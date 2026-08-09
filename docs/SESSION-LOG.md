@@ -5,6 +5,46 @@ this file holds *where things stand and what to do next*. Newest entry on top.
 
 ---
 
+## 2026-08-10 — the project is `pi-daddy`, under version control, with eight decisions taken
+
+**The project is renamed to `pi-daddy`** (repo and project alike). "DTCM — Dynamic Tool & Context
+Management" named the token-economics thesis ADR-0007 retired. Replaced only where the name is
+*operational* — `CLAUDE.md`, `README.md`, `GETTING-STARTED.md`, all of `.claude/`. **"DTCM" is deliberately
+preserved in every ADR and register**, where it *is* the abandoned thesis; a convention note in `CLAUDE.md`
+forbids a blanket find-and-replace, because a register entry describes what was believed on its date and
+renaming it makes the record lie.
+
+**This is now a git repository** — the first one this project has had. Baseline commit `d8e4c47`, branch
+`main`, 75 files, authored as `mojomanyana <nemanjaalavanja@gmail.com>` set **repo-local** so the global
+identity is untouched. `.gitignore` covers `node_modules/`, `.superpowers/`, and — per **R-27** —
+`.pi/grants-approvals.json` and `.pi/grants.jsonl`. No remote is set; that is the user's to add.
+
+### Decisions taken (eight, in one pass)
+
+| # | Decision |
+| :--- | :--- |
+| **ADR-0011** | **Accepted — Option 3.** Universal capabilities were treated three ways across the two spawn paths (silently dropped / silently passed / loudly refused). Fix: the interceptor refuses a spawn retaining a universal capability, `shouldSeekApproval` additionally requires `universal` to be empty, and the cosmetic stripping at `interceptor.ts:85` is removed. **Not yet implemented** — will be the first change to `src/interceptor.ts` since the package shipped. `src/resolve.ts` stays untouched. |
+| **ADR-0009** | **Superseded by events.** The build path was taken; re-triggers stay live, now including "a `pi-fabric` release that fixes the recursion/containment exclusivity". |
+| Wiring tests | **Integration harness, not extraction.** `obtainApprovals` stays in the extension; coverage comes from an rpc-mode suite driving real pi, promoted from `docs/probes/approval-ux/drive.mjs`. Wire as a separate `npm run test:integration` so `npm test` stays fast and pi-free. |
+| Upstream PR | **Write the case first, code later.** A proposal document for a `tools` parameter on `pi-subagents`' `Agent` tool, to become an issue in the user's words. Patch only if the maintainer is receptive. |
+| Gating `bash` | **Document as recommended, do not default it.** `bash` subsumes read/write/edit/grep/find/ls (R-25), so gating it is the highest-value gate *and* the likeliest source of reflexive approval. The README will recommend a `PI_GRANTS_GATED` value with the fatigue caveat; the code default stays empty, preserving "governance is opt-in and never silently tightens a workflow". |
+| Next feature | **Background + streaming delegation.** |
+
+### Next actions, highest value first
+
+1. **Implement ADR-0011** — accepted but unimplemented; keeps the register honest.
+2. **Background + streaming delegation.** `delegate` blocks until the child exits, so an orchestrator cannot
+   fan out and collect — the actual multi-level pattern this project exists for. Also the first real test of
+   the single-flight approval queue against genuine parallel spawns.
+3. **The rpc integration harness** (decision above).
+4. **`PI_GRANTS_GATED` recommendation** in the README (small).
+5. **The `pi-subagents` proposal document** (small).
+6. **Verify `pi-token-audit` against Anthropic and Google payload shapes** — proven on one provider only.
+7. **A-14** — are deferred tool definitions billed as prompt tokens? Consciously deferred; only matters if
+   the cost thesis is revived, which ADR-0007 retired.
+
+---
+
 ## 2026-08-09 — `pi-agent-grants` 0.4.0: human approval for gated capabilities
 
 Gated capabilities (held but not passable without a person saying yes) could previously only ever be

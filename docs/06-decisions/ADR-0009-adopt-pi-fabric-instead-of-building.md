@@ -1,8 +1,25 @@
 # ADR-0009: Adopt `pi-fabric` instead of building the governance layer
 
 **Date:** 2026-08-09
-**Status:** **Proposed** — the technical question is now settled empirically (see below); what remains for the
-user is the commitment to **code mode** as the orchestration style, which is a preference I should not settle.
+**Status:** **Superseded by events, 2026-08-10.** The build path was taken: `pi-agent-grants` shipped at
+0.4.0 (149 tests, live-verified against pi 0.83.0) with the resolver, ledger, interceptor, governed
+`delegate` tool, and human approval for gated capabilities. This ADR is retained as the record of the
+alternative that was genuinely considered and measured, not as a live proposal.
+
+**Why the build path was right, in one line:** in `pi-fabric`, `recursive: true` overrides both `tools: []`
+and `extensions: false`, so **recursion and containment are mutually exclusive there** — measured, not
+suspected (`docs/probes/pi-fabric-eval`, probes 2, 4, 7, 8). A governance layer that cannot contain a
+recursive child does not govern. That finding is also why `ext:pi-fabric/fabric_exec` sits in
+`UNIVERSAL_CAPABILITIES` on evidence rather than suspicion.
+
+**The re-triggers below survive and remain live.** Superseded means "reality answered this", not "never
+again". Reopen on any of: durable actors, mesh coordination, per-branch cost budgets — or a `pi-fabric`
+release that fixes the recursion/containment exclusivity, which would remove the one measured blocker and
+make this worth re-running rather than re-reading.
+
+*Original status, for the record:* **Proposed** — the technical question is now settled empirically (see
+below); what remains for the user is the commitment to **code mode** as the orchestration style, which is a
+preference I should not settle.
 **Driver:** ADR-0007 (reframe) · ADR-0008 (attenuation invariant) ·
 `docs/specs/2026-08-09-capability-governance-design.md` · ADR-0001 (build-vs-leverage, now answerable on the
 right shelf) · R-06 (platform convergence)
