@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Subagent-driven-development workspace: ledgers, task briefs, reports, review
+# packages. Scratch for a single run — the git history is the durable record now.
+.superpowers/
+
+# Persisted capability approvals (R-27).
+#
+# This is NOT ordinary noise-filtering. `.pi/grants-approvals.json` records that a
+# human approved a gated capability — `tool:write@docs-writer` and the like. Committing
+# it would mean one person's "always allow" silently authorising everyone who clones the
+# repo, none of whom was asked. The loader already refuses entries whose `cwd` does not
+# match (that is the real defence), but the file has no business in history either.
+.pi/grants-approvals.json
+
+# Grant ledgers: append-only audit trails, machine-local by nature.
+.pi/grants.jsonl
+*.jsonl.log
+
+# Editor / OS
+.DS_Store
+*.swp
+*~
+
+# Logs and scratch
+*.log
+tmp/

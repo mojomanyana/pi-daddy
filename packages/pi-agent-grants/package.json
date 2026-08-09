@@ -1,0 +1,37 @@
+{
+  "name": "pi-agent-grants",
+  "version": "0.4.0",
+  "description": "Capability governance for pi sub-agents: grants that can only narrow going down a delegation tree, enforced by pi's own --tools allowlist, with an append-only grant ledger.",
+  "keywords": [
+    "pi-package",
+    "subagents",
+    "capabilities",
+    "least-privilege",
+    "governance",
+    "audit"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./resolve": "./src/resolve.ts",
+    "./ledger": "./src/ledger.ts",
+    "./spawn": "./src/spawn.ts",
+    "./delegate": "./src/delegate.ts",
+    "./catalog": "./src/catalog.ts",
+    "./approval": "./src/approval.ts",
+    "./approval-store": "./src/approval-store.ts",
+    "./approval-prompt": "./src/approval-prompt.ts"
+  },
+  "files": [
+    "extensions",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.ts"
+  }
+}

@@ -1,0 +1,246 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import {
+  APPROVAL_TTL_DAYS,
+  DELEGATE_SUBJECT,
+  approvalKey,
+  expiryFor,
+  inheritApprovals,
+  offeredScopes,
+  shouldSeekApproval,
+} from "../src/approval.ts";
+import { resolve } from "../src/resolve.ts";
+import { planDelegation } from "../src/delegate.ts";
+import { decideSpawn } from "../src/interceptor.ts";
+import { parseAgentType } from "../src/agent-types.ts";
+
+test("a gated capability with nothing else wrong is worth asking a human about", () => {
+  const result = resolve({
+    requested: ["tool:read", "tool:write"],
+    parentGrant: ["tool:read", "tool:write"],
+    gated: ["tool:write"],
+  });
+  assert.deepEqual(result.gatedBlocked, ["tool:write"]);
+  assert.equal(shouldSeekApproval(result), true);
+});
+
+test("a request mixing a gated capability with a DENIED one raises no dialog", () => {
+  // The spawn is refused for `tool:bash` whatever the human says, so asking them about `tool:write`
+  // banks a yes — republished to children for `session`, written to disk for `always` — against a
+  // delegation that never happens. The old predicate (gatedBlocked.length > 0) said yes here.
+  const result = resolve({
+    requested: ["tool:write", "tool:bash"],
+    parentGrant: ["tool:write"],
+    gated: ["tool:write"],
+  });
+  assert.deepEqual(result.denied, ["tool:bash"], "denied and gatedBlocked are computed independently");
+  assert.deepEqual(result.gatedBlocked, ["tool:write"], "so both are populated at once");
+  assert.equal(shouldSeekApproval(result), false, "a refused spawn is not a question for a human");
+});
+
+test("clipped alone does not suppress the dialog — a clipped spawn still proceeds", () => {
+  const result = resolve({
+    requested: ["tool:read", "tool:write"],
+    parentGrant: ["tool:read", "tool:write"],
+    ceiling: ["tool:write"],
+    gated: ["tool:write"],
+  });
+  assert.deepEqual(result.clipped, ["tool:read"]);
+  assert.equal(shouldSeekApproval(result), true, "clipping drops capabilities, it does not refuse");
+});
+
+test("no resolution at all (depth, unknown capability, bad task) is never a question for a human", () => {
+  assert.equal(shouldSeekApproval(undefined), false);
+});
+
+test("planDelegation's mixed gated+denied refusal reaches the predicate as a no", () => {
+  // The end-to-end shape the wiring sees: `tools: ["write","bash"]` from a session holding a gated
+  // `write` but no `bash` at all.
+  const plan = planDelegation(
+    { task: "edit and grep", tools: ["write", "bash"] },
+    { ownGrant: ["tool:write"], depth: 0, maxDepth: 2, gated: ["tool:write"] },
+  );
+  assert.equal(plan.ok, false);
+  assert.match(plan.reason ?? "", /escalation blocked/, "it refuses for bash, not for the gate");
+  assert.equal(shouldSeekApproval(plan.result), false);
+});
+
+test("decideSpawn's mixed gated+denied refusal reaches the predicate as a no", () => {
+  const types = new Map([
+    ["mixed", parseAgentType("mixed", "---\nname: mixed\ntools: write, bash\n---\nbody")!],
+  ]);
+  const decision = decideSpawn(
+    { subagentType: "mixed" },
+    { parentGrant: ["tool:write"], depth: 0, maxDepth: 2, types, gated: ["tool:write"] },
+  );
+  assert.equal(decision.allow, false);
+  assert.deepEqual(decision.result?.denied, ["tool:bash"]);
+  assert.deepEqual(decision.result?.gatedBlocked, ["tool:write"]);
+  assert.equal(shouldSeekApproval(decision.result), false);
+});
+
+test("a key names the capability and the subject that was approved", () => {
+  assert.equal(approvalKey("tool:write", "docs-writer"), "tool:write@docs-writer");
+});
+
+test("an approval for one agent type does not satisfy another", () => {
+  assert.notEqual(approvalKey("tool:write", "typeA"), approvalKey("tool:write", "typeB"));
+});
+
+test("the delegate subject cannot collide with a real agent type", () => {
+  // '<' and '>' are not legal in an agent-type name parsed from frontmatter.
+  assert.match(DELEGATE_SUBJECT, /^<.+>$/);
+});
+
+test("always is offered on the interceptor path, where the subject is a file a human wrote", () => {
+  assert.deepEqual(offeredScopes("interceptor"), ["once", "session", "always"]);
+});
+
+test("always is NEVER offered on the delegate path — the model controls the subject there", () => {
+  assert.deepEqual(offeredScopes("delegate"), ["once", "session"]);
+  assert.ok(!offeredScopes("delegate").includes("always"));
+});
+
+test("an inherited approval is intersected with the child's grant", () => {
+  assert.deepEqual(inheritApprovals(["tool:write", "tool:bash"], ["tool:read", "tool:write"]), [
+    "tool:write",
+  ]);
+});
+
+test("THE invariant for approvals: approved can never exceed the grant", () => {
+  assert.deepEqual(inheritApprovals(["tool:write"], []), []);
+  assert.deepEqual(inheritApprovals([], ["tool:write"]), []);
+});
+
+test("the wildcard is never inherited as an approval (mirrors R-26 for grants)", () => {
+  assert.deepEqual(inheritApprovals(["tool:*", "tool:read"], ["tool:*", "tool:read"]), ["tool:read"]);
+});
+
+test("expiry is TTL days after approval, as an ISO instant", () => {
+  const at = new Date("2026-08-09T14:02:11.331Z");
+  const expected = new Date(at.getTime() + APPROVAL_TTL_DAYS * 86_400_000).toISOString();
+  assert.equal(expiryFor(at), expected);
+  assert.equal(expiryFor(at), "2026-09-08T14:02:11.331Z");
+});
+
+import { entryVerdict, resolveApprovals, type ApprovalEntry } from "../src/approval.ts";
+
+const CWD = "/repo/a";
+const NOW = new Date("2026-08-20T00:00:00.000Z");
+
+const entry = (over: Partial<ApprovalEntry> = {}): ApprovalEntry => ({
+  approvedAt: "2026-08-09T00:00:00.000Z",
+  expiresAt: "2026-09-08T00:00:00.000Z",
+  cwd: CWD,
+  grantAtApproval: ["tool:read", "tool:write"],
+  ...over,
+});
+
+test("a live entry whose agent type is unchanged is valid", () => {
+  const v = entryVerdict({ entry: entry(), cwd: CWD, now: NOW, currentCeiling: ["tool:read", "tool:write"] });
+  assert.equal(v, "valid");
+});
+
+test("R-27: an entry approved in another directory authorises nothing here", () => {
+  const v = entryVerdict({ entry: entry(), cwd: "/repo/b", now: NOW, currentCeiling: ["tool:read", "tool:write"] });
+  assert.equal(v, "foreign-cwd");
+});
+
+test("an expired entry is not valid", () => {
+  const v = entryVerdict({
+    entry: entry(),
+    cwd: CWD,
+    now: new Date("2026-09-09T00:00:00.000Z"),
+    currentCeiling: ["tool:read", "tool:write"],
+  });
+  assert.equal(v, "expired");
+});
+
+test("the confused deputy: a rewritten agent type voids the approval", () => {
+  const v = entryVerdict({
+    entry: entry(),
+    cwd: CWD,
+    now: NOW,
+    currentCeiling: ["tool:bash", "tool:read", "tool:write"],
+  });
+  assert.equal(v, "type-changed");
+});
+
+test("a deleted agent type voids the approval", () => {
+  const v = entryVerdict({ entry: entry(), cwd: CWD, now: NOW, currentCeiling: null });
+  assert.equal(v, "type-missing");
+});
+
+test("reordering the tools: line is not a change", () => {
+  const v = entryVerdict({ entry: entry(), cwd: CWD, now: NOW, currentCeiling: ["tool:write", "tool:read"] });
+  assert.equal(v, "valid");
+});
+
+test("a malformed expiresAt fails closed: not valid, treated as expired", () => {
+  const v = entryVerdict({
+    entry: entry({ expiresAt: "not-a-date" }),
+    cwd: CWD,
+    now: NOW,
+    currentCeiling: ["tool:read", "tool:write"],
+  });
+  assert.equal(v, "expired");
+});
+
+const RA = (over: Partial<Parameters<typeof resolveApprovals>[0]> = {}) =>
+  resolveApprovals({
+    gated: [],
+    subject: "docs-writer",
+    sessionApprovals: new Set<string>(),
+    persisted: new Map<string, ApprovalEntry>(),
+    ...over,
+  });
+
+test("nothing gated means nothing to approve and nothing to ask", () => {
+  const r = RA();
+  assert.deepEqual(r.approved, []);
+  assert.deepEqual(r.needsPrompt, []);
+});
+
+test("an unsatisfied gated capability needs a prompt", () => {
+  const r = RA({ gated: ["tool:write"] });
+  assert.deepEqual(r.approved, []);
+  assert.deepEqual(r.needsPrompt, ["tool:write"]);
+});
+
+test("a session approval satisfies without prompting", () => {
+  const r = RA({ gated: ["tool:write"], sessionApprovals: new Set(["tool:write@docs-writer"]) });
+  assert.deepEqual(r.approved, ["tool:write"]);
+  assert.deepEqual(r.needsPrompt, []);
+  assert.equal(r.sources["tool:write"], "session");
+});
+
+test("a persisted approval satisfies without prompting", () => {
+  const r = RA({ gated: ["tool:write"], persisted: new Map([["tool:write@docs-writer", entry()]]) });
+  assert.deepEqual(r.approved, ["tool:write"]);
+  assert.equal(r.sources["tool:write"], "persisted");
+});
+
+test("an inherited approval satisfies, and outranks session and persisted in reporting", () => {
+  const r = RA({
+    gated: ["tool:write"],
+    inherited: ["tool:write"],
+    sessionApprovals: new Set(["tool:write@docs-writer"]),
+  });
+  assert.deepEqual(r.approved, ["tool:write"]);
+  assert.equal(r.sources["tool:write"], "inherited");
+});
+
+test("a persisted approval for a DIFFERENT subject does not satisfy", () => {
+  const r = RA({ gated: ["tool:write"], persisted: new Map([["tool:write@other", entry()]]) });
+  assert.deepEqual(r.approved, []);
+  assert.deepEqual(r.needsPrompt, ["tool:write"]);
+});
+
+test("mixed: one satisfied, one still needing a human", () => {
+  const r = RA({
+    gated: ["tool:write", "tool:bash"],
+    sessionApprovals: new Set(["tool:write@docs-writer"]),
+  });
+  assert.deepEqual(r.approved, ["tool:write"]);
+  assert.deepEqual(r.needsPrompt, ["tool:bash"]);
+});
