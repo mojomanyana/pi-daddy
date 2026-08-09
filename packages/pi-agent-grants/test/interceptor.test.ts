@@ -142,3 +142,56 @@ test("gated capability blocks a spawn until approved", () => {
   const approved = decideSpawn({ subagentType: "review" }, { ...ctx, gated: ["tool:bash"], approved: ["tool:bash"] });
   assert.equal(approved.allow, true);
 });
+
+// ── ADR-0011: universal capabilities are refused on BOTH spawn paths ─────────────
+//
+// `ext:pi-fabric/fabric_exec` transitively confers the whole catalog — measured, not
+// suspected (docs/probes/pi-fabric-eval, probes 2/4/7/8). Before ADR-0011 the interceptor
+// treated it two different ways, neither of them a refusal: a wildcard holder had it
+// silently stripped from `effective`, and an enumerated holder had it passed straight
+// through. Both were cosmetic, because `Decision.effective` is a RECORD on this path —
+// pi-subagents' Agent tool has no `tools` parameter, so the child received it regardless.
+
+const FABRIC = typeFrom(`---
+name: fabricator
+tools: read, fabric_exec
+---
+body`);
+
+test("ADR-0011: an enumerated delegator cannot spawn a type declaring a universal capability", () => {
+  const d = decideSpawn(
+    { subagentType: "fabricator" },
+    { parentGrant: ["tool:read", "tool:fabric_exec"], depth: 0, maxDepth: 2, types: types(FABRIC) },
+  );
+  assert.equal(d.allow, false, "the child would receive the whole catalog");
+  assert.match(d.reason ?? "", /fabric_exec/);
+  assert.match(d.reason ?? "", /narrow/i, "the reason names WHY, not just what");
+});
+
+test("ADR-0011: a wildcard holder cannot either — silent stripping is gone", () => {
+  const d = decideSpawn(
+    { subagentType: "fabricator" },
+    { parentGrant: [WILDCARD], depth: 0, maxDepth: 2, types: types(FABRIC) },
+  );
+  assert.equal(d.allow, false, "holding tool:* is authority to grant, not to defeat narrowing");
+  assert.match(d.reason ?? "", /fabric_exec/);
+});
+
+test("ADR-0011: escalation still outranks the narrowing refusal", () => {
+  // A type needing more than the parent holds is an escalation ATTEMPT — the more
+  // important signal, and the one the ledger keys on. It must not be masked.
+  const d = decideSpawn(
+    { subagentType: "fabricator" },
+    { parentGrant: ["tool:read"], depth: 0, maxDepth: 2, types: types(FABRIC) },
+  );
+  assert.equal(d.allow, false);
+  assert.match(d.reason ?? "", /escalation/i, "reported as escalation, not as non-narrowing");
+});
+
+test("ADR-0011: an ordinary type is unaffected", () => {
+  const d = decideSpawn(
+    { subagentType: "plan" },
+    { parentGrant: ["tool:read", "tool:bash"], depth: 0, maxDepth: 2, types: types(PLAN) },
+  );
+  assert.equal(d.allow, true, d.reason);
+});
