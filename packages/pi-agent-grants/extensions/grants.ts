@@ -17,7 +17,6 @@
  * child derives its own grant from the tool array of its first provider request.
  */
 
-import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
@@ -37,6 +36,7 @@ import { createApprovalGate, createApprovalGateProvider, timeoutMsFromEnv } from
 import { buildCatalog, makeCatalog, type Catalog } from "../src/catalog.ts";
 import { DELEGATE_CAPABILITY, planDelegation } from "../src/delegate.ts";
 import { decideSpawn } from "../src/interceptor.ts";
+import { ENV_CHILD_TIMEOUT, runChild, timeoutFromEnv } from "../src/run-child.ts";
 import { appendRecord, buildRecord } from "../src/ledger.ts";
 import {
   childEnv,
@@ -520,22 +520,43 @@ export default function (pi: ExtensionAPI) {
         };
       }
 
-      const output = await new Promise<{ code: number | null; text: string }>((settle) => {
-        const child = spawn("pi", plan.args, {
-          // Explicit per-child env — the parent's own grant vars must not leak in. A plain spread would
-          // not achieve that: a key `plan.env` does not set is a key the parent's value survives into, so
-          // `mergeChildEnv` strips every governance variable first and lets only the plan put them back.
-          env: mergeChildEnv(process.env, plan.env),
-          cwd: ctx.cwd,
-          stdio: ["ignore", "pipe", "pipe"],
-        });
-        let text = "";
-        child.stdout.on("data", (chunk) => (text += String(chunk)));
-        child.stderr.on("data", (chunk) => (text += String(chunk)));
-        signal?.addEventListener("abort", () => child.kill("SIGTERM"), { once: true });
-        child.on("error", (error) => settle({ code: -1, text: `spawn failed: ${String(error)}` }));
-        child.on("close", (code) => settle({ code, text }));
+      // G8: bounded output, a wall-clock timeout with SIGTERM->SIGKILL escalation, and an abort that is
+      // observed even if it happened before we got here. See src/run-child.ts for why each one exists.
+      const output = await runChild({
+        command: "pi",
+        args: plan.args,
+        // Explicit per-child env — the parent's own grant vars must not leak in. A plain spread would
+        // not achieve that: a key `plan.env` does not set is a key the parent's value survives into, so
+        // `mergeChildEnv` strips every governance variable first and lets only the plan put them back.
+        env: mergeChildEnv(process.env, plan.env),
+        cwd: ctx.cwd,
+        signal,
+        timeoutMs: timeoutFromEnv(process.env[ENV_CHILD_TIMEOUT]),
       });
+
+      // G8: a child that failed is reported as a failure. Previously a non-zero exit, a timeout and a
+      // truncated flood all came back as ordinary tool results, so the orchestrator read them as answers.
+      if (output.spawnError || output.aborted || output.timedOut || output.code !== 0) {
+        const why = output.spawnError
+          ? `could not be started: ${output.spawnError}`
+          : output.aborted
+            ? "was cancelled"
+            : output.timedOut
+              ? "exceeded its time limit and was killed"
+              : `exited with code ${output.code}`;
+        return {
+          content: [{ type: "text", text: `delegation failed — the sub-agent ${why}.\n\n${output.text.trim()}` }],
+          details: {
+            granted: plan.effective,
+            depth: plan.childDepth,
+            exitCode: output.code,
+            timedOut: output.timedOut,
+            aborted: output.aborted,
+            truncated: output.truncated,
+          },
+          isError: true,
+        };
+      }
 
       return {
         content: [{ type: "text", text: output.text.trim() || "(no output)" }],
