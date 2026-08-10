@@ -51,6 +51,33 @@ the merge. A note in the ADR records the confusion rather than erasing it.
 from searches run inside a worktree that could not have contained it. A cross-branch check
 (`git log --all -- <path>`) would have settled it in one command.
 
+### Review backlog: G1, G6, G7, G8 closed (same day, after the above)
+
+Four more groups done, TDD throughout, each failing test watched failing first. **186 tests passing,
+typecheck clean over `src` + `extensions` + `test`** (it previously excluded tests, which hid four errors).
+
+- **G1 · the argv channel** — the delegation task sat in a CLI-parsed position. A task beginning `@` made
+  pi read an arbitrary file into a child holding **no tools at all**, because the read happens before any
+  tool exists and `--tools` therefore never applies. **Reproduced live**: a `--no-tools` child read a file
+  *and obeyed the instructions in it*; after the fix it reports no filesystem access
+  (`docs/probes/g1-argv`). Fixed with an unconditional leading space — positional, not pattern-based, so
+  a third special prefix in some later pi cannot silently re-open it.
+- **G6 · the ledger** — it reported **allowed** wildcard spawns as escalation attempts (`resolve()` has no
+  notion of `tool:*`, so the extension's recompute denied everything), and dropped every refusal decided
+  before resolution. `Decision.result` and `Delegation.result` are now **required**, so a new early exit
+  cannot reintroduce either. A configured ledger that cannot be written now refuses the spawn.
+- **G7 · configuration** — `parseInt` accepted `"2abc"` as `2` and gave `NaN` otherwise, and every
+  comparison against `NaN` is false, so a malformed `PI_GRANTS_MAX_DEPTH` **removed** the depth limit
+  rather than tightening it. Malformed now disables spawning and says which variable. Ungoverned sessions
+  publish nothing to children. The catalog is awaited rather than raced.
+- **G8 · child processes** — output cap, wall-clock timeout with `SIGTERM`→`SIGKILL`, `signal.aborted`
+  checked *before* spawning (an `AbortSignal` does not replay), and failed children returned as tool
+  errors instead of answers. Extracted to `src/run-child.ts` and tested against **real** processes.
+
+**Eight groups remain open.** G2 (the `pi-subagents` reality gap), G3 (approval integrity) and G5 (`bash`
+as a governance hole) need decisions rather than patches; G9/G10/G11/G12 are packaging, measurement
+honesty, coverage and docs.
+
 ### ⚠️ The next actions are NOT the ones listed in the entry below
 
 `docs/reviews/2026-08-10-aggregated-findings.md` — **two independent reviews, cross-referenced, with eight
@@ -58,17 +85,14 @@ findings reached separately by both** — is the authoritative backlog now, and 
 work happened on a branch, so it is easy to miss. **Read it before planning anything.** Merging ADR-0011
 completed exactly one of its twelve groups (**G4**). Its own recommended order stands, with G4 struck:
 
-1. ~~**G4** — wildcard/universal bypasses~~ **DONE** (this entry). One of twelve.
-2. **G1 · the argv channel** (`src/spawn.ts`) — a model-controlled task sits in a CLI-parsed position, so
-   `@file` reads arbitrary files and `--approve` parses as a flag. *One file, cheapest critical, do first.*
-3. **G12 + the `SESSION-LOG` correction** — the docs currently assert a falsified fact (see below).
-4. **G6, G7, G8** — ledger integrity, config robustness, child-process handling. Contained and testable,
-   no design decisions needed.
-5. **G3** (approval integrity) needs a decision on where the store lives; **G2** (the `pi-subagents`
+1. ~~**G4**, **G1**, **G6**, **G7**, **G8**~~ — **DONE**, see the entry above. Five of twelve.
+2. **G12 + the `SESSION-LOG` correction** — the docs still assert a falsified fact (see below). Cheapest
+   remaining, and the one that actively misleads.
+3. **G3** (approval integrity) needs a decision on where the store lives; **G2** (the `pi-subagents`
    reality gap) is the largest and needs the integration model settled; **G5** (`bash` as a governance
    hole — a child with `bash` can run `env -u PI_GRANTS_GRANT pi …` and create an *ungoverned* descendant)
    **may be unfixable in-process and should be an ADR, not a patch**.
-6. **G9, G10, G11** — packaging, measurement honesty, coverage.
+4. **G9, G10, G11** — packaging, measurement honesty, coverage.
 
 **A load-bearing "verified fact" in this file is falsified.** The 72% tool-definition share recorded in the
 2026-08-09 entry — under *"Verified facts, don't re-litigate"*, and feeding **ADR-0006** — was proved

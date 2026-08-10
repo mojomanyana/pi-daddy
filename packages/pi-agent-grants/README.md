@@ -93,7 +93,32 @@ pi -e ./extensions/grants.ts
 `/grants` shows the session's grant, its depth, and an allow/block verdict per known agent type.
 
 **Governance is opt-in.** With `PI_GRANTS_GRANT` unset, the session holds the wildcard and nothing is
-blocked — this extension must never silently tighten a normal workflow.
+blocked — this extension must never silently tighten a normal workflow. Since 0.5.0 that holds for
+**descendants** too: an ungoverned session publishes no governance variables at all. It previously
+exported its own observed tool surface as its children's grant, so "inactive" governance quietly governed
+everything below it.
+
+### Configuration, and how it fails
+
+| Variable | Default | Notes |
+| :--- | :--- | :--- |
+| `PI_GRANTS_GRANT` | unset → ungoverned | Presence is what switches governance on. |
+| `PI_GRANTS_MAX_DEPTH` | `2` | Child-depth bound. `0` disables spawning. |
+| `PI_GRANTS_DEPTH` | `0` | This session's own depth; set by the parent, not by hand. |
+| `PI_GRANTS_GATED` | empty | Capabilities needing human approval. See the `bash` note below. |
+| `PI_GRANTS_LEDGER` | unset → not recording | **Setting this makes the ledger load-bearing** — see below. |
+| `PI_GRANTS_CHILD_TIMEOUT` | `600` (seconds) | Wall-clock limit for a `delegate` child. Inherited by descendants. |
+
+**A malformed value disables spawning; it never falls back to a default.** An unreadable
+`PI_GRANTS_MAX_DEPTH` or `PI_GRANTS_DEPTH` yields `maxDepth: 0` and a startup warning naming the
+variable. Before 0.5.0 these were read with `parseInt`, which accepts numeric prefixes (`"2abc"` → `2`)
+and otherwise gives `NaN` — and since every comparison against `NaN` is false, a typo did not tighten the
+depth limit, it **removed** it.
+
+**Configuring a ledger makes it a precondition, not a log.** If `PI_GRANTS_LEDGER` is set and the write
+fails, the spawn or delegation is **refused**. Asking for an audit trail is an explicit act, and
+`ledger.ts` has always documented that an unrecorded grant should fail closed; until 0.5.0 both call
+sites silently swallowed the error. Sessions with no ledger configured are unaffected.
 
 ### Verified live against real agent types
 
@@ -122,6 +147,10 @@ delegate({ task: "summarise src/", tools: ["read"] })
 - **Spawning is itself a capability.** Grant `delegate` and the child can sub-delegate; withhold it and the
   child is a leaf — the extension is only passed to children that hold it, so the machinery isn't even
   present. Depth control needs no separate mechanism (`maxDepth` remains as a backstop).
+- **A child cannot outlive or overwhelm you.** Output is capped (1 MiB), there is a wall-clock timeout
+  with `SIGTERM` → `SIGKILL` escalation so a child cannot ignore its way past it, an abort is honoured
+  even if it arrived before the spawn, and a child that exits non-zero, times out or is cancelled comes
+  back as a **tool error naming which** — not as an answer. See `src/run-child.ts`.
 - **No propagation race, structurally.** Each child is spawned with its **own explicit `env` object**, so
   nothing per-child is written to the shared `process.env`. The child's environment is built by stripping
   every `PI_GRANTS_*` variable from this process's own environment and then applying the plan, so the plan is
@@ -346,6 +375,26 @@ the tree, persisted for `always`; see *Approving a gated capability* above). Tha
 typechecked, and verified live against real pi (see below). What does not exist yet: background/streaming
 delegation (`delegate` runs to completion and returns the child's output). Known gap in the interceptor
 path: it can only enforce, not provision, until `pi-subagents`' `Agent` tool gains a `tools` parameter.
+
+### Hardening in 0.5.0, from two independent reviews
+
+Beyond ADR-0011, four groups of the review backlog
+(`docs/reviews/2026-08-10-aggregated-findings.md`) are closed:
+
+- **G1 · the argv channel.** The delegation task occupied a CLI-parsed position, so a task beginning
+  `@` made pi read an arbitrary file into a child that held **no tools at all** — `--tools` never applies,
+  because no tool is involved — and one beginning `-` could pass `--approve`. Reproduced and closed;
+  `docs/probes/g1-argv`.
+- **G6 · the ledger.** It reported allowed wildcard spawns as escalation attempts, and dropped every
+  refusal that was decided before resolution. Both fixed at the type level, so a new early exit cannot
+  reintroduce them.
+- **G7 · configuration.** Malformed bounds now fail closed and say so; ungoverned sessions publish
+  nothing; the catalog is awaited rather than raced.
+- **G8 · child processes.** Caps, timeout, abort-before-spawn, real errors for failed children.
+
+Eight groups remain open, three of them needing decisions rather than patches — including that a child
+holding `bash` can run `env -u PI_GRANTS_GRANT pi …` and create a completely ungoverned descendant.
+**Read the backlog before relying on this package.**
 
 ### 0.5.0 is a breaking change
 
