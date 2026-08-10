@@ -170,6 +170,41 @@ call to catch.
    kept in step with upstream releases; that maintenance burden is accepted knowingly, because the
    alternative is a ledger that is wrong in the permissive direction.
 
+### The port, specified — read from `pi-subagents` 0.14.3 source
+
+Recorded here because the whole value of a *faithful* port is that it matches, and "match pi-subagents"
+is not actionable a month from now. Semantics from `src/custom-agents.ts` and `src/default-agents.ts`:
+
+| `tools:` in frontmatter | What the child actually gets | What we compute **today** |
+| :--- | :--- | :--- |
+| **omitted** | **all built-ins** (`csvList` returns its defaults) | `tool:*` wildcard |
+| `none` or empty | **zero** built-ins | `[]` — correct |
+| `*` or `all` (case-insensitive) | all built-ins, plus any plain entries | `tool:*` — correct in effect |
+| a CSV list | those entries | correct |
+| **a YAML block list** | `String(val)` on the parsed array yields `"read,grep"`, so **those entries** | **absent → `tool:*`** — wrong, and permissive |
+| `ext:` entries | kept as separate selectors; a `tools:` with *only* `ext:` entries yields **zero** built-ins | mapped as capabilities |
+
+Three further mismatches, all confirmed in source:
+
+1. **Names come from the FILENAME** — `basename(file, ".md")` — not from frontmatter `name`. This is
+   finding 4's root, and it is a one-line fix on our side.
+2. **Discovery order** is global `~/.pi/agent/agents` → `<cwd>/.agents/agents` → `<cwd>/.pi/agents`, last
+   wins. Ours reads a different set in a different order.
+3. **`extensions` and `skills` default to `true`**, so a type that says nothing about them still receives
+   the session's extension tools. A ceiling computed from `tools:` alone is therefore **not** the child's
+   authority — finding 2, restated concretely. The port must add the session's observed extension tools
+   whenever `extensions !== false`.
+
+**Deliberately NOT importing pi's `parseFrontmatter`**, though `pi-subagents` uses it and it is exported
+from `@earendil-works/pi-coding-agent`. That package resolves only inside a pi process; `src/` must stay
+importable by `node --test` with no pi present, which is what keeps the unit suite fast and pure. The port
+therefore matches pi's **semantics** for the `tools:` subset — inline CSV, inline array, block list — rather
+than borrowing its parser, and says so where the parser is defined.
+
+**A side effect worth noticing before it surprises someone:** `Explore` and `Plan`, two of the built-in
+types, declare `READ_ONLY_TOOLS = ["read", "bash", "grep", "find", "ls"]` — which **includes `bash`**. Under
+ADR-0012 `bash` is gated by default, so spawning them in a governed session will prompt.
+
 Two things are fixed regardless, because they are wrong under every option:
 
 1. **Stop advertising `skill:` and `agent:` as enforceable.** Nothing reads `agent:`, and `--tools` cannot
