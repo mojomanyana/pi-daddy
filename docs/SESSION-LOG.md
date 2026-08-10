@@ -51,6 +51,32 @@ the merge. A note in the ADR records the confusion rather than erasing it.
 from searches run inside a worktree that could not have contained it. A cross-branch check
 (`git log --all -- <path>`) would have settled it in one command.
 
+### G12 closed, and three decisions written up for you (ADR-0012/0013/0014)
+
+**ADR-0011 Finding 1 is resolved**: the wildcard branch keeps refusing, but the message is now honest — it
+names the gated capability, says a `tool:*` grant cannot be approved for it because no dialog is offered on
+that path, and points at `PI_GRANTS_GRANT` as the remedy. Making it *prompt* was rejected on merit: it
+would let a wildcard holder widen its own children past an operator's gate with one dialog. Verified live.
+
+**G12 — the docs stopped asserting a falsified fact.** The 72% tool-definition share now carries a dated
+falsification note everywhere it appears (`SESSION-LOG`, `README`, ADR-0006, ADR-0007). Annotated, never
+deleted, per this project's convention. Each note states what it does and does not undermine: ADR-0007's
+reframe does not depend on it; **ADR-0006's magnitude claim and `pi-token-audit`'s headline feature do**.
+`CLAUDE.md` and `GETTING-STARTED.md` also stopped describing a project with no production code in it.
+
+**Three ADRs now await your decision.** Each has options honestly weighed and a recommendation, and none is
+decided — they all narrow what the product claims, which is yours to choose:
+
+| ADR | The finding | Recommended |
+| :--- | :--- | :--- |
+| **0012** | **`bash` escapes governance entirely — measured.** A session holding *only* `tool:bash`, at depth 1 of a maxDepth-2 tree, spawned an ungoverned pi with the full default surface: no ledger entry, no depth increment, no grant (`docs/probes/g5-bash-escape`). Also, gating is not closed under `SUBSUMPTION`, so gating `write` produces no prompt when `bash` is passed. | Close the subsumption gap; **narrow the advertised guarantee** rather than refusing every `bash` grant or becoming infrastructure. |
+| **0013** | **The interceptor does not build the thing it governs.** Children are in-process (so `propagation.ts`'s race-freedom argument holds on the `delegate` path only), the ceiling omits extensions and skills, the hand-rolled frontmatter parser disagrees with pi's YAML *in the permissive direction*, identity is keyed differently at each end, and scheduled `Agent` calls have no hook at all. | Downgrade the interceptor to **best-effort guard + audit**; pursue the upstream `tools` parameter in parallel. |
+| **0014** | **The approval file is forgeable by the agent it gates** — self-defeating in the package's own recommended `PI_GRANTS_GATED=tool:write` example, since a session that may use `write` can write the approval. Plus `once` being inherited by a whole subtree, the subject erased in propagation, and a corrupt file destroying valid entries on the next write. | Move the store outside agent-writable space; fix scope/subject/durability regardless. **Do not over-invest while 0012 is open** — the weaker link is elsewhere. |
+
+**`skill:` and `agent:` capabilities enforce nothing**, under every option: skills are injected into the
+system prompt rather than passed as tools, and nothing anywhere reads an `agent:` capability. That needs
+fixing or removing — a capability that enforces nothing reads as a control.
+
 ### Review backlog: G1, G6, G7, G8 closed (same day, after the above)
 
 Four more groups done, TDD throughout, each failing test watched failing first. **186 tests passing,
@@ -85,14 +111,14 @@ findings reached separately by both** — is the authoritative backlog now, and 
 work happened on a branch, so it is easy to miss. **Read it before planning anything.** Merging ADR-0011
 completed exactly one of its twelve groups (**G4**). Its own recommended order stands, with G4 struck:
 
-1. ~~**G4**, **G1**, **G6**, **G7**, **G8**~~ — **DONE**, see the entry above. Five of twelve.
-2. **G12 + the `SESSION-LOG` correction** — the docs still assert a falsified fact (see below). Cheapest
-   remaining, and the one that actively misleads.
-3. **G3** (approval integrity) needs a decision on where the store lives; **G2** (the `pi-subagents`
-   reality gap) is the largest and needs the integration model settled; **G5** (`bash` as a governance
-   hole — a child with `bash` can run `env -u PI_GRANTS_GRANT pi …` and create an *ungoverned* descendant)
-   **may be unfixable in-process and should be an ADR, not a patch**.
-4. **G9, G10, G11** — packaging, measurement honesty, coverage.
+1. ~~**G4**, **G1**, **G6**, **G7**, **G8**, **G12**~~ — **DONE**. Six of twelve.
+2. **Decide ADR-0012, ADR-0013, ADR-0014** — written up and waiting. Nothing else should be built on this
+   layer until 0012 and 0013 are settled: both change what the package is allowed to claim, and 0014's
+   scope depends on 0012's answer.
+3. **G11 — the rpc integration harness.** `extensions/grants.ts` is still untested; four probes now
+   hand-drive `drive.mjs`, which is well past the point where it should be `npm run test:integration`.
+4. **G9, G10** — packaging (`.ts` exports do not work under `node_modules`; no `LICENSE`) and correcting
+   the `pi-token-audit` instrument whose headline number G12 just annotated as wrong.
 
 **A load-bearing "verified fact" in this file is falsified.** The 72% tool-definition share recorded in the
 2026-08-09 entry — under *"Verified facts, don't re-litigate"*, and feeding **ADR-0006** — was proved

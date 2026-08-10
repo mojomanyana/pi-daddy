@@ -37,17 +37,19 @@ docs/02-assumptions.md    — assumptions register (A-01..A-16) with validation 
 docs/03-risks.md          — risk register (R-01..R-26); note R-17 is INVERTED (the boundary is the feature)
 docs/04-landscape.md      — build-vs-leverage; TWO matrices — the first surveys the wrong shelf, see the note
 docs/05-metrics.md        — measurement plan; M1/M2 cost metrics retired by ADR-0007
-docs/06-decisions/        — eleven ADRs, reversals kept: 0004→superseded, 0005 park→superseded, 0006 unpark
-                            (its magnitude claim falsified 2026-08-10), 0007 THE REFRAME, 0008 attenuation
-                            invariant, 0009 pi-fabric (parked), 0010 approval semantics, 0011 universal
-                            capabilities on both spawn paths
+docs/06-decisions/        — fourteen ADRs, reversals kept: 0004→superseded, 0005 park→superseded, 0006
+                            unpark (its magnitude claim falsified 2026-08-10), 0007 THE REFRAME, 0008
+                            attenuation invariant, 0009 pi-fabric (parked), 0010 approval semantics,
+                            0011 universal capabilities on both spawn paths.
+                            AWAITING YOUR DECISION: 0012 bash is a governance hole (measured escape),
+                            0013 the pi-subagents reality gap, 0014 approval store is forgeable
 docs/specs/               — capability-governance design (supersedes the blueprint's four artifacts)
 docs/ROADMAP.md           — OBSOLETE phase plan, retained as a record
 docs/gate-reports/        — /gate verdicts + the baseline report; the G0 report records both waivers
 docs/reviews/             — TWO independent whole-codebase reviews + their cross-referenced aggregate.
                             THE AUTHORITATIVE BACKLOG: 12 groups, 5 closed. Read before planning work.
 docs/probes/              — measurement probes: baseline/ (session history), pi-fabric-eval/ (11 probes),
-                            approval-ux/, adr-0011-universal/, g1-argv/ (all live against real pi)
+                            approval-ux/, adr-0011-universal/, g1-argv/, g5-bash-escape/ (live vs real pi)
 packages/pi-agent-grants  — THE PRODUCT (0.5.0): resolver, ledger, interceptor, delegate tool, catalog,
                             human approval for gated capabilities, bounded child processes
 packages/pi-token-audit   — token/cost audit (0.1.0). ITS HEADLINE NUMBER IS WRONG: the "tool-definition
