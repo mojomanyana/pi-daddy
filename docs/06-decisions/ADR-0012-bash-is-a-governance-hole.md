@@ -1,7 +1,8 @@
 # ADR-0012: `bash` is a governance hole, and it may not be closable in-process
 
 **Date:** 2026-08-10
-**Status:** **Proposed — needs a decision.** This is the sharpest open finding in the package.
+**Status:** **Accepted 2026-08-10 — Option 2 + Option 4, plus `bash` gated by default.** Implemented the
+same day; 198 unit + 8 integration tests passing.
 **Driver:** Review group **G5** (findings B-C9, A-S7), from the two independent whole-codebase reviews in
 `docs/reviews/`. Interacts with **R-25** (`bash` subsumption), **ADR-0008** (the attenuation invariant),
 and **ADR-0010** (approval semantics).
@@ -102,9 +103,55 @@ is out of scope and belongs to the OS.
   much less than the README currently implies.
 - **Forecloses:** nothing, and it composes with Option 2.
 
-## Recommendation
+## Decision
 
-**Option 2 + Option 4, taken together, and not Option 1.** Close the subsumption gap because it is a real
+**Option 2 + Option 4 together, and not Option 1 — plus a fifth element the options above did not
+contain: `bash` is GATED BY DEFAULT in a governed session.**
+
+### The threat model, stated, because everything else follows from it
+
+**Sub-agents are cooperative but fallible.** The risk being managed is a confused or over-eager agent doing
+damage by accident, or **a prompt-injected one going off-script** — not an agent that deliberately hunts
+for an escape hatch.
+
+That last clause is why the decision is not simply "document it". **A prompt-injected agent holding `bash`
+*is* the adversarial case**: it will follow instructions to escape, because following instructions is
+exactly what went wrong. The escape is therefore reachable in this threat model, through hostile content in
+a repo a sub-agent reads. What the threat model rules out is *disproportionate* responses — an OS sandbox
+(Option 3) against an adversary that is not assumed, and refusing every `bash` grant (Option 1), which
+would make the package useless for the delegations people actually run.
+
+### What was decided
+
+1. **Gating is closed under `SUBSUMPTION`.** A capability is gated if it is gated *or if it subsumes
+   something gated*. Gating `write` now gates `bash`. **The direction is load-bearing**: gating `bash` must
+   *not* gate a plain `write` grant, or gating a broad capability would restrict the narrow ones and invert
+   least privilege. Covered by a test that would otherwise pass either way.
+2. **`bash` is gated by default** (`DEFAULT_GATED = ["tool:bash"]`), so a human is asked before any child
+   receives it. With subsumption-aware gating, that one entry also covers `write`, `edit`, `read`, `grep`,
+   `find` and `ls`.
+3. **The guarantee is scoped to the tool surface.** The package governs *which tools pi exposes to a
+   model*, enforced structurally by `--tools`. An agent granted an execution primitive can do anything that
+   primitive can do; containing **that** is the operating system's job and is explicitly out of scope.
+
+### The principle this bends, and how far
+
+The extension's rule has been *"governance is opt-in and never silently tightens a workflow"*, with the
+code default for `PI_GRANTS_GATED` empty. **That rule survives where it matters**: an ungoverned session —
+no `PI_GRANTS_GRANT` — is completely untouched and still blocks nothing.
+
+What changes is inside a session the operator *already chose to govern*. There, handing a child `bash`
+hands it an ungoverned-descendant escape hatch, and doing so **silently** is the behaviour worth changing.
+`PI_GRANTS_GATED=""` turns the default off; absent and explicitly-empty are deliberately distinguishable,
+because without that an operator wanting no gates would have to stop governing altogether.
+
+**`src/resolve.ts` was modified.** ADR-0011 stated that file was untouched and did not authorise changing
+it. This decision does, explicitly and narrowly: gating semantics live there, and implementing
+subsumption-aware gating anywhere else would mean a second gate check that could disagree with the first.
+
+## Why not the others
+
+**Option 2 + Option 4 rather than Option 1 alone.** Close the subsumption gap because it is a real
 defect with a cheap fix and it silently defeats the most common gating configuration. Then redefine the
 guarantee honestly rather than pretending a string in an environment can contain a shell.
 

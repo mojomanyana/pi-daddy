@@ -42,6 +42,7 @@ import {
   childEnv,
   depthConfig,
   deriveOwnGrant,
+  gatedFromEnv,
   mergeChildEnv,
   ENV_APPROVED,
   ENV_DEPTH,
@@ -66,7 +67,12 @@ export default function (pi: ExtensionAPI) {
   // `NaN`, and every comparison against `NaN` is false, so depth limiting switched itself off.
   const bounds = depthConfig(process.env[ENV_DEPTH], process.env[ENV_MAX_DEPTH]);
   const { depth, maxDepth } = bounds;
-  const gated = parseList(process.env[ENV_GATED]);
+  // ADR-0012: `bash` is gated by DEFAULT — but only in a governed session. An ungoverned one
+  // (no PI_GRANTS_GRANT) still blocks nothing, so "governance is opt-in" holds exactly where it always
+  // did. Inside a session the operator already chose to govern, handing a child `bash` hands it an
+  // ungoverned-descendant escape hatch, and doing that silently is what changes here.
+  // `PI_GRANTS_GATED=""` turns the default off; absent and empty are deliberately distinguishable.
+  const gated = governed ? gatedFromEnv(process.env[ENV_GATED]) : parseList(process.env[ENV_GATED]);
   const ledgerPath = process.env[ENV_LEDGER];
 
   /** This session's own grant. Starts as the inherited upper bound, tightened once tools are observed. */

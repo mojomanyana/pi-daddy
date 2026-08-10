@@ -116,8 +116,26 @@ export function resolve(input: ResolveInput): ResolveResult {
   // reported independently rather than being masked by whichever filter happened to run first.
   const denied = requested.filter((c) => !parent.has(c));
   const clipped = requested.filter((c) => parent.has(c) && ceiling !== null && !ceiling.has(c));
+  /**
+   * Is this capability gated, directly or by subsuming something gated?
+   *
+   * ADR-0012. Exact-name gating was defeatable by handing down a broader capability: the package's own
+   * `SUBSUMPTION` table says `bash` confers `write`, so gating `write` produced **no prompt** when `bash`
+   * was granted instead. The gate read as satisfied because the string never appeared.
+   *
+   * The direction is load-bearing and easy to invert. A capability is gated when it **subsumes**
+   * something gated — never when it **is subsumed by** something gated. Gating `bash` must not quietly
+   * gate a plain `write` grant, which would make gating a broad capability restrict the narrow ones and
+   * invert least privilege.
+   */
+  const isGated = (c: Capability): boolean => {
+    if (gated.has(c)) return true;
+    if (input.subsumption === false) return false;
+    return (SUBSUMPTION[c] ?? []).some((implied) => gated.has(implied));
+  };
+
   const gatedBlocked = requested.filter(
-    (c) => parent.has(c) && (ceiling === null || ceiling.has(c)) && gated.has(c) && !approved.has(c),
+    (c) => parent.has(c) && (ceiling === null || ceiling.has(c)) && isGated(c) && !approved.has(c),
   );
 
   const rejected = new Set([...denied, ...clipped, ...gatedBlocked]);

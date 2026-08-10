@@ -137,6 +137,30 @@ export function depthConfig(depthRaw: string | undefined, maxDepthRaw: string | 
 /** The documented default child-depth bound when `PI_GRANTS_MAX_DEPTH` is not set. */
 export const DEFAULT_MAX_DEPTH = 2;
 
+/**
+ * Gated by default in a governed session (ADR-0012).
+ *
+ * `bash` is not one capability among others; it is an execution primitive. A child holding it can run
+ * `env -u PI_GRANTS_GRANT pi …` and obtain a completely **ungoverned** descendant — measured, not
+ * theorised (`docs/probes/g5-bash-escape`). Handing that down silently is the thing worth changing.
+ *
+ * Subsumption-aware gating (also ADR-0012) means this single entry covers `write`, `edit`, `read`,
+ * `grep`, `find` and `ls` as well, since `bash` confers all of them.
+ */
+export const DEFAULT_GATED: Capability[] = ["tool:bash"];
+
+/**
+ * Read the gate list, distinguishing **absent** from **explicitly empty**.
+ *
+ * `parseList` alone cannot: it maps both `undefined` and `""` to `[]`. That distinction is the operator's
+ * only way to turn the default off — without it, someone who wants no gates would have to stop governing
+ * altogether, which is strictly worse than the thing they were trying to avoid.
+ */
+export function gatedFromEnv(raw: string | undefined): Capability[] {
+  if (raw === undefined) return [...DEFAULT_GATED];
+  return parseList(raw);
+}
+
 export interface ChildEnvInput {
   /** This session's own grant — becomes the child's inherited parent grant. */
   ownGrant: Capability[];

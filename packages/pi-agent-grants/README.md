@@ -8,6 +8,23 @@ Built because that guarantee does not exist elsewhere. `@tintinweb/pi-subagents`
 agent type; `pi-fabric` provisions dynamically but **cannot constrain a recursive child at all** (measured:
 `docs/probes/pi-fabric-eval`).
 
+## What this governs, and what it does not
+
+**It governs the tool surface: which tools pi exposes to a model.** That part is structural, not advisory —
+`--tools` is enforced by pi core, and an `-e`-loaded extension cannot re-add its own tool past it
+(measured). A child granted `read` has no write tool, and no prompt can talk it into having one.
+
+**It does not contain an agent that holds an execution primitive.** A child granted `bash` can run
+`env -u PI_GRANTS_GRANT pi …` and obtain a completely ungoverned descendant — no ledger entry, no depth
+increment, no grant. Measured, not theorised: `docs/probes/g5-bash-escape`. `env -u` is incidental; the
+mechanism is *"the child can execute programs"*, and governance state lives in that program's environment.
+Containing **that** is the operating system's job, and is out of scope here (**ADR-0012**).
+
+So: **`bash` is gated by default in a governed session** — a human is asked before any child receives it —
+and gating is closed under subsumption, so gating `write` gates `bash` too. Neither makes the escape
+impossible. Both stop it happening silently, which is the difference that matters when the realistic threat
+is a confused or prompt-injected agent rather than a determined one.
+
 ## The invariant
 
 ```
@@ -105,7 +122,7 @@ everything below it.
 | `PI_GRANTS_GRANT` | unset → ungoverned | Presence is what switches governance on. |
 | `PI_GRANTS_MAX_DEPTH` | `2` | Child-depth bound. `0` disables spawning. |
 | `PI_GRANTS_DEPTH` | `0` | This session's own depth; set by the parent, not by hand. |
-| `PI_GRANTS_GATED` | empty | Capabilities needing human approval. See the `bash` note below. |
+| `PI_GRANTS_GATED` | **`tool:bash`** in a governed session | Capabilities needing human approval. Set to `""` to gate nothing. Gating is closed under subsumption, so this also covers `write`/`edit`/`read`/`grep`/`find`/`ls` (ADR-0012). |
 | `PI_GRANTS_LEDGER` | unset → not recording | **Setting this makes the ledger load-bearing** — see below. |
 | `PI_GRANTS_CHILD_TIMEOUT` | `600` (seconds) | Wall-clock limit for a `delegate` child. Inherited by descendants. |
 
