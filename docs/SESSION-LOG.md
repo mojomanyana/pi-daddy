@@ -51,6 +51,38 @@ the merge. A note in the ADR records the confusion rather than erasing it.
 from searches run inside a worktree that could not have contained it. A cross-branch check
 (`git log --all -- <path>`) would have settled it in one command.
 
+### 2026-08-11 — all three ADRs decided AND implemented; `pi-agent-grants` 0.6.0
+
+**ADR-0012, ADR-0013 and ADR-0014 are accepted, implemented and committed.** 222 unit + 8 integration + 3
+model-driven tests passing, typecheck clean across `src` + `extensions` + `test` + `test-integration`.
+
+| ADR | Decided | Built |
+| :--- | :--- | :--- |
+| **0012 `bash`** | Threat model is *cooperative but fallible, **with prompt injection in scope*** — which is why "document it" was not enough: a prompt-injected agent holding `bash` **is** the adversarial case. | Gating closed under subsumption (gating `write` gates `bash`; the **direction** is tested both ways so it cannot invert). `bash` gated by default in a **governed** session only. README guarantee rewritten: it governs the **tool surface**, not the agent. |
+| **0013 `pi-subagents`** | Govern it properly — decided on **usage**: `Agent` 25 times including that day, `delegate` **zero** outside probes. | Ceiling ported rule-for-rule from 0.14.3. |
+| **0014 approvals** | Relocate the trust root; thread scope + subject. | Store moved to `$PI_CODING_AGENT_DIR`; legacy file **ignored and reported**, never migrated; `capability@subject` pairs; `once` stops at the boundary; atomic no-follow writes. |
+
+**The port dragged review finding S-5 into the open.** `delegate` was registered **unconditionally**
+despite a comment claiming otherwise, so "withhold `tool:delegate` and the child is a leaf" was untrue.
+Invisible until ceilings honestly included inherited extension tools — at which point *every* agent type
+"required tool:delegate", a correct reading of an incorrect situation, since in-process children really do
+inherit our tool registry. Now conditional.
+
+**One test had to be re-targeted rather than updated.** "A review-level child cannot re-spawn debug" tested
+wildcard re-acquisition through a type that is no longer wildcard — and `review` holds `bash`, which
+subsumes every built-in including `edit-diff`, so that spawn is now **legitimately allowed**. The wildcard
+property is retested against an unknown type, and *a grant containing `bash` already confers all of these*
+is pinned in its own test. That is R-25 made visible instead of hidden behind a wildcard ceiling.
+
+**ADR-0013's other half is not ours to finish.** Measured: the live registry is unreachable by import
+(different module instance), the supported RPC is `ping`/`spawn`/`stop` with no config query, and
+`SpawnOptions` has no `tools` field — so **refuse-or-allow is a hard ceiling on that path**.
+`docs/proposals/pi-subagents-tools-parameter.md` is drafted **for the user to file**.
+
+**Finding 6, still open and not addressable locally:** `subagents:rpc:spawn` bypasses the interceptor
+entirely — event bus straight to `manager.spawn()`, no `tool_call` — so any other loaded extension can
+spawn an ungoverned sub-agent. Adding names to `SPAWN_TOOLS` cannot catch it.
+
 ### G11 closed — and it found a defect on its first run
 
 **`npm run test:integration`** now drives a real pi process with the extension loaded: **8 tests, ~17s, no
