@@ -39,25 +39,52 @@ read from `/grants` inside a real pi process, not from a completed spawn: `deriv
 `fabric_exec` from a session that never observed it, so the escalation check fires first. Reaching it
 end-to-end needs `npm:pi-fabric` installed, which this machine does not have.
 
-### One documentation defect fixed
+### A citation that looked dangling and was not
 
-ADR-0011 cited `docs/reviews/2026-08-10-aggregated-findings.md` (findings A-S2 / B-C5) as the evidence for
-the one change made beyond its stated decision. **That file was never written** — it exists nowhere on
-disk, and those labels appear nowhere but in the ADR. The reviews happened in a session whose output was
-not persisted, which is exactly what "files are the memory" exists to prevent. The dangling citation is
-**recorded in the ADR rather than deleted**, and repointed to evidence that does exist: the pre-change code
-at `main:src/interceptor.ts:84-92`, where the branch returns `allow: true` without ever reading `ctx.gated`.
+ADR-0011 cites `docs/reviews/2026-08-10-aggregated-findings.md` (findings A-S2 / B-C5). From the
+`adr-0011-universal-capabilities` branch that file was absent — `docs/reviews/` was committed to `main`
+*after* the branch was cut — so it read as a reference to a document that had never been written, and was
+briefly recorded here as one. **It was not**: the file is real, and the citation resolves from `main` after
+the merge. A note in the ADR records the confusion rather than erasing it.
 
-### Next actions, highest value first
+**The lesson worth keeping is about branch-local verification.** "The file does not exist" was concluded
+from searches run inside a worktree that could not have contained it. A cross-branch check
+(`git log --all -- <path>`) would have settled it in one command.
 
-1. **Decide Finding 1** (prompt vs. honest message) — small, and it is a live incoherence in shipped code.
-2. **Background + streaming delegation** — the agreed next feature. `delegate` blocks until the child
-   exits, so an orchestrator cannot fan out and collect: the actual multi-level pattern this project
-   exists for. Also the first real test of the single-flight approval queue against genuine parallel spawns.
-3. **The rpc integration harness** — promote `docs/probes/approval-ux/drive.mjs` into `npm run
-   test:integration`. Two probes now hand-drive it; that is the point at which it should be a suite.
-4. `PI_GRANTS_GATED` recommendation in the README · the `pi-subagents` proposal document · verify
-   `pi-token-audit` against Anthropic and Google payload shapes · A-14 (deferred).
+### ⚠️ The next actions are NOT the ones listed in the entry below
+
+`docs/reviews/2026-08-10-aggregated-findings.md` — **two independent reviews, cross-referenced, with eight
+findings reached separately by both** — is the authoritative backlog now, and it was cut on `main` while
+work happened on a branch, so it is easy to miss. **Read it before planning anything.** Merging ADR-0011
+completed exactly one of its twelve groups (**G4**). Its own recommended order stands, with G4 struck:
+
+1. ~~**G4** — wildcard/universal bypasses~~ **DONE** (this entry). One of twelve.
+2. **G1 · the argv channel** (`src/spawn.ts`) — a model-controlled task sits in a CLI-parsed position, so
+   `@file` reads arbitrary files and `--approve` parses as a flag. *One file, cheapest critical, do first.*
+3. **G12 + the `SESSION-LOG` correction** — the docs currently assert a falsified fact (see below).
+4. **G6, G7, G8** — ledger integrity, config robustness, child-process handling. Contained and testable,
+   no design decisions needed.
+5. **G3** (approval integrity) needs a decision on where the store lives; **G2** (the `pi-subagents`
+   reality gap) is the largest and needs the integration model settled; **G5** (`bash` as a governance
+   hole — a child with `bash` can run `env -u PI_GRANTS_GRANT pi …` and create an *ungoverned* descendant)
+   **may be unfixable in-process and should be an ADR, not a patch**.
+6. **G9, G10, G11** — packaging, measurement honesty, coverage.
+
+**A load-bearing "verified fact" in this file is falsified.** The 72% tool-definition share recorded in the
+2026-08-09 entry — under *"Verified facts, don't re-litigate"*, and feeding **ADR-0006** — was proved
+algebraically to be `toolChars / payloadChars`, a **character ratio, not a token measurement**
+(`promptTokens` cancels; verified across a 72× swing). It has not yet been corrected there. Two other
+architectural claims also fell: children are **in-process** on the interceptor path, so `propagation.ts`'s
+race-freedom argument (and the R-26 fix) assumes a process boundary that exists on only one of the two
+paths; and withholding `delegate` does **not** make a session a leaf.
+
+**Previously agreed next feature — background + streaming delegation — should be re-decided against this
+backlog.** It is a capability addition on top of a layer with twelve open critical findings, several of
+which mean the guarantee the package advertises does not currently hold.
+
+Also still queued and unaffected: the rpc integration harness (now hand-driven by two probes — that is the
+point at which it should become `npm run test:integration`, and it is G11), the `PI_GRANTS_GATED`
+recommendation, the `pi-subagents` proposal document, and A-14 (deferred).
 
 ---
 
