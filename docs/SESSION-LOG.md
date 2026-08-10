@@ -51,6 +51,29 @@ the merge. A note in the ADR records the confusion rather than erasing it.
 from searches run inside a worktree that could not have contained it. A cross-branch check
 (`git log --all -- <path>`) would have settled it in one command.
 
+### G11 closed — and it found a defect on its first run
+
+**`npm run test:integration`** now drives a real pi process with the extension loaded: **8 tests, ~17s, no
+model tokens**, plus **3 opt-in end-to-end tests** (`PI_GRANTS_IT_MODEL=1`) with a real model calling real
+tools. `npm test` stays fast and pi-free, as decided on 2026-08-10.
+
+The default tier drives the `/grants` command, whose handler runs the real decision function over real
+agent-type files — so the whole wiring (env parsing, agent-type loading, `publishChildEnv`, `decideSpawn`)
+is exercised **without a model deciding anything**. That is what makes it deterministic enough to keep.
+The suite is checked against reintroduced bugs: restoring the G7 `NaN` defect makes two of its tests fail.
+
+**It found this immediately, and it is the kind of thing only an integration test could find:**
+
+> **`AgentToolResult` has no `isError` field.** pi sets `isError` **only when `execute` throws** — a normal
+> return is hardcoded `isError: false` (`pi-agent-core/dist/agent-loop.js`). `delegate` was *returning*
+> `isError: true`, which pi silently discarded. **Every refusal this package ever made — escalation, gate,
+> universal capability, depth, unknown capability — was recorded by pi as a SUCCESSFUL tool call**,
+> including the G6 ledger-fail-closed and G8 child-failure paths added earlier the same day. Fixed by
+> throwing.
+
+Note what this means about the earlier G8 entry below: its claim that a failed child "comes back as a tool
+error" was **only half true when written**. The text reached the model; pi's own error state did not.
+
 ### G12 closed, and three decisions written up for you (ADR-0012/0013/0014)
 
 **ADR-0011 Finding 1 is resolved**: the wildcard branch keeps refusing, but the message is now honest — it
@@ -111,13 +134,11 @@ findings reached separately by both** — is the authoritative backlog now, and 
 work happened on a branch, so it is easy to miss. **Read it before planning anything.** Merging ADR-0011
 completed exactly one of its twelve groups (**G4**). Its own recommended order stands, with G4 struck:
 
-1. ~~**G4**, **G1**, **G6**, **G7**, **G8**, **G12**~~ — **DONE**. Six of twelve.
+1. ~~**G4**, **G1**, **G6**, **G7**, **G8**, **G12**, **G11**~~ — **DONE**. Seven of twelve.
 2. **Decide ADR-0012, ADR-0013, ADR-0014** — written up and waiting. Nothing else should be built on this
    layer until 0012 and 0013 are settled: both change what the package is allowed to claim, and 0014's
    scope depends on 0012's answer.
-3. **G11 — the rpc integration harness.** `extensions/grants.ts` is still untested; four probes now
-   hand-drive `drive.mjs`, which is well past the point where it should be `npm run test:integration`.
-4. **G9, G10** — packaging (`.ts` exports do not work under `node_modules`; no `LICENSE`) and correcting
+3. **G9, G10** — packaging (`.ts` exports do not work under `node_modules`; no `LICENSE`) and correcting
    the `pi-token-audit` instrument whose headline number G12 just annotated as wrong.
 
 **A load-bearing "verified fact" in this file is falsified.** The 72% tool-definition share recorded in the

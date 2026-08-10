@@ -147,6 +147,11 @@ delegate({ task: "summarise src/", tools: ["read"] })
 - **Spawning is itself a capability.** Grant `delegate` and the child can sub-delegate; withhold it and the
   child is a leaf — the extension is only passed to children that hold it, so the machinery isn't even
   present. Depth control needs no separate mechanism (`maxDepth` remains as a backstop).
+- **A refusal is a tool *error*, not an answer.** `delegate` throws on refusal, because `AgentToolResult`
+  has **no `isError` field** — pi sets `isError` only when `execute` throws, and a normal return is
+  hardcoded `isError: false`. Until 0.5.0 the tool returned `isError: true`, which was silently discarded,
+  so every refusal this package made was recorded by pi as a **successful** tool call. Found by the
+  integration suite on its first run.
 - **A child cannot outlive or overwhelm you.** Output is capped (1 MiB), there is a wall-clock timeout
   with `SIGTERM` → `SIGKILL` escalation so a child cannot ignore its way past it, an abort is honoured
   even if it arrived before the spawn, and a child that exits non-zero, times out or is cancelled comes
@@ -365,6 +370,25 @@ and the measured `fabric_exec` escalation.
 
 **Verified end to end**, not just unit-tested: a child spawned from this package's own planned argv with a
 `["tool:read"]` grant reported `NO_WRITE_TOOL` and **created no file** when told to write.
+
+## Testing
+
+```bash
+npm test              # 188 unit tests. Fast, pure, no pi, no network.
+npm run test:integration   # 8 tests against a REAL pi process. ~17s, no model tokens.
+PI_GRANTS_IT_MODEL=1 npm run test:integration   # + 3 end-to-end tests with a real model. ~60s, costs money.
+```
+
+The integration suite exists because `extensions/grants.ts` is where the wiring bugs live — every defect
+the live probes ever found was in the extension, not in `src/`. Its default tier drives the `/grants`
+command, whose handler runs the real decision function over real agent-type files in a real pi process
+**without a model deciding anything**, so it is deterministic and free. The opt-in tier adds a model
+choosing to call tools, and asserts on structure (`isError`, the ledger JSON, whether a file appeared)
+rather than on model wording.
+
+It earned itself immediately: its first run found that **every delegation refusal was being recorded by pi
+as a success** (see *Governed delegation*, first bullet). It is also checked against reintroduced bugs —
+restoring the G7 `NaN` defect makes two of its tests fail.
 
 ## Status
 

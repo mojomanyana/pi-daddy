@@ -513,11 +513,12 @@ export default function (pi: ExtensionAPI) {
       }
 
       if (!plan.ok) {
-        return {
-          content: [{ type: "text", text: `delegation refused: ${plan.reason}` }],
-          details: { blocked: true, reason: plan.reason },
-          isError: true,
-        };
+        // THROW, do not return. `AgentToolResult` has no `isError` field: pi sets `isError` only when
+        // `execute` throws (`pi-agent-core/dist/agent-loop.js` — a normal return is hardcoded
+        // `isError: false`). Returning `isError: true` was silently discarded, so every refusal this
+        // package makes — escalation, gate, universal capability, depth, unknown capability — was
+        // recorded by pi as a SUCCESSFUL tool call. Found by the integration suite on its first run.
+        throw new Error(`delegation refused: ${plan.reason}`);
       }
 
       // G8: bounded output, a wall-clock timeout with SIGTERM->SIGKILL escalation, and an abort that is
@@ -544,18 +545,9 @@ export default function (pi: ExtensionAPI) {
             : output.timedOut
               ? "exceeded its time limit and was killed"
               : `exited with code ${output.code}`;
-        return {
-          content: [{ type: "text", text: `delegation failed — the sub-agent ${why}.\n\n${output.text.trim()}` }],
-          details: {
-            granted: plan.effective,
-            depth: plan.childDepth,
-            exitCode: output.code,
-            timedOut: output.timedOut,
-            aborted: output.aborted,
-            truncated: output.truncated,
-          },
-          isError: true,
-        };
+        // Thrown for the same reason as the refusal above: a returned `isError` is discarded, and G8's
+        // whole point was that a dead child must not read as an answer.
+        throw new Error(`delegation failed — the sub-agent ${why}.\n\n${output.text.trim()}`);
       }
 
       return {
