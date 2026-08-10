@@ -1,7 +1,8 @@
 # ADR-0013: The interceptor's model of a child does not match what `pi-subagents` builds
 
 **Date:** 2026-08-10
-**Status:** **Proposed — needs a decision.** The largest of the open review groups.
+**Status:** **Accepted 2026-08-10 — govern `pi-subagents` properly (Option 1), which the evidence then
+showed requires an upstream change.** Option 4 pursued in parallel; the local half is a faithful port.
 **Driver:** Review group **G2** (findings B-C2, B-C3, B-C4, B-C11, A-C2, A-S9). Undermines part of
 `propagation.ts`'s race-freedom argument and therefore the **R-26** fix it records.
 
@@ -106,16 +107,70 @@ enforce-only into provisioning.
 - **Costs:** not in this project's control, and the six findings stay live meanwhile.
 - **Forecloses:** nothing.
 
-## Recommendation
+## Decision
 
-**Option 3 now, Option 4 in parallel, and Options 1–2 only if Option 4 fails.**
+**Option 1 — govern `pi-subagents` properly — taken 2026-08-10, with Option 4 in parallel.**
 
-The findings are not five separate bugs; they are five symptoms of one structural fact — **the interceptor
-does not build the thing it is governing.** Fixing them individually means reimplementing another
-package's loader and lifecycle inside this one, and finding 3 shows what that costs: a hand-rolled parser
-that disagrees with the real one, in the permissive direction.
+Option 3 (downgrade the interceptor to advisory) was recommended above and was **not** taken. The evidence
+that decided it: `Agent` has been called **25 times across 85 sessions, most recently the same day**, while
+`delegate` has been called **zero times outside probes**. The interceptor governs the mechanism actually in
+use; `delegate` governs one that is not. Downgrading the claim on the path that carries the real traffic
+would have been honest about the wrong thing.
 
-Two things should be fixed regardless of which option is chosen, because they are wrong under all of them:
+### A goal this decision does not meet, recorded plainly
+
+The stated aim was *"fresh context and a new process for sub-tasks"*. Those are separable, and
+`pi-subagents` provides only the first:
+
+| | Fresh context | New OS process |
+| :--- | :--- | :--- |
+| `pi-subagents` `Agent` | yes — a new in-process `AgentSession` | **no** |
+| this package's `delegate` | yes | **yes** — a real `spawn("pi", …)` |
+
+**No amount of work on the interceptor will produce process isolation**, because pi-subagents creates
+in-process `AgentRecord`s by construction. This decision was taken with that understood. `delegate` remains
+available and is the only path that provides it.
+
+### What the evidence changed about Option 1's cost
+
+The option above described the cost as "couples to `pi-subagents` internals". **That understated it.**
+Measured against 0.14.3 (`docs/probes/g13-subagents-coupling`):
+
+- **The live registry cannot be read by importing it.** pi loads `./src/index.ts` and the registry is
+  module-level state in the same process, so an `import()` of that path ought to hit Node's module cache.
+  It returns a **different instance**: `getAvailableTypes()` gave `[]` in a session where pi-subagents was
+  demonstrably loaded.
+- **`getToolNamesForType` is unusable as an authority lookup.** Unknown names fall back to
+  `general-purpose`, whose `builtinToolNames` is omitted and therefore means *all available tools*. Every
+  type queried returned the full builtin list. **A layer trusting it would grant everything to a typo** —
+  the same permissive-direction failure as finding 3.
+- **The supported RPC cannot answer the question.** `ping` / `spawn` / `stop` only, at
+  `PROTOCOL_VERSION = 2`. No config query.
+- **Nothing accepts a tool override.** `SpawnOptions` has no `tools` field, so neither the `Agent` tool nor
+  the RPC can narrow a child. **Refuse or allow remains the ceiling on any local fix.**
+
+### Finding 6, new, found while establishing the above
+
+**`subagents:rpc:spawn` bypasses the interceptor entirely.** It travels the event bus to `manager.spawn()`
+and never produces a `tool_call`, so this package's hook — its whole enforcement point on that path — never
+observes it. Any other loaded extension can spawn an ungoverned sub-agent.
+
+This is broader than finding A-S9. Adding names to `SPAWN_TOOLS` cannot catch it, because there is no tool
+call to catch.
+
+### So the decision has two halves
+
+1. **Upstream (Option 4), now the critical path.** A `tools` parameter on `Agent` and `SpawnOptions`, or an
+   RPC method reporting a type's resolved config. Drafted as
+   `docs/proposals/pi-subagents-tools-parameter.md`, **for the user to file under their own name** — it is
+   their project relationship, not this package's.
+2. **Locally, meanwhile: a faithful port of the resolution rules.** Replace the naive frontmatter reader
+   with `pi-subagents`' actual logic — `DEFAULT_AGENTS`, `loadCustomAgents`, and the `general-purpose`
+   fallback — so ceilings and ledger entries stop being wrong. It still cannot provision, and it must be
+   kept in step with upstream releases; that maintenance burden is accepted knowingly, because the
+   alternative is a ledger that is wrong in the permissive direction.
+
+Two things are fixed regardless, because they are wrong under every option:
 
 1. **Stop advertising `skill:` and `agent:` as enforceable.** Nothing reads `agent:`, and `--tools` cannot
    gate a skill. Either pass `--no-skills`/`--no-context-files` and make `skill:` mean something, or
