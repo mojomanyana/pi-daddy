@@ -87,6 +87,56 @@ export function deriveOwnGrant(
     .sort();
 }
 
+/**
+ * Parse a bound from the environment, distinguishing **absent** from **malformed**.
+ *
+ * G7 / A-S4 + B-I4. `Number.parseInt` is the wrong tool for reading configuration: it accepts a numeric
+ * prefix (`parseInt("2abc")` is `2`), returns `NaN` for anything else, and `NaN` silently passes every
+ * comparison as false — so a malformed `PI_GRANTS_MAX_DEPTH` did not tighten the limit, it removed it.
+ *
+ * The three-way return is the point. `undefined` means "not configured, use the documented default";
+ * `null` means "configured wrongly", which callers must treat as a failure rather than a default,
+ * because a value someone tried to set and mistyped is not the same as one they never set.
+ */
+export function parseBound(raw: string | undefined): number | null | undefined {
+  if (raw === undefined) return undefined;
+  const trimmed = raw.trim();
+  // Exact non-negative decimal integers only: no signs, no fractions, no 0x, no numeric prefixes.
+  if (!/^\d+$/.test(trimmed)) return null;
+  const value = Number(trimmed);
+  return Number.isSafeInteger(value) ? value : null;
+}
+
+export interface DepthConfig {
+  depth: number;
+  maxDepth: number;
+  /** Names of the variables that were set but unreadable, for an operator-facing warning. */
+  malformed: string[];
+}
+
+/**
+ * Resolve this session's depth bounds, failing closed on anything malformed.
+ *
+ * **Malformed input disables spawning entirely (`maxDepth: 0`)** rather than falling back to a default,
+ * and that applies to a bad `PI_GRANTS_DEPTH` just as much as a bad `PI_GRANTS_MAX_DEPTH`. The old
+ * `|| 0` guard on depth failed open in a subtler way than the missing guard on maxDepth: a session that
+ * could not read its own depth was treated as a **root**, which is the most permissive answer available
+ * and precisely the value an attacker would choose. If we do not know how deep we are, we must not spawn.
+ */
+export function depthConfig(depthRaw: string | undefined, maxDepthRaw: string | undefined): DepthConfig {
+  const depth = parseBound(depthRaw);
+  const maxDepth = parseBound(maxDepthRaw);
+  const malformed: string[] = [];
+  if (depth === null) malformed.push(ENV_DEPTH);
+  if (maxDepth === null) malformed.push(ENV_MAX_DEPTH);
+
+  if (malformed.length > 0) return { depth: depth ?? 0, maxDepth: 0, malformed };
+  return { depth: depth ?? 0, maxDepth: maxDepth ?? DEFAULT_MAX_DEPTH, malformed };
+}
+
+/** The documented default child-depth bound when `PI_GRANTS_MAX_DEPTH` is not set. */
+export const DEFAULT_MAX_DEPTH = 2;
+
 export interface ChildEnvInput {
   /** This session's own grant — becomes the child's inherited parent grant. */
   ownGrant: Capability[];
@@ -103,6 +153,19 @@ export interface ChildEnvInput {
    */
   approved?: Capability[];
   ledgerPath?: string;
+  /**
+   * Whether THIS session is governed — i.e. `PI_GRANTS_GRANT` was set for it.
+   *
+   * G7 / B-I8. Governance is opt-in: with the variable unset the README promises "nothing is blocked".
+   * That was true of the session itself and false of its children, because this function still exported
+   * a grant, a depth and a bound, so an ungoverned parent silently started governing its descendants —
+   * and the grant it exported was its own observed tool surface, which is a real restriction arrived at
+   * by accident. An ungoverned session must be transparent, not a source of policy.
+   *
+   * Defaults to `true` so that every existing caller keeps publishing; only the extension, which alone
+   * knows whether the variable was set, passes `false`.
+   */
+  governed?: boolean;
 }
 
 /**
@@ -118,6 +181,7 @@ export interface ChildEnvInput {
  * because a session's first provider request always precedes its first tool call.
  */
 export function childEnv(input: ChildEnvInput): Record<string, string> {
+  if (input.governed === false) return {};
   const inheritable = input.ownGrant.filter((c) => c !== WILDCARD);
   const env: Record<string, string> = {
     [ENV_GRANT]: inheritable.join(","),

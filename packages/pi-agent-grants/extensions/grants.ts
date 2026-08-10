@@ -40,6 +40,7 @@ import { decideSpawn } from "../src/interceptor.ts";
 import { appendRecord, buildRecord } from "../src/ledger.ts";
 import {
   childEnv,
+  depthConfig,
   deriveOwnGrant,
   mergeChildEnv,
   ENV_APPROVED,
@@ -61,8 +62,10 @@ export default function (pi: ExtensionAPI) {
   const grantRaw = process.env[ENV_GRANT];
   const governed = grantRaw !== undefined;
   const inherited: Capability[] = governed ? parseList(grantRaw) : [WILDCARD];
-  const depth = Number.parseInt(process.env[ENV_DEPTH] ?? "0", 10) || 0;
-  const maxDepth = Number.parseInt(process.env[ENV_MAX_DEPTH] ?? "2", 10);
+  // G7 / A-S4 + B-I4: strict, three-way parsing that fails CLOSED. A malformed bound used to yield
+  // `NaN`, and every comparison against `NaN` is false, so depth limiting switched itself off.
+  const bounds = depthConfig(process.env[ENV_DEPTH], process.env[ENV_MAX_DEPTH]);
+  const { depth, maxDepth } = bounds;
   const gated = parseList(process.env[ENV_GATED]);
   const ledgerPath = process.env[ENV_LEDGER];
 
@@ -72,6 +75,15 @@ export default function (pi: ExtensionAPI) {
   let observedTools: string[] | null = null;
   let types = new Map<string, AgentType>();
   let catalog: Catalog = makeCatalog([]);
+  /**
+   * The in-flight catalog build, so `delegate` can wait for it instead of racing it.
+   *
+   * G7 / A-R5. The refresh in `before_provider_request` was fire-and-forget, so a `delegate` call
+   * early in a session could read a catalog that was still empty and refuse a perfectly valid grant
+   * as an "unknown capability". It failed closed, which is why it was Important rather than Critical,
+   * but non-deterministically: the same delegation succeeded or failed on timing alone.
+   */
+  let catalogReady: Promise<Catalog> = Promise.resolve(catalog);
 
   /** Approval keys approved for this session. In memory only — this dies with the process. */
   const sessionApprovals = new Set<string>();
@@ -103,6 +115,9 @@ export default function (pi: ExtensionAPI) {
       gated,
       ledgerPath,
       approved: [...inheritedApprovals, ...sessionApprovalCapabilities()],
+      // G7 / B-I8: an ungoverned session publishes nothing, so "governance is opt-in" holds for
+      // descendants too. Previously it exported its own observed tool surface as their grant.
+      governed,
     });
     for (const [key, value] of Object.entries(env)) process.env[key] = value;
   };
@@ -237,8 +252,19 @@ export default function (pi: ExtensionAPI) {
     cwd = ctx.cwd;
     try {
       types = await loadAgentTypes(ctx.cwd);
-      catalog = await buildCatalog({ cwd: ctx.cwd, observedTools });
+      catalogReady = buildCatalog({ cwd: ctx.cwd, observedTools });
+      catalog = await catalogReady;
       publishChildEnv();
+      // A malformed bound is now loud as well as safe. Silently disabling spawning would be just as
+      // confusing as silently disabling the limit was dangerous — the operator set the variable, so
+      // they need to know it did not take effect (G7 / A-S4).
+      if (bounds.malformed.length > 0) {
+        ctx.ui.notify(
+          `grants: ${bounds.malformed.join(" and ")} could not be read as a non-negative integer — ` +
+            `spawning is disabled for this session (failing closed)`,
+          "warning",
+        );
+      }
       if (governed) {
         ctx.ui.notify(
           `grants: depth ${depth}/${maxDepth}, holding [${ownGrant.join(", ") || "nothing"}]`,
@@ -264,7 +290,12 @@ export default function (pi: ExtensionAPI) {
       publishChildEnv();
       // Refresh the catalog now that the real tool surface is known — this is the only moment extension
       // tools become visible, so it is the only moment `ext:`/`tool:` grants can be validated.
-      void buildCatalog({ cwd, observedTools: names }).then((c) => (catalog = c)).catch(() => {});
+      // Keep the handle: a concurrent `delegate` awaits this rather than reading a half-built catalog.
+      // The `catch` resolves to the CURRENT catalog rather than rejecting, so a failed refresh degrades
+      // to the previous view instead of failing every delegation in the session.
+      catalogReady = buildCatalog({ cwd, observedTools: names })
+        .then((c) => (catalog = c))
+        .catch(() => catalog);
     } catch {
       /* never throw into the agent loop */
     }
@@ -415,7 +446,7 @@ export default function (pi: ExtensionAPI) {
       // `approved ⊆ grant` still holds regardless — this is purely about the audit trail, not privilege.
       let plan = planDelegation(
         { task: params.task, tools: params.tools, model: params.model ?? defaultModel },
-        { ownGrant, depth, maxDepth, gated, ledgerPath, extensionPath, catalog },
+        { ownGrant, depth, maxDepth, gated, ledgerPath, extensionPath, catalog: await catalogReady },
       );
 
       // Same fill-and-retry as the interceptor path: ask for what is gated, re-plan with `approved`
@@ -441,7 +472,7 @@ export default function (pi: ExtensionAPI) {
                 gated,
                 ledgerPath,
                 extensionPath,
-                catalog,
+                catalog: await catalogReady,
                 approved: [...inheritedApprovals, ...approvalOutcome.approved],
               },
             );
