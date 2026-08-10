@@ -119,6 +119,22 @@ independent confirmation that no approval flow ran:
 
 ## Finding 1 — a wildcard delegator can be told to get an approval it cannot get
 
+> **RESOLVED 2026-08-10, after this run.** The finding below is left exactly as it was recorded — that is
+> what a probe is for. What changed: the refusal stands, and the *message* is now honest. It names the
+> gated capability, states that a `tool:*` grant cannot be approved for it because no approval is offered
+> on this path, and points at `PI_GRANTS_GRANT` as the remedy. Verified live:
+>
+> ```
+> BLOCK  docs-writer — agent type "docs-writer" declares tool:write, which this session's operator has
+> gated — and a tool:* grant cannot be approved for it, because no approval is offered on this path.
+> Set PI_GRANTS_GRANT to an enumerated list to be asked instead of refused
+> ```
+>
+> Making the branch *prompt* was rejected deliberately: it would let a wildcard holder widen its own
+> children past an operator's gate with one dialog. An inherited or persisted approval is still honoured
+> here — only the prompt is unavailable. See ADR-0011, *Resolved, from live verification*.
+
+
 **Severity: not a security hole. It fails closed.** But the message is actively misleading and the state
 is unreachable-by-design in a way nobody decided.
 

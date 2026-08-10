@@ -143,6 +143,46 @@ test("gated capability blocks a spawn until approved", () => {
   assert.equal(approved.allow, true);
 });
 
+test("a wildcard delegator is not told to obtain an approval it cannot obtain", () => {
+  // ADR-0011 Finding 1 (docs/probes/adr-0011-universal). The gated check on the wildcard branch
+  // correctly refuses, but the branch returns before a `ResolveResult` exists, and the extension guards
+  // its approval flow with `shouldSeekApproval(decision.result)` — which is false for `undefined`. So no
+  // dialog is ever offered, verified live with the driver armed to approve. Saying "requires approval"
+  // sends the operator to find a human who cannot help: exactly the defect ADR-0011 removed from
+  // `planDelegation`, reintroduced on the other path by the same change.
+  const blocked = decideSpawn(
+    { subagentType: "review" },
+    { parentGrant: [WILDCARD], depth: 0, maxDepth: 2, types: types(REVIEW), gated: ["tool:bash"] },
+  );
+  assert.equal(blocked.allow, false, "the gate is the operator's, not the delegator's");
+  assert.doesNotMatch(
+    blocked.reason ?? "",
+    /requires approval/,
+    "no approval can be given on this path, so the reason must not name one",
+  );
+  assert.match(blocked.reason ?? "", /tool:bash/, "it must still say WHICH capability was gated");
+  assert.match(
+    blocked.reason ?? "",
+    /PI_GRANTS_GRANT/,
+    "and it must name the remedy: an enumerated grant is the path that can be approved",
+  );
+});
+
+test("an approved gated capability still lets a wildcard delegator spawn", () => {
+  const allowed = decideSpawn(
+    { subagentType: "review" },
+    {
+      parentGrant: [WILDCARD],
+      depth: 0,
+      maxDepth: 2,
+      types: types(REVIEW),
+      gated: ["tool:bash"],
+      approved: ["tool:bash"],
+    },
+  );
+  assert.equal(allowed.allow, true, "an inherited or persisted approval must still be honoured here");
+});
+
 // ── ADR-0011: universal capabilities are refused on BOTH spawn paths ─────────────
 //
 // `ext:pi-fabric/fabric_exec` transitively confers the whole catalog — measured, not

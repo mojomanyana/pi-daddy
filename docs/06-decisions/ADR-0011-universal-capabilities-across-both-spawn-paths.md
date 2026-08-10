@@ -164,9 +164,24 @@ subsumes the file and search tools (R-25, `SUBSUMPTION` in `src/resolve.ts:43`) 
 promoting it is real, but it is a separate decision with a much larger blast radius, and conflating the two
 would stall both.
 
-## Open, from live verification (2026-08-10)
+## Resolved, from live verification (2026-08-10)
 
-**A wildcard delegator can be told to obtain an approval it cannot obtain.** With `PI_GRANTS_GRANT="tool:*"`
+> **Decided and implemented 2026-08-10: the message is made honest; the refusal stands.** The wildcard
+> branch now says the capability is gated, that a `tool:*` grant **cannot be approved for it because no
+> approval is offered on this path**, and that setting `PI_GRANTS_GRANT` to an enumerated list reaches the
+> path that can be. Verified live — see the probe.
+>
+> **The alternative was rejected on its merits, not its cost.** Making the branch prompt (by giving it a
+> `ResolveResult`) would have been more useful, and it would have meant a wildcard holder could widen its
+> own children past an operator's gate with a single dialog. A gate is the operator's; holding the
+> wildcard is authority to grant widely, never authority to be *asked* where an enumerated grant would be
+> refused. An operator who wants the dialog can have it by enumerating the grant, which is exactly the
+> remedy the message now names.
+>
+> An inherited or persisted approval is still honoured here — only the *prompt* is unavailable, not the
+> approval itself. That is covered by a test, because the distinction is easy to lose.
+
+**The finding, as originally recorded.** With `PI_GRANTS_GRANT="tool:*"`
 and a configured gate, a spawn is refused with *"requires approval for tool:write"* and **no dialog is ever
 offered** — confirmed live with the driver armed to approve (`docs/probes/adr-0011-universal`, Finding 1).
 The new gated check sits in `decideSpawn`'s wildcard branch, which returns early carrying no
@@ -174,9 +189,9 @@ The new gated check sits in `decideSpawn`'s wildcard branch, which returns early
 
 It fails closed and is strictly safer than the silent pass-through it replaced. But it is the same defect
 this ADR deliberately removed from `planDelegation` — reporting *"requires approval"* for a spawn no human
-can approve — reintroduced on the other path by the same change. Two fixes are plausible (produce a
-`ResolveResult` so the path prompts; or make the message name `PI_GRANTS_GRANT` as the remedy), and both
-are decisions rather than repairs, so neither was taken here. **This needs a decision — see the probe.**
+can approve — reintroduced on the other path by the same change. Two fixes were plausible (produce a
+`ResolveResult` so the path prompts; or make the message name `PI_GRANTS_GRANT` as the remedy). **The
+second was taken** — see the box above.
 
 ## Revisit trigger
 

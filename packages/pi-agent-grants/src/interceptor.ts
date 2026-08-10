@@ -12,6 +12,9 @@
  */
 
 import { ceilingFor, WILDCARD, type AgentType } from "./agent-types.ts";
+// Only for the refusal message: naming the variable that fixes it is the difference between a
+// refusal an operator can act on and one they cannot.
+import { ENV_GRANT } from "./propagation.ts";
 import { resolve, UNIVERSAL_CAPABILITIES, type Capability, type ResolveResult } from "./resolve.ts";
 
 export interface SpawnRequest {
@@ -155,7 +158,16 @@ export function decideSpawn(request: SpawnRequest, ctx: DecisionContext): Decisi
         requested,
         result: decidedResult({ gatedBlocked: gatedHere }),
         allow: false,
-        reason: `agent type "${typeName}" requires approval for ${gatedHere.join(", ")}`,
+        // ADR-0011 Finding 1: this branch REFUSES, it does not prompt — it returns before a
+        // `ResolveResult` exists, and the extension's approval flow is guarded by
+        // `shouldSeekApproval(decision.result)`, which is false for `undefined`. Saying "requires
+        // approval" would send the operator to a dialog that never appears. The message names the
+        // remedy instead, because there genuinely is one: an enumerated grant reaches the path that
+        // CAN be approved.
+        reason:
+          `agent type "${typeName}" declares ${gatedHere.join(", ")}, which this session's operator has ` +
+          `gated — and a ${WILDCARD} grant cannot be approved for it, because no approval is offered on ` +
+          `this path. Set ${ENV_GRANT} to an enumerated list to be asked instead of refused`,
       };
     }
 
