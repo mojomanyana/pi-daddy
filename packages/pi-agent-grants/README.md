@@ -441,11 +441,27 @@ and the measured `fabric_exec` escalation.
 **Verified end to end**, not just unit-tested: a child spawned from this package's own planned argv with a
 `["tool:read"]` grant reported `NO_WRITE_TOOL` and **created no file** when told to write.
 
+## Install
+
+```bash
+pi install npm:pi-agent-grants     # as a pi extension
+npm i pi-agent-grants              # as a library (the resolver, ledger and spawn planner are pure)
+```
+
+The package is both. pi loads `extensions/grants.ts` through its own transpiling loader, which reads
+TypeScript from `node_modules` quite happily; **Node does not** — it refuses to strip types under
+`node_modules` — so the library entry points are compiled to `dist/`. Until 0.6.0 `exports` pointed at
+`./src/*.ts`, and every consumer import failed with `ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING` while
+every in-repo test passed. `npm run test:smoke` packs a tarball, installs it into a scratch project and
+*uses* it, so that gap cannot reopen silently.
+
 ## Testing
 
 ```bash
-npm test              # 188 unit tests. Fast, pure, no pi, no network.
+npm test                   # 222 unit tests. Fast, pure, no pi, no network.
+npm run typecheck          # src + extensions + tests + integration tests
 npm run test:integration   # 8 tests against a REAL pi process. ~17s, no model tokens.
+npm run test:smoke         # pack, install into a scratch project, import and use it
 PI_GRANTS_IT_MODEL=1 npm run test:integration   # + 3 end-to-end tests with a real model. ~60s, costs money.
 ```
 

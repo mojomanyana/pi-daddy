@@ -17,9 +17,15 @@
   },
   "files": [
     "extensions",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": ">=0.83.0"
+  },
+  "pi": {
+    "extensions": [
+      "./extensions/token-audit.ts"
+    ]
   }
 }

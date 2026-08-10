@@ -18,6 +18,9 @@ node_modules/
 .pi/grants.jsonl
 *.jsonl.log
 
+# Build output — reproduced by `npm run build`, and the source of truth is src/.
+dist/
+
 # Editor / OS
 .DS_Store
 *.swp

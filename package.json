@@ -1,0 +1,15 @@
+{
+  "name": "pi-daddy",
+  "private": true,
+  "description": "Capability governance for pi's multi-level agent system. Workspace root; the shipped packages live under packages/.",
+  "license": "MIT",
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present"
+  }
+}

@@ -16,23 +16,89 @@
     "node": ">=22.19.0"
   },
   "exports": {
-    ".": "./src/index.ts",
-    "./resolve": "./src/resolve.ts",
-    "./ledger": "./src/ledger.ts",
-    "./spawn": "./src/spawn.ts",
-    "./delegate": "./src/delegate.ts",
-    "./catalog": "./src/catalog.ts",
-    "./approval": "./src/approval.ts",
-    "./approval-store": "./src/approval-store.ts",
-    "./approval-prompt": "./src/approval-prompt.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./resolve": {
+      "types": "./dist/resolve.d.ts",
+      "default": "./dist/resolve.js"
+    },
+    "./ledger": {
+      "types": "./dist/ledger.d.ts",
+      "default": "./dist/ledger.js"
+    },
+    "./spawn": {
+      "types": "./dist/spawn.d.ts",
+      "default": "./dist/spawn.js"
+    },
+    "./delegate": {
+      "types": "./dist/delegate.d.ts",
+      "default": "./dist/delegate.js"
+    },
+    "./catalog": {
+      "types": "./dist/catalog.d.ts",
+      "default": "./dist/catalog.js"
+    },
+    "./interceptor": {
+      "types": "./dist/interceptor.d.ts",
+      "default": "./dist/interceptor.js"
+    },
+    "./agent-types": {
+      "types": "./dist/agent-types.d.ts",
+      "default": "./dist/agent-types.js"
+    },
+    "./propagation": {
+      "types": "./dist/propagation.d.ts",
+      "default": "./dist/propagation.js"
+    },
+    "./run-child": {
+      "types": "./dist/run-child.d.ts",
+      "default": "./dist/run-child.js"
+    },
+    "./approval": {
+      "types": "./dist/approval.d.ts",
+      "default": "./dist/approval.js"
+    },
+    "./approval-store": {
+      "types": "./dist/approval-store.d.ts",
+      "default": "./dist/approval-store.js"
+    },
+    "./approval-prompt": {
+      "types": "./dist/approval-prompt.d.ts",
+      "default": "./dist/approval-prompt.js"
+    }
   },
   "files": [
+    "dist",
     "extensions",
     "src",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.check.json",
     "test": "node --test test/*.test.ts",
-    "test:integration": "node --test test-integration/*.it.ts"
+    "test:integration": "node --test test-integration/*.it.ts",
+    "prepack": "npm run build",
+    "test:smoke": "node scripts/smoke-installed.mjs"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "pi": {
+    "extensions": [
+      "./extensions/grants.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": ">=0.83.0",
+    "typebox": ">=1.0.0"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": ">=0.83.0",
+    "@types/node": "^22.0.0",
+    "typebox": ">=1.0.0",
+    "typescript": "^5.7.0"
   }
 }

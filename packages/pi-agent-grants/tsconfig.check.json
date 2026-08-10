@@ -1,0 +1,13 @@
+{
+  // Typecheck EVERYTHING, including tests and the extension — the build config deliberately compiles
+  // only `src`, and for a long time the check config excluded tests, which hid four real type errors.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    // The build config pins rootDir to `src`; the check config covers files outside it.
+    "rootDir": ".",
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": false
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts", "test-integration/**/*.ts", "extensions/**/*.ts"]
+}
