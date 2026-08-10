@@ -193,7 +193,7 @@ test("ADR-0011: an ordinary type is unaffected", () => {
     { subagentType: "plan" },
     { parentGrant: ["tool:read", "tool:bash"], depth: 0, maxDepth: 2, types: types(PLAN) },
   );
-  assert.equal(d.allow, true, d.reason);
+  assert.equal(d.allow, true, d.reason ?? "expected allow");
 });
 
 // Found independently by two reviews (A-S2 / B-C5). The wildcard branch returned `allow`
@@ -217,5 +217,5 @@ test("a wildcard holder proceeds once the gated capability is approved", () => {
       gated: ["tool:bash"], approved: ["tool:bash"],
     },
   );
-  assert.equal(d.allow, true, d.reason);
+  assert.equal(d.allow, true, d.reason ?? "expected allow");
 });

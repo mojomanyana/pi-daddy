@@ -51,7 +51,7 @@ import {
   observeToolNames,
   parseList,
 } from "../src/propagation.ts";
-import { resolve, type Capability } from "../src/resolve.ts";
+import { type Capability } from "../src/resolve.ts";
 
 const SPAWN_TOOLS = new Set(["Agent", "subagent", "spawn_agent"]);
 
@@ -323,9 +323,12 @@ export default function (pi: ExtensionAPI) {
     }
 
     if (ledgerPath) {
-      const result = decision.result ?? resolve({ requested: decision.requested, parentGrant: ownGrant, gated });
+      // G6 / A-S3: `decideSpawn` now carries the result it decided from, so there is nothing to
+      // recompute. The old `?? resolve({...})` fallback ran on the wildcard path and denied everything,
+      // recording legitimate allowed spawns as escalation attempts.
+      const result = decision.result;
       await appendRecord(
-        { path: ledgerPath, strict: false },
+        { path: ledgerPath, strict: true },
         buildRecord({
           parentId: `d${depth}`,
           childId: `${decision.typeName}@d${decision.childDepth}`,
@@ -342,8 +345,16 @@ export default function (pi: ExtensionAPI) {
           humanDenied: approvalOutcome?.humanDenied,
           now: new Date(),
         }),
-      ).catch(() => {
-        /* ledger is advisory here; the allow/block decision already stands */
+      ).catch((error) => {
+        // G6 / A-R4 + B-I2. This used to swallow silently, which contradicted `ledger.ts`'s own
+        // contract that "an unrecorded grant should fail closed". Configuring a ledger is an explicit
+        // act: the operator asked for an audit trail, so a spawn that cannot be recorded must not
+        // proceed. Sessions with no `PI_GRANTS_LEDGER` are unaffected — they never enter this branch.
+        decision = {
+          ...decision,
+          allow: false,
+          reason: `grants: ledger write failed, denying — ${String(error)}`,
+        };
       });
     }
 
@@ -442,9 +453,11 @@ export default function (pi: ExtensionAPI) {
         }
       }
 
-      if (ledgerPath && plan.result) {
+      // G6 / B-I3: no `&& plan.result` guard — `planDelegation` always carries one now, and the four
+      // refusals that used to lack it (disabled, too deep, no task, unknown capability) went unaudited.
+      if (ledgerPath) {
         await appendRecord(
-          { path: ledgerPath, strict: false },
+          { path: ledgerPath, strict: true },
           buildRecord({
             parentId: `d${depth}`,
             childId: `delegate@d${plan.childDepth}`,
@@ -461,7 +474,11 @@ export default function (pi: ExtensionAPI) {
             humanDenied: approvalOutcome?.humanDenied,
             now: new Date(),
           }),
-        ).catch(() => {});
+        ).catch((error) => {
+          // G6 / A-R4 + B-I2: fail closed. Unlike the interceptor path this one PROVISIONS, so an
+          // unrecorded delegation would be a child running with granted capabilities and no audit line.
+          plan = { ...plan, ok: false, reason: `grants: ledger write failed, denying — ${String(error)}` };
+        });
       }
 
       if (!plan.ok) {

@@ -62,7 +62,12 @@ export interface Delegation {
   /** Per-child environment — never merged into the parent's process.env. */
   env: Record<string, string>;
   effective: Capability[];
-  result?: ResolveResult;
+  /**
+   * The result this plan was made from. **Required** (B-I3): while it was optional the extension
+   * guarded its ledger write with `if (ledgerPath && plan.result)`, silently dropping every refusal
+   * that returned before `resolve()` ran. The type is what keeps a new early exit auditable.
+   */
+  result: ResolveResult;
   childDepth: number;
 }
 
@@ -74,7 +79,18 @@ export interface Delegation {
  */
 export function planDelegation(request: DelegationRequest, ctx: DelegationContext): Delegation {
   const childDepth = ctx.depth + 1;
-  const empty: Delegation = { ok: false, args: [], env: {}, effective: [], childDepth };
+  // G6 / B-I3: every refusal carries a result, including the four below that return before `resolve()`
+  // is ever called. The extension guarded its ledger write with `if (ledgerPath && plan.result)`, so
+  // those four governance decisions — disabled, too deep, no task, unknown capability — were never
+  // audited at all. An empty result is the honest record: nothing was resolved, and that is the fact.
+  const empty: Delegation = {
+    ok: false,
+    args: [],
+    env: {},
+    effective: [],
+    childDepth,
+    result: { effective: [], denied: [], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
+  };
 
   if (ctx.maxDepth <= 0) return { ...empty, reason: "delegation is disabled (maxDepth 0)" };
   if (childDepth > ctx.maxDepth) {

@@ -161,7 +161,7 @@ test("delegate hands the child only approvals for capabilities it was actually g
       approved: ["tool:write", "tool:bash"],
     },
   );
-  assert.equal(plan.ok, true, plan.reason);
+  assert.equal(plan.ok, true, plan.reason ?? "expected ok");
   assert.equal(plan.env[ENV_APPROVED], "tool:write", "bash was approved but not granted to this child");
 });
 
@@ -179,7 +179,7 @@ test("an approved capability the child was NOT granted never reaches it", () => 
       approved: ["tool:write"],
     },
   );
-  assert.equal(plan.ok, true, plan.reason);
+  assert.equal(plan.ok, true, plan.reason ?? "expected ok");
   assert.equal(plan.env[ENV_APPROVED], "", "the plan states an empty approval set rather than omitting it");
 
   const parentEnv = { PATH: "/usr/bin", [ENV_APPROVED]: "tool:write", [ENV_GRANT]: "tool:read,tool:write" };

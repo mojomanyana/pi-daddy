@@ -43,7 +43,12 @@ export interface Decision {
   effective: Capability[];
   /** Ceiling the requested type declares, for the ledger. */
   requested: Capability[];
-  result?: ResolveResult;
+  /**
+   * The result this decision was made from. **Required** (A-S3): when it was optional, the caller
+   * recomputed a missing one from different inputs and recorded a false escalation. The type is what
+   * stops that returning — a new early exit cannot omit it.
+   */
+  result: ResolveResult;
   childDepth: number;
   typeName: string;
 }
@@ -51,6 +56,35 @@ export interface Decision {
 /** Does this grant permit handing out everything? */
 function holdsWildcard(grant: Capability[]): boolean {
   return grant.includes(WILDCARD);
+}
+
+/**
+ * A `ResolveResult` for a decision reached WITHOUT calling `resolve()`.
+ *
+ * G6 / review finding A-S3. Six of this function's eight exits used to return no `result` at all, and the
+ * extension papered over that with `decision.result ?? resolve({ requested, parentGrant, gated })`
+ * (`grants.ts:326`) — recomputing the record from different inputs than the decision was made from. On the
+ * wildcard path that recompute is actively wrong: `resolve()` has no notion of `tool:*` (the string
+ * appears nowhere in `resolve.ts`), so a wildcard delegator's grant matches nothing, every requested
+ * capability lands in `denied`, and `isEscalationAttempt()` reports an ALLOWED spawn as an attack. The one
+ * signal the ledger exists to carry was firing on legitimate traffic.
+ *
+ * Fixing it here rather than by teaching `resolve()` the wildcard is deliberate. `resolve.ts` is the
+ * security core: it is the function that must never over-grant, it has the package's most exhaustive
+ * tests, and giving it a branch where one input string means "everything is permitted" is exactly the
+ * shape of change that turns a total function into a footgun. The wildcard is an *interceptor-level*
+ * concept — the authority to hand out what you do not enumerate — so it stays at this level.
+ */
+function decidedResult(over: Partial<ResolveResult> = {}): ResolveResult {
+  return {
+    effective: [],
+    denied: [],
+    clipped: [],
+    gatedBlocked: [],
+    universal: [],
+    subsumedBy: [],
+    ...over,
+  };
 }
 
 /**
@@ -63,7 +97,15 @@ export function decideSpawn(request: SpawnRequest, ctx: DecisionContext): Decisi
   const childDepth = ctx.depth + 1;
   const typeName = typeof request.subagentType === "string" ? request.subagentType : "";
 
-  const base = { effective: [] as Capability[], requested: [] as Capability[], childDepth, typeName };
+  // Every exit carries a `result` (A-S3). `base` supplies an empty one; paths that reach `resolve()`
+  // overwrite it, and the wildcard paths below build an accurate one by hand.
+  const base = {
+    effective: [] as Capability[],
+    requested: [] as Capability[],
+    result: decidedResult(),
+    childDepth,
+    typeName,
+  };
 
   if (ctx.maxDepth <= 0) {
     return { ...base, allow: false, reason: "spawning is disabled (maxDepth 0)" };
@@ -95,6 +137,7 @@ export function decideSpawn(request: SpawnRequest, ctx: DecisionContext): Decisi
       return {
         ...base,
         requested,
+        result: decidedResult({ universal }),
         allow: false,
         reason:
           `agent type "${typeName}" declares ${universal.join(", ")}, which transitively confers the whole ` +
@@ -110,6 +153,7 @@ export function decideSpawn(request: SpawnRequest, ctx: DecisionContext): Decisi
       return {
         ...base,
         requested,
+        result: decidedResult({ gatedBlocked: gatedHere }),
         allow: false,
         reason: `agent type "${typeName}" requires approval for ${gatedHere.join(", ")}`,
       };
@@ -119,6 +163,9 @@ export function decideSpawn(request: SpawnRequest, ctx: DecisionContext): Decisi
       ...base,
       allow: true,
       requested,
+      // The delegator holds the wildcard, so nothing was denied. Recording this explicitly is the whole
+      // point of A-S3: the extension's fallback `resolve()` would deny ALL of it.
+      result: decidedResult({ effective: requested }),
       effective: requested,
       reason: type ? undefined : `unknown agent type "${typeName}" — allowed only because the delegator holds ${WILDCARD}`,
     };
@@ -129,6 +176,7 @@ export function decideSpawn(request: SpawnRequest, ctx: DecisionContext): Decisi
     return {
       ...base,
       requested,
+      result: decidedResult({ denied: requested }),
       allow: false,
       reason: type
         ? `agent type "${typeName}" declares no tools: allowlist, so it would receive pi's full toolset; the delegator does not hold ${WILDCARD}`
