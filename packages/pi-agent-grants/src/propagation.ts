@@ -27,7 +27,7 @@
 
 import type { Capability } from "./resolve.ts";
 import { WILDCARD } from "./agent-types.ts";
-import { inheritApprovals } from "./approval.ts";
+import { inheritApprovals, type InheritableApproval } from "./approval.ts";
 
 export const ENV_GRANT = "PI_GRANTS_GRANT";
 export const ENV_DEPTH = "PI_GRANTS_DEPTH";
@@ -175,7 +175,11 @@ export interface ChildEnvInput {
    * a parent-level fact — identical for every sibling, so there is nothing to race on. Each child then
    * re-intersects with its own grant on arrival, exactly as it does for the grant itself.
    */
-  approved?: Capability[];
+  /**
+   * Approvals eligible to cross the boundary (ADR-0014): capability, subject and scope. `once` is
+   * dropped by `inheritApprovals`, and the subject is preserved so it cannot satisfy another one.
+   */
+  approved?: InheritableApproval[];
   ledgerPath?: string;
   /**
    * Whether THIS session is governed — i.e. `PI_GRANTS_GRANT` was set for it.

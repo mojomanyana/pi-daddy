@@ -116,6 +116,11 @@ test("saving prunes entries that have become invalid", async () => {
 });
 
 test("an unwritable location reports failure rather than throwing", async () => {
+  // ADR-0014 moved the store out of the workspace, so the unwritable location has to be the STORE's
+  // directory, not the project's — pointing a cwd at /dev/null no longer has any bearing on where we write.
+  const previous = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = "/dev/null/nope";
+  try {
   const ok = await saveApproval(
     "/dev/null",
     "tool:write@x",
@@ -124,6 +129,10 @@ test("an unwritable location reports failure rather than throwing", async () => 
     NOW,
   );
   assert.equal(ok, false, "the caller downgrades to session scope rather than failing the work");
+  } finally {
+    if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previous;
+  }
 });
 
 test("a null entry drops without taking valid entries with it", async () => {

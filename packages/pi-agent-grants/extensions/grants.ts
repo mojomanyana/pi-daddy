@@ -17,6 +17,7 @@
  * child derives its own grant from the tool array of its first provider request.
  */
 
+import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
@@ -25,13 +26,15 @@ import {
   DELEGATE_SUBJECT,
   approvalKey,
   expiryFor,
+  parseInherited,
+  type InheritableApproval,
   resolveApprovals,
   shouldSeekApproval,
   type ApprovalPath,
   type ApprovalScope,
   type ApprovalSource,
 } from "../src/approval.ts";
-import { loadApprovals, revokeAll, revokeApproval, saveApproval } from "../src/approval-store.ts";
+import { legacyApprovalsPath, loadApprovals, revokeAll, revokeApproval, saveApproval } from "../src/approval-store.ts";
 import { createApprovalGate, createApprovalGateProvider, timeoutMsFromEnv } from "../src/approval-prompt.ts";
 import { buildCatalog, makeCatalog, type Catalog } from "../src/catalog.ts";
 import { DELEGATE_CAPABILITY, planDelegation } from "../src/delegate.ts";
@@ -94,7 +97,7 @@ export default function (pi: ExtensionAPI) {
   /** Approval keys approved for this session. In memory only — this dies with the process. */
   const sessionApprovals = new Set<string>();
   /** Approvals inherited from the delegator, already clamped to this session's grant upstream. */
-  const inheritedApprovals = parseList(process.env[ENV_APPROVED]);
+  const inheritedApprovals = parseInherited(process.env[ENV_APPROVED]);
 
   /** Current ceiling for an agent type, for the confused-deputy check in the store. */
   const ceilingOf = (subject: string) => {
@@ -131,9 +134,30 @@ export default function (pi: ExtensionAPI) {
       : observedTools.filter((t) => !PI_BUILTIN_TOOLS.includes(t as never)).map((t) => `tool:${t}`);
   };
 
-  /** Capabilities (not keys) approved this session, for propagation. */
-  const sessionApprovalCapabilities = (): Capability[] =>
-    [...sessionApprovals].map((key) => key.slice(0, key.indexOf("@")));
+  /**
+   * What this session may republish to children (ADR-0014).
+   *
+   * Two changes from the version that published bare capability names. Each entry keeps its **subject**,
+   * so an approval given for one agent type cannot satisfy another; and each keeps its **scope**, so
+   * `inheritApprovals` can drop `once` rather than handing a whole subtree an approval a human gave for
+   * a single spawn.
+   *
+   * `once` never enters `sessionApprovals` in the first place, so everything here is `session` or
+   * `always` — but the scope is carried rather than assumed, because assuming it is what went wrong.
+   */
+  const republishable = (): InheritableApproval[] => [
+    // Inherited keys arrive already clamped and already `once`-free from the level above.
+    ...[...inheritedApprovals].map((key) => ({
+      capability: key.slice(0, key.indexOf("@")),
+      subject: key.slice(key.indexOf("@") + 1),
+      scope: "session" as const,
+    })),
+    ...[...sessionApprovals].map((key) => ({
+      capability: key.slice(0, key.indexOf("@")),
+      subject: key.slice(key.indexOf("@") + 1),
+      scope: "session" as const,
+    })),
+  ];
 
   /**
    * Publish what children inherit. Written once at session start, and republished whenever this
@@ -149,7 +173,7 @@ export default function (pi: ExtensionAPI) {
       maxDepth,
       gated,
       ledgerPath,
-      approved: [...inheritedApprovals, ...sessionApprovalCapabilities()],
+      approved: republishable(),
       // G7 / B-I8: an ungoverned session publishes nothing, so "governance is opt-in" holds for
       // descendants too. Previously it exported its own observed tool surface as their grant.
       governed,
@@ -299,6 +323,21 @@ export default function (pi: ExtensionAPI) {
             `spawning is disabled for this session (failing closed)`,
           "warning",
         );
+      }
+      // ADR-0014: a pre-0.6 in-workspace approvals file is IGNORED, not migrated — importing it would
+      // import exactly the entries whose trustworthiness the move exists to remove. Say so, because an
+      // operator whose approvals silently stopped applying deserves to know why.
+      try {
+        if (existsSync(legacyApprovalsPath(ctx.cwd))) {
+          ctx.ui.notify(
+            `grants: ignoring ${legacyApprovalsPath(ctx.cwd)} — approvals now live outside the workspace ` +
+              `(it was writable by the very agents it gated). Re-approve when next asked; the old file is ` +
+              `safe to delete.`,
+            "warning",
+          );
+        }
+      } catch {
+        /* never throw into the agent loop */
       }
       if (governed) {
         ctx.ui.notify(
@@ -513,7 +552,8 @@ export default function (pi: ExtensionAPI) {
             params.task,
             signal,
           );
-          if (approvalOutcome.approved.length > 0) {
+          const outcome = approvalOutcome;
+          if (outcome.approved.length > 0) {
             plan = planDelegation(
               { task: params.task, tools: params.tools, model: params.model ?? defaultModel },
               {
@@ -524,7 +564,16 @@ export default function (pi: ExtensionAPI) {
                 ledgerPath,
                 extensionPath,
                 catalog: await catalogReady,
-                approved: [...inheritedApprovals, ...approvalOutcome.approved],
+                // The scope is the REAL one: a `once` approval still authorises this spawn, and
+                // `inheritApprovals` then keeps it from reaching the child. See ADR-0014.
+                approved: [
+                  ...republishable(),
+                  ...outcome.approved.map((capability) => ({
+                    capability,
+                    subject: DELEGATE_SUBJECT,
+                    scope: outcome.scope ?? ("once" as const),
+                  })),
+                ],
               },
             );
           }
@@ -681,7 +730,7 @@ export default function (pi: ExtensionAPI) {
         `  depth      ${depth} of max ${maxDepth}${maxDepth <= 0 ? " (spawning disabled)" : ""}`,
         `  ledger     ${ledgerPath ?? "(not recording — set PI_GRANTS_LEDGER)"}`,
         `  approvals  ${sessionApprovals.size} this session, ${valid.size} persisted` +
-          `${inheritedApprovals.length > 0 ? `, ${inheritedApprovals.length} inherited` : ""}` +
+          `${inheritedApprovals.size > 0 ? `, ${inheritedApprovals.size} inherited` : ""}` +
           ` — /grants approvals`,
         `  catalog    ${catalog.all.length} capabilities — ` +
           `${catalog.byKind("builtin").length} builtin, ${catalog.byKind("extension").length} extension, ` +

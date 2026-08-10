@@ -14,7 +14,8 @@
  * dropped from the file on the next `saveApproval` or `revokeApproval`.
  */
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { entryVerdict, type ApprovalEntry, type EntryVerdict } from "./approval.ts";
 import type { Capability } from "./resolve.ts";
@@ -33,8 +34,43 @@ export interface DroppedApproval {
 /** Look up an agent type's current ceiling by subject; null when the type no longer exists. */
 export type CeilingLookup = (subject: string) => Capability[] | null;
 
-export function approvalsPath(cwd: string): string {
+/**
+ * Where persisted approvals live — **outside the governed workspace** (ADR-0014).
+ *
+ * It used to be `<cwd>/.pi/grants-approvals.json`, which was self-defeating in this package's own
+ * recommended configuration: `PI_GRANTS_GATED=tool:write` means *"may use write, may not pass it down
+ * without a human"*, and **a session that may use `write` can write the approvals file**. A reviewer
+ * demonstrated it end to end, including authoring a matching agent-type file so `grantAtApproval`
+ * compared equal — no dialog, and a ledger line reading `approvalSource: "persisted"`, indistinguishable
+ * from a real human approval.
+ *
+ * One file for all projects; entries are scoped by their own `cwd` field, which `entryVerdict` already
+ * checks (that check exists for R-27 and now does double duty). A narrowed child does not hold write
+ * access to the user's home directory, so it cannot forge an entry here.
+ *
+ * **This does not defend against a child holding `bash`** — see ADR-0012, which accepts that such a
+ * child can escape governance entirely. The point of this change is to close the *self-defeating* case,
+ * not to claim a boundary the package does not have.
+ */
+export function approvalsPath(_cwd?: string): string {
+  return join(agentDir(), "grants-approvals.json");
+}
+
+/**
+ * The old in-workspace location, so it can be REPORTED rather than read.
+ *
+ * Deliberately not migrated. Importing a legacy file would import exactly the entries whose
+ * trustworthiness this change exists to remove — a forged approval would survive the fix that was
+ * supposed to stop it. The extension names the file and ignores it; re-approving is a few keystrokes and
+ * the only honest path.
+ */
+export function legacyApprovalsPath(cwd: string): string {
   return join(cwd, ".pi", "grants-approvals.json");
+}
+
+/** `$PI_CODING_AGENT_DIR`, or pi's default. Matches how pi-subagents resolves the same directory. */
+function agentDir(): string {
+  return process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
 }
 
 /** The subject half of `capability@subject`. Capability ids contain `:` but never `@`. */
@@ -106,12 +142,36 @@ export async function loadApprovals(
   return { valid, dropped };
 }
 
+/**
+ * Write the file atomically, and never through a symlink (ADR-0014).
+ *
+ * Two defects this closes:
+ *
+ *  - **B-I6** — writes followed project-controlled symlinks and were not atomic, so a crash or a
+ *    concurrent writer could leave a half-written file that the next read discards entirely.
+ *  - **A-R2** — a corrupt file made the next legitimate write destroy every other entry, because entries
+ *    are validated on read but pruned only on write. Writing to a temp file and renaming makes the
+ *    replacement all-or-nothing; `wx` on the temp refuses to follow an existing link.
+ *
+ * `rename` is atomic within a filesystem, and the temp file is created in the same directory precisely so
+ * that holds.
+ */
 async function writeFileSafely(cwd: string, file: ApprovalFile): Promise<boolean> {
+  const path = approvalsPath(cwd);
+  // Same directory as the target: `rename` is only atomic within one filesystem.
+  const temp = `${path}.${process.pid}.tmp`;
   try {
-    await mkdir(dirname(approvalsPath(cwd)), { recursive: true });
-    await writeFile(approvalsPath(cwd), `${JSON.stringify(file, null, 2)}\n`, "utf8");
+    await mkdir(dirname(path), { recursive: true });
+    // `wx` fails rather than following a pre-existing symlink or clobbering another writer's temp.
+    await writeFile(temp, `${JSON.stringify(file, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
+    await rename(temp, path);
     return true;
   } catch {
+    try {
+      await unlink(temp);
+    } catch {
+      /* nothing to clean up */
+    }
     return false;
   }
 }

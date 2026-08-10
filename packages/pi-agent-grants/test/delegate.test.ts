@@ -66,7 +66,7 @@ test("an empty task is refused", () => {
 test("gated capability blocks until approved", () => {
   const gatedCtx = ctx({ gated: ["tool:write"] });
   assert.match(planDelegation({ task: "x", tools: ["write"] }, gatedCtx).reason ?? "", /requires explicit approval/);
-  const ok = planDelegation({ task: "x", tools: ["write"] }, ctx({ gated: ["tool:write"], approved: ["tool:write"] }));
+  const ok = planDelegation({ task: "x", tools: ["write"] }, ctx({ gated: ["tool:write"], approved: [{ capability: "tool:write", subject: "<delegate>", scope: "once" }] }));
   assert.equal(ok.ok, true);
 });
 

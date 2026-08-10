@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-10
 **Status:** **Accepted 2026-08-10 — Option 1 (relocate the trust root) + the scope/subject/durability
-fixes.** Implementation pending.
+fixes.** **Implemented 2026-08-11** — 222 unit + 11 integration tests passing.
 **Driver:** Review group **G3** (findings A-C3/B-C1, B-C6, A-S1, A-S6, A-R2, B-I6). Directly undermines
 **ADR-0010**'s approval semantics and the compensating control **R-27** records.
 

@@ -18,7 +18,7 @@
 import { planSpawn } from "./spawn.ts";
 import { resolve, assertNarrowing, type Capability, type ResolveResult } from "./resolve.ts";
 import { ENV_APPROVED, ENV_DEPTH, ENV_GATED, ENV_GRANT, ENV_LEDGER, ENV_MAX_DEPTH } from "./propagation.ts";
-import { inheritApprovals } from "./approval.ts";
+import { inheritApprovals, type InheritableApproval } from "./approval.ts";
 import { unknownCapabilities, type Catalog } from "./catalog.ts";
 
 /** The tool name that confers the ability to delegate further. */
@@ -47,7 +47,15 @@ export interface DelegationContext {
   depth: number;
   maxDepth: number;
   gated: Capability[];
-  approved?: Capability[];
+  /**
+   * Approvals in force for this delegation, with subject and scope (ADR-0014).
+   *
+   * One source of truth for two different questions. The **gate check here** honours every entry,
+   * including `once` — that approval applies to *this* spawn, which is exactly what the human said yes
+   * to. What crosses to the CHILD is `inheritApprovals`, which drops `once` and keeps the subject, so
+   * the same list cannot silently authorise a subtree.
+   */
+  approved?: InheritableApproval[];
   ledgerPath?: string;
   /** Path to this extension, so a child granted `tool:delegate` can delegate in turn. */
   extensionPath?: string;
@@ -118,7 +126,7 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
     requested,
     parentGrant: ctx.ownGrant,
     gated: ctx.gated,
-    approved: ctx.approved,
+    approved: (ctx.approved ?? []).map((a) => a.capability),
   });
 
   if (result.denied.length > 0) {

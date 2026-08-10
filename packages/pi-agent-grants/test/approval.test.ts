@@ -103,19 +103,25 @@ test("always is NEVER offered on the delegate path — the model controls the su
   assert.ok(!offeredScopes("delegate").includes("always"));
 });
 
+// ADR-0014: approvals crossing a boundary carry subject and scope, and are published as
+// `capability@subject`. See test/approval-integrity.test.ts for the scope and subject rules themselves.
+const inh = (capability: string) => ({ capability, subject: "docs-writer", scope: "session" as const });
+
 test("an inherited approval is intersected with the child's grant", () => {
-  assert.deepEqual(inheritApprovals(["tool:write", "tool:bash"], ["tool:read", "tool:write"]), [
-    "tool:write",
+  assert.deepEqual(inheritApprovals([inh("tool:write"), inh("tool:bash")], ["tool:read", "tool:write"]), [
+    "tool:write@docs-writer",
   ]);
 });
 
 test("THE invariant for approvals: approved can never exceed the grant", () => {
-  assert.deepEqual(inheritApprovals(["tool:write"], []), []);
+  assert.deepEqual(inheritApprovals([inh("tool:write")], []), []);
   assert.deepEqual(inheritApprovals([], ["tool:write"]), []);
 });
 
 test("the wildcard is never inherited as an approval (mirrors R-26 for grants)", () => {
-  assert.deepEqual(inheritApprovals(["tool:*", "tool:read"], ["tool:*", "tool:read"]), ["tool:read"]);
+  assert.deepEqual(inheritApprovals([inh("tool:*"), inh("tool:read")], ["tool:*", "tool:read"]), [
+    "tool:read@docs-writer",
+  ]);
 });
 
 test("expiry is TTL days after approval, as an ISO instant", () => {
@@ -225,7 +231,8 @@ test("a persisted approval satisfies without prompting", () => {
 test("an inherited approval satisfies, and outranks session and persisted in reporting", () => {
   const r = RA({
     gated: ["tool:write"],
-    inherited: ["tool:write"],
+    // ADR-0014: a set of `capability@subject` keys, so it cannot satisfy another subject.
+    inherited: new Set(["tool:write@docs-writer"]),
     sessionApprovals: new Set(["tool:write@docs-writer"]),
   });
   assert.deepEqual(r.approved, ["tool:write"]);

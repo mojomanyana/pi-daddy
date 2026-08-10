@@ -90,9 +90,57 @@ export function offeredScopes(path: ApprovalPath): ApprovalScope[] {
  * The wildcard is filtered for the same reason `childEnv` filters it out of grants (R-26): inheriting it
  * would let a descendant treat every future gate as pre-approved.
  */
-export function inheritApprovals(approved: Capability[], grant: Capability[]): Capability[] {
+/** An approval as it crosses a boundary: the capability, WHO it was for, and HOW LONG it was meant to last. */
+export interface InheritableApproval {
+  capability: Capability;
+  /** The agent type, or `<delegate>`. Carried because an approval is for a subject, not for a word. */
+  subject: string;
+  scope: ApprovalScope;
+}
+
+/**
+ * What a child may inherit, as `capability@subject` keys.
+ *
+ * ADR-0014 changed this in two ways, and both were cases of a human's explicit choice being discarded
+ * one hop down:
+ *
+ *  - **`once` is dropped** (A-S1). The scope chosen was not carried, so a `once` approval was written
+ *    into the child's `PI_GRANTS_APPROVED` and republished onward — the most conservative answer a human
+ *    can give produced the least conservative outcome, across an entire descendant subtree.
+ *  - **The subject is kept** (A-S6). Bare capabilities were published, so a `<delegate>`-subject approval
+ *    matched *any* subject below. `approvalKey`'s own doc argues at length that a model-controlled name
+ *    is not a key; erasing the subject made that argument moot exactly where it mattered.
+ *
+ * The clamp to `grant` is unchanged and still load-bearing: **approval cannot conjure a capability**, so
+ * an inherited yes is only ever honoured for something the child independently holds.
+ */
+export function inheritApprovals(approved: InheritableApproval[], grant: Capability[]): string[] {
   const held = new Set(grant);
-  return [...new Set(approved.filter((c) => c !== WILDCARD && held.has(c)))].sort();
+  return [
+    ...new Set(
+      approved
+        .filter((a) => a.scope !== "once" && a.capability !== WILDCARD && held.has(a.capability))
+        .map((a) => approvalKey(a.capability, a.subject)),
+    ),
+  ].sort();
+}
+
+/**
+ * Read the inherited set back on the child side.
+ *
+ * Anything that is not a well-formed `capability@subject` pair is dropped rather than guessed at. An
+ * unparseable entry granting nothing is a missing prompt; an unparseable entry granting *something* is a
+ * silent escalation, so the direction of the failure is not a matter of taste.
+ */
+export function parseInherited(raw: string | undefined): Set<string> {
+  const out = new Set<string>();
+  for (const item of (raw ?? "").split(",")) {
+    const trimmed = item.trim();
+    const at = trimmed.indexOf("@");
+    if (at <= 0 || at === trimmed.length - 1) continue;
+    out.add(trimmed);
+  }
+  return out;
 }
 
 /** When an approval granted now stops being valid. Computed once at write time and stored, so an entry's
@@ -163,7 +211,13 @@ export interface ResolveApprovalsInput {
   /** Persisted entries by key, ALREADY validity-filtered by the store. */
   persisted: ReadonlyMap<string, ApprovalEntry>;
   /** Capabilities approved further up the tree and inherited with the grant. */
-  inherited?: Capability[];
+  /**
+   * `capability@subject` keys inherited from the delegator (ADR-0014).
+   *
+   * Was `Capability[]` — bare names that matched any subject, and included `once` approvals that were
+   * never meant to leave the level they were given at.
+   */
+  inherited?: Set<string>;
 }
 
 export interface ResolveApprovalsResult {
@@ -181,14 +235,16 @@ export interface ResolveApprovalsResult {
  * stops an orchestrator's tenth delegation from raising a tenth identical dialog.
  */
 export function resolveApprovals(input: ResolveApprovalsInput): ResolveApprovalsResult {
-  const inherited = new Set(input.inherited ?? []);
+  // ADR-0014: these are `capability@subject` keys now, not bare capabilities, so an approval given for
+  // one subject can no longer satisfy another.
+  const inherited = input.inherited ?? new Set<string>();
   const approved: Capability[] = [];
   const needsPrompt: Capability[] = [];
   const sources: Record<Capability, ApprovalSource> = {};
 
   for (const capability of [...new Set(input.gated)].sort()) {
     const key = approvalKey(capability, input.subject);
-    if (inherited.has(capability)) {
+    if (inherited.has(key)) {
       approved.push(capability);
       sources[capability] = "inherited";
     } else if (input.sessionApprovals.has(key)) {

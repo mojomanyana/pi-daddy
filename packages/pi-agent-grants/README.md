@@ -222,6 +222,26 @@ delegate({ task: "summarise src/", tools: ["read"] })
 
 ## Approving a gated capability
 
+> **0.6.0 changed where approvals live and what crosses a boundary (ADR-0014).**
+>
+> **The store moved out of the workspace**, to `$PI_CODING_AGENT_DIR` (default `~/.pi/agent/`). It used to
+> sit at `<cwd>/.pi/grants-approvals.json`, which was self-defeating in this package's own recommended
+> configuration: `PI_GRANTS_GATED=tool:write` means *"may use write, may not pass it down without a
+> human"* — and **a session that may use `write` can write the approvals file**. Forged entries produced
+> a ledger line reading `approvalSource: "persisted"`, indistinguishable from a real approval.
+>
+> A legacy in-workspace file is **ignored, not migrated**, with a warning naming it. Importing it would
+> import exactly the entries the move exists to stop trusting. Re-approve when next asked.
+>
+> **`PI_GRANTS_APPROVED` now carries `capability@subject` pairs**, and `once` never crosses a boundary.
+> Previously the scope a human chose was discarded one hop down, so *"Allow once"* was inherited by an
+> entire descendant subtree, and a `<delegate>`-subject approval matched *any* subject. This is a
+> **breaking change** to the propagation format between versions.
+>
+> **This does not defend against a child holding `bash`** — see ADR-0012, which accepts that such a child
+> escapes governance entirely. The point is to close the self-defeating case, not to claim a boundary the
+> package does not have.
+
 `gated` capabilities are ones a session holds but may not pass on without a human saying so. They used to
 just refuse — this version adds the yes. Refusing before this could not be revisited; the underlying
 resolver has always computed `gatedBlocked` and `approved`, but nothing ever filled `approved`.
