@@ -76,8 +76,11 @@ definitions**.
 > G0 loss figure was computed on the fallback mounting path only, which is a separate and unaffected
 > argument — and on ADR-0007's reframe, which retired cost as the objective altogether. What is
 > undermined is the **magnitude claim**, and with it Track B's headline feature. Correcting it is group
-> **G10**: either relabel the output a character share and delete the calibration ceremony, or tokenize
-> the tool block properly. **A-14 remains deferred and is unaffected.** It rests on zero unvalidated assumptions — A-12 is VALIDATED end-to-end, since usage with
+> **G10 — done 2026-08-11.** The output is relabelled a character share and the calibration ceremony is
+> deleted; tokenizing properly was rejected because ADR-0007 retired the thesis it would serve.
+> **A-14 remains deferred and is unaffected.**
+
+It rests on zero unvalidated assumptions — A-12 is VALIDATED end-to-end, since usage with
 `cacheRead`/`cacheWrite`/`cost` is persisted directly in session JSONL — and the scout confirmed a real
 gap: every framework prior art publishes patterns, none publishes numbers. Roughly 80% of it already
 exists as `docs/probes/baseline/session_stats.py`.

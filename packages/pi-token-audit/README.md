@@ -6,28 +6,51 @@ pi tells you how many input tokens a request used and how they split across the 
 you which tool ran. It tells you nothing in between — there is no field anywhere for *"how much of this
 request was tool definitions?"*
 
-That's the number this measures.
+This measures the closest honest proxy: **how much of the serialized request, by character, is tool
+definitions.**
 
 ```
 token-audit — 1 provider request(s), model gpt-5.6-sol
 
-  prompt tokens        6,947
+  prompt tokens        2,941
     served from cache   0 (0.0%)
     cache writes        0   read:write = no cache writes seen
-  output tokens        5
-  cost                 $0.0349
+  output tokens        30
+  cost                 $0.0052
 
-  TOOL DEFINITIONS     ~4,993 tokens (~71.9% of prompt tokens)
-    tools sent          13
-    definition chars    24,179 in the last request
+  TOOL DEFINITIONS     24.6% of request CHARACTERS (2,724 of 11,078)
+    tools sent          4
+    definition chars    2,724 in the last request
 
-  method: chars/token measured per turn from this provider's own counts.
-    median 4.84 chars/token, observed range n/a across 1 turn(s).
-    Tool-token figures are derived, not provider-reported — treat the range as the error bar.
+  method: a CHARACTER share of the serialized request, not a token measurement.
+    Providers report totals only, so no per-block token count exists to divide up. Tokenization is
+    not uniform — JSON punctuation and schema keywords tokenize differently from prose — so treat
+    this as an indicator of scale, not a figure to do arithmetic on.
 ```
 
-That run is real, and it is the reason this tool exists: a **fresh** pi session spent **72% of its
-prompt budget describing its own tools** before doing any work.
+> ### It used to claim more than that, and the claim was wrong
+>
+> Until this correction the headline read *"~4,993 tokens (~71.9% of prompt tokens)"*, backed by a
+> per-turn calibration reporting median chars/token and an observed range described as "the error bar".
+>
+> **That was arithmetic theatre.** The code computed `charsPerToken = payloadChars / promptTokens`, then
+> `estToolTokens = toolChars / charsPerToken`. Substitute the first into the second and `promptTokens`
+> **cancels exactly**:
+>
+> ```
+> estToolTokens / promptTokens  ==  toolChars / payloadChars
+> ```
+>
+> The headline was a character ratio all along, and the calibration could not change it by construction.
+> Verified across a 72× swing in token count. The figure it produced — *"a fresh pi session spends 72% of
+> its prompt budget describing its own tools"* — was quoted as a measured fact in this project's
+> `SESSION-LOG.md` and fed **ADR-0006**; both now carry a dated correction.
+>
+> **Why relabel rather than tokenize properly.** Getting real numbers needs a per-provider tokenizer, and
+> **ADR-0007** retired the token-economics thesis this instrument was built to serve. Adding a tokenizer
+> dependency to sharpen a number nobody is deciding on would be investing in an abandoned goal. The
+> character share is genuinely useful for spotting a bloated tool surface; it is simply not a token count,
+> and now it does not pretend to be.
 
 ## Install
 

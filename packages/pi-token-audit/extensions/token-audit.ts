@@ -39,10 +39,21 @@ interface TurnRecord {
   cacheRead: number;
   cacheWrite: number;
   costTotal: number;
-  /** promptTokens / payloadChars, measured — null when the pairing failed */
-  charsPerToken: number | null;
-  /** toolChars / charsPerToken, i.e. the number pi does not expose */
-  estToolTokens: number | null;
+  /**
+   * REMOVED in the G10 correction — kept in this comment so the mistake is legible.
+   *
+   * The report used to compute `charsPerToken = payloadChars / promptTokens`, then
+   * `estToolTokens = toolChars / charsPerToken`, and present the result as a share of prompt tokens.
+   * Substitute the first into the second and `promptTokens` **cancels exactly**:
+   *
+   *     estToolTokens / promptTokens  ==  toolChars / payloadChars
+   *
+   * So the headline was a **character ratio** wearing a token measurement's clothes, and the per-turn
+   * "calibration" — median chars/token, observed range, "treat the range as the error bar" — could not
+   * affect it. Verified across a 72x swing in token count (review finding A-C4). That number reached
+   * `SESSION-LOG.md` as a verified fact and fed ADR-0006.
+   */
+
 }
 
 const PENDING_LIMIT = 8;
@@ -50,7 +61,7 @@ const PENDING_LIMIT = 8;
 export default function (pi: ExtensionAPI) {
   const turns: TurnRecord[] = [];
   /** Measurements awaiting the usage numbers from the matching response. */
-  const pending: Array<Omit<TurnRecord, "promptTokens" | "outputTokens" | "cacheRead" | "cacheWrite" | "costTotal" | "charsPerToken" | "estToolTokens">> = [];
+  const pending: Array<Omit<TurnRecord, "promptTokens" | "outputTokens" | "cacheRead" | "cacheWrite" | "costTotal">> = [];
 
   const safeLen = (value: unknown): number => {
     if (value === undefined || value === null) return 0;
@@ -108,7 +119,7 @@ export default function (pi: ExtensionAPI) {
         cost?: { total?: number };
       };
       const promptTokens = (usage.input ?? 0) + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0);
-      const charsPerToken = promptTokens > 0 ? measured.payloadChars / promptTokens : null;
+
 
       turns.push({
         ...measured,
@@ -117,8 +128,6 @@ export default function (pi: ExtensionAPI) {
         cacheRead: usage.cacheRead ?? 0,
         cacheWrite: usage.cacheWrite ?? 0,
         costTotal: usage.cost?.total ?? 0,
-        charsPerToken,
-        estToolTokens: charsPerToken ? measured.toolChars / charsPerToken : null,
       });
     } catch {
       /* never throw into the agent loop */
@@ -152,13 +161,6 @@ export default function (pi: ExtensionAPI) {
   });
 }
 
-function median(values: number[]): number | null {
-  if (!values.length) return null;
-  const sorted = [...values].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
-}
-
 function renderJson(turns: TurnRecord[]): string {
   return JSON.stringify({ turnCount: turns.length, turns }, null, 2);
 }
@@ -174,16 +176,13 @@ function renderReport(turns: TurnRecord[]): string {
   const cacheWrite = sum((t) => t.cacheWrite);
   const cost = sum((t) => t.costTotal);
 
-  const paired = turns.filter((t) => t.estToolTokens !== null);
-  const toolTokens = paired.reduce((acc, t) => acc + (t.estToolTokens ?? 0), 0);
-  const ratios = turns.map((t) => t.charsPerToken).filter((r): r is number => r !== null);
-  const medianRatio = median(ratios);
-  const spread = ratios.length > 1
-    ? `${Math.min(...ratios).toFixed(2)}–${Math.max(...ratios).toFixed(2)}`
-    : "n/a";
+  // G10: the honest quantity, computed directly instead of being laundered through a token estimate.
+  // This is what the old calculation always reduced to; naming it correctly is the whole fix.
+  const payloadChars = sum((t) => t.payloadChars);
+  const toolChars = sum((t) => t.toolChars);
+  const share = payloadChars > 0 ? (100 * toolChars) / payloadChars : 0;
 
   const lastTurn = turns[turns.length - 1];
-  const share = promptTokens > 0 ? (100 * toolTokens) / promptTokens : 0;
   const cacheRatio = cacheWrite > 0 ? `${(cacheRead / cacheWrite).toFixed(0)} : 1` : "no cache writes seen";
 
   const lines = [
@@ -195,13 +194,14 @@ function renderReport(turns: TurnRecord[]): string {
     `  output tokens        ${sum((t) => t.outputTokens).toLocaleString()}`,
     `  cost                 $${cost.toFixed(4)}`,
     ``,
-    `  TOOL DEFINITIONS     ~${Math.round(toolTokens).toLocaleString()} tokens (~${share.toFixed(1)}% of prompt tokens)`,
+    `  TOOL DEFINITIONS     ${share.toFixed(1)}% of request CHARACTERS (${toolChars.toLocaleString()} of ${payloadChars.toLocaleString()})`,
     `    tools sent          ${lastTurn.toolCount}${lastTurn.deferredCount ? ` (${lastTurn.deferredCount} deferred)` : ""}`,
     `    definition chars    ${lastTurn.toolChars.toLocaleString()} in the last request`,
     ``,
-    `  method: chars/token measured per turn from this provider's own counts.`,
-    `    median ${medianRatio ? medianRatio.toFixed(2) : "n/a"} chars/token, observed range ${spread} across ${ratios.length} turn(s).`,
-    `    Tool-token figures are derived, not provider-reported — treat the range as the error bar.`,
+    `  method: a CHARACTER share of the serialized request, not a token measurement.`,
+    `    Providers report totals only, so no per-block token count exists to divide up. Tokenization is`,
+    `    not uniform — JSON punctuation and schema keywords tokenize differently from prose — so treat`,
+    `    this as an indicator of scale, not a figure to do arithmetic on.`,
   ];
 
   if (share > 0 && share < 15) {

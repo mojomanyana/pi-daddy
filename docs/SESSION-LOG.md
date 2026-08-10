@@ -286,7 +286,7 @@ discipline and probe convention survive; the phase list does not.
    > verified as such across a 72× swing in token count. The sentence is left standing because this is a
    > dated record of what was believed, but **it must not be quoted as evidence**. It is load-bearing for
    > **ADR-0006**, whose unpark argument rests partly on it; that ADR carries the same note. Correcting the
-   > instrument is **G10**.
+   > instrument is **G10**, **done 2026-08-11**: the report now states a character share and says so.
 4. **The reframe (ADR-0007) — the most important event.** The user stated the actual goal: *"a large set of
    tools and sub agents… a top level orchestrating agent… that can give them some skills and tools but some
    not… narrow control of sub-agents… multilevel agent system."* Token cost was never the objective. The
