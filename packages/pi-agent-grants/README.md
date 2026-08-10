@@ -462,7 +462,7 @@ restoring the G7 `NaN` defect makes two of its tests fail.
 
 ## Status
 
-**0.5.0 — early, and honest about scope.** What exists and is verified against real pi: the resolver, the
+**0.6.0 — early, and honest about scope.** What exists and is verified against real pi: the resolver, the
 ledger, the spawn planner, the `tool_call` interceptor for `pi-subagents` spawns, the `delegate` tool for
 governed provisioning, and human approval for gated capabilities (once / session / always, inheritable down
 the tree, persisted for `always`; see *Approving a gated capability* above). That part is unit-tested,
@@ -489,6 +489,22 @@ Beyond ADR-0011, four groups of the review backlog
 Eight groups remain open, three of them needing decisions rather than patches — including that a child
 holding `bash` can run `env -u PI_GRANTS_GRANT pi …` and create a completely ungoverned descendant.
 **Read the backlog before relying on this package.**
+
+### 0.6.0 is a breaking change too
+
+Three, all from the ADRs accepted on 2026-08-10/11:
+
+- **`bash` is gated by default** in a governed session, and gating is closed under subsumption, so
+  `PI_GRANTS_GATED=tool:write` now also gates `bash` (**ADR-0012**). Set `PI_GRANTS_GATED=""` for the
+  old behaviour.
+- **Agent-type ceilings changed** to match what `pi-subagents` actually builds (**ADR-0013**). An absent
+  `tools:` key now means *every built-in* rather than the wildcard, a YAML block list is finally read,
+  and identity comes from the filename. Some spawns that were refused now succeed, and vice versa.
+- **`PI_GRANTS_APPROVED` carries `capability@subject` pairs** and `once` no longer crosses a boundary
+  (**ADR-0014**). A 0.5.x parent and a 0.6.x child do not understand each other's format.
+
+Also: `delegate` is now registered only when the session may delegate, which is what the docs always
+claimed; and persisted approvals moved out of the workspace, with any legacy file ignored and reported.
 
 ### 0.5.0 is a breaking change
 
