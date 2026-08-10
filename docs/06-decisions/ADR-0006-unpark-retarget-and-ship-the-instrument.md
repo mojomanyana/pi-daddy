@@ -65,7 +65,19 @@ selection layer anyway with gates waived.
 
 **Track B — ship the instrument (immediate).** Build and ship a pi package that answers "where did my
 tokens and money go?", including the one number pi does not expose: **prompt tokens attributable to tool
-definitions**. It rests on zero unvalidated assumptions — A-12 is VALIDATED end-to-end, since usage with
+definitions**.
+
+> **2026-08-10 — the shipped instrument does not compute that number.** Review finding A-C4 proved
+> algebraically that `pi-token-audit`'s tool-definition share is `toolChars / payloadChars`: `promptTokens`
+> cancels, so it is a **character ratio**, verified across a 72× swing in token count. The "72% of prompt
+> tokens" figure this decision cites as supporting evidence is therefore not a token measurement.
+>
+> **What this does and does not undermine.** The *decision* to unpark stands on its other leg — that the
+> G0 loss figure was computed on the fallback mounting path only, which is a separate and unaffected
+> argument — and on ADR-0007's reframe, which retired cost as the objective altogether. What is
+> undermined is the **magnitude claim**, and with it Track B's headline feature. Correcting it is group
+> **G10**: either relabel the output a character share and delete the calibration ceremony, or tokenize
+> the tool block properly. **A-14 remains deferred and is unaffected.** It rests on zero unvalidated assumptions — A-12 is VALIDATED end-to-end, since usage with
 `cacheRead`/`cacheWrite`/`cost` is persisted directly in session JSONL — and the scout confirmed a real
 gap: every framework prior art publishes patterns, none publishes numbers. Roughly 80% of it already
 exists as `docs/probes/baseline/session_stats.py`.

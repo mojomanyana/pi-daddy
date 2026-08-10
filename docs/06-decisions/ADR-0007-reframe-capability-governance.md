@@ -80,6 +80,11 @@ Working shape (to be specified, not assumed):
 - All pi substrate facts: mutable per-turn tools, event bus, extension seams, no MCP, session tree.
 - The **72%-of-prompt finding** supports the design as a side benefit: sub-agents run short sessions, the
   regime where narrow grants cut the most context.
+  > **FALSIFIED 2026-08-10 (review finding A-C4).** That figure is a **character ratio**
+  > (`toolChars / payloadChars`), not a share of prompt tokens — `promptTokens` cancels out of the
+  > calculation, confirmed across a 72× swing in token count. **This ADR does not depend on it**: the
+  > reframe rests on the user's stated goal, and the finding is listed here only as a side benefit. It is
+  > more load-bearing for **ADR-0006**. Recorded, not deleted, because the claim is dated.
 
 **Does not survive as a success criterion:**
 - **M1 net cost per task** as the headline metric, and **Q-HOW-2**'s cost target as a gate.

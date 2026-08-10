@@ -30,8 +30,14 @@ Orchestrator → provisioning) was always about. ADR-0007 records the reframe, i
 had written the desired feature down as a hazard.
 
 The economic findings survive as knowledge rather than as a verdict: the break-even inequality
-`S > 11.5·c·C`, the head-of-prefix cache asymmetry, and a measured fresh-session figure of **72% of prompt
-tokens spent on tool definitions** — high at session start, decaying as context grows.
+`S > 11.5·c·C` and the head-of-prefix cache asymmetry.
+
+> **A third finding did not survive.** A "measured fresh-session figure of 72% of prompt tokens spent on
+> tool definitions" was reported here until 2026-08-10. It is **not a token measurement**: `promptTokens`
+> cancels out of the calculation, leaving `toolChars / payloadChars` — a character ratio, confirmed as
+> such across a 72× swing in token count (review finding A-C4). It is recorded in `docs/SESSION-LOG.md`
+> and `ADR-0007` with the same note, and it is partly load-bearing for **ADR-0006**. Fixing the
+> instrument that produced it is group **G10** of the review backlog.
 
 ## What exists now
 

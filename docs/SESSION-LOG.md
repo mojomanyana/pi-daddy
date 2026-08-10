@@ -202,6 +202,12 @@ discipline and probe convention survive; the phase list does not.
 3. **Park reversed** (ADR-0006): the loss figure was computed on the *fallback* mounting path only. On
    native deferred loading (which pi routes to) the penalty collapses. Governing ratio is `S/(H+S)`, a curve
    over session length — a *fresh* session measured **72%** of prompt tokens on tool definitions.
+   > **FALSIFIED 2026-08-10 (review finding A-C4). The 72% is not a token measurement.** `promptTokens`
+   > cancels out of the calculation, so the figure is `toolChars / payloadChars` — a **character ratio**,
+   > verified as such across a 72× swing in token count. The sentence is left standing because this is a
+   > dated record of what was believed, but **it must not be quoted as evidence**. It is load-bearing for
+   > **ADR-0006**, whose unpark argument rests partly on it; that ADR carries the same note. Correcting the
+   > instrument is **G10**.
 4. **The reframe (ADR-0007) — the most important event.** The user stated the actual goal: *"a large set of
    tools and sub agents… a top level orchestrating agent… that can give them some skills and tools but some
    not… narrow control of sub-agents… multilevel agent system."* Token cost was never the objective. The

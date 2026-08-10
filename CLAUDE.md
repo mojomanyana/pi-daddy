@@ -37,14 +37,21 @@ docs/02-assumptions.md    — assumptions register (A-01..A-16) with validation 
 docs/03-risks.md          — risk register (R-01..R-26); note R-17 is INVERTED (the boundary is the feature)
 docs/04-landscape.md      — build-vs-leverage; TWO matrices — the first surveys the wrong shelf, see the note
 docs/05-metrics.md        — measurement plan; M1/M2 cost metrics retired by ADR-0007
-docs/06-decisions/        — nine ADRs, reversals kept: 0004→superseded, 0005 park→superseded, 0006 unpark,
-                            0007 THE REFRAME, 0008 attenuation invariant, 0009 pi-fabric (parked)
+docs/06-decisions/        — eleven ADRs, reversals kept: 0004→superseded, 0005 park→superseded, 0006 unpark
+                            (its magnitude claim falsified 2026-08-10), 0007 THE REFRAME, 0008 attenuation
+                            invariant, 0009 pi-fabric (parked), 0010 approval semantics, 0011 universal
+                            capabilities on both spawn paths
 docs/specs/               — capability-governance design (supersedes the blueprint's four artifacts)
 docs/ROADMAP.md           — OBSOLETE phase plan, retained as a record
 docs/gate-reports/        — /gate verdicts + the baseline report; the G0 report records both waivers
-docs/probes/              — measurement probes: baseline/ (session history), pi-fabric-eval/ (11 probes)
-packages/pi-agent-grants  — THE PRODUCT (0.3.0): resolver, ledger, interceptor, delegate tool, catalog
-packages/pi-token-audit   — token/cost audit incl. the tool-definition share pi does not expose (0.1.0)
+docs/reviews/             — TWO independent whole-codebase reviews + their cross-referenced aggregate.
+                            THE AUTHORITATIVE BACKLOG: 12 groups, 5 closed. Read before planning work.
+docs/probes/              — measurement probes: baseline/ (session history), pi-fabric-eval/ (11 probes),
+                            approval-ux/, adr-0011-universal/, g1-argv/ (all live against real pi)
+packages/pi-agent-grants  — THE PRODUCT (0.5.0): resolver, ledger, interceptor, delegate tool, catalog,
+                            human approval for gated capabilities, bounded child processes
+packages/pi-token-audit   — token/cost audit (0.1.0). ITS HEADLINE NUMBER IS WRONG: the "tool-definition
+                            share" is a character ratio, not a token share (falsified 2026-08-10, G10)
 ```
 
 ## How To Work Here
@@ -73,10 +80,16 @@ Subagents: `product-strategist`, `architecture-critic`, `research-scout`.
 ## Start Here
 
 **`docs/SESSION-LOG.md`** — it carries current state, the measured facts not to re-litigate, the open
-decisions, and the ranked next actions. Then `ADR-0007` (the reframe) → `ADR-0008` (the invariant) →
-`packages/pi-agent-grants/README.md`.
+decisions, and the ranked next actions. Then **`docs/reviews/2026-08-10-aggregated-findings.md`**, which is
+the **authoritative work backlog** — twelve groups from two independent reviews, five closed. Then
+`ADR-0007` (the reframe) → `ADR-0008` (the invariant) → `packages/pi-agent-grants/README.md`.
 
 Do **not** start from the BASELINE questions or the ROADMAP phase list — both belong to the retired thesis.
+
+**Do not plan work without reading the review backlog.** It is easy to miss: it was committed to `main`
+while feature work happened on a branch, so a worktree can legitimately not contain it. Several of its open
+findings mean the guarantee this package advertises does not currently hold — most sharply, a child holding
+`bash` can run `env -u PI_GRANTS_GRANT pi …` and create a completely **ungoverned** descendant.
 
 **Facts established by measurement; re-deriving them wastes a session:** pi's default tool surface is only
 `read, bash, edit, write` · pi's `--tools`/`--no-tools` hard-enforce even against `-e`-loaded extension

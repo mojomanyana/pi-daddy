@@ -1,8 +1,14 @@
 # Getting Started — pi-daddy (WSL)
 
-This is a standalone, self-contained project workspace for the **Dynamic Tool & Context
-Management** system from your architecture handoff. It is documentation + Claude Code
-configuration only — zero implementation code, by design (that's Phase D2, behind two gates).
+This is a standalone, self-contained project workspace for **pi-daddy** — capability governance for pi's
+multi-level agent system, from your architecture handoff.
+
+> **This page described the project as it started, and is out of date in one important way.** It said
+> "documentation + Claude Code configuration only — zero implementation code, by design". **Production code
+> now exists**: `packages/pi-agent-grants` (0.5.0) and `packages/pi-token-audit` (0.1.0), shipped under
+> scoped gate waivers recorded in `docs/gate-reports/G0-2026-08-09.md`. The phase plan those gates belonged
+> to is obsolete (`docs/ROADMAP.md`). Start from `docs/SESSION-LOG.md` and
+> `docs/reviews/2026-08-10-aggregated-findings.md` instead of from this file.
 
 It assumes nothing about any other repo. Drop it into any folder, rename the folder freely.
 
@@ -30,29 +36,37 @@ docs/
 
 ## Set up in WSL, step by step
 
+> **Historical.** This describes the original bootstrap from a zip, when the project was documents
+> only. The workspace is a git repository now (baseline commit `d8e4c47`), so there is nothing to
+> unzip and nothing to `git init`. The folder name it used, `dtcm`, is the retired thesis name.
+
 ```bash
-# 1. Open your WSL terminal and create the project folder (rename as you like)
-mkdir -p ~/projects/dtcm && cd ~/projects/dtcm
+# 1. Get the workspace (it is already a repo; no remote is configured yet)
+cd ~/projects/pi-daddy
 
-# 2. Get the kit in — Windows Downloads is reachable from WSL at /mnt/c
-unzip /mnt/c/Users/alava/Downloads/dtcm-kit.zip -d .
+# 2. Run the test suite to confirm the toolchain works
+cd packages/pi-agent-grants && npm test && cd -
 
-# 3. Make it a repo so every discovery answer and decision has history
-git init -b main
-git add -A
-git commit -m "pi-daddy: discovery kickoff kit (docs + Claude Code workflow, no code)"
-
-# 4. Launch Claude Code at the project root
+# 3. Launch Claude Code at the project root
 claude
 
-# 5. Inside Claude Code — start discovery
-/kickoff
+# 4. Inside Claude Code — read the state, then the backlog
+#    (NOT /kickoff: discovery finished, and the phase plan it belongs to is obsolete)
 ```
 
+Then read `docs/SESSION-LOG.md`, followed by `docs/reviews/2026-08-10-aggregated-findings.md` — the
+authoritative backlog of what is still wrong.
+
 If `claude` isn't installed in WSL yet, install it first (see Anthropic's Claude Code install
-docs for the current command), then repeat step 4.
+docs for the current command), then repeat step 3.
 
 ## Your first session, step by step
+
+> **Historical — this whole section belongs to the retired thesis.** Discovery is finished, its BASELINE
+> questions were answered, `/gate` passed G0 with two scoped waivers, and `docs/ROADMAP.md`'s phase list is
+> obsolete. `/kickoff` and `/validate` still work, but they will interview you about a programme that was
+> abandoned in **ADR-0007**. For current work, go to `docs/SESSION-LOG.md` and the review backlog. The
+> steps below are kept as a record of how the project was meant to start.
 
 1. `/kickoff` — Claude reads the project state, shows a status snapshot, then interviews you
    starting with the ★★★ questions. Expect it to open with the BASELINE block — Q-BASE-1 (which
@@ -70,6 +84,10 @@ docs for the current command), then repeat step 4.
    which land in `docs/specs/`. A GO on G1 unlocks actual implementation (Phase D2).
 
 ## Ground rules the kit enforces
+
+> **The first rule below has been consciously waived twice**, for `pi-agent-grants` and
+> `pi-token-audit`, both recorded in `docs/gate-reports/G0-2026-08-09.md`. The rest still hold, and the
+> documentation discipline in particular is what makes this workspace navigable.
 
 No production code before gate G1 — probes only, in `docs/probes/`. Every decision becomes an
 ADR; every load-bearing claim gets an assumption ID; every answer is recorded in the docs.
