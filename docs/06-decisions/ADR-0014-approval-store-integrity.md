@@ -1,7 +1,8 @@
 # ADR-0014: The persisted-approval file is forgeable by the agent it gates
 
 **Date:** 2026-08-10
-**Status:** **Proposed — needs a decision.** The store's location must be settled before any code.
+**Status:** **Accepted 2026-08-10 — Option 1 (relocate the trust root) + the scope/subject/durability
+fixes.** Implementation pending.
 **Driver:** Review group **G3** (findings A-C3/B-C1, B-C6, A-S1, A-S6, A-R2, B-I6). Directly undermines
 **ADR-0010**'s approval semantics and the compensating control **R-27** records.
 
@@ -92,21 +93,36 @@ Fix A-S1, B-C6 and A-S6 (thread `scope` through propagation so `once` never cros
   ledger keeps recording `approvalSource: "persisted"` as though it were.
 - **Forecloses:** nothing.
 
-## Recommendation
+## Decision
 
-**Option 1 for the trust root, plus the scope/subject/durability fixes from Option 4** — and treat Option 3
-as the honest fallback if Option 1 proves awkward.
+**Option 1 (relocate the trust root) plus the scope, subject and durability fixes.** Taken 2026-08-10.
 
-The scope, subject and durability fixes should happen under every option: they are unambiguous defects,
-none of them needs a decision, and each inverts the meaning of something a human explicitly chose.
+1. **The approvals store moves out of agent-writable space**, to `~/.pi/agent/`, keyed by project path.
+   This closes forgery for any agent that lacks write access to the user's home directory — the realistic
+   case, since the whole point of a grant is that the child is narrowed and a narrowed child does not
+   receive it. Existing workspace files need a migration path.
+2. **Scope and subject are threaded through propagation.** `PI_GRANTS_APPROVED` carries
+   `capability@subject` pairs together with the scope, so a `once` approval **never crosses a spawn or
+   process boundary**, and a `<delegate>`-subject approval can no longer satisfy a different subject. This
+   is a **breaking change to the propagation format** between versions.
+3. **Durability:** atomic replace, no symlink following, and a corrupt file must not cause the next
+   legitimate write to delete valid entries.
 
-For the trust root, Option 1 buys the most per unit of complexity. Option 2 does not stand alone — its key
-needs exactly the safe location Option 1 provides, so it is an addition to Option 1, not an alternative.
+**Signing (Option 2) was rejected as an alternative and noted as an addition.** Its key needs exactly the
+safe location Option 1 provides, so it is Option 1 plus cryptography rather than a competing choice.
+**Dropping `always` (Option 3) was rejected** because repeated prompting is itself what drives reflexive
+approval, which is how gates stop working — trading a security property for an ergonomic one that has its
+own security cost.
 
-**A caveat that should shape how much is spent here.** Under **ADR-0012** a child holding `bash` can
-already start an ungoverned pi, which makes approval integrity moot for that child. **Do not spend heavily
-on Option 2 while ADR-0012 is open** — the weaker link is elsewhere, and hardening this one first would
-buy confidence rather than security.
+### Proportionality, stated so the effort matches the threat
+
+Under **ADR-0012** — accepted the same day — a child holding `bash` can start a completely ungoverned pi.
+**Hardening this store against an agent that already has a shell buys confidence, not security.** Option 1
+is worth it because it is small and closes the *self-defeating* case (an agent gated on `write` writing its
+own approval). Going further here, before the `bash` question changes, would be misallocated effort.
+
+The scope, subject and durability fixes are worth doing under any option: they are unambiguous defects, and
+each one inverts the meaning of something a human explicitly chose.
 
 ## Consequences
 
