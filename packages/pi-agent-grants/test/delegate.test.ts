@@ -96,7 +96,9 @@ test("the prompt stays last in argv even when the extension is injected", () => 
     { task: "THE-TASK", tools: ["read", "delegate"] },
     ctx({ ownGrant: ["tool:read", DELEGATE_CAPABILITY], extensionPath: "/x/g.ts" }),
   );
-  assert.equal(d.args[d.args.length - 1], "THE-TASK");
+  // Positional, not byte-identical: `planSpawn` neutralises the argv position the task occupies, so the
+  // element ends with the task rather than equalling it. See test/spawn-argv.test.ts (G1).
+  assert.ok(d.args[d.args.length - 1].endsWith("THE-TASK"));
 });
 
 test("a universal capability cannot be provisioned even if somehow held", () => {

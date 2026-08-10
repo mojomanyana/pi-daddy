@@ -52,6 +52,37 @@ export function planSpawn(input: SpawnPlanInput): SpawnPlan {
   if (allowlist) args.push("--tools", allowlist.join(","));
   else args.push("--no-tools");
 
-  args.push(input.prompt);
+  args.push(neutralisePrompt(input.prompt));
   return { args, allowlist };
+}
+
+/**
+ * Make a model-controlled task unparseable by pi's CLI.
+ *
+ * pi's usage is `pi [options] [@files...] [messages...]`, and both of the non-message forms are reached
+ * by the FIRST CHARACTER of an argv element:
+ *
+ *  - `@…` is resolved as a file and its contents injected into the child's prompt — absolute paths, `~`
+ *    expansion, no sandbox. This happens in `main.js` before any tool is constructed, so `--tools` and
+ *    `--no-tools` never apply to it. A child granted nothing at all still reads the file. Verified
+ *    against pi 0.83.0 (review finding A-C1 / B-C7, and `docs/probes/g1-argv`).
+ *  - `-…` is parsed as a flag, and pi ships `--approve` ("trust project-local files for this run").
+ *
+ * The task comes from the model, so this is the one place in the package where a model-authored string
+ * would otherwise reach a parser that outranks the enforcement point. A single leading space removes it
+ * from both branches: pi does not trim before dispatching on the prefix (measured), and a leading space
+ * is semantically nil inside a prompt.
+ *
+ * **It is applied unconditionally, and that is the point.** Rewriting only arguments that start with
+ * `@` or `-` would encode pi 0.83.0's current parser into this package and silently re-open the hole
+ * the moment pi — or an extension registering its own flags — adds a third prefix. The guarantee here is
+ * positional rather than pattern-based: the first character of that argv element is never the task's.
+ *
+ * Deliberately NOT a refusal. The review also suggested rejecting `@`/`-` tasks in `planDelegation` so
+ * they land in the ledger. Neutralising costs no false refusals and needs no judgement about which
+ * prompts are legitimate, so it is the whole fix; recording an attempt is an audit question (G6), not a
+ * security one, and is left to that group.
+ */
+function neutralisePrompt(prompt: string): string {
+  return ` ${prompt}`;
 }
