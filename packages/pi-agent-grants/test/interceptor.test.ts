@@ -195,3 +195,27 @@ test("ADR-0011: an ordinary type is unaffected", () => {
   );
   assert.equal(d.allow, true, d.reason);
 });
+
+// Found independently by two reviews (A-S2 / B-C5). The wildcard branch returned `allow`
+// before the gated check ever ran, so an operator who set PI_GRANTS_GATED without also
+// setting PI_GRANTS_GRANT got a gate that silently did nothing. Fixed with ADR-0011
+// because it is the same early return.
+test("a wildcard holder still cannot skip a configured gate", () => {
+  const d = decideSpawn(
+    { subagentType: "review" },
+    { parentGrant: [WILDCARD], depth: 0, maxDepth: 2, types: types(REVIEW), gated: ["tool:bash"] },
+  );
+  assert.equal(d.allow, false, "holding tool:* is authority to grant, not authority to skip a gate");
+  assert.match(d.reason ?? "", /approval/i);
+});
+
+test("a wildcard holder proceeds once the gated capability is approved", () => {
+  const d = decideSpawn(
+    { subagentType: "review" },
+    {
+      parentGrant: [WILDCARD], depth: 0, maxDepth: 2, types: types(REVIEW),
+      gated: ["tool:bash"], approved: ["tool:bash"],
+    },
+  );
+  assert.equal(d.allow, true, d.reason);
+});
