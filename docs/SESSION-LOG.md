@@ -166,12 +166,35 @@ findings reached separately by both** — is the authoritative backlog now, and 
 work happened on a branch, so it is easy to miss. **Read it before planning anything.** Merging ADR-0011
 completed exactly one of its twelve groups (**G4**). Its own recommended order stands, with G4 struck:
 
-1. ~~**G4**, **G1**, **G6**, **G7**, **G8**, **G12**, **G11**~~ — **DONE**. Seven of twelve.
-2. **Decide ADR-0012, ADR-0013, ADR-0014** — written up and waiting. Nothing else should be built on this
-   layer until 0012 and 0013 are settled: both change what the package is allowed to claim, and 0014's
-   scope depends on 0012's answer.
-3. **G9, G10** — packaging (`.ts` exports do not work under `node_modules`; no `LICENSE`) and correcting
-   the `pi-token-audit` instrument whose headline number G12 just annotated as wrong.
+**ALL TWELVE REVIEW GROUPS are now closed, or taken as far as they can go locally**, and ADR-0012, 0013
+and 0014 are decided *and* implemented. The last two finished 2026-08-11:
+
+- **G9 — the package was not installable.** `exports` pointed at `./src/*.ts`, and Node refuses to strip
+  types under `node_modules`, so **every consumer import threw** while every in-repo test passed —
+  verified by packing and installing the tarball. Now built to `dist/` with declarations, thirteen modules
+  exported (three had been unreachable), `pi.extensions` declared on both packages, peer/dev deps
+  declared, **tsconfigs committed** (the check config had lived in a session scratchpad, which is how four
+  type errors in tests went unnoticed), `LICENSE` in both packages and at the root, a root workspace
+  manifest, and `npm run test:smoke` — which packs, installs into a scratch project and *uses* the result.
+  **The extension half was never broken**: pi's own loader reads TypeScript from `node_modules` fine.
+- **G10 — the instrument's headline was arithmetic theatre.** `promptTokens` cancels out of
+  `estToolTokens / promptTokens`, so the "tool-definition token share" was always
+  `toolChars / payloadChars`. It now reports a **character share** and explains why no token figure
+  exists. Relabelled rather than tokenized properly, deliberately: ADR-0007 retired the thesis a
+  tokenizer would serve.
+
+### What is left, and none of it is code
+
+1. **File the upstream proposal** (`docs/proposals/pi-subagents-tools-parameter.md`) — the user's call and
+   the user's name. Until it lands the interceptor can refuse but never provision, which is measured
+   rather than assumed (`docs/probes/g13-subagents-coupling`).
+2. **Finding 6 has no local fix.** `subagents:rpc:spawn` reaches `manager.spawn()` over the event bus with
+   no `tool_call`, so any other loaded extension can spawn an ungoverned sub-agent. Adding names to
+   `SPAWN_TOOLS` cannot catch it — there is no tool call to catch.
+3. **`pi-token-audit` still has no tests**, and is verified against one provider. G11 closed the
+   `extensions/grants.ts` half of that coverage gap, not this one.
+4. **Deferred by decision:** `A-14` (are deferred tool definitions billed as prompt tokens?) matters only
+   if the cost thesis is revived, which ADR-0007 retired.
 
 **A load-bearing "verified fact" in this file is falsified.** The 72% tool-definition share recorded in the
 2026-08-09 entry — under *"Verified facts, don't re-litigate"*, and feeding **ADR-0006** — was proved
