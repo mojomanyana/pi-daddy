@@ -112,13 +112,18 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
       reason: `cannot grant ${result.denied.join(", ")} — this session does not hold it (capability escalation blocked)`,
     };
   }
-  if (result.gatedBlocked.length > 0) {
-    return { ...empty, result, reason: `${result.gatedBlocked.join(", ")} requires explicit approval` };
-  }
+  // ADR-0011: narrowing is checked BEFORE the gate, and the order is load-bearing rather than
+  // stylistic. `assertNarrowing` refuses regardless of approval, so with the old order this returned
+  // "requires explicit approval" for a delegation that could never be approved — telling the operator
+  // to go and find a human who cannot help. `shouldSeekApproval` now also refuses to prompt in this
+  // case; this reordering makes the reported *reason* agree with what actually blocks the spawn.
   try {
     assertNarrowing(result);
   } catch (error) {
     return { ...empty, result, reason: String(error instanceof Error ? error.message : error) };
+  }
+  if (result.gatedBlocked.length > 0) {
+    return { ...empty, result, reason: `${result.gatedBlocked.join(", ")} requires explicit approval` };
   }
 
   const canSubDelegate = result.effective.includes(DELEGATE_CAPABILITY);

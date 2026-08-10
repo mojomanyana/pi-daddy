@@ -67,6 +67,11 @@ export function approvalKey(capability: Capability, subject: string): string {
 export function shouldSeekApproval(result: ResolveResult | undefined): boolean {
   if (!result) return false;
   if (result.denied.length > 0) return false;
+  // ADR-0011. A grant retaining a universal capability is refused by `assertNarrowing` no matter what
+  // a human says, so asking is worse than useless: the dialog cannot change the outcome, and a
+  // `session`- or `always`-scoped yes given there is banked and reused for later spawns that DO
+  // proceed. Same harm the `denied` guard above exists to prevent.
+  if (result.universal.length > 0) return false;
   return result.gatedBlocked.length > 0;
 }
 

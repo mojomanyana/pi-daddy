@@ -1,6 +1,6 @@
 {
   "name": "pi-agent-grants",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Capability governance for pi sub-agents: grants that can only narrow going down a delegation tree, enforced by pi's own --tools allowlist, with an append-only grant ledger.",
   "keywords": [
     "pi-package",

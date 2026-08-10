@@ -80,14 +80,46 @@ export function decideSpawn(request: SpawnRequest, ctx: DecisionContext): Decisi
   // ceiling, so we must not assume it is narrow.
   const requested = type ? ceilingFor(type) : [WILDCARD];
 
-  // The delegator holding the wildcard may hand out anything, including a wildcard ceiling.
+  // The delegator holding the wildcard may hand out anything it holds — but "anything it holds" is
+  // not the same as "anything at all", and this branch used to return `allow` before either of the
+  // two checks below had run.
+  //
+  // ADR-0011. The old code filtered universal capabilities out of `effective` here and allowed the
+  // spawn. That filtering was cosmetic: `effective` is a RECORD on this path, not a provisioning
+  // instruction — `pi-subagents`' Agent tool has no `tools` parameter, so the child received the
+  // capability regardless and only the ledger entry changed. A line that looks like enforcement but
+  // edits an audit record is worse than no line, so it is gone.
   if (holdsWildcard(ctx.parentGrant)) {
-    const effective = requested.filter((c) => !UNIVERSAL_CAPABILITIES.includes(c));
+    const universal = requested.filter((c) => UNIVERSAL_CAPABILITIES.includes(c));
+    if (universal.length > 0) {
+      return {
+        ...base,
+        requested,
+        allow: false,
+        reason:
+          `agent type "${typeName}" declares ${universal.join(", ")}, which transitively confers the whole ` +
+          `catalog — the spawn would not narrow anything, so holding ${WILDCARD} does not authorise it`,
+      };
+    }
+
+    // A gate is the operator's, not the delegator's. Holding the wildcard is authority to GRANT
+    // widely; it was never authority to skip a human. Found independently by two reviews.
+    const approvedHere = new Set(ctx.approved ?? []);
+    const gatedHere = (ctx.gated ?? []).filter((c) => requested.includes(c) && !approvedHere.has(c));
+    if (gatedHere.length > 0) {
+      return {
+        ...base,
+        requested,
+        allow: false,
+        reason: `agent type "${typeName}" requires approval for ${gatedHere.join(", ")}`,
+      };
+    }
+
     return {
       ...base,
       allow: true,
       requested,
-      effective,
+      effective: requested,
       reason: type ? undefined : `unknown agent type "${typeName}" — allowed only because the delegator holds ${WILDCARD}`,
     };
   }
@@ -120,6 +152,21 @@ export function decideSpawn(request: SpawnRequest, ctx: DecisionContext): Decisi
       reason:
         `agent type "${typeName}" requires ${result.denied.join(", ")}, which this session does not hold ` +
         `(capability escalation blocked)`,
+    };
+  }
+  // ADR-0011: checked BEFORE `gatedBlocked`, deliberately. A spawn retaining a universal capability
+  // can never proceed, with or without a human's approval — so reporting "requires approval" would
+  // send the operator to a dialog that cannot help, and a yes given there would be banked against a
+  // spawn that was always going to be refused.
+  if (result.universal.length > 0) {
+    return {
+      ...base,
+      requested,
+      result,
+      allow: false,
+      reason:
+        `agent type "${typeName}" would retain ${result.universal.join(", ")}, which transitively confers ` +
+        `the whole catalog — the grant would not narrow anything`,
     };
   }
   if (result.gatedBlocked.length > 0) {

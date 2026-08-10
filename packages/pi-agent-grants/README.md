@@ -41,6 +41,21 @@ granted `tools: []` (nothing at all) plus `recursive: true` still spawned a gran
 `assertNarrowing()` therefore **throws** if a supposedly narrow grant contains one. A narrow grant with
 `fabric_exec` in it is full authority wearing a narrow grant's clothing.
 
+**Since 0.5.0 (ADR-0011), every path refuses one — including the interceptor.** Before that, the concept
+was handled three different ways: `delegate` refused, while the interceptor either silently stripped the
+capability from the ledger entry (wildcard delegator) or silently passed it through (enumerated grant).
+The stripping was cosmetic and is gone: `effective` is a **record** on the interceptor path, not a
+provisioning instruction, so filtering it changed the audit entry while the child still received
+`fabric_exec`. A line that looks like enforcement but only edits an audit record is worse than no line.
+
+A related consequence: no approval dialog is raised for a spawn that retains a universal capability.
+`assertNarrowing` refuses it whatever the human says, so asking was worse than useless — a `session`- or
+`always`-scoped *yes* given there was banked and reused for later spawns that **did** proceed.
+
+For v1 a delegator that legitimately holds `fabric_exec` and knowingly wants a child to have it **cannot**
+spawn that child. `assertNarrowing`'s `allowUniversal` flag exists but is deliberately not plumbed through
+`decideSpawn`; the first real need for that override is the evidence it should be added.
+
 ## Use
 
 ```ts
@@ -218,6 +233,24 @@ and blocks it otherwise; it cannot hand a child a narrower set than its type dec
 security property — a spawn exceeding the delegator's grant never happens — and adding a `tools` parameter
 upstream is what would turn enforcement into provisioning.
 
+Because refusal is the only lever this path has, two cases that used to be allowed now block outright
+(both new in 0.5.0, ADR-0011):
+
+- **The agent type declares a universal capability.** Refused, whether the delegator holds an enumerated
+  grant or `tool:*`. The interceptor cannot hand the child a narrower set, so allowing the spawn means
+  handing over the whole catalog.
+- **The agent type requires approval for a gated capability and the delegator holds `tool:*`.** The
+  wildcard branch used to return before the gated check ran, so an operator who set `PI_GRANTS_GATED`
+  without `PI_GRANTS_GRANT` got a gate that silently did nothing. **A gate is the operator's, not the
+  delegator's**: holding the wildcard is authority to grant widely, never authority to skip a human.
+
+  **Known rough edge, verified live** (`docs/probes/adr-0011-universal`, Finding 1): on the wildcard path
+  this is a *hard refusal*, not a prompt. The message says "requires approval" but no dialog is offered,
+  because that branch returns before a `ResolveResult` exists for the approval flow to act on. It fails
+  closed and is safer than the silent pass-through it replaced, but there is no way to give the approval
+  it names — grant an enumerated `PI_GRANTS_GRANT` instead of `tool:*` if you want the dialog. Awaiting a
+  decision; see the probe.
+
 ### Propagation is race-free by construction
 
 An earlier version wrote each child's computed grant into `process.env` inside the `tool_call` handler.
@@ -306,13 +339,25 @@ and the measured `fabric_exec` escalation.
 
 ## Status
 
-**0.4.0 — early, and honest about scope.** What exists and is verified against real pi: the resolver, the
+**0.5.0 — early, and honest about scope.** What exists and is verified against real pi: the resolver, the
 ledger, the spawn planner, the `tool_call` interceptor for `pi-subagents` spawns, the `delegate` tool for
-governed provisioning, and — new in 0.4.0 — human approval for gated capabilities (once / session / always,
-inheritable down the tree, persisted for `always`; see *Approving a gated capability* above). That part is
-unit-tested, typechecked, and now verified live against real pi (see below). What does not exist yet: background/streaming delegation (`delegate` runs to
-completion and returns the child's output). Known gap in the interceptor path: it can only enforce, not
-provision, until `pi-subagents`' `Agent` tool gains a `tools` parameter.
+governed provisioning, and human approval for gated capabilities (once / session / always, inheritable down
+the tree, persisted for `always`; see *Approving a gated capability* above). That part is unit-tested,
+typechecked, and verified live against real pi (see below). What does not exist yet: background/streaming
+delegation (`delegate` runs to completion and returns the child's output). Known gap in the interceptor
+path: it can only enforce, not provision, until `pi-subagents`' `Agent` tool gains a `tools` parameter.
+
+### 0.5.0 is a breaking change
+
+Spawns that succeeded in 0.4.0 now fail. Both cases are listed under *Enforce, not provision* above: an
+agent type declaring a universal capability is refused on **both** spawn paths, and a wildcard-holding
+delegator no longer bypasses a configured gate. **That reliance was never sound** — the guarantee this
+package sells is that a sub-agent cannot receive more than a narrow grant, and each of those spawns handed
+it either the entire catalog or a capability an operator had explicitly gated. The rationale, the options
+weighed, and the revisit triggers are in `docs/06-decisions/ADR-0011-universal-capabilities-across-both-spawn-paths.md`.
+
+If a spawn starts failing after upgrading, the ledger names the capability and the reason; there is
+deliberately no override flag yet.
 
 Live verification of the approval feature has been done — `docs/probes/approval-ux` — and on its first run
 **seven of eight scenarios behaved as specified**. The eighth found a real defect (an approval inherited down
