@@ -1,7 +1,15 @@
 # ADR-0011: Universal capabilities are treated three different ways across the two spawn paths
 
 **Date:** 2026-08-10
-**Status:** Accepted — Option 3, 2026-08-10. Not yet implemented.
+**Status:** Accepted — Option 3, 2026-08-10. **Implemented 2026-08-10** (`e8b0fef`), 155 tests passing.
+
+**One thing was implemented beyond the decision as written, and deliberately.** The wildcard branch of
+`decideSpawn` returned `allow` *before* the gated check ran, so an operator who set `PI_GRANTS_GATED`
+without `PI_GRANTS_GRANT` got a gate that silently did nothing. Two independent reviews found this
+separately (`docs/reviews/2026-08-10-aggregated-findings.md`, A-S2 / B-C5). It is fixed here because it
+lives in the same early return this ADR restructures, and because leaving it would have made the decision
+incoherent — removing the cosmetic stripping without touching the early return would have left that branch
+allowing spawns *with* universal capabilities, the opposite of what was decided.
 **Driver:** Residual R3 from the final whole-branch review of the gated-capability-approval feature
 (`.superpowers/sdd/2026-08-09-gated-capability-approval/progress.md`). Extends **ADR-0008** (monotonic
 attenuation) and interacts with **ADR-0010** (approval semantics). Touches risk **R-25**.
