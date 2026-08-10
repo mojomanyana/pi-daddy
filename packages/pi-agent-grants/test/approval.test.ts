@@ -71,7 +71,9 @@ test("decideSpawn's mixed gated+denied refusal reaches the predicate as a no", (
   ]);
   const decision = decideSpawn(
     { subagentType: "mixed" },
-    { parentGrant: ["tool:write"], depth: 0, maxDepth: 2, types, gated: ["tool:write"] },
+    // ADR-0013: an explicit (empty) extension surface — omitting it means "unknown", which
+    // correctly resolves to the wildcard and would test a different branch than intended.
+    { parentGrant: ["tool:write"], depth: 0, maxDepth: 2, types, gated: ["tool:write"], extensionTools: [] },
   );
   assert.equal(decision.allow, false);
   assert.deepEqual(decision.result?.denied, ["tool:bash"]);

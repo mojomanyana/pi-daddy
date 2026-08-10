@@ -1,16 +1,19 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ceilingFor, parseAgentType, WILDCARD } from "../src/agent-types.ts";
+import { ceilingFor, parseAgentType, PI_BUILTIN_TOOLS, WILDCARD } from "../src/agent-types.ts";
 import { decideSpawn } from "../src/interceptor.ts";
 import type { AgentType } from "../src/agent-types.ts";
 
-const typeFrom = (text: string): AgentType => {
-  const t = parseAgentType("mem://t.md", text);
+// ADR-0013: identity comes from the FILENAME, as `pi-subagents` does — so fixtures must supply one.
+const typeFrom = (text: string, file = "t"): AgentType => {
+  const t = parseAgentType(`mem://${file}.md`, text);
   assert.ok(t, "frontmatter should parse");
   return t;
 };
 
 const types = (...list: AgentType[]) => new Map(list.map((t) => [t.name, t]));
+/** ADR-0013: a session with no extension tools. Omitting this yields the wildcard, by design. */
+const NO_EXT = { extensionTools: [] as string[] };
 
 // Frontmatter shapes taken verbatim from real ~/.pi/agent/agents/*.md files.
 const PLAN = typeFrom(`---
@@ -19,20 +22,20 @@ description: >
   multi-line block scalar that must not be mis-parsed
 tools: read, grep, find, ls
 ---
-body`);
+body`, "plan");
 
 const REVIEW = typeFrom(`---
 name: review
 tools: read, grep, find, ls, bash
 ---
-body`);
+body`, "review");
 
 const DEBUG = typeFrom(`---
 name: debug
 description: >
   no tools: key at all — pi hands this type the full default toolset
 ---
-body`);
+body`, "debug");
 
 test("frontmatter: tools list parsed, block scalar skipped", () => {
   assert.equal(PLAN.name, "plan");
@@ -40,26 +43,31 @@ test("frontmatter: tools list parsed, block scalar skipped", () => {
   assert.equal(PLAN.disallowedTools, undefined);
 });
 
-test("frontmatter: absent tools: key is the dangerous case and maps to wildcard", () => {
+test("frontmatter: an absent tools: key means every built-in (ADR-0013)", () => {
+  // Was `[WILDCARD]`. `csvList(undefined, BUILTIN_TOOL_NAMES)` returns its defaults, so the child gets
+  // the built-ins — an enumerable set a sufficiently-granted delegator CAN cover. Calling it the
+  // wildcard refused spawns that would only ever have received those same tools.
   assert.equal(DEBUG.tools, undefined);
-  assert.deepEqual(ceilingFor(DEBUG), [WILDCARD]);
+  assert.deepEqual(ceilingFor(DEBUG, NO_EXT), PI_BUILTIN_TOOLS.map((t) => `tool:${t}`).sort());
 });
 
 test("ceiling: explicit list, wildcard forms, and none", () => {
-  assert.deepEqual(ceilingFor(PLAN), ["tool:find", "tool:grep", "tool:ls", "tool:read"]);
-  assert.deepEqual(ceilingFor(typeFrom("---\nname: a\ntools: \"*\"\n---\n")), [WILDCARD]);
-  assert.deepEqual(ceilingFor(typeFrom("---\nname: a\ntools: all\n---\n")), [WILDCARD]);
-  assert.deepEqual(ceilingFor(typeFrom("---\nname: a\ntools: none\n---\n")), []);
+  assert.deepEqual(ceilingFor(PLAN, NO_EXT), ["tool:find", "tool:grep", "tool:ls", "tool:read"]);
+  // `*` and `all` expand to the built-in set rather than to the wildcard token, matching parseToolsField.
+  const allBuiltins = PI_BUILTIN_TOOLS.map((t) => `tool:${t}`).sort();
+  assert.deepEqual(ceilingFor(typeFrom("---\nname: a\ntools: \"*\"\n---\n"), NO_EXT), allBuiltins);
+  assert.deepEqual(ceilingFor(typeFrom("---\nname: a\ntools: all\n---\n"), NO_EXT), allBuiltins);
+  assert.deepEqual(ceilingFor(typeFrom("---\nname: a\ntools: none\n---\n"), NO_EXT), []);
 });
 
 test("ceiling: disallowed_tools subtracts, deny wins", () => {
   const t = typeFrom("---\nname: a\ntools: read, bash\ndisallowed_tools: bash\n---\n");
-  assert.deepEqual(ceilingFor(t), ["tool:read"]);
+  assert.deepEqual(ceilingFor(t, NO_EXT), ["tool:read"]);
 });
 
 test("ceiling: ext: selectors are preserved", () => {
   const t = typeFrom("---\nname: a\ntools: read, ext:pi-web-access/web_search\n---\n");
-  assert.deepEqual(ceilingFor(t), ["ext:pi-web-access/web_search", "tool:read"]);
+  assert.deepEqual(ceilingFor(t, NO_EXT), ["ext:pi-web-access/web_search", "tool:read"]);
 });
 
 // ---- the real scenario, using the user's own agent types --------------------------------------
@@ -68,7 +76,7 @@ const PLAN_GRANT = ["tool:read", "tool:grep", "tool:find", "tool:ls"];
 
 test("a plan-level session MAY spawn plan (equal ceiling)", () => {
   const d = decideSpawn({ subagentType: "plan" }, {
-    parentGrant: PLAN_GRANT, depth: 0, maxDepth: 2, types: types(PLAN, REVIEW, DEBUG),
+    parentGrant: PLAN_GRANT, depth: 0, maxDepth: 2, extensionTools: [], types: types(PLAN, REVIEW, DEBUG),
   });
   assert.equal(d.allow, true);
   assert.deepEqual(d.effective, ["tool:find", "tool:grep", "tool:ls", "tool:read"]);
@@ -76,32 +84,35 @@ test("a plan-level session MAY spawn plan (equal ceiling)", () => {
 
 test("a plan-level session may NOT spawn review — review needs bash", () => {
   const d = decideSpawn({ subagentType: "review" }, {
-    parentGrant: PLAN_GRANT, depth: 0, maxDepth: 2, types: types(PLAN, REVIEW, DEBUG),
+    parentGrant: PLAN_GRANT, depth: 0, maxDepth: 2, extensionTools: [], types: types(PLAN, REVIEW, DEBUG),
   });
   assert.equal(d.allow, false);
   assert.match(d.reason ?? "", /tool:bash/);
   assert.match(d.reason ?? "", /escalation blocked/);
 });
 
-test("a plan-level session may NOT spawn debug — no tools: key means full toolset", () => {
+test("a plan-level session may NOT spawn debug — an absent tools: key still means more than plan holds", () => {
   const d = decideSpawn({ subagentType: "debug" }, {
-    parentGrant: PLAN_GRANT, depth: 0, maxDepth: 2, types: types(PLAN, REVIEW, DEBUG),
+    parentGrant: PLAN_GRANT, depth: 0, maxDepth: 2, extensionTools: [], types: types(PLAN, REVIEW, DEBUG),
   });
   assert.equal(d.allow, false);
-  assert.match(d.reason ?? "", /full toolset/);
+  // The REASON changed with ADR-0013 and the refusal did not: debug now resolves to the built-in set
+  // rather than the wildcard, so this is an ordinary escalation (it needs bash/write/edit) instead of
+  // "would receive pi's full toolset". Still refused, which is what this test is for.
+  assert.match(d.reason ?? "", /escalation blocked/);
 });
 
 test("a wildcard-holding root may spawn anything, including debug", () => {
   for (const name of ["plan", "review", "debug"]) {
     const d = decideSpawn({ subagentType: name }, {
-      parentGrant: [WILDCARD], depth: 0, maxDepth: 2, types: types(PLAN, REVIEW, DEBUG),
+      parentGrant: [WILDCARD], depth: 0, maxDepth: 2, extensionTools: [], types: types(PLAN, REVIEW, DEBUG),
     });
     assert.equal(d.allow, true, `${name} should be allowed for a wildcard holder`);
   }
 });
 
 test("depth is enforced, and maxDepth 0 forbids spawning outright", () => {
-  const ctx = { parentGrant: [WILDCARD], types: types(PLAN), gated: [] };
+  const ctx = { parentGrant: [WILDCARD], extensionTools: [], types: types(PLAN), gated: [] };
   assert.equal(decideSpawn({ subagentType: "plan" }, { ...ctx, depth: 2, maxDepth: 2 }).allow, false);
   assert.match(
     decideSpawn({ subagentType: "plan" }, { ...ctx, depth: 2, maxDepth: 2 }).reason ?? "",
@@ -114,7 +125,7 @@ test("depth is enforced, and maxDepth 0 forbids spawning outright", () => {
 });
 
 test("fails closed: unknown type, and missing subagent_type", () => {
-  const ctx = { parentGrant: PLAN_GRANT, depth: 0, maxDepth: 2, types: types(PLAN) };
+  const ctx = { parentGrant: PLAN_GRANT, depth: 0, maxDepth: 2, extensionTools: [], types: types(PLAN) };
   const unknown = decideSpawn({ subagentType: "nope" }, ctx);
   assert.equal(unknown.allow, false);
   assert.match(unknown.reason ?? "", /unknown agent type/);
@@ -124,18 +135,40 @@ test("fails closed: unknown type, and missing subagent_type", () => {
   assert.match(missing.reason ?? "", /without a subagent_type/);
 });
 
-test("attenuation across levels: a review-level child cannot re-spawn debug", () => {
+test("attenuation across levels: a child of a wildcard root cannot act as a wildcard holder", () => {
+  // Re-targeted for ADR-0013. It used to spawn `debug` here, on the premise that an absent `tools:` key
+  // meant the wildcard and therefore could not be covered. `debug` now resolves to the built-in set, and
+  // `review` holds `bash`, which subsumes every one of them — so that spawn is now legitimately ALLOWED
+  // (see the test below, which pins that explicitly).
+  //
+  // The property this test actually exists to protect is untouched: an UNKNOWN type still requires the
+  // wildcard, and a child never inherits it.
   const reviewGrant = decideSpawn({ subagentType: "review" }, {
-    parentGrant: [WILDCARD], depth: 0, maxDepth: 3, types: types(PLAN, REVIEW, DEBUG),
+    parentGrant: [WILDCARD], depth: 0, maxDepth: 3, extensionTools: [], types: types(PLAN, REVIEW, DEBUG),
   }).effective;
-  const grandchild = decideSpawn({ subagentType: "debug" }, {
-    parentGrant: reviewGrant, depth: 1, maxDepth: 3, types: types(PLAN, REVIEW, DEBUG),
+  assert.ok(!reviewGrant.includes(WILDCARD), "a wildcard root hands down an enumerated grant");
+
+  const grandchild = decideSpawn({ subagentType: "not-a-known-type" }, {
+    parentGrant: reviewGrant, depth: 1, maxDepth: 3, extensionTools: [], types: types(PLAN, REVIEW, DEBUG),
   });
   assert.equal(grandchild.allow, false, "wildcard must not be re-acquired below the root");
 });
 
+test("a bash-holding child CAN spawn a type needing every built-in — bash is not narrow", () => {
+  // The uncomfortable consequence of R-25, now visible rather than hidden behind a wildcard ceiling:
+  // `review` holds bash, bash subsumes read/write/edit/edit-diff/grep/find/ls, so a type declaring no
+  // `tools:` key at all is fully covered. This is correct, and it is exactly why ADR-0012 gates bash.
+  const reviewGrant = decideSpawn({ subagentType: "review" }, {
+    parentGrant: [WILDCARD], depth: 0, maxDepth: 3, extensionTools: [], types: types(PLAN, REVIEW, DEBUG),
+  }).effective;
+  const grandchild = decideSpawn({ subagentType: "debug" }, {
+    parentGrant: reviewGrant, depth: 1, maxDepth: 3, extensionTools: [], types: types(PLAN, REVIEW, DEBUG),
+  });
+  assert.equal(grandchild.allow, true, "a grant containing bash already confers all of these");
+});
+
 test("gated capability blocks a spawn until approved", () => {
-  const ctx = { parentGrant: ["tool:read", "tool:bash", "tool:grep", "tool:find", "tool:ls"], depth: 0, maxDepth: 2, types: types(REVIEW) };
+  const ctx = { parentGrant: ["tool:read", "tool:bash", "tool:grep", "tool:find", "tool:ls"], depth: 0, maxDepth: 2, extensionTools: [], types: types(REVIEW) };
   const blocked = decideSpawn({ subagentType: "review" }, { ...ctx, gated: ["tool:bash"] });
   assert.equal(blocked.allow, false);
   assert.match(blocked.reason ?? "", /requires approval for tool:bash/);
@@ -152,7 +185,7 @@ test("a wildcard delegator is not told to obtain an approval it cannot obtain", 
   // `planDelegation`, reintroduced on the other path by the same change.
   const blocked = decideSpawn(
     { subagentType: "review" },
-    { parentGrant: [WILDCARD], depth: 0, maxDepth: 2, types: types(REVIEW), gated: ["tool:bash"] },
+    { parentGrant: [WILDCARD], depth: 0, maxDepth: 2, extensionTools: [], types: types(REVIEW), gated: ["tool:bash"] },
   );
   assert.equal(blocked.allow, false, "the gate is the operator's, not the delegator's");
   assert.doesNotMatch(
@@ -175,7 +208,7 @@ test("an approved gated capability still lets a wildcard delegator spawn", () =>
       parentGrant: [WILDCARD],
       depth: 0,
       maxDepth: 2,
-      types: types(REVIEW),
+      extensionTools: [], types: types(REVIEW),
       gated: ["tool:bash"],
       approved: ["tool:bash"],
     },
@@ -196,12 +229,12 @@ const FABRIC = typeFrom(`---
 name: fabricator
 tools: read, fabric_exec
 ---
-body`);
+body`, "fabricator");
 
 test("ADR-0011: an enumerated delegator cannot spawn a type declaring a universal capability", () => {
   const d = decideSpawn(
     { subagentType: "fabricator" },
-    { parentGrant: ["tool:read", "tool:fabric_exec"], depth: 0, maxDepth: 2, types: types(FABRIC) },
+    { parentGrant: ["tool:read", "tool:fabric_exec"], depth: 0, maxDepth: 2, extensionTools: [], types: types(FABRIC) },
   );
   assert.equal(d.allow, false, "the child would receive the whole catalog");
   assert.match(d.reason ?? "", /fabric_exec/);
@@ -211,7 +244,7 @@ test("ADR-0011: an enumerated delegator cannot spawn a type declaring a universa
 test("ADR-0011: a wildcard holder cannot either — silent stripping is gone", () => {
   const d = decideSpawn(
     { subagentType: "fabricator" },
-    { parentGrant: [WILDCARD], depth: 0, maxDepth: 2, types: types(FABRIC) },
+    { parentGrant: [WILDCARD], depth: 0, maxDepth: 2, extensionTools: [], types: types(FABRIC) },
   );
   assert.equal(d.allow, false, "holding tool:* is authority to grant, not to defeat narrowing");
   assert.match(d.reason ?? "", /fabric_exec/);
@@ -222,7 +255,7 @@ test("ADR-0011: escalation still outranks the narrowing refusal", () => {
   // important signal, and the one the ledger keys on. It must not be masked.
   const d = decideSpawn(
     { subagentType: "fabricator" },
-    { parentGrant: ["tool:read"], depth: 0, maxDepth: 2, types: types(FABRIC) },
+    { parentGrant: ["tool:read"], depth: 0, maxDepth: 2, extensionTools: [], types: types(FABRIC) },
   );
   assert.equal(d.allow, false);
   assert.match(d.reason ?? "", /escalation/i, "reported as escalation, not as non-narrowing");
@@ -231,7 +264,7 @@ test("ADR-0011: escalation still outranks the narrowing refusal", () => {
 test("ADR-0011: an ordinary type is unaffected", () => {
   const d = decideSpawn(
     { subagentType: "plan" },
-    { parentGrant: ["tool:read", "tool:bash"], depth: 0, maxDepth: 2, types: types(PLAN) },
+    { parentGrant: ["tool:read", "tool:bash"], depth: 0, maxDepth: 2, extensionTools: [], types: types(PLAN) },
   );
   assert.equal(d.allow, true, d.reason ?? "expected allow");
 });
@@ -243,7 +276,7 @@ test("ADR-0011: an ordinary type is unaffected", () => {
 test("a wildcard holder still cannot skip a configured gate", () => {
   const d = decideSpawn(
     { subagentType: "review" },
-    { parentGrant: [WILDCARD], depth: 0, maxDepth: 2, types: types(REVIEW), gated: ["tool:bash"] },
+    { parentGrant: [WILDCARD], depth: 0, maxDepth: 2, extensionTools: [], types: types(REVIEW), gated: ["tool:bash"] },
   );
   assert.equal(d.allow, false, "holding tool:* is authority to grant, not authority to skip a gate");
   assert.match(d.reason ?? "", /approval/i);
@@ -253,7 +286,7 @@ test("a wildcard holder proceeds once the gated capability is approved", () => {
   const d = decideSpawn(
     { subagentType: "review" },
     {
-      parentGrant: [WILDCARD], depth: 0, maxDepth: 2, types: types(REVIEW),
+      parentGrant: [WILDCARD], depth: 0, maxDepth: 2, extensionTools: [], types: types(REVIEW),
       gated: ["tool:bash"], approved: ["tool:bash"],
     },
   );

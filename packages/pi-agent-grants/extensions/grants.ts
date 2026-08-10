@@ -20,7 +20,7 @@
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { ceilingFor, loadAgentTypes, WILDCARD, type AgentType } from "../src/agent-types.ts";
+import { ceilingFor, loadAgentTypes, PI_BUILTIN_TOOLS, WILDCARD, type AgentType } from "../src/agent-types.ts";
 import {
   DELEGATE_SUBJECT,
   approvalKey,
@@ -99,7 +99,36 @@ export default function (pi: ExtensionAPI) {
   /** Current ceiling for an agent type, for the confused-deputy check in the store. */
   const ceilingOf = (subject: string) => {
     const type = types.get(subject);
-    return type ? ceilingFor(type) : null;
+    return type ? ceilingFor(type, { extensionTools: extensionCapabilities() }) : null;
+  };
+
+  /**
+   * The extension tools this session actually has, as capabilities (ADR-0013).
+   *
+   * Derived from the observed tool array minus pi's built-ins: an agent type that inherits extensions
+   * receives exactly these, so they belong in its ceiling. `null` until the first provider request,
+   * which `ceilingFor` reads as "unknown" and fails closed on.
+   */
+  const extensionCapabilities = (): Capability[] | undefined => {
+    // `pi.getAllTools()` is authoritative and available immediately — unlike `observedTools`, which only
+    // exists after the first provider request. That distinction is not academic: `/grants` runs before any
+    // provider call, so deriving this from observation alone made every inheriting type resolve to the
+    // wildcard and the command reported BLOCK for everything at session start.
+    try {
+      const all = pi.getAllTools?.();
+      if (all) {
+        return all
+          .map((t) => String(t.name))
+          .filter((n) => !PI_BUILTIN_TOOLS.includes(n as never))
+          .map((n) => `tool:${n}`)
+          .sort();
+      }
+    } catch {
+      /* fall through to the observed surface */
+    }
+    return observedTools === null
+      ? undefined
+      : observedTools.filter((t) => !PI_BUILTIN_TOOLS.includes(t as never)).map((t) => `tool:${t}`);
   };
 
   /** Capabilities (not keys) approved this session, for propagation. */
@@ -349,7 +378,7 @@ export default function (pi: ExtensionAPI) {
           // Same pure function, second call — the ONLY difference is that `approved` is now filled.
           decision = decideSpawn(
             { subagentType: decision.typeName },
-            { parentGrant: ownGrant, depth, maxDepth, types, gated, approved: approvalOutcome.approved },
+            { parentGrant: ownGrant, depth, maxDepth, types, gated, approved: approvalOutcome.approved, extensionTools: extensionCapabilities() },
           );
         }
         if (!decision.allow && approvalOutcome.reason) decision.reason = approvalOutcome.reason;
@@ -416,7 +445,23 @@ export default function (pi: ExtensionAPI) {
     }
   })();
 
-  pi.registerTool({
+  /**
+   * Review finding S-5, fixed. The comment above has always claimed conditional registration; the call
+   * was unconditional, `DELEGATE_CAPABILITY` was imported and never used, and "withhold it and the child
+   * is a leaf" was simply untrue on this path.
+   *
+   * ADR-0013's faithful ceiling is what forced it. Once a type's ceiling honestly includes the extension
+   * tools it inherits, an unconditionally-registered `delegate` appears in EVERY child's ceiling — so a
+   * delegator without it was told every single agent type "requires tool:delegate". That was a correct
+   * reading of an incorrect situation: in-process children really do inherit our tool registry.
+   *
+   * Decided on the INHERITED grant rather than `ownGrant`, because registration happens at load time,
+   * before any tools are observed. An ungoverned session registers it as before.
+   */
+  const mayDelegate =
+    !governed || inherited.includes(DELEGATE_CAPABILITY) || inherited.includes(WILDCARD);
+
+  if (mayDelegate) pi.registerTool({
     name: "delegate",
     label: "Delegate (governed)",
     description:
@@ -643,7 +688,7 @@ export default function (pi: ExtensionAPI) {
           `${catalog.byKind("skill").length} skill, ${catalog.byKind("agentType").length} agent-type`,
       ];
       for (const [name] of [...types].slice(0, 12)) {
-        const d = decideSpawn({ subagentType: name }, { parentGrant: ownGrant, depth, maxDepth, types, gated });
+        const d = decideSpawn({ subagentType: name }, { parentGrant: ownGrant, depth, maxDepth, types, gated, extensionTools: extensionCapabilities() });
         lines.push(`    ${d.allow ? "allow" : "BLOCK"}  ${name}${d.allow ? "" : ` — ${d.reason}`}`);
       }
       ctx.ui.notify(lines.join("\n"), "info");

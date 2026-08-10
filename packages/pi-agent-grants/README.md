@@ -49,6 +49,39 @@ So pi core hard-blocks extension tools, and an explicitly `-e`-loaded extension 
 past the allowlist**. That is why this package needs no runtime inside the descendant: it computes the
 allowlist and hands it to pi.
 
+## What an agent type's ceiling actually is
+
+Since 0.5.0 (**ADR-0013**) the ceiling is computed to match what `@tintinweb/pi-subagents` really builds,
+rule for rule, because a ceiling that disagrees with the spawner is not a conservative approximation — it
+is a **wrong audit record**, and the old disagreement ran in the permissive direction.
+
+| `tools:` in the type's frontmatter | Ceiling |
+| :--- | :--- |
+| **absent** | every built-in — **not** the wildcard. `csvList` returns its defaults |
+| `none` / empty | nothing |
+| `*` / `all` | every built-in, plus any plain entries |
+| CSV, inline array, **or YAML block list** | those entries |
+| only `ext:` entries | zero built-ins, those selectors |
+
+**The block-list case was the bug.** The old reader treated `tools:\n  - read\n  - grep` as an *absent*
+key, absence meant the wildcard, and with a wildcard delegator the spawn was allowed while the ledger
+recorded `effective: ["tool:*"]` for a child that actually held two tools.
+
+**Identity comes from the filename**, as `pi-subagents` does (`basename(file, ".md")`); the frontmatter
+`name` is ignored. Trusting it let our registry and the spawner disagree about which definition a type
+refers to.
+
+**And the ceiling is not just `tools:`.** `extensions:` defaults to true, so most types also inherit the
+session's extension tools — those are part of the ceiling too. If that surface cannot be enumerated, the
+ceiling is the wildcard: an un-enumerated inheritance cannot be honestly bounded, and an under-counted
+ceiling is one that gets *allowed*.
+
+> **Known limit, measured.** None of this makes the interceptor a provisioning path. `pi-subagents` has no
+> `tools` parameter on its `Agent` tool or in `SpawnOptions`, its registry is unreachable from another
+> extension, and its cross-extension RPC has no config query — so **refuse-or-allow remains the ceiling on
+> that path**. See `docs/probes/g13-subagents-coupling` and the upstream ask in
+> `docs/proposals/pi-subagents-tools-parameter.md`.
+
 ## Universal capabilities
 
 `fabric_exec` is treated as **universal** — granting it is equivalent to granting the whole catalog, because

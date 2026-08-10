@@ -37,6 +37,14 @@ export interface DecisionContext {
   gated?: Capability[];
   /** Gated capabilities approved for this spawn. */
   approved?: Capability[];
+  /**
+   * Extension-tool capabilities this session actually holds (ADR-0013).
+   *
+   * Most agent types inherit the session's extensions, so this is part of the child's real ceiling.
+   * Omitting it makes every inheriting type resolve to the wildcard — fail closed, because an
+   * under-counted ceiling is one that gets allowed.
+   */
+  extensionTools?: Capability[];
 }
 
 export interface Decision {
@@ -123,7 +131,7 @@ export function decideSpawn(request: SpawnRequest, ctx: DecisionContext): Decisi
   const type = ctx.types.get(typeName);
   // An unknown type is treated as wildcard-requesting rather than as harmless: we cannot read its
   // ceiling, so we must not assume it is narrow.
-  const requested = type ? ceilingFor(type) : [WILDCARD];
+  const requested = type ? ceilingFor(type, { extensionTools: ctx.extensionTools }) : [WILDCARD];
 
   // The delegator holding the wildcard may hand out anything it holds — but "anything it holds" is
   // not the same as "anything at all", and this branch used to return `allow` before either of the
