@@ -5,6 +5,62 @@ this file holds *where things stand and what to do next*. Newest entry on top.
 
 ---
 
+## 2026-08-10 (later) — ADR-0011 implemented, live-verified, and shipped as `pi-agent-grants` 0.5.0
+
+**ADR-0011 is done and merged.** All three decided changes are implemented (`e8b0fef`), **155 tests
+passing**, and — new — **verified live against real pi**: `docs/probes/adr-0011-universal`. The entry below
+still says "Not yet implemented"; that was true when it was written and is left standing, as this register
+always does.
+
+**This is a breaking change, so the package is `0.5.0`.** Two spawns that succeeded in 0.4.0 now fail: an
+agent type declaring a universal capability is refused on **both** paths, and a wildcard-holding delegator
+no longer bypasses a configured gate. The README carries a *"0.5.0 is a breaking change"* section.
+
+### What the live run proved, and what it found
+
+Confirmed in a real pi process with real agent-type files, the driver **armed with `Allow once`** so that
+"no dialog appeared" is falsifiable rather than merely unobserved:
+
+- Wildcard delegator + agent type declaring `fabric_exec` → refused (was allowed in 0.4.0).
+- Enumerated grant holding `fabric_exec` + same type → refused (was *silently passed through* in 0.4.0).
+- Wildcard delegator + gated capability, real model-driven spawn → refused, ledger correct (the gate did
+  **nothing** in 0.4.0).
+- No approval dialog for any doomed spawn; no `approvalSource`/`humanDenied` in any ledger line.
+
+**One new finding, needing a decision (probe Finding 1).** A wildcard delegator is now refused with
+*"requires approval for tool:write"* while **no dialog is ever offered** — the wildcard branch returns
+before a `ResolveResult` exists, and `shouldSeekApproval(undefined)` is `false`. It fails closed, but it is
+the very defect ADR-0011 deliberately removed from `planDelegation`, reintroduced on the other path by the
+same change. Two fixes are plausible (make the path prompt; or make the message honest) and **both are
+design decisions, so neither was taken.** Recorded in ADR-0011 under *Open, from live verification*.
+
+**Scenario 2's evidence is weaker than the others and says so.** The enumerated-path universal branch was
+read from `/grants` inside a real pi process, not from a completed spawn: `deriveOwnGrant` strips
+`fabric_exec` from a session that never observed it, so the escalation check fires first. Reaching it
+end-to-end needs `npm:pi-fabric` installed, which this machine does not have.
+
+### One documentation defect fixed
+
+ADR-0011 cited `docs/reviews/2026-08-10-aggregated-findings.md` (findings A-S2 / B-C5) as the evidence for
+the one change made beyond its stated decision. **That file was never written** — it exists nowhere on
+disk, and those labels appear nowhere but in the ADR. The reviews happened in a session whose output was
+not persisted, which is exactly what "files are the memory" exists to prevent. The dangling citation is
+**recorded in the ADR rather than deleted**, and repointed to evidence that does exist: the pre-change code
+at `main:src/interceptor.ts:84-92`, where the branch returns `allow: true` without ever reading `ctx.gated`.
+
+### Next actions, highest value first
+
+1. **Decide Finding 1** (prompt vs. honest message) — small, and it is a live incoherence in shipped code.
+2. **Background + streaming delegation** — the agreed next feature. `delegate` blocks until the child
+   exits, so an orchestrator cannot fan out and collect: the actual multi-level pattern this project
+   exists for. Also the first real test of the single-flight approval queue against genuine parallel spawns.
+3. **The rpc integration harness** — promote `docs/probes/approval-ux/drive.mjs` into `npm run
+   test:integration`. Two probes now hand-drive it; that is the point at which it should be a suite.
+4. `PI_GRANTS_GATED` recommendation in the README · the `pi-subagents` proposal document · verify
+   `pi-token-audit` against Anthropic and Google payload shapes · A-14 (deferred).
+
+---
+
 ## 2026-08-10 — the project is `pi-daddy`, under version control, with eight decisions taken
 
 **The project is renamed to `pi-daddy`** (repo and project alike). "DTCM — Dynamic Tool & Context

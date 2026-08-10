@@ -2,14 +2,24 @@
 
 **Date:** 2026-08-10
 **Status:** Accepted — Option 3, 2026-08-10. **Implemented 2026-08-10** (`e8b0fef`), 155 tests passing.
+**Verified live against real pi 2026-08-10** — all three decided behaviours confirmed, one new finding
+recorded: `docs/probes/adr-0011-universal`. Shipped in `pi-agent-grants` **0.5.0** (a breaking change).
 
 **One thing was implemented beyond the decision as written, and deliberately.** The wildcard branch of
 `decideSpawn` returned `allow` *before* the gated check ran, so an operator who set `PI_GRANTS_GATED`
-without `PI_GRANTS_GRANT` got a gate that silently did nothing. Two independent reviews found this
-separately (`docs/reviews/2026-08-10-aggregated-findings.md`, A-S2 / B-C5). It is fixed here because it
-lives in the same early return this ADR restructures, and because leaving it would have made the decision
-incoherent — removing the cosmetic stripping without touching the early return would have left that branch
-allowing spawns *with* universal capabilities, the opposite of what was decided.
+without `PI_GRANTS_GRANT` got a gate that silently did nothing. It is fixed here because it lives in the
+same early return this ADR restructures, and because leaving it would have made the decision incoherent —
+removing the cosmetic stripping without touching the early return would have left that branch allowing
+spawns *with* universal capabilities, the opposite of what was decided.
+
+> **Citation corrected 2026-08-10.** This paragraph originally credited the finding to two independent
+> reviews, citing `docs/reviews/2026-08-10-aggregated-findings.md` (findings A-S2 / B-C5). **That file was
+> never written** — no such path exists in the repository or anywhere on disk, and the labels appear
+> nowhere but in this ADR. The reviews happened in a session whose output was not persisted, which is
+> exactly the failure this project's "files are the memory" rule exists to prevent; the dangling reference
+> is left recorded here rather than quietly deleted. The finding itself does not depend on them: it is
+> verifiable directly from the pre-change code at `main:src/interceptor.ts:84-92`, where the branch
+> returns `allow: true` without ever reading `ctx.gated`.
 **Driver:** Residual R3 from the final whole-branch review of the gated-capability-approval feature
 (`.superpowers/sdd/2026-08-09-gated-capability-approval/progress.md`). Extends **ADR-0008** (monotonic
 attenuation) and interacts with **ADR-0010** (approval semantics). Touches risk **R-25**.
@@ -155,9 +165,26 @@ subsumes the file and search tools (R-25, `SUBSUMPTION` in `src/resolve.ts:43`) 
 promoting it is real, but it is a separate decision with a much larger blast radius, and conflating the two
 would stall both.
 
+## Open, from live verification (2026-08-10)
+
+**A wildcard delegator can be told to obtain an approval it cannot obtain.** With `PI_GRANTS_GRANT="tool:*"`
+and a configured gate, a spawn is refused with *"requires approval for tool:write"* and **no dialog is ever
+offered** — confirmed live with the driver armed to approve (`docs/probes/adr-0011-universal`, Finding 1).
+The new gated check sits in `decideSpawn`'s wildcard branch, which returns early carrying no
+`ResolveResult`, and `shouldSeekApproval(undefined)` is `false`, so the approval flow never engages.
+
+It fails closed and is strictly safer than the silent pass-through it replaced. But it is the same defect
+this ADR deliberately removed from `planDelegation` — reporting *"requires approval"* for a spawn no human
+can approve — reintroduced on the other path by the same change. Two fixes are plausible (produce a
+`ResolveResult` so the path prompts; or make the message name `PI_GRANTS_GRANT` as the remedy), and both
+are decisions rather than repairs, so neither was taken here. **This needs a decision — see the probe.**
+
 ## Revisit trigger
 
 Any of:
+
+- **The wildcard-gate finding above being decided either way**, which is a change to this ADR's expansion
+  and belongs in its own record or an amendment here.
 
 - A ledger entry showing a spawn allowed with a non-empty `universal` set — evidence the interceptor
   pass-through is being exercised in practice rather than in theory.
