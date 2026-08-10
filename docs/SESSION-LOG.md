@@ -5,6 +5,64 @@ this file holds *where things stand and what to do next*. Newest entry on top.
 
 ---
 
+## NEXT SESSION — read this, then pick one
+
+**State: nothing is half-finished.** `main` is clean, `pi-agent-grants` **0.6.0**, `pi-token-audit`
+**0.1.0**. **222 unit + 8 integration + 3 model-driven tests pass**, typecheck is clean over
+`src` + `extensions` + `test` + `test-integration`, and the packed tarball installs and runs
+(`npm run test:smoke`). All twelve review groups are closed; ADRs 0012/0013/0014 are decided *and*
+implemented. There is no cliff-hanger to resume — pick work deliberately.
+
+```bash
+cd packages/pi-agent-grants && npm test && npm run typecheck && npm run test:integration
+```
+
+### 1. The user's action, not an agent's — file the upstream proposal
+
+`docs/proposals/pi-subagents-tools-parameter.md` is written as an issue body in the user's voice, ready
+for `github.com/tintinweb/pi-subagents/issues`. **Do not file it for them** — it is their name and their
+relationship with that maintainer. Ask whether it went out; if the maintainer is receptive, the offer in
+the document is to write the patch.
+
+**Why it is first:** it is the only thing that turns the interceptor from *enforce-only* into
+*provisioning*. `SpawnOptions` has no `tools` field, the agent registry is unreachable from outside, and
+the RPC cannot describe a type — all measured (`docs/probes/g13-subagents-coupling`). **No local work can
+lift that ceiling.**
+
+### 2. Known-open, with no local fix — do not "solve" it by accident
+
+**`subagents:rpc:spawn` bypasses the interceptor entirely.** It reaches `manager.spawn()` over the event
+bus and never produces a `tool_call`, so any other loaded extension can spawn an ungoverned sub-agent.
+Adding names to `SPAWN_TOOLS` **cannot** catch it — there is no tool call to catch. Recorded as Finding 6
+in ADR-0013.
+
+### 3. Genuine, contained work, in the order I would take it
+
+| # | Work | Why, and what to watch |
+| :--- | :--- | :--- |
+| a | **Tests for `pi-token-audit`** | It has none. G11 closed the coverage gap for `extensions/grants.ts` only — do not read "G11 closed" as meaning both packages are covered. Its per-turn pairing also has **no correlation key** (`pending.shift()` takes the oldest), which holds in pi 0.83.0 by accident of implementation, not by design. |
+| b | **`pi-token-audit` on other providers** | Verified against one provider. The review reports Bedrock yielding 0 and Google 1 for tool-definition chars, so the extraction is probably provider-shaped. |
+| c | **Background + streaming delegation** | The feature originally chosen before the review backlog took priority. `delegate` blocks until the child exits, so an orchestrator cannot fan out and collect — the actual multi-level pattern this project exists for. It would also be the first real test of the single-flight approval queue against genuine parallel spawns. |
+| d | **`skill:` and `agent:` capabilities enforce nothing** | Flagged across ADR-0013 and still true. Skills are injected into the system prompt rather than passed as tools, so `--tools` cannot gate them, and nothing anywhere reads an `agent:` capability. **Either make them real** (pass `--no-skills` / `--no-context-files` from `planSpawn`) **or remove the namespaces** — a capability that enforces nothing reads as a control. |
+
+### 4. Things that look like work and are not
+
+- **`A-14`** (are deferred tool definitions billed as prompt tokens?) — only matters if the cost thesis is
+  revived, and **ADR-0007 retired it**. Deferred by decision, not by neglect.
+- **The `docs/0*.md` registers, `ROADMAP.md`, the gate reports** — historical record. They describe what
+  was believed on their dates. **Annotate, never revise.** Several already carry dated falsification notes.
+- **"DTCM" in those files** — deliberate. See the rename note above and `.claude/rules/phase-gates.md` §4.
+- **The phase gates** — retired. Two packages shipped under recorded waivers; `/kickoff`, `/gate`,
+  `/validate` and `/spec` were removed on 2026-08-11 because they drove the falsified programme.
+
+### 5. If you change what the product claims, write an ADR
+
+That is the convention that made every reversal here survivable, and this project has had several. The
+current claim is deliberately narrow and was argued for in ADR-0012: **it governs the tool surface, not
+the agent.** If a change widens or narrows that, it needs a record beside the code.
+
+---
+
 ## 2026-08-10 (later) — ADR-0011 implemented, live-verified, and shipped as `pi-agent-grants` 0.5.0
 
 **ADR-0011 is done and merged.** All three decided changes are implemented (`e8b0fef`), **155 tests

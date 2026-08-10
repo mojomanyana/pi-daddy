@@ -5,7 +5,7 @@ multi-level agent system, from your architecture handoff.
 
 > **This page described the project as it started, and is out of date in one important way.** It said
 > "documentation + Claude Code configuration only — zero implementation code, by design". **Production code
-> now exists**: `packages/pi-agent-grants` (0.5.0) and `packages/pi-token-audit` (0.1.0), shipped under
+> now exists**: `packages/pi-agent-grants` (0.6.0) and `packages/pi-token-audit` (0.1.0), shipped under
 > scoped gate waivers recorded in `docs/gate-reports/G0-2026-08-09.md`. The phase plan those gates belonged
 > to is obsolete (`docs/ROADMAP.md`). Start from `docs/SESSION-LOG.md` and
 > `docs/reviews/2026-08-10-aggregated-findings.md` instead of from this file.
@@ -19,7 +19,7 @@ CLAUDE.md              # project memory for Claude Code (phase rules, file map, 
 README.md              # what this project is and how the workflow runs
 GETTING-STARTED.md     # this file
 .claude/
-  skills/              # /kickoff /brainstorm /validate /adr /gate /spec
+  skills/              # /adr /brainstorm  (the discovery-era skills were removed 2026-08-11)
   agents/              # product-strategist, architecture-critic, research-scout
   rules/phase-gates.md # no production code before gate G1, docs-are-the-memory
 docs/
@@ -31,7 +31,7 @@ docs/
   05-metrics.md        # baseline-first measurement plan
   06-decisions/        # ADR template + 3 open ADRs
   ROADMAP.md           # D0 → G0 → D1 → G1 → D2..D4
-  gate-reports/        # /gate writes verdicts here
+  gate-reports/        # the G0 verdict, written before /gate was removed
 ```
 
 ## Set up in WSL, step by step
@@ -64,8 +64,8 @@ docs for the current command), then repeat step 3.
 
 > **Historical — this whole section belongs to the retired thesis.** Discovery is finished, its BASELINE
 > questions were answered, `/gate` passed G0 with two scoped waivers, and `docs/ROADMAP.md`'s phase list is
-> obsolete. `/kickoff` and `/validate` still work, but they will interview you about a programme that was
-> abandoned in **ADR-0007**. For current work, go to `docs/SESSION-LOG.md` and the review backlog. The
+> obsolete. **`/kickoff`, `/validate`, `/gate` and `/spec` no longer exist** — they were removed on
+> 2026-08-11 precisely because they would interview you about a programme abandoned in **ADR-0007**. For current work, go to `docs/SESSION-LOG.md` and the review backlog. The
 > steps below are kept as a record of how the project was meant to start.
 
 1. `/kickoff` — Claude reads the project state, shows a status snapshot, then interviews you

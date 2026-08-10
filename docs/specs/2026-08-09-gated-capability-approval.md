@@ -1,7 +1,10 @@
 # Design — Human approval for gated capabilities
 
 **Date:** 2026-08-09
-**Status:** Approved for implementation (design approved in session; ADR-0010 records the decision)
+**Status:** **IMPLEMENTED 2026-08-09, and revised twice since** — read ADR-0011 and **ADR-0014** before
+treating anything here as current. ADR-0014 in particular moved the approvals store out of the workspace,
+changed `PI_GRANTS_APPROVED` to carry `capability@subject` pairs, and stopped `once` crossing a boundary;
+where this document and that ADR disagree, **the ADR is right**.
 **Package:** `packages/pi-agent-grants`
 **Driver:** SESSION-LOG next-action #1 — *"Human-approval UX for gated capabilities. They currently just
 refuse. Needs once/session scopes and a defined answer for background agents with no interactive user."*

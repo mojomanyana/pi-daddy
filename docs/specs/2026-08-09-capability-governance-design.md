@@ -1,5 +1,9 @@
 # Design — Capability governance for pi's multi-level sub-agents
 
+> **Also predates ADRs 0011–0014.** The interceptor's ceiling model, the approval store's location
+> and the propagation format have all changed since. Where this document and an ADR disagree, the ADR is
+> right. See `docs/06-decisions/` and `packages/pi-agent-grants/README.md`.
+
 > ## ⛔ SUPERSEDED AS A BUILD PLAN, same day — see ADR-0009
 >
 > **`pi-fabric` 0.40.3 already implements essentially all of this**, more maturely, with stricter security

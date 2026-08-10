@@ -1,8 +1,23 @@
 # Gated Capability Approval — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or
-> superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for
-> tracking.
+> # ✅ COMPLETED 2026-08-09 — DO NOT EXECUTE THIS PLAN
+>
+> **Every task below shipped in `pi-agent-grants` 0.4.0**, and the feature has since been revised twice
+> more — by **ADR-0011** (universal capabilities refused on both spawn paths) and **ADR-0014** (the store
+> relocated out of the workspace, `capability@subject` propagation, `once` no longer crossing a boundary).
+>
+> **The 47 unchecked `- [ ]` boxes below are not outstanding work.** They were never ticked off because the
+> git history became the record of completion; the boxes are left as written so the plan reads as it was
+> authored. Executing it would re-implement shipped code against a design that three later decisions have
+> moved on from.
+>
+> Kept because it documents *how* the approval feature was structured — in particular the constraint that
+> `resolve.ts` was not to be modified, which held for the whole feature and is a big part of why the
+> result was reviewable. For current behaviour read `packages/pi-agent-grants/README.md`, then ADR-0010,
+> ADR-0011 and ADR-0014.
+>
+> ~~**For agentic workers:** REQUIRED SUB-SKILL: use superpowers:subagent-driven-development or
+> superpowers:executing-plans to implement this plan task-by-task.~~ — obsolete instruction, struck.
 
 **Goal:** Give a human a way to say *yes* to a gated capability — with a scope, an audit trail, and a
 defined answer when no human is present — without modifying `resolve.ts`.
