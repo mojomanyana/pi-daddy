@@ -16,6 +16,17 @@ import { MAX_CHILDREN_PER_CALL, childSpawnId, splitBudget } from "../src/fanout.
 import { runOneDelegation } from "./run-delegation.ts";
 import { type GrantsSession } from "./session.ts";
 
+export interface DelegationRegistration {
+  /**
+   * Re-derive "which definitions may this session spawn?" into the registered tool schemas.
+   *
+   * Must be called once the session knows the answer — `session_start` loads the definitions, and the first
+   * provider request tightens `ownGrant`. Both change the list, and neither has happened when the tools are
+   * registered. See R-39: without this the answer is permanently `none`.
+   */
+  refreshSpawnable: () => void;
+}
+
 
 /**
  * Register `delegate` and `delegate_all` — but only if this session may delegate.
@@ -23,38 +34,58 @@ import { type GrantsSession } from "./session.ts";
  * The conditional is the whole of S-5: an unconditionally-registered `delegate` appears in every child's
  * ceiling, so a delegator without it was told every single agent type "requires tool:delegate".
  */
-export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession): void {
-  if (!session.mayDelegate) return;
+export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession): DelegationRegistration {
+  if (!session.mayDelegate) return { refreshSpawnable: () => {} };
 
   /**
    * Definitions this session is actually authorised to spawn (ADR-0017), for the tool description.
    *
    * Listing all of them would tell the model it can spawn things every attempt at which is refused — the
    * R-28 shape again, a description disagreeing with the enforcer. Computed from the same
-   * `maySpawnDefinition` the planner uses, at registration time, which is sound because `agent:` ids no
-   * longer evaporate when the tool surface is observed (R-36).
+   * `maySpawnDefinition` the planner uses.
    */
-  const spawnable = [...session.definitions.keys()]
-    .filter((name) => maySpawnDefinition(session.ownGrant, name))
-    .sort();
+  const spawnable = () =>
+    [...session.definitions.keys()].filter((name) => maySpawnDefinition(session.ownGrant, name)).sort();
 
-  pi.registerTool({
-    name: "delegate",
-    label: "Delegate (governed)",
-    description:
-      "Delegate a task to a sub-agent holding ONLY the capabilities you grant it. You cannot grant what " +
-      "you do not hold. Prefer 'agent' — it spawns a definition whose capabilities and instructions were " +
-      "written by the operator. Use 'tools' only when no definition fits. Grant 'delegate' if the " +
-      "sub-agent must itself delegate further; withhold it to make the sub-agent a leaf.",
-    parameters: Type.Object({
+  /**
+   * **R-39.** This used to be computed once, right here, and it was always `[]`.
+   *
+   * `registerDelegationTools` is called synchronously from the extension factory, while
+   * `session.definitions` is only populated in the `session_start` hook — which fires afterwards. So every
+   * model in every governed session was told `Available: none.` and did the reasonable thing: it used
+   * `delegate({tools})`, the path with no operator-authored instructions, no `agent:` prerequisite, no body
+   * digest on the record, and no `always` approval available. **ADR-0017 and ADR-0019 bought expressiveness
+   * the model was structurally prevented from using**, and every dialog was a `<delegate>` dialog again.
+   *
+   * The comment this replaces reasoned carefully about grant staleness and never noticed the map was empty.
+   *
+   * The repair rests on a measured fact: **pi serialises a tool's schema at request time, not at
+   * registration**, so mutating the description after the definitions load reaches the provider. Verified
+   * directly — a probe that rewrote a parameter description in `session_start` saw the new text arrive in
+   * `before_provider_request`'s payload.
+   */
+  const describeAgent = (names: string[]) =>
+    `Name of a definition to spawn — its allowed-tools become the grant and its instructions ` +
+    `become the sub-agent's system prompt. Available: ${names.join(", ") || "none"}.`;
+
+  const childShape = Type.Object({
+    task: Type.String({ description: "The task for this sub-agent. It receives only this." }),
+    agent: Type.Optional(Type.String({ description: describeAgent(spawnable()) })),
+    tools: Type.Optional(Type.Array(Type.String(), { description: "Capabilities, when no 'agent' fits." })),
+    model: Type.Optional(Type.String({ description: "Model as provider/id. Defaults to this session's." })),
+  });
+
+  const delegateAllParams = Type.Object({
+    children: Type.Array(childShape, {
+      minItems: 1,
+      maxItems: MAX_CHILDREN_PER_CALL,
+      description: "The sub-agents to run concurrently. Each is independent and unaware of the others.",
+    }),
+  });
+
+  const delegateParams = Type.Object({
       task: Type.String({ description: "The task for the sub-agent. It receives only this." }),
-      agent: Type.Optional(
-        Type.String({
-          description:
-            `Name of a definition to spawn — its allowed-tools become the grant and its instructions ` +
-            `become the sub-agent's system prompt. Available: ${spawnable.join(", ") || "none"}.`,
-        }),
-      ),
+      agent: Type.Optional(Type.String({ description: describeAgent(spawnable()) })),
       tools: Type.Optional(
         Type.Array(Type.String(), {
           description:
@@ -71,7 +102,17 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
             "Defaults to this session's model, already provider-qualified.",
         }),
       ),
-    }),
+  });
+
+  pi.registerTool({
+    name: "delegate",
+    label: "Delegate (governed)",
+    description:
+      "Delegate a task to a sub-agent holding ONLY the capabilities you grant it. You cannot grant what " +
+      "you do not hold. Prefer 'agent' — it spawns a definition whose capabilities and instructions were " +
+      "written by the operator. Use 'tools' only when no definition fits. Grant 'delegate' if the " +
+      "sub-agent must itself delegate further; withhold it to make the sub-agent a leaf.",
+    parameters: delegateParams,
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const outcome = await runOneDelegation(
         session,
@@ -126,21 +167,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       "across the whole delegation subtree. Children cannot see each other or share context. Use this " +
       "when independent tasks can proceed in parallel — several reviewers over one diff, say — and read " +
       "every child's outcome, because one can be refused while the others succeed.",
-    parameters: Type.Object({
-      children: Type.Array(
-        Type.Object({
-          task: Type.String({ description: "The task for this sub-agent. It receives only this." }),
-          agent: Type.Optional(Type.String({ description: "Definition to spawn; its allowed-tools become the grant." })),
-          tools: Type.Optional(Type.Array(Type.String(), { description: "Capabilities, when no 'agent' fits." })),
-          model: Type.Optional(Type.String({ description: "Model as provider/id. Defaults to this session's." })),
-        }),
-        {
-          minItems: 1,
-          maxItems: MAX_CHILDREN_PER_CALL,
-          description: "The sub-agents to run concurrently. Each is independent and unaware of the others.",
-        },
-      ),
-    }),
+    parameters: delegateAllParams,
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const children = params.children ?? [];
       const split = splitBudget(session.fanoutBudget, children.length);
@@ -195,4 +222,16 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       };
     },
   });
+
+  return {
+    // Written through the CONSTRUCTED schema (`properties.agent`) rather than the object handed to
+    // `Type.Optional`, because `Optional` shallow-copies — mutating the input would update a discarded
+    // clone. Both tools are refreshed from one place so they cannot disagree about what is spawnable.
+    refreshSpawnable: () => {
+      const names = spawnable();
+      const description = describeAgent(names);
+      (delegateParams.properties.agent as { description?: string }).description = description;
+      (childShape.properties.agent as { description?: string }).description = description;
+    },
+  };
 }

@@ -46,6 +46,12 @@ export interface GrantsCommandContext {
   previewDelegation: (name: string) => Promise<GatedPlan>;
 }
 
+/**
+ * How many definitions `/grants` previews. Each one runs the real planner, so this bounds work, not truth —
+ * and whatever it drops is now stated rather than silently omitted (R-48).
+ */
+const PREVIEW_LIMIT = 12;
+
 export const grantsCommand = {
   description:
     "Show this session's capability grant, delegation depth, and known agent-type ceilings; " +
@@ -127,9 +133,13 @@ handler: async (args: string, ctx: any) => {
 
     if (sub === "revoke") {
       if (target === "--all") {
-        const ok = await revokeAll(cwd);
+        const ok = await revokeAll(cwd, snapshotOf, new Date());
         ctx.ui.notify(
-          ok ? "grants: all persisted approvals revoked" : "grants: failed to revoke — could not write the approvals file",
+          // "in this project" is not padding: the store is shared by every project on the machine, and
+          // this used to clear all of them.
+          ok
+            ? "grants: all persisted approvals for this project revoked"
+            : "grants: failed to revoke — could not write the approvals file",
           ok ? "info" : "warning",
         );
       } else if (!target) {
@@ -159,7 +169,8 @@ handler: async (args: string, ctx: any) => {
     ];
     // Runs the REAL planner AND the real approval step over each definition, so this listing cannot
     // disagree with what a spawn would do — the R-28 lesson, kept structural rather than remembered.
-    for (const [name] of [...definitions].slice(0, 12)) {
+    const shown = [...definitions].slice(0, PREVIEW_LIMIT);
+    for (const [name] of shown) {
       const { plan, approval } = await previewDelegation(name);
       // Why it is allowed, when a standing approval is the reason. An `allow` that silently depends on a
       // 30-day entry in a file elsewhere is precisely what an operator runs this command to discover, and
@@ -172,6 +183,14 @@ handler: async (args: string, ctx: any) => {
         `    ${plan.ok ? "allow" : "BLOCK"}  ${name}` +
           (plan.ok ? `  ${plan.effective.join(", ")}${because}` : ` — ${plan.reason}`),
       );
+    }
+    // R-48. The cap is fine; the SILENCE was not. An operator running `/grants` to answer "what can this
+    // session spawn without asking me?" — the exact question R-38 was fixed for — cannot tell a definition
+    // that was omitted from one that does not exist, and the `catalog … N agent-type` line above
+    // contradicts the short list with no explanation. Map order is discovery order, so the entries dropped
+    // are the GLOBAL ones (`~/.pi/agent/skills`), which is the least obvious thing to lose.
+    if (definitions.size > shown.length) {
+      lines.push(`    … and ${definitions.size - shown.length} more not shown (first ${PREVIEW_LIMIT} only)`);
     }
     ctx.ui.notify(lines.join("\n"), "info");
   },

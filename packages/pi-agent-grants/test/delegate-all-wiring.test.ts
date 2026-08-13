@@ -30,6 +30,8 @@ afterEach(() => {
 
 interface ToolSpec {
   name: string;
+  /** Captured so a test can read what the MODEL is told, which is where R-39 lived. */
+  parameters?: unknown;
   execute: (id: string, params: Record<string, unknown>, signal: undefined, onUpdate: undefined, ctx: unknown) => Promise<unknown>;
 }
 
@@ -53,6 +55,27 @@ async function harness(env: Record<string, string>, existingDir?: string) {
 
   await hooks.get("session_start")!({}, ctx);
   return { dir, tools, ctx };
+}
+
+/**
+ * The `agent` parameter description as the MODEL receives it.
+ *
+ * Two shapes, deliberately handled in one place: `delegate` has `agent` at the top level, while
+ * `delegate_all` nests it inside each `children` item. Getting this wrong is how a test passes for the
+ * wrong tool — it happened while writing these, and the assertion caught it.
+ */
+function agentDescriptionOf(spec: ToolSpec): string {
+  const schema = spec.parameters as {
+    properties?: {
+      agent?: { description?: string };
+      children?: { items?: { properties?: { agent?: { description?: string } } } };
+    };
+  };
+  return (
+    schema?.properties?.agent?.description ??
+    schema?.properties?.children?.items?.properties?.agent?.description ??
+    ""
+  );
 }
 
 /** Children that request a capability a read-only session cannot grant, so none of them spawns. */
@@ -176,4 +199,48 @@ test("a child's ledger id descends from an inherited parent id, not from depth",
 
   const lines = (await readFile(ledger, "utf8")).trim().split("\n").filter(Boolean).map((l) => JSON.parse(l));
   assert.deepEqual(lines.map((l) => l.childId).sort(), ["d0.2.1", "d0.2.2"]);
+});
+
+test("R-39: the model is told which definitions it may spawn", async () => {
+  // The defect: `spawnable` was computed when `registerDelegationTools` ran, which is synchronous in the
+  // extension factory — before the `session_start` hook that loads `session.definitions`. So the map was
+  // always empty and every model in every governed session read `Available: none.`, then reasonably used
+  // `delegate({tools})` instead: the path with no operator-authored instructions, no `agent:` prerequisite,
+  // no body digest on the record and no `always` approval available. ADR-0017 and ADR-0019 were both dead
+  // machinery for the reason ADR-0019 was written to fix.
+  //
+  // Reintroduce it by moving the `refreshSpawnable()` call out of `session_start` and this fails.
+  const dir = await mkdtemp(join(tmpdir(), "grants-fanout-"));
+  await mkdir(join(dir, ".pi", "skills", "reviewer"), { recursive: true });
+  await writeFile(
+    join(dir, ".pi", "skills", "reviewer", "SKILL.md"),
+    "---\nname: reviewer\ndescription: Reviews a diff.\nallowed-tools: Read\n---\nReview the diff.",
+    "utf8",
+  );
+
+  const { tools } = await harness({ [ENV_GRANT]: "agent:reviewer,tool:read,tool:delegate" }, dir);
+
+  for (const name of ["delegate", "delegate_all"]) {
+    const described = agentDescriptionOf(tools.get(name)!);
+    assert.match(described, /reviewer/, `${name} must name the definition this session may spawn`);
+    assert.doesNotMatch(described, /Available: none/, `${name} must not claim there are none`);
+  }
+});
+
+test("R-39: a definition the session may NOT spawn is not advertised", async () => {
+  // The other half, and the reason the list is filtered rather than just "every definition on disk":
+  // telling the model it can spawn something every attempt at which is refused is R-28's shape in a
+  // description. `reviewer` exists on disk; the grant does not carry `agent:reviewer`.
+  const dir = await mkdtemp(join(tmpdir(), "grants-fanout-"));
+  await mkdir(join(dir, ".pi", "skills", "reviewer"), { recursive: true });
+  await writeFile(
+    join(dir, ".pi", "skills", "reviewer", "SKILL.md"),
+    "---\nname: reviewer\ndescription: Reviews a diff.\nallowed-tools: Read\n---\nReview the diff.",
+    "utf8",
+  );
+
+  const { tools } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate" }, dir);
+
+  const described = agentDescriptionOf(tools.get("delegate")!);
+  assert.match(described, /Available: none/, "an unauthorised definition must not be advertised (ADR-0017)");
 });

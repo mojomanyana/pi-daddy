@@ -7,57 +7,68 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ## NEXT SESSION — read this, then pick one
 
-**State: green, nothing half-finished, working tree clean.** `pi-agent-grants` **0.10.1**, `pi-token-audit`
-**0.1.0**. **272 unit + 17 integration tests** (+**4** more with a real model), typecheck clean, smoke clean
-(packs, installs, exercises every subpath). **Nineteen** ADRs decided; ADR-0016 through ADR-0019 fully
-implemented **and now observed working**. No file in `src/` or `extensions/` exceeds 400 lines, and
-`test/file-size.test.ts` enforces that rather than trusting it.
+**State: green, working tree clean, and no longer unreviewed.** `pi-agent-grants` **0.10.2**,
+`pi-token-audit` **0.1.0**. **276 unit + 17 integration tests** (+**4** with a real model), typecheck clean,
+smoke clean. **Nineteen** ADRs decided.
 
-**2026-08-13 shipped six things in one session** — the `grants.ts` split, ADR-0017 (`agent:<name>`
-authorises a definition), ADR-0018 (the ledger records which instructions ran), ADR-0019 (the persisted
-approval store was unreachable), **the end-to-end proof that ADR-0019 works, which found R-38 on the way**,
-and **the README rewrite**, which found two undocumented environment variables. Four of them came from
-**pulling one thread**: R-35 said a capability that enforces nothing reads as a control, and asking "what
-else is like that?" produced R-36, R-37 and — once the store was writable — R-38, a diagnostic that
-disagreed with the enforcer about it. **If you want a seventh, that is still the question**, and the way to
-ask it is to grep for call sites and then *write a test that watches the real thing*, which is what caught
-R-38. Writing a document against the code is the other way, and it is cheaper than it looks.
+**2026-08-13 shipped seven things, and the seventh was a red-team pass that found a defect in the first
+six.** In order: the `grants.ts` split; ADR-0017; ADR-0018; ADR-0019; the end-to-end proof that ADR-0019
+works (which found R-38); the README rewrite (which found two undocumented variables); and
+`architecture-critic` + `product-strategist` over the three ADRs, which produced **thirteen risk entries and
+six same-session fixes** — including **R-39, where every model in every governed session was being told
+`Available: none`, making ADR-0017 and ADR-0019 dead machinery**, and **R-40, where `npm test` was rewriting
+the developer's real approvals file in `$HOME`.**
+
+**The lesson of the day, stated plainly for whoever is next.** Six changes went in on one pair of eyes, all
+verified, all tested, all documented — and a two-agent review found a shipped defect that made two of them
+inert, plus data loss in the test suite. Tests and documentation did not catch these because both were
+*written by the same reasoning that introduced them*. **Get the review before shipping the next three
+things, not after.**
 
 ```bash
 cd packages/pi-agent-grants && npm test && npm run typecheck && npm run test:integration && npm run test:smoke
 PI_GRANTS_IT_MODEL=1 npm run test:integration   # the 4 model-driven ones — ~60s, costs money
 ```
 
-**Read `docs/SPEC.md` before changing behaviour.** It states the current guarantee, every bound, and every
-known gap. Do not re-derive it from the ADRs.
+**Do not edit the tree while an integration run is in flight.** A half-applied edit produced a failure
+indistinguishable from a real regression (see the last entry).
+
+**Read `docs/SPEC.md` before changing behaviour**, and `docs/03-risks.md` R-39…R-51 before touching the
+approval store — six of those are still open and three want decisions.
 
 ### Known-open, and none of it is a cliff-hanger
 
 | # | Item | Notes |
 | :--- | :--- | :--- |
+| 1 | **R-41's keyspace.** The approvals key is `capability@subject` with no project component, in a file shared by every project — so two checkouts with a same-named definition cannot both hold an approval. **Measured.** | **Needs a decision:** nest by `cwd` and bump the version (old entries then fail closed, costing one re-approval). A format change to a security store, so not a drive-by. |
+| 2 | **R-44. The model-authored task is written to disk** (`taskAtApproval`) and printed by `/grants approvals`, while `src/ledger.ts` says it is "not recorded, anywhere, ever". Found by BOTH reviewers. | **Needs a decision:** delete the field, or narrow the rule in writing and say what buys the exemption. It cannot stay unrecorded. Removal costs one display line and one fixture. |
+| 3 | **R-45. The body pin is enforced on the persisted path only** — session and inherited approvals carry no digest, so a child re-reading a rewritten definition runs it under a yes given about the old body. | **Needs a decision:** carry the digest in `PI_GRANTS_APPROVED` and re-verify on arrival (an ADR), or document inheritance as subject-scoped only (a SPEC paragraph). |
+| 4 | **R-46, R-47, R-51** — the ledger reports one approval source for a mixed set (so it can claim a human was asked when they were not); `PI_GRANTS_GATED=agent:x` is a silent no-op; nothing reads `definitionDigest`, so ADR-0018's two advertised questions have no tool. | Each is small and independent. R-47's cheapest form is a startup warning; R-51's is `/grants ledger` grouping by digest. |
+| 5 | **`agent:*` does not exist**, so "may spawn any definition, but only these tools" is unexpressible — the only wildcard is `tool:*`, which is authority to grant every tool. | **Needs a decision** (`product-strategist`): `resolve()` has no wildcard rule by design, so adding one to the `agent:` namespace is an ADR, not three lines. |
 | — | ~~R-35, R-36, R-37, R-38~~ **ALL CLOSED 2026-08-13** by ADR-0017/0018/0019 and the approval-store IT. Left deliberately: the digest identifies a body without preserving it, and nothing judges what a body *says*. | Done. Do not reopen without new evidence. |
 | — | ~~**The persisted approval store has never been exercised end to end**~~ **DONE 2026-08-13 (0.10.1).** A real model answered a real dialog, the entry landed on disk, a *different* process honoured it with no prompt (`approvalSource: "persisted"`), and a body edit re-raised it. Seven further model-free tests cover the reload and every void reason. | `test-integration/approval.it.ts`. It found R-38 while being written. |
-| 2 | **Nothing verifies the ledger automatically.** `/grants ledger` detects corruption; no scheduled or startup check runs it. | R-34. Detection exists, which is the part that was missing. |
-| 3 | **Pane cleanup is not leak-proof.** `finally` covers thrown errors, not the process being killed. No reaper. | `docs/probes/g16-herdr` addendum. |
+| 6 | **Nothing verifies the ledger automatically.** `/grants ledger` detects corruption; no scheduled or startup check runs it. | R-34. Detection exists, which is the part that was missing. |
+| 7 | **Pane cleanup is not leak-proof.** `finally` covers thrown errors, not the process being killed. No reaper. | `docs/probes/g16-herdr` addendum. |
 | — | ~~**`packages/pi-agent-grants/README.md` deeper sections are stale**~~ **DONE 2026-08-13.** Rewritten against the code: the `SKILL.md` ceiling table replaces the pi-subagents one (whose central case is *inverted* here), the approval section no longer contradicts its own banner, and the interceptor sections are gone. Found two undocumented variables while doing it. | `docs/SPEC.md` remains authoritative. |
-| 5 | **`subagents:rpc:spawn` bypasses the tripwire.** Unfixable from here. | ADR-0013 Finding 6. |
-| 6 | **`bash` escapes governance.** Out of scope by decision. | ADR-0012. |
-| 7 | **Background delegation** is deliberately not built. Fan-out carried the value; background carries the lifecycle holes. | ADR-0015. Approvals resolved after a tool call returns would use a torn-down `ctx.ui`, so gating would depend on queue position — that must be answered first. |
-| 8 | **`pi-token-audit` has no tests**, and its headline "tool-definition share" is a character ratio, not a token share. | Falsified 2026-08-10. |
+| 8 | **`subagents:rpc:spawn` bypasses the tripwire.** Unfixable from here. | ADR-0013 Finding 6. |
+| 9 | **`bash` escapes governance.** Out of scope by decision. | ADR-0012. |
+| 10 | **Background delegation** is deliberately not built. Fan-out carried the value; background carries the lifecycle holes. | ADR-0015. Approvals resolved after a tool call returns would use a torn-down `ctx.ui`, so gating would depend on queue position — that must be answered first. |
+| 11 | **`pi-token-audit` has no tests**, and its headline "tool-definition share" is a character ratio, not a token share. | Falsified 2026-08-10. |
 
-### No queued code work
+### What to do next
 
-Pick from the table above. **Item 7 wants an ADR before any code**, and it is the only item there that
-needs a decision rather than work. Items 2, 3 and 8 are small and independent: a startup or scheduled
-`verifyLedger` call, a pane reaper, and the first tests for `pi-token-audit` (whose headline number is still
-wrong and should probably be deleted rather than tested).
+**The three decisions above (items 1, 2, 3) block nothing else and are cheap to answer** — each has its
+options written out in `docs/03-risks.md`. Item 4 is three small independent fixes needing no decision.
 
-**One caution for whoever goes next, and it is now stronger.** Five shipped changes in a day is a lot of
-unreviewed decision-making by one pair of eyes. `product-strategist` and `architecture-critic` have not seen
-ADR-0017, 0018 or 0019, nor the R-38 fix. The last time the critic was pointed at a strategy question it
-found R-28 — a shipped enforcement defect — instead, and R-38 is R-28's shape appearing a second time in the
-same layer. **A red-team pass over the three ADRs together is cheap and is probably worth more than the next
-feature.**
+Then, in rough value order: **`pi-token-audit`** still ships a headline number that is a character ratio sold
+as a token share (falsified 2026-08-10) — `product-strategist` recommends deleting the package rather than
+testing it, since the thesis it served is the one ADR-0007 retired. **R-34** (item 6 — nothing runs
+`verifyLedger` automatically) pairs naturally with R-51. **Item 10** (background delegation) still wants an
+ADR before any code.
+
+**The README and `docs/SPEC.md` are current as of 0.10.2** — both were rewritten against the code today, and
+SPEC's headline claim now carries the two qualifiers a reviewer would otherwise keep (`bash` escapes; the
+ledger is opt-in, so "always recorded" was false).
 
 ### Things that look like work and are not
 
@@ -76,7 +87,75 @@ That convention is why every reversal here was survivable, and there have been f
 ---
 
 
-## 2026-08-13 (last) — the README caught up with four versions of the product
+## 2026-08-13 (last) — the red-team pass, and what one pair of eyes had missed — 0.10.2
+
+**The caution at the top of this file said a review of ADR-0017/0018/0019 was probably worth more than the
+next feature. It was.** `architecture-critic` and `product-strategist` ran against the three ADRs and the
+R-38 fix. Thirteen risk entries (R-39…R-51), six fixed the same session, and **both reviewers independently
+found the same one** (R-44), which is usually the sign a finding is real.
+
+**Every finding acted on was reproduced by execution before it was written down** — and two turned out
+*worse* than reported, which is the argument for that rule rather than a restatement of it.
+
+**The one that shipped: R-39.** `delegate`'s `agent` parameter description was computed at registration
+time, which is synchronous in the extension factory — before the `session_start` hook that loads the
+definitions. So the map was always empty and **every model in every governed session read
+`Available: none.`** It then did the reasonable thing and used `delegate({tools})`: no operator-authored
+instructions, no `agent:` prerequisite, no body digest on the record, and permanently denied `always`.
+**ADR-0017 and ADR-0019 were both dead machinery in exactly the way ADR-0019 was written to prevent** —
+every dialog was a `<delegate>` dialog again, which is the prompt fatigue that argument turned on. The
+comment on the line reasoned carefully about grant staleness and never noticed the map was empty.
+
+Fixing it needed a fact nobody here had: **pi serialises a tool's schema at request time, not at
+registration.** Measured with a throwaway probe that rewrote a parameter description in `session_start` and
+read it back out of `before_provider_request`'s payload — `AFTER_SESSION_START` arrives at the provider. So
+`refreshSpawnable()` is called from both hooks, writing through the *constructed* schema because
+`Type.Optional` shallow-copies its input.
+
+**The one that was destroying data: R-40.** `approvalsPath(_cwd?)` ignored its argument — a vestige of the
+pre-ADR-0014 in-workspace store — so the unit suite passed a `mkdtemp` directory, believed it was hermetic,
+and **rewrote and cleared the developer's real `~/.pi/agent/grants-approvals.json` on every `npm test`.**
+Confirmed by looking: the file contained this suite's fixture, `cwd: /tmp/grants-approvals-oFhqs6`, with a
+body digest of sixty-four zeroes. Latent while nothing could write the store; destructive from the moment
+ADR-0019 made it reachable — and this very log had applied that reasoning to the *integration* suite the
+same morning without carrying it back to the unit suite. The parameter is now gone entirely, so the mistake
+is unspellable rather than merely fixed.
+
+**Two findings that were worse than the report.** R-41: approving in project B does not merely ignore
+project A's approval, it **deletes it from the file** — and, not in the report at all, the storage key is
+`capability@subject` with no project component, so two checkouts with a same-named definition (`review`,
+`deploy` — the common case) **cannot both hold an approval**. The pruning half is fixed; the keyspace needs a
+format decision. R-42: the atomic-write temp file was named per *process*, so two concurrent
+`saveApproval` calls unlinked each other's temp and **both returned failure having written nothing** —
+measured with two *different* keys, so never limited to the shared-dialog case the finding described. That is
+`delegate_all`, i.e. `always` failing precisely in the case ADR-0019 says drives adoption.
+
+**Also fixed:** R-43 (`/grants revoke --all` revoked every project on the machine) and R-48 (`/grants`
+truncated its verdict list at 12 in silence, dropping the *global* definitions first).
+
+**Open, and needing decisions rather than patches:** R-41's keyspace, R-44 (the model-authored task is
+written to disk and printed back, which `src/ledger.ts` forbids in unqualified terms — *"not recorded,
+anywhere, ever"*), R-45 (the body pin is enforced on the persisted path and on neither the session nor the
+inherited one), R-46 (one `approvalSource` for a mixed set, so the ledger can claim a human was asked when
+they were not), R-47 (`PI_GRANTS_GATED=agent:x` is a silent no-op), R-49, R-50, R-51.
+
+**Two things the reviewers cleared, which is worth as much.** The `ctx: null` preview added this morning has
+no side effects — it returns before the gate is built, so it never touches the single-flight queue, session
+approvals, `publishChildEnv` or `process.env`, and its only I/O is one read. And R-29's `once` fix still
+holds now that the approval subject varies per definition.
+
+**A process note worth keeping.** A model-tier run failed mid-pass and it was not a defect: source was
+edited *while* the run was live, and a two-step edit left `grants-command.ts` briefly referencing a constant
+declared later. Every `/grants` spawned in that window produced no verdict lines. **Do not edit the tree
+while an integration run is in flight** — the failure looks exactly like a real regression.
+
+**Verified: 276 unit, 17 integration, 21 with `PI_GRANTS_IT_MODEL=1`, typecheck clean, smoke clean.** The
+mutation checks are recorded with each fix: removing `refreshSpawnable()` fails the R-39 test and nothing
+else; the store's real file is byte-identical across a full `npm test`.
+
+---
+
+## 2026-08-13 (sixth) — the README caught up with four versions of the product
 
 **The largest purely-mechanical job left, and it was not entirely mechanical.** `packages/pi-agent-grants/README.md`
 still described the deleted pi-subagents interceptor as a provisioning path, and its own 0.7.0 banner said so

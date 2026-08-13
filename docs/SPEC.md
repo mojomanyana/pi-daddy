@@ -3,13 +3,18 @@
 **The current-state document.** No history, no reasoning about alternatives, no record of how anything came
 to be decided. Where this disagrees with an ADR, the ADR is right and this file is stale — say so.
 
-Last synced against the code: **2026-08-13**, `pi-agent-grants` 0.10.1, pi 0.84.1, herdr 0.7.5.
+Last synced against the code: **2026-08-13**, `pi-agent-grants` 0.10.2, pi 0.84.1, herdr 0.7.5.
 
 ---
 
 ## The claim
 
-**A sub-agent can never hold more capability than its parent, and a governed spawn is always recorded.**
+**A sub-agent can never hold more capability than its parent — within the tool surface — and a governed
+spawn is recorded whenever a ledger is configured.**
+
+Both qualifiers are load-bearing and were added after a reviewer kept the unqualified sentence: `bash`
+subsumes governance entirely (below), and `PI_GRANTS_LEDGER` is opt-in, so "always recorded" was contradicted
+by this document's own Configuration section.
 
 The grant shrinks monotonically down a delegation tree. Enforcement is **pi's own `--tools` allowlist** in a
 separate OS process — not a policy engine, not an LLM, and nothing this package runs inside the child.
@@ -258,7 +263,7 @@ bound a typo can switch off is not a bound.
 
 ```bash
 cd packages/pi-agent-grants
-npm test                   # 272 unit tests — pure, no pi, no network
+npm test                   # 276 unit tests — pure, no pi, no network
 npm run typecheck          # src + extensions + test + test-integration
 npm run test:integration   # 17 tests against a REAL pi process, no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and USE every subpath

@@ -29,10 +29,13 @@ const inheritable = (over: Partial<InheritableApproval> = {}): InheritableApprov
 // ── the trust root ───────────────────────────────────────────────────────────────────────────────
 
 test("the approvals store lives outside the governed workspace", () => {
+  // `approvalsPath` takes no argument at all since 0.10.2 — it used to accept a `cwd` and ignore it, which
+  // is how the unit suite came to rewrite the developer's real store while believing it was hermetic.
+  // Asserting the path is unrelated to any workspace is now a statement about the signature as much as the
+  // value: there is no input that could place it inside one.
   const cwd = "/home/someone/project";
-  const path = approvalsPath(cwd);
   assert.ok(
-    !path.startsWith(cwd),
+    !approvalsPath().startsWith(cwd),
     "an agent that may write in the workspace must not be able to write its own approval",
   );
 });

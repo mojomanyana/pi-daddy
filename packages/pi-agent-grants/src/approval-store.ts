@@ -14,6 +14,7 @@
  * dropped from the file on the next `saveApproval` or `revokeApproval`.
  */
 
+import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -55,8 +56,14 @@ export type SubjectLookup = (subject: string) => SubjectSnapshot | null;
  * **This does not defend against a child holding `bash`** — see ADR-0012, which accepts that such a
  * child can escape governance entirely. The point of this change is to close the *self-defeating* case,
  * not to claim a boundary the package does not have.
+ *
+ * **It took a `cwd` parameter until 0.10.2 and ignored it**, which was not a harmless vestige: the unit
+ * suite passed a `mkdtemp` directory to it, reasonably believed the result was hermetic, and spent every
+ * `npm test` rewriting and clearing the developer's real store in `$HOME`. That was invisible while the
+ * store was unwritable (nothing since 0.7.0 could create an entry) and became destructive the day ADR-0019
+ * made it reachable. The parameter is gone so the mistake is unspellable rather than merely fixed.
  */
-export function approvalsPath(_cwd?: string): string {
+export function approvalsPath(): string {
   return join(agentDir(), "grants-approvals.json");
 }
 
@@ -96,9 +103,9 @@ function isValidEntryShape(entry: unknown): entry is ApprovalEntry {
   );
 }
 
-async function readFileSafely(cwd: string): Promise<ApprovalFile> {
+async function readFileSafely(): Promise<ApprovalFile> {
   try {
-    const parsed = JSON.parse(await readFile(approvalsPath(cwd), "utf8")) as unknown;
+    const parsed = JSON.parse(await readFile(approvalsPath(), "utf8")) as unknown;
     if (!parsed || typeof parsed !== "object") return { version: 1, approvals: {} };
     const file = parsed as Partial<ApprovalFile>;
     if (file.version !== 1 || !file.approvals || typeof file.approvals !== "object") {
@@ -121,7 +128,7 @@ export interface LoadApprovalsInput {
 export async function loadApprovals(
   input: LoadApprovalsInput,
 ): Promise<{ valid: Map<string, ApprovalEntry>; dropped: DroppedApproval[] }> {
-  const file = await readFileSafely(input.cwd);
+  const file = await readFileSafely();
   const valid = new Map<string, ApprovalEntry>();
   const dropped: DroppedApproval[] = [];
 
@@ -160,10 +167,18 @@ export async function loadApprovals(
  * `rename` is atomic within a filesystem, and the temp file is created in the same directory precisely so
  * that holds.
  */
-async function writeFileSafely(cwd: string, file: ApprovalFile): Promise<boolean> {
-  const path = approvalsPath(cwd);
+async function writeFileSafely(file: ApprovalFile): Promise<boolean> {
+  const path = approvalsPath();
   // Same directory as the target: `rename` is only atomic within one filesystem.
-  const temp = `${path}.${process.pid}.tmp`;
+  //
+  // **Unique per CALL, not per process.** It was `${path}.${pid}.tmp`, so two concurrent `saveApproval`
+  // calls in one process collided: the second's `wx` failed EEXIST, its `catch` unlinked the *first's*
+  // in-flight temp, and the first's `rename` then failed ENOENT — **both returned false and nothing was
+  // written**, on a perfectly writable file. Measured with two different keys, so it was not limited to
+  // the shared-dialog case: any two concurrent writes lost both. `delegate_all` is exactly that shape, and
+  // both callers would report "could not persist the approval — it applies for this session only", which
+  // named the wrong cause.
+  const temp = `${path}.${process.pid}.${randomUUID()}.tmp`;
   try {
     await mkdir(dirname(path), { recursive: true });
     // `wx` fails rather than following a pre-existing symlink or clobbering another writer's temp.
@@ -181,7 +196,25 @@ async function writeFileSafely(cwd: string, file: ApprovalFile): Promise<boolean
 }
 
 /**
- * Persist one approval, pruning anything that has since become invalid.
+ * Entries belonging to OTHER projects, which any write from here must carry through untouched.
+ *
+ * One file serves every project, so "write back the valid set" was **deleting other projects' approvals**.
+ * Measured: approve `tool:bash@deploy` in `/work/api`, then approve anything at all in `/work/web`, and the
+ * first entry is not merely ignored in `/work/web` — it is gone from the file, so `/work/api` prompts again.
+ * Two active projects turned `always` into *"always, until I approve something anywhere else"*, which is
+ * precisely the prompt fatigue ADR-0019 exists to remove.
+ *
+ * `entryVerdict` checks `cwd` **first**, so a `foreign-cwd` entry has not been evaluated against this
+ * session's definitions at all — this session knows nothing about whether it is otherwise valid, and
+ * preserving it verbatim is the only honest thing to do with it. Pruning stays limited to entries this
+ * session can actually judge dead.
+ */
+function foreignEntries(dropped: DroppedApproval[]): Record<string, ApprovalEntry> {
+  return Object.fromEntries(dropped.filter((d) => d.verdict === "foreign-cwd").map((d) => [d.key, d.entry]));
+}
+
+/**
+ * Persist one approval, pruning anything THIS session can see has become invalid.
  *
  * Returns false when the write failed. The caller must then downgrade to session scope and warn — NOT
  * refuse the delegation. The human already said yes; refusing work because a cache could not be written
@@ -194,9 +227,13 @@ export async function saveApproval(
   snapshotOf: SubjectLookup,
   now: Date,
 ): Promise<boolean> {
-  const { valid } = await loadApprovals({ cwd, now, snapshotOf });
+  const { valid, dropped } = await loadApprovals({ cwd, now, snapshotOf });
   valid.set(key, entry);
-  return writeFileSafely(cwd, { version: 1, approvals: Object.fromEntries(valid) });
+  // This project's entries win a key collision, which is the best available answer and not a good one:
+  // the key is `capability@subject` with no project component, so two projects with a same-named
+  // definition (`review`, `deploy` — the common case) still cannot both hold an approval. That is a
+  // keyspace defect, not a pruning one, and it needs a decision about the on-disk format.
+  return writeFileSafely({ version: 1, approvals: { ...foreignEntries(dropped), ...Object.fromEntries(valid) } });
 }
 
 /**
@@ -212,13 +249,21 @@ export async function revokeApproval(
   snapshotOf: SubjectLookup,
   now: Date,
 ): Promise<boolean> {
-  const { valid } = await loadApprovals({ cwd, now, snapshotOf });
+  const { valid, dropped } = await loadApprovals({ cwd, now, snapshotOf });
   if (!valid.has(key)) return false;
   valid.delete(key);
-  return writeFileSafely(cwd, { version: 1, approvals: Object.fromEntries(valid) });
+  return writeFileSafely({ version: 1, approvals: { ...foreignEntries(dropped), ...Object.fromEntries(valid) } });
 }
 
-/** Clear all approvals. Returns false if the write failed. */
-export async function revokeAll(cwd: string): Promise<boolean> {
-  return writeFileSafely(cwd, { version: 1, approvals: {} });
+/**
+ * Clear every approval **for this directory**. Returns false if the write failed.
+ *
+ * Scoped rather than global, and the old behaviour was the surprising one: `/grants revoke --all` wrote an
+ * empty file, so revoking in one project silently revoked every other project's approvals too. An operator
+ * running it in one checkout is answering for that checkout — there is no interface for "and everywhere
+ * else", and it should not be the default reading of a command that names neither.
+ */
+export async function revokeAll(cwd: string, snapshotOf: SubjectLookup, now: Date): Promise<boolean> {
+  const { dropped } = await loadApprovals({ cwd, now, snapshotOf });
+  return writeFileSafely({ version: 1, approvals: foreignEntries(dropped) });
 }

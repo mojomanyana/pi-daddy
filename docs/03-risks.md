@@ -672,6 +672,203 @@ interactive sessions. The listing now also names *why* it allows —
 silently depends on a 30-day entry in a file elsewhere is the thing an operator ran the command to find.
 **Trigger for the shape recurring:** any second caller of `planDelegation` that is not `planWithApprovals`.
 
+## R-39 · Every model was told there are no definitions to spawn — H×H, FIXED
+Added **and fixed** 2026-08-13 by an `architecture-critic` red-team pass over ADR-0017/0018/0019. **The one
+that shipped.**
+
+`registerDelegationTools` computed `spawnable` — the list in the `agent` parameter's description — at
+**registration** time. Registration is synchronous in the extension factory (`extensions/grants.ts`), while
+`session.definitions` is populated by the `session_start` hook, which fires afterwards. The map was
+therefore always empty, `maySpawnDefinition` filtered nothing, and every model in every governed session
+read **`Available: none.`**
+
+So the model did the reasonable thing and used `delegate({tools})`: the path with no operator-authored
+instructions, no `agent:` prerequisite, no `definitionDigest` on the record, and — by ADR-0019's own
+reasoning — permanently denied `always`. **ADR-0017 and ADR-0019 both bought expressiveness the model was
+structurally prevented from using**, and every dialog was a `<delegate>` dialog again. That is precisely the
+prompt fatigue ADR-0019 was written to remove, arriving through the front door.
+
+The comment on the deleted line reasoned carefully about grant staleness and never noticed the map was
+empty. That is the lesson worth keeping: a careful argument about *when* a value is computed is worthless if
+nobody checks what it computes.
+
+**FIXED (0.10.2)** on a measured fact — **pi serialises a tool's schema at request time, not at
+registration**, verified by a probe that rewrote a parameter description in `session_start` and saw the new
+text arrive in `before_provider_request`'s payload. `registerDelegationTools` now returns
+`refreshSpawnable()`, called from both hooks. Written through the *constructed* schema
+(`params.properties.agent`) because `Type.Optional` shallow-copies its input. Pinned by two tests, and
+verified to fail when the refresh call is removed.
+
+## R-40 · `npm test` rewrote and cleared the developer's real approvals store — H×M/H, FIXED
+Added **and fixed** 2026-08-13, same pass. **Confirmed by finding this suite's fixtures in `$HOME`**, not by
+reading code: `~/.pi/agent/grants-approvals.json` contained `tool:write@x` with
+`cwd: /tmp/grants-approvals-oFhqs6` and a body digest of sixty-four zeroes.
+
+`approvalsPath(_cwd?)` **ignored its argument** — a vestige of the pre-ADR-0014 in-workspace store —
+and `test/approval-store.test.ts` passed it a `mkdtemp` directory, reasonably believing the result was
+hermetic. One test wrote `{ this is not json` over the real file; another emptied it; a third left
+`version: 2` behind, which the loader rejects, so the operator's approvals would have silently granted
+nothing even before being overwritten.
+
+**Latent since ADR-0014 and destructive from ADR-0019**: while nothing could write the store, nothing could
+lose anything either. `docs/SESSION-LOG.md` had applied exactly this reasoning to the *integration* suite the
+same morning ("without the override this suite would read and write the developer's own approvals") and did
+not carry it back to the unit suite.
+
+**FIXED (0.10.2):** `approvalsPath()` takes no argument at all, so the mistake is unspellable rather than
+merely corrected, and each test gets a hermetic `PI_CODING_AGENT_DIR`. Verified by checksumming the real
+file across a full `npm test` run: unchanged.
+
+## R-41 · One project's `always` approval deletes another project's — H×M, HALF-FIXED (keyspace needs a decision)
+Added 2026-08-13, same pass; **measured, and worse than reported**.
+
+ADR-0014 moved the store to one file for all projects, scoped by each entry's own `cwd`. But `saveApproval`
+loaded, dropped every non-matching-`cwd` entry as `foreign-cwd`, and wrote back **only the valid set** — so
+approving anything in `/work/web` deleted the approval given in `/work/api`. Not merely ignored: gone from
+the file. Two active projects turned `always` into *"always, until I approve something anywhere else"*.
+Two unit tests pinned this as correct by calling another project's live approval "stale" — the same
+tests-pinning-the-defect pattern R-29 hit.
+
+**FIXED (0.10.2):** writes carry `foreign-cwd` entries through untouched (they are the only verdict
+`entryVerdict` can reach without consulting this session's definitions, so they are exactly "another
+project's, and not ours to judge") and pruning is limited to entries this session can see are dead.
+
+**STILL OPEN, and it needs a decision about the on-disk format.** The storage key is `capability@subject`
+with **no project component**, so two projects with a same-named definition — `review`, `deploy`, i.e. the
+common case — cannot both hold an approval at all. Measured: A saves, B saves the same key, A now reads its
+own entry as `foreign-cwd` and re-prompts; re-approving in A evicts B. **Mitigation:** nest by `cwd`
+(`{version: 2, projects: {"<cwd>": {…}}}`) and let the version bump make old entries unreadable, which fails
+closed and costs one re-approval. That is a format change to a security-relevant store, so it is not a
+drive-by fix.
+**Trigger:** two checkouts on one machine with definitions of the same name — which is the normal case for
+an operator using this at all.
+
+## R-42 · Two concurrent `saveApproval` calls destroyed each other's write — M/H×M, FIXED
+Added **and fixed** 2026-08-13, same pass. The atomic-write temp file was named
+`${path}.${process.pid}.tmp` — unique per **process**, not per call. So of two concurrent writes, the
+second's `wx` failed `EEXIST`, its `catch` unlinked the **first's** in-flight temp, and the first's `rename`
+then failed `ENOENT`. **Both returned false and nothing was written**, on a perfectly writable file.
+
+Measured with two *different* keys, so it was never limited to the shared-dialog case the finding described:
+any two concurrent writes lost both. `delegate_all` is exactly that shape, so `always` failed precisely in
+the fan-out case ADR-0019 argues drives adoption — and both callers reported *"could not persist the
+approval — it applies for this session only"*, naming a cause that was not the cause.
+
+**FIXED (0.10.2):** `${path}.${pid}.${randomUUID()}.tmp`, plus a test that runs two concurrent saves and
+requires both to report success and at least one to survive.
+
+## R-43 · `/grants revoke --all` revoked every project on the machine — M×M, FIXED
+Added **and fixed** 2026-08-13, same pass; the sibling of R-41 and separated from it because the fix is a
+different shape. `revokeAll` wrote an empty approvals file, and the store is one file for all projects — so
+revoking in one checkout silently revoked every other checkout's approvals too.
+
+An operator running a command that names neither a project nor a scope is answering for the checkout they are
+sitting in. There is no interface for *"and everywhere else"*, so it must not be the default reading of the
+one that exists. **FIXED:** scoped to its own `cwd`, other projects' entries preserved, and the confirmation
+now says *"all persisted approvals for this project"* rather than *"all persisted approvals"* — the message
+was accurate about the old behaviour, which is how it went unnoticed.
+
+## R-44 · The model-authored task is written to disk, which the project's own rule forbids — M×M, OPEN
+Added 2026-08-13, found independently by **both** reviewers, which is why it is not filed as a nit.
+
+`src/ledger.ts` states the privacy boundary without qualification: *"**The task is not recorded, anywhere,
+ever** — it is assembled by the model from the parent's context and can carry anything the parent could see,
+so a ledger holding it would be a secrets sink."* ADR-0018 rejected recording it for that reason, and
+`docs/SPEC.md` repeats the rule as "in any field".
+
+`extensions/approvals.ts` writes `taskAtApproval: task` into the persisted entry, and `/grants approvals`
+prints it back. The field predates ADR-0019 and was unreachable until it, so **0.10.0 armed it hours after
+the rule was made explicit** — into a destination the ADR's own criteria rank *worse* than the ledger:
+`PI_GRANTS_LEDGER` is opt-in and operator-placed, whereas `~/.pi/agent/grants-approvals.json` is always-on,
+outside the repository, shared by every project, and kept for 30 days.
+
+**A second reason to remove it, not found by either reviewer.** Displaying `for: <task>` beside a standing
+approval implies a scope the approval does not have: the entry authorises **any** task for that definition
+for 30 days. It reads like a constraint and is not one — the legibility failure of R-25 and R-35.
+
+**Decision, not a bug:** either the field goes, or `ledger.ts`'s "anywhere, ever" and ADR-0018's Option-3
+rejection must be narrowed in writing to exempt the approval store and say what buys the exemption. It
+cannot stay unrecorded. Cost of removal: one display line and one test fixture; it is part of no key.
+
+## R-45 · The body pin exists on one of three approval paths — M×H, OPEN
+Added 2026-08-13, same pass.
+
+`resolveApprovals` resolves `inherited` → `session` → `persisted`, and **only the persisted branch passes
+through `entryVerdict`**. Session approvals are bare `capability@subject` strings; `inheritApprovals`
+publishes them to a child with no digest, no ceiling and no expiry. So ADR-0019's headline property —
+*an approval is void once the instructions change* — is enforced on the one path that persists and on
+neither of the two that do not.
+
+**Scenario at depth 2.** A human approves `tool:bash@deploy` for body A. The file is then rewritten (a `git
+pull`, or any agent in the tree holding `write`). The parent is unaffected — its `definitions` map is a
+`session_start` snapshot — but the child it spawns is a **new process**, loads `deploy` from disk as body B,
+receives `PI_GRANTS_APPROVED=tool:bash@deploy`, hits the `inherited` branch first, and runs body B with
+`bash` under a yes given about body A. The ledger records `approvalSource: "inherited"`, which reads as
+correct.
+
+Not an escalation — `bash` was held and `approved ⊆ grant` still holds — but it is the confused deputy
+ADR-0010 and ADR-0019 exist to stop, on the paths that skip the check. **Mitigation:** carry the digest in
+`PI_GRANTS_APPROVED` and re-verify on arrival, or accept and document that inheritance is subject-scoped
+only. The first is an ADR; the second is a SPEC paragraph.
+
+## R-46 · The ledger reports one approval source for a set with several — M×M, OPEN
+Added 2026-08-13, same pass. `resolveApprovals` computes a per-capability `sources` map and
+`obtainApprovals` throws it away, returning `scope ? "prompt" : sources[approved[0]]`.
+
+Gate `tool:bash` and `tool:write`; let a persisted entry cover `bash` while a human clicks *Allow once* for
+`write`. The record reads `approved: ["tool:bash","tool:write"], approvalSource: "prompt"` — **asserting a
+human was asked about `tool:bash`, which they were not.** The ledger's whole job is answering *"did a human
+authorise this?"*, and here it over-claims. **Mitigation:** `approvalSources: Record<Capability,
+ApprovalSource>` on the record — a record-format addition, hence not done unilaterally.
+
+## R-47 · `PI_GRANTS_GATED=agent:deploy` is a silent no-op — M×M, OPEN
+Added 2026-08-13, same pass. `gatedBlocked` is a filter over `requested`, and for a definition spawn
+`requested` is the definition's **ceiling** — which never contains `agent:<name>`, because the
+authorisation check is a separate, ungated branch. `gatedFromEnv` accepts any string.
+
+So an operator who reads ADR-0017's *"it attenuates like any other capability"* and writes
+`PI_GRANTS_GATED=tool:bash,agent:deploy` meaning *"ask me before deploy runs"* gets no dialog, no warning,
+and nothing in the ledger marking the gate inert. It **does** work when a definition hands the id down
+(`allowed-tools: agent:deploy`), so the flag half-works, which is worse than not working at all. R-25's
+shape, in the namespace ADR-0017 just promoted out of exactly that state.
+**Mitigation:** cheapest is a startup warning naming an `agent:`/`skill:` entry in `PI_GRANTS_GATED` as
+unenforced; the real fix is including the authorising id in the gate check, which is a behaviour change.
+
+## R-48 · `/grants` silently truncated its verdict list at 12 — L/M×L/M, FIXED
+Added **and fixed** 2026-08-13, same pass. The listing sliced to 12 definitions with no indication that it
+had. Map order is discovery order, so the entries dropped are the **global** ones (`~/.pi/agent/skills`) —
+the least obvious to lose — and absent was indistinguishable from "no such definition" while the
+`catalog … N agent-type` line directly above contradicted the short list. R-38's failure mode with a
+different cause. **FIXED:** `… and N more not shown`.
+
+## R-49 · An unlocked read-modify-write can resurrect a revoked approval — L×M, OPEN
+Added 2026-08-13, same pass. `approval-store.ts` documents that *"a revoke takes effect immediately —
+including one performed from another session while this one is running"*, and the write path is an unlocked
+read-modify-write, so: session 1 loads; session 2 revokes; session 1 saves an unrelated approval and
+**restores the revoked entry** for the rest of its 30 days, with no error and no warning.
+
+Needs two live sessions and a revoke inside the window, so likelihood is low — but it falsifies a documented
+property, and the mitigation already exists in this codebase: the ledger's lock file.
+
+## R-50 · "Void the moment either changes" is really "void at the next session start" — L×L, DOCUMENTATION
+Added 2026-08-13, same pass. `session.definitions` is loaded once at `session_start` and never refreshed, so
+`snapshotOf` validates persisted entries against a **session-start snapshot** rather than the file. Every
+consequence is fail-safe and none is written down: within a long session an edited definition does not void
+its approval (consistent, since the child genuinely receives the old body); two concurrent sessions can
+legitimately disagree about the same entry; a definition added after start is unknown until restart. The one
+that matters for an investigation: SPEC advises rehashing the file to answer *"has this definition changed
+since?"*, and a rehash cannot distinguish "changed after the spawn" from "changed before it, in a session
+holding a stale copy".
+
+## R-51 · Nothing reads `definitionDigest`, so ADR-0018's questions have no tool — M×L, OPEN
+Added 2026-08-13 by the `product-strategist` pass. `verifyLedger` counts records, escalation attempts and
+corrupt lines; it never touches `definitionDigest`. Both questions ADR-0018 advertises — *"did these four
+children run the same instructions?"* and *"has this definition changed since?"* — require hand-written
+`jq`, and the second is not even reproducible with `sha256sum SKILL.md`, because the digest covers the body
+alone. Same class as R-34: the data exists and the control does not.
+**Mitigation:** `/grants ledger` groups by digest and flags digests that no longer match disk. If nobody
+uses it, that answers ADR-0018's revisit trigger and the field is decoration.
+
 ---
 
 ## Register log
@@ -710,6 +907,8 @@ silently depends on a 30-day entry in a file elsewhere is the thing an operator 
 | 2026-08-13 | R-36 | **FIXED** same day (ADR-0017 step 1) — only `tool:`/`ext:` are filtered against an observation; `skill:` and `agent:` pass through. Four tests, including survival across three levels | ADR-0017 |
 | 2026-08-13 | R-37 | Added — the `<delegate>` approval subject rests on a premise ADR-0017 falsified, so `always` approvals can never persist on the only spawn path. Fail-closed; the real cost is the prompt fatigue that gets gating switched off (R-25's shape) | ADR-0018 scoping |
 | 2026-08-13 | R-35 | **Audit half closed** by ADR-0018 — every definition spawn records a `definitionDigest` (name, source, sha256 of the body). What remains is inherent: the digest identifies text without preserving it, and no capability model judges what a body says. The **task is never recorded**, by decision | ADR-0018 |
+| 2026-08-13 | R-39…R-51 | **Red-team pass over ADR-0017/0018/0019 and the R-38 fix** (`architecture-critic` + `product-strategist`, the first review of any of it). Thirteen entries. Five fixed the same session (R-39 the description that said `Available: none`, R-40 the suite rewriting `$HOME`, R-41's pruning half, R-42 the lost concurrent write, R-43 global revoke, R-48 silent truncation); six open, of which R-41's keyspace, R-44's stored task and R-45's unpinned inheritance need decisions rather than patches. **Both reviewers independently found R-44.** Every finding acted on was reproduced by execution first | red-team pass |
+| 2026-08-13 | R-29 | Cross-referenced R-41 — two unit tests were again found *pinning a defect as correct*, this time calling another project's live approval "stale". Third occurrence of that pattern in this repository; worth a standing check when a test's fixture is named after a judgement rather than a state | red-team pass |
 | 2026-08-13 | R-38 | Added and **FIXED same session** — `/grants` listed a definition as BLOCK while a real spawn would allow it off a valid persisted approval, because the listing shared the *planner* with enforcement but not the *approval step*. R-28's shape one layer up. Found by the first end-to-end test of the approval store, and confirmed by execution before being written. Fixed with one `planWithApprovals` used by both, `ctx: null` meaning preview | approval-store IT |
 | 2026-08-13 | R-37 | **Verified end to end** — an `always` approval was created by a real model answering a real dialog, read back by a *different* process with no prompt (ledger `approvalSource: "persisted"`), and voided by a body edit that re-raised the dialog. ADR-0019's machinery had been implemented and unit-tested but never watched working; it works | approval-store IT |
 | 2026-08-13 | R-37 | **Corrected and FIXED** — the entry understated it: `always` was not silently downgraded, it was **never offered**, because `offeredScopes` gated it on a path ADR-0016 had deleted. Nothing since 0.7.0 could write a persisted approval, so ADR-0014's integrity work guarded an unwritable file. ADR-0019 makes the definition the subject and pins the body digest as well as the ceiling | ADR-0019 |

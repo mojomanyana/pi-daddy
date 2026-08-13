@@ -51,6 +51,11 @@ export default function (pi: ExtensionAPI) {
 
   const session = createGrantsSession(extensionPath);
 
+  // Filled in by `registerDelegationTools` at the bottom of this function. A holder rather than a reordering,
+  // because the hooks below have to be registered before the tools and both need to call it — the tool
+  // schemas describe which definitions are spawnable, and nothing knows that until a hook has run (R-39).
+  const delegation = { refreshSpawnable: () => {} };
+
   pi.on("session_start", async (_event, ctx) => {
     session.cwd = ctx.cwd;
     try {
@@ -58,6 +63,10 @@ export default function (pi: ExtensionAPI) {
       session.catalogReady = buildCatalog({ cwd: ctx.cwd, observedTools: session.observedTools });
       session.catalog = await session.catalogReady;
       session.publishChildEnv();
+      // The definitions now exist, so the `delegate` schema can finally name them (R-39). pi serialises a
+      // tool's schema at REQUEST time, not at registration — measured — which is what makes this reach the
+      // model at all.
+      delegation.refreshSpawnable();
       // A malformed bound is now loud as well as safe. Silently disabling spawning would be just as
       // confusing as silently disabling the limit was dangerous — the operator set the variable, so
       // they need to know it did not take effect (G7 / A-S4).
@@ -106,6 +115,9 @@ export default function (pi: ExtensionAPI) {
       session.observedTools = names;
       session.ownGrant = deriveOwnGrant(session.inherited, names);
       session.publishChildEnv();
+      // The grant can only have narrowed, so what is spawnable can only have shrunk. Refreshed for the NEXT
+      // request: this hook runs after the current payload's tools were already serialised.
+      delegation.refreshSpawnable();
       // Refresh the catalog now that the real tool surface is known — this is the only moment extension
       // tools become visible, so it is the only moment `ext:`/`tool:` grants can be validated.
       // Keep the handle: a concurrent `delegate` awaits this rather than reading a half-built catalog.
@@ -173,7 +185,11 @@ export default function (pi: ExtensionAPI) {
   // Governed delegation. Unlike the tripwire above this PROVISIONS: the grant is an argument, so the
   // orchestrator hands each child exactly the capabilities it should have. Registered only when this
   // session may delegate, so withholding `tool:delegate` genuinely makes a session a leaf.
-  registerDelegationTools(pi, session);
+  //
+  // Registration necessarily happens HERE, before any hook has run, so the tools cannot yet know which
+  // definitions exist — hence `refreshSpawnable`, called from both hooks above once they do. R-39 is what
+  // happens without it: every model in every governed session is told `Available: none`.
+  delegation.refreshSpawnable = registerDelegationTools(pi, session).refreshSpawnable;
 
   pi.registerCommand("grants", {
     ...grantsCommand,
