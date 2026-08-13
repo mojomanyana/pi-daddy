@@ -5,7 +5,7 @@ deliberate subset of what it holds and withholds the rest. Sub-agents may delega
 subset of what they themselves hold — enforced by **pi's own `--tools` allowlist**, with an append-only
 ledger of every grant and refusal.
 
-**Status:** `pi-agent-grants` **0.10.1**, `pi-token-audit` **0.1.0**. 272 unit + 17 integration tests (+4
+**Status:** `pi-agent-grants` **0.11.0**, `pi-token-audit` **0.1.0**. 282 unit + 17 integration tests (+4
 more with a real model); typecheck and smoke clean.
 
 ## What it actually does
@@ -65,7 +65,7 @@ somebody.
 | **`docs/SPEC.md`** | **What the product is, precisely. No history. Start here.** |
 | `docs/SESSION-LOG.md` | Current state and what's next, newest first. |
 | `docs/03-risks.md` | Live risk register. R-25 onward are current. |
-| `docs/06-decisions/` | Nineteen ADRs. Reversals kept and marked — **0016** is the current architecture; **0008** the invariant; **0012** why `bash` is out of scope; **0017**–**0019** authorise a definition, record which instructions ran, and pin an approval to both. |
+| `docs/06-decisions/` | Twenty-three ADRs. Reversals kept and marked — **0016** is the current architecture; **0008** the invariant; **0012** why `bash` is out of scope; **0017**–**0019** authorise a definition, record which instructions ran, and pin an approval to both; **0020**–**0023** are the first red-team pass. |
 | `docs/probes/` | Measurement evidence against real software. Each states what it does **not** establish. |
 | `docs/archive/` | Superseded, kept as evidence, never edited to match today. Don't start here. |
 | `packages/pi-agent-grants/` | The product. |
@@ -75,7 +75,7 @@ somebody.
 
 ```bash
 cd packages/pi-agent-grants
-npm test                   # 272 unit tests — pure, no pi, no network
+npm test                   # 282 unit tests — pure, no pi, no network
 npm run typecheck          # src + extensions + test + test-integration
 npm run test:integration   # 17 tests against a REAL pi process, no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and USE every subpath

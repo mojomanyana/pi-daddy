@@ -105,6 +105,11 @@ export interface InheritableApproval {
   /** The agent type, or `<delegate>`. Carried because an approval is for a subject, not for a word. */
   subject: string;
   scope: ApprovalScope;
+  /**
+   * The definition's body digest at the time of approval (ADR-0022). Absent for `<delegate>`, which names
+   * no file to hash — and, per ADR-0019, is never persisted or offered `always` for the same reason.
+   */
+  bodySha256?: string;
 }
 
 /**
@@ -129,7 +134,9 @@ export function inheritApprovals(approved: InheritableApproval[], grant: Capabil
     ...new Set(
       approved
         .filter((a) => a.scope !== "once" && a.capability !== WILDCARD && held.has(a.capability))
-        .map((a) => approvalKey(a.capability, a.subject)),
+        // ADR-0022: the digest rides along, so the child can check the yes against the instructions IT
+        // loaded rather than trusting that its parent read the same file. See `parseInherited`.
+        .map((a) => approvalKey(a.capability, a.subject) + (a.bodySha256 ? `#${a.bodySha256}` : "")),
     ),
   ].sort();
 }
@@ -141,13 +148,49 @@ export function inheritApprovals(approved: InheritableApproval[], grant: Capabil
  * unparseable entry granting nothing is a missing prompt; an unparseable entry granting *something* is a
  * silent escalation, so the direction of the failure is not a matter of taste.
  */
-export function parseInherited(raw: string | undefined): Set<string> {
-  const out = new Set<string>();
+export function parseInherited(raw: string | undefined): Map<string, string | undefined> {
+  const out = new Map<string, string | undefined>();
   for (const item of (raw ?? "").split(",")) {
     const trimmed = item.trim();
-    const at = trimmed.indexOf("@");
-    if (at <= 0 || at === trimmed.length - 1) continue;
-    out.add(trimmed);
+    // ADR-0022 appends `#<sha256>`. Split it off FIRST: a `#` cannot appear in a capability id or in a
+    // definition name (identity comes from a path component), so this is unambiguous.
+    const hash = trimmed.indexOf("#");
+    const key = hash === -1 ? trimmed : trimmed.slice(0, hash);
+    const digest = hash === -1 ? undefined : trimmed.slice(hash + 1);
+    const at = key.indexOf("@");
+    if (at <= 0 || at === key.length - 1) continue;
+    if (hash !== -1 && !digest) continue; // `key#` promises a pin and carries none — drop it, do not guess
+    out.set(key, digest);
+  }
+  return out;
+}
+
+/**
+ * Drop inherited approvals that were given for different instructions (ADR-0022).
+ *
+ * The hole this closes: `resolveApprovals` checks `inherited` FIRST and none of it had ever been through
+ * `entryVerdict`, so ADR-0019's headline property — an approval is void once the instructions change — held
+ * on the one path that persists and neither of the two that do not. A child is a fresh process: it re-reads
+ * the definition from disk, so a `git pull` between the parent's approval and the child's spawn meant the
+ * child ran a rewritten body under a yes given about the old one, recording `approvalSource: "inherited"`.
+ *
+ * An entry with **no** digest is honoured, and that is not a hole: `<delegate>` legitimately has none, and
+ * neither does a pre-0.11 parent. It is the same trade `entryVerdict` refuses to make for a *persisted*
+ * entry — but that entry is 30 days old and read off disk, whereas this one was handed over by a live parent
+ * process in the same tree, which is a much shorter chain to trust.
+ */
+export function verifyInherited(
+  parsed: ReadonlyMap<string, string | undefined>,
+  snapshotOf: (subject: string) => SubjectSnapshot | null,
+): Set<string> {
+  const out = new Set<string>();
+  for (const [key, digest] of parsed) {
+    if (digest === undefined) {
+      out.add(key);
+      continue;
+    }
+    const current = snapshotOf(key.slice(key.indexOf("@") + 1));
+    if (current && current.bodySha256 === digest) out.add(key);
   }
   return out;
 }
@@ -166,8 +209,14 @@ export interface ApprovalEntry {
   cwd: string;
   /** The agent type's ceiling AT APPROVAL TIME. Load-bearing, not decorative — see `entryVerdict`. */
   grantAtApproval: Capability[];
-  /** Provenance only, NEVER part of a key: what was being done when the yes was given. */
-  taskAtApproval?: string;
+  /*
+   * `taskAtApproval` was here and is GONE (ADR-0021). It stored the model-authored task string, which
+   * `src/ledger.ts` forbids in unqualified terms — "the task is not recorded, anywhere, ever" — and the
+   * approval store is a worse home for it than the ledger by ADR-0018's own criteria: always-on, outside
+   * the repository, kept for 30 days. It also read as a scope it never was, since the entry authorises ANY
+   * task for that definition. Both reviewers found it independently. `approval-store.ts`'s `sanitise`
+   * strips it from any entry this version rewrites.
+   */
   /**
    * The definition's body digest AT APPROVAL TIME (ADR-0019, using ADR-0018's hash).
    *

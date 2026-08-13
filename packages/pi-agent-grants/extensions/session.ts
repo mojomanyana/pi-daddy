@@ -76,8 +76,15 @@ export interface GrantsSession {
 
   /** Approval keys approved for this session. In memory only — this dies with the process. */
   readonly sessionApprovals: Set<string>;
-  /** Approvals inherited from the delegator, already clamped to this session's grant upstream. */
-  readonly inheritedApprovals: Set<string>;
+  /**
+   * Approvals inherited from the delegator, already clamped to this session's grant upstream.
+   *
+   * Key → body digest (ADR-0022), where the digest is absent for `<delegate>` and for a pre-0.11 parent.
+   * Deliberately kept RAW here and verified at the point of use (`storedApprovals`), because verification
+   * needs `session.definitions`, which does not exist until `session_start` — and this object is built
+   * before any hook has run.
+   */
+  readonly inheritedApprovals: Map<string, string | undefined>;
   /** ONE single-flight queue for the whole session — see `obtainApprovals` for why it lives here. */
   readonly approvalGateFor: ReturnType<typeof createApprovalGateProvider>;
 

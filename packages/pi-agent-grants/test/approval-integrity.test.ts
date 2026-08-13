@@ -15,7 +15,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { approvalKey, inheritApprovals, parseInherited, type InheritableApproval } from "../src/approval.ts";
+import { approvalKey, inheritApprovals, parseInherited, verifyInherited, type InheritableApproval } from "../src/approval.ts";
 import { approvalsPath, legacyApprovalsPath } from "../src/approval-store.ts";
 import { resolveApprovals } from "../src/approval.ts";
 
@@ -29,13 +29,13 @@ const inheritable = (over: Partial<InheritableApproval> = {}): InheritableApprov
 // ── the trust root ───────────────────────────────────────────────────────────────────────────────
 
 test("the approvals store lives outside the governed workspace", () => {
-  // `approvalsPath` takes no argument at all since 0.10.2 — it used to accept a `cwd` and ignore it, which
-  // is how the unit suite came to rewrite the developer's real store while believing it was hermetic.
-  // Asserting the path is unrelated to any workspace is now a statement about the signature as much as the
-  // value: there is no input that could place it inside one.
+  // The `cwd` argument is REAL since ADR-0020 (one file per project) and was a lie before it — accepted and
+  // ignored, which is how the unit suite came to rewrite the developer's own store while believing it was
+  // hermetic (R-40). It now selects which project's file, and the assertion is that it never selects a path
+  // inside the project itself: the store must stay somewhere a governed agent cannot write.
   const cwd = "/home/someone/project";
   assert.ok(
-    !approvalsPath().startsWith(cwd),
+    !approvalsPath(cwd).startsWith(cwd),
     "an agent that may write in the workspace must not be able to write its own approval",
   );
 });
@@ -79,7 +79,7 @@ test("an inherited approval does NOT satisfy a different subject", () => {
     subject: "docs-writer",
     sessionApprovals: new Set(),
     persisted: new Map(),
-    inherited,
+    inherited: verifyInherited(inherited, () => null),
   });
   assert.deepEqual(result.approved, [], "a <delegate> approval must not authorise an agent type");
   assert.deepEqual(result.needsPrompt, ["tool:write"]);
@@ -91,7 +91,7 @@ test("an inherited approval DOES satisfy its own subject", () => {
     subject: "docs-writer",
     sessionApprovals: new Set(),
     persisted: new Map(),
-    inherited: parseInherited("tool:write@docs-writer"),
+    inherited: verifyInherited(parseInherited("tool:write@docs-writer"), () => null),
   });
   assert.deepEqual(result.approved, ["tool:write"]);
   assert.equal(result.sources["tool:write"], "inherited");
@@ -106,4 +106,66 @@ test("parseInherited tolerates the empty and malformed cases without granting an
 test("the pair format round-trips through approvalKey", () => {
   const key = approvalKey("tool:write", "docs-writer");
   assert.ok(parseInherited(key).has(key), "what we publish must be what the child parses");
+});
+
+// ── ADR-0022: an inherited approval names the instructions it was given for ──────────────────────────
+
+test("ADR-0022: an inherited approval is dropped when the body it was given for has changed", () => {
+  // The hole: `resolveApprovals` checks `inherited` FIRST and nothing on that path had ever been through
+  // `entryVerdict`, so ADR-0019's "void once the instructions change" held only for persisted entries. A
+  // child is a fresh process that re-reads the definition from disk, so a `git pull` between the parent's
+  // approval and the child's spawn meant the child ran a rewritten body under the old yes — and recorded
+  // `approvalSource: "inherited"`, which reads as correct.
+  //
+  // Breaks if the digest stops being compared, or if a mismatch is treated as "no pin" and honoured.
+  const published = inheritApprovals(
+    [{ capability: "tool:bash", subject: "deploy", scope: "session", bodySha256: "aaa111" }],
+    ["tool:bash"],
+  );
+  assert.deepEqual(published, ["tool:bash@deploy#aaa111"], "the digest rides with the key");
+
+  const asParentSawIt = verifyInherited(parseInherited(published.join(",")), () => ({
+    ceiling: ["tool:bash"],
+    bodySha256: "aaa111",
+  }));
+  assert.deepEqual([...asParentSawIt], ["tool:bash@deploy"], "same body: the approval applies");
+
+  const afterRewrite = verifyInherited(parseInherited(published.join(",")), () => ({
+    ceiling: ["tool:bash"],
+    bodySha256: "bbb222",
+  }));
+  assert.deepEqual([...afterRewrite], [], "rewritten body: the approval does not apply");
+
+  const deleted = verifyInherited(parseInherited(published.join(",")), () => null);
+  assert.deepEqual([...deleted], [], "definition gone: an approval pinned to it cannot be verified, so it fails closed");
+});
+
+test("ADR-0022: an entry with no pin is still honoured, and one promising a pin without carrying it is not", () => {
+  // `<delegate>` names no file to hash, and a pre-0.11 parent sends no digest at all — both legitimately
+  // unpinned, and both a much shorter chain to trust than a 30-day-old file (which `entryVerdict` refuses
+  // for exactly this reason). `key#` with nothing after it is neither: it claims a pin and carries none.
+  const unpinned = verifyInherited(parseInherited("tool:write@<delegate>"), () => null);
+  assert.deepEqual([...unpinned], ["tool:write@<delegate>"]);
+
+  const truncated = verifyInherited(parseInherited("tool:bash@deploy#"), () => ({
+    ceiling: ["tool:bash"],
+    bodySha256: "aaa111",
+  }));
+  assert.deepEqual([...truncated], [], "a promise of a pin with no pin is dropped, not guessed at");
+});
+
+test("ADR-0022: the digest survives a round trip through the environment format", () => {
+  // The propagation format is a comma-separated string, and `#` had to be a character that cannot occur in
+  // a capability id or a definition name (identity comes from a path component). This pins that.
+  const published = inheritApprovals(
+    [
+      { capability: "tool:bash", subject: "deploy", scope: "session", bodySha256: "abc" },
+      { capability: "tool:write", subject: "<delegate>", scope: "session" },
+    ],
+    ["tool:bash", "tool:write"],
+  );
+  const parsed = parseInherited(published.join(","));
+  assert.equal(parsed.get("tool:bash@deploy"), "abc");
+  assert.equal(parsed.get("tool:write@<delegate>"), undefined);
+  assert.equal(parsed.size, 2);
 });

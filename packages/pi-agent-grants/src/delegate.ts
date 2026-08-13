@@ -17,7 +17,7 @@
 
 import { planSpawn } from "./spawn.ts";
 import { ceilingForDefinition, digestDefinition, type DefinitionDigest, type SkillDefinition } from "./definitions.ts";
-import { resolve, assertNarrowing, type Capability, type ResolveResult } from "./resolve.ts";
+import { AGENT_WILDCARD, resolve, assertNarrowing, type Capability, type ResolveResult } from "./resolve.ts";
 import { ENV_APPROVED, ENV_DEPTH, ENV_FANOUT, ENV_GATED, ENV_GRANT, ENV_LEDGER, ENV_MAX_DEPTH, ENV_PARENT_ID } from "./propagation.ts";
 import { inheritApprovals, type InheritableApproval } from "./approval.ts";
 import { unknownCapabilities, type Catalog } from "./catalog.ts";
@@ -36,7 +36,14 @@ export const agentCapability = (name: string): Capability => `agent:${name}`;
  * package must never break by accident.
  */
 export function maySpawnDefinition(ownGrant: Capability[], name: string): boolean {
-  return ownGrant.includes(WILDCARD) || ownGrant.includes(agentCapability(name));
+  // ADR-0023 adds the middle case. `tool:*` is authority to grant every tool and satisfies this too;
+  // `agent:*` is authority to spawn any definition and grants no tools at all, which is the configuration
+  // an operator wanting "any of our definitions, narrow tools" previously had to fake with `tool:*`.
+  return (
+    ownGrant.includes(WILDCARD) ||
+    ownGrant.includes(AGENT_WILDCARD) ||
+    ownGrant.includes(agentCapability(name))
+  );
 }
 
 /** The tool name that confers the ability to delegate further. */

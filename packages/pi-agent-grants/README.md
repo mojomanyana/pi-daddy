@@ -4,6 +4,27 @@
 tree, so a sub-agent can never confer more than it holds — enforced by **pi's own `--tools` allowlist**, with
 an append-only ledger of what was granted and what was refused.
 
+> ## 0.11.0 is a breaking change: per-project approvals, and an inherited yes names its instructions
+>
+> Four decisions taken together after the first independent review of this package's approval layer
+> (ADR-0020…ADR-0023). Two of them break compatibility.
+>
+> - **Approvals are stored one file per project**, under `$PI_CODING_AGENT_DIR/grants-approvals/`. The
+>   single shared file could not express two checkouts holding an approval for a same-named definition —
+>   `review`, `deploy`, i.e. what happens the moment you reuse your own conventions — and every write
+>   touched every project's data, which is where four defects came from. **The old file is ignored, not
+>   migrated**, and reported once; re-approve when next asked.
+> - **`PI_GRANTS_APPROVED` carries a body digest**: `capability@subject#sha256`. A child verifies it against
+>   the definition **it** loaded, because a child is a fresh process that re-reads from disk — so a
+>   `git pull` mid-tree could otherwise let a descendant run rewritten instructions under a yes given about
+>   the old ones. A 0.10 parent and a 0.11 child do not understand each other's format.
+> - **The task is never stored.** `taskAtApproval` is gone: it put model-authored text in an always-on file
+>   outside your repository for 30 days, which this package's own rule forbids — and it displayed as though
+>   it scoped the approval, which it never did.
+> - **`agent:*` exists.** "May spawn any of our definitions, but never hand over `write`" was previously
+>   unexpressible; the only wildcard was `tool:*`, which is authority to grant every tool. `agent:*` confers
+>   no tool authority. Do not pair it with `tool:bash`.
+>
 > ## 0.9.0 / 0.10.0: an approval is pinned to the *instructions* as well as the tools
 >
 > **ADR-0018 and ADR-0019.** Two changes, and the second was a repair.
@@ -576,7 +597,7 @@ every in-repo test passed. `npm run test:smoke` packs a tarball, installs it int
 ## Testing
 
 ```bash
-npm test                   # 272 unit tests. Fast, pure, no pi, no network.
+npm test                   # 282 unit tests. Fast, pure, no pi, no network.
 npm run typecheck          # src + extensions + tests + integration tests
 npm run test:integration   # 17 tests against a REAL pi process. ~23s, no model tokens.
 npm run test:smoke         # pack, install into a scratch project, import and use it
@@ -605,7 +626,7 @@ its own author the day after it was added: rather than raise the cap, `delegatio
 
 ## Status
 
-**0.10.1 — usable, and honest about scope.** What exists and is verified against real pi: the resolver, the
+**0.11.0 — usable, and honest about scope.** What exists and is verified against real pi: the resolver, the
 ledger with an integrity reader, the spawn planner, `SKILL.md` definitions with `allowed-tools` as an
 enforced ceiling, `delegate` and `delegate_all` with a subtree budget, two executors, and human approval for
 gated capabilities (once / session / always, inheritable down the tree, persisted for `always` and pinned to

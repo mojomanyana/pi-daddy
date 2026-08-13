@@ -323,3 +323,40 @@ test("defined-but-falsy approval fields do not leak into the audit record", () =
   assert.equal("approved" in round, false, "empty approved[] should not appear in JSON");
   assert.equal("humanDenied" in round, false, "false humanDenied should not appear in JSON");
 });
+
+// ── ADR-0023: `agent:*` ──────────────────────────────────────────────────────────────────────────────
+
+test("ADR-0023: agent:* covers any definition id and confers no tools", () => {
+  // The configuration that was unexpressible: "may spawn any of our definitions, but never hand over
+  // write". The only wildcard was `tool:*`, which is authority to grant EVERY tool — so an operator had to
+  // choose between an unmaintainable list and a total grant, and R-25 records which one gets chosen.
+  const r = resolve({
+    requested: ["agent:deploy", "agent:review", "tool:read"],
+    parentGrant: ["agent:*", "tool:read"],
+  });
+
+  assert.deepEqual(r.denied, [], "any agent: id is covered");
+  assert.deepEqual(r.effective, ["agent:deploy", "agent:review", "tool:read"]);
+
+  const noTools = resolve({ requested: ["tool:write"], parentGrant: ["agent:*", "tool:read"] });
+  assert.deepEqual(noTools.denied, ["tool:write"], "and it grants no tool authority whatsoever");
+});
+
+test("ADR-0023: agent:* is not a general namespace wildcard", () => {
+  // Deliberately one explicit case rather than a `<ns>:*` mechanism, so a namespace added later does not
+  // silently acquire a wildcard. If this ever starts passing, that was a decision someone should have made.
+  const r = resolve({ requested: ["skill:review"], parentGrant: ["skill:*", "tool:read"] });
+  assert.deepEqual(r.denied, ["skill:review"], "skill:* is not a rule this package implements");
+});
+
+test("ADR-0023: agent:* does not exempt a definition id from a gate", () => {
+  // Holding a wildcard is authority to grant widely, never authority to skip a human — the property
+  // ADR-0011 established for `tool:*` and integration-tested since. It must hold for the new wildcard too.
+  const r = resolve({
+    requested: ["agent:deploy"],
+    parentGrant: ["agent:*"],
+    gated: ["agent:deploy"],
+  });
+  assert.deepEqual(r.gatedBlocked, ["agent:deploy"], "covered by the wildcard, still gated");
+  assert.deepEqual(r.effective, []);
+});

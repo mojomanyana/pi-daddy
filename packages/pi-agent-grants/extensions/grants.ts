@@ -25,7 +25,7 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { WILDCARD } from "../src/pi-tools.ts";
-import { legacyApprovalsPath } from "../src/approval-store.ts";
+import { legacyApprovalsPath, sharedApprovalsPath } from "../src/approval-store.ts";
 import { buildCatalog } from "../src/catalog.ts";
 import { loadDefinitions } from "../src/definitions.ts";
 import { appendRecord, buildRecord } from "../src/ledger.ts";
@@ -80,6 +80,22 @@ export default function (pi: ExtensionAPI) {
       // ADR-0014: a pre-0.6 in-workspace approvals file is IGNORED, not migrated — importing it would
       // import exactly the entries whose trustworthiness the move exists to remove. Say so, because an
       // operator whose approvals silently stopped applying deserves to know why.
+      // ADR-0020: the pre-0.11 single shared store is ignored, not migrated. Same reasoning shape as the
+      // legacy file below — an operator whose approvals silently stopped applying must be told why — but a
+      // different reason for not migrating: splitting it by `cwd` would be lossless, and it is still declined
+      // because one-shot migration code in the layer with nine defects buys less than one re-approval costs.
+      try {
+        if (existsSync(sharedApprovalsPath())) {
+          ctx.ui.notify(
+            `grants: ignoring ${sharedApprovalsPath()} — approvals are now stored one file per governed ` +
+              `directory (ADR-0020), because a single shared file could not hold two projects' approvals ` +
+              `for a same-named definition. Re-approve when next asked; the old file is safe to delete.`,
+            "warning",
+          );
+        }
+      } catch {
+        /* never throw into the agent loop */
+      }
       try {
         if (existsSync(legacyApprovalsPath(ctx.cwd))) {
           ctx.ui.notify(

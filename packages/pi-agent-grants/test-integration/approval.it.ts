@@ -15,19 +15,24 @@
  * `/grants` preview must never prompt. An assertion that only runs when somebody pays for a model is weak
  * insurance, so everything that can be checked for free is.
  *
- * **`PI_CODING_AGENT_DIR` is set on every run here.** `approvalsPath` resolves to
- * `$PI_CODING_AGENT_DIR/grants-approvals.json`, defaulting to `~/.pi/agent` (ADR-0014 moved it out of the
- * governed workspace). Without the override these tests would read and *write the developer's own
- * approvals file*, which is both a dirty test and a governance hazard.
+ * **`PI_CODING_AGENT_DIR` is set on every run here.** `approvalsPath` resolves under `$PI_CODING_AGENT_DIR`,
+ * defaulting to `~/.pi/agent` (ADR-0014 moved it out of the governed workspace). Without the override these
+ * tests would read and *write the developer's own approvals*, which is both a dirty test and a governance
+ * hazard — and was a live one until R-40, when the unit suite was found doing exactly that.
+ *
+ * Since ADR-0020 the store is **one file per project**, so the path is derived rather than assumed: the
+ * test sets its own `PI_CODING_AGENT_DIR` and asks `approvalsPath()` where the file is, instead of
+ * spelling out a filename that the production code alone gets to choose.
  */
 
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { describe, test } from "node:test";
 import { expiryFor, type ApprovalEntry } from "../src/approval.ts";
+import { approvalsPath } from "../src/approval-store.ts";
 import { digestDefinition, parseSkillDefinition } from "../src/definitions.ts";
 import { fixture, modelTestsEnabled, piAvailable, runCommand, runPrompt, verdictFor } from "./harness.ts";
 
@@ -71,9 +76,14 @@ interface Seeded {
 async function seeded(entry?: (base: ApprovalEntry) => ApprovalEntry): Promise<Seeded> {
   const cwd = await fixture({ "bash-user": skillFile(BODY) });
   const agentDir = await mkdtemp(join(tmpdir(), "grants-it-agentdir-"));
-  const approvalsFile = join(agentDir, "grants-approvals.json");
+  // Set it in THIS process too, so `approvalsPath` resolves to the same file the spawned pi will use.
+  // Asking the production function is the point: ADR-0020 changed the layout, and a test that hard-coded
+  // the old filename would have kept passing against a file nothing reads.
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+  const approvalsFile = approvalsPath(cwd);
 
   if (entry) {
+    await mkdir(dirname(approvalsFile), { recursive: true });
     const now = new Date();
     const base: ApprovalEntry = {
       approvedAt: now.toISOString(),
@@ -84,7 +94,6 @@ async function seeded(entry?: (base: ApprovalEntry) => ApprovalEntry): Promise<S
       // accident rather than the valid-entry test it claims to be.
       grantAtApproval: ["tool:bash", "tool:read"],
       bodyAtApproval: await digestOf(cwd),
-      taskAtApproval: "run a shell command",
     };
     await writeFile(
       approvalsFile,
@@ -119,7 +128,6 @@ describe("the persisted approval store, read back through a real pi process", {
 
     assert.match(text, /1 persisted approval\b/, "the entry on disk must be counted as valid here");
     assert.match(text, /tool:bash@bash-user/, "and named, so an operator can revoke it");
-    assert.match(text, /for: run a shell command/, "with the provenance the human saw when they said yes");
     assert.doesNotMatch(text, /\(ignored\)/);
   });
 

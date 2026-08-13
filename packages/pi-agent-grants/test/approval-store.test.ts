@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   approvalsPath,
   loadApprovals,
@@ -17,7 +17,7 @@ const NOW = new Date("2026-08-20T00:00:00.000Z");
 /**
  * A fresh project directory **and a fresh store**.
  *
- * The store part is not tidiness. `approvalsPath()` resolves to `$PI_CODING_AGENT_DIR/grants-approvals.json`
+ * The store part is not tidiness. `approvalsPath(cwd)` resolves to `$PI_CODING_AGENT_DIR/grants-approvals.json`
  * and used to take a `cwd` it ignored, so these tests passed a `mkdtemp` directory, believed they were
  * hermetic, and spent every `npm test` rewriting and clearing the developer's REAL store in `$HOME` — one
  * test writing `{ this is not json` over it, another emptying it. Invisible while nothing could write the
@@ -30,6 +30,17 @@ const NOW = new Date("2026-08-20T00:00:00.000Z");
 const temp = async () => {
   process.env.PI_CODING_AGENT_DIR = await mkdtemp(join(tmpdir(), "grants-agentdir-"));
   return mkdtemp(join(tmpdir(), "grants-approvals-"));
+};
+
+/**
+ * Stage a store file by hand.
+ *
+ * Needed because ADR-0020 puts each project's file in a `grants-approvals/` subdirectory, which only a real
+ * write creates. A test that skipped the mkdir would silently exercise "no file" instead of "this file".
+ */
+const stage = async (cwd: string, text: string) => {
+  await mkdir(dirname(approvalsPath(cwd)), { recursive: true });
+  await writeFile(approvalsPath(cwd), text, "utf8");
 };
 
 /** The body digest every entry here was approved against, unless a test says otherwise (ADR-0019). */
@@ -60,7 +71,7 @@ test("a missing file is empty, not an error", async () => {
 
 test("a corrupt file grants nothing and does not throw", async () => {
   const cwd = await temp();
-  await writeFile(approvalsPath(), "{ this is not json", "utf8");
+  await stage(cwd, "{ this is not json");
   const r = await loadApprovals({ cwd, now: NOW, snapshotOf: ceiling(["tool:read"]) });
   assert.equal(r.valid.size, 0, "a broken cache grants nothing");
 });
@@ -76,19 +87,15 @@ test("round trip: a saved approval loads back", async () => {
 test("the file records version 1 and is human-readable", async () => {
   const cwd = await temp();
   await saveApproval(cwd, "tool:write@docs-writer", entryFor(cwd), ceiling(["tool:read", "tool:write"]), NOW);
-  const parsed = JSON.parse(await readFile(approvalsPath(), "utf8"));
+  const parsed = JSON.parse(await readFile(approvalsPath(cwd), "utf8"));
   assert.equal(parsed.version, 1);
   assert.equal(parsed.approvals["tool:write@docs-writer"].cwd, cwd);
-  assert.ok(await readFile(approvalsPath(), "utf8").then((t) => t.includes("\n")), "pretty-printed");
+  assert.ok(await readFile(approvalsPath(cwd), "utf8").then((t) => t.includes("\n")), "pretty-printed");
 });
 
 test("R-27: an entry from another checkout is dropped with a reason", async () => {
   const cwd = await temp();
-  await writeFile(
-    approvalsPath(),
-    JSON.stringify({ version: 1, approvals: { "tool:write@docs-writer": entryFor("/somewhere/else") } }),
-    "utf8",
-  );
+  await stage(cwd, JSON.stringify({ version: 1, approvals: { "tool:write@docs-writer": entryFor("/somewhere/else") } }));
   const r = await loadApprovals({ cwd, now: NOW, snapshotOf: ceiling(["tool:read", "tool:write"]) });
   assert.equal(r.valid.size, 0);
   assert.equal(r.dropped[0].verdict, "foreign-cwd");
@@ -121,14 +128,10 @@ test("ADR-0019: an entry with no body pin is dropped — unverifiable is not unc
   // Entries written before 0.10.0 carry no `bodyAtApproval`. Failing closed costs one re-approval;
   // failing open would silently honour a yes given about text nobody can now identify.
   const cwd = await temp();
-  await writeFile(
-    approvalsPath(),
-    JSON.stringify({
+  await stage(cwd, JSON.stringify({
       version: 1,
       approvals: { "tool:write@docs-writer": entryFor(cwd, { bodyAtApproval: undefined }) },
-    }),
-    "utf8",
-  );
+    }));
   const r = await loadApprovals({ cwd, now: NOW, snapshotOf: ceiling(["tool:read", "tool:write"]) });
   assert.equal(r.valid.size, 0);
   assert.equal(r.dropped[0].verdict, "instructions-changed");
@@ -149,62 +152,60 @@ test("revoking something that was never approved reports false", async () => {
   assert.equal(await revokeApproval(cwd, "tool:write@nope", ceiling(["tool:read", "tool:write"]), NOW), false);
 });
 
-test("revokeAll clears THIS project and leaves other projects alone", async () => {
-  // It used to write an empty file, so `/grants revoke --all` in one checkout silently revoked every other
-  // checkout on the machine. An operator running it in one project is answering for that project; there is
-  // no interface for "and everywhere else", so it must not be the default reading.
-  const cwd = await temp();
-  const c = ceiling(["tool:read", "tool:write"]);
-  await saveApproval(cwd, "tool:write@a", entryFor(cwd), c, NOW);
-  await saveApproval("/work/other", "tool:write@b", entryFor("/work/other"), c, NOW);
-
-  assert.equal(await revokeAll(cwd, c, NOW), true);
-
-  assert.equal((await loadApprovals({ cwd, now: NOW, snapshotOf: c })).valid.size, 0, "this project is cleared");
-  assert.equal(
-    (await loadApprovals({ cwd: "/work/other", now: NOW, snapshotOf: c })).valid.size,
-    1,
-    "the other project's approval survives",
-  );
-});
-
 test("saving prunes entries that are DEAD, and only those", async () => {
   // Re-targeted. This test used to stage `entryFor("/elsewhere")` — another project's approval — and assert
   // it was "pruned on write". That is the defect, not the specification: the store is one file for every
   // project, so pruning it deleted a live approval belonging to a different checkout. An entry this session
   // can see is dead (expired) is a different thing, and is what pruning is for.
   const cwd = await temp();
-  await writeFile(
-    approvalsPath(),
-    JSON.stringify({
+  await stage(cwd, JSON.stringify({
       version: 1,
       approvals: { "tool:write@expired": entryFor(cwd, { expiresAt: "2026-01-01T00:00:00.000Z" }) },
-    }),
-    "utf8",
-  );
+    }));
   await saveApproval(cwd, "tool:write@fresh", entryFor(cwd), ceiling(["tool:read", "tool:write"]), NOW);
-  const parsed = JSON.parse(await readFile(approvalsPath(), "utf8"));
+  const parsed = JSON.parse(await readFile(approvalsPath(cwd), "utf8"));
   assert.deepEqual(Object.keys(parsed.approvals), ["tool:write@fresh"], "the expired entry was pruned on write");
 });
 
-test("saving in one project does not delete another project's approvals", async () => {
-  // The measured failure: approve in /work/api, then approve anything at all in /work/web, and the first
-  // entry is not merely ignored in /work/web — it is GONE from the file, so /work/api prompts again. Two
-  // active projects turned `always` into "always, until I approve something anywhere else", which is the
-  // prompt fatigue ADR-0019 exists to remove. Breaks if `saveApproval` writes only the `valid` set.
-  const api = await temp();          // also fixes the store for both halves of this test
+test("two projects' approvals live in separate files and cannot affect each other", async () => {
+  // ADR-0020. The measured failure this replaces: one shared file, so approving in /work/web wrote back only
+  // the entries valid THERE and /work/api's approval was gone — and worse, the key `capability@subject` had
+  // no project component at all, so two checkouts with a same-named definition could never both hold one.
+  // Per-project files make both inexpressible. This test used to assert the carry-through that 0.10.2 needed
+  // and 0.11.0 deletes; the property it pins is the same one, now enforced by the layout.
+  const api = await temp();          // also fixes PI_CODING_AGENT_DIR for both halves
   const web = "/work/web";
   const c = ceiling(["tool:read", "tool:write"]);
 
+  // The SAME key in both projects — `deploy`, `review`: the case that could not work before.
   await saveApproval(api, "tool:write@deploy", entryFor(api), c, NOW);
-  await saveApproval(web, "tool:write@build", entryFor(web), c, NOW);
+  await saveApproval(web, "tool:write@deploy", entryFor(web), c, NOW);
 
-  const back = await loadApprovals({ cwd: api, now: NOW, snapshotOf: c });
-  assert.deepEqual([...back.valid.keys()], ["tool:write@deploy"], "project A's approval must survive project B's");
-  assert.deepEqual(
-    back.dropped.map((d) => d.verdict),
-    ["foreign-cwd"],
-    "and B's is present but inert here, which is exactly what foreign-cwd means",
+  const fromApi = await loadApprovals({ cwd: api, now: NOW, snapshotOf: c });
+  const fromWeb = await loadApprovals({ cwd: web, now: NOW, snapshotOf: c });
+
+  assert.deepEqual([...fromApi.valid.keys()], ["tool:write@deploy"], "project A keeps its own");
+  assert.deepEqual([...fromWeb.valid.keys()], ["tool:write@deploy"], "and project B keeps its own");
+  assert.deepEqual(fromApi.dropped, [], "neither file contains the other project's entry to drop");
+  assert.notEqual(approvalsPath(api), approvalsPath(web), "different projects, different files");
+});
+
+test("revoking everything in one project leaves another project untouched", async () => {
+  // R-43 was `revokeAll` writing an empty shared file, so `/grants revoke --all` in one checkout revoked
+  // every checkout on the machine. Under ADR-0020 it empties one file and cannot name another's.
+  const api = await temp();
+  const web = "/work/web";
+  const c = ceiling(["tool:read", "tool:write"]);
+  await saveApproval(api, "tool:write@a", entryFor(api), c, NOW);
+  await saveApproval(web, "tool:write@b", entryFor(web), c, NOW);
+
+  assert.equal(await revokeAll(api), true);
+
+  assert.equal((await loadApprovals({ cwd: api, now: NOW, snapshotOf: c })).valid.size, 0, "this project cleared");
+  assert.equal(
+    (await loadApprovals({ cwd: web, now: NOW, snapshotOf: c })).valid.size,
+    1,
+    "the other project's approval survives",
   );
 });
 
@@ -248,11 +249,7 @@ test("an unwritable location reports failure rather than throwing", async () => 
 
 test("a null entry drops without taking valid entries with it", async () => {
   const cwd = await temp();
-  await writeFile(
-    approvalsPath(),
-    JSON.stringify({ version: 1, approvals: { "tool:write@good": entryFor(cwd), "tool:write@bad": null } }),
-    "utf8",
-  );
+  await stage(cwd, JSON.stringify({ version: 1, approvals: { "tool:write@good": entryFor(cwd), "tool:write@bad": null } }));
   const r = await loadApprovals({ cwd, now: NOW, snapshotOf: ceiling(["tool:read", "tool:write"]) });
   assert.equal(r.valid.size, 1, "the valid entry loads");
   assert.deepEqual([...r.valid.keys()], ["tool:write@good"]);
@@ -262,45 +259,32 @@ test("a null entry drops without taking valid entries with it", async () => {
 
 test("a non-object entry (string) drops without taking valid entries with it", async () => {
   const cwd = await temp();
-  await writeFile(
-    approvalsPath(),
-    JSON.stringify({ version: 1, approvals: { "tool:write@good": entryFor(cwd), "tool:write@bad": "not an object" } }),
-    "utf8",
-  );
+  await stage(cwd, JSON.stringify({ version: 1, approvals: { "tool:write@good": entryFor(cwd), "tool:write@bad": "not an object" } }));
   const r = await loadApprovals({ cwd, now: NOW, snapshotOf: ceiling(["tool:read", "tool:write"]) });
   assert.equal(r.valid.size, 1, "the valid entry loads");
   assert.deepEqual([...r.valid.keys()], ["tool:write@good"]);
 });
 
-test("revokeApproval prunes a dead entry but keeps another project's", async () => {
-  // Also re-targeted: the injected entry was `entryFor("/elsewhere")` and the assertion was that revoking
-  // one approval deleted it. Revoking in one checkout must not revoke in another.
+test("revokeApproval removes its target and prunes a dead entry beside it", async () => {
+  // Pruning is lazy: entries are validated on read and only removed on write, so a revoke is the moment to
+  // drop what has expired. Scoped to this project's file by ADR-0020, so there is nothing else it can reach.
   const cwd = await temp();
   const c = ceiling(["tool:read", "tool:write"]);
   await saveApproval(cwd, "tool:write@target", entryFor(cwd), c, NOW);
 
-  const current = JSON.parse(await readFile(approvalsPath(), "utf8"));
+  const current = JSON.parse(await readFile(approvalsPath(cwd), "utf8"));
   current.approvals["tool:write@expired"] = entryFor(cwd, { expiresAt: "2026-01-01T00:00:00.000Z" });
-  current.approvals["tool:write@other-project"] = entryFor("/elsewhere");
-  await writeFile(approvalsPath(), JSON.stringify(current), "utf8");
+  await stage(cwd, JSON.stringify(current));
 
   await revokeApproval(cwd, "tool:write@target", c, NOW);
 
-  const parsed = JSON.parse(await readFile(approvalsPath(), "utf8"));
-  assert.deepEqual(
-    Object.keys(parsed.approvals).sort(),
-    ["tool:write@other-project"],
-    "the target is revoked and the expired one pruned; the other project's is untouched",
-  );
+  const parsed = JSON.parse(await readFile(approvalsPath(cwd), "utf8"));
+  assert.deepEqual(Object.keys(parsed.approvals), [], "the target is revoked and the expired one pruned");
 });
 
 test("a wrong-version file grants nothing", async () => {
   const cwd = await temp();
-  await writeFile(
-    approvalsPath(),
-    JSON.stringify({ version: 2, approvals: { "tool:write@x": entryFor(cwd) } }),
-    "utf8",
-  );
+  await stage(cwd, JSON.stringify({ version: 2, approvals: { "tool:write@x": entryFor(cwd) } }));
   const r = await loadApprovals({ cwd, now: NOW, snapshotOf: ceiling(["tool:read", "tool:write"]) });
   assert.equal(r.valid.size, 0, "wrong version grants nothing");
   assert.deepEqual(r.dropped, [], "entries from wrong-version files are not reported (they are silently ignored)");

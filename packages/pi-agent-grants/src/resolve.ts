@@ -61,6 +61,21 @@ export function expandSubsumed(grant: Capability[]): Capability[] {
   return [...expanded].sort();
 }
 
+/**
+ * "Any definition" — ADR-0023, and the only wildcard this module understands.
+ *
+ * Declared here rather than beside `WILDCARD` in `pi-tools.ts` because this module has **no imports at
+ * all** — `pi-tools.ts` imports `Capability` from it, so the dependency runs the other way and adding one
+ * here would make it circular. That constraint is worth preserving: `resolve` is the only place an
+ * escalation could be introduced, and a module with no dependencies is a module whose behaviour is fully
+ * determined by its arguments.
+ *
+ * Deliberately weaker than `tool:*`: it confers **no tool authority**, so `agent:*,tool:read` may spawn
+ * every definition on disk and hand each of them nothing but `read`. It exists because the alternative was
+ * `tool:*` — authority to grant every tool — which made the safe configuration the laborious one.
+ */
+export const AGENT_WILDCARD: Capability = "agent:*";
+
 export interface ResolveInput {
   /** What the delegating agent asked to give the child. */
   requested: Capability[];
@@ -108,14 +123,28 @@ export function resolve(input: ResolveInput): ResolveResult {
   const held = new Set(input.parentGrant);
   const parent =
     input.subsumption === false ? held : new Set(expandSubsumed(input.parentGrant));
+  /**
+   * `agent:*` covers any `agent:<name>` — ADR-0023, and the ONLY wildcard rule in this function.
+   *
+   * `resolve` is otherwise exact-match plus subsumption, deliberately: `tool:*` works not because anything
+   * here understands it, but because `deriveOwnGrant` *enumerates* a session's observed tool names beside
+   * it. Definitions are not tools, so nothing enumerates them — which is why `maySpawnDefinition` had to
+   * special-case the wildcard, and why this needs stating rather than falling out.
+   *
+   * Scoped to one namespace on purpose. There is no generalised `<ns>:*` rule, so a namespace added later
+   * does not silently acquire a wildcard; adding one is a deliberate edit and another decision.
+   */
+  const anyDefinition = held.has(AGENT_WILDCARD);
+  const covered = (c: Capability): boolean =>
+    parent.has(c) || (anyDefinition && c.startsWith("agent:"));
   const ceiling = input.ceiling === undefined ? null : new Set(input.ceiling);
   const gated = new Set(input.gated ?? []);
   const approved = new Set(input.approved ?? []);
 
   // Order is irrelevant to the outcome (set intersection is commutative), so each rejection reason is
   // reported independently rather than being masked by whichever filter happened to run first.
-  const denied = requested.filter((c) => !parent.has(c));
-  const clipped = requested.filter((c) => parent.has(c) && ceiling !== null && !ceiling.has(c));
+  const denied = requested.filter((c) => !covered(c));
+  const clipped = requested.filter((c) => covered(c) && ceiling !== null && !ceiling.has(c));
   /**
    * Is this capability gated, directly or by subsuming something gated?
    *
@@ -135,7 +164,7 @@ export function resolve(input: ResolveInput): ResolveResult {
   };
 
   const gatedBlocked = requested.filter(
-    (c) => parent.has(c) && (ceiling === null || ceiling.has(c)) && isGated(c) && !approved.has(c),
+    (c) => covered(c) && (ceiling === null || ceiling.has(c)) && isGated(c) && !approved.has(c),
   );
 
   const rejected = new Set([...denied, ...clipped, ...gatedBlocked]);

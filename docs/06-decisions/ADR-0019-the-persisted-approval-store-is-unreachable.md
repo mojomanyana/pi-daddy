@@ -1,7 +1,12 @@
 # ADR-0019: the persisted-approval store is unreachable — make `always` real, or delete it
 
 **Date:** 2026-08-13
-**Status:** Proposed
+**Status:** Accepted (2026-08-13, by the user, Option 1 — make `always` reachable — over the steelmanned
+option of deleting the store). **Implemented in 0.10.0**; the status line said "Proposed" until 2026-08-14,
+which was simply stale. Verified end to end in 0.10.1 (`test-integration/approval.it.ts`) and then **partly
+revised the next day**: ADR-0020 replaces the single shared store this ADR made writable, ADR-0021 removes
+the `taskAtApproval` field it armed, and ADR-0022 extends its body pin to the inherited path. The decision
+itself stands — the store is reachable and `always` means something.
 **Driver:** R-37, sharpened into something larger by grepping for its call sites. Touches ADR-0010
 (approval semantics), ADR-0014 (store integrity), ADR-0012 (gating `bash` by default) and ADR-0017 (which
 falsified the premise the current behaviour rests on). ADR-0018 supplies a component either fix needs.

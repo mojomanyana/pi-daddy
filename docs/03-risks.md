@@ -733,15 +733,12 @@ tests-pinning-the-defect pattern R-29 hit.
 `entryVerdict` can reach without consulting this session's definitions, so they are exactly "another
 project's, and not ours to judge") and pruning is limited to entries this session can see are dead.
 
-**STILL OPEN, and it needs a decision about the on-disk format.** The storage key is `capability@subject`
-with **no project component**, so two projects with a same-named definition — `review`, `deploy`, i.e. the
-common case — cannot both hold an approval at all. Measured: A saves, B saves the same key, A now reads its
-own entry as `foreign-cwd` and re-prompts; re-approving in A evicts B. **Mitigation:** nest by `cwd`
-(`{version: 2, projects: {"<cwd>": {…}}}`) and let the version bump make old entries unreadable, which fails
-closed and costs one re-approval. That is a format change to a security-relevant store, so it is not a
-drive-by fix.
-**Trigger:** two checkouts on one machine with definitions of the same name — which is the normal case for
-an operator using this at all.
+**FULLY CLOSED 2026-08-14 by ADR-0020** — and by a different route than the mitigation proposed here.
+Nesting by `cwd` inside one document was Option 2 and lost: it fixes the collision while leaving every write
+touching every project's data, which is where R-41, R-42, R-43 and R-49 all came from. **One file per
+project** makes the collision inexpressible instead of handled. The `foreign-cwd` carry-through added in
+0.10.2 is deleted with the shared file that required it; `entryVerdict` keeps checking `cwd`, still doing
+R-27's original job of refusing an entry copied from elsewhere.
 
 ## R-42 · Two concurrent `saveApproval` calls destroyed each other's write — M/H×M, FIXED
 Added **and fixed** 2026-08-13, same pass. The atomic-write temp file was named
@@ -786,9 +783,11 @@ outside the repository, shared by every project, and kept for 30 days.
 approval implies a scope the approval does not have: the entry authorises **any** task for that definition
 for 30 days. It reads like a constraint and is not one — the legibility failure of R-25 and R-35.
 
-**Decision, not a bug:** either the field goes, or `ledger.ts`'s "anywhere, ever" and ADR-0018's Option-3
-rejection must be narrowed in writing to exempt the approval store and say what buys the exemption. It
-cannot stay unrecorded. Cost of removal: one display line and one test fixture; it is part of no key.
+**FIXED 2026-08-14 by ADR-0021** — the field is deleted, not exempted. `ledger.ts`'s "anywhere, ever" stands
+unamended and is now true. The write path additionally projects every entry through a **whitelist of declared
+fields**, so this closes the class rather than the instance: no future field can reach the store by being
+present on a parsed object. The task is still shown in the dialog, where a human needs it and where it is
+not at rest.
 
 ## R-45 · The body pin exists on one of three approval paths — M×H, OPEN
 Added 2026-08-13, same pass.
@@ -807,9 +806,13 @@ receives `PI_GRANTS_APPROVED=tool:bash@deploy`, hits the `inherited` branch firs
 correct.
 
 Not an escalation — `bash` was held and `approved ⊆ grant` still holds — but it is the confused deputy
-ADR-0010 and ADR-0019 exist to stop, on the paths that skip the check. **Mitigation:** carry the digest in
-`PI_GRANTS_APPROVED` and re-verify on arrival, or accept and document that inheritance is subject-scoped
-only. The first is an ADR; the second is a SPEC paragraph.
+ADR-0010 and ADR-0019 exist to stop, on the paths that skip the check.
+**FIXED 2026-08-14 by ADR-0022:** `PI_GRANTS_APPROVED` publishes `capability@subject#sha256`, and the child
+verifies the digest against the definition **it** loaded rather than trusting that its parent read the same
+file. A republished key carries this session's digest, not the one it received, so a stale pin cannot travel
+another hop. Breaking propagation-format change, as ADR-0014's was. An unpinned entry is still honoured —
+`<delegate>` has no file to hash and a pre-0.11 parent sends none — but `key#` with nothing after it is
+dropped rather than guessed at.
 
 ## R-46 · The ledger reports one approval source for a set with several — M×M, OPEN
 Added 2026-08-13, same pass. `resolveApprovals` computes a per-capability `sources` map and
@@ -860,6 +863,20 @@ that matters for an investigation: SPEC advises rehashing the file to answer *"h
 since?"*, and a rehash cannot distinguish "changed after the spawn" from "changed before it, in a session
 holding a stale copy".
 
+## R-52 · "Any definition, narrow tools" was unexpressible — M×M, FIXED
+Added **and fixed** 2026-08-14; found by `product-strategist` in the red-team pass and decided as ADR-0023.
+`maySpawnDefinition` accepted exactly `tool:*` or an exact `agent:<name>`, so an operator wanting *"may spawn
+any of our review definitions, but may never hand over `write`"* had to either enumerate every definition —
+a list that must be kept in sync by hand, where **adding a skill silently makes it unspawnable** — or grant
+`tool:*`, which is authority to grant every tool and switches off the governance they wanted. **The
+ergonomic option was the least safe one on the menu**, which is R-25's shape.
+**FIXED by ADR-0023:** `agent:*` covers any `agent:<name>` and confers no tool authority. It is the only
+wildcard rule in `resolve()` and is deliberately not generalised to `<ns>:*`, so a namespace added later does
+not silently acquire one. It is inheritable (unlike `tool:*`, R-26) because it grants no tools and every
+definition a descendant runs is still clipped to that descendant's own grant.
+**Trigger for revisiting:** any incident where a definition nobody authorised ran because a grant said
+`agent:*` — the risk Option 2 named, and the reason `agent:*,tool:bash` is documented as a poor combination.
+
 ## R-51 · Nothing reads `definitionDigest`, so ADR-0018's questions have no tool — M×L, OPEN
 Added 2026-08-13 by the `product-strategist` pass. `verifyLedger` counts records, escalation attempts and
 corrupt lines; it never touches `definitionDigest`. Both questions ADR-0018 advertises — *"did these four
@@ -907,6 +924,8 @@ uses it, that answers ADR-0018's revisit trigger and the field is decoration.
 | 2026-08-13 | R-36 | **FIXED** same day (ADR-0017 step 1) — only `tool:`/`ext:` are filtered against an observation; `skill:` and `agent:` pass through. Four tests, including survival across three levels | ADR-0017 |
 | 2026-08-13 | R-37 | Added — the `<delegate>` approval subject rests on a premise ADR-0017 falsified, so `always` approvals can never persist on the only spawn path. Fail-closed; the real cost is the prompt fatigue that gets gating switched off (R-25's shape) | ADR-0018 scoping |
 | 2026-08-13 | R-35 | **Audit half closed** by ADR-0018 — every definition spawn records a `definitionDigest` (name, source, sha256 of the body). What remains is inherent: the digest identifies text without preserving it, and no capability model judges what a body says. The **task is never recorded**, by decision | ADR-0018 |
+| 2026-08-14 | R-41, R-44, R-45, R-52 | **All four closed by decision**, as ADR-0020 (one approval file per project), ADR-0021 (the task is never stored), ADR-0022 (an inherited approval names its instructions) and ADR-0023 (`agent:*`). Each was presented to the user with a worked failure scenario and the options weighed; each ADR records the rejected option and what it would have bought. Two are breaking: the store layout and the propagation format | red-team follow-up |
+| 2026-08-14 | R-49 | Narrowed, not closed — ADR-0020 reduces the unlocked read-modify-write race from "any two projects on the machine" to "two sessions in the same directory". The mitigation is unchanged and still unbuilt: the lock the ledger already has | ADR-0020 |
 | 2026-08-13 | R-39…R-51 | **Red-team pass over ADR-0017/0018/0019 and the R-38 fix** (`architecture-critic` + `product-strategist`, the first review of any of it). Thirteen entries. Five fixed the same session (R-39 the description that said `Available: none`, R-40 the suite rewriting `$HOME`, R-41's pruning half, R-42 the lost concurrent write, R-43 global revoke, R-48 silent truncation); six open, of which R-41's keyspace, R-44's stored task and R-45's unpinned inheritance need decisions rather than patches. **Both reviewers independently found R-44.** Every finding acted on was reproduced by execution first | red-team pass |
 | 2026-08-13 | R-29 | Cross-referenced R-41 — two unit tests were again found *pinning a defect as correct*, this time calling another project's live approval "stale". Third occurrence of that pattern in this repository; worth a standing check when a test's fixture is named after a judgement rather than a state | red-team pass |
 | 2026-08-13 | R-38 | Added and **FIXED same session** — `/grants` listed a definition as BLOCK while a real spawn would allow it off a valid persisted approval, because the listing shared the *planner* with enforcement but not the *approval step*. R-28's shape one layer up. Found by the first end-to-end test of the approval store, and confirmed by execution before being written. Fixed with one `planWithApprovals` used by both, `ctx: null` meaning preview | approval-store IT |

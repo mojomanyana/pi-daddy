@@ -7,68 +7,61 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ## NEXT SESSION — read this, then pick one
 
-**State: green, working tree clean, and no longer unreviewed.** `pi-agent-grants` **0.10.2**,
-`pi-token-audit` **0.1.0**. **276 unit + 17 integration tests** (+**4** with a real model), typecheck clean,
-smoke clean. **Nineteen** ADRs decided.
+**State: green, working tree clean, reviewed, and the review's decisions shipped.** `pi-agent-grants`
+**0.11.0**, `pi-token-audit` **0.1.0**. **282 unit + 17 integration tests** (+**4** with a real model),
+typecheck clean, smoke clean. **Twenty-three** ADRs decided.
 
-**2026-08-13 shipped seven things, and the seventh was a red-team pass that found a defect in the first
-six.** In order: the `grants.ts` split; ADR-0017; ADR-0018; ADR-0019; the end-to-end proof that ADR-0019
-works (which found R-38); the README rewrite (which found two undocumented variables); and
-`architecture-critic` + `product-strategist` over the three ADRs, which produced **thirteen risk entries and
-six same-session fixes** — including **R-39, where every model in every governed session was being told
-`Available: none`, making ADR-0017 and ADR-0019 dead machinery**, and **R-40, where `npm test` was rewriting
-the developer's real approvals file in `$HOME`.**
+**Read the 2026-08-14 entry below before touching the approval layer.** Four ADRs landed together
+(0020–0023) and two are breaking: approvals are stored **one file per project**, and `PI_GRANTS_APPROVED`
+carries a **body digest** that a child verifies against the definition it loaded. A 0.10 parent and a 0.11
+child do not understand each other.
 
-**The lesson of the day, stated plainly for whoever is next.** Six changes went in on one pair of eyes, all
-verified, all tested, all documented — and a two-agent review found a shipped defect that made two of them
-inert, plus data loss in the test suite. Tests and documentation did not catch these because both were
-*written by the same reasoning that introduced them*. **Get the review before shipping the next three
-things, not after.**
+**What the last two days actually demonstrated.** Six changes shipped on one pair of eyes — all verified,
+all tested, all documented — and a two-agent review then found a defect that made two of them *inert*
+(every model was being told `Available: none`), plus a test suite that was rewriting the developer's real
+approvals file. **Tests and docs did not catch these because both were written by the same reasoning that
+introduced them.** Get the review before shipping the next three things, not after.
 
 ```bash
 cd packages/pi-agent-grants && npm test && npm run typecheck && npm run test:integration && npm run test:smoke
 PI_GRANTS_IT_MODEL=1 npm run test:integration   # the 4 model-driven ones — ~60s, costs money
 ```
 
-**Do not edit the tree while an integration run is in flight.** A half-applied edit produced a failure
-indistinguishable from a real regression (see the last entry).
-
-**Read `docs/SPEC.md` before changing behaviour**, and `docs/03-risks.md` R-39…R-51 before touching the
-approval store — six of those are still open and three want decisions.
+**Do not edit the tree while an integration run is in flight** — a half-applied edit produces a failure
+indistinguishable from a real regression. And **read what a bulk regex matched** before running the suite:
+one ate the body of the helper it was rewriting and hung `npm test` with no output.
 
 ### Known-open, and none of it is a cliff-hanger
 
 | # | Item | Notes |
 | :--- | :--- | :--- |
-| 1 | **R-41's keyspace.** The approvals key is `capability@subject` with no project component, in a file shared by every project — so two checkouts with a same-named definition cannot both hold an approval. **Measured.** | **Needs a decision:** nest by `cwd` and bump the version (old entries then fail closed, costing one re-approval). A format change to a security store, so not a drive-by. |
-| 2 | **R-44. The model-authored task is written to disk** (`taskAtApproval`) and printed by `/grants approvals`, while `src/ledger.ts` says it is "not recorded, anywhere, ever". Found by BOTH reviewers. | **Needs a decision:** delete the field, or narrow the rule in writing and say what buys the exemption. It cannot stay unrecorded. Removal costs one display line and one fixture. |
-| 3 | **R-45. The body pin is enforced on the persisted path only** — session and inherited approvals carry no digest, so a child re-reading a rewritten definition runs it under a yes given about the old body. | **Needs a decision:** carry the digest in `PI_GRANTS_APPROVED` and re-verify on arrival (an ADR), or document inheritance as subject-scoped only (a SPEC paragraph). |
-| 4 | **R-46, R-47, R-51** — the ledger reports one approval source for a mixed set (so it can claim a human was asked when they were not); `PI_GRANTS_GATED=agent:x` is a silent no-op; nothing reads `definitionDigest`, so ADR-0018's two advertised questions have no tool. | Each is small and independent. R-47's cheapest form is a startup warning; R-51's is `/grants ledger` grouping by digest. |
-| 5 | **`agent:*` does not exist**, so "may spawn any definition, but only these tools" is unexpressible — the only wildcard is `tool:*`, which is authority to grant every tool. | **Needs a decision** (`product-strategist`): `resolve()` has no wildcard rule by design, so adding one to the `agent:` namespace is an ADR, not three lines. |
+| — | ~~R-41 keyspace, R-44 stored task, R-45 unpinned inheritance, R-52 the `agent:*` cliff~~ **ALL CLOSED 2026-08-14** by ADR-0020/0021/0022/0023. | Done. Each ADR records the rejected option. |
+| 1 | **R-46, R-47, R-51** — the ledger reports one approval source for a mixed set (so it can claim a human was asked when they were not); `PI_GRANTS_GATED=agent:x` is a silent no-op; nothing reads `definitionDigest`, so ADR-0018's two advertised questions have no tool. | **The queued code work.** Small and independent, no decisions needed. R-47's cheapest form is a startup warning; R-51's is `/grants ledger` grouping by digest, which also answers ADR-0018's revisit trigger. |
+| 2 | **R-49** — an unlocked read-modify-write can resurrect a revoked approval. ADR-0020 narrowed it from "any two projects" to "two sessions in the same directory". | The mitigation already exists in this codebase: the lock the ledger uses. |
+| 3 | **R-50** — "void the moment either changes" is really "void at the next session start"; `session.definitions` is a snapshot. All consequences fail safe, none is documented. | A SPEC paragraph, not code. |
 | — | ~~R-35, R-36, R-37, R-38~~ **ALL CLOSED 2026-08-13** by ADR-0017/0018/0019 and the approval-store IT. Left deliberately: the digest identifies a body without preserving it, and nothing judges what a body *says*. | Done. Do not reopen without new evidence. |
 | — | ~~**The persisted approval store has never been exercised end to end**~~ **DONE 2026-08-13 (0.10.1).** A real model answered a real dialog, the entry landed on disk, a *different* process honoured it with no prompt (`approvalSource: "persisted"`), and a body edit re-raised it. Seven further model-free tests cover the reload and every void reason. | `test-integration/approval.it.ts`. It found R-38 while being written. |
-| 6 | **Nothing verifies the ledger automatically.** `/grants ledger` detects corruption; no scheduled or startup check runs it. | R-34. Detection exists, which is the part that was missing. |
-| 7 | **Pane cleanup is not leak-proof.** `finally` covers thrown errors, not the process being killed. No reaper. | `docs/probes/g16-herdr` addendum. |
+| 4 | **Nothing verifies the ledger automatically.** `/grants ledger` detects corruption; no scheduled or startup check runs it. | R-34. Detection exists, which is the part that was missing. |
+| 5 | **Pane cleanup is not leak-proof.** `finally` covers thrown errors, not the process being killed. No reaper. | `docs/probes/g16-herdr` addendum. |
 | — | ~~**`packages/pi-agent-grants/README.md` deeper sections are stale**~~ **DONE 2026-08-13.** Rewritten against the code: the `SKILL.md` ceiling table replaces the pi-subagents one (whose central case is *inverted* here), the approval section no longer contradicts its own banner, and the interceptor sections are gone. Found two undocumented variables while doing it. | `docs/SPEC.md` remains authoritative. |
-| 8 | **`subagents:rpc:spawn` bypasses the tripwire.** Unfixable from here. | ADR-0013 Finding 6. |
-| 9 | **`bash` escapes governance.** Out of scope by decision. | ADR-0012. |
-| 10 | **Background delegation** is deliberately not built. Fan-out carried the value; background carries the lifecycle holes. | ADR-0015. Approvals resolved after a tool call returns would use a torn-down `ctx.ui`, so gating would depend on queue position — that must be answered first. |
-| 11 | **`pi-token-audit` has no tests**, and its headline "tool-definition share" is a character ratio, not a token share. | Falsified 2026-08-10. |
+| 6 | **`subagents:rpc:spawn` bypasses the tripwire.** Unfixable from here. | ADR-0013 Finding 6. |
+| 7 | **`bash` escapes governance.** Out of scope by decision. | ADR-0012. |
+| 8 | **Background delegation** is deliberately not built. Fan-out carried the value; background carries the lifecycle holes. | ADR-0015. Approvals resolved after a tool call returns would use a torn-down `ctx.ui`, so gating would depend on queue position — that must be answered first. |
+| 9 | **`pi-token-audit` has no tests**, and its headline "tool-definition share" is a character ratio, not a token share. | Falsified 2026-08-10. |
 
 ### What to do next
 
-**The three decisions above (items 1, 2, 3) block nothing else and are cheap to answer** — each has its
-options written out in `docs/03-risks.md`. Item 4 is three small independent fixes needing no decision.
+**Item 1 is three small independent fixes and is the queued code work.** Nothing above it is blocked.
 
 Then, in rough value order: **`pi-token-audit`** still ships a headline number that is a character ratio sold
 as a token share (falsified 2026-08-10) — `product-strategist` recommends deleting the package rather than
-testing it, since the thesis it served is the one ADR-0007 retired. **R-34** (item 6 — nothing runs
-`verifyLedger` automatically) pairs naturally with R-51. **Item 10** (background delegation) still wants an
-ADR before any code.
+testing it, since the thesis it served is the one ADR-0007 retired, and it is the only thing in this repo a
+user could install and be misled by. **R-34** (nothing runs `verifyLedger` automatically) pairs naturally
+with R-51. **Item 8** (background delegation) still wants an ADR before any code.
 
-**The README and `docs/SPEC.md` are current as of 0.10.2** — both were rewritten against the code today, and
-SPEC's headline claim now carries the two qualifiers a reviewer would otherwise keep (`bash` escapes; the
-ledger is opt-in, so "always recorded" was false).
+**Before the next batch ships, run the review first.** `architecture-critic` and `product-strategist` have
+now seen ADR-0017–0019 and the R-38 fix; they have **not** seen ADR-0020–0023, which are the four largest
+changes to the approval layer since it was written and include two breaking ones.
 
 ### Things that look like work and are not
 
@@ -86,6 +79,64 @@ That convention is why every reversal here was survivable, and there have been f
 
 ---
 
+
+## 2026-08-14 — four decisions from the red-team pass, implemented — 0.11.0
+
+**The three open decisions and one config cliff from yesterday, answered by the user and shipped.** Four
+ADRs (0020–0023), each recording the option that lost and what it would have bought. **Two are breaking.**
+
+**ADR-0020 — one approval file per project.** The shared store could not express two checkouts holding an
+approval for a same-named definition (`review`, `deploy` — the case that arises the moment an operator
+reuses their own conventions), and every write touched every project's data, which is where R-41, R-42, R-43
+and R-49 all came from. The obvious fix — nest by `cwd` inside one document — **lost**: it closes the
+collision while leaving that shared read-modify-write intact, which is the bet that had already lost four
+times. Per-project files make the collision *inexpressible*. Option 3, deleting persistence entirely, was
+steelmanned properly: this file has produced **nine** recorded defects and ADR-0019 rejected deletion twelve
+hours before most of that evidence existed. It lost because the cost lands on ADR-0012's default `bash`
+gate, which is the one gate an operator never opted into and therefore the one most exposed to R-25 fatigue.
+The old file is **ignored, not migrated**, and reported once — migration would be code that runs on exactly
+one input per machine, inside the layer with nine defects.
+
+**ADR-0021 — the task is never stored.** `taskAtApproval` is deleted rather than exempted, so
+`ledger.ts`'s unqualified *"the task is not recorded, anywhere, ever"* is now true. The write path projects
+every entry through a **whitelist of declared fields**, which closes the class instead of the instance: no
+future field can reach disk by riding on a parsed object. Option 2 — show the pinned body digest instead —
+lost on ordering: R-51 says nothing reads digests yet, so the line would have invited an operator to act on
+a value no tool can help them with.
+
+**ADR-0022 — an inherited approval names its instructions.** `PI_GRANTS_APPROVED` now publishes
+`capability@subject#sha256` and the child verifies it against the definition **it** loaded. A republished key
+carries *this* session's digest rather than the one it received, so a stale pin cannot travel another hop —
+the hole this closes rather than moves. An unpinned entry is still honoured (`<delegate>` has no file to
+hash; a pre-0.11 parent sends none), and that asymmetry with `entryVerdict` is deliberate and argued: a live
+parent in the same tree is a much shorter chain to trust than a 30-day-old file. `key#` with nothing after it
+is dropped rather than guessed at.
+
+**ADR-0023 — `agent:*`.** The configuration *"may spawn any of our definitions, but never hand over
+`write`"* was unexpressible, and the only workaround was `tool:*` — **the ergonomic option was the least
+safe one on the menu**, which is R-25's shape. `agent:*` confers no tool authority. It is the **only**
+wildcard rule in `resolve()` and is deliberately not generalised to `<ns>:*`, so a namespace added later
+cannot silently acquire one. Prefix globs (`agent:review-*`) were rejected on ADR-0016's reasoning about
+`Bash(git:*)`: a security control implemented by string-matching is wrong at the edges.
+
+**Three implementation notes worth keeping.**
+
+1. **`AGENT_WILDCARD` lives in `resolve.ts`, not beside `WILDCARD` in `pi-tools.ts`** — because `resolve.ts`
+   has *no imports at all* and `pi-tools.ts` imports `Capability` from it, so the obvious placement would
+   have made the dependency circular. Worth preserving: the one module where an escalation could be
+   introduced is the one whose behaviour is fully determined by its arguments.
+2. **Two unit tests written yesterday had to be re-targeted**, not deleted. They pinned the `foreign-cwd`
+   carry-through that 0.10.2 needed and ADR-0020 removes; the property they were really about — one
+   project's approvals cannot affect another's — is now asserted against the layout instead of the logic.
+3. **A regex ate its own helper.** A bulk edit rewriting `writeFile(approvalsPath(cwd), …)` into
+   `stage(cwd, …)` also rewrote the body of `stage` itself, giving it an infinite recursion that hung
+   `npm test` with no output. Read what a bulk edit matched before running the suite on it.
+
+**Verified: 282 unit, 17 integration, 21 with `PI_GRANTS_IT_MODEL=1`, typecheck clean, smoke clean.** The
+model-tier lifecycle — dialog, write, reload in a different process with no prompt, void by body edit — was
+re-run against the new per-project store and passes unchanged.
+
+---
 
 ## 2026-08-13 (last) — the red-team pass, and what one pair of eyes had missed — 0.10.2
 

@@ -15,6 +15,7 @@ import {
   approvalKey,
   expiryFor,
   resolveApprovals,
+  verifyInherited,
   type ApprovalPath,
   type ApprovalScope,
   type ApprovalSource,
@@ -63,14 +64,21 @@ export function snapshotOf(session: GrantsSession, subject: string): SubjectSnap
  * `always` — but the scope is carried rather than assumed, because assuming it is what went wrong.
  */
 export function republishable(session: GrantsSession): InheritableApproval[] {
-  const fromKey = (key: string) => ({
-    capability: key.slice(0, key.indexOf("@")),
-    subject: key.slice(key.indexOf("@") + 1),
-    scope: "session" as const,
-  });
+  const fromKey = (key: string) => {
+    const subject = key.slice(key.indexOf("@") + 1);
+    return {
+      capability: key.slice(0, key.indexOf("@")),
+      subject,
+      scope: "session" as const,
+      // ADR-0022: the digest is taken from THIS session's view of the definition, not carried over from
+      // whatever the parent sent. Republishing a stale hash would let a rewritten body travel one more hop
+      // on a pin nobody re-checked, which is the hole this closes rather than moves.
+      bodySha256: snapshotOf(session, subject)?.bodySha256,
+    };
+  };
   return [
     // Inherited keys arrive already clamped and already `once`-free from the level above.
-    ...[...session.inheritedApprovals].map(fromKey),
+    ...[...session.inheritedApprovals.keys()].map(fromKey),
     ...[...session.sessionApprovals].map(fromKey),
   ];
 }
@@ -115,7 +123,9 @@ export async function storedApprovals(
     subject,
     sessionApprovals: session.sessionApprovals,
     persisted: valid,
-    inherited: session.inheritedApprovals,
+    // ADR-0022. Verified HERE rather than at parse time because it needs `session.definitions`, which
+    // arrives at `session_start` — after the session object is built.
+    inherited: verifyInherited(session.inheritedApprovals, (name) => snapshotOf(session, name)),
   });
 }
 
@@ -204,7 +214,9 @@ export async function obtainApprovals(
                 // ADR-0019: the tools AND the instructions the human actually saw. Pinning only the
                 // former would let a rewritten body inherit a yes that was given about different text.
                 bodyAtApproval: current.bodySha256,
-                taskAtApproval: task,
+                // The TASK is deliberately absent (ADR-0021). It is shown in the dialog, where a human
+                // needs it, and never written down, because the model assembles it from the parent's
+                // context and it can carry anything the parent could see.
               },
               snapshot,
               now,

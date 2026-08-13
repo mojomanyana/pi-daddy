@@ -3,7 +3,7 @@
 **The current-state document.** No history, no reasoning about alternatives, no record of how anything came
 to be decided. Where this disagrees with an ADR, the ADR is right and this file is stale — say so.
 
-Last synced against the code: **2026-08-13**, `pi-agent-grants` 0.10.2, pi 0.84.1, herdr 0.7.5.
+Last synced against the code: **2026-08-14**, `pi-agent-grants` 0.11.0, pi 0.84.1, herdr 0.7.5.
 
 ---
 
@@ -83,6 +83,15 @@ never hand down one it does not hold. The id authorises; it is never passed to `
 Capability ids are `tool:<name>`, `ext:<pkg>/<tool>`, `skill:<name>` and `agent:<name>`. Only the first two
 name tools, and **only those two are filtered against a session's observed tool surface** — an observation
 says nothing about a namespace that is not tools.
+
+**Two wildcards, and they are not equivalent.** `tool:*` is authority to grant every tool and satisfies any
+capability. **`agent:*`** (ADR-0023) covers any `agent:<name>` and confers **no tool authority at all**, so
+`agent:*,tool:read` may spawn every definition on disk and hand each of them nothing but `read`. It exists
+because that configuration was otherwise unexpressible and the workaround was `tool:*` — the least safe
+option on the menu. It is the **only** wildcard rule in `resolve()`; there is deliberately no general
+`<namespace>:*`. Unlike `tool:*` it is inheritable, because it grants no tools and every definition a
+descendant runs is still clipped to that descendant's own grant. `agent:*` beside `tool:bash` is a poor
+combination: any `SKILL.md` appearing in either skill root would run with a shell.
 
 Anything pi-daddy needs beyond the standard goes under the spec's `metadata:` map with `pi-daddy-` keys —
 never as invented top-level frontmatter, so the file stays valid for every other tool that reads it.
@@ -164,6 +173,21 @@ A persisted approval is pinned to **both** the definition's `allowed-tools` *and
 void the moment either changes: adding a tool voids it (`type-changed`), and so does rewriting the
 instructions while leaving the tools alone (`instructions-changed`). An entry carrying no body pin is
 treated as changed rather than assumed unchanged.
+
+**Approvals are stored one file per governed directory** (ADR-0020), under
+`$PI_CODING_AGENT_DIR/grants-approvals/`. A single shared file could not express two projects holding an
+approval for a same-named definition — `review`, `deploy` — and every write touched every project's data,
+which is where four defects came from. `/grants revoke --all` clears one project because it cannot name
+another's file.
+
+**An inherited approval carries the body digest too** (ADR-0022). `PI_GRANTS_APPROVED` publishes
+`capability@subject#sha256`, and a child verifies it against the definition **it** loaded — a child is a
+fresh process that re-reads from disk, so without this a `git pull` mid-tree let a descendant run rewritten
+instructions under a yes given about the old ones. `<delegate>` carries no digest, having no file to hash.
+
+**The task is never stored** (ADR-0021). It is shown in the dialog, where a human needs it, and written
+nowhere — the same rule the ledger states, now true of the approval store as well. The write path projects
+entries through a whitelist of declared fields, so no future field can reach disk by accident.
 
 Concurrent callers share **one dialog** per `capability@subject`, but only share the *answer* when it was
 about more than one spawn. `session`, `always`, a decline and an error answer everyone; **a `once` is
@@ -247,14 +271,14 @@ loudly.
 | `PI_GRANTS_GRANT` | unset ⇒ **ungoverned** | Presence switches governance on. An ungoverned session publishes no governance variables at all, so "inactive" cannot quietly govern descendants. |
 | `PI_GRANTS_MAX_DEPTH` / `PI_GRANTS_DEPTH` | `2` / `0` | Depth is set by the parent, not by hand. |
 | `PI_GRANTS_GATED` | `tool:bash` when governed | `""` gates nothing. Closed under subsumption. |
-| `PI_GRANTS_APPROVED` | unset | `capability@subject` pairs, inherited and clamped. |
+| `PI_GRANTS_APPROVED` | unset | `capability@subject#sha256` entries, inherited, clamped, and verified against the definition the child loaded (ADR-0022). |
 | `PI_GRANTS_APPROVAL_TIMEOUT` | `120` | Seconds a dialog waits. `0` or unreadable ⇒ **no timeout**: waiting forever denies nothing. |
 | `PI_GRANTS_FANOUT` | `8` | Subtree budget. |
 | `PI_GRANTS_PARENT_ID` | `d0` | Ledger identity; set by the parent. |
 | `PI_GRANTS_LEDGER` | unset ⇒ not recording | Setting it makes it load-bearing. |
 | `PI_GRANTS_CHILD_TIMEOUT` | `600` | Seconds. Inherited. |
 | `PI_GRANTS_HERDR` / `_WORKSPACE` / `_KEEP_PANE` | unset | herdr executor. |
-| `PI_CODING_AGENT_DIR` | `~/.pi/agent` | pi's own variable, listed because it decides where persisted approvals live. |
+| `PI_CODING_AGENT_DIR` | `~/.pi/agent` | pi's own variable, listed because it decides where persisted approvals live — one file per project under `grants-approvals/`. |
 
 **Malformed configuration disables spawning rather than falling back**, and says which variable it was — a
 bound a typo can switch off is not a bound.
@@ -263,7 +287,7 @@ bound a typo can switch off is not a bound.
 
 ```bash
 cd packages/pi-agent-grants
-npm test                   # 276 unit tests — pure, no pi, no network
+npm test                   # 282 unit tests — pure, no pi, no network
 npm run typecheck          # src + extensions + test + test-integration
 npm run test:integration   # 17 tests against a REAL pi process, no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and USE every subpath

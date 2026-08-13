@@ -30,9 +30,8 @@ export interface GrantsCommandContext {
   catalog: Catalog;
   definitions: Map<string, SkillDefinition>;
   sessionApprovals: Set<string>;
-  /** Keys, not entries — `parseInherited` returns a Set. Declared as a Map until the split, which was
-   *  harmless only because the handler takes `ctx: any` and reads nothing but `.size`. */
-  inheritedApprovals: Set<string>;
+  /** Key → body digest, as `parseInherited` returns it (ADR-0022). Only `.size` is read here. */
+  inheritedApprovals: Map<string, string | undefined>;
   /** A definition's current ceiling and body digest, for the store's confused-deputy check (ADR-0019). */
   snapshotOf: SubjectLookup;
   /**
@@ -107,7 +106,6 @@ handler: async (args: string, ctx: any) => {
       for (const [key, entry] of valid) {
         lines.push(`  ${key}`);
         lines.push(`    approved ${entry.approvedAt}, expires ${entry.expiresAt}`);
-        if (entry.taskAtApproval) lines.push(`    for: ${entry.taskAtApproval}`);
       }
       // Dropped entries are SHOWN, not silently omitted — otherwise a revoked-by-expiry approval looks
       // like one that was never given. Malformed entries are also reported as "expired" by the store
@@ -133,7 +131,7 @@ handler: async (args: string, ctx: any) => {
 
     if (sub === "revoke") {
       if (target === "--all") {
-        const ok = await revokeAll(cwd, snapshotOf, new Date());
+        const ok = await revokeAll(cwd);
         ctx.ui.notify(
           // "in this project" is not padding: the store is shared by every project on the machine, and
           // this used to clear all of them.

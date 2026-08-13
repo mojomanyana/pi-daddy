@@ -1,6 +1,6 @@
 {
   "name": "pi-agent-grants",
-  "version": "0.10.2",
+  "version": "0.11.0",
   "description": "Capability governance for pi sub-agents: spawn Agent Skills (SKILL.md) definitions whose allowed-tools becomes a grant that can only narrow going down a delegation tree, enforced by pi's own --tools allowlist, with an append-only ledger.",
   "keywords": [
     "pi-package",
