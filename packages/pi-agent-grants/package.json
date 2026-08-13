@@ -82,6 +82,7 @@
     "extensions",
     "src",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "scripts": {

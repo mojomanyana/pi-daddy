@@ -321,5 +321,21 @@ Stated because a gap nobody wrote down is the one that surprises somebody.
   `agent:` are passed through as written; everything else is lowercased and prefixed. The catalog then
   refuses it as unknown, so it fails loudly rather than granting anything — but the message names the
   mangled id, not the mistake. Bare names (`Read`, `Grep`) are the documented form.
+- **"Void the moment either changes" means "void at the next session start".** `session.definitions` is read
+  once, at `session_start`, and never refreshed (R-50). Every consequence fails safe and none was written
+  down until now: within a long session an edited definition does not void its approval — consistent, since
+  the child genuinely receives the body this session holds; two concurrent sessions in one project can
+  legitimately disagree about the same entry; a definition added after start is unknown until restart. The
+  one that matters for an investigation: rehashing a file to answer *"has this definition changed since?"*
+  cannot distinguish *changed after the spawn* from *changed before it, in a session holding a stale copy*.
+- **A definition edited mid-fan-out produces siblings that disagree.** The parent is unaffected (it holds
+  the snapshot above) while every child re-reads from disk and re-hashes, so an inherited approval matches
+  for children spawned before the edit and not after — and a child, having no interactive user, refuses
+  rather than asking. Derivable from the two rules above; stated because nobody should have to derive it
+  from an incident.
+- **A session started in a subdirectory is a different project.** Approvals are keyed by the directory pi
+  was started in, so `cd src && pi` gets its own store and its own re-prompt. Fragmentation, not a hazard —
+  but `/grants approvals` will report nothing to an operator who approved something an hour ago one level
+  up.
 - **`PI_BUILTIN_TOOLS` is a pinned observation** of pi 0.84.1. Drift misfiles a capability in the catalog;
   it cannot grant one, because `--tools` is the authority.
