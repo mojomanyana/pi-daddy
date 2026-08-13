@@ -21,7 +21,7 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { ceilingFor, loadAgentTypes, PI_BUILTIN_TOOLS, WILDCARD, type AgentType } from "../src/agent-types.ts";
+import { PI_BUILTIN_TOOLS, WILDCARD } from "../src/pi-tools.ts";
 import {
   DELEGATE_SUBJECT,
   approvalKey,
@@ -34,12 +34,15 @@ import {
   type ApprovalScope,
   type ApprovalSource,
 } from "../src/approval.ts";
-import { legacyApprovalsPath, loadApprovals, revokeAll, revokeApproval, saveApproval } from "../src/approval-store.ts";
+import { legacyApprovalsPath, loadApprovals, saveApproval } from "../src/approval-store.ts";
 import { createApprovalGate, createApprovalGateProvider, timeoutMsFromEnv } from "../src/approval-prompt.ts";
-import { buildCatalog, makeCatalog, type Catalog } from "../src/catalog.ts";
+import { buildCatalog, makeCatalog, skillPathsFromCatalog, type Catalog } from "../src/catalog.ts";
+import { ceilingForDefinition, loadDefinitions, type SkillDefinition } from "../src/definitions.ts";
 import { DELEGATE_CAPABILITY, planDelegation } from "../src/delegate.ts";
-import { decideSpawn } from "../src/interceptor.ts";
 import { ENV_CHILD_TIMEOUT, runChild, timeoutFromEnv } from "../src/run-child.ts";
+import { runHerdrPane } from "../src/run-herdr.ts";
+import { grantsCommand } from "./grants-command.ts";
+import { MAX_CHILDREN_PER_CALL, budgetFromEnv, childSpawnId, splitBudget } from "../src/fanout.ts";
 import { appendRecord, buildRecord } from "../src/ledger.ts";
 import {
   childEnv,
@@ -51,14 +54,30 @@ import {
   ENV_DEPTH,
   ENV_GATED,
   ENV_GRANT,
+  ENV_FANOUT,
   ENV_LEDGER,
   ENV_MAX_DEPTH,
+  ENV_PARENT_ID,
   observeToolNames,
   parseList,
 } from "../src/propagation.ts";
 import { type Capability } from "../src/resolve.ts";
 
 const SPAWN_TOOLS = new Set(["Agent", "subagent", "spawn_agent"]);
+
+/**
+ * Run governed children in herdr panes instead of captured child processes (ADR-0016 point 6).
+ *
+ * Opt-in, and deliberately not auto-detected from `herdr` being on PATH: where a governed child executes
+ * is an operator decision, and a run that silently relocates because a binary appeared is exactly the kind
+ * of invisible change this package exists to prevent. Both executors enforce the identical grant — the
+ * plan is the same, only the place it runs differs.
+ */
+const ENV_HERDR = "PI_GRANTS_HERDR";
+/** herdr workspace for spawned panes. Omitted lets herdr choose. */
+const ENV_HERDR_WORKSPACE = "PI_GRANTS_HERDR_WORKSPACE";
+/** Keep each child's pane after it finishes, for inspection. Off by default: fan-out would flood it. */
+const ENV_HERDR_KEEP_PANE = "PI_GRANTS_HERDR_KEEP_PANE";
 
 export default function (pi: ExtensionAPI) {
   // Governance is opt-in: with PI_GRANTS_GRANT unset the session holds the wildcard and nothing is
@@ -77,12 +96,24 @@ export default function (pi: ExtensionAPI) {
   // `PI_GRANTS_GATED=""` turns the default off; absent and empty are deliberately distinguishable.
   const gated = governed ? gatedFromEnv(process.env[ENV_GATED]) : parseList(process.env[ENV_GATED]);
   const ledgerPath = process.env[ENV_LEDGER];
+  const useHerdr = process.env[ENV_HERDR] === "1";
+  /**
+   * This session's ledger identity, and the descendants it may still create.
+   *
+   * `ownSpawnId` comes from the parent (F8), so ids form one tree across process boundaries instead of
+   * every level restarting at `d0` and the ledger becoming unjoinable. `fanoutBudget` is the cardinality
+   * bound ADR-0008 never had: it attenuates downward like depth, so a subtree can never create more
+   * descendants than its root was given — with no shared state, no lock and no counter file.
+   */
+  const ownSpawnId = process.env[ENV_PARENT_ID]?.trim() || `d${depth}`;
+  const fanoutBudget = budgetFromEnv(process.env[ENV_FANOUT]);
 
   /** This session's own grant. Starts as the inherited upper bound, tightened once tools are observed. */
   let ownGrant: Capability[] = deriveOwnGrant(inherited, null);
   let observed = false;
   let observedTools: string[] | null = null;
-  let types = new Map<string, AgentType>();
+  /** ADR-0016: `SKILL.md` definitions, keyed by name. The format this package spawns from now. */
+  let definitions = new Map<string, SkillDefinition>();
   let catalog: Catalog = makeCatalog([]);
   /**
    * The in-flight catalog build, so `delegate` can wait for it instead of racing it.
@@ -99,11 +130,51 @@ export default function (pi: ExtensionAPI) {
   /** Approvals inherited from the delegator, already clamped to this session's grant upstream. */
   const inheritedApprovals = parseInherited(process.env[ENV_APPROVED]);
 
-  /** Current ceiling for an agent type, for the confused-deputy check in the store. */
+  /**
+   * Current ceiling for a definition, for the confused-deputy check in the approval store.
+   *
+   * ADR-0010's property is unchanged: an `always` approval is void once the thing it was granted for
+   * has changed. Only the source moved — a `SKILL.md`'s `allowed-tools` rather than an agent type's
+   * frontmatter. An undeclared definition yields an EMPTY ceiling, not a wildcard, so a stored approval
+   * for it can never be revalidated by accident.
+   */
   const ceilingOf = (subject: string) => {
-    const type = types.get(subject);
-    return type ? ceilingFor(type, { extensionTools: extensionCapabilities() }) : null;
+    const definition = definitions.get(subject);
+    return definition ? ceilingForDefinition(definition).capabilities : null;
   };
+
+  /**
+   * The one place a delegation context is built — and therefore the one place each field is spelled.
+   *
+   * R-28 is why this is a builder rather than an object literal at each call site. On the path this
+   * replaced, three call sites passed `extensionTools` and the one that ENFORCED did not, so every
+   * ordinary narrow definition was refused with a reason that misstated the file, while `/grants`
+   * cheerfully reported the opposite. The defect was in an argument list, and nothing tested argument
+   * lists. A builder makes the omission unspellable instead of merely corrected.
+   *
+   * `/grants` uses it too, deliberately: the listing runs the REAL planner over the REAL context, so a
+   * diagnostic that disagrees with enforcement is not expressible.
+   */
+  const delegationContext = async (approved?: InheritableApproval[]) => ({
+    ownGrant,
+    depth,
+    maxDepth,
+    gated,
+    ledgerPath,
+    extensionPath,
+    catalog: await catalogReady,
+    // R-32: where each granted skill lives, so `planSpawn` can pass `--skill` for those and only those.
+    // Derived from the catalog's own `source`, so it cannot drift from what was discovered.
+    skillPaths: skillPathsFromCatalog(await catalogReady),
+    // ADR-0016: operator-authored SKILL.md definitions, so `delegate({agent})` can name one.
+    definitions,
+    // The herdr executor drives the child after starting it, so its plan must NOT carry `--print`.
+    // Threaded through the plan rather than patched afterwards: the argv is what the ledger records, and
+    // an executor quietly rewriting it would make the record describe a spawn that did not happen.
+    interactive: useHerdr,
+    ...(approved ? { approved } : {}),
+  });
+
 
   /**
    * The extension tools this session actually has, as capabilities (ADR-0013).
@@ -310,7 +381,7 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     cwd = ctx.cwd;
     try {
-      types = await loadAgentTypes(ctx.cwd);
+      definitions = await loadDefinitions(ctx.cwd);
       catalogReady = buildCatalog({ cwd: ctx.cwd, observedTools });
       catalog = await catalogReady;
       publishChildEnv();
@@ -376,101 +447,54 @@ export default function (pi: ExtensionAPI) {
     return undefined; // inspect only — never replace the payload
   });
 
-  pi.on("tool_call", async (event, ctx) => {
-    if (!SPAWN_TOOLS.has(event.toolName)) return undefined;
+  /**
+   * Tripwire, not a fence — ADR-0016 point 5.
+   *
+   * This hook used to compute what `@tintinweb/pi-subagents` would grant a child, by re-implementing
+   * that package's tool-resolution rules (ADR-0013). That port is gone with this change, and so is
+   * R-31: there is no longer another project's private function to keep in step, and no permissive
+   * drift when it moves.
+   *
+   * What remains is the reason not to simply delete the hook. This package is now the spawner, so a
+   * third-party spawn tool appearing in a governed session means something can create a descendant that
+   * this package does not provision, does not bound by depth, and does not record. Installing one is a
+   * single command. **Refusing is cheap and silence is not**, so the tripwire refuses and names itself.
+   *
+   * It cannot be complete, and says so rather than implying otherwise: `subagents:rpc:spawn` reaches
+   * `manager.spawn()` over the event bus and never produces a `tool_call` at all (ADR-0013 Finding 6),
+   * so a tool-name check cannot see it. This catches the ordinary case loudly; it is not a boundary.
+   */
+  pi.on("tool_call", async (event) => {
+    if (!governed || !SPAWN_TOOLS.has(event.toolName)) return undefined;
 
-    const input = (event.input ?? {}) as Record<string, unknown>;
-    // The spawn prompt, shown to the human for context and stored as an `always` entry's provenance.
-    // Model-supplied, so it is never part of a key — only ever displayed and recorded.
-    const spawnTask = typeof input.prompt === "string" ? input.prompt : undefined;
-
-    let decision: ReturnType<typeof decideSpawn>;
-    try {
-      decision = decideSpawn(
-        { subagentType: input.subagent_type ?? input.agent_type ?? input.type, isolated: input.isolated },
-        { parentGrant: ownGrant, depth, maxDepth, types, gated },
-      );
-    } catch (error) {
-      // A governance layer that errors must deny, not permit.
-      return { block: true, reason: `grants: decision failed, denying (${String(error)})` };
-    }
-
-    // A gate is not a denial: ask a human for what is left, then re-run the SAME pure function with
-    // `approved` filled. `src/resolve.ts` and `src/interceptor.ts` are not touched by this at all.
-    let approvalOutcome: Awaited<ReturnType<typeof obtainApprovals>> | undefined;
-    // `shouldSeekApproval` — not just `gatedBlocked.length > 0` — so a human is never asked about a spawn
-    // this session was going to refuse anyway for an unrelated `denied`. See its doc comment.
-    if (!decision.allow && shouldSeekApproval(decision.result)) {
-      try {
-        approvalOutcome = await obtainApprovals(
-          decision.result?.gatedBlocked ?? [],
-          decision.typeName,
-          "interceptor",
-          ctx,
-          spawnTask,
-          // This is the only path that writes a 30-day persisted approval, so an orphaned dialog here
-          // outlives the turn that raised it. `ExtensionContext.signal` is undefined when the agent is
-          // not streaming, which the gate passes straight through to `select` as "no signal".
-          ctx.signal,
-        );
-        if (approvalOutcome.approved.length > 0) {
-          // Same pure function, second call — the ONLY difference is that `approved` is now filled.
-          decision = decideSpawn(
-            { subagentType: decision.typeName },
-            { parentGrant: ownGrant, depth, maxDepth, types, gated, approved: approvalOutcome.approved, extensionTools: extensionCapabilities() },
-          );
-        }
-        if (!decision.allow && approvalOutcome.reason) decision.reason = approvalOutcome.reason;
-      } catch (error) {
-        // A governance layer that errors must deny, not permit — the original refusal already stands.
-        decision.reason = `grants: approval flow failed, denying (${String(error)})`;
-      }
-    }
+    const reason =
+      `grants: "${event.toolName}" spawns sub-agents outside this session's governance — refused. ` +
+      `This session grants capabilities by spawning them itself (\`delegate\`), so a child created by ` +
+      `another extension would hold whatever that extension decided, with no grant, no depth bound and ` +
+      `no ledger entry. Use \`delegate\` instead. If you meant to run ungoverned, unset PI_GRANTS_GRANT.`;
 
     if (ledgerPath) {
-      // G6 / A-S3: `decideSpawn` now carries the result it decided from, so there is nothing to
-      // recompute. The old `?? resolve({...})` fallback ran on the wildcard path and denied everything,
-      // recording legitimate allowed spawns as escalation attempts.
-      const result = decision.result;
+      // Recorded like any other refusal: an audit that omits the spawns we turned away cannot answer
+      // "did anything try to get around this?", which is the one question a tripwire exists to answer.
       await appendRecord(
         { path: ledgerPath, strict: true },
         buildRecord({
           parentId: `d${depth}`,
-          childId: `${decision.typeName}@d${decision.childDepth}`,
-          depth: decision.childDepth,
-          agentType: decision.typeName,
-          requested: decision.requested,
+          childId: `${event.toolName}@d${depth + 1}`,
+          depth: depth + 1,
+          agentType: event.toolName,
+          // The wildcard is the honest record: an unknown spawner was going to hand this child whatever
+          // IT decided, and we have no way to know what that would have been.
+          requested: [WILDCARD],
           parentGrant: ownGrant,
-          result,
-          blocked: !decision.allow,
-          reason: decision.reason,
-          approved: approvalOutcome?.approved,
-          approvalSource: approvalOutcome?.source,
-          approvalScope: approvalOutcome?.scope,
-          humanDenied: approvalOutcome?.humanDenied,
+          result: { effective: [], denied: [WILDCARD], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
+          blocked: true,
+          reason,
           now: new Date(),
         }),
-      ).catch((error) => {
-        // G6 / A-R4 + B-I2. This used to swallow silently, which contradicted `ledger.ts`'s own
-        // contract that "an unrecorded grant should fail closed". Configuring a ledger is an explicit
-        // act: the operator asked for an audit trail, so a spawn that cannot be recorded must not
-        // proceed. Sessions with no `PI_GRANTS_LEDGER` are unaffected — they never enter this branch.
-        decision = {
-          ...decision,
-          allow: false,
-          reason: `grants: ledger write failed, denying — ${String(error)}`,
-        };
-      });
+      );
     }
-
-    if (!decision.allow) {
-      ctx.ui.notify(`grants: blocked spawn — ${decision.reason}`, "warning");
-      return { block: true, reason: `grants: ${decision.reason}` };
-    }
-    // No env mutation HERE, on the allow path — that per-spawn write was the original race. Any env
-    // mutation for this decision already happened inside `obtainApprovals` (session-approval case), and
-    // it is safe there for the same reason: it publishes a parent-level fact, not a per-child value.
-    return undefined;
+    return { block: true, reason };
   });
 
   // Governed delegation. Unlike the interceptor above this PROVISIONS: the grant is an argument, so the
@@ -500,19 +524,192 @@ export default function (pi: ExtensionAPI) {
   const mayDelegate =
     !governed || inherited.includes(DELEGATE_CAPABILITY) || inherited.includes(WILDCARD);
 
+  /**
+   * Plan, gate, audit and run ONE governed child. Shared by `delegate` and `delegate_all`.
+   *
+   * Extracted rather than copied, for the reason R-28 exists: this is where the grant is resolved, the
+   * human is asked, and the ledger is written, and two call sites spelling that out separately is how one
+   * of them comes to omit a step. `delegate_all` differs from `delegate` only in running several of these
+   * concurrently and reporting each outcome — not in any governance rule.
+   *
+   * Returns an outcome instead of throwing, because a fan-out must be able to report "three succeeded, one
+   * was refused". `delegate` converts a failure back into a throw to keep its own contract, which matters:
+   * `AgentToolResult` has no `isError` field, so a returned error is silently discarded by pi.
+   */
+  const runOneDelegation = async (
+    spec: { task: string; agent?: string; tools?: string[]; model?: string },
+    ids: { parentId: string; childId: string },
+    budget: number | undefined,
+    ctx: { cwd: string; model?: { provider: string; id: string } },
+    signal: AbortSignal | undefined,
+  ): Promise<{ ok: boolean; text: string; reason?: string; granted: Capability[]; depth: number; exitCode: number | null }> => {
+    // pi resolves a BARE model id to an unauthenticated provider and the child dies at startup — the id
+    // alone is not enough, it must be qualified with its provider (`Model<Api>` carries both).
+    const defaultModel = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
+    const request = { task: spec.task, agent: spec.agent, tools: spec.tools, model: spec.model ?? defaultModel };
+    const extra = { fanoutBudget: budget, spawnId: ids.parentId, childSpawnId: ids.childId };
+
+    // Deliberately NOT pre-filling `approved` here — pre-filling would satisfy any inherited-approval gate
+    // silently, before `gatedBlocked` ever surfaces, so `obtainApprovals` would never run and the ledger
+    // would lose the `approvalSource: "inherited"` record ADR-0010 relies on as inheritance's compensating
+    // control. `approved ⊆ grant` still holds regardless — this is about the audit trail, not privilege.
+    let plan = planDelegation(request, { ...(await delegationContext()), ...extra });
+
+    let approvalOutcome: Awaited<ReturnType<typeof obtainApprovals>> | undefined;
+    if (!plan.ok && shouldSeekApproval(plan.result)) {
+      try {
+        approvalOutcome = await obtainApprovals(
+          plan.result?.gatedBlocked ?? [],
+          DELEGATE_SUBJECT,
+          "delegate",
+          ctx as never,
+          spec.task,
+          signal,
+        );
+        const outcome = approvalOutcome;
+        if (outcome.approved.length > 0) {
+          plan = planDelegation(request, {
+            // The scope is the REAL one: a `once` approval still authorises this spawn, and
+            // `inheritApprovals` then keeps it from reaching the child. See ADR-0014. R-29 is what makes
+            // this safe under fan-out: a `once` is consumed by exactly one concurrent caller.
+            ...(await delegationContext([
+              ...republishable(),
+              ...outcome.approved.map((capability) => ({
+                capability,
+                subject: DELEGATE_SUBJECT,
+                scope: outcome.scope ?? ("once" as const),
+              })),
+            ])),
+            ...extra,
+          });
+        }
+        if (!plan.ok && approvalOutcome.reason) plan = { ...plan, reason: approvalOutcome.reason };
+      } catch (error) {
+        plan = { ...plan, reason: `grants: approval flow failed, denying (${String(error)})` };
+      }
+    }
+
+    // G6 / B-I3: no `&& plan.result` guard — `planDelegation` always carries one now.
+    if (ledgerPath) {
+      await appendRecord(
+        { path: ledgerPath, strict: true },
+        buildRecord({
+          // F8: real ids, not depth labels. Four concurrent siblings used to produce four lines identical
+          // except `ts`, so the ledger could not be joined to a result, a process, or the child's own
+          // lines one level down.
+          parentId: ids.parentId,
+          childId: ids.childId,
+          depth: plan.childDepth,
+          agentType: spec.agent ?? "delegate",
+          requested: plan.requested,
+          parentGrant: ownGrant,
+          result: plan.result,
+          blocked: !plan.ok,
+          reason: plan.reason,
+          approved: approvalOutcome?.approved,
+          approvalSource: approvalOutcome?.source,
+          approvalScope: approvalOutcome?.scope,
+          humanDenied: approvalOutcome?.humanDenied,
+          now: new Date(),
+        }),
+      ).catch((error) => {
+        // G6 / A-R4 + B-I2: fail closed. This path PROVISIONS, so an unrecorded delegation would be a
+        // child running with granted capabilities and no audit line.
+        plan = { ...plan, ok: false, reason: `grants: ledger write failed, denying — ${String(error)}` };
+      });
+    }
+
+    if (!plan.ok) {
+      return { ok: false, text: "", reason: plan.reason, granted: [], depth: plan.childDepth, exitCode: null };
+    }
+
+    // G8: bounded output, a wall-clock timeout with SIGTERM->SIGKILL escalation, and an abort observed
+    // even if it happened before we got here. See src/run-child.ts for why each one exists.
+    //
+    // ADR-0016 point 6: two executors, one plan. `runChild` is the default because it needs nothing
+    // installed; herdr gives the same governed argv a VISIBLE, attachable pane. Opt-in per session rather
+    // than auto-detected — a governed run must not silently relocate because a binary is on PATH.
+    const output = useHerdr
+      ? await runHerdrPane({
+          args: plan.args.slice(0, -1),
+          // The task is delivered as a prompt, so it never reaches argv at all. `plan.args` still ends
+          // with the neutralised task (planSpawn is executor-agnostic), hence the slice — and the leading
+          // space `neutralisePrompt` added is stripped because there is no parser to defend against here.
+          prompt: plan.args[plan.args.length - 1].trimStart(),
+          // Grant/depth/ledger go on the PANE: `herdr agent start` has no --env, but a pane's environment
+          // reaches the shell that launches the agent (docs/probes/g16-herdr).
+          env: plan.env,
+          cwd: ctx.cwd,
+          name: `${spec.agent ?? "delegate"}-${ids.childId}`,
+          workspace: process.env[ENV_HERDR_WORKSPACE],
+          signal,
+          timeoutMs: timeoutFromEnv(process.env[ENV_CHILD_TIMEOUT]),
+          keepPane: process.env[ENV_HERDR_KEEP_PANE] === "1",
+        })
+      : await runChild({
+          command: "pi",
+          args: plan.args,
+          // Explicit per-child env — the parent's own grant vars must not leak in. A plain spread would
+          // not achieve that: a key `plan.env` does not set is a key the parent's value survives into, so
+          // `mergeChildEnv` strips every governance variable first and lets only the plan put them back.
+          env: mergeChildEnv(process.env, plan.env),
+          cwd: ctx.cwd,
+          signal,
+          timeoutMs: timeoutFromEnv(process.env[ENV_CHILD_TIMEOUT]),
+        });
+
+    // G8: a child that failed is reported as a failure. A non-zero exit, a timeout and a truncated flood
+    // all used to come back as ordinary tool results, so the orchestrator read them as answers.
+    if (output.spawnError || output.aborted || output.timedOut || output.code !== 0) {
+      const why = output.spawnError
+        ? `could not be started: ${output.spawnError}`
+        : output.aborted
+          ? "was cancelled"
+          : output.timedOut
+            ? "exceeded its time limit and was killed"
+            : `exited with code ${output.code}`;
+      return {
+        ok: false,
+        text: output.text.trim(),
+        reason: `the sub-agent ${why}`,
+        granted: plan.effective,
+        depth: plan.childDepth,
+        exitCode: output.code,
+      };
+    }
+
+    return {
+      ok: true,
+      text: output.text.trim(),
+      granted: plan.effective,
+      depth: plan.childDepth,
+      exitCode: output.code,
+    };
+  };
   if (mayDelegate) pi.registerTool({
     name: "delegate",
     label: "Delegate (governed)",
     description:
       "Delegate a task to a sub-agent holding ONLY the capabilities you grant it. You cannot grant what " +
-      "you do not hold. Grant 'delegate' if the sub-agent must itself delegate further; withhold it to " +
-      "make the sub-agent a leaf.",
+      "you do not hold. Prefer 'agent' — it spawns a definition whose capabilities and instructions were " +
+      "written by the operator. Use 'tools' only when no definition fits. Grant 'delegate' if the " +
+      "sub-agent must itself delegate further; withhold it to make the sub-agent a leaf.",
     parameters: Type.Object({
       task: Type.String({ description: "The task for the sub-agent. It receives only this." }),
-      tools: Type.Array(Type.String(), {
-        description:
-          "Capabilities to grant, e.g. [\"read\",\"grep\"] or [\"tool:read\",\"ext:pkg/tool\"]. Empty means no tools.",
-      }),
+      agent: Type.Optional(
+        Type.String({
+          description:
+            `Name of a definition to spawn — its allowed-tools become the grant and its instructions ` +
+            `become the sub-agent's system prompt. Available: ${[...definitions.keys()].sort().join(", ") || "none"}.`,
+        }),
+      ),
+      tools: Type.Optional(
+        Type.Array(Type.String(), {
+          description:
+            "Capabilities to grant when no 'agent' is named, e.g. [\"read\",\"grep\"] or " +
+            "[\"tool:read\",\"ext:pkg/tool\"]. Empty means no tools. Ignored when 'agent' is given.",
+        }),
+      ),
       model: Type.Optional(
         Type.String({
           // A bare id resolves across all known providers and can land on one there is no key for, so the
@@ -524,223 +721,147 @@ export default function (pi: ExtensionAPI) {
       ),
     }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-      // pi resolves a BARE model id to an unauthenticated provider and the child dies at startup — the
-      // id alone is not enough, it must be qualified with its provider (`Model<Api>` carries both).
-      // Computed once and reused at both `planDelegation` call sites below so they cannot diverge.
-      const defaultModel = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
-
-      // Deliberately NOT pre-filling `approved` here (unlike the interceptor path's first `decideSpawn`,
-      // which also omits it) — pre-filling would satisfy any inherited-approval gate silently, before
-      // `gatedBlocked` ever surfaces, so `obtainApprovals` would never run and the ledger would lose the
-      // `approvalSource: "inherited"` record ADR-0010 relies on as inheritance's compensating control.
-      // `approved ⊆ grant` still holds regardless — this is purely about the audit trail, not privilege.
-      let plan = planDelegation(
-        { task: params.task, tools: params.tools, model: params.model ?? defaultModel },
-        { ownGrant, depth, maxDepth, gated, ledgerPath, extensionPath, catalog: await catalogReady },
+      const outcome = await runOneDelegation(
+        { task: params.task, agent: params.agent, tools: params.tools, model: params.model },
+        { parentId: ownSpawnId, childId: childSpawnId(ownSpawnId, 0) },
+        // A single blocking delegation spends nothing from the subtree budget: cardinality is already
+        // bounded to one by the call being blocking, which is the accident fan-out removes. Passing the
+        // budget through unchanged means a child can still fan out with what this session was given.
+        fanoutBudget,
+        ctx,
+        signal,
       );
 
-      // Same fill-and-retry as the interceptor path: ask for what is gated, re-plan with `approved`
-      // filled. `src/delegate.ts`'s `planDelegation` is not touched by this at all.
-      let approvalOutcome: Awaited<ReturnType<typeof obtainApprovals>> | undefined;
-      if (!plan.ok && shouldSeekApproval(plan.result)) {
-        try {
-          approvalOutcome = await obtainApprovals(
-            plan.result?.gatedBlocked ?? [],
-            DELEGATE_SUBJECT,
-            "delegate",
-            ctx,
-            params.task,
-            signal,
-          );
-          const outcome = approvalOutcome;
-          if (outcome.approved.length > 0) {
-            plan = planDelegation(
-              { task: params.task, tools: params.tools, model: params.model ?? defaultModel },
-              {
-                ownGrant,
-                depth,
-                maxDepth,
-                gated,
-                ledgerPath,
-                extensionPath,
-                catalog: await catalogReady,
-                // The scope is the REAL one: a `once` approval still authorises this spawn, and
-                // `inheritApprovals` then keeps it from reaching the child. See ADR-0014.
-                approved: [
-                  ...republishable(),
-                  ...outcome.approved.map((capability) => ({
-                    capability,
-                    subject: DELEGATE_SUBJECT,
-                    scope: outcome.scope ?? ("once" as const),
-                  })),
-                ],
-              },
-            );
-          }
-          if (!plan.ok && approvalOutcome.reason) plan = { ...plan, reason: approvalOutcome.reason };
-        } catch (error) {
-          // A governance layer that errors must deny, not permit — the original refusal already stands.
-          plan = { ...plan, reason: `grants: approval flow failed, denying (${String(error)})` };
-        }
-      }
-
-      // G6 / B-I3: no `&& plan.result` guard — `planDelegation` always carries one now, and the four
-      // refusals that used to lack it (disabled, too deep, no task, unknown capability) went unaudited.
-      if (ledgerPath) {
-        await appendRecord(
-          { path: ledgerPath, strict: true },
-          buildRecord({
-            parentId: `d${depth}`,
-            childId: `delegate@d${plan.childDepth}`,
-            depth: plan.childDepth,
-            agentType: "delegate",
-            requested: params.tools.map((t) => (t.includes(":") ? t : `tool:${t}`)),
-            parentGrant: ownGrant,
-            result: plan.result,
-            blocked: !plan.ok,
-            reason: plan.reason,
-            approved: approvalOutcome?.approved,
-            approvalSource: approvalOutcome?.source,
-            approvalScope: approvalOutcome?.scope,
-            humanDenied: approvalOutcome?.humanDenied,
-            now: new Date(),
-          }),
-        ).catch((error) => {
-          // G6 / A-R4 + B-I2: fail closed. Unlike the interceptor path this one PROVISIONS, so an
-          // unrecorded delegation would be a child running with granted capabilities and no audit line.
-          plan = { ...plan, ok: false, reason: `grants: ledger write failed, denying — ${String(error)}` };
-        });
-      }
-
-      if (!plan.ok) {
-        // THROW, do not return. `AgentToolResult` has no `isError` field: pi sets `isError` only when
-        // `execute` throws (`pi-agent-core/dist/agent-loop.js` — a normal return is hardcoded
-        // `isError: false`). Returning `isError: true` was silently discarded, so every refusal this
-        // package makes — escalation, gate, universal capability, depth, unknown capability — was
+      if (!outcome.ok) {
+        // THROW, do not return. `AgentToolResult` has no `isError` field: pi sets it only when `execute`
+        // throws (`pi-agent-core/dist/agent-loop.js` — a normal return is hardcoded `isError: false`).
+        // Returning `isError: true` was silently discarded, so every refusal this package made was
         // recorded by pi as a SUCCESSFUL tool call. Found by the integration suite on its first run.
-        throw new Error(`delegation refused: ${plan.reason}`);
-      }
-
-      // G8: bounded output, a wall-clock timeout with SIGTERM->SIGKILL escalation, and an abort that is
-      // observed even if it happened before we got here. See src/run-child.ts for why each one exists.
-      const output = await runChild({
-        command: "pi",
-        args: plan.args,
-        // Explicit per-child env — the parent's own grant vars must not leak in. A plain spread would
-        // not achieve that: a key `plan.env` does not set is a key the parent's value survives into, so
-        // `mergeChildEnv` strips every governance variable first and lets only the plan put them back.
-        env: mergeChildEnv(process.env, plan.env),
-        cwd: ctx.cwd,
-        signal,
-        timeoutMs: timeoutFromEnv(process.env[ENV_CHILD_TIMEOUT]),
-      });
-
-      // G8: a child that failed is reported as a failure. Previously a non-zero exit, a timeout and a
-      // truncated flood all came back as ordinary tool results, so the orchestrator read them as answers.
-      if (output.spawnError || output.aborted || output.timedOut || output.code !== 0) {
-        const why = output.spawnError
-          ? `could not be started: ${output.spawnError}`
-          : output.aborted
-            ? "was cancelled"
-            : output.timedOut
-              ? "exceeded its time limit and was killed"
-              : `exited with code ${output.code}`;
-        // Thrown for the same reason as the refusal above: a returned `isError` is discarded, and G8's
-        // whole point was that a dead child must not read as an answer.
-        throw new Error(`delegation failed — the sub-agent ${why}.\n\n${output.text.trim()}`);
+        const detail = outcome.text ? `\n\n${outcome.text}` : "";
+        throw new Error(`delegation refused: ${outcome.reason}${detail}`);
       }
 
       return {
-        content: [{ type: "text", text: output.text.trim() || "(no output)" }],
+        content: [{ type: "text", text: outcome.text || "(no output)" }],
+        details: { granted: outcome.granted, depth: outcome.depth, exitCode: outcome.exitCode },
+      };
+    },
+  });
+
+  /**
+   * Bounded SYNCHRONOUS fan-out — ADR-0015's option A′.
+   *
+   * One call spawns several governed children concurrently and returns when the last one finishes. There is
+   * deliberately no background mode, no result-by-id and no child registry, and that scoping is the whole
+   * design: **fan-out and background are separable, fan-out carries most of the value, and background
+   * carries nearly all of the state-machine holes.** Because the turn still owns the children, the parent
+   * cannot exit before them, the tool-call signal is still live, the timeout still outlives every child,
+   * results are returned rather than stored, and there are no ids to dangle across a compaction.
+   *
+   * Every child goes through `runOneDelegation`, so each one is planned, gated, audited and bounded by
+   * exactly the same rules as a single `delegate`. What fan-out adds is a **cardinality bound** (the
+   * budget) and **sibling identity** (F8) — the two things ADR-0008 never had, because a blocking
+   * `delegate` bounded cardinality to one by accident.
+   */
+  if (mayDelegate) pi.registerTool({
+    name: "delegate_all",
+    label: "Delegate to several sub-agents (governed, parallel)",
+    description:
+      "Run several sub-agents CONCURRENTLY and return all their results. Each child is governed exactly " +
+      "as with `delegate`: it holds only what you grant it, and you cannot grant what you do not hold. " +
+      `At most ${MAX_CHILDREN_PER_CALL} children per call, and a session-wide budget bounds the total ` +
+      "across the whole delegation subtree. Children cannot see each other or share context. Use this " +
+      "when independent tasks can proceed in parallel — several reviewers over one diff, say — and read " +
+      "every child's outcome, because one can be refused while the others succeed.",
+    parameters: Type.Object({
+      children: Type.Array(
+        Type.Object({
+          task: Type.String({ description: "The task for this sub-agent. It receives only this." }),
+          agent: Type.Optional(Type.String({ description: "Definition to spawn; its allowed-tools become the grant." })),
+          tools: Type.Optional(Type.Array(Type.String(), { description: "Capabilities, when no 'agent' fits." })),
+          model: Type.Optional(Type.String({ description: "Model as provider/id. Defaults to this session's." })),
+        }),
+        {
+          minItems: 1,
+          maxItems: MAX_CHILDREN_PER_CALL,
+          description: "The sub-agents to run concurrently. Each is independent and unaware of the others.",
+        },
+      ),
+    }),
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+      const children = params.children ?? [];
+      const split = splitBudget(fanoutBudget, children.length);
+      if (!split.ok) {
+        // Thrown, not returned: a returned `isError` is discarded by pi, so a refusal that came back as a
+        // normal result would read to the orchestrator as a successful fan-out of zero children.
+        throw new Error(`fan-out refused: ${split.reason}`);
+      }
+
+      // Concurrent by construction. Each child gets its own budget share and its own ledger id, so the
+      // records form a tree and two siblings can never be confused for one another.
+      const outcomes = await Promise.all(
+        children.map((child, index) =>
+          runOneDelegation(
+            child,
+            { parentId: ownSpawnId, childId: childSpawnId(ownSpawnId, index) },
+            split.perChild,
+            ctx,
+            signal,
+          ),
+        ),
+      );
+
+      const failed = outcomes.filter((o) => !o.ok);
+      // Every child is reported, including the ones that failed. R-03's rule: a missing result must never
+      // be indistinguishable from an empty one, and a fan-out that hid its refusals would let an
+      // orchestrator summarise four reviews when only three happened.
+      const report = outcomes
+        .map((outcome, index) => {
+          const label = `### child ${index + 1}${children[index].agent ? ` (${children[index].agent})` : ""}`;
+          return outcome.ok
+            ? `${label} — completed\n\n${outcome.text || "(no output)"}`
+            : `${label} — FAILED: ${outcome.reason}${outcome.text ? `\n\n${outcome.text}` : ""}`;
+        })
+        .join("\n\n---\n\n");
+
+      if (failed.length === children.length) {
+        // All of them failed, so there is no partial result to hand back — and a tool that returns text
+        // when nothing ran is exactly how a wrong summary gets written.
+        throw new Error(`fan-out failed: every child was refused or failed.\n\n${report}`);
+      }
+
+      return {
+        content: [{ type: "text", text: report }],
         details: {
-          granted: plan.effective,
-          depth: plan.childDepth,
-          subsumedBy: plan.result?.subsumedBy ?? [],
-          exitCode: output.code,
+          children: outcomes.length,
+          failed: failed.length,
+          budgetPerChild: split.perChild,
+          granted: outcomes.map((o) => o.granted),
         },
       };
     },
   });
 
   pi.registerCommand("grants", {
-    description:
-      "Show this session's capability grant, delegation depth, and known agent-type ceilings; " +
-      "/grants approvals | /grants revoke <key>|--all",
-    handler: async (args, ctx) => {
-      const [sub, target] = args.trim().split(/\s+/).filter(Boolean);
-
-      if (sub === "approvals") {
-        const { valid, dropped } = await loadApprovals({ cwd, now: new Date(), ceilingOf });
-        // The count says "valid", and the ignored entries are listed below it — but a reader who stops at
-        // the first line would conclude the file is empty, so the ignored total goes on that same line.
-        const lines = [
-          `grants: ${valid.size} persisted approval${valid.size === 1 ? "" : "s"}` +
-            (dropped.length > 0 ? `, ${dropped.length} ignored` : ""),
-        ];
-        for (const [key, entry] of valid) {
-          lines.push(`  ${key}`);
-          lines.push(`    approved ${entry.approvedAt}, expires ${entry.expiresAt}`);
-          if (entry.taskAtApproval) lines.push(`    for: ${entry.taskAtApproval}`);
-        }
-        // Dropped entries are SHOWN, not silently omitted — otherwise a revoked-by-expiry approval looks
-        // like one that was never given. Malformed entries are also reported as "expired" by the store
-        // (a deliberate simplification so it need not extend EntryVerdict); relabel those here so a
-        // corrupt entry doesn't read as a timed-out one.
-        //
-        // This mirrors `isValidEntryShape` in `src/approval-store.ts` (all four required fields) and
-        // must be kept in step with it — it is a display-only relabeling of an entry the store already
-        // dropped, not a second validity decision, so it stays here rather than moving into `src/`.
-        for (const d of dropped) {
-          const raw = d.entry as Partial<Record<"approvedAt" | "expiresAt" | "cwd" | "grantAtApproval", unknown>>;
-          const shapeCorrupt =
-            typeof raw?.approvedAt !== "string" ||
-            typeof raw?.expiresAt !== "string" ||
-            typeof raw?.cwd !== "string" ||
-            !Array.isArray(raw?.grantAtApproval);
-          const verdict = shapeCorrupt ? "malformed" : d.verdict;
-          lines.push(`  (ignored) ${d.key} — ${verdict}`);
-        }
-        ctx.ui.notify(lines.join("\n"), "info");
-        return;
-      }
-
-      if (sub === "revoke") {
-        if (target === "--all") {
-          const ok = await revokeAll(cwd);
-          ctx.ui.notify(
-            ok ? "grants: all persisted approvals revoked" : "grants: failed to revoke — could not write the approvals file",
-            ok ? "info" : "warning",
-          );
-        } else if (!target) {
-          ctx.ui.notify("grants: usage — /grants revoke <capability>@<agent-type> | --all", "warning");
-        } else {
-          const removed = await revokeApproval(cwd, target, ceilingOf, new Date());
-          ctx.ui.notify(
-            removed ? `grants: revoked ${target}` : `grants: no persisted approval named ${target}`,
-            removed ? "info" : "warning",
-          );
-        }
-        return;
-      }
-
-      const { valid } = await loadApprovals({ cwd, now: new Date(), ceilingOf });
-      const lines = [
-        governed ? "grants: ACTIVE" : "grants: inactive (set PI_GRANTS_GRANT to govern this session)",
-        `  holding    ${ownGrant.join(", ") || "(nothing)"}${observed ? " (observed)" : " (inherited, not yet observed)"}`,
-        `  depth      ${depth} of max ${maxDepth}${maxDepth <= 0 ? " (spawning disabled)" : ""}`,
-        `  ledger     ${ledgerPath ?? "(not recording — set PI_GRANTS_LEDGER)"}`,
-        `  approvals  ${sessionApprovals.size} this session, ${valid.size} persisted` +
-          `${inheritedApprovals.size > 0 ? `, ${inheritedApprovals.size} inherited` : ""}` +
-          ` — /grants approvals`,
-        `  catalog    ${catalog.all.length} capabilities — ` +
-          `${catalog.byKind("builtin").length} builtin, ${catalog.byKind("extension").length} extension, ` +
-          `${catalog.byKind("skill").length} skill, ${catalog.byKind("agentType").length} agent-type`,
-      ];
-      for (const [name] of [...types].slice(0, 12)) {
-        const d = decideSpawn({ subagentType: name }, { parentGrant: ownGrant, depth, maxDepth, types, gated, extensionTools: extensionCapabilities() });
-        lines.push(`    ${d.allow ? "allow" : "BLOCK"}  ${name}${d.allow ? "" : ` — ${d.reason}`}`);
-      }
-      ctx.ui.notify(lines.join("\n"), "info");
-    },
+    ...grantsCommand,
+    handler: (args, ctx) =>
+      grantsCommand.handler(args, {
+        ...ctx,
+        grants: {
+          cwd,
+          governed,
+          ownGrant,
+          observed,
+          depth,
+          maxDepth,
+          ledgerPath,
+          catalog,
+          definitions,
+          sessionApprovals,
+          inheritedApprovals,
+          ceilingOf,
+          delegationContext,
+        },
+      }),
   });
 }

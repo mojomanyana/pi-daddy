@@ -9,7 +9,7 @@
  * ADR-0010 records the four decisions encoded here.
  */
 
-import { WILDCARD } from "./agent-types.ts";
+import { WILDCARD } from "./pi-tools.ts";
 import type { Capability, ResolveResult } from "./resolve.ts";
 
 /** How far a single yes reaches in time. */

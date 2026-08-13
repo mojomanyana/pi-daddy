@@ -142,11 +142,16 @@ test("single-flight: two concurrent requests for the same key raise ONE dialog",
   };
   const gate = createApprovalGate({ ui, hasUI: true, mode: "tui" });
   const both = Promise.all([gate.request(req()), gate.request(req())]);
-  release("Allow once");
+  // RE-TARGETED for R-29, not weakened. This test protects de-duplication — two concurrent callers must
+  // not stack two dialogs asking an identical question — and that property is unchanged. It previously
+  // answered "Allow once" and asserted BOTH callers received it, which pinned the defect: one human yes
+  // about one spawn, silently reused for another. A `session` answer is the honest way to test sharing,
+  // because it genuinely is an answer about the session. The `once` case is covered by the R-29 tests.
+  release("Allow for this session");
   const [a, b] = await both;
   assert.equal(calls, 1, "the second request awaited the first dialog");
-  assert.equal(a.scope, "once");
-  assert.equal(b.scope, "once");
+  assert.equal(a.scope, "session");
+  assert.equal(b.scope, "session");
 });
 
 test("different keys prompt separately", async () => {
@@ -203,12 +208,15 @@ test("single-flight survives the CALLER's pattern: a fresh gate per invocation s
   const options = { ui, hasUI: true, mode: "tui" };
   const first = gateFor(options).request(req()); // invocation 1 — its own gate object
   const second = gateFor(options).request(req()); // invocation 2 — a DIFFERENT gate object
-  release("Allow once");
+  // Re-targeted for R-29 on the same reasoning as the test above: what is under test here is that the
+  // PROVIDER shares one queue across separately-built gates. A session-scoped answer isolates that
+  // property from the question of which answers may be shared at all.
+  release("Allow for this session");
   const [a, b] = await Promise.all([first, second]);
 
   assert.equal(calls, 1, "the second invocation awaited the first invocation's dialog");
-  assert.equal(a.scope, "once");
-  assert.equal(b.scope, "once");
+  assert.equal(a.scope, "session");
+  assert.equal(b.scope, "session");
 });
 
 test("two independently created gates do NOT share a queue — the provider is what shares it", async () => {
@@ -247,4 +255,77 @@ test("the timeout env var is read in seconds and converted to milliseconds", () 
   assert.equal(timeoutMsFromEnv(undefined), 120_000, "default is two minutes");
   assert.equal(timeoutMsFromEnv("0"), undefined, "zero means wait indefinitely");
   assert.equal(timeoutMsFromEnv("banana"), undefined, "unparseable means wait rather than guess");
+});
+
+// ---------------------------------------------------------------------------
+// R-29 — the single-flight key does two jobs that need different identities.
+//
+// `DELEGATE_SUBJECT` is a deliberate constant (`approval.ts:24-32`): the only things naming a delegated
+// child are the task and the tool list, both model-chosen, and "a key the model controls is not a key".
+// That reasoning is right for *approval identity* — what a human said yes to, and what may be persisted.
+//
+// It is wrong for *de-duplication*. Sharing one in-flight dialog is correct for a `session` or `always`
+// answer, because those genuinely are answers about the session. It is not correct for `once`, which
+// means THIS spawn. Measured before the fix: four concurrent delegations gating `tool:bash`, one dialog,
+// one click of "Allow once" -> four `granted` outcomes, with the human having seen only the first task.
+// ---------------------------------------------------------------------------
+
+/** A UI that answers `answer` the first time and `later` on every subsequent dialog. */
+const countingUI = (answer: string | undefined, later = answer) => {
+  const titles: string[] = [];
+  const ui: ApprovalUI = {
+    select: async (title) => {
+      titles.push(title);
+      return titles.length === 1 ? answer : later;
+    },
+    notify: () => {},
+  };
+  return { ui, titles };
+};
+
+test("R-29: one 'Allow once' does not authorise concurrent spawns", async () => {
+  const { ui, titles } = countingUI("Allow once", "Deny");
+  const gate = createApprovalGateProvider()({ ui, hasUI: true, mode: "interactive" });
+  const shared = { capability: "tool:bash", subject: "<delegate>", path: "delegate" as const };
+
+  const outcomes = await Promise.all([
+    gate.request({ ...shared, task: "audit module A" }),
+    gate.request({ ...shared, task: "audit module B" }),
+    gate.request({ ...shared, task: "audit module C" }),
+  ]);
+
+  const granted = outcomes.filter((o) => o.kind === "granted");
+  assert.equal(granted.length, 1, "'once' means this spawn — exactly one caller may consume it");
+  assert.ok(titles.length > 1, "the callers that did not get it must be asked, not silently granted");
+});
+
+test("R-29: a 'session' answer IS shared, because it is genuinely about the session", async () => {
+  // The fix must not destroy the de-duplication that makes gating usable. A session-scoped yes answers
+  // the question for every caller, so one dialog is correct and three would be prompt fatigue.
+  const { ui, titles } = countingUI("Allow for this session");
+  const gate = createApprovalGateProvider()({ ui, hasUI: true, mode: "interactive" });
+  const shared = { capability: "tool:bash", subject: "<delegate>", path: "delegate" as const };
+
+  const outcomes = await Promise.all([
+    gate.request({ ...shared, task: "audit module A" }),
+    gate.request({ ...shared, task: "audit module B" }),
+    gate.request({ ...shared, task: "audit module C" }),
+  ]);
+
+  assert.equal(outcomes.filter((o) => o.kind === "granted").length, 3, "a session yes covers all of them");
+  assert.equal(titles.length, 1, "and it must only be asked once");
+});
+
+test("R-29: a refusal is shared too — one 'Deny' does not become three dialogs", async () => {
+  const { ui, titles } = countingUI("Deny");
+  const gate = createApprovalGateProvider()({ ui, hasUI: true, mode: "interactive" });
+  const shared = { capability: "tool:bash", subject: "<delegate>", path: "delegate" as const };
+
+  const outcomes = await Promise.all([
+    gate.request({ ...shared, task: "audit module A" }),
+    gate.request({ ...shared, task: "audit module B" }),
+  ]);
+
+  assert.ok(outcomes.every((o) => o.kind === "declined"), "a human's no answers every pending caller");
+  assert.equal(titles.length, 1, "re-asking after a decline is how you train someone to click yes");
 });

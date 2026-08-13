@@ -1,7 +1,7 @@
 {
   "name": "pi-agent-grants",
-  "version": "0.6.0",
-  "description": "Capability governance for pi sub-agents: grants that can only narrow going down a delegation tree, enforced by pi's own --tools allowlist, with an append-only grant ledger.",
+  "version": "0.7.0",
+  "description": "Capability governance for pi sub-agents: spawn Agent Skills (SKILL.md) definitions whose allowed-tools becomes a grant that can only narrow going down a delegation tree, enforced by pi's own --tools allowlist, with an append-only ledger.",
   "keywords": [
     "pi-package",
     "subagents",
@@ -40,17 +40,25 @@
       "types": "./dist/catalog.d.ts",
       "default": "./dist/catalog.js"
     },
-    "./interceptor": {
-      "types": "./dist/interceptor.d.ts",
-      "default": "./dist/interceptor.js"
-    },
-    "./agent-types": {
-      "types": "./dist/agent-types.d.ts",
-      "default": "./dist/agent-types.js"
-    },
     "./propagation": {
       "types": "./dist/propagation.d.ts",
       "default": "./dist/propagation.js"
+    },
+    "./definitions": {
+      "types": "./dist/definitions.d.ts",
+      "default": "./dist/definitions.js"
+    },
+    "./fanout": {
+      "types": "./dist/fanout.d.ts",
+      "default": "./dist/fanout.js"
+    },
+    "./pi-tools": {
+      "types": "./dist/pi-tools.d.ts",
+      "default": "./dist/pi-tools.js"
+    },
+    "./run-herdr": {
+      "types": "./dist/run-herdr.d.ts",
+      "default": "./dist/run-herdr.js"
     },
     "./run-child": {
       "types": "./dist/run-child.d.ts",

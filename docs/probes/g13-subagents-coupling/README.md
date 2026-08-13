@@ -6,7 +6,7 @@ spawner uses. This probe establishes **whether any local mechanism can do that**
 
 **Headline result: none can.** Direct import gives a different module instance; the supported RPC has no
 config query; nothing anywhere accepts a tool override. Governing this path properly **requires an upstream
-change** — which is why `docs/proposals/pi-subagents-tools-parameter.md` exists.
+change** — which is why `docs/archive/proposals/pi-subagents-tools-parameter.md` exists.
 
 ## Environment
 

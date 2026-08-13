@@ -12,7 +12,7 @@
  * PRIVACY: capability ids, counts, and identifiers only. Never prompts, tool arguments, or results.
  */
 
-import { appendFile, mkdir } from "node:fs/promises";
+import { appendFile, mkdir, open, readFile, rm, stat } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { Capability, ResolveResult } from "./resolve.ts";
 import type { ApprovalScope, ApprovalSource } from "./approval.ts";
@@ -99,17 +99,131 @@ export function buildRecord(args: {
   };
 }
 
+/** How long to wait for another writer to finish before giving up. Short: failing closed beats hanging. */
+export const LOCK_TIMEOUT_MS = 2000;
+/** A lock older than this is treated as abandoned by a killed process and broken. */
+export const STALE_LOCK_MS = 10_000;
+
+/**
+ * Serialise appends across processes with an exclusive lock file.
+ *
+ * **Why this exists now.** `O_APPEND` is atomic for one write to a regular file on a POSIX filesystem, and
+ * for most of this package's life cardinality was bounded to one by `delegate` being blocking, so there was
+ * never a second writer. Fan-out removes that: `ENV_LEDGER` propagates to children, so a subtree can have
+ * many processes appending to one file — and the guarantee does **not** hold on drvfs (`/mnt/c` under WSL2)
+ * or NFS, which is exactly where this project runs.
+ *
+ * **A lock introduces its own failure mode and it is handled deliberately.** A process killed while holding
+ * the lock would otherwise block every future write forever, so a lock older than `STALE_LOCK_MS` is broken.
+ * Two processes can race to break the same stale lock; whichever wins the subsequent exclusive create
+ * proceeds, which is correct because only one can.
+ *
+ * The timeout is short *on purpose*: a delegation refused because the ledger was busy is recoverable and
+ * loud, while a delegation that hangs waiting for a lock is neither. Fail closed, and quickly.
+ */
+async function withLedgerLock<T>(path: string, write: () => Promise<T>): Promise<T> {
+  const lockPath = `${path}.lock`;
+  const deadline = Date.now() + LOCK_TIMEOUT_MS;
+
+  for (;;) {
+    let handle: Awaited<ReturnType<typeof open>> | undefined;
+    try {
+      handle = await open(lockPath, "wx");
+      await handle.writeFile(`${process.pid} ${new Date().toISOString()}\n`, "utf8");
+    } catch (error) {
+      const code = (error as { code?: string }).code;
+      if (code !== "EEXIST") throw error;
+
+      // Someone else holds it. Break it only if it is old enough to be abandoned.
+      try {
+        const held = await stat(lockPath);
+        if (Date.now() - held.mtimeMs > STALE_LOCK_MS) await rm(lockPath, { force: true });
+      } catch {
+        /* it vanished between the check and the stat — the next attempt will simply take it */
+      }
+
+      if (Date.now() >= deadline) {
+        throw new Error(`grant ledger is locked by another writer (waited ${LOCK_TIMEOUT_MS}ms)`);
+      }
+      await new Promise((r) => setTimeout(r, 25));
+      continue;
+    }
+
+    try {
+      return await write();
+    } finally {
+      await handle.close().catch(() => undefined);
+      await rm(lockPath, { force: true }).catch(() => undefined);
+    }
+  }
+}
+
 export async function appendRecord(options: LedgerOptions, record: GrantRecord): Promise<void> {
   const line = `${JSON.stringify(record)}\n`;
   try {
     await mkdir(dirname(options.path), { recursive: true });
-    // O_APPEND keeps concurrent writers from interleaving partial lines.
-    await appendFile(options.path, line, { encoding: "utf8", flag: "a" });
+    // O_APPEND alone is not enough once several processes write to one ledger — see `withLedgerLock`.
+    await withLedgerLock(options.path, () => appendFile(options.path, line, { encoding: "utf8", flag: "a" }));
   } catch (error) {
     if (options.strict ?? true) {
       throw new Error(`grant ledger write failed (failing closed): ${String(error)}`);
     }
   }
+}
+
+export interface LedgerReport {
+  /** False when the file is absent — a configuration state, not damage. */
+  exists: boolean;
+  /** Lines that parsed as records. */
+  records: number;
+  /** Lines that did not, with 1-based line numbers so the report is actionable. */
+  corrupt: Array<{ line: number; text: string }>;
+  /** Records where an agent asked for more than it held — ADR-0008's designated signal. */
+  escalationAttempts: number;
+  ok: boolean;
+}
+
+/**
+ * Read the ledger back and report what is wrong with it.
+ *
+ * **This is the gap that mattered most.** `appendRecord`'s strict mode catches write *errors*, never
+ * corruption, and nothing in this package had ever read a ledger back — so a torn line was silently
+ * indistinguishable from a spawn that never happened. An audit trail whose damage is invisible is not a
+ * compensating control, and ADR-0008 leans on the ledger as exactly that.
+ *
+ * Deliberately reports rather than repairs. A corrupt line is evidence; rewriting the file to make it parse
+ * would destroy the one artifact an investigation has.
+ */
+export async function verifyLedger(path: string): Promise<LedgerReport> {
+  let text: string;
+  try {
+    text = await readFile(path, "utf8");
+  } catch (error) {
+    if ((error as { code?: string }).code === "ENOENT") {
+      return { exists: false, records: 0, corrupt: [], escalationAttempts: 0, ok: true };
+    }
+    throw error;
+  }
+
+  const corrupt: Array<{ line: number; text: string }> = [];
+  let records = 0;
+  let escalationAttempts = 0;
+
+  const lines = text.split("\n");
+  lines.forEach((raw, index) => {
+    // A trailing newline yields one empty final element, which is normal rather than damage.
+    if (raw.trim().length === 0) return;
+    try {
+      const parsed = JSON.parse(raw) as GrantRecord;
+      if (!Array.isArray(parsed.denied)) throw new Error("not a grant record");
+      records += 1;
+      if (isEscalationAttempt(parsed)) escalationAttempts += 1;
+    } catch {
+      corrupt.push({ line: index + 1, text: raw.slice(0, 120) });
+    }
+  });
+
+  return { exists: true, records, corrupt, escalationAttempts, ok: corrupt.length === 0 };
 }
 
 /** True when this record shows an agent asking for more than it holds. */

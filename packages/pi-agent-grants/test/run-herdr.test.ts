@@ -1,0 +1,288 @@
+/**
+ * `runHerdrPane` — the herdr executor (ADR-0016 point 6).
+ *
+ * Every rule here is tested against an INJECTED `exec`, so the suite stays fast, pi-free and herdr-free.
+ * The facts the fake reproduces were measured against real herdr 0.7.5 in `docs/probes/g16-herdr` — argv
+ * delivered verbatim, env carried on the pane rather than the agent, and `wait --until idle` matching the
+ * pre-existing state.
+ */
+
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { runHerdrPane, splitSystemPrompt, type HerdrExec } from "../src/run-herdr.ts";
+
+interface FakeOptions {
+  /** `state_change_seq` reported by `agent start`, i.e. the state BEFORE prompting. */
+  startSeq?: number;
+  /** Statuses returned by successive `agent get` calls. */
+  getSequence?: Array<{ agent_status: string; state_change_seq: number }>;
+  output?: string;
+  failAt?: string;
+}
+
+function fakeHerdr(options: FakeOptions = {}) {
+  const calls: string[][] = [];
+  const gets = [...(options.getSequence ?? [{ agent_status: "idle", state_change_seq: 99 }])];
+
+  const exec: HerdrExec = async (args) => {
+    calls.push(args);
+    const verb = args.slice(0, 2).join(" ");
+    if (options.failAt && verb.startsWith(options.failAt)) {
+      return { code: 1, stdout: JSON.stringify({ id: "x", error: { code: "boom", message: "it broke" } }), stderr: "" };
+    }
+    if (verb === "tab create") {
+      return { code: 0, stdout: JSON.stringify({ id: "x", result: { root_pane: { pane_id: "w1:p9", tab_id: "w1:t9" } } }), stderr: "" };
+    }
+    if (verb === "agent start") {
+      return {
+        code: 0,
+        stdout: JSON.stringify({ id: "x", result: { agent: { state_change_seq: options.startSeq ?? 10 }, argv: ["pi", ...args.slice(args.indexOf("--") + 1)] } }),
+        stderr: "",
+      };
+    }
+    if (verb === "agent prompt") return { code: 0, stdout: JSON.stringify({ id: "x", result: { ok: true } }), stderr: "" };
+    if (verb === "agent get") {
+      const next = gets.length > 1 ? gets.shift()! : gets[0];
+      return { code: 0, stdout: JSON.stringify({ id: "x", result: { agent: next } }), stderr: "" };
+    }
+    if (verb === "agent read") {
+      return { code: 0, stdout: JSON.stringify({ id: "x", result: { output: options.output ?? "the child's answer" } }), stderr: "" };
+    }
+    return { code: 0, stdout: JSON.stringify({ id: "x", result: { type: "ok" } }), stderr: "" };
+  };
+
+  return { exec, calls, verbs: () => calls.map((c) => c.slice(0, 2).join(" ")) };
+}
+
+const request = (over: Partial<Parameters<typeof runHerdrPane>[0]> = {}) => ({
+  args: ["--no-session", "--no-extensions", "--tools", "read"],
+  prompt: "review the diff",
+  env: { PI_GRANTS_GRANT: "tool:read", PI_GRANTS_DEPTH: "1" },
+  cwd: "/repo",
+  name: "child-1",
+  ...over,
+});
+
+test("the grant travels on the PANE, because agent start has no --env", () => {
+  // Measured: `herdr agent start --help` has no --env; `tab create` does, and a pane's environment reaches
+  // the shell that launches the agent. Put the env on the agent and the child silently loses its grant.
+  const fake = fakeHerdr();
+  return runHerdrPane(request({ exec: fake.exec })).then(() => {
+    const create = fake.calls.find((c) => c[0] === "tab" && c[1] === "create")!;
+    assert.ok(create.includes("--env"));
+    assert.ok(create.includes("PI_GRANTS_GRANT=tool:read"), "the grant must be set on the pane");
+    assert.ok(create.includes("PI_GRANTS_DEPTH=1"));
+    const start = fake.calls.find((c) => c[0] === "agent" && c[1] === "start")!;
+    assert.ok(!start.includes("--env"), "agent start does not accept it, so it must not be sent there");
+  });
+});
+
+test("argv is passed after `--`, and the task is NOT in it", async () => {
+  // Stronger than the direct-spawn path: there, a model-authored task has to be defended from pi's argv
+  // parser (`neutralisePrompt`). Here it is delivered as a prompt, so no parser ever sees it.
+  const fake = fakeHerdr();
+  await runHerdrPane(request({ exec: fake.exec }));
+
+  const start = fake.calls.find((c) => c[0] === "agent" && c[1] === "start")!;
+  const after = start.slice(start.indexOf("--") + 1);
+  assert.deepEqual(after, ["--no-session", "--no-extensions", "--tools", "read"]);
+  assert.ok(!start.includes("review the diff"), "the task must not reach argv");
+
+  const prompt = fake.calls.find((c) => c[0] === "agent" && c[1] === "prompt")!;
+  assert.equal(prompt[3], "review the diff");
+});
+
+test("R-33: a pre-existing idle state does not count as completion", async () => {
+  // The measured trap. `agent start` reports seq 10 and the agent is ALREADY idle at seq 10; a naive wait
+  // returns instantly and the caller merges an empty result. Settling requires seq to advance.
+  const fake = fakeHerdr({
+    startSeq: 10,
+    getSequence: [
+      { agent_status: "idle", state_change_seq: 10 }, // stale — must be ignored
+      { agent_status: "working", state_change_seq: 11 },
+      { agent_status: "idle", state_change_seq: 12 }, // genuinely settled
+    ],
+  });
+
+  const result = await runHerdrPane(request({ exec: fake.exec }));
+  assert.equal(result.timedOut, false);
+  assert.equal(result.code, 0);
+  assert.match(result.text, /the child's answer/);
+  assert.ok(fake.verbs().filter((v) => v === "agent get").length >= 3, "it must keep polling past the stale state");
+});
+
+test("R-33: `agent wait` is never used, because its contract cannot express 'after this point'", async () => {
+  const fake = fakeHerdr();
+  await runHerdrPane(request({ exec: fake.exec }));
+  assert.ok(!fake.verbs().includes("agent wait"));
+});
+
+test("the pane is always closed, even when the run fails", async () => {
+  // A fan-out that leaks a pane per child fills the operator's workspace, and the probe records that an
+  // orphaned pane is not trivially closable afterwards.
+  const fake = fakeHerdr({ failAt: "agent prompt" });
+  const result = await runHerdrPane(request({ exec: fake.exec }));
+
+  assert.match(String(result.spawnError), /prompt failed/);
+  assert.ok(fake.verbs().includes("tab close"), "cleanup must run on the failure path too");
+  assert.ok(fake.verbs().includes("agent stop"));
+});
+
+test("keepPane leaves the pane for a human to inspect", async () => {
+  const fake = fakeHerdr();
+  await runHerdrPane(request({ exec: fake.exec, keepPane: true }));
+  assert.ok(!fake.verbs().includes("tab close"));
+  assert.ok(fake.verbs().includes("agent stop"), "the agent still stops; only the pane survives");
+});
+
+test("an already-aborted signal creates nothing at all", async () => {
+  const fake = fakeHerdr();
+  const result = await runHerdrPane(request({ exec: fake.exec, signal: AbortSignal.abort() }));
+
+  assert.equal(result.aborted, true);
+  assert.deepEqual(fake.calls, [], "a pane must not be created for a run that was already cancelled");
+});
+
+test("a timeout still returns whatever the child produced, labelled", async () => {
+  // R-03: a missing result must never be indistinguishable from an empty one.
+  const fake = fakeHerdr({
+    startSeq: 5,
+    getSequence: [{ agent_status: "working", state_change_seq: 6 }],
+    output: "partial findings so far",
+  });
+
+  const result = await runHerdrPane(request({ exec: fake.exec, timeoutMs: 30 }));
+  assert.equal(result.timedOut, true);
+  assert.match(result.text, /partial findings so far/);
+});
+
+test("a BLOCKED agent is reported as a failure, not as an answer", async () => {
+  // pi is waiting for a human in a pane nobody may be watching. Returning its screen as though it were a
+  // completed review is exactly the silent-success failure this project keeps closing.
+  const fake = fakeHerdr({
+    startSeq: 1,
+    getSequence: [{ agent_status: "blocked", state_change_seq: 2 }],
+  });
+
+  const result = await runHerdrPane(request({ exec: fake.exec }));
+  assert.equal(result.code, 1, "a non-zero code is what makes the caller treat this as a failure");
+  assert.match(result.text, /BLOCKED waiting for a human/);
+});
+
+test("oversized output keeps the TAIL and says it was truncated", async () => {
+  const fake = fakeHerdr({ output: `${"x".repeat(5000)}THE-ANSWER` });
+  const result = await runHerdrPane(request({ exec: fake.exec, maxOutputBytes: 100 }));
+
+  assert.equal(result.truncated, true);
+  assert.match(result.text, /THE-ANSWER$/, "a terminal's useful content is its most recent output");
+});
+
+test("a non-JSON reply is a spawn error, not an empty answer", async () => {
+  const exec: HerdrExec = async () => ({ code: 127, stdout: "herdr: command not found", stderr: "" });
+  const result = await runHerdrPane(request({ exec }));
+
+  assert.match(String(result.spawnError), /unparseable herdr reply/);
+  assert.equal(result.text, "", "and it must not be reported as the child's output");
+});
+
+test("a multi-line system prompt is staged to a FILE, because herdr types argv into a shell", async () => {
+  // Measured: herdr rejects it outright — `invalid_agent_argument: agent arguments cannot be encoded
+  // safely for the target shell`. Every `delegate({agent})` spawn would fail on this path, since a
+  // SKILL.md body is always multi-line. pi reads a path there as readily as literal text.
+  const fake = fakeHerdr();
+  const body = "# Tiny Review\n\nYou review code cold.\nNever edit.";
+  await runHerdrPane(request({ exec: fake.exec, args: ["--tools", "read", "--append-system-prompt", body] }));
+
+  const start = fake.calls.find((c) => c[0] === "agent" && c[1] === "start")!;
+  const at = start.indexOf("--append-system-prompt");
+  assert.ok(at > 0, "the flag is still passed");
+  assert.ok(!start[at + 1].includes("\n"), "but its value must be a single-line path, not the body");
+  assert.match(start[at + 1], /grants-herdr-.*system-prompt\.md$/);
+  assert.ok(!start.some((a) => a.includes("Never edit")), "the body must not appear in argv at all");
+});
+
+test("splitSystemPrompt leaves argv alone when there is no system prompt", () => {
+  const out = splitSystemPrompt(["--tools", "read"]);
+  assert.deepEqual(out.args, ["--tools", "read"]);
+  assert.equal(out.systemPrompt, undefined);
+});
+
+test("a plan carrying --print is refused, naming the flag", async () => {
+  // Found by the first end-to-end run: --print makes pi exit before herdr can detect an interactive
+  // agent, and herdr's own error for that is opaque. A caller/executor mismatch should read like one.
+  const fake = fakeHerdr();
+  const result = await runHerdrPane(request({ exec: fake.exec, args: ["--print", "--tools", "read"] }));
+
+  assert.match(String(result.spawnError), /--print/);
+  assert.deepEqual(fake.calls, [], "and nothing is created for a plan that cannot work");
+});
+
+test("agent start is retried while a fresh pane is still reaching its shell prompt", async () => {
+  // Measured, and invisible until automated: `tab create` returns before the pane's shell is at a prompt,
+  // and `agent start` requires one. Driving it by hand hid this entirely — the think-time between two
+  // commands exceeded the shell's startup — and the first scripted run failed every time.
+  let starts = 0;
+  const inner = fakeHerdr();
+  const exec: HerdrExec = async (args) => {
+    if (args[0] === "agent" && args[1] === "start" && ++starts <= 2) {
+      return {
+        code: 1,
+        stdout: JSON.stringify({ error: { code: "agent_pane_busy", message: "agent target pane w1:p9 is not an available shell" } }),
+        stderr: "",
+      };
+    }
+    return inner.exec(args);
+  };
+
+  const result = await runHerdrPane(request({ exec }));
+  assert.equal(result.spawnError, undefined, "a pane that is merely slow must not fail the delegation");
+  assert.equal(starts, 3, "it retries until the shell is ready");
+});
+
+test("a non-busy start error fails immediately instead of retrying to the deadline", async () => {
+  // Retrying a real failure would turn a clear error into a timeout, which is strictly worse to debug.
+  let starts = 0;
+  const inner = fakeHerdr();
+  const exec: HerdrExec = async (args) => {
+    if (args[0] === "agent" && args[1] === "start") {
+      starts += 1;
+      return {
+        code: 1,
+        stdout: JSON.stringify({ error: { code: "invalid_agent_argument", message: "cannot be encoded safely" } }),
+        stderr: "",
+      };
+    }
+    return inner.exec(args);
+  };
+
+  const result = await runHerdrPane(request({ exec, timeoutMs: 5000 }));
+  assert.match(String(result.spawnError), /cannot be encoded safely/);
+  assert.equal(starts, 1, "no retry for an error that will never clear");
+});
+
+test("agent read returns RAW terminal text, not a JSON envelope", async () => {
+  // The one command that breaks the pattern. Parsing it as JSON turned every successful read into
+  // "unparseable herdr reply" — reporting the child's actual answer as a failure to read it. The unit fake
+  // had been written to the envelope shape, so it agreed with the bug; only the end-to-end run disagreed.
+  const inner = fakeHerdr();
+  const exec: HerdrExec = async (args) =>
+    args[0] === "agent" && args[1] === "read"
+      ? { code: 0, stdout: "$ pi --tools read\n\nGOVERNED\n", stderr: "" }
+      : inner.exec(args);
+
+  const result = await runHerdrPane(request({ exec }));
+  assert.match(result.text, /GOVERNED/);
+  assert.ok(!result.text.includes("unparseable"), "raw text must not be reported as a read failure");
+});
+
+test("a JSON error reply from agent read is still recognised as an error", async () => {
+  // Accepting raw text must not swallow a genuine failure: an error reply here IS JSON.
+  const inner = fakeHerdr();
+  const exec: HerdrExec = async (args) =>
+    args[0] === "agent" && args[1] === "read"
+      ? { code: 1, stdout: JSON.stringify({ error: { code: "agent_not_found", message: "gone" } }), stderr: "" }
+      : inner.exec(args);
+
+  const result = await runHerdrPane(request({ exec }));
+  assert.match(result.text, /could not read the agent pane: gone/);
+});

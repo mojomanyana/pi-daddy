@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { WILDCARD } from "../src/agent-types.ts";
+import { WILDCARD } from "../src/pi-tools.ts";
 import {
   childEnv,
   deriveOwnGrant,

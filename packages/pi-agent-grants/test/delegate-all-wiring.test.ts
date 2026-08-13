@@ -1,0 +1,139 @@
+/**
+ * Wiring tests for `delegate_all` — the fan-out tool as the extension actually registers it.
+ *
+ * `src/` is pure and `test/fanout.test.ts` covers the budget arithmetic, but R-28 was a defect **in an
+ * argument list** that 226 pure tests could not see. So this loads the real extension against a fake `pi`
+ * and invokes the registered tool, which is the only way to test that the pieces are connected.
+ *
+ * **Nothing is spawned.** Every child here requests a capability the session does not hold, so each one is
+ * refused before any process starts — which is also what makes the test fast and deterministic. The
+ * governance, identity and reporting paths are exactly the ones under test.
+ */
+
+import assert from "node:assert/strict";
+import { mkdtemp, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, test } from "node:test";
+import grantsExtension from "../extensions/grants.ts";
+import { MAX_CHILDREN_PER_CALL } from "../src/fanout.ts";
+import { ENV_APPROVED, ENV_DEPTH, ENV_FANOUT, ENV_GATED, ENV_GRANT, ENV_LEDGER, ENV_MAX_DEPTH, ENV_PARENT_ID } from "../src/propagation.ts";
+
+const KEYS = [ENV_GRANT, ENV_DEPTH, ENV_MAX_DEPTH, ENV_GATED, ENV_APPROVED, ENV_LEDGER, ENV_FANOUT, ENV_PARENT_ID];
+const saved = new Map<string, string | undefined>();
+
+afterEach(() => {
+  for (const [k, v] of saved) v === undefined ? delete process.env[k] : (process.env[k] = v);
+  saved.clear();
+});
+
+interface ToolSpec {
+  name: string;
+  execute: (id: string, params: Record<string, unknown>, signal: undefined, onUpdate: undefined, ctx: unknown) => Promise<unknown>;
+}
+
+async function harness(env: Record<string, string>) {
+  const dir = await mkdtemp(join(tmpdir(), "grants-fanout-"));
+  for (const k of KEYS) if (!saved.has(k)) saved.set(k, process.env[k]);
+  for (const k of KEYS) delete process.env[k];
+  Object.assign(process.env, env);
+
+  const tools = new Map<string, ToolSpec>();
+  const hooks = new Map<string, (e: unknown, c: unknown) => unknown>();
+  const ctx = { cwd: dir, ui: { notify: () => {}, select: async () => undefined }, signal: undefined };
+
+  grantsExtension({
+    on: (name: string, handler: (e: unknown, c: unknown) => unknown) => void hooks.set(name, handler),
+    registerTool: (spec: ToolSpec) => void tools.set(spec.name, spec),
+    registerCommand: () => {},
+    getAllTools: () => ["read", "grep", "write", "delegate"].map((name) => ({ name })),
+  } as never);
+
+  await hooks.get("session_start")!({}, ctx);
+  return { dir, tools, ctx };
+}
+
+/** Children that request a capability a read-only session cannot grant, so none of them spawns. */
+const refusedChildren = (n: number) =>
+  Array.from({ length: n }, (_, i) => ({ task: `audit module ${i + 1}`, tools: ["write"] }));
+
+test("delegate_all is registered when the session may delegate", async () => {
+  const { tools } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate" });
+  assert.ok(tools.has("delegate_all"), "fan-out must be reachable");
+  assert.ok(tools.has("delegate"), "and the single form stays");
+});
+
+test("delegate_all is NOT registered when tool:delegate is withheld", async () => {
+  // The S-5 property, extended to the new tool: "withhold tool:delegate and the child is a leaf" must stay
+  // true, or fan-out becomes a way around it.
+  const { tools } = await harness({ [ENV_GRANT]: "tool:read" });
+  assert.ok(!tools.has("delegate_all"));
+  assert.ok(!tools.has("delegate"));
+});
+
+test("more children than the per-call limit is refused before anything runs", async () => {
+  const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate", [ENV_FANOUT]: "1000" });
+  await assert.rejects(
+    () => tools.get("delegate_all")!.execute("t", { children: refusedChildren(MAX_CHILDREN_PER_CALL + 1) }, undefined, undefined, ctx),
+    /per-call limit/,
+  );
+});
+
+test("a fan-out wider than the remaining budget is refused, naming the remedy", async () => {
+  const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate", [ENV_FANOUT]: "2" });
+  await assert.rejects(
+    () => tools.get("delegate_all")!.execute("t", { children: refusedChildren(4) }, undefined, undefined, ctx),
+    /budget exhausted[\s\S]*PI_GRANTS_FANOUT/,
+  );
+});
+
+test("every child is reported, and an all-failed fan-out throws rather than returning text", async () => {
+  // R-03: a missing result must never be indistinguishable from an empty one. A fan-out that returned a
+  // cheerful report when nothing ran is how an orchestrator summarises four reviews that never happened.
+  const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate" });
+  await assert.rejects(
+    () => tools.get("delegate_all")!.execute("t", { children: refusedChildren(3) }, undefined, undefined, ctx),
+    (error: Error) => {
+      assert.match(error.message, /every child was refused/);
+      for (const n of [1, 2, 3]) assert.match(error.message, new RegExp(`child ${n} — FAILED`), `child ${n} must appear`);
+      assert.match(error.message, /tool:write/, "and the reason must name the capability");
+      return true;
+    },
+  );
+});
+
+test("F8: concurrent siblings get distinct, hierarchical ledger ids", async () => {
+  // The defect this fixes: every child was recorded as `delegate@d1`, so four concurrent siblings produced
+  // four lines identical except `ts` — and two in the same millisecond were indistinguishable. Refusals are
+  // recorded too (G6), which is why this works without spawning anything.
+  const dir = await mkdtemp(join(tmpdir(), "grants-ledger-"));
+  const ledger = join(dir, "ledger.jsonl");
+  const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate", [ENV_LEDGER]: ledger });
+
+  await tools.get("delegate_all")!.execute("t", { children: refusedChildren(3) }, undefined, undefined, ctx).catch(() => undefined);
+
+  const lines = (await readFile(ledger, "utf8")).trim().split("\n").filter(Boolean).map((l) => JSON.parse(l));
+  assert.equal(lines.length, 3, "each child is audited, including refusals");
+  const ids = lines.map((l) => l.childId);
+  assert.equal(new Set(ids).size, 3, `siblings must be distinguishable, got ${JSON.stringify(ids)}`);
+  assert.deepEqual([...ids].sort(), ["d0.1", "d0.2", "d0.3"]);
+  for (const line of lines) assert.equal(line.parentId, "d0", "and every one names its real parent");
+});
+
+test("a child's ledger id descends from an inherited parent id, not from depth", async () => {
+  // Without this every level restarts at `d0` and the ledger cannot be joined into a tree across process
+  // boundaries — the half of F8 that only shows up below the root.
+  const dir = await mkdtemp(join(tmpdir(), "grants-ledger-"));
+  const ledger = join(dir, "ledger.jsonl");
+  const { tools, ctx } = await harness({
+    [ENV_GRANT]: "tool:read,tool:delegate",
+    [ENV_LEDGER]: ledger,
+    [ENV_DEPTH]: "1",
+    [ENV_PARENT_ID]: "d0.2",
+  });
+
+  await tools.get("delegate_all")!.execute("t", { children: refusedChildren(2) }, undefined, undefined, ctx).catch(() => undefined);
+
+  const lines = (await readFile(ledger, "utf8")).trim().split("\n").filter(Boolean).map((l) => JSON.parse(l));
+  assert.deepEqual(lines.map((l) => l.childId).sort(), ["d0.2.1", "d0.2.2"]);
+});

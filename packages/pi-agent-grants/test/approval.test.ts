@@ -11,8 +11,6 @@ import {
 } from "../src/approval.ts";
 import { resolve } from "../src/resolve.ts";
 import { planDelegation } from "../src/delegate.ts";
-import { decideSpawn } from "../src/interceptor.ts";
-import { parseAgentType } from "../src/agent-types.ts";
 
 test("a gated capability with nothing else wrong is worth asking a human about", () => {
   const result = resolve({
@@ -65,21 +63,10 @@ test("planDelegation's mixed gated+denied refusal reaches the predicate as a no"
   assert.equal(shouldSeekApproval(plan.result), false);
 });
 
-test("decideSpawn's mixed gated+denied refusal reaches the predicate as a no", () => {
-  const types = new Map([
-    ["mixed", parseAgentType("mixed", "---\nname: mixed\ntools: write, bash\n---\nbody")!],
-  ]);
-  const decision = decideSpawn(
-    { subagentType: "mixed" },
-    // ADR-0013: an explicit (empty) extension surface — omitting it means "unknown", which
-    // correctly resolves to the wildcard and would test a different branch than intended.
-    { parentGrant: ["tool:write"], depth: 0, maxDepth: 2, types, gated: ["tool:write"], extensionTools: [] },
-  );
-  assert.equal(decision.allow, false);
-  assert.deepEqual(decision.result?.denied, ["tool:bash"]);
-  assert.deepEqual(decision.result?.gatedBlocked, ["tool:write"]);
-  assert.equal(shouldSeekApproval(decision.result), false);
-});
+// The `decideSpawn` variant of this test is DELETED rather than retargeted, and deliberately so: the
+// test immediately above already pins the identical property (a mixed gated+denied refusal reaches
+// `shouldSeekApproval` as a no) on `planDelegation`, which after ADR-0016 is the only decision function.
+// Keeping a second copy would be duplication dressed as coverage.
 
 test("a key names the capability and the subject that was approved", () => {
   assert.equal(approvalKey("tool:write", "docs-writer"), "tool:write@docs-writer");

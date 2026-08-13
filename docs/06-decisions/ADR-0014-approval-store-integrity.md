@@ -146,3 +146,34 @@ each one inverts the meaning of something a human explicitly chose.
   hold the key.
 - Any observed forged approval in a real ledger.
 - pi gaining a first-class secret or state store outside the workspace → Option 1 becomes trivial.
+
+---
+
+## 2026-08-12 — a decided property was falsified under concurrency, and repaired
+
+**Not a revision of the above.** This ADR threaded `scope` through propagation so that `once` never
+crosses a delegation boundary, and that part holds: `inheritApprovals` still drops `once`, so no child
+inherits one. What was *not* considered is **sibling** concurrency.
+
+**Measured** (R-29, 10-line probe, no pi and no model): the single-flight approval queue keys on
+`approvalKey(capability, subject)`, and on the delegate path the subject is the constant
+`DELEGATE_SUBJECT`. Concurrent callers therefore share one pending promise and receive the **same**
+`PromptOutcome`. Four concurrent delegations gating `tool:bash` → one dialog → one click of *Allow once* →
+**four `granted` outcomes**, with the dialog title showing only the first caller's task. So "`once` stops
+at the boundary" was true **downward** and false **sideways**, and the ledger would have shown four lines
+reading `approvalScope: "once"` — which a reviewer reads as "the human said once, four times."
+
+**Latent when found**, because `delegate` blocks and two delegations could not overlap. Fixed anyway,
+*before* the fan-out work that would arm it.
+
+**The fix deliberately does not touch this ADR's reasoning about keys.** Making the subject per-spawn was
+rejected: the only things naming a delegated child are the task and the tool list, both model-chosen, and
+a key the model controls is not a key. That argument governs **approval identity** and stands. The defect
+was that one key also served **de-duplication**, which is a different question with a different answer.
+The queue still raises one dialog per key; a joining caller now keeps that answer only when it was about
+more than one spawn (`session`, `always`, a decline, an error), while a `once` is consumed by exactly one
+caller and the others ask their own question.
+
+**Still open, and explicitly not fixed here:** an approval resolved *after* its tool call returns would use
+a torn-down `ctx.ui`, so under **background** (as opposed to synchronous) fan-out, whether a spawn is gated
+would depend on its queue position. That must be answered before background delegation, not after.

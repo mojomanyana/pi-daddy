@@ -109,3 +109,52 @@ and totally. It also makes the audit trail meaningless, since a grant nobody che
   simpler static model (Option 3) would have sufficed.
 - `D_gated` approval prompts become frequent enough that users click through them, at which point the
   backstop is theatre and needs redesign.
+
+---
+
+## 2026-08-12 — amended: the invariant gains a cardinality companion
+
+**Not a correction.** Everything above holds: a child's grant is a subset of its parent's, at every level,
+by construction. What this ADR never said is **how many children may exist**, and that omission was
+invisible for a structural reason worth recording — `delegate` blocked until its child exited, so
+cardinality was bounded to **one by accident of the implementation**, not by any decided rule. The
+invariant was never tested against the case it did not cover.
+
+ADR-0015's bounded fan-out removes that accident. With `maxDepth: 2` and five children per call, five
+delegators each spawning five is thirty concurrent model sessions — **every ledger line individually
+correct and narrow, the aggregate a machine DoS and an uncapped bill.** Set against ADR-0012, which put
+`bash` out of scope *explicitly*, leaving this implicit would have been the worse kind of silence: a bound
+nobody decided not to have.
+
+**Decided: a subtree budget, propagated like depth** (`src/fanout.ts`, `PI_GRANTS_FANOUT`, default 8).
+
+A session holding budget `B` may create at most `B` descendants **in its whole subtree**. Spawning spends
+from `B` before the remainder is divided among the children, so a parent pays for the children it creates
+rather than only its descendants paying. `Math.floor` on the division means rounding always *loses* budget,
+never invents it, so a deep tree converges to zero instead of sustaining itself.
+
+**Why a budget rather than a per-call limit.** A per-call cap of `K` with depth `D` still permits `K^D`
+descendants — the same exponential wearing a smaller number. A budget is subtractive and therefore total.
+Critically it composes **with no shared state**: no registry, no lock, no counter file, because it
+attenuates downward through the environment exactly as depth does. That is the same property that let the
+grant itself cross a process boundary, reused.
+
+A second, independent bound caps children **per call** (`MAX_CHILDREN_PER_CALL`, 8). Budget and blast
+radius are different questions: a hundred simultaneous `pi` processes is not the same failure as a hundred
+spread across a session.
+
+**A malformed or zero budget falls back to the default rather than disabling the bound**, per G7's rule —
+a bound a typo can switch off is the A-S4 defect wearing different clothes. To forbid delegation outright
+an operator sets `maxDepth: 0`, which says what it means.
+
+**Also fixed here, because fan-out made it visible (review finding F8):** `parent_id` and `child_id` were
+named in this ADR as correlation keys but implemented as **depth labels wearing id names** — every child
+was `delegate@d1`, so concurrent siblings produced records identical except `ts`, and two in the same
+millisecond were indistinguishable. Ids are now hierarchical and derived (`d0.2.1`), so a line's ancestry
+is readable from the id alone with no join, and reproducible, so a ledger is diffable across runs.
+
+**Still open, and NOT addressed:** the ledger's `O_APPEND` atomicity argument assumes a local filesystem
+and sub-`PIPE_BUF` writes. Fan-out makes multi-process concurrent appends ordinary rather than theoretical,
+and on WSL2 a ledger under `/mnt/c` is drvfs, which promises nothing. Nothing in this package reads the
+ledger back, so corruption there would be silent. That is the next thing this invariant's compensating
+control needs.

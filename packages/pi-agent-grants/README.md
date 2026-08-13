@@ -4,9 +4,39 @@
 tree, so a sub-agent can never confer more than it holds — enforced by **pi's own `--tools` allowlist**, with
 an append-only ledger of what was granted and what was refused.
 
+> ## 0.7.0 is a breaking change: this package is now the spawner, not a fence
+>
+> **ADR-0016.** Earlier versions were a governance layer wrapped around `@tintinweb/pi-subagents`: the
+> product was a `tool_call` interceptor that decided whether *someone else's* spawn was permissible. It
+> could refuse or allow, never narrow, because that package's `Agent` tool has no `tools` parameter — a
+> ceiling no amount of local work could lift.
+>
+> This version spawns children itself, so **the grant is an argument rather than a veto**. What changed:
+>
+> - **`delegate({agent, task})` spawns a definition by name.** Definitions are **Agent Skills
+>   (`SKILL.md`)** files — the open standard, already read by 16+ tools — and their `allowed-tools` field
+>   becomes the grant. The spec calls that field *"pre-approved"* and **experimental**; it declares intent
+>   and blocks nothing. Passed through `--tools` it becomes structural. **The standard declares intent;
+>   this package makes it enforced.**
+> - **`delegate_all` runs several children concurrently**, each with its own grant, its own instructions,
+>   and no knowledge of the others.
+> - **Two executors, one plan**: a captured child process (default) or a visible, attachable **herdr** pane
+>   (`PI_GRANTS_HERDR=1`).
+> - **Skills and context files are no longer inherited.** Previously a child spawned with `--tools read`
+>   still loaded every skill the operator had, plus `CLAUDE.md` — measured, `docs/probes/g16-herdr`. So the
+>   `skill:` capability namespace enforced nothing. It does now.
+> - **A cardinality bound.** A subtree *budget* caps how many descendants may exist at all, because the old
+>   `delegate` bounded that to one only by accident of being blocking.
+> - **Removed:** the pi-subagents ceiling port (`agent-types.ts`, `interceptor.ts`). The `tool_call` hook
+>   remains as a **tripwire** that refuses third-party spawn tools — installing one is a single command,
+>   and a silently ungoverned descendant is the thing this package exists to prevent.
+>
+> **Sections below still describing the interceptor as a provisioning path are stale** and are being
+> rewritten; the ADRs are authoritative where they disagree.
+
 Built because that guarantee does not exist elsewhere. `@tintinweb/pi-subagents` provisions statically per
-agent type; `pi-fabric` provisions dynamically but **cannot constrain a recursive child at all** (measured:
-`docs/probes/pi-fabric-eval`).
+agent type and cannot be narrowed per spawn; `pi-fabric` provisions dynamically but **cannot constrain a
+recursive child at all** (measured: `docs/probes/pi-fabric-eval`).
 
 ## What this governs, and what it does not
 
@@ -34,8 +64,15 @@ effective = ( requested ∩ parentGrant ∩ ceiling ) \ (gated \ approved)
 Escalation is impossible **by construction**, not by policy. The root holds the full catalog, so grants are
 free from the top; every level below can only subtract. No policy engine, no LLM on the security path.
 
-Depth control falls out for free: spawning is itself a capability. Withhold `agent:`/`tool:Agent` and the
-child is a leaf.
+Depth control falls out for free: spawning is itself a capability. Withhold `tool:delegate` and the child is
+a leaf — it receives neither `delegate` nor `delegate_all`.
+
+**Cardinality is bounded separately** (ADR-0008, amended 2026-08-12). The invariant above says what a child
+may *hold* and nothing about how many children exist; a blocking `delegate` bounded that to one by accident,
+and fan-out removes the accident. `PI_GRANTS_FANOUT` is a **subtree budget**: a session holding `B` may
+create at most `B` descendants in total, because spawning spends from `B` before the remainder is divided
+among the children. A per-call cap of K with depth D would still permit K^D — the same exponential wearing a
+smaller number — so the bound is subtractive instead, and composes across processes with no shared state.
 
 ## Why pi's `--tools` is the enforcement point
 
@@ -128,10 +165,7 @@ await appendRecord({ path: ".pi/grants.jsonl" }, buildRecord({ /* … */ result,
 `result.denied` is the field that earns the ledger: **an agent asking for what it does not hold is an
 escalation attempt**, and it is invisible without a record.
 
-## Intercepting spawns (wired into `@tintinweb/pi-subagents`)
-
-The extension hooks pi's `tool_call` and refuses any `Agent` spawn whose agent type would hold more than
-the current session holds, or that exceeds the depth bound.
+## Running it
 
 ```bash
 PI_GRANTS_GRANT="tool:read,tool:grep,tool:find,tool:ls" \
@@ -140,7 +174,26 @@ PI_GRANTS_MAX_DEPTH=2 \
 pi -e ./extensions/grants.ts
 ```
 
-`/grants` shows the session's grant, its depth, and an allow/block verdict per known agent type.
+`/grants` shows the session's grant, its depth, and an allow/block verdict per known definition — computed
+by the **same planner** a real spawn uses, so the diagnostic cannot disagree with the enforcer. That is not
+cosmetic: R-28 was exactly such a disagreement, where `/grants` reported "allow" for spawns the enforcement
+path refused with a reason that misstated the definition file.
+
+`/grants ledger` reads the ledger back and reports its integrity — record count, escalation attempts, and
+any unparseable lines with line numbers. It exists because nothing in this package had ever read a ledger
+back, so a torn line was indistinguishable from a spawn that never happened. A corrupt line is **evidence**
+and is left alone rather than repaired.
+
+### The tripwire
+
+The `tool_call` hook no longer computes ceilings for `@tintinweb/pi-subagents` — that port is deleted. In a
+**governed** session it now refuses third-party spawn tools (`Agent`, `subagent`, `spawn_agent`) and records
+the refusal, because such a spawn would create a descendant this package did not provision, does not bound
+by depth, and does not record.
+
+**It is a tripwire, not a boundary, and the difference is measured:** `subagents:rpc:spawn` reaches
+`manager.spawn()` over the event bus and never produces a `tool_call` at all (ADR-0013 Finding 6), so a
+tool-name check cannot see it. It catches the ordinary case loudly. It is not containment.
 
 **Governance is opt-in.** With `PI_GRANTS_GRANT` unset, the session holds the wildcard and nothing is
 blocked — this extension must never silently tighten a normal workflow. Since 0.5.0 that holds for
@@ -157,7 +210,12 @@ everything below it.
 | `PI_GRANTS_DEPTH` | `0` | This session's own depth; set by the parent, not by hand. |
 | `PI_GRANTS_GATED` | **`tool:bash`** in a governed session | Capabilities needing human approval. Set to `""` to gate nothing. Gating is closed under subsumption, so this also covers `write`/`edit`/`read`/`grep`/`find`/`ls` (ADR-0012). |
 | `PI_GRANTS_LEDGER` | unset → not recording | **Setting this makes the ledger load-bearing** — see below. |
-| `PI_GRANTS_CHILD_TIMEOUT` | `600` (seconds) | Wall-clock limit for a `delegate` child. Inherited by descendants. |
+| `PI_GRANTS_CHILD_TIMEOUT` | `600` (seconds) | Wall-clock limit for a child. Inherited by descendants — an operator preference, deliberately *not* attenuating state. |
+| `PI_GRANTS_FANOUT` | `8` | **Subtree budget**: total descendants this session may create. Attenuates downward like depth. Malformed or `0` falls back to the default — a bound a typo can switch off is not a bound. |
+| `PI_GRANTS_PARENT_ID` | `d0` | This session's ledger id; set by the parent. Makes sibling records joinable into a tree. |
+| `PI_GRANTS_HERDR` | unset | `1` runs children in visible **herdr** panes instead of captured processes. Opt-in, never auto-detected: where a governed child executes is an operator decision, not a consequence of what is on `PATH`. |
+| `PI_GRANTS_HERDR_WORKSPACE` | unset | herdr workspace for spawned panes. |
+| `PI_GRANTS_HERDR_KEEP_PANE` | unset | `1` keeps each child's pane for inspection. Off by default: a fan-out would flood the workspace. |
 
 **A malformed value disables spawning; it never falls back to a default.** An unreadable
 `PI_GRANTS_MAX_DEPTH` or `PI_GRANTS_DEPTH` yields `maxDepth: 0` and a startup warning naming the

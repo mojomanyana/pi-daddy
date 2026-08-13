@@ -26,7 +26,7 @@ global), Node v24.14.0, `defaultProvider: openai-codex`, `defaultModel: gpt-5.6-
 local extension `herdr-agent-state.ts` and a local `subagent` extension. 82 session files, 46 project
 scopes, 4,002 message entries.
 
-**Results:** see `docs/gate-reports/baseline-2026-08-09.md`. Headline: catalog ≈ 20 tools, only 11
+**Results:** see `docs/archive/gate-reports/baseline-2026-08-09.md`. Headline: catalog ≈ 20 tools, only 11
 ever used, 98.1% of all 1,956 tool calls are four tools, p90 distinct-tools-per-session = 4, and the
 prompt cache is read 114× more than it is written.
 

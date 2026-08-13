@@ -26,10 +26,24 @@
  */
 
 import type { Capability } from "./resolve.ts";
-import { WILDCARD } from "./agent-types.ts";
+import { WILDCARD } from "./pi-tools.ts";
 import { inheritApprovals, type InheritableApproval } from "./approval.ts";
 
 export const ENV_GRANT = "PI_GRANTS_GRANT";
+/**
+ * Total descendants this session may create in its whole subtree (`src/fanout.ts`).
+ *
+ * In `GRANT_ENV_KEYS` and therefore stripped from a child's environment and re-supplied only by the spawn
+ * plan — like depth, and for the same reason: it is capability state that must ATTENUATE downward, not an
+ * operator preference that should inherit. `PI_GRANTS_CHILD_TIMEOUT` is deliberately the other kind.
+ */
+export const ENV_FANOUT = "PI_GRANTS_FANOUT";
+/**
+ * This session's ledger id, so a child's records name their real parent (review finding F8).
+ *
+ * Without it every level restarts at `d0` and the ledger cannot be joined into a tree across processes.
+ */
+export const ENV_PARENT_ID = "PI_GRANTS_PARENT_ID";
 export const ENV_DEPTH = "PI_GRANTS_DEPTH";
 export const ENV_MAX_DEPTH = "PI_GRANTS_MAX_DEPTH";
 export const ENV_GATED = "PI_GRANTS_GATED";
@@ -50,6 +64,8 @@ export const GRANT_ENV_KEYS = [
   ENV_GATED,
   ENV_LEDGER,
   ENV_APPROVED,
+  ENV_FANOUT,
+  ENV_PARENT_ID,
 ] as const;
 
 export const parseList = (raw: string | undefined): Capability[] =>

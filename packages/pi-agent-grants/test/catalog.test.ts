@@ -61,26 +61,49 @@ test("skills are discovered from SKILL.md directories and top-level .md files", 
   assert.ok(!found.includes("skill:not-a-skill"), "a directory without SKILL.md is not a skill");
 });
 
-test("buildCatalog assembles tools, skills, and agent types together — the 'skills and tools' requirement", async () => {
+test("buildCatalog assembles tools, skills, and agent definitions together — the 'skills and tools' requirement", async () => {
+  // RETARGETED by ADR-0016: definitions live under the SKILL roots now, not `.pi/agents/`, because a
+  // subagent IS a skill you spawn. The property under test is unchanged — the catalog must cover the
+  // whole capability surface, not just tools.
   const root = await mkdtemp(join(tmpdir(), "grants-catalog-"));
-  await mkdir(join(root, ".pi", "skills"), { recursive: true });
+  await mkdir(join(root, ".pi", "skills", "planner"), { recursive: true });
+  await writeFile(
+    join(root, ".pi", "skills", "planner", "SKILL.md"),
+    "---\nname: planner\ndescription: Plans work\nallowed-tools: Read\n---\n\nPlan it.",
+  );
   await writeFile(join(root, ".pi", "skills", "review.md"), "# r");
-  await mkdir(join(root, ".pi", "agents"), { recursive: true });
-  await writeFile(join(root, ".pi", "agents", "planner.md"), "---\nname: planner\ntools: read\n---\nbody");
 
   const catalog = await buildCatalog({ cwd: root, observedTools: ["read", "web_search"] });
-  assert.deepEqual(catalog.byKind("builtin"), ["tool:read"]);
+  // Built-ins are seeded from `PI_BUILTIN_TOOLS` rather than derived from the observation, because the
+  // catalog is consulted before any provider request happens (`/grants`) and an empty catalog made every
+  // capability look "unknown". Observation is what distinguishes an EXTENSION tool, which cannot be
+  // known statically.
+  assert.ok(catalog.byKind("builtin").includes("tool:read"));
+  assert.ok(catalog.byKind("builtin").includes("tool:bash"), "seeded, not observed");
   assert.deepEqual(catalog.byKind("extension"), ["tool:web_search"]);
-  assert.deepEqual(catalog.byKind("skill"), ["skill:review"]);
-  assert.ok(catalog.byKind("agentType").includes("agent:planner"));
+
+  // `planner` appears TWICE, under two capability ids, and that is the design rather than duplication:
+  // `skill:planner` means "may load these instructions", `agent:planner` means "may spawn a child
+  // running them". A grant can hold either without the other.
+  assert.ok(catalog.byKind("skill").includes("skill:planner"), "loadable as a skill");
+  assert.ok(catalog.byKind("agentType").includes("agent:planner"), "and spawnable as an agent");
+
+  // `review.md` has no frontmatter, so it is a skill but NOT a definition — a plain instruction file
+  // cannot be spawned, because nothing in it declares what the child would be allowed to do.
+  assert.ok(catalog.byKind("skill").includes("skill:review"));
+  assert.ok(!catalog.byKind("agentType").includes("agent:review"), "no frontmatter means not spawnable");
 });
 
-test("without an observation the catalog still lists skills and agent types", async () => {
+test("without an observation the catalog still lists built-ins, skills and definitions", async () => {
+  // This is the case that forced the seeding. `/grants` runs before the first provider request, so with
+  // an observation-only catalog every grant it previewed was refused as an "unknown capability" —
+  // a diagnostic contradicting the enforcer, which is exactly R-28's shape.
   const root = await mkdtemp(join(tmpdir(), "grants-catalog-"));
   await mkdir(join(root, ".pi", "skills"), { recursive: true });
   await writeFile(join(root, ".pi", "skills", "s.md"), "# s");
   const catalog = await buildCatalog({ cwd: root, observedTools: null });
-  assert.deepEqual(catalog.byKind("builtin"), [], "no tools observed yet");
+  assert.ok(catalog.byKind("builtin").includes("tool:read"), "pi's built-ins are known statically");
+  assert.deepEqual(catalog.byKind("extension"), [], "extension tools still require an observation");
   assert.deepEqual(catalog.byKind("skill"), ["skill:s"]);
 });
 

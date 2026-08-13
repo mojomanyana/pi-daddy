@@ -16,80 +16,104 @@ import { mkdtemp, readFile, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import type { AgentType } from "../src/agent-types.ts";
 import { makeCatalog } from "../src/catalog.ts";
+import type { SkillDefinition } from "../src/definitions.ts";
 import { planDelegation } from "../src/delegate.ts";
-import { decideSpawn } from "../src/interceptor.ts";
-import { appendRecord, buildRecord, isEscalationAttempt } from "../src/ledger.ts";
+import { appendRecord, buildRecord, isEscalationAttempt, verifyLedger } from "../src/ledger.ts";
 
-const types = (...defs: AgentType[]) => new Map(defs.map((d) => [d.name, d]));
-const docsWriter: AgentType = { name: "docs-writer", tools: ["read", "write"], source: "x.md" };
+// RETARGETED by ADR-0016. These tests were written against `decideSpawn`, the interceptor's decision
+// function, which is deleted along with the rest of the pi-subagents port. **The properties they guard
+// survive intact** — every refusal must carry the result it was decided from, and the ledger's one
+// security signal must not fire on an allowed spawn — so they are re-pointed at `planDelegation`, which
+// is now the only decision function, rather than deleted with the code they happened to exercise.
+const definitions = (...defs: SkillDefinition[]) => new Map(defs.map((d) => [d.name, d]));
+const docsWriter: SkillDefinition = {
+  name: "docs-writer",
+  description: "Writes docs",
+  allowedTools: "read write",
+  body: "Write docs.",
+  source: "/skills/docs-writer/SKILL.md",
+};
 
-const recordFor = (decision: ReturnType<typeof decideSpawn>, parentGrant: string[]) =>
+const recordFor = (plan: ReturnType<typeof planDelegation>, parentGrant: string[], agentType: string) =>
   buildRecord({
     parentId: "d0",
-    childId: `${decision.typeName}@d${decision.childDepth}`,
-    depth: decision.childDepth,
-    agentType: decision.typeName,
-    requested: decision.requested,
+    childId: `${agentType}@d${plan.childDepth}`,
+    depth: plan.childDepth,
+    agentType,
+    requested: plan.requested,
     parentGrant,
-    // The extension uses `decision.result ?? resolve(...)`; a decision that always carries its own
-    // result is what removes the recompute entirely.
-    result: decision.result!,
-    blocked: !decision.allow,
-    reason: decision.reason,
+    // A plan that always carries its own result is what removes the extension's recompute entirely.
+    result: plan.result,
+    blocked: !plan.ok,
+    reason: plan.reason,
     now: new Date(),
   });
 
 test("an ALLOWED wildcard spawn is not recorded as an escalation attempt", () => {
-  const decision = decideSpawn(
-    { subagentType: "docs-writer" },
-    { parentGrant: ["tool:*"], depth: 0, maxDepth: 2, types: types(docsWriter) },
+  // The grant here is what `deriveOwnGrant` ACTUALLY produces for a wildcard holder that has observed
+  // its tools: the wildcard **plus the enumerated names**. That detail is the whole point of this test —
+  // `resolve()` has no notion of `tool:*` (see A-S3 above), so a wildcard-only grant matches nothing and
+  // would be refused. Writing `["tool:*"]` alone here would test an unreachable state and, worse, would
+  // read as evidence that a wildcard grant is honoured directly. It is not; it is expanded first.
+  const plan = planDelegation(
+    { task: "write the docs", agent: "docs-writer" },
+    {
+      ownGrant: ["tool:*", "tool:read", "tool:write"],
+      depth: 0,
+      maxDepth: 2,
+      gated: [],
+      definitions: definitions(docsWriter),
+    },
   );
-  assert.equal(decision.allow, true, "precondition: a wildcard holder may spawn this type");
-  assert.ok(decision.result, "every decision must carry the result it was made from");
+  assert.equal(plan.ok, true, `precondition: a wildcard holder may spawn this definition — ${plan.reason}`);
   assert.equal(
-    isEscalationAttempt(recordFor(decision, ["tool:*"])),
+    isEscalationAttempt(recordFor(plan, ["tool:*"], "docs-writer")),
     false,
-    "the ledger's one signal must not fire for a spawn the interceptor allowed",
+    "the ledger's one signal must not fire for a spawn that was allowed",
   );
 });
 
-test("a decision refused before resolution still carries a result", () => {
-  // Depth, missing type name, and unknown type all return before `resolve()` is reached, so the
-  // extension had nothing to record and `if (ledgerPath && plan.result)` skipped the entry entirely.
-  for (const [label, decision] of [
+test("a definition spawn refused before resolution still carries a result", () => {
+  // Depth, a missing task, and an unknown name all return before `resolve()` is reached, so there was
+  // nothing to record and `if (ledgerPath && plan.result)` skipped the entry entirely.
+  const known = { definitions: definitions(docsWriter), gated: [] as string[] };
+  for (const [label, plan] of [
     [
       "depth limit",
-      decideSpawn(
-        { subagentType: "docs-writer" },
-        { parentGrant: ["tool:read"], depth: 5, maxDepth: 2, types: types(docsWriter) },
-      ),
+      planDelegation({ task: "t", agent: "docs-writer" }, { ownGrant: ["tool:read"], depth: 5, maxDepth: 2, ...known }),
     ],
     [
-      "no subagent_type",
-      decideSpawn({}, { parentGrant: ["tool:read"], depth: 0, maxDepth: 2, types: types(docsWriter) }),
+      "no task",
+      planDelegation({ task: "", agent: "docs-writer" }, { ownGrant: ["tool:read"], depth: 0, maxDepth: 2, ...known }),
     ],
     [
       "spawning disabled",
-      decideSpawn(
-        { subagentType: "docs-writer" },
-        { parentGrant: ["tool:read"], depth: 0, maxDepth: 0, types: types(docsWriter) },
+      planDelegation({ task: "t", agent: "docs-writer" }, { ownGrant: ["tool:read"], depth: 0, maxDepth: 0, ...known }),
+    ],
+    [
+      "unknown definition",
+      planDelegation({ task: "t", agent: "nope" }, { ownGrant: ["tool:read"], depth: 0, maxDepth: 2, ...known }),
+    ],
+    [
+      // ADR-0016's inversion: undeclared is the WEAKEST state. The old format's equivalent case resolved
+      // to the wildcard, which is why this one is worth pinning.
+      "undeclared allowed-tools",
+      planDelegation(
+        { task: "t", agent: "docs-writer" },
+        {
+          ownGrant: ["tool:read"],
+          depth: 0,
+          maxDepth: 2,
+          gated: [],
+          definitions: definitions({ ...docsWriter, allowedTools: undefined }),
+        },
       ),
     ],
   ] as const) {
-    assert.equal(decision.allow, false, `${label}: precondition`);
-    assert.ok(decision.result, `${label}: a refusal with no result cannot be recorded`);
+    assert.equal(plan.ok, false, `${label}: precondition`);
+    assert.ok(plan.result, `${label}: a refusal with no result cannot be recorded`);
   }
-});
-
-test("a wildcard-ceiling refusal carries a result too", () => {
-  const decision = decideSpawn(
-    { subagentType: "unknown-type" },
-    { parentGrant: ["tool:read"], depth: 0, maxDepth: 2, types: types(docsWriter) },
-  );
-  assert.equal(decision.allow, false);
-  assert.ok(decision.result);
 });
 
 test("a delegation refused before resolution still carries a result", () => {
@@ -157,4 +181,90 @@ test("appendRecord in non-strict mode swallows the failure", async () => {
   await assert.doesNotReject(() =>
     appendRecord({ path: join(blocker, "grants.jsonl"), strict: false }, {} as never),
   );
+});
+
+// ---------------------------------------------------------------------------
+// Fan-out made concurrent appends ordinary rather than theoretical (review finding F13).
+//
+// Two separate problems, and they need different answers:
+//
+//  1. **Nothing ever read the ledger back.** `appendRecord`'s strict mode catches write *errors*, not
+//     corruption, so a torn line would be lost exactly at peak concurrency — which is when the audit
+//     trail matters most. Detection is the compensating control ADR-0008 relies on and never had.
+//  2. **Concurrent writers.** `O_APPEND` is atomic for a single write to a regular file on a POSIX
+//     filesystem. It promises nothing on drvfs (`/mnt/c` under WSL2) or NFS, and `ENV_LEDGER` propagates
+//     to children, so a subtree can have many processes appending to one file.
+// ---------------------------------------------------------------------------
+
+test("F13: a ledger of concurrent appends is fully parseable", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "grants-concurrent-"));
+  const path = join(dir, "ledger.jsonl");
+  const big = Array.from({ length: 120 }, (_, i) => `tool:capability-with-a-longish-name-${i}`);
+
+  // Records deliberately far larger than any single-write atomicity window, appended concurrently.
+  await Promise.all(
+    Array.from({ length: 40 }, (_, i) =>
+      appendRecord(
+        { path, strict: true },
+        buildRecord({
+          parentId: "d0",
+          childId: `d0.${i + 1}`,
+          depth: 1,
+          requested: big,
+          parentGrant: big,
+          result: { effective: big, denied: [], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
+          blocked: false,
+          now: new Date(),
+        }),
+      ),
+    ),
+  );
+
+  const report = await verifyLedger(path);
+  assert.equal(report.corrupt.length, 0, `every line must parse, got ${JSON.stringify(report.corrupt.slice(0, 2))}`);
+  assert.equal(report.records, 40, "and none may be lost");
+});
+
+test("verifyLedger reports a torn line instead of ignoring it", async () => {
+  // The point of the detector. Without it, a truncated record is indistinguishable from a spawn that never
+  // happened — a gap in the audit trail that reads as an absence of activity.
+  const dir = await mkdtemp(join(tmpdir(), "grants-torn-"));
+  const path = join(dir, "ledger.jsonl");
+  await appendRecord({ path }, buildRecord({
+    parentId: "d0", childId: "d0.1", depth: 1, requested: [], parentGrant: [],
+    result: { effective: [], denied: [], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
+    blocked: false, now: new Date(),
+  }));
+  await writeFile(path, `${await readFile(path, "utf8")}{"parentId":"d0","childId":"d0.2","dep\n`, "utf8");
+
+  const report = await verifyLedger(path);
+  assert.equal(report.records, 1);
+  assert.equal(report.corrupt.length, 1);
+  assert.equal(report.corrupt[0].line, 2, "the line number is what makes it actionable");
+  assert.equal(report.ok, false);
+});
+
+test("verifyLedger on a missing ledger is not an error", async () => {
+  // An operator who has not set PI_GRANTS_LEDGER has no ledger, which is a configuration state rather than
+  // a corruption. Reporting it as damage would train them to ignore the check.
+  const dir = await mkdtemp(join(tmpdir(), "grants-absent-"));
+  const report = await verifyLedger(join(dir, "nope.jsonl"));
+  assert.equal(report.ok, true);
+  assert.equal(report.records, 0);
+  assert.equal(report.exists, false);
+});
+
+test("verifyLedger counts escalation attempts, so the one signal is readable", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "grants-esc-"));
+  const path = join(dir, "ledger.jsonl");
+  for (const denied of [[], ["tool:write"], []]) {
+    await appendRecord({ path }, buildRecord({
+      parentId: "d0", childId: "d0.1", depth: 1, requested: [], parentGrant: [],
+      result: { effective: [], denied, clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
+      blocked: denied.length > 0, now: new Date(),
+    }));
+  }
+  const report = await verifyLedger(path);
+  assert.equal(report.records, 3);
+  assert.equal(report.escalationAttempts, 1);
 });

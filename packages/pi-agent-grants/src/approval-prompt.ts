@@ -97,6 +97,19 @@ function labelToScope(label: string, scopes: ApprovalScope[]): ApprovalScope | n
  *
  * `delegate` sets no `executionMode`, so an orchestrator can fan out several children at once and two can
  * hit the same gate simultaneously — otherwise two stacked dialogs asking the identical question.
+ *
+ * **R-29 — the key does two jobs, and only one of them may be shared.** `approvalKey` is
+ * `capability@subject`, and on the delegate path the subject is the constant `DELEGATE_SUBJECT`, which is
+ * deliberate: the only things naming a delegated child are the task and the tool list, both model-chosen,
+ * and a key the model controls is not a key (`approval.ts:24-32`). That reasoning governs *approval
+ * identity* — what a human said yes to, and what may be persisted — and it is right.
+ *
+ * It does **not** govern de-duplication. Sharing one dialog's outcome is correct for `session` and
+ * `always`, which are genuinely answers about the session or the project, and for a decline or an error,
+ * which answer everyone. It is **wrong for `once`**, which means *this spawn*. Measured before the fix:
+ * four concurrent delegations gating `tool:bash`, one dialog, one click of *Allow once* → four `granted`
+ * outcomes, with the human having seen only the first caller's task. That is a confused deputy, and it
+ * falsified ADR-0014's decided property that "`once` stops at the boundary".
  */
 export type InFlightApprovals = Map<string, Promise<PromptOutcome>>;
 
@@ -172,8 +185,18 @@ export function createApprovalGate(
       }
 
       const key = approvalKey(request.capability, request.subject);
-      const existing = inFlight.get(key);
-      if (existing) return existing;
+
+      // R-29. Join an in-flight dialog, but only *keep* its answer if that answer was about more than one
+      // spawn. A `once` belongs to whichever caller the human was actually looking at — the title shows
+      // that caller's task — so anyone else who joined must ask their own question rather than ride a yes
+      // given for somebody else's work. The loop (rather than a single retry) covers the case where a
+      // fellow waiter started its own dialog first: we join that one instead of opening a third.
+      for (;;) {
+        const existing = inFlight.get(key);
+        if (!existing) break;
+        const outcome = await existing;
+        if (outcome.scope !== "once") return outcome;
+      }
 
       const pending = ask(request).finally(() => inFlight.delete(key));
       inFlight.set(key, pending);

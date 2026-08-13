@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { DELEGATE_CAPABILITY, normaliseCapability, planDelegation } from "../src/delegate.ts";
 import { ENV_DEPTH, ENV_GRANT, ENV_MAX_DEPTH } from "../src/propagation.ts";
+import type { SkillDefinition } from "../src/definitions.ts";
 
 const ctx = (over: Partial<Parameters<typeof planDelegation>[1]> = {}) => ({
   ownGrant: ["tool:read", "tool:bash", "tool:edit", "tool:write"],
@@ -126,4 +127,111 @@ test("a known capability still passes the catalog check", async () => {
   const { makeCatalog } = await import("../src/catalog.ts");
   const catalog = makeCatalog([{ capability: "tool:read", kind: "builtin" }]);
   assert.equal(planDelegation({ task: "x", tools: ["read"] }, { ...ctx(), catalog }).ok, true);
+});
+
+// ---------------------------------------------------------------------------
+// ADR-0016 — delegate by NAMED DEFINITION, not by a model-chosen tool list.
+//
+// Before this, `DelegationRequest` was `{task, tools[]}`: the model picked the capabilities. That is
+// backwards for governance — the definition is an operator-authored artifact and should be the upper
+// bound, with the model choosing only WHICH definition and WHAT task.
+// ---------------------------------------------------------------------------
+
+const definition = (over: Partial<SkillDefinition> = {}): SkillDefinition => ({
+  name: "review",
+  description: "Reviews code",
+  allowedTools: "Read Grep",
+  body: "# Review\n\nFind what breaks.",
+  source: "/skills/review/SKILL.md",
+  ...over,
+});
+
+test("ADR-0016: a named definition supplies the ceiling, clamped by the session grant", () => {
+  const plan = planDelegation(
+    { task: "review the diff", agent: "review" },
+    {
+      ownGrant: ["tool:read", "tool:grep", "tool:bash"],
+      depth: 0,
+      maxDepth: 2,
+      gated: [],
+      definitions: new Map([["review", definition()]]),
+    },
+  );
+  assert.equal(plan.ok, true, plan.reason);
+  assert.deepEqual(plan.effective, ["tool:grep", "tool:read"], "the definition bounds it, not the grant");
+});
+
+test("ADR-0016: a definition can never widen past the session grant", () => {
+  // ADR-0008 is untouched by the new entry point: a definition is an upper bound, never a grant.
+  const plan = planDelegation(
+    { task: "review", agent: "review" },
+    {
+      ownGrant: ["tool:read"],
+      depth: 0,
+      maxDepth: 2,
+      gated: [],
+      definitions: new Map([["review", definition({ allowedTools: "Read Grep Bash" })]]),
+    },
+  );
+  assert.equal(plan.ok, false);
+  assert.match(String(plan.reason), /grep|bash/);
+});
+
+test("ADR-0016: an undeclared allowed-tools refuses, and says how to fix it", () => {
+  const plan = planDelegation(
+    { task: "review", agent: "review" },
+    {
+      ownGrant: ["tool:read", "tool:grep"],
+      depth: 0,
+      maxDepth: 2,
+      gated: [],
+      definitions: new Map([["review", definition({ allowedTools: undefined })]]),
+    },
+  );
+  assert.equal(plan.ok, false);
+  assert.match(String(plan.reason), /allowed-tools/, "the message must name the field the author must add");
+});
+
+test("ADR-0016: a sub-tool pattern refuses and names the pattern", () => {
+  const plan = planDelegation(
+    { task: "review", agent: "review" },
+    {
+      ownGrant: ["tool:read", "tool:bash"],
+      depth: 0,
+      maxDepth: 2,
+      gated: [],
+      definitions: new Map([["review", definition({ allowedTools: "Read Bash(git:*)" })]]),
+    },
+  );
+  assert.equal(plan.ok, false);
+  assert.match(String(plan.reason), /Bash\(git:\*\)/);
+  assert.ok(!plan.effective.includes("tool:bash"), "refusing must not also have granted it");
+});
+
+test("ADR-0016: an unknown definition name refuses rather than falling back", () => {
+  // pi-subagents resolves an unknown type to `general-purpose`, whose tool list means EVERYTHING. That
+  // fallback is why a typo could grant the full toolset. There is no fallback here.
+  const plan = planDelegation(
+    { task: "x", agent: "reviewww" },
+    { ownGrant: ["tool:read"], depth: 0, maxDepth: 2, gated: [], definitions: new Map() },
+  );
+  assert.equal(plan.ok, false);
+  assert.match(String(plan.reason), /reviewww/);
+});
+
+test("ADR-0016: the definition body becomes the child's system prompt", () => {
+  const plan = planDelegation(
+    { task: "review the diff", agent: "review" },
+    {
+      ownGrant: ["tool:read", "tool:grep"],
+      depth: 0,
+      maxDepth: 2,
+      gated: [],
+      definitions: new Map([["review", definition()]]),
+    },
+  );
+  const at = plan.args.indexOf("--append-system-prompt");
+  assert.ok(at >= 0, "a spawned definition must carry its own instructions");
+  assert.match(plan.args[at + 1], /Find what breaks\./);
+  assert.equal(plan.args.at(-1), " review the diff", "the task still ends the argv (G1)");
 });

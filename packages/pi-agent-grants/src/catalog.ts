@@ -10,7 +10,7 @@
  *    the model, so it includes extension-registered tools and reflects any `--tools` allowlist already in
  *    force. Nothing else can see the real surface.
  *  - **skills** — `SKILL.md` directories and top-level `.md` files under pi's skill roots.
- *  - **agent types** — the same `.md` definitions the interceptor already reads.
+ *  - **definitions** — spawnable `SKILL.md` agents (ADR-0016), as `agent:<name>`.
  *
  * Provenance note: a provider payload gives tool NAMES, not owning packages, so extension tools cannot be
  * qualified as `ext:<pkg>/<tool>` from that source alone. They are catalogued as `tool:<name>` — which is
@@ -21,7 +21,8 @@
 import { readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { loadAgentTypes, PI_BUILTIN_TOOLS, type AgentType } from "./agent-types.ts";
+import { loadDefinitions, type SkillDefinition } from "./definitions.ts";
+import { PI_BUILTIN_TOOLS } from "./pi-tools.ts";
 import type { Capability } from "./resolve.ts";
 
 export type CapabilityKind = "builtin" | "extension" | "skill" | "agentType";
@@ -95,11 +96,19 @@ export async function loadSkills(cwd: string): Promise<CatalogEntry[]> {
   return [...found.values()];
 }
 
-export function agentTypeEntries(types: Map<string, AgentType>): CatalogEntry[] {
-  return [...types.values()].map((t) => ({
-    capability: `agent:${t.name}`,
+/**
+ * Spawnable definitions, as `agent:<name>` capabilities.
+ *
+ * A definition is BOTH a skill (loadable into a session) and an agent (spawnable as a child) — ADR-0016
+ * collapsed those into one file — so the same `SKILL.md` legitimately appears twice in the catalog under
+ * two capability ids. That is not duplication: `skill:review` means "may load these instructions" and
+ * `agent:review` means "may spawn a child running them", and a grant can hold either without the other.
+ */
+export function definitionEntries(definitions: Map<string, SkillDefinition>): CatalogEntry[] {
+  return [...definitions.values()].map((d) => ({
+    capability: `agent:${d.name}`,
     kind: "agentType" as const,
-    source: t.source,
+    source: d.source,
   }));
 }
 
@@ -123,11 +132,22 @@ export async function buildCatalog(input: {
   cwd: string;
   observedTools: string[] | null;
 }): Promise<Catalog> {
-  const [skills, types] = await Promise.all([loadSkills(input.cwd), loadAgentTypes(input.cwd)]);
+  const [skills, definitions] = await Promise.all([loadSkills(input.cwd), loadDefinitions(input.cwd)]);
   return makeCatalog([
+    // pi's built-ins are seeded unconditionally, because they are known statically and the catalog is
+    // consulted BEFORE any provider request has happened — `/grants` runs at that point. Without this,
+    // every capability looked "unknown" until the first model call, so the preview refused grants that
+    // enforcement would have allowed: R-28's failure shape (a diagnostic disagreeing with the enforcer)
+    // reappearing through a different door.
+    //
+    // The trade-off, stated plainly: in a session started with `--tools read`, this still lists `bash`
+    // as an existing capability, so a delegation naming it passes the *unknown* check and is refused by
+    // the *grant* check instead ("this session does not hold it"). That is the better error anyway, and
+    // the grant check — not this catalog — is the authority. Nothing here grants anything.
+    ...PI_BUILTIN_TOOLS.map((name) => ({ capability: `tool:${name}` as const, kind: "builtin" as const })),
     ...(input.observedTools ? classifyToolNames(input.observedTools) : []),
     ...skills,
-    ...agentTypeEntries(types),
+    ...definitionEntries(definitions),
   ]);
 }
 
@@ -140,4 +160,21 @@ export async function buildCatalog(input: {
  */
 export function unknownCapabilities(requested: Capability[], catalog: Catalog): Capability[] {
   return requested.filter((c) => !catalog.has(c)).sort();
+}
+
+/**
+ * Skill name -> absolute path, for `planSpawn`'s `--skill` flags (R-32).
+ *
+ * Derived from the catalog's own `source` field rather than re-scanning, so what a child is handed
+ * cannot drift from what was discovered and offered. A skill entry without a source is omitted, which
+ * makes it *unresolvable* rather than silently absent — `planDelegation` refuses on that, because a
+ * grant naming a skill the child never receives is a ledger line that lies.
+ */
+export function skillPathsFromCatalog(catalog: Catalog): Record<string, string> {
+  const paths: Record<string, string> = {};
+  for (const entry of catalog.entries) {
+    if (entry.kind !== "skill" || !entry.source) continue;
+    paths[entry.capability.slice("skill:".length)] = entry.source;
+  }
+  return paths;
 }

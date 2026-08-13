@@ -319,6 +319,253 @@ Backed by the 30-day expiry and by the ceiling check (an approval is void once i
 **Trigger:** any `grants-approvals.json` appearing in a repository's tracked files; or a ledger entry with
 `approvalSource: "persisted"` whose approving `cwd` differs from the session's.
 
+## R-28 · A correct pure function reached through a wrong argument list — H×H (FOUND AND FIXED)
+Added 2026-08-12 by the architecture-critic pass, **confirmed by execution before being written down**.
+`extensions/grants.ts` called `decideSpawn` from the `tool_call` hook **without `extensionTools`**, while the
+three other call sites (`/grants` status, the `/grants` ceiling display, the post-approval retry) all passed
+it. Because `ceilingFor` returns `[WILDCARD]` when it is `undefined` — fail-closed, and correct in isolation —
+and `inheritsExtensions` defaults to **true** for any type file lacking an `extensions:` key, **every ordinary
+narrow agent type resolved to `tool:*` on the one path that enforces.**
+
+In a governed session holding an *enumerated* grant — the product's whole selling point — the result was:
+the spawn refused; the reason **stating a falsehood about the file** (*"declares no `tools:` allowlist"* about
+a file declaring `tools: read, grep`); and the ledger recording `denied: ["tool:*"]`, so `isEscalationAttempt`
+— the single security signal ADR-0008 designates — **fired on legitimate traffic**. `shouldSeekApproval`
+returns `false` when `denied` is non-empty, so the retry that *did* pass the argument was unreachable.
+
+**Why 226 unit tests could not see it.** `decideSpawn` and `ceilingFor` were correct and well covered;
+`test/agent-types-fidelity.test.ts:93` already pinned that an omitted `extensionTools` yields the wildcard.
+The defect was **in the argument list, and nothing tested the argument list.** This is the generalisable
+lesson: a pure-core/thin-wiring design moves the bugs into the wiring, and `extensions/grants.ts` was the one
+file with no unit coverage — which three independent reviewers had already flagged.
+
+**It had also been found and fixed once before, on `/grants` only** (see the comment on
+`extensionCapabilities`). Repairing the symptom at the call site that revealed it, rather than the shared
+call, is what let it survive on the enforcement path for two releases.
+
+**Mitigation (implemented):** a single `decisionContext()` builder in `extensions/grants.ts` is now the only
+place `extensionTools` is spelled, so the omission is *unspellable* rather than merely corrected. Covered by
+`test/interceptor-wiring.test.ts`, which loads the real extension against a fake `pi` and drives the
+`tool_call` hook directly — the first unit coverage that file has had. Verified by reintroducing the defect:
+two of its four tests fail.
+**Trigger:** any second construction of a `DecisionContext` literal outside the builder; any refusal whose
+reason names `tool:*` for a type whose file declares an explicit `tools:` list; `isEscalationAttempt` firing
+on traffic an operator considers routine.
+
+## R-29 · One "Allow once" authorises N concurrent spawns — H×H (FOUND AND FIXED)
+Added 2026-08-12, **confirmed by execution** (10-line probe, no pi, no model). The single-flight approval
+queue keys on `capability@subject` (`approval-prompt.ts:174-180`) and the delegate path's subject is the
+**constant** `DELEGATE_SUBJECT`. Concurrent callers therefore share one pending promise and receive the *same*
+`PromptOutcome`. Measured: four concurrent delegations gating `tool:bash`, one dialog, *Allow once* clicked
+once → **four `{scope:"once", kind:"granted"}` outcomes**, and the dialog title showed only the **first**
+caller's task. A textbook confused deputy: the human approved seeing task A and authorised A-D unseen.
+
+ADR-0014's decided property — *"`once` stops at the boundary"* — **does not survive concurrency.** The ledger
+would show four lines reading `approvalScope: "once"`, which a reviewer reads as "the human said once, four
+times."
+
+**Was not a live defect** when found: `delegate` blocks until the child exits, so two delegations could not
+overlap. It was a hard precondition for any fan-out work, so it was fixed **before** the feature that would
+arm it rather than after.
+
+**Mitigation (implemented 2026-08-12).** The obvious fix — key the single flight on a per-spawn identity —
+was **rejected**, because `DELEGATE_SUBJECT` is a constant for a good reason: the only things naming a
+delegated child are the task and the tool list, both model-chosen, and *a key the model controls is not a
+key* (`approval.ts:24-32`). That reasoning governs **approval identity** and is sound.
+
+The real defect was narrower: **one key was doing two jobs.** De-duplication and authorisation are not the
+same question. So the queue still shares one dialog per key, but a joining caller only *keeps* the answer
+if it was about more than one spawn — `session`, `always`, a decline, or an error answer everyone; a
+**`once` is consumed by exactly one caller** and the rest ask their own question. Verified by reintroducing
+the defect: `test/approval-prompt.test.ts`'s R-29 test fails.
+
+**Two pre-existing tests had to be re-targeted rather than updated**, and this is the interesting part:
+*"two concurrent requests raise ONE dialog"* asserted `calls === 1` **and** that both callers received
+`scope: "once"` — it was **pinning the defect** while appearing to protect de-duplication. Re-answered with
+a `session` scope, they still protect the real property; the `once` semantics are now covered separately.
+
+**Still open, and NOT addressed by this fix:** approvals evaluated *after* `execute` returns would use a
+torn-down `ctx.ui`, making "is this spawn gated?" depend on queue position. That remains a precondition for
+background (as opposed to synchronous) fan-out.
+**Trigger:** any ledger file with two `approvalScope: "once"` lines sharing a timestamp and capability; any
+approval resolved outside the tool call that requested it.
+
+## R-30 · A model-controlled argv/env spawn path outside the fence — M×H
+Added 2026-08-12. `herdr` (a terminal workspace manager for agent panes) is installed on the author's machine,
+and the third-party `@andrewjacop/pi-herdr` exposes `herdr_start_agent` / `herdr_delegate` whose **model-facing
+parameters include `agentArgs: string[]` and `env: Record<string,string>`**. That is a model-authored array
+landing directly in a CLI argv — the exact hole `neutralisePrompt` exists to close (`docs/probes/g1-argv`) —
+plus model control of the channel grants travel on.
+
+**Precise impact, because `deriveOwnGrant` is a real mitigation:** a forged `PI_GRANTS_GRANT=tool:*` does
+**not** conjure tools; it is intersected with tools actually observed, and pi's `--tools` remains the
+enforcement point. But a pane launched with no `--tools` has pi's full default surface, so the forged grant
+resolves to everything, and that agent can delegate onward **looking legitimate** — minting ledger entries
+claiming authority it was never granted. Audit-record laundering rather than privilege escalation from
+nothing.
+
+**Not a live breach:** `pi-herdr` is not in this machine's `~/.pi/agent/settings.json` packages, so it is not
+loaded. **Same class as ADR-0013 Finding 6** (`subagents:rpc:spawn` bypassing `tool_call`), and materially
+worse in that the escape is a *documented parameter* rather than an internal path.
+**Mitigation (options, undecided — see ADR-0015):** speak herdr's own CLI/socket from this package so
+**we** build the argv (`herdr agent start <NAME> --kind pi --pane <ID> -- <planSpawn args>`), which is
+strictly safer than intercepting a third-party extension whose model-facing parameters are the hole; and/or
+add `herdr_*` spawn tools to the fence.
+**Trigger:** `pi-herdr` appearing in any settings `packages` list; any tool schema exposing an argv array or
+an env map to a model in a governed session.
+
+## R-31 · The pi-subagents port has no version pin and no drift tripwire — M×H (RETIRED: THE PORT IS DELETED)
+Added 2026-08-12. ADR-0013 ported pi-subagents' tool-resolution rules "rule-for-rule from 0.14.3", and
+`packages/pi-agent-grants/package.json` names `@tintinweb/pi-subagents` **nowhere** — not a dependency, peer,
+or devDependency. So no version is claimed, `npm ls` cannot see it, and R-22 ("upstream churn") has **no wired
+trigger**. Measured 2026-08-12: upstream is **0.15.0**, which adds a `src/nested-tools.ts` nesting-depth
+ceiling and `fallbackSubagent` resolution that our port does not model; installed pi is **0.84.1** while every
+probe records 0.83.0 and `PI_BUILTIN_TOOLS` is pinned "as of 0.83.0".
+
+**The failure direction is permissive**, which is what makes it a risk rather than a chore: any upstream rule
+that *widens* what a child receives makes our ceiling an **undercount**, and `agent-types.ts:143` says
+outright that an under-counted ceiling is one that gets **ALLOWED**.
+**Mitigation (proposed):** add `@tintinweb/pi-subagents` as a **pinned devDependency**; replace the
+transcribed fidelity table in `test/agent-types-fidelity.test.ts` with a differential test importing the real
+resolution helpers over ~30 frontmatter fixtures, so `npm update` turns drift into a red test; record a
+`subagentsVersionSeen` field in the ledger so an audit can tell which port produced a line.
+**Trigger:** any `@tintinweb/pi-subagents` release; any pi release changing the built-in tool list.
+
+> **2026-08-12 (later) — RETIRED, by deletion rather than mitigation.** ADR-0016 removed
+> `src/agent-types.ts` and `src/interceptor.ts` entirely: this package no longer re-implements another
+> project's tool-resolution rules, so there is nothing left to drift. The proposed mitigation above — pin
+> `@tintinweb/pi-subagents` as a devDependency and add a differential fidelity test — was **not built and
+> is no longer needed**; the cheaper fix was to stop having the dependency. Recorded rather than deleted
+> because the *reasoning* is the reusable part: a copy of someone else's private function, kept in step by
+> human vigilance, with a silent permissive failure mode, is a liability whether or not it has drifted yet.
+>
+> **One half survives and moved:** `PI_BUILTIN_TOOLS` is still a pinned observation of pi itself, now in
+> `src/pi-tools.ts`, and its trigger below still stands. It is used for *classification only* — never for
+> enforcement, which is `--tools`' job — so drift there misfiles a capability rather than granting one.
+
+> **2026-08-12 — the second trigger FIRED, in the product rather than in a dependency.**
+> `docs/probes/g16-herdr` §6: a child launched with `--tools read` under pi **0.84.1** reported a
+> **`parallel`** tool, which is absent from `PI_BUILTIN_TOOLS` (`src/agent-types.ts:20`, pinned "as of
+> 0.83.0"). Not an enforcement hole — `--no-tools` removes it — but `PI_BUILTIN_TOOLS` is exactly what
+> `ceilingFor` subtracts to derive extension tools and what the catalog classifies by, so an unknown
+> built-in is **misclassified as an extension capability**. The pinned list needs a tripwire of its own,
+> not only the pi-subagents one.
+
+## R-32 · A governed child inherits the operator's skills and context files — M×H (FOUND AND FIXED)
+Added 2026-08-12, **measured** (`docs/probes/g16-herdr` §4-5). `planSpawn` (`src/spawn.ts:50`) passes
+`--no-extensions` and nothing else. pi has **separate** `--no-skills` / `--skill <path>` and
+`--no-context-files` flags, and the comment at that line reasons only about *extension* discovery. So a
+child spawned with the narrowest useful grant (`--tools read`) still starts with **every skill the
+operator has installed** and with `CLAUDE.md` loaded — observed directly in a governed pane's startup
+banner:
+
+```
+[Context]  CLAUDE.md
+[Skills]   architect, build, debug, decide, git-ops, plan, review, skill-harness
+```
+
+**Two distinct problems, and they need different answers.**
+
+1. **`skill:` capabilities enforce nothing.** This was suspected (ADR-0013; `SESSION-LOG` item f) and is
+   now measured: a grant of `skill:review` and a grant naming no skill produce the *identical* child. A
+   capability namespace that reads as a control and is not one is worse than an absent feature — it
+   invites exactly the misplaced confidence R-25 describes. **Either make it real** (`--no-skills` plus
+   `--skill` per granted skill) **or delete the namespace.**
+2. **Context files are model-directing text that no grant describes.** Inheriting project conventions is
+   often *desirable*, so this is not self-evidently a bug — but it must be a **decision**, because
+   `CLAUDE.md` can instruct a child in ways no capability records and no ledger line reflects. Under
+   ADR-0012's threat model (prompt injection in scope), an untrusted repo's context file reaching a
+   governed child is the injection vector, and today it arrives silently.
+
+**Mitigation (implemented 2026-08-12).** `planSpawn` now emits `--no-skills` unconditionally and adds
+`--skill <path>` for each granted skill, resolved from the catalog's own `source` via
+`skillPathsFromCatalog`. The order is not stylistic: read from pi's resolver
+(`dist/core/resource-loader.js:329`), `noSkills` drops *discovered* skills while keeping
+explicitly-passed paths, so `--skill` **without** `--no-skills` would ADD to the discovered set rather
+than replace it — an allowlist that widens. A granted skill the catalog cannot place is **refused** by
+`planDelegation`, not dropped: a grant naming a skill the child never receives is a ledger line that
+lies. `--no-context-files` is on by default and `contextFiles: true` opts back in, so inheriting project
+conventions stays possible but becomes a decision.
+
+**A third resource class turned up while verifying the fix**, and is now withheld too:
+`--no-prompt-templates`. Lower risk (a template expands when a human invokes `/name`; it is not injected
+into the system prompt) but withheld for consistency, because under a herdr backend a governed child runs
+in an **attachable pane with a human in it**.
+
+**Verified in a real pi process, not only in unit tests** — the same way the defect was found. Before:
+`[Context] CLAUDE.md` and `[Skills] architect, build, debug, decide, git-ops, plan, review,
+skill-harness`. After: neither block appears.
+
+**Still open:** the ledger records what a child *could do*, never what it was *told* — the skills and
+system prompt it received are not in the record. That gap is what makes "what was this child instructed
+to do?" unanswerable after the fact, and it is not closed by this fix.
+**Trigger:** any grant naming a `skill:` capability that reaches a child without a `--skill` flag; any
+pi release adding a resource class that `--no-extensions` does not cover.
+
+## R-33 · `wait --until idle` returns before the work starts — M×H (FOUND AND FIXED)
+Added 2026-08-12, **measured** (`docs/probes/g16-herdr` §7). `herdr agent wait <name> --until idle`
+called immediately after `herdr agent prompt` matched the agent's **pre-existing** idle state and returned
+at once, with `state_change_seq` unchanged — a reply indistinguishable from a completed run.
+
+**Why this is a governance risk and not merely a bug to code around:** the intended fan-out pattern is
+spawn N → prompt N → wait N → harvest N → merge. If the wait is satisfied by the state *before* the work,
+an orchestrator collects N empty transcripts and **merges them into a confident summary of nothing** —
+R-03's lossy-aggregation failure with a new cause. A missing result must never be indistinguishable from
+an empty one.
+**Mitigation (implemented 2026-08-12).** `runHerdrPane` does not use `agent wait` at all — its contract
+cannot express "settled *after* this point". It polls `agent get` and requires **both** a terminal status
+**and** `state_change_seq` advanced past the value observed before prompting. Verified by reintroducing the
+defect: the R-33 test fails.
+**Trigger:** any `runHerdrPane` implementation; any orchestration step that merges N child results.
+
+## R-34 · A ledger whose damage is invisible is not a compensating control — M×H (DETECTION ADDED)
+Added 2026-08-12. ADR-0008 leans on the append-only ledger as its compensating control, and **nothing in
+this package had ever read one back.** `appendRecord`'s strict mode catches write *errors*, never
+corruption, so a torn line was silently indistinguishable from a spawn that never happened — a gap in the
+audit trail that reads as an absence of activity. Two conditions made that more than theoretical: fan-out
+turned concurrent appends from impossible into ordinary (a blocking `delegate` had bounded writers to one by
+accident), and `PI_GRANTS_LEDGER` propagates to children, so a subtree can have many *processes* appending
+to one file. `O_APPEND` is atomic for a single write to a regular file on a POSIX filesystem and promises
+nothing on drvfs (`/mnt/c` under WSL2) or NFS — which is where this project runs.
+
+**Mitigation (implemented).** `verifyLedger` reads the ledger back and reports record count, escalation
+attempts, and unparseable lines **with line numbers**; `/grants ledger` exposes it, because a check an
+operator cannot run is not a control. Appends are serialised across processes by an exclusive lock file with
+a short timeout (failing closed beats hanging) and stale-lock breaking (a process killed while holding it
+must not block every future write). A corrupt line is **reported, never repaired** — it is the only artifact
+an investigation has.
+
+**Deliberately still open:** nothing *automatically* verifies. Detection exists; a scheduled or startup
+check does not, so a corrupt ledger stays unnoticed until someone runs the command. Naming that is the
+point — the previous state was worse and undocumented.
+**Trigger:** any `/grants ledger` run reporting a non-zero corrupt count; any ledger configured under
+`/mnt/` or an NFS mount.
+
+## R-35 · A definition's instructions are not governed, only its tools — M×H
+Added 2026-08-12, found while writing `docs/SPEC.md` — i.e. by trying to state the guarantee precisely, not
+by testing.
+
+`agent:<name>` is produced by the catalog for every definition and *parses* as a capability
+(`normaliseCapability`, `ceilingForDefinition`), but **nothing ever checks that a session holds one.** The
+only gate on `delegate({agent})` is that the definition's `allowed-tools` fits inside the session's grant.
+
+**So the capability model governs what a child CAN DO and never what it is TOLD to do.** A session granted
+`read, bash` may spawn any definition whose ceiling fits — including one whose `SKILL.md` body instructs it
+to delete everything it can reach, because that body needs only `bash`. Every grant is honoured and every
+ledger line is correct; the instructions were simply never in scope. It also means an operator cannot
+express "this session may spawn `review` but not `deploy`", which is an ordinary thing to want.
+
+Sharpened by ADR-0016: definitions are now **spawnable prompts**, so their bodies carry far more weight than
+an agent type's frontmatter ever did. The ledger records the grant and not the body, so "what was this child
+instructed to do?" is unanswerable after the fact.
+
+**Mitigation (undecided):** make `agent:<name>` a genuine prerequisite for spawning that definition — cheap,
+since the catalog already emits the ids and `resolve()` already intersects capability sets — **or** delete
+the namespace. A capability that enforces nothing reads as a control, which is R-25's legibility failure in
+a new place. Recording the body's hash in the ledger would separately close the audit half.
+**Trigger:** any grant naming an `agent:` capability, since it currently has no effect; any operator asking
+to restrict which definitions a session may spawn.
+
 ---
 
 ## Register log
@@ -335,3 +582,19 @@ Backed by the 30-day expiry and by the ceiling check (an approval is void once i
 | 2026-08-09 | R-25, R-26 | Added — `bash` grants read as narrow but aren't (legibility failure); wildcard leaked down the tree (found by test, fixed) | `pi-agent-grants` |
 | 2026-08-09 | R-27 | Added — persisting `always` approvals to a repo-local file lets a commit authorise every clone; mitigated by `cwd`-match on load | ADR-0010 |
 | 2026-08-09 | R-25 | Cross-referenced ADR-0010 — gating `bash` by default is the highest-value use of the new approval machinery and also its hardest test (prompt fatigue); carried as an open item, not decided | ADR-0010 |
+| 2026-08-12 | R-28 | Added and **FIXED same session** — the `tool_call` hook reached a correct `decideSpawn` through a wrong argument list, refusing every narrow inheriting type in an enumerated-grant session and firing the escalation signal on legitimate traffic. Confirmed by execution before being written. Fixed with a single `decisionContext()` builder + `test/interceptor-wiring.test.ts` (first unit coverage of `extensions/grants.ts`) | architecture-critic, verified locally |
+| 2026-08-12 | R-29 | Added — one *Allow once* authorises N concurrent spawns (single flight keyed on a constant subject). Confirmed by a 10-line probe. **Latent**, since `delegate` blocks; a hard precondition for fan-out, and it reopens ADR-0014 | architecture-critic, verified locally |
+| 2026-08-12 | R-30 | Added — `pi-herdr`'s `herdr_start_agent`/`herdr_delegate` expose **model-controlled `agentArgs` and `env`**, reopening the g1-argv hole and allowing a forged `PI_GRANTS_GRANT`. Not loaded on this machine; same class as ADR-0013 Finding 6 but through a documented parameter | landscape check |
+| 2026-08-12 | R-31 | Added — the pi-subagents port has no version pin and no drift tripwire, and has **already drifted** (upstream 0.15.0, pi 0.84.1 vs probes' 0.83.0). Failure direction is permissive, so drift silently widens ceilings | architecture-critic, verified locally |
+| 2026-08-12 | R-22 | Cross-referenced R-31 — R-22 named upstream churn as a risk but wired no trigger; R-31 is that gap made concrete, with a proposed differential test as the tripwire | architecture-critic |
+| 2026-08-12 | R-29 | **FIXED** — a joining caller keeps a shared answer only when it was about more than one spawn; a `once` is consumed by exactly one. The per-spawn-key fix was rejected on ADR-0014's own reasoning. Two pre-existing tests were found to be **pinning the defect** and were re-targeted | `pi-agent-grants` |
+| 2026-08-12 | R-31 | **TRIGGER FIRED** — pi 0.84.1 exposes a `parallel` tool absent from `PI_BUILTIN_TOOLS` (pinned "as of 0.83.0"). Gated correctly, but misclassified as an extension capability by `ceilingFor` and the catalog | `docs/probes/g16-herdr` |
+| 2026-08-12 | R-32 | Added — **measured**: a governed child inherits all the operator's skills and `CLAUDE.md`, because `planSpawn` passes `--no-extensions` but not `--no-skills` / `--no-context-files`. Confirms `skill:` capabilities enforce nothing | `docs/probes/g16-herdr` |
+| 2026-08-12 | R-31 | **RETIRED by deletion** — ADR-0016 removed the port (`src/agent-types.ts`, `src/interceptor.ts`), so there is no longer another project's resolution logic to keep in step. The proposed devDependency pin and differential test were never built and are no longer needed; `PI_BUILTIN_TOOLS` moved to `src/pi-tools.ts` and keeps its own trigger | ADR-0016 |
+| 2026-08-12 | R-32 | **FIXED** — `planSpawn` withholds skills, context files and prompt templates, and passes `--skill` per granted skill; an unresolvable granted skill is refused, not dropped. `skill:` capabilities now enforce something for the first time. Verified in a real pi process, and a third leaking resource class (prompt templates) was found while verifying | `pi-agent-grants` |
+| 2026-08-12 | R-33 | Added — **measured**: herdr's `wait --until idle` is satisfied by the pre-existing idle state, so a fan-out harvest can merge N empty results into a confident summary (R-03 with a new cause) | `docs/probes/g16-herdr` |
+| 2026-08-12 | R-33 | **FIXED** — `runHerdrPane` polls `agent get` and requires a terminal status *and* an advanced `state_change_seq`; `agent wait` is never used. Building the executor also found four further herdr constraints, written up as an addendum to `docs/probes/g16-herdr` | ADR-0016 |
+| 2026-08-12 | ADR-0008 | **AMENDED** — the attenuation invariant gains a **cardinality companion**: a subtree budget (`PI_GRANTS_FANOUT`), propagated like depth, plus a per-call cap. Closes review finding F5, which had no entry of its own because "silence about a bound" is not a risk anyone had written down | ADR-0015 / fan-out |
+| 2026-08-12 | R-35 | Added — `agent:` capabilities enforce nothing, so definitions are not individually authorised and a definition's *instructions* are ungoverned. Found by writing `docs/SPEC.md`: stating the guarantee precisely is what exposed the gap between "what a child can do" and "what it is told to do" | doc sync |
+| 2026-08-12 | R-34 | Added and **partly fixed** — the ledger had no reader, so corruption was silent; `verifyLedger` + `/grants ledger` make it detectable and concurrent appends are now serialised by a lock | fan-out |
+| 2026-08-12 | R-30 | Downgraded in likelihood — the working frame (no third-party pi extensions; speak herdr's CLI directly) means `pi-herdr` is not installed and its model-controlled `agentArgs`/`env` are not in the trust path. **Kept as a live entry**: the hazard returns the moment it is installed, and this frame is not yet recorded in an ADR | `docs/probes/g16-herdr` |

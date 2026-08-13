@@ -19,12 +19,38 @@ export interface SpawnPlanInput {
   sessionFile?: string;
   /** Non-interactive by default: a governed child should not prompt a human. */
   print?: boolean;
+  /**
+   * Absolute path per skill NAME (`review` -> `/…/review`), as the catalog discovered them.
+   *
+   * R-32. Only skills named by a `skill:` capability in `effective` are passed, and a granted skill
+   * absent from this map is reported in `unresolvedSkills` rather than dropped.
+   */
+  skillPaths?: Record<string, string>;
+  /**
+   * Let the child load `AGENTS.md` / `CLAUDE.md`. **Default false** — see the `--no-context-files`
+   * note in `planSpawn`.
+   */
+  contextFiles?: boolean;
+  /**
+   * Instructions appended to the child's system prompt — a definition's `SKILL.md` body (ADR-0016).
+   *
+   * Appended rather than replacing, so pi's own coding-assistant prompt survives underneath and a
+   * definition only has to describe its own job.
+   */
+  systemPrompt?: string;
 }
 
 export interface SpawnPlan {
   args: string[];
   /** The tool names pi will allow, for the ledger. `null` means no tools at all. */
   allowlist: string[] | null;
+  /** Skill paths handed to the child, for the ledger. */
+  skills: string[];
+  /**
+   * Granted `skill:` capabilities with no known path. **Non-empty means the caller should refuse**:
+   * the child would silently lack a capability its grant says it holds.
+   */
+  unresolvedSkills: Capability[];
 }
 
 /**
@@ -49,11 +75,53 @@ export function planSpawn(input: SpawnPlanInput): SpawnPlan {
   // `-e` paths would still load, so this package never passes one.
   args.push("--no-extensions");
 
+  // R-32. `--no-extensions` governs EXTENSIONS ONLY — measured, not assumed: a child spawned with
+  // `--tools read` still loaded all eight of the operator's skills and `CLAUDE.md`
+  // (`docs/probes/g16-herdr` §4-5). Skills are injected into the system prompt rather than passed as
+  // tools, so `--tools` cannot reach them and the `skill:` namespace enforced nothing at all.
+  //
+  // `--no-skills` is unconditional and `--skill` is added on top, because that is exactly how pi
+  // resolves them (`dist/core/resource-loader.js:329`): with `noSkills` set, discovered skills are
+  // dropped and explicitly-passed paths are kept. Passing `--skill` WITHOUT `--no-skills` would add to
+  // the discovered set instead of replacing it — an allowlist that widens, which is the failure
+  // direction this package exists to prevent.
+  const skills: string[] = [];
+  const unresolvedSkills: Capability[] = [];
+  for (const capability of input.effective) {
+    if (!capability.startsWith("skill:")) continue;
+    const path = input.skillPaths?.[capability.slice(6)];
+    if (path) skills.push(path);
+    else unresolvedSkills.push(capability);
+  }
+  args.push("--no-skills");
+  for (const path of skills) args.push("--skill", path);
+
+  // Context files are model-directing text that NO capability describes and no ledger line records, so
+  // a child inheriting them holds influence its grant does not express. Under ADR-0012's threat model
+  // — prompt injection explicitly in scope — an untrusted repository's `CLAUDE.md` reaching a governed
+  // child is the injection vector. Off by default therefore, but deliberately still expressible:
+  // inheriting a project's conventions is often exactly what an operator wants, and that should be a
+  // decision they make rather than one this package makes silently in either direction.
+  if (!input.contextFiles) args.push("--no-context-files");
+
+  // Prompt templates are the third resource class that `--no-extensions` does not cover — found in the
+  // banner of the very run that verified the two above. Lower risk than skills (a template is expanded
+  // when a human invokes `/name`, not injected into the system prompt) but withheld for consistency:
+  // under a herdr backend a governed child runs in an attachable pane WITH a human, so "only what the
+  // grant names" must not depend on which executor ran it.
+  args.push("--no-prompt-templates");
+
+  // A definition's body, so the child IS the reviewer rather than merely holding a reviewer's tools.
+  // Note this is operator-authored text from a file on disk, not a model-chosen string — the model
+  // picks WHICH definition, never its contents. That is what keeps it out of `neutralisePrompt`'s
+  // remit: the G1 hazard is a model-controlled string reaching a parser, and this is not one.
+  if (input.systemPrompt) args.push("--append-system-prompt", input.systemPrompt);
+
   if (allowlist) args.push("--tools", allowlist.join(","));
   else args.push("--no-tools");
 
   args.push(neutralisePrompt(input.prompt));
-  return { args, allowlist };
+  return { args, allowlist, skills, unresolvedSkills };
 }
 
 /**

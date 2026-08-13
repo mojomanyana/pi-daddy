@@ -228,12 +228,19 @@ function sanitisedEnv(overrides?: Record<string, string>): NodeJS.ProcessEnv {
   return { ...env, ...overrides };
 }
 
-/** A throwaway project with agent types on disk, outside the repo. */
-export async function fixture(types: Record<string, string> = {}): Promise<string> {
+/**
+ * A throwaway project with `SKILL.md` definitions on disk, outside the repo.
+ *
+ * ADR-0016 moved definitions from `.pi/agents/<name>.md` (pi-subagents' layout) to
+ * `.pi/skills/<name>/SKILL.md` (the Agent Skills standard), so this writes the latter. Each key is the
+ * DIRECTORY name, which is also the definition's identity — the spec requires `name` to match it, and
+ * this package reads identity from the path rather than the frontmatter for exactly that reason.
+ */
+export async function fixture(definitions: Record<string, string> = {}): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), "grants-it-"));
-  await mkdir(join(dir, ".pi", "agents"), { recursive: true });
-  for (const [name, frontmatter] of Object.entries(types)) {
-    await writeFile(join(dir, ".pi", "agents", `${name}.md`), frontmatter, "utf8");
+  for (const [name, content] of Object.entries(definitions)) {
+    await mkdir(join(dir, ".pi", "skills", name), { recursive: true });
+    await writeFile(join(dir, ".pi", "skills", name, "SKILL.md"), content, "utf8");
   }
   return dir;
 }
