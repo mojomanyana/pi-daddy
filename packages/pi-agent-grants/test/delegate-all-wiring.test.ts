@@ -11,7 +11,8 @@
  */
 
 import assert from "node:assert/strict";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, test } from "node:test";
@@ -32,8 +33,9 @@ interface ToolSpec {
   execute: (id: string, params: Record<string, unknown>, signal: undefined, onUpdate: undefined, ctx: unknown) => Promise<unknown>;
 }
 
-async function harness(env: Record<string, string>) {
-  const dir = await mkdtemp(join(tmpdir(), "grants-fanout-"));
+async function harness(env: Record<string, string>, existingDir?: string) {
+  // `existingDir` lets a test stage `SKILL.md` definitions before the extension loads them.
+  const dir = existingDir ?? (await mkdtemp(join(tmpdir(), "grants-fanout-")));
   for (const k of KEYS) if (!saved.has(k)) saved.set(k, process.env[k]);
   for (const k of KEYS) delete process.env[k];
   Object.assign(process.env, env);
@@ -118,6 +120,44 @@ test("F8: concurrent siblings get distinct, hierarchical ledger ids", async () =
   assert.equal(new Set(ids).size, 3, `siblings must be distinguishable, got ${JSON.stringify(ids)}`);
   assert.deepEqual([...ids].sort(), ["d0.1", "d0.2", "d0.3"]);
   for (const line of lines) assert.equal(line.parentId, "d0", "and every one names its real parent");
+});
+
+test("ADR-0018: the digest reaches the LEDGER FILE, not just the plan", async () => {
+  // The class of defect this catches is the one that keeps recurring here: a correct value on the plan that
+  // the call site never passes to `buildRecord` (R-28, B-I3). Only a real ledger line can show it.
+  //
+  // Nothing spawns: the definition declares a sub-tool pattern, which `--tools` cannot express, so the plan
+  // is refused — but refused AFTER the file is read, which is exactly the case that must still be
+  // identified. Deterministic, and no child process.
+  const dir = await mkdtemp(join(tmpdir(), "grants-digest-"));
+  const TASK_SENTINEL = "ZZ-task-text-that-must-never-be-recorded-ZZ";
+  const body = "# Patterned\n\nDo the patterned thing.";
+  await mkdir(join(dir, ".pi", "skills", "patterned"), { recursive: true });
+  await writeFile(
+    join(dir, ".pi", "skills", "patterned", "SKILL.md"),
+    `---\nname: patterned\ndescription: Declares a sub-tool pattern.\nallowed-tools: Read, Bash(git:*)\n---\n${body}`,
+  );
+
+  const ledger = join(dir, "ledger.jsonl");
+  const { tools, ctx } = await harness(
+    { [ENV_GRANT]: "agent:patterned,tool:read,tool:bash,tool:delegate", [ENV_LEDGER]: ledger },
+    dir,
+  );
+
+  await tools
+    .get("delegate")!
+    .execute("t", { task: TASK_SENTINEL, agent: "patterned" }, undefined, undefined, ctx)
+    .catch(() => undefined);
+
+  const [line] = (await readFile(ledger, "utf8")).trim().split("\n").filter(Boolean).map((l) => JSON.parse(l));
+  assert.equal(line.blocked, true);
+  assert.equal(line.definitionDigest?.name, "patterned");
+  assert.equal(
+    line.definitionDigest?.sha256,
+    createHash("sha256").update(body, "utf8").digest("hex"),
+    "the recorded digest must be of the body the child would have received",
+  );
+  assert.ok(!JSON.stringify(line).includes(TASK_SENTINEL), "the TASK is never written to the ledger (ADR-0018)");
 });
 
 test("a child's ledger id descends from an inherited parent id, not from depth", async () => {

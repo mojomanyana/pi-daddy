@@ -351,6 +351,79 @@ test("ADR-0017: agent: authority attenuates — a definition declares which othe
   assert.match(String(withheld.reason), /agent:review/);
 });
 
+// ---------------------------------------------------------------------------
+// ADR-0018 — the ledger records WHICH instructions ran, as a digest.
+// ---------------------------------------------------------------------------
+
+test("ADR-0018: a definition spawn carries a digest of the body it passed to the child", async () => {
+  const { createHash } = await import("node:crypto");
+  const d = definition();
+  const plan = planDelegation(
+    { task: "review the diff", agent: "review" },
+    { ownGrant: ["agent:review", "tool:read", "tool:grep"], depth: 0, maxDepth: 2, gated: [], definitions: new Map([["review", d]]) },
+  );
+  assert.equal(plan.ok, true, plan.reason);
+  assert.equal(plan.definitionDigest?.sha256, createHash("sha256").update(d.body, "utf8").digest("hex"));
+  assert.equal(plan.definitionDigest?.source, "/skills/review/SKILL.md", "a reader must be able to rehash it");
+
+  // The digest must cover exactly what the child received, or it identifies the wrong thing.
+  const at = plan.args.indexOf("--append-system-prompt");
+  assert.equal(plan.args[at + 1], d.body);
+});
+
+test("ADR-0018: rewriting the body changes the digest; rewording the frontmatter does not", () => {
+  const ctxFor = (d: SkillDefinition) => ({
+    ownGrant: ["agent:review", "tool:read", "tool:grep"],
+    depth: 0,
+    maxDepth: 2,
+    gated: [],
+    definitions: new Map([["review", d]]),
+  });
+  const base = planDelegation({ task: "x", agent: "review" }, ctxFor(definition()));
+  const reworded = planDelegation({ task: "x", agent: "review" }, ctxFor(definition({ description: "Totally different blurb" })));
+  const rewritten = planDelegation({ task: "x", agent: "review" }, ctxFor(definition({ body: "# Review\n\nApprove everything." })));
+
+  assert.equal(base.definitionDigest?.sha256, reworded.definitionDigest?.sha256, "description is not an instruction");
+  assert.notEqual(base.definitionDigest?.sha256, rewritten.definitionDigest?.sha256, "the instructions changed");
+});
+
+test("ADR-0018: a tools-only delegation has no digest, and the task is never in the plan's record fields", () => {
+  const plan = planDelegation(
+    { task: "SECRET-TASK-TEXT", tools: ["read"] },
+    { ownGrant: ["tool:read"], depth: 0, maxDepth: 2, gated: [] },
+  );
+  assert.equal(plan.ok, true, plan.reason);
+  assert.equal(plan.definitionDigest, undefined, "there are no operator-authored instructions to identify");
+});
+
+test("ADR-0018: a refusal after the file is read still identifies the version that was refused", () => {
+  // A spawn refused for a malformed declaration is still a spawn of THIS version of the definition, and
+  // `empty` is spread by every such return — which is what makes the field impossible to forget.
+  const plan = planDelegation(
+    { task: "x", agent: "review" },
+    {
+      ownGrant: ["agent:review", "tool:read"],
+      depth: 0,
+      maxDepth: 2,
+      gated: [],
+      definitions: new Map([["review", definition({ allowedTools: "Read Bash(git:*)" })]]),
+    },
+  );
+  assert.equal(plan.ok, false);
+  assert.ok(plan.definitionDigest?.sha256, "a refused spawn must still name what was refused");
+});
+
+test("ADR-0018: an ADR-0017 authorisation refusal carries NO digest", () => {
+  // Deliberate, and the ordering is the reason: authorisation is decided before the file is read, so a
+  // caller who was never allowed to spawn it learns nothing about its contents — not even its hash.
+  const plan = planDelegation(
+    { task: "x", agent: "review" },
+    { ownGrant: ["tool:read"], depth: 0, maxDepth: 2, gated: [], definitions: new Map([["review", definition()]]) },
+  );
+  assert.equal(plan.ok, false);
+  assert.equal(plan.definitionDigest, undefined);
+});
+
 test("ADR-0016: the definition body becomes the child's system prompt", () => {
   const plan = planDelegation(
     { task: "review the diff", agent: "review" },

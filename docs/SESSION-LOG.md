@@ -7,10 +7,10 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ## NEXT SESSION — read this, then pick one
 
-**State: green, nothing half-finished.** `pi-agent-grants` **0.8.0**, `pi-token-audit` **0.1.0**. **262 unit
+**State: green, nothing half-finished.** `pi-agent-grants` **0.9.0**, `pi-token-audit` **0.1.0**. **268 unit
 + 10 integration tests**, typecheck clean, smoke clean (packs, installs, exercises every subpath).
-**Seventeen** ADRs decided; ADR-0016 and ADR-0017 fully implemented. `extensions/grants.ts` is **202 lines**
-— the split is done and a test enforces the ceiling.
+**Eighteen** ADRs decided; ADR-0016, ADR-0017 and ADR-0018 fully implemented. `extensions/grants.ts` is
+**202 lines** — the split is done and a test enforces the ceiling.
 
 ```bash
 cd packages/pi-agent-grants && npm test && npm run typecheck && npm run test:integration && npm run test:smoke
@@ -23,7 +23,8 @@ known gap. Do not re-derive it from the ADRs.
 
 | # | Item | Notes |
 | :--- | :--- | :--- |
-| 1 | ~~R-35 / R-36~~ **CLOSED 2026-08-13 by ADR-0017 (Accepted) and shipped in 0.8.0.** What remains of R-35 is the half a capability model cannot reach: the operator authorises a *file*, and the ledger records the grant but never the **body**, so "what was this child told to do?" is unanswerable after the fact. | **A body hash on the ledger record would close it, and has no owner.** That is deliberately a separate ADR — one decision per ADR. Start there if you want R-35 fully retired. |
+| 1 | ~~R-35 / R-36~~ **CLOSED 2026-08-13** — ADR-0017 (authorisation, 0.8.0) and ADR-0018 (audit, 0.9.0). What remains of R-35 is inherent and recorded in SPEC: the digest identifies a body without preserving it, and nothing judges what a body *says*. | Done. Do not reopen without new evidence. |
+| 1b | **R-37 — the `<delegate>` approval subject rests on a premise ADR-0017 falsified.** A definition IS an operator-authored subject now, so `always` approvals could persist for `delegate({agent})`; today they never do, ADR-0010's machinery is dormant, and the cost is the prompt fatigue that gets gating switched off. | **The most load-bearing open item, and it wants an ADR.** ADR-0018's `definitionDigest` supplies the missing half: a stored approval could be voided by a body change, which `grantAtApproval` cannot detect. |
 | 2 | **Nothing verifies the ledger automatically.** `/grants ledger` detects corruption; no scheduled or startup check runs it. | R-34. Detection exists, which is the part that was missing. |
 | 3 | **Pane cleanup is not leak-proof.** `finally` covers thrown errors, not the process being killed. No reaper. | `docs/probes/g16-herdr` addendum. |
 | 4 | **`packages/pi-agent-grants/README.md` deeper sections are stale** — they still describe the interceptor as a provisioning path. Its 0.7.0 header says so. | ~400 lines. `docs/SPEC.md` is correct in the meantime. |
@@ -32,10 +33,10 @@ known gap. Do not re-derive it from the ADRs.
 | 7 | **Background delegation** is deliberately not built. Fan-out carried the value; background carries the lifecycle holes. | ADR-0015. Approvals resolved after a tool call returns would use a torn-down `ctx.ui`, so gating would depend on queue position — that must be answered first. |
 | 8 | **`pi-token-audit` has no tests**, and its headline "tool-definition share" is a character ratio, not a token share. | Falsified 2026-08-10. |
 
-### The scoped code work is DONE (2026-08-13) — see the entry below
+### No queued code work
 
-`extensions/grants.ts` is 202 lines. There is no queued code work; pick from the table above, and note that
-items 1 and 7 want an ADR before any code.
+Pick from the table above. **Items 1b and 7 want an ADR before any code**; item 4 (the README) is the
+largest purely-mechanical job left and needs no decision from anyone.
 
 ### Things that look like work and are not
 
@@ -53,6 +54,53 @@ That convention is why every reversal here was survivable, and there have been f
 
 ---
 
+
+## 2026-08-13 (later still) — ADR-0018: the ledger records *which* instructions ran — 0.9.0
+
+**R-35's audit half, closed as far as it can honestly be closed.** Every spawn naming a definition now
+records `definitionDigest: {name, source, sha256}` over the body — the exact text passed as
+`--append-system-prompt`.
+
+**The binding constraint was already written down, at the top of `src/ledger.ts`:** *capability ids, counts
+and identifiers only — never prompts, tool arguments or results.* That rule sorted the options by itself.
+Two texts direct a governed child and they fall on opposite sides of it: the **body** is operator-authored,
+already committed to a repository, and a hash of it is an *identifier*; the **task** is assembled by the
+model from the parent's context and could carry anything the parent could see. So the body is digested and
+**the task is never recorded, in any field, by decision** — the privacy rule now says so outright instead of
+leaving it to be inferred.
+
+The user declined the body **snapshot** (Option 2). The argument that carried: the ledger write path is a
+fail-closed governance dependency, and doubling what can break it would mean either a full disk stops
+governance or a record claims a snapshot that may not exist. The digest is the addressing scheme a snapshot
+store would need anyway, so nothing is foreclosed.
+
+**Three implementation details worth keeping.**
+
+1. **The digest is over the body alone**, not the frontmatter — otherwise rewording `description` would
+   report an instruction change that never happened. Pinned by a test that does exactly that.
+2. **It is assigned into `empty`**, the object every refusal spreads, so it appears on every outcome from
+   the point the file is read. That is the R-28 discipline applied to a record field: one spelling instead
+   of eight that a ninth return could forget. The success return does not spread `empty`, so it names it.
+3. **An ADR-0017 authorisation refusal carries NO digest** — deliberate, and the ordering is the reason. A
+   caller who was never allowed to spawn the definition learns nothing about it, not even its hash.
+
+**The test that matters is the ledger-file one**, not the plan one: the recurring defect here is a correct
+value on the plan that the call site never passes to `buildRecord` (R-28, B-I3). It stages a `SKILL.md`
+declaring a sub-tool pattern, so the plan is refused *after* the file is read and nothing spawns — then
+reads the real JSONL line back. **Verified it can fail** by deleting `definitionDigest: plan.definitionDigest`
+from `delegation.ts`; it does, and nothing else does. It also asserts a task sentinel is absent from the
+line.
+
+**R-37, found while scoping and recorded rather than fixed.** ADR-0017 falsified the premise behind the
+fixed `<delegate>` approval subject — *"the only things naming a child are the task and the tool list, both
+model-chosen"* — because a definition is now an operator-authored, capability-authorised subject. The
+consequence is fail-closed (`ceilingOf("<delegate>")` is `null`, so `always` silently downgrades to
+`session`) but it leaves ADR-0010's persisted-approval machinery **dormant on the only spawn path**, and
+prompt fatigue is what gets gating switched off — R-25's shape. It is now the top open item.
+
+268 unit + 10 integration, typecheck clean, smoke clean.
+
+---
 
 ## 2026-08-13 (later) — ADR-0017: `agent:<name>` authorises a definition — 0.8.0
 

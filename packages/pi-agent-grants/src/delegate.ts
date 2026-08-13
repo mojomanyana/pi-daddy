@@ -16,7 +16,7 @@
  */
 
 import { planSpawn } from "./spawn.ts";
-import { ceilingForDefinition, type SkillDefinition } from "./definitions.ts";
+import { ceilingForDefinition, digestDefinition, type DefinitionDigest, type SkillDefinition } from "./definitions.ts";
 import { resolve, assertNarrowing, type Capability, type ResolveResult } from "./resolve.ts";
 import { ENV_APPROVED, ENV_DEPTH, ENV_FANOUT, ENV_GATED, ENV_GRANT, ENV_LEDGER, ENV_MAX_DEPTH, ENV_PARENT_ID } from "./propagation.ts";
 import { inheritApprovals, type InheritableApproval } from "./approval.ts";
@@ -149,6 +149,13 @@ export interface Delegation {
   requested: Capability[];
   /** Ledger id for this child, if the caller assigned one (F8). */
   childId?: string;
+  /**
+   * Which operator-authored instructions this spawn used (ADR-0018).
+   *
+   * Absent for a `tools:`-style delegation, which has no definition and therefore no instructions to
+   * identify — and absent on an ADR-0017 authorisation refusal, which is decided before the file is read.
+   */
+  definitionDigest?: DefinitionDigest;
 }
 
 /**
@@ -182,6 +189,7 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
   // ADR-0016. A named definition replaces the model's tool list with an operator-authored ceiling.
   let requested: Capability[];
   let systemPrompt: string | undefined;
+  let definitionDigest: DefinitionDigest | undefined;
 
   if (request.agent) {
     const definition = ctx.definitions?.get(request.agent);
@@ -221,6 +229,17 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
             : `It may spawn no definitions at all; add ${authorising} to its grant to allow this one.`),
       };
     }
+
+    // ADR-0018. Recorded from here on — after authorisation, because the digest is a fact about a file
+    // this caller was allowed to read, and before every remaining outcome, because a spawn refused for a
+    // malformed declaration is still a spawn of THIS version of the definition.
+    //
+    // Assigned into `empty`, which every subsequent refusal spreads. That is the R-28 discipline applied
+    // to a record field rather than an argument: instead of eight `definitionDigest` spellings that a
+    // ninth return could forget, there is one, and forgetting it is not expressible. The success return
+    // does not spread `empty`, so it names the field explicitly.
+    definitionDigest = digestDefinition(definition);
+    Object.assign(empty, { definitionDigest });
 
     const ceiling = ceilingForDefinition(definition);
     if (ceiling.undeclared) {
@@ -345,5 +364,15 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
   env[ENV_APPROVED] = inheritApprovals(ctx.approved ?? [], result.effective).join(",");
   if (ctx.ledgerPath) env[ENV_LEDGER] = ctx.ledgerPath;
 
-  return { ok: true, args, env, effective: result.effective, result, childDepth, requested, childId: ctx.childSpawnId };
+  return {
+    ok: true,
+    args,
+    env,
+    effective: result.effective,
+    result,
+    childDepth,
+    requested,
+    childId: ctx.childSpawnId,
+    ...(definitionDigest ? { definitionDigest } : {}),
+  };
 }

@@ -19,10 +19,41 @@
  * form now costs a refusal instead of a grant.
  */
 
+import { createHash } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { skillDirs } from "./catalog.ts";
 import type { Capability } from "./resolve.ts";
+
+/**
+ * Identifies WHICH instructions a child was given, without reproducing them (ADR-0018).
+ *
+ * The ledger's standing rule is *capability ids, counts and identifiers only — never prompts, tool
+ * arguments or results*. A hash is an identifier: it names a version of an operator-authored file. The
+ * **task** is model-assembled from the parent's context and is never recorded anywhere, by decision.
+ */
+export interface DefinitionDigest {
+  name: string;
+  /** Where the definition was read from, so a reader can go and rehash it. */
+  source: string;
+  /** SHA-256 of the body — the exact text passed as `--append-system-prompt`. */
+  sha256: string;
+}
+
+/**
+ * Digest a definition's body.
+ *
+ * Over the **body alone**, deliberately: that is precisely the text the child receives, so a digest that
+ * also covered the frontmatter would change when `description` was reworded and report an instruction
+ * change that never happened. `allowed-tools` is already recorded in full on every record.
+ */
+export function digestDefinition(definition: SkillDefinition): DefinitionDigest {
+  return {
+    name: definition.name,
+    source: definition.source,
+    sha256: createHash("sha256").update(definition.body, "utf8").digest("hex"),
+  };
+}
 
 export interface SkillDefinition {
   /** From the path, never the frontmatter — see `parseSkillDefinition`. */

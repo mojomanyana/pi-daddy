@@ -10,11 +10,19 @@
  * hold is an escalation attempt, and it is invisible without a record.
  *
  * PRIVACY: capability ids, counts, and identifiers only. Never prompts, tool arguments, or results.
+ *
+ * ADR-0018 makes the boundary explicit rather than leaving it to be inferred, because a record now carries
+ * something about the child's instructions. **`definitionDigest` is an identifier**: a SHA-256 of an
+ * operator-authored file already committed to a repository, which names a version without reproducing it.
+ * **The task is not recorded, anywhere, ever** — it is assembled by the model from the parent's context and
+ * can carry anything the parent could see, so a ledger holding it would be a secrets sink. That half of
+ * "what was this child told to do?" is out of the ledger by decision, not by omission.
  */
 
 import { appendFile, mkdir, open, readFile, rm, stat } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { Capability, ResolveResult } from "./resolve.ts";
+import type { DefinitionDigest } from "./definitions.ts";
 import type { ApprovalScope, ApprovalSource } from "./approval.ts";
 
 export interface GrantRecord {
@@ -48,6 +56,15 @@ export interface GrantRecord {
   approvalScope?: ApprovalScope;
   /** A human was asked and declined. Distinct from `denied`, which is an escalation attempt. */
   humanDenied?: boolean;
+  /**
+   * WHICH operator-authored instructions this child was given (ADR-0018).
+   *
+   * Identifies, never reproduces: matching digests prove two children ran the same text, and a digest that
+   * no longer matches the file proves the definition changed since. **It says nothing about whether those
+   * instructions were correct or whether the child obeyed them** — it identifies text, it does not evaluate
+   * it. Absent for a `tools:`-style delegation, which has no definition.
+   */
+  definitionDigest?: DefinitionDigest;
 }
 
 export interface LedgerOptions {
@@ -76,6 +93,7 @@ export function buildRecord(args: {
   approvalSource?: ApprovalSource;
   approvalScope?: ApprovalScope;
   humanDenied?: boolean;
+  definitionDigest?: DefinitionDigest;
   now: Date;
 }): GrantRecord {
   return {
@@ -96,6 +114,7 @@ export function buildRecord(args: {
     ...(args.approvalSource ? { approvalSource: args.approvalSource } : {}),
     ...(args.approvalScope ? { approvalScope: args.approvalScope } : {}),
     ...(args.humanDenied ? { humanDenied: true } : {}),
+    ...(args.definitionDigest ? { definitionDigest: args.definitionDigest } : {}),
   };
 }
 

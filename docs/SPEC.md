@@ -175,6 +175,19 @@ hanging — and a lock abandoned by a killed process is broken after 10s.
 line numbers. A corrupt line is **reported, never repaired**: it is the only artifact an investigation has.
 Nothing verifies automatically.
 
+**Privacy is a property of this file, and the boundary is exact.** Capability ids, counts and identifiers
+only — *never prompts, tool arguments or results.* A spawn that names a definition records a
+`definitionDigest` of `{name, source, sha256}` over the body (ADR-0018): an **identifier** for
+operator-authored text already committed to a repository, which names a version without reproducing it.
+**The task is never recorded**, in any field — it is assembled by the model from the parent's context and
+could carry anything the parent could see.
+
+So the ledger answers *"did these four children run the same instructions?"* (compare digests) and *"has
+this definition changed since?"* (rehash the file). It does **not** answer *what the instructions said* —
+if the file is gone or altered, the digest proves the loss rather than recovering the text — and matching
+digests say nothing about whether the child behaved as intended. It identifies text; it does not evaluate
+it.
+
 ## Executors
 
 Same plan, two places to run it:
@@ -240,12 +253,18 @@ Stated because a gap nobody wrote down is the one that surprises somebody.
 - **Nothing verifies the ledger automatically.** Detection exists; a scheduled check does not.
 - **Pane cleanup is not leak-proof.** Cleanup runs in a `finally`, which covers thrown errors but not the
   process being killed. There is no reaper.
-- **A definition's *instructions* are still ungoverned, and the ledger does not record them.** ADR-0017
-  closed half of R-35: *which* definitions may be spawned is now authorised by `agent:<name>`. What remains
-  is that the operator authorises a **file**, and what that file says is their responsibility — a capability
-  model can name a definition, it cannot read a body and judge it. The ledger records the grant and never
-  the body, so *"what was this child told to do?"* is unanswerable after the fact. A body hash on the record
-  would close that, and is not decided.
+- **A definition's *instructions* are still ungoverned.** ADR-0017 closed the authorisation half of R-35
+  (`agent:<name>` is required to spawn one) and ADR-0018 the audit half as far as it goes (the record
+  identifies which body ran). What no capability model reaches: the operator authorises a **file**, and what
+  that file says is their responsibility. Nothing reads a body and judges it, and the ledger identifies the
+  text without preserving it — if the definition changed, the digest proves the change and cannot recover
+  what was lost.
+- **Delegate-path approvals use the fixed subject `<delegate>` and are never persisted** (R-37). The premise
+  — *"the only things naming a child are the task and the tool list, both model-chosen"* — stopped being
+  true for `delegate({agent})` when ADR-0017 made the definition an authorised, operator-authored subject.
+  Fail-closed (an `always` approval quietly downgrades to session scope), so ADR-0010's persisted-approval
+  machinery is dormant on the only spawn path, and repeated prompting is what pushes an operator to switch
+  gating off.
 - **An `allowed-tools` entry written as `tool:read` becomes `tool:tool:read`.** Only `ext:`, `skill:` and
   `agent:` are passed through as written; everything else is lowercased and prefixed. The catalog then
   refuses it as unknown, so it fails loudly rather than granting anything — but the message names the

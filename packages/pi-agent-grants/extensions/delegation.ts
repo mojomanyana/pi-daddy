@@ -134,6 +134,9 @@ async function runOneDelegation(
         approvalSource: approvalOutcome?.source,
         approvalScope: approvalOutcome?.scope,
         humanDenied: approvalOutcome?.humanDenied,
+        // ADR-0018: taken from the PLAN, never re-derived here. The B-I3 lesson — a call site that
+        // recomputed the digest could record one the planner never used.
+        definitionDigest: plan.definitionDigest,
         now: new Date(),
       }),
     ).catch((error) => {

@@ -603,6 +603,34 @@ and `agent:` through untouched — an observed tool array says nothing about a n
 This is a widening, so it ships with the test that pins it.
 **Trigger:** a `skill:` capability present in `PI_GRANTS_GRANT` and absent from `/grants` in the same
 session; any child unable to re-grant a skill it demonstrably holds.
+**Note 2026-08-13: FIXED** the same day by ADR-0017 step 1 — only `tool:` and `ext:` are filtered against
+an observation now, pinned by four tests including a three-level survival case. Kept as a live entry
+because the *shape* recurs: a matcher written when only one namespace existed, silently excluding the ones
+added later.
+
+## R-37 · Delegate approvals are keyed to a subject that ADR-0017 made obsolete — M×L
+Added 2026-08-13, surfaced while scoping ADR-0018.
+
+`src/approval.ts:24–33` fixes the delegate-path approval subject to the literal `<delegate>`, on this
+reasoning: *"the only things naming a child are the task string and the tool list, both chosen by the model.
+A key the model controls is not a key."* That was correct when written. **ADR-0017 falsified it for
+`delegate({agent})`**: the definition is operator-authored, and the session must now hold `agent:<name>` to
+name it at all, so there IS a human-authored subject — the same one the capability names.
+
+The consequence is not an escalation, which is why this is M×L: `ceilingOf("<delegate>")` is `null`, so an
+`always` approval can never be persisted on this path (`saveApproval` is skipped, the scope downgrades to
+`session`, and the operator is told). **The cost is prompt fatigue.** ADR-0010's persisted-approval
+machinery — including `grantAtApproval`, the confused-deputy check that voids an approval when the thing it
+was granted for changes — is dormant on the only spawn path that exists, and an operator asked the same
+question every session is an operator who eventually sets `PI_GRANTS_GATED=""`. That is R-25's shape: a
+control that is technically present and practically switched off.
+
+**Mitigation (undecided):** make the definition name the approval subject for `delegate({agent})`, leaving
+`<delegate>` for the `tools:` form where the premise still holds. ADR-0018's `definitionDigest` gives it the
+missing half — a stored approval could then be voided by a body change, which `grantAtApproval` cannot
+detect today because `ceilingForDefinition` reads only `allowed-tools`.
+**Trigger:** any operator disabling gating; any repeated approval prompt for the same definition across
+sessions; a `grants: cannot persist the approval` warning naming `<delegate>`.
 
 ---
 
@@ -639,3 +667,6 @@ session; any child unable to re-grant a skill it demonstrably holds.
 | 2026-08-13 | R-28 | **Dated note** — the mitigation is unchanged but moved: `decideSpawn`/`decisionContext()`/`test/interceptor-wiring.test.ts` went with ADR-0016's port deletion; the surviving builder is `delegationContext()` in `extensions/session.ts` after `extensions/grants.ts` was split 866 → 202 lines. `test/file-size.test.ts` now makes "the one file with no unit coverage grew unreviewable" a test failure | grants.ts split |
 | 2026-08-13 | R-36 | Added — `deriveOwnGrant` filters the inherited grant by observed **tool** names, so `skill:` and `agent:` capabilities are silently dropped at the first provider request. Live for `skill:` since R-32; fail-closed but unrecorded, and a hard blocker for ADR-0017. **Measured by execution** while scoping that ADR | ADR-0017 |
 | 2026-08-13 | R-35 | Taken up by **ADR-0017 (Proposed)** — `agent:<name>` becomes a real prerequisite (Option A) rather than the namespace being deleted (Option B), in two steps with R-36 fixed first. The audit half (body hash on the ledger record) is deliberately left to a separate ADR | ADR-0017 |
+| 2026-08-13 | R-36 | **FIXED** same day (ADR-0017 step 1) — only `tool:`/`ext:` are filtered against an observation; `skill:` and `agent:` pass through. Four tests, including survival across three levels | ADR-0017 |
+| 2026-08-13 | R-37 | Added — the `<delegate>` approval subject rests on a premise ADR-0017 falsified, so `always` approvals can never persist on the only spawn path. Fail-closed; the real cost is the prompt fatigue that gets gating switched off (R-25's shape) | ADR-0018 scoping |
+| 2026-08-13 | R-35 | **Audit half closed** by ADR-0018 — every definition spawn records a `definitionDigest` (name, source, sha256 of the body). What remains is inherent: the digest identifies text without preserving it, and no capability model judges what a body says. The **task is never recorded**, by decision | ADR-0018 |
