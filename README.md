@@ -69,7 +69,7 @@ somebody.
 | `docs/probes/` | Measurement evidence against real software. Each states what it does **not** establish. |
 | `docs/archive/` | Superseded, kept as evidence, never edited to match today. Don't start here. |
 | `packages/pi-agent-grants/` | The product. |
-| `packages/pi-token-audit/` | Token/cost audit. **Its headline number is wrong** — the "tool-definition share" is a character ratio, not a token share. |
+| `packages/pi-token-audit/` | Token/cost audit. G10's falsification is **fixed** (`5c593fb`): it reports a character share and says so. Still untested, and it serves the retired thesis. |
 
 ## Running the tests
 

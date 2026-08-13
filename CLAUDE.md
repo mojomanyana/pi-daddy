@@ -68,8 +68,11 @@ docs/archive/             — SUPERSEDED, kept as evidence, never edited to matc
                             dead upstream proposal. See its README for why each stopped being current.
 packages/pi-agent-grants  — THE PRODUCT (0.7.0): SKILL.md definitions, resolver, ledger, delegate +
                             delegate_all, catalog, human approval, two executors (process | herdr pane)
-packages/pi-token-audit   — token/cost audit (0.1.0). ITS HEADLINE NUMBER IS WRONG: the "tool-definition
-                            share" is a character ratio, not a token share (falsified 2026-08-10, G10)
+packages/pi-token-audit   — token/cost audit (0.1.0). G10 falsified its headline on 2026-08-10 and
+                            5c593fb FIXED it hours later: the token estimate is deleted and the report
+                            says "% of request CHARACTERS ... not a token measurement". This line claimed
+                            otherwise for four days and two reviewers repeated it (R-59). Still true:
+                            no tests, and it serves the thesis ADR-0007 retired
 ```
 
 ## How To Work Here

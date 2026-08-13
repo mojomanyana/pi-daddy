@@ -48,16 +48,16 @@ one ate the body of the helper it was rewriting and hung `npm test` with no outp
 | 6 | **`subagents:rpc:spawn` bypasses the tripwire.** Unfixable from here. | ADR-0013 Finding 6. |
 | 7 | **`bash` escapes governance.** Out of scope by decision. | ADR-0012. |
 | 8 | **Background delegation** is deliberately not built. Fan-out carried the value; background carries the lifecycle holes. | ADR-0015. Approvals resolved after a tool call returns would use a torn-down `ctx.ui`, so gating would depend on queue position — that must be answered first. |
-| 9 | **`pi-token-audit` has no tests**, and its headline "tool-definition share" is a character ratio, not a token share. | Falsified 2026-08-10. |
+| 9 | **`pi-token-audit` has no tests.** Its headline is a **character** share and now says so — G10's falsification was fixed in `5c593fb` on 2026-08-10, and this row claimed otherwise for four days (R-59). | The live question is scope, not correctness: 223 lines serving the thesis ADR-0007 retired. |
 
 ### What to do next
 
 **Item 1 is three small independent fixes and is the queued code work.** Nothing above it is blocked.
 
-Then, in rough value order: **`pi-token-audit`** still ships a headline number that is a character ratio sold
-as a token share (falsified 2026-08-10) — `product-strategist` recommends deleting the package rather than
-testing it, since the thesis it served is the one ADR-0007 retired, and it is the only thing in this repo a
-user could install and be misled by. **R-34** (nothing runs `verifyLedger` automatically) pairs naturally
+Then, in rough value order: **`pi-token-audit`** — and **check a claim before repeating it**. Two reviewers
+and this log all said its headline was a character ratio sold as a token share; `5c593fb` fixed that on
+2026-08-10, hours after G10, and the report has said *"% of request CHARACTERS … not a token measurement"*
+ever since (R-59). The live questions are narrower: no tests, and it serves the thesis ADR-0007 retired. **R-34** (nothing runs `verifyLedger` automatically) pairs naturally
 with R-51. **Item 8** (background delegation) still wants an ADR before any code.
 
 **Before the next batch ships, run the review first.** `architecture-critic` and `product-strategist` have
