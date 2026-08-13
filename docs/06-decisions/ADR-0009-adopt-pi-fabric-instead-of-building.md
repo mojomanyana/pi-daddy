@@ -21,7 +21,7 @@ make this worth re-running rather than re-reading.
 below); what remains for the user is the commitment to **code mode** as the orchestration style, which is a
 preference I should not settle.
 **Driver:** ADR-0007 (reframe) · ADR-0008 (attenuation invariant) ·
-`docs/specs/2026-08-09-capability-governance-design.md` · ADR-0001 (build-vs-leverage, now answerable on the
+`docs/archive/specs/2026-08-09-capability-governance-design.md` · ADR-0001 (build-vs-leverage, now answerable on the
 right shelf) · R-06 (platform convergence)
 
 ## Context
@@ -179,7 +179,7 @@ granting it is equivalent to granting everything it can reach.
 
 ## Consequences if adopted
 
-- `docs/specs/2026-08-09-capability-governance-design.md` becomes **reference, not a build plan** — its value
+- `docs/archive/specs/2026-08-09-capability-governance-design.md` becomes **reference, not a build plan** — its value
   is as an independent statement of requirements that Fabric can be evaluated against, and as the record of
   which acceptance criteria (N1–N6) matter.
 - ADR-0008's attenuation invariant stays as the *evaluation criterion* rather than an implementation target,

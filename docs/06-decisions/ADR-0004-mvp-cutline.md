@@ -110,7 +110,7 @@ break-even spreadsheet and the 20-minute grep for an existing pi tool-allowlist 
 campaign. A-12 is already answered — pi-ai's `Usage` preserves `cacheRead`/`cacheWrite`/`cacheWrite1h`
 across 25+ providers — so net cost is measurable without patching pi; what is *not* provided, and is
 therefore our work, is tool-definition token attribution (method and error bar in §3b). Deliverable:
-`docs/gate-reports/baseline-YYYY-MM-DD.md` plus the fixed goal set, which becomes the regression suite.
+`docs/archive/gate-reports/baseline-YYYY-MM-DD.md` plus the fixed goal set, which becomes the regression suite.
 **The numeric thresholds that would justify Stage B are written down before the data is collected.**
 
 **Stage B — the cure.** *(Revised at acceptance — see amendments 1–3.)* Ride **pi's own documented

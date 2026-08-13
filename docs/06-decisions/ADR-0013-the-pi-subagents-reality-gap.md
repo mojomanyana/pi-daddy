@@ -162,7 +162,7 @@ call to catch.
 
 1. **Upstream (Option 4), now the critical path.** A `tools` parameter on `Agent` and `SpawnOptions`, or an
    RPC method reporting a type's resolved config. Drafted as
-   `docs/proposals/pi-subagents-tools-parameter.md`, **for the user to file under their own name** — it is
+   `docs/archive/proposals/pi-subagents-tools-parameter.md`, **for the user to file under their own name** — it is
    their project relationship, not this package's.
 2. **Locally, meanwhile: a faithful port of the resolution rules.** Replace the naive frontmatter reader
    with `pi-subagents`' actual logic — `DEFAULT_AGENTS`, `loadCustomAgents`, and the `general-purpose`
@@ -220,7 +220,7 @@ Two things are fixed regardless, because they are wrong under every option:
 **If the recommendation is taken:**
 
 - The README's interceptor section becomes "best-effort guard and audit", not "the security property".
-- `docs/specs/2026-08-09-capability-governance-design.md` needs its interceptor sections revisited.
+- `docs/archive/specs/2026-08-09-capability-governance-design.md` needs its interceptor sections revisited.
 - The upstream proposal stops being a nice-to-have and becomes the path back to a governed
   `pi-subagents`.
 

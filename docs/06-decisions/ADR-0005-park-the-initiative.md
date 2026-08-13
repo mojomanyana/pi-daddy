@@ -5,7 +5,7 @@
 **Supersedes:** ADR-0004 (MVP cutline). ADR-0004's Stage A *executed and worked* — it produced the
 evidence that selects this outcome. Its Stage B is cancelled.
 **Driver:** Q-KILL-1 (economic kill path fired) · A-02 (BUSTED for the measured catalog) · A-13 (control
-arm wins) · `docs/gate-reports/baseline-2026-08-09.md` · risks R-01, R-13
+arm wins) · `docs/archive/gate-reports/baseline-2026-08-09.md` · risks R-01, R-13
 
 ## Context
 

@@ -4,7 +4,7 @@
 **Status:** **Accepted 2026-08-10 — Option 2 + Option 4, plus `bash` gated by default.** Implemented the
 same day; 198 unit + 8 integration tests passing.
 **Driver:** Review group **G5** (findings B-C9, A-S7), from the two independent whole-codebase reviews in
-`docs/reviews/`. Interacts with **R-25** (`bash` subsumption), **ADR-0008** (the attenuation invariant),
+`docs/archive/reviews/`. Interacts with **R-25** (`bash` subsumption), **ADR-0008** (the attenuation invariant),
 and **ADR-0010** (approval semantics).
 
 ## Context

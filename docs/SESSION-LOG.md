@@ -1,65 +1,155 @@
 # Session Log
 
-**Read this first when resuming.** The register (`01-discovery.md` … `06-decisions/`) holds the reasoning;
-this file holds *where things stand and what to do next*. Newest entry on top.
+**Where things stand and what to do next.** `docs/SPEC.md` says what the product *is*; ADRs hold the
+decisions; this file holds state and next actions. Newest entry on top.
 
 ---
 
 ## NEXT SESSION — read this, then pick one
 
-**State: nothing is half-finished.** `main` is clean, `pi-agent-grants` **0.6.0**, `pi-token-audit`
-**0.1.0**. **222 unit + 8 integration + 3 model-driven tests pass**, typecheck is clean over
-`src` + `extensions` + `test` + `test-integration`, and the packed tarball installs and runs
-(`npm run test:smoke`). All twelve review groups are closed; ADRs 0012/0013/0014 are decided *and*
-implemented. There is no cliff-hanger to resume — pick work deliberately.
+**State: everything is green and nothing is half-finished.** `pi-agent-grants` **0.7.0**, `pi-token-audit`
+**0.1.0**. **250 unit + 9 integration tests**, typecheck clean, smoke clean (packs, installs, exercises
+every subpath). Sixteen ADRs decided; ADR-0016 fully implemented.
 
 ```bash
-cd packages/pi-agent-grants && npm test && npm run typecheck && npm run test:integration
+cd packages/pi-agent-grants && npm test && npm run typecheck && npm run test:integration && npm run test:smoke
 ```
 
-### 1. The user's action, not an agent's — file the upstream proposal
+**Read `docs/SPEC.md` before changing behaviour.** It states the current guarantee, every bound, and every
+known gap. Do not re-derive it from the ADRs.
 
-`docs/proposals/pi-subagents-tools-parameter.md` is written as an issue body in the user's voice, ready
-for `github.com/tintinweb/pi-subagents/issues`. **Do not file it for them** — it is their name and their
-relationship with that maintainer. Ask whether it went out; if the maintainer is receptive, the offer in
-the document is to write the patch.
+### Known-open, and none of it is a cliff-hanger
 
-**Why it is first:** it is the only thing that turns the interceptor from *enforce-only* into
-*provisioning*. `SpawnOptions` has no `tools` field, the agent registry is unreachable from outside, and
-the RPC cannot describe a type — all measured (`docs/probes/g13-subagents-coupling`). **No local work can
-lift that ceiling.**
-
-### 2. Known-open, with no local fix — do not "solve" it by accident
-
-**`subagents:rpc:spawn` bypasses the interceptor entirely.** It reaches `manager.spawn()` over the event
-bus and never produces a `tool_call`, so any other loaded extension can spawn an ungoverned sub-agent.
-Adding names to `SPAWN_TOOLS` **cannot** catch it — there is no tool call to catch. Recorded as Finding 6
-in ADR-0013.
-
-### 3. Genuine, contained work, in the order I would take it
-
-| # | Work | Why, and what to watch |
+| # | Item | Notes |
 | :--- | :--- | :--- |
-| a | **Tests for `pi-token-audit`** | It has none. G11 closed the coverage gap for `extensions/grants.ts` only — do not read "G11 closed" as meaning both packages are covered. Its per-turn pairing also has **no correlation key** (`pending.shift()` takes the oldest), which holds in pi 0.83.0 by accident of implementation, not by design. |
-| b | **`pi-token-audit` on other providers** | Verified against one provider. The review reports Bedrock yielding 0 and Google 1 for tool-definition chars, so the extraction is probably provider-shaped. |
-| c | **Background + streaming delegation** | The feature originally chosen before the review backlog took priority. `delegate` blocks until the child exits, so an orchestrator cannot fan out and collect — the actual multi-level pattern this project exists for. It would also be the first real test of the single-flight approval queue against genuine parallel spawns. |
-| d | **`skill:` and `agent:` capabilities enforce nothing** | Flagged across ADR-0013 and still true. Skills are injected into the system prompt rather than passed as tools, so `--tools` cannot gate them, and nothing anywhere reads an `agent:` capability. **Either make them real** (pass `--no-skills` / `--no-context-files` from `planSpawn`) **or remove the namespaces** — a capability that enforces nothing reads as a control. |
+| 1 | **R-35 — a definition's instructions are ungoverned.** `agent:<name>` parses as a capability but nothing checks it, so any session with `tool:delegate` may spawn any definition whose tools fit its grant. The capability model governs what a child *can do*, never what it is *told to do*. | Either make `agent:<name>` a real prerequisite (cheap — the catalog already emits the ids) **or delete the namespace**. A capability that enforces nothing reads as a control. |
+| 2 | **Nothing verifies the ledger automatically.** `/grants ledger` detects corruption; no scheduled or startup check runs it. | R-34. Detection exists, which is the part that was missing. |
+| 3 | **Pane cleanup is not leak-proof.** `finally` covers thrown errors, not the process being killed. No reaper. | `docs/probes/g16-herdr` addendum. |
+| 4 | **`packages/pi-agent-grants/README.md` deeper sections are stale** — they still describe the interceptor as a provisioning path. Its 0.7.0 header says so. | ~400 lines. `docs/SPEC.md` is correct in the meantime. |
+| 5 | **`subagents:rpc:spawn` bypasses the tripwire.** Unfixable from here. | ADR-0013 Finding 6. |
+| 6 | **`bash` escapes governance.** Out of scope by decision. | ADR-0012. |
+| 7 | **Background delegation** is deliberately not built. Fan-out carried the value; background carries the lifecycle holes. | ADR-0015. Approvals resolved after a tool call returns would use a torn-down `ctx.ui`, so gating would depend on queue position — that must be answered first. |
+| 8 | **`pi-token-audit` has no tests**, and its headline "tool-definition share" is a character ratio, not a token share. | Falsified 2026-08-10. |
 
-### 4. Things that look like work and are not
+### Things that look like work and are not
 
-- **`A-14`** (are deferred tool definitions billed as prompt tokens?) — only matters if the cost thesis is
-  revived, and **ADR-0007 retired it**. Deferred by decision, not by neglect.
-- **The `docs/0*.md` registers, `ROADMAP.md`, the gate reports** — historical record. They describe what
-  was believed on their dates. **Annotate, never revise.** Several already carry dated falsification notes.
-- **"DTCM" in those files** — deliberate. See the rename note above and `.claude/rules/phase-gates.md` §4.
-- **The phase gates** — retired. Two packages shipped under recorded waivers; `/kickoff`, `/gate`,
-  `/validate` and `/spec` were removed on 2026-08-11 because they drove the falsified programme.
+- **`docs/archive/`** — superseded by design, kept as evidence, **never edited to match today**. Its README
+  says why each file stopped being current. Do not start there.
+- **"DTCM" in archived registers and ADRs** — deliberate. Those mentions *are* the retired thesis. See
+  `CLAUDE.md` and `.claude/rules/phase-gates.md` §4.
+- **The phase gates** — retired. `/kickoff`, `/gate`, `/validate` and `/spec` were removed 2026-08-11.
+- **The upstream pi-subagents proposal** — **dead** by ADR-0016 and archived. Do not file it.
 
-### 5. If you change what the product claims, write an ADR
+### If you change what the product claims, write an ADR
 
-That is the convention that made every reversal here survivable, and this project has had several. The
-current claim is deliberately narrow and was argued for in ADR-0012: **it governs the tool surface, not
-the agent.** If a change widens or narrows that, it needs a record beside the code.
+That convention is why every reversal here was survivable, and there have been five. Then update
+`docs/SPEC.md` in the same change — a spec that lags the code is worse than no spec.
+
+---
+
+
+## 2026-08-12 — a shipped enforcement defect, found by red-teaming a strategy question
+
+**What the session was for:** the user asked whether the product could drop `pi-subagents` and rely on
+"our library + pi". A `/brainstorm` over five options was stress-tested by the strategist and the
+architecture critic. **The critic found a live defect that outranked the question it was asked.**
+
+**R-28 — the `tool_call` hook reached a correct pure function through a wrong argument list.** Confirmed
+by execution before it was written down, then fixed: one `decisionContext()` builder, four new tests in
+`test/interceptor-wiring.test.ts` (the first unit coverage `extensions/grants.ts` has had), checked by
+reintroducing the defect. **226 unit + 8 integration pass; typecheck clean.**
+
+**Two lessons worth keeping.**
+
+1. **A pure-core / thin-wiring design moves the bugs into the wiring.** `decideSpawn` and `ceilingFor`
+   were correct and well covered — `agent-types-fidelity.test.ts:93` already pinned that an omitted
+   `extensionTools` yields the wildcard. 226 tests could not see this because **the defect was in the
+   argument list, and nothing tested the argument list.** Three reviewers had independently flagged
+   `extensions/grants.ts` as the file with no unit coverage; that flag was correct and under-acted-on.
+2. **This defect had been found and fixed once before, on `/grants` only** (see the comment on
+   `extensionCapabilities`). Repairing the symptom at the call site that revealed it, rather than the
+   shared call, is what let it survive on the enforcement path for two releases. The fix here is
+   deliberately structural — the argument is now spelled in exactly one place.
+
+**And it contaminated the question being asked.** ADR-0013 preferred the interceptor because `Agent` was
+used 25× against `delegate`'s 0. Those calls cannot have passed a governed enumerated session while this
+defect stood, so the number measures the **ungoverned** case. ADR-0015 therefore **declines to decide**
+and asks for the measurement instead — the same failure mode as the original token-economics thesis
+(ADR-0007), caught earlier this time.
+
+**Re-measured, because prior probes were stale:** `@tintinweb/pi-subagents` is **0.15.0** (probes used
+0.14.3) and pi is **0.84.1** (probes record 0.83.0). The proposal's core claims survive — still no
+`tools` on `SpawnOptions` or `Agent`, RPC still `ping`/`spawn`/`stop`, children still in-process — but
+its "unknown types get all tools" argument was answered upstream by `fallbackSubagent: "none"` (#183).
+Recorded as R-31, with a differential test proposed as the missing tripwire.
+
+**New to the landscape: herdr.** Panes are separate CLI processes, so `--tools` bites — the first spawn
+mechanism other than our own where it does. The third-party `@andrewjacop/pi-herdr` is *not* the way in
+(R-30: model-controlled `agentArgs` and `env`); speaking herdr's own CLI so **we** build the argv is
+Option G in ADR-0015, and it would make herdr the child registry, answering most of the critic's
+lifecycle objections to background delegation.
+
+**Also recorded:** R-29 (one *Allow once* → N concurrent authorisations, confirmed by probe; latent
+because `delegate` blocks, and a hard precondition for fan-out).
+
+---
+
+## 2026-08-12 (later) — re-architected: ADR-0016, and 0.7.0
+
+The user's direction, given twice: **drop pi-subagents and every third-party pi extension**; build on pi
+core + this package + their own `principal-pi-skills`, with **herdr as a hard requirement**; and prefer a
+**widely adopted standard** for definitions. ADR-0016 records it. What shipped:
+
+**Definitions are Agent Skills (`SKILL.md`).** `allowed-tools` is the grant, the body is the child's system
+prompt. **The inversion is the whole point:** in pi-subagents' format an absent `tools:` meant *pi's full
+default toolset*, so an undeclared definition was the most powerful kind and any parse failure produced a
+wildcard — the direction that caused R-28 and review finding F18. Here absent means **not spawnable**, and
+there is **no unknown-name fallback** (pi-subagents resolved an unknown type to `general-purpose` = every
+tool, which is how a typo could grant everything).
+
+**The port is deleted.** `src/agent-types.ts` and `src/interceptor.ts` are gone with three test files.
+**R-31 is retired by deletion rather than mitigation** — its proposed devDependency pin and differential
+fidelity test were never built and are no longer needed. The `tool_call` hook survives as a **tripwire**
+that refuses third-party spawn tools and says plainly that it is not a boundary.
+
+**Two behaviour changes fell out of that deletion, both deliberate.** The catalog now seeds pi's built-ins
+unconditionally, because `/grants` runs before any provider request and an observation-only catalog made
+every capability look "unknown" — **R-28's shape through a different door**. And `/grants` now runs the real
+planner through the same context builder `delegate` uses, so a diagnostic that disagrees with the enforcer
+is not expressible.
+
+**Four tests were re-targeted rather than deleted, one deleted as redundant.** The properties survived even
+though the code they exercised did not. The ADR-0011 Finding 1 test was **narrowed on purpose**: it
+described a defect in `decideSpawn`'s wildcard shortcut, which no longer exists.
+
+**`runHerdrPane` — and it failed four times end to end before it worked.** Each failure was a fact the probe
+had not established, all four now encoded with tests (`docs/probes/g16-herdr` addendum): `--print` is
+incompatible with an interactive agent; herdr **cannot pass a multi-line argument**, so a definition body is
+staged to a file; a fresh pane is not yet at a shell prompt; and `agent read` returns **raw text, not the
+JSON envelope** every other command uses. **The lesson from the last one is the one worth carrying** — the
+unit fake had been written to the envelope shape, so *it agreed with the bug*. A test written from an
+assumption tests the assumption.
+
+**Bounded synchronous fan-out.** `delegate_all` runs N children concurrently; verified with three reviewer
+definitions in 10.8s against ~30s sequential, each holding exactly what its own `allowed-tools` declared.
+**No background mode by design** — fan-out carries most of the value, background carries nearly all the
+lifecycle holes. ADR-0008 gained a **cardinality companion** (a subtree budget) and real **sibling ids**;
+both gaps existed because a blocking `delegate` bounded cardinality to one *by accident*.
+
+**Ledger integrity (R-34).** Nothing in this package had ever read a ledger back, so a torn line was
+indistinguishable from a spawn that never happened. `verifyLedger` + `/grants ledger` now report it; a
+corrupt line is **reported, never repaired**. Concurrent appends are serialised by a lock file with a short
+timeout and stale-lock breaking.
+
+**Released 0.7.0.** The `exports` map still pointed at the two deleted modules — a failure that would have
+appeared **only on a consumer's machine**, since unit tests, typecheck and integration all passed. The smoke
+test now exercises every subpath.
+
+**Docs consolidated.** `docs/SPEC.md` is the new current-state document; ~4,700 lines of superseded material
+moved to `docs/archive/` with a README explaining why each stopped being current. **Writing the spec found
+R-35**: stating the guarantee precisely exposed that `agent:` capabilities enforce nothing, so a definition's
+*instructions* are ungoverned — the capability model governs what a child can do, never what it is told to
+do.
 
 ---
 
@@ -99,8 +189,8 @@ end-to-end needs `npm:pi-fabric` installed, which this machine does not have.
 
 ### A citation that looked dangling and was not
 
-ADR-0011 cites `docs/reviews/2026-08-10-aggregated-findings.md` (findings A-S2 / B-C5). From the
-`adr-0011-universal-capabilities` branch that file was absent — `docs/reviews/` was committed to `main`
+ADR-0011 cites `docs/archive/reviews/2026-08-10-aggregated-findings.md` (findings A-S2 / B-C5). From the
+`adr-0011-universal-capabilities` branch that file was absent — `docs/archive/reviews/` was committed to `main`
 *after* the branch was cut — so it read as a reference to a document that had never been written, and was
 briefly recorded here as one. **It was not**: the file is real, and the citation resolves from `main` after
 the merge. A note in the ADR records the confusion rather than erasing it.
@@ -135,7 +225,7 @@ is pinned in its own test. That is R-25 made visible instead of hidden behind a 
 **ADR-0013's other half is not ours to finish.** Measured: the live registry is unreachable by import
 (different module instance), the supported RPC is `ping`/`spawn`/`stop` with no config query, and
 `SpawnOptions` has no `tools` field — so **refuse-or-allow is a hard ceiling on that path**.
-`docs/proposals/pi-subagents-tools-parameter.md` is drafted **for the user to file**.
+`docs/archive/proposals/pi-subagents-tools-parameter.md` is drafted **for the user to file**.
 
 **Finding 6, still open and not addressable locally:** `subagents:rpc:spawn` bypasses the interceptor
 entirely — event bus straight to `manager.spawn()`, no `tool_call` — so any other loaded extension can
@@ -175,7 +265,7 @@ would let a wildcard holder widen its own children past an operator's gate with 
 falsification note everywhere it appears (`SESSION-LOG`, `README`, ADR-0006, ADR-0007). Annotated, never
 deleted, per this project's convention. Each note states what it does and does not undermine: ADR-0007's
 reframe does not depend on it; **ADR-0006's magnitude claim and `pi-token-audit`'s headline feature do**.
-`CLAUDE.md` and `GETTING-STARTED.md` also stopped describing a project with no production code in it.
+`CLAUDE.md` and `docs/archive/GETTING-STARTED.md` also stopped describing a project with no production code in it.
 
 **Three ADRs now await your decision.** Each has options honestly weighed and a recommendation, and none is
 decided — they all narrow what the product claims, which is yours to choose:
@@ -219,7 +309,7 @@ honesty, coverage and docs.
 
 ### ⚠️ The next actions are NOT the ones listed in the entry below
 
-`docs/reviews/2026-08-10-aggregated-findings.md` — **two independent reviews, cross-referenced, with eight
+`docs/archive/reviews/2026-08-10-aggregated-findings.md` — **two independent reviews, cross-referenced, with eight
 findings reached separately by both** — is the authoritative backlog now, and it was cut on `main` while
 work happened on a branch, so it is easy to miss. **Read it before planning anything.** Merging ADR-0011
 completed exactly one of its twelve groups (**G4**). Its own recommended order stands, with G4 struck:
@@ -243,7 +333,7 @@ and 0014 are decided *and* implemented. The last two finished 2026-08-11:
 
 ### What is left, and none of it is code
 
-1. **File the upstream proposal** (`docs/proposals/pi-subagents-tools-parameter.md`) — the user's call and
+1. **File the upstream proposal** (`docs/archive/proposals/pi-subagents-tools-parameter.md`) — the user's call and
    the user's name. Until it lands the interceptor can refuse but never provision, which is measured
    rather than assumed (`docs/probes/g13-subagents-coupling`).
 2. **Finding 6 has no local fix.** `subagents:rpc:spawn` reaches `manager.spawn()` over the event bus with
@@ -276,7 +366,7 @@ recommendation, the `pi-subagents` proposal document, and A-14 (deferred).
 
 **The project is renamed to `pi-daddy`** (repo and project alike). "DTCM — Dynamic Tool & Context
 Management" named the token-economics thesis ADR-0007 retired. Replaced only where the name is
-*operational* — `CLAUDE.md`, `README.md`, `GETTING-STARTED.md`, all of `.claude/`. **"DTCM" is deliberately
+*operational* — `CLAUDE.md`, `README.md`, `docs/archive/GETTING-STARTED.md`, all of `.claude/`. **"DTCM" is deliberately
 preserved in every ADR and register**, where it *is* the abandoned thesis; a convention note in `CLAUDE.md`
 forbids a blanket find-and-replace, because a register entry describes what was believed on its date and
 renaming it makes the record lie.
@@ -350,7 +440,7 @@ top orchestrator grants each sub-agent a deliberate subset of tools/skills and w
 sub-agents may delegate further but only ever a subset of what they hold; every grant and refusal is
 recorded. Enforced by pi's own `--tools` allowlist, so the guarantee is structural.
 
-`docs/ROADMAP.md`'s phase plan is **obsolete** — it was written for the token-economics thesis. The gate
+`docs/archive/ROADMAP.md`'s phase plan is **obsolete** — it was written for the token-economics thesis. The gate
 discipline and probe convention survive; the phase list does not.
 
 ### What happened, in order
@@ -409,7 +499,7 @@ installed pi's `dist/index.d.ts` and `node_modules/typebox/build/index.d.mts`.
    benefits everyone using that package. Not started — it is the user's name on the PR.
 3. ~~**Rename the project.**~~ **RESOLVED 2026-08-10 — the project is `pi-daddy`.** "DTCM — Dynamic Tool &
    Context Management" named the token-economics thesis ADR-0007 retired. Replaced wherever the name is
-   *operational* (`CLAUDE.md`, `README.md`, `GETTING-STARTED.md`, all of `.claude/`) and **deliberately kept
+   *operational* (`CLAUDE.md`, `README.md`, `docs/archive/GETTING-STARTED.md`, all of `.claude/`) and **deliberately kept
    in the historical record** — every ADR and register entry, where "DTCM" *is* the abandoned thesis and
    renaming it would make the record lie. See the convention note in `CLAUDE.md`.
 

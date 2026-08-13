@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-08
 **Status:** Proposed (OPEN — decide before G0)
-**Driver:** Q-KILL-1, Q-WHAT-1, risk R-06, `docs/04-landscape.md`
+**Driver:** Q-KILL-1, Q-WHAT-1, risk R-06, `docs/archive/04-landscape.md`
 
 ## Context
 

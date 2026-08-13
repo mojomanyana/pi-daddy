@@ -8,13 +8,13 @@ recorded: `docs/probes/adr-0011-universal`. Shipped in `pi-agent-grants` **0.5.0
 **One thing was implemented beyond the decision as written, and deliberately.** The wildcard branch of
 `decideSpawn` returned `allow` *before* the gated check ran, so an operator who set `PI_GRANTS_GATED`
 without `PI_GRANTS_GRANT` got a gate that silently did nothing. Two independent reviews found this
-separately (`docs/reviews/2026-08-10-aggregated-findings.md`, A-S2 / B-C5). It is fixed here because it
+separately (`docs/archive/reviews/2026-08-10-aggregated-findings.md`, A-S2 / B-C5). It is fixed here because it
 lives in the same early return this ADR restructures, and because leaving it would have made the decision
 incoherent — removing the cosmetic stripping without touching the early return would have left that branch
 allowing spawns *with* universal capabilities, the opposite of what was decided.
 
 > **Note on this citation, 2026-08-10.** It reads as dangling from the `adr-0011-universal-capabilities`
-> branch, and was briefly recorded here as such. It is not: `docs/reviews/` was committed to `main`
+> branch, and was briefly recorded here as such. It is not: `docs/archive/reviews/` was committed to `main`
 > *after* that branch was cut, so the file was absent from the branch's working tree while this ADR
 > referenced it. It resolves from `main` after the merge. The finding is independently verifiable in any
 > case, from the pre-change code at `main:src/interceptor.ts:84-92`, where the branch returns

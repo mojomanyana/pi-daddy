@@ -15,53 +15,55 @@ not on token savings. The name "Dynamic Tool & Context Management" describes the
 
 **Renamed 2026-08-10.** The project is **pi-daddy**. "DTCM — Dynamic Tool & Context Management" named the
 token-economics thesis that ADR-0007 retired, so it was replaced everywhere the name is *operational* —
-this file, `README.md`, `GETTING-STARTED.md`, and everything under `.claude/`.
+this file, `README.md`, `docs/archive/GETTING-STARTED.md`, and everything under `.claude/`.
 
-**"DTCM" is deliberately left intact in the historical record**: every ADR, `01-discovery.md`,
-`02-assumptions.md`, `03-risks.md`, `04-landscape.md`, and `ROADMAP.md`. Those mentions *are* the retired
-thesis — "DTCM's MVP is staged", "park the DTCM initiative" — and rewriting them would erase the evidence
+**"DTCM" is deliberately left intact in the historical record**: every ADR, `docs/03-risks.md`, and the
+registers now under `docs/archive/` (`01-discovery.md`, `02-assumptions.md`, `04-landscape.md`,
+`ROADMAP.md`). Those mentions *are* the retired thesis — "DTCM's MVP is staged", "park the DTCM initiative" — and rewriting them would erase the evidence
 of the thing that was abandoned, which is the one thing those documents exist to preserve. **Do not
 find-and-replace them.** A register entry describes what was believed on its date; renaming it makes the
 record lie.
 
-**Current state: SHIPPED AND HARDENED.** `pi-agent-grants` **0.6.0** and `pi-token-audit` **0.1.0** exist
-under scoped gate waivers; `docs/ROADMAP.md`'s phase plan is obsolete and retained only as a record.
-**All twelve groups of the review backlog are closed**, and fourteen ADRs are decided — the last three
-(0012/0013/0014) on 2026-08-10/11.
+**Re-architected 2026-08-12 (ADR-0016).** Earlier versions were a governance layer wrapped around
+`@tintinweb/pi-subagents` — a `tool_call` interceptor deciding whether *someone else's* spawn was
+permissible, able to refuse or allow but never to narrow. **This package is now the spawner**, so the grant
+is an argument rather than a veto. Definitions are **Agent Skills (`SKILL.md`)** files whose `allowed-tools`
+becomes the grant; the pi-subagents ceiling port is deleted; the interceptor survives only as a tripwire.
 
-**What the product claims, precisely** — this wording is load-bearing and was narrowed deliberately by
-ADR-0012: it governs the **tool surface**, i.e. which tools pi exposes to a model, enforced structurally by
-pi's own `--tools` allowlist. It does **not** contain an agent holding an execution primitive: a child with
-`bash` can run `env -u PI_GRANTS_GRANT pi …` and get an ungoverned descendant (measured —
+**Current state: `pi-agent-grants` 0.7.0, `pi-token-audit` 0.1.0.** Sixteen ADRs decided. 250 unit + 9
+integration tests, typecheck and smoke clean.
+
+**What the product claims, precisely** — this wording is load-bearing and was narrowed by ADR-0012: it
+governs the **tool surface**, i.e. which tools pi exposes to a model, enforced structurally by pi's own
+`--tools` allowlist. It does **not** contain an agent holding an execution primitive: a child with `bash`
+can run `env -u PI_GRANTS_GRANT pi …` and get an ungoverned descendant (measured —
 `docs/probes/g5-bash-escape`). Containing that is the OS's job and is out of scope.
+
+**`docs/SPEC.md` is the authoritative statement of what exists today.** Do not re-derive it from the ADRs.
 
 ## Where Things Live
 
 ```
-docs/SESSION-LOG.md       — START HERE when resuming: state, verified facts, open decisions, next actions
+docs/SPEC.md              — WHAT THE PRODUCT IS, current state, no history. Read this second.
+docs/SESSION-LOG.md       — START HERE when resuming: state, verified facts, next actions. Newest on top.
+docs/03-risks.md          — live risk register. R-25 onward are current; R-01..R-24 serve the retired thesis
+docs/06-decisions/        — sixteen ADRs. Reversals are kept and marked: 0004→superseded, 0005 park→
+                            superseded, 0006 (magnitude claim falsified), 0007 THE REFRAME, 0008
+                            attenuation + cardinality, 0009 pi-fabric (parked), 0010 approvals, 0011
+                            universal capabilities, 0012 bash, 0013 pi-subagents (superseded by 0016),
+                            0014 approval integrity, 0015 which path is primary (declined to decide, and
+                            says why), 0016 THIS PACKAGE IS THE SPAWNER — the current architecture
+docs/probes/              — measurement evidence, all against real software. Each has a "what this does
+                            not establish" section: baseline/, pi-fabric-eval/, approval-ux/,
+                            adr-0011-universal/, g1-argv/, g5-bash-escape/, g13-subagents-coupling/,
+                            g16-herdr/ (herdr as an executor + four constraints found by building it)
 docs/00-blueprint.md      — the architecture handoff, verbatim (immutable source input)
-docs/01-discovery.md      — question bank; Q-WHY-1 and Q-WHAT-1 carry RE-ANSWERED blocks after the reframe
-docs/02-assumptions.md    — assumptions register (A-01..A-16) with validation methods + statuses
-docs/03-risks.md          — risk register (R-01..R-26); note R-17 is INVERTED (the boundary is the feature)
-docs/04-landscape.md      — build-vs-leverage; TWO matrices — the first surveys the wrong shelf, see the note
-docs/05-metrics.md        — measurement plan; M1/M2 cost metrics retired by ADR-0007
-docs/06-decisions/        — fourteen ADRs, reversals kept: 0004→superseded, 0005 park→superseded, 0006
-                            unpark (its magnitude claim falsified 2026-08-10), 0007 THE REFRAME, 0008
-                            attenuation invariant, 0009 pi-fabric (parked), 0010 approval semantics,
-                            0011 universal capabilities on both spawn paths.
-                            0012 bash is a governance hole, 0013 the pi-subagents reality gap,
-                            0014 approval store forgeable — all three ACCEPTED and IMPLEMENTED
-docs/specs/               — capability-governance design (supersedes the blueprint's four artifacts)
-docs/ROADMAP.md           — OBSOLETE phase plan, retained as a record
-docs/gate-reports/        — the G0 verdict + baseline report (from the removed /gate); records both waivers
-docs/reviews/             — TWO independent whole-codebase reviews + their cross-referenced aggregate.
-                            The backlog that drove the hardening: 12 groups, ALL CLOSED. Read for context.
-docs/probes/              — measurement probes, all live against real pi: baseline/, pi-fabric-eval/ (11),
-                            approval-ux/, adr-0011-universal/, g1-argv/, g5-bash-escape/,
-                            g13-subagents-coupling/
-docs/proposals/           — pi-subagents-tools-parameter.md — DRAFTED FOR THE USER TO FILE UPSTREAM
-packages/pi-agent-grants  — THE PRODUCT (0.6.0): resolver, ledger, interceptor, delegate tool, catalog,
-                            human approval for gated capabilities, bounded child processes
+docs/archive/             — SUPERSEDED, kept as evidence, never edited to match today. The retired-thesis
+                            registers (discovery, assumptions, landscape, metrics), ROADMAP, gate reports,
+                            both code reviews, the old specs, the completed implementation plan, and the
+                            dead upstream proposal. See its README for why each stopped being current.
+packages/pi-agent-grants  — THE PRODUCT (0.7.0): SKILL.md definitions, resolver, ledger, delegate +
+                            delegate_all, catalog, human approval, two executors (process | herdr pane)
 packages/pi-token-audit   — token/cost audit (0.1.0). ITS HEADLINE NUMBER IS WRONG: the "tool-definition
                             share" is a character ratio, not a token share (falsified 2026-08-10, G10)
 ```
@@ -80,19 +82,20 @@ refuses until a gate passes that no longer means anything. They are in git histo
 
 ```bash
 cd packages/pi-agent-grants
-npm test                   # 222 unit tests — fast, pure, no pi, no network
+npm test                   # 250 unit tests — fast, pure, no pi, no network
 npm run typecheck          # src + extensions + tests + integration tests
-npm run test:integration   # 8 tests vs a REAL pi process — ~17s, no model tokens
+npm run test:integration   # 9 tests vs a REAL pi process — ~20s, no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and USE it
 PI_GRANTS_IT_MODEL=1 npm run test:integration   # + 3 end-to-end with a real model (~60s, costs money)
 ```
 
 ## Hard Rules
 
-- **Phase discipline:** D0 (discovery) → G0 → D1 (specs) → G1 → D2+ (code). No production code
-  before G1 — see `.claude/rules/phase-gates.md`. Probes only under `docs/probes/`.
-- **Files are the memory.** Decisions → ADRs; claims → assumptions register; failure modes → risk
-  register; answers → `docs/01-discovery.md`. An answer that exists only in chat does not exist.
+- **The phase-gate rule is RETIRED** — two packages shipped under recorded waivers. `.claude/rules/phase-gates.md`
+  keeps the filename so links resolve, and its live rules (documentation, evidence and terminology
+  discipline) are the ones that carried this project. Probes still go only under `docs/probes/`.
+- **Files are the memory.** Decisions → ADRs; current state → `docs/SPEC.md`; failure modes →
+  `docs/03-risks.md`; measurements → `docs/probes/`. An answer that exists only in chat does not exist.
 - **The blueprint is immutable.** `docs/00-blueprint.md` is source input; disagreement is recorded
   beside it, never edited into it.
 - **Terminology:** "workflow skills" = `.claude/skills/` (process tooling for this workspace).
@@ -101,15 +104,16 @@ PI_GRANTS_IT_MODEL=1 npm run test:integration   # + 3 end-to-end with a real mod
 
 ## Start Here
 
-**Read `docs/SESSION-LOG.md` first** — newest entry on top. It carries current state, the facts not worth
-re-deriving, and **`## NEXT SESSION`**, which is the ranked list of what is actually left. Then
-`ADR-0007` (the reframe) → `ADR-0008` (the invariant) → `packages/pi-agent-grants/README.md`.
+1. **`docs/SESSION-LOG.md`** — newest entry on top. Current state and **`## NEXT SESSION`**, the ranked list
+   of what is actually left.
+2. **`docs/SPEC.md`** — what the product is, precisely, with no history. This is the one to trust about
+   present behaviour; do not re-derive it from the ADRs.
+3. **`ADR-0016`** (this package is the spawner) → **`ADR-0008`** (the invariant + its cardinality
+   companion) → **`ADR-0012`** (why `bash` is out of scope).
 
-`docs/reviews/2026-08-10-aggregated-findings.md` is the twelve-group backlog from two independent reviews
-that drove all the hardening. **All twelve are closed**, so read it for context and rationale rather than
-as a work queue.
-
-Do **not** start from the BASELINE questions or the ROADMAP phase list — both belong to the retired thesis.
+**Do not start from `docs/archive/`.** Everything in there is superseded and kept only as evidence — the
+discovery questions, assumptions register, landscape, metrics, ROADMAP and both code reviews all serve the
+token-economics thesis ADR-0007 retired. Its README says why each stopped being current.
 
 **Facts established by measurement; re-deriving them wastes a session.**
 
@@ -127,15 +131,26 @@ Do **not** start from the BASELINE questions or the ROADMAP phase list — both 
 - Node refuses to strip types under `node_modules`, so library entry points must be compiled. **pi's own
   loader has no such limit** and reads extension TypeScript from `node_modules` fine.
 
-*About `@tintinweb/pi-subagents` (0.14.3):*
-- Its children are **in-process** `AgentRecord`s — `child_process` appears only in `worktree.ts`, for git.
-  So `propagation.ts`'s race-freedom argument holds on the `delegate` path only.
-- Its live agent registry is **unreachable** from another extension: importing the same path yields a
-  different module instance (`docs/probes/g13-subagents-coupling`).
-- `SpawnOptions` has **no `tools` field**, and the supported RPC is `ping`/`spawn`/`stop` only. So the
-  interceptor can **refuse or allow, never narrow** — until the upstream proposal lands.
-- `subagents:rpc:spawn` **bypasses `tool_call` entirely**, so an extension hooking it cannot see those
-  spawns at all.
+- pi has **separate** switches for each resource class: `--no-extensions` does **not** disable skills,
+  context files or prompt templates. Each needs its own flag, and `--skill` *adds* to the discovered set
+  unless `--no-skills` is also passed (`docs/probes/g16-herdr`).
+- `--append-system-prompt` accepts **either literal text or a file path**.
+
+*About herdr (0.7.5) — the executor:*
+- `herdr agent start … -- <args>` delivers argv **verbatim**, and `--tools` is enforced inside a pane
+  exactly as for a direct spawn.
+- It has **no `--env`**; the environment goes on the **pane** (`tab create --env`), which the agent's shell
+  inherits. That is how the grant propagates on this path.
+- `agent start` **types argv into a shell**, so a multi-line argument is refused outright — a definition's
+  body must be staged to a file.
+- `agent wait --until idle` matches the state the agent was **already** in, so settling must require a
+  state counter to advance. Everything in `docs/probes/g16-herdr`.
+
+*About `@tintinweb/pi-subagents` (measured at 0.14.3 and 0.15.0) — NO LONGER A DEPENDENCY (ADR-0016):*
+- `SpawnOptions` has **no `tools` field** and the RPC is `ping`/`spawn`/`stop`, so an interceptor there can
+  **refuse or allow, never narrow**. That ceiling is why this package became the spawner instead.
+- `subagents:rpc:spawn` **bypasses `tool_call` entirely**, so the tripwire cannot see those spawns.
+- Its children are **in-process**, so they share one `process.env` — unlike ours.
 
 *About `pi-fabric` (evaluated, not installed):*
 - `recursive: true` overrides `tools: []` *and* `extensions: false`, so recursion and containment are
