@@ -13,14 +13,15 @@ decisions; this file holds state and next actions. Newest entry on top.
 implemented **and now observed working**. No file in `src/` or `extensions/` exceeds 400 lines, and
 `test/file-size.test.ts` enforces that rather than trusting it.
 
-**2026-08-13 shipped five things in one session** — the `grants.ts` split, ADR-0017 (`agent:<name>`
+**2026-08-13 shipped six things in one session** — the `grants.ts` split, ADR-0017 (`agent:<name>`
 authorises a definition), ADR-0018 (the ledger records which instructions ran), ADR-0019 (the persisted
-approval store was unreachable), and finally **the end-to-end proof that ADR-0019 works, which found R-38
-on the way**. Four of the five came from **pulling one thread**: R-35 said a capability that enforces
-nothing reads as a control, and asking "what else is like that?" produced R-36, R-37 and — once the store
-was writable — R-38, a diagnostic that disagreed with the enforcer about it. **If you want a sixth, that is
-still the question**, and the way to ask it is to grep for call sites and then *write a test that watches
-the real thing*, which is what caught R-38.
+approval store was unreachable), **the end-to-end proof that ADR-0019 works, which found R-38 on the way**,
+and **the README rewrite**, which found two undocumented environment variables. Four of them came from
+**pulling one thread**: R-35 said a capability that enforces nothing reads as a control, and asking "what
+else is like that?" produced R-36, R-37 and — once the store was writable — R-38, a diagnostic that
+disagreed with the enforcer about it. **If you want a seventh, that is still the question**, and the way to
+ask it is to grep for call sites and then *write a test that watches the real thing*, which is what caught
+R-38. Writing a document against the code is the other way, and it is cheaper than it looks.
 
 ```bash
 cd packages/pi-agent-grants && npm test && npm run typecheck && npm run test:integration && npm run test:smoke
@@ -38,7 +39,7 @@ known gap. Do not re-derive it from the ADRs.
 | — | ~~**The persisted approval store has never been exercised end to end**~~ **DONE 2026-08-13 (0.10.1).** A real model answered a real dialog, the entry landed on disk, a *different* process honoured it with no prompt (`approvalSource: "persisted"`), and a body edit re-raised it. Seven further model-free tests cover the reload and every void reason. | `test-integration/approval.it.ts`. It found R-38 while being written. |
 | 2 | **Nothing verifies the ledger automatically.** `/grants ledger` detects corruption; no scheduled or startup check runs it. | R-34. Detection exists, which is the part that was missing. |
 | 3 | **Pane cleanup is not leak-proof.** `finally` covers thrown errors, not the process being killed. No reaper. | `docs/probes/g16-herdr` addendum. |
-| 4 | **`packages/pi-agent-grants/README.md` deeper sections are stale** — they still describe the interceptor as a provisioning path. Its 0.7.0 header says so. | ~400 lines. `docs/SPEC.md` is correct in the meantime. |
+| — | ~~**`packages/pi-agent-grants/README.md` deeper sections are stale**~~ **DONE 2026-08-13.** Rewritten against the code: the `SKILL.md` ceiling table replaces the pi-subagents one (whose central case is *inverted* here), the approval section no longer contradicts its own banner, and the interceptor sections are gone. Found two undocumented variables while doing it. | `docs/SPEC.md` remains authoritative. |
 | 5 | **`subagents:rpc:spawn` bypasses the tripwire.** Unfixable from here. | ADR-0013 Finding 6. |
 | 6 | **`bash` escapes governance.** Out of scope by decision. | ADR-0012. |
 | 7 | **Background delegation** is deliberately not built. Fan-out carried the value; background carries the lifecycle holes. | ADR-0015. Approvals resolved after a tool call returns would use a torn-down `ctx.ui`, so gating would depend on queue position — that must be answered first. |
@@ -46,10 +47,10 @@ known gap. Do not re-derive it from the ADRs.
 
 ### No queued code work
 
-Pick from the table above. **Item 7 wants an ADR before any code.** **Item 4 (the README) is now the
-largest job left** and is purely mechanical — stale in *four* ways: the interceptor sections, plus
-ADR-0017's `agent:` requirement, ADR-0018's digest and ADR-0019's approval subjects. Its 0.8.0 banner and
-quick-start grant are correct; the deeper sections are not.
+Pick from the table above. **Item 7 wants an ADR before any code**, and it is the only item there that
+needs a decision rather than work. Items 2, 3 and 8 are small and independent: a startup or scheduled
+`verifyLedger` call, a pane reaper, and the first tests for `pi-token-audit` (whose headline number is still
+wrong and should probably be deleted rather than tested).
 
 **One caution for whoever goes next, and it is now stronger.** Five shipped changes in a day is a lot of
 unreviewed decision-making by one pair of eyes. `product-strategist` and `architecture-critic` have not seen
@@ -75,7 +76,53 @@ That convention is why every reversal here was survivable, and there have been f
 ---
 
 
-## 2026-08-13 (last) — the approval store, watched working — and R-38 found doing it — 0.10.1
+## 2026-08-13 (last) — the README caught up with four versions of the product
+
+**The largest purely-mechanical job left, and it was not entirely mechanical.** `packages/pi-agent-grants/README.md`
+still described the deleted pi-subagents interceptor as a provisioning path, and its own 0.7.0 banner said so
+— which is a reasonable thing to write once and a bad thing to leave standing for three more releases.
+Rewritten against the code, 626 → ~656 lines.
+
+**Four generations of staleness, and two of them were actively dangerous to a reader:**
+
+1. **§"What an agent type's ceiling actually is"** documented the pi-subagents frontmatter rules, whose
+   central case is **inverted** in this product: there an absent `tools:` key meant pi's full default
+   toolset, here an absent `allowed-tools` means *undeclared, therefore not spawnable*. An operator
+   following the old table would have believed a declaration-free definition was the powerful one. Replaced
+   by a `SKILL.md` ceiling table, with the inversion and the pattern refusal (`Bash(git:*)`) called out as
+   the two load-bearing rows.
+2. **§Approving a gated capability** said *"`always` is offered only on the interceptor path"* — the exact
+   sentence ADR-0019 falsified — and, three paragraphs below its own 0.6.0 banner saying the store had moved
+   out of the workspace, still said persisted approvals live in `.pi/grants-approvals.json`. A document that
+   contradicts itself within one section is worse than one that is merely out of date.
+3. **§"Enforce, not provision — the interceptor's limit"** and **§"Verified live against real agent types"**
+   described code that no longer exists. Deleted rather than annotated; the probes hold that history, and
+   `docs/probes/approval-ux` is now explicitly labelled in the README as a record of an interceptor run
+   rather than a description of this version.
+4. **Two test sections disagreed with each other** (149 vs 222 unit tests, both wrong) and the status header
+   said 0.6.0. Collapsed into one, now 272 / 17 / +4.
+
+**Two gaps found while writing, which is the usual return on doing this properly.**
+`PI_GRANTS_APPROVAL_TIMEOUT` was **undocumented everywhere** — not in the README, not in `docs/SPEC.md` —
+despite deciding how long a governance dialog waits and having a deliberate `0` ⇒ *no timeout* reading. And
+`PI_CODING_AGENT_DIR` decides where persisted approvals live, which the new integration suite depends on and
+neither document mentioned. Both are now in both tables.
+
+**The one claim that needed a test rather than a proofread.** The README shows a `/grants` line reading
+`allow  deploy  tool:bash, tool:read  (tool:bash approved: persisted)`. Documented output drifts, so the
+preview test now asserts that annotation and says in its message that it pins the README example. Everything
+else quoted from the code was checked against the source it came from — the undeclared-definition refusal,
+the planned argv (which gained `--no-skills`, `--no-context-files` and `--no-prompt-templates` since the old
+sample was written), `MAX_CHILDREN_PER_CALL`, `STALE_LOCK_MS`, `skillDirs`, and `allowUniversal` still
+existing.
+
+The root `README.md` had the same class of drift in three numbers and one ADR count; fixed in the same pass.
+
+**Verified: 272 unit, 17 integration, typecheck clean.** No behaviour changed except the one new assertion.
+
+---
+
+## 2026-08-13 (fifth) — the approval store, watched working — and R-38 found doing it — 0.10.1
 
 **The one job in the last session's table that needed no decision, only a real run.** ADR-0019 had made the
 persisted-approval store reachable for the first time since 0.7.0, with every branch of `entryVerdict`

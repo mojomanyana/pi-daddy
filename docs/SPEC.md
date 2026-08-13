@@ -243,11 +243,13 @@ loudly.
 | `PI_GRANTS_MAX_DEPTH` / `PI_GRANTS_DEPTH` | `2` / `0` | Depth is set by the parent, not by hand. |
 | `PI_GRANTS_GATED` | `tool:bash` when governed | `""` gates nothing. Closed under subsumption. |
 | `PI_GRANTS_APPROVED` | unset | `capability@subject` pairs, inherited and clamped. |
+| `PI_GRANTS_APPROVAL_TIMEOUT` | `120` | Seconds a dialog waits. `0` or unreadable ⇒ **no timeout**: waiting forever denies nothing. |
 | `PI_GRANTS_FANOUT` | `8` | Subtree budget. |
 | `PI_GRANTS_PARENT_ID` | `d0` | Ledger identity; set by the parent. |
 | `PI_GRANTS_LEDGER` | unset ⇒ not recording | Setting it makes it load-bearing. |
 | `PI_GRANTS_CHILD_TIMEOUT` | `600` | Seconds. Inherited. |
 | `PI_GRANTS_HERDR` / `_WORKSPACE` / `_KEEP_PANE` | unset | herdr executor. |
+| `PI_CODING_AGENT_DIR` | `~/.pi/agent` | pi's own variable, listed because it decides where persisted approvals live. |
 
 **Malformed configuration disables spawning rather than falling back**, and says which variable it was — a
 bound a typo can switch off is not a bound.

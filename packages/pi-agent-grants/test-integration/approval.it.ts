@@ -199,6 +199,12 @@ describe("the persisted approval store, read back through a real pi process", {
       /^allow/,
       "a definition whose only gated capability is covered by a valid persisted approval would spawn",
     );
+    assert.match(
+      verdictFor(withEntry, "bash-user") ?? "",
+      /\(tool:bash approved: persisted\)/,
+      "and the listing must say WHY — an allow resting on a 30-day entry in the home directory is exactly " +
+        "what an operator runs this command to discover. Also pins the example in README.md.",
+    );
 
     await writeFile(skillPath(s.cwd), skillFile("Something else entirely."), "utf8");
     const voided = await runCommand({
