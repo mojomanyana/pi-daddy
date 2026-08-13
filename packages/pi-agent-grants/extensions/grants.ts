@@ -30,7 +30,7 @@ import { buildCatalog } from "../src/catalog.ts";
 import { loadDefinitions } from "../src/definitions.ts";
 import { appendRecord, buildRecord } from "../src/ledger.ts";
 import { deriveOwnGrant, observeToolNames } from "../src/propagation.ts";
-import { ceilingOf } from "./approvals.ts";
+import { snapshotOf } from "./approvals.ts";
 import { registerDelegationTools } from "./delegation.ts";
 import { grantsCommand } from "./grants-command.ts";
 import { createGrantsSession } from "./session.ts";
@@ -193,7 +193,7 @@ export default function (pi: ExtensionAPI) {
           definitions: session.definitions,
           sessionApprovals: session.sessionApprovals,
           inheritedApprovals: session.inheritedApprovals,
-          ceilingOf: (subject: string) => ceilingOf(session, subject),
+          snapshotOf: (subject: string) => snapshotOf(session, subject),
           delegationContext: session.delegationContext,
         },
       }),

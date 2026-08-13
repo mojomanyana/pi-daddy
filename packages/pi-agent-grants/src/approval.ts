@@ -19,7 +19,7 @@ export type ApprovalScope = "once" | "session" | "always";
 export type ApprovalSource = "prompt" | "session" | "persisted" | "inherited";
 
 /** Which call site is asking. Determines the scopes offered — see `offeredScopes`. */
-export type ApprovalPath = "interceptor" | "delegate";
+export type ApprovalPath = "definition" | "delegate";
 
 /**
  * Subject used for delegate-path approvals.
@@ -75,9 +75,18 @@ export function shouldSeekApproval(result: ResolveResult | undefined): boolean {
   return result.gatedBlocked.length > 0;
 }
 
-/** Scopes a given call site may offer. `always` requires a human-authored subject, so delegate is denied it. */
+/**
+ * Scopes a given call site may offer. `always` requires a **human-authored subject**.
+ *
+ * ADR-0019. The rule is unchanged; which paths satisfy it is not. `"interceptor"` used to be the only one
+ * and ADR-0016 deleted it, leaving `always` offerable from nowhere — 220 lines of persistence no live path
+ * could write to. `"definition"` is `delegate({agent})`, where ADR-0017 makes the subject an
+ * operator-authored file the session must hold `agent:<name>` to name at all. `"delegate"` is the `tools:`
+ * form, where the original reasoning stands untouched: the only things naming that child are the task and
+ * the tool list, both model-chosen, and a key the model controls is not a key.
+ */
 export function offeredScopes(path: ApprovalPath): ApprovalScope[] {
-  return path === "interceptor" ? ["once", "session", "always"] : ["once", "session"];
+  return path === "definition" ? ["once", "session", "always"] : ["once", "session"];
 }
 
 /**
@@ -149,7 +158,7 @@ export function expiryFor(approvedAt: Date): string {
   return new Date(approvedAt.getTime() + APPROVAL_TTL_DAYS * DAY_MS).toISOString();
 }
 
-/** A persisted approval written by the interceptor path and keyed externally by subject and capability. */
+/** A persisted approval, keyed externally by subject and capability. Only the `"definition"` path writes one. */
 export interface ApprovalEntry {
   approvedAt: string;
   expiresAt: string;
@@ -159,17 +168,45 @@ export interface ApprovalEntry {
   grantAtApproval: Capability[];
   /** Provenance only, NEVER part of a key: what was being done when the yes was given. */
   taskAtApproval?: string;
+  /**
+   * The definition's body digest AT APPROVAL TIME (ADR-0019, using ADR-0018's hash).
+   *
+   * `grantAtApproval` pins the tools; this pins the INSTRUCTIONS. Without it an `always` approval survives
+   * a total rewrite of what the child is told to do, because `ceilingForDefinition` reads only
+   * `allowed-tools` — R-35's hazard reappearing inside the persistence layer. Absent means the entry
+   * predates 0.10.0 and cannot be verified, which `entryVerdict` treats as changed: fail closed.
+   */
+  bodyAtApproval?: string;
 }
 
-export type EntryVerdict = "valid" | "expired" | "foreign-cwd" | "type-changed" | "type-missing";
+export type EntryVerdict =
+  | "valid"
+  | "expired"
+  | "foreign-cwd"
+  | "type-changed"
+  | "instructions-changed"
+  | "type-missing";
+
+/**
+ * What a subject looks like RIGHT NOW — one lookup, not two (ADR-0019).
+ *
+ * Deliberately a single snapshot rather than parallel `ceilingOf` / `digestOf` callbacks. R-28 was one
+ * call site supplying one argument and omitting another; a shape that cannot be half-supplied is the
+ * structural form of remembering.
+ */
+export interface SubjectSnapshot {
+  ceiling: Capability[];
+  /** SHA-256 of the definition body — `digestDefinition(...).sha256`. */
+  bodySha256: string;
+}
 
 export interface EntryValidityInput {
   entry: ApprovalEntry;
   /** The directory this session is running in. */
   cwd: string;
   now: Date;
-  /** The named agent type's CURRENT ceiling, or null when the type no longer exists. */
-  currentCeiling: Capability[] | null;
+  /** The subject's CURRENT ceiling and body digest, or null when it no longer exists. */
+  current: SubjectSnapshot | null;
 }
 
 /**
@@ -185,6 +222,10 @@ export interface EntryValidityInput {
  *                     approve `tool:write@docs-writer` when it declares `read, write`, and later that file
  *                     gains `bash`. The entry would still match the key while describing something the
  *                     human never saw.
+ *  - `instructions-changed` — the same confused deputy, one level deeper. The tools are untouched but the
+ *                     BODY was rewritten, so the child would now be told to do something the human never
+ *                     saw. Only checkable since ADR-0018 gave the body a digest; an entry carrying no body
+ *                     pin lands here too, because unverifiable is not the same as unchanged.
  *  - `type-missing` — the type was deleted or renamed; a new file could later claim the same name.
  */
 export function entryVerdict(input: EntryValidityInput): EntryVerdict {
@@ -194,12 +235,16 @@ export function entryVerdict(input: EntryValidityInput): EntryVerdict {
   // read the expiry of is a cache we do not trust — treat it as expired, per the spec's rule that a
   // broken cache grants nothing.
   if (!Number.isFinite(expiresAt) || expiresAt <= input.now.getTime()) return "expired";
-  if (input.currentCeiling === null) return "type-missing";
+  if (input.current === null) return "type-missing";
   // Compare as sorted lists: reformatting or reordering a `tools:` line is not a change; adding,
   // removing, or renaming a capability is.
   const approved = [...input.entry.grantAtApproval].sort().join(",");
-  const current = [...input.currentCeiling].sort().join(",");
-  return approved === current ? "valid" : "type-changed";
+  const current = [...input.current.ceiling].sort().join(",");
+  if (approved !== current) return "type-changed";
+  // Fail closed on an unpinned entry: it was written before bodies were digested, so "unchanged" is not
+  // something this code can assert about it. One re-approval is the honest cost.
+  if (input.entry.bodyAtApproval !== input.current.bodySha256) return "instructions-changed";
+  return "valid";
 }
 
 export interface ResolveApprovalsInput {

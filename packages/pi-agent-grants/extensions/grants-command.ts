@@ -18,7 +18,7 @@ import type { SkillDefinition } from "../src/definitions.ts";
 import type { InheritableApproval } from "../src/approval.ts";
 import type { DelegationContext } from "../src/delegate.ts";
 import { approvalKey, resolveApprovals } from "../src/approval.ts";
-import { legacyApprovalsPath, loadApprovals, revokeAll, revokeApproval } from "../src/approval-store.ts";
+import { legacyApprovalsPath, loadApprovals, revokeAll, revokeApproval, type SubjectLookup } from "../src/approval-store.ts";
 import { planDelegation } from "../src/delegate.ts";
 import { verifyLedger } from "../src/ledger.ts";
 
@@ -36,8 +36,8 @@ export interface GrantsCommandContext {
   /** Keys, not entries — `parseInherited` returns a Set. Declared as a Map until the split, which was
    *  harmless only because the handler takes `ctx: any` and reads nothing but `.size`. */
   inheritedApprovals: Set<string>;
-  /** Current ceiling for a definition, for the store's confused-deputy check. */
-  ceilingOf: (subject: string) => Capability[] | null;
+  /** A definition's current ceiling and body digest, for the store's confused-deputy check (ADR-0019). */
+  snapshotOf: SubjectLookup;
   /** The shared builder, so the preview cannot disagree with what a real spawn would do (R-28). */
   delegationContext: (approved?: InheritableApproval[]) => Promise<DelegationContext>;
 }
@@ -51,7 +51,7 @@ handler: async (args: string, ctx: any) => {
     // the enclosing closure — which is how a diagnostic came to disagree with the enforcer (R-28).
     const {
       cwd, governed, ownGrant, observed, depth, maxDepth, ledgerPath,
-      catalog, definitions, sessionApprovals, inheritedApprovals, ceilingOf, delegationContext,
+      catalog, definitions, sessionApprovals, inheritedApprovals, snapshotOf, delegationContext,
     } = ctx.grants as GrantsCommandContext;
 
     const [sub, target] = args.trim().split(/\s+/).filter(Boolean);
@@ -87,7 +87,7 @@ handler: async (args: string, ctx: any) => {
     }
 
     if (sub === "approvals") {
-      const { valid, dropped } = await loadApprovals({ cwd, now: new Date(), ceilingOf });
+      const { valid, dropped } = await loadApprovals({ cwd, now: new Date(), snapshotOf });
       // The count says "valid", and the ignored entries are listed below it — but a reader who stops at
       // the first line would conclude the file is empty, so the ignored total goes on that same line.
       const lines = [
@@ -131,7 +131,7 @@ handler: async (args: string, ctx: any) => {
       } else if (!target) {
         ctx.ui.notify("grants: usage — /grants revoke <capability>@<agent-type> | --all", "warning");
       } else {
-        const removed = await revokeApproval(cwd, target, ceilingOf, new Date());
+        const removed = await revokeApproval(cwd, target, snapshotOf, new Date());
         ctx.ui.notify(
           removed ? `grants: revoked ${target}` : `grants: no persisted approval named ${target}`,
           removed ? "info" : "warning",
@@ -140,7 +140,7 @@ handler: async (args: string, ctx: any) => {
       return;
     }
 
-    const { valid } = await loadApprovals({ cwd, now: new Date(), ceilingOf });
+    const { valid } = await loadApprovals({ cwd, now: new Date(), snapshotOf });
     const lines = [
       governed ? "grants: ACTIVE" : "grants: inactive (set PI_GRANTS_GRANT to govern this session)",
       `  holding    ${ownGrant.join(", ") || "(nothing)"}${observed ? " (observed)" : " (inherited, not yet observed)"}`,

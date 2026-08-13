@@ -33,6 +33,7 @@ export {
   type ApprovalScope,
   type ApprovalSource,
   type EntryVerdict,
+  type SubjectSnapshot,
 } from "./approval.ts";
 
 export {
@@ -42,6 +43,7 @@ export {
   revokeApproval,
   saveApproval,
   type DroppedApproval,
+  type SubjectLookup,
 } from "./approval-store.ts";
 
 export {

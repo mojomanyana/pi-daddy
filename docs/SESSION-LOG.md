@@ -7,10 +7,17 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ## NEXT SESSION — read this, then pick one
 
-**State: green, nothing half-finished.** `pi-agent-grants` **0.9.0**, `pi-token-audit` **0.1.0**. **268 unit
-+ 10 integration tests**, typecheck clean, smoke clean (packs, installs, exercises every subpath).
-**Eighteen** ADRs decided; ADR-0016, ADR-0017 and ADR-0018 fully implemented. `extensions/grants.ts` is
-**202 lines** — the split is done and a test enforces the ceiling.
+**State: green, nothing half-finished, working tree clean.** `pi-agent-grants` **0.10.0**, `pi-token-audit`
+**0.1.0**. **272 unit + 10 integration tests**, typecheck clean, smoke clean (packs, installs, exercises
+every subpath). **Nineteen** ADRs decided; ADR-0016 through ADR-0019 fully implemented. No file in `src/`
+or `extensions/` exceeds 400 lines, and `test/file-size.test.ts` enforces that rather than trusting it.
+
+**2026-08-13 shipped four things in one session** — the `grants.ts` split, then ADR-0017 (`agent:<name>`
+authorises a definition), ADR-0018 (the ledger records which instructions ran), ADR-0019 (the persisted
+approval store was unreachable). Three of the four came from **pulling one thread**: R-35 said a capability
+that enforces nothing reads as a control, and asking "what else is like that?" produced R-36 (namespaces
+silently dropped at observation) and R-37 (`always` offerable from nowhere). **If you want a fourth, that
+is the question to ask again** — and ask it by grepping for call sites, which is what found both.
 
 ```bash
 cd packages/pi-agent-grants && npm test && npm run typecheck && npm run test:integration && npm run test:smoke
@@ -23,8 +30,8 @@ known gap. Do not re-derive it from the ADRs.
 
 | # | Item | Notes |
 | :--- | :--- | :--- |
-| 1 | ~~R-35 / R-36~~ **CLOSED 2026-08-13** — ADR-0017 (authorisation, 0.8.0) and ADR-0018 (audit, 0.9.0). What remains of R-35 is inherent and recorded in SPEC: the digest identifies a body without preserving it, and nothing judges what a body *says*. | Done. Do not reopen without new evidence. |
-| 1b | **R-37 — the `<delegate>` approval subject rests on a premise ADR-0017 falsified.** A definition IS an operator-authored subject now, so `always` approvals could persist for `delegate({agent})`; today they never do, ADR-0010's machinery is dormant, and the cost is the prompt fatigue that gets gating switched off. | **The most load-bearing open item, and it wants an ADR.** ADR-0018's `definitionDigest` supplies the missing half: a stored approval could be voided by a body change, which `grantAtApproval` cannot detect. |
+| — | ~~R-35, R-36, R-37~~ **ALL CLOSED 2026-08-13** by ADR-0017/0018/0019. Left deliberately: the digest identifies a body without preserving it, and nothing judges what a body *says*. | Done. Do not reopen without new evidence. |
+| 1 | **The persisted approval store is live again after being unwritable since 0.7.0** (ADR-0019). Nothing has exercised it end to end with a real human answering a real dialog. | **The highest-value next job.** `always` is offered only for `delegate({agent})`; a `PI_GRANTS_IT_MODEL` run gating `bash` on a definition would confirm the write, the reload, and that a body edit voids it. Unit tests cover the logic; nobody has watched it work. |
 | 2 | **Nothing verifies the ledger automatically.** `/grants ledger` detects corruption; no scheduled or startup check runs it. | R-34. Detection exists, which is the part that was missing. |
 | 3 | **Pane cleanup is not leak-proof.** `finally` covers thrown errors, not the process being killed. No reaper. | `docs/probes/g16-herdr` addendum. |
 | 4 | **`packages/pi-agent-grants/README.md` deeper sections are stale** — they still describe the interceptor as a provisioning path. Its 0.7.0 header says so. | ~400 lines. `docs/SPEC.md` is correct in the meantime. |
@@ -35,8 +42,16 @@ known gap. Do not re-derive it from the ADRs.
 
 ### No queued code work
 
-Pick from the table above. **Items 1b and 7 want an ADR before any code**; item 4 (the README) is the
-largest purely-mechanical job left and needs no decision from anyone.
+Pick from the table above. **Item 7 wants an ADR before any code.** Item 1 needs no decision, only a real
+run. Item 4 (the README) is the largest purely-mechanical job left — and it is now stale in *four* ways,
+not one: the interceptor sections, plus ADR-0017's `agent:` requirement, ADR-0018's digest and ADR-0019's
+approval subjects. Its 0.8.0 banner and quick-start grant are correct; the deeper sections are not.
+
+**One caution for whoever goes next.** Four shipped changes in a day is a lot of unreviewed decision-making
+by one pair of eyes. `product-strategist` and `architecture-critic` have not seen ADR-0017, 0018 or 0019,
+and the last time the critic was pointed at a strategy question it found R-28 — a shipped enforcement
+defect — instead. A red-team pass over the three together is cheap and is probably worth more than the next
+feature.
 
 ### Things that look like work and are not
 
@@ -54,6 +69,46 @@ That convention is why every reversal here was survivable, and there have been f
 
 ---
 
+
+## 2026-08-13 (last) — ADR-0019: the persisted-approval store was unreachable — 0.10.0
+
+**Found by grepping for call sites instead of trusting a reading.** R-37 was filed saying `always`
+approvals *downgrade* on the delegate path. Wrong, and the correction is the useful part: `always` was
+**never offered**. `offeredScopes` gated it on the path literal `"interceptor"`, and ADR-0016 deleted the
+only caller that passed it. **No version since 0.7.0 could create a persisted approval at all** — so
+`approval-store.ts` (220 lines), `entryVerdict`'s confused-deputy check, ADR-0014's atomic-write /
+symlink-refusal / foreign-`cwd` work, and `/grants approvals|revoke` were all guarding a file nothing could
+write. `docs/SPEC.md` said `always` was available *"on paths with a human-authored subject"*: true, and
+misleading, in one sentence.
+
+The user chose to make it reachable over deleting it (the steelmanned option — this project's best moves
+have been deletions, and 220 lines of mutable on-disk state is its largest surface). The argument that
+carried: `agent:` was three lines of decoration when R-35 faced the same choice, whereas this is working,
+well-tested code implementing a property that was hard to get right, and what it buys is specifically the
+survival of ADR-0012's default `bash` gate. A gate switched off by prompt fatigue is worse than one never
+claimed.
+
+**What shipped.** `delegate({agent: X})` approves against **X** on a new `"definition"` path that offers
+`always`; `delegate({tools})` keeps `<delegate>` and keeps being denied it, because there the original
+reasoning is untouched. A persisted entry pins the ceiling **and** ADR-0018's body digest, so rewriting a
+definition's instructions voids it (`instructions-changed`) — strictly stronger than ADR-0010 designed,
+since `ceilingForDefinition` reads only `allowed-tools` and could never have seen a body change. An entry
+with no body pin fails closed: unverifiable is not unchanged. `CeilingLookup` became one `SubjectLookup`
+returning `{ceiling, bodySha256}`, because two parallel callbacks is R-28's shape waiting to happen.
+
+**The line-cap test caught its own author.** Adding this pushed `extensions/delegation.ts` to 403 lines and
+`test/file-size.test.ts` — added this morning — failed. Raising the cap the day after writing it would have
+neutered the guard, so the file was split as the failure message instructed: `run-delegation.ts` (what a
+delegation *does*, 223 lines) and `delegation.ts` (how pi is *told* about it, 198). That is the guard
+working exactly as designed, on the person who installed it.
+
+**Verification was interrupted and is worth recording.** The Bash tool was unavailable for a stretch mid-task
+(an unrelated outage), so the code sat fully edited and completely unverified. Nothing was committed and no
+"fixed" note was written during that window — a claim of green with no run behind it is exactly what rule 5
+exists to prevent. Everything below was run afterwards: **272 unit + 10 integration**, typecheck clean,
+smoke clean.
+
+---
 
 ## 2026-08-13 (later still) — ADR-0018: the ledger records *which* instructions ran — 0.9.0
 

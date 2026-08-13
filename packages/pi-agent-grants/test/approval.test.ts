@@ -81,8 +81,10 @@ test("the delegate subject cannot collide with a real agent type", () => {
   assert.match(DELEGATE_SUBJECT, /^<.+>$/);
 });
 
-test("always is offered on the interceptor path, where the subject is a file a human wrote", () => {
-  assert.deepEqual(offeredScopes("interceptor"), ["once", "session", "always"]);
+test("always is offered on the definition path, where the subject is a file a human wrote", () => {
+  // ADR-0019. This assertion previously named `"interceptor"`, a path ADR-0016 had already deleted — so
+  // the rule was tested against a caller that no longer existed and `always` was reachable from nowhere.
+  assert.deepEqual(offeredScopes("definition"), ["once", "session", "always"]);
 });
 
 test("always is NEVER offered on the delegate path — the model controls the subject there", () => {
@@ -123,21 +125,28 @@ import { entryVerdict, resolveApprovals, type ApprovalEntry } from "../src/appro
 const CWD = "/repo/a";
 const NOW = new Date("2026-08-20T00:00:00.000Z");
 
+/** The body digest these entries were approved against (ADR-0019). */
+const BODY = "1111111111111111111111111111111111111111111111111111111111111111";
+
 const entry = (over: Partial<ApprovalEntry> = {}): ApprovalEntry => ({
   approvedAt: "2026-08-09T00:00:00.000Z",
   expiresAt: "2026-09-08T00:00:00.000Z",
   cwd: CWD,
   grantAtApproval: ["tool:read", "tool:write"],
+  bodyAtApproval: BODY,
   ...over,
 });
 
+/** The subject as it stands now: a ceiling plus a body digest, in one lookup (ADR-0019). */
+const at = (ceiling: string[], bodySha256: string = BODY) => ({ ceiling, bodySha256 });
+
 test("a live entry whose agent type is unchanged is valid", () => {
-  const v = entryVerdict({ entry: entry(), cwd: CWD, now: NOW, currentCeiling: ["tool:read", "tool:write"] });
+  const v = entryVerdict({ entry: entry(), cwd: CWD, now: NOW, current: at(["tool:read", "tool:write"]) });
   assert.equal(v, "valid");
 });
 
 test("R-27: an entry approved in another directory authorises nothing here", () => {
-  const v = entryVerdict({ entry: entry(), cwd: "/repo/b", now: NOW, currentCeiling: ["tool:read", "tool:write"] });
+  const v = entryVerdict({ entry: entry(), cwd: "/repo/b", now: NOW, current: at(["tool:read", "tool:write"]) });
   assert.equal(v, "foreign-cwd");
 });
 
@@ -146,7 +155,7 @@ test("an expired entry is not valid", () => {
     entry: entry(),
     cwd: CWD,
     now: new Date("2026-09-09T00:00:00.000Z"),
-    currentCeiling: ["tool:read", "tool:write"],
+    current: at(["tool:read", "tool:write"]),
   });
   assert.equal(v, "expired");
 });
@@ -156,19 +165,41 @@ test("the confused deputy: a rewritten agent type voids the approval", () => {
     entry: entry(),
     cwd: CWD,
     now: NOW,
-    currentCeiling: ["tool:bash", "tool:read", "tool:write"],
+    current: at(["tool:bash", "tool:read", "tool:write"]),
   });
   assert.equal(v, "type-changed");
 });
 
 test("a deleted agent type voids the approval", () => {
-  const v = entryVerdict({ entry: entry(), cwd: CWD, now: NOW, currentCeiling: null });
+  const v = entryVerdict({ entry: entry(), cwd: CWD, now: NOW, current: null });
   assert.equal(v, "type-missing");
 });
 
 test("reordering the tools: line is not a change", () => {
-  const v = entryVerdict({ entry: entry(), cwd: CWD, now: NOW, currentCeiling: ["tool:write", "tool:read"] });
+  const v = entryVerdict({ entry: entry(), cwd: CWD, now: NOW, current: at(["tool:write", "tool:read"]) });
   assert.equal(v, "valid");
+});
+
+test("ADR-0019: the confused deputy one level deeper — same tools, rewritten instructions", () => {
+  // `grantAtApproval` cannot see this: `ceilingForDefinition` reads only `allowed-tools`, so a definition
+  // whose body was replaced wholesale still compares equal on tools. The body digest is what closes it.
+  const v = entryVerdict({
+    entry: entry(),
+    cwd: CWD,
+    now: NOW,
+    current: at(["tool:read", "tool:write"], "a-completely-different-body"),
+  });
+  assert.equal(v, "instructions-changed");
+});
+
+test("ADR-0019: an entry with no body pin fails closed rather than being assumed unchanged", () => {
+  const v = entryVerdict({
+    entry: entry({ bodyAtApproval: undefined }),
+    cwd: CWD,
+    now: NOW,
+    current: at(["tool:read", "tool:write"]),
+  });
+  assert.equal(v, "instructions-changed", "pre-0.10.0 entries cost one re-approval; that is the honest price");
 });
 
 test("a malformed expiresAt fails closed: not valid, treated as expired", () => {
@@ -176,7 +207,7 @@ test("a malformed expiresAt fails closed: not valid, treated as expired", () => 
     entry: entry({ expiresAt: "not-a-date" }),
     cwd: CWD,
     now: NOW,
-    currentCeiling: ["tool:read", "tool:write"],
+    current: at(["tool:read", "tool:write"]),
   });
   assert.equal(v, "expired");
 });

@@ -3,7 +3,7 @@
 **The current-state document.** No history, no reasoning about alternatives, no record of how anything came
 to be decided. Where this disagrees with an ADR, the ADR is right and this file is stale — say so.
 
-Last synced against the code: **2026-08-13**, `pi-agent-grants` 0.8.0, pi 0.84.1, herdr 0.7.5.
+Last synced against the code: **2026-08-13**, `pi-agent-grants` 0.10.0, pi 0.84.1, herdr 0.7.5.
 
 ---
 
@@ -145,9 +145,20 @@ and re-supplied only by the plan, so a value the plan does not set cannot surviv
 
 ## Approvals
 
-A gated capability requires a human yes before it reaches a child. Scopes: `once`, `session`, and — on
-paths with a human-authored subject — `always` (30 days, stored outside the workspace, void once the
-definition it was granted for changes).
+A gated capability requires a human yes before it reaches a child. Scopes: `once`, `session`, and — **only
+for `delegate({agent})`** — `always` (30 days, stored outside the workspace).
+
+**What a yes is *about* differs by call form, and that is what decides which scopes are offered.**
+`delegate({agent: X})` is approved against **`X` itself**: an operator-authored file the session must hold
+`agent:X` to name at all, so the prompt reads *"approve tool:bash for deploy?"* and `always` is available.
+`delegate({tools: […]})` is approved against the constant `<delegate>` and is offered only `once` and
+`session`, because there the only things naming the child are the task and the tool list — both
+model-chosen, and a key the model controls is not a key.
+
+A persisted approval is pinned to **both** the definition's `allowed-tools` *and* its body digest, so it is
+void the moment either changes: adding a tool voids it (`type-changed`), and so does rewriting the
+instructions while leaving the tools alone (`instructions-changed`). An entry carrying no body pin is
+treated as changed rather than assumed unchanged.
 
 Concurrent callers share **one dialog** per `capability@subject`, but only share the *answer* when it was
 about more than one spawn. `session`, `always`, a decline and an error answer everyone; **a `once` is
@@ -259,12 +270,9 @@ Stated because a gap nobody wrote down is the one that surprises somebody.
   that file says is their responsibility. Nothing reads a body and judges it, and the ledger identifies the
   text without preserving it — if the definition changed, the digest proves the change and cannot recover
   what was lost.
-- **Delegate-path approvals use the fixed subject `<delegate>` and are never persisted** (R-37). The premise
-  — *"the only things naming a child are the task and the tool list, both model-chosen"* — stopped being
-  true for `delegate({agent})` when ADR-0017 made the definition an authorised, operator-authored subject.
-  Fail-closed (an `always` approval quietly downgrades to session scope), so ADR-0010's persisted-approval
-  machinery is dormant on the only spawn path, and repeated prompting is what pushes an operator to switch
-  gating off.
+- **A child can never be asked anything.** It runs `--print` with no UI, so a gate it hits has only two
+  outcomes: satisfied by an inherited approval, or refused. Persistence helps the human session across
+  restarts; below the root, inheritance is the whole mechanism.
 - **An `allowed-tools` entry written as `tool:read` becomes `tool:tool:read`.** Only `ext:`, `skill:` and
   `agent:` are passed through as written; everything else is lowercased and prefixed. The catalog then
   refuses it as unknown, so it fails loudly rather than granting anything — but the message names the

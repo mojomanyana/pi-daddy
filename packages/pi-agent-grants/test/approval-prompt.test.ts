@@ -29,7 +29,7 @@ const recordingUI = (answer: string | undefined) => {
 const req = (over = {}) => ({
   capability: "tool:write",
   subject: "docs-writer",
-  path: "interceptor" as const,
+  path: "definition" as const,
   task: "fix the docs typos",
   ...over,
 });

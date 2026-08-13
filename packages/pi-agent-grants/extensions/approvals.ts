@@ -19,25 +19,35 @@ import {
   type ApprovalScope,
   type ApprovalSource,
   type InheritableApproval,
+  type SubjectSnapshot,
 } from "../src/approval.ts";
 import { loadApprovals, saveApproval } from "../src/approval-store.ts";
 import type { createApprovalGate } from "../src/approval-prompt.ts";
 import { timeoutMsFromEnv } from "../src/approval-prompt.ts";
-import { ceilingForDefinition } from "../src/definitions.ts";
+import { ceilingForDefinition, digestDefinition } from "../src/definitions.ts";
 import type { Capability } from "../src/resolve.ts";
 import type { GrantsSession } from "./session.ts";
 
 /**
- * Current ceiling for a definition, for the confused-deputy check in the approval store.
+ * What a subject looks like right now, for the confused-deputy check in the approval store.
  *
- * ADR-0010's property is unchanged: an `always` approval is void once the thing it was granted for
- * has changed. Only the source moved — a `SKILL.md`'s `allowed-tools` rather than an agent type's
- * frontmatter. An undeclared definition yields an EMPTY ceiling, not a wildcard, so a stored approval
- * for it can never be revalidated by accident.
+ * ADR-0010's property is unchanged: an `always` approval is void once the thing it was granted for has
+ * changed. Two things moved. The source is a `SKILL.md`'s `allowed-tools` rather than an agent type's
+ * frontmatter (ADR-0016); and "the thing it was granted for" now includes the **body** as well as the
+ * tools (ADR-0019), because a definition whose instructions were rewritten is not the definition the human
+ * approved. An undeclared definition yields an EMPTY ceiling, not a wildcard, so a stored approval for it
+ * can never be revalidated by accident.
+ *
+ * `<delegate>` — the `tools:` form's subject — resolves to `null` here and always will: it names no file,
+ * so there is nothing to compare against. That is also why that path is never offered `always`.
  */
-export function ceilingOf(session: GrantsSession, subject: string): Capability[] | null {
+export function snapshotOf(session: GrantsSession, subject: string): SubjectSnapshot | null {
   const definition = session.definitions.get(subject);
-  return definition ? ceilingForDefinition(definition).capabilities : null;
+  if (!definition) return null;
+  return {
+    ceiling: ceilingForDefinition(definition).capabilities,
+    bodySha256: digestDefinition(definition).sha256,
+  };
 }
 
 /**
@@ -94,8 +104,8 @@ export async function obtainApprovals(
   task?: string,
   signal?: AbortSignal,
 ): Promise<ApprovalOutcome> {
-  const ceiling = (name: string) => ceilingOf(session, name);
-  const { valid } = await loadApprovals({ cwd: session.cwd, now: new Date(), ceilingOf: ceiling });
+  const snapshot = (name: string) => snapshotOf(session, name);
+  const { valid } = await loadApprovals({ cwd: session.cwd, now: new Date(), snapshotOf: snapshot });
   const pre = resolveApprovals({
     gated: gatedBlocked,
     subject,
@@ -145,14 +155,14 @@ export async function obtainApprovals(
     }
     if (outcome.scope === "always") {
       const now = new Date();
-      const currentCeiling = ceiling(subject);
+      const current = snapshot(subject);
       // No readable ceiling means the entry would carry `grantAtApproval: []`, which `entryVerdict`
       // compares against the type's ceiling on every load — so it could only ever come back
       // "type-missing" or "type-changed". Writing it is not unsafe (it fails closed), it is simply a
       // dead entry that silently accumulates in the file. Skip it and say so, taking the same
       // downgrade-to-session path as a failed write below: the human's yes still stands.
       const written =
-        currentCeiling === null
+        current === null
           ? false
           : await saveApproval(
               session.cwd,
@@ -161,18 +171,21 @@ export async function obtainApprovals(
                 approvedAt: now.toISOString(),
                 expiresAt: expiryFor(now),
                 cwd: session.cwd,
-                grantAtApproval: currentCeiling,
+                grantAtApproval: current.ceiling,
+                // ADR-0019: the tools AND the instructions the human actually saw. Pinning only the
+                // former would let a rewritten body inherit a yes that was given about different text.
+                bodyAtApproval: current.bodySha256,
                 taskAtApproval: task,
               },
-              ceiling,
+              snapshot,
               now,
             );
       if (!written) {
         // The human already said yes; the security decision stands. Only the convenience cache
         // failed, so this downgrades scope rather than refusing the delegation (see approval-store.ts).
         ctx.ui.notify(
-          currentCeiling === null
-            ? `grants: cannot persist the approval for ${capability} — no agent type named ${subject} is ` +
+          current === null
+            ? `grants: cannot persist the approval for ${capability} — no definition named ${subject} is ` +
                 `readable here, so a stored entry could never be valid; it applies for this session only`
             : `grants: could not persist the approval for ${capability} — it applies for this session only`,
           "warning",

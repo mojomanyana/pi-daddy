@@ -631,6 +631,16 @@ missing half — a stored approval could then be voided by a body change, which 
 detect today because `ceilingForDefinition` reads only `allowed-tools`.
 **Trigger:** any operator disabling gating; any repeated approval prompt for the same definition across
 sessions; a `grants: cannot persist the approval` warning naming `<delegate>`.
+**Note 2026-08-13 — the entry above UNDERSTATED it, and the correction is the useful part.** It said
+`always` was offered and silently downgraded. It was never *offered*: `offeredScopes` gates `always` on the
+path literal `"interceptor"`, and ADR-0016 deleted the only caller that passed it. So no version since
+0.7.0 could create a persisted approval at all, and `approval-store.ts`, `entryVerdict`'s ceiling check and
+every ADR-0014 integrity property were guarding a file nothing could write. Found by grepping for the call
+sites instead of trusting the reading — the same lesson as R-28.
+**FIXED by ADR-0019 (0.10.0):** `delegate({agent})` approves against the definition on a `"definition"`
+path that offers `always`; the `tools:` form keeps `<delegate>` and keeps being denied it. A persisted
+entry pins the ceiling **and** the ADR-0018 body digest, so rewriting instructions voids it
+(`instructions-changed`) — strictly stronger than ADR-0010 designed, and an unpinned entry fails closed.
 
 ---
 
@@ -670,3 +680,4 @@ sessions; a `grants: cannot persist the approval` warning naming `<delegate>`.
 | 2026-08-13 | R-36 | **FIXED** same day (ADR-0017 step 1) — only `tool:`/`ext:` are filtered against an observation; `skill:` and `agent:` pass through. Four tests, including survival across three levels | ADR-0017 |
 | 2026-08-13 | R-37 | Added — the `<delegate>` approval subject rests on a premise ADR-0017 falsified, so `always` approvals can never persist on the only spawn path. Fail-closed; the real cost is the prompt fatigue that gets gating switched off (R-25's shape) | ADR-0018 scoping |
 | 2026-08-13 | R-35 | **Audit half closed** by ADR-0018 — every definition spawn records a `definitionDigest` (name, source, sha256 of the body). What remains is inherent: the digest identifies text without preserving it, and no capability model judges what a body says. The **task is never recorded**, by decision | ADR-0018 |
+| 2026-08-13 | R-37 | **Corrected and FIXED** — the entry understated it: `always` was not silently downgraded, it was **never offered**, because `offeredScopes` gated it on a path ADR-0016 had deleted. Nothing since 0.7.0 could write a persisted approval, so ADR-0014's integrity work guarded an unwritable file. ADR-0019 makes the definition the subject and pins the body digest as well as the ceiling | ADR-0019 |

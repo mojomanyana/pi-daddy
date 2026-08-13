@@ -17,8 +17,7 @@
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { entryVerdict, type ApprovalEntry, type EntryVerdict } from "./approval.ts";
-import type { Capability } from "./resolve.ts";
+import { entryVerdict, type ApprovalEntry, type EntryVerdict, type SubjectSnapshot } from "./approval.ts";
 
 interface ApprovalFile {
   version: 1;
@@ -31,8 +30,13 @@ export interface DroppedApproval {
   verdict: EntryVerdict;
 }
 
-/** Look up an agent type's current ceiling by subject; null when the type no longer exists. */
-export type CeilingLookup = (subject: string) => Capability[] | null;
+/**
+ * Look up a subject's current ceiling AND body digest; null when the subject no longer exists.
+ *
+ * One snapshot rather than two callbacks (ADR-0019) — see `SubjectSnapshot`. Was `CeilingLookup`, which
+ * could only ever answer half the question `entryVerdict` needs to ask.
+ */
+export type SubjectLookup = (subject: string) => SubjectSnapshot | null;
 
 /**
  * Where persisted approvals live — **outside the governed workspace** (ADR-0014).
@@ -110,7 +114,7 @@ async function readFileSafely(cwd: string): Promise<ApprovalFile> {
 export interface LoadApprovalsInput {
   cwd: string;
   now: Date;
-  ceilingOf: CeilingLookup;
+  snapshotOf: SubjectLookup;
 }
 
 /** Load the approvals valid HERE and NOW, plus the ones that were dropped and why. */
@@ -133,7 +137,7 @@ export async function loadApprovals(
       entry,
       cwd: input.cwd,
       now: input.now,
-      currentCeiling: input.ceilingOf(subjectOf(key)),
+      current: input.snapshotOf(subjectOf(key)),
     });
     if (verdict === "valid") valid.set(key, entry);
     else dropped.push({ key, entry, verdict });
@@ -187,10 +191,10 @@ export async function saveApproval(
   cwd: string,
   key: string,
   entry: ApprovalEntry,
-  ceilingOf: CeilingLookup,
+  snapshotOf: SubjectLookup,
   now: Date,
 ): Promise<boolean> {
-  const { valid } = await loadApprovals({ cwd, now, ceilingOf });
+  const { valid } = await loadApprovals({ cwd, now, snapshotOf });
   valid.set(key, entry);
   return writeFileSafely(cwd, { version: 1, approvals: Object.fromEntries(valid) });
 }
@@ -205,10 +209,10 @@ export async function saveApproval(
 export async function revokeApproval(
   cwd: string,
   key: string,
-  ceilingOf: CeilingLookup,
+  snapshotOf: SubjectLookup,
   now: Date,
 ): Promise<boolean> {
-  const { valid } = await loadApprovals({ cwd, now, ceilingOf });
+  const { valid } = await loadApprovals({ cwd, now, snapshotOf });
   if (!valid.has(key)) return false;
   valid.delete(key);
   return writeFileSafely(cwd, { version: 1, approvals: Object.fromEntries(valid) });
