@@ -895,6 +895,23 @@ disagree with the enforcer about whether a definition changed. Two rows under on
 explicitly, because that is the finding rather than a formatting quirk. Both of ADR-0018's advertised
 questions now have a command; whether anyone runs it is that ADR's revisit trigger.
 
+## R-59 · Four documents described a defect that had been fixed four days earlier — L×M, FIXED
+Added **and fixed** 2026-08-14. `CLAUDE.md`, the root `README.md` and two places in `docs/SESSION-LOG.md`
+all stated that `pi-token-audit`'s headline was *"a character ratio, not a token share"*. That was true when
+G10 falsified it on 2026-08-10 and **false a few hours later**: `5c593fb` deleted the token estimate and the
+report has since read *"% of request CHARACTERS … not a token measurement"*, with the arithmetic of the
+mistake preserved in a comment so it stays legible.
+
+**Two independent reviewers repeated the stale claim, and so did this assistant, three times in one
+session** — because it was written in `CLAUDE.md`, which is the first thing anything reads here. That is the
+cost of a stale line in an orienting document: it is not one wrong sentence, it is every downstream reader
+inheriting it, including the ones brought in specifically to find wrong sentences.
+
+Same shape as R-58 (documents describing behaviour the code no longer has), and worse in one respect: R-58's
+contradictions were internal and findable by reading one file, whereas this one was only findable by reading
+the *code* that the documents described. **Trigger:** any risk-register entry marked FIXED whose claim still
+appears unqualified in `CLAUDE.md`, a README, or the session log.
+
 ## R-53 · A fresh approval crossed to the child unpinned, with one scope for the whole set — H×H, FIXED
 Added **and fixed** 2026-08-14 by the second red-team pass, over ADR-0020–0023. **The one that shipped**, and
 it made ADR-0022 false on exactly the approvals ADR-0022 was written for.
@@ -1029,6 +1046,7 @@ updated without re-reading the section the banner describes.
 | 2026-08-13 | R-36 | **FIXED** same day (ADR-0017 step 1) — only `tool:`/`ext:` are filtered against an observation; `skill:` and `agent:` pass through. Four tests, including survival across three levels | ADR-0017 |
 | 2026-08-13 | R-37 | Added — the `<delegate>` approval subject rests on a premise ADR-0017 falsified, so `always` approvals can never persist on the only spawn path. Fail-closed; the real cost is the prompt fatigue that gets gating switched off (R-25's shape) | ADR-0018 scoping |
 | 2026-08-13 | R-35 | **Audit half closed** by ADR-0018 — every definition spawn records a `definitionDigest` (name, source, sha256 of the body). What remains is inherent: the digest identifies text without preserving it, and no capability model judges what a body says. The **task is never recorded**, by decision | ADR-0018 |
+| 2026-08-14 | R-59 | Added and fixed — four documents, `CLAUDE.md` first among them, described `pi-token-audit`'s G10 defect as live four days after `5c593fb` fixed it. Both reviewers and the assistant repeated it from those documents. A stale line in an orienting file is inherited by every reader, including the ones hired to find stale lines | verifying a finding |
 | 2026-08-14 | R-53…R-58 | **Second red-team pass**, over ADR-0020–0023 (`architecture-critic` + `product-strategist`). Six entries, all fixed the same session. R-53 is the one that shipped: every freshly-approved capability crossed to the child **unpinned**, so ADR-0022 was false on exactly the approvals it was written for — hidden by sort order. R-54 broke "governance is opt-in". Both confirmed by execution before being written. The pass also cleared the `republishable` laundering fix, `parseInherited`/`verifyInherited`, ADR-0021's deletion, and R-46's derived scalar as sound | red-team pass 2 |
 | 2026-08-14 | R-46, R-47, R-51 | **Closed (R-46, R-51) and half-closed (R-47)** — the queued code work from the red-team pass, none of it needing a decision. The ledger no longer claims a human was asked about a capability satisfied from the store; `/grants ledger` reads `definitionDigest` for the first time, so ADR-0018's two advertised questions finally have a command; and an `agent:` id in `PI_GRANTS_GATED` says out loud that it gates nothing. Enforcing that last one is left as a decision | queued work |
 | 2026-08-14 | R-41, R-44, R-45, R-52 | **All four closed by decision**, as ADR-0020 (one approval file per project), ADR-0021 (the task is never stored), ADR-0022 (an inherited approval names its instructions) and ADR-0023 (`agent:*`). Each was presented to the user with a worked failure scenario and the options weighed; each ADR records the rejected option and what it would have bought. Two are breaking: the store layout and the propagation format | red-team follow-up |
