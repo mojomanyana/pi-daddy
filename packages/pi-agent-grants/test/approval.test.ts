@@ -94,11 +94,14 @@ test("always is NEVER offered on the delegate path — the model controls the su
 
 // ADR-0014: approvals crossing a boundary carry subject and scope, and are published as
 // `capability@subject`. See test/approval-integrity.test.ts for the scope and subject rules themselves.
-const inh = (capability: string) => ({ capability, subject: "docs-writer", scope: "session" as const });
+// ADR-0022 (hardened after F1): a definition subject must carry a body pin to cross a boundary at all, so
+// these fixtures carry one. `<delegate>` legitimately does not — it names no file — and that case is
+// covered in `approval-integrity.test.ts`.
+const inh = (capability: string) => ({ capability, subject: "docs-writer", scope: "session" as const, bodySha256: "body-digest" });
 
 test("an inherited approval is intersected with the child's grant", () => {
   assert.deepEqual(inheritApprovals([inh("tool:write"), inh("tool:bash")], ["tool:read", "tool:write"]), [
-    "tool:write@docs-writer",
+    "tool:write@docs-writer#body-digest",
   ]);
 });
 
@@ -109,7 +112,7 @@ test("THE invariant for approvals: approved can never exceed the grant", () => {
 
 test("the wildcard is never inherited as an approval (mirrors R-26 for grants)", () => {
   assert.deepEqual(inheritApprovals([inh("tool:*"), inh("tool:read")], ["tool:*", "tool:read"]), [
-    "tool:read@docs-writer",
+    "tool:read@docs-writer#body-digest",
   ]);
 });
 

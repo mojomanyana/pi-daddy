@@ -21,7 +21,7 @@ import { mergeChildEnv } from "../src/propagation.ts";
 import type { Capability } from "../src/resolve.ts";
 import { ENV_CHILD_TIMEOUT, runChild, timeoutFromEnv } from "../src/run-child.ts";
 import { runHerdrPane } from "../src/run-herdr.ts";
-import { obtainApprovals, republishable, type ApprovalOutcome, type ApprovalUIContext } from "./approvals.ts";
+import { obtainApprovals, republishable, snapshotOf, type ApprovalOutcome, type ApprovalUIContext } from "./approvals.ts";
 import { ENV_HERDR_KEEP_PANE, ENV_HERDR_WORKSPACE, type GrantsSession } from "./session.ts";
 
 /** What one child was asked to do. The shape both tools accept, per child. */
@@ -105,7 +105,16 @@ export async function planWithApprovals(
           ...outcome.approved.map((capability) => ({
             capability,
             subject: approvalSubject,
-            scope: outcome.scope ?? ("once" as const),
+            // F1b: this capability's OWN scope. It was `outcome.scope` — one variable overwritten by the
+            // last capability answered — so approving A `once` and B `session` re-stamped A as `session`
+            // and handed a whole subtree an approval a human gave for a single spawn. That is ADR-0014's
+            // A-S1 defect, reopened by a mixed answer.
+            scope: outcome.scopes[capability] ?? ("once" as const),
+            // F1a: and the pin. Without it every freshly-approved capability crossed to the child
+            // UNPINNED, and `verifyInherited` honours an unpinned entry by decision — so ADR-0022's
+            // headline property was false on the hot path, for the approvals it was written to cover.
+            // Taken from this session's snapshot, the same source `republishable` uses.
+            bodySha256: snapshotOf(session, approvalSubject)?.bodySha256,
           })),
         ])),
         ...extra,
@@ -177,7 +186,7 @@ export async function runOneDelegation(
         reason: plan.reason,
         approved: approvalOutcome?.approved,
         approvalSources: approvalOutcome?.sources,
-        approvalScope: approvalOutcome?.scope,
+        approvalScopes: approvalOutcome?.scopes,
         humanDenied: approvalOutcome?.humanDenied,
         // ADR-0018: taken from the PLAN, never re-derived here. The B-I3 lesson — a call site that
         // recomputed the digest could record one the planner never used.

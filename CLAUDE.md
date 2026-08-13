@@ -30,7 +30,7 @@ permissible, able to refuse or allow but never to narrow. **This package is now 
 is an argument rather than a veto. Definitions are **Agent Skills (`SKILL.md`)** files whose `allowed-tools`
 becomes the grant; the pi-subagents ceiling port is deleted; the interceptor survives only as a tripwire.
 
-**Current state: `pi-agent-grants` 0.11.1, `pi-token-audit` 0.1.0.** Twenty-three ADRs decided. 283 unit +
+**Current state: `pi-agent-grants` 0.11.2, `pi-token-audit` 0.1.0.** Twenty-three ADRs decided. 287 unit +
 19 integration tests (+4 more with a real model), typecheck and smoke clean.
 
 **What the product claims, precisely** — this wording is load-bearing and was narrowed by ADR-0012: it

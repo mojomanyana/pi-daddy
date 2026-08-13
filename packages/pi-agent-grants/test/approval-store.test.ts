@@ -289,3 +289,37 @@ test("a wrong-version file grants nothing", async () => {
   assert.equal(r.valid.size, 0, "wrong version grants nothing");
   assert.deepEqual(r.dropped, [], "entries from wrong-version files are not reported (they are silently ignored)");
 });
+
+test("ADR-0021: sanitise strips an undeclared field on the way out", async () => {
+  // The guard against the NEXT `taskAtApproval`, which had no test at all — and by this project's rule 7,
+  // a guard whose removal breaks nothing is decoration. `sanitise` whitelists declared fields rather than
+  // deleting known-bad ones, so it closes the class; this asserts the class, not the instance.
+  //
+  // Replace `sanitise(valid)` with `Object.fromEntries(valid)` in `saveApproval` and this fails.
+  const cwd = await temp();
+  const c = ceiling(["tool:read", "tool:write"]);
+
+  // An entry carrying model-authored text, as 0.10.x wrote it.
+  await stage(
+    cwd,
+    JSON.stringify({
+      version: 1,
+      approvals: {
+        "tool:write@docs-writer": { ...entryFor(cwd), taskAtApproval: "rotate the prod key AKIA-SECRET" },
+      },
+    }),
+  );
+
+  // Any write rewrites the whole file, so one unrelated save is enough to clean it.
+  await saveApproval(cwd, "tool:read@docs-writer", entryFor(cwd), c, NOW);
+
+  const text = await readFile(approvalsPath(cwd), "utf8");
+  assert.ok(!text.includes("AKIA-SECRET"), "the task text must not survive a rewrite");
+  assert.ok(!text.includes("taskAtApproval"), "nor the field itself");
+  const parsed = JSON.parse(text);
+  assert.deepEqual(
+    Object.keys(parsed.approvals).sort(),
+    ["tool:read@docs-writer", "tool:write@docs-writer"],
+    "and both entries survive — this strips fields, not approvals",
+  );
+});

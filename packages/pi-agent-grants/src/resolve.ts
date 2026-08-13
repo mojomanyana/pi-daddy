@@ -61,14 +61,14 @@ export function expandSubsumed(grant: Capability[]): Capability[] {
   return [...expanded].sort();
 }
 
+import { WILDCARD } from "./pi-tools.ts";
+
 /**
- * "Any definition" — ADR-0023, and the only wildcard this module understands.
+ * "Any definition" — ADR-0023, and one of two wildcards this module understands.
  *
- * Declared here rather than beside `WILDCARD` in `pi-tools.ts` because this module has **no imports at
- * all** — `pi-tools.ts` imports `Capability` from it, so the dependency runs the other way and adding one
- * here would make it circular. That constraint is worth preserving: `resolve` is the only place an
- * escalation could be introduced, and a module with no dependencies is a module whose behaviour is fully
- * determined by its arguments.
+ * Declared here rather than beside `WILDCARD` because `pi-tools.ts` imports `Capability` from this module.
+ * That import is `import type`, so it is erased and the runtime dependency runs one way only — which is
+ * what makes importing `WILDCARD` back safe.
  *
  * Deliberately weaker than `tool:*`: it confers **no tool authority**, so `agent:*,tool:read` may spawn
  * every definition on disk and hand each of them nothing but `read`. It exists because the alternative was
@@ -135,8 +135,22 @@ export function resolve(input: ResolveInput): ResolveResult {
    * does not silently acquire a wildcard; adding one is a deliberate edit and another decision.
    */
   const anyDefinition = held.has(AGENT_WILDCARD);
+  /**
+   * `tool:*` satisfies **any** capability, including `skill:` and `agent:` ids.
+   *
+   * Missing until 0.11.2, and the omission broke the one rule this package must never break by accident:
+   * *governance is opt-in*. An ungoverned session holds `[tool:*, …observed tools]` and nothing else, so
+   * spawning a definition whose `allowed-tools` names `agent:worker` or `skill:review` — the composition
+   * ADR-0017 created and ADR-0023's own example uses — was refused with **"capability escalation
+   * blocked"**, and recorded as an escalation attempt, in a session that had opted out.
+   *
+   * `maySpawnDefinition` had always honoured `tool:*` for definition ids and `docs/SPEC.md` had always
+   * claimed it "satisfies any capability". This function disagreed with both, which is R-28's shape: two
+   * spellings of one rule, and the enforcing one was wrong.
+   */
+  const anyCapability = held.has(WILDCARD);
   const covered = (c: Capability): boolean =>
-    parent.has(c) || (anyDefinition && c.startsWith("agent:"));
+    parent.has(c) || anyCapability || (anyDefinition && c.startsWith("agent:"));
   const ceiling = input.ceiling === undefined ? null : new Set(input.ceiling);
   const gated = new Set(input.gated ?? []);
   const approved = new Set(input.approved ?? []);
@@ -176,7 +190,10 @@ export function resolve(input: ResolveInput): ResolveResult {
     clipped,
     gatedBlocked,
     universal: effective.filter((c) => UNIVERSAL_CAPABILITIES.includes(c)),
-    subsumedBy: effective.filter((c) => !held.has(c)),
+    // F9: capabilities covered by a WILDCARD are not "subsumed" — this field means "the grant is broader
+    // than its list suggests", which is the `bash`-covers-`grep` warning. A wildcard holder already knows
+    // its grant is broad; listing every id under it would bury the signal the field exists to carry.
+    subsumedBy: effective.filter((c) => !held.has(c) && !anyCapability && !(anyDefinition && c.startsWith("agent:"))),
   };
 }
 

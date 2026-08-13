@@ -90,6 +90,19 @@ export function republishable(session: GrantsSession): InheritableApproval[] {
 export interface ApprovalOutcome {
   approved: Capability[];
   /**
+   * How far EACH capability's yes reaches (F1b/F5).
+   *
+   * Was a single `scope`, declared outside the prompt loop and overwritten by the last capability answered.
+   * Approve `tool:bash` *once* and `tool:write` *for this session* and both were re-stamped `session` —
+   * so ADR-0014's rule that "`once` stops at the boundary" was reopened by a mixed answer, and the ledger's
+   * `approvalScope` described one capability while claiming to describe the set.
+   *
+   * Only prompted capabilities appear here. One satisfied from the store or by inheritance is deliberately
+   * absent, so the caller's `?? "once"` keeps it out of what a child inherits — the conservative reading,
+   * and the behaviour that was already in place.
+   */
+  scopes: Record<Capability, ApprovalScope>;
+  /**
    * Where EACH approved capability's yes came from (R-46).
    *
    * Was a single `source`, chosen as `scope ? "prompt" : sources[approved[0]]` — which told the ledger a
@@ -97,7 +110,6 @@ export interface ApprovalOutcome {
    * always computed this map; the bug was that it was thrown away.
    */
   sources: Record<Capability, ApprovalSource>;
-  scope?: ApprovalScope;
   humanDenied: boolean;
   reason?: string;
 }
@@ -164,7 +176,7 @@ export async function obtainApprovals(
   const snapshot = (name: string) => snapshotOf(session, name);
   const pre = await storedApprovals(session, gatedBlocked, subject);
   if (ctx === null || pre.needsPrompt.length === 0) {
-    return { approved: pre.approved, sources: pre.sources, humanDenied: false };
+    return { approved: pre.approved, sources: pre.sources, scopes: {}, humanDenied: false };
   }
 
   // The gate PROVIDER lives on the session, not here: `obtainApprovals` runs once per `tool_call` and once
@@ -182,7 +194,7 @@ export async function obtainApprovals(
   // Seeded with what the store already answered, then one entry added per capability a human is asked
   // about — so a mixed set reports exactly which yes came from where.
   const sources: Record<Capability, ApprovalSource> = { ...pre.sources };
-  let scope: ApprovalScope | undefined;
+  const scopes: Record<Capability, ApprovalScope> = {};
   let humanDenied = false;
   let reason: string | undefined;
 
@@ -198,7 +210,7 @@ export async function obtainApprovals(
     }
     approved.push(capability);
     sources[capability] = "prompt";
-    scope = outcome.scope;
+    scopes[capability] = outcome.scope;
 
     if (outcome.scope === "session" || outcome.scope === "always") {
       session.sessionApprovals.add(approvalKey(capability, subject));
@@ -242,11 +254,13 @@ export async function obtainApprovals(
             : `grants: could not persist the approval for ${capability} — it applies for this session only`,
           "warning",
         );
-        scope = "session";
+        // The human's yes stands; only the cache failed. Downgrade THIS capability, not the set — under
+        // the old scalar this also rewrote the scope of every other capability answered in the same call.
+        scopes[capability] = "session";
       }
     }
     session.publishChildEnv(); // a new session approval widens what children may inherit — republish now
   }
 
-  return { approved, sources, scope, humanDenied, reason };
+  return { approved, sources, scopes, humanDenied, reason };
 }

@@ -139,11 +139,11 @@ test("an inherited approval is intersected with what the child actually gets", (
     depth: 0,
     maxDepth: 2,
     gated: ["tool:write"],
-    approved: [{ capability: "tool:write", subject: "docs-writer", scope: "session" }, { capability: "tool:bash", subject: "docs-writer", scope: "session" }],
+    approved: [{ capability: "tool:write", subject: "docs-writer", scope: "session", bodySha256: "body-digest" }, { capability: "tool:bash", subject: "docs-writer", scope: "session", bodySha256: "body-digest" }],
   });
   // ADR-0014: the published value is `capability@subject`, so an approval cannot satisfy a subject
   // it was never given for.
-  assert.equal(env[ENV_APPROVED], "tool:write@docs-writer", "bash was approved upstream but is not held here");
+  assert.equal(env[ENV_APPROVED], "tool:write@docs-writer#body-digest", "bash was approved upstream but is not held here");
 });
 
 test("no approvals means the variable is EMPTY, not absent — an absent key would not overwrite", () => {
@@ -169,11 +169,11 @@ test("publishing a narrowed grant CLEARS a previously published approval", () =>
     for (const [k, v] of Object.entries(env)) target[k] = v;
   };
 
-  publish(childEnv({ ownGrant: ["tool:read", "tool:write"], depth: 0, maxDepth: 2, gated: ["tool:write"], approved: [{ capability: "tool:write", subject: "docs-writer", scope: "session" }] }));
-  assert.equal(target[ENV_APPROVED], "tool:write@docs-writer");
+  publish(childEnv({ ownGrant: ["tool:read", "tool:write"], depth: 0, maxDepth: 2, gated: ["tool:write"], approved: [{ capability: "tool:write", subject: "docs-writer", scope: "session", bodySha256: "body-digest" }] }));
+  assert.equal(target[ENV_APPROVED], "tool:write@docs-writer#body-digest");
 
   // The session observes its real tool surface and loses `write`; the approval no longer applies.
-  publish(childEnv({ ownGrant: ["tool:read"], depth: 0, maxDepth: 2, gated: ["tool:write"], approved: [{ capability: "tool:write", subject: "docs-writer", scope: "session" }] }));
+  publish(childEnv({ ownGrant: ["tool:read"], depth: 0, maxDepth: 2, gated: ["tool:write"], approved: [{ capability: "tool:write", subject: "docs-writer", scope: "session", bodySha256: "body-digest" }] }));
   assert.equal(target[ENV_APPROVED], "", "the stale approval is cleared, not left behind");
 });
 
@@ -183,9 +183,9 @@ test("the wildcard is never inherited as an approval", () => {
     depth: 0,
     maxDepth: 2,
     gated: [],
-    approved: [{ capability: "tool:*", subject: "docs-writer", scope: "session" }, { capability: "tool:read", subject: "docs-writer", scope: "session" }],
+    approved: [{ capability: "tool:*", subject: "docs-writer", scope: "session", bodySha256: "body-digest" }, { capability: "tool:read", subject: "docs-writer", scope: "session", bodySha256: "body-digest" }],
   });
-  assert.equal(env[ENV_APPROVED], "tool:read@docs-writer");
+  assert.equal(env[ENV_APPROVED], "tool:read@docs-writer#body-digest");
 });
 
 test("delegate hands the child only approvals for capabilities it was actually granted", () => {
@@ -196,11 +196,11 @@ test("delegate hands the child only approvals for capabilities it was actually g
       depth: 0,
       maxDepth: 2,
       gated: ["tool:write", "tool:bash"],
-      approved: [{ capability: "tool:write", subject: "docs-writer", scope: "session" }, { capability: "tool:bash", subject: "docs-writer", scope: "session" }],
+      approved: [{ capability: "tool:write", subject: "docs-writer", scope: "session", bodySha256: "body-digest" }, { capability: "tool:bash", subject: "docs-writer", scope: "session", bodySha256: "body-digest" }],
     },
   );
   assert.equal(plan.ok, true, plan.reason ?? "expected ok");
-  assert.equal(plan.env[ENV_APPROVED], "tool:write@docs-writer", "bash was approved but not granted to this child");
+  assert.equal(plan.env[ENV_APPROVED], "tool:write@docs-writer#body-digest", "bash was approved but not granted to this child");
 });
 
 test("an approved capability the child was NOT granted never reaches it", () => {
@@ -214,7 +214,7 @@ test("an approved capability the child was NOT granted never reaches it", () => 
       depth: 0,
       maxDepth: 2,
       gated: ["tool:write"],
-      approved: [{ capability: "tool:write", subject: "docs-writer", scope: "session" }],
+      approved: [{ capability: "tool:write", subject: "docs-writer", scope: "session", bodySha256: "body-digest" }],
     },
   );
   assert.equal(plan.ok, true, plan.reason ?? "expected ok");

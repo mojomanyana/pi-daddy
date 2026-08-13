@@ -5,7 +5,7 @@ deliberate subset of what it holds and withholds the rest. Sub-agents may delega
 subset of what they themselves hold — enforced by **pi's own `--tools` allowlist**, with an append-only
 ledger of every grant and refusal.
 
-**Status:** `pi-agent-grants` **0.11.1**, `pi-token-audit` **0.1.0**. 283 unit + 19 integration tests (+4
+**Status:** `pi-agent-grants` **0.11.2**, `pi-token-audit` **0.1.0**. 287 unit + 19 integration tests (+4
 more with a real model); typecheck and smoke clean.
 
 ## What it actually does
@@ -75,7 +75,7 @@ somebody.
 
 ```bash
 cd packages/pi-agent-grants
-npm test                   # 283 unit tests — pure, no pi, no network
+npm test                   # 287 unit tests — pure, no pi, no network
 npm run typecheck          # src + extensions + test + test-integration
 npm run test:integration   # 19 tests against a REAL pi process, no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and USE every subpath

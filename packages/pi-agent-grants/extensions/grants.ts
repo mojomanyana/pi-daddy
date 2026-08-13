@@ -25,6 +25,7 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { WILDCARD } from "../src/pi-tools.ts";
+import { AGENT_WILDCARD } from "../src/resolve.ts";
 import { legacyApprovalsPath, sharedApprovalsPath } from "../src/approval-store.ts";
 import { buildCatalog } from "../src/catalog.ts";
 import { loadDefinitions } from "../src/definitions.ts";
@@ -89,7 +90,9 @@ export default function (pi: ExtensionAPI) {
           ctx.ui.notify(
             `grants: ignoring ${sharedApprovalsPath()} — approvals are now stored one file per governed ` +
               `directory (ADR-0020), because a single shared file could not hold two projects' approvals ` +
-              `for a same-named definition. Re-approve when next asked; the old file is safe to delete.`,
+              `for a same-named definition. Re-approve when next asked. **Deleting the old file is ` +
+              `recommended, not merely safe**: entries written by 0.10.x may contain the task text a model ` +
+              `composed at approval time, which this version no longer stores anywhere (ADR-0021).`,
             "warning",
           );
         }
@@ -118,6 +121,19 @@ export default function (pi: ExtensionAPI) {
       //
       // Warned rather than enforced: making it gate the spawn is a behaviour change and wants a decision.
       // Silence is the part that is indefensible either way.
+      // `agent:*` grants no tools, but it authorises every definition in BOTH skill roots — including
+      // `~/.pi/agent/skills/`, which other software installs into, so ADR-0017's "an operator-authored
+      // file" is not true of everything it covers. Paired with a shell that is every body on disk running
+      // with `bash`. `docs/SPEC.md` calls the combination poor and nothing detected it, which is R-47's
+      // shape in a control shipped one day later.
+      if (session.ownGrant.includes(AGENT_WILDCARD) && session.gated.length === 0 && session.ownGrant.includes("tool:bash")) {
+        ctx.ui.notify(
+          `grants: PI_GRANTS_GRANT pairs agent:* with tool:bash and gates nothing — every SKILL.md in ` +
+            `this project AND in ~/.pi/agent/skills (which other tools install into) may run with a shell. ` +
+            `Enumerate the agent: ids you mean, or leave PI_GRANTS_GATED at its default so bash is asked for.`,
+          "warning",
+        );
+      }
       const inertGates = session.gated.filter((c) => c.startsWith("agent:"));
       if (inertGates.length > 0) {
         ctx.ui.notify(

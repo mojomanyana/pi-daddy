@@ -895,6 +895,102 @@ disagree with the enforcer about whether a definition changed. Two rows under on
 explicitly, because that is the finding rather than a formatting quirk. Both of ADR-0018's advertised
 questions now have a command; whether anyone runs it is that ADR's revisit trigger.
 
+## R-53 · A fresh approval crossed to the child unpinned, with one scope for the whole set — H×H, FIXED
+Added **and fixed** 2026-08-14 by the second red-team pass, over ADR-0020–0023. **The one that shipped**, and
+it made ADR-0022 false on exactly the approvals ADR-0022 was written for.
+
+`planWithApprovals` re-plans with the just-approved capabilities, and that object literal carried two
+defects:
+
+- **No `bodySha256`.** `inheritApprovals` appended `#<digest>` only when one was supplied, and
+  `verifyInherited` **honours an unpinned entry by decision** (`<delegate>` names no file; a pre-0.11 parent
+  sends none). So every freshly-approved capability reached the child *exempt from the digest check*. The
+  only thing hiding it in the single-capability case was sort order: both `tool:bash@deploy` and
+  `tool:bash@deploy#<digest>` were published, `.sort()` put the unpinned one first, and `parseInherited`'s
+  last-write-wins let the pinned one survive. **A security pin defended by lexicographic collation is not
+  defended.**
+- **One scope for the set.** `outcome.scope` was a single variable declared outside the prompt loop and
+  overwritten by the last capability answered. Approve `tool:bash` *once* and `tool:write* *for this
+  session* and both were re-stamped `session` — reopening ADR-0014's A-S1, the defect whose whole point is
+  that a human's most conservative answer must not produce the least conservative outcome.
+
+Confirmed by execution before being written down: the published set survived verification against a
+different body.
+
+**FIXED (0.11.2)** in three places, and the third is the one that matters: the literal now takes its digest
+from `snapshotOf` and its scope from a per-capability map, `obtainApprovals` returns `scopes` instead of a
+scalar — and **`inheritApprovals` now refuses to publish an unpinned entry for any subject other than
+`<delegate>`**. Enforcing it at the point of publication makes it structural rather than something two call
+sites must each remember, which is what the first fix relied on. A caller that cannot produce a digest
+publishes nothing: the fail-closed direction.
+
+## R-54 · `tool:*` did not satisfy non-tool capabilities, so ungoverned sessions were refused — M×M, FIXED
+Added **and fixed** 2026-08-14, same pass. **This broke the one rule the package must never break by
+accident: governance is opt-in.**
+
+`docs/SPEC.md` has always said `tool:*` "satisfies any capability", and `maySpawnDefinition` has always
+honoured it for definition ids. `resolve()` did not: it was exact-match plus subsumption plus (since
+ADR-0023) `agent:*`, and `tool:*` appeared nowhere in its coverage check. It worked for tools only because
+`deriveOwnGrant` *enumerates* observed tool names beside the wildcard — and an ungoverned session's
+non-tool inheritance is empty.
+
+So with **no `PI_GRANTS_GRANT` at all**, spawning a definition whose `allowed-tools` names `agent:worker` or
+`skill:review` — the composition ADR-0017 created and ADR-0023's own example uses — was refused with
+*"capability escalation blocked"* and recorded as an escalation attempt, in a session that had opted out of
+governance. Measured. R-28's shape: two spellings of one rule, and the enforcing one was wrong. ADR-0023
+edited this exact function and restated the false claim rather than noticing it.
+**FIXED (0.11.2):** `covered()` honours `tool:*` for every capability. The gate still bites underneath it —
+holding the wildcard is authority to grant widely, never authority to skip a human (ADR-0011).
+
+## R-55 · `agent:*` could not be handed down at all — M×M, FIXED
+Added **and fixed** 2026-08-14, same pass. `unknownCapabilities` runs **before** `resolve`, and the catalog
+contains no wildcards — `definitionEntries` emits one id per discovered definition and `PI_BUILTIN_TOOLS`
+has no `*`. So `delegate({tools: ["agent:*"]})` and a definition declaring `allowed-tools: agent:*` were
+both refused as *"unknown capability … (typo, or an uninstalled package?)"*, from any grant. ADR-0023's
+Decision says a parent holding `agent:*` may hand it down; that was live only at the root.
+**FIXED (0.11.2):** wildcards are grammar, not catalog entries, and are exempt from the unknown check.
+**Left open, recorded here:** because that check short-circuits before `resolve`, requesting a capability
+that does not exist yields `denied: []`, so ADR-0008's escalation signal is not raised for a probe that
+names something nonexistent. Fail-closed (the spawn is refused) but unrecorded as an attempt.
+
+## R-56 · `/grants ledger` reported a false "CHANGED since" across projects — M×M, FIXED
+Added **and fixed** 2026-08-14, same pass — in the R-51 feature shipped hours earlier. The digest listing
+compared by **name only** while `verifyLedger` carried `source` all along. `PI_GRANTS_LEDGER` exported once
+in a shell profile is shared by every project, so two different `deploy` definitions in two checkouts were
+reported as one definition that had changed, complete with the NOTE the code's own comment calls "the
+finding, not a formatting quirk". **A diagnostic manufacturing an incident, in the one command ADR-0018
+points an investigator at.**
+**FIXED (0.11.2):** `source` is compared too; a same-named definition from elsewhere is labelled as such,
+and the NOTE fires only for two versions of the same file.
+
+## R-57 · The per-project filename was a 24-bit hash with its mitigation removed — L×M, FIXED
+Added **and fixed** 2026-08-14, same pass. `approvalsPath` used `sha256(cwd).slice(0, 6)` — 6 hex, 24 bits.
+ADR-0020 deleted the `foreign-cwd` carry-through on the premise that one file means one directory, so
+**inside a collision R-41 returns with its mitigation gone**: the second project's save deletes the first's
+entries. Accidental collision arrives at a few thousand governed directories; a deliberate one costs ~16.7M
+hashes, under a second. Availability only — `entryVerdict` still refuses to honour another `cwd`'s entry —
+but "the collision becomes inexpressible" is a stronger claim than 24 bits supports.
+**FIXED (0.11.2):** 16 hex, 64 bits.
+
+## R-58 · Four documents described behaviour the code no longer had — M×M, FIXED
+Added **and fixed** 2026-08-14 by the `product-strategist` pass. Each was introduced by the two days of
+changes that preceded it, and the last one is the one this project's rules single out:
+
+- `README.md` gave the **shared** store path, contradicting its own banner 290 lines above.
+- `README.md` carried a live warning about `foreign-cwd` pruning — **behaviour ADR-0020 deleted** —
+  presented as a caution about current code.
+- `README.md`'s configuration table said `PI_GRANTS_APPROVED` carries `capability@subject` pairs,
+  contradicting its own banner at line 17.
+- `src/approval-store.ts` still said *"One file for all projects"*, contradicted eight lines later in the
+  same comment block. **A register entry may describe what was believed on its date; a source comment
+  describing present behaviour may not.**
+
+Also: the README's opening paragraph carried the **unqualified** claim a reviewer forced out of `SPEC.md`
+the day before — *"a sub-agent can never confer more than it holds"*, with no tool-surface clause. It is
+repaired 100 lines down; the first paragraph is what a package registry shows.
+**Trigger for the shape recurring:** any release where a decision changes behaviour and the README banner is
+updated without re-reading the section the banner describes.
+
 ---
 
 ## Register log
@@ -933,6 +1029,7 @@ questions now have a command; whether anyone runs it is that ADR's revisit trigg
 | 2026-08-13 | R-36 | **FIXED** same day (ADR-0017 step 1) — only `tool:`/`ext:` are filtered against an observation; `skill:` and `agent:` pass through. Four tests, including survival across three levels | ADR-0017 |
 | 2026-08-13 | R-37 | Added — the `<delegate>` approval subject rests on a premise ADR-0017 falsified, so `always` approvals can never persist on the only spawn path. Fail-closed; the real cost is the prompt fatigue that gets gating switched off (R-25's shape) | ADR-0018 scoping |
 | 2026-08-13 | R-35 | **Audit half closed** by ADR-0018 — every definition spawn records a `definitionDigest` (name, source, sha256 of the body). What remains is inherent: the digest identifies text without preserving it, and no capability model judges what a body says. The **task is never recorded**, by decision | ADR-0018 |
+| 2026-08-14 | R-53…R-58 | **Second red-team pass**, over ADR-0020–0023 (`architecture-critic` + `product-strategist`). Six entries, all fixed the same session. R-53 is the one that shipped: every freshly-approved capability crossed to the child **unpinned**, so ADR-0022 was false on exactly the approvals it was written for — hidden by sort order. R-54 broke "governance is opt-in". Both confirmed by execution before being written. The pass also cleared the `republishable` laundering fix, `parseInherited`/`verifyInherited`, ADR-0021's deletion, and R-46's derived scalar as sound | red-team pass 2 |
 | 2026-08-14 | R-46, R-47, R-51 | **Closed (R-46, R-51) and half-closed (R-47)** — the queued code work from the red-team pass, none of it needing a decision. The ledger no longer claims a human was asked about a capability satisfied from the store; `/grants ledger` reads `definitionDigest` for the first time, so ADR-0018's two advertised questions finally have a command; and an `agent:` id in `PI_GRANTS_GATED` says out loud that it gates nothing. Enforcing that last one is left as a decision | queued work |
 | 2026-08-14 | R-41, R-44, R-45, R-52 | **All four closed by decision**, as ADR-0020 (one approval file per project), ADR-0021 (the task is never stored), ADR-0022 (an inherited approval names its instructions) and ADR-0023 (`agent:*`). Each was presented to the user with a worked failure scenario and the options weighed; each ADR records the rejected option and what it would have bought. Two are breaking: the store layout and the propagation format | red-team follow-up |
 | 2026-08-14 | R-49 | Narrowed, not closed — ADR-0020 reduces the unlocked read-modify-write race from "any two projects on the machine" to "two sessions in the same directory". The mitigation is unchanged and still unbuilt: the lock the ledger already has | ADR-0020 |

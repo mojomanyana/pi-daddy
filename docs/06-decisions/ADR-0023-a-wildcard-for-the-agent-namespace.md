@@ -81,7 +81,20 @@ main legitimate use.
 **Negative.** An operator writing `agent:*,tool:bash` grants a shell to any `SKILL.md` that appears in either
 skill root, including one installed by another tool. That is the weakening Option 2 warned about, it is
 recorded here rather than discovered later, and it argues for documenting `agent:*` as appropriate for narrow
-tool grants and inappropriate beside `bash`.
+tool grants and inappropriate beside `bash`. **Since 2026-08-14 that combination is detected and warned about
+at session start**, because a hazard a document declares and nothing observes is R-47's shape.
+
+**Negative, and load-bearing: this decision shipped without its exception.** The moment an operator writes
+`agent:*`, the only route back to per-definition control is `PI_GRANTS_GATED=agent:<name>` — which R-47
+records as a **silent no-op**, given a warning the same day and no enforcement. So the menu is *enumerate
+every definition by hand* or *authorise all of them with no carve-out*. This ADR removed one cliff and left
+the operator on the next one, and R-47's enforcement decision is therefore no longer an independent item:
+it is what gives `agent:*` its missing "except".
+
+**A premise of ADR-0017 that does not survive here.** That ADR reasons about *an operator-authored file*.
+Definitions are discovered from `~/.pi/agent/skills/` as well as the project, and the format is read by 16+
+tools — so `agent:*` authorises bodies installed by other software. Clipping to the tool grant bounds what
+such a child can *do*; it does not bound what it says back into the parent's context.
 
 **Neutral.** `skill:*` and `ext:*` are **not** added. No demand, and the namespaces differ: skills are
 already enumerable from the catalog, and `ext:` ids name third-party tools where enumeration is the point.

@@ -22,8 +22,8 @@ import { readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { loadDefinitions, type SkillDefinition } from "./definitions.ts";
-import { PI_BUILTIN_TOOLS } from "./pi-tools.ts";
-import type { Capability } from "./resolve.ts";
+import { PI_BUILTIN_TOOLS, WILDCARD } from "./pi-tools.ts";
+import { AGENT_WILDCARD, type Capability } from "./resolve.ts";
 
 export type CapabilityKind = "builtin" | "extension" | "skill" | "agentType";
 
@@ -159,7 +159,13 @@ export async function buildCatalog(input: {
  * stale grant referring to an uninstalled package. Silently treating unknown as denied hides that.
  */
 export function unknownCapabilities(requested: Capability[], catalog: Catalog): Capability[] {
-  return requested.filter((c) => !catalog.has(c)).sort();
+  // Wildcards are GRAMMAR, not entries. Nothing enumerates them into the catalog — `definitionEntries`
+  // emits `agent:<name>` per discovered definition and `PI_BUILTIN_TOOLS` contains no `*` — so this check
+  // reported `agent:*` as *"not present in this session's catalog (typo, or an uninstalled package?)"* and
+  // refused it BEFORE `resolve` could apply ADR-0023's rule. That made the ADR's "a parent holding
+  // `agent:*` may hand down `agent:*`" false, and made a definition declaring `allowed-tools: agent:*`
+  // unspawnable from any grant. The wildcard is live only at the root without this.
+  return requested.filter((c) => c !== WILDCARD && c !== AGENT_WILDCARD && !catalog.has(c)).sort();
 }
 
 /**

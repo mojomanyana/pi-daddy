@@ -23,6 +23,10 @@ const inheritable = (over: Partial<InheritableApproval> = {}): InheritableApprov
   capability: "tool:write",
   subject: "docs-writer",
   scope: "session",
+  // ADR-0022, hardened after F1: a definition subject that carries no pin is not published at all, because
+  // `verifyInherited` honours an unpinned entry by decision — so an unpinned one for a subject that DOES
+  // name a file would be an approval exempt from the digest check.
+  bodySha256: "body-digest",
   ...over,
 });
 
@@ -57,7 +61,7 @@ test("an `once` approval is never inherited", () => {
 test("`session` and `always` approvals are inherited", () => {
   for (const scope of ["session", "always"] as const) {
     const out = inheritApprovals([inheritable({ scope })], ["tool:write"]);
-    assert.deepEqual(out, ["tool:write@docs-writer"], `scope ${scope}`);
+    assert.deepEqual(out, ["tool:write@docs-writer#body-digest"], `scope ${scope}`);
   }
 });
 
@@ -69,7 +73,7 @@ test("an approval is still clamped to what the child actually holds", () => {
 // ── the subject must survive the boundary ────────────────────────────────────────────────────────
 
 test("an inherited approval carries its subject", () => {
-  assert.deepEqual(inheritApprovals([inheritable()], ["tool:write"]), ["tool:write@docs-writer"]);
+  assert.deepEqual(inheritApprovals([inheritable()], ["tool:write"]), ["tool:write@docs-writer#body-digest"]);
 });
 
 test("an inherited approval does NOT satisfy a different subject", () => {
@@ -203,5 +207,54 @@ test("ADR-0022: a stale inherited approval is not laundered into a fresh one on 
     published,
     [],
     "an approval this session may not use must not be handed to its children with a fresh digest",
+  );
+});
+
+test("F1: a freshly-approved capability crosses to the child PINNED, and keeps its own scope", () => {
+  // The hot path, and the one the red-team pass ranked first. `planWithApprovals` re-plans with the
+  // just-approved capabilities, and that literal carried NO `bodySha256` and ONE scope for the whole set:
+  //
+  //   - unpinned: `verifyInherited` honours an entry with no digest by decision (`<delegate>` has no file,
+  //     a pre-0.11 parent sends none), so every fresh approval reached the child exempt from ADR-0022 —
+  //     the property was false on exactly the approvals it was written for.
+  //   - one scope: `outcome.scope` was a single variable overwritten by the last capability answered, so
+  //     approving A `once` and B `session` re-stamped A as `session` and handed a subtree an approval a
+  //     human gave for one spawn. ADR-0014's A-S1, reopened by a mixed answer.
+  //
+  // Both halves are asserted here on the published string, which is what the child actually receives.
+  const published = inheritApprovals(
+    [
+      { capability: "tool:bash", subject: "deploy", scope: "once", bodySha256: "digest-A" },
+      { capability: "tool:write", subject: "deploy", scope: "session", bodySha256: "digest-A" },
+    ],
+    ["tool:bash", "tool:write"],
+  );
+
+  assert.deepEqual(published, ["tool:write@deploy#digest-A"], "`once` stops at the boundary; `session` crosses pinned");
+
+  // And the pin is load-bearing on the way in: the same string against a rewritten body grants nothing.
+  const againstRewritten = verifyInherited(parseInherited(published.join(",")), () => ({
+    ceiling: ["tool:write"],
+    bodySha256: "digest-B",
+  }));
+  assert.deepEqual([...againstRewritten], [], "a fresh approval is not exempt from the digest check");
+});
+
+test("F1: an unpinned entry cannot ride in beside a pinned one for the same key", () => {
+  // Before the fix both spellings were published — `tool:write@deploy` from the freshly-approved literal
+  // and `tool:write@deploy#A` from `republishable` — and only lexicographic sort order decided which one
+  // `parseInherited` kept. A security pin defended by collation is not defended, so this asserts the
+  // unpinned spelling is not emitted at all rather than asserting which one wins.
+  const published = inheritApprovals(
+    [
+      { capability: "tool:write", subject: "deploy", scope: "session", bodySha256: "digest-A" },
+      { capability: "tool:write", subject: "deploy", scope: "session" },
+    ],
+    ["tool:write"],
+  );
+
+  assert.ok(
+    !published.includes("tool:write@deploy"),
+    `an unpinned twin must not be published for a definition subject; got ${JSON.stringify(published)}`,
   );
 });

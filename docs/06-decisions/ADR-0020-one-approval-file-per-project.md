@@ -42,8 +42,11 @@ That is a real job, and it is the argument that kept the layer alive in ADR-0019
 
 ### Option 1 — one file per project *(chosen)*
 
-`~/.pi/agent/grants-approvals/<basename>-<hash>.json`, where the hash is the first 6 hex of
-`sha256(cwd)`. One document per governed directory.
+`~/.pi/agent/grants-approvals/<basename>-<hash>.json`, where the hash is the first 16 hex of
+`sha256(cwd)`. One document per governed directory. (It shipped at 6 hex — 24 bits — and was widened the
+same day as R-57: this option deletes the `foreign-cwd` carry-through on the premise that one file means
+one directory, so inside a collision R-41 returns with its mitigation gone. The premise has to be worth
+what was removed to rely on it.)
 
 **Buys:** the collision becomes inexpressible rather than handled — there is no shared keyspace to collide
 in. `revoke --all` cannot reach another project because it cannot name another project's file. A corrupt or
@@ -94,7 +97,7 @@ with nine defects. The old file is ignored and named in a warning; re-approving 
 ## Decision
 
 **Persisted approvals move to one file per governed directory**, at
-`$PI_CODING_AGENT_DIR/grants-approvals/<basename>-<sha256(cwd)[0..6]>.json`. The single shared
+`$PI_CODING_AGENT_DIR/grants-approvals/<basename>-<first 16 hex of sha256(cwd)>.json`. The single shared
 `grants-approvals.json` is **ignored, not migrated**, and reported once at session start so an operator
 whose approvals stopped applying learns why. Each entry keeps its `cwd` field and `entryVerdict` keeps
 checking it — a file copied between machines or checkouts still authorises nothing (R-27). `revokeAll` and
@@ -125,6 +128,23 @@ No garbage collection of files for directories that no longer exist. No `skill:`
 An operator with enough governed checkouts that the directory becomes unmanageable, or any concrete need to
 answer *"what has been approved anywhere on this machine?"* — both of which argue for Option 2's single
 document, and neither of which is hypothetical if this package is ever used across a monorepo's worth of
-subdirectories. Also: **any further defect traced to this layer.** Five of the nine so far were caused by
-the shared file; if the count keeps climbing after this change, Option 3 is the answer and R-25's fatigue
-argument needs a different remedy.
+subdirectories. Note that a session started in a **subdirectory** is a different project to this code, so it
+gets its own file and its own re-prompt; that was already true before per-project files, but it is
+fragmentation as well as litter.
+
+**Toward Option 3 (delete persistence), amended 2026-08-14 after a reviewer called the original trigger
+unfalsifiable — correctly.** It said *"any further defect traced to this layer"*, which every defect since
+would have tripped and none did, so it decided nothing. Defect count is the wrong axis: R-37, R-38, R-40 and
+R-44 were all *"nobody had ever exercised this"*, and it has now been exercised end to end. The replacement,
+either half of which is sufficient:
+
+- **One** instance of `entryVerdict` honouring an approval it should have voided. That is the single
+  property the layer was kept for, so one is enough.
+- **Two** defects at M×M or above, in `approval-store.ts` or `extensions/approvals.ts`, that reach a
+  **released** version — as opposed to being caught in the session that introduced them, which is what has
+  happened to every one so far.
+
+And the benefit side, which this ADR asserts rather than measures: it keeps the layer on R-25's fatigue
+argument with no number behind it. The ledger now records `approvalSources` per capability (0.11.1), so
+counting `persisted` against `prompt` over a few weeks of real use settles Option 3 with evidence instead of
+argument, and needs no new machinery.

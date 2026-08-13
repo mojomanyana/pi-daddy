@@ -66,7 +66,14 @@ export interface GrantRecord {
    * the truth. Two fields, one of which is a safe summary of the other — not two competing answers.
    */
   approvalSources?: Record<Capability, ApprovalSource>;
-  /** Present only when the source was a live prompt. */
+  /**
+   * How far each prompted capability's yes reaches (F5). Same shape and same reason as `approvalSources`:
+   * `approvalScope` below is a **derived summary**, emitted only when every prompted capability shares one
+   * scope. This field decides propagation — `inheritApprovals` drops `once` — so a scalar that described
+   * one capability while claiming to describe the set was not merely a reporting defect.
+   */
+  approvalScopes?: Record<Capability, ApprovalScope>;
+  /** Present only when the source was a live prompt, and only when one scope covers the whole set. */
   approvalScope?: ApprovalScope;
   /** A human was asked and declined. Distinct from `denied`, which is an escalation attempt. */
   humanDenied?: boolean;
@@ -105,7 +112,7 @@ export function buildRecord(args: {
   reason?: string;
   approved?: Capability[];
   approvalSources?: Record<Capability, ApprovalSource>;
-  approvalScope?: ApprovalScope;
+  approvalScopes?: Record<Capability, ApprovalScope>;
   humanDenied?: boolean;
   definitionDigest?: DefinitionDigest;
   now: Date;
@@ -114,6 +121,8 @@ export function buildRecord(args: {
   // than accepting it, so a call site cannot supply one that disagrees with the map beside it.
   const sources = args.approvalSources ?? {};
   const distinct = [...new Set(Object.values(sources))];
+  const scopes = args.approvalScopes ?? {};
+  const distinctScopes = [...new Set(Object.values(scopes))];
   return {
     ts: args.now.toISOString(),
     parentId: args.parentId,
@@ -131,7 +140,8 @@ export function buildRecord(args: {
     ...(args.approved && args.approved.length > 0 ? { approved: args.approved } : {}),
     ...(distinct.length === 1 ? { approvalSource: distinct[0] } : {}),
     ...(Object.keys(sources).length > 0 ? { approvalSources: sources } : {}),
-    ...(args.approvalScope ? { approvalScope: args.approvalScope } : {}),
+    ...(distinctScopes.length === 1 ? { approvalScope: distinctScopes[0] } : {}),
+    ...(Object.keys(scopes).length > 0 ? { approvalScopes: scopes } : {}),
     ...(args.humanDenied ? { humanDenied: true } : {}),
     ...(args.definitionDigest ? { definitionDigest: args.definitionDigest } : {}),
   };

@@ -8,7 +8,7 @@ decisions; this file holds state and next actions. Newest entry on top.
 ## NEXT SESSION — read this, then pick one
 
 **State: green, working tree clean, reviewed, and the review's decisions shipped.** `pi-agent-grants`
-**0.11.1**, `pi-token-audit` **0.1.0**. **283 unit + 19 integration tests** (+**4** with a real model),
+**0.11.2**, `pi-token-audit` **0.1.0**. **287 unit + 19 integration tests** (+**4** with a real model),
 typecheck clean, smoke clean. **Twenty-three** ADRs decided.
 
 **Read the 2026-08-14 entry below before touching the approval layer.** Four ADRs landed together
@@ -80,6 +80,82 @@ That convention is why every reversal here was survivable, and there have been f
 
 ---
 
+
+## 2026-08-14 (last) — the second red-team pass, over the four ADRs written that morning — 0.11.2
+
+**Six more entries (R-53…R-58), all fixed the same session, and one of them shipped.** `architecture-critic`
+and `product-strategist` reviewed ADR-0020–0023 and the R-38/R-46/R-51 work. Everything acted on was
+reproduced by execution first.
+
+**Found before dispatching, by re-reading my own change: the republish laundering hole.** `verifyInherited`
+stopped a session *using* a stale-pinned approval, but `republishable` mapped over the RAW inherited keys and
+re-stamped each with THIS session's digest — so a middle session that could not use an approval handed its
+child a valid-looking one. ADR-0022's hole, inside ADR-0022's fix. That is the **second** time in two days a
+fix has contained a smaller copy of the bug it fixed, and both were caught by asking *"where else does this
+shape appear?"* rather than by tests.
+
+**R-53, the one that shipped, and the pass ranked it first.** `planWithApprovals` re-plans with the
+just-approved capabilities, and that literal carried **no digest** and **one scope for the whole set**:
+
+- Unpinned: `verifyInherited` honours an entry with no pin *by decision* (`<delegate>` names no file; a
+  pre-0.11 parent sends none), so every freshly-approved capability crossed to the child **exempt from
+  ADR-0022** — false on exactly the approvals the ADR was written for. What hid it was **sort order**: both
+  spellings were published and `parseInherited`'s last-write-wins let the pinned one survive. A security pin
+  defended by lexicographic collation is not defended.
+- One scope: `outcome.scope` was a single variable overwritten by the last capability answered, so approving
+  A *once* and B *session* re-stamped A as `session` — ADR-0014's A-S1 reopened by a mixed answer.
+
+The fix worth keeping is the third part. Attaching a digest at both call sites would have worked and would
+have been the same bet that just lost, so **`inheritApprovals` now refuses to publish an unpinned entry for
+any subject but `<delegate>`**. A caller that cannot produce a digest publishes nothing. Eight existing tests
+failed on that change — their fixtures predated the pin — and each was updated rather than the rule relaxed.
+
+**R-54 broke the one rule this package must never break by accident: governance is opt-in.** `resolve()` had
+no `tool:*` coverage rule. `docs/SPEC.md` has always claimed the wildcard "satisfies any capability" and
+`maySpawnDefinition` has always honoured it for definition ids — `resolve` disagreed with both. So with **no
+`PI_GRANTS_GRANT` at all**, spawning a definition whose `allowed-tools` names `agent:worker` or
+`skill:review` was refused as *"capability escalation blocked"* and recorded as an escalation attempt.
+R-28's shape again: two spellings of one rule, and the enforcing one was wrong. ADR-0023 edited that exact
+function and restated the false claim rather than noticing it.
+
+**R-55: `agent:*` could not be handed down at all.** `unknownCapabilities` runs before `resolve` and the
+catalog holds no wildcards, so ADR-0023's Decision was live only at the root. Wildcards are grammar, not
+entries.
+
+**R-56: `/grants ledger` manufactured an incident.** The R-51 listing shipped that morning compared digests
+by **name only**, while `verifyLedger` had carried `source` all along — so two projects' same-named `deploy`
+definitions read as one definition that had CHANGED, complete with the NOTE the code calls "the finding".
+A diagnostic inventing an instruction change, in the one command ADR-0018 points an investigator at.
+
+**R-57: the per-project filename was 24 bits** — and ADR-0020 deleted the `foreign-cwd` carry-through on the
+premise that one file means one directory, so inside a collision R-41 returns with its mitigation gone.
+Widened to 64.
+
+**R-58: four documents described behaviour the code no longer had**, all introduced by the preceding two
+days. The one this project's rules single out: `src/approval-store.ts` still said *"One file for all
+projects"*, contradicted eight lines later in the same comment block. A register entry may describe what was
+believed on its date; **a source comment describing present behaviour may not.** The README's opening
+paragraph had also quietly re-acquired the unqualified claim a reviewer forced out of SPEC the day before.
+
+**Two amendments to decisions, both from the strategist and both fair.** ADR-0020's revisit trigger said
+*"any further defect traced to this layer"* — unfalsifiable, since every defect since would have tripped it
+and none did. It is now two concrete conditions, either sufficient: **one** case of `entryVerdict` honouring
+an approval it should have voided, or **two** M×M defects in that layer reaching a *released* version rather
+than being caught in the session that introduced them. And ADR-0023 now records that it **shipped without
+its exception**: `agent:*` makes `PI_GRANTS_GATED=agent:<name>` the only route back to per-definition
+control, and R-47 is that gate being a silent no-op — so R-47's enforcement decision is no longer an
+independent item.
+
+**Cleared as sound**, which is worth as much: the republish fix, `parseInherited`/`verifyInherited`,
+ADR-0021's deletion (and `sanitise`, which now has the test rule 7 requires), R-46's derived scalar, the
+per-project layout, and — checked against pi's own plumbing — `cwd` canonicality, so trailing slashes and
+symlinks are not reachable through the CLI.
+
+**Verified: 287 unit, 19 integration, 23 with `PI_GRANTS_IT_MODEL=1`, typecheck clean, smoke clean.**
+Mutation-checked: stubbing the digest comparison fails the R-51 test alone; replacing `sanitise` with a
+plain rewrite fails the ADR-0021 test alone.
+
+---
 
 ## 2026-08-14 (later) — the queued work: the digest becomes readable, and the ledger stops over-claiming — 0.11.1
 

@@ -234,7 +234,7 @@ test("the ledger records what was approved and where the yes came from", () => {
     blocked: false,
     approved: ["tool:write"],
     approvalSources: { "tool:write": "prompt" },
-    approvalScope: "once",
+    approvalScopes: { "tool:write": "once" },
     now: new Date("2026-08-09T00:00:00.000Z"),
   });
   assert.deepEqual(record.approved, ["tool:write"]);
@@ -266,12 +266,16 @@ test("R-46: a mixed-provenance approval set does not claim a human was asked abo
     blocked: false,
     approved: ["tool:bash", "tool:write"],
     approvalSources: { "tool:bash": "persisted", "tool:write": "prompt" },
-    approvalScope: "once",
+    approvalScopes: { "tool:bash": "once", "tool:write": "session" },
     now: new Date("2026-08-09T00:00:00.000Z"),
   });
 
   assert.equal(record.approvalSource, undefined, "no single source is true of the set, so none is claimed");
   assert.deepEqual(record.approvalSources, { "tool:bash": "persisted", "tool:write": "prompt" });
+  // F5: the same defect one field over, and this one is load-bearing — `inheritApprovals` drops `once`,
+  // so a scalar describing one capability while claiming to describe the set decides propagation.
+  assert.equal(record.approvalScope, undefined, "two scopes, so no single one is claimed");
+  assert.deepEqual(record.approvalScopes, { "tool:bash": "once", "tool:write": "session" });
 });
 
 test("a human saying no is recorded distinctly from an escalation attempt", () => {

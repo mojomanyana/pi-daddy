@@ -134,8 +134,16 @@ export function inheritApprovals(approved: InheritableApproval[], grant: Capabil
     ...new Set(
       approved
         .filter((a) => a.scope !== "once" && a.capability !== WILDCARD && held.has(a.capability))
-        // ADR-0022: the digest rides along, so the child can check the yes against the instructions IT
-        // loaded rather than trusting that its parent read the same file. See `parseInherited`.
+        // A definition subject MUST carry a pin to cross a boundary (ADR-0022, hardened after F1).
+        //
+        // `verifyInherited` honours an unpinned entry by decision — `<delegate>` names no file and a
+        // pre-0.11 parent sends none — so an unpinned entry for a subject that *does* name a file is an
+        // approval exempt from the digest check. Enforcing it at the point of PUBLICATION rather than
+        // trusting each caller to attach a digest is what makes it structural: two call sites build these
+        // entries, one of them forgot, and every fresh approval crossed unpinned as a result. A caller that
+        // cannot produce a digest (the definition is not on disk here) now publishes nothing, which is the
+        // fail-closed direction.
+        .filter((a) => a.subject === DELEGATE_SUBJECT || Boolean(a.bodySha256))
         .map((a) => approvalKey(a.capability, a.subject) + (a.bodySha256 ? `#${a.bodySha256}` : "")),
     ),
   ].sort();

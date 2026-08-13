@@ -1,8 +1,12 @@
 # pi-agent-grants
 
 **Capability governance for pi sub-agents.** A grant can only ever *shrink* as it passes down a delegation
-tree, so a sub-agent can never confer more than it holds — enforced by **pi's own `--tools` allowlist**, with
-an append-only ledger of what was granted and what was refused.
+tree, so a sub-agent can never hold more of the **tool surface** than its parent — enforced by **pi's own
+`--tools` allowlist**, with an append-only ledger of what was granted and what was refused whenever one is
+configured.
+
+Both qualifiers are load-bearing and are not buried: a child granted `bash` can escape governance entirely
+(ADR-0012, measured), and the ledger is opt-in. See *What this governs, and what it does not*.
 
 > ## 0.11.0 is a breaking change: per-project approvals, and an inherited yes names its instructions
 >
@@ -300,8 +304,8 @@ silently showing fewer rows:
 | `foreign-cwd` | the entry belongs to another directory. Nobody in *this* checkout was asked |
 | `type-missing` | the definition was deleted or renamed, and a new file could later claim the name |
 
-**The store lives outside the governed workspace**, at `$PI_CODING_AGENT_DIR/grants-approvals.json`
-(default `~/.pi/agent/`). It used to sit at `<cwd>/.pi/grants-approvals.json`, which was self-defeating in
+**The store lives outside the governed workspace**, one file per governed directory under
+`$PI_CODING_AGENT_DIR/grants-approvals/` (default `~/.pi/agent/`). It used to sit at `<cwd>/.pi/grants-approvals.json`, which was self-defeating in
 this package's own recommended configuration: `PI_GRANTS_GATED=tool:write` means *"may use write, may not
 pass it down without a human"* — and **a session that may use `write` can write the approvals file.** A
 reviewer forged an entry end to end, including a matching definition so the ceiling compared equal, and got
@@ -344,12 +348,10 @@ cannot make the next legitimate write destroy every other entry.
 /grants revoke --all
 ```
 
-**One consequence of `cwd`-matching plus lazy pruning, worth knowing before it surprises you.** Entries are
-validated on read but only pruned on write, and a write rewrites the file with the valid set alone. So where
-the approvals file arrived from somewhere else, the first `always` approval a developer gives silently
-deletes every other developer's `foreign-cwd` entry. Harmless — those entries authorised nothing in this
-directory in the first place, and their owners' own checkouts are untouched — but the file does shrink
-without anyone asking it to.
+**Pruning is lazy and scoped to one project.** Entries are validated on read and removed only on write, so
+an expired or type-changed entry lingers in the file until the next approval or revoke. It cannot reach
+another project: since ADR-0020 each governed directory has its own file, which is what makes
+`/grants revoke --all` mean *this project* rather than *this machine*.
 
 ### Verified live, end to end
 
@@ -428,7 +430,7 @@ everything below it.
 | `PI_GRANTS_MAX_DEPTH` | `2` | Child-depth bound. `0` disables spawning. |
 | `PI_GRANTS_DEPTH` | `0` | This session's own depth; set by the parent, not by hand. |
 | `PI_GRANTS_GATED` | **`tool:bash`** in a governed session | Capabilities needing human approval. Set to `""` to gate nothing. Gating is closed under subsumption, so this also covers `write`/`edit`/`read`/`grep`/`find`/`ls` (ADR-0012). |
-| `PI_GRANTS_APPROVED` | unset | Inherited `capability@subject` pairs; set by the parent, clamped to the child's own grant on arrival. |
+| `PI_GRANTS_APPROVED` | unset | Inherited `capability@subject#sha256` entries; set by the parent, clamped to the child's own grant, and honoured only against the definition body the child itself loaded (ADR-0022). |
 | `PI_GRANTS_APPROVAL_TIMEOUT` | `120` (seconds) | How long a dialog waits. `0` or an unreadable value means **no timeout**: waiting forever denies nothing, so it is the safe reading of a value we do not understand. |
 | `PI_GRANTS_LEDGER` | unset → not recording | **Setting this makes the ledger load-bearing** — see below. |
 | `PI_GRANTS_CHILD_TIMEOUT` | `600` (seconds) | Wall-clock limit for a child. Inherited by descendants — an operator preference, deliberately *not* attenuating state. |
@@ -599,7 +601,7 @@ every in-repo test passed. `npm run test:smoke` packs a tarball, installs it int
 ## Testing
 
 ```bash
-npm test                   # 283 unit tests. Fast, pure, no pi, no network.
+npm test                   # 287 unit tests. Fast, pure, no pi, no network.
 npm run typecheck          # src + extensions + tests + integration tests
 npm run test:integration   # 19 tests against a REAL pi process. ~26s, no model tokens.
 npm run test:smoke         # pack, install into a scratch project, import and use it

@@ -93,20 +93,30 @@ handler: async (args: string, ctx: any) => {
       if (report.definitions.length > 0) {
         lines.push(`  instructions ${report.definitions.length} distinct version(s) across the recorded spawns`);
         for (const d of report.definitions) {
+          const here = definitions.get(d.name);
           const current = snapshotOf(d.name);
+          // F4: compare the SOURCE too. A ledger path exported once in a shell profile is shared by every
+          // project — nothing scopes `PI_GRANTS_LEDGER` per project — so two different `deploy` definitions
+          // in two checkouts were reported as one definition that had CHANGED, and the NOTE below called it
+          // a finding. `verifyLedger` has carried `source` all along; the listing simply never read it.
           const state =
             current === null
               ? "no such definition here"
-              : current.bodySha256 === d.sha256
-                ? "current"
-                : "CHANGED since";
+              : here && here.source !== d.source
+                ? "another project's definition of the same name"
+                : current.bodySha256 === d.sha256
+                  ? "current"
+                  : "CHANGED since";
           lines.push(`    ${d.name}  ${d.sha256.slice(0, 12)}  ${d.spawns} spawn(s)  — ${state}`);
         }
         // Two rows for one name is the finding, not a formatting quirk: the same definition ran under two
         // different bodies inside this ledger.
-        const names = report.definitions.map((d) => d.name);
-        for (const name of [...new Set(names)]) {
-          if (names.filter((n) => n === name).length > 1) {
+        // Only versions of the SAME file count as "ran under more than one version" — grouping by name
+        // alone turned two projects' same-named definitions into a fabricated instruction change.
+        const names = report.definitions.map((d) => `${d.name}\u0000${d.source}`);
+        for (const key of [...new Set(names)]) {
+          const name = key.slice(0, key.indexOf("\u0000"));
+          if (names.filter((n) => n === key).length > 1) {
             lines.push(`    NOTE ${name} ran under more than one version of its instructions in this ledger`);
           }
         }

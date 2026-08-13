@@ -54,9 +54,10 @@ export type SubjectLookup = (subject: string) => SubjectSnapshot | null;
  * compared equal — no dialog, and a ledger line reading `approvalSource: "persisted"`, indistinguishable
  * from a real human approval.
  *
- * One file for all projects; entries are scoped by their own `cwd` field, which `entryVerdict` already
- * checks (that check exists for R-27 and now does double duty). A narrowed child does not hold write
- * access to the user's home directory, so it cannot forge an entry here.
+ * A narrowed child does not hold write access to the user's home directory, so it cannot forge an entry
+ * here. Each entry still carries its own `cwd` and `entryVerdict` still checks it — that check exists for
+ * R-27 and refuses an entry copied between checkouts or machines, which per-project files do not make
+ * redundant.
  *
  * **This does not defend against a child holding `bash`** — see ADR-0012, which accepts that such a
  * child can escape governance entirely. The point of this change is to close the *self-defeating* case,
@@ -82,7 +83,12 @@ export type SubjectLookup = (subject: string) => SubjectSnapshot | null;
  */
 export function approvalsPath(cwd: string): string {
   const slug = (basename(cwd) || "root").replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 40);
-  const hash = createHash("sha256").update(cwd, "utf8").digest("hex").slice(0, 6);
+  // 16 hex = 64 bits, not the 6 this shipped with. ADR-0020 deleted the `foreign-cwd` carry-through on the
+  // premise that one file means one directory — so inside a hash collision R-41 returns *with its
+  // mitigation removed*: the second project's save deletes the first's entries. At 24 bits a deliberate
+  // collision costs about 16.7M hashes, well under a second, and an accidental one arrives at a few
+  // thousand governed directories. The premise has to be worth what was removed to rely on it.
+  const hash = createHash("sha256").update(cwd, "utf8").digest("hex").slice(0, 16);
   return join(agentDir(), "grants-approvals", `${slug}-${hash}.json`);
 }
 
