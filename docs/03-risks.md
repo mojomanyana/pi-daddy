@@ -348,6 +348,16 @@ place `extensionTools` is spelled, so the omission is *unspellable* rather than 
 `test/interceptor-wiring.test.ts`, which loads the real extension against a fake `pi` and drives the
 `tool_call` hook directly — the first unit coverage that file has had. Verified by reintroducing the defect:
 two of its four tests fail.
+**Note 2026-08-13 (where the mitigation lives now, the mitigation itself unchanged):** ADR-0016 deleted the
+interceptor, so `decideSpawn`, `decisionContext()` and `test/interceptor-wiring.test.ts` are gone with it;
+the surviving builder is `delegationContext()`, and it moved to `extensions/session.ts` when
+`extensions/grants.ts` was split (866 → 202 lines). The property is the one that mattered and it still
+holds: **one builder, used by both the enforcing path and `/grants`, so a diagnostic that disagrees with
+enforcement is not expressible.** The `extensionCapabilities` comment cited above went with the port — the
+fact it recorded is in `CLAUDE.md` (`pi.getAllTools()` is available immediately; the first-provider-request
+tool array is not). `test/delegate-all-wiring.test.ts` is now the wiring coverage, and
+`test/file-size.test.ts` makes "the one file with no unit coverage grew to 866 lines" a test failure rather
+than a thing three reviewers have to notice again.
 **Trigger:** any second construction of a `DecisionContext` literal outside the builder; any refusal whose
 reason names `tool:*` for a type whose file declares an explicit `tools:` list; `isEscalationAttempt` firing
 on traffic an operator considers routine.

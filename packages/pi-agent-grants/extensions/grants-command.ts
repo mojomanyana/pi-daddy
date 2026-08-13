@@ -33,7 +33,9 @@ export interface GrantsCommandContext {
   catalog: Catalog;
   definitions: Map<string, SkillDefinition>;
   sessionApprovals: Set<string>;
-  inheritedApprovals: Map<string, InheritableApproval>;
+  /** Keys, not entries — `parseInherited` returns a Set. Declared as a Map until the split, which was
+   *  harmless only because the handler takes `ctx: any` and reads nothing but `.size`. */
+  inheritedApprovals: Set<string>;
   /** Current ceiling for a definition, for the store's confused-deputy check. */
   ceilingOf: (subject: string) => Capability[] | null;
   /** The shared builder, so the preview cannot disagree with what a real spawn would do (R-28). */

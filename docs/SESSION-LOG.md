@@ -7,10 +7,10 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ## NEXT SESSION — read this, then pick one
 
-**State: committed, green, nothing half-finished.** `main` is clean at `acce822`; the session's work landed
-as two commits — the 0.7.0 re-architecture and the documentation consolidation. `pi-agent-grants` **0.7.0**,
-`pi-token-audit` **0.1.0**. **250 unit + 9 integration tests**, typecheck clean, smoke clean (packs,
-installs, exercises every subpath). Sixteen ADRs decided; ADR-0016 fully implemented.
+**State: green, nothing half-finished.** `pi-agent-grants` **0.7.0**, `pi-token-audit` **0.1.0**. **251 unit
++ 9 integration tests**, typecheck clean, smoke clean (packs, installs, exercises every subpath). Sixteen
+ADRs decided; ADR-0016 fully implemented. `extensions/grants.ts` is **202 lines** — the split below is done,
+and a test now enforces the ceiling.
 
 ```bash
 cd packages/pi-agent-grants && npm test && npm run typecheck && npm run test:integration && npm run test:smoke
@@ -32,27 +32,10 @@ known gap. Do not re-derive it from the ADRs.
 | 7 | **Background delegation** is deliberately not built. Fan-out carried the value; background carries the lifecycle holes. | ADR-0015. Approvals resolved after a tool call returns would use a torn-down `ctx.ui`, so gating would depend on queue position — that must be answered first. |
 | 8 | **`pi-token-audit` has no tests**, and its headline "tool-definition share" is a character ratio, not a token share. | Falsified 2026-08-10. |
 
-### The one piece of code work already scoped
+### The scoped code work is DONE (2026-08-13) — see the entry below
 
-**Finish splitting `extensions/grants.ts` (866 lines).** `/grants` was extracted to `grants-command.ts`
-(155 lines) taking its dependencies as an explicit context object; the rest was **deliberately left**
-because the approval flow and `runOneDelegation` are genuinely entangled with session state, and starting
-that at the end of a long session is how the next R-28 gets written.
-
-The plan, so it need not be re-derived:
-
-1. `createGrantsSession(pi)` returns the session state (`ownGrant`, `depth`, `gated`, `definitions`,
-   `catalog`, `ownSpawnId`, `fanoutBudget`, the approval sets) as one object.
-2. `extensions/approvals.ts` takes it and owns `obtainApprovals` / `republishable` / `ceilingOf`.
-3. `extensions/delegation.ts` takes it and owns `runOneDelegation` plus both tool registrations.
-4. `grants.ts` keeps env parsing, the hooks and the tripwire — target ~300 lines.
-
-Behaviour-preserving, so the existing 250 unit + 9 integration tests are the check. Optionally add a test
-that fails if any file exceeds ~400 lines, making the constraint enforced rather than remembered.
-
-**Why this file specifically:** every wiring bug in this package has lived in it — the G7 `NaN` bound, the
-discarded `isError`, the unconditionally-registered `delegate` (S-5), and R-28's omitted argument. `src/` is
-pure and well covered; the wiring is where the defects are.
+`extensions/grants.ts` is 202 lines. There is no queued code work; pick from the table above, and note that
+items 1 and 7 want an ADR before any code.
 
 ### Things that look like work and are not
 
@@ -70,6 +53,53 @@ That convention is why every reversal here was survivable, and there have been f
 
 ---
 
+
+## 2026-08-13 — `extensions/grants.ts` split, and the ceiling made enforceable
+
+**Behaviour-preserving by construction, and checked that way.** Baseline recorded first (250 unit + 9
+integration, typecheck clean), then the file was cut apart and the same suites rerun. Nothing in `src/`
+changed, `docs/SPEC.md` needed no edit, and no ADR was required: the product claims exactly what it
+claimed yesterday.
+
+| file | lines | holds |
+| :--- | ---: | :--- |
+| `extensions/grants.ts` | 202 | the pi surface only — three hooks, the tripwire, four registrations |
+| `extensions/delegation.ts` | 381 | `runOneDelegation` and both tool registrations |
+| `extensions/session.ts` | 228 | `createGrantsSession()`: env parsing, mutable state, `delegationContext`, `publishChildEnv` |
+| `extensions/approvals.ts` | 193 | `obtainApprovals`, `republishable`, `ceilingOf` |
+| `extensions/grants-command.ts` | 164 | `/grants`, unchanged |
+
+**Every module takes the session as an explicit argument.** That is the point, not the line count. All four
+wiring defects this package has had — the G7 `NaN` bound, the discarded `isError`, the unconditionally
+registered `delegate` (S-5), R-28's omitted argument — were defects of *scope*: a value that was whatever
+happened to be in the closure at one call site. Configuration on the session is `readonly`; the six fields
+that genuinely change (`ownGrant`, `observed`, `observedTools`, `definitions`, `catalog`, `catalogReady`,
+plus `cwd`) are read live **through the object**, because a copy of `ownGrant` taken at load time is a copy
+taken before the tool surface is observed.
+
+**Three things fell out of the split, all small, all deliberate.**
+
+1. **`extensionCapabilities` was dead and is deleted** — ~28 lines whose only consumer was the interceptor
+   ceiling ADR-0016 removed. It was still being maintained as if live. The fact its comment recorded is in
+   `CLAUDE.md`; a dated note on R-28 records where its builder lives now.
+2. **`GrantsCommandContext.inheritedApprovals` was typed `Map<string, InheritableApproval>`; it is a
+   `Set<string>`.** Harmless only because the handler takes `ctx: any` and reads nothing but `.size` —
+   i.e. it was caught by moving the value through a typed parameter, which is the argument for doing that.
+3. **`createGrantsSession` takes no `pi`** (the log's sketch said it would) — with `extensionCapabilities`
+   gone nothing in the session touches `pi`. `extensionPath` is passed *in*, because it must name the file
+   pi loads as the extension and only `grants.ts` can say that about itself.
+
+**`test/file-size.test.ts` (251st test) caps `src/` and `extensions/` at 400 lines.** Rule 7 satisfied: the
+production change that breaks it is folding any of these back together, and it was verified by lowering the
+bound to 200 and watching it fail with the offending files named. Tests are exempt — a long test file is
+many small independent cases, not the failure mode being prevented.
+
+**What it does not establish:** that the wiring is *correct*, only that it is unchanged. The 251 unit tests
+still touch `extensions/` at only one point (`delegate-all-wiring.test.ts`); `session.ts` and `approvals.ts`
+have no direct unit coverage, and the argument-list class of defect is now spread over three files instead
+of hidden in one. The integration suite against real pi remains the check that actually exercises them.
+
+---
 
 ## 2026-08-12 — a shipped enforcement defect, found by red-teaming a strategy question
 
