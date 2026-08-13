@@ -514,7 +514,7 @@ every in-repo test passed. `npm run test:smoke` packs a tarball, installs it int
 ## Testing
 
 ```bash
-npm test                   # 287 unit tests. Fast, pure, no pi, no network.
+npm test                   # 292 unit tests. Fast, pure, no pi, no network.
 npm run typecheck          # src + extensions + tests + integration tests
 npm run test:integration   # 19 tests against a REAL pi process. ~26s, no model tokens.
 npm run test:smoke         # pack, install into a scratch project, import and use it

@@ -30,7 +30,7 @@ permissible, able to refuse or allow but never to narrow. **This package is now 
 is an argument rather than a veto. Definitions are **Agent Skills (`SKILL.md`)** files whose `allowed-tools`
 becomes the grant; the pi-subagents ceiling port is deleted; the interceptor survives only as a tripwire.
 
-**Current state: `pi-agent-grants` 0.11.2, `pi-token-audit` 0.1.0.** Twenty-three ADRs decided. 287 unit +
+**Current state: `pi-agent-grants` 0.12.0 — the only package.** Twenty-five ADRs decided. 292 unit +
 19 integration tests (+4 more with a real model), typecheck and smoke clean.
 
 **What the product claims, precisely** — this wording is load-bearing and was narrowed by ADR-0012: it
@@ -47,7 +47,7 @@ can run `env -u PI_GRANTS_GRANT pi …` and get an ungoverned descendant (measur
 docs/SPEC.md              — WHAT THE PRODUCT IS, current state, no history. Read this second.
 docs/SESSION-LOG.md       — START HERE when resuming: state, verified facts, next actions. Newest on top.
 docs/03-risks.md          — live risk register. R-25 onward are current; R-01..R-24 serve the retired thesis
-docs/06-decisions/        — twenty-three ADRs. Reversals are kept and marked: 0004→superseded, 0005 park→
+docs/06-decisions/        — twenty-five ADRs. Reversals are kept and marked: 0004→superseded, 0005 park→
                             superseded, 0006 (magnitude claim falsified), 0007 THE REFRAME, 0008
                             attenuation + cardinality, 0009 pi-fabric (parked), 0010 approvals, 0011
                             universal capabilities, 0012 bash, 0013 pi-subagents (superseded by 0016),
@@ -68,11 +68,9 @@ docs/archive/             — SUPERSEDED, kept as evidence, never edited to matc
                             dead upstream proposal. See its README for why each stopped being current.
 packages/pi-agent-grants  — THE PRODUCT (0.7.0): SKILL.md definitions, resolver, ledger, delegate +
                             delegate_all, catalog, human approval, two executors (process | herdr pane)
-packages/pi-token-audit   — token/cost audit (0.1.0). G10 falsified its headline on 2026-08-10 and
-                            5c593fb FIXED it hours later: the token estimate is deleted and the report
-                            says "% of request CHARACTERS ... not a token measurement". This line claimed
-                            otherwise for four days and two reviewers repeated it (R-59). Still true:
-                            no tests, and it serves the thesis ADR-0007 retired
+                          (pi-token-audit was DELETED by ADR-0025 — one package to keep documents true
+                            about is the point. The G10 falsification stays in docs/probes/, which is
+                            where the value always was.)
 ```
 
 ## How To Work Here

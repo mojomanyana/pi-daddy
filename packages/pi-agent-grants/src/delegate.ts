@@ -17,46 +17,17 @@
 
 import { planSpawn } from "./spawn.ts";
 import { ceilingForDefinition, digestDefinition, type DefinitionDigest, type SkillDefinition } from "./definitions.ts";
-import { AGENT_WILDCARD, resolve, assertNarrowing, type Capability, type ResolveResult } from "./resolve.ts";
+import { resolve, assertNarrowing, type Capability, type ResolveResult } from "./resolve.ts";
+import { AGENT_WILDCARD } from "./resolve.ts";
+import { DELEGATE_CAPABILITY, agentCapability, maySpawnDefinition, normaliseCapability } from "./capabilities.ts";
+
+// Re-exported so the split stays internal: `delegate.ts` has been the import site for these since 0.6.0 and
+// four modules plus the test suite name it. Moving the definitions without moving the door would be churn
+// charged to every caller for a line count they did not cause.
+export { DELEGATE_CAPABILITY, agentCapability, maySpawnDefinition, normaliseCapability } from "./capabilities.ts";
 import { ENV_APPROVED, ENV_DEPTH, ENV_FANOUT, ENV_GATED, ENV_GRANT, ENV_LEDGER, ENV_MAX_DEPTH, ENV_PARENT_ID } from "./propagation.ts";
 import { inheritApprovals, type InheritableApproval } from "./approval.ts";
 import { unknownCapabilities, type Catalog } from "./catalog.ts";
-import { WILDCARD } from "./pi-tools.ts";
-
-/** The capability that authorises spawning a definition (ADR-0017). `tool:*` satisfies any of them. */
-export const agentCapability = (name: string): Capability => `agent:${name}`;
-
-/**
- * May this grant spawn that definition? (ADR-0017.)
- *
- * `resolve()` is exact-match plus subsumption and has no wildcard rule — a wildcard session works only
- * because `deriveOwnGrant` *enumerates* its observed tools alongside `tool:*`. Definitions are not tools,
- * so nothing enumerates them, and the wildcard has to be honoured here explicitly. Without that an
- * UNGOVERNED session would stop being able to spawn, and "governance is opt-in" is the one rule this
- * package must never break by accident.
- */
-export function maySpawnDefinition(ownGrant: Capability[], name: string): boolean {
-  // ADR-0023 adds the middle case. `tool:*` is authority to grant every tool and satisfies this too;
-  // `agent:*` is authority to spawn any definition and grants no tools at all, which is the configuration
-  // an operator wanting "any of our definitions, narrow tools" previously had to fake with `tool:*`.
-  return (
-    ownGrant.includes(WILDCARD) ||
-    ownGrant.includes(AGENT_WILDCARD) ||
-    ownGrant.includes(agentCapability(name))
-  );
-}
-
-/** The tool name that confers the ability to delegate further. */
-export const DELEGATE_CAPABILITY: Capability = "tool:delegate";
-
-/** Accept `read` or `tool:read` or `ext:pkg/tool` and normalise to a capability id. */
-export function normaliseCapability(raw: string): Capability {
-  const value = raw.trim();
-  if (value.startsWith("tool:") || value.startsWith("ext:") || value.startsWith("skill:") || value.startsWith("agent:")) {
-    return value;
-  }
-  return `tool:${value}`;
-}
 
 export interface DelegationRequest {
   task: string;
@@ -197,9 +168,12 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
   let requested: Capability[];
   let systemPrompt: string | undefined;
   let definitionDigest: DefinitionDigest | undefined;
+  /** The definition being spawned, hoisted so the gate below can name its authorising id (ADR-0024). */
+  let spawned: SkillDefinition | undefined;
 
   if (request.agent) {
     const definition = ctx.definitions?.get(request.agent);
+    spawned = definition;
     // No fallback, deliberately. pi-subagents resolves an unknown type to `general-purpose`, whose
     // omitted tool list means EVERY tool — so a typo there granted the full surface. An unknown name
     // here is simply an error.
@@ -287,12 +261,36 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
     }
   }
 
+  const approvedCapabilities = (ctx.approved ?? []).map((a) => a.capability);
   const result = resolve({
     requested,
     parentGrant: ctx.ownGrant,
     gated: ctx.gated,
-    approved: (ctx.approved ?? []).map((a) => a.capability),
+    approved: approvedCapabilities,
   });
+
+  /**
+   * ADR-0024: gating `agent:<name>` asks a human before that definition runs.
+   *
+   * `gatedBlocked` is a filter over `requested`, and for a definition spawn `requested` is the definition's
+   * CEILING — so the id that authorises it was never a candidate, and `PI_GRANTS_GATED=agent:deploy` did
+   * nothing at all on the path an operator writing it means. It half-worked when some *other* definition
+   * passed the id down in its own `allowed-tools`, which is worse than not working (R-47, R-25's shape).
+   *
+   * Evaluated here rather than by adding the id to `requested`, and that is the load-bearing part: a
+   * capability in `requested` flows to `effective`, which becomes the CHILD's grant — so the child would
+   * hold `agent:deploy` and could spawn `deploy` itself without anyone being asked. This is the parent's
+   * authority to run the definition *now*, not something the child receives.
+   *
+   * `agent:*` in the gate covers every definition, so "ask me before any definition runs" is one variable.
+   */
+  if (spawned) {
+    const authorising = agentCapability(spawned.name);
+    const gatedHere = ctx.gated.includes(authorising) || ctx.gated.includes(AGENT_WILDCARD);
+    if (gatedHere && !approvedCapabilities.includes(authorising)) {
+      result.gatedBlocked = [...result.gatedBlocked, authorising];
+    }
+  }
 
   if (result.denied.length > 0) {
     return {

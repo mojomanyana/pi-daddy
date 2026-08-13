@@ -837,10 +837,14 @@ So an operator who reads ADR-0017's *"it attenuates like any other capability"* 
 and nothing in the ledger marking the gate inert. It **does** work when a definition hands the id down
 (`allowed-tools: agent:deploy`), so the flag half-works, which is worse than not working at all. R-25's
 shape, in the namespace ADR-0017 just promoted out of exactly that state.
-**PARTLY FIXED 2026-08-14 (0.11.1):** a startup warning names the inert entry, says a human is never asked,
-and points at the fix that does work — withholding the `agent:` capability from `PI_GRANTS_GRANT`. **Making
-it actually gate the spawn is deliberately not done**: that is a behaviour change and wants a decision. The
-silence was the indefensible part either way.
+**PARTLY FIXED 2026-08-14 (0.11.1):** a startup warning named the inert entry.
+**FULLY FIXED 2026-08-14 (0.12.0) by ADR-0024:** the authorising id is evaluated against the gate, so
+naming a definition in `PI_GRANTS_GATED` asks a human before it spawns, through the existing approval path —
+`once`/`session`/`always` all apply, and a rewritten body voids a stored yes. `agent:*` in the gate covers
+every definition. The id is deliberately **not** added to `requested` or `effective`: it is the parent's
+authority to run the definition now, and putting it in `effective` would place it in the *child's* grant and
+let the child re-spawn that definition with nobody asked. This also closes the gap ADR-0023 recorded against
+itself — `agent:*` finally has its "except".
 
 ## R-48 · `/grants` silently truncated its verdict list at 12 — L/M×L/M, FIXED
 Added **and fixed** 2026-08-13, same pass. The listing sliced to 12 definitions with no indication that it

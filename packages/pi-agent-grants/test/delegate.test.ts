@@ -440,3 +440,66 @@ test("ADR-0016: the definition body becomes the child's system prompt", () => {
   assert.match(plan.args[at + 1], /Find what breaks\./);
   assert.equal(plan.args.at(-1), " review the diff", "the task still ends the argv (G1)");
 });
+
+// ── ADR-0024: gating a definition's authorising id ───────────────────────────────────────────────────
+
+const gateFixture = (gated: string[], approved: string[] = []) => {
+  const definitions = new Map([
+    ["deploy", { name: "deploy", description: "d", allowedTools: "Read", body: "ship it", source: "/p/deploy/SKILL.md" }],
+  ]);
+  return planDelegation(
+    { task: "roll out staging", agent: "deploy" },
+    {
+      ownGrant: ["agent:deploy", "tool:read"],
+      depth: 0,
+      maxDepth: 2,
+      gated,
+      definitions,
+      approved: approved.map((capability) => ({ capability, subject: "deploy", scope: "session" as const })),
+    },
+  );
+};
+
+test("ADR-0024: a gated agent: id blocks the spawn and names itself", () => {
+  // R-47: `gatedBlocked` filters `requested`, and for a definition spawn `requested` is the definition's
+  // CEILING — so the authorising id was never a candidate and this configuration did nothing at all. It
+  // half-worked when another definition passed the id down in its own allowed-tools, which is worse.
+  const plan = gateFixture(["agent:deploy"]);
+
+  assert.equal(plan.ok, false, "naming a definition in PI_GRANTS_GATED must ask before it runs");
+  assert.deepEqual(plan.result?.gatedBlocked, ["agent:deploy"]);
+  assert.match(plan.reason ?? "", /agent:deploy requires explicit approval/);
+});
+
+test("ADR-0024: approving the authorising id lets the spawn through", () => {
+  const plan = gateFixture(["agent:deploy"], ["agent:deploy"]);
+
+  assert.equal(plan.ok, true, "a human's yes must actually unblock it");
+  assert.deepEqual(plan.result?.gatedBlocked, []);
+});
+
+test("ADR-0024: the authorising id never reaches the child's grant", () => {
+  // The load-bearing half. If it joined `requested` it would flow to `effective`, which becomes the CHILD's
+  // grant — so the child would hold `agent:deploy` and could spawn `deploy` itself with nobody asked. This
+  // is the parent's authority to run it NOW, not a capability the child receives.
+  const plan = gateFixture(["agent:deploy"], ["agent:deploy"]);
+
+  assert.deepEqual(plan.effective, ["tool:read"], "the child gets the definition's tools and nothing else");
+  assert.ok(!plan.env?.PI_GRANTS_GRANT?.includes("agent:deploy"), "and cannot re-spawn it unasked");
+});
+
+test("ADR-0024: agent:* in the gate covers every definition", () => {
+  // So "ask me before any definition runs" is one variable rather than a list that must track the disk.
+  const plan = gateFixture(["agent:*"]);
+
+  assert.equal(plan.ok, false);
+  assert.deepEqual(plan.result?.gatedBlocked, ["agent:deploy"], "reported as the specific id, not the wildcard");
+});
+
+test("ADR-0024: the tools: form has no authorising id to gate", () => {
+  const plan = planDelegation(
+    { task: "t", tools: ["read"] },
+    { ownGrant: ["tool:read"], depth: 0, maxDepth: 2, gated: ["agent:deploy"] },
+  );
+  assert.equal(plan.ok, true, "a delegation naming no definition is untouched by a definition gate");
+});

@@ -5,7 +5,7 @@ deliberate subset of what it holds and withholds the rest. Sub-agents may delega
 subset of what they themselves hold — enforced by **pi's own `--tools` allowlist**, with an append-only
 ledger of every grant and refusal.
 
-**Status:** `pi-agent-grants` **0.11.2**, `pi-token-audit` **0.1.0**. 287 unit + 19 integration tests (+4
+**Status:** `pi-agent-grants` **0.12.0**, the only package. 292 unit + 19 integration tests (+4
 more with a real model); typecheck and smoke clean.
 
 ## What it actually does
@@ -65,11 +65,10 @@ somebody.
 | **`docs/SPEC.md`** | **What the product is, precisely. No history. Start here.** |
 | `docs/SESSION-LOG.md` | Current state and what's next, newest first. |
 | `docs/03-risks.md` | Live risk register. R-25 onward are current. |
-| `docs/06-decisions/` | Twenty-three ADRs. Reversals kept and marked — **0016** is the current architecture; **0008** the invariant; **0012** why `bash` is out of scope; **0017**–**0019** authorise a definition, record which instructions ran, and pin an approval to both; **0020**–**0023** are the first red-team pass. |
+| `docs/06-decisions/` | Twenty-five ADRs. Reversals kept and marked — **0016** is the current architecture; **0008** the invariant; **0012** why `bash` is out of scope; **0017**–**0019** authorise a definition, record which instructions ran, and pin an approval to both; **0020**–**0023** are the first red-team pass. |
 | `docs/probes/` | Measurement evidence against real software. Each states what it does **not** establish. |
 | `docs/archive/` | Superseded, kept as evidence, never edited to match today. Don't start here. |
 | `packages/pi-agent-grants/` | The product. |
-| `packages/pi-token-audit/` | Token/cost audit. G10's falsification is **fixed** (`5c593fb`): it reports a character share and says so. Still untested, and it serves the retired thesis. |
 
 ## Running the tests
 

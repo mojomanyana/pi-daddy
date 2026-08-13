@@ -3,7 +3,7 @@
 **The current-state document.** No history, no reasoning about alternatives, no record of how anything came
 to be decided. Where this disagrees with an ADR, the ADR is right and this file is stale — say so.
 
-Last synced against the code: **2026-08-14**, `pi-agent-grants` 0.11.2, pi 0.84.1, herdr 0.7.5.
+Last synced against the code: **2026-08-14**, `pi-agent-grants` 0.12.0, pi 0.84.1, herdr 0.7.5.
 
 ---
 
@@ -287,7 +287,7 @@ bound a typo can switch off is not a bound.
 
 ```bash
 cd packages/pi-agent-grants
-npm test                   # 287 unit tests — pure, no pi, no network
+npm test                   # 292 unit tests — pure, no pi, no network
 npm run typecheck          # src + extensions + test + test-integration
 npm run test:integration   # 19 tests against a REAL pi process, no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and USE every subpath

@@ -8,7 +8,7 @@ decisions; this file holds state and next actions. Newest entry on top.
 ## NEXT SESSION — read this, then pick one
 
 **State: green, working tree clean, reviewed, and the review's decisions shipped.** `pi-agent-grants`
-**0.11.2**, `pi-token-audit` **0.1.0**. **287 unit + 19 integration tests** (+**4** with a real model),
+**0.12.0** — now the only package. **292 unit + 19 integration tests** (+**4** with a real model),
 typecheck clean, smoke clean. **Twenty-three** ADRs decided.
 
 **Read the 2026-08-14 entry below before touching the approval layer.** Four ADRs landed together
@@ -48,17 +48,20 @@ one ate the body of the helper it was rewriting and hung `npm test` with no outp
 | 6 | **`subagents:rpc:spawn` bypasses the tripwire.** Unfixable from here. | ADR-0013 Finding 6. |
 | 7 | **`bash` escapes governance.** Out of scope by decision. | ADR-0012. |
 | 8 | **Background delegation** is deliberately not built. Fan-out carried the value; background carries the lifecycle holes. | ADR-0015. Approvals resolved after a tool call returns would use a torn-down `ctx.ui`, so gating would depend on queue position — that must be answered first. |
-| 9 | **`pi-token-audit` has no tests.** Its headline is a **character** share and now says so — G10's falsification was fixed in `5c593fb` on 2026-08-10, and this row claimed otherwise for four days (R-59). | The live question is scope, not correctness: 223 lines serving the thesis ADR-0007 retired. |
+| — | ~~`pi-token-audit`~~ **DELETED 2026-08-14 by ADR-0025.** Not because it lied — `5c593fb` fixed that on 2026-08-10 — but because a second package in a single-product repository is a second thing every orienting document must keep true, and R-59 is what that cost. | The G10 finding stays in `docs/probes/`. |
 
 ### What to do next
 
 **Item 1 is three small independent fixes and is the queued code work.** Nothing above it is blocked.
 
-Then, in rough value order: **`pi-token-audit`** — and **check a claim before repeating it**. Two reviewers
-and this log all said its headline was a character ratio sold as a token share; `5c593fb` fixed that on
-2026-08-10, hours after G10, and the report has said *"% of request CHARACTERS … not a token measurement"*
-ever since (R-59). The live questions are narrower: no tests, and it serves the thesis ADR-0007 retired. **R-34** (nothing runs `verifyLedger` automatically) pairs naturally
-with R-51. **Item 8** (background delegation) still wants an ADR before any code.
+Then, in rough value order: **R-34** (item 4 — nothing runs `verifyLedger` automatically) pairs naturally
+with R-51's digest reader. **Item 8** (background delegation) still wants an ADR before any code, and the
+question it must answer first is what happens to an approval resolved after its tool call returned.
+
+**The measurement ADR-0020 asks for is the highest-value thing that needs no code**: the ledger now records
+`approvalSources` per capability, so counting `persisted` against `prompt` over a few weeks of real use
+settles whether the persistence layer earns its keep — with evidence, instead of the asserted fatigue
+argument it currently rests on.
 
 **Before the next batch ships, run the review first.** `architecture-critic` and `product-strategist` have
 now seen ADR-0017–0019 and the R-38 fix; they have **not** seen ADR-0020–0023, which are the four largest
@@ -81,7 +84,47 @@ That convention is why every reversal here was survivable, and there have been f
 ---
 
 
-## 2026-08-14 (last) — the second red-team pass, over the four ADRs written that morning — 0.11.2
+## 2026-08-14 (last) — the two decisions, and one package fewer — 0.12.0
+
+**ADR-0024: a gated `agent:` id now asks before the definition runs.** R-47 was a gate that did nothing on
+the path an operator writing it means, because `gatedBlocked` filters `requested` and a definition spawn's
+`requested` is its *ceiling* — the authorising id was never a candidate. It half-worked when some other
+definition passed the id down in its own `allowed-tools`, which is worse than not working.
+
+The load-bearing implementation detail: the id is evaluated against the gate **without joining `requested`**.
+A capability in `requested` flows to `effective`, which becomes the **child's** grant — so the child would
+hold `agent:deploy` and could spawn `deploy` itself with nobody asked. This is the parent's authority to run
+it *now*, not something the child receives. Pinned by a test that asserts the id never reaches
+`PI_GRANTS_GRANT`.
+
+This closes the gap ADR-0023 recorded against itself: `agent:*` now has its "except", so
+*"any of our definitions, narrow tools, and a human in the loop for the one that ships things"* is
+expressible in two variables.
+
+**`test/file-size.test.ts` caught its author for the second time.** ADR-0024 pushed `src/delegate.ts` to 413
+lines and the guard refused it, naming the remedy. The cap was not raised: the capability-id helpers moved to
+`src/capabilities.ts`, and the seam was not chosen for convenience — three modules outside `delegate.ts`
+already imported them, which is the evidence they were a separate concern in the wrong file. `delegate.ts`
+re-exports them so the split stays internal and no caller pays for a line count it did not cause.
+
+**ADR-0025: `pi-token-audit` is deleted**, and the reasoning matters more than the deletion. **Not because it
+lied.** G10 falsified its headline on 2026-08-10 and `5c593fb` fixed it hours later — the report has said
+*"% of request CHARACTERS … not a token measurement"* ever since. Both red-team reviewers said otherwise, and
+so did I, three times, from a stale line in `CLAUDE.md` (R-59). Deciding on that premise would have been
+right by accident.
+
+The real argument is the one R-59 demonstrated: **a second package in a single-product repository is a second
+thing every orienting document must keep true**, and the cost showed up as a fixed defect being described as
+live for four days in the file every reader and every reviewer starts from. What is kept is the *finding* —
+G10 stays in `docs/probes/`, where a headline that survived review, reached the session log as a verified
+fact and fed ADR-0006 before anyone noticed `promptTokens` cancels is one of this project's better pieces of
+evidence. The code that produced it does not have to stay installed for the lesson to stay learned.
+
+**Verified: 292 unit, 19 integration, 23 with `PI_GRANTS_IT_MODEL=1`, typecheck clean, smoke clean.**
+
+---
+
+## 2026-08-14 (fourth) — the second red-team pass, over the four ADRs written that morning — 0.11.2
 
 **Six more entries (R-53…R-58), all fixed the same session, and one of them shipped.** `architecture-critic`
 and `product-strategist` reviewed ADR-0020–0023 and the R-38/R-46/R-51 work. Everything acted on was
