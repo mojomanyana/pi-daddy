@@ -169,3 +169,39 @@ test("ADR-0022: the digest survives a round trip through the environment format"
   assert.equal(parsed.get("tool:write@<delegate>"), undefined);
   assert.equal(parsed.size, 2);
 });
+
+test("ADR-0022: a stale inherited approval is not laundered into a fresh one on the way down", async () => {
+  // Found while reviewing my own change. `verifyInherited` correctly stops THIS session using an approval
+  // whose body digest no longer matches — but `republishable` mapped over the RAW inherited keys and
+  // stamped each with THIS session's current digest. So a middle session that cannot use the approval
+  // would still hand its child a perfectly valid-looking one:
+  //
+  //   parent approves body A, sends  tool:bash@deploy#A
+  //   middle loads body B, refuses it locally, republishes  tool:bash@deploy#B
+  //   child  loads body B, digest matches, uses it — under a yes given about A
+  //
+  // That is ADR-0022's hole reappearing one hop further down, which is exactly the failure the ADR says
+  // its digest exists to prevent. Breaks if `republishable` stops filtering through `verifyInherited`.
+  const { republishable } = await import("../extensions/approvals.ts");
+
+  const definition = {
+    name: "deploy",
+    description: "d",
+    allowedTools: "Bash",
+    body: "BODY B",
+    source: "/p/.pi/skills/deploy/SKILL.md",
+  };
+  const session = {
+    definitions: new Map([["deploy", definition]]),
+    // The parent's pin is for a body this session does not have.
+    inheritedApprovals: new Map([["tool:bash@deploy", "digest-of-body-A"]]),
+    sessionApprovals: new Set<string>(),
+  };
+
+  const published = republishable(session as never);
+  assert.deepEqual(
+    published,
+    [],
+    "an approval this session may not use must not be handed to its children with a fresh digest",
+  );
+});

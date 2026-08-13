@@ -77,8 +77,12 @@ export function republishable(session: GrantsSession): InheritableApproval[] {
     };
   };
   return [
-    // Inherited keys arrive already clamped and already `once`-free from the level above.
-    ...[...session.inheritedApprovals.keys()].map(fromKey),
+    // Inherited keys arrive already clamped and already `once`-free from the level above — but NOT already
+    // verified, and republishing an unverified one launders it. `fromKey` stamps this session's current
+    // digest, so a key whose pin no longer matches would go out looking valid and be honoured by a child
+    // that loaded the same current body: the approval was given about a different text and would travel
+    // one hop further on a pin nobody checked. That is ADR-0022's own hole, reappearing inside the fix.
+    ...[...verifyInherited(session.inheritedApprovals, (name) => snapshotOf(session, name))].map(fromKey),
     ...[...session.sessionApprovals].map(fromKey),
   ];
 }
