@@ -642,6 +642,36 @@ path that offers `always`; the `tools:` form keeps `<delegate>` and keeps being 
 entry pins the ceiling **and** the ADR-0018 body digest, so rewriting instructions voids it
 (`instructions-changed`) — strictly stronger than ADR-0010 designed, and an unpinned entry fails closed.
 
+## R-38 · `/grants` reported a definition as blocked while a spawn would allow it — L×M
+Added **and fixed** 2026-08-13, found by writing the first end-to-end test of the persisted approval store
+(0.10.1). **Measured before it was written down:** an integration test seeded one valid entry, then asked
+`/grants` and `/grants approvals` in the same session. The listing said
+`BLOCK  bash-user — tool:bash requires explicit approval`; the approvals view, reading the same file
+through the same `snapshotOf`, said `1 persisted approval`. A real `delegate({agent: "bash-user"})` would
+have spawned, silently, with no human in the loop.
+
+**The cause is R-28's shape, one layer up.** `/grants` deliberately ran the real `planDelegation` "so a
+diagnostic that disagrees with enforcement is not expressible" — and that was true of the *planner* and
+false of the *path*. Enforcement is plan → gate → approvals → re-plan; the listing was plan alone, and
+`planDelegation` knows nothing about approvals by design (it takes them as an argument). Sharing the
+function while not sharing the sequence left the two able to disagree again.
+
+Direction of the error was conservative for privilege and **wrong for audit**, which is why an L×M
+diagnostic defect was worth fixing rather than noting: the operator most likely to run `/grants` is one
+asking *what can this session spawn without asking me?*, and the answer it gave was a confident no. ADR-0019
+had just made standing approvals writable for the first time since 0.7.0, so the number of sessions in
+which this could mislead went from zero to all of them on the same day.
+
+**FIXED (0.10.1):** the sequence itself is now one function — `planWithApprovals` in
+`extensions/run-delegation.ts` — used by the enforcer and by `/grants`. They differ in one argument:
+`ctx: null` means *preview*, so stored approvals count exactly as they would for a spawn and no human is
+asked. Deliberately **not** expressed as `hasUI: false`, which is a different fact ("nobody is here to ask",
+true in every governed child) and would have replaced each gated definition's reason with advice about
+interactive sessions. The listing now also names *why* it allows —
+`allow  bash-user  tool:bash, tool:read  (tool:bash approved: persisted)` — because an `allow` that
+silently depends on a 30-day entry in a file elsewhere is the thing an operator ran the command to find.
+**Trigger for the shape recurring:** any second caller of `planDelegation` that is not `planWithApprovals`.
+
 ---
 
 ## Register log
@@ -680,4 +710,6 @@ entry pins the ceiling **and** the ADR-0018 body digest, so rewriting instructio
 | 2026-08-13 | R-36 | **FIXED** same day (ADR-0017 step 1) — only `tool:`/`ext:` are filtered against an observation; `skill:` and `agent:` pass through. Four tests, including survival across three levels | ADR-0017 |
 | 2026-08-13 | R-37 | Added — the `<delegate>` approval subject rests on a premise ADR-0017 falsified, so `always` approvals can never persist on the only spawn path. Fail-closed; the real cost is the prompt fatigue that gets gating switched off (R-25's shape) | ADR-0018 scoping |
 | 2026-08-13 | R-35 | **Audit half closed** by ADR-0018 — every definition spawn records a `definitionDigest` (name, source, sha256 of the body). What remains is inherent: the digest identifies text without preserving it, and no capability model judges what a body says. The **task is never recorded**, by decision | ADR-0018 |
+| 2026-08-13 | R-38 | Added and **FIXED same session** — `/grants` listed a definition as BLOCK while a real spawn would allow it off a valid persisted approval, because the listing shared the *planner* with enforcement but not the *approval step*. R-28's shape one layer up. Found by the first end-to-end test of the approval store, and confirmed by execution before being written. Fixed with one `planWithApprovals` used by both, `ctx: null` meaning preview | approval-store IT |
+| 2026-08-13 | R-37 | **Verified end to end** — an `always` approval was created by a real model answering a real dialog, read back by a *different* process with no prompt (ledger `approvalSource: "persisted"`), and voided by a body edit that re-raised the dialog. ADR-0019's machinery had been implemented and unit-tested but never watched working; it works | approval-store IT |
 | 2026-08-13 | R-37 | **Corrected and FIXED** — the entry understated it: `always` was not silently downgraded, it was **never offered**, because `offeredScopes` gated it on a path ADR-0016 had deleted. Nothing since 0.7.0 could write a persisted approval, so ADR-0014's integrity work guarded an unwritable file. ADR-0019 makes the definition the subject and pins the body digest as well as the ceiling | ADR-0019 |

@@ -19,6 +19,7 @@ import {
   type ApprovalScope,
   type ApprovalSource,
   type InheritableApproval,
+  type ResolveApprovalsResult,
   type SubjectSnapshot,
 } from "../src/approval.ts";
 import { loadApprovals, saveApproval } from "../src/approval-store.ts";
@@ -90,30 +91,58 @@ export interface ApprovalUIContext {
 }
 
 /**
+ * The approvals already in hand: inherited, given earlier this session, or persisted from a previous one.
+ *
+ * No dialog, and no I/O beyond reading the store. Extracted (R-38) so that a **read-only preview can run
+ * the same resolution the enforcer runs**. `/grants` used to list each definition from `planDelegation`
+ * alone, which knows nothing about approvals — so a definition whose only gated capability was covered by a
+ * valid persisted approval was listed as `BLOCK  … requires explicit approval` while a real spawn proceeded
+ * with no human in the loop. That is R-28's shape (a diagnostic disagreeing with the enforcer) and it hid a
+ * standing approval from the operator who ran the command to find exactly that.
+ */
+export async function storedApprovals(
+  session: GrantsSession,
+  gated: Capability[],
+  subject: string,
+): Promise<ResolveApprovalsResult> {
+  const { valid } = await loadApprovals({
+    cwd: session.cwd,
+    now: new Date(),
+    snapshotOf: (name) => snapshotOf(session, name),
+  });
+  return resolveApprovals({
+    gated,
+    subject,
+    sessionApprovals: session.sessionApprovals,
+    persisted: valid,
+    inherited: session.inheritedApprovals,
+  });
+}
+
+/**
  * Satisfy as many gated capabilities as possible, asking a human only for what is left.
  *
  * Returns what was approved and how, so the caller can re-resolve with the same pure `resolve()` and
  * the ledger can record which of the three flavours of "no" applies (see `ledger.ts`'s `GrantRecord`).
+ *
+ * **`ctx: null` means preview**: report what is already in hand and ask nobody. Deliberately not expressed
+ * as `hasUI: false`, which means *"there is nobody here to ask"* — that path replaces the plan's reason with
+ * a message about pre-approving in an interactive session, which is right for a governed child and both
+ * wrong and noisy for a listing that never intended to ask. The two are different facts and are kept
+ * distinguishable.
  */
 export async function obtainApprovals(
   session: GrantsSession,
   gatedBlocked: Capability[],
   subject: string,
   path: ApprovalPath,
-  ctx: ApprovalUIContext,
+  ctx: ApprovalUIContext | null,
   task?: string,
   signal?: AbortSignal,
 ): Promise<ApprovalOutcome> {
   const snapshot = (name: string) => snapshotOf(session, name);
-  const { valid } = await loadApprovals({ cwd: session.cwd, now: new Date(), snapshotOf: snapshot });
-  const pre = resolveApprovals({
-    gated: gatedBlocked,
-    subject,
-    sessionApprovals: session.sessionApprovals,
-    persisted: valid,
-    inherited: session.inheritedApprovals,
-  });
-  if (pre.needsPrompt.length === 0) {
+  const pre = await storedApprovals(session, gatedBlocked, subject);
+  if (ctx === null || pre.needsPrompt.length === 0) {
     return {
       approved: pre.approved,
       source: pre.approved.length > 0 ? pre.sources[pre.approved[0]] : undefined,

@@ -21,7 +21,7 @@ import { mergeChildEnv } from "../src/propagation.ts";
 import type { Capability } from "../src/resolve.ts";
 import { ENV_CHILD_TIMEOUT, runChild, timeoutFromEnv } from "../src/run-child.ts";
 import { runHerdrPane } from "../src/run-herdr.ts";
-import { obtainApprovals, republishable, type ApprovalOutcome } from "./approvals.ts";
+import { obtainApprovals, republishable, type ApprovalOutcome, type ApprovalUIContext } from "./approvals.ts";
 import { ENV_HERDR_KEEP_PANE, ENV_HERDR_WORKSPACE, type GrantsSession } from "./session.ts";
 
 /** What one child was asked to do. The shape both tools accept, per child. */
@@ -32,10 +32,91 @@ interface ChildSpec {
   model?: string;
 }
 
-/** The slice of pi's `ExtensionContext` a delegation needs. */
-interface DelegationToolContext {
+/**
+ * The slice of pi's `ExtensionContext` a delegation needs.
+ *
+ * It extends `ApprovalUIContext` rather than being cast to it at the call site. pi hands `execute` its full
+ * context, so `ui`/`hasUI`/`mode` were always present — but the local type omitted them and an `as never`
+ * bridged the gap, which is the same "a value that was whatever happened to be in scope" shape the module
+ * header lists four defects for.
+ */
+interface DelegationToolContext extends ApprovalUIContext {
   cwd: string;
   model?: { provider: string; id: string };
+}
+
+/** A planned delegation, plus whatever approvals contributed to it. */
+export interface GatedPlan {
+  plan: ReturnType<typeof planDelegation>;
+  /** Absent when the gate was never reached — i.e. the plan succeeded or failed for another reason. */
+  approval?: ApprovalOutcome;
+}
+
+/**
+ * Plan a delegation and satisfy its gate as far as approvals allow.
+ *
+ * **Spelled once, on purpose.** The enforcer and the `/grants` listing both come through here, so a preview
+ * cannot claim an outcome a spawn would not produce (R-38, and R-28 before it). The two differ in exactly
+ * one respect, which is the one thing a read-only diagnostic must not do: pass `ctx: null` and no human is
+ * asked — stored approvals still count, and the plan's own reason is left to speak for whatever is left.
+ *
+ * Deliberately NOT pre-filling `approved` on the first plan: pre-filling would satisfy an inherited-approval
+ * gate silently, before `gatedBlocked` ever surfaced, so `obtainApprovals` would never run and the ledger
+ * would lose the `approvalSource: "inherited"` record ADR-0010 relies on as inheritance's compensating
+ * control. `approved ⊆ grant` holds regardless — this is about the audit trail, not privilege.
+ */
+export async function planWithApprovals(
+  session: GrantsSession,
+  request: ChildSpec & { model?: string },
+  extra: Record<string, unknown>,
+  ctx: ApprovalUIContext | null,
+  signal?: AbortSignal,
+): Promise<GatedPlan> {
+  // Spelled ONCE. It is asked for twice — when the human is prompted, and when the answer is fed back into
+  // the re-plan — and two spellings of one argument is the defect R-28 was.
+  const approvalSubject = request.agent ?? DELEGATE_SUBJECT;
+
+  let plan = planDelegation(request, { ...(await session.delegationContext()), ...extra });
+  if (plan.ok || !shouldSeekApproval(plan.result)) return { plan };
+
+  let approval: ApprovalOutcome | undefined;
+  try {
+    approval = await obtainApprovals(
+      session,
+      plan.result?.gatedBlocked ?? [],
+      // ADR-0019. A definition IS a human-authored subject — operator-written, and nameable only by a
+      // session holding `agent:<name>` (ADR-0017) — so the approval is keyed to it and `always` is on
+      // offer. The `tools:` form keeps `<delegate>` and keeps being denied `always`, because there the
+      // original reasoning is untouched: the model chose both the task and the tool list.
+      approvalSubject,
+      request.agent ? "definition" : "delegate",
+      ctx,
+      request.task,
+      signal,
+    );
+    const outcome = approval;
+    if (outcome.approved.length > 0) {
+      plan = planDelegation(request, {
+        // The scope is the REAL one: a `once` approval still authorises this spawn, and
+        // `inheritApprovals` then keeps it from reaching the child. See ADR-0014. R-29 is what makes
+        // this safe under fan-out: a `once` is consumed by exactly one concurrent caller.
+        ...(await session.delegationContext([
+          ...republishable(session),
+          ...outcome.approved.map((capability) => ({
+            capability,
+            subject: approvalSubject,
+            scope: outcome.scope ?? ("once" as const),
+          })),
+        ])),
+        ...extra,
+      });
+    }
+    if (!plan.ok && approval.reason) plan = { ...plan, reason: approval.reason };
+  } catch (error) {
+    plan = { ...plan, reason: `grants: approval flow failed, denying (${String(error)})` };
+  }
+
+  return { plan, approval };
 }
 
 interface DelegationOutcome {
@@ -72,54 +153,10 @@ export async function runOneDelegation(
   const defaultModel = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
   const request = { task: spec.task, agent: spec.agent, tools: spec.tools, model: spec.model ?? defaultModel };
   const extra = { fanoutBudget: budget, spawnId: ids.parentId, childSpawnId: ids.childId };
-  // Spelled ONCE. It is asked for twice — when the human is prompted, and when the answer is fed back into
-  // the re-plan — and two spellings of one argument is the defect R-28 was.
-  const approvalSubject = spec.agent ?? DELEGATE_SUBJECT;
 
-  // Deliberately NOT pre-filling `approved` here — pre-filling would satisfy any inherited-approval gate
-  // silently, before `gatedBlocked` ever surfaces, so `obtainApprovals` would never run and the ledger
-  // would lose the `approvalSource: "inherited"` record ADR-0010 relies on as inheritance's compensating
-  // control. `approved ⊆ grant` still holds regardless — this is about the audit trail, not privilege.
-  let plan = planDelegation(request, { ...(await session.delegationContext()), ...extra });
-
-  let approvalOutcome: ApprovalOutcome | undefined;
-  if (!plan.ok && shouldSeekApproval(plan.result)) {
-    try {
-      approvalOutcome = await obtainApprovals(
-        session,
-        plan.result?.gatedBlocked ?? [],
-        // ADR-0019. A definition IS a human-authored subject — operator-written, and nameable only by a
-        // session holding `agent:<name>` (ADR-0017) — so the approval is keyed to it and `always` is on
-        // offer. The `tools:` form keeps `<delegate>` and keeps being denied `always`, because there the
-        // original reasoning is untouched: the model chose both the task and the tool list.
-        approvalSubject,
-        spec.agent ? "definition" : "delegate",
-        ctx as never,
-        spec.task,
-        signal,
-      );
-      const outcome = approvalOutcome;
-      if (outcome.approved.length > 0) {
-        plan = planDelegation(request, {
-          // The scope is the REAL one: a `once` approval still authorises this spawn, and
-          // `inheritApprovals` then keeps it from reaching the child. See ADR-0014. R-29 is what makes
-          // this safe under fan-out: a `once` is consumed by exactly one concurrent caller.
-          ...(await session.delegationContext([
-            ...republishable(session),
-            ...outcome.approved.map((capability) => ({
-              capability,
-              subject: approvalSubject,
-              scope: outcome.scope ?? ("once" as const),
-            })),
-          ])),
-          ...extra,
-        });
-      }
-      if (!plan.ok && approvalOutcome.reason) plan = { ...plan, reason: approvalOutcome.reason };
-    } catch (error) {
-      plan = { ...plan, reason: `grants: approval flow failed, denying (${String(error)})` };
-    }
-  }
+  // Planning and the gate live in `planWithApprovals`, shared with the `/grants` preview so the two cannot
+  // disagree (R-38). This call is the enforcing one: it passes `ctx`, so a human CAN be asked.
+  let { plan, approval: approvalOutcome } = await planWithApprovals(session, request, extra, ctx, signal);
 
   // G6 / B-I3: no `&& plan.result` guard — `planDelegation` always carries one now.
   if (session.ledgerPath) {

@@ -33,6 +33,7 @@ import { deriveOwnGrant, observeToolNames } from "../src/propagation.ts";
 import { snapshotOf } from "./approvals.ts";
 import { registerDelegationTools } from "./delegation.ts";
 import { grantsCommand } from "./grants-command.ts";
+import { planWithApprovals } from "./run-delegation.ts";
 import { createGrantsSession } from "./session.ts";
 
 const SPAWN_TOOLS = new Set(["Agent", "subagent", "spawn_agent"]);
@@ -194,7 +195,12 @@ export default function (pi: ExtensionAPI) {
           sessionApprovals: session.sessionApprovals,
           inheritedApprovals: session.inheritedApprovals,
           snapshotOf: (subject: string) => snapshotOf(session, subject),
-          delegationContext: session.delegationContext,
+          // The REAL delegation path, minus the one thing a diagnostic must never do. `ctx: null` is what
+          // says so: stored approvals count exactly as they would for a spawn, and no human is asked
+          // (R-38). Passing `ctx` here would let `/grants` raise a dialog, and passing `hasUI: false` would
+          // make every gated definition report "no interactive user" instead of what actually blocks it.
+          previewDelegation: (name: string) =>
+            planWithApprovals(session, { task: "(preview)", agent: name }, {}, null),
         },
       }),
   });

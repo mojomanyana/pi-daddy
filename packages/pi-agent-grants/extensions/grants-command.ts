@@ -15,11 +15,8 @@
 import type { Capability } from "../src/resolve.ts";
 import type { Catalog } from "../src/catalog.ts";
 import type { SkillDefinition } from "../src/definitions.ts";
-import type { InheritableApproval } from "../src/approval.ts";
-import type { DelegationContext } from "../src/delegate.ts";
-import { approvalKey, resolveApprovals } from "../src/approval.ts";
-import { legacyApprovalsPath, loadApprovals, revokeAll, revokeApproval, type SubjectLookup } from "../src/approval-store.ts";
-import { planDelegation } from "../src/delegate.ts";
+import type { GatedPlan } from "./run-delegation.ts";
+import { loadApprovals, revokeAll, revokeApproval, type SubjectLookup } from "../src/approval-store.ts";
 import { verifyLedger } from "../src/ledger.ts";
 
 export interface GrantsCommandContext {
@@ -38,8 +35,15 @@ export interface GrantsCommandContext {
   inheritedApprovals: Set<string>;
   /** A definition's current ceiling and body digest, for the store's confused-deputy check (ADR-0019). */
   snapshotOf: SubjectLookup;
-  /** The shared builder, so the preview cannot disagree with what a real spawn would do (R-28). */
-  delegationContext: (approved?: InheritableApproval[]) => Promise<DelegationContext>;
+  /**
+   * What a real `delegate({agent: name})` would do, decided by the code that would do it.
+   *
+   * Was `delegationContext` plus a `planDelegation` call here, which shared the planner but not the
+   * **approval step** — so a definition whose one gated capability was covered by a valid persisted approval
+   * was listed as blocked while a spawn proceeded silently (R-38). Injecting the whole preview keeps the
+   * R-28 discipline where it belongs: this command asks what would happen instead of working it out.
+   */
+  previewDelegation: (name: string) => Promise<GatedPlan>;
 }
 
 export const grantsCommand = {
@@ -51,7 +55,7 @@ handler: async (args: string, ctx: any) => {
     // the enclosing closure — which is how a diagnostic came to disagree with the enforcer (R-28).
     const {
       cwd, governed, ownGrant, observed, depth, maxDepth, ledgerPath,
-      catalog, definitions, sessionApprovals, inheritedApprovals, snapshotOf, delegationContext,
+      catalog, definitions, sessionApprovals, inheritedApprovals, snapshotOf, previewDelegation,
     } = ctx.grants as GrantsCommandContext;
 
     const [sub, target] = args.trim().split(/\s+/).filter(Boolean);
@@ -153,11 +157,21 @@ handler: async (args: string, ctx: any) => {
         `${catalog.byKind("builtin").length} builtin, ${catalog.byKind("extension").length} extension, ` +
         `${catalog.byKind("skill").length} skill, ${catalog.byKind("agentType").length} agent-type`,
     ];
-    // Runs the REAL planner over each definition, so this listing cannot disagree with what a spawn
-    // would do — the R-28 lesson, kept structural rather than remembered.
+    // Runs the REAL planner AND the real approval step over each definition, so this listing cannot
+    // disagree with what a spawn would do — the R-28 lesson, kept structural rather than remembered.
     for (const [name] of [...definitions].slice(0, 12)) {
-      const d = planDelegation({ task: "(preview)", agent: name }, await delegationContext());
-      lines.push(`    ${d.ok ? "allow" : "BLOCK"}  ${name}${d.ok ? `  ${d.effective.join(", ")}` : ` — ${d.reason}`}`);
+      const { plan, approval } = await previewDelegation(name);
+      // Why it is allowed, when a standing approval is the reason. An `allow` that silently depends on a
+      // 30-day entry in a file elsewhere is precisely what an operator runs this command to discover, and
+      // R-38 was the version of this listing that could not have told them (it said BLOCK instead).
+      const because =
+        plan.ok && approval?.source && approval.approved.length > 0
+          ? `  (${approval.approved.join(", ")} approved: ${approval.source})`
+          : "";
+      lines.push(
+        `    ${plan.ok ? "allow" : "BLOCK"}  ${name}` +
+          (plan.ok ? `  ${plan.effective.join(", ")}${because}` : ` — ${plan.reason}`),
+      );
     }
     ctx.ui.notify(lines.join("\n"), "info");
   },

@@ -30,8 +30,8 @@ permissible, able to refuse or allow but never to narrow. **This package is now 
 is an argument rather than a veto. Definitions are **Agent Skills (`SKILL.md`)** files whose `allowed-tools`
 becomes the grant; the pi-subagents ceiling port is deleted; the interceptor survives only as a tripwire.
 
-**Current state: `pi-agent-grants` 0.7.0, `pi-token-audit` 0.1.0.** Sixteen ADRs decided. 250 unit + 9
-integration tests, typecheck and smoke clean.
+**Current state: `pi-agent-grants` 0.10.1, `pi-token-audit` 0.1.0.** Nineteen ADRs decided. 272 unit + 17
+integration tests (+4 more with a real model), typecheck and smoke clean.
 
 **What the product claims, precisely** — this wording is load-bearing and was narrowed by ADR-0012: it
 governs the **tool surface**, i.e. which tools pi exposes to a model, enforced structurally by pi's own
@@ -47,12 +47,14 @@ can run `env -u PI_GRANTS_GRANT pi …` and get an ungoverned descendant (measur
 docs/SPEC.md              — WHAT THE PRODUCT IS, current state, no history. Read this second.
 docs/SESSION-LOG.md       — START HERE when resuming: state, verified facts, next actions. Newest on top.
 docs/03-risks.md          — live risk register. R-25 onward are current; R-01..R-24 serve the retired thesis
-docs/06-decisions/        — sixteen ADRs. Reversals are kept and marked: 0004→superseded, 0005 park→
+docs/06-decisions/        — nineteen ADRs. Reversals are kept and marked: 0004→superseded, 0005 park→
                             superseded, 0006 (magnitude claim falsified), 0007 THE REFRAME, 0008
                             attenuation + cardinality, 0009 pi-fabric (parked), 0010 approvals, 0011
                             universal capabilities, 0012 bash, 0013 pi-subagents (superseded by 0016),
                             0014 approval integrity, 0015 which path is primary (declined to decide, and
-                            says why), 0016 THIS PACKAGE IS THE SPAWNER — the current architecture
+                            says why), 0016 THIS PACKAGE IS THE SPAWNER — the current architecture,
+                            0017 agent:<name> authorises a definition, 0018 the ledger records WHICH
+                            instructions ran, 0019 the persisted-approval store made reachable again
 docs/probes/              — measurement evidence, all against real software. Each has a "what this does
                             not establish" section: baseline/, pi-fabric-eval/, approval-ux/,
                             adr-0011-universal/, g1-argv/, g5-bash-escape/, g13-subagents-coupling/,

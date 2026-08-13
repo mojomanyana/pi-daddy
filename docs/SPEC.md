@@ -3,7 +3,7 @@
 **The current-state document.** No history, no reasoning about alternatives, no record of how anything came
 to be decided. Where this disagrees with an ADR, the ADR is right and this file is stale — say so.
 
-Last synced against the code: **2026-08-13**, `pi-agent-grants` 0.10.0, pi 0.84.1, herdr 0.7.5.
+Last synced against the code: **2026-08-13**, `pi-agent-grants` 0.10.1, pi 0.84.1, herdr 0.7.5.
 
 ---
 
@@ -168,6 +168,13 @@ authorised every concurrent child while the human had seen only the first task.
 An approval never crosses a delegation boundary: `once` is dropped on inheritance, and what does cross is
 clamped to the child's own grant, so `approved ⊆ grant` holds at every level.
 
+**`/grants` previews each definition through the same code path a spawn takes** — plan, then satisfy the
+gate from stored approvals — differing in one respect: it never asks a human, and never claims one is
+missing. So a definition covered by a standing approval lists as `allow` *and names the reason*
+(`(tool:bash approved: persisted)`), which is what makes a 30-day yes discoverable rather than something an
+operator has to know to go looking for. R-38 was the version that shared the planner but not the sequence
+and reported such a definition as blocked.
+
 ## The ledger
 
 Append-only JSONL at `PI_GRANTS_LEDGER`. One record per governed decision — **including refusals**, which
@@ -249,11 +256,17 @@ bound a typo can switch off is not a bound.
 
 ```bash
 cd packages/pi-agent-grants
-npm test                  # 250 unit tests — pure, no pi, no network
+npm test                   # 272 unit tests — pure, no pi, no network
 npm run typecheck          # src + extensions + test + test-integration
-npm run test:integration   # 9 tests against a REAL pi process, no model tokens
+npm run test:integration   # 17 tests against a REAL pi process, no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and USE every subpath
+
+PI_GRANTS_IT_MODEL=1 npm run test:integration   # + 4 with a real model (~60s, costs money)
 ```
+
+The model tier is where the **whole** chain is observed: model → `tool_call` → decision → argv → a child
+process that genuinely lacks a tool, and — since 0.10.1 — a human answering a real dialog, the approval
+landing on disk, a *different* process honouring it with no prompt, and a body edit re-raising it.
 
 ## Known gaps
 
