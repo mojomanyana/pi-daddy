@@ -7,9 +7,10 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ## NEXT SESSION — read this, then pick one
 
-**State: everything is green and nothing is half-finished.** `pi-agent-grants` **0.7.0**, `pi-token-audit`
-**0.1.0**. **250 unit + 9 integration tests**, typecheck clean, smoke clean (packs, installs, exercises
-every subpath). Sixteen ADRs decided; ADR-0016 fully implemented.
+**State: committed, green, nothing half-finished.** `main` is clean at `acce822`; the session's work landed
+as two commits — the 0.7.0 re-architecture and the documentation consolidation. `pi-agent-grants` **0.7.0**,
+`pi-token-audit` **0.1.0**. **250 unit + 9 integration tests**, typecheck clean, smoke clean (packs,
+installs, exercises every subpath). Sixteen ADRs decided; ADR-0016 fully implemented.
 
 ```bash
 cd packages/pi-agent-grants && npm test && npm run typecheck && npm run test:integration && npm run test:smoke
@@ -30,6 +31,28 @@ known gap. Do not re-derive it from the ADRs.
 | 6 | **`bash` escapes governance.** Out of scope by decision. | ADR-0012. |
 | 7 | **Background delegation** is deliberately not built. Fan-out carried the value; background carries the lifecycle holes. | ADR-0015. Approvals resolved after a tool call returns would use a torn-down `ctx.ui`, so gating would depend on queue position — that must be answered first. |
 | 8 | **`pi-token-audit` has no tests**, and its headline "tool-definition share" is a character ratio, not a token share. | Falsified 2026-08-10. |
+
+### The one piece of code work already scoped
+
+**Finish splitting `extensions/grants.ts` (866 lines).** `/grants` was extracted to `grants-command.ts`
+(155 lines) taking its dependencies as an explicit context object; the rest was **deliberately left**
+because the approval flow and `runOneDelegation` are genuinely entangled with session state, and starting
+that at the end of a long session is how the next R-28 gets written.
+
+The plan, so it need not be re-derived:
+
+1. `createGrantsSession(pi)` returns the session state (`ownGrant`, `depth`, `gated`, `definitions`,
+   `catalog`, `ownSpawnId`, `fanoutBudget`, the approval sets) as one object.
+2. `extensions/approvals.ts` takes it and owns `obtainApprovals` / `republishable` / `ceilingOf`.
+3. `extensions/delegation.ts` takes it and owns `runOneDelegation` plus both tool registrations.
+4. `grants.ts` keeps env parsing, the hooks and the tripwire — target ~300 lines.
+
+Behaviour-preserving, so the existing 250 unit + 9 integration tests are the check. Optionally add a test
+that fails if any file exceeds ~400 lines, making the constraint enforced rather than remembered.
+
+**Why this file specifically:** every wiring bug in this package has lived in it — the G7 `NaN` bound, the
+discarded `isError`, the unconditionally-registered `delegate` (S-5), and R-28's omitted argument. `src/` is
+pure and well covered; the wiring is where the defects are.
 
 ### Things that look like work and are not
 
