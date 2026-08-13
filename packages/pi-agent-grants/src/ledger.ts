@@ -52,6 +52,20 @@ export interface GrantRecord {
    */
   approved?: Capability[];
   approvalSource?: ApprovalSource;
+  /**
+   * WHERE each approved capability's yes came from — one entry per capability (R-46).
+   *
+   * `approvalSource` above is a single scalar and was written for a set: gate `tool:bash` and `tool:write`,
+   * let a persisted entry cover `bash` while a human clicks *Allow once* for `write`, and the record read
+   * `approved: ["tool:bash","tool:write"], approvalSource: "prompt"` — **asserting a human was asked about
+   * `tool:bash`, which they were not.** The ledger's whole job is answering "did a human authorise this?",
+   * so over-claiming in that direction is the worst available failure.
+   *
+   * The scalar is kept and is now written **only when every approved capability shares one source**, so a
+   * reader of old and new lines alike can trust it; when sources differ it is omitted and this map carries
+   * the truth. Two fields, one of which is a safe summary of the other — not two competing answers.
+   */
+  approvalSources?: Record<Capability, ApprovalSource>;
   /** Present only when the source was a live prompt. */
   approvalScope?: ApprovalScope;
   /** A human was asked and declined. Distinct from `denied`, which is an escalation attempt. */
@@ -90,12 +104,16 @@ export function buildRecord(args: {
   blocked: boolean;
   reason?: string;
   approved?: Capability[];
-  approvalSource?: ApprovalSource;
+  approvalSources?: Record<Capability, ApprovalSource>;
   approvalScope?: ApprovalScope;
   humanDenied?: boolean;
   definitionDigest?: DefinitionDigest;
   now: Date;
 }): GrantRecord {
+  // R-46: the scalar is a SUMMARY, emitted only when it cannot mislead. `buildRecord` derives it rather
+  // than accepting it, so a call site cannot supply one that disagrees with the map beside it.
+  const sources = args.approvalSources ?? {};
+  const distinct = [...new Set(Object.values(sources))];
   return {
     ts: args.now.toISOString(),
     parentId: args.parentId,
@@ -111,7 +129,8 @@ export function buildRecord(args: {
     blocked: args.blocked,
     reason: args.reason,
     ...(args.approved && args.approved.length > 0 ? { approved: args.approved } : {}),
-    ...(args.approvalSource ? { approvalSource: args.approvalSource } : {}),
+    ...(distinct.length === 1 ? { approvalSource: distinct[0] } : {}),
+    ...(Object.keys(sources).length > 0 ? { approvalSources: sources } : {}),
     ...(args.approvalScope ? { approvalScope: args.approvalScope } : {}),
     ...(args.humanDenied ? { humanDenied: true } : {}),
     ...(args.definitionDigest ? { definitionDigest: args.definitionDigest } : {}),
@@ -199,6 +218,20 @@ export interface LedgerReport {
   corrupt: Array<{ line: number; text: string }>;
   /** Records where an agent asked for more than it held — ADR-0008's designated signal. */
   escalationAttempts: number;
+  /**
+   * Every distinct set of instructions this ledger saw run, with how many spawns used it (R-51).
+   *
+   * ADR-0018 advertises that a record answers *"did these four children run the same instructions?"* and
+   * *"has this definition changed since?"* — and until this existed **nothing read `definitionDigest` at
+   * all**, so both questions required hand-written `jq` and the second was not even reproducible with
+   * `sha256sum`, because the digest covers the body and not the frontmatter. A field no tool reads is a
+   * field that quietly becomes decoration.
+   *
+   * Grouped by `name` + `sha256`, so two entries with one name are exactly the evidence that a definition
+   * changed mid-ledger. Sorted by name then digest so two runs of the same fan-out produce a diffable
+   * report, like the ids themselves.
+   */
+  definitions: Array<{ name: string; source: string; sha256: string; spawns: number }>;
   ok: boolean;
 }
 
@@ -219,12 +252,14 @@ export async function verifyLedger(path: string): Promise<LedgerReport> {
     text = await readFile(path, "utf8");
   } catch (error) {
     if ((error as { code?: string }).code === "ENOENT") {
-      return { exists: false, records: 0, corrupt: [], escalationAttempts: 0, ok: true };
+      return { exists: false, records: 0, corrupt: [], escalationAttempts: 0, definitions: [], ok: true };
     }
     throw error;
   }
 
   const corrupt: Array<{ line: number; text: string }> = [];
+  // Keyed by name+digest: one name with two entries is the signal that the definition changed mid-ledger.
+  const digests = new Map<string, { name: string; source: string; sha256: string; spawns: number }>();
   let records = 0;
   let escalationAttempts = 0;
 
@@ -237,12 +272,26 @@ export async function verifyLedger(path: string): Promise<LedgerReport> {
       if (!Array.isArray(parsed.denied)) throw new Error("not a grant record");
       records += 1;
       if (isEscalationAttempt(parsed)) escalationAttempts += 1;
+      const d = parsed.definitionDigest;
+      if (d?.name && d.sha256) {
+        const key = `${d.name}\u0000${d.sha256}`;
+        const seen = digests.get(key);
+        if (seen) seen.spawns += 1;
+        else digests.set(key, { name: d.name, source: d.source, sha256: d.sha256, spawns: 1 });
+      }
     } catch {
       corrupt.push({ line: index + 1, text: raw.slice(0, 120) });
     }
   });
 
-  return { exists: true, records, corrupt, escalationAttempts, ok: corrupt.length === 0 };
+  return {
+    exists: true,
+    records,
+    corrupt,
+    escalationAttempts,
+    definitions: [...digests.values()].sort((a, b) => a.name.localeCompare(b.name) || a.sha256.localeCompare(b.sha256)),
+    ok: corrupt.length === 0,
+  };
 }
 
 /** True when this record shows an agent asking for more than it holds. */

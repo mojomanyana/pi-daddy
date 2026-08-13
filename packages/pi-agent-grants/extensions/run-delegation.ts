@@ -176,7 +176,7 @@ export async function runOneDelegation(
         blocked: !plan.ok,
         reason: plan.reason,
         approved: approvalOutcome?.approved,
-        approvalSource: approvalOutcome?.source,
+        approvalSources: approvalOutcome?.sources,
         approvalScope: approvalOutcome?.scope,
         humanDenied: approvalOutcome?.humanDenied,
         // ADR-0018: taken from the PLAN, never re-derived here. The B-I3 lesson — a call site that

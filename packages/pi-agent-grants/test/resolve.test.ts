@@ -233,14 +233,45 @@ test("the ledger records what was approved and where the yes came from", () => {
     result,
     blocked: false,
     approved: ["tool:write"],
-    approvalSource: "prompt",
+    approvalSources: { "tool:write": "prompt" },
     approvalScope: "once",
     now: new Date("2026-08-09T00:00:00.000Z"),
   });
   assert.deepEqual(record.approved, ["tool:write"]);
-  assert.equal(record.approvalSource, "prompt");
+  assert.equal(record.approvalSource, "prompt", "one source for the whole set: the scalar is safe to emit");
+  assert.deepEqual(record.approvalSources, { "tool:write": "prompt" });
   assert.equal(record.approvalScope, "once");
   assert.equal(record.humanDenied, undefined);
+});
+
+test("R-46: a mixed-provenance approval set does not claim a human was asked about all of it", () => {
+  // Gate two capabilities, let a persisted entry cover one and a human answer the other. The record used to
+  // read `approvalSource: "prompt"` for both, asserting a human was asked about something they never saw —
+  // and the ledger's whole job is answering "did a human authorise this?". Breaks if the scalar is emitted
+  // unconditionally again, or if the map stops being written.
+  const result = resolve({
+    requested: ["tool:bash", "tool:write"],
+    parentGrant: ["tool:bash", "tool:write"],
+    gated: ["tool:bash", "tool:write"],
+    approved: ["tool:bash", "tool:write"],
+  });
+  const record = buildRecord({
+    parentId: "d0",
+    childId: "deploy@d1",
+    depth: 1,
+    agentType: "deploy",
+    requested: ["tool:bash", "tool:write"],
+    parentGrant: ["tool:bash", "tool:write"],
+    result,
+    blocked: false,
+    approved: ["tool:bash", "tool:write"],
+    approvalSources: { "tool:bash": "persisted", "tool:write": "prompt" },
+    approvalScope: "once",
+    now: new Date("2026-08-09T00:00:00.000Z"),
+  });
+
+  assert.equal(record.approvalSource, undefined, "no single source is true of the set, so none is claimed");
+  assert.deepEqual(record.approvalSources, { "tool:bash": "persisted", "tool:write": "prompt" });
 });
 
 test("a human saying no is recorded distinctly from an escalation attempt", () => {

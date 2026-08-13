@@ -85,6 +85,32 @@ handler: async (args: string, ctx: any) => {
         `  integrity  ${report.ok ? "OK" : `${report.corrupt.length} UNPARSEABLE LINE(S)`}`,
       ];
       for (const bad of report.corrupt.slice(0, 5)) lines.push(`    line ${bad.line}: ${bad.text}`);
+      // R-51. ADR-0018 advertises that the ledger answers "did these four children run the same
+      // instructions?" and "has this definition changed since?" — and nothing read `definitionDigest`, so
+      // both needed hand-written jq and the second was not reproducible with `sha256sum` (the digest covers
+      // the body, not the frontmatter). The comparison against disk uses the SAME `snapshotOf` the approval
+      // store uses, so this listing cannot disagree with what voids an approval.
+      if (report.definitions.length > 0) {
+        lines.push(`  instructions ${report.definitions.length} distinct version(s) across the recorded spawns`);
+        for (const d of report.definitions) {
+          const current = snapshotOf(d.name);
+          const state =
+            current === null
+              ? "no such definition here"
+              : current.bodySha256 === d.sha256
+                ? "current"
+                : "CHANGED since";
+          lines.push(`    ${d.name}  ${d.sha256.slice(0, 12)}  ${d.spawns} spawn(s)  — ${state}`);
+        }
+        // Two rows for one name is the finding, not a formatting quirk: the same definition ran under two
+        // different bodies inside this ledger.
+        const names = report.definitions.map((d) => d.name);
+        for (const name of [...new Set(names)]) {
+          if (names.filter((n) => n === name).length > 1) {
+            lines.push(`    NOTE ${name} ran under more than one version of its instructions in this ledger`);
+          }
+        }
+      }
       if (!report.ok) {
         // Deliberately not repaired. A corrupt line is evidence; rewriting the file to make it parse
         // would destroy the one artifact an investigation has.
@@ -173,9 +199,11 @@ handler: async (args: string, ctx: any) => {
       // Why it is allowed, when a standing approval is the reason. An `allow` that silently depends on a
       // 30-day entry in a file elsewhere is precisely what an operator runs this command to discover, and
       // R-38 was the version of this listing that could not have told them (it said BLOCK instead).
+      // R-46: name each capability's own source, since they can differ (persisted for one, a live prompt
+      // for another). The scalar this replaced picked one and applied it to the set.
       const because =
-        plan.ok && approval?.source && approval.approved.length > 0
-          ? `  (${approval.approved.join(", ")} approved: ${approval.source})`
+        plan.ok && approval && approval.approved.length > 0
+          ? `  (${approval.approved.map((c) => `${c} approved: ${approval.sources[c] ?? "?"}`).join("; ")})`
           : "";
       lines.push(
         `    ${plan.ok ? "allow" : "BLOCK"}  ${name}` +

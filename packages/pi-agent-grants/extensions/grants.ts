@@ -108,6 +108,26 @@ export default function (pi: ExtensionAPI) {
       } catch {
         /* never throw into the agent loop */
       }
+      // R-47. `gatedBlocked` filters `requested`, and for a definition spawn `requested` is that
+      // definition's CEILING — which never contains `agent:<name>`, because the authorisation check
+      // (ADR-0017) is a separate, ungated branch. So `PI_GRANTS_GATED=agent:deploy`, written by an operator
+      // who read "it attenuates like any other capability" and meant "ask me before deploy runs", produces
+      // no dialog and no warning. It DOES bite when a definition passes the id down in its own
+      // `allowed-tools`, so the flag half-works — which is worse than not working, and is R-25's shape in
+      // the namespace ADR-0017 just promoted out of exactly that state.
+      //
+      // Warned rather than enforced: making it gate the spawn is a behaviour change and wants a decision.
+      // Silence is the part that is indefensible either way.
+      const inertGates = session.gated.filter((c) => c.startsWith("agent:"));
+      if (inertGates.length > 0) {
+        ctx.ui.notify(
+          `grants: ${inertGates.join(", ")} in PI_GRANTS_GATED does NOT gate spawning that definition — ` +
+            `the authorisation check for a definition is separate and ungated, so a human is never asked. ` +
+            `It applies only where a definition passes the id down in its own allowed-tools. To control ` +
+            `which definitions may run, withhold the agent: capability from PI_GRANTS_GRANT instead.`,
+          "warning",
+        );
+      }
       if (session.governed) {
         ctx.ui.notify(
           `grants: depth ${session.depth}/${session.maxDepth}, holding [${session.ownGrant.join(", ") || "nothing"}]`,

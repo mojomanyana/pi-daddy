@@ -821,8 +821,11 @@ Added 2026-08-13, same pass. `resolveApprovals` computes a per-capability `sourc
 Gate `tool:bash` and `tool:write`; let a persisted entry cover `bash` while a human clicks *Allow once* for
 `write`. The record reads `approved: ["tool:bash","tool:write"], approvalSource: "prompt"` — **asserting a
 human was asked about `tool:bash`, which they were not.** The ledger's whole job is answering *"did a human
-authorise this?"*, and here it over-claims. **Mitigation:** `approvalSources: Record<Capability,
-ApprovalSource>` on the record — a record-format addition, hence not done unilaterally.
+authorise this?"*, and here it over-claims. **FIXED 2026-08-14 (0.11.1):** the record carries `approvalSources`, one entry per capability. The scalar
+`approvalSource` is **kept and derived** — emitted only when every approved capability shares one source, so
+old and new lines can both be trusted, and omitted rather than guessed when they differ. `buildRecord`
+derives it instead of accepting it, so no call site can supply a summary that disagrees with the map beside
+it.
 
 ## R-47 · `PI_GRANTS_GATED=agent:deploy` is a silent no-op — M×M, OPEN
 Added 2026-08-13, same pass. `gatedBlocked` is a filter over `requested`, and for a definition spawn
@@ -834,8 +837,10 @@ So an operator who reads ADR-0017's *"it attenuates like any other capability"* 
 and nothing in the ledger marking the gate inert. It **does** work when a definition hands the id down
 (`allowed-tools: agent:deploy`), so the flag half-works, which is worse than not working at all. R-25's
 shape, in the namespace ADR-0017 just promoted out of exactly that state.
-**Mitigation:** cheapest is a startup warning naming an `agent:`/`skill:` entry in `PI_GRANTS_GATED` as
-unenforced; the real fix is including the authorising id in the gate check, which is a behaviour change.
+**PARTLY FIXED 2026-08-14 (0.11.1):** a startup warning names the inert entry, says a human is never asked,
+and points at the fix that does work — withholding the `agent:` capability from `PI_GRANTS_GRANT`. **Making
+it actually gate the spawn is deliberately not done**: that is a behaviour change and wants a decision. The
+silence was the indefensible part either way.
 
 ## R-48 · `/grants` silently truncated its verdict list at 12 — L/M×L/M, FIXED
 Added **and fixed** 2026-08-13, same pass. The listing sliced to 12 definitions with no indication that it
@@ -883,8 +888,12 @@ corrupt lines; it never touches `definitionDigest`. Both questions ADR-0018 adve
 children run the same instructions?"* and *"has this definition changed since?"* — require hand-written
 `jq`, and the second is not even reproducible with `sha256sum SKILL.md`, because the digest covers the body
 alone. Same class as R-34: the data exists and the control does not.
-**Mitigation:** `/grants ledger` groups by digest and flags digests that no longer match disk. If nobody
-uses it, that answers ADR-0018's revisit trigger and the field is decoration.
+**FIXED 2026-08-14 (0.11.1):** `verifyLedger` groups records by `name`+`sha256`, and `/grants ledger` prints
+each version with its spawn count and compares it against disk — `current`, `CHANGED since`, or
+`no such definition here` — using the **same `snapshotOf`** that voids an approval, so the listing cannot
+disagree with the enforcer about whether a definition changed. Two rows under one name are called out
+explicitly, because that is the finding rather than a formatting quirk. Both of ADR-0018's advertised
+questions now have a command; whether anyone runs it is that ADR's revisit trigger.
 
 ---
 
@@ -924,6 +933,7 @@ uses it, that answers ADR-0018's revisit trigger and the field is decoration.
 | 2026-08-13 | R-36 | **FIXED** same day (ADR-0017 step 1) — only `tool:`/`ext:` are filtered against an observation; `skill:` and `agent:` pass through. Four tests, including survival across three levels | ADR-0017 |
 | 2026-08-13 | R-37 | Added — the `<delegate>` approval subject rests on a premise ADR-0017 falsified, so `always` approvals can never persist on the only spawn path. Fail-closed; the real cost is the prompt fatigue that gets gating switched off (R-25's shape) | ADR-0018 scoping |
 | 2026-08-13 | R-35 | **Audit half closed** by ADR-0018 — every definition spawn records a `definitionDigest` (name, source, sha256 of the body). What remains is inherent: the digest identifies text without preserving it, and no capability model judges what a body says. The **task is never recorded**, by decision | ADR-0018 |
+| 2026-08-14 | R-46, R-47, R-51 | **Closed (R-46, R-51) and half-closed (R-47)** — the queued code work from the red-team pass, none of it needing a decision. The ledger no longer claims a human was asked about a capability satisfied from the store; `/grants ledger` reads `definitionDigest` for the first time, so ADR-0018's two advertised questions finally have a command; and an `agent:` id in `PI_GRANTS_GATED` says out loud that it gates nothing. Enforcing that last one is left as a decision | queued work |
 | 2026-08-14 | R-41, R-44, R-45, R-52 | **All four closed by decision**, as ADR-0020 (one approval file per project), ADR-0021 (the task is never stored), ADR-0022 (an inherited approval names its instructions) and ADR-0023 (`agent:*`). Each was presented to the user with a worked failure scenario and the options weighed; each ADR records the rejected option and what it would have bought. Two are breaking: the store layout and the propagation format | red-team follow-up |
 | 2026-08-14 | R-49 | Narrowed, not closed — ADR-0020 reduces the unlocked read-modify-write race from "any two projects on the machine" to "two sessions in the same directory". The mitigation is unchanged and still unbuilt: the lock the ledger already has | ADR-0020 |
 | 2026-08-13 | R-39…R-51 | **Red-team pass over ADR-0017/0018/0019 and the R-38 fix** (`architecture-critic` + `product-strategist`, the first review of any of it). Thirteen entries. Five fixed the same session (R-39 the description that said `Available: none`, R-40 the suite rewriting `$HOME`, R-41's pruning half, R-42 the lost concurrent write, R-43 global revoke, R-48 silent truncation); six open, of which R-41's keyspace, R-44's stored task and R-45's unpinned inheritance need decisions rather than patches. **Both reviewers independently found R-44.** Every finding acted on was reproduced by execution first | red-team pass |

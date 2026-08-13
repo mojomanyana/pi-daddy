@@ -17,6 +17,7 @@ import { after, describe, test } from "node:test";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { digestDefinition, parseSkillDefinition } from "../src/definitions.ts";
 import { fixture, piAvailable, runCommand, verdictFor } from "./harness.ts";
 
 const DOCS_WRITER = `---
@@ -214,6 +215,68 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     assert.match(text, /records\s+1/, "the valid record is counted");
     assert.match(text, /UNPARSEABLE LINE/, "and the torn one is reported rather than ignored");
     assert.match(text, /line 2:/, "with a line number, so it is actionable");
+  });
+
+  test("R-51: /grants ledger groups by instructions and flags a definition that has changed", async () => {
+    // ADR-0018 advertises that a record answers "did these four children run the same instructions?" and
+    // "has this definition changed since?" — and until 0.11.1 NOTHING read `definitionDigest`, so both
+    // needed hand-written jq. Two records for `docs-writer`: one whose digest matches the fixture on disk,
+    // one that does not. The comparison uses the same `snapshotOf` that voids an approval, so the listing
+    // cannot disagree with the enforcer about whether a definition changed.
+    const cwd = await projectOnce();
+    const dir = await mkdtemp(join(tmpdir(), "grants-it-digest-"));
+    const ledger = join(dir, "ledger.jsonl");
+    const line = (sha: string, childId: string) =>
+      JSON.stringify({
+        ts: new Date().toISOString(),
+        parentId: "d0",
+        childId,
+        depth: 1,
+        agentType: "docs-writer",
+        requested: ["tool:read"],
+        parentGrant: ["tool:read"],
+        effective: ["tool:read"],
+        denied: [],
+        clipped: [],
+        gatedBlocked: [],
+        blocked: false,
+        definitionDigest: { name: "docs-writer", source: `${cwd}/.pi/skills/docs-writer/SKILL.md`, sha256: sha },
+      });
+    // The real digest of the DOCS_WRITER fixture body, computed the way production computes it.
+    const parsed = parseSkillDefinition(`${cwd}/.pi/skills/docs-writer/SKILL.md`, DOCS_WRITER);
+    assert.ok(parsed, "precondition: the fixture parses");
+    const real = digestDefinition(parsed).sha256;
+    await writeFile(ledger, `${line(real, "d0.1")}\n${line(real, "d0.2")}\n${line("0".repeat(64), "d0.3")}\n`, "utf8");
+
+    const r = await runCommand({
+      cwd,
+      command: "/grants ledger",
+      env: { PI_GRANTS_GRANT: "agent:docs-writer,tool:read,tool:write", PI_GRANTS_LEDGER: ledger },
+    });
+
+    const text = r.notifies.map((n) => n.message).join("\n");
+    assert.match(text, /instructions 2 distinct version\(s\)/, "two bodies ran under one name");
+    assert.match(text, new RegExp(`${real.slice(0, 12)}\\s+2 spawn\\(s\\)\\s+— current`), "the live one is counted and matched");
+    assert.match(text, /0{12}\s+1 spawn\(s\)\s+— CHANGED since/, "and the stale one is named as changed");
+    assert.match(text, /NOTE docs-writer ran under more than one version/);
+  });
+
+  test("R-47: gating an agent: id warns that it does not gate spawning", async () => {
+    // `gatedBlocked` filters `requested`, and for a definition spawn `requested` is the definition's
+    // ceiling — which never contains `agent:<name>`, because ADR-0017's authorisation check is a separate
+    // ungated branch. So this configuration reads as a control and is not one (R-25's shape). Enforcing it
+    // is a behaviour change and wants a decision; being silent about it is indefensible either way.
+    const cwd = await projectOnce();
+    const r = await runCommand({
+      cwd,
+      command: "/grants",
+      env: { PI_GRANTS_GRANT: "agent:docs-writer,tool:read,tool:write", PI_GRANTS_GATED: "agent:docs-writer" },
+    });
+
+    const warning = r.notifies.find((n) => n.message.includes("does NOT gate spawning"));
+    assert.ok(warning, "an operator who wrote a gate that does nothing must be told");
+    assert.match(warning.message, /agent:docs-writer/);
+    assert.match(warning.message, /withhold the agent: capability/, "and told what to do instead");
   });
 
   test("an ungoverned session reports itself inactive", async () => {

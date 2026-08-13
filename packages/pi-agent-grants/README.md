@@ -396,8 +396,10 @@ approval says so:
                         as NONE, never as everything.
 ```
 
-`/grants ledger` reads the ledger back and reports its integrity — record count, escalation attempts, and
-any unparseable lines with line numbers. It exists because nothing in this package had ever read a ledger
+`/grants ledger` reads the ledger back and reports its integrity — record count, escalation attempts, any
+unparseable lines with line numbers, and **which instructions actually ran**: records grouped by definition
+digest, each compared against the file on disk (`current` / `CHANGED since`), which is what makes ADR-0018's
+`definitionDigest` answerable rather than decorative. It exists because nothing in this package had ever read a ledger
 back, so a torn line was indistinguishable from a spawn that never happened. A corrupt line is **evidence**
 and is left alone rather than repaired. Nothing runs this check automatically.
 
@@ -597,9 +599,9 @@ every in-repo test passed. `npm run test:smoke` packs a tarball, installs it int
 ## Testing
 
 ```bash
-npm test                   # 282 unit tests. Fast, pure, no pi, no network.
+npm test                   # 283 unit tests. Fast, pure, no pi, no network.
 npm run typecheck          # src + extensions + tests + integration tests
-npm run test:integration   # 17 tests against a REAL pi process. ~23s, no model tokens.
+npm run test:integration   # 19 tests against a REAL pi process. ~26s, no model tokens.
 npm run test:smoke         # pack, install into a scratch project, import and use it
 PI_GRANTS_IT_MODEL=1 npm run test:integration   # + 4 end-to-end tests with a real model. ~60s, costs money.
 ```

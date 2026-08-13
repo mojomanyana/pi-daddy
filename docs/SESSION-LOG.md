@@ -8,7 +8,7 @@ decisions; this file holds state and next actions. Newest entry on top.
 ## NEXT SESSION — read this, then pick one
 
 **State: green, working tree clean, reviewed, and the review's decisions shipped.** `pi-agent-grants`
-**0.11.0**, `pi-token-audit` **0.1.0**. **282 unit + 17 integration tests** (+**4** with a real model),
+**0.11.1**, `pi-token-audit` **0.1.0**. **283 unit + 19 integration tests** (+**4** with a real model),
 typecheck clean, smoke clean. **Twenty-three** ADRs decided.
 
 **Read the 2026-08-14 entry below before touching the approval layer.** Four ADRs landed together
@@ -36,7 +36,8 @@ one ate the body of the helper it was rewriting and hung `npm test` with no outp
 | # | Item | Notes |
 | :--- | :--- | :--- |
 | — | ~~R-41 keyspace, R-44 stored task, R-45 unpinned inheritance, R-52 the `agent:*` cliff~~ **ALL CLOSED 2026-08-14** by ADR-0020/0021/0022/0023. | Done. Each ADR records the rejected option. |
-| 1 | **R-46, R-47, R-51** — the ledger reports one approval source for a mixed set (so it can claim a human was asked when they were not); `PI_GRANTS_GATED=agent:x` is a silent no-op; nothing reads `definitionDigest`, so ADR-0018's two advertised questions have no tool. | **The queued code work.** Small and independent, no decisions needed. R-47's cheapest form is a startup warning; R-51's is `/grants ledger` grouping by digest, which also answers ADR-0018's revisit trigger. |
+| — | ~~R-46, R-51~~ **CLOSED 2026-08-14 (0.11.1).** The ledger no longer claims a human was asked about a capability satisfied from the store, and `/grants ledger` reads the digest — ADR-0018's two advertised questions finally have a command. | Done. |
+| 1 | **R-47 is half-closed.** An `agent:` id in `PI_GRANTS_GATED` now *says* it gates nothing. Making it actually gate the spawn is a behaviour change and **wants a decision**. | The only item here that needs you rather than work. |
 | 2 | **R-49** — an unlocked read-modify-write can resurrect a revoked approval. ADR-0020 narrowed it from "any two projects" to "two sessions in the same directory". | The mitigation already exists in this codebase: the lock the ledger uses. |
 | 3 | **R-50** — "void the moment either changes" is really "void at the next session start"; `session.definitions` is a snapshot. All consequences fail safe, none is documented. | A SPEC paragraph, not code. |
 | — | ~~R-35, R-36, R-37, R-38~~ **ALL CLOSED 2026-08-13** by ADR-0017/0018/0019 and the approval-store IT. Left deliberately: the digest identifies a body without preserving it, and nothing judges what a body *says*. | Done. Do not reopen without new evidence. |
@@ -79,6 +80,55 @@ That convention is why every reversal here was survivable, and there have been f
 
 ---
 
+
+## 2026-08-14 (later) — the queued work: the digest becomes readable, and the ledger stops over-claiming — 0.11.1
+
+**Three fixes from the red-team pass that needed no decision.** None changes what the product claims; each
+makes an existing claim true.
+
+**R-51 — `definitionDigest` had no reader, so ADR-0018's promise was unkeepable.** That ADR advertises that
+a record answers *"did these four children run the same instructions?"* and *"has this definition changed
+since?"*, and `verifyLedger` never touched the field — both questions needed hand-written `jq`, and the
+second was not even reproducible with `sha256sum`, because the digest covers the body and not the
+frontmatter. `verifyLedger` now groups by `name`+`sha256`, and `/grants ledger` prints each version with its
+spawn count and compares it against disk:
+
+```
+  instructions 2 distinct version(s) across the recorded spawns
+    docs-writer  4f2a91c8b0d3  2 spawn(s)  — current
+    docs-writer  000000000000  1 spawn(s)  — CHANGED since
+    NOTE docs-writer ran under more than one version of its instructions in this ledger
+```
+
+The comparison uses **the same `snapshotOf` that voids an approval**, so this listing cannot disagree with
+the enforcer about whether a definition changed — the R-28 discipline applied to a new diagnostic rather
+than rediscovered by it later. Two rows under one name are called out explicitly, because that is the
+finding, not a formatting quirk.
+
+**R-46 — the ledger claimed a human was asked about capabilities they never saw.** `obtainApprovals`
+returned one scalar `source` for a whole set, chosen as `scope ? "prompt" : sources[approved[0]]`. Gate
+`tool:bash` and `tool:write`, let a persisted entry cover `bash` while a human clicks *Allow once* for
+`write`, and the record read `approvalSource: "prompt"` for both. `resolveApprovals` had always computed the
+per-capability map; the defect was that it was thrown away.
+
+The fix keeps both fields and makes one a **derived summary of the other**: `approvalSources` always, and the
+scalar only when every capability shares one source — omitted rather than guessed when they differ.
+`buildRecord` derives it instead of accepting it, so no call site can supply a summary that disagrees with
+the map beside it. Old lines stay readable; new ones cannot lie.
+
+**R-47 — `PI_GRANTS_GATED=agent:deploy` is a gate that gates nothing**, because `gatedBlocked` filters
+`requested` and a definition spawn's `requested` is its *ceiling*, which never contains `agent:<name>` —
+ADR-0017's authorisation check is a separate, ungated branch. It *does* bite when a definition passes the id
+down in its own `allowed-tools`, so the flag **half-works, which is worse than not working**. A startup
+warning now names it, says a human is never asked, and points at what does work (withhold the capability
+from `PI_GRANTS_GRANT`). **Making it enforce is deliberately left as a decision** — that is a behaviour
+change. The silence was indefensible either way.
+
+**Verified: 283 unit, 19 integration, 23 with `PI_GRANTS_IT_MODEL=1`, typecheck clean, smoke clean.** The
+R-51 test was confirmed to fail when the digest comparison is stubbed to `true`, and nothing else fails with
+it.
+
+---
 
 ## 2026-08-14 — four decisions from the red-team pass, implemented — 0.11.0
 

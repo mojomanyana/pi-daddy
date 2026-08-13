@@ -85,7 +85,14 @@ export function republishable(session: GrantsSession): InheritableApproval[] {
 
 export interface ApprovalOutcome {
   approved: Capability[];
-  source?: ApprovalSource;
+  /**
+   * Where EACH approved capability's yes came from (R-46).
+   *
+   * Was a single `source`, chosen as `scope ? "prompt" : sources[approved[0]]` — which told the ledger a
+   * human had been asked about capabilities satisfied silently from the store. `resolveApprovals` has
+   * always computed this map; the bug was that it was thrown away.
+   */
+  sources: Record<Capability, ApprovalSource>;
   scope?: ApprovalScope;
   humanDenied: boolean;
   reason?: string;
@@ -153,11 +160,7 @@ export async function obtainApprovals(
   const snapshot = (name: string) => snapshotOf(session, name);
   const pre = await storedApprovals(session, gatedBlocked, subject);
   if (ctx === null || pre.needsPrompt.length === 0) {
-    return {
-      approved: pre.approved,
-      source: pre.approved.length > 0 ? pre.sources[pre.approved[0]] : undefined,
-      humanDenied: false,
-    };
+    return { approved: pre.approved, sources: pre.sources, humanDenied: false };
   }
 
   // The gate PROVIDER lives on the session, not here: `obtainApprovals` runs once per `tool_call` and once
@@ -172,6 +175,9 @@ export async function obtainApprovals(
   });
 
   const approved = [...pre.approved];
+  // Seeded with what the store already answered, then one entry added per capability a human is asked
+  // about — so a mixed set reports exactly which yes came from where.
+  const sources: Record<Capability, ApprovalSource> = { ...pre.sources };
   let scope: ApprovalScope | undefined;
   let humanDenied = false;
   let reason: string | undefined;
@@ -187,6 +193,7 @@ export async function obtainApprovals(
       break;
     }
     approved.push(capability);
+    sources[capability] = "prompt";
     scope = outcome.scope;
 
     if (outcome.scope === "session" || outcome.scope === "always") {
@@ -237,11 +244,5 @@ export async function obtainApprovals(
     session.publishChildEnv(); // a new session approval widens what children may inherit — republish now
   }
 
-  return {
-    approved,
-    source: approved.length > 0 ? (scope ? "prompt" : pre.sources[approved[0]]) : undefined,
-    scope,
-    humanDenied,
-    reason,
-  };
+  return { approved, sources, scope, humanDenied, reason };
 }
