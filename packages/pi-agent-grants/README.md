@@ -4,6 +4,29 @@
 tree, so a sub-agent can never confer more than it holds — enforced by **pi's own `--tools` allowlist**, with
 an append-only ledger of what was granted and what was refused.
 
+> ## 0.8.0 is a breaking change: spawning a definition requires `agent:<name>`
+>
+> **ADR-0017.** The catalog has always emitted `agent:<name>` for every definition and the parser has always
+> accepted it, but **nothing ever checked it** (R-35). The only gate on `delegate({agent: "deploy"})` was
+> whether that definition's `allowed-tools` fitted inside the session's grant — so governance covered what a
+> child *can do* and never *which operator-authored instructions it was given*, and an operator could not
+> say "this session may spawn `review` but not `deploy`".
+>
+> **What you must change:** an enumerated `PI_GRANTS_GRANT` now needs an `agent:` id per definition it may
+> spawn. `PI_GRANTS_GRANT="tool:read,tool:delegate"` can spawn nothing by name; add `agent:review` to allow
+> that one. `tool:*` satisfies any of them, so an **ungoverned session is unaffected** and `delegate({tools:
+> […]})` is untouched. The refusal names the missing capability and lists what the session *may* spawn.
+>
+> It attenuates like every other capability: a definition's own `allowed-tools` may list `agent:other`,
+> which is how a delegator is told which definitions **it** may spawn — and a parent can never hand down one
+> it does not hold. The id authorises; it is never passed to `--tools`.
+>
+> **Also fixed, and required for the above (R-36):** `deriveOwnGrant` filtered the inherited grant against
+> the session's *observed tools*, which silently dropped `skill:` and `agent:` capabilities at the first
+> provider request. A child holding `skill:review` therefore could not re-grant it, and `/grants` stopped
+> listing it. Only `tool:` and `ext:` are filtered now — an observation says nothing about a namespace that
+> is not tools.
+>
 > ## 0.7.0 is a breaking change: this package is now the spawner, not a fence
 >
 > **ADR-0016.** Earlier versions were a governance layer wrapped around `@tintinweb/pi-subagents`: the
@@ -168,7 +191,8 @@ escalation attempt**, and it is invisible without a record.
 ## Running it
 
 ```bash
-PI_GRANTS_GRANT="tool:read,tool:grep,tool:find,tool:ls" \
+# `agent:` ids say WHICH definitions this session may spawn (0.8.0); `tool:` ids say what it may grant them.
+PI_GRANTS_GRANT="agent:review,tool:read,tool:grep,tool:find,tool:ls,tool:delegate" \
 PI_GRANTS_LEDGER=.pi/grants.jsonl \
 PI_GRANTS_MAX_DEPTH=2 \
 pi -e ./extensions/grants.ts

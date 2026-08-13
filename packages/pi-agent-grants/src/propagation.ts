@@ -78,6 +78,16 @@ function matchesToolName(capability: Capability, toolName: string): boolean {
 }
 
 /**
+ * Is this capability something an observed tool array can speak about at all? (R-36, ADR-0017 step 1.)
+ *
+ * `tool:` and `ext:` name tools, so a tool array that omits one is evidence the session does not have it.
+ * `skill:` and `agent:` name a loadable instruction file and a spawnable definition — neither is ever a
+ * tool, so an observation says **nothing** about them and must not be read as evidence of absence.
+ */
+const isToolCapability = (capability: Capability): boolean =>
+  capability.startsWith("tool:") || capability.startsWith("ext:");
+
+/**
  * Derive this session's own grant from what it inherited and what pi actually gave it.
  *
  * `observedTools` is the bare tool-name list from the session's own provider payload, or null when it
@@ -86,21 +96,33 @@ function matchesToolName(capability: Capability, toolName: string): boolean {
  *
  * A wildcard holder stays a wildcard holder: an enumerated observation must not silently downgrade an
  * explicitly unlimited grant, or a root session would lose the authority it was configured with.
+ *
+ * **R-36 / ADR-0017 step 1: only tool-shaped capabilities are filtered.** The observation is a list of
+ * TOOLS, so it is evidence about `tool:` and `ext:` and about nothing else. Until this was fixed, a child
+ * inheriting `tool:read, skill:review` held only `tool:read` from its first provider request onward — it
+ * still *had* the skill (it arrives as `--skill`), but could not re-grant it and `/grants` stopped listing
+ * it. Silently, and in the narrowing direction, which is why it survived: nothing fails when a grant
+ * quietly shrinks. It also made ADR-0017's `agent:` prerequisite unsatisfiable below the root.
  */
 export function deriveOwnGrant(
   inheritedParentGrant: Capability[],
   observedTools: string[] | null,
 ): Capability[] {
   if (observedTools === null) return [...inheritedParentGrant];
+  // Capabilities an observation cannot speak about ride through both branches untouched.
+  const nonTool = inheritedParentGrant.filter((c) => !isToolCapability(c) && c !== WILDCARD);
   if (inheritedParentGrant.includes(WILDCARD)) {
     // Keep the wildcard, and additionally enumerate what was observed so descendants can be checked
     // against concrete names too.
     const enumerated = observedTools.map((t) => `tool:${t}`);
-    return [...new Set([WILDCARD, ...enumerated])].sort();
+    return [...new Set([WILDCARD, ...enumerated, ...nonTool])].sort();
   }
-  return inheritedParentGrant
-    .filter((c) => observedTools.some((t) => matchesToolName(c, t)))
-    .sort();
+  return [
+    ...inheritedParentGrant.filter(
+      (c) => isToolCapability(c) && observedTools.some((t) => matchesToolName(c, t)),
+    ),
+    ...nonTool,
+  ].sort();
 }
 
 /**

@@ -53,7 +53,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
 
   test("an enumerated grant allows a type it covers and blocks one it does not", async () => {
     const cwd = await projectOnce();
-    const r = await runCommand({ cwd, command: "/grants", env: { PI_GRANTS_GRANT: "tool:read,tool:write" } });
+    const r = await runCommand({ cwd, command: "/grants", env: { PI_GRANTS_GRANT: "agent:docs-writer,agent:undeclared,tool:read,tool:write" } });
 
     assert.match(verdictFor(r, "docs-writer") ?? "", /^allow/);
     assert.match(
@@ -65,7 +65,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
 
   test("a capability the session does not hold is refused as escalation", async () => {
     const cwd = await projectOnce();
-    const r = await runCommand({ cwd, command: "/grants", env: { PI_GRANTS_GRANT: "tool:read" } });
+    const r = await runCommand({ cwd, command: "/grants", env: { PI_GRANTS_GRANT: "agent:docs-writer,tool:read" } });
 
     const verdict = verdictFor(r, "docs-writer") ?? "";
     assert.match(verdict, /^BLOCK/);
@@ -73,12 +73,25 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     assert.match(verdict, /escalation blocked/);
   });
 
+  test("ADR-0017: a definition whose tools fit is still refused without agent:<name>", async () => {
+    // R-35's exact shape, end to end: `docs-writer` needs Read+Write and the grant holds both, which used
+    // to be the whole test. What is missing now is the authority to run THAT definition. The three tests
+    // above had to gain `agent:` ids for this reason — proof the prerequisite bites on the real path and
+    // not merely in a pure function.
+    const cwd = await projectOnce();
+    const r = await runCommand({ cwd, command: "/grants", env: { PI_GRANTS_GRANT: "tool:read,tool:write" } });
+
+    const verdict = verdictFor(r, "docs-writer") ?? "";
+    assert.match(verdict, /^BLOCK/, "holding every tool the definition needs is no longer sufficient");
+    assert.match(verdict, /agent:docs-writer/, "and the refusal names the capability the operator must add");
+  });
+
   test("a gated capability blocks, and names approval, on an enumerated grant", async () => {
     const cwd = await projectOnce();
     const r = await runCommand({
       cwd,
       command: "/grants",
-      env: { PI_GRANTS_GRANT: "tool:read,tool:write", PI_GRANTS_GATED: "tool:write" },
+      env: { PI_GRANTS_GRANT: "agent:docs-writer,tool:read,tool:write", PI_GRANTS_GATED: "tool:write" },
     });
 
     // Wording differs from the deleted interceptor's ("requires approval for X"); the property — a gated
@@ -124,7 +137,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     const enumerated = await runCommand({
       cwd,
       command: "/grants",
-      env: { PI_GRANTS_GRANT: "tool:read,tool:fabric_exec" },
+      env: { PI_GRANTS_GRANT: "agent:fabric-agent,tool:read,tool:fabric_exec" },
     });
     assert.match(verdictFor(enumerated, "fabric-agent") ?? "", /fabric_exec/);
   });

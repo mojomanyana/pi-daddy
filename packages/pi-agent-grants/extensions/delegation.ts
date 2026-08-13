@@ -13,7 +13,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { DELEGATE_SUBJECT, shouldSeekApproval } from "../src/approval.ts";
-import { planDelegation } from "../src/delegate.ts";
+import { maySpawnDefinition, planDelegation } from "../src/delegate.ts";
 import { MAX_CHILDREN_PER_CALL, childSpawnId, splitBudget } from "../src/fanout.ts";
 import { appendRecord, buildRecord } from "../src/ledger.ts";
 import { mergeChildEnv } from "../src/propagation.ts";
@@ -220,6 +220,18 @@ async function runOneDelegation(
 export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession): void {
   if (!session.mayDelegate) return;
 
+  /**
+   * Definitions this session is actually authorised to spawn (ADR-0017), for the tool description.
+   *
+   * Listing all of them would tell the model it can spawn things every attempt at which is refused — the
+   * R-28 shape again, a description disagreeing with the enforcer. Computed from the same
+   * `maySpawnDefinition` the planner uses, at registration time, which is sound because `agent:` ids no
+   * longer evaporate when the tool surface is observed (R-36).
+   */
+  const spawnable = [...session.definitions.keys()]
+    .filter((name) => maySpawnDefinition(session.ownGrant, name))
+    .sort();
+
   pi.registerTool({
     name: "delegate",
     label: "Delegate (governed)",
@@ -234,7 +246,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
         Type.String({
           description:
             `Name of a definition to spawn — its allowed-tools become the grant and its instructions ` +
-            `become the sub-agent's system prompt. Available: ${[...session.definitions.keys()].sort().join(", ") || "none"}.`,
+            `become the sub-agent's system prompt. Available: ${spawnable.join(", ") || "none"}.`,
         }),
       ),
       tools: Type.Optional(

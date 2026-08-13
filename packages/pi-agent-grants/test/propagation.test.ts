@@ -57,6 +57,42 @@ test("ext: capabilities match on their bare tool name", () => {
   );
 });
 
+test("R-36: observation does not drop capabilities it cannot speak about", () => {
+  // The observation is a list of TOOLS. `skill:` names an instruction file and `agent:` names a spawnable
+  // definition — neither is ever a tool, so their absence from the array is not evidence of anything.
+  // Before ADR-0017 step 1 this returned ["tool:read"], so a child could not re-grant a skill it held and
+  // `/grants` stopped listing it — silently, and in the narrowing direction, which is why it survived.
+  assert.deepEqual(
+    deriveOwnGrant(["tool:read", "tool:bash", "skill:review", "agent:reviewer"], ["read"]),
+    ["agent:reviewer", "skill:review", "tool:read"],
+  );
+});
+
+test("R-36: a wildcard holder keeps its non-tool capabilities too", () => {
+  const g = deriveOwnGrant([WILDCARD, "skill:review", "agent:reviewer"], ["read"]);
+  assert.ok(g.includes("skill:review") && g.includes("agent:reviewer"), "enumeration must not evict them");
+  assert.ok(g.includes(WILDCARD) && g.includes("tool:read"));
+});
+
+test("R-36: an empty tool observation still drops every tool, and only tools", () => {
+  // The fail-closed half must survive the fix: nothing about passing `skill:` through may weaken the
+  // rule that an unobserved TOOL is gone.
+  assert.deepEqual(deriveOwnGrant(["tool:read", "skill:review"], []), ["skill:review"]);
+});
+
+test("R-36: a skill survives three levels, which is the property that was broken", () => {
+  const root = deriveOwnGrant(["tool:read", "skill:review", "agent:reviewer"], ["read"]);
+  const child = deriveOwnGrant(
+    parseList(childEnv({ ownGrant: root, depth: 0, maxDepth: 3, gated: [] })[ENV_GRANT]),
+    ["read"],
+  );
+  const grandchild = deriveOwnGrant(
+    parseList(childEnv({ ownGrant: child, depth: 1, maxDepth: 3, gated: [] })[ENV_GRANT]),
+    ["read"],
+  );
+  assert.deepEqual(grandchild, ["agent:reviewer", "skill:review", "tool:read"]);
+});
+
 test("a wildcard holder stays a wildcard holder after observing", () => {
   const g = deriveOwnGrant([WILDCARD], ["read", "bash"]);
   assert.ok(g.includes(WILDCARD), "an explicitly unlimited root must not be silently downgraded");

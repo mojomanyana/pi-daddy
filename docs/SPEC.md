@@ -3,7 +3,7 @@
 **The current-state document.** No history, no reasoning about alternatives, no record of how anything came
 to be decided. Where this disagrees with an ADR, the ADR is right and this file is stale — say so.
 
-Last synced against the code: **2026-08-12**, `pi-agent-grants` 0.7.0, pi 0.84.1, herdr 0.7.5.
+Last synced against the code: **2026-08-13**, `pi-agent-grants` 0.8.0, pi 0.84.1, herdr 0.7.5.
 
 ---
 
@@ -63,10 +63,21 @@ Three rules, and each fails in the safe direction:
 
 | Case | Result |
 |---|---|
+| The session does not hold `agent:<name>` | **Refused before the file is even read**, naming the missing capability and listing the definitions it *may* spawn. `tool:*` satisfies any of them, so an ungoverned session is unaffected. |
 | `allowed-tools` **absent** | **Not spawnable.** Undeclared is the weakest state, never the strongest. |
 | `allowed-tools:` present but empty | Spawnable with **zero** tools — deliberately distinct from absent. |
 | A sub-tool pattern, e.g. `Bash(git:*)` | **Refused, naming the pattern.** `--tools` matches whole names only; granting bare `bash` would widen the declaration and dropping it would silently narrow. |
 | An unknown definition name | **Refused, listing what exists.** There is no fallback. |
+
+**Spawning a definition requires holding `agent:<name>`** (ADR-0017), so *which* definitions may run here is
+an operator decision, expressed in the grant like any other capability — and refused as a **denial**, so the
+attempt reaches the escalation signal. It attenuates like everything else: a definition's own `allowed-tools`
+may list `agent:other`, which is how a delegator is told which definitions **it** may spawn, and a parent can
+never hand down one it does not hold. The id authorises; it is never passed to `--tools`.
+
+Capability ids are `tool:<name>`, `ext:<pkg>/<tool>`, `skill:<name>` and `agent:<name>`. Only the first two
+name tools, and **only those two are filtered against a session's observed tool surface** — an observation
+says nothing about a namespace that is not tools.
 
 Anything pi-daddy needs beyond the standard goes under the spec's `metadata:` map with `pi-daddy-` keys —
 never as invented top-level frontmatter, so the file stays valid for every other tool that reads it.
@@ -229,15 +240,15 @@ Stated because a gap nobody wrote down is the one that surprises somebody.
 - **Nothing verifies the ledger automatically.** Detection exists; a scheduled check does not.
 - **Pane cleanup is not leak-proof.** Cleanup runs in a `finally`, which covers thrown errors but not the
   process being killed. There is no reaper.
-- **`agent:` capabilities enforce nothing — which means definitions are not individually authorised.**
-  The catalog lists each definition as `agent:<name>`, and `agent:` parses as a capability, but **no code
-  path ever checks whether a session holds one.** So any session with `tool:delegate` may spawn *any*
-  definition whose `allowed-tools` fits inside its own grant. An operator cannot say "this session may spawn
-  `review` but not `deploy`".
-  Concretely: the capability check governs **what a child can do**, never **what it is told to do**. A
-  session granted `read, bash` can spawn a definition whose body says "delete everything you can reach",
-  because that body needs only `bash`. The grant is honoured; the instructions were never in scope.
-  Either make `agent:<name>` a real prerequisite for spawning, or drop the namespace — a capability that
-  enforces nothing reads as a control.
+- **A definition's *instructions* are still ungoverned, and the ledger does not record them.** ADR-0017
+  closed half of R-35: *which* definitions may be spawned is now authorised by `agent:<name>`. What remains
+  is that the operator authorises a **file**, and what that file says is their responsibility — a capability
+  model can name a definition, it cannot read a body and judge it. The ledger records the grant and never
+  the body, so *"what was this child told to do?"* is unanswerable after the fact. A body hash on the record
+  would close that, and is not decided.
+- **An `allowed-tools` entry written as `tool:read` becomes `tool:tool:read`.** Only `ext:`, `skill:` and
+  `agent:` are passed through as written; everything else is lowercased and prefixed. The catalog then
+  refuses it as unknown, so it fails loudly rather than granting anything — but the message names the
+  mangled id, not the mistake. Bare names (`Read`, `Grep`) are the documented form.
 - **`PI_BUILTIN_TOOLS` is a pinned observation** of pi 0.84.1. Drift misfiles a capability in the catalog;
   it cannot grant one, because `--tools` is the authority.

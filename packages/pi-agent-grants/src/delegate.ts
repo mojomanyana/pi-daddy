@@ -21,6 +21,23 @@ import { resolve, assertNarrowing, type Capability, type ResolveResult } from ".
 import { ENV_APPROVED, ENV_DEPTH, ENV_FANOUT, ENV_GATED, ENV_GRANT, ENV_LEDGER, ENV_MAX_DEPTH, ENV_PARENT_ID } from "./propagation.ts";
 import { inheritApprovals, type InheritableApproval } from "./approval.ts";
 import { unknownCapabilities, type Catalog } from "./catalog.ts";
+import { WILDCARD } from "./pi-tools.ts";
+
+/** The capability that authorises spawning a definition (ADR-0017). `tool:*` satisfies any of them. */
+export const agentCapability = (name: string): Capability => `agent:${name}`;
+
+/**
+ * May this grant spawn that definition? (ADR-0017.)
+ *
+ * `resolve()` is exact-match plus subsumption and has no wildcard rule — a wildcard session works only
+ * because `deriveOwnGrant` *enumerates* its observed tools alongside `tool:*`. Definitions are not tools,
+ * so nothing enumerates them, and the wildcard has to be honoured here explicitly. Without that an
+ * UNGOVERNED session would stop being able to spawn, and "governance is opt-in" is the one rule this
+ * package must never break by accident.
+ */
+export function maySpawnDefinition(ownGrant: Capability[], name: string): boolean {
+  return ownGrant.includes(WILDCARD) || ownGrant.includes(agentCapability(name));
+}
 
 /** The tool name that confers the ability to delegate further. */
 export const DELEGATE_CAPABILITY: Capability = "tool:delegate";
@@ -178,6 +195,30 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
         reason:
           `unknown agent "${request.agent}"` +
           (known.length > 0 ? ` — known definitions: ${known.join(", ")}` : " — no definitions were found"),
+      };
+    }
+
+    // ADR-0017: authorisation comes BEFORE anything is said about the file. Which definitions this
+    // session may spawn is a governance question about the SESSION; whether the file declares its tools
+    // properly is a diagnostic about the DEFINITION, and answering the second one first would report a
+    // malformed-file error to a caller who was never allowed to spawn it either way.
+    //
+    // Recorded as a denial rather than a bare refusal, deliberately: `denied` is the escalation signal
+    // ADR-0008 designates, and asking to run a definition this session was not granted IS an attempt to
+    // exceed the grant. A refusal that left `denied` empty would keep it out of every audit query.
+    if (!maySpawnDefinition(ctx.ownGrant, definition.name)) {
+      const authorising = agentCapability(definition.name);
+      const held = ctx.ownGrant.filter((c) => c.startsWith("agent:")).sort();
+      return {
+        ...empty,
+        requested: [authorising],
+        result: { ...empty.result, denied: [authorising] },
+        reason:
+          `cannot spawn "${definition.name}" — this session does not hold ${authorising} ` +
+          `(the definition lives at ${definition.source}). ` +
+          (held.length > 0
+            ? `It may spawn: ${held.join(", ")}.`
+            : `It may spawn no definitions at all; add ${authorising} to its grant to allow this one.`),
       };
     }
 

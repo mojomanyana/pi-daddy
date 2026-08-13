@@ -575,6 +575,34 @@ the namespace. A capability that enforces nothing reads as a control, which is R
 a new place. Recording the body's hash in the ledger would separately close the audit half.
 **Trigger:** any grant naming an `agent:` capability, since it currently has no effect; any operator asking
 to restrict which definitions a session may spawn.
+**Note 2026-08-13:** taken up by **ADR-0017** (Proposed), which chooses the prerequisite over deleting the
+namespace and blocks on R-36 below. The audit half — the ledger records the grant and never the body — is
+explicitly *not* in that ADR and still has no owner.
+
+## R-36 · Observation silently drops every non-tool capability from a session's own grant — M×M
+Added 2026-08-13 while scoping ADR-0017. **Measured by execution, not by reading the code.**
+
+`deriveOwnGrant` tightens the inherited grant by filtering it against the session's *observed tool names*
+(`src/propagation.ts:101–103`), and the filter is `matchesToolName`, which only ever matches `tool:` and
+`ext:`. Every other namespace therefore fails the test and is dropped at the first provider request:
+
+```
+inherited      : tool:read, skill:review, agent:reviewer, ext:pkg/web_search
+before observe : tool:read, skill:review, agent:reviewer, ext:pkg/web_search
+after  observe : ext:pkg/web_search, tool:read
+```
+
+**This is live for `skill:` today.** R-32 shipped skill grants and a child does receive the skill (it is
+passed as `--skill`), but the capability vanishes from its own grant the moment the model is first called
+— so the child cannot re-grant it to a grandchild, and `/grants` stops listing something the child holds.
+The direction is fail-closed, which is why it is M×M rather than higher, but it is **silent**: nothing
+records that a capability was removed, and the delegator that granted it is never told.
+
+**Mitigation (proposed, ADR-0017 step 1):** filter only the namespaces that *are* tools and pass `skill:`
+and `agent:` through untouched — an observed tool array says nothing about a namespace that is not tools.
+This is a widening, so it ships with the test that pins it.
+**Trigger:** a `skill:` capability present in `PI_GRANTS_GRANT` and absent from `/grants` in the same
+session; any child unable to re-grant a skill it demonstrably holds.
 
 ---
 
@@ -608,3 +636,6 @@ to restrict which definitions a session may spawn.
 | 2026-08-12 | R-35 | Added — `agent:` capabilities enforce nothing, so definitions are not individually authorised and a definition's *instructions* are ungoverned. Found by writing `docs/SPEC.md`: stating the guarantee precisely is what exposed the gap between "what a child can do" and "what it is told to do" | doc sync |
 | 2026-08-12 | R-34 | Added and **partly fixed** — the ledger had no reader, so corruption was silent; `verifyLedger` + `/grants ledger` make it detectable and concurrent appends are now serialised by a lock | fan-out |
 | 2026-08-12 | R-30 | Downgraded in likelihood — the working frame (no third-party pi extensions; speak herdr's CLI directly) means `pi-herdr` is not installed and its model-controlled `agentArgs`/`env` are not in the trust path. **Kept as a live entry**: the hazard returns the moment it is installed, and this frame is not yet recorded in an ADR | `docs/probes/g16-herdr` |
+| 2026-08-13 | R-28 | **Dated note** — the mitigation is unchanged but moved: `decideSpawn`/`decisionContext()`/`test/interceptor-wiring.test.ts` went with ADR-0016's port deletion; the surviving builder is `delegationContext()` in `extensions/session.ts` after `extensions/grants.ts` was split 866 → 202 lines. `test/file-size.test.ts` now makes "the one file with no unit coverage grew unreviewable" a test failure | grants.ts split |
+| 2026-08-13 | R-36 | Added — `deriveOwnGrant` filters the inherited grant by observed **tool** names, so `skill:` and `agent:` capabilities are silently dropped at the first provider request. Live for `skill:` since R-32; fail-closed but unrecorded, and a hard blocker for ADR-0017. **Measured by execution** while scoping that ADR | ADR-0017 |
+| 2026-08-13 | R-35 | Taken up by **ADR-0017 (Proposed)** — `agent:<name>` becomes a real prerequisite (Option A) rather than the namespace being deleted (Option B), in two steps with R-36 fixed first. The audit half (body hash on the ledger record) is deliberately left to a separate ADR | ADR-0017 |

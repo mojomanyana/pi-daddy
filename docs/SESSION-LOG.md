@@ -7,10 +7,10 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ## NEXT SESSION — read this, then pick one
 
-**State: green, nothing half-finished.** `pi-agent-grants` **0.7.0**, `pi-token-audit` **0.1.0**. **251 unit
-+ 9 integration tests**, typecheck clean, smoke clean (packs, installs, exercises every subpath). Sixteen
-ADRs decided; ADR-0016 fully implemented. `extensions/grants.ts` is **202 lines** — the split below is done,
-and a test now enforces the ceiling.
+**State: green, nothing half-finished.** `pi-agent-grants` **0.8.0**, `pi-token-audit` **0.1.0**. **262 unit
++ 10 integration tests**, typecheck clean, smoke clean (packs, installs, exercises every subpath).
+**Seventeen** ADRs decided; ADR-0016 and ADR-0017 fully implemented. `extensions/grants.ts` is **202 lines**
+— the split is done and a test enforces the ceiling.
 
 ```bash
 cd packages/pi-agent-grants && npm test && npm run typecheck && npm run test:integration && npm run test:smoke
@@ -23,7 +23,7 @@ known gap. Do not re-derive it from the ADRs.
 
 | # | Item | Notes |
 | :--- | :--- | :--- |
-| 1 | **R-35 — a definition's instructions are ungoverned.** `agent:<name>` parses as a capability but nothing checks it, so any session with `tool:delegate` may spawn any definition whose tools fit its grant. The capability model governs what a child *can do*, never what it is *told to do*. | Either make `agent:<name>` a real prerequisite (cheap — the catalog already emits the ids) **or delete the namespace**. A capability that enforces nothing reads as a control. |
+| 1 | ~~R-35 / R-36~~ **CLOSED 2026-08-13 by ADR-0017 (Accepted) and shipped in 0.8.0.** What remains of R-35 is the half a capability model cannot reach: the operator authorises a *file*, and the ledger records the grant but never the **body**, so "what was this child told to do?" is unanswerable after the fact. | **A body hash on the ledger record would close it, and has no owner.** That is deliberately a separate ADR — one decision per ADR. Start there if you want R-35 fully retired. |
 | 2 | **Nothing verifies the ledger automatically.** `/grants ledger` detects corruption; no scheduled or startup check runs it. | R-34. Detection exists, which is the part that was missing. |
 | 3 | **Pane cleanup is not leak-proof.** `finally` covers thrown errors, not the process being killed. No reaper. | `docs/probes/g16-herdr` addendum. |
 | 4 | **`packages/pi-agent-grants/README.md` deeper sections are stale** — they still describe the interceptor as a provisioning path. Its 0.7.0 header says so. | ~400 lines. `docs/SPEC.md` is correct in the meantime. |
@@ -53,6 +53,61 @@ That convention is why every reversal here was survivable, and there have been f
 
 ---
 
+
+## 2026-08-13 (later) — ADR-0017: `agent:<name>` authorises a definition — 0.8.0
+
+**R-35 closed as far as a capability model can close it, and R-36 found on the way.** The user chose Option
+A (prerequisite) over the steelmanned Option B (delete the namespace). Shipped in two steps, in that order,
+because step 2 does not work without step 1.
+
+**Step 1 — R-36, found by measurement while scoping the ADR.** `deriveOwnGrant` filtered the inherited grant
+against the session's *observed tool names*, and the matcher only ever matched `tool:` and `ext:` — so every
+other namespace was dropped at the first provider request:
+
+```
+inherited      : tool:read, skill:review, agent:reviewer, ext:pkg/web_search
+after  observe : ext:pkg/web_search, tool:read
+```
+
+**Live for `skill:` since R-32**: the child received the skill (it arrives as `--skill`) but could not
+re-grant it, and `/grants` stopped listing something it held. Fail-closed, which is why it survived —
+nothing fails when a grant quietly shrinks. It also made the `agent:` prerequisite unsatisfiable below the
+root. Now only tool-shaped capabilities are filtered, in both the enumerated and wildcard branches.
+
+**Step 2 — the prerequisite.** Spawning definition `X` requires holding `agent:X`; `tool:*` satisfies any of
+them, because `resolve()` has **no wildcard rule** (a wildcard session works only because `deriveOwnGrant`
+*enumerates* its observed tools, and definitions are not tools) — without that special case an **ungoverned**
+session would have stopped being able to spawn, breaking "governance is opt-in".
+
+Three details worth keeping:
+
+1. **The refusal is a `denied`, not a bare reason.** `denied` is the escalation signal ADR-0008 designates,
+   and asking to run a definition this session was not granted *is* an attempt to exceed the grant. A
+   refusal leaving it empty would be invisible to every audit query.
+2. **Authorisation is decided before anything is said about the file** — reporting "declares no
+   `allowed-tools`" to a caller who was never allowed to spawn it discloses the definition and misnames the
+   problem. Pinned by a test.
+3. **It attenuates for free.** `ceilingForDefinition` already parsed `agent:` entries inside `allowed-tools`,
+   so an operator writes a delegator's spawn rights in the same file as its tools, and `resolve()` already
+   refuses to hand down one the parent lacks. Evidence the design anticipated this.
+
+`delegate`'s tool description now lists only the definitions the session may actually spawn — listing all of
+them would tell the model it can spawn things every attempt at which is refused, which is R-28's shape (a
+description disagreeing with the enforcer).
+
+**Breaking, and the breakage was visible in the suite**: five unit tests and four *integration* tests failed
+until their enumerated grants gained `agent:` ids — the integration failures being the proof the rule bites
+on the real path. **262 unit + 10 integration** (the extra one asserts the refusal end-to-end through
+`/grants`), typecheck clean, smoke clean. `docs/SPEC.md`, the README banner and the quick-start grant all
+updated; the README's deeper sections remain stale as before.
+
+**Found and NOT fixed:** an `allowed-tools` entry written as `tool:read` becomes `tool:tool:read` — only
+`ext:`, `skill:` and `agent:` pass through as written. It fails loudly (the catalog refuses it as unknown)
+but the message names the mangled id rather than the mistake. Recorded in SPEC's known gaps rather than
+fixed, because no ADR covers changing definition parsing and drifting into it during an unrelated change is
+how the record stops matching the code.
+
+---
 
 ## 2026-08-13 — `extensions/grants.ts` split, and the ceiling made enforceable
 

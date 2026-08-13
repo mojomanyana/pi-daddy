@@ -150,7 +150,7 @@ test("ADR-0016: a named definition supplies the ceiling, clamped by the session 
   const plan = planDelegation(
     { task: "review the diff", agent: "review" },
     {
-      ownGrant: ["tool:read", "tool:grep", "tool:bash"],
+      ownGrant: ["agent:review", "tool:read", "tool:grep", "tool:bash"],
       depth: 0,
       maxDepth: 2,
       gated: [],
@@ -166,7 +166,7 @@ test("ADR-0016: a definition can never widen past the session grant", () => {
   const plan = planDelegation(
     { task: "review", agent: "review" },
     {
-      ownGrant: ["tool:read"],
+      ownGrant: ["agent:review", "tool:read"],
       depth: 0,
       maxDepth: 2,
       gated: [],
@@ -181,7 +181,7 @@ test("ADR-0016: an undeclared allowed-tools refuses, and says how to fix it", ()
   const plan = planDelegation(
     { task: "review", agent: "review" },
     {
-      ownGrant: ["tool:read", "tool:grep"],
+      ownGrant: ["agent:review", "tool:read", "tool:grep"],
       depth: 0,
       maxDepth: 2,
       gated: [],
@@ -196,7 +196,7 @@ test("ADR-0016: a sub-tool pattern refuses and names the pattern", () => {
   const plan = planDelegation(
     { task: "review", agent: "review" },
     {
-      ownGrant: ["tool:read", "tool:bash"],
+      ownGrant: ["agent:review", "tool:read", "tool:bash"],
       depth: 0,
       maxDepth: 2,
       gated: [],
@@ -219,11 +219,143 @@ test("ADR-0016: an unknown definition name refuses rather than falling back", ()
   assert.match(String(plan.reason), /reviewww/);
 });
 
-test("ADR-0016: the definition body becomes the child's system prompt", () => {
+// ---------------------------------------------------------------------------
+// ADR-0017 — `agent:<name>` authorises a definition. Before this the ONLY gate on spawning one was
+// whether its `allowed-tools` fitted the session grant, so a capability the catalog emitted and the
+// parser accepted enforced nothing (R-35).
+// ---------------------------------------------------------------------------
+
+test("ADR-0017: a definition cannot be spawned without agent:<name>, even when its tools fit", () => {
+  // The exact shape R-35 described: the grant covers everything the definition needs, and that used to
+  // be sufficient. Nothing about the tool surface changed — only the authority to run THIS definition.
   const plan = planDelegation(
     { task: "review the diff", agent: "review" },
     {
       ownGrant: ["tool:read", "tool:grep"],
+      depth: 0,
+      maxDepth: 2,
+      gated: [],
+      definitions: new Map([["review", definition()]]),
+    },
+  );
+  assert.equal(plan.ok, false, "tools fitting is no longer sufficient");
+  assert.match(String(plan.reason), /agent:review/, "the refusal must name the missing capability");
+  assert.match(String(plan.reason), /SKILL\.md/, "and where the definition lives");
+});
+
+test("ADR-0017: the refusal is recorded as a DENIAL, so it reaches the escalation signal", () => {
+  // `denied` is the signal ADR-0008 designates. A refusal that left it empty would be invisible to every
+  // audit query asking "did anything try to exceed its grant?".
+  const plan = planDelegation(
+    { task: "x", agent: "review" },
+    { ownGrant: ["tool:read", "tool:grep"], depth: 0, maxDepth: 2, gated: [], definitions: new Map([["review", definition()]]) },
+  );
+  assert.deepEqual(plan.result.denied, ["agent:review"]);
+  assert.deepEqual(plan.requested, ["agent:review"], "the ledger must record what was actually asked for");
+  assert.deepEqual(plan.effective, [], "and nothing may be granted on the way out");
+});
+
+test("ADR-0017: holding agent:<name> is what makes it spawnable", () => {
+  const plan = planDelegation(
+    { task: "review the diff", agent: "review" },
+    {
+      ownGrant: ["agent:review", "tool:read", "tool:grep"],
+      depth: 0,
+      maxDepth: 2,
+      gated: [],
+      definitions: new Map([["review", definition()]]),
+    },
+  );
+  assert.equal(plan.ok, true, plan.reason);
+  assert.deepEqual(plan.effective, ["tool:grep", "tool:read"], "the agent: id authorises, it is not granted");
+});
+
+test("ADR-0017: the wildcard satisfies any agent: prerequisite", () => {
+  // Governance is opt-in. An ungoverned session holds `tool:*` and must keep spawning exactly as before —
+  // and `resolve()` has no wildcard rule, so this only works because the check honours it explicitly.
+  const plan = planDelegation(
+    { task: "review", agent: "review" },
+    {
+      ownGrant: ["tool:*", "tool:read", "tool:grep"],
+      depth: 0,
+      maxDepth: 2,
+      gated: [],
+      definitions: new Map([["review", definition()]]),
+    },
+  );
+  assert.equal(plan.ok, true, plan.reason);
+});
+
+test("ADR-0017: the refusal names the definitions this session CAN spawn", () => {
+  const plan = planDelegation(
+    { task: "ship it", agent: "deploy" },
+    {
+      ownGrant: ["agent:review", "tool:read", "tool:bash"],
+      depth: 0,
+      maxDepth: 2,
+      gated: [],
+      definitions: new Map([
+        ["review", definition()],
+        ["deploy", definition({ name: "deploy", allowedTools: "Bash", source: "/skills/deploy/SKILL.md" })],
+      ]),
+    },
+  );
+  assert.equal(plan.ok, false);
+  assert.match(String(plan.reason), /may spawn: agent:review/, "an operator needs the fix, not just the refusal");
+});
+
+test("ADR-0017: authorisation is decided before anything is said about the file", () => {
+  // A malformed-file diagnostic reported to a caller who was never allowed to spawn it discloses the
+  // definition's contents and misnames the actual problem.
+  const plan = planDelegation(
+    { task: "x", agent: "review" },
+    {
+      ownGrant: ["tool:read"],
+      depth: 0,
+      maxDepth: 2,
+      gated: [],
+      definitions: new Map([["review", definition({ allowedTools: undefined })]]),
+    },
+  );
+  assert.match(String(plan.reason), /does not hold agent:review/);
+  assert.doesNotMatch(String(plan.reason), /allowed-tools/, "the file's problems are not this caller's business");
+});
+
+test("ADR-0017: agent: authority attenuates — a definition declares which others it may spawn", () => {
+  // The property that makes this coherent with ADR-0008: `ceilingForDefinition` already parses `agent:`
+  // entries in `allowed-tools`, so an operator writes a delegator's spawn rights in the same file as its
+  // tools, and the child can never receive one the parent does not hold.
+  const orchestrator = definition({
+    name: "orchestrator",
+    // Bare names are the documented form and are lowercased into `tool:`; only `ext:`, `skill:` and
+    // `agent:` are passed through as written. Writing `tool:delegate` here yields `tool:tool:delegate`,
+    // which the catalog then refuses as unknown — loud, but confusing. See the note on R-35 in the log.
+    allowedTools: "Read Delegate agent:review",
+    source: "/skills/orchestrator/SKILL.md",
+  });
+  const ctxFor = (ownGrant: string[]) => ({
+    ownGrant,
+    depth: 0,
+    maxDepth: 3,
+    gated: [],
+    definitions: new Map([["orchestrator", orchestrator], ["review", definition()]]),
+  });
+
+  const granted = planDelegation({ task: "coordinate", agent: "orchestrator" }, ctxFor(["agent:orchestrator", "agent:review", "tool:read", "tool:delegate"]));
+  assert.equal(granted.ok, true, granted.reason);
+  assert.ok(granted.effective.includes("agent:review"), "the child may spawn review in turn");
+  assert.ok(!granted.args.includes("agent:review"), "and the id never reaches pi's --tools");
+
+  const withheld = planDelegation({ task: "coordinate", agent: "orchestrator" }, ctxFor(["agent:orchestrator", "tool:read", "tool:delegate"]));
+  assert.equal(withheld.ok, false, "a parent cannot hand down spawn rights it does not hold");
+  assert.match(String(withheld.reason), /agent:review/);
+});
+
+test("ADR-0016: the definition body becomes the child's system prompt", () => {
+  const plan = planDelegation(
+    { task: "review the diff", agent: "review" },
+    {
+      ownGrant: ["agent:review", "tool:read", "tool:grep"],
       depth: 0,
       maxDepth: 2,
       gated: [],
