@@ -34,7 +34,16 @@ export interface OpenPane {
   promptDir?: string;
 }
 
-/** Panes opened by THIS process and not yet closed. Keyed by tab id, so a double close is impossible. */
+/**
+ * Panes opened by THIS process and not yet closed. Keyed by tab id, so a double close is impossible.
+ *
+ * **That keying rests on tab ids being unique, which was measured rather than assumed** (herdr 0.7.5): ids
+ * are `w<workspace>:t<counter>`, allocated by the single server, and **not recycled** — creating a tab,
+ * closing it, and creating again yields the next counter value, never the freed one. If that ever changed,
+ * concurrent panes would collapse into one entry and an early finisher's `untrackPane` would drop a live
+ * sibling. Recorded because the hazard is invisible in the code and the precondition lives in another
+ * project.
+ */
 const open = new Map<string, OpenPane>();
 let hookInstalled = false;
 

@@ -25,7 +25,7 @@ import {
 } from "../src/approval.ts";
 import { loadApprovals, saveApproval } from "../src/approval-store.ts";
 import type { createApprovalGate } from "../src/approval-prompt.ts";
-import { timeoutMsFromEnv } from "../src/approval-prompt.ts";
+import { timeoutMsFromEnv, type PromptOutcomeKind } from "../src/approval-prompt.ts";
 import { ceilingForDefinition, digestDefinition } from "../src/definitions.ts";
 import type { Capability } from "../src/resolve.ts";
 import type { GrantsSession } from "./session.ts";
@@ -111,6 +111,14 @@ export interface ApprovalOutcome {
    */
   sources: Record<Capability, ApprovalSource>;
   humanDenied: boolean;
+  /**
+   * Which of the five prompt outcomes ended the loop, when one did (ADR-0026's F5).
+   *
+   * `humanDenied` is one bit of a five-way discriminant. `no-ui`, `dismissed` and `error` all produced the
+   * same record with only free-text `reason` to separate them, and they call for different responses: a
+   * dismissal is a queue or a longer timeout, `no-ui` is an operator pre-approving, `error` is a defect.
+   */
+  gateOutcome?: PromptOutcomeKind;
   reason?: string;
 }
 
@@ -196,6 +204,7 @@ export async function obtainApprovals(
   const sources: Record<Capability, ApprovalSource> = { ...pre.sources };
   const scopes: Record<Capability, ApprovalScope> = {};
   let humanDenied = false;
+  let gateOutcome: PromptOutcomeKind | undefined;
   let reason: string | undefined;
 
   for (const capability of pre.needsPrompt) {
@@ -205,6 +214,11 @@ export async function obtainApprovals(
       // RPC mode too, so an automated client's timeout or dismissal there would misreport as "a human
       // declined" if we asked `ctx.hasUI` instead. Only `kind === "declined"` means a person said no.
       humanDenied = outcome.kind === "declined";
+      // The full discriminant, not just the one bit of it that had a field. `no-ui`, `dismissed` and
+      // `error` used to produce records identical to each other, separated only by free-text `reason` —
+      // so "was there an operator who timed out, or was there nobody?" had no answer, and the two want
+      // different fixes. It was computed here all along and thrown away.
+      gateOutcome = outcome.kind;
       reason = outcome.reason;
       break;
     }
@@ -267,5 +281,5 @@ export async function obtainApprovals(
     session.publishChildEnv(); // a new session approval widens what children may inherit — republish now
   }
 
-  return { approved, sources, scopes, humanDenied, reason };
+  return { approved, sources, scopes, humanDenied, gateOutcome, reason };
 }

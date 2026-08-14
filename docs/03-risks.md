@@ -1042,6 +1042,56 @@ after this fix there is no reachable input that throws past it — which is the 
 and the reason it cannot be driven from outside. **Trigger:** any new `await` added to `session_start`
 whose callee rethrows; it belongs in its own `catch`, not in the blanket one.
 
+## R-70 · A ledger of nothing but declines reported no declines — L×M, FIXED
+Added **and fixed** 2026-08-14, red-team pass. `humanDenied` was rendered **inside** the
+`attributed > 0 || unattributed > 0` guard, so a ledger with no approvals printed nothing about the
+declines in it.
+
+That is the worst possible ledger to be quiet about. A session where the operator said no to everything is
+simultaneously the strongest evidence the gate is doing its job and the most alarming shape an audit can
+take — and it was the one shape `/grants ledger` had nothing to say about. The number arguing hardest for
+this package's own gating was invisible in exactly the file arguing hardest.
+
+**FIXED:** declines are reported on their own line, before the approvals block, with **records and distinct
+pairs**. The pair count is there for R-63's reason one field over: R-29 shares a decline across every
+concurrent caller, so one click of *Deny* under an eight-wide fan-out writes eight `humanDenied` records,
+and calling that "eight times a human declined" is the per-record bias R-63 removed from `persisted` — left
+in place on the only number that flatters this package's own control.
+
+## R-69 · Four causes of an unsatisfied gate produced one indistinguishable record — M×M, FIXED
+Added **and fixed** 2026-08-14, raised by `architecture-critic` against ADR-0026. `PromptOutcomeKind` has
+five members and the ledger record kept **one bit** of it (`humanDenied`, from `declined`), so `no-ui`,
+`dismissed` and `error` produced *identical* records — `gatedBlocked` non-empty, no `approvalSource`,
+`blocked: true` — separated only by free-text `reason` written for a human at the call site.
+
+Given a failed run, *"was there an operator who timed out, or was there nobody to ask?"* was not answerable
+from any field, and **the two want opposite fixes**: a dismissal wants a longer
+`PI_GRANTS_APPROVAL_TIMEOUT` or a queue; `no-ui` wants an operator pre-approving; `error` is a defect. The
+discriminant was already computed at the call site and thrown away — R-51's shape, in the record rather
+than in a reader.
+
+It lands on ADR-0026 specifically because that decision is expressed **entirely in ledger vocabulary** and
+asks a future reader to believe the ledger when it says *"nobody was there to ask"*. It could not say that.
+
+**FIXED:** `gateOutcome` carries the kind, written only when a gate went unsatisfied — a field present on
+every record is not a signal, and an approved spawn already says so through `approvalSources`. **Privacy is
+unchanged**: a fixed five-member enum, nothing model-authored.
+
+## R-71 · Two herdr panes could be orphaned with nothing tracking them — L×L, FIXED
+Added **and fixed** 2026-08-14, red-team pass, both confirmed by execution against the injected exec.
+
+- **A `tab create` reply carrying `pane_id` but no `tab_id`** ran to completion and returned `code: 0` with
+  the tab closed by nobody — `cleanup`'s close is guarded by `tabId` and `trackPane` had never been called.
+  Defensive only (real herdr 0.7.5 always returns both), but a silent permanent leak rather than a loud
+  failure.
+- **The early return had an untracked window** one herdr round-trip wide: a tab existed from the moment the
+  reply was parsed, and nothing would have reaped it if the process died there. The *normal* path had no
+  such window and the *error* path did — backwards, since the error path is the one more likely to be taken
+  while something is already going wrong. `trackPane` now runs before the pane-id check.
+
+Also: the early return removed the staged prompt directory unconditionally, throwing away with `keepPane`
+what `cleanup` deliberately keeps — on the one path where there is no agent in the pane to ask instead.
+
 ## R-67 · The file lock let two writers into `work()` at once — M×H, FIXED
 Added **and fixed** 2026-08-14 by the red-team pass. **The most serious finding of the four**, and the only
 one that broke an invariant rather than a claim. Reproduced across **real OS processes with no clock
@@ -1344,3 +1394,4 @@ updated without re-reading the section the banner describes.
 | 2026-08-14 | R-64, R-65, R-66 | **Independent red-team pass over the same day's work — four agents, one hypothesis each, and three found a defect.** R-66 is the worst: eight ledger lines asserting a human was prompted where one was (R-46's shape at the concurrency level). R-64: `in` walking the prototype deleted the whole ADR-0020 measurement and marked an intact ledger corrupt. R-65: the pane reaper was disabled by the one failure it was built for, and could hang exit for 80s. **Every finding was re-verified by execution here before being acted on**, and two were worse than reported | red-team pass 3 |
 | 2026-08-14 | ADR-0008 | **Documentation corrected, code unchanged, by the operator's decision.** `docs/SPEC.md` and the package README both called `PI_GRANTS_FANOUT` a **session total** — "a session holding `B` may create at most `B` descendants in total". Measured false: `session.fanoutBudget` is read once and never decremented, so three successive `delegate_all(8)` calls in one session are all accepted. What the bound actually is: per-call width plus downward attenuation, so no *subtree* exceeds its root. Making the code match the document was weighed and declined — it would break working setups and needs its own ADR — so the document was made to match the code, which is where the claim was wrong | red-team pass 3 |
 | 2026-08-14 | R-67, R-68 | **The lock let two writers in, and the pass that found it used real processes.** R-67: `rm(lockPath)` deletes the path, not your lock — so the stale-break's `stat`/`rm` gap could destroy a live lock, and the unconditional `finally` freed the *new* owner's, cascading to processes that raced nothing. Reproduced 2/120 trials × 16 processes under load, no clock manipulation. Fixed with a per-hold token and `removeIfOurs`. **The first version of that fix had no failing test until the mutation check showed it.** R-68: `busy` keyed on the error TYPE rather than on whether anything had been read, so `EMFILE` asserted an entry was still in effect that nobody had looked for — R-61's defect inside R-61's fix | red-team pass 3 |
+| 2026-08-14 | R-69, R-70, R-71 | **The tail of the red-team pass, found by re-auditing the four reports against what had actually shipped.** Seven items had been reported and not fixed. R-69: four causes of an unsatisfied gate produced one indistinguishable record, and ADR-0026 rests on the ledger being able to tell them apart. R-70: a ledger of nothing but declines reported no declines — the quietest output for the loudest file. R-71: two paths could orphan a herdr pane with nothing tracking it. **`src/ledger.ts` hit the 400-line guard during the fix and was split rather than the cap raised**, along the read/write seam every reporting defect so far has lived on | red-team pass 3 |

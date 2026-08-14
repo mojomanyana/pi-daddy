@@ -188,6 +188,7 @@ export async function runOneDelegation(
         approvalSources: approvalOutcome?.sources,
         approvalScopes: approvalOutcome?.scopes,
         humanDenied: approvalOutcome?.humanDenied,
+        gateOutcome: approvalOutcome?.gateOutcome,
         // ADR-0018: taken from the PLAN, never re-derived here. The B-I3 lesson — a call site that
         // recomputed the digest could record one the planner never used.
         definitionDigest: plan.definitionDigest,

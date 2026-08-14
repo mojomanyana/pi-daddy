@@ -178,17 +178,27 @@ export async function runHerdrPane(request: HerdrRunRequest): Promise<ChildRunRe
   const rootPane = (created.result?.root_pane ?? {}) as { pane_id?: string; tab_id?: string };
   const paneId = rootPane.pane_id;
   const tabId = rootPane.tab_id;
+  // **Tracked BEFORE the pane-id check, not after.** A tab can exist from the moment this reply is parsed,
+  // so registering later leaves a window — one herdr round-trip wide — in which a killed process orphans a
+  // tab nothing would reap. The normal path had no such window and the error path did, which is backwards:
+  // the error path is the one more likely to be taken while something is already going wrong.
+  if (tabId && !request.keepPane) trackPane({ tab: tabId, name: request.name, promptDir });
+
   if (!paneId) {
     // The tab may exist even though the reply carried no pane id, and this return used to be BEFORE
     // `cleanup` was defined — so the one path where herdr half-succeeded was the one that leaked a tab.
-    if (tabId && !request.keepPane) await exec(["tab", "close", tabId]).catch(() => undefined);
-    if (promptDir) await rm(promptDir, { recursive: true, force: true }).catch(() => undefined);
+    if (tabId && !request.keepPane) {
+      const reply = await exec(["tab", "close", tabId]).catch(() => undefined);
+      // Same rule as `cleanup`: untrack only what is provably gone, so a close herdr refused stays the
+      // reaper's problem rather than being dropped on the assumption that it worked.
+      if (reply !== undefined && !parseReply(reply).error) untrackPane(tabId);
+    }
+    // `keepPane` keeps the staged prompt for the same reason `cleanup` does — a human inspecting the pane
+    // may want to see what the child was told. This branch used to remove it unconditionally, which threw
+    // that away on the one path where there is no agent in the pane to ask instead.
+    if (promptDir && !request.keepPane) await rm(promptDir, { recursive: true, force: true }).catch(() => undefined);
     return { ...empty, spawnError: "herdr tab create returned no pane id" };
   }
-
-  // The pane exists from here on, so record it: `cleanup` runs in a `finally`, which a KILLED process never
-  // reaches. See `src/pane-reaper.ts` for exactly which kills are covered and why SIGINT deliberately is not.
-  if (tabId && !request.keepPane) trackPane({ tab: tabId, name: request.name, promptDir });
 
   /** Close what we opened, whatever happened. A leaked pane per child is how fan-out fills a workspace. */
   const cleanup = async () => {

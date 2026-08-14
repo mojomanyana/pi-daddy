@@ -26,6 +26,7 @@ import type { Capability, ResolveResult } from "./resolve.ts";
 import type { DefinitionDigest } from "./definitions.ts";
 import { DELEGATE_SUBJECT } from "./approval.ts";
 import type { ApprovalScope, ApprovalSource } from "./approval.ts";
+import type { PromptOutcomeKind } from "./approval-prompt.ts";
 
 export interface GrantRecord {
   ts: string;
@@ -80,6 +81,24 @@ export interface GrantRecord {
   /** A human was asked and declined. Distinct from `denied`, which is an escalation attempt. */
   humanDenied?: boolean;
   /**
+   * WHY a gate went unsatisfied, when the answer was not a yes.
+   *
+   * `PromptOutcomeKind` has five members and this record kept exactly one of them (`humanDenied`, from
+   * `declined`). So `no-ui`, `dismissed` (a timeout or an abort) and `error` produced **identical** records
+   * — `gatedBlocked` non-empty, no `approvalSource`, `blocked: true` — and the only thing separating them
+   * was free-text `reason`, written for a human at the call site. Given a failed run, *"was there an
+   * operator who timed out, or was there nobody to ask?"* was not answerable from any field, and the fix
+   * for each is different: one is a queue or a longer `PI_GRANTS_APPROVAL_TIMEOUT`, the other is an
+   * operator pre-approving.
+   *
+   * The discriminant was already computed and thrown away. ADR-0026 leans on this vocabulary being able to
+   * say *"nobody was there to ask"* and be believed, so it is recorded rather than inferred.
+   *
+   * **Privacy is unchanged**: this is a fixed five-member enum, not text — nothing model-authored, nothing
+   * a task could carry.
+   */
+  gateOutcome?: PromptOutcomeKind;
+  /**
    * WHICH operator-authored instructions this child was given (ADR-0018).
    *
    * Identifies, never reproduces: matching digests prove two children ran the same text, and a digest that
@@ -116,6 +135,7 @@ export function buildRecord(args: {
   approvalSources?: Record<Capability, ApprovalSource>;
   approvalScopes?: Record<Capability, ApprovalScope>;
   humanDenied?: boolean;
+  gateOutcome?: PromptOutcomeKind;
   definitionDigest?: DefinitionDigest;
   now: Date;
 }): GrantRecord {
@@ -145,6 +165,10 @@ export function buildRecord(args: {
     ...(distinctScopes.length === 1 ? { approvalScope: distinctScopes[0] } : {}),
     ...(Object.keys(scopes).length > 0 ? { approvalScopes: scopes } : {}),
     ...(args.humanDenied ? { humanDenied: true } : {}),
+    // Written whenever a gate was reached and not satisfied by a yes. `granted` is omitted deliberately —
+    // an approved spawn already says so through `approvalSources`, and a field that appears on every record
+    // stops being a signal.
+    ...(args.gateOutcome && args.gateOutcome !== "granted" ? { gateOutcome: args.gateOutcome } : {}),
     ...(args.definitionDigest ? { definitionDigest: args.definitionDigest } : {}),
   };
 }
@@ -152,6 +176,10 @@ export function buildRecord(args: {
 // R-49: the lock moved to `src/file-lock.ts` so the approvals store could use the SAME one rather than
 // grow a second copy. Re-exported because `./ledger` is a published subpath and these were part of it.
 export { LOCK_TIMEOUT_MS, STALE_LOCK_MS } from "./file-lock.ts";
+
+// The reading half, split out under the file-size guard and re-exported so `./ledger` is unchanged for
+// anyone importing it. See `ledger-report.ts` for why the seam is where it is.
+export { verifyLedger, type LedgerReport } from "./ledger-report.ts";
 
 /**
  * Serialise appends across processes.
@@ -178,197 +206,6 @@ export async function appendRecord(options: LedgerOptions, record: GrantRecord):
       throw new Error(`grant ledger write failed (failing closed): ${String(error)}`);
     }
   }
-}
-
-export interface LedgerReport {
-  /** False when the file is absent — a configuration state, not damage. */
-  exists: boolean;
-  /** Lines that parsed as records. */
-  records: number;
-  /** Lines that did not, with 1-based line numbers so the report is actionable. */
-  corrupt: Array<{ line: number; text: string }>;
-  /** Records where an agent asked for more than it held — ADR-0008's designated signal. */
-  escalationAttempts: number;
-  /**
-   * Every distinct set of instructions this ledger saw run, with how many spawns used it (R-51).
-   *
-   * ADR-0018 advertises that a record answers *"did these four children run the same instructions?"* and
-   * *"has this definition changed since?"* — and until this existed **nothing read `definitionDigest` at
-   * all**, so both questions required hand-written `jq` and the second was not even reproducible with
-   * `sha256sum`, because the digest covers the body and not the frontmatter. A field no tool reads is a
-   * field that quietly becomes decoration.
-   *
-   * Grouped by `name` + `sha256`, so two entries with one name are exactly the evidence that a definition
-   * changed mid-ledger. Sorted by name then digest so two runs of the same fan-out produce a diffable
-   * report, like the ids themselves.
-   */
-  definitions: Array<{ name: string; source: string; sha256: string; spawns: number }>;
-  /**
-   * Where the yes came from, per approved capability, tallied across the whole ledger.
-   *
-   * **This is the measurement ADR-0020 asks for.** That ADR keeps the persistence layer on R-25's fatigue
-   * argument with *no number behind it*, and named the evidence that would settle it: counting `persisted`
-   * against `prompt` over a few weeks of real use. It also said this "needs no new machinery" — true of the
-   * data and false of the answer, which required hand-written `jq`. Same shape as R-51: a field no tool
-   * reads becomes decoration, and a measurement nobody can run does not get run.
-   *
-   * **`bySource` counts RECORDS and is an upper bound, not an answer.** Deleting the persistence layer does
-   * not turn every `persisted` record back into a prompt: precedence is `inherited → session → persisted →
-   * prompt`, and `session` approvals live in memory and do not depend on the store at all. So a session that
-   * spawns `deploy` twenty times under one persisted entry writes twenty `persisted` records, while without
-   * the store it would raise **one** prompt and satisfy the other nineteen from the session cache. Reporting
-   * twenty prompts avoided would overstate the layer's value twentyfold, on the one number that decides
-   * whether to keep it — the same direction of bias `unattributed` exists to avoid, arrived at a different way.
-   *
-   * `distinctBySource` is the closer estimate: distinct `capability@subject` pairs, which bounds the cost of
-   * deletion at one prompt per pair per session. The ledger carries no session id, so the exact figure is not
-   * computable from it; both numbers are printed and labelled rather than one being presented as the truth.
-   *
-   * Counted from `approvalSources` **only**. `approvalSource` is deliberately not used as a fallback: before
-   * 0.11.1 that scalar was written for the whole set even when the sources differed (R-46), so folding it in
-   * would report humans as having been asked about capabilities they were never asked about — biasing the
-   * one direction this measurement must not be biased in. Those records are counted as `unattributed`
-   * instead, so the sample size is visible rather than silently smaller.
-   */
-  approvals: {
-    /** Raw record counts. An UPPER bound on prompts avoided — see above before quoting one. */
-    bySource: Record<ApprovalSource, number>;
-    /** Distinct `capability@subject` pairs per source. The closer estimate. */
-    distinctBySource: Record<ApprovalSource, number>;
-    /** Records carrying approvals from before per-capability sources existed. Not attributable; see above. */
-    unattributed: number;
-    /** Records where a human was asked and said no — the fatigue argument's other half. */
-    humanDenied: number;
-  };
-  ok: boolean;
-}
-
-/**
- * Read the ledger back and report what is wrong with it.
- *
- * **This is the gap that mattered most.** `appendRecord`'s strict mode catches write *errors*, never
- * corruption, and nothing in this package had ever read a ledger back — so a torn line was silently
- * indistinguishable from a spawn that never happened. An audit trail whose damage is invisible is not a
- * compensating control, and ADR-0008 leans on the ledger as exactly that.
- *
- * Deliberately reports rather than repairs. A corrupt line is evidence; rewriting the file to make it parse
- * would destroy the one artifact an investigation has.
- */
-export async function verifyLedger(path: string): Promise<LedgerReport> {
-  let text: string;
-  try {
-    text = await readFile(path, "utf8");
-  } catch (error) {
-    if ((error as { code?: string }).code === "ENOENT") {
-      return {
-        exists: false,
-        records: 0,
-        corrupt: [],
-        escalationAttempts: 0,
-        definitions: [],
-        approvals: {
-          bySource: { prompt: 0, session: 0, persisted: 0, inherited: 0 },
-          distinctBySource: { prompt: 0, session: 0, persisted: 0, inherited: 0 },
-          unattributed: 0,
-          humanDenied: 0,
-        },
-        ok: true,
-      };
-    }
-    throw error;
-  }
-
-  const corrupt: Array<{ line: number; text: string }> = [];
-  // Keyed by name+digest: one name with two entries is the signal that the definition changed mid-ledger.
-  const digests = new Map<string, { name: string; source: string; sha256: string; spawns: number }>();
-  let records = 0;
-  let escalationAttempts = 0;
-  const bySource: Record<ApprovalSource, number> = { prompt: 0, session: 0, persisted: 0, inherited: 0 };
-  // `capability@subject` seen per source, so the report can state a bound as well as a raw count.
-  const distinct: Record<ApprovalSource, Set<string>> = {
-    prompt: new Set(),
-    session: new Set(),
-    persisted: new Set(),
-    inherited: new Set(),
-  };
-  let unattributed = 0;
-  let humanDenied = 0;
-
-  const lines = text.split("\n");
-  lines.forEach((raw, index) => {
-    // A trailing newline yields one empty final element, which is normal rather than damage.
-    if (raw.trim().length === 0) return;
-    try {
-      const parsed = JSON.parse(raw) as GrantRecord;
-      if (!Array.isArray(parsed.denied)) throw new Error("not a grant record");
-      records += 1;
-      if (isEscalationAttempt(parsed)) escalationAttempts += 1;
-      if (parsed.humanDenied) humanDenied += 1;
-      // A **plain, non-empty** object. Three shapes were accepted here that must not be, all of them
-      // reachable from a torn, hand-edited or foreign line — which is the input class `verifyLedger` exists
-      // for, so "this package never writes that" is not a defence:
-      //   - `{}` beside a non-empty `approved` counted NOWHERE, silently shrinking the sample the comment
-      //     below promises to keep visible;
-      //   - an ARRAY passed `typeof === "object"` and was tallied with numeric indices as capability names;
-      //   - `null` is an object.
-      const rawSources = parsed.approvalSources;
-      const sources =
-        rawSources && typeof rawSources === "object" && !Array.isArray(rawSources) && Object.keys(rawSources).length > 0
-          ? rawSources
-          : undefined;
-      if (sources) {
-        // The subject half of `capability@subject`. `agentType` is the definition's name, or the literal
-        // `"delegate"` for the `tools:` form — which is NOT `DELEGATE_SUBJECT`, the `<delegate>` the approval
-        // layer keys on. Mapped here rather than at the write site so old ledgers read correctly too.
-        // **Stated limit:** a definition genuinely named `delegate` is indistinguishable from the `tools:`
-        // form in this field, and their two distinct approvals count as one pair. `DELEGATE_SUBJECT`'s own
-        // angle brackets exist to make that collision impossible, and the ledger drops them.
-        const subject = parsed.agentType === undefined || parsed.agentType === "delegate" ? DELEGATE_SUBJECT : parsed.agentType;
-        for (const [capability, source] of Object.entries(sources)) {
-          // `Object.hasOwn`, never `in`: `in` walks the prototype, so a source of `"toString"` or
-          // `"valueOf"` passed the check, wrote a STRING into a counter, made `attributed` a string, and
-          // deleted the entire measurement from the report while marking an intact ledger corrupt.
-          // An unrecognised source is counted as unattributed rather than dropped: a tally that silently
-          // ignores what it does not understand reports a smaller sample as a cleaner one.
-          if (Object.hasOwn(bySource, source)) {
-            bySource[source] += 1;
-            distinct[source].add(`${capability}@${subject}`);
-          } else unattributed += 1;
-        }
-      } else if (parsed.approved && parsed.approved.length > 0) {
-        unattributed += parsed.approved.length;
-      }
-      const d = parsed.definitionDigest;
-      if (d?.name && d.sha256) {
-        const key = `${d.name}\u0000${d.sha256}`;
-        const seen = digests.get(key);
-        if (seen) seen.spawns += 1;
-        else digests.set(key, { name: d.name, source: d.source, sha256: d.sha256, spawns: 1 });
-      }
-    } catch {
-      corrupt.push({ line: index + 1, text: raw.slice(0, 120) });
-    }
-  });
-
-  return {
-    exists: true,
-    records,
-    corrupt,
-    escalationAttempts,
-    definitions: [...digests.values()].sort((a, b) => a.name.localeCompare(b.name) || a.sha256.localeCompare(b.sha256)),
-    approvals: {
-      bySource,
-      distinctBySource: {
-        prompt: distinct.prompt.size,
-        session: distinct.session.size,
-        persisted: distinct.persisted.size,
-        inherited: distinct.inherited.size,
-      },
-      unattributed,
-      humanDenied,
-    },
-    ok: corrupt.length === 0,
-  };
 }
 
 /** True when this record shows an agent asking for more than it holds. */

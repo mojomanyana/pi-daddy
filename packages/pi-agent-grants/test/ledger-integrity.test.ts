@@ -392,3 +392,36 @@ test("R-64: the tools: form is keyed to <delegate>, the subject the approval lay
     "the bare-word and absent forms are ONE approval (tool:write@<delegate>); deploy is the other",
   );
 });
+
+test("R-69: the four kinds of unsatisfied gate are distinguishable in the record", async () => {
+  // `PromptOutcomeKind` has five members and the record kept one bit of it (`humanDenied`), so `no-ui`,
+  // `dismissed` and `error` produced IDENTICAL records — gatedBlocked non-empty, no approvalSource,
+  // blocked: true — separated only by free-text `reason` written for a human at the call site. Given a
+  // failed run, "was there an operator who timed out, or was there nobody to ask?" had no answer, and the
+  // two want opposite fixes: a longer PI_GRANTS_APPROVAL_TIMEOUT versus an operator pre-approving.
+  //
+  // ADR-0026 rests its decision on this vocabulary being able to say "nobody was there to ask" and be
+  // believed, which is why it is recorded rather than inferred.
+  const blocked = {
+    effective: [], denied: [], clipped: [], gatedBlocked: ["tool:bash"], universal: [], subsumedBy: [],
+  };
+  const record = (gateOutcome: "no-ui" | "dismissed" | "error" | "declined" | "granted") =>
+    buildRecord({
+      parentId: "d0", childId: "d0.1", depth: 1, agentType: "deploy", requested: ["tool:bash"],
+      parentGrant: ["tool:bash"], result: blocked, blocked: true, now: new Date(),
+      humanDenied: gateOutcome === "declined", gateOutcome,
+    });
+
+  assert.equal(record("no-ui").gateOutcome, "no-ui", "nobody was there — an operator pre-approves");
+  assert.equal(record("dismissed").gateOutcome, "dismissed", "somebody was, and did not answer in time");
+  assert.equal(record("error").gateOutcome, "error", "the dialog itself broke — a defect, not a decision");
+  assert.equal(record("declined").gateOutcome, "declined");
+  assert.equal(record("declined").humanDenied, true, "the older field still says what it always said");
+
+  // A field present on every record is not a signal. An approved spawn already says so via approvalSources.
+  assert.equal(record("granted").gateOutcome, undefined, "success is not a reason a gate went unsatisfied");
+
+  // The four unsatisfied kinds must be mutually distinguishable — the whole point.
+  const kinds = (["no-ui", "dismissed", "error", "declined"] as const).map((k) => record(k).gateOutcome);
+  assert.equal(new Set(kinds).size, 4, "four causes, four values, no free-text parsing");
+});

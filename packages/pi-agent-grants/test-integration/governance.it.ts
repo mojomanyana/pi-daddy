@@ -259,7 +259,11 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     // denominator of all records let a wide fan-out drive the ratio toward "delete it" for free.
     assert.match(text, /ADR-0020: 1 persisted vs 1 prompted capability@subject pair\(s\)/, "pairs vs pairs");
     assert.match(text, /RECORDS ARE AN UPPER BOUND on prompts avoided/, "the raw counts are labelled as a bound");
-    assert.match(text, /1 not counted: written before per-capability sources/, "and the legacy line is excluded OUT LOUD");
+    // Excluded OUT LOUD, and without asserting a cause: a pre-0.11.1 line is the usual reason, and a torn
+    // or hand-edited one reads identically. Naming the version as fact would be a guess in a report whose
+    // whole value is that its numbers mean what they say.
+    assert.match(text, /1 not counted — the record named approved capabilities but no usable/, "excluded out loud");
+    assert.match(text, /Usually a line written before 0\.11\.1/, "with the likely cause offered, not asserted");
   });
 
   test("R-51: /grants ledger groups by instructions and flags a definition that has changed", async () => {
@@ -322,6 +326,43 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     assert.ok(warning, "an operator who wrote a gate that does nothing must be told");
     assert.match(warning.message, /agent:docs-writer/);
     assert.match(warning.message, /withhold the agent: capability/, "and told what to do instead");
+  });
+
+  test("R-70: a ledger of nothing but declines still reports them", async () => {
+    // The declines were rendered INSIDE the approvals guard, so a ledger with no approvals printed no
+    // mention of them — and a session where the operator said no to everything is both the strongest
+    // evidence the gate is working and the most alarming shape an audit can take. The number that argues
+    // hardest for this package's own gating was invisible in exactly the ledger that argues hardest.
+    //
+    // Pairs as well as records, for R-63's reason one field over: R-29 shares a decline across every
+    // concurrent caller, so ONE click of Deny under a fan-out writes one record per child.
+    const cwd = await projectOnce();
+    const ledger = join(await tempDir("grants-it-declined-"), "ledger.jsonl");
+    const base = {
+      ts: "2026-08-14T00:00:00.000Z", parentId: "d0", depth: 1, requested: ["tool:bash"],
+      parentGrant: ["tool:bash"], effective: [], denied: [], clipped: [],
+      gatedBlocked: ["tool:bash"], blocked: true, humanDenied: true, gateOutcome: "declined",
+    };
+    await writeFile(
+      ledger,
+      [
+        JSON.stringify({ ...base, childId: "d0.1", agentType: "deploy" }),
+        JSON.stringify({ ...base, childId: "d0.2", agentType: "deploy" }),
+        JSON.stringify({ ...base, childId: "d0.3", agentType: "deploy" }),
+      ].join("\n") + "\n",
+      "utf8",
+    );
+
+    const r = await runCommand({
+      cwd,
+      command: "/grants ledger",
+      env: { PI_GRANTS_GRANT: "tool:read", PI_GRANTS_LEDGER: ledger },
+    });
+
+    const text = r.notifies.map((n) => n.message).join("\n");
+    assert.match(text, /declined   3 record\(s\) across 1 distinct capability@subject pair\(s\)/, "reported at all");
+    assert.match(text, /a human was asked and said no/, "and said plainly");
+    assert.ok(!/approvals  /.test(text), "precondition: there are no approvals here, which is the whole point");
   });
 
   test("R-34: a corrupt ledger is reported at session start, unasked", async () => {

@@ -126,12 +126,24 @@ handler: async (args: string, ctx: any) => {
       // few weeks of real use — then said it "needs no new machinery". True of the data, false of the
       // answer: nothing counted it, so the measurement required hand-written jq and never happened. R-51's
       // shape exactly, and the reason that entry exists.
-      const { bySource, distinctBySource, unattributed, humanDenied } = report.approvals;
+      const { bySource, distinctBySource, unattributed, humanDenied, humanDeniedPairs } = report.approvals;
       const attributed = Object.values(bySource).reduce((sum, n) => sum + n, 0);
+      // **Declines are reported on their own, not folded into the approvals block.** They were rendered
+      // inside this guard, so a ledger of nothing BUT declines — a session where the operator said no to
+      // everything, which is the strongest possible evidence the gate is working and the most alarming
+      // shape an audit can take — printed no mention of them at all. The number that argues hardest for
+      // this package's gating was invisible in exactly the ledger that argues hardest.
+      if (humanDenied > 0) {
+        lines.push(
+          `  declined   ${humanDenied} record(s) across ${humanDeniedPairs} distinct capability@subject ` +
+            `pair(s) — a human was asked and said no. Pairs is the number of DECISIONS: one *Deny* under a ` +
+            `fan-out writes one record per child.`,
+        );
+      }
       if (attributed > 0 || unattributed > 0) {
         lines.push(
           `  approvals  ${bySource.prompt} prompt · ${bySource.persisted} persisted · ${bySource.session} session · ` +
-            `${bySource.inherited} inherited${humanDenied > 0 ? ` · ${humanDenied} record(s) a human declined` : ""}`,
+            `${bySource.inherited} inherited`,
         );
         // **Two numbers, because one of them would lie.** Counting `persisted` RECORDS as prompts avoided
         // overstates the layer twentyfold in the obvious case: precedence is inherited → session →
@@ -156,9 +168,14 @@ handler: async (args: string, ctx: any) => {
             `Deleting the layer costs at most one prompt per pair per session.)`,
         );
         if (unattributed > 0) {
+          // States what was observed, not a cause. Pre-0.11.1 lines are the COMMON reason, and a torn line,
+          // a hand edit or an unrecognised source value produce the same count — asserting the version
+          // would be a guess dressed as a fact, in a report whose whole value is that its numbers mean what
+          // they say.
           lines.push(
-            `    ${unattributed} not counted: written before per-capability sources (0.11.1), where one ` +
-              `scalar described the whole set and over-claimed "prompt" (R-46).`,
+            `    ${unattributed} not counted — the record named approved capabilities but no usable ` +
+              `per-capability source. Usually a line written before 0.11.1, where one scalar described the ` +
+              `whole set and over-claimed "prompt" (R-46); a damaged or hand-edited line reads the same.`,
           );
         }
       }
