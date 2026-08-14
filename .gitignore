@@ -29,3 +29,5 @@ dist/
 # Logs and scratch
 *.log
 tmp/
+
+.claude/

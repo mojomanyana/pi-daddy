@@ -64,8 +64,10 @@ documents saying `pi-agent-grants` indefinitely, and a reader having to learn th
 
 ## Consequences
 
-**`.claude/rules/phase-gates.md` §2 and `CLAUDE.md`'s terminology note are amended, not deleted**, to name
-this as the exception with its reason. A rule that forbids what the repository already contains does not
+**The working rules §2 and `CLAUDE.md`'s terminology note are amended, not deleted**, to name this as the
+exception with its reason. (Those rules lived in `.claude/rules/phase-gates.md` when this ADR was written
+and moved to `docs/WORKING-RULES.md` the same day, when `.claude/` became gitignored — same content, and a
+rule the repository cites has to be a rule the repository contains.) A rule that forbids what the repository already contains does not
 protect anything — it teaches the next session to distrust the file, which is the exact failure the
 phase-gate rule at the top of that same file was rewritten to escape.
 

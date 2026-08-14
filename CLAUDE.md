@@ -84,11 +84,16 @@ packages/pi-daddy  — THE PRODUCT (0.7.0): SKILL.md definitions, resolver, ledg
 
 ## How To Work Here
 
+**`.claude/` is gitignored as of 2026-08-14, so everything in this section is LOCAL-ONLY.** If you cloned
+this repository you do not have it, and nothing below is required to work here — the rules that matter are
+in `docs/WORKING-RULES.md`, which is tracked. Listed anyway because the documents record having used it.
+
 - `/adr <title>` — create or progress a decision record. **The workhorse; use it for anything that
   changes what the product claims.**
 - `/brainstorm <topic>` — option generation plus a strategist/critic stress-test on one topic.
 
 Subagents: `product-strategist`, `architecture-critic`, `research-scout` (advisory only; they never edit).
+The 2026-08-14 red-team pass used the first two, and four of that day's risk entries came out of it.
 
 **`/kickoff`, `/validate`, `/gate` and `/spec` were removed on 2026-08-11.** They drove the discovery
 programme ADR-0007 retired — `/kickoff` would have interviewed you about a falsified thesis and `/spec`
@@ -106,14 +111,17 @@ PI_GRANTS_KEEP_TMP=1 npm test                   # keep fixture directories for i
 
 ## Hard Rules
 
-- **The phase-gate rule is RETIRED** — two packages shipped under recorded waivers. `.claude/rules/phase-gates.md`
-  keeps the filename so links resolve, and its live rules (documentation, evidence and terminology
-  discipline) are the ones that carried this project. Probes still go only under `docs/probes/`.
+- **The working rules are `docs/WORKING-RULES.md`** — documentation, evidence and terminology discipline,
+  nine of them, and they are the ones that carried this project. They lived in
+  `.claude/rules/phase-gates.md` until 2026-08-14; that path is local-only now, and documents dated before
+  then cite it correctly for their date. The phase-gate rule the old filename named is **retired** — two
+  packages shipped under recorded waivers. Probes still go only under `docs/probes/`.
 - **Files are the memory.** Decisions → ADRs; current state → `docs/SPEC.md`; failure modes →
   `docs/03-risks.md`; measurements → `docs/probes/`. An answer that exists only in chat does not exist.
 - **The blueprint is immutable.** `docs/00-blueprint.md` is source input; disagreement is recorded
   beside it, never edited into it.
-- **Terminology:** "workflow skills" = `.claude/skills/` (process tooling for this workspace).
+- **Terminology:** "workflow skills" = `.claude/skills/` (process tooling for this workspace, local-only
+  since 2026-08-14).
   The agent-runtime tools/skills this project will eventually manage are called "tools" or
   "runtime skills" in specs — never bare "skills" where it could be ambiguous.
 

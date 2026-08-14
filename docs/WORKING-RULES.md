@@ -1,14 +1,17 @@
-# Rules — pi-daddy working discipline
+# Working rules — pi-daddy
 
-These rules apply to all work in this project.
+**These are the project's rules, and they live in the repository because they are cited by it.** The risk
+register references them eighteen times, ADR-0027 amends rule 2 by name, and a rule nobody clones is not a
+rule.
 
-> **The phase-gate rule that gave this file its name is retired.** It said *"before G1 passes: no
-> production code — this project deliberately has no `src/` yet"*. Two packages have since shipped under
-> explicitly recorded waivers (`docs/gate-reports/G0-2026-08-09.md`), `docs/ROADMAP.md`'s phase plan is
-> obsolete, and the discovery skills that drove the gates (`/kickoff`, `/gate`, `/validate`, `/spec`) were
-> removed on 2026-08-11. A rule that forbids what the repository already contains does not protect
-> anything; it just teaches a new session to distrust the file. The filename is kept so existing links
-> resolve. **The rules below are the live ones**, and they are the ones that carried the project.
+> **Relocated 2026-08-14.** They lived in `.claude/rules/phase-gates.md`, which is now local-only —
+> `.claude/` is gitignored, so that copy is Claude Code's and this one is the project's. **Documents dated
+> before 2026-08-14 cite the old path**; that is correct for their date and the content is the same. One
+> note here beats rewriting thirty-five citations, and rule 2 below is the reason.
+>
+> The filename `phase-gates.md` was itself a fossil: the phase-gate rule that named it was retired when two
+> packages shipped under recorded waivers, and the name was kept only so links resolved. Nothing links to
+> it now, so the name goes too.
 
 ## Documentation discipline — the rules that did the work
 
