@@ -279,6 +279,68 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     assert.match(warning.message, /withhold the agent: capability/, "and told what to do instead");
   });
 
+  test("R-34: a corrupt ledger is reported at session start, unasked", async () => {
+    // Detection existed and nothing ran it: `/grants ledger` found a torn line only if an operator thought
+    // to look. A check you have to know to run is a feature, not a control. This drives `/grants` — NOT
+    // `/grants ledger` — so what it proves is that the warning arrives without being asked for.
+    const cwd = await projectOnce();
+    const dir = await mkdtemp(join(tmpdir(), "grants-it-corrupt-"));
+    const ledger = join(dir, "ledger.jsonl");
+    await writeFile(ledger, `{"parentId":"d0","childId":"d0.1","dep\n`, "utf8");
+
+    const r = await runCommand({
+      cwd,
+      command: "/grants",
+      env: { PI_GRANTS_GRANT: "agent:docs-writer,tool:read,tool:write", PI_GRANTS_LEDGER: ledger },
+    });
+
+    const alarm = r.notifies.find((n) => n.message.includes("unparseable line"));
+    assert.ok(alarm, "a damaged audit trail must announce itself");
+    assert.equal(alarm.type, "error", "not an info line among the startup chatter");
+    assert.match(alarm.message, /line 1/, "and say where, so it is actionable");
+  });
+
+  test("R-34: a healthy ledger says nothing at startup", async () => {
+    // The other half, and the one that keeps the warning worth reading: a control that speaks every session
+    // is a control an operator learns to skip (R-25). The escalation COUNT is deliberately not reported
+    // here either — that is a query, and `/grants ledger` answers it.
+    const cwd = await projectOnce();
+    const dir = await mkdtemp(join(tmpdir(), "grants-it-clean-"));
+    const ledger = join(dir, "ledger.jsonl");
+    await writeFile(
+      ledger,
+      `${JSON.stringify({
+        ts: new Date().toISOString(),
+        parentId: "d0",
+        childId: "d0.1",
+        depth: 1,
+        requested: ["tool:read"],
+        parentGrant: ["tool:read"],
+        effective: ["tool:read"],
+        denied: ["tool:write"],
+        clipped: [],
+        gatedBlocked: [],
+        blocked: true,
+      })}\n`,
+      "utf8",
+    );
+
+    const r = await runCommand({
+      cwd,
+      command: "/grants",
+      env: { PI_GRANTS_GRANT: "agent:docs-writer,tool:read,tool:write", PI_GRANTS_LEDGER: ledger },
+    });
+
+    assert.ok(
+      !r.notifies.some((n) => n.message.includes("unparseable line")),
+      "an intact ledger must not raise an alarm",
+    );
+    assert.ok(
+      !r.notifies.some((n) => n.type === "error"),
+      "and a recorded escalation attempt is history, not a startup alarm",
+    );
+  });
+
   test("an ungoverned session reports itself inactive", async () => {
     const cwd = await projectOnce();
     const r = await runCommand({ cwd, command: "/grants" });

@@ -528,7 +528,7 @@ cannot express "settled *after* this point". It polls `agent get` and requires *
 defect: the R-33 test fails.
 **Trigger:** any `runHerdrPane` implementation; any orchestration step that merges N child results.
 
-## R-34 · A ledger whose damage is invisible is not a compensating control — M×H (DETECTION ADDED)
+## R-34 · A ledger whose damage is invisible is not a compensating control — M×H, CLOSED
 Added 2026-08-12. ADR-0008 leans on the append-only ledger as its compensating control, and **nothing in
 this package had ever read one back.** `appendRecord`'s strict mode catches write *errors*, never
 corruption, so a torn line was silently indistinguishable from a spawn that never happened — a gap in the
@@ -537,6 +537,14 @@ turned concurrent appends from impossible into ordinary (a blocking `delegate` h
 accident), and `PI_GRANTS_LEDGER` propagates to children, so a subtree can have many *processes* appending
 to one file. `O_APPEND` is atomic for a single write to a regular file on a POSIX filesystem and promises
 nothing on drvfs (`/mnt/c` under WSL2) or NFS — which is where this project runs.
+
+**CLOSED 2026-08-14 (0.12.1).** `verifyLedger` now runs at **session start** whenever `PI_GRANTS_LEDGER` is
+set, and a damaged trail announces itself as an error naming the first bad line. Until then the check was
+reachable and unrun: `/grants ledger` found a torn line only if an operator thought to look, and a check you
+have to know to run is a feature rather than a control — the same distinction this entry was opened on, one
+level up. Corruption **only**: the escalation count is a query, and reporting historical attempts at every
+start is the fatigue shape R-25 names, which ends with the operator skipping the line that matters. An
+intact ledger says nothing, and a test asserts that as well as the alarm.
 
 **Mitigation (implemented).** `verifyLedger` reads the ledger back and reports record count, escalation
 attempts, and unparseable lines **with line numbers**; `/grants ledger` exposes it, because a check an
@@ -1050,6 +1058,7 @@ updated without re-reading the section the banner describes.
 | 2026-08-13 | R-36 | **FIXED** same day (ADR-0017 step 1) — only `tool:`/`ext:` are filtered against an observation; `skill:` and `agent:` pass through. Four tests, including survival across three levels | ADR-0017 |
 | 2026-08-13 | R-37 | Added — the `<delegate>` approval subject rests on a premise ADR-0017 falsified, so `always` approvals can never persist on the only spawn path. Fail-closed; the real cost is the prompt fatigue that gets gating switched off (R-25's shape) | ADR-0018 scoping |
 | 2026-08-13 | R-35 | **Audit half closed** by ADR-0018 — every definition spawn records a `definitionDigest` (name, source, sha256 of the body). What remains is inherent: the digest identifies text without preserving it, and no capability model judges what a body says. The **task is never recorded**, by decision | ADR-0018 |
+| 2026-08-14 | R-34 | **CLOSED** — `verifyLedger` runs at session start, so a damaged audit trail announces itself instead of waiting to be asked about. Corruption only; the escalation count stays a query, because a control that speaks every session is one an operator learns to skip | queued work |
 | 2026-08-14 | R-59 | Added and fixed — four documents, `CLAUDE.md` first among them, described `pi-token-audit`'s G10 defect as live four days after `5c593fb` fixed it. Both reviewers and the assistant repeated it from those documents. A stale line in an orienting file is inherited by every reader, including the ones hired to find stale lines | verifying a finding |
 | 2026-08-14 | R-53…R-58 | **Second red-team pass**, over ADR-0020–0023 (`architecture-critic` + `product-strategist`). Six entries, all fixed the same session. R-53 is the one that shipped: every freshly-approved capability crossed to the child **unpinned**, so ADR-0022 was false on exactly the approvals it was written for — hidden by sort order. R-54 broke "governance is opt-in". Both confirmed by execution before being written. The pass also cleared the `republishable` laundering fix, `parseInherited`/`verifyInherited`, ADR-0021's deletion, and R-46's derived scalar as sound | red-team pass 2 |
 | 2026-08-14 | R-46, R-47, R-51 | **Closed (R-46, R-51) and half-closed (R-47)** — the queued code work from the red-team pass, none of it needing a decision. The ledger no longer claims a human was asked about a capability satisfied from the store; `/grants ledger` reads `definitionDigest` for the first time, so ADR-0018's two advertised questions finally have a command; and an `agent:` id in `PI_GRANTS_GATED` says out loud that it gates nothing. Enforcing that last one is left as a decision | queued work |

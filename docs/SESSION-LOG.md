@@ -8,7 +8,7 @@ decisions; this file holds state and next actions. Newest entry on top.
 ## NEXT SESSION — read this, then pick one
 
 **State: green, working tree clean, reviewed, and the review's decisions shipped.** `pi-agent-grants`
-**0.12.0** — now the only package. **292 unit + 19 integration tests** (+**4** with a real model),
+**0.12.1** — now the only package. **292 unit + 21 integration tests** (+**4** with a real model),
 typecheck clean, smoke clean. **Twenty-three** ADRs decided.
 
 **Read the 2026-08-14 entry below before touching the approval layer.** Four ADRs landed together
@@ -42,7 +42,7 @@ one ate the body of the helper it was rewriting and hung `npm test` with no outp
 | 3 | **R-50** — "void the moment either changes" is really "void at the next session start"; `session.definitions` is a snapshot. All consequences fail safe, none is documented. | A SPEC paragraph, not code. |
 | — | ~~R-35, R-36, R-37, R-38~~ **ALL CLOSED 2026-08-13** by ADR-0017/0018/0019 and the approval-store IT. Left deliberately: the digest identifies a body without preserving it, and nothing judges what a body *says*. | Done. Do not reopen without new evidence. |
 | — | ~~**The persisted approval store has never been exercised end to end**~~ **DONE 2026-08-13 (0.10.1).** A real model answered a real dialog, the entry landed on disk, a *different* process honoured it with no prompt (`approvalSource: "persisted"`), and a body edit re-raised it. Seven further model-free tests cover the reload and every void reason. | `test-integration/approval.it.ts`. It found R-38 while being written. |
-| 4 | **Nothing verifies the ledger automatically.** `/grants ledger` detects corruption; no scheduled or startup check runs it. | R-34. Detection exists, which is the part that was missing. |
+| — | ~~**Nothing verifies the ledger automatically**~~ **CLOSED 2026-08-14 (0.12.1).** `verifyLedger` runs at session start; a damaged trail announces itself, an intact one stays quiet. | R-34. Corruption only — the escalation count is a query, not an alarm. |
 | 5 | **Pane cleanup is not leak-proof.** `finally` covers thrown errors, not the process being killed. No reaper. | `docs/probes/g16-herdr` addendum. |
 | — | ~~**`packages/pi-agent-grants/README.md` deeper sections are stale**~~ **DONE 2026-08-13.** Rewritten against the code: the `SKILL.md` ceiling table replaces the pi-subagents one (whose central case is *inverted* here), the approval section no longer contradicts its own banner, and the interceptor sections are gone. Found two undocumented variables while doing it. | `docs/SPEC.md` remains authoritative. |
 | 6 | **`subagents:rpc:spawn` bypasses the tripwire.** Unfixable from here. | ADR-0013 Finding 6. |
@@ -84,7 +84,30 @@ That convention is why every reversal here was survivable, and there have been f
 ---
 
 
-## 2026-08-14 (last) — the two decisions, and one package fewer — 0.12.0
+## 2026-08-14 (last) — the ledger check runs itself — 0.12.1
+
+**R-34, closed on the distinction it was opened on.** That entry exists because ADR-0008 leans on the ledger
+as its compensating control and nothing had ever read one back; the fix added `verifyLedger` and
+`/grants ledger`, *"because a check an operator cannot run is not a control"*. What went unnoticed is that
+the same sentence applies one level up: a check an operator has to **know to run** is a feature, not a
+control. Nothing ran it.
+
+`verifyLedger` now runs at session start whenever `PI_GRANTS_LEDGER` is set, and a damaged trail announces
+itself as an error naming the first bad line. **Corruption only** — the escalation count stays a query.
+Reporting historical attempts at every start is the fatigue shape R-25 names, and it ends with the operator
+skipping the line that matters. Two tests: one that the alarm fires unasked (driving `/grants`, not
+`/grants ledger`), and one that an intact ledger — *including one holding a recorded escalation attempt* —
+says nothing at all.
+
+Awaited rather than fired and forgotten: it is one read on a path that already awaits two directory scans,
+and awaiting is what guarantees the warning reaches a live `ctx.ui`.
+
+**Verified: 292 unit, 21 integration, typecheck clean, smoke clean.** Mutation-checked — stubbing the
+corruption branch fails the alarm test and nothing else.
+
+---
+
+## 2026-08-14 (fifth) — the two decisions, and one package fewer — 0.12.0
 
 **ADR-0024: a gated `agent:` id now asks before the definition runs.** R-47 was a gate that did nothing on
 the path an operator writing it means, because `gatedBlocked` filters `requested` and a definition spawn's

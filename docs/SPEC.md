@@ -3,7 +3,7 @@
 **The current-state document.** No history, no reasoning about alternatives, no record of how anything came
 to be decided. Where this disagrees with an ADR, the ADR is right and this file is stale — say so.
 
-Last synced against the code: **2026-08-14**, `pi-agent-grants` 0.12.0, pi 0.84.1, herdr 0.7.5.
+Last synced against the code: **2026-08-14**, `pi-agent-grants` 0.12.1, pi 0.84.1, herdr 0.7.5.
 
 ---
 
@@ -289,7 +289,7 @@ bound a typo can switch off is not a bound.
 cd packages/pi-agent-grants
 npm test                   # 292 unit tests — pure, no pi, no network
 npm run typecheck          # src + extensions + test + test-integration
-npm run test:integration   # 19 tests against a REAL pi process, no model tokens
+npm run test:integration   # 21 tests against a REAL pi process, no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and USE every subpath
 
 PI_GRANTS_IT_MODEL=1 npm run test:integration   # + 4 with a real model (~60s, costs money)
@@ -305,7 +305,6 @@ Stated because a gap nobody wrote down is the one that surprises somebody.
 
 - **`bash` escapes governance.** Out of scope by decision (ADR-0012).
 - **`subagents:rpc:spawn` bypasses the tripwire.** Unfixable from here.
-- **Nothing verifies the ledger automatically.** Detection exists; a scheduled check does not.
 - **Pane cleanup is not leak-proof.** Cleanup runs in a `finally`, which covers thrown errors but not the
   process being killed. There is no reaper.
 - **A definition's *instructions* are still ungoverned.** ADR-0017 closed the authorisation half of R-35

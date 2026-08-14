@@ -516,7 +516,7 @@ every in-repo test passed. `npm run test:smoke` packs a tarball, installs it int
 ```bash
 npm test                   # 292 unit tests. Fast, pure, no pi, no network.
 npm run typecheck          # src + extensions + tests + integration tests
-npm run test:integration   # 19 tests against a REAL pi process. ~26s, no model tokens.
+npm run test:integration   # 21 tests against a REAL pi process. ~30s, no model tokens.
 npm run test:smoke         # pack, install into a scratch project, import and use it
 PI_GRANTS_IT_MODEL=1 npm run test:integration   # + 4 end-to-end tests with a real model. ~60s, costs money.
 ```
@@ -553,7 +553,7 @@ Known gaps, stated because a gap nobody wrote down is the one that surprises som
 
 - **`bash` escapes governance.** Out of scope by decision (ADR-0012).
 - **`subagents:rpc:spawn` bypasses the tripwire.** Unfixable from here.
-- **Nothing verifies the ledger automatically.** Detection exists; a scheduled check does not.
+- **The ledger is verified at session start** when one is configured: a damaged trail announces itself, an intact one stays quiet.
 - **Pane cleanup is not leak-proof.** Cleanup runs in a `finally`, which covers thrown errors but not the
   process being killed. There is no reaper.
 - **A definition's *instructions* are governed only by identity.** `agent:<name>` says which file may be

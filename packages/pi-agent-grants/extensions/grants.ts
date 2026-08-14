@@ -29,7 +29,7 @@ import { AGENT_WILDCARD } from "../src/resolve.ts";
 import { legacyApprovalsPath, sharedApprovalsPath } from "../src/approval-store.ts";
 import { buildCatalog } from "../src/catalog.ts";
 import { loadDefinitions } from "../src/definitions.ts";
-import { appendRecord, buildRecord } from "../src/ledger.ts";
+import { appendRecord, buildRecord, verifyLedger } from "../src/ledger.ts";
 import { deriveOwnGrant, observeToolNames } from "../src/propagation.ts";
 import { snapshotOf } from "./approvals.ts";
 import { registerDelegationTools } from "./delegation.ts";
@@ -143,6 +143,29 @@ export default function (pi: ExtensionAPI) {
             `which definitions may run, withhold the agent: capability from PI_GRANTS_GRANT instead.`,
           "warning",
         );
+      }
+      // R-34. `verifyLedger` existed and nothing ran it, so a torn line was detectable and undetected —
+      // and a check an operator has to know to run is not a control, it is a feature. Setting
+      // `PI_GRANTS_LEDGER` already means "I want an audit trail"; noticing that the trail is damaged is
+      // part of keeping one.
+      //
+      // Corruption only, deliberately. The escalation count is a *query* — `/grants ledger` answers it —
+      // and reporting historical attempts unprompted at every start is the fatigue shape R-25 names, which
+      // ends with the operator ignoring the line that matters.
+      //
+      // Awaited rather than fired and forgotten: it is one read, on a path that already awaits two
+      // directory scans, and awaiting is what guarantees the warning reaches a live `ctx.ui`.
+      if (session.ledgerPath) {
+        const report = await verifyLedger(session.ledgerPath);
+        if (report.exists && !report.ok) {
+          ctx.ui.notify(
+            `grants: ledger ${session.ledgerPath} has ${report.corrupt.length} unparseable line(s) — ` +
+              `first at line ${report.corrupt[0]?.line}. A torn line is indistinguishable from a spawn that ` +
+              `never happened, so this audit trail is incomplete. Run /grants ledger for detail; the file is ` +
+              `left alone because a corrupt line is evidence.`,
+            "error",
+          );
+        }
       }
       if (session.governed) {
         ctx.ui.notify(
