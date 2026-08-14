@@ -8,7 +8,7 @@ decisions; this file holds state and next actions. Newest entry on top.
 ## NEXT SESSION — read this, then pick one
 
 **State: green, and reviewed TWICE — by the operator, then by four independent agents.** `pi-agent-grants`
-**0.13.0** — the only package. **313 unit + 25 integration tests** (+**4** with a real model), typecheck
+**0.13.0** — the only package. **314 unit + 26 integration tests** (+**4** with a real model), typecheck
 clean, smoke clean. **Twenty-six** ADRs decided.
 
 **The known-open list is empty of code.** What remains needs a human: item 1 needs weeks of real usage, and
@@ -133,8 +133,22 @@ immunity the 120s dialog timeout already breaks, and offered a remedy (`always`)
 unreachable for `delegate({tools})`**. Every one is now corrected in place with the correction marked, and
 its revisit trigger was rewritten because the first one could not fire — ADR-0020's defect in mirror image.
 
-**Verified: 313 unit, 25 integration, typecheck clean, smoke clean.** Every fix mutation-checked; every
-agent finding re-verified here by execution before being acted on, and two were worse than reported.
+**Then, and this is the part worth keeping: re-auditing the four reports against what had actually
+SHIPPED found seven items reported and not fixed.** Reading a report is not acting on it, and the gap is
+invisible unless you go back and tick the list off line by line. Three more risks came out of that pass —
+R-69 (four causes of an unsatisfied gate, one indistinguishable record, which is the vocabulary ADR-0026
+rests on), R-70 (a ledger of nothing but declines reported no declines — the quietest output for the
+loudest file), R-71 (two paths orphaning a herdr pane).
+
+**`src/ledger.ts` hit the 400-line guard during that fix and was split, not exempted** (habit 3). The seam
+is the one every reporting defect has lived on: writing fails closed on one record, reading must never fail
+at all on a whole damaged file.
+
+**Verified: 314 unit, 26 integration, typecheck clean, smoke clean.** Every fix mutation-checked; every
+agent finding re-verified here by execution before being acted on, and two were worse than reported. **Two
+of the new controls had no failing test until the mutation check said so** — the declines block and the
+lock's ownership check — which is the third and fourth time in three days that rule 7 has caught the author
+rather than a contributor. It is the single highest-yield habit in this repository.
 
 ---
 

@@ -8,7 +8,20 @@ the record of how the package got here and are worth keeping; they are not worth
 
 ## 0.13.0 — the approvals file gets the lock the ledger already had, and two silences end
 
-Closing the last items that were open rather than out of scope. One breaking change, and it is a type.
+Closing the last items that were open rather than out of scope, then **red-teaming the result**: an
+operator review and four independent agents, each given one hypothesis to attack. Between them they found
+eight further defects **in the fixes above**, all repaired here before release. The two worth knowing about
+as a user of this package:
+
+- **The file lock admitted two writers into the critical section.** `rm(lockPath)` deletes whatever is at
+  the path, not the lock this process created, so a broken stale lock cascaded: the old holder freed the new
+  owner's lock on the way out, and the next arrival — which raced nothing — walked in beside it. Reproduced
+  across real OS processes. Every lock now carries a token and proves ownership before deleting.
+- **The ledger over-claimed human approval under concurrency.** One *Allow for this session* answered under
+  a fan-out of eight wrote eight lines each recording `approvalSource: "prompt"`. Riders now record
+  `session`, which is what actually happened.
+
+One breaking change, and it is a type.
 
 - **BREAKING: `revokeApproval` returns `"revoked" | "absent" | "failed" | "busy"`**, not a boolean. It had
   two outcomes for four facts, and `/grants revoke` printed *"no persisted approval named X"* whenever the
