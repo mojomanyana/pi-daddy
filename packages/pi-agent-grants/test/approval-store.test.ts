@@ -144,14 +144,53 @@ test("revoke removes one entry and leaves the others", async () => {
   const c = ceiling(["tool:read", "tool:write"]);
   await saveApproval(cwd, "tool:write@a", entryFor(cwd), c, NOW);
   await saveApproval(cwd, "tool:write@b", entryFor(cwd), c, NOW);
-  assert.equal(await revokeApproval(cwd, "tool:write@a", c, NOW), true);
+  assert.equal(await revokeApproval(cwd, "tool:write@a", c, NOW), "revoked");
   const r = await loadApprovals({ cwd, now: NOW, snapshotOf: c });
   assert.deepEqual([...r.valid.keys()], ["tool:write@b"]);
 });
 
-test("revoking something that was never approved reports false", async () => {
+test("R-49: a concurrent save cannot resurrect an approval another session revoked", async () => {
+  // THE defect. Every write here is load → modify → write and it was unlocked, so: session 1 loads;
+  // session 2 revokes; session 1 saves something unrelated and writes the revoked entry back for the rest
+  // of its 30 days, silently. `approval-store.ts` documents that a revoke "takes effect immediately —
+  // including one performed from another session while this one is running", and that was false.
+  //
+  // **This assertion is only satisfiable under a lock**, which is what makes it a test rather than a
+  // description. Interleave the two unlocked and there are exactly two outcomes and both are wrong: the
+  // save wins and `a` comes back, or the revoke wins and `c` is lost. Serialised, either order gives
+  // {b, c} — so one expected value covers both, with no dependence on which goroutine got there first.
   const cwd = await temp();
-  assert.equal(await revokeApproval(cwd, "tool:write@nope", ceiling(["tool:read", "tool:write"]), NOW), false);
+  const c = ceiling(["tool:read", "tool:write"]);
+  await saveApproval(cwd, "tool:write@a", entryFor(cwd), c, NOW);
+  await saveApproval(cwd, "tool:write@b", entryFor(cwd), c, NOW);
+
+  const [saved, revoked] = await Promise.all([
+    saveApproval(cwd, "tool:write@c", entryFor(cwd), c, NOW),
+    revokeApproval(cwd, "tool:write@a", c, NOW),
+  ]);
+  assert.equal(saved, true, "the unrelated save must still succeed — a busy cache must not lose work");
+  assert.equal(revoked, "revoked");
+
+  const { valid } = await loadApprovals({ cwd, now: NOW, snapshotOf: c });
+  assert.deepEqual(
+    [...valid.keys()].sort(),
+    ["tool:write@b", "tool:write@c"],
+    "the revoked entry must stay revoked, and the concurrent save must not be lost",
+  );
+});
+
+test("R-49: revoking reports ABSENT distinctly from FAILED, because they are opposite facts", async () => {
+  // It returned a boolean and `/grants revoke` printed "no persisted approval named X" for false — so a
+  // failed write told the operator the approval does not exist while it was still in effect. The most
+  // alarming outcome wore the most reassuring message.
+  const c = ceiling(["tool:read", "tool:write"]);
+  assert.equal(await revokeApproval(await temp(), "tool:write@nope", c, NOW), "absent");
+
+  // A store directory replaced by a FILE: neither the lock nor the temp file can be created there.
+  const cwd = await temp();
+  await mkdir(dirname(dirname(approvalsPath(cwd))), { recursive: true });
+  await writeFile(dirname(approvalsPath(cwd)), "not a directory", "utf8");
+  assert.equal(await revokeApproval(cwd, "tool:write@a", c, NOW), "failed", "a write that did not happen");
 });
 
 test("saving prunes entries that are DEAD, and only those", async () => {

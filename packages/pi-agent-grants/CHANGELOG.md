@@ -6,6 +6,33 @@ This file exists because the README had grown ninety lines of stacked version ba
 reached what the package *does* — churn documentation in front of product documentation. The banners are
 the record of how the package got here and are worth keeping; they are not worth reading first.
 
+## 0.13.0 — the approvals file gets the lock the ledger already had, and two silences end
+
+Closing the last items that were open rather than out of scope. One breaking change, and it is a type.
+
+- **BREAKING: `revokeApproval` returns `"revoked" | "absent" | "failed"`**, not a boolean. It had two
+  outcomes for three facts, and `/grants revoke` printed *"no persisted approval named X"* whenever the
+  write failed — telling an operator that the approval they are revoking does not exist **while it is still
+  in effect**. The most alarming outcome wore the most reassuring message. Callers switching on the boolean
+  must switch on the string; `"revoked"` is the only success.
+- **Approval writes hold a lock (R-49).** Every write is load → modify → write and none of them was
+  serialised, so session 1 could load, session 2 could revoke, and session 1's next save would restore the
+  revoked entry for the rest of its 30 days. The lock is the ledger's, moved to `src/file-lock.ts` and used
+  by both — one implementation, two callers, opposite failure policies: the ledger fails a delegation closed
+  when it cannot take the lock, the approvals store never fails your work, because it is a convenience cache.
+- **`/grants ledger` counts where each approval came from.** ADR-0020 keeps the persistence layer on an
+  asserted fatigue argument and named the evidence that would settle it — `persisted` against `prompt` over
+  real use. The data was already recorded and nothing read it. Records written before per-capability sources
+  existed are reported as *not counted* rather than folded in, because that older scalar over-claimed
+  `prompt`.
+- **An unreadable ledger no longer silences session start (R-60).** `verifyLedger` rethrows on anything but
+  a missing file, and that call sat inside an empty catch — so a `PI_GRANTS_LEDGER` pointing at a directory
+  produced no alarm, no warning, and not even the line saying governance was on.
+- **Herdr panes opened by a killed process are closed at exit.** Coverage is exact and documented in
+  `src/pane-reaper.ts`: normal exit and `process.exit()` are covered; SIGKILL is not, and neither is a
+  SIGTERM nothing else in the process is listening for. **No signal handler is installed**, deliberately —
+  one here would suppress Node's default termination and turn pi's "interrupt this turn" into "exit pi".
+
 ## 0.11.0 is a breaking change: per-project approvals, and an inherited yes names its instructions
 
 Four decisions taken together after the first independent review of this package's approval layer

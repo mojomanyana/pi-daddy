@@ -7,12 +7,23 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ## NEXT SESSION — read this, then pick one
 
-**State: green — but one fix is UNREVIEWED.** `pi-agent-grants` **0.12.1** — the only package. **295 unit +
-24 integration tests** (+**4** with a real model), typecheck clean, smoke clean. **Twenty-five** ADRs decided.
+**State: green — and FIVE changes are UNREVIEWED.** `pi-agent-grants` **0.13.0** — the only package.
+**301 unit + 25 integration tests** (+**4** with a real model), typecheck clean, smoke clean.
+**Twenty-six** ADRs decided.
 
-**Read R-60 first.** It shipped without a second pair of eyes, which is the one thing this file tells you not
-to do. An independent agent given the hypothesis *"an empty catch made every startup control optional — what
-else in `session_start` can throw?"* is the review to get before anything else lands.
+**The review is the next action, before anything else lands.** The known-open list is now empty of code, and
+every item that emptied it was written by one pair of eyes in one sitting — the precise conditions under
+which the last two red-team passes each found a defect that made a shipped fix false. Four hypotheses worth
+handing an independent agent, one per change:
+
+1. **R-60** — an empty catch made every startup control optional. What else in `session_start` can throw?
+2. **R-49** — writes now take a lock and reads deliberately do not. Is there a read-then-write pair across
+   two calls that the per-call lock does not actually cover? `planWithApprovals` is the place to look.
+3. **R-61 / `RevokeOutcome`** — a boolean became three states. Is `failed` reachable for a reason that is
+   really `absent`, and does any other caller still render a boolean as a sentence?
+4. **The ADR-0020 tally** — it excludes pre-0.11.1 records to avoid inflating `prompt`. Does anything else
+   in that count lean the same way, e.g. `inherited` entries counted once per child rather than once per
+   human decision?
 
 ```bash
 cd packages/pi-agent-grants && npm test && npm run typecheck && npm run test:integration && npm run test:smoke
@@ -43,18 +54,18 @@ sentence in this file.
 3. **When a guard fails, obey it.** `test/file-size.test.ts` refused `delegate.ts` at 413 lines; the cap was
    not raised and the file was split along a seam three other modules already implied.
 
-### Known-open — nothing here is blocking, and nothing needs code today
+### Known-open — the code items are DONE. What is left needs a human, not a session.
 
 | # | Item | Notes |
 | :--- | :--- | :--- |
-| 1 | **The measurement ADR-0020 asks for.** The ledger records `approvalSources` per capability, so counting `persisted` against `prompt` over a few weeks of real use settles whether the persistence layer earns its keep. | **The highest-value item, and only the operator can run it** — it needs usage, not code. ADR-0020 rests on an *asserted* fatigue argument until this exists. |
-| 2 | **R-49** — an unlocked read-modify-write can resurrect a revoked approval. ADR-0020 narrowed it from "any two projects" to "two sessions in the same directory". | **Parked deliberately**: do not harden a layer whose fate item 1 decides. The mitigation already exists in this codebase — the ledger's lock. |
-| 3 | **Background delegation** is deliberately not built. | ADR-0015. Wants an ADR, and that ADR cannot be written until someone answers what happens to an approval resolved *after* its tool call returned — gating would otherwise depend on queue position, which is a control-correctness failure rather than a UX one. |
-| 4 | **Pane cleanup is not leak-proof.** `finally` covers thrown errors, not the process being killed. | Parked: opt-in executor, `PI_GRANTS_HERDR` off by default. |
+| 1 | **The measurement ADR-0020 asks for** — **the machinery now exists, the usage does not.** `/grants ledger` prints `N prompt · N persisted · …` and *"N of M attributed yes(es) came from the persisted store"*. | **Still the highest-value item and still only the operator can run it.** What changed: the missing piece is *use*, not tooling. ADR-0020 has a dated note; that ADR rests on an asserted fatigue argument until someone governs real work for a few weeks and reads the line. |
+| ~~2~~ | ~~**R-49** — an unlocked read-modify-write can resurrect a revoked approval~~ **CLOSED 2026-08-14 (0.13.0).** | The park said *"do not harden a layer whose fate item 1 decides"* — and the fix turned out to be **reuse, not hardening**: the ledger's lock moved to `src/file-lock.ts` and both writers share it, leaving nothing extra to delete if Option 3 is ever taken. **R-61 fell out of it**: a failed revoke printed *"no persisted approval named X"* while the approval stayed in effect. |
+| ~~3~~ | ~~**Background delegation** wants an ADR that cannot be written~~ **DECIDED 2026-08-14 — ADR-0026.** The blocking question is answered: a background delegation whose gates are unresolved when its tool call returns is **refused**, recorded as `gatedBlocked` with no source. A late approval starts nothing. | **Not implemented, deliberately** — what was missing was a decision, not code, and no workload yet needs it. Consequence worth knowing: background mode is only useful for **ungated** capability sets, and the remedy is operator pre-approval. |
+| ~~4~~ | ~~**Pane cleanup is not leak-proof**~~ **FIXED IN PART 2026-08-14 (R-62).** Open panes are closed on `exit`. | **Not** on SIGKILL, nor a SIGTERM nothing else is listening for — Node runs no `exit` handlers there. The obvious completion is **refused with a reason**: a signal listener here suppresses Node's default termination and would turn pi's "interrupt this turn" into "exit pi", on every session rather than the opt-in ones. |
 | ~~5~~ | ~~**The test suites leave a `mkdtemp` directory per test**~~ **CLOSED 2026-08-14** — `test/tmp.ts` hands out fixture directories and `after(cleanupTempDirs)` removes them; `PI_GRANTS_KEEP_TMP=1` keeps them for inspection. | A scan test fails if a suite calls `mkdtemp` directly or forgets the hook — the helper had to be *required*, not merely available. |
-| 6 | **`subagents:rpc:spawn` bypasses the tripwire.** Unfixable from here. | ADR-0013 Finding 6. |
-| 7 | **`bash` escapes governance.** Out of scope by decision. | ADR-0012. |
-| — | ~~R-34, R-35…R-59~~ **ALL CLOSED.** The approval layer has now been reviewed twice by independent agents and every finding either fixed or recorded with a decision. | Do not reopen without new evidence. |
+| 6 | **`subagents:rpc:spawn` bypasses the tripwire.** Unfixable from here. | ADR-0013 Finding 6. Nothing to do; do not re-derive it. |
+| 7 | **`bash` escapes governance.** Out of scope by decision. | ADR-0012. Nothing to do; do not re-derive it. |
+| — | ~~R-34, R-35…R-62~~ **ALL CLOSED or recorded with a decision.** | Do not reopen without new evidence. |
 
 ### If you want a fourth thing to pull
 
@@ -79,7 +90,61 @@ That convention is why every reversal here was survivable, and there have been f
 ---
 
 
-## 2026-08-14 (last) — R-60: the ledger check was silent on the worst damage there is
+## 2026-08-14 (last) — the known-open list, emptied of code — 0.13.0
+
+**Four items, and the interesting part is that two of them were "parked deliberately" and the park did not
+survive contact with the fix.**
+
+**Item 1 — the ADR-0020 measurement.** That ADR names the evidence that would settle whether the persistence
+layer earns its keep (`persisted` against `prompt`) and says it *"needs no new machinery"*. True of the data
+and false of the answer: nothing read `approvalSources`, so the measurement needed hand-written `jq` and
+therefore never happened — **R-51's shape exactly**, one layer up. `/grants ledger` now prints the tally.
+The number is stated as what it measures — prompts the operator did not see — not as a verdict, because how
+many prompts a person will tolerate is not something a ledger can hold. Pre-0.11.1 records are reported as
+**not counted** rather than folded in: that older scalar over-claimed `prompt` (R-46), so including it would
+bias the one direction this measurement must not be biased in. **Only usage produces the number.**
+
+**Item 2 — R-49, parked as "do not harden a layer whose fate item 1 decides".** The park was right about
+hardening and wrong about this fix, because it was **reuse**: the ledger's lock moved to `src/file-lock.ts`
+and both writers share it, so there is no new mechanism and nothing extra to delete if Option 3 is ever
+taken. Two decisions inside it, both the ledger's *opposite* and both following from what the file is —
+writes lock and reads do not, and a lock this cannot take never fails your work. The test is the property:
+two concurrent writes, and the expected `{b, c}` is **satisfiable only under a lock**, since unlocked leaves
+either the revoked entry resurrected or the concurrent save lost.
+
+**R-61 fell out of it, and it is the worse defect.** `revokeApproval` returned a boolean for three facts, so
+a **failed write printed "no persisted approval named X"** — telling an operator performing a security
+action that the approval they were revoking did not exist, while it was still in effect and still satisfying
+gates. Reassuring and wrong. Now `"revoked" | "absent" | "failed"`, breaking, and `failed` says the approval
+**is still in effect**.
+
+**Item 4 — pane cleanup.** Open panes are now closed on `exit`; SIGKILL and an unlistened SIGTERM are not
+covered and say so. **The obvious completion is refused**: a SIGINT/SIGTERM listener would close those cases
+and *suppress Node's default termination*, taking over an application decision this package has no standing
+to make — pi uses SIGINT to interrupt a turn, and a handler that re-raised would turn that into "exit pi",
+on **every** session rather than the opt-in ones. A governance package quietly changing its host's interrupt
+semantics is worse than the leak. Also found there: `tab create` replying without a pane id returned *before*
+`cleanup` was defined, so the one path where herdr half-succeeded was the one that leaked a tab.
+
+**Items 6 and 7 are not work.** `subagents:rpc:spawn` is unfixable from here (ADR-0013) and `bash` is out of
+scope (ADR-0012). Re-deriving either wastes a session; both are in the table so nobody tries.
+
+**Item 3 went to the operator and came back decided — ADR-0026.**
+The blocking question was *what happens to an approval resolved after its tool call returned*. The answer:
+**refuse the spawn**, recorded as `gatedBlocked` with no source. A late approval starts nothing, so the
+effective set never depends on when a human got to the dialog. Consequence: background mode is only useful
+for **ungated** capability sets, and the remedy is operator pre-approval. **Not implemented** — what was
+missing was a decision, not code, and ADR-0015 had declined to decide it once already.
+
+**Verified: 301 unit, 25 integration, typecheck clean, smoke clean.** Every fix mutation-checked — removing
+the lock fails the race test alone; leaving a pane tracked fails the reaper test alone; restoring
+`verifyLedger`'s rethrow fails the R-60 test alone.
+
+**None of this is independently reviewed.** See the four hypotheses at the top of this file.
+
+---
+
+## 2026-08-14 (ninth) — R-60: the ledger check was silent on the worst damage there is
 
 **Pulled the "fourth thing": grep for call sites rather than trusting a reading, then ask where else this
 shape appears.** It found one, in the control shipped the session before.

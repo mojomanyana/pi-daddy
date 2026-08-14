@@ -19,7 +19,8 @@
  * "what was this child told to do?" is out of the ledger by decision, not by omission.
  */
 
-import { appendFile, mkdir, open, readFile, rm, stat } from "node:fs/promises";
+import { appendFile, mkdir, readFile } from "node:fs/promises";
+import { withFileLock } from "./file-lock.ts";
 import { dirname } from "node:path";
 import type { Capability, ResolveResult } from "./resolve.ts";
 import type { DefinitionDigest } from "./definitions.ts";
@@ -147,64 +148,23 @@ export function buildRecord(args: {
   };
 }
 
-/** How long to wait for another writer to finish before giving up. Short: failing closed beats hanging. */
-export const LOCK_TIMEOUT_MS = 2000;
-/** A lock older than this is treated as abandoned by a killed process and broken. */
-export const STALE_LOCK_MS = 10_000;
+// R-49: the lock moved to `src/file-lock.ts` so the approvals store could use the SAME one rather than
+// grow a second copy. Re-exported because `./ledger` is a published subpath and these were part of it.
+export { LOCK_TIMEOUT_MS, STALE_LOCK_MS } from "./file-lock.ts";
 
 /**
- * Serialise appends across processes with an exclusive lock file.
+ * Serialise appends across processes.
  *
- * **Why this exists now.** `O_APPEND` is atomic for one write to a regular file on a POSIX filesystem, and
- * for most of this package's life cardinality was bounded to one by `delegate` being blocking, so there was
- * never a second writer. Fan-out removes that: `ENV_LEDGER` propagates to children, so a subtree can have
- * many processes appending to one file — and the guarantee does **not** hold on drvfs (`/mnt/c` under WSL2)
- * or NFS, which is exactly where this project runs.
+ * **Why the ledger needs it.** For most of this package's life cardinality was bounded to one by `delegate`
+ * being blocking, so there was never a second writer. Fan-out removes that: `ENV_LEDGER` propagates to
+ * children, so a subtree can have many processes appending to one file.
  *
- * **A lock introduces its own failure mode and it is handled deliberately.** A process killed while holding
- * the lock would otherwise block every future write forever, so a lock older than `STALE_LOCK_MS` is broken.
- * Two processes can race to break the same stale lock; whichever wins the subsequent exclusive create
- * proceeds, which is correct because only one can.
- *
- * The timeout is short *on purpose*: a delegation refused because the ledger was busy is recoverable and
- * loud, while a delegation that hangs waiting for a lock is neither. Fail closed, and quickly.
+ * A ledger write that cannot take the lock **fails the delegation closed** — see `appendRecord`'s `strict`
+ * — because a child running with granted capabilities and no audit line is what the ledger exists to
+ * prevent. That is the opposite of what the approvals store does with the same lock, and deliberately so.
  */
-async function withLedgerLock<T>(path: string, write: () => Promise<T>): Promise<T> {
-  const lockPath = `${path}.lock`;
-  const deadline = Date.now() + LOCK_TIMEOUT_MS;
-
-  for (;;) {
-    let handle: Awaited<ReturnType<typeof open>> | undefined;
-    try {
-      handle = await open(lockPath, "wx");
-      await handle.writeFile(`${process.pid} ${new Date().toISOString()}\n`, "utf8");
-    } catch (error) {
-      const code = (error as { code?: string }).code;
-      if (code !== "EEXIST") throw error;
-
-      // Someone else holds it. Break it only if it is old enough to be abandoned.
-      try {
-        const held = await stat(lockPath);
-        if (Date.now() - held.mtimeMs > STALE_LOCK_MS) await rm(lockPath, { force: true });
-      } catch {
-        /* it vanished between the check and the stat — the next attempt will simply take it */
-      }
-
-      if (Date.now() >= deadline) {
-        throw new Error(`grant ledger is locked by another writer (waited ${LOCK_TIMEOUT_MS}ms)`);
-      }
-      await new Promise((r) => setTimeout(r, 25));
-      continue;
-    }
-
-    try {
-      return await write();
-    } finally {
-      await handle.close().catch(() => undefined);
-      await rm(lockPath, { force: true }).catch(() => undefined);
-    }
-  }
-}
+const withLedgerLock = <T>(path: string, write: () => Promise<T>): Promise<T> =>
+  withFileLock(path, "grant ledger", write);
 
 export async function appendRecord(options: LedgerOptions, record: GrantRecord): Promise<void> {
   const line = `${JSON.stringify(record)}\n`;
@@ -242,6 +202,31 @@ export interface LedgerReport {
    * report, like the ids themselves.
    */
   definitions: Array<{ name: string; source: string; sha256: string; spawns: number }>;
+  /**
+   * Where the yes came from, per approved capability, tallied across the whole ledger.
+   *
+   * **This is the measurement ADR-0020 asks for.** That ADR keeps the persistence layer on R-25's fatigue
+   * argument with *no number behind it*, and named the evidence that would settle it: counting `persisted`
+   * against `prompt` over a few weeks of real use. It also said this "needs no new machinery" — true of the
+   * data and false of the answer, which required hand-written `jq`. Same shape as R-51: a field no tool
+   * reads becomes decoration, and a measurement nobody can run does not get run.
+   *
+   * `persisted` is the number that decides it: each one is a prompt the operator did **not** see, and
+   * deleting the layer converts every one of them back into a prompt.
+   *
+   * Counted from `approvalSources` **only**. `approvalSource` is deliberately not used as a fallback: before
+   * 0.11.1 that scalar was written for the whole set even when the sources differed (R-46), so folding it in
+   * would report humans as having been asked about capabilities they were never asked about — biasing the
+   * one direction this measurement must not be biased in. Those records are counted as `unattributed`
+   * instead, so the sample size is visible rather than silently smaller.
+   */
+  approvals: {
+    bySource: Record<ApprovalSource, number>;
+    /** Records carrying approvals from before per-capability sources existed. Not attributable; see above. */
+    unattributed: number;
+    /** Records where a human was asked and said no — the fatigue argument's other half. */
+    humanDenied: number;
+  };
   ok: boolean;
 }
 
@@ -262,7 +247,15 @@ export async function verifyLedger(path: string): Promise<LedgerReport> {
     text = await readFile(path, "utf8");
   } catch (error) {
     if ((error as { code?: string }).code === "ENOENT") {
-      return { exists: false, records: 0, corrupt: [], escalationAttempts: 0, definitions: [], ok: true };
+      return {
+        exists: false,
+        records: 0,
+        corrupt: [],
+        escalationAttempts: 0,
+        definitions: [],
+        approvals: { bySource: { prompt: 0, session: 0, persisted: 0, inherited: 0 }, unattributed: 0, humanDenied: 0 },
+        ok: true,
+      };
     }
     throw error;
   }
@@ -272,6 +265,9 @@ export async function verifyLedger(path: string): Promise<LedgerReport> {
   const digests = new Map<string, { name: string; source: string; sha256: string; spawns: number }>();
   let records = 0;
   let escalationAttempts = 0;
+  const bySource: Record<ApprovalSource, number> = { prompt: 0, session: 0, persisted: 0, inherited: 0 };
+  let unattributed = 0;
+  let humanDenied = 0;
 
   const lines = text.split("\n");
   lines.forEach((raw, index) => {
@@ -282,6 +278,18 @@ export async function verifyLedger(path: string): Promise<LedgerReport> {
       if (!Array.isArray(parsed.denied)) throw new Error("not a grant record");
       records += 1;
       if (isEscalationAttempt(parsed)) escalationAttempts += 1;
+      if (parsed.humanDenied) humanDenied += 1;
+      const sources = parsed.approvalSources;
+      if (sources && typeof sources === "object") {
+        for (const source of Object.values(sources)) {
+          // An unrecognised source is counted as unattributed rather than dropped: a tally that silently
+          // ignores what it does not understand reports a smaller sample as a cleaner one.
+          if (source in bySource) bySource[source] += 1;
+          else unattributed += 1;
+        }
+      } else if (parsed.approved && parsed.approved.length > 0) {
+        unattributed += parsed.approved.length;
+      }
       const d = parsed.definitionDigest;
       if (d?.name && d.sha256) {
         const key = `${d.name}\u0000${d.sha256}`;
@@ -300,6 +308,7 @@ export async function verifyLedger(path: string): Promise<LedgerReport> {
     corrupt,
     escalationAttempts,
     definitions: [...digests.values()].sort((a, b) => a.name.localeCompare(b.name) || a.sha256.localeCompare(b.sha256)),
+    approvals: { bySource, unattributed, humanDenied },
     ok: corrupt.length === 0,
   };
 }

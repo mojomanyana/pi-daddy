@@ -121,6 +121,32 @@ handler: async (args: string, ctx: any) => {
           }
         }
       }
+      // ADR-0020's revisit trigger, made runnable. That ADR keeps the persistence layer on an ASSERTED
+      // fatigue argument and named the evidence that would settle it — `persisted` against `prompt` over a
+      // few weeks of real use — then said it "needs no new machinery". True of the data, false of the
+      // answer: nothing counted it, so the measurement required hand-written jq and never happened. R-51's
+      // shape exactly, and the reason that entry exists.
+      const { bySource, unattributed, humanDenied } = report.approvals;
+      const attributed = Object.values(bySource).reduce((sum, n) => sum + n, 0);
+      if (attributed > 0 || unattributed > 0) {
+        lines.push(
+          `  approvals  ${bySource.prompt} prompt · ${bySource.persisted} persisted · ${bySource.session} session · ` +
+            `${bySource.inherited} inherited${humanDenied > 0 ? ` · ${humanDenied} record(s) a human declined` : ""}`,
+        );
+        // Stated as what it measures, not as a verdict: this counts prompts avoided, and how many prompts
+        // an operator will tolerate is not a number the ledger can hold.
+        lines.push(
+          `    ${bySource.persisted} of ${attributed} attributed yes(es) came from the persisted store — ` +
+            `each is a prompt nobody saw, and deleting that layer (ADR-0020 Option 3) turns every one back ` +
+            `into one.`,
+        );
+        if (unattributed > 0) {
+          lines.push(
+            `    ${unattributed} not counted: written before per-capability sources (0.11.1), where one ` +
+              `scalar described the whole set and over-claimed "prompt" (R-46).`,
+          );
+        }
+      }
       if (!report.ok) {
         // Deliberately not repaired. A corrupt line is evidence; rewriting the file to make it parse
         // would destroy the one artifact an investigation has.
@@ -179,10 +205,19 @@ handler: async (args: string, ctx: any) => {
       } else if (!target) {
         ctx.ui.notify("grants: usage — /grants revoke <capability>@<agent-type> | --all", "warning");
       } else {
-        const removed = await revokeApproval(cwd, target, snapshotOf, new Date());
+        // R-49. This was a boolean, so a FAILED write printed "no persisted approval named X" — telling an
+        // operator that the thing they are revoking does not exist, while it survives. The three outcomes
+        // are three different facts and the worst of them was disguised as the most reassuring.
+        const outcome = await revokeApproval(cwd, target, snapshotOf, new Date());
         ctx.ui.notify(
-          removed ? `grants: revoked ${target}` : `grants: no persisted approval named ${target}`,
-          removed ? "info" : "warning",
+          {
+            revoked: `grants: revoked ${target}`,
+            absent: `grants: no persisted approval named ${target}`,
+            failed:
+              `grants: ${target} was NOT revoked — the approvals file could not be written (another ` +
+              `session may be writing it, or the path is not writable). It is still in effect; try again.`,
+          }[outcome],
+          outcome === "revoked" ? "info" : outcome === "absent" ? "warning" : "error",
         );
       }
       return;

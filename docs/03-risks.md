@@ -861,7 +861,7 @@ the least obvious to lose — and absent was indistinguishable from "no such def
 `catalog … N agent-type` line directly above contradicted the short list. R-38's failure mode with a
 different cause. **FIXED:** `… and N more not shown`.
 
-## R-49 · An unlocked read-modify-write can resurrect a revoked approval — L×M, OPEN
+## R-49 · An unlocked read-modify-write can resurrect a revoked approval — L×M, FIXED
 Added 2026-08-13, same pass. `approval-store.ts` documents that *"a revoke takes effect immediately —
 including one performed from another session while this one is running"*, and the write path is an unlocked
 read-modify-write, so: session 1 loads; session 2 revokes; session 1 saves an unrelated approval and
@@ -869,6 +869,65 @@ read-modify-write, so: session 1 loads; session 2 revokes; session 1 saves an un
 
 Needs two live sessions and a revoke inside the window, so likelihood is low — but it falsifies a documented
 property, and the mitigation already exists in this codebase: the ledger's lock file.
+
+**FIXED 2026-08-14 (0.13.0).** The park said *"do not harden a layer whose fate item 1 decides"*, and that
+reasoning weakened once the fix turned out to be **reuse rather than hardening**: the lock moved to
+`src/file-lock.ts` and both writers use it, so this cost no new mechanism and leaves nothing extra to delete
+if ADR-0020 ever chooses Option 3.
+
+Two decisions inside it, both the opposite of the ledger's and both following from what the file *is*:
+
+- **Writes lock; reads do not.** A read that loses a race sees the previous state, which is exactly what
+  "read on demand" already promises. Locking reads would buy nothing and slow every gate check.
+- **A lock this cannot take does not fail the work.** The ledger is a security control — no audit line, no
+  spawn. This store is a convenience cache and the human already said yes, so a timeout downgrades to
+  session scope and warns. Failing a delegation closed because a *cache* was busy would be failing closed on
+  the wrong thing.
+
+The test is the property, not the plumbing: two writes are issued concurrently and the assertion —
+`{b, c}` — is **satisfiable only under a lock**, since unlocked leaves either the revoked entry resurrected
+or the concurrent save lost. Mutation-checked; removing the lock fails that test alone. Found on the way in:
+the lock lives beside the file, so its directory has to exist *before* the lock is taken, and on a
+first-ever approval it did not — every write failed on the lock and reported "busy". The existing round-trip
+tests caught it within a minute.
+
+## R-61 · A failed revoke was reported as "no such approval" — L×H, FIXED
+Added **and fixed** 2026-08-14, found while fixing R-49. `revokeApproval` returned a boolean for three
+facts, so `/grants revoke <key>` printed **"grants: no persisted approval named X"** whenever the *write*
+failed — while the approval was still in effect and still satisfying gates.
+
+Low likelihood, high impact, and the impact is the direction that matters: an operator revoking an approval
+is performing a security action, and they were told the thing they were revoking did not exist. Reassuring
+and wrong beats alarming and wrong every time, which is why this outranks its own probability. Same family
+as R-46 (a record asserting a human was asked when they were not) — the failure is the *claim*, not the
+mechanism.
+
+**FIXED (0.13.0), breaking:** `RevokeOutcome` is `"revoked" | "absent" | "failed"`, and `failed` reports
+that the approval **is still in effect** and says to try again. **Trigger:** any boolean return in this
+package that a caller renders as a sentence — the boolean is the smell, and there are no others left in
+`approval-store.ts` whose two values are three facts.
+
+## R-62 · A killed process orphans one herdr pane per in-flight child — L×L, FIXED IN PART
+Added **and fixed in part** 2026-08-14. `runHerdrPane` closes its pane in a `finally`, which covers a thrown
+error and a timeout and **not the process being killed**, so an interrupted fan-out left a pane per child —
+and `docs/probes/g16-herdr` records that an orphaned pane is not trivially closable afterwards. Low severity
+throughout: the herdr executor is opt-in and `PI_GRANTS_HERDR` is off by default.
+
+**FIXED IN PART (0.13.0)** — `src/pane-reaper.ts` tracks open panes and closes them on `exit`. The coverage
+is stated rather than implied, because the gap is the interesting half:
+
+- **Covered:** normal exit, `process.exit()`, an uncaught exception reaching the default handler.
+- **NOT covered:** SIGKILL, and SIGTERM/SIGINT where nothing else in the process has a listener. Node runs
+  no `exit` handlers there, by design. `herdr tab close <id>` remains the manual remedy.
+
+**The obvious completion is deliberately refused.** Installing a SIGINT/SIGTERM listener would close the
+remaining cases and would *suppress Node's default termination* — a library taking over an application-level
+decision it has no standing to make. pi uses SIGINT to interrupt a turn; a handler here that re-raised would
+turn *"cancel this delegation"* into *"exit pi"*, on **every** session rather than the opt-in ones. A
+governance package quietly changing its host's interrupt semantics is a worse defect than the leak.
+
+Also fixed alongside: `tab create` replying without a pane id returned **before** `cleanup` was defined, so
+the one path where herdr half-succeeded was the one that leaked a tab.
 
 ## R-50 · "Void the moment either changes" is really "void at the next session start" — L×L, DOCUMENTATION
 Added 2026-08-13, same pass. `session.definitions` is loaded once at `session_start` and never refreshed, so
@@ -1107,3 +1166,5 @@ updated without re-reading the section the banner describes.
 | 2026-08-13 | R-37 | **Verified end to end** — an `always` approval was created by a real model answering a real dialog, read back by a *different* process with no prompt (ledger `approvalSource: "persisted"`), and voided by a body edit that re-raised the dialog. ADR-0019's machinery had been implemented and unit-tested but never watched working; it works | approval-store IT |
 | 2026-08-13 | R-37 | **Corrected and FIXED** — the entry understated it: `always` was not silently downgraded, it was **never offered**, because `offeredScopes` gated it on a path ADR-0016 had deleted. Nothing since 0.7.0 could write a persisted approval, so ADR-0014's integrity work guarded an unwritable file. ADR-0019 makes the definition the subject and pins the body digest as well as the ceiling | ADR-0019 |
 | 2026-08-14 | R-60 | Added and fixed — `verifyLedger` rethrows any non-`ENOENT` read error, and at session start that call sat inside an **empty** blanket catch, so an unreadable `PI_GRANTS_LEDGER` produced zero output: no alarm, and not even the `holding [...]` line. R-34's own shape one level down, on the damage class R-34 exists to catch. Confirmed by execution before being written; the outer catch is now loud | the fourth question |
+| 2026-08-14 | R-49, R-61, R-62 | **The parked items, finished.** R-49 closed by REUSE not hardening — the ledger's lock moved to `src/file-lock.ts` and both writers share it, so the park's reason ("do not harden a layer whose fate item 1 decides") no longer applied. R-61 fell out of it: a failed revoke printed "no persisted approval named X" while the approval stayed in effect. R-62 fixed in part, with the SIGINT completion **refused** and the reason recorded — a listener here would suppress Node's default termination and turn pi's "interrupt this turn" into "exit pi" | finishing the list |
+| 2026-08-14 | ADR-0020 | **The measurement is runnable.** `/grants ledger` now counts `persisted` against `prompt` per capability, which that ADR named as the evidence that settles Option 3 and then left to hand-written `jq`. Pre-0.11.1 records are reported as *not counted* rather than folded in, because the older scalar over-claimed `prompt` (R-46) — biasing the one direction the measurement must not be biased in. **Only usage produces the number**; the machinery is no longer what is missing | finishing the list |

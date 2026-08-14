@@ -270,3 +270,51 @@ test("verifyLedger counts escalation attempts, so the one signal is readable", a
   assert.equal(report.records, 3);
   assert.equal(report.escalationAttempts, 1);
 });
+
+test("ADR-0020: verifyLedger tallies where each yes came from, per capability", async () => {
+  // The measurement ADR-0020 named and nothing performed. `persisted` is the number that settles it: each
+  // one is a prompt the operator never saw, so it is the size of what deleting the layer would cost.
+  const dir = await tempDir("grants-sources-");
+  const path = join(dir, "ledger.jsonl");
+  const record = (approvalSources: Record<string, string>, humanDenied = false) =>
+    appendRecord({ path }, buildRecord({
+      parentId: "d0", childId: "d0.1", depth: 1, requested: [], parentGrant: [],
+      result: { effective: [], denied: [], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
+      blocked: false, now: new Date(), approvalSources: approvalSources as never,
+      ...(humanDenied ? { humanDenied: true } : {}),
+    } as never));
+
+  // Deliberately a MIXED record: two capabilities, two different sources. Counting per record instead of
+  // per capability is the specific error R-46 already made once with the scalar, and it would report this
+  // as one prompt — halving the persisted count in exactly the direction that flatters the layer.
+  await record({ "tool:bash": "persisted", "tool:write": "prompt" });
+  await record({ "tool:bash": "persisted" });
+  await record({ "skill:deploy": "inherited" }, true);
+
+  const { bySource, unattributed, humanDenied } = (await verifyLedger(path)).approvals;
+  assert.deepEqual(bySource, { prompt: 1, session: 0, persisted: 2, inherited: 1 });
+  assert.equal(unattributed, 0);
+  assert.equal(humanDenied, 1, "a human saying no is the fatigue argument's other half");
+});
+
+test("ADR-0020: a pre-0.11.1 line is counted as unattributed, never as a prompt", async () => {
+  // The bias this must not have. Before per-capability sources, ONE scalar described the whole set even
+  // when the sources differed (R-46) — so folding `approvalSource` into the tally would report humans as
+  // having been asked about capabilities they were never asked about, inflating `prompt` against the
+  // `persisted` number the whole measurement turns on. Old lines shrink the sample; they never colour it.
+  const dir = await tempDir("grants-legacy-src-");
+  const path = join(dir, "ledger.jsonl");
+  await writeFile(
+    path,
+    `${JSON.stringify({
+      ts: new Date().toISOString(), parentId: "d0", childId: "d0.1", depth: 1,
+      requested: [], parentGrant: [], effective: [], denied: [], clipped: [], gatedBlocked: [],
+      blocked: false, approved: ["tool:bash", "tool:write"], approvalSource: "prompt",
+    })}\n`,
+    "utf8",
+  );
+
+  const { bySource, unattributed } = (await verifyLedger(path)).approvals;
+  assert.equal(bySource.prompt, 0, "the legacy scalar must not become evidence a human was asked");
+  assert.equal(unattributed, 2, "counted, so the sample size is visible rather than silently smaller");
+});

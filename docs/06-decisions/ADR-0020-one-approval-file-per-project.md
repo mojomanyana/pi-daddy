@@ -148,3 +148,22 @@ And the benefit side, which this ADR asserts rather than measures: it keeps the 
 argument with no number behind it. The ledger now records `approvalSources` per capability (0.11.1), so
 counting `persisted` against `prompt` over a few weeks of real use settles Option 3 with evidence instead of
 argument, and needs no new machinery.
+
+**Dated note, 2026-08-14 (0.13.0) — the trigger is now runnable, and the decision is unchanged.**
+*"Needs no new machinery"* was true of the data and false of the answer: `approvalSources` was recorded and
+nothing read it, so settling this ADR required hand-written `jq` and therefore never happened. `/grants
+ledger` now prints the tally — `N prompt · N persisted · N session · N inherited`, and *"N of M attributed
+yes(es) came from the persisted store"*, which is the number stated as what it measures: prompts the
+operator did not see, and which deleting the layer converts back into prompts.
+
+Records written before per-capability sources existed are reported as **not counted** rather than folded in.
+The pre-0.11.1 scalar described a whole set even when its sources differed (R-46), so including it would
+report humans as having been asked about capabilities they were never asked about — inflating `prompt`
+against the `persisted` number this trigger turns on. Old lines shrink the sample; they must never colour it.
+
+**This does not settle anything yet.** Only usage produces the number, and that is still the operator's to
+run. What changed is that the missing piece is now *use* rather than *tooling*.
+
+R-49 was also closed the same day, which the "deliberate non-goals" above list as out of scope for this ADR
+("no file locking"). That remains true of *this* decision — the fix was reuse of the ledger's existing lock,
+not a new mechanism, and it leaves nothing extra to remove should Option 3 ever be taken.

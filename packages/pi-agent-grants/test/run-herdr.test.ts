@@ -10,6 +10,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { runHerdrPane, splitSystemPrompt, type HerdrExec } from "../src/run-herdr.ts";
+import { openPaneCount, reapOpenPanes, trackPane } from "../src/pane-reaper.ts";
 
 interface FakeOptions {
   /** `state_change_seq` reported by `agent start`, i.e. the state BEFORE prompting. */
@@ -285,4 +286,38 @@ test("a JSON error reply from agent read is still recognised as an error", async
 
   const result = await runHerdrPane(request({ exec }));
   assert.match(result.text, /could not read the agent pane: gone/);
+});
+
+test("a completed run leaves nothing for the exit-time reaper", async () => {
+  // The registry must not grow one entry per delegation. A fan-out of eight that finished normally has
+  // nothing outstanding, so the exit hook does nothing — which is the only state it is ever in for a
+  // session that was not killed.
+  const before = openPaneCount();
+  await runHerdrPane(request({ exec: fakeHerdr().exec }));
+  assert.equal(openPaneCount(), before, "cleanup ran, so the pane must be untracked");
+  assert.deepEqual(reapOpenPanes(() => {}), [], "and the reaper has nothing to close");
+});
+
+test("a pane orphaned by a killed process is closed by the reaper", async () => {
+  // `finally` covers a thrown error and a timeout, NOT the process being killed — the gap this closes.
+  // Simulated by tracking a pane and never running cleanup, which is precisely what a kill leaves behind.
+  const closed: string[][] = [];
+  trackPane({ tab: "w1:t42", name: "orphan" });
+  assert.equal(openPaneCount(), 1);
+
+  assert.deepEqual(reapOpenPanes((args) => void closed.push(args)), ["w1:t42"]);
+  assert.deepEqual(closed, [["agent", "stop", "orphan"], ["tab", "close", "w1:t42"]], "the agent is stopped before its tab goes away");
+  assert.equal(openPaneCount(), 0, "and a reaped pane is not reaped twice");
+});
+
+test("one pane herdr refuses to close does not strand the others", async () => {
+  // At exit there is nowhere to report a failure, so the only useful behaviour is to keep going. Failing
+  // the whole sweep on the first stuck pane would turn one orphan into eight.
+  trackPane({ tab: "stuck", name: "a" });
+  trackPane({ tab: "fine", name: "b" });
+  const closed = reapOpenPanes((args) => {
+    if (args[0] === "tab" && args[2] === "stuck") throw new Error("herdr says no");
+  });
+  assert.deepEqual(closed, ["fine"], "the closable pane is reported, the stuck one is not claimed");
+  assert.equal(openPaneCount(), 0, "both are dropped: a pane we cannot close is not retried forever");
 });

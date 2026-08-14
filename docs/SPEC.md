@@ -3,7 +3,7 @@
 **The current-state document.** No history, no reasoning about alternatives, no record of how anything came
 to be decided. Where this disagrees with an ADR, the ADR is right and this file is stale — say so.
 
-Last synced against the code: **2026-08-14**, `pi-agent-grants` 0.12.1, pi 0.84.1, herdr 0.7.5.
+Last synced against the code: **2026-08-14**, `pi-agent-grants` 0.13.0, pi 0.84.1, herdr 0.7.5.
 
 ---
 
@@ -111,6 +111,11 @@ There is deliberately **no background mode, no result-by-id and no child registr
 owns the children: the parent cannot exit first, the tool-call signal stays live, the timeout outlives every
 child, results are returned rather than stored, and no ids dangle across a compaction.
 
+If one is ever built, ADR-0026 settles the rule that blocked it: a background delegation whose gates are
+unresolved when its tool call returns is **refused** (`gatedBlocked`, no `approvalSource`), and an approval
+arriving later starts nothing. Otherwise a child's capability set would depend on when a human reached the
+dialog. The consequence is that background mode would only be useful for **ungated** capability sets.
+
 Both tools are registered **only** when the session holds `tool:delegate`. Withhold it and the session is a
 leaf.
 
@@ -179,6 +184,16 @@ treated as changed rather than assumed unchanged.
 approval for a same-named definition — `review`, `deploy` — and every write touched every project's data,
 which is where four defects came from. `/grants revoke --all` clears one project because it cannot name
 another's file.
+
+**Writes are serialised by a file lock; reads are not.** Every write is load → modify → write, so without
+one a save could restore an entry another session had just revoked (R-49). A read that loses the race sees
+the previous state, which is what "read on demand" already means. It is the **same lock as the ledger's**
+(`src/file-lock.ts`) with the opposite failure policy, and the difference follows from what the two files
+are: no audit line means no spawn, whereas a busy approvals file **never** fails your work — the human
+already said yes, and this store is a cache of that decision.
+
+`/grants revoke <key>` has three outcomes and says which: revoked, **no such approval**, or **not revoked
+and still in effect**. The last one used to be reported as the second.
 
 **An inherited approval carries the body digest too** (ADR-0022). `PI_GRANTS_APPROVED` publishes
 `capability@subject#sha256`, and a child verifies it against the definition **it** loaded — a child is a
@@ -259,6 +274,13 @@ is staged to a temp file because `agent start` types argv into a shell and rejec
 `agent start` is retried while it comes up; and settling requires a terminal status **and** an advanced
 `state_change_seq`, because `agent wait --until idle` matches the state the agent was already in.
 
+**Pane cleanup covers everything except being killed outright.** A run closes its own pane in a `finally`,
+and panes still open are closed again on process `exit` — which covers a normal exit and `process.exit()`,
+and does **not** cover SIGKILL or a SIGTERM nothing else in the process is listening for, because Node runs
+no `exit` handlers there. `herdr tab close <id>` is the remedy for an orphan. No signal handler is installed
+by design: one here would suppress Node's default termination and turn pi's *"interrupt this turn"* into
+*"exit pi"*, on every session rather than the opt-in ones.
+
 ## The tripwire
 
 The `tool_call` hook refuses third-party spawn tools (`Agent`, `subagent`, `spawn_agent`) in a governed
@@ -292,9 +314,9 @@ bound a typo can switch off is not a bound.
 
 ```bash
 cd packages/pi-agent-grants
-npm test                   # 295 unit tests — pure, no pi, no network
+npm test                   # 301 unit tests — pure, no pi, no network
 npm run typecheck          # src + extensions + test + test-integration
-npm run test:integration   # 24 tests against a REAL pi process, no model tokens
+npm run test:integration   # 25 tests against a REAL pi process, no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and USE every subpath
 
 PI_GRANTS_IT_MODEL=1 npm run test:integration   # + 4 with a real model (~60s, costs money)

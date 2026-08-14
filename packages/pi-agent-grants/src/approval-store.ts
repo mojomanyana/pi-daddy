@@ -7,10 +7,11 @@
  * return of `saveApproval`), and an unreadable one simply grants nothing.
  *
  * Read on demand, never cached at session start, so a revoke takes effect immediately — including one
- * performed from another session while this one is running. (No file locking on read-modify-write,
- * acceptable for a convenience cache; this is advisory-only state backed by real decisions already made.
- * R-49 records the residual race, which ADR-0020 narrowed from "any two projects" to "two sessions in the
- * same directory".)
+ * performed from another session while this one is running. **That sentence used to be false** (R-49): every
+ * write is load → modify → write and it was unlocked, so a save could restore an entry another session had
+ * just revoked. Writes now hold the same file lock the ledger uses (`src/file-lock.ts`, `underLock` below);
+ * reads deliberately do not, because a read that loses a race simply sees the previous state, which is what
+ * "read on demand" already promises.
  *
  * **One file per project** (ADR-0020), and **no model-authored text, ever** (ADR-0021) — see `approvalsPath`
  * and `sanitise` for why each of those is a decision rather than a detail.
@@ -21,6 +22,7 @@
 
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { withFileLock } from "./file-lock.ts";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { entryVerdict, type ApprovalEntry, type EntryVerdict, type SubjectSnapshot } from "./approval.ts";
@@ -272,31 +274,42 @@ export async function saveApproval(
   snapshotOf: SubjectLookup,
   now: Date,
 ): Promise<boolean> {
-  const { valid } = await loadApprovals({ cwd, now, snapshotOf });
-  valid.set(key, entry);
-  // ADR-0020: this file belongs to ONE project, so there is nothing here that another project could own and
-  // pruning cannot reach across a boundary. The `foreign-cwd` carry-through 0.10.2 needed is gone with the
-  // shared file that made it necessary.
-  return writeFileSafely(cwd, { version: 1, approvals: sanitise(valid) });
+  return underLock(cwd, false, async () => {
+    const { valid } = await loadApprovals({ cwd, now, snapshotOf });
+    valid.set(key, entry);
+    // ADR-0020: this file belongs to ONE project, so there is nothing here that another project could own and
+    // pruning cannot reach across a boundary. The `foreign-cwd` carry-through 0.10.2 needed is gone with the
+    // shared file that made it necessary.
+    return writeFileSafely(cwd, { version: 1, approvals: sanitise(valid) });
+  });
 }
 
 /**
  * Remove one approval, pruning any entries that have since become invalid.
  *
- * Returns false when there was nothing to remove. Like saveApproval, this filters invalid entries
- * so a revoke takes the opportunity to clean up stale entries — the lazy-pruning policy applies
- * to both write paths.
+ * Like `saveApproval`, this filters invalid entries so a revoke takes the opportunity to clean up stale
+ * ones — the lazy-pruning policy applies to both write paths.
+ *
+ * **Three outcomes, not two (R-49).** It returned a boolean, and the caller printed
+ * *"no persisted approval named X"* for false — which was a **false statement** whenever the cause was a
+ * failed write. An operator told there is nothing to revoke, while the approval they are revoking survives,
+ * has been told the opposite of the truth about a security control. `"absent"` and `"failed"` are different
+ * facts and now say so.
  */
+export type RevokeOutcome = "revoked" | "absent" | "failed";
+
 export async function revokeApproval(
   cwd: string,
   key: string,
   snapshotOf: SubjectLookup,
   now: Date,
-): Promise<boolean> {
-  const { valid } = await loadApprovals({ cwd, now, snapshotOf });
-  if (!valid.has(key)) return false;
-  valid.delete(key);
-  return writeFileSafely(cwd, { version: 1, approvals: sanitise(valid) });
+): Promise<RevokeOutcome> {
+  return underLock<RevokeOutcome>(cwd, "failed", async () => {
+    const { valid } = await loadApprovals({ cwd, now, snapshotOf });
+    if (!valid.has(key)) return "absent";
+    valid.delete(key);
+    return (await writeFileSafely(cwd, { version: 1, approvals: sanitise(valid) })) ? "revoked" : "failed";
+  });
 }
 
 /**
@@ -308,5 +321,40 @@ export async function revokeApproval(
  * else", and it should not be the default reading of a command that names neither.
  */
 export async function revokeAll(cwd: string): Promise<boolean> {
-  return writeFileSafely(cwd, { version: 1, approvals: {} });
+  return underLock(cwd, false, () => writeFileSafely(cwd, { version: 1, approvals: {} }));
+}
+
+/**
+ * Hold the store's lock for one read-modify-write (R-49).
+ *
+ * **The race it closes.** Every write here is load → modify → write, and it was unlocked, so: session 1
+ * loads; session 2 revokes; session 1 saves an unrelated approval and **restores the revoked entry** for the
+ * rest of its 30 days, with no error and no warning. `approval-store.ts` documents that *"a revoke takes
+ * effect immediately — including one performed from another session while this one is running"*, and that
+ * sentence was false. Narrow (ADR-0020 scoped it to two sessions in the same directory) and cheap to close,
+ * because the lock already existed for the ledger — `src/file-lock.ts`, one implementation, two callers.
+ *
+ * **A lock this cannot take does NOT fail the work**, which is the opposite of the ledger's choice with the
+ * same lock and follows from what the two files are. The ledger is a security control: no audit line, no
+ * spawn. This store is a convenience cache (ADR-0020) — the human already said yes, and refusing their work
+ * because a cache was busy would be failing closed on the wrong thing. So a timeout yields `busy`, which the
+ * caller reports as an ordinary write failure and downgrades to session scope.
+ */
+async function underLock<T>(cwd: string, busy: T, work: () => Promise<T>): Promise<T> {
+  const path = approvalsPath(cwd);
+  try {
+    // The lock lives beside the file, so its directory must exist before the lock can be taken — and on a
+    // first-ever approval it does not. `writeFileSafely` creates it, which is one step too late: every
+    // write failed with ENOENT on the LOCK and was reported as "busy". Caught by the existing round-trip
+    // tests within a minute of adding the lock, which is the argument for having them.
+    await mkdir(dirname(path), { recursive: true });
+    return await withFileLock(path, "approvals file", work);
+  } catch (error) {
+    // Only a lock failure lands here — `work` itself never throws, because both write paths swallow into a
+    // boolean. Anything else (a directory that cannot be created for the lock, EROFS) is the same kind of
+    // "could not write" the caller already handles, so it takes the same route rather than reaching the UI
+    // as an unhandled rejection.
+    void error;
+    return busy;
+  }
 }

@@ -216,6 +216,45 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     assert.match(text, /records\s+1/, "the valid record is counted");
     assert.match(text, /UNPARSEABLE LINE/, "and the torn one is reported rather than ignored");
     assert.match(text, /line 2:/, "with a line number, so it is actionable");
+    assert.ok(
+      !/approvals\s+\d/.test(text),
+      "a ledger with no approvals must not print an approvals tally — a report that speaks about " +
+        "everything every time is one an operator stops reading (R-25)",
+    );
+  });
+
+  test("ADR-0020: /grants ledger counts persisted against prompt, so the layer's fate is measurable", async () => {
+    // ADR-0020 keeps the persistence layer on an ASSERTED fatigue argument and names the evidence that
+    // would settle it, then says it "needs no new machinery". True of the data and false of the answer:
+    // nothing read `approvalSources`, so the measurement needed hand-written jq and never happened. This
+    // drives the operator's actual path to that number — one command, real pi, no model.
+    const cwd = await projectOnce();
+    const ledger = join(await tempDir("grants-it-sources-"), "ledger.jsonl");
+    const base = {
+      ts: new Date().toISOString(), parentId: "d0", depth: 1, requested: [], parentGrant: [],
+      effective: [], denied: [], clipped: [], gatedBlocked: [], blocked: false,
+    };
+    await writeFile(
+      ledger,
+      [
+        // A mixed record — two capabilities, two sources — plus a legacy line that must not be believed.
+        JSON.stringify({ ...base, childId: "d0.1", approved: ["tool:bash", "tool:write"], approvalSources: { "tool:bash": "persisted", "tool:write": "prompt" } }),
+        JSON.stringify({ ...base, childId: "d0.2", approved: ["tool:bash"], approvalSources: { "tool:bash": "persisted" } }),
+        JSON.stringify({ ...base, childId: "d0.3", approved: ["tool:bash"], approvalSource: "prompt" }),
+      ].join("\n") + "\n",
+      "utf8",
+    );
+
+    const r = await runCommand({
+      cwd,
+      command: "/grants ledger",
+      env: { PI_GRANTS_GRANT: "tool:read", PI_GRANTS_LEDGER: ledger },
+    });
+
+    const text = r.notifies.map((n) => n.message).join("\n");
+    assert.match(text, /1 prompt · 2 persisted/, "the two numbers ADR-0020 asks to be compared");
+    assert.match(text, /2 of 3 attributed yes\(es\) came from the persisted store/, "stated as prompts avoided");
+    assert.match(text, /1 not counted: written before per-capability sources/, "and the legacy line is excluded OUT LOUD");
   });
 
   test("R-51: /grants ledger groups by instructions and flags a definition that has changed", async () => {
