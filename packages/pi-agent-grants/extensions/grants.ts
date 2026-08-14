@@ -155,14 +155,32 @@ export default function (pi: ExtensionAPI) {
       //
       // Awaited rather than fired and forgotten: it is one read, on a path that already awaits two
       // directory scans, and awaiting is what guarantees the warning reaches a live `ctx.ui`.
+      //
+      // R-60. `verifyLedger` RETHROWS every read error that is not ENOENT — right for `/grants ledger`,
+      // where an operator asked a direct question and deserves the failure — and this call is the only one
+      // that makes it inside the blanket catch below. So an unreadable ledger threw here and cancelled every
+      // remaining control **in silence**: no alarm, and not even the `holding [...]` line that is the one
+      // sign governance is on. Confirmed by execution — `PI_GRANTS_LEDGER` naming a directory produced ZERO
+      // notifications from a governed session. A trail that cannot be read at all is a worse failure than a
+      // torn line, and it was the one case this control said nothing about.
       if (session.ledgerPath) {
-        const report = await verifyLedger(session.ledgerPath);
-        if (report.exists && !report.ok) {
+        try {
+          const report = await verifyLedger(session.ledgerPath);
+          if (report.exists && !report.ok) {
+            ctx.ui.notify(
+              `grants: ledger ${session.ledgerPath} has ${report.corrupt.length} unparseable line(s) — ` +
+                `first at line ${report.corrupt[0]?.line}. A torn line is indistinguishable from a spawn that ` +
+                `never happened, so this audit trail is incomplete. Run /grants ledger for detail; the file is ` +
+                `left alone because a corrupt line is evidence.`,
+              "error",
+            );
+          }
+        } catch (error) {
           ctx.ui.notify(
-            `grants: ledger ${session.ledgerPath} has ${report.corrupt.length} unparseable line(s) — ` +
-              `first at line ${report.corrupt[0]?.line}. A torn line is indistinguishable from a spawn that ` +
-              `never happened, so this audit trail is incomplete. Run /grants ledger for detail; the file is ` +
-              `left alone because a corrupt line is evidence.`,
+            `grants: ledger ${session.ledgerPath} could not be read ` +
+              `(${(error as { code?: string }).code ?? String(error)}) — nothing can be verified about this ` +
+              `audit trail, and the first spawn will refuse rather than proceed unrecorded. Check that ` +
+              `PI_GRANTS_LEDGER names a writable FILE.`,
             "error",
           );
         }
@@ -173,8 +191,21 @@ export default function (pi: ExtensionAPI) {
           "info",
         );
       }
-    } catch {
-      /* never throw into the agent loop */
+    } catch (error) {
+      // Rule 8 — fail closed, and be LOUD about it. Swallowing is still right: a startup fault must not
+      // reach the agent loop. Swallowing SILENTLY is what let R-60 exist, and would let the next one exist
+      // too, because every control added above this line is cancelled by any throw before it with no trace.
+      // Deliberately says which checks are affected rather than claiming they passed.
+      try {
+        ctx.ui.notify(
+          `grants: session start did not complete — ${error instanceof Error ? error.message : String(error)}. ` +
+            `Checks and setup after the failure did not run, so definitions may be missing and a delegation ` +
+            `may refuse. The grant itself is unaffected: it is enforced by --tools when a child is spawned.`,
+          "error",
+        );
+      } catch {
+        /* a UI that cannot be notified is the one failure there is nowhere to report */
+      }
     }
     return undefined;
   });

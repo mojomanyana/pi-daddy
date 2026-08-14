@@ -907,6 +907,43 @@ disagree with the enforcer about whether a definition changed. Two rows under on
 explicitly, because that is the finding rather than a formatting quirk. Both of ADR-0018's advertised
 questions now have a command; whether anyone runs it is that ADR's revisit trigger.
 
+## R-60 · A ledger that could not be READ silenced session start entirely — M×M, FIXED
+Added **and fixed** 2026-08-14, one session after R-34 added the control it defeats. Found by asking the
+session log's fourth question — *where else does the R-34 shape appear?* — and **confirmed by execution
+before being written down**: a governed session with `PI_GRANTS_LEDGER` naming a directory emitted **zero**
+notifications. Not the corruption alarm, and not the `grants: depth 0/2, holding [...]` line that is the one
+sign governance is on at all. A control run under the same harness with an ordinary path emitted it.
+
+`verifyLedger` **rethrows** every read error that is not `ENOENT`. That is right for `/grants ledger`, where
+an operator asked a direct question. It is wrong at session start, where the call sat inside
+`session_start`'s blanket `try { … } catch { /* never throw into the agent loop */ }` — an **empty** catch.
+So the throw cancelled every remaining control with no trace.
+
+Three things make this worse than its blast radius suggests:
+
+- **It is R-34's own shape, one level down.** R-34 was *"a check an operator has to know to run is not a
+  control"*. R-60 is *a control that does not run on the one input class it exists to detect* — and a trail
+  nothing can read is more damaged than a trail with a torn line, not less.
+- **The write path already got this right.** `appendRecord` is called with `strict: true`, so the *first
+  spawn* against an unreadable ledger refuses loudly. Only the startup check was silent. An asymmetry like
+  that is the tell.
+- **An empty catch makes every future control silently optional.** Anything added to `session_start` after a
+  throwing line inherits the same fault without anyone writing a new bug.
+
+**FIXED (unreleased):** the `verifyLedger` call carries its own `catch`, which reports the path, the errno
+and what to do (`PI_GRANTS_LEDGER names a writable FILE`) as an `error`, and the hook continues. The outer
+catch is now **loud** rather than empty — it names the failure and says explicitly that later checks did not
+run and that the grant itself is unaffected, because enforcement is `--tools` at spawn time and does not
+depend on this hook. One integration test against real pi, asserting both halves: the new alarm fires, **and**
+the `holding [...]` line still arrives, which is what pins the discarded-controls defect rather than just the
+message. Mutation-checked: restoring the rethrow fails that test and nothing else.
+
+**What this does not establish.** The loud outer catch has **no direct test**. Every loader inside the hook
+(`loadDefinitions`, `buildCatalog`, both `existsSync` probes) already swallows its own filesystem errors, so
+after this fix there is no reachable input that throws past it — which is the reason it is defence in depth
+and the reason it cannot be driven from outside. **Trigger:** any new `await` added to `session_start`
+whose callee rethrows; it belongs in its own `catch`, not in the blanket one.
+
 ## R-59 · Four documents described a defect that had been fixed four days earlier — L×M, FIXED
 Added **and fixed** 2026-08-14. `CLAUDE.md`, the root `README.md` and two places in `docs/SESSION-LOG.md`
 all stated that `pi-token-audit`'s headline was *"a character ratio, not a token share"*. That was true when
@@ -1069,3 +1106,4 @@ updated without re-reading the section the banner describes.
 | 2026-08-13 | R-38 | Added and **FIXED same session** — `/grants` listed a definition as BLOCK while a real spawn would allow it off a valid persisted approval, because the listing shared the *planner* with enforcement but not the *approval step*. R-28's shape one layer up. Found by the first end-to-end test of the approval store, and confirmed by execution before being written. Fixed with one `planWithApprovals` used by both, `ctx: null` meaning preview | approval-store IT |
 | 2026-08-13 | R-37 | **Verified end to end** — an `always` approval was created by a real model answering a real dialog, read back by a *different* process with no prompt (ledger `approvalSource: "persisted"`), and voided by a body edit that re-raised the dialog. ADR-0019's machinery had been implemented and unit-tested but never watched working; it works | approval-store IT |
 | 2026-08-13 | R-37 | **Corrected and FIXED** — the entry understated it: `always` was not silently downgraded, it was **never offered**, because `offeredScopes` gated it on a path ADR-0016 had deleted. Nothing since 0.7.0 could write a persisted approval, so ADR-0014's integrity work guarded an unwritable file. ADR-0019 makes the definition the subject and pins the body digest as well as the ceiling | ADR-0019 |
+| 2026-08-14 | R-60 | Added and fixed — `verifyLedger` rethrows any non-`ENOENT` read error, and at session start that call sat inside an **empty** blanket catch, so an unreadable `PI_GRANTS_LEDGER` produced zero output: no alarm, and not even the `holding [...]` line. R-34's own shape one level down, on the damage class R-34 exists to catch. Confirmed by execution before being written; the outer catch is now loud | the fourth question |

@@ -7,9 +7,12 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ## NEXT SESSION — read this, then pick one
 
-**State: green, working tree clean, reviewed twice, and everything actionable is done.** `pi-agent-grants`
-**0.12.1** — the only package. **295 unit + 23 integration tests** (+**4** with a real model), typecheck
-clean, smoke clean. **Twenty-five** ADRs decided.
+**State: green — but one fix is UNREVIEWED.** `pi-agent-grants` **0.12.1** — the only package. **295 unit +
+24 integration tests** (+**4** with a real model), typecheck clean, smoke clean. **Twenty-five** ADRs decided.
+
+**Read R-60 first.** It shipped without a second pair of eyes, which is the one thing this file tells you not
+to do. An independent agent given the hypothesis *"an empty catch made every startup control optional — what
+else in `session_start` can throw?"* is the review to get before anything else lands.
 
 ```bash
 cd packages/pi-agent-grants && npm test && npm run typecheck && npm run test:integration && npm run test:smoke
@@ -76,7 +79,45 @@ That convention is why every reversal here was survivable, and there have been f
 ---
 
 
-## 2026-08-14 (last) — the fixture directories clean up after themselves
+## 2026-08-14 (last) — R-60: the ledger check was silent on the worst damage there is
+
+**Pulled the "fourth thing": grep for call sites rather than trusting a reading, then ask where else this
+shape appears.** It found one, in the control shipped the session before.
+
+`verifyLedger` **rethrows** every read error that is not `ENOENT` — right for `/grants ledger`, where an
+operator asked. At session start that call sat inside `session_start`'s blanket `try/catch`, and the catch
+was **empty**. So an unreadable ledger threw and cancelled every remaining control in silence.
+
+**Confirmed by execution before writing anything down** (habit 1). A governed session with
+`PI_GRANTS_LEDGER` naming a directory emitted **zero** notifications — no alarm, and not even
+`grants: depth 0/2, holding [...]`, the one line that says governance is on. The same harness with an
+ordinary path emitted it, so the probe was not simply broken.
+
+This is **R-34's own shape one level down**: R-34 was *"a check an operator has to know to run is not a
+control"*; R-60 is a control that does not run on the one input class it exists for. A trail nothing can
+read is more damaged than a trail with a torn line, and it was the case that said nothing. The tell was an
+asymmetry already in the tree: `appendRecord` is called with `strict: true`, so the first *spawn* against
+that same ledger refuses loudly. Only the startup check was quiet.
+
+Fixed in two places. The `verifyLedger` call has its own `catch` that names the path, the errno and the
+remedy; the outer catch is **loud** instead of empty, and says which checks did not run rather than implying
+they passed. One integration test against real pi asserts both halves — the new alarm fires **and** the
+`holding [...]` line still arrives, which is what pins the discarded-controls defect rather than the message
+alone. Mutation-checked: restoring the rethrow fails that test and nothing else.
+
+**Stated rather than hidden** (rule 6): the loud outer catch has **no direct test**. Every loader inside the
+hook already swallows its own filesystem errors, so after this fix nothing reachable throws past it. R-60's
+trigger is written for that — any new `await` in `session_start` whose callee rethrows belongs in its own
+`catch`, not the blanket one.
+
+**Verified: 295 unit, 24 integration, typecheck clean, smoke clean.**
+
+**Not yet reviewed independently.** The log's own loudest sentence says get the review before shipping the
+next three things. This is thing one.
+
+---
+
+## 2026-08-14 (eighth) — the fixture directories clean up after themselves
 
 **Known-open item 5, closed.** Every suite created a `mkdtemp` directory per test and none removed it —
 4,896 under `/tmp` in one day. `test/tmp.ts` now hands them out (`tempDir`) and remembers them

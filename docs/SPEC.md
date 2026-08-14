@@ -220,7 +220,12 @@ hanging — and a lock abandoned by a killed process is broken after 10s.
 
 `/grants ledger` reads it back and reports record count, escalation attempts, and unparseable lines with
 line numbers. A corrupt line is **reported, never repaired**: it is the only artifact an investigation has.
-Nothing verifies automatically.
+
+**Integrity is checked at every session start**, not only when asked — a check an operator has to know to run
+is a feature, not a control. Two things raise an `error` there, and only those two: unparseable lines, naming
+the first one; and a ledger that **cannot be read at all**, naming the errno and the path. Everything else
+stays a query — the escalation count in particular, because a control that speaks every session is one an
+operator learns to skip. A ledger that does not exist yet is not a fault.
 
 **Privacy is a property of this file, and the boundary is exact.** Capability ids, counts and identifiers
 only — *never prompts, tool arguments or results.* A spawn that names a definition records a
@@ -289,7 +294,7 @@ bound a typo can switch off is not a bound.
 cd packages/pi-agent-grants
 npm test                   # 295 unit tests — pure, no pi, no network
 npm run typecheck          # src + extensions + test + test-integration
-npm run test:integration   # 23 tests against a REAL pi process, no model tokens
+npm run test:integration   # 24 tests against a REAL pi process, no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and USE every subpath
 
 PI_GRANTS_IT_MODEL=1 npm run test:integration   # + 4 with a real model (~60s, costs money)

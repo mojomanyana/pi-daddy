@@ -14,7 +14,7 @@
 
 import assert from "node:assert/strict";
 import { after, describe, test } from "node:test";
-import { writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { digestDefinition, parseSkillDefinition } from "../src/definitions.ts";
 import { cleanupTempDirs, fixture, piAvailable, runCommand, tempDir, verdictFor } from "./harness.ts";
@@ -339,6 +339,40 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     assert.ok(
       !r.notifies.some((n) => n.type === "error"),
       "and a recorded escalation attempt is history, not a startup alarm",
+    );
+  });
+
+  test("R-60: a ledger that cannot be READ is louder than one that is merely torn", async () => {
+    // The gap in the control above. `verifyLedger` rethrows every read error that is not ENOENT, that call
+    // sat inside `session_start`'s blanket catch, and the catch was empty — so the WORSE damage produced
+    // NOTHING: no alarm, and not even the `holding [...]` line. Found by asking where else the R-34 shape
+    // appears ("a check nobody runs") and confirmed by execution before it was written down: a governed
+    // session with PI_GRANTS_LEDGER naming a directory emitted zero notifications.
+    //
+    // A directory is the cheap way to make the read fail deterministically without depending on file modes,
+    // which behave differently under root and on some filesystems. The failure under test is the CLASS —
+    // `readFile` rejecting with something other than ENOENT — not this particular errno.
+    const cwd = await projectOnce();
+    const ledger = join(await tempDir("grants-it-unreadable-"), "ledger-is-a-directory");
+    await mkdir(ledger, { recursive: true });
+
+    const r = await runCommand({
+      cwd,
+      command: "/grants",
+      env: { PI_GRANTS_GRANT: "agent:docs-writer,tool:read,tool:write", PI_GRANTS_LEDGER: ledger },
+    });
+
+    const alarm = r.notifies.find((n) => n.message.includes("could not be read"));
+    assert.ok(alarm, "an audit trail nothing can verify must say so");
+    assert.equal(alarm.type, "error");
+    assert.match(alarm.message, new RegExp(ledger.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), "naming the path");
+    assert.match(alarm.message, /PI_GRANTS_LEDGER names a writable FILE/, "and what to do about it");
+
+    // The half that pins the actual defect: the throw used to discard every control after it. This line is
+    // the last thing `session_start` emits, so its presence proves the rest of the hook still ran.
+    assert.ok(
+      r.notifies.some((n) => n.message.includes("grants: depth 0/")),
+      "a governed session must still report itself — silence is what made this worth fixing",
     );
   });
 
