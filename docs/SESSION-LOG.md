@@ -7,23 +7,17 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ## NEXT SESSION — read this, then pick one
 
-**State: green — and FIVE changes are UNREVIEWED.** `pi-agent-grants` **0.13.0** — the only package.
-**301 unit + 25 integration tests** (+**4** with a real model), typecheck clean, smoke clean.
-**Twenty-six** ADRs decided.
+**State: green, and reviewed.** `pi-agent-grants` **0.13.0** — the only package. **305 unit + 25 integration
+tests** (+**4** with a real model), typecheck clean, smoke clean. **Twenty-six** ADRs decided.
 
-**The review is the next action, before anything else lands.** The known-open list is now empty of code, and
-every item that emptied it was written by one pair of eyes in one sitting — the precise conditions under
-which the last two red-team passes each found a defect that made a shipped fix false. Four hypotheses worth
-handing an independent agent, one per change:
+**The known-open list is empty of code.** What remains needs a human: item 1 needs weeks of real usage, and
+items 6 and 7 are closed by decision. See the table below before assuming otherwise.
 
-1. **R-60** — an empty catch made every startup control optional. What else in `session_start` can throw?
-2. **R-49** — writes now take a lock and reads deliberately do not. Is there a read-then-write pair across
-   two calls that the per-call lock does not actually cover? `planWithApprovals` is the place to look.
-3. **R-61 / `RevokeOutcome`** — a boolean became three states. Is `failed` reachable for a reason that is
-   really `absent`, and does any other caller still render a boolean as a sentence?
-4. **The ADR-0020 tally** — it excludes pre-0.11.1 records to avoid inflating `prompt`. Does anything else
-   in that count lean the same way, e.g. `inherited` entries counted once per child rather than once per
-   human decision?
+**The four unreviewed changes were reviewed by the operator on 2026-08-14 and three produced a finding**
+(R-60's guard, R-61's fourth state, R-63's twentyfold bias). **What made that review work is worth copying**:
+each hypothesis was checked by execution or by grep *first*, so the operator was handed a concrete finding
+with a worked example instead of "please look at this" — and two of the four were then cleared in minutes
+rather than costing a pass. Write the hypotheses down; verify them before asking.
 
 ```bash
 cd packages/pi-agent-grants && npm test && npm run typecheck && npm run test:integration && npm run test:smoke
@@ -90,7 +84,51 @@ That convention is why every reversal here was survivable, and there have been f
 ---
 
 
-## 2026-08-14 (last) — the known-open list, emptied of code — 0.13.0
+## 2026-08-14 (last) — the operator reviewed the four unreviewed changes; three produced a finding
+
+**The review worked, and the way it worked is the reusable part.** Four hypotheses had been written down —
+one per unreviewed change — and each was *checked by execution or by grep before being put to the operator*,
+so what they were asked was a concrete finding with an example rather than "please look at this". Two of the
+four were cleared in minutes. Two produced defects, and one of those is the most consequential thing in this
+session.
+
+**R-63 — the ADR-0020 tally overstated the persistence layer twentyfold.** It counted `persisted` RECORDS
+and reported each as a prompt avoided. Precedence is `inherited → session → persisted → prompt`, and
+**`session` approvals live in memory and owe the store nothing** — so a session spawning `deploy` twenty
+times under one persisted entry writes twenty records, while deleting the store would raise **one** prompt
+and satisfy nineteen from the session cache. The number that decides ADR-0020's fate was wrong by 20×, in
+favour of keeping the thing under evaluation.
+
+The lesson is sharper than the bug. **That report already excluded pre-0.11.1 records specifically to avoid
+inflating `prompt`** — the bias was thought about, named in a comment, and defended against in one direction
+while walking into it from the other. *Excluding one known bias is not being unbiased.* It now prints
+records as a stated upper bound **and** distinct `capability@subject` pairs as the closer estimate.
+
+**R-61 gained a fourth state, because the R-61 fix contained a smaller copy of R-61.** A lock timeout
+happens *before* the load, so `failed` — whose message asserts *"It is still in effect"* — was returned for
+a key nobody had looked for. Third time a fix here has contained a smaller version of its own bug (R-38's
+preview, ADR-0022's republish path), and the **first time it was caught while still being reviewed** rather
+than by a later pass. `busy` now claims nothing about the entry.
+
+**R-60 gained a guard test, which immediately found two more.** `test/session-start-guard.test.ts` fails on
+any `await` in `session_start` without its own `catch` — the exact way R-60 was born, by *adding* a line
+rather than editing one. It flagged `loadDefinitions` and `buildCatalog` on its first run. Neither throws
+today; that is the point, because `verifyLedger` did not either until the day it did.
+
+**Cleared, and worth recording as cleared** (rule 6 — say what the evidence covers): the per-call lock does
+cover `planWithApprovals`, whose long window is the human dialog, where a fresh yes *should* beat an older
+revoke; and no other boolean in the package is rendered as a sentence that could be false — `report.ok`,
+`plan.ok`, `revokeAll` and `saveApproval` all have two values for two facts.
+
+One documentation change came out of it: *"a revoke takes effect immediately"* claimed two things, one false
+and now fixed (R-49), one **impossible** — a spawn past its gate check is not retracted by a revoke arriving
+microseconds later, and no lock closes that. It now says *"at the next gate check"* and explains why.
+
+**Verified: 305 unit, 25 integration, typecheck clean, smoke clean.** All three fixes mutation-checked.
+
+---
+
+## 2026-08-14 (tenth) — the known-open list, emptied of code — 0.13.0
 
 **Four items, and the interesting part is that two of them were "parked deliberately" and the park did not
 survive contact with the fix.**

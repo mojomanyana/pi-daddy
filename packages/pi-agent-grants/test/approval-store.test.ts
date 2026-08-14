@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 import {
@@ -152,8 +152,8 @@ test("revoke removes one entry and leaves the others", async () => {
 test("R-49: a concurrent save cannot resurrect an approval another session revoked", async () => {
   // THE defect. Every write here is load → modify → write and it was unlocked, so: session 1 loads;
   // session 2 revokes; session 1 saves something unrelated and writes the revoked entry back for the rest
-  // of its 30 days, silently. `approval-store.ts` documents that a revoke "takes effect immediately —
-  // including one performed from another session while this one is running", and that was false.
+  // of its 30 days, silently. `approval-store.ts` documents that a revoke "takes effect at the next gate
+  // check — including one performed from another session while this one is running", and that was false.
   //
   // **This assertion is only satisfiable under a lock**, which is what makes it a test rather than a
   // description. Interleave the two unlocked and there are exactly two outcomes and both are wrong: the
@@ -191,6 +191,37 @@ test("R-49: revoking reports ABSENT distinctly from FAILED, because they are opp
   await mkdir(dirname(dirname(approvalsPath(cwd))), { recursive: true });
   await writeFile(dirname(approvalsPath(cwd)), "not a directory", "utf8");
   assert.equal(await revokeApproval(cwd, "tool:write@a", c, NOW), "failed", "a write that did not happen");
+});
+
+test("R-61: a busy lock reports BUSY, because nothing was looked at", async () => {
+  // The first R-61 fix contained a smaller copy of R-61. A lock timeout happens BEFORE the load, so
+  // reporting `failed` there asserted "it is still in effect" about an entry nobody had looked for — which
+  // is false for a key that never existed. It errs alarming rather than reassuring, which is why it ranks
+  // low and not why it was kept.
+  const cwd = await temp();
+  const c = ceiling(["tool:read", "tool:write"]);
+  await saveApproval(cwd, "tool:write@a", entryFor(cwd), c, NOW);
+
+  // Hold the lock the way an abandoned process would, but freshly, so it is not treated as stale.
+  const lock = `${approvalsPath(cwd)}.lock`;
+  await mkdir(dirname(lock), { recursive: true });
+  await writeFile(lock, "9999 held by a test\n", { encoding: "utf8", flag: "wx" });
+  try {
+    // Concurrently, because each call waits out the full lock timeout and this suite is meant to be fast.
+    const [held, missing] = await Promise.all([
+      revokeApproval(cwd, "tool:write@a", c, NOW),
+      revokeApproval(cwd, "tool:write@never-existed", c, NOW),
+    ]);
+    assert.equal(held, "busy", "held by another writer");
+    // The distinction is the point: a key that never existed ALSO reports busy rather than absent, because
+    // the timeout happens before the load. Reporting `absent` would be a claim about a file nobody read.
+    assert.equal(missing, "busy", "never got to look, so it must not claim the key is missing");
+  } finally {
+    await rm(lock, { force: true });
+  }
+
+  // With the lock released the same call answers properly — so the busy result was the lock, not damage.
+  assert.equal(await revokeApproval(cwd, "tool:write@a", c, NOW), "revoked");
 });
 
 test("saving prunes entries that are DEAD, and only those", async () => {

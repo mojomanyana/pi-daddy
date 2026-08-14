@@ -6,12 +6,22 @@
  * must never fail the work — an unwritable file downgrades the approval to session scope (see the boolean
  * return of `saveApproval`), and an unreadable one simply grants nothing.
  *
- * Read on demand, never cached at session start, so a revoke takes effect immediately — including one
- * performed from another session while this one is running. **That sentence used to be false** (R-49): every
- * write is load → modify → write and it was unlocked, so a save could restore an entry another session had
- * just revoked. Writes now hold the same file lock the ledger uses (`src/file-lock.ts`, `underLock` below);
- * reads deliberately do not, because a read that loses a race simply sees the previous state, which is what
- * "read on demand" already promises.
+ * Read on demand, never cached at session start, so **a revoke takes effect at the next gate check** —
+ * including a revoke performed from another session while this one is running.
+ *
+ * That sentence used to read *"takes effect immediately"* and claimed two different things, one of which was
+ * false and one of which is impossible:
+ *
+ *  - **False, and fixed (R-49).** Every write is load → modify → write and it was unlocked, so a save could
+ *    restore an entry another session had just revoked. Writes now hold the same file lock the ledger uses
+ *    (`src/file-lock.ts`, `underLock` below).
+ *  - **Impossible, and stated rather than fixed.** A spawn whose gate check has already passed is not
+ *    retracted by a revoke arriving microseconds later. No lock closes that: the read has to finish before
+ *    the spawn starts, so there is always an instant where the decision is made and the process is not yet
+ *    running. Inherent to revoking anything, not a gap in this one.
+ *
+ * Reads deliberately take no lock. A read that loses a race sees the previous state, which is exactly what
+ * "at the next gate check" already means.
  *
  * **One file per project** (ADR-0020), and **no model-authored text, ever** (ADR-0021) — see `approvalsPath`
  * and `sanitise` for why each of those is a decision rather than a detail.
@@ -22,7 +32,7 @@
 
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
-import { withFileLock } from "./file-lock.ts";
+import { LockTimeoutError, withFileLock } from "./file-lock.ts";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { entryVerdict, type ApprovalEntry, type EntryVerdict, type SubjectSnapshot } from "./approval.ts";
@@ -68,7 +78,7 @@ export type SubjectLookup = (subject: string) => SubjectSnapshot | null;
  * **ONE FILE PER PROJECT since 0.11.0 (ADR-0020).** It was one shared document keyed only by
  * `capability@subject`, which produced four defects in eight lines — approving in one checkout deleted
  * another's entries (R-41), `revoke --all` cleared every project (R-43), two concurrent writes lost both
- * (R-42), and an unlocked read-modify-write could resurrect a revoked entry (R-49, still open). The
+ * (R-42), and an unlocked read-modify-write could resurrect a revoked entry (R-49, fixed in 0.13.0). The
  * unfixable one was the keyspace: two checkouts holding definitions of the same name — `review`, `deploy`,
  * i.e. what happens the moment an operator reuses their own conventions — could not both hold an approval,
  * so they took turns indefinitely. Per-project files make the collision **inexpressible** rather than
@@ -274,7 +284,7 @@ export async function saveApproval(
   snapshotOf: SubjectLookup,
   now: Date,
 ): Promise<boolean> {
-  return underLock(cwd, false, async () => {
+  return underLock(cwd, false, false, async () => {
     const { valid } = await loadApprovals({ cwd, now, snapshotOf });
     valid.set(key, entry);
     // ADR-0020: this file belongs to ONE project, so there is nothing here that another project could own and
@@ -296,7 +306,14 @@ export async function saveApproval(
  * has been told the opposite of the truth about a security control. `"absent"` and `"failed"` are different
  * facts and now say so.
  */
-export type RevokeOutcome = "revoked" | "absent" | "failed";
+/**
+ * **Four, and the fourth is the first fix's own smaller copy of R-61.** `failed` asserts the approval is
+ * still in effect, which is verified: we found the entry and could not remove it. A **lock timeout happens
+ * before the load**, so nothing was ever looked at — reporting `failed` there asserted a fact about an entry
+ * that may not exist, which is R-61's shape at lower severity. It errs alarming rather than reassuring, so
+ * it is the safe direction to be wrong in; that is a reason to rank it low, not a reason to keep it.
+ */
+export type RevokeOutcome = "revoked" | "absent" | "failed" | "busy";
 
 export async function revokeApproval(
   cwd: string,
@@ -304,7 +321,7 @@ export async function revokeApproval(
   snapshotOf: SubjectLookup,
   now: Date,
 ): Promise<RevokeOutcome> {
-  return underLock<RevokeOutcome>(cwd, "failed", async () => {
+  return underLock<RevokeOutcome>(cwd, "busy", "failed", async () => {
     const { valid } = await loadApprovals({ cwd, now, snapshotOf });
     if (!valid.has(key)) return "absent";
     valid.delete(key);
@@ -321,7 +338,7 @@ export async function revokeApproval(
  * else", and it should not be the default reading of a command that names neither.
  */
 export async function revokeAll(cwd: string): Promise<boolean> {
-  return underLock(cwd, false, () => writeFileSafely(cwd, { version: 1, approvals: {} }));
+  return underLock(cwd, false, false, () => writeFileSafely(cwd, { version: 1, approvals: {} }));
 }
 
 /**
@@ -340,21 +357,21 @@ export async function revokeAll(cwd: string): Promise<boolean> {
  * because a cache was busy would be failing closed on the wrong thing. So a timeout yields `busy`, which the
  * caller reports as an ordinary write failure and downgrades to session scope.
  */
-async function underLock<T>(cwd: string, busy: T, work: () => Promise<T>): Promise<T> {
+async function underLock<T>(cwd: string, onBusy: T, onError: T, work: () => Promise<T>): Promise<T> {
   const path = approvalsPath(cwd);
   try {
     // The lock lives beside the file, so its directory must exist before the lock can be taken — and on a
     // first-ever approval it does not. `writeFileSafely` creates it, which is one step too late: every
-    // write failed with ENOENT on the LOCK and was reported as "busy". Caught by the existing round-trip
+    // write failed with ENOENT on the LOCK and was reported as busy. Caught by the existing round-trip
     // tests within a minute of adding the lock, which is the argument for having them.
     await mkdir(dirname(path), { recursive: true });
     return await withFileLock(path, "approvals file", work);
   } catch (error) {
-    // Only a lock failure lands here — `work` itself never throws, because both write paths swallow into a
-    // boolean. Anything else (a directory that cannot be created for the lock, EROFS) is the same kind of
-    // "could not write" the caller already handles, so it takes the same route rather than reaching the UI
-    // as an unhandled rejection.
-    void error;
-    return busy;
+    // **The two are not the same fact**, which is why `LockTimeoutError` has its own type. "Another session
+    // holds the lock" is transient and says nothing about the file; "the lock could not be created at all"
+    // (EROFS, a directory replaced by a file) is a real write failure. Reporting the second as the first
+    // would tell an operator to retry something that will never succeed. `work` itself never throws — both
+    // write paths swallow into their own value — so everything landing here is one of these two.
+    return error instanceof LockTimeoutError ? onBusy : onError;
   }
 }

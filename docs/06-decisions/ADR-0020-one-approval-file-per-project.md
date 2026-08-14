@@ -161,6 +161,20 @@ The pre-0.11.1 scalar described a whole set even when its sources differed (R-46
 report humans as having been asked about capabilities they were never asked about — inflating `prompt`
 against the `persisted` number this trigger turns on. Old lines shrink the sample; they must never colour it.
 
+**Amended the same day, after the operator reviewed it (R-63).** The first version reported `persisted`
+RECORDS and called each one a prompt avoided, which overstates this layer twentyfold in the ordinary case:
+precedence is `inherited → session → persisted → prompt`, and **`session` approvals live in memory and owe
+this store nothing**, so twenty spawns under one persisted entry would have been *one* prompt and nineteen
+session hits without it. The report excluded pre-0.11.1 records specifically to avoid inflating `prompt`,
+and then inflated `persisted` by a different route — **excluding one known bias is not the same as being
+unbiased**, and this trigger is worth nothing if the number it produces leans toward keeping the thing it is
+evaluating.
+
+It now prints both: records as a stated **upper bound**, and distinct `capability@subject` pairs as the
+closer estimate, since deleting the layer costs at most one prompt per pair per session. The exact figure
+needs a session id the ledger does not carry; adding one is **declined for now** — a schema change to the
+file whose privacy boundary is spelled out in three documents, for a question asked once.
+
 **This does not settle anything yet.** Only usage produces the number, and that is still the operator's to
 run. What changed is that the missing piece is now *use* rather than *tooling*.
 

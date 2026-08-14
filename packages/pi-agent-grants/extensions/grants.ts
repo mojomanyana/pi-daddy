@@ -60,9 +60,26 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     session.cwd = ctx.cwd;
     try {
-      session.definitions = await loadDefinitions(ctx.cwd);
-      session.catalogReady = buildCatalog({ cwd: ctx.cwd, observedTools: session.observedTools });
-      session.catalog = await session.catalogReady;
+      // Guarded together, and guarded at all because of R-60 rather than because either one throws today:
+      // both loaders swallow their own filesystem errors, so this catch is currently unreachable. The point
+      // is that "currently" is not a property anyone can rely on — `verifyLedger` was also harmless until
+      // the day it was not, and the cost of finding out is every control below this line, silently.
+      // Discovery failing is worth its own sentence anyway: a session with no definitions can still
+      // delegate by `tools:`, and an operator whose `agent:` spawns have all started failing deserves to
+      // know it was the *scan* that broke rather than the grant.
+      try {
+        session.definitions = await loadDefinitions(ctx.cwd);
+        session.catalogReady = buildCatalog({ cwd: ctx.cwd, observedTools: session.observedTools });
+        session.catalog = await session.catalogReady;
+      } catch (error) {
+        ctx.ui.notify(
+          `grants: could not read this project's definitions or capability catalog ` +
+            `(${error instanceof Error ? error.message : String(error)}) — no SKILL.md definition can be ` +
+            `spawned this session, and delegation by tools: is unaffected. Governance itself is unaffected: ` +
+            `it is enforced by --tools when a child is spawned.`,
+          "error",
+        );
+      }
       session.publishChildEnv();
       // The definitions now exist, so the `delegate` schema can finally name them (R-39). pi serialises a
       // tool's schema at REQUEST time, not at registration — measured — which is what makes this reach the

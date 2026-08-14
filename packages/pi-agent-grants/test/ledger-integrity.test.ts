@@ -297,6 +297,55 @@ test("ADR-0020: verifyLedger tallies where each yes came from, per capability", 
   assert.equal(humanDenied, 1, "a human saying no is the fatigue argument's other half");
 });
 
+test("ADR-0020: records are counted separately from distinct capability@subject pairs", async () => {
+  // **The bias this exists to remove, and it was in the first version of this feature.** Counting
+  // `persisted` RECORDS as prompts avoided overstates the layer: precedence is inherited → session →
+  // persisted → prompt, and `session` approvals live in memory owing the store nothing. So a session
+  // spawning `deploy` twenty times under ONE persisted entry writes twenty records, while deleting the
+  // store would raise ONE prompt and satisfy the other nineteen from the session cache. Twentyfold, in
+  // favour of keeping the thing under evaluation.
+  const dir = await tempDir("grants-pairs-");
+  const path = join(dir, "ledger.jsonl");
+  const spawn = (agentType: string) =>
+    appendRecord({ path }, buildRecord({
+      parentId: "d0", childId: "d0.1", depth: 1, agentType, requested: [], parentGrant: [],
+      result: { effective: [], denied: [], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
+      blocked: false, now: new Date(), approvalSources: { "tool:write": "persisted" } as never,
+    } as never));
+
+  for (let i = 0; i < 5; i += 1) await spawn("deploy");
+  await spawn("review");
+
+  const { bySource, distinctBySource } = (await verifyLedger(path)).approvals;
+  assert.equal(bySource.persisted, 6, "six records, which is the upper bound and NOT the answer");
+  assert.equal(
+    distinctBySource.persisted,
+    2,
+    "tool:write@deploy and tool:write@review — the closer estimate, and the number a reader should quote",
+  );
+});
+
+test("ADR-0020: the same capability under two subjects is two pairs, not one", async () => {
+  // The pair key must carry the SUBJECT. Keying on capability alone would collapse `tool:write@deploy` and
+  // `tool:write@review` into one — under-counting this time, which is the other direction and equally
+  // wrong. It is the same keying `approvalKey` uses, so the report cannot disagree with the store about
+  // what one approval is.
+  const dir = await tempDir("grants-subject-");
+  const path = join(dir, "ledger.jsonl");
+  await writeFile(
+    path,
+    [
+      JSON.stringify({ ts: "2026-08-14T00:00:00.000Z", parentId: "d0", childId: "d0.1", depth: 1, agentType: "deploy", requested: [], parentGrant: [], effective: [], denied: [], clipped: [], gatedBlocked: [], blocked: false, approvalSources: { "tool:write": "persisted" } }),
+      // No `agentType` at all — the `tools:` delegation form, whose subject is `<delegate>`.
+      JSON.stringify({ ts: "2026-08-14T00:00:01.000Z", parentId: "d0", childId: "d0.2", depth: 1, requested: [], parentGrant: [], effective: [], denied: [], clipped: [], gatedBlocked: [], blocked: false, approvalSources: { "tool:write": "persisted" } }),
+    ].join("\n") + "\n",
+    "utf8",
+  );
+
+  const { distinctBySource } = (await verifyLedger(path)).approvals;
+  assert.equal(distinctBySource.persisted, 2, "tool:write@deploy and tool:write@<delegate> are two approvals");
+});
+
 test("ADR-0020: a pre-0.11.1 line is counted as unattributed, never as a prompt", async () => {
   // The bias this must not have. Before per-capability sources, ONE scalar described the whole set even
   // when the sources differed (R-46) — so folding `approvalSource` into the tally would report humans as

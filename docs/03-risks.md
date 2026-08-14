@@ -902,10 +902,49 @@ and wrong beats alarming and wrong every time, which is why this outranks its ow
 as R-46 (a record asserting a human was asked when they were not) — the failure is the *claim*, not the
 mechanism.
 
-**FIXED (0.13.0), breaking:** `RevokeOutcome` is `"revoked" | "absent" | "failed"`, and `failed` reports
-that the approval **is still in effect** and says to try again. **Trigger:** any boolean return in this
-package that a caller renders as a sentence — the boolean is the smell, and there are no others left in
-`approval-store.ts` whose two values are three facts.
+**FIXED (0.13.0), breaking:** `RevokeOutcome` is `"revoked" | "absent" | "failed" | "busy"`.
+
+**The first fix contained a smaller copy of the defect it fixed** — the third time that has happened here
+(R-38's preview, ADR-0022's republish path), and the first time it was caught by the operator reviewing the
+fix rather than by a later pass. It shipped as three states, and a **lock timeout happens before the load**,
+so `failed` was returned for a key nobody had looked for while asserting *"It is still in effect"*. False for
+a name that never existed. It errs alarming rather than reassuring — the opposite of R-61 proper — which
+ranks it low and is not a reason to keep it.
+
+`busy` now says only what was checked: another session holds the file, **nothing was changed**, and this
+says nothing about whether the approval exists. `LockTimeoutError` earns its own type precisely so the two
+can be told apart: "someone else is writing" is transient, while "the lock could not be created at all"
+(EROFS, a directory replaced by a file) will never succeed, and telling an operator to retry that one wastes
+their time on a certainty.
+
+**Trigger:** any boolean return in this package that a caller renders as a sentence. Swept at fix time —
+`report.ok`, `plan.ok`, `revokeAll` and `saveApproval` were all checked and all have two values for two
+facts.
+
+## R-63 · The ADR-0020 tally overstated the persistence layer twentyfold — M×H, FIXED
+Added **and fixed** 2026-08-14, **found by the operator reviewing the previous day's work**, and the most
+useful finding of the four because it was wrong in the direction that decides an ADR.
+
+`/grants ledger`'s new tally counted `persisted` **records** and reported each as a prompt avoided.
+Precedence is `inherited → session → persisted → prompt`, and **`session` approvals live in memory and owe
+the persistence layer nothing**. So a session spawning `deploy` twenty times under one persisted entry
+writes twenty `persisted` records — while deleting the store would raise **one** prompt and satisfy the
+other nineteen from the session cache. The cost of deletion was reported as 20 when it is 1.
+
+That is the same bias `unattributed` exists to prevent, arrived at from the other side: the report excluded
+pre-0.11.1 records precisely so it would not inflate `prompt`, and then inflated `persisted` twentyfold by a
+different route. **Excluding one known bias is not the same as being unbiased**, and this is what that
+sentence costs when it goes unexamined. A second, opposite bias was in it too: one human decision fanning out
+to eight children writes eight `inherited` records, inflating the denominator.
+
+**FIXED (0.13.0)** by reporting **two** numbers and labelling them. Records stay, as an upper bound and named
+as one; distinct `capability@subject` pairs are printed beside them as the closer estimate, since deleting
+the layer costs at most one prompt per pair per session. The exact figure needs a session id the ledger does
+not carry, and adding one is refused for now — a schema change to the file whose privacy boundary is spelled
+out in three documents, for a question asked once.
+
+**Trigger:** any count in this package presented as an answer rather than a bound. The tell is a sentence of
+the form *"each of these is an X"* about records that were not counted per X.
 
 ## R-62 · A killed process orphans one herdr pane per in-flight child — L×L, FIXED IN PART
 Added **and fixed in part** 2026-08-14. `runHerdrPane` closes its pane in a `finally`, which covers a thrown
@@ -1168,3 +1207,4 @@ updated without re-reading the section the banner describes.
 | 2026-08-14 | R-60 | Added and fixed — `verifyLedger` rethrows any non-`ENOENT` read error, and at session start that call sat inside an **empty** blanket catch, so an unreadable `PI_GRANTS_LEDGER` produced zero output: no alarm, and not even the `holding [...]` line. R-34's own shape one level down, on the damage class R-34 exists to catch. Confirmed by execution before being written; the outer catch is now loud | the fourth question |
 | 2026-08-14 | R-49, R-61, R-62 | **The parked items, finished.** R-49 closed by REUSE not hardening — the ledger's lock moved to `src/file-lock.ts` and both writers share it, so the park's reason ("do not harden a layer whose fate item 1 decides") no longer applied. R-61 fell out of it: a failed revoke printed "no persisted approval named X" while the approval stayed in effect. R-62 fixed in part, with the SIGINT completion **refused** and the reason recorded — a listener here would suppress Node's default termination and turn pi's "interrupt this turn" into "exit pi" | finishing the list |
 | 2026-08-14 | ADR-0020 | **The measurement is runnable.** `/grants ledger` now counts `persisted` against `prompt` per capability, which that ADR named as the evidence that settles Option 3 and then left to hand-written `jq`. Pre-0.11.1 records are reported as *not counted* rather than folded in, because the older scalar over-claimed `prompt` (R-46) — biasing the one direction the measurement must not be biased in. **Only usage produces the number**; the machinery is no longer what is missing | finishing the list |
+| 2026-08-14 | R-60, R-61, R-63 | **The operator reviewed the four unreviewed changes, and three of the four produced a finding.** R-63 is the one that mattered: the ADR-0020 tally counted `persisted` RECORDS as prompts avoided, overstating the layer twentyfold, on the number that decides whether to delete it — the same bias `unattributed` exists to prevent, arrived at from the other side. R-61 gained a `busy` state after its own fix was found to contain a smaller copy of R-61. R-60 gained `test/session-start-guard.test.ts`, which immediately found two more unguarded `await`s. **Every hypothesis that produced a finding was one written down as a hypothesis** — the ones checked and cleared (the lock covering `planWithApprovals`, other booleans rendered as sentences) were cleared in minutes | review round |

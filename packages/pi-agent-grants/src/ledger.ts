@@ -211,8 +211,17 @@ export interface LedgerReport {
    * data and false of the answer, which required hand-written `jq`. Same shape as R-51: a field no tool
    * reads becomes decoration, and a measurement nobody can run does not get run.
    *
-   * `persisted` is the number that decides it: each one is a prompt the operator did **not** see, and
-   * deleting the layer converts every one of them back into a prompt.
+   * **`bySource` counts RECORDS and is an upper bound, not an answer.** Deleting the persistence layer does
+   * not turn every `persisted` record back into a prompt: precedence is `inherited → session → persisted →
+   * prompt`, and `session` approvals live in memory and do not depend on the store at all. So a session that
+   * spawns `deploy` twenty times under one persisted entry writes twenty `persisted` records, while without
+   * the store it would raise **one** prompt and satisfy the other nineteen from the session cache. Reporting
+   * twenty prompts avoided would overstate the layer's value twentyfold, on the one number that decides
+   * whether to keep it — the same direction of bias `unattributed` exists to avoid, arrived at a different way.
+   *
+   * `distinctBySource` is the closer estimate: distinct `capability@subject` pairs, which bounds the cost of
+   * deletion at one prompt per pair per session. The ledger carries no session id, so the exact figure is not
+   * computable from it; both numbers are printed and labelled rather than one being presented as the truth.
    *
    * Counted from `approvalSources` **only**. `approvalSource` is deliberately not used as a fallback: before
    * 0.11.1 that scalar was written for the whole set even when the sources differed (R-46), so folding it in
@@ -221,7 +230,10 @@ export interface LedgerReport {
    * instead, so the sample size is visible rather than silently smaller.
    */
   approvals: {
+    /** Raw record counts. An UPPER bound on prompts avoided — see above before quoting one. */
     bySource: Record<ApprovalSource, number>;
+    /** Distinct `capability@subject` pairs per source. The closer estimate. */
+    distinctBySource: Record<ApprovalSource, number>;
     /** Records carrying approvals from before per-capability sources existed. Not attributable; see above. */
     unattributed: number;
     /** Records where a human was asked and said no — the fatigue argument's other half. */
@@ -253,7 +265,12 @@ export async function verifyLedger(path: string): Promise<LedgerReport> {
         corrupt: [],
         escalationAttempts: 0,
         definitions: [],
-        approvals: { bySource: { prompt: 0, session: 0, persisted: 0, inherited: 0 }, unattributed: 0, humanDenied: 0 },
+        approvals: {
+          bySource: { prompt: 0, session: 0, persisted: 0, inherited: 0 },
+          distinctBySource: { prompt: 0, session: 0, persisted: 0, inherited: 0 },
+          unattributed: 0,
+          humanDenied: 0,
+        },
         ok: true,
       };
     }
@@ -266,6 +283,13 @@ export async function verifyLedger(path: string): Promise<LedgerReport> {
   let records = 0;
   let escalationAttempts = 0;
   const bySource: Record<ApprovalSource, number> = { prompt: 0, session: 0, persisted: 0, inherited: 0 };
+  // `capability@subject` seen per source, so the report can state a bound as well as a raw count.
+  const distinct: Record<ApprovalSource, Set<string>> = {
+    prompt: new Set(),
+    session: new Set(),
+    persisted: new Set(),
+    inherited: new Set(),
+  };
   let unattributed = 0;
   let humanDenied = 0;
 
@@ -281,11 +305,16 @@ export async function verifyLedger(path: string): Promise<LedgerReport> {
       if (parsed.humanDenied) humanDenied += 1;
       const sources = parsed.approvalSources;
       if (sources && typeof sources === "object") {
-        for (const source of Object.values(sources)) {
+        // The approval's subject: a definition spawn is keyed to the definition, everything else to
+        // `<delegate>` — the same keying `approvalKey` uses, so the pair count means what a reader expects.
+        const subject = parsed.agentType ?? "<delegate>";
+        for (const [capability, source] of Object.entries(sources)) {
           // An unrecognised source is counted as unattributed rather than dropped: a tally that silently
           // ignores what it does not understand reports a smaller sample as a cleaner one.
-          if (source in bySource) bySource[source] += 1;
-          else unattributed += 1;
+          if (source in bySource) {
+            bySource[source] += 1;
+            distinct[source].add(`${capability}@${subject}`);
+          } else unattributed += 1;
         }
       } else if (parsed.approved && parsed.approved.length > 0) {
         unattributed += parsed.approved.length;
@@ -308,7 +337,17 @@ export async function verifyLedger(path: string): Promise<LedgerReport> {
     corrupt,
     escalationAttempts,
     definitions: [...digests.values()].sort((a, b) => a.name.localeCompare(b.name) || a.sha256.localeCompare(b.sha256)),
-    approvals: { bySource, unattributed, humanDenied },
+    approvals: {
+      bySource,
+      distinctBySource: {
+        prompt: distinct.prompt.size,
+        session: distinct.session.size,
+        persisted: distinct.persisted.size,
+        inherited: distinct.inherited.size,
+      },
+      unattributed,
+      humanDenied,
+    },
     ok: corrupt.length === 0,
   };
 }

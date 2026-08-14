@@ -192,8 +192,14 @@ the previous state, which is what "read on demand" already means. It is the **sa
 are: no audit line means no spawn, whereas a busy approvals file **never** fails your work — the human
 already said yes, and this store is a cache of that decision.
 
-`/grants revoke <key>` has three outcomes and says which: revoked, **no such approval**, or **not revoked
-and still in effect**. The last one used to be reported as the second.
+**A revoke takes effect at the next gate check**, not retroactively. A spawn whose check already passed is
+unaffected — inherent rather than a lock gap: the read must finish before the process starts, so there is
+always an instant where the decision is made and the child is not yet running.
+
+`/grants revoke <key>` has **four** outcomes and says only what it checked: revoked; **no such approval**;
+**not revoked and still in effect** (the entry was found and the write failed); or **could not be checked**,
+when another session holds the lock and nothing was read at all. The third used to be reported as the
+second, and the fourth used to be reported as the third — each one claiming more than the code had verified.
 
 **An inherited approval carries the body digest too** (ADR-0022). `PI_GRANTS_APPROVED` publishes
 `capability@subject#sha256`, and a child verifies it against the definition **it** loaded — a child is a
@@ -241,6 +247,13 @@ is a feature, not a control. Two things raise an `error` there, and only those t
 the first one; and a ledger that **cannot be read at all**, naming the errno and the path. Everything else
 stays a query — the escalation count in particular, because a control that speaks every session is one an
 operator learns to skip. A ledger that does not exist yet is not a fault.
+
+`/grants ledger` also tallies **where each approval came from** — `prompt`, `session`, `persisted`,
+`inherited` — which is the evidence ADR-0020 named for deciding whether the persistence layer earns its
+keep. It prints raw record counts **and** distinct `capability@subject` pairs, and says which is which:
+records are an **upper bound** on prompts avoided, not a count of them, because within one session only the
+first would have been a prompt and the rest are satisfied from the in-memory session cache. Records written
+before per-capability sources existed are reported as *not counted*.
 
 **Privacy is a property of this file, and the boundary is exact.** Capability ids, counts and identifiers
 only — *never prompts, tool arguments or results.* A spawn that names a definition records a
@@ -314,7 +327,7 @@ bound a typo can switch off is not a bound.
 
 ```bash
 cd packages/pi-agent-grants
-npm test                   # 301 unit tests — pure, no pi, no network
+npm test                   # 305 unit tests — pure, no pi, no network
 npm run typecheck          # src + extensions + test + test-integration
 npm run test:integration   # 25 tests against a REAL pi process, no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and USE every subpath

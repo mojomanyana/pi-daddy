@@ -253,7 +253,10 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
 
     const text = r.notifies.map((n) => n.message).join("\n");
     assert.match(text, /1 prompt · 2 persisted/, "the two numbers ADR-0020 asks to be compared");
-    assert.match(text, /2 of 3 attributed yes\(es\) came from the persisted store/, "stated as prompts avoided");
+    // Both records AND pairs, because quoting records alone overstates the layer: the two persisted records
+    // here are ONE capability@subject (`tool:write@<delegate>`), so deleting the store costs one prompt.
+    assert.match(text, /2 persisted record\(s\) across 1 distinct capability@subject pair\(s\)/, "record count and its bound");
+    assert.match(text, /UPPER BOUND on prompts avoided/, "labelled as a bound, not presented as the answer");
     assert.match(text, /1 not counted: written before per-capability sources/, "and the legacy line is excluded OUT LOUD");
   });
 

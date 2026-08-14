@@ -126,19 +126,27 @@ handler: async (args: string, ctx: any) => {
       // few weeks of real use — then said it "needs no new machinery". True of the data, false of the
       // answer: nothing counted it, so the measurement required hand-written jq and never happened. R-51's
       // shape exactly, and the reason that entry exists.
-      const { bySource, unattributed, humanDenied } = report.approvals;
+      const { bySource, distinctBySource, unattributed, humanDenied } = report.approvals;
       const attributed = Object.values(bySource).reduce((sum, n) => sum + n, 0);
       if (attributed > 0 || unattributed > 0) {
         lines.push(
           `  approvals  ${bySource.prompt} prompt · ${bySource.persisted} persisted · ${bySource.session} session · ` +
             `${bySource.inherited} inherited${humanDenied > 0 ? ` · ${humanDenied} record(s) a human declined` : ""}`,
         );
-        // Stated as what it measures, not as a verdict: this counts prompts avoided, and how many prompts
-        // an operator will tolerate is not a number the ledger can hold.
+        // **Two numbers, because one of them would lie.** Counting `persisted` RECORDS as prompts avoided
+        // overstates the layer twentyfold in the obvious case: precedence is inherited → session →
+        // persisted → prompt, and `session` approvals are in memory and owe the store nothing, so twenty
+        // spawns under one persisted entry would have been ONE prompt and nineteen session hits without it.
+        // Distinct `capability@subject` pairs bounds it properly. The exact figure needs a session id the
+        // ledger does not carry, so the bound is printed AS a bound rather than dressed up as an answer.
         lines.push(
-          `    ${bySource.persisted} of ${attributed} attributed yes(es) came from the persisted store — ` +
-            `each is a prompt nobody saw, and deleting that layer (ADR-0020 Option 3) turns every one back ` +
-            `into one.`,
+          `    ${bySource.persisted} persisted record(s) across ${distinctBySource.persisted} distinct ` +
+            `capability@subject pair(s), out of ${attributed} attributed yes(es).`,
+        );
+        lines.push(
+          `    Records are an UPPER BOUND on prompts avoided, not a count of them — within one session only ` +
+            `the first would have been a prompt. Deleting the layer (ADR-0020 Option 3) costs at most one ` +
+            `prompt per pair per session, so ${distinctBySource.persisted} is the closer estimate.`,
         );
         if (unattributed > 0) {
           lines.push(
@@ -213,9 +221,15 @@ handler: async (args: string, ctx: any) => {
           {
             revoked: `grants: revoked ${target}`,
             absent: `grants: no persisted approval named ${target}`,
+            // Says only what was checked. `failed` found the entry and could not remove it, so "still in
+            // effect" is verified; `busy` never got past the lock, so it claims nothing about the entry at
+            // all — asserting it there would be R-61 again, one size smaller.
             failed:
-              `grants: ${target} was NOT revoked — the approvals file could not be written (another ` +
-              `session may be writing it, or the path is not writable). It is still in effect; try again.`,
+              `grants: ${target} was NOT revoked — the approvals file could not be written. It is still in ` +
+              `effect; check that the path is writable and try again.`,
+            busy:
+              `grants: ${target} could not be checked — another session is writing the approvals file. ` +
+              `NOTHING was changed, and this says nothing about whether that approval exists; try again.`,
           }[outcome],
           outcome === "revoked" ? "info" : outcome === "absent" ? "warning" : "error",
         );
