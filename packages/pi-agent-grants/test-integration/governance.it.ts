@@ -341,6 +341,43 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     );
   });
 
+  test("ADR-0023: agent:* beside an ungated bash is warned about", async () => {
+    // `docs/SPEC.md` and ADR-0023 both call this combination poor and nothing observed it — a hazard a
+    // document declares and no code detects is R-47's shape, in a control shipped one day after R-47.
+    // Shipped without a test, which by rule 7 made it decoration; this is that test.
+    //
+    // `agent:*` authorises every SKILL.md in BOTH roots, including `~/.pi/agent/skills` which other tools
+    // install into, so ADR-0017's "an operator-authored file" is not true of everything it covers.
+    const cwd = await projectOnce();
+    const r = await runCommand({
+      cwd,
+      command: "/grants",
+      env: { PI_GRANTS_GRANT: "agent:*,tool:read,tool:bash,tool:delegate", PI_GRANTS_GATED: "" },
+    });
+
+    const warning = r.notifies.find((n) => n.message.includes("may run with a shell"));
+    assert.ok(warning, "granting every definition a shell with no gate must not be silent");
+    assert.match(warning.message, /agent:\*/);
+    assert.match(warning.message, /PI_GRANTS_GATED/, "and name the variable that fixes it");
+  });
+
+  test("ADR-0023: agent:* with bash GATED is not warned about", async () => {
+    // The default configuration, and the reason the check tests `gated` rather than just the grant: with
+    // bash gated a human is asked before any child receives it, which is the whole mitigation. Warning here
+    // would be nagging about a correct setup — R-25's shape, in the warning added to prevent R-25's shape.
+    const cwd = await projectOnce();
+    const r = await runCommand({
+      cwd,
+      command: "/grants",
+      env: { PI_GRANTS_GRANT: "agent:*,tool:read,tool:bash,tool:delegate" },
+    });
+
+    assert.ok(
+      !r.notifies.some((n) => n.message.includes("may run with a shell")),
+      "bash is gated by default, so this configuration is the recommended one",
+    );
+  });
+
   test("an ungoverned session reports itself inactive", async () => {
     const cwd = await projectOnce();
     const r = await runCommand({ cwd, command: "/grants" });

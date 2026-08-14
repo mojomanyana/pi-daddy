@@ -7,65 +7,57 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ## NEXT SESSION — read this, then pick one
 
-**State: green, working tree clean, reviewed, and the review's decisions shipped.** `pi-agent-grants`
-**0.12.1** — now the only package. **292 unit + 21 integration tests** (+**4** with a real model),
-typecheck clean, smoke clean. **Twenty-three** ADRs decided.
-
-**Read the 2026-08-14 entry below before touching the approval layer.** Four ADRs landed together
-(0020–0023) and two are breaking: approvals are stored **one file per project**, and `PI_GRANTS_APPROVED`
-carries a **body digest** that a child verifies against the definition it loaded. A 0.10 parent and a 0.11
-child do not understand each other.
-
-**What the last two days actually demonstrated.** Six changes shipped on one pair of eyes — all verified,
-all tested, all documented — and a two-agent review then found a defect that made two of them *inert*
-(every model was being told `Available: none`), plus a test suite that was rewriting the developer's real
-approvals file. **Tests and docs did not catch these because both were written by the same reasoning that
-introduced them.** Get the review before shipping the next three things, not after.
+**State: green, working tree clean, reviewed twice, and everything actionable is done.** `pi-agent-grants`
+**0.12.1** — the only package. **292 unit + 23 integration tests** (+**4** with a real model), typecheck
+clean, smoke clean. **Twenty-five** ADRs decided.
 
 ```bash
 cd packages/pi-agent-grants && npm test && npm run typecheck && npm run test:integration && npm run test:smoke
 PI_GRANTS_IT_MODEL=1 npm run test:integration   # the 4 model-driven ones — ~60s, costs money
 ```
 
-**Do not edit the tree while an integration run is in flight** — a half-applied edit produces a failure
-indistinguishable from a real regression. And **read what a bulk regex matched** before running the suite:
-one ate the body of the helper it was rewriting and hung `npm test` with no output.
+**2026-08-13/14 took this from 0.9.0 to 0.12.1: nine ADRs (0017–0025) and R-38 through R-59.** The shape of
+those two days matters more than the list:
 
-### Known-open, and none of it is a cliff-hanger
+- **Six changes shipped on one pair of eyes** — all verified, all tested, all documented — and the first
+  red-team pass then found a defect that made two of them *inert* (`Available: none` told every model there
+  were no definitions to spawn) plus a test suite rewriting the developer's real approvals file.
+- **Four ADRs were written to fix that**, and the second pass found a defect that made one of them false on
+  exactly the case it was written for (a fresh approval crossed to the child **unpinned**, hidden by
+  lexicographic sort order).
+- **Tests and documentation caught neither**, because both were written by the same reasoning that
+  introduced them. Two independent agents, given the specific hypotheses to attack, caught both in minutes.
+
+**So: get the review before shipping the next three things, not after.** That is the single most useful
+sentence in this file.
+
+**Three habits that earned their place**, all of which produced a finding this session:
+1. **Verify a reported finding by execution before acting on it.** Twice the real defect was *worse* than
+   reported (R-41's keyspace, R-42's scope), and once the claim was **stale by four days** and had been
+   repeated by two reviewers and the assistant from a line in `CLAUDE.md` (R-59).
+2. **Ask "where else does this shape appear?"** Both times a fix contained a smaller copy of the bug it
+   fixed — R-38's preview, and ADR-0022's republish path — that question found it, not the tests.
+3. **When a guard fails, obey it.** `test/file-size.test.ts` refused `delegate.ts` at 413 lines; the cap was
+   not raised and the file was split along a seam three other modules already implied.
+
+### Known-open — nothing here is blocking, and nothing needs code today
 
 | # | Item | Notes |
 | :--- | :--- | :--- |
-| — | ~~R-41 keyspace, R-44 stored task, R-45 unpinned inheritance, R-52 the `agent:*` cliff~~ **ALL CLOSED 2026-08-14** by ADR-0020/0021/0022/0023. | Done. Each ADR records the rejected option. |
-| — | ~~R-46, R-51~~ **CLOSED 2026-08-14 (0.11.1).** The ledger no longer claims a human was asked about a capability satisfied from the store, and `/grants ledger` reads the digest — ADR-0018's two advertised questions finally have a command. | Done. |
-| 1 | **R-47 is half-closed.** An `agent:` id in `PI_GRANTS_GATED` now *says* it gates nothing. Making it actually gate the spawn is a behaviour change and **wants a decision**. | The only item here that needs you rather than work. |
-| 2 | **R-49** — an unlocked read-modify-write can resurrect a revoked approval. ADR-0020 narrowed it from "any two projects" to "two sessions in the same directory". | The mitigation already exists in this codebase: the lock the ledger uses. |
-| 3 | **R-50** — "void the moment either changes" is really "void at the next session start"; `session.definitions` is a snapshot. All consequences fail safe, none is documented. | A SPEC paragraph, not code. |
-| — | ~~R-35, R-36, R-37, R-38~~ **ALL CLOSED 2026-08-13** by ADR-0017/0018/0019 and the approval-store IT. Left deliberately: the digest identifies a body without preserving it, and nothing judges what a body *says*. | Done. Do not reopen without new evidence. |
-| — | ~~**The persisted approval store has never been exercised end to end**~~ **DONE 2026-08-13 (0.10.1).** A real model answered a real dialog, the entry landed on disk, a *different* process honoured it with no prompt (`approvalSource: "persisted"`), and a body edit re-raised it. Seven further model-free tests cover the reload and every void reason. | `test-integration/approval.it.ts`. It found R-38 while being written. |
-| — | ~~**Nothing verifies the ledger automatically**~~ **CLOSED 2026-08-14 (0.12.1).** `verifyLedger` runs at session start; a damaged trail announces itself, an intact one stays quiet. | R-34. Corruption only — the escalation count is a query, not an alarm. |
-| 5 | **Pane cleanup is not leak-proof.** `finally` covers thrown errors, not the process being killed. No reaper. | `docs/probes/g16-herdr` addendum. |
-| — | ~~**`packages/pi-agent-grants/README.md` deeper sections are stale**~~ **DONE 2026-08-13.** Rewritten against the code: the `SKILL.md` ceiling table replaces the pi-subagents one (whose central case is *inverted* here), the approval section no longer contradicts its own banner, and the interceptor sections are gone. Found two undocumented variables while doing it. | `docs/SPEC.md` remains authoritative. |
+| 1 | **The measurement ADR-0020 asks for.** The ledger records `approvalSources` per capability, so counting `persisted` against `prompt` over a few weeks of real use settles whether the persistence layer earns its keep. | **The highest-value item, and only the operator can run it** — it needs usage, not code. ADR-0020 rests on an *asserted* fatigue argument until this exists. |
+| 2 | **R-49** — an unlocked read-modify-write can resurrect a revoked approval. ADR-0020 narrowed it from "any two projects" to "two sessions in the same directory". | **Parked deliberately**: do not harden a layer whose fate item 1 decides. The mitigation already exists in this codebase — the ledger's lock. |
+| 3 | **Background delegation** is deliberately not built. | ADR-0015. Wants an ADR, and that ADR cannot be written until someone answers what happens to an approval resolved *after* its tool call returned — gating would otherwise depend on queue position, which is a control-correctness failure rather than a UX one. |
+| 4 | **Pane cleanup is not leak-proof.** `finally` covers thrown errors, not the process being killed. | Parked: opt-in executor, `PI_GRANTS_HERDR` off by default. |
+| 5 | **The test suites leave a `mkdtemp` directory per test** and never clean up — today's runs left **4,896** under `/tmp` (removed at session end). The harness comment says "the OS reaps them", which is true and slow. | Hygiene, not correctness. An `after()` hook per suite would do it. |
 | 6 | **`subagents:rpc:spawn` bypasses the tripwire.** Unfixable from here. | ADR-0013 Finding 6. |
 | 7 | **`bash` escapes governance.** Out of scope by decision. | ADR-0012. |
-| 8 | **Background delegation** is deliberately not built. Fan-out carried the value; background carries the lifecycle holes. | ADR-0015. Approvals resolved after a tool call returns would use a torn-down `ctx.ui`, so gating would depend on queue position — that must be answered first. |
-| — | ~~`pi-token-audit`~~ **DELETED 2026-08-14 by ADR-0025.** Not because it lied — `5c593fb` fixed that on 2026-08-10 — but because a second package in a single-product repository is a second thing every orienting document must keep true, and R-59 is what that cost. | The G10 finding stays in `docs/probes/`. |
+| — | ~~R-34, R-35…R-59~~ **ALL CLOSED.** The approval layer has now been reviewed twice by independent agents and every finding either fixed or recorded with a decision. | Do not reopen without new evidence. |
 
-### What to do next
+### If you want a fourth thing to pull
 
-**Item 1 is three small independent fixes and is the queued code work.** Nothing above it is blocked.
-
-Then, in rough value order: **R-34** (item 4 — nothing runs `verifyLedger` automatically) pairs naturally
-with R-51's digest reader. **Item 8** (background delegation) still wants an ADR before any code, and the
-question it must answer first is what happens to an approval resolved after its tool call returned.
-
-**The measurement ADR-0020 asks for is the highest-value thing that needs no code**: the ledger now records
-`approvalSources` per capability, so counting `persisted` against `prompt` over a few weeks of real use
-settles whether the persistence layer earns its keep — with evidence, instead of the asserted fatigue
-argument it currently rests on.
-
-**Before the next batch ships, run the review first.** `architecture-critic` and `product-strategist` have
-now seen ADR-0017–0019 and the R-38 fix; they have **not** seen ADR-0020–0023, which are the four largest
-changes to the approval layer since it was written and include two breaking ones.
+The thread that produced most of this session: **grep for call sites rather than trusting a reading**, then
+**write a test that watches the real thing**. R-37, R-38, R-39, R-53 and R-54 were all found that way, and
+every one of them was a control that read as live and was not.
 
 ### Things that look like work and are not
 
@@ -84,7 +76,32 @@ That convention is why every reversal here was survivable, and there have been f
 ---
 
 
-## 2026-08-14 (last) — the ledger check runs itself — 0.12.1
+## 2026-08-14 (last) — session close: the untested warning, and 4,896 temp directories
+
+**Two pieces of cleanup, one of which was a real gap.**
+
+**The `agent:*` + ungated-`bash` warning shipped without a test.** It was added from a review finding —
+*a hazard a document declares and no code detects is R-47's shape* — and then immediately became the same
+thing one level down: a detector nothing verified, which by rule 7 is decoration. Two tests now: the alarm
+fires for `agent:*,tool:bash` with `PI_GRANTS_GATED=""`, and — the half that keeps it worth reading — it
+stays **silent** for the default configuration where `bash` is gated. Warning about a correct setup is
+R-25's shape inside the warning added to prevent R-25's shape.
+
+**The suites left 4,896 `mkdtemp` directories under `/tmp` in one day.** Every suite creates one per test
+and none clean up; the harness comment says "the OS reaps them", which is true and slow. Removed at close
+and recorded as item 5 — hygiene, not correctness, and an `after()` hook per suite would fix it.
+
+Also removed: `~/.pi/agent/grants-approvals.json`, which held nothing but this project's own test fixture
+(`tool:write@x`, `cwd=/tmp/grants-approvals-…`, a zeroed digest, `version: 2` — a version the loader
+rejects). It was written by `npm test` before R-40 was fixed, verified inert before deletion, and the live
+per-project store had never been created, so nothing real was ever stored there.
+
+**Final state verified: 292 unit, 23 integration, 27 with `PI_GRANTS_IT_MODEL=1`, typecheck clean, smoke
+clean, working tree clean.**
+
+---
+
+## 2026-08-14 (sixth) — the ledger check runs itself — 0.12.1
 
 **R-34, closed on the distinction it was opened on.** That entry exists because ADR-0008 leans on the ledger
 as its compensating control and nothing had ever read one back; the fix added `verifyLedger` and
