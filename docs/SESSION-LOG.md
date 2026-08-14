@@ -8,7 +8,7 @@ decisions; this file holds state and next actions. Newest entry on top.
 ## NEXT SESSION — read this, then pick one
 
 **State: green, and reviewed TWICE — by the operator, then by four independent agents.** `pi-agent-grants`
-**0.13.0** — the only package. **314 unit + 26 integration tests** (+**4** with a real model), typecheck
+**0.13.0** — the only package. **315 unit + 26 integration tests** (+**4** with a real model), typecheck
 clean, smoke clean. **Twenty-six** ADRs decided.
 
 **The known-open list is empty of code.** What remains needs a human: item 1 needs weeks of real usage, and
@@ -144,7 +144,7 @@ loudest file), R-71 (two paths orphaning a herdr pane).
 is the one every reporting defect has lived on: writing fails closed on one record, reading must never fail
 at all on a whole damaged file.
 
-**Verified: 314 unit, 26 integration, typecheck clean, smoke clean.** Every fix mutation-checked; every
+**Verified: 315 unit, 26 integration, typecheck clean, smoke clean.** Every fix mutation-checked; every
 agent finding re-verified here by execution before being acted on, and two were worse than reported. **Two
 of the new controls had no failing test until the mutation check said so** — the declines block and the
 lock's ownership check — which is the third and fourth time in three days that rule 7 has caught the author

@@ -30,7 +30,7 @@ permissible, able to refuse or allow but never to narrow. **This package is now 
 is an argument rather than a veto. Definitions are **Agent Skills (`SKILL.md`)** files whose `allowed-tools`
 becomes the grant; the pi-subagents ceiling port is deleted; the interceptor survives only as a tripwire.
 
-**Current state: `pi-agent-grants` 0.13.0 — the only package.** Twenty-six ADRs decided. 314 unit +
+**Current state: `pi-agent-grants` 0.13.0 — the only package.** Twenty-six ADRs decided. 315 unit +
 26 integration tests (+4 more with a real model), typecheck and smoke clean.
 
 **What the product claims, precisely** — this wording is load-bearing and was narrowed by ADR-0012: it
@@ -89,7 +89,7 @@ refuses until a gate passes that no longer means anything. They are in git histo
 
 ```bash
 cd packages/pi-agent-grants
-npm test                   # 314 unit tests — fast, pure, no pi, no network
+npm test                   # 315 unit tests — fast, pure, no pi, no network
 npm run typecheck          # src + extensions + tests + integration tests
 npm run test:integration   # 26 tests vs a REAL pi process — ~35s, no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and USE it

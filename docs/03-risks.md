@@ -773,7 +773,7 @@ one that exists. **FIXED:** scoped to its own `cwd`, other projects' entries pre
 now says *"all persisted approvals for this project"* rather than *"all persisted approvals"* — the message
 was accurate about the old behaviour, which is how it went unnoticed.
 
-## R-44 · The model-authored task is written to disk, which the project's own rule forbids — M×M, OPEN
+## R-44 · The model-authored task is written to disk, which the project's own rule forbids — M×M, FIXED
 Added 2026-08-13, found independently by **both** reviewers, which is why it is not filed as a nit.
 
 `src/ledger.ts` states the privacy boundary without qualification: *"**The task is not recorded, anywhere,
@@ -797,7 +797,7 @@ fields**, so this closes the class rather than the instance: no future field can
 present on a parsed object. The task is still shown in the dialog, where a human needs it and where it is
 not at rest.
 
-## R-45 · The body pin exists on one of three approval paths — M×H, OPEN
+## R-45 · The body pin exists on one of three approval paths — M×H, FIXED
 Added 2026-08-13, same pass.
 
 `resolveApprovals` resolves `inherited` → `session` → `persisted`, and **only the persisted branch passes
@@ -822,7 +822,7 @@ another hop. Breaking propagation-format change, as ADR-0014's was. An unpinned 
 `<delegate>` has no file to hash and a pre-0.11 parent sends none — but `key#` with nothing after it is
 dropped rather than guessed at.
 
-## R-46 · The ledger reports one approval source for a set with several — M×M, OPEN
+## R-46 · The ledger reports one approval source for a set with several — M×M, FIXED
 Added 2026-08-13, same pass. `resolveApprovals` computes a per-capability `sources` map and
 `obtainApprovals` throws it away, returning `scope ? "prompt" : sources[approved[0]]`.
 
@@ -835,7 +835,7 @@ old and new lines can both be trusted, and omitted rather than guessed when they
 derives it instead of accepting it, so no call site can supply a summary that disagrees with the map beside
 it.
 
-## R-47 · `PI_GRANTS_GATED=agent:deploy` is a silent no-op — M×M, OPEN
+## R-47 · `PI_GRANTS_GATED=agent:deploy` is a silent no-op — M×M, FIXED
 Added 2026-08-13, same pass. `gatedBlocked` is a filter over `requested`, and for a definition spawn
 `requested` is the definition's **ceiling** — which never contains `agent:<name>`, because the
 authorisation check is a separate, ungated branch. `gatedFromEnv` accepts any string.
@@ -992,7 +992,7 @@ definition a descendant runs is still clipped to that descendant's own grant.
 **Trigger for revisiting:** any incident where a definition nobody authorised ran because a grant said
 `agent:*` — the risk Option 2 named, and the reason `agent:*,tool:bash` is documented as a poor combination.
 
-## R-51 · Nothing reads `definitionDigest`, so ADR-0018's questions have no tool — M×L, OPEN
+## R-51 · Nothing reads `definitionDigest`, so ADR-0018's questions have no tool — M×L, FIXED
 Added 2026-08-13 by the `product-strategist` pass. `verifyLedger` counts records, escalation attempts and
 corrupt lines; it never touches `definitionDigest`. Both questions ADR-0018 advertises — *"did these four
 children run the same instructions?"* and *"has this definition changed since?"* — require hand-written
@@ -1041,6 +1041,26 @@ message. Mutation-checked: restoring the rethrow fails that test and nothing els
 after this fix there is no reachable input that throws past it — which is the reason it is defence in depth
 and the reason it cannot be driven from outside. **Trigger:** any new `await` added to `session_start`
 whose callee rethrows; it belongs in its own `catch`, not in the blanket one.
+
+## R-72 · Five risk headlines said OPEN for defects their own bodies recorded as FIXED — L×M, FIXED
+Added **and fixed** 2026-08-14. R-44, R-45, R-46, R-47 and R-51 each carried `OPEN` in the `## R-nn ·`
+headline while the body beneath it said **FIXED**, with a date and a version — and in R-47's case
+*"FULLY FIXED … by ADR-0024"*.
+
+**This is R-59's shape, in the register R-59 lives in**, and it is the second time this project has shipped
+a stale status line into the document a reader orients from. R-59's trigger was written for exactly this
+case and did not fire, because it names `CLAUDE.md`, READMEs and the session log — the places the *previous*
+instance was found — and not the risk register itself. A trigger derived from where the last one turned up
+finds the last one again.
+
+The failure mode is specific and cheap: a headline is what a reader skims and what a `grep '^## R'` returns,
+so five closed defects looked live to anyone scanning, and `docs/SESSION-LOG.md`'s claim that "R-34…R-62 are
+ALL CLOSED" contradicted the register it summarised.
+
+**FIXED:** all five headlines corrected. **Trigger, generalised past its origin this time:** any `## R-nn`
+headline whose body contains `FIXED` or `CLOSED`. That is mechanical — a five-line script over this file —
+and it is the form the check should have taken from the start, rather than a list of the filenames where a
+human last happened to notice.
 
 ## R-70 · A ledger of nothing but declines reported no declines — L×M, FIXED
 Added **and fixed** 2026-08-14, red-team pass. `humanDenied` was rendered **inside** the
@@ -1395,3 +1415,4 @@ updated without re-reading the section the banner describes.
 | 2026-08-14 | ADR-0008 | **Documentation corrected, code unchanged, by the operator's decision.** `docs/SPEC.md` and the package README both called `PI_GRANTS_FANOUT` a **session total** — "a session holding `B` may create at most `B` descendants in total". Measured false: `session.fanoutBudget` is read once and never decremented, so three successive `delegate_all(8)` calls in one session are all accepted. What the bound actually is: per-call width plus downward attenuation, so no *subtree* exceeds its root. Making the code match the document was weighed and declined — it would break working setups and needs its own ADR — so the document was made to match the code, which is where the claim was wrong | red-team pass 3 |
 | 2026-08-14 | R-67, R-68 | **The lock let two writers in, and the pass that found it used real processes.** R-67: `rm(lockPath)` deletes the path, not your lock — so the stale-break's `stat`/`rm` gap could destroy a live lock, and the unconditional `finally` freed the *new* owner's, cascading to processes that raced nothing. Reproduced 2/120 trials × 16 processes under load, no clock manipulation. Fixed with a per-hold token and `removeIfOurs`. **The first version of that fix had no failing test until the mutation check showed it.** R-68: `busy` keyed on the error TYPE rather than on whether anything had been read, so `EMFILE` asserted an entry was still in effect that nobody had looked for — R-61's defect inside R-61's fix | red-team pass 3 |
 | 2026-08-14 | R-69, R-70, R-71 | **The tail of the red-team pass, found by re-auditing the four reports against what had actually shipped.** Seven items had been reported and not fixed. R-69: four causes of an unsatisfied gate produced one indistinguishable record, and ADR-0026 rests on the ledger being able to tell them apart. R-70: a ledger of nothing but declines reported no declines — the quietest output for the loudest file. R-71: two paths could orphan a herdr pane with nothing tracking it. **`src/ledger.ts` hit the 400-line guard during the fix and was split rather than the cap raised**, along the read/write seam every reporting defect so far has lived on | red-team pass 3 |
+| 2026-08-14 | R-72 | Added and fixed — five headlines (R-44, R-45, R-46, R-47, R-51) said **OPEN** for defects their own bodies recorded as FIXED, one of them *"FULLY FIXED … by ADR-0024"*. **R-59's shape inside the register R-59 lives in**, and R-59's trigger did not fire because it names `CLAUDE.md`, READMEs and the session log — the places the previous instance was found. A trigger derived from where the last one turned up finds the last one again. The replacement is mechanical: any headline whose body says FIXED | orienting-document sweep |

@@ -5,7 +5,7 @@ deliberate subset of what it holds and withholds the rest. Sub-agents may delega
 subset of what they themselves hold — enforced by **pi's own `--tools` allowlist**, with an append-only
 ledger of every grant and refusal.
 
-**Status:** `pi-agent-grants` **0.13.0**, the only package. 314 unit + 26 integration tests (+4
+**Status:** `pi-agent-grants` **0.13.0**, the only package. 315 unit + 26 integration tests (+4
 more with a real model); typecheck and smoke clean.
 
 ## What it actually does
