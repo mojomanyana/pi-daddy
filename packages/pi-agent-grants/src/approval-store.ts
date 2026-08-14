@@ -32,7 +32,7 @@
 
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
-import { LockTimeoutError, withFileLock } from "./file-lock.ts";
+import { withFileLock } from "./file-lock.ts";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { entryVerdict, type ApprovalEntry, type EntryVerdict, type SubjectSnapshot } from "./approval.ts";
@@ -359,19 +359,25 @@ export async function revokeAll(cwd: string): Promise<boolean> {
  */
 async function underLock<T>(cwd: string, onBusy: T, onError: T, work: () => Promise<T>): Promise<T> {
   const path = approvalsPath(cwd);
+  // **The discriminant is whether anything was READ, not which error was thrown.** Keying on
+  // `LockTimeoutError` looked right and was not: `EMFILE` — the classic transient, and one a fan-out of
+  // children plus herdr panes produces — happens before the load just as a timeout does, yet took the
+  // `failed` branch, whose message asserts the approval "is still in effect" about an entry nobody looked
+  // for, and blames a path that is perfectly writable. That is the very defect the fourth outcome was
+  // added to prevent, one error code to the left.
+  let entered = false;
   try {
     // The lock lives beside the file, so its directory must exist before the lock can be taken — and on a
     // first-ever approval it does not. `writeFileSafely` creates it, which is one step too late: every
     // write failed with ENOENT on the LOCK and was reported as busy. Caught by the existing round-trip
     // tests within a minute of adding the lock, which is the argument for having them.
     await mkdir(dirname(path), { recursive: true });
-    return await withFileLock(path, "approvals file", work);
-  } catch (error) {
-    // **The two are not the same fact**, which is why `LockTimeoutError` has its own type. "Another session
-    // holds the lock" is transient and says nothing about the file; "the lock could not be created at all"
-    // (EROFS, a directory replaced by a file) is a real write failure. Reporting the second as the first
-    // would tell an operator to retry something that will never succeed. `work` itself never throws — both
-    // write paths swallow into their own value — so everything landing here is one of these two.
-    return error instanceof LockTimeoutError ? onBusy : onError;
+    return await withFileLock(path, "approvals file", () => {
+      entered = true;
+      return work();
+    });
+  } catch {
+    // Never reached the load, so nothing may be claimed about the entry — whatever the cause.
+    return entered ? onError : onBusy;
   }
 }

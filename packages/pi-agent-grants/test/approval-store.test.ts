@@ -179,18 +179,26 @@ test("R-49: a concurrent save cannot resurrect an approval another session revok
   );
 });
 
-test("R-49: revoking reports ABSENT distinctly from FAILED, because they are opposite facts", async () => {
+test("R-49/R-67: revoking reports ABSENT distinctly from every kind of did-not-happen", async () => {
   // It returned a boolean and `/grants revoke` printed "no persisted approval named X" for false — so a
   // failed write told the operator the approval does not exist while it was still in effect. The most
   // alarming outcome wore the most reassuring message.
+  //
+  // **What this covers, and what it does not** (rule 6): `absent` and `busy` are both produced here from
+  // real filesystem states. `failed` — the write failing AFTER a successful load, the only case entitled
+  // to assert "it is still in effect" — has no filesystem arrangement that reaches it on this path, because
+  // anything stopping the write also stops the lock beside it and that reports `busy` first. It is kept as
+  // defence in depth and deliberately NOT asserted here, rather than asserted with a fixture that proves
+  // something else. R-64 is what that mistake costs.
   const c = ceiling(["tool:read", "tool:write"]);
-  assert.equal(await revokeApproval(await temp(), "tool:write@nope", c, NOW), "absent");
+  assert.equal(await revokeApproval(await temp(), "tool:write@nope", c, NOW), "absent", "the file WAS read");
 
-  // A store directory replaced by a FILE: neither the lock nor the temp file can be created there.
+  // The store directory replaced by a FILE: the lock cannot be created, so nothing is read — which used to
+  // report `failed` and assert the entry survived.
   const cwd = await temp();
   await mkdir(dirname(dirname(approvalsPath(cwd))), { recursive: true });
   await writeFile(dirname(approvalsPath(cwd)), "not a directory", "utf8");
-  assert.equal(await revokeApproval(cwd, "tool:write@a", c, NOW), "failed", "a write that did not happen");
+  assert.equal(await revokeApproval(cwd, "tool:write@a", c, NOW), "busy", "nothing was looked at");
 });
 
 test("R-61: a busy lock reports BUSY, because nothing was looked at", async () => {
@@ -393,5 +401,22 @@ test("ADR-0021: sanitise strips an undeclared field on the way out", async () =>
     Object.keys(parsed.approvals).sort(),
     ["tool:read@docs-writer", "tool:write@docs-writer"],
     "and both entries survive — this strips fields, not approvals",
+  );
+});
+
+test("R-67: a pre-load failure of ANY kind reports busy, not a claim about the entry", async () => {
+  // The `busy` state keyed off `LockTimeoutError`, which looked right and was not: `EMFILE` — the classic
+  // transient, and one a fan-out of children plus herdr panes produces — fails before the load exactly as a
+  // timeout does, and took the `failed` branch. That branch asserts the approval "is still in effect" about
+  // an entry nobody looked for. Here the store directory is a FILE, so `mkdir` fails before the lock: a
+  // different error, the same "nothing was read" fact, and the outcome must follow the fact.
+  const cwd = await temp();
+  await mkdir(dirname(dirname(approvalsPath(cwd))), { recursive: true });
+  await writeFile(dirname(approvalsPath(cwd)), "not a directory", "utf8");
+
+  assert.equal(
+    await revokeApproval(cwd, "tool:write@a", ceiling(["tool:read", "tool:write"]), NOW),
+    "busy",
+    "nothing past the lock was read, so nothing may be asserted about the entry",
   );
 });

@@ -234,9 +234,13 @@ handler: async (args: string, ctx: any) => {
             failed:
               `grants: ${target} was NOT revoked — the approvals file could not be written. It is still in ` +
               `effect; check that the path is writable and try again.`,
+            // Names no cause, because at this point none was established: a lock held by another session,
+            // an exhausted file-descriptor table and a read-only path all land here identically, having
+            // read nothing. Guessing "another session is writing" would be wrong for two of the three.
             busy:
-              `grants: ${target} could not be checked — another session is writing the approvals file. ` +
-              `NOTHING was changed, and this says nothing about whether that approval exists; try again.`,
+              `grants: ${target} could not be checked — the approvals file could not be opened for writing ` +
+              `(another session may hold it, or the path may not be writable). NOTHING was changed, and ` +
+              `this says nothing about whether that approval exists.`,
           }[outcome],
           outcome === "revoked" ? "info" : outcome === "absent" ? "warning" : "error",
         );

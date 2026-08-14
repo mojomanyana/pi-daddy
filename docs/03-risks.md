@@ -1042,6 +1042,70 @@ after this fix there is no reachable input that throws past it — which is the 
 and the reason it cannot be driven from outside. **Trigger:** any new `await` added to `session_start`
 whose callee rethrows; it belongs in its own `catch`, not in the blanket one.
 
+## R-67 · The file lock let two writers into `work()` at once — M×H, FIXED
+Added **and fixed** 2026-08-14 by the red-team pass. **The most serious finding of the four**, and the only
+one that broke an invariant rather than a claim. Reproduced across **real OS processes with no clock
+manipulation** — 120 trials × 16 processes on a deliberately oversubscribed box gave two trials with
+overlapping holders, and the overlap persisted for the rest of each trial rather than self-correcting.
+
+The lock came from the ledger and predates its extraction; R-49 gave it a second caller, which is what made
+it worth attacking.
+
+**One root cause, two breaks:** `rm(lockPath)` deletes whatever is at the path *now*, not the lock this
+process created.
+
+- **The stale break is two awaits.** `stat` decides the lock is old; `rm` deletes whatever is there when it
+  runs. A process descheduled between them destroys a **live** lock another waiter created in the gap, and
+  its own create then succeeds. Two holders.
+- **The `finally` was unconditional, and this one is far wider** — its window is the whole of `work()`. A
+  holder whose lock had been broken out from under it still freed the **new** owner's lock on the way out.
+  The next arrival then walked in beside that owner having raced nothing and observed nothing wrong, which
+  is how one lost race became a chain.
+
+The docstring asserted the opposite in so many words: *"whichever wins the subsequent exclusive create
+proceeds, which is correct because only one can."* True of the create, false of the delete — which is
+exactly what made it convincing.
+
+**FIXED (unreleased):** every lock carries a unique token, and `removeIfOurs` re-reads it before any delete,
+so a process can only ever remove a file it can prove is its own. Read-then-delete is still two operations,
+so the window is narrowed rather than closed — from "the whole of `work()`" to "between a read and an
+unlink" — and the *systematic* break is gone. Three tests; mutation-checked, and the first version of the
+fix had **no** failing test until the mutation showed it, which is rule 7 catching the author.
+
+**Also fixed, found in the same pass:** a throw from `handle.writeFile` (ENOSPC, EDQUOT, EFBIG) jumped to
+the rethrow with the lock file **already created**, leaving an orphan and leaking the descriptor to GC. An
+orphan blocks every writer for a full `STALE_LOCK_MS`, and with the ledger's `strict: true` that fails
+delegations closed for ten seconds at a time while being re-created on every retry.
+
+**Also corrected — a claim, not code:** `STALE_LOCK_MS` never checks whether the owner is alive, so *any*
+10s stall hands the lock on: `SIGSTOP`, laptop suspend, swap thrash, a debugger breakpoint, a long GC pause.
+The trigger originally hypothesised — a slow `work()` — is **cleared by measurement**: one ledger append is
+0.11ms on ext4 and 20.5ms on drvfs, a 10,000-entry `saveApproval` is 30ms / 97ms, and 16-way contention
+raises *waiters'* time rather than the holder's (max hold 49ms). Two orders of magnitude of headroom against
+normal operation, and no guard at all against abnormal suspension. Both halves are now in the docstring.
+
+**Trigger:** any `rm`, `unlink` or `rename` in this package that targets a path another process may own,
+without first proving ownership.
+
+## R-68 · `busy` keyed on the error type instead of on what had been read — L×M, FIXED
+Added **and fixed** 2026-08-14, same pass. R-61's fourth outcome exists because *"a lock timeout happens
+before the load, so nothing was ever looked at"* — and then it was implemented as `error instanceof
+LockTimeoutError`, which is a different question.
+
+`EMFILE` — the classic transient, and one a fan-out of children plus herdr panes produces — also fails
+before the load, took the `failed` branch, and so asserted the approval *"is still in effect"* about an
+entry nobody had looked for while blaming a path that is perfectly writable. R-61's own defect, one error
+code to the left, inside R-61's own fix.
+
+**FIXED:** the discriminant is now whether `work()` was entered at all, so every pre-load failure reports
+`busy` whatever its cause — and the `busy` message names **no** cause, because at that point none has been
+established. Verified by execution with a store directory replaced by a file.
+
+**Consequence worth stating:** `failed` may now be unreachable on the revoke path, since anything stopping
+the write also stops the lock beside it. It is kept as defence in depth and **deliberately not asserted by
+a test**, rather than asserted with a fixture that proves something else — which is precisely the mistake
+R-64 recorded.
+
 ## R-66 · Eight ledger lines claimed a human was prompted; one human was — M×H, FIXED
 Added **and fixed** 2026-08-14 by the red-team pass over that same day's work. **Confirmed by execution
 before being acted on**: one dialog, eight `granted/session` outcomes.
@@ -1279,3 +1343,4 @@ updated without re-reading the section the banner describes.
 | 2026-08-14 | R-60, R-61, R-63 | **The operator reviewed the four unreviewed changes, and three of the four produced a finding.** R-63 is the one that mattered: the ADR-0020 tally counted `persisted` RECORDS as prompts avoided, overstating the layer twentyfold, on the number that decides whether to delete it — the same bias `unattributed` exists to prevent, arrived at from the other side. R-61 gained a `busy` state after its own fix was found to contain a smaller copy of R-61. R-60 gained `test/session-start-guard.test.ts`, which immediately found two more unguarded `await`s. **Every hypothesis that produced a finding was one written down as a hypothesis** — the ones checked and cleared (the lock covering `planWithApprovals`, other booleans rendered as sentences) were cleared in minutes | review round |
 | 2026-08-14 | R-64, R-65, R-66 | **Independent red-team pass over the same day's work — four agents, one hypothesis each, and three found a defect.** R-66 is the worst: eight ledger lines asserting a human was prompted where one was (R-46's shape at the concurrency level). R-64: `in` walking the prototype deleted the whole ADR-0020 measurement and marked an intact ledger corrupt. R-65: the pane reaper was disabled by the one failure it was built for, and could hang exit for 80s. **Every finding was re-verified by execution here before being acted on**, and two were worse than reported | red-team pass 3 |
 | 2026-08-14 | ADR-0008 | **Documentation corrected, code unchanged, by the operator's decision.** `docs/SPEC.md` and the package README both called `PI_GRANTS_FANOUT` a **session total** — "a session holding `B` may create at most `B` descendants in total". Measured false: `session.fanoutBudget` is read once and never decremented, so three successive `delegate_all(8)` calls in one session are all accepted. What the bound actually is: per-call width plus downward attenuation, so no *subtree* exceeds its root. Making the code match the document was weighed and declined — it would break working setups and needs its own ADR — so the document was made to match the code, which is where the claim was wrong | red-team pass 3 |
+| 2026-08-14 | R-67, R-68 | **The lock let two writers in, and the pass that found it used real processes.** R-67: `rm(lockPath)` deletes the path, not your lock — so the stale-break's `stat`/`rm` gap could destroy a live lock, and the unconditional `finally` freed the *new* owner's, cascading to processes that raced nothing. Reproduced 2/120 trials × 16 processes under load, no clock manipulation. Fixed with a per-hold token and `removeIfOurs`. **The first version of that fix had no failing test until the mutation check showed it.** R-68: `busy` keyed on the error TYPE rather than on whether anything had been read, so `EMFILE` asserted an entry was still in effect that nobody had looked for — R-61's defect inside R-61's fix | red-team pass 3 |
