@@ -8,11 +8,17 @@ configured.
 Both qualifiers are load-bearing and are not buried: a child granted `bash` can escape governance entirely
 (ADR-0012, measured), and the ledger is opt-in. See *What this governs, and what it does not*.
 
-> **0.11.x is two breaking changes.** Approvals are stored **one file per project**, and
-> `PI_GRANTS_APPROVED` carries a **body digest** the child verifies against the definition it loaded — so a
-> 0.10 parent and a 0.11 child do not understand each other. The old approvals file is ignored, not
-> migrated, and reported once; **deleting it is recommended** rather than merely safe, because entries
-> written by 0.10.x may contain model-authored task text this version no longer stores anywhere.
+> **0.13.0 changes one API.** `revokeApproval` returns `"revoked" | "absent" | "failed" | "busy"` instead
+> of a boolean — it had two outcomes for four facts, and `/grants revoke` reported a failed write as *"no
+> persisted approval named X"*, telling you the approval you were revoking did not exist **while it was
+> still in effect**. Switch on the string; `"revoked"` is the only success.
+>
+> **0.11.x is two breaking changes**, still relevant if you are upgrading from 0.10 or earlier. Approvals
+> are stored **one file per project**, and `PI_GRANTS_APPROVED` carries a **body digest** the child verifies
+> against the definition it loaded — so a 0.10 parent and a 0.11 child do not understand each other. The old
+> approvals file is ignored, not migrated, and reported once; **deleting it is recommended** rather than
+> merely safe, because entries written by 0.10.x may contain model-authored task text this version no longer
+> stores anywhere.
 >
 > Full history, and what each earlier release broke: **[CHANGELOG.md](./CHANGELOG.md)**.
 
@@ -543,7 +549,7 @@ its own author the day after it was added: rather than raise the cap, `delegatio
 
 ## Status
 
-**0.11.0 — usable, and honest about scope.** What exists and is verified against real pi: the resolver, the
+**0.13.0 — usable, and honest about scope.** What exists and is verified against real pi: the resolver, the
 ledger with an integrity reader, the spawn planner, `SKILL.md` definitions with `allowed-tools` as an
 enforced ceiling, `delegate` and `delegate_all` with a subtree budget, two executors, and human approval for
 gated capabilities (once / session / always, inheritable down the tree, persisted for `always` and pinned to
@@ -554,12 +560,21 @@ Known gaps, stated because a gap nobody wrote down is the one that surprises som
 - **`bash` escapes governance.** Out of scope by decision (ADR-0012).
 - **`subagents:rpc:spawn` bypasses the tripwire.** Unfixable from here.
 - **The ledger is verified at session start** when one is configured: a damaged trail announces itself, an intact one stays quiet.
-- **Pane cleanup is not leak-proof.** Cleanup runs in a `finally`, which covers thrown errors but not the
-  process being killed. There is no reaper.
+- **Pane cleanup covers everything except being killed outright.** A run closes its pane in a `finally`,
+  and anything still open is closed on process `exit` — which does **not** cover SIGKILL, nor a SIGTERM
+  nothing else in the process is listening for, because Node runs no `exit` handlers there. `herdr tab
+  close <id>` is the remedy. No signal handler is installed, deliberately: one here would suppress Node's
+  default termination and turn pi's *"interrupt this turn"* into *"exit pi"* (R-62).
 - **A definition's *instructions* are governed only by identity.** `agent:<name>` says which file may be
   spawned and the digest says which version ran, but nothing reads a body and judges what it says — the
   operator authorises a file, and its contents are their responsibility.
 - **No background delegation.** `delegate` runs to completion and returns the child's output (ADR-0015).
+  If one is ever built, ADR-0026 fixes the rule that blocked it twice: a background spawn whose gates are
+  unresolved when its tool call returns is **refused**, and an approval arriving later starts nothing —
+  otherwise a child's capability set would depend on when a human reached the dialog.
+- **Whether persisted approvals earn their keep is still unmeasured.** `/grants ledger` now counts where
+  every approval came from, so the question ADR-0020 left open has a command; what it does not have yet is
+  a few weeks of real use to answer it.
 
 `docs/SPEC.md` in the repository is the authoritative current-state document; the ADRs hold the reasoning.
 
