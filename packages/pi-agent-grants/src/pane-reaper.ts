@@ -58,9 +58,27 @@ export function openPaneCount(): number {
   return open.size;
 }
 
+/** Per-command wall clock. `SIGKILL` because `timeout` alone is not a bound — see `TOTAL_BUDGET_MS`. */
+const PER_CALL_MS = 2000;
+
+/**
+ * Total wall clock the whole sweep may add to process exit.
+ *
+ * **Measured, and the reason this exists.** With eight panes and a hung herdr, a per-call timeout of 5s
+ * across two calls per pane is **80 seconds of silent hang at shutdown** — `stdio: "ignore"`, so the process
+ * looks wedged with no output. Worse, `timeout` is not a hard bound at all: `spawnSync` sends `SIGTERM` and
+ * then waits for the child to actually die, so a process ignoring `SIGTERM` runs to its own completion
+ * (measured: a 3s timeout took 59.8s against `trap '' TERM; sleep 60`). Hence `killSignal: "SIGKILL"` **and**
+ * a budget across the whole sweep rather than per call.
+ *
+ * A pane left open because the budget ran out is the failure this whole module downgrades to, and it is the
+ * right one: `herdr tab close <id>` is a five-second manual fix, whereas a shell that will not exit is not.
+ */
+const TOTAL_BUDGET_MS = 6000;
+
 /** Run one herdr command synchronously, swallowing everything: at exit there is nowhere to report. */
 const defaultSyncExec = (args: string[]): void => {
-  execFileSync("herdr", args, { stdio: "ignore", timeout: 5000 });
+  execFileSync("herdr", args, { stdio: "ignore", timeout: PER_CALL_MS, killSignal: "SIGKILL" });
 };
 
 /**
@@ -73,9 +91,14 @@ const defaultSyncExec = (args: string[]): void => {
  * Failures are swallowed per pane rather than per call — one pane herdr will not close must not strand the
  * other seven, and nothing at exit has anywhere to report to anyway.
  */
-export function reapOpenPanes(syncExec: (args: string[]) => void = defaultSyncExec): string[] {
+export function reapOpenPanes(syncExec: (args: string[]) => void = defaultSyncExec, now = Date.now): string[] {
   const closed: string[] = [];
+  const deadline = now() + TOTAL_BUDGET_MS;
   for (const pane of [...open.values()]) {
+    // Checked BEFORE each pane rather than after, so the budget bounds what we start, not what we finish.
+    // Panes left behind stay in the map; there is no later sweep, and saying so is the honest position —
+    // `openPaneCount()` is non-zero afterwards precisely so a caller could report it if it ever wanted to.
+    if (now() >= deadline) break;
     try {
       syncExec(["agent", "stop", pane.name]);
     } catch {

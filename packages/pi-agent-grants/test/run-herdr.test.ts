@@ -321,3 +321,34 @@ test("one pane herdr refuses to close does not strand the others", async () => {
   assert.deepEqual(closed, ["fine"], "the closable pane is reported, the stuck one is not claimed");
   assert.equal(openPaneCount(), 0, "both are dropped: a pane we cannot close is not retried forever");
 });
+
+test("R-65: a pane herdr REFUSED to close stays tracked, so the reaper still has it", async () => {
+  // The single failure the reaper exists for was the one that disabled it. `defaultExec` RESOLVES with
+  // `{code: 1}` on failure and never rejects, so `cleanup`'s `.catch` was dead code: a refused close looked
+  // exactly like a successful one and the pane was dropped from the registry. Confirmed by an independent
+  // pass before this test was written.
+  const before = openPaneCount();
+  const inner = fakeHerdr();
+  const exec: HerdrExec = async (args) =>
+    args[0] === "tab" && args[1] === "close"
+      ? { code: 1, stdout: JSON.stringify({ error: { code: "tab_busy", message: "no" } }), stderr: "" }
+      : inner.exec(args);
+
+  await runHerdrPane(request({ exec }));
+  assert.equal(openPaneCount(), before + 1, "a pane we failed to close must remain the reaper's problem");
+  assert.deepEqual(reapOpenPanes(() => {}), ["w1:t9"], "and the reaper must try it again at exit");
+  assert.equal(openPaneCount(), before);
+});
+
+test("R-65: the exit sweep is bounded in TOTAL, not per call", async () => {
+  // Measured against a hung herdr: 8 panes x 2 calls x 5s was 80 SECONDS of silent hang at shutdown, and
+  // `timeout` is not even a hard bound (spawnSync SIGTERMs, then waits). A pane left open is the right
+  // thing to degrade to; a shell that will not exit is not.
+  for (let i = 0; i < 8; i += 1) trackPane({ tab: `w1:t${i}`, name: `a${i}` });
+  let clock = 0;
+  // Every call "takes" 2s of the fake clock, so the 6s budget must stop the sweep partway.
+  const closed = reapOpenPanes(() => { clock += 2000; }, () => clock);
+  assert.ok(closed.length < 8, `the budget must stop the sweep, closed ${closed.length}`);
+  assert.ok(openPaneCount() > 0, "and what it did not reach stays tracked rather than being silently dropped");
+  reapOpenPanes(() => {});
+});

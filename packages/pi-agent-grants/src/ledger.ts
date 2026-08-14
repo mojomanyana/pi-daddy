@@ -24,6 +24,7 @@ import { withFileLock } from "./file-lock.ts";
 import { dirname } from "node:path";
 import type { Capability, ResolveResult } from "./resolve.ts";
 import type { DefinitionDigest } from "./definitions.ts";
+import { DELEGATE_SUBJECT } from "./approval.ts";
 import type { ApprovalScope, ApprovalSource } from "./approval.ts";
 
 export interface GrantRecord {
@@ -303,15 +304,33 @@ export async function verifyLedger(path: string): Promise<LedgerReport> {
       records += 1;
       if (isEscalationAttempt(parsed)) escalationAttempts += 1;
       if (parsed.humanDenied) humanDenied += 1;
-      const sources = parsed.approvalSources;
-      if (sources && typeof sources === "object") {
-        // The approval's subject: a definition spawn is keyed to the definition, everything else to
-        // `<delegate>` — the same keying `approvalKey` uses, so the pair count means what a reader expects.
-        const subject = parsed.agentType ?? "<delegate>";
+      // A **plain, non-empty** object. Three shapes were accepted here that must not be, all of them
+      // reachable from a torn, hand-edited or foreign line — which is the input class `verifyLedger` exists
+      // for, so "this package never writes that" is not a defence:
+      //   - `{}` beside a non-empty `approved` counted NOWHERE, silently shrinking the sample the comment
+      //     below promises to keep visible;
+      //   - an ARRAY passed `typeof === "object"` and was tallied with numeric indices as capability names;
+      //   - `null` is an object.
+      const rawSources = parsed.approvalSources;
+      const sources =
+        rawSources && typeof rawSources === "object" && !Array.isArray(rawSources) && Object.keys(rawSources).length > 0
+          ? rawSources
+          : undefined;
+      if (sources) {
+        // The subject half of `capability@subject`. `agentType` is the definition's name, or the literal
+        // `"delegate"` for the `tools:` form — which is NOT `DELEGATE_SUBJECT`, the `<delegate>` the approval
+        // layer keys on. Mapped here rather than at the write site so old ledgers read correctly too.
+        // **Stated limit:** a definition genuinely named `delegate` is indistinguishable from the `tools:`
+        // form in this field, and their two distinct approvals count as one pair. `DELEGATE_SUBJECT`'s own
+        // angle brackets exist to make that collision impossible, and the ledger drops them.
+        const subject = parsed.agentType === undefined || parsed.agentType === "delegate" ? DELEGATE_SUBJECT : parsed.agentType;
         for (const [capability, source] of Object.entries(sources)) {
+          // `Object.hasOwn`, never `in`: `in` walks the prototype, so a source of `"toString"` or
+          // `"valueOf"` passed the check, wrote a STRING into a counter, made `attributed` a string, and
+          // deleted the entire measurement from the report while marking an intact ledger corrupt.
           // An unrecognised source is counted as unattributed rather than dropped: a tally that silently
           // ignores what it does not understand reports a smaller sample as a cleaner one.
-          if (source in bySource) {
+          if (Object.hasOwn(bySource, source)) {
             bySource[source] += 1;
             distinct[source].add(`${capability}@${subject}`);
           } else unattributed += 1;

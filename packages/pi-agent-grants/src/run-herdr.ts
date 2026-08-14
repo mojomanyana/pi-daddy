@@ -193,12 +193,21 @@ export async function runHerdrPane(request: HerdrRunRequest): Promise<ChildRunRe
   /** Close what we opened, whatever happened. A leaked pane per child is how fan-out fills a workspace. */
   const cleanup = async () => {
     await exec(["agent", "stop", request.name]).catch(() => undefined);
-    if (!request.keepPane && tabId) await exec(["tab", "close", tabId]).catch(() => undefined);
+    let closed = false;
+    if (!request.keepPane && tabId) {
+      // **The reply must be PARSED, not merely awaited.** `defaultExec` resolves with `{code: 1}` on
+      // failure and never rejects, so the `.catch` here was dead code and a herdr that REFUSED to close the
+      // pane looked identical to one that closed it. The pane was then untracked, so the exit reaper — the
+      // one thing built for exactly this failure — would not retry it. The single case the reaper exists
+      // for was the case that disabled it.
+      const reply = await exec(["tab", "close", tabId]).catch(() => undefined);
+      closed = reply !== undefined && !parseReply(reply).error;
+    }
     // Kept when the pane is kept: a human inspecting the pane may want to see what the child was told.
     if (promptDir && !request.keepPane) await rm(promptDir, { recursive: true, force: true }).catch(() => undefined);
-    // Closed the normal way, so the exit-time reaper must not try again — and `openPaneCount()` is what a
-    // test asserts to prove the registry does not grow one entry per delegation.
-    if (tabId) untrackPane(tabId);
+    // Untrack only what is genuinely gone. A pane we failed to close stays registered so `exit` tries once
+    // more; `openPaneCount()` is what a test asserts to prove the registry does not grow per delegation.
+    if (tabId && (closed || request.keepPane)) untrackPane(tabId);
   };
 
   try {

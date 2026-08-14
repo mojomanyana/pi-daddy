@@ -325,45 +325,70 @@ test("ADR-0020: records are counted separately from distinct capability@subject 
   );
 });
 
-test("ADR-0020: the same capability under two subjects is two pairs, not one", async () => {
-  // The pair key must carry the SUBJECT. Keying on capability alone would collapse `tool:write@deploy` and
-  // `tool:write@review` into one — under-counting this time, which is the other direction and equally
-  // wrong. It is the same keying `approvalKey` uses, so the report cannot disagree with the store about
-  // what one approval is.
-  const dir = await tempDir("grants-subject-");
-  const path = join(dir, "ledger.jsonl");
-  await writeFile(
-    path,
-    [
-      JSON.stringify({ ts: "2026-08-14T00:00:00.000Z", parentId: "d0", childId: "d0.1", depth: 1, agentType: "deploy", requested: [], parentGrant: [], effective: [], denied: [], clipped: [], gatedBlocked: [], blocked: false, approvalSources: { "tool:write": "persisted" } }),
-      // No `agentType` at all — the `tools:` delegation form, whose subject is `<delegate>`.
-      JSON.stringify({ ts: "2026-08-14T00:00:01.000Z", parentId: "d0", childId: "d0.2", depth: 1, requested: [], parentGrant: [], effective: [], denied: [], clipped: [], gatedBlocked: [], blocked: false, approvalSources: { "tool:write": "persisted" } }),
-    ].join("\n") + "\n",
-    "utf8",
-  );
+test("R-64: a malformed approvalSources cannot corrupt the tally or delete the report", async () => {
+  // Found by an independent pass over the same day's work, and every case confirmed by execution first.
+  // These shapes arrive from a torn, hand-edited or foreign line — the input class `verifyLedger` EXISTS
+  // for — so "this package never writes that" is not a defence.
+  const dir = await tempDir("grants-malformed-");
+  const base = {
+    ts: "2026-08-14T00:00:00.000Z", parentId: "d0", childId: "d0.1", depth: 1,
+    requested: [], parentGrant: [], effective: [], denied: [], clipped: [], gatedBlocked: [], blocked: false,
+  };
+  const write = async (name: string, records: object[]) => {
+    const p = join(dir, name);
+    await writeFile(p, records.map((r) => JSON.stringify(r)).join("\n") + "\n", "utf8");
+    return (await verifyLedger(p)).approvals;
+  };
 
-  const { distinctBySource } = (await verifyLedger(path)).approvals;
-  assert.equal(distinctBySource.persisted, 2, "tool:write@deploy and tool:write@<delegate> are two approvals");
+  // `{}` beside a non-empty `approved` was counted NOWHERE — silently shrinking the sample that
+  // `unattributed` exists to keep visible, which is the exact promise the field's doc comment makes.
+  const empty = await write("empty.jsonl", [{ ...base, approved: ["tool:write", "tool:bash"], approvalSources: {} }]);
+  assert.equal(empty.unattributed, 2, "an empty map is an ABSENT map, not a map saying nothing");
+
+  // An array passed `typeof === "object"` and was tallied with numeric indices as capability names —
+  // inventing a `0@deploy` pair and inflating `persisted`, which is R-63's direction.
+  const arr = await write("array.jsonl", [{ ...base, agentType: "deploy", approved: ["tool:write"], approvalSources: ["persisted"] as never }]);
+  assert.equal(arr.bySource.persisted, 0, "an array is not a source map");
+  assert.equal(arr.unattributed, 1, "and it is counted, not dropped");
+
+  // **The one that deleted the whole measurement.** `source in bySource` walks the PROTOTYPE, so a source
+  // of `"toString"` passed the check, `bySource.toString += 1` wrote a string into a counter, and
+  // `attributed` — a sum in the renderer — became a string, so `attributed > 0` was false and the entire
+  // approvals block vanished. The intact records beside it were reported as corrupt at the same time.
+  const proto = await write("proto.jsonl", [
+    { ...base, approved: ["tool:write"], approvalSources: { "tool:write": "toString" } },
+    { ...base, agentType: "deploy", approved: ["tool:write"], approvalSources: { "tool:write": "persisted" } },
+  ]);
+  assert.deepEqual(proto.bySource, { prompt: 0, session: 0, persisted: 1, inherited: 0 }, "no prototype key");
+  assert.equal(proto.unattributed, 1, "the unknown source is counted as unattributed");
+  assert.equal(
+    typeof Object.values(proto.bySource).reduce((s, n) => s + n, 0),
+    "number",
+    "the renderer sums these — a string here deletes the report it was added to produce",
+  );
 });
 
-test("ADR-0020: a pre-0.11.1 line is counted as unattributed, never as a prompt", async () => {
-  // The bias this must not have. Before per-capability sources, ONE scalar described the whole set even
-  // when the sources differed (R-46) — so folding `approvalSource` into the tally would report humans as
-  // having been asked about capabilities they were never asked about, inflating `prompt` against the
-  // `persisted` number the whole measurement turns on. Old lines shrink the sample; they never colour it.
-  const dir = await tempDir("grants-legacy-src-");
+test("R-64: the tools: form is keyed to <delegate>, the subject the approval layer actually uses", async () => {
+  // The pair key claimed to match `approvalKey` and did not: the approval subject is `DELEGATE_SUBJECT`
+  // (`<delegate>`) while the ledger writes `agentType: spec.agent ?? "delegate"` — the bare word. The old
+  // test asserted the mapping using a record with NO agentType, a shape production has never written, so
+  // it passed while proving nothing about the real one.
+  const dir = await tempDir("grants-subject-key-");
   const path = join(dir, "ledger.jsonl");
-  await writeFile(
-    path,
-    `${JSON.stringify({
-      ts: new Date().toISOString(), parentId: "d0", childId: "d0.1", depth: 1,
-      requested: [], parentGrant: [], effective: [], denied: [], clipped: [], gatedBlocked: [],
-      blocked: false, approved: ["tool:bash", "tool:write"], approvalSource: "prompt",
-    })}\n`,
-    "utf8",
-  );
+  const rec = (agentType: string | undefined, capability: string) =>
+    JSON.stringify({
+      ts: "2026-08-14T00:00:00.000Z", parentId: "d0", childId: "d0.1", depth: 1, ...(agentType ? { agentType } : {}),
+      requested: [], parentGrant: [], effective: [], denied: [], clipped: [], gatedBlocked: [], blocked: false,
+      approved: [capability], approvalSources: { [capability]: "persisted" },
+    });
 
-  const { bySource, unattributed } = (await verifyLedger(path)).approvals;
-  assert.equal(bySource.prompt, 0, "the legacy scalar must not become evidence a human was asked");
-  assert.equal(unattributed, 2, "counted, so the sample size is visible rather than silently smaller");
+  // `agentType: "delegate"` is what run-delegation.ts writes for the tools: form — the shape that matters.
+  await writeFile(path, [rec("delegate", "tool:write"), rec(undefined, "tool:write"), rec("deploy", "tool:write")].join("\n") + "\n", "utf8");
+
+  const { distinctBySource } = (await verifyLedger(path)).approvals;
+  assert.equal(
+    distinctBySource.persisted,
+    2,
+    "the bare-word and absent forms are ONE approval (tool:write@<delegate>); deploy is the other",
+  );
 });
