@@ -53,10 +53,15 @@ a leaf — it receives neither `delegate` nor `delegate_all`.
 
 **Cardinality is bounded separately** (ADR-0008, amended 2026-08-12). The invariant above says what a child
 may *hold* and nothing about how many children exist; a blocking `delegate` bounded that to one by accident,
-and fan-out removes the accident. `PI_GRANTS_FANOUT` is a **subtree budget**: a session holding `B` may
-create at most `B` descendants in total, because spawning spends from `B` before the remainder is divided
-among the children. A per-call cap of K with depth D would still permit K^D — the same exponential wearing a
-smaller number — so the bound is subtractive instead, and composes across processes with no shared state.
+and fan-out removes the accident. `PI_GRANTS_FANOUT` is a **subtree budget**: a call
+spends from `B` before dividing the remainder among the children, so no *subtree* can exceed what its root
+held. A per-call cap of K with depth D would still permit K^D — the same exponential wearing a smaller
+number — so the bound is subtractive instead, and composes across processes with no shared state.
+
+**It is not a session total, and the distinction is measurable:** the value is read once from the
+environment and never decremented, so one session may issue successive `delegate_all` calls at the full
+width. What is bounded is the shape of any *one* tree, not how many trees a turn builds. Bound depth with
+`PI_GRANTS_MAX_DEPTH`; nothing bounds the number of turns.
 
 ## Why pi's `--tools` is the enforcement point
 

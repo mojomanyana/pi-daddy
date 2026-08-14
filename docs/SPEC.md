@@ -124,7 +124,7 @@ leaf.
 | Bound | Variable | Default | Behaviour |
 |---|---|---|---|
 | Depth | `PI_GRANTS_MAX_DEPTH` | `2` | `0` disables spawning. Malformed ⇒ `0` plus a startup warning. |
-| **Cardinality** | `PI_GRANTS_FANOUT` | `8` | **Subtree budget**: total descendants this session may create. Spawning spends from it before the remainder is divided among children, so a subtree can never exceed what its root held. Malformed or `0` ⇒ the default. |
+| **Cardinality** | `PI_GRANTS_FANOUT` | `8` | **Per-call width, and the budget each child inherits.** Spawning spends from it before the remainder is divided among children, so a *subtree* can never exceed what its root held. **Not a session total** — the value is read once and never decremented, so a session may issue successive `delegate_all` calls at the full width. Bound the *tree* with `PI_GRANTS_MAX_DEPTH`; nothing bounds how many turns a session takes. Malformed or `0` ⇒ the default. |
 | Blast radius | — | `8` | Maximum children in a single call. |
 | Wall clock | `PI_GRANTS_CHILD_TIMEOUT` | `600`s | Per child. SIGTERM then SIGKILL. |
 | Output | — | 1 MiB | Per child; beyond it the child is killed and the result flagged truncated. |
