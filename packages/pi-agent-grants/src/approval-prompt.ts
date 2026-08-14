@@ -58,6 +58,16 @@ export interface PromptOutcome {
   kind: PromptOutcomeKind;
   /** Why, when the answer was no. */
   reason?: string;
+  /**
+   * True when this caller RODE another caller's answer rather than being asked (R-66).
+   *
+   * The single-flight queue shares any non-`once` outcome, which is right — a human approving
+   * `tool:bash` *for this session* authorised the capability, not one child. What is not right is
+   * recording the riders as though each had faced a dialog: the ledger's whole job is answering "did a
+   * human authorise this?", and a fan-out of eight wrote eight lines claiming a prompt where there was
+   * one. The rider's honest source is `session`, and this flag is how the caller can tell.
+   */
+  joined?: boolean;
 }
 
 export interface ApprovalGateOptions {
@@ -195,7 +205,13 @@ export function createApprovalGate(
         const existing = inFlight.get(key);
         if (!existing) break;
         const outcome = await existing;
-        if (outcome.scope !== "once") return outcome;
+        // **`joined` marks the rider, and the ledger depends on it (R-66).** Sharing a non-`once` outcome
+        // is correct — the human authorised the capability for the session, not for one child — but the
+        // caller then stamped `approvalSource: "prompt"` on every one of them, so a fan-out of eight wrote
+        // eight lines each asserting a human was prompted when exactly one was. That is R-46's defect at
+        // the concurrency level, and `ledger.ts` calls over-claiming in this direction "the worst available
+        // failure". Confirmed by execution: one dialog, eight `granted/session` outcomes.
+        if (outcome.scope !== "once") return { ...outcome, joined: true };
       }
 
       const pending = ask(request).finally(() => inFlight.delete(key));

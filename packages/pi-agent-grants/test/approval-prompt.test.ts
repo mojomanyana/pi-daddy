@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   createApprovalGate,
   createApprovalGateProvider,
+  SCOPE_LABELS,
   timeoutMsFromEnv,
   type ApprovalUI,
 } from "../src/approval-prompt.ts";
@@ -328,4 +329,53 @@ test("R-29: a refusal is shared too — one 'Deny' does not become three dialogs
 
   assert.ok(outcomes.every((o) => o.kind === "declined"), "a human's no answers every pending caller");
   assert.equal(titles.length, 1, "re-asking after a decline is how you train someone to click yes");
+});
+
+test("R-66: a caller that JOINS another's answer is marked, so the ledger stops claiming it was prompted", async () => {
+  // Confirmed by execution before the fix: one dialog produced eight `granted/session` outcomes, and
+  // `obtainApprovals` stamped `approvalSource: "prompt"` on every one — eight ledger lines each asserting
+  // a human was asked, when exactly one was. `src/ledger.ts` calls over-claiming in this direction "the
+  // worst available failure", and R-46 is the same defect one level down.
+  //
+  // Sharing the outcome stays correct: *Allow for this session* authorises the capability for the session,
+  // not for one child. Only the RECORD was wrong.
+  let dialogs = 0;
+  const ui = {
+    notify: () => {},
+    select: async () => {
+      dialogs += 1;
+      await new Promise((r) => setTimeout(r, 20));
+      return SCOPE_LABELS.session;
+    },
+  };
+  const gate = createApprovalGateProvider()({ ui, hasUI: true, mode: "interactive" });
+  const request = { capability: "tool:bash", subject: "deploy", path: "definition" as const, task: "t" };
+
+  const outcomes = await Promise.all(Array.from({ length: 4 }, () => gate.request(request)));
+
+  assert.equal(dialogs, 1, "precondition: the single-flight queue must still share, that part was right");
+  assert.equal(outcomes.filter((o) => !o.joined).length, 1, "exactly one caller was actually asked");
+  assert.equal(outcomes.filter((o) => o.joined).length, 3, "and the other three rode that answer");
+  for (const o of outcomes) assert.equal(o.scope, "session", "all four are still authorised");
+});
+
+test("R-66: a `once` answer is never marked joined, because nobody may ride it", async () => {
+  // The R-29 property this must not disturb: `once` means THIS spawn, so a second caller opens its own
+  // dialog rather than joining. If `joined` ever appeared on a `once` path it would mean a rider had
+  // received someone else's single-spawn approval.
+  let dialogs = 0;
+  const ui = {
+    notify: () => {},
+    select: async () => {
+      dialogs += 1;
+      await new Promise((r) => setTimeout(r, 20));
+      return SCOPE_LABELS.once;
+    },
+  };
+  const gate = createApprovalGateProvider()({ ui, hasUI: true, mode: "interactive" });
+  const request = { capability: "tool:bash", subject: "deploy", path: "definition" as const, task: "t" };
+
+  const outcomes = await Promise.all(Array.from({ length: 3 }, () => gate.request(request)));
+  assert.equal(dialogs, 3, "each caller asks its own question for a `once`");
+  assert.deepEqual(outcomes.map((o) => o.joined ?? false), [false, false, false]);
 });

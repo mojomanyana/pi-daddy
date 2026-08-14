@@ -1042,6 +1042,75 @@ after this fix there is no reachable input that throws past it — which is the 
 and the reason it cannot be driven from outside. **Trigger:** any new `await` added to `session_start`
 whose callee rethrows; it belongs in its own `catch`, not in the blanket one.
 
+## R-66 · Eight ledger lines claimed a human was prompted; one human was — M×H, FIXED
+Added **and fixed** 2026-08-14 by the red-team pass over that same day's work. **Confirmed by execution
+before being acted on**: one dialog, eight `granted/session` outcomes.
+
+R-29's single-flight queue **shares** any non-`once` outcome across concurrent callers, and that is correct
+— *Allow for this session* authorises the capability for the session, not for one child. What was wrong is
+the RECORD. `obtainApprovals` then stamped `sources[capability] = "prompt"` unconditionally, so a fan-out of
+eight under one click wrote **eight lines each asserting a human was asked**, with the human having seen
+exactly one child's task.
+
+`src/ledger.ts` names this exact direction "the worst available failure", and **R-46 is the same defect one
+level down** — a scalar claiming a human was asked about a capability they were never asked about. R-46 was
+fixed across the capability SET; the concurrency case survived it.
+
+**FIXED (unreleased):** `PromptOutcome` carries `joined`, set only on the shared-outcome path, and a rider
+records `session` — which is the honest answer, since it was satisfied by the session approval that answer
+created. Two tests, and the second is the one that keeps R-29 intact: a `once` outcome is **never** marked
+joined, because nobody may ride a single-spawn approval. Mutation-checked.
+
+**Trigger:** any field the ledger derives from a shared or cached result rather than from what this
+particular caller did.
+
+## R-65 · The pane reaper was disabled by the one failure it was built for — L×M, FIXED
+Added **and fixed** 2026-08-14, red-team pass, both halves confirmed by execution.
+
+**The reaper could not see a refused close.** `defaultExec` **resolves** with `{code: 1}` on failure and
+never rejects, so `cleanup`'s `.catch(() => undefined)` was dead code and the reply was never parsed: a
+herdr that REFUSED to close a pane looked identical to one that closed it, and the pane was untracked. The
+single failure mode the reaper exists for was the one that removed the pane from its registry. Now the
+reply is parsed and only a genuine close untracks.
+
+**The exit sweep could hang the process for 80 seconds, silently.** Eight panes × two calls × a 5s
+per-command timeout, with `stdio: "ignore"`, against a hung herdr. Worse, `timeout` is **not a bound**:
+`spawnSync` sends `SIGTERM` and then waits for the child to die, so a process ignoring `SIGTERM` runs to
+completion — measured at **59.8s for a 3s timeout**. Now `killSignal: "SIGKILL"`, 2s per call, and a **6s
+budget across the whole sweep**. A pane left open is the right degradation; a shell that will not exit is
+not.
+
+**What this does not establish.** The reaper still does not cover SIGKILL or an unlistened SIGTERM (R-62),
+and a pane skipped because the budget ran out is not retried — there is no later sweep. Both are stated in
+`src/pane-reaper.ts` rather than implied.
+
+## R-64 · Three malformed source maps corrupted the ADR-0020 tally — M×M, FIXED
+Added **and fixed** 2026-08-14, red-team pass, every case reproduced by execution. All three arrive from a
+torn, hand-edited or foreign line — **the input class `verifyLedger` exists for**, so "this package never
+writes that" is not a defence.
+
+- **`source in bySource` walks the prototype.** A source of `"toString"` passed the check,
+  `bySource.toString += 1` wrote a *string* into a counter, the renderer's `Object.values(...).reduce` then
+  concatenated instead of summing, `attributed > 0` was false, and **the entire measurement disappeared from
+  the report** — while the same line was counted as both valid and corrupt, marking an intact ledger
+  damaged. `Object.hasOwn` now.
+- **`{}` beside a non-empty `approved` was counted nowhere**, silently shrinking the sample — falsifying the
+  promise made by the very field (`unattributed`) added to keep the sample visible.
+- **An array passed `typeof === "object"`** and was tallied with numeric indices as capability names,
+  inflating `persisted`, which is R-63's direction.
+
+**Also: the pair key claimed to match `approvalKey` and did not.** The approval subject is `DELEGATE_SUBJECT`
+(`<delegate>`); the ledger writes `spec.agent ?? "delegate"`, the bare word. `DELEGATE_SUBJECT`'s angle
+brackets exist precisely so it "can never collide with a real type", and the ledger dropped them. Mapped in
+`verifyLedger` so old files read correctly, with the residual limit stated: a definition genuinely named
+`delegate` is indistinguishable from the `tools:` form in that field.
+
+**The test encoded the wrong belief**, which is why it survived: it hand-wrote a record with **no**
+`agentType` — a shape production has never written — and asserted the mapping from that. It passed while
+proving nothing about the real record. Deleted, and replaced with one driven by the shape
+`run-delegation.ts` actually writes. **Trigger:** any test whose fixture is hand-written rather than
+produced the way the code under test produces it.
+
 ## R-59 · Four documents described a defect that had been fixed four days earlier — L×M, FIXED
 Added **and fixed** 2026-08-14. `CLAUDE.md`, the root `README.md` and two places in `docs/SESSION-LOG.md`
 all stated that `pi-token-audit`'s headline was *"a character ratio, not a token share"*. That was true when

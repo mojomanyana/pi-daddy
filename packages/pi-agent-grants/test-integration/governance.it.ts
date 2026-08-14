@@ -255,8 +255,10 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     assert.match(text, /1 prompt · 2 persisted/, "the two numbers ADR-0020 asks to be compared");
     // Both records AND pairs, because quoting records alone overstates the layer: the two persisted records
     // here are ONE capability@subject (`tool:write@<delegate>`), so deleting the store costs one prompt.
-    assert.match(text, /2 persisted record\(s\) across 1 distinct capability@subject pair\(s\)/, "record count and its bound");
-    assert.match(text, /UPPER BOUND on prompts avoided/, "labelled as a bound, not presented as the answer");
+    // Pairs against PAIRS — the comparison ADR-0020 actually asks for. Printing persisted records over a
+    // denominator of all records let a wide fan-out drive the ratio toward "delete it" for free.
+    assert.match(text, /ADR-0020: 1 persisted vs 1 prompted capability@subject pair\(s\)/, "pairs vs pairs");
+    assert.match(text, /RECORDS ARE AN UPPER BOUND on prompts avoided/, "the raw counts are labelled as a bound");
     assert.match(text, /1 not counted: written before per-capability sources/, "and the legacy line is excluded OUT LOUD");
   });
 

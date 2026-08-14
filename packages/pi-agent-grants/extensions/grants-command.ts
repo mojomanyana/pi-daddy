@@ -139,14 +139,21 @@ handler: async (args: string, ctx: any) => {
         // spawns under one persisted entry would have been ONE prompt and nineteen session hits without it.
         // Distinct `capability@subject` pairs bounds it properly. The exact figure needs a session id the
         // ledger does not carry, so the bound is printed AS a bound rather than dressed up as an answer.
+        // **Pairs against pairs.** The comparison ADR-0020 asks for is `persisted` vs `prompt`, and the
+        // first version printed persisted RECORDS against a denominator of ALL records — so widening a
+        // fan-out drove the ratio arbitrarily toward "delete the layer" with zero additional human
+        // decisions (`inherited` and `session` are written once per CHILD). Measured: the same two human
+        // approvals read as 69% at fan-out 8 and 3.8% at fan-out 512. `distinctBySource.prompt` was being
+        // computed and never shown, which is the number that makes the comparison honest.
         lines.push(
-          `    ${bySource.persisted} persisted record(s) across ${distinctBySource.persisted} distinct ` +
-            `capability@subject pair(s), out of ${attributed} attributed yes(es).`,
+          `    ADR-0020: ${distinctBySource.persisted} persisted vs ${distinctBySource.prompt} prompted ` +
+            `capability@subject pair(s) — the comparison that decides Option 3.`,
         );
         lines.push(
-          `    Records are an UPPER BOUND on prompts avoided, not a count of them — within one session only ` +
-            `the first would have been a prompt. Deleting the layer (ADR-0020 Option 3) costs at most one ` +
-            `prompt per pair per session, so ${distinctBySource.persisted} is the closer estimate.`,
+          `    (${bySource.persisted} persisted record(s) over ${attributed} attributed. RECORDS ARE AN ` +
+            `UPPER BOUND on prompts avoided, not a count: within one session only the first would have been ` +
+            `a prompt, and a wide fan-out inflates every per-record figure without any extra human decision. ` +
+            `Deleting the layer costs at most one prompt per pair per session.)`,
         );
         if (unattributed > 0) {
           lines.push(

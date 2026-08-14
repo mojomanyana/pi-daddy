@@ -209,7 +209,12 @@ export async function obtainApprovals(
       break;
     }
     approved.push(capability);
-    sources[capability] = "prompt";
+    // R-66: `prompt` means A HUMAN SAW A DIALOG FOR THIS. A caller that joined another's in-flight answer
+    // did not, so it records the source it actually had — the session approval that answer created. Eight
+    // concurrent children under one *Allow for this session* used to write eight lines each claiming a
+    // prompt. Same repair as R-46, one level up: stop asserting a human was asked on a path where they
+    // were not.
+    sources[capability] = outcome.joined ? "session" : "prompt";
     scopes[capability] = outcome.scope;
 
     if (outcome.scope === "session" || outcome.scope === "always") {
