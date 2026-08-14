@@ -22,6 +22,14 @@ These rules apply to all work in this project.
    describes what was believed **on its date**; editing it to match today makes the record lie. Add a
    dated note; do not revise history.
 
+   **One recorded exception, 2026-08-14 (ADR-0027).** The package rename `pi-agent-grants` → `pi-daddy` WAS
+   find-and-replaced through dated documents, including ADRs, the risk register, the session log, probes and
+   the archive. The test that permits it: does the name denote something **abandoned**? "DTCM" does — those
+   sentences are the evidence of a retired thesis. "pi-agent-grants" did not: same artifact, same behaviour,
+   different label, and nothing was ever published under it. ADR-0027 lists exactly what became untrue as a
+   result, because a falsification nobody wrote down is indistinguishable from the truth. **Rule 4 below is
+   unaffected and still absolute.**
+
 3. **`docs/00-blueprint.md` is immutable source input.** Disagreement with it is recorded as an
    assumption, a risk, or an ADR — never edited into it.
 

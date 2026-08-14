@@ -1,5 +1,5 @@
 /**
- * pi-agent-grants — the extension entry point pi loads.
+ * pi-daddy — the extension entry point pi loads.
  *
  * Wiring only; every decision lives in `../src/` as a pure function so it can be tested without pi. What
  * remains in *this* file is the part that is genuinely about pi: the hooks, the tripwire, and the four

@@ -11,7 +11,7 @@ standard on this topic"*. Supersedes most of ADR-0013 and reframes ADR-0015. Evi
 
 ## Context
 
-**The supported world is now exactly four things:** pi core (0.84.1), `pi-agent-grants` (this package),
+**The supported world is now exactly four things:** pi core (0.84.1), `pi-daddy` (this package),
 `principal-pi-skills` (the user's own skills and agent definitions), and **herdr** (0.7.5) as the
 execution substrate. No third-party pi extension is in the trust path — not `@tintinweb/pi-subagents`,
 not `@andrewjacop/pi-herdr`.

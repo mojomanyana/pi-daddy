@@ -9,7 +9,7 @@
 > token cost was never the goal. The project is now **capability governance for pi's multi-level agent
 > system**, judged on control correctness rather than cost.
 >
-> **Where the work actually lives now:** `packages/pi-agent-grants` (the product) and
+> **Where the work actually lives now:** `packages/pi-daddy` (the product) and
 > `packages/pi-token-audit`, both under scoped gate waivers recorded in the G0 report. Read
 > `docs/SESSION-LOG.md` for the current state and next actions, then `ADR-0007` → `ADR-0008` → `ADR-0009`.
 >

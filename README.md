@@ -5,7 +5,7 @@ deliberate subset of what it holds and withholds the rest. Sub-agents may delega
 subset of what they themselves hold — enforced by **pi's own `--tools` allowlist**, with an append-only
 ledger of every grant and refusal.
 
-**Status:** `pi-agent-grants` **0.13.0**, the only package. 315 unit + 26 integration tests (+4
+**Status:** `pi-daddy` **0.13.0**, the only package. 315 unit + 26 integration tests (+4
 more with a real model); typecheck and smoke clean.
 
 ## What it actually does
@@ -68,12 +68,12 @@ somebody.
 | `docs/06-decisions/` | Twenty-five ADRs. Reversals kept and marked — **0016** is the current architecture; **0008** the invariant; **0012** why `bash` is out of scope; **0017**–**0019** authorise a definition, record which instructions ran, and pin an approval to both; **0020**–**0023** are the first red-team pass. |
 | `docs/probes/` | Measurement evidence against real software. Each states what it does **not** establish. |
 | `docs/archive/` | Superseded, kept as evidence, never edited to match today. Don't start here. |
-| `packages/pi-agent-grants/` | The product. |
+| `packages/pi-daddy/` | The product. |
 
 ## Running the tests
 
 ```bash
-cd packages/pi-agent-grants
+cd packages/pi-daddy
 npm test                   # 287 unit tests — pure, no pi, no network
 npm run typecheck          # src + extensions + test + test-integration
 npm run test:integration   # 23 tests against a REAL pi process, no model tokens

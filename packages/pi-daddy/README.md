@@ -1,4 +1,4 @@
-# pi-agent-grants
+# pi-daddy
 
 **Capability governance for pi sub-agents.** A grant can only ever *shrink* as it passes down a delegation
 tree, so a sub-agent can never hold more of the **tool surface** than its parent — enforced by **pi's own
@@ -8,19 +8,17 @@ configured.
 Both qualifiers are load-bearing and are not buried: a child granted `bash` can escape governance entirely
 (ADR-0012, measured), and the ledger is opt-in. See *What this governs, and what it does not*.
 
-> **0.13.0 changes one API.** `revokeApproval` returns `"revoked" | "absent" | "failed" | "busy"` instead
-> of a boolean — it had two outcomes for four facts, and `/grants revoke` reported a failed write as *"no
-> persisted approval named X"*, telling you the approval you were revoking did not exist **while it was
-> still in effect**. Switch on the string; `"revoked"` is the only success.
+> **0.13.0 is the first published release.** Earlier versions were developed in-repo and never shipped, so
+> the breaking changes in the changelog describe how this package arrived at its current behaviour rather
+> than anything you need to migrate from.
 >
-> **0.11.x is two breaking changes**, still relevant if you are upgrading from 0.10 or earlier. Approvals
-> are stored **one file per project**, and `PI_GRANTS_APPROVED` carries a **body digest** the child verifies
-> against the definition it loaded — so a 0.10 parent and a 0.11 child do not understand each other. The old
-> approvals file is ignored, not migrated, and reported once; **deleting it is recommended** rather than
-> merely safe, because entries written by 0.10.x may contain model-authored task text this version no longer
-> stores anywhere.
+> It has been reviewed twice — once by its author against written hypotheses, then by four independent
+> agents each given one hypothesis to attack. That pass found eight further defects, including a file lock
+> that admitted two writers into its critical section, and all of them are fixed here. The reasoning for
+> every decision is in **[CHANGELOG.md](./CHANGELOG.md)** and in the `docs/06-decisions/` ADRs upstream.
 >
-> Full history, and what each earlier release broke: **[CHANGELOG.md](./CHANGELOG.md)**.
+> **Known gaps are stated rather than implied** — see *Status* at the end of this file. The largest is
+> deliberate: a child granted `bash` escapes governance entirely, by decision.
 
 ## What this governs, and what it does not
 
@@ -468,7 +466,7 @@ The resolver, ledger, spawn planner and the whole approval model are pure functi
 without pi:
 
 ```ts
-import { resolve, assertNarrowing, planSpawn, buildRecord, appendRecord } from "pi-agent-grants";
+import { resolve, assertNarrowing, planSpawn, buildRecord, appendRecord } from "pi-daddy";
 
 const result = resolve({
   requested:   ["tool:read", "tool:grep"],
@@ -485,7 +483,7 @@ const plan = planSpawn({ effective: result.effective, prompt: task });
 await appendRecord({ path: ".pi/grants.jsonl" }, buildRecord({ /* … */ result, blocked: false, now: new Date() }));
 ```
 
-Subpaths are exported individually (`pi-agent-grants/resolve`, `/ledger`, `/spawn`, `/delegate`, `/catalog`,
+Subpaths are exported individually (`pi-daddy/resolve`, `/ledger`, `/spawn`, `/delegate`, `/catalog`,
 `/propagation`, `/definitions`, `/fanout`, `/pi-tools`, `/approval`, `/approval-store`, `/approval-prompt`,
 `/run-child`, `/run-herdr`).
 
@@ -511,8 +509,8 @@ Subpaths are exported individually (`pi-agent-grants/resolve`, `/ledger`, `/spaw
 ## Install
 
 ```bash
-pi install npm:pi-agent-grants     # as a pi extension
-npm i pi-agent-grants              # as a library (the resolver, ledger and spawn planner are pure)
+pi install npm:pi-daddy     # as a pi extension
+npm i pi-daddy              # as a library (the resolver, ledger and spawn planner are pure)
 ```
 
 The package is both. pi loads `extensions/grants.ts` through its own transpiling loader, which reads

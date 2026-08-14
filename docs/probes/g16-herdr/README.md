@@ -1,6 +1,6 @@
 # Probe — `g16-herdr` (can herdr be a governed delegation backend?)
 
-**What it measures.** ADR-0015 Option G proposes that `pi-agent-grants` speak herdr's own CLI so that
+**What it measures.** ADR-0015 Option G proposes that `pi-daddy` speak herdr's own CLI so that
 **we** build the child's argv — `herdr agent start <NAME> --kind pi --pane <ID> -- <planSpawn args>` —
 rather than going through the third-party `@andrewjacop/pi-herdr`, whose `agentArgs` and `env` are
 model-controlled (R-30). That requires two things to be true: herdr must deliver our argv unmodified, and

@@ -1,7 +1,7 @@
 # ADR-0009: Adopt `pi-fabric` instead of building the governance layer
 
 **Date:** 2026-08-09
-**Status:** **Superseded by events, 2026-08-10.** The build path was taken: `pi-agent-grants` shipped at
+**Status:** **Superseded by events, 2026-08-10.** The build path was taken: `pi-daddy` shipped at
 0.4.0 (149 tests, live-verified against pi 0.83.0) with the resolver, ledger, interceptor, governed
 `delegate` tool, and human approval for gated capabilities. This ADR is retained as the record of the
 alternative that was genuinely considered and measured, not as a live proposal.
@@ -117,10 +117,10 @@ is pi-fabric's only reliable multi-level containment.
 ## Decision — **PARKED 2026-08-09** (user), superseding the recommendation below
 
 **The adopt-or-reject choice on `pi-fabric` is deliberately deferred.** Since this ADR was drafted,
-`pi-agent-grants` 0.2.0 shipped a `delegate` tool that provides governed *provisioning* and depth control
+`pi-daddy` 0.2.0 shipped a `delegate` tool that provides governed *provisioning* and depth control
 **without** Fabric — verified live — so Fabric is no longer on the critical path for the stated requirement
 (narrow control, multi-level, steering). Spawning and steering come from `pi-subagents`; provisioning and
-attenuation come from `pi-agent-grants`.
+attenuation come from `pi-daddy`.
 
 Fabric still offers things nothing else here does — persistent actors, mesh coordination, councils, cost
 budgets, and code-mode composition — so it is not rejected either. **Re-trigger:** a concrete need for

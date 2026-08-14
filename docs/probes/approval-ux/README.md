@@ -1,6 +1,6 @@
 # Probe — `approval-ux` (live verification of gated-capability approval against real pi)
 
-**What it measures.** Whether `packages/pi-agent-grants` 0.4.0's human-approval feature behaves against a
+**What it measures.** Whether `packages/pi-daddy` 0.4.0's human-approval feature behaves against a
 real `pi` process the way ADR-0010 and the package README say it does. The eight scenarios cover the three
 approval scopes, the three flavours of *no*, persistence, revocation, and the three ways a persisted
 approval stops meaning what the human meant (`expired` is not exercised; `foreign-cwd` and `type-changed`
@@ -36,14 +36,14 @@ defect in `delegate`'s default model resolution was found on the way. Both are d
 >   therefore a fresh empty queue — on every call. Fixed by a shared gate provider, and covered by a test
 >   that exercises the caller's shape rather than a reused gate.
 >
-> Details and current behaviour: `packages/pi-agent-grants/README.md` (*Verified live*).
+> Details and current behaviour: `packages/pi-daddy/README.md` (*Verified live*).
 
 ## Environment
 
 pi 0.83.0 (`/home/alavanja/.nvm/versions/node/v24.14.0/bin/pi`), Node v24.14.0, provider `openai-codex`,
 model `gpt-5.6-sol`, `@tintinweb/pi-subagents` (installed via `~/.pi/agent/settings.json` `packages`, and
 the source of the `Agent` tool the interceptor hooks). Extension under test:
-`packages/pi-agent-grants/extensions/grants.ts`. Unit suite at the time of the run: **134 passing, 0
+`packages/pi-daddy/extensions/grants.ts`. Unit suite at the time of the run: **134 passing, 0
 failing**. Date: 2026-08-09.
 
 ## How to rerun
@@ -74,7 +74,7 @@ emitted on stdout as an `extension_ui_request` JSON line and a `select` blocks u
    ```bash
    cd "$PROJ" && { echo '{"type":"prompt","id":"1","message":"/grants approvals"}'; sleep 8; } \
      | timeout 30 env PI_GRANTS_GRANT="tool:read,tool:write" PI_GRANTS_GATED="tool:write" \
-       pi --no-session -e <repo>/packages/pi-agent-grants/extensions/grants.ts --mode rpc \
+       pi --no-session -e <repo>/packages/pi-daddy/extensions/grants.ts --mode rpc \
      | grep '"method":"notify"'
    ```
 
@@ -172,7 +172,7 @@ No approvals file was written.
 ```bash
 cd "$PROJ" && PI_GRANTS_GRANT="tool:read,tool:write" PI_GRANTS_GATED="tool:write" \
   PI_GRANTS_LEDGER="$PROJ/.pi/grants.jsonl" \
-  pi --print --no-session -e <repo>/packages/pi-agent-grants/extensions/grants.ts \
+  pi --print --no-session -e <repo>/packages/pi-daddy/extensions/grants.ts \
   'Call the Agent tool exactly once with subagent_type set to "docs-writer" …'
 ```
 

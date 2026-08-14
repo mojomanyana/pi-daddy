@@ -22,7 +22,7 @@ this on the false premise would have been deciding it for the wrong reason.
 What is true:
 
 - **No tests.** Verified against one provider's payload shape only.
-- **Nothing depends on it.** `pi-agent-grants` does not import it; no shared code, no shared types.
+- **Nothing depends on it.** `pi-daddy` does not import it; no shared code, no shared types.
 - **It is publishable.** `0.1.0`, no `private: true`, and it ships an extension pi will load.
 - **It serves a retired thesis**, and this repository is judged on control correctness (ADR-0007).
 - **It has a documentation footprint out of proportion to its size.** R-59 is the evidence: four documents
@@ -65,7 +65,7 @@ file every reader and every reviewer starts from. The label would have to be mai
 **`packages/pi-token-audit` is deleted**, along with every reference that describes it as a current
 artifact — `CLAUDE.md`, both READMEs and the session log's open-items table. `docs/probes/` keeps the G10
 measurement and its arithmetic unchanged, and this ADR plus `5c593fb` are the pointer for anyone who wants
-the code back. For v1 this repository ships exactly one package, `pi-agent-grants`.
+the code back. For v1 this repository ships exactly one package, `pi-daddy`.
 
 **Not deleted, and this is the distinction:** the *finding*. G10 is one of this project's better pieces of
 evidence — a headline number that survived review, reached `SESSION-LOG.md` as a verified fact and fed
@@ -80,7 +80,7 @@ publishable artifact. `CLAUDE.md`'s "Where Things Live" shrinks to what this pro
 **Negative.** Cost visibility goes with it. If it is wanted back it must be restored from git rather than
 maintained continuously — and it will come back untested, because that is how it left.
 
-**Neutral.** No code change to `pi-agent-grants`; nothing imported it.
+**Neutral.** No code change to `pi-daddy`; nothing imported it.
 
 **Deliberate non-goal.** No replacement. If cost visibility is wanted later it should be a separate decision
 with its own justification, not this package restored on momentum.

@@ -469,7 +469,7 @@ safety. False positive: pi's *default* surface is only `read`, `bash`, `edit`, `
 type declaring `tools: read, grep, find, ls` looks like an escalation from any normal parent despite being
 strictly weaker. False safety: a reviewer reading "grant: read, bash" sees two capabilities and infers
 narrowness that does not exist.
-**Validation:** VALIDATED by inspection and encoded as `SUBSUMPTION` in `packages/pi-agent-grants/src/resolve.ts`,
+**Validation:** VALIDATED by inspection and encoded as `SUBSUMPTION` in `packages/pi-daddy/src/resolve.ts`,
 with `ResolveResult.subsumedBy` reporting what a parent covers only indirectly. Tested (`resolve.test.ts`).
 **Open question deliberately left open:** whether `bash` should be promoted to a *universal* capability
 alongside `fabric_exec`. It is not literally universal — a bash-only child still cannot spawn agents — but for
@@ -479,7 +479,7 @@ file operations it is total. Currently modelled as subsuming rather than univers
 ## A-16 — pi's `--tools` / `--no-tools` hard-enforce against extension tools · CRITICAL
 **Claim:** pi core's allowlist flags cannot be circumvented by an extension re-registering or re-activating
 its own tool, so they are a trustworthy enforcement point for capability grants.
-**Why it matters:** the entire `pi-agent-grants` design rests on it. If extensions could re-add tools past the
+**Why it matters:** the entire `pi-daddy` design rests on it. If extensions could re-add tools past the
 allowlist, enforcement would have to live inside each descendant session — which is what the original spec
 assumed, and what dragged in the grant-propagation problem and the `isolated`-disables-governance hole.
 **Evidence (2026-08-09, measured — `docs/probes/pi-fabric-eval` probes 9–11):**
@@ -514,5 +514,5 @@ spawned with a `["tool:read"]` grant reported `NO_WRITE_TOOL` and created no fil
 | 2026-08-09 | A-12 | → **VALIDATED end-to-end** — usage with cacheRead/cacheWrite/cost is persisted in session JSONL; retrospective cost measurement needs no instrumentation | `docs/probes/baseline/` |
 | 2026-08-09 | A-13 | Control arm **dominates on the measured workload**: p90 = 4 distinct tools/session from ~20; four tools = 98.1% of calls; pi's default set already is the right profile | `docs/probes/baseline/` |
 | 2026-08-09 | A-14 | Added, then **consciously deferred** — deferred-token billing stopped being load-bearing when ADR-0007 reframed away from cost | ADR-0006/0007 |
-| 2026-08-09 | A-15 | Added **VALIDATED** — `bash` subsumes the file/search tools, so a grant containing it is not narrow; encoded as `SUBSUMPTION` + `subsumedBy` | `pi-agent-grants` |
+| 2026-08-09 | A-15 | Added **VALIDATED** — `bash` subsumes the file/search tools, so a grant containing it is not narrow; encoded as `SUBSUMPTION` + `subsumedBy` | `pi-daddy` |
 | 2026-08-09 | A-16 | Added **VALIDATED** — pi's `--tools`/`--no-tools` hard-enforce against extension tools (probes 9–11); pi's default surface is only read/bash/edit/write | `docs/probes/pi-fabric-eval` |

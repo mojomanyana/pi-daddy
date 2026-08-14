@@ -5,7 +5,7 @@
 treating anything here as current. ADR-0014 in particular moved the approvals store out of the workspace,
 changed `PI_GRANTS_APPROVED` to carry `capability@subject` pairs, and stopped `once` crossing a boundary;
 where this document and that ADR disagree, **the ADR is right**.
-**Package:** `packages/pi-agent-grants`
+**Package:** `packages/pi-daddy`
 **Driver:** SESSION-LOG next-action #1 — *"Human-approval UX for gated capabilities. They currently just
 refuse. Needs once/session scopes and a defined answer for background agents with no interactive user."*
 
@@ -14,7 +14,7 @@ holds but which may not enter a child's grant without a human saying so. Today b
 refuse. This adds the only thing missing: a way to say yes, with a scope, an audit trail, and a defined
 answer when no human is present.*
 
-**Gate status.** The G0 waiver is scoped to `packages/pi-agent-grants` — *"resolver, ledger, and a spawn
+**Gate status.** The G0 waiver is scoped to `packages/pi-daddy` — *"resolver, ledger, and a spawn
 helper that applies a computed allowlist"*. This work stays inside that package and touches no excluded
 component (no Orchestrator, registry, selection, eviction, aggregator). One thing is worth naming rather
 than slipping through: **the approval store is the package's first persistent state outside the append-only

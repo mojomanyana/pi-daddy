@@ -11,14 +11,14 @@ entry, no depth increment, no grant computed.**
 ## Environment
 
 pi 0.83.0, Node v24.14.0, provider `openai-codex`, model `gpt-5.6-sol`. Extension under test:
-`packages/pi-agent-grants/extensions/grants.ts` at 0.5.0. Date: 2026-08-10.
+`packages/pi-daddy/extensions/grants.ts` at 0.5.0. Date: 2026-08-10.
 
 ## Reproduction
 
 ```bash
 PI_GRANTS_GRANT="tool:bash" PI_GRANTS_DEPTH=1 PI_GRANTS_MAX_DEPTH=2 \
 pi --print --no-session --no-extensions --tools bash \
-   -e packages/pi-agent-grants/extensions/grants.ts \
+   -e packages/pi-daddy/extensions/grants.ts \
    'Run exactly this shell command and show me its full output: env -u PI_GRANTS_GRANT -u PI_GRANTS_DEPTH pi --print --no-session --no-extensions "Reply with exactly UNGOVERNED_CHILD_OK and nothing else."'
 ```
 

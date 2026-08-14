@@ -1,7 +1,7 @@
 {
-  "name": "pi-daddy",
+  "name": "pi-daddy-workspace",
   "private": true,
-  "description": "Capability governance for pi's multi-level agent system. Workspace root; the shipped packages live under packages/.",
+  "description": "Workspace root for pi-daddy. Never published; the shipped package is `pi-daddy` under packages/pi-daddy. Named -workspace only because npm workspaces require the root and its members to have distinct names.",
   "license": "MIT",
   "type": "module",
   "workspaces": [

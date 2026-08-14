@@ -1,4 +1,4 @@
-# Changelog — pi-agent-grants
+# Changelog — pi-daddy
 
 Newest first. **Breaking changes are marked and say what to do about them.**
 
@@ -6,11 +6,17 @@ This file exists because the README had grown ninety lines of stacked version ba
 reached what the package *does* — churn documentation in front of product documentation. The banners are
 the record of how the package got here and are worth keeping; they are not worth reading first.
 
+> **0.13.0 is the first PUBLISHED release.** Every version below it was developed in this repository and
+> never shipped to npm, so if you are reading this as a new user, **none of the breaking changes described
+> below can have affected you** — there was no earlier version to install. They are kept because they are
+> the record of how the package arrived at what it does, and because the reasoning behind each one is
+> usually the clearest statement of why the current behaviour is what it is.
+
 ## 0.13.0 — the approvals file gets the lock the ledger already had, and two silences end
 
 Closing the last items that were open rather than out of scope, then **red-teaming the result**: an
 operator review and four independent agents, each given one hypothesis to attack. Between them they found
-eight further defects **in the fixes above**, all repaired here before release. The two worth knowing about
+eight further defects **in that work**, all repaired here before release. The two worth knowing about
 as a user of this package:
 
 - **The file lock admitted two writers into the critical section.** `rm(lockPath)` deletes whatever is at

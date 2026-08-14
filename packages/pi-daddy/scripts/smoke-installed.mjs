@@ -25,16 +25,16 @@ try {
   writeFileSync(
     join(work, "probe.mjs"),
     [
-      `import { resolve, assertNarrowing } from "pi-agent-grants";`,
-      `import { planSpawn } from "pi-agent-grants/spawn";`,
-      `import { runChild } from "pi-agent-grants/run-child";`,
+      `import { resolve, assertNarrowing } from "pi-daddy";`,
+      `import { planSpawn } from "pi-daddy/spawn";`,
+      `import { runChild } from "pi-daddy/run-child";`,
       // The subpaths added in 0.7.0. A smoke test exists to catch a broken `exports` map, so every new
       // module belongs here — 0.7.0 deleted two subpaths and added four, and a stale map fails only on a
       // consumer's machine.
-      `import { parseSkillDefinition, ceilingForDefinition } from "pi-agent-grants/definitions";`,
-      `import { splitBudget, childSpawnId } from "pi-agent-grants/fanout";`,
-      `import { splitSystemPrompt } from "pi-agent-grants/run-herdr";`,
-      `import { PI_BUILTIN_TOOLS, WILDCARD } from "pi-agent-grants/pi-tools";`,
+      `import { parseSkillDefinition, ceilingForDefinition } from "pi-daddy/definitions";`,
+      `import { splitBudget, childSpawnId } from "pi-daddy/fanout";`,
+      `import { splitSystemPrompt } from "pi-daddy/run-herdr";`,
+      `import { PI_BUILTIN_TOOLS, WILDCARD } from "pi-daddy/pi-tools";`,
       // Exercise it, don't just import it: a module that loads but throws on use is not "working".
       `const r = resolve({ requested: ["tool:read"], parentGrant: ["tool:read", "tool:write"] });`,
       `assertNarrowing(r);`,

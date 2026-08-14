@@ -7,9 +7,9 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ## NEXT SESSION — read this, then pick one
 
-**State: green, and reviewed TWICE — by the operator, then by four independent agents.** `pi-agent-grants`
+**State: green, and reviewed TWICE — by the operator, then by four independent agents.** `pi-daddy`
 **0.13.0** — the only package. **315 unit + 26 integration tests** (+**4** with a real model), typecheck
-clean, smoke clean. **Twenty-six** ADRs decided.
+clean, smoke clean. **Twenty-seven** ADRs decided.
 
 **The known-open list is empty of code.** What remains needs a human: item 1 needs weeks of real usage, and
 items 6 and 7 are closed by decision. See the table below before assuming otherwise.
@@ -21,7 +21,7 @@ with a worked example instead of "please look at this" — and two of the four w
 rather than costing a pass. Write the hypotheses down; verify them before asking.
 
 ```bash
-cd packages/pi-agent-grants && npm test && npm run typecheck && npm run test:integration && npm run test:smoke
+cd packages/pi-daddy && npm test && npm run typecheck && npm run test:integration && npm run test:smoke
 PI_GRANTS_IT_MODEL=1 npm run test:integration   # the 4 model-driven ones — ~60s, costs money
 ```
 
@@ -85,7 +85,37 @@ That convention is why every reversal here was survivable, and there have been f
 ---
 
 
-## 2026-08-14 (last) — four agents, one hypothesis each, and the lock was letting two writers in
+## 2026-08-14 (last) — the package is `pi-daddy`, and the rename went through the record
+
+**Renamed on the way to a first publish**, which is what forced the question: `pi-agent-grants` matched
+neither the repository, the workspace root, nor anything anyone calls this. `git mv` to
+`packages/pi-daddy/`, `"name": "pi-daddy"`, and the workspace root became `pi-daddy-workspace` because npm
+requires the root and its members to differ — given a forced choice the *published* artifact keeps the good
+name.
+
+**The operator chose to replace the old name in dated documents too, over the assistant's recommendation,
+and ADR-0027 records both the decision and the disagreement.** 126 occurrences across 29 files, including
+ADRs, the risk register, this log, `docs/probes/` and `docs/archive/` — the last of which is documented as
+*"never edited to match today"* and has now been edited to match today.
+
+**What that made untrue is listed in the ADR rather than glossed**: ADR-0016 now says "pi-daddy 0.7.0" and
+no such version existed; probe READMEs cite a path that did not exist when the probe ran. The reasons it was
+accepted: **nothing was ever published under the old name**, so no reader outside this repository holds an
+artifact it refers to; git preserves every original wording and `--follow` traverses the move; and R-59 and
+R-72 are both entries about the cost of two names for one thing in an orienting document.
+
+**`.claude/rules/phase-gates.md` §2 and `CLAUDE.md` are amended rather than quietly violated.** The test that
+permits this and forbids the DTCM rewrite: *does the name denote something abandoned?* "DTCM" does — those
+sentences are the evidence of a retired thesis. "pi-agent-grants" did not. **Rule 4 is untouched.** A rule
+that forbids what the repository already contains protects nothing; it teaches the next session to distrust
+the file, which is the exact failure the retired phase-gate rule at the top of that file was rewritten to
+escape.
+
+**Verified after the move: 315 unit, 26 integration, typecheck clean, smoke clean.**
+
+---
+
+## 2026-08-14 (twelfth) — four agents, one hypothesis each, and the lock was letting two writers in
 
 **The independent pass the top of this file kept asking for. Every one of the four found something, and the
 worst of them broke an invariant rather than a claim.**
@@ -657,7 +687,7 @@ else; the store's real file is byte-identical across a full `npm test`.
 
 ## 2026-08-13 (sixth) — the README caught up with four versions of the product
 
-**The largest purely-mechanical job left, and it was not entirely mechanical.** `packages/pi-agent-grants/README.md`
+**The largest purely-mechanical job left, and it was not entirely mechanical.** `packages/pi-daddy/README.md`
 still described the deleted pi-subagents interceptor as a provisioning path, and its own 0.7.0 banner said so
 — which is a reasonable thing to write once and a bad thing to leave standing for three more releases.
 Rewritten against the code, 626 → ~656 lines.
@@ -1054,7 +1084,7 @@ do.
 
 ---
 
-## 2026-08-10 (later) — ADR-0011 implemented, live-verified, and shipped as `pi-agent-grants` 0.5.0
+## 2026-08-10 (later) — ADR-0011 implemented, live-verified, and shipped as `pi-daddy` 0.5.0
 
 **ADR-0011 is done and merged.** All three decided changes are implemented (`e8b0fef`), **155 tests
 passing**, and — new — **verified live against real pi**: `docs/probes/adr-0011-universal`. The entry below
@@ -1100,7 +1130,7 @@ the merge. A note in the ADR records the confusion rather than erasing it.
 from searches run inside a worktree that could not have contained it. A cross-branch check
 (`git log --all -- <path>`) would have settled it in one command.
 
-### 2026-08-11 — all three ADRs decided AND implemented; `pi-agent-grants` 0.6.0
+### 2026-08-11 — all three ADRs decided AND implemented; `pi-daddy` 0.6.0
 
 **ADR-0012, ADR-0013 and ADR-0014 are accepted, implemented and committed.** 222 unit + 8 integration + 3
 model-driven tests passing, typecheck clean across `src` + `extensions` + `test` + `test-integration`.
@@ -1303,7 +1333,7 @@ identity is untouched. `.gitignore` covers `node_modules/`, `.superpowers/`, and
 
 ---
 
-## 2026-08-09 — `pi-agent-grants` 0.4.0: human approval for gated capabilities
+## 2026-08-09 — `pi-daddy` 0.4.0: human approval for gated capabilities
 
 Gated capabilities (held but not passable without a person saying yes) could previously only ever be
 refused; `0.4.0` adds the yes — once/session/always scopes, inheritable down the tree intersected with
@@ -1311,7 +1341,7 @@ each child's actual grant, with `always` persisted per-project and offered only 
 (agent types are human-authored files; `delegate`'s subject is model-chosen, so it never gets `always`).
 **ADR-0010** records the approval semantics and **R-27** the hazard of a committed approvals file
 authorising every clone (mitigated by ignoring entries whose `cwd` doesn't match). New public exports from
-`src/approval.ts`, `src/approval-store.ts`, `src/approval-prompt.ts` — see `packages/pi-agent-grants/README.md`'s
+`src/approval.ts`, `src/approval-store.ts`, `src/approval-prompt.ts` — see `packages/pi-daddy/README.md`'s
 *Approving a gated capability* section.
 
 State: **unit-tested, typechecked, and verified live against real pi (149 tests, clean typecheck)**. The live
@@ -1367,7 +1397,7 @@ discipline and probe convention survive; the phase list does not.
 5. **ADR-0008** established the invariant: capabilities attenuate monotonically down the tree.
 6. **pi-fabric evaluated empirically** (11 probes) — it implements much of the design but **recursion and
    containment are mutually exclusive by construction** there. Decision **parked** with a re-trigger.
-7. **Built and shipped** `pi-agent-grants` (0.3.0) and `pi-token-audit` (0.1.0).
+7. **Built and shipped** `pi-daddy` (0.3.0) and `pi-token-audit` (0.1.0).
 
 ### Verified facts (measured, not assumed — don't re-litigate)
 
@@ -1383,10 +1413,10 @@ discipline and probe convention survive; the phase list does not.
 
 | Package | State | Verification |
 | :--- | :--- | :--- |
-| `packages/pi-agent-grants` **0.3.0** | resolver · ledger · spawn planner · `tool_call` interceptor · `delegate` tool · live catalog | **73/73 tests**, both typechecks clean, **7 live scenarios** verified against real pi |
+| `packages/pi-daddy` **0.3.0** | resolver · ledger · spawn planner · `tool_call` interceptor · `delegate` tool · live catalog | **73/73 tests**, both typechecks clean, **7 live scenarios** verified against real pi |
 | `packages/pi-token-audit` **0.1.0** | token/cost audit incl. tool-definition share | typechecks clean; verified end-to-end on `openai-codex`/`gpt-5.6-sol` |
 
-Run tests: `cd packages/pi-agent-grants && npm test`.
+Run tests: `cd packages/pi-daddy && npm test`.
 Typecheck: tsconfigs are in the session scratchpad (not committed) — recreate with `tsc` pointing at
 `src/**` and `extensions/grants.ts`, mapping `@earendil-works/pi-coding-agent` and `typebox` to the globally
 installed pi's `dist/index.d.ts` and `node_modules/typebox/build/index.d.mts`.

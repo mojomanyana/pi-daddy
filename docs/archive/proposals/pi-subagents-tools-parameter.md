@@ -40,7 +40,7 @@ either.
 
 ## Why
 
-I maintain a capability-governance layer for pi (`pi-agent-grants`). The model is that a top orchestrator
+I maintain a capability-governance layer for pi (`pi-daddy`). The model is that a top orchestrator
 holds a catalog of tools and grants each sub-agent a deliberate subset — enforced structurally by pi's own
 `--tools` allowlist, which hard-blocks even `-e`-loaded extension tools.
 

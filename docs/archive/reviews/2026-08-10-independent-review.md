@@ -1,6 +1,6 @@
 # Independent whole-codebase review — 2026-08-10
 
-**Scope:** everything in `packages/` — `pi-agent-grants` 0.4.0 and `pi-token-audit` 0.1.0 — plus the
+**Scope:** everything in `packages/` — `pi-daddy` 0.4.0 and `pi-token-audit` 0.1.0 — plus the
 project's own documentation. Not a diff review: the whole codebase as it stands at commit `a4904d2`.
 
 **Method.** Five reviewers, dispatched in parallel, each given the domain and the package's own claims but
@@ -91,8 +91,8 @@ tools:
 Verified:
 
 ```
-pi-agent-grants  tools:   undefined
-pi-agent-grants  ceiling: [ 'tool:*' ]          ← WILDCARD
+pi-daddy  tools:   undefined
+pi-daddy  ceiling: [ 'tool:*' ]          ← WILDCARD
 
 pi's own dist/utils/frontmatter.js: import { parse } from "yaml"   → ["read","grep"]
 ```
@@ -204,7 +204,7 @@ the share is understated *precisely in the regime the tool exists to evaluate*.
 | # | Finding |
 | :--- | :--- |
 | A-1 | **`interceptor.ts`, `propagation.ts`, `agent-types.ts` are unreachable from outside the package** — confirmed by building a real `node_modules` symlink: `ERR_PACKAGE_PATH_NOT_EXPORTED`. `decideSpawn`, the function the package is named for, cannot be imported, while the README documents it as contract. **VERIFIED.** |
-| A-2 | **`catalog.ts` and `delegate.ts` have subpath exports but are missing from `index.ts`**, so `import { buildCatalog } from "pi-agent-grants"` yields `undefined` silently rather than throwing. |
+| A-2 | **`catalog.ts` and `delegate.ts` have subpath exports but are missing from `index.ts`**, so `import { buildCatalog } from "pi-daddy"` yields `undefined` silently rather than throwing. |
 | A-3 | **`grants.ts:532-539` hand-copies `isValidEntryShape`** from `approval-store.ts:46-57`, which is not exported — a maintenance liability documented in its own comment, in the one file with no tests. |
 | A-4 | **`obtainApprovals` makes security-relevant policy decisions** (whether to persist, whether to downgrade scope on write failure) in the untested file, violating the package's stated house rule. |
 | A-5 | **`appendRecord` has zero tests.** The README's "the ledger fails closed; an unrecorded grant is a hole" is unverified. `loadAgentTypes`' multi-directory precedence and `catalog.ts`'s multi-root skill loading are likewise untested. |
@@ -225,7 +225,7 @@ The **package** README is accurate line-for-line — env vars, argv order, file 
 
 | Document | Claim | Reality |
 | :--- | :--- | :--- |
-| `README.md:40` | `pi-agent-grants` 0.2.0, 63 tests | 0.4.0, 149 tests |
+| `README.md:40` | `pi-daddy` 0.2.0, 63 tests | 0.4.0, 149 tests |
 | `CLAUDE.md:46` | 0.3.0 | 0.4.0 |
 | both | "nine ADRs", "R-01..R-26" | eleven ADRs, R-27 |
 | both | ADR-0009 "parked" | Superseded by events |

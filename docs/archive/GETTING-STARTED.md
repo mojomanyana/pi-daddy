@@ -5,7 +5,7 @@ multi-level agent system, from your architecture handoff.
 
 > **This page described the project as it started, and is out of date in one important way.** It said
 > "documentation + Claude Code configuration only — zero implementation code, by design". **Production code
-> now exists**: `packages/pi-agent-grants` (0.6.0) and `packages/pi-token-audit` (0.1.0), shipped under
+> now exists**: `packages/pi-daddy` (0.6.0) and `packages/pi-token-audit` (0.1.0), shipped under
 > scoped gate waivers recorded in `docs/gate-reports/G0-2026-08-09.md`. The phase plan those gates belonged
 > to is obsolete (`docs/ROADMAP.md`). Start from `docs/SESSION-LOG.md` and
 > `docs/reviews/2026-08-10-aggregated-findings.md` instead of from this file.
@@ -45,7 +45,7 @@ docs/
 cd ~/projects/pi-daddy
 
 # 2. Run the test suite to confirm the toolchain works
-cd packages/pi-agent-grants && npm test && cd -
+cd packages/pi-daddy && npm test && cd -
 
 # 3. Launch Claude Code at the project root
 claude
@@ -85,7 +85,7 @@ docs for the current command), then repeat step 3.
 
 ## Ground rules the kit enforces
 
-> **The first rule below has been consciously waived twice**, for `pi-agent-grants` and
+> **The first rule below has been consciously waived twice**, for `pi-daddy` and
 > `pi-token-audit`, both recorded in `docs/gate-reports/G0-2026-08-09.md`. The rest still hold, and the
 > documentation discipline in particular is what makes this workspace navigable.
 

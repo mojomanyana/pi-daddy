@@ -15,7 +15,7 @@ offered**, so there is no way to give the approval it names. See *Finding 1*.
 pi 0.83.0 (`/home/alavanja/.nvm/versions/node/v24.14.0/bin/pi`), Node v24.14.0, provider `openai-codex`,
 model `gpt-5.6-sol`, `@tintinweb/pi-subagents` (from `~/.pi/agent/settings.json` `packages`, the source of
 the `Agent` tool the interceptor hooks). Extension under test:
-`packages/pi-agent-grants/extensions/grants.ts` at 0.5.0. Unit suite at the time of the run: **155
+`packages/pi-daddy/extensions/grants.ts` at 0.5.0. Unit suite at the time of the run: **155
 passing, 0 failing**. Date: 2026-08-10.
 
 **`pi-fabric` is not installed here.** That constrains what scenario 2 can reach — see its caveat.
@@ -56,7 +56,7 @@ is the right channel (`ctx.ui.*` is invisible through `--print`; in rpc mode eve
    ```bash
    cd "$PROJ" && { echo '{"type":"prompt","id":"1","message":"/grants"}'; sleep 10; } \
      | timeout 40 env PI_GRANTS_GRANT="tool:read,tool:write,tool:fabric_exec" PI_GRANTS_GATED="tool:write" \
-       pi --no-session -e <repo>/packages/pi-agent-grants/extensions/grants.ts --mode rpc \
+       pi --no-session -e <repo>/packages/pi-daddy/extensions/grants.ts --mode rpc \
      | grep '"method":"notify"'
    ```
 

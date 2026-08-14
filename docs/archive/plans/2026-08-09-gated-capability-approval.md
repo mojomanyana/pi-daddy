@@ -2,7 +2,7 @@
 
 > # ✅ COMPLETED 2026-08-09 — DO NOT EXECUTE THIS PLAN
 >
-> **Every task below shipped in `pi-agent-grants` 0.4.0**, and the feature has since been revised twice
+> **Every task below shipped in `pi-daddy` 0.4.0**, and the feature has since been revised twice
 > more — by **ADR-0011** (universal capabilities refused on both spawn paths) and **ADR-0014** (the store
 > relocated out of the workspace, `capability@subject` propagation, `once` no longer crossing a boundary).
 >
@@ -13,7 +13,7 @@
 >
 > Kept because it documents *how* the approval feature was structured — in particular the constraint that
 > `resolve.ts` was not to be modified, which held for the whole feature and is a big part of why the
-> result was reviewable. For current behaviour read `packages/pi-agent-grants/README.md`, then ADR-0010,
+> result was reviewable. For current behaviour read `packages/pi-daddy/README.md`, then ADR-0010,
 > ADR-0011 and ADR-0014.
 >
 > ~~**For agentic workers:** REQUIRED SUB-SKILL: use superpowers:subagent-driven-development or
@@ -42,7 +42,7 @@ a second time with `approved` filled. All decision logic lives in `src/` as pure
   design's central claim. `ResolveInput.approved` already exists and already works.
 - **Do not modify `src/interceptor.ts`.** `DecisionContext.approved` already exists and already flows into
   `resolve()` at `interceptor.ts:107-112`.
-- Test command: `cd packages/pi-agent-grants && npm test` (`node --test test/*.test.ts`). Baseline before
+- Test command: `cd packages/pi-daddy && npm test` (`node --test test/*.test.ts`). Baseline before
   any change: **73 passing**. Every task states the expected new total.
 - Imports inside `src/` use explicit `.ts` extensions (e.g. `from "./resolve.ts"`) — match the existing files.
 - Node ≥ 22.19.0, `"type": "module"`. No new runtime dependencies; `node:*` builtins only.
@@ -79,8 +79,8 @@ a second time with `approved` filled. All decision logic lives in `src/` as pure
 ### Task 1: Approval model — keys, scopes, inheritance
 
 **Files:**
-- Create: `packages/pi-agent-grants/src/approval.ts`
-- Test: `packages/pi-agent-grants/test/approval.test.ts`
+- Create: `packages/pi-daddy/src/approval.ts`
+- Test: `packages/pi-daddy/test/approval.test.ts`
 
 **Interfaces:**
 - Consumes: `Capability` from `./resolve.ts`; `WILDCARD` from `./agent-types.ts`
@@ -90,7 +90,7 @@ a second time with `approved` filled. All decision logic lives in `src/` as pure
 
 - [ ] **Step 1: Write the failing test**
 
-Create `packages/pi-agent-grants/test/approval.test.ts`:
+Create `packages/pi-daddy/test/approval.test.ts`:
 
 ```ts
 import assert from "node:assert/strict";
@@ -151,12 +151,12 @@ test("expiry is TTL days after approval, as an ISO instant", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd packages/pi-agent-grants && npm test`
+Run: `cd packages/pi-daddy && npm test`
 Expected: FAIL — `Cannot find module '../src/approval.ts'`
 
 - [ ] **Step 3: Write minimal implementation**
 
-Create `packages/pi-agent-grants/src/approval.ts`:
+Create `packages/pi-daddy/src/approval.ts`:
 
 ```ts
 /**
@@ -237,7 +237,7 @@ export function expiryFor(approvedAt: Date): string {
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cd packages/pi-agent-grants && npm test`
+Run: `cd packages/pi-daddy && npm test`
 Expected: PASS — **82 tests** (73 baseline + 9 new)
 
 - [ ] **Step 5: Checkpoint (no commit — see Global Constraints)**
@@ -249,8 +249,8 @@ Confirm `npm test` reports 82 passing and 0 failing before starting Task 2.
 ### Task 2: Entry validity and approval precedence
 
 **Files:**
-- Modify: `packages/pi-agent-grants/src/approval.ts` (append)
-- Test: `packages/pi-agent-grants/test/approval.test.ts` (append)
+- Modify: `packages/pi-daddy/src/approval.ts` (append)
+- Test: `packages/pi-daddy/test/approval.test.ts` (append)
 
 **Interfaces:**
 - Consumes: Task 1's `ApprovalScope`, `ApprovalSource`, `approvalKey`
@@ -259,7 +259,7 @@ Confirm `npm test` reports 82 passing and 0 failing before starting Task 2.
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `packages/pi-agent-grants/test/approval.test.ts`:
+Append to `packages/pi-daddy/test/approval.test.ts`:
 
 ```ts
 import { entryVerdict, resolveApprovals, type ApprovalEntry } from "../src/approval.ts";
@@ -377,12 +377,12 @@ test("mixed: one satisfied, one still needing a human", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd packages/pi-agent-grants && npm test`
+Run: `cd packages/pi-daddy && npm test`
 Expected: FAIL — `entryVerdict` / `resolveApprovals` are not exported
 
 - [ ] **Step 3: Write minimal implementation**
 
-Append to `packages/pi-agent-grants/src/approval.ts`:
+Append to `packages/pi-daddy/src/approval.ts`:
 
 ```ts
 /** A persisted approval. Only the interceptor path writes these, so `subject` is always an agent type. */
@@ -488,7 +488,7 @@ export function resolveApprovals(input: ResolveApprovalsInput): ResolveApprovals
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cd packages/pi-agent-grants && npm test`
+Run: `cd packages/pi-daddy && npm test`
 Expected: PASS — **95 tests** (82 + 13 new)
 
 - [ ] **Step 5: Checkpoint**
@@ -500,8 +500,8 @@ Confirm 95 passing, 0 failing.
 ### Task 3: The approval store
 
 **Files:**
-- Create: `packages/pi-agent-grants/src/approval-store.ts`
-- Test: `packages/pi-agent-grants/test/approval-store.test.ts`
+- Create: `packages/pi-daddy/src/approval-store.ts`
+- Test: `packages/pi-daddy/test/approval-store.test.ts`
 
 **Interfaces:**
 - Consumes: `ApprovalEntry`, `EntryVerdict`, `entryVerdict` from `./approval.ts`
@@ -513,7 +513,7 @@ Confirm 95 passing, 0 failing.
 
 - [ ] **Step 1: Write the failing test**
 
-Create `packages/pi-agent-grants/test/approval-store.test.ts`:
+Create `packages/pi-daddy/test/approval-store.test.ts`:
 
 ```ts
 import assert from "node:assert/strict";
@@ -646,12 +646,12 @@ test("an unwritable location reports failure rather than throwing", async () => 
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd packages/pi-agent-grants && npm test`
+Run: `cd packages/pi-daddy && npm test`
 Expected: FAIL — `Cannot find module '../src/approval-store.ts'`
 
 - [ ] **Step 3: Write minimal implementation**
 
-Create `packages/pi-agent-grants/src/approval-store.ts`:
+Create `packages/pi-daddy/src/approval-store.ts`:
 
 ```ts
 /**
@@ -784,7 +784,7 @@ export async function revokeAll(cwd: string): Promise<void> {
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cd packages/pi-agent-grants && npm test`
+Run: `cd packages/pi-daddy && npm test`
 Expected: PASS — **106 tests** (95 + 11 new)
 
 - [ ] **Step 5: Checkpoint**
@@ -796,9 +796,9 @@ Confirm 106 passing, 0 failing.
 ### Task 4: Propagate approvals to children
 
 **Files:**
-- Modify: `packages/pi-agent-grants/src/propagation.ts:32` (add `ENV_APPROVED`), `:69-101` (`ChildEnvInput`, `childEnv`)
-- Modify: `packages/pi-agent-grants/src/delegate.ts:20` (import), `:140-147` (child env)
-- Test: `packages/pi-agent-grants/test/propagation.test.ts` (append)
+- Modify: `packages/pi-daddy/src/propagation.ts:32` (add `ENV_APPROVED`), `:69-101` (`ChildEnvInput`, `childEnv`)
+- Modify: `packages/pi-daddy/src/delegate.ts:20` (import), `:140-147` (child env)
+- Test: `packages/pi-daddy/test/propagation.test.ts` (append)
 
 **Interfaces:**
 - Consumes: `inheritApprovals` from `./approval.ts`
@@ -807,7 +807,7 @@ Confirm 106 passing, 0 failing.
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `packages/pi-agent-grants/test/propagation.test.ts`:
+Append to `packages/pi-daddy/test/propagation.test.ts`:
 
 ```ts
 import { ENV_APPROVED, childEnv } from "../src/propagation.ts";
@@ -873,12 +873,12 @@ test("an approved capability the child was NOT granted never reaches it", () => 
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd packages/pi-agent-grants && npm test`
+Run: `cd packages/pi-daddy && npm test`
 Expected: FAIL — `ENV_APPROVED` is not exported from `../src/propagation.ts`
 
 - [ ] **Step 3: Write minimal implementation**
 
-In `packages/pi-agent-grants/src/propagation.ts`, add the import at the top (after the existing
+In `packages/pi-daddy/src/propagation.ts`, add the import at the top (after the existing
 `import { WILDCARD } from "./agent-types.ts";`):
 
 ```ts
@@ -911,7 +911,7 @@ Extend `childEnv`'s body — after the `gated` line, before `ledgerPath`:
   if (approved.length > 0) env[ENV_APPROVED] = approved.join(",");
 ```
 
-In `packages/pi-agent-grants/src/delegate.ts`, extend the propagation import (line 20):
+In `packages/pi-daddy/src/delegate.ts`, extend the propagation import (line 20):
 
 ```ts
 import { ENV_APPROVED, ENV_DEPTH, ENV_GATED, ENV_GRANT, ENV_LEDGER, ENV_MAX_DEPTH } from "./propagation.ts";
@@ -934,7 +934,7 @@ Then, in `planDelegation`, after the `if (ctx.gated.length > 0)` line:
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cd packages/pi-agent-grants && npm test`
+Run: `cd packages/pi-daddy && npm test`
 Expected: PASS — **111 tests** (106 + 5 new)
 
 - [ ] **Step 5: Checkpoint**
@@ -947,8 +947,8 @@ signature gained an optional field only, so none should have changed.
 ### Task 5: Ledger records the approval
 
 **Files:**
-- Modify: `packages/pi-agent-grants/src/ledger.ts:19-35` (`GrantRecord`), `:49-76` (`buildRecord`)
-- Test: `packages/pi-agent-grants/test/resolve.test.ts` (append — `buildRecord` is already tested there)
+- Modify: `packages/pi-daddy/src/ledger.ts:19-35` (`GrantRecord`), `:49-76` (`buildRecord`)
+- Test: `packages/pi-daddy/test/resolve.test.ts` (append — `buildRecord` is already tested there)
 
 **Interfaces:**
 - Consumes: `ApprovalScope`, `ApprovalSource` from `./approval.ts`
@@ -957,7 +957,7 @@ signature gained an optional field only, so none should have changed.
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `packages/pi-agent-grants/test/resolve.test.ts`:
+Append to `packages/pi-daddy/test/resolve.test.ts`:
 
 ```ts
 test("the ledger records what was approved and where the yes came from", () => {
@@ -1052,12 +1052,12 @@ test("existing records are unaffected — the new fields are absent, not null", 
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd packages/pi-agent-grants && npm test`
+Run: `cd packages/pi-daddy && npm test`
 Expected: FAIL — `buildRecord` does not accept `approvalSource`
 
 - [ ] **Step 3: Write minimal implementation**
 
-In `packages/pi-agent-grants/src/ledger.ts`, add the import below the existing `resolve.ts` import:
+In `packages/pi-daddy/src/ledger.ts`, add the import below the existing `resolve.ts` import:
 
 ```ts
 import type { ApprovalScope, ApprovalSource } from "./approval.ts";
@@ -1104,7 +1104,7 @@ through `JSON.stringify`, keeping every existing record byte-identical:
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cd packages/pi-agent-grants && npm test`
+Run: `cd packages/pi-daddy && npm test`
 Expected: PASS — **115 tests** (111 + 4 new)
 
 - [ ] **Step 5: Checkpoint**
@@ -1116,8 +1116,8 @@ Confirm 115 passing.
 ### Task 6: The prompt gate — `hasUI`, timeout, single-flight
 
 **Files:**
-- Create: `packages/pi-agent-grants/src/approval-prompt.ts`
-- Test: `packages/pi-agent-grants/test/approval-prompt.test.ts`
+- Create: `packages/pi-daddy/src/approval-prompt.ts`
+- Test: `packages/pi-daddy/test/approval-prompt.test.ts`
 
 **Interfaces:**
 - Consumes: `ApprovalScope`, `ApprovalPath`, `approvalKey`, `offeredScopes` from `./approval.ts`
@@ -1127,7 +1127,7 @@ Confirm 115 passing.
 
 - [ ] **Step 1: Write the failing test**
 
-Create `packages/pi-agent-grants/test/approval-prompt.test.ts`:
+Create `packages/pi-daddy/test/approval-prompt.test.ts`:
 
 ```ts
 import assert from "node:assert/strict";
@@ -1253,12 +1253,12 @@ test("the timeout env var is read in seconds and converted to milliseconds", () 
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd packages/pi-agent-grants && npm test`
+Run: `cd packages/pi-daddy && npm test`
 Expected: FAIL — `Cannot find module '../src/approval-prompt.ts'`
 
 - [ ] **Step 3: Write minimal implementation**
 
-Create `packages/pi-agent-grants/src/approval-prompt.ts`:
+Create `packages/pi-daddy/src/approval-prompt.ts`:
 
 ```ts
 /**
@@ -1404,7 +1404,7 @@ export function createApprovalGate(options: ApprovalGateOptions): ApprovalGate {
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cd packages/pi-agent-grants && npm test`
+Run: `cd packages/pi-daddy && npm test`
 Expected: PASS — **126 tests** (115 + 11 new)
 
 - [ ] **Step 5: Checkpoint**
@@ -1416,7 +1416,7 @@ Confirm 126 passing.
 ### Task 7: Wire approval into both call sites
 
 **Files:**
-- Modify: `packages/pi-agent-grants/extensions/grants.ts` — imports, session state, `tool_call` handler
+- Modify: `packages/pi-daddy/extensions/grants.ts` — imports, session state, `tool_call` handler
   (`:107-149`), `delegate.execute` (`:177-233`)
 
 **Interfaces:**
@@ -1428,7 +1428,7 @@ Confirm 126 passing.
 
 - [ ] **Step 1: Add imports and session state**
 
-In `packages/pi-agent-grants/extensions/grants.ts`, extend the imports:
+In `packages/pi-daddy/extensions/grants.ts`, extend the imports:
 
 ```ts
 import {
@@ -1658,7 +1658,7 @@ and add the same four fields to this call site's `buildRecord`.
 
 - [ ] **Step 5: Run the suite and verify nothing regressed**
 
-Run: `cd packages/pi-agent-grants && npm test`
+Run: `cd packages/pi-daddy && npm test`
 Expected: PASS — **126 tests**, unchanged. This task adds wiring, which Task 10 verifies live.
 
 Then typecheck per Global Constraints. Expected: clean.
@@ -1668,7 +1668,7 @@ Then typecheck per Global Constraints. Expected: clean.
 ### Task 8: `/grants approvals` and `/grants revoke`
 
 **Files:**
-- Modify: `packages/pi-agent-grants/extensions/grants.ts:236-254` (the `grants` command handler)
+- Modify: `packages/pi-daddy/extensions/grants.ts:236-254` (the `grants` command handler)
 
 **Interfaces:**
 - Consumes: `loadApprovals`, `revokeApproval`, `revokeAll` from Task 3
@@ -1743,7 +1743,7 @@ Also update the command's `description` to mention the subcommands:
 
 - [ ] **Step 2: Run the suite**
 
-Run: `cd packages/pi-agent-grants && npm test`
+Run: `cd packages/pi-daddy && npm test`
 Expected: PASS — **126 tests**, unchanged.
 
 - [ ] **Step 3: Typecheck**
@@ -1759,12 +1759,12 @@ Verified live in Task 10, scenarios 4–5.
 ### Task 9: Public surface and documentation
 
 **Files:**
-- Modify: `packages/pi-agent-grants/src/index.ts`, `packages/pi-agent-grants/package.json`,
-  `packages/pi-agent-grants/README.md`, `docs/SESSION-LOG.md`
+- Modify: `packages/pi-daddy/src/index.ts`, `packages/pi-daddy/package.json`,
+  `packages/pi-daddy/README.md`, `docs/SESSION-LOG.md`
 
 - [ ] **Step 1: Extend the exports**
 
-Append to `packages/pi-agent-grants/src/index.ts`:
+Append to `packages/pi-daddy/src/index.ts`:
 
 ```ts
 export {
@@ -1863,7 +1863,7 @@ accepted deliberately.
 
 - [ ] **Step 4: Run the suite**
 
-Run: `cd packages/pi-agent-grants && npm test`
+Run: `cd packages/pi-daddy && npm test`
 Expected: PASS — **126 tests**.
 
 ---

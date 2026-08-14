@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * RPC driver for live verification of pi-agent-grants approvals.
+ * RPC driver for live verification of pi-daddy approvals.
  *
  * Spawns `pi --mode rpc`, sends one prompt, echoes every JSON line pi emits, and answers
  * `extension_ui_request`/`select` with a configured value — which is exactly the channel
@@ -23,7 +23,7 @@ const msg = opt("msg", "hello");
 const answers = [opt("answer", null), opt("answer-2", null), opt("answer-3", null)].filter((a) => a !== null);
 const cancel = flag("cancel");
 const timeoutS = Number(opt("timeout", "120"));
-const EXT = "/home/alavanja/prepos/pi-daddy/packages/pi-agent-grants/extensions/grants.ts";
+const EXT = "/home/alavanja/prepos/pi-daddy/packages/pi-daddy/extensions/grants.ts";
 
 const args = ["--no-session"];
 if (flag("no-extensions")) args.push("--no-extensions");

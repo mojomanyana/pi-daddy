@@ -3,7 +3,7 @@
 **Date:** 2026-08-10
 **Status:** Accepted — Option 3, 2026-08-10. **Implemented 2026-08-10** (`e8b0fef`), 155 tests passing.
 **Verified live against real pi 2026-08-10** — all three decided behaviours confirmed, one new finding
-recorded: `docs/probes/adr-0011-universal`. Shipped in `pi-agent-grants` **0.5.0** (a breaking change).
+recorded: `docs/probes/adr-0011-universal`. Shipped in `pi-daddy` **0.5.0** (a breaking change).
 
 **One thing was implemented beyond the decision as written, and deliberately.** The wildcard branch of
 `decideSpawn` returned `allow` *before* the gated check ran, so an operator who set `PI_GRANTS_GATED`
