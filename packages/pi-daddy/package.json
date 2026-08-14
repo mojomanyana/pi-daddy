@@ -12,6 +12,15 @@
   ],
   "license": "MIT",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mojomanyana/pi-daddy.git",
+    "directory": "packages/pi-daddy"
+  },
+  "homepage": "https://github.com/mojomanyana/pi-daddy#readme",
+  "bugs": {
+    "url": "https://github.com/mojomanyana/pi-daddy/issues"
+  },
   "engines": {
     "node": ">=22.19.0"
   },
