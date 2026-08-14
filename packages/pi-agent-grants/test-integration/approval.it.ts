@@ -27,14 +27,15 @@
 
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { describe, test } from "node:test";
+import { after, describe, test } from "node:test";
 import { expiryFor, type ApprovalEntry } from "../src/approval.ts";
 import { approvalsPath } from "../src/approval-store.ts";
 import { digestDefinition, parseSkillDefinition } from "../src/definitions.ts";
-import { fixture, modelTestsEnabled, piAvailable, runCommand, runPrompt, verdictFor } from "./harness.ts";
+import { cleanupTempDirs, fixture, modelTestsEnabled, piAvailable, runCommand, runPrompt, tempDir, verdictFor } from "./harness.ts";
+
+after(cleanupTempDirs);
 
 const BODY = "Run one shell command and report what it printed.";
 
@@ -75,7 +76,7 @@ interface Seeded {
 /** A project with `bash-user` on disk, an isolated agent dir, and whatever entry the test wants in it. */
 async function seeded(entry?: (base: ApprovalEntry) => ApprovalEntry): Promise<Seeded> {
   const cwd = await fixture({ "bash-user": skillFile(BODY) });
-  const agentDir = await mkdtemp(join(tmpdir(), "grants-it-agentdir-"));
+  const agentDir = await tempDir("grants-it-agentdir-");
   // Set it in THIS process too, so `approvalsPath` resolves to the same file the spawned pi will use.
   // Asking the production function is the point: ADR-0020 changed the layout, and a test that hard-coded
   // the old filename would have kept passing against a file nothing reads.

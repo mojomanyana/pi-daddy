@@ -19,10 +19,14 @@
 
 import { spawn } from "node:child_process";
 import { execFileSync } from "node:child_process";
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { tempDir } from "../test/tmp.ts";
+
+// Re-exported so an `.it.ts` file registers teardown from the harness it already imports:
+// `after(cleanupTempDirs)`. `PI_GRANTS_KEEP_TMP=1` keeps every fixture for inspection after a failure.
+export { cleanupTempDirs, tempDir } from "../test/tmp.ts";
 
 export const EXTENSION = resolve(dirname(fileURLToPath(import.meta.url)), "..", "extensions", "grants.ts");
 
@@ -237,7 +241,7 @@ function sanitisedEnv(overrides?: Record<string, string>): NodeJS.ProcessEnv {
  * this package reads identity from the path rather than the frontmatter for exactly that reason.
  */
 export async function fixture(definitions: Record<string, string> = {}): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), "grants-it-"));
+  const dir = await tempDir("grants-it-");
   for (const [name, content] of Object.entries(definitions)) {
     await mkdir(join(dir, ".pi", "skills", name), { recursive: true });
     await writeFile(join(dir, ".pi", "skills", name, "SKILL.md"), content, "utf8");

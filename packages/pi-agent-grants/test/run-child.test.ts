@@ -11,11 +11,12 @@
 
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { mkdtemp } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test } from "node:test";
+import { after, test } from "node:test";
 import { runChild } from "../src/run-child.ts";
+import { cleanupTempDirs, tempDir } from "./tmp.ts";
+
+after(cleanupTempDirs);
 
 const node = (script: string, over = {}) => ({
   command: process.execPath,
@@ -75,7 +76,7 @@ test("an already-aborted signal never spawns the child at all", async () => {
   // issued in that window was lost and the child ran to completion outside it.
   const controller = new AbortController();
   controller.abort();
-  const marker = join(await mkdtemp(join(tmpdir(), "g8-")), "child-ran");
+  const marker = join(await tempDir("g8-"), "child-ran");
   const r = await runChild(
     node(`require('fs').writeFileSync(${JSON.stringify(marker)}, 'ran')`, { signal: controller.signal }),
   );

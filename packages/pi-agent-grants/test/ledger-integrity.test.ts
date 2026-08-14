@@ -12,14 +12,16 @@
  */
 
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, writeFile, mkdir } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { test } from "node:test";
+import { after, test } from "node:test";
 import { makeCatalog } from "../src/catalog.ts";
 import type { SkillDefinition } from "../src/definitions.ts";
 import { planDelegation } from "../src/delegate.ts";
 import { appendRecord, buildRecord, isEscalationAttempt, verifyLedger } from "../src/ledger.ts";
+import { cleanupTempDirs, tempDir } from "./tmp.ts";
+
+after(cleanupTempDirs);
 
 // RETARGETED by ADR-0016. These tests were written against `decideSpawn`, the interceptor's decision
 // function, which is deleted along with the rest of the pi-subagents port. **The properties they guard
@@ -137,7 +139,7 @@ test("a delegation refused before resolution still carries a result", () => {
 });
 
 test("appendRecord writes one JSON line per record, appending", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "grants-ledger-"));
+  const dir = await tempDir("grants-ledger-");
   const path = join(dir, "nested", "grants.jsonl");
   const record = buildRecord({
     parentId: "d0",
@@ -160,7 +162,7 @@ test("appendRecord writes one JSON line per record, appending", async () => {
 });
 
 test("appendRecord fails closed by default when the ledger cannot be written", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "grants-ledger-"));
+  const dir = await tempDir("grants-ledger-");
   // A regular file where a directory must be: mkdir(dirname) cannot succeed.
   const blocker = join(dir, "blocker");
   await writeFile(blocker, "not a directory");
@@ -173,7 +175,7 @@ test("appendRecord fails closed by default when the ledger cannot be written", a
 });
 
 test("appendRecord in non-strict mode swallows the failure", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "grants-ledger-"));
+  const dir = await tempDir("grants-ledger-");
   const blocker = join(dir, "blocker");
   await mkdir(dir, { recursive: true });
   await writeFile(blocker, "not a directory");
@@ -197,7 +199,7 @@ test("appendRecord in non-strict mode swallows the failure", async () => {
 // ---------------------------------------------------------------------------
 
 test("F13: a ledger of concurrent appends is fully parseable", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "grants-concurrent-"));
+  const dir = await tempDir("grants-concurrent-");
   const path = join(dir, "ledger.jsonl");
   const big = Array.from({ length: 120 }, (_, i) => `tool:capability-with-a-longish-name-${i}`);
 
@@ -228,7 +230,7 @@ test("F13: a ledger of concurrent appends is fully parseable", async () => {
 test("verifyLedger reports a torn line instead of ignoring it", async () => {
   // The point of the detector. Without it, a truncated record is indistinguishable from a spawn that never
   // happened — a gap in the audit trail that reads as an absence of activity.
-  const dir = await mkdtemp(join(tmpdir(), "grants-torn-"));
+  const dir = await tempDir("grants-torn-");
   const path = join(dir, "ledger.jsonl");
   await appendRecord({ path }, buildRecord({
     parentId: "d0", childId: "d0.1", depth: 1, requested: [], parentGrant: [],
@@ -247,7 +249,7 @@ test("verifyLedger reports a torn line instead of ignoring it", async () => {
 test("verifyLedger on a missing ledger is not an error", async () => {
   // An operator who has not set PI_GRANTS_LEDGER has no ledger, which is a configuration state rather than
   // a corruption. Reporting it as damage would train them to ignore the check.
-  const dir = await mkdtemp(join(tmpdir(), "grants-absent-"));
+  const dir = await tempDir("grants-absent-");
   const report = await verifyLedger(join(dir, "nope.jsonl"));
   assert.equal(report.ok, true);
   assert.equal(report.records, 0);
@@ -255,7 +257,7 @@ test("verifyLedger on a missing ledger is not an error", async () => {
 });
 
 test("verifyLedger counts escalation attempts, so the one signal is readable", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "grants-esc-"));
+  const dir = await tempDir("grants-esc-");
   const path = join(dir, "ledger.jsonl");
   for (const denied of [[], ["tool:write"], []]) {
     await appendRecord({ path }, buildRecord({

@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { after, test } from "node:test";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { cleanupTempDirs, tempDir } from "./tmp.ts";
 import {
   approvalsPath,
   loadApprovals,
@@ -28,9 +28,11 @@ const NOW = new Date("2026-08-20T00:00:00.000Z");
  * must be) — so a shared store would leak one test's fixtures into the next one's assertions.
  */
 const temp = async () => {
-  process.env.PI_CODING_AGENT_DIR = await mkdtemp(join(tmpdir(), "grants-agentdir-"));
-  return mkdtemp(join(tmpdir(), "grants-approvals-"));
+  process.env.PI_CODING_AGENT_DIR = await tempDir("grants-agentdir-");
+  return tempDir("grants-approvals-");
 };
+
+after(cleanupTempDirs);
 
 /**
  * Stage a store file by hand.

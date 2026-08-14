@@ -14,11 +14,12 @@
 
 import assert from "node:assert/strict";
 import { after, describe, test } from "node:test";
-import { mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { digestDefinition, parseSkillDefinition } from "../src/definitions.ts";
-import { fixture, piAvailable, runCommand, verdictFor } from "./harness.ts";
+import { cleanupTempDirs, fixture, piAvailable, runCommand, tempDir, verdictFor } from "./harness.ts";
+
+after(cleanupTempDirs);
 
 const DOCS_WRITER = `---
 name: docs-writer
@@ -183,7 +184,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     // command exercises the whole wiring — env parsing, path resolution, `verifyLedger` — with no model
     // deciding anything.
     const cwd = await projectOnce();
-    const dir = await mkdtemp(join(tmpdir(), "grants-it-ledger-"));
+    const dir = await tempDir("grants-it-ledger-");
     const ledger = join(dir, "ledger.jsonl");
     await writeFile(
       ledger,
@@ -224,7 +225,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     // one that does not. The comparison uses the same `snapshotOf` that voids an approval, so the listing
     // cannot disagree with the enforcer about whether a definition changed.
     const cwd = await projectOnce();
-    const dir = await mkdtemp(join(tmpdir(), "grants-it-digest-"));
+    const dir = await tempDir("grants-it-digest-");
     const ledger = join(dir, "ledger.jsonl");
     const line = (sha: string, childId: string) =>
       JSON.stringify({
@@ -284,7 +285,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     // to look. A check you have to know to run is a feature, not a control. This drives `/grants` — NOT
     // `/grants ledger` — so what it proves is that the warning arrives without being asked for.
     const cwd = await projectOnce();
-    const dir = await mkdtemp(join(tmpdir(), "grants-it-corrupt-"));
+    const dir = await tempDir("grants-it-corrupt-");
     const ledger = join(dir, "ledger.jsonl");
     await writeFile(ledger, `{"parentId":"d0","childId":"d0.1","dep\n`, "utf8");
 
@@ -305,7 +306,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     // is a control an operator learns to skip (R-25). The escalation COUNT is deliberately not reported
     // here either — that is a query, and `/grants ledger` answers it.
     const cwd = await projectOnce();
-    const dir = await mkdtemp(join(tmpdir(), "grants-it-clean-"));
+    const dir = await tempDir("grants-it-clean-");
     const ledger = join(dir, "ledger.jsonl");
     await writeFile(
       ledger,
@@ -388,7 +389,4 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     );
   });
 
-  after(() => {
-    // Fixtures live under the OS temp dir and are left for inspection when a test fails; the OS reaps them.
-  });
 });

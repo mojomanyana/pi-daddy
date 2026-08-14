@@ -8,7 +8,7 @@ decisions; this file holds state and next actions. Newest entry on top.
 ## NEXT SESSION — read this, then pick one
 
 **State: green, working tree clean, reviewed twice, and everything actionable is done.** `pi-agent-grants`
-**0.12.1** — the only package. **292 unit + 23 integration tests** (+**4** with a real model), typecheck
+**0.12.1** — the only package. **295 unit + 23 integration tests** (+**4** with a real model), typecheck
 clean, smoke clean. **Twenty-five** ADRs decided.
 
 ```bash
@@ -48,7 +48,7 @@ sentence in this file.
 | 2 | **R-49** — an unlocked read-modify-write can resurrect a revoked approval. ADR-0020 narrowed it from "any two projects" to "two sessions in the same directory". | **Parked deliberately**: do not harden a layer whose fate item 1 decides. The mitigation already exists in this codebase — the ledger's lock. |
 | 3 | **Background delegation** is deliberately not built. | ADR-0015. Wants an ADR, and that ADR cannot be written until someone answers what happens to an approval resolved *after* its tool call returned — gating would otherwise depend on queue position, which is a control-correctness failure rather than a UX one. |
 | 4 | **Pane cleanup is not leak-proof.** `finally` covers thrown errors, not the process being killed. | Parked: opt-in executor, `PI_GRANTS_HERDR` off by default. |
-| 5 | **The test suites leave a `mkdtemp` directory per test** and never clean up — today's runs left **4,896** under `/tmp` (removed at session end). The harness comment says "the OS reaps them", which is true and slow. | Hygiene, not correctness. An `after()` hook per suite would do it. |
+| ~~5~~ | ~~**The test suites leave a `mkdtemp` directory per test**~~ **CLOSED 2026-08-14** — `test/tmp.ts` hands out fixture directories and `after(cleanupTempDirs)` removes them; `PI_GRANTS_KEEP_TMP=1` keeps them for inspection. | A scan test fails if a suite calls `mkdtemp` directly or forgets the hook — the helper had to be *required*, not merely available. |
 | 6 | **`subagents:rpc:spawn` bypasses the tripwire.** Unfixable from here. | ADR-0013 Finding 6. |
 | 7 | **`bash` escapes governance.** Out of scope by decision. | ADR-0012. |
 | — | ~~R-34, R-35…R-59~~ **ALL CLOSED.** The approval layer has now been reviewed twice by independent agents and every finding either fixed or recorded with a decision. | Do not reopen without new evidence. |
@@ -76,7 +76,35 @@ That convention is why every reversal here was survivable, and there have been f
 ---
 
 
-## 2026-08-14 (last) — session close: the untested warning, and 4,896 temp directories
+## 2026-08-14 (last) — the fixture directories clean up after themselves
+
+**Known-open item 5, closed.** Every suite created a `mkdtemp` directory per test and none removed it —
+4,896 under `/tmp` in one day. `test/tmp.ts` now hands them out (`tempDir`) and remembers them
+(`cleanupTempDirs`), and each of the nine suites that makes fixtures registers one top-level
+`after(cleanupTempDirs)`. Measured: `ls /tmp | wc -l` is **identical** before and after a full `npm test`
+and a full `npm run test:integration`, where it previously grew by hundreds.
+
+**The half that is not bookkeeping.** A helper nobody is *required* to use decays back one suite at a time,
+which is exactly how the count reached 4,896 — the old `after()` in `governance.it.ts` was an empty block
+whose comment said *"the OS reaps them"*. So `test/temp-hygiene.test.ts` scans `test/` and
+`test-integration/` and fails on any file that calls `mkdtemp` directly or that calls `tempDir` without the
+teardown hook. Same shape as `file-size.test.ts`: a constraint nobody can run is a preference.
+
+The one property the old comment was protecting — fixtures left on disk after a failure — survives as
+`PI_GRANTS_KEEP_TMP=1`, an opt-in rather than the default that leaked.
+
+**Mutation-checked both ways** (rule 7): restoring one bare `mkdtemp(join(tmpdir(), …))` fails the scan,
+and stubbing `cleanupTempDirs` to remove nothing fails the removal test. Nothing else fails in either case.
+
+Also corrected: the `CLAUDE.md` verification block still said **250 unit / 9 integration / 3 model** — stale
+by roughly forty-five tests, and the second stale-counts finding in two sessions (R-59 was the first).
+
+**Verified: 295 unit, 23 integration, typecheck clean, smoke clean.** The four model-driven tests were not
+re-run — they cost money and the change to `delegation.it.ts` is one import line, typechecked.
+
+---
+
+## 2026-08-14 (seventh) — session close: the untested warning, and 4,896 temp directories
 
 **Two pieces of cleanup, one of which was a real gap.**
 

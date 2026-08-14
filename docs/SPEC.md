@@ -287,7 +287,7 @@ bound a typo can switch off is not a bound.
 
 ```bash
 cd packages/pi-agent-grants
-npm test                   # 292 unit tests — pure, no pi, no network
+npm test                   # 295 unit tests — pure, no pi, no network
 npm run typecheck          # src + extensions + test + test-integration
 npm run test:integration   # 23 tests against a REAL pi process, no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and USE every subpath

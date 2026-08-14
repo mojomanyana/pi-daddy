@@ -12,13 +12,15 @@
 
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { afterEach, test } from "node:test";
+import { after, afterEach, test } from "node:test";
 import grantsExtension from "../extensions/grants.ts";
 import { MAX_CHILDREN_PER_CALL } from "../src/fanout.ts";
 import { ENV_APPROVED, ENV_DEPTH, ENV_FANOUT, ENV_GATED, ENV_GRANT, ENV_LEDGER, ENV_MAX_DEPTH, ENV_PARENT_ID } from "../src/propagation.ts";
+import { cleanupTempDirs, tempDir } from "./tmp.ts";
+
+after(cleanupTempDirs);
 
 const KEYS = [ENV_GRANT, ENV_DEPTH, ENV_MAX_DEPTH, ENV_GATED, ENV_APPROVED, ENV_LEDGER, ENV_FANOUT, ENV_PARENT_ID];
 const saved = new Map<string, string | undefined>();
@@ -37,7 +39,7 @@ interface ToolSpec {
 
 async function harness(env: Record<string, string>, existingDir?: string) {
   // `existingDir` lets a test stage `SKILL.md` definitions before the extension loads them.
-  const dir = existingDir ?? (await mkdtemp(join(tmpdir(), "grants-fanout-")));
+  const dir = existingDir ?? (await tempDir("grants-fanout-"));
   for (const k of KEYS) if (!saved.has(k)) saved.set(k, process.env[k]);
   for (const k of KEYS) delete process.env[k];
   Object.assign(process.env, env);
@@ -131,7 +133,7 @@ test("F8: concurrent siblings get distinct, hierarchical ledger ids", async () =
   // The defect this fixes: every child was recorded as `delegate@d1`, so four concurrent siblings produced
   // four lines identical except `ts` — and two in the same millisecond were indistinguishable. Refusals are
   // recorded too (G6), which is why this works without spawning anything.
-  const dir = await mkdtemp(join(tmpdir(), "grants-ledger-"));
+  const dir = await tempDir("grants-ledger-");
   const ledger = join(dir, "ledger.jsonl");
   const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate", [ENV_LEDGER]: ledger });
 
@@ -152,7 +154,7 @@ test("ADR-0018: the digest reaches the LEDGER FILE, not just the plan", async ()
   // Nothing spawns: the definition declares a sub-tool pattern, which `--tools` cannot express, so the plan
   // is refused — but refused AFTER the file is read, which is exactly the case that must still be
   // identified. Deterministic, and no child process.
-  const dir = await mkdtemp(join(tmpdir(), "grants-digest-"));
+  const dir = await tempDir("grants-digest-");
   const TASK_SENTINEL = "ZZ-task-text-that-must-never-be-recorded-ZZ";
   const body = "# Patterned\n\nDo the patterned thing.";
   await mkdir(join(dir, ".pi", "skills", "patterned"), { recursive: true });
@@ -186,7 +188,7 @@ test("ADR-0018: the digest reaches the LEDGER FILE, not just the plan", async ()
 test("a child's ledger id descends from an inherited parent id, not from depth", async () => {
   // Without this every level restarts at `d0` and the ledger cannot be joined into a tree across process
   // boundaries — the half of F8 that only shows up below the root.
-  const dir = await mkdtemp(join(tmpdir(), "grants-ledger-"));
+  const dir = await tempDir("grants-ledger-");
   const ledger = join(dir, "ledger.jsonl");
   const { tools, ctx } = await harness({
     [ENV_GRANT]: "tool:read,tool:delegate",
@@ -210,7 +212,7 @@ test("R-39: the model is told which definitions it may spawn", async () => {
   // machinery for the reason ADR-0019 was written to fix.
   //
   // Reintroduce it by moving the `refreshSpawnable()` call out of `session_start` and this fails.
-  const dir = await mkdtemp(join(tmpdir(), "grants-fanout-"));
+  const dir = await tempDir("grants-fanout-");
   await mkdir(join(dir, ".pi", "skills", "reviewer"), { recursive: true });
   await writeFile(
     join(dir, ".pi", "skills", "reviewer", "SKILL.md"),
@@ -231,7 +233,7 @@ test("R-39: a definition the session may NOT spawn is not advertised", async () 
   // The other half, and the reason the list is filtered rather than just "every definition on disk":
   // telling the model it can spawn something every attempt at which is refused is R-28's shape in a
   // description. `reviewer` exists on disk; the grant does not carry `agent:reviewer`.
-  const dir = await mkdtemp(join(tmpdir(), "grants-fanout-"));
+  const dir = await tempDir("grants-fanout-");
   await mkdir(join(dir, ".pi", "skills", "reviewer"), { recursive: true });
   await writeFile(
     join(dir, ".pi", "skills", "reviewer", "SKILL.md"),

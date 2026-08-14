@@ -14,8 +14,10 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { describe, test } from "node:test";
-import { fixture, modelTestsEnabled, piAvailable, runPrompt } from "./harness.ts";
+import { after, describe, test } from "node:test";
+import { cleanupTempDirs, fixture, modelTestsEnabled, piAvailable, runPrompt } from "./harness.ts";
+
+after(cleanupTempDirs);
 
 const skip = !piAvailable()
   ? "pi is not on PATH"

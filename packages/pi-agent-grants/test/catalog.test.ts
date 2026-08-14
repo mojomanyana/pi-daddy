@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { test } from "node:test";
+import { after, test } from "node:test";
 import {
   buildCatalog,
   classifyToolNames,
@@ -10,6 +9,9 @@ import {
   makeCatalog,
   unknownCapabilities,
 } from "../src/catalog.ts";
+import { cleanupTempDirs, tempDir } from "./tmp.ts";
+
+after(cleanupTempDirs);
 
 test("classifies pi built-ins vs extension-provided tools", () => {
   const entries = classifyToolNames(["read", "bash", "Agent", "web_search"]);
@@ -48,7 +50,7 @@ test("unknown capabilities are reported separately from denials", () => {
 });
 
 test("skills are discovered from SKILL.md directories and top-level .md files", async () => {
-  const root = await mkdtemp(join(tmpdir(), "grants-catalog-"));
+  const root = await tempDir("grants-catalog-");
   const skills = join(root, ".pi", "skills");
   await mkdir(join(skills, "code-review"), { recursive: true });
   await writeFile(join(skills, "code-review", "SKILL.md"), "# review");
@@ -65,7 +67,7 @@ test("buildCatalog assembles tools, skills, and agent definitions together — t
   // RETARGETED by ADR-0016: definitions live under the SKILL roots now, not `.pi/agents/`, because a
   // subagent IS a skill you spawn. The property under test is unchanged — the catalog must cover the
   // whole capability surface, not just tools.
-  const root = await mkdtemp(join(tmpdir(), "grants-catalog-"));
+  const root = await tempDir("grants-catalog-");
   await mkdir(join(root, ".pi", "skills", "planner"), { recursive: true });
   await writeFile(
     join(root, ".pi", "skills", "planner", "SKILL.md"),
@@ -98,7 +100,7 @@ test("without an observation the catalog still lists built-ins, skills and defin
   // This is the case that forced the seeding. `/grants` runs before the first provider request, so with
   // an observation-only catalog every grant it previewed was refused as an "unknown capability" —
   // a diagnostic contradicting the enforcer, which is exactly R-28's shape.
-  const root = await mkdtemp(join(tmpdir(), "grants-catalog-"));
+  const root = await tempDir("grants-catalog-");
   await mkdir(join(root, ".pi", "skills"), { recursive: true });
   await writeFile(join(root, ".pi", "skills", "s.md"), "# s");
   const catalog = await buildCatalog({ cwd: root, observedTools: null });
@@ -108,6 +110,6 @@ test("without an observation the catalog still lists built-ins, skills and defin
 });
 
 test("a missing skill root is not an error", async () => {
-  const root = await mkdtemp(join(tmpdir(), "grants-catalog-"));
+  const root = await tempDir("grants-catalog-");
   assert.deepEqual(await loadSkills(root), []);
 });
