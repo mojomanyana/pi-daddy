@@ -7,8 +7,9 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ## NEXT SESSION — read this, then pick one
 
-**State: green, and reviewed.** `pi-agent-grants` **0.13.0** — the only package. **305 unit + 25 integration
-tests** (+**4** with a real model), typecheck clean, smoke clean. **Twenty-six** ADRs decided.
+**State: green, and reviewed TWICE — by the operator, then by four independent agents.** `pi-agent-grants`
+**0.13.0** — the only package. **313 unit + 25 integration tests** (+**4** with a real model), typecheck
+clean, smoke clean. **Twenty-six** ADRs decided.
 
 **The known-open list is empty of code.** What remains needs a human: item 1 needs weeks of real usage, and
 items 6 and 7 are closed by decision. See the table below before assuming otherwise.
@@ -84,7 +85,60 @@ That convention is why every reversal here was survivable, and there have been f
 ---
 
 
-## 2026-08-14 (last) — the operator reviewed the four unreviewed changes; three produced a finding
+## 2026-08-14 (last) — four agents, one hypothesis each, and the lock was letting two writers in
+
+**The independent pass the top of this file kept asking for. Every one of the four found something, and the
+worst of them broke an invariant rather than a claim.**
+
+**R-67 — `withFileLock` admitted two holders at once.** Root cause in one sentence: `rm(lockPath)` deletes
+whatever is at the path *now*, not the lock this process created. Two breaks followed — the stale-break
+`stat`/`rm` gap could destroy a **live** lock, and the unconditional `finally` freed the **new** owner's,
+which cascaded to processes that raced nothing and observed nothing wrong. Reproduced across **real OS
+processes with no clock manipulation**: 2 of 120 trials × 16 processes under deliberate load, and the
+overlap persisted for the rest of each trial. The docstring asserted the opposite in so many words, which
+is what made it convincing. Fixed with a per-hold token and `removeIfOurs`.
+
+**The fix had no failing test until the mutation check said so.** Reverting `removeIfOurs` to the
+unconditional `rm` passed everything. That is rule 7 catching the author, and it is the second time in two
+days — worth more than the fix.
+
+**R-66 — eight ledger lines claimed a human was prompted; one was.** R-29 shares a non-`once` outcome across
+concurrent callers, correctly; the *record* then stamped `"prompt"` on every rider. `ledger.ts` calls that
+exact direction "the worst available failure", and **R-46 is the same defect one level down** — fixed across
+the capability set while the concurrency case survived it untouched.
+
+**R-64 — `source in bySource` walks the prototype.** A ledger line with `"toString"` as a source wrote a
+string into a counter, made the renderer's sum a string, and **deleted the entire ADR-0020 measurement from
+the report** while marking an intact ledger corrupt. Two smaller siblings beside it. All in code written the
+day before.
+
+**R-65 — the pane reaper was disabled by the one failure it exists for.** `defaultExec` *resolves* `{code:1}`
+on failure, so the `.catch` was dead code and a refused close looked exactly like a successful one. Also 80
+seconds of silent hang at exit, and `timeout` is not a bound: `spawnSync` SIGTERMs then waits (measured, 3s
+timeout → 59.8s).
+
+**Two agents also cleared hypotheses, and that is worth as much.** No realistic `work()` comes within two
+orders of magnitude of `STALE_LOCK_MS` (measured on both filesystems); tab ids are not recycled; concurrent
+tracking does not tear. Each cleared claim is now a sentence in the code stating what the threshold does and
+does not guard.
+
+**One finding went to the operator rather than being fixed:** `PI_GRANTS_FANOUT` is not a session total,
+though `SPEC.md` and the README both said so — three successive `delegate_all(8)` calls in one session are
+all accepted. Their call: correct the documents, because making the code match changes what a bound *means*
+and would break working setups. Recorded against ADR-0008.
+
+**ADR-0026 survived on its decision and lost most of its argument.** The critic confirmed all four
+hypotheses against the reasoning: it cited ADR-0008 for an invariant ADR-0008 never states, claimed an
+immunity the 120s dialog timeout already breaks, and offered a remedy (`always`) that is **structurally
+unreachable for `delegate({tools})`**. Every one is now corrected in place with the correction marked, and
+its revisit trigger was rewritten because the first one could not fire — ADR-0020's defect in mirror image.
+
+**Verified: 313 unit, 25 integration, typecheck clean, smoke clean.** Every fix mutation-checked; every
+agent finding re-verified here by execution before being acted on, and two were worse than reported.
+
+---
+
+## 2026-08-14 (eleventh) — the operator reviewed the four unreviewed changes; three produced a finding
 
 **The review worked, and the way it worked is the reusable part.** Four hypotheses had been written down —
 one per unreviewed change — and each was *checked by execution or by grep before being put to the operator*,
