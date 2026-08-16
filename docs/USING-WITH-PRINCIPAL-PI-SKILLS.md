@@ -79,8 +79,12 @@ what the frontmatter `name` says.
 ```bash
 export PI_GRANTS_GRANT="agent:review,tool:read,tool:grep,tool:delegate"
 export PI_GRANTS_LEDGER="$PWD/.pi/grants.jsonl"     # optional but recommended
-pi -e ./node_modules/pi-daddy/extensions/grants.ts
+pi
 ```
+
+**Plain `pi` — no `-e`.** The package declares `pi.extensions`, and pi auto-loads it for an installed
+package; verified by execution. You only need `-e ./extensions/grants.ts` when running from a **clone** of
+this repository, where there is no `node_modules/pi-daddy` for pi to find.
 
 Four capabilities, each doing one job:
 

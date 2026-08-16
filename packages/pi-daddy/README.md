@@ -300,8 +300,12 @@ as the record of that run and are not a description of this version.
 PI_GRANTS_GRANT="agent:review,tool:read,tool:grep,tool:find,tool:ls,tool:delegate" \
 PI_GRANTS_LEDGER=.pi/grants.jsonl \
 PI_GRANTS_MAX_DEPTH=2 \
-pi -e ./extensions/grants.ts
+pi
 ```
+
+**Plain `pi`, no `-e`, when you installed this from npm** — the package declares `pi.extensions` and pi
+auto-loads it (verified by execution). `-e ./extensions/grants.ts` is for running from a **clone** of the
+repository, where there is no `node_modules/pi-daddy` for pi to find.
 
 `/grants` shows the session's grant, its depth, the catalog by kind, and an allow/BLOCK verdict per known
 definition — computed by **the same function a real spawn uses**, so the diagnostic cannot disagree with the
