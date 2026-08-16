@@ -1,4 +1,9 @@
-# Dependencies
+# Dependencies.
+# BOTH forms, deliberately: `node_modules/` matches a DIRECTORY only, so a node_modules SYMLINK — which is
+# what a git worktree sharing an install has — is not ignored and gets committed by `git add -A`. That
+# happened (2026-08-17): the symlinks landed in a commit, and pulling it REPLACED a real node_modules with
+# a link to itself, deleting the install.
+node_modules
 node_modules/
 
 # Subagent-driven-development workspace: ledgers, task briefs, reports, review
