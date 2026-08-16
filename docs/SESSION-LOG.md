@@ -8,8 +8,20 @@ decisions; this file holds state and next actions. Newest entry on top.
 ## NEXT SESSION — read this, then pick one
 
 **State: green, and reviewed TWICE — by the operator, then by four independent agents.** `pi-daddy`
-**0.13.0** — the only package. **315 unit + 26 integration tests** (+**4** with a real model), typecheck
-clean, smoke clean. **Twenty-seven** ADRs decided.
+**0.14.0** — the only package. **353 unit + 28 integration tests** (+**4** with a real model), typecheck
+clean, smoke clean. **Twenty-eight** ADRs decided.
+
+**2026-08-16/17 added the pi-daddy half of the `principal-pi-skills` integration** (handoff B1/B2/B4,
+ADR-0028 and ADR-0029), then **red-teamed it with five independent agents who found nine defects** — R-78
+through R-82, including an RCE in the generated grant file. Read that entry before adding anything that
+*generates* a file rather than reading one.
+
+ADR-0028: `npx pi-daddy init` scaffolds definitions and a grant **without choosing a ceiling**, and session
+start names what is spawnable and what is withheld. **What is left of that handoff is section A, and it is
+not ours** — `principal-pi-skills` declaring `allowed-tools` on its seven skills (A1) and installing into
+`skills/` as well as `agents/` (A2). Until A1 lands, `init` correctly reports `0 declaring allowed-tools`
+and the operator writes seven ceilings by hand. **Do not resolve A1 from here**: the handoff's proposed
+table is unresolved and self-contradicting, and the ceiling belongs to whoever wrote the skill.
 
 **The known-open list is empty of code.** What remains needs a human: item 1 needs weeks of real usage, and
 items 6 and 7 are closed by decision. See the table below before assuming otherwise.
@@ -84,6 +96,111 @@ That convention is why every reversal here was survivable, and there have been f
 
 ---
 
+
+## 2026-08-17 — five reviewers, nine defects, and the trigger I wrote and did not apply
+
+**The independent pass on PR #2: five agents, one written hypothesis each, none of them allowed to fix
+anything. Every one found something.** Nine defects, all reproduced here by execution before being acted on,
+all fixed; one new decision (ADR-0029); ADR-0028 amended in four places and one of its sentences struck as
+false.
+
+**R-78 is the one to remember, and it is humbling.** R-77 — written the previous day — closed a capability
+injection through a definition's **name**, and its trigger reads *"any new file this package generates whose
+content includes a string taken from a third party, in a format where a separator or a quote means
+something."* The `allowed-tools` **value** travels to the identical interpolation site, one line away, and
+was unchecked. A package declaring `allowed-tools: Read,ext:x";touch …` produced a `.pi/grants.env` that
+executed the payload when sourced — silently, exit 0, variable left plausible. **I wrote the trigger and
+applied it to one of the two channels it names.** The fix is a whitelist plus a charset backstop that does
+not depend on my enumeration, because the enumeration has now been incomplete twice.
+
+**R-79 is B-I6 reintroduced.** `approval-store.ts` fixed "never write through a symlink" under ADR-0014 and
+says so in a comment. A new writer in the same package, three days later, used `writeFile` after a `readFile`
+presence probe — so a dangling symlink wrote outside the project, and an *unreadable* file counted as
+*absent* and had its ceiling silently widened. One `open(path, "wx")` closes both.
+
+**R-81 is R-28's shape inside the module whose header claims to have made R-28's shape inexpressible.** The
+summariser deferred to the real planner and then **re-derived a category from two fields of its result** —
+and `planDelegation` has six refusals that set neither. So a malformed `PI_GRANTS_MAX_DEPTH` printed "their
+files are written wrong" two lines above `/grants` printing "delegation is disabled". The classification was
+the second reading of the rules. It now prints the planner's own words.
+
+**The pattern across all nine: every defect was in the half of the change nothing had attacked.** A
+generated file, a CLI with no tests, a classifier written after the planner it defers to. The unit suite was
+in good shape — a reviewer ran **38 mutations and 27 were killed**, and none of the 17 new tests was
+decoration — which is exactly why the review had to attack somewhere else to find anything.
+
+**ADR-0029 came from the design critic, and it is the deepest finding.** ADR-0028 said `init` "never chooses
+a ceiling", which is true and beside the point: `init` chooses the **grant**, and the handoff's whole reason
+a third party may safely author `allowed-tools` is that *the operator's grant independently bounds it*. A
+generated union collapses those two authors into one. The generated grant is now read-only by default, with
+`bash`/`write`/`edit` commented and named. The operator chose that option from three.
+
+**Two process notes worth keeping.** A reviewer switched the working tree off the branch mid-session, and
+uncommitted work by another session was sitting on `main` — the fix pass moved to a `git worktree` rather
+than stashing someone else's changes. And one of the reviewers' own findings ("the summary vanished under
+`PI_GRANTS_GATED=agent:x`") was **the branch switch, not a bug**; they caught it and retracted it, which is
+the behaviour to want.
+
+**353 unit + 28 integration, typecheck clean, smoke clean.** Still 0.14.0 — nothing shipped between the two
+passes.
+
+---
+
+## 2026-08-16 — `pi-daddy init`, and a startup line that names what it will not spawn
+
+**The pi-daddy half of the `principal-pi-skills` handoff: B1, B2 and B4, decided in ADR-0028.** Section A
+belongs to the other repository and was not touched. B3 was already answered.
+
+**`npx pi-daddy init` exists, and what makes it governance rather than convenience is what it refuses to
+do.** It reads `node_modules` for packages declaring `pi.skills`, copies each declared `SKILL.md` into
+`.pi/skills/`, and writes an annotated `.pi/grants.env`. A declared `allowed-tools` is copied **byte for
+byte**; an undeclared one gets a **commented** placeholder and stays unspawnable; an existing file is
+**kept**, because that edit is the capability decision and a second `init` run is exactly when it would be
+destroyed. The generated grant authorises only what can actually be spawned.
+
+**The tempting version was to ship the handoff's ceiling table**, and it was rejected for two reasons worth
+keeping: the constraint forbids it, and *that table contradicts itself* — it gives `plan` a `Write` while
+the prose beneath calls `plan` structurally incapable of modifying anything. Shipping it would have been
+pi-daddy settling an open question that belongs to the skill package.
+
+**Session start now says `1 of 7 definitions spawnable — review` and names the six it is withholding**,
+grouped by reason, because a gate and an escalation have different fixes. It speaks even when **nothing** is
+spawnable — the handoff proposed printing only when at least one was, which is silent for exactly the
+operator in P2's state. Classified by the real planner, never by a second reading of the rules: this package
+has shipped a diagnostic that disagreed with the enforcer twice (R-28, R-38).
+
+**R-73 shipped and the smoke test caught it, which is the finding worth carrying.** `npx pi-daddy init`
+printed **nothing** and exited **0** for every installed copy: npm makes a bin a symlink, so
+`process.argv[1]` is the link while `import.meta.url` is the file it points at, and the "only run when
+invoked directly" guard was false every time. Every in-repo test passed — they import `main` and call it,
+which is the path the guard exists to exclude. **A scaffolding command that does nothing is
+indistinguishable from one that found nothing to do**, which is why an `×H` sits on an otherwise trivial
+defect. Same class as B-I12 (the `exports` map that worked in the tree and threw for every consumer), caught
+by the same script, now twice.
+
+**And the review question found one more, in code written the same hour.** *What does the generated file
+interpolate?* — a definition's identity is its **directory name**, and `init` writes it into a
+comma-separated `PI_GRANTS_GRANT`, a file the operator `source`s, and a path, all at once. A package
+shipping a directory called `a,tool:bash` made `init` write
+`PI_GRANTS_GRANT="agent:a,tool:bash,tool:delegate,tool:read"`: **`tool:bash` in an operator's grant,
+declared by no definition and chosen by nobody**, in the one file this feature exists to make reviewable.
+Reproduced against the real CLI, fixed with a name whitelist at discovery, R-77. That is the session log's
+second habit — *ask where else this shape appears* — pointed at generated output instead of at parsing.
+
+**Mutation checks found a decoration.** Thirteen production changes were named and reverted one at a time; twelve
+failed exactly the test written for them, and the one that did not — deleting the containment check on a `pi.skills`
+entry — failed **nothing**, because the fixture pointed at `../../../etc`, which is unreadable with or
+without the guard. Rewritten to point at a real, readable definition outside the package. That is rule 7
+catching the author for the third time in three sessions, and it is the cheapest check in this repository.
+
+**Everything asserted about pi and about `principal-pi-skills@2.3.1` was re-measured** —
+`docs/probes/b2-init-principal-pi-skills` runs the whole loop (`npm i` → `init` → one human edit → a real pi
+session → `/grants`) and costs no model tokens. P2 is unchanged at 2.3.1: **zero of seven skills declare
+`allowed-tools`**, so the README's worked example shows the honest state rather than the after-A1 one.
+
+**332 unit + 27 integration, typecheck clean, smoke clean.** 0.14.0.
+
+---
 
 ## 2026-08-14 (last) — the package is `pi-daddy`, and the rename went through the record
 

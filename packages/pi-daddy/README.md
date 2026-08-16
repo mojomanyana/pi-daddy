@@ -8,7 +8,7 @@ configured.
 Both qualifiers are load-bearing and are not buried: a child granted `bash` can escape governance entirely
 (ADR-0012, measured), and the ledger is opt-in. See *What this governs, and what it does not*.
 
-> **0.13.0 is the first published release.** Earlier versions were developed in-repo and never shipped, so
+> **0.13.0 was the first published release.** Earlier versions were developed in-repo and never shipped, so
 > the breaking changes in the changelog describe how this package arrived at its current behaviour rather
 > than anything you need to migrate from.
 >
@@ -331,6 +331,97 @@ digest, each compared against the file on disk (`current` / `CHANGED since`), wh
 back, so a torn line was indistinguishable from a spawn that never happened. A corrupt line is **evidence**
 and is left alone rather than repaired. Nothing runs this check automatically.
 
+## Worked example: governing `principal-pi-skills`
+
+The abstract examples above use invented definitions. This one uses the seven skills people actually have
+installed. Every transcript below is **copied from a run**, not retyped — the run is
+`docs/probes/b2-init-principal-pi-skills` (2026-08-17, `principal-pi-skills@2.3.1`, pi 0.84.1), and where
+this section abridges output it says so.
+
+```bash
+npm install pi-daddy principal-pi-skills
+npx pi-daddy init
+```
+
+```
+found principal-pi-skills@2.3.1 — 7 skill(s), 0 declaring allowed-tools
+wrote .pi/skills/decide/SKILL.md
+… six more `wrote` lines, one per skill …
+wrote .pi/grants.env
+
+7 skill(s) declare no allowed-tools and cannot be spawned until they do: decide, architect, plan,
+build, review, debug, git-ops. Each copy carries a commented `allowed-tools:` line. pi-daddy does
+not choose ceilings — that decision is what you review and commit, so it is yours to write.
+
+Live grant (1 capabilities): tool:delegate
+```
+
+**That is the honest state today, and the zero is the interesting number.** `principal-pi-skills@2.3.1` —
+the published version — declares `allowed-tools` on none of its seven skills, so none of them is spawnable
+and `init` says so rather than inventing capability sets to make its output look better. (It is being fixed
+at the source, in their PR #30; until that ships, this is what `npm install` gives you.) `init` did the
+mechanical work — seven directories, seven copies, the grant file — and left the one decision that has to be
+a human's.
+
+You make it, in the file. This is the copy `init` wrote for `decide`, with its commented block elided, and
+the ceiling is the one `principal-pi-skills` PR #30 settled on by re-deriving it from the skill's own body:
+
+```diff
+  ---
+  name: decide
+  description: >
+    Use when a decision needs making …
+  # pi-daddy: this skill declares no `allowed-tools`, so it CANNOT be spawned as a governed sub-agent —
+  … four more comment lines …
+- # allowed-tools: <list the tools this skill needs, e.g. Read, Grep>
++ allowed-tools: read, grep, find, ls
+  ---
+```
+
+and in `.pi/grants.env`, whose `PI_GRANTS_GRANT` line `init` wrote as `"tool:delegate"` — you add the rest:
+
+```sh
+export PI_GRANTS_GRANT="agent:decide,tool:read,tool:grep,tool:find,tool:ls,tool:delegate"
+```
+
+```bash
+source .pi/grants.env && pi
+```
+
+```
+grants: depth 0/2, holding [agent:decide, tool:read, tool:grep, tool:find, tool:ls, tool:delegate]
+grants: 1 of 7 definitions spawnable — decide
+  withheld: architect (needs agent:architect); build (needs agent:build); debug (needs agent:debug);
+  git-ops (needs agent:git-ops); plan (needs agent:plan); review (needs agent:review)
+```
+
+The second line is the one worth having. A `decide` sub-agent that **physically cannot write** is a
+different object from one that has been asked not to — and now that is enforced by `--tools` rather than
+requested in prose. The other six are visibly withheld, each naming its own missing capability, which is the
+difference between *governance is working* and *did the install fail?*
+
+**`decide` and not `review`, and the reason is worth a sentence.** An earlier version of this section used
+`review` as the read-only example and sourced that to its description saying *"Reports findings; never
+edits"* — **a string that appears nowhere in `principal-pi-skills`**. It was invented for a demo file in
+this repository and then cited back as their evidence. `review`'s real ceiling, settled upstream from its
+body, is `read, grep, find, ls, bash`: it creates a disposable worktree and runs the tests, and denied
+`bash` every verdict it returns is `UNVERIFIED`. The structurally read-only tier is `decide`, `architect`
+and `plan`.
+
+**Capabilities that can change your machine are written commented** (ADR-0029). When the seven skills do
+declare their ceilings, `init` puts `tool:read`, `tool:grep` and friends in the live grant and writes
+`tool:bash`, `tool:write` and `tool:edit` — plus the `agent:` ids of the definitions that need them — as
+commented lines naming who asked for what. `init` + `source` gives you a working read-only setup; the wide
+half costs one deliberate uncomment. The reason is that `PI_GRANTS_GRANT` is what *bounds* a declared
+ceiling, so generating it from those same ceilings would give the bound and the bounded one author, and it
+would not be you.
+
+Two things this example does **not** claim. pi-daddy governs which **tools**, never which **paths**: a
+`Write(docs/**)` is refused rather than reinterpreted, so *"an architect that may write an ADR but not your
+source"* is not expressible — the honest choice is between a document-producing agent with real write power
+and a read-only one that hands its output back for the parent to write. And the ceilings above are an
+example, not a recommendation: what each skill needs is the skill author's call.
+
 ### The tripwire
 
 In a **governed** session the `tool_call` hook refuses third-party spawn tools (`Agent`, `subagent`,
@@ -515,9 +606,11 @@ Subpaths are exported individually (`pi-daddy/resolve`, `/ledger`, `/spawn`, `/d
 ```bash
 pi install npm:pi-daddy     # as a pi extension
 npm i pi-daddy              # as a library (the resolver, ledger and spawn planner are pure)
+npx pi-daddy init           # as a command: scaffold .pi/skills/ and .pi/grants.env from installed
+                            # skill packages — see the worked example above
 ```
 
-The package is both. pi loads `extensions/grants.ts` through its own transpiling loader, which reads
+The package is all three. pi loads `extensions/grants.ts` through its own transpiling loader, which reads
 TypeScript from `node_modules` quite happily; **Node does not** — it refuses to strip types under
 `node_modules` — so the library entry points are compiled to `dist/`. Until 0.6.0 `exports` pointed at
 `./src/*.ts`, and every consumer import failed with `ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING` while
@@ -527,10 +620,11 @@ every in-repo test passed. `npm run test:smoke` packs a tarball, installs it int
 ## Testing
 
 ```bash
-npm test                   # 292 unit tests. Fast, pure, no pi, no network.
+npm test                   # 353 unit tests. Fast, pure, no pi, no network.
 npm run typecheck          # src + extensions + tests + integration tests
-npm run test:integration   # 23 tests against a REAL pi process. ~32s, no model tokens.
-npm run test:smoke         # pack, install into a scratch project, import and use it
+npm run test:integration   # 28 tests against a REAL pi process. ~40s, no model tokens.
+npm run test:smoke         # pack, install into a scratch project, import and use it — and run the
+                           # installed `pi-daddy init` bin, which is how R-73 was found
 PI_GRANTS_IT_MODEL=1 npm run test:integration   # + 4 end-to-end tests with a real model. ~60s, costs money.
 ```
 
@@ -556,7 +650,7 @@ its own author the day after it was added: rather than raise the cap, `delegatio
 
 ## Status
 
-**0.13.0 — usable, and honest about scope.** What exists and is verified against real pi: the resolver, the
+**0.14.0 — usable, and honest about scope.** What exists and is verified against real pi: the resolver, the
 ledger with an integrity reader, the spawn planner, `SKILL.md` definitions with `allowed-tools` as an
 enforced ceiling, `delegate` and `delegate_all` with a subtree budget, two executors, and human approval for
 gated capabilities (once / session / always, inheritable down the tree, persisted for `always` and pinned to

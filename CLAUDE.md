@@ -35,8 +35,8 @@ permissible, able to refuse or allow but never to narrow. **This package is now 
 is an argument rather than a veto. Definitions are **Agent Skills (`SKILL.md`)** files whose `allowed-tools`
 becomes the grant; the pi-subagents ceiling port is deleted; the interceptor survives only as a tripwire.
 
-**Current state: `pi-daddy` 0.13.0 — the only package.** Twenty-seven ADRs decided. 315 unit +
-26 integration tests (+4 more with a real model), typecheck and smoke clean.
+**Current state: `pi-daddy` 0.14.0 — the only package.** Twenty-nine ADRs decided. 353 unit +
+28 integration tests (+4 more with a real model), typecheck and smoke clean.
 
 **What the product claims, precisely** — this wording is load-bearing and was narrowed by ADR-0012: it
 governs the **tool surface**, i.e. which tools pi exposes to a model, enforced structurally by pi's own
@@ -52,7 +52,7 @@ can run `env -u PI_GRANTS_GRANT pi …` and get an ungoverned descendant (measur
 docs/SPEC.md              — WHAT THE PRODUCT IS, current state, no history. Read this second.
 docs/SESSION-LOG.md       — START HERE when resuming: state, verified facts, next actions. Newest on top.
 docs/03-risks.md          — live risk register. R-25 onward are current; R-01..R-24 serve the retired thesis
-docs/06-decisions/        — twenty-seven ADRs. Reversals are kept and marked: 0004→superseded, 0005 park→
+docs/06-decisions/        — twenty-nine ADRs. Reversals are kept and marked: 0004→superseded, 0005 park→
                             superseded, 0006 (magnitude claim falsified), 0007 THE REFRAME, 0008
                             attenuation + cardinality, 0009 pi-fabric (parked), 0010 approvals, 0011
                             universal capabilities, 0012 bash, 0013 pi-subagents (superseded by 0016),
@@ -65,18 +65,23 @@ docs/06-decisions/        — twenty-seven ADRs. Reversals are kept and marked: 
                             0024 a gated agent: id asks first, 0025 pi-token-audit retired, 0026
                             background delegation — a LATE approval starts nothing (0015 finally answered),
                             0027 THE PACKAGE IS `pi-daddy` — and the one rename that went through the
-                            historical record, with what it made untrue listed
+                            historical record, with what it made untrue listed, 0028 `pi-daddy init`
+                            scaffolds a grant it REFUSES to decide, and session start names what is
+                            spawnable (handoff items B1/B2/B4)
 docs/probes/              — measurement evidence, all against real software. Each has a "what this does
                             not establish" section: baseline/, pi-fabric-eval/, approval-ux/,
                             adr-0011-universal/, g1-argv/, g5-bash-escape/, g13-subagents-coupling/,
-                            g16-herdr/ (herdr as an executor + four constraints found by building it)
+                            g16-herdr/ (herdr as an executor + four constraints found by building it),
+                            b2-init-principal-pi-skills/ (the whole init loop against the real package)
 docs/00-blueprint.md      — the architecture handoff, verbatim (immutable source input)
 docs/archive/             — SUPERSEDED, kept as evidence, never edited to match today. The retired-thesis
                             registers (discovery, assumptions, landscape, metrics), ROADMAP, gate reports,
                             both code reviews, the old specs, the completed implementation plan, and the
                             dead upstream proposal. See its README for why each stopped being current.
-packages/pi-daddy  — THE PRODUCT (0.7.0): SKILL.md definitions, resolver, ledger, delegate +
-                            delegate_all, catalog, human approval, two executors (process | herdr pane)
+packages/pi-daddy  — THE PRODUCT (0.14.0): SKILL.md definitions, resolver, ledger, delegate +
+                            delegate_all, catalog, human approval, two executors (process | herdr pane),
+                            and `pi-daddy init` — the CLI that scaffolds definitions and a grant WITHOUT
+                            choosing a ceiling (ADR-0028)
                           (pi-token-audit was DELETED by ADR-0025 — one package to keep documents true
                             about is the point. The G10 falsification stays in docs/probes/, which is
                             where the value always was.)
@@ -101,9 +106,9 @@ refuses until a gate passes that no longer means anything. They are in git histo
 
 ```bash
 cd packages/pi-daddy
-npm test                   # 315 unit tests — fast, pure, no pi, no network
+npm test                   # 353 unit tests — fast, pure, no pi, no network
 npm run typecheck          # src + extensions + tests + integration tests
-npm run test:integration   # 26 tests vs a REAL pi process — ~35s, no model tokens
+npm run test:integration   # 28 tests vs a REAL pi process — ~40s, no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and USE it
 PI_GRANTS_IT_MODEL=1 npm run test:integration   # + 4 end-to-end with a real model (~60s, costs money)
 PI_GRANTS_KEEP_TMP=1 npm test                   # keep fixture directories for inspection after a failure
