@@ -1,8 +1,13 @@
 # Handoff — make `pi-daddy` + `principal-pi-skills` work out of the box
 
-**Status:** **section B is DONE (2026-08-16, ADR-0028); section A is untouched and still belongs to
-`principal-pi-skills`.** B1, B2 and B4 shipped in `pi-daddy` 0.14.0; B3 was answered by execution on
-2026-08-14. Each item below carries a dated note saying what was built and where it differs from the sketch.
+**Status:** **section B is DONE (2026-08-16, ADR-0028). Section A belongs to `principal-pi-skills`, and A1
+is done there** — their PR #30 declares `allowed-tools` on all seven skills and overturned three rows of the
+table below; A2, A3 and A4 remain. B1, B2 and B4 shipped in `pi-daddy` 0.14.0; B3 was answered by execution
+on 2026-08-14. Each item carries a dated note saying what was built and where it differs from the sketch.
+
+*(The first version of this line said section A was "untouched", which was true when it was written on
+2026-08-16 and stopped being true the same day. Corrected rather than left, because this is the header a
+reader orients from — R-59's shape.)*
 **Audience:** whoever implements this, in either repository.
 **Written 2026-08-14** against `pi-daddy@0.13.0`, `principal-pi-skills@2.3.1`, pi 0.84.1.
 

@@ -3,6 +3,13 @@
 **Every command and every output below was run against real pi 0.84.1, `pi-daddy@0.13.0` and
 `principal-pi-skills@2.3.1` on 2026-08-14.** Nothing here is inferred.
 
+> **Updated 2026-08-16 (`pi-daddy` 0.14.0, ADR-0028): steps 2 and 3 are now one command.** `npx pi-daddy
+> init` does the copying and writes the grant file; you still choose each ceiling, because that is the one
+> decision this package will not make for you. See *The short way* below — re-measured against the same two
+> package versions, `docs/probes/b2-init-principal-pi-skills`. **Everything above this note is unchanged and
+> still true**, and the manual walkthrough is kept: it is what `init` writes, and reading it once is how you
+> know what you are committing.
+
 ## They do not compose out of the box, and it is worth knowing why
 
 `principal-pi-skills` ships seven skills — `decide, architect, plan, build, review, debug, git-ops` —
@@ -39,7 +46,44 @@ BLOCK  plan — agent "plan" declares no `allowed-tools`, so it cannot be spawne
 **Which is the point.** You are deciding what each skill may touch. That decision is not in the skill,
 because the skill's author cannot know your threat model.
 
+## The short way (0.14.0)
+
+```bash
+npm install pi-daddy principal-pi-skills
+npx pi-daddy init
+```
+
+```
+found principal-pi-skills@2.3.1 — 7 skill(s), 0 declaring allowed-tools
+wrote .pi/skills/{decide,architect,plan,build,review,debug,git-ops}/SKILL.md
+wrote .pi/grants.env
+```
+
+`init` copies every skill the package declares in its own `package.json` (`"pi": {"skills": [...]}`) into
+`.pi/skills/`, and writes `.pi/grants.env` with every capability annotated by the definition it came from.
+**It chooses no ceiling.** Because none of the seven declares `allowed-tools` today, each copy carries a
+*commented* placeholder and the generated grant authorises none of them — `init` says so rather than
+inventing capability sets to make its own output look better.
+
+So the remaining work is exactly the decision, and nothing else: uncomment and complete the
+`allowed-tools:` line in each definition you want, then add its `agent:<name>` to `PI_GRANTS_GRANT`. Then:
+
+```bash
+source .pi/grants.env && pi
+```
+
+```
+grants: depth 0/2, holding [agent:review, tool:read, tool:grep, tool:delegate]
+grants: 1 of 7 definitions spawnable — review
+  withheld: architect, build, debug, decide, git-ops, plan — need agent:architect, …, which this session does not hold
+```
+
+A second `init` **keeps** every file that already exists, so it cannot destroy a ceiling you wrote;
+`--force` rewrites and discards them.
+
 ## Step by step: one governed skill
+
+The long form of the same thing — what `init` writes, and why each line is there.
 
 ### 1. Install both
 

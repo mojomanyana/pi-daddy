@@ -1358,6 +1358,98 @@ repaired 100 lines down; the first paragraph is what a package registry shows.
 **Trigger for the shape recurring:** any release where a decision changes behaviour and the README banner is
 updated without re-reading the section the banner describes.
 
+## R-73 · `npx pi-daddy init` printed nothing and exited 0 — L×H, FIXED
+Added **and fixed** 2026-08-16, during B2. The CLI guards its entry point with *"only run when invoked
+directly"*, spelled `import.meta.url === pathToFileURL(process.argv[1]).href`. **npm installs a bin as a
+symlink**, so `process.argv[1]` is `node_modules/.bin/pi-daddy` while `import.meta.url` is the file it points
+at, and the comparison was false for every installed copy. `main()` never ran.
+
+The failure mode is the reason this is `×H` rather than a footnote: **a scaffolding command that does nothing
+is indistinguishable from one that found nothing to do.** Exit code 0, no output, no error — an operator
+would reasonably conclude their project had no skill packages and go looking in the wrong place.
+
+**Found by the smoke test, not by reasoning or review.** Every in-repo test passed: they import `main` and
+call it, which is precisely the path the guard is written to exclude. This is B-I12's shape exactly (the
+`exports` map that worked in the tree and threw for every consumer), which is why `scripts/smoke-installed.mjs`
+exists, and it has now caught the same class of defect twice.
+**FIXED:** `realpathSync(process.argv[1])` before comparing, wrapped in a `catch` that declines to run rather
+than throwing. The smoke test now runs the installed bin end to end and asserts on its output and the files
+it writes.
+**Trigger for the shape recurring:** any new package entry point — a `bin`, an `exports` subpath, an
+`imports` alias — that no test exercises through an *installed* copy.
+
+## R-74 · A definition copied by `init` does not track the package it came from — L×M, ACCEPTED
+Added 2026-08-16 (ADR-0028). `pi-daddy init` copies each declared `SKILL.md` into `.pi/skills/`, so
+`npm update principal-pi-skills` changes `node_modules` and leaves the governed copies exactly as they were.
+An operator who believes the update reached their sub-agents is wrong, and nothing tells them.
+
+**Accepted rather than fixed, because the alternative is worse.** ADR-0018 pins a spawn to a body digest and
+ADR-0022 pins an inherited approval to it: a definition that silently changed under an operator would void
+approvals mid-session, make *"has this definition changed since?"* unanswerable, and hand a child rewritten
+instructions under a yes given about the old ones. A committed, diffable copy is the property the whole
+design rests on. `init --force` is the deliberate re-sync and its usage text says it discards any
+`allowed-tools` the operator wrote.
+**Trigger:** an operator reporting that a skill upgrade "did not take effect", or `/grants ledger` reporting
+`CHANGED since` for a definition nobody edited — the first would mean the copy semantics need saying louder
+in `init`'s output, the second would mean something is rewriting `.pi/skills/` behind them.
+
+## R-75 · The startup summary classifies against the grant *before* the tool surface is observed — L×L, DOCUMENTATION
+Added 2026-08-16 (ADR-0028). `session_start` runs before the first provider request, so `ownGrant` is still
+the **inherited** upper bound; `deriveOwnGrant` narrows it to the observed tool names only when a request is
+made. A definition whose ceiling names a tool this session turns out not to have is therefore counted
+spawnable at startup and refused afterwards.
+
+It fails in the harmless direction — the line over-reports what is available, it never authorises anything,
+and `--tools` remains the enforcement point — and the same caveat already applies to the `holding [...]` line
+above it, which `/grants` marks *"(inherited, not yet observed)"*. Recorded because it is the kind of thing
+nobody should have to derive from a confused operator: the summary is an **upper bound**, and `/grants` run
+after any request is the settled answer.
+**Trigger:** anyone treating the startup count as an inventory — a test asserting it equals `/grants`, or a
+document quoting it as *"what this session can spawn"* without the qualifier.
+
+## R-76 · `init`'s generated grant is as wide as its widest skill — M×M, MITIGATED
+Added 2026-08-16 (ADR-0028). The grant `init` writes is the **union** of every copied definition's declared
+ceiling, so one skill declaring `Bash` puts `tool:bash` in the operator's session grant. An operator who
+sources `.pi/grants.env` without reading it has a session that may hand a shell to a child — and `bash`
+subsumes governance entirely (ADR-0012).
+
+**Mitigated three ways rather than avoided**, because the alternative — `init` choosing a subset — is the one
+thing ADR-0028 forbids. `tool:bash` is **gated by default**, so a human is asked before any child receives
+it; every capability in the file is annotated with the definition it came from, so the wide one is nameable
+at a glance; and the file exists precisely to be edited before it is sourced, which is the difference between
+this and a runtime default.
+**Trigger:** a `.pi/grants.env` found committed with capabilities no definition in that project declares, or
+any report of a session holding `tool:bash` whose operator did not know it did.
+
+## R-77 · A skill's DIRECTORY NAME could write a capability into the operator's grant — M×H, FIXED
+Added **and fixed** 2026-08-16, during B2, by asking what the generated file interpolates. A definition's
+identity is its directory name (`nameFromPath`), and `pi-daddy init` writes that name into three places at
+once: `agent:<name>` inside a **comma-separated** `PI_GRANTS_GRANT`, a `.pi/grants.env` the operator
+**sources**, and the path the copy is written to.
+
+**Reproduced against the real CLI.** An installed package with a skill directory named `a,tool:bash`
+produced:
+
+```
+export PI_GRANTS_GRANT="agent:a,tool:bash,tool:delegate,tool:read"
+```
+
+**`tool:bash` in an operator's grant, declared by no definition and chosen by nobody** — in the one file
+this feature exists to make reviewable, and in the capability this project gates by default because it
+subsumes governance entirely (ADR-0012). A quote character reaches a file that is `source`d; a name of `..`
+would write outside `.pi/skills/`.
+
+The reach is bounded and worth stating exactly: it needs a package the operator chose to install, it changes
+what `init` *proposes* rather than what any session enforces, and the file is meant to be read before it is
+sourced. It is `×H` because the whole claim of `init` is that the grant is what the definitions declare, and
+this is a way for it not to be.
+**FIXED:** `isSafeName` — a whitelist, `[A-Za-z0-9][A-Za-z0-9._-]*`, applied at discovery. A refused skill is
+**named on stderr** with the rule, and counted on the summary line so `0 skill(s)` cannot read as "this
+package ships none". Verified by mutation: deleting the check fails exactly that test.
+**Trigger for the shape recurring:** any new file this package *generates* whose content includes a string
+taken from a third party — a definition name, a package name, a path — in a format where a separator or a
+quote means something.
+
 ---
 
 ## Register log
@@ -1416,3 +1508,5 @@ updated without re-reading the section the banner describes.
 | 2026-08-14 | R-67, R-68 | **The lock let two writers in, and the pass that found it used real processes.** R-67: `rm(lockPath)` deletes the path, not your lock — so the stale-break's `stat`/`rm` gap could destroy a live lock, and the unconditional `finally` freed the *new* owner's, cascading to processes that raced nothing. Reproduced 2/120 trials × 16 processes under load, no clock manipulation. Fixed with a per-hold token and `removeIfOurs`. **The first version of that fix had no failing test until the mutation check showed it.** R-68: `busy` keyed on the error TYPE rather than on whether anything had been read, so `EMFILE` asserted an entry was still in effect that nobody had looked for — R-61's defect inside R-61's fix | red-team pass 3 |
 | 2026-08-14 | R-69, R-70, R-71 | **The tail of the red-team pass, found by re-auditing the four reports against what had actually shipped.** Seven items had been reported and not fixed. R-69: four causes of an unsatisfied gate produced one indistinguishable record, and ADR-0026 rests on the ledger being able to tell them apart. R-70: a ledger of nothing but declines reported no declines — the quietest output for the loudest file. R-71: two paths could orphan a herdr pane with nothing tracking it. **`src/ledger.ts` hit the 400-line guard during the fix and was split rather than the cap raised**, along the read/write seam every reporting defect so far has lived on | red-team pass 3 |
 | 2026-08-14 | R-72 | Added and fixed — five headlines (R-44, R-45, R-46, R-47, R-51) said **OPEN** for defects their own bodies recorded as FIXED, one of them *"FULLY FIXED … by ADR-0024"*. **R-59's shape inside the register R-59 lives in**, and R-59's trigger did not fire because it names `CLAUDE.md`, READMEs and the session log — the places the previous instance was found. A trigger derived from where the last one turned up finds the last one again. The replacement is mechanical: any headline whose body says FIXED | orienting-document sweep |
+| 2026-08-16 | R-73…R-76 | **The pi-daddy half of the `principal-pi-skills` integration** (handoff B1/B2/B4, ADR-0028). R-73 shipped and was caught by the smoke test: `npx pi-daddy init` printed nothing and exited 0 for every *installed* copy, because npm makes a bin a symlink and the entry-point guard compared it against `import.meta.url` — a scaffolding command that does nothing looks exactly like one with nothing to do. R-74 and R-76 are accepted consequences of `init` copying definitions and unioning their ceilings, both recorded with what mitigates them; R-75 states that the new startup line is an upper bound. **Every claim about pi and about `principal-pi-skills@2.3.1` was re-measured** — `docs/probes/b2-init-principal-pi-skills` | handoff B1/B2/B4 |
+| 2026-08-16 | R-77 | Added and fixed the same session — a skill **directory name** could write a capability into the grant `init` generates (`a,tool:bash` → `tool:bash` in `PI_GRANTS_GRANT`), because a name is interpolated into a comma-separated id list, a sourced shell file and a path at once. Reproduced against the real CLI before being written. Found by asking *what does the generated file interpolate?* — the same "where else does this shape appear?" question that found R-60, and the reason to ask it of anything that writes a file rather than reads one | handoff B1/B2/B4 |

@@ -1,0 +1,78 @@
+== workdir: <workdir>
+
+== P2, re-measured: how many of the seven declare allowed-tools?
+(none)
+
+== pi-daddy init
+found principal-pi-skills@2.3.1 — 7 skill(s), 0 declaring allowed-tools
+wrote .pi/skills/decide/SKILL.md
+wrote .pi/skills/architect/SKILL.md
+wrote .pi/skills/plan/SKILL.md
+wrote .pi/skills/build/SKILL.md
+wrote .pi/skills/review/SKILL.md
+wrote .pi/skills/debug/SKILL.md
+wrote .pi/skills/git-ops/SKILL.md
+wrote .pi/grants.env
+
+7 skill(s) declare no allowed-tools and cannot be spawned until they do: decide, architect, plan, build, review, debug, git-ops.
+Each copy carries a commented `allowed-tools:` line. pi-daddy does not choose ceilings — that
+decision is what you review and commit, so it is yours to write. Then add each `agent:<name>`
+to PI_GRANTS_GRANT in .pi/grants.env.
+
+Grant written (1 capabilities): tool:delegate
+
+  $EDITOR .pi/grants.env         # review it, then commit it
+  source .pi/grants.env && pi    # /grants lists every definition and its verdict
+
+== the generated .pi/grants.env
+# .pi/grants.env — written by `pi-daddy init`. REVIEW IT, then commit it.
+#
+# Every capability below was read from a SKILL.md's own `allowed-tools`. pi-daddy chose none of them:
+# a ceiling belongs in a file a human reviews, not in a default applied when a sub-agent is spawned.
+# Delete an `agent:` id to withhold that definition; delete a `tool:` id to withhold that tool from
+# every child. You cannot grant a child what this session does not hold, so this file is the ceiling
+# over the whole delegation tree.
+#
+# NOT AUTHORISED — pi-daddy refuses to spawn these, so no `agent:` id is granted for them:
+#   decide: declares no `allowed-tools` — fill it in, then add `agent:decide` below
+#   architect: declares no `allowed-tools` — fill it in, then add `agent:architect` below
+#   plan: declares no `allowed-tools` — fill it in, then add `agent:plan` below
+#   build: declares no `allowed-tools` — fill it in, then add `agent:build` below
+#   review: declares no `allowed-tools` — fill it in, then add `agent:review` below
+#   debug: declares no `allowed-tools` — fill it in, then add `agent:debug` below
+#   git-ops: declares no `allowed-tools` — fill it in, then add `agent:git-ops` below
+#
+# tool:delegate is what registers the delegation tools at all — withhold it and this session is a leaf.
+export PI_GRANTS_GRANT="tool:delegate"
+
+# Optional. Setting a ledger makes it LOAD-BEARING: a spawn that cannot be recorded is refused.
+#export PI_GRANTS_LEDGER=".pi/grants.jsonl"
+
+# Optional. tool:bash is gated by default, so a human is asked before any child receives a shell.
+# `PI_GRANTS_GATED=""` gates nothing; adding a capability gates that one too (and everything that
+# subsumes it — gating write also gates bash, because bash can write).
+#export PI_GRANTS_GATED="tool:bash"
+
+== the operator decides ONE ceiling (this is the step pi-daddy refuses to take)
+.pi/skills/review/SKILL.md:13:allowed-tools: Read, Grep
+.pi/grants.env:19:export PI_GRANTS_GRANT="agent:review,tool:read,tool:grep,tool:delegate"
+
+== a real pi session, driven over rpc — every ctx.ui.notify it emits
+[info] grants: depth 0/2, holding [agent:review, tool:read, tool:grep, tool:delegate]
+[info] grants: 1 of 7 definitions spawnable — review
+  withheld: architect, build, debug, decide, git-ops, plan — need agent:architect, agent:build, agent:debug, agent:decide, agent:git-ops, agent:plan, which this session does not hold
+[info] grants: ACTIVE
+  holding    agent:review, tool:read, tool:grep, tool:delegate (inherited, not yet observed)
+  depth      0 of max 2
+  ledger     (not recording — set PI_GRANTS_LEDGER)
+  approvals  0 this session, 0 persisted — /grants approvals
+  catalog    23 capabilities — 9 builtin, 0 extension, 7 skill, 7 agent-type
+    BLOCK  architect — cannot spawn "architect" — this session does not hold agent:architect (the definition lives at <workdir>/.pi/skills/architect/SKILL.md). It may spawn: agent:review.
+    BLOCK  build — cannot spawn "build" — this session does not hold agent:build (the definition lives at <workdir>/.pi/skills/build/SKILL.md). It may spawn: agent:review.
+    BLOCK  debug — cannot spawn "debug" — this session does not hold agent:debug (the definition lives at <workdir>/.pi/skills/debug/SKILL.md). It may spawn: agent:review.
+    BLOCK  decide — cannot spawn "decide" — this session does not hold agent:decide (the definition lives at <workdir>/.pi/skills/decide/SKILL.md). It may spawn: agent:review.
+    BLOCK  git-ops — cannot spawn "git-ops" — this session does not hold agent:git-ops (the definition lives at <workdir>/.pi/skills/git-ops/SKILL.md). It may spawn: agent:review.
+    BLOCK  plan — cannot spawn "plan" — this session does not hold agent:plan (the definition lives at <workdir>/.pi/skills/plan/SKILL.md). It may spawn: agent:review.
+    allow  review  tool:grep, tool:read
+
+== done. workdir kept at <workdir>

@@ -12,6 +12,53 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## 0.14.0 — `pi-daddy init`, and a startup line that names what it will and will not spawn
+
+The pi-daddy half of making this package and a package of skills work together out of the box
+(`docs/HANDOFF-principal-pi-skills-integration.md`, items B1/B2/B4; **ADR-0028**). Nothing about grant
+resolution, enforcement, approvals or the ledger changed — this is the part before and around them.
+
+- **`npx pi-daddy init` scaffolds a governed project.** It reads `<cwd>/node_modules` for packages declaring
+  skills in their own `package.json` (`"pi": {"skills": [...]}`, pi's convention), copies each declared
+  `SKILL.md` into `.pi/skills/`, and writes an annotated `.pi/grants.env`. That replaces, per skill: make a
+  directory, copy the body, hand-write frontmatter, choose a capability set with no guidance, and assemble a
+  `PI_GRANTS_GRANT` string by hand — seven times for `principal-pi-skills`.
+
+  **It chooses no ceiling, and that boundary is the whole design.** A skill that declares `allowed-tools` is
+  copied byte for byte; one that declares none is copied with a *commented* placeholder and stays
+  unspawnable until a human fills it in. The placeholder is deliberately not a working example, so
+  uncommenting it unedited fails loudly instead of granting something nobody decided. An existing file is
+  **kept**, never overwritten — that edit is the capability decision, and a second `init` run is exactly
+  when it would be destroyed. `--force` exists and says what it costs.
+
+- **Session start says how many definitions are spawnable, and names the withheld ones.** The line reported
+  the grant and never the definitions, so *"governance is working"* and *"did the install fail?"* looked
+  identical:
+
+  ```
+  grants: 1 of 7 definitions spawnable — review
+    withheld: architect, build, … — need agent:architect, …, which this session does not hold
+  ```
+
+  Classified by the same planner a real spawn comes through (no human is asked, stored approvals count), and
+  it speaks even when **nothing** is spawnable — which is the state most worth being told about. It is an
+  upper bound: it runs before the tool surface is observed, and `/grants` is the settled answer.
+
+- **A worked `principal-pi-skills` example in the README**, replacing the invented one, with every line
+  produced by running the commands (`docs/probes/b2-init-principal-pi-skills`).
+
+- **Fixed before release: a skill's directory name could write a capability into the generated grant**
+  (R-77). A name is interpolated into a comma-separated `PI_GRANTS_GRANT`, into a file the operator sources,
+  and into a path. A package shipping a directory called `a,tool:bash` produced
+  `PI_GRANTS_GRANT="agent:a,tool:bash,…"` — `tool:bash` in an operator's grant, declared by no definition.
+  Names are now whitelisted at discovery and a refusal is printed with its reason.
+
+- **Fixed before release: `npx pi-daddy init` printed nothing and exited 0 for every installed copy** (R-73).
+  npm installs a bin as a symlink, so `process.argv[1]` is the link and the entry-point guard compared it
+  against the real file's URL. Caught by the smoke test, which now runs the installed bin — the same class of
+  defect as the `exports` map that worked in the tree and threw for every consumer, and the second time that
+  script has caught it.
+
 ## 0.13.0 — the approvals file gets the lock the ledger already had, and two silences end
 
 Closing the last items that were open rather than out of scope, then **red-teaming the result**: an
