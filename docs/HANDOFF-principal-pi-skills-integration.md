@@ -1,6 +1,9 @@
 # Handoff — make `pi-daddy` + `principal-pi-skills` work out of the box
 
-**Status:** proposed, not started. **Audience:** whoever implements this, in either repository.
+**Status:** **section B is DONE (2026-08-16, ADR-0028); section A is untouched and still belongs to
+`principal-pi-skills`.** B1, B2 and B4 shipped in `pi-daddy` 0.14.0; B3 was answered by execution on
+2026-08-14. Each item below carries a dated note saying what was built and where it differs from the sketch.
+**Audience:** whoever implements this, in either repository.
 **Written 2026-08-14** against `pi-daddy@0.13.0`, `principal-pi-skills@2.3.1`, pi 0.84.1.
 
 Everything in the *Problems* section was reproduced by execution, not inferred. The commands are in
@@ -79,40 +82,70 @@ is that the declaration becomes **enforced** rather than advisory.
 
 ### The seven skills are two tiers, and that is the selling point
 
-Proposed ceilings, from each skill's own description:
+**SETTLED 2026-08-16 by `principal-pi-skills` PR #30**, which re-derived the ceilings from the skill
+*bodies* and overturned three of the seven rows this handoff proposed. Its decision record is
+`docs/DECISION-capability-ceilings.md` in that repository. **The table below is theirs, and it is correct;
+the proposal it replaced is kept underneath because the errors are the instructive part.**
 
-| Skill | `allowed-tools` | Why |
+| Skill | `allowed-tools` | Confers write? |
 |---|---|---|
-| `decide` | `Read, Grep, Glob` | explores options; changes nothing |
-| `architect` | `Read, Grep, Glob` | designs; does not implement |
-| `plan` | `Read, Grep, Glob, Write` | reads to plan, writes the plan file |
-| `review` | `Read, Grep, Glob` | its own description says *"Reports findings; never edits"* |
-| `debug` | `Read, Grep, Glob, Bash` | must run the failing test |
-| `build` | `Read, Grep, Glob, Edit, Write, Bash` | writes code; needs everything |
-| `git-ops` | `Read, Bash` | git *is* bash |
+| `decide` | `read, grep, find, ls` | no |
+| `architect` | `read, grep, find, ls` | no |
+| `plan` | `read, grep, find, ls` | no |
+| `review` | `read, grep, find, ls, bash` | **yes, via `bash`** |
+| `debug` | `read, grep, find, ls, bash` | **yes, via `bash`** |
+| `build` | `read, grep, find, ls, edit, write, bash` | **yes** |
+| `git-ops` | `read, bash` | **yes, via `bash`** |
 
-**⚠ This table is UNRESOLVED and its first draft contradicted itself.** It gave `plan` a `Write` while the
-prose beneath claimed `plan` was among "four structurally incapable of modifying anything". Both cannot be
-true, and the contradiction is the interesting part rather than a typo — see the open question below.
+Reproduced here through `parseSkillDefinition` → `ceilingForDefinition` → `expandSubsumed`: all seven parse
+with zero patterns, and the write column matches exactly.
 
-What is defensible today: **`review` is the only unambiguously read-only skill**, and its own description
-says so (*"Reports findings; never edits"*). A `review` subagent that physically cannot write is a
-different object from one that has been asked not to, and that alone justifies the integration.
+**The open question is answered: `decide`, `architect` and `plan` do NOT get `write`.** The premise to
+reject is *"writing a document is writing a file"* — in that framework a document is a **message**, and
+`build/SKILL.md:15` had already said so: *"You are the only phase that writes durably. Plan reads."* All
+three advisory skills already end in a fenced block they **emit**, so returning text is not a degradation
+traded for safety; it is what they do today with no pi-daddy involved.
 
-**The open question, which `principal-pi-skills` should settle:** `decide`, `architect` and `plan` all
-*produce a document* — an ADR, a design, a plan. That is writing a file, so they are real subagents that
-need `Write`, not read-only ones. But:
+### What this handoff got wrong, kept because the errors are the lesson
 
-> **pi-daddy governs which TOOLS, never which PATHS.** `resolve.ts` has no notion of a path, and a sub-tool
-> pattern (`Bash(git:*)`, and by the same rule `Write(docs/**)`) is **refused, not reinterpreted** —
-> because granting bare `write` would widen a deliberately narrow declaration and dropping it would
-> silently narrow. Verified in `docs/SPEC.md` and `README.md`.
+1. **A fabricated citation.** It called `review` *"the only unambiguously read-only skill"* and sourced
+   that to its description saying *"Reports findings; never edits."* **That string exists nowhere in
+   `principal-pi-skills`** — it was invented for the demo `SKILL.md` in
+   `docs/USING-WITH-PRINCIPAL-PI-SKILLS.md` and then cited back as their evidence. Inventing a source and
+   attributing it is worse than being wrong, and rule 5 exists to prevent exactly this.
+2. **`review` is not read-only.** Its body creates a disposable worktree and runs the tests
+   (`review/SKILL.md:58-68`); denied `bash`, every verdict is `UNVERIFIED`, which its own body calls *"not
+   a soft approve"*. The one row called defensible was the one that breaks its skill.
+3. **`Glob` is not a pi tool.** Built-ins are `bash, edit, edit-diff, find, grep, ls, parallel, read,
+   write` (`src/pi-tools.ts`). Six of seven proposed rows carried `Glob`, so six of seven would have been
+   refused by the catalog as unknown.
+4. **`plan` was given `Write` in the table while the prose called it incapable of modifying anything.**
+   The prose was right and the table was wrong.
+5. **`bash` subsumes `write` and `edit`** (`SUBSUMPTION`, `src/resolve.ts:43-53`) — so "structurally
+   incapable of modifying anything" was unsound for any row holding `bash`. This is pi-daddy's own code,
+   and the handoff did not consult it.
+6. **`agents/*.md` already declared these ceilings.** `agents/plan.md` had `tools: read, grep, find, ls`
+   and `agents/review.md` had `…, bash`, committed before the question was asked. A table derived "from
+   each skill's own description" was reading the wrong field.
 
-So *"an architect that may write an ADR but not your source"* is **not expressible**. Granting `architect`
-a `Write` grants it write access to everything, and the honest choice is between a document-producing agent
-with real write power and a read-only one that hands its output back as text for the parent to write.
+**The two-tier property the integration sells survives, restated honestly:** the tiers are **advisory vs.
+executing**, not *"four incapable of modifying anything"*. Exactly four are structurally incapable, and
+they are the four whose bodies say so.
 
-Both are legitimate; they are different products. Do not resolve this by picking the tidier table.
+<details>
+<summary>The original proposal, for the record</summary>
+
+| Skill | proposed | why it was wrong |
+|---|---|---|
+| `decide` | `Read, Grep, Glob` | `Glob` unknown to pi |
+| `architect` | `Read, Grep, Glob` | `Glob` unknown to pi |
+| `plan` | `Read, Grep, Glob, Write` | `Write` contradicted the prose; `Glob` unknown |
+| `review` | `Read, Grep, Glob` | needs `bash` or every verdict is `UNVERIFIED` |
+| `debug` | `Read, Grep, Glob, Bash` | `Glob` unknown |
+| `build` | `Read, Grep, Glob, Edit, Write, Bash` | `Glob` unknown |
+| `git-ops` | `Read, Bash` | the one row that survived |
+
+</details>
 
 ---
 
@@ -120,9 +153,15 @@ Both are legitimate; they are different products. Do not resolve this by picking
 
 ### A — `principal-pi-skills`
 
-**A1. Declare `allowed-tools` on all seven `SKILL.md` files.** Use the table above. If they are generated
-from `contracts/` (the installer's comments say they are), the ceiling belongs in the contract so both
-`agents/` and the skill dirs stay in sync.
+**A1. DONE 2026-08-16 — `principal-pi-skills` PR #30 (open).** All seven declare `allowed-tools`, in pi's
+lowercase tool names, and the three generated from `contracts/*.md.tmpl` declare it there so `SKILL.md` and
+both `agents/` twins cannot drift — as this item asked. It also fixed a latent defect in that repo that this
+handoff never spotted: `agents/debug.md` carried **no** `tools:` key at all, and in pi-subagents an absent
+`tools:` means the *full default toolset* — so the debug twin was silently the most powerful of the three,
+the exact inversion pi-daddy exists to reverse.
+
+*Original text: "Declare `allowed-tools` on all seven `SKILL.md` files. Use the table above. If they are
+generated from `contracts/`, the ceiling belongs in the contract."*
 
 *Acceptance:* `grep -L "allowed-tools" */SKILL.md` returns nothing.
 *Backwards compatibility:* additive. `allowed-tools` is ignored by tools that do not read it, and pi's own
@@ -162,6 +201,14 @@ pi-daddy will ask before any child receives a shell.
 
 ### B — `pi-daddy`
 
+**B1. DONE 2026-08-16 (0.14.0).** `extensions/spawn-summary.ts`, classified by the real planner
+(`planWithApprovals` with `ctx: null`) rather than by a second reading of the rules. **Two deliberate
+differences from the sketch below**, both in ADR-0028: it prints even when *nothing* is spawnable — the
+proposal's "only when at least one definition is spawnable" is silent for exactly the operator in P2's state
+— and the withheld ones are grouped by *reason*, because a gate and an escalation have different fixes.
+Measured in a real pi process: `docs/probes/b2-init-principal-pi-skills` and
+`test-integration/governance.it.ts`.
+
 **B1. Say what is spawnable at startup (fixes P4).** The startup notify reports the grant and not the
 definitions. Proposed addition, only when at least one definition is spawnable:
 
@@ -175,6 +222,14 @@ are being withheld, which is the difference between "governance is working" and 
 
 *Constraint:* this runs in `session_start`, which is R-60 territory — put any new `await` in its own
 `try/catch` or `test/session-start-guard.test.ts` will fail, by design.
+
+**B2. DONE 2026-08-16 (0.14.0).** `src/cli.ts` + `src/init.ts` + `src/skill-packages.ts`, with a `bin`.
+The design constraint below is what the module is built around and is restated in ADR-0028: a declared
+`allowed-tools` is copied **byte for byte**, an undeclared one gets a *commented* placeholder and stays
+unspawnable, an existing file is **kept** rather than overwritten, and the generated grant authorises only
+what can actually be spawned. Discovery reads each package's own `pi.skills` manifest field — measured
+against `principal-pi-skills@2.3.1` — and never scans for files named `SKILL.md`. **Open question 4 was
+answered "both"**: a file, plus the `source` line printed.
 
 **B2. `npx pi-daddy init` — scaffold a governed project (fixes P3).** Reads whatever skill packages are
 installed, writes `.pi/skills/`, prints the grant. Roughly:
@@ -202,6 +257,14 @@ this repository.
 the `-e` form without saying it is the from-a-clone case** — fix that as part of B4. This is R-59's shape:
 an instruction that works but tells the reader to do something unnecessary, in the document they orient
 from.
+
+**B4. DONE 2026-08-16 (0.14.0).** *"Worked example: governing `principal-pi-skills`"* in
+`packages/pi-daddy/README.md`, every line of it produced by running the commands
+(`docs/probes/b2-init-principal-pi-skills`). It shows the **honest** current state — seven skills, zero
+declaring `allowed-tools`, so `init` reports `0 declaring` and grants one capability — rather than the
+after-A1 state, and says what changes when A1 lands. The `README.md:303` `-e` line B3 asks about **was
+already corrected** in commit `a7b934a`, the same commit that added this handoff; it now reads *"for running
+from a **clone** of the repository"*.
 
 **B4. A `principal-pi-skills` worked example in the README**, replacing the abstract `review-security`
 example with the real one people will actually have installed.
@@ -248,6 +311,11 @@ active and what each is contributing.
 ## Verification plan
 
 Nothing here is done until these pass, and none of them needs a model:
+
+**Status 2026-08-16:** test 1 is met by a different route than it names — `npx pi-daddy init` rather than
+`principal-pi-agents install`, since A2 has not landed — and test 2 is met and covered by a new integration
+test. Tests 3 and 4 were already covered by `test-integration/` and are unchanged by section B. All of it is
+in `docs/probes/b2-init-principal-pi-skills`.
 
 1. **The path test.** After `principal-pi-agents install`, `/grants` in a fresh project lists all seven
    definitions with their ceilings — no manual copying.
