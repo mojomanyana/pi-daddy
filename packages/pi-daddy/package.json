@@ -1,6 +1,6 @@
 {
   "name": "pi-daddy",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "description": "Capability governance for pi sub-agents: spawn Agent Skills (SKILL.md) definitions whose allowed-tools becomes a grant that can only narrow going down a delegation tree, enforced by pi's own --tools allowlist, with an append-only ledger.",
   "keywords": [
     "pi-package",
@@ -84,7 +84,18 @@
     "./approval-prompt": {
       "types": "./dist/approval-prompt.d.ts",
       "default": "./dist/approval-prompt.js"
+    },
+    "./init": {
+      "types": "./dist/init.d.ts",
+      "default": "./dist/init.js"
+    },
+    "./skill-packages": {
+      "types": "./dist/skill-packages.d.ts",
+      "default": "./dist/skill-packages.js"
     }
+  },
+  "bin": {
+    "pi-daddy": "./dist/cli.js"
   },
   "files": [
     "dist",

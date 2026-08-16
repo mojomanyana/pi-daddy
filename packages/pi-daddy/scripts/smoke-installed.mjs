@@ -9,7 +9,7 @@
  * Packs a tarball, installs it into a scratch project, and imports it the way a consumer would.
  */
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -35,6 +35,8 @@ try {
       `import { splitBudget, childSpawnId } from "pi-daddy/fanout";`,
       `import { splitSystemPrompt } from "pi-daddy/run-herdr";`,
       `import { PI_BUILTIN_TOOLS, WILDCARD } from "pi-daddy/pi-tools";`,
+      `import { planInit, withPlaceholder } from "pi-daddy/init";`,
+      `import { discoverSkillPackages } from "pi-daddy/skill-packages";`,
       // Exercise it, don't just import it: a module that loads but throws on use is not "working".
       `const r = resolve({ requested: ["tool:read"], parentGrant: ["tool:read", "tool:write"] });`,
       `assertNarrowing(r);`,
@@ -49,13 +51,38 @@ try {
       `if (!splitBudget(8, 2).ok || childSpawnId("d0", 0) !== "d0.1") throw new Error("fanout export broken");`,
       `if (splitSystemPrompt(["--append-system-prompt", "x"]).systemPrompt !== "x") throw new Error("run-herdr export broken");`,
       `if (!PI_BUILTIN_TOOLS.includes("read") || WILDCARD !== "tool:*") throw new Error("pi-tools export broken");`,
+      `if (withPlaceholder("---\\nname: x\\ndescription: d\\n---\\nb", false).includes("\\nallowed-tools:")) throw new Error("init invented a ceiling");`,
+      `const pkgs = await discoverSkillPackages(process.cwd());`,
+      `if (planInit(pkgs, process.cwd()).grant.join() !== "agent:review,tool:delegate,tool:grep,tool:read") throw new Error("init grant wrong: " + planInit(pkgs, process.cwd()).grant);`,
       `console.log("SMOKE_OK");`,
     ].join("\n"),
   );
 
+  // A skill package the way `principal-pi-skills` ships one — declared in `pi.skills`, measured at 2.3.1.
+  // Both the library entry points above and the `pi-daddy` BIN below are exercised against it: `bin` is
+  // packaging, and packaging is exactly what this script exists to catch (a missing `dist/cli.js`, a
+  // `files` array that drops it, a lost shebang) — none of which any in-repo test can see.
+  const skillPkg = join(work, "node_modules", "fake-skills");
+  mkdirSync(join(skillPkg, "review"), { recursive: true });
+  writeFileSync(join(skillPkg, "package.json"), JSON.stringify({ name: "fake-skills", version: "1.0.0", pi: { skills: ["./review"] } }));
+  writeFileSync(
+    join(skillPkg, "review", "SKILL.md"),
+    "---\nname: review\ndescription: Reports findings; never edits.\nallowed-tools: Read, Grep\n---\nReview it.\n",
+  );
+
   const out = run("node", ["probe.mjs"], work).trim();
   if (!out.includes("SMOKE_OK")) throw new Error(`unexpected output: ${out}`);
-  console.log("smoke: installed package imports and runs — OK");
+
+  const initOut = run(join(work, "node_modules", ".bin", "pi-daddy"), ["init"], work);
+  if (!initOut.includes("found fake-skills@1.0.0")) throw new Error(`init did not find the package:\n${initOut}`);
+  const grantEnv = readFileSync(join(work, ".pi", "grants.env"), "utf8");
+  if (!grantEnv.includes('PI_GRANTS_GRANT="agent:review,tool:delegate,tool:grep,tool:read"')) {
+    throw new Error(`init wrote the wrong grant:\n${grantEnv}`);
+  }
+  const copied = readFileSync(join(work, ".pi", "skills", "review", "SKILL.md"), "utf8");
+  if (!copied.includes("allowed-tools: Read, Grep")) throw new Error("init did not copy the declaration verbatim");
+
+  console.log("smoke: installed package imports and runs, and `pi-daddy init` scaffolds — OK");
 } catch (error) {
   console.error("smoke FAILED:\n", error.stdout ?? "", error.stderr ?? error.message ?? error);
   process.exitCode = 1;
