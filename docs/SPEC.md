@@ -73,6 +73,21 @@ Three rules, and each fails in the safe direction:
 | `allowed-tools:` present but empty | Spawnable with **zero** tools — deliberately distinct from absent. |
 | A sub-tool pattern, e.g. `Bash(git:*)` | **Refused, naming the pattern.** `--tools` matches whole names only; granting bare `bash` would widen the declaration and dropping it would silently narrow. |
 | An unknown definition name | **Refused, listing what exists.** There is no fallback. |
+| A tool name pi does not have, e.g. `Glob` | **Refused as unknown, naming the likely intent** (`tool:glob → did you mean tool:find?`). Names are lowercased and never translated, so a foreign vocabulary reaches the catalog verbatim and is refused there. The hint is advisory: the delegation still fails and the author still edits the file. |
+
+**A ceiling containing `bash` is not a narrow ceiling.** `bash` can run `grep`, `find`, `ls`, `cat` and
+`sed`, so `SUBSUMPTION` treats it as conferring `read`, `write`, `edit`, `edit-diff`, `grep`, `find` and
+`ls` — and `resolve` reports the difference in `subsumedBy` rather than hiding it. Writing
+`allowed-tools: Read, Grep, Bash` therefore declares a definition that can rewrite any file on the
+machine, and a reviewer reading the list alone will not see it.
+
+This is the single most common way a declaration means more than it says, so state it where the ceiling is
+authored, not only where it is enforced. There is no path-scoped alternative: pi-daddy governs **which
+tools, never which paths**, and `Write(docs/**)` is refused as a sub-tool pattern rather than narrowed —
+so "may write an ADR but not your source" is not expressible, and the honest choice is between a
+definition holding real write authority and one that returns its output as text. The reference consumer
+settled it the second way for its advisory definitions; see
+[principal-pi-skills' decision record](https://github.com/mojomanyana/principal-pi-skills/blob/main/docs/DECISION-capability-ceilings.md).
 
 **Spawning a definition requires holding `agent:<name>`** (ADR-0017), so *which* definitions may run here is
 an operator decision, expressed in the grant like any other capability — and refused as a **denial**, so the

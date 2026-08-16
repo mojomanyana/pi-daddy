@@ -169,6 +169,98 @@ export function unknownCapabilities(requested: Capability[], catalog: Catalog): 
 }
 
 /**
+ * Tool names that exist in OTHER harnesses' vocabularies, mapped to the pi tool that does the same job.
+ *
+ * This is a hint for an error message and nothing else. `ceilingForDefinition` deliberately refuses to
+ * translate names — lowercasing and no more — because a translation table there would have to decide what
+ * `Glob` *means* and would either invent a grant or silently drop one. Naming a likely intent in the
+ * refusal costs nothing and keeps that property: the delegation is still refused, and the author still
+ * edits the file.
+ *
+ * Populated from the names an author actually reaches for. `allowed-tools` is an Agent Skills field, so
+ * the frontmatter people copy in is usually written against Claude Code's toolset; `Glob` is the one that
+ * bit a real consumer (principal-pi-skills, seven definitions), because pi's equivalent is `find`.
+ */
+const FOREIGN_TOOL_NAMES: Readonly<Record<string, string>> = {
+  "tool:glob": "tool:find",
+  "tool:searchfiles": "tool:find",
+  "tool:bashtool": "tool:bash",
+  "tool:readfile": "tool:read",
+  "tool:writefile": "tool:write",
+  "tool:str_replace_editor": "tool:edit",
+  "tool:multiedit": "tool:edit",
+};
+
+/**
+ * Optimal string alignment distance — Levenshtein plus adjacent transposition.
+ *
+ * Transposition counts as ONE edit, not two, because it is the typo people actually make: `raed` for
+ * `read` is a single slip of the fingers, and plain Levenshtein scores it 2 — the same as two unrelated
+ * substitutions. With the threshold this small, that difference is the whole feature.
+ */
+function editDistance(a: string, b: string): number {
+  // Three rows, because a transposition needs the row before last.
+  const rows: number[][] = [
+    Array.from({ length: b.length + 1 }, (_, j) => j),
+    new Array<number>(b.length + 1).fill(0),
+    new Array<number>(b.length + 1).fill(0),
+  ];
+  let twoBack = rows[2];
+  let prev = rows[0];
+  let cur = rows[1];
+
+  for (let i = 1; i <= a.length; i++) {
+    cur[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      let d = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+        d = Math.min(d, twoBack[j - 2] + 1);
+      }
+      cur[j] = d;
+    }
+    const spent = twoBack;
+    twoBack = prev;
+    prev = cur;
+    cur = spent;
+  }
+  return prev[b.length];
+}
+
+/**
+ * The capability an unknown one was most likely meant to be, or null when nothing is close enough.
+ *
+ * Two sources, in order. A known foreign name wins outright — `Glob` is not a typo for `find`, so no
+ * distance metric would ever connect them, and that is exactly the case worth naming. Otherwise the
+ * nearest catalog entry within a small edit distance, which catches `raed`/`serach` and stops well short
+ * of guessing: the threshold scales with the name's length and never exceeds two.
+ */
+export function suggestForUnknown(unknown: Capability, catalog: Catalog): Capability | null {
+  const foreign = FOREIGN_TOOL_NAMES[unknown.toLowerCase()];
+  if (foreign && catalog.has(foreign)) return foreign;
+
+  // Only among capabilities of the same namespace: suggesting `skill:review` for a mistyped tool name
+  // would be a worse message than none, because it points the author at the wrong kind of fix.
+  const ns = unknown.slice(0, unknown.indexOf(":") + 1);
+  if (!ns) return null;
+  const bare = unknown.slice(ns.length);
+  const limit = Math.min(2, Math.floor(bare.length / 3));
+  if (limit < 1) return null;
+
+  let best: Capability | null = null;
+  let bestDistance = limit + 1;
+  for (const candidate of catalog.all) {
+    if (!candidate.startsWith(ns)) continue;
+    const d = editDistance(bare, candidate.slice(ns.length));
+    if (d < bestDistance) {
+      bestDistance = d;
+      best = candidate;
+    }
+  }
+  return bestDistance <= limit ? best : null;
+}
+
+/**
  * Skill name -> absolute path, for `planSpawn`'s `--skill` flags (R-32).
  *
  * Derived from the catalog's own `source` field rather than re-scanning, so what a child is handed
