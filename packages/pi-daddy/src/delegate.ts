@@ -27,7 +27,7 @@ import { DELEGATE_CAPABILITY, agentCapability, maySpawnDefinition, normaliseCapa
 export { DELEGATE_CAPABILITY, agentCapability, maySpawnDefinition, normaliseCapability } from "./capabilities.ts";
 import { ENV_APPROVED, ENV_DEPTH, ENV_FANOUT, ENV_GATED, ENV_GRANT, ENV_LEDGER, ENV_MAX_DEPTH, ENV_PARENT_ID } from "./propagation.ts";
 import { inheritApprovals, type InheritableApproval } from "./approval.ts";
-import { unknownCapabilities, type Catalog } from "./catalog.ts";
+import { suggestForUnknown, unknownCapabilities, type Catalog } from "./catalog.ts";
 
 export interface DelegationRequest {
   task: string;
@@ -251,12 +251,24 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
   if (ctx.catalog) {
     const unknown = unknownCapabilities(requested, ctx.catalog);
     if (unknown.length > 0) {
+      // Name the likely intent where there is one. `ceilingForDefinition` refuses to TRANSLATE names
+      // (lowercasing and no more), so an author who wrote Claude Code's `Glob` gets `tool:glob` and a
+      // refusal — correct, and previously unhelpful, because pi's equivalent is `find` and no amount of
+      // staring at "not present in this session's catalog" says so. The hint changes nothing about the
+      // refusal; it just stops the author having to guess which of nine built-ins was meant.
+      const hints = unknown
+        .map((c) => {
+          const s = suggestForUnknown(c, ctx.catalog!);
+          return s === null ? null : `${c} → did you mean ${s}?`;
+        })
+        .filter((h): h is string => h !== null);
       return {
         ...empty,
         requested,
         reason:
           `unknown capabilit${unknown.length === 1 ? "y" : "ies"}: ${unknown.join(", ")} — not present in ` +
-          `this session's catalog (typo, or an uninstalled package?)`,
+          `this session's catalog (typo, or an uninstalled package?)` +
+          (hints.length > 0 ? ` — ${hints.join("; ")}` : ""),
       };
     }
   }

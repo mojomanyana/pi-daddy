@@ -7,6 +7,7 @@ import {
   classifyToolNames,
   loadSkills,
   makeCatalog,
+  suggestForUnknown,
   unknownCapabilities,
 } from "../src/catalog.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
@@ -112,4 +113,55 @@ test("without an observation the catalog still lists built-ins, skills and defin
 test("a missing skill root is not an error", async () => {
   const root = await tempDir("grants-catalog-");
   assert.deepEqual(await loadSkills(root), []);
+});
+
+/**
+ * The refusal stays a refusal — these assert only that it NAMES the likely intent.
+ *
+ * `Glob` is the case that matters and the case a distance metric can never reach: it is not a misspelling
+ * of `find`, it is a different harness's word for the same job. The rest guard the edges, because a
+ * suggestion that fires too eagerly is worse than none — it sends an author to edit the wrong line.
+ */
+const PI = makeCatalog(
+  ["bash", "edit", "edit-diff", "find", "grep", "ls", "parallel", "read", "write"].map((n) => ({
+    capability: `tool:${n}`,
+    kind: "builtin" as const,
+  })),
+);
+
+test("names pi's equivalent for a foreign tool name no edit distance could reach", () => {
+  assert.equal(suggestForUnknown("tool:glob", PI), "tool:find");
+});
+
+test("suggests the nearest built-in for a plain typo", () => {
+  assert.equal(suggestForUnknown("tool:raed", PI), "tool:read");
+});
+
+test("stays silent when nothing is close, rather than guessing", () => {
+  assert.equal(suggestForUnknown("tool:kubernetes", PI), null);
+});
+
+test("never crosses namespaces — a mistyped tool must not point at a skill", () => {
+  const mixed = makeCatalog([
+    { capability: "tool:read", kind: "builtin" },
+    { capability: "skill:reed", kind: "skill" },
+  ]);
+  // `skill:reed` is one edit from `tool:raed`'s bare name too, so a namespace-blind search would
+  // offer it — and send the author to install a skill when they mistyped a tool.
+  assert.equal(suggestForUnknown("tool:raed", mixed), "tool:read");
+  // The same rule read the other way: a mistyped SKILL stays among skills.
+  assert.equal(suggestForUnknown("skill:raed", mixed), "skill:reed");
+  // And with no same-namespace candidate at all, silence rather than the cross-namespace match.
+  const toolsOnly = makeCatalog([{ capability: "tool:read", kind: "builtin" }]);
+  assert.equal(suggestForUnknown("skill:raed", toolsOnly), null);
+});
+
+test("a name too short to typo-match gets no suggestion", () => {
+  // limit = floor(2/3) = 0, so `ls` cannot be reached by distance from `lx`.
+  assert.equal(suggestForUnknown("tool:lx", PI), null);
+});
+
+test("a foreign name absent from THIS catalog suggests nothing", () => {
+  const noFind = makeCatalog([{ capability: "tool:read", kind: "builtin" }]);
+  assert.equal(suggestForUnknown("tool:glob", noFind), null);
 });
