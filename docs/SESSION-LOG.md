@@ -8,7 +8,7 @@ decisions; this file holds state and next actions. Newest entry on top.
 ## NEXT SESSION — read this, then pick one
 
 **State: green, and reviewed TWICE — by the operator, then by four independent agents.** `pi-daddy`
-**0.14.0** — the only package. **347 unit + 28 integration tests** (+**4** with a real model), typecheck
+**0.14.0** — the only package. **353 unit + 28 integration tests** (+**4** with a real model), typecheck
 clean, smoke clean. **Twenty-eight** ADRs decided.
 
 **2026-08-16/17 added the pi-daddy half of the `principal-pi-skills` integration** (handoff B1/B2/B4,
@@ -141,7 +141,7 @@ than stashing someone else's changes. And one of the reviewers' own findings ("t
 `PI_GRANTS_GATED=agent:x`") was **the branch switch, not a bug**; they caught it and retracted it, which is
 the behaviour to want.
 
-**347 unit + 28 integration, typecheck clean, smoke clean.** Still 0.14.0 — nothing shipped between the two
+**353 unit + 28 integration, typecheck clean, smoke clean.** Still 0.14.0 — nothing shipped between the two
 passes.
 
 ---
@@ -198,7 +198,7 @@ catching the author for the third time in three sessions, and it is the cheapest
 session → `/grants`) and costs no model tokens. P2 is unchanged at 2.3.1: **zero of seven skills declare
 `allowed-tools`**, so the README's worked example shows the honest state rather than the after-A1 one.
 
-**332 unit + 28 integration, typecheck clean, smoke clean.** 0.14.0.
+**332 unit + 27 integration, typecheck clean, smoke clean.** 0.14.0.
 
 ---
 

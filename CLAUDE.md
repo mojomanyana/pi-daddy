@@ -35,7 +35,7 @@ permissible, able to refuse or allow but never to narrow. **This package is now 
 is an argument rather than a veto. Definitions are **Agent Skills (`SKILL.md`)** files whose `allowed-tools`
 becomes the grant; the pi-subagents ceiling port is deleted; the interceptor survives only as a tripwire.
 
-**Current state: `pi-daddy` 0.14.0 — the only package.** Twenty-nine ADRs decided. 347 unit +
+**Current state: `pi-daddy` 0.14.0 — the only package.** Twenty-nine ADRs decided. 353 unit +
 28 integration tests (+4 more with a real model), typecheck and smoke clean.
 
 **What the product claims, precisely** — this wording is load-bearing and was narrowed by ADR-0012: it
@@ -106,7 +106,7 @@ refuses until a gate passes that no longer means anything. They are in git histo
 
 ```bash
 cd packages/pi-daddy
-npm test                   # 347 unit tests — fast, pure, no pi, no network
+npm test                   # 353 unit tests — fast, pure, no pi, no network
 npm run typecheck          # src + extensions + tests + integration tests
 npm run test:integration   # 28 tests vs a REAL pi process — ~40s, no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and USE it

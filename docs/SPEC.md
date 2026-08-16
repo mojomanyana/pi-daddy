@@ -177,6 +177,11 @@ refusal the two designated signals do not explain prints the planner's own words
 invented here (R-81). It speaks even when **nothing** is spawnable, which is the state an operator most
 needs told.
 
+Printing the planner's words rather than a category also means the line inherits improvements to them for
+free: a ceiling declaring `Glob` now reports *"unknown capability: tool:glob … → did you mean tool:find?"*
+at session start, from the hint `unknownCapabilities` gained separately. The version that invented a
+category said *"cannot be spawned as their files are written"* for the same case.
+
 **Facts about the SESSION are answered before any definition is planned.** A grant without `tool:delegate`
 registers no delegation tool at all, and a depth bound at zero disables spawning — in both cases every
 per-definition verdict would be identical and would blame the wrong thing. The line says so in one sentence
@@ -418,7 +423,7 @@ bound a typo can switch off is not a bound.
 
 ```bash
 cd packages/pi-daddy
-npm test                   # 347 unit tests — pure, no pi, no network
+npm test                   # 353 unit tests — pure, no pi, no network
 npm run typecheck          # src + extensions + test + test-integration
 npm run test:integration   # 28 tests against a REAL pi process, no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and USE every subpath —
