@@ -91,12 +91,28 @@ Proposed ceilings, from each skill's own description:
 | `build` | `Read, Grep, Glob, Edit, Write, Bash` | writes code; needs everything |
 | `git-ops` | `Read, Bash` | git *is* bash |
 
-**Four of the seven become structurally incapable of modifying anything.** That is the whole value: a
-`review` subagent that physically cannot write is a different object from one that has been asked not to.
-The other three are exactly where the operator's grant and the default `bash` gate do their work — and a
-human is asked before `build` or `git-ops` ever receives a shell.
+**⚠ This table is UNRESOLVED and its first draft contradicted itself.** It gave `plan` a `Write` while the
+prose beneath claimed `plan` was among "four structurally incapable of modifying anything". Both cannot be
+true, and the contradiction is the interesting part rather than a typo — see the open question below.
 
-This table is the argument for the integration. It should appear in both READMEs.
+What is defensible today: **`review` is the only unambiguously read-only skill**, and its own description
+says so (*"Reports findings; never edits"*). A `review` subagent that physically cannot write is a
+different object from one that has been asked not to, and that alone justifies the integration.
+
+**The open question, which `principal-pi-skills` should settle:** `decide`, `architect` and `plan` all
+*produce a document* — an ADR, a design, a plan. That is writing a file, so they are real subagents that
+need `Write`, not read-only ones. But:
+
+> **pi-daddy governs which TOOLS, never which PATHS.** `resolve.ts` has no notion of a path, and a sub-tool
+> pattern (`Bash(git:*)`, and by the same rule `Write(docs/**)`) is **refused, not reinterpreted** —
+> because granting bare `write` would widen a deliberately narrow declaration and dropping it would
+> silently narrow. Verified in `docs/SPEC.md` and `README.md`.
+
+So *"an architect that may write an ADR but not your source"* is **not expressible**. Granting `architect`
+a `Write` grants it write access to everything, and the honest choice is between a document-producing agent
+with real write power and a read-only one that hands its output back as text for the parent to write.
+
+Both are legitimate; they are different products. Do not resolve this by picking the tidier table.
 
 ---
 
