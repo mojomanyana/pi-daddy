@@ -1,7 +1,10 @@
 # ADR-0028: `pi-daddy init` scaffolds a grant it refuses to decide, and session start names what is spawnable
 
 **Date:** 2026-08-16
-**Status:** Accepted
+**Status:** Accepted, **amended 2026-08-17** after an independent review (five agents, one hypothesis each).
+The amendments are marked inline and none of them reverses a decision: the boundary this ADR draws is
+correct and was drawn around the wrong object, which **ADR-0029** now names; four consequences were missing;
+one sentence was false. R-78 through R-82 record the defects found in the code.
 **Driver:** `docs/HANDOFF-principal-pi-skills-integration.md`, work items **B1** (fixes P4) and **B2** (fixes
 P3). Section A belongs to `principal-pi-skills` and is not decided here. B3 was answered by execution on
 2026-08-14 (pi auto-loads `pi.extensions` from an installed package) and B4 is documentation.
@@ -50,6 +53,13 @@ Four rules make it a scaffolder rather than a policy:
 4. **An existing file is kept, never overwritten.** The edit an operator makes to one of these files *is*
    the capability decision, and the second run of a scaffolding command is exactly when it would be
    destroyed. `--force` exists and says in the usage text that it discards them.
+
+**Amended 2026-08-17 — R-78.** The whitelist below was applied to the definition's **name** and not to the
+capability ids it **declares**, which reach the identical interpolation site. A package declaring
+`allowed-tools: Read,ext:x";touch …` produced a `.pi/grants.env` that executed code when sourced. Declared
+ids are whitelisted too now, `tool:*`/`agent:*` from a package are refused outright, and the assembled grant
+is charset-checked before the file is written at all. **The trigger this ADR's own risk entry states names
+that case** and it was applied to one channel of two.
 
 **A definition whose name cannot safely be a capability id is refused outright** (R-77, found and fixed
 while building this). A name is interpolated into a comma-separated `PI_GRANTS_GRANT`, into a file the
@@ -131,10 +141,22 @@ Two deviations from the handoff's sketch, both deliberate:
   installed bin — which is how the symlink defect in the entry-point guard was found rather than reasoned
   about.
 - **A copied definition does not track its package.** `npm update principal-pi-skills` changes
-  `node_modules`; `.pi/skills/` is a committed artifact and stays as it is. That is the correct direction —
-  ADR-0018 pins a spawn to a body digest and ADR-0022 pins an inherited approval to it, so a definition that
-  silently changed under an operator would void approvals and make the ledger's "has this changed since?"
-  unanswerable. `init --force` is the deliberate re-sync, and it says what it costs.
+  `node_modules`; `.pi/skills/` is a committed artifact and stays as it is. `init --force` is the deliberate
+  re-sync, and it says what it costs.
+
+  **Amended 2026-08-17 — the justification below was backwards.** It read: *"ADR-0018 pins a spawn to a body
+  digest and ADR-0022 pins an inherited approval to it, so a definition that silently changed under an
+  operator would void approvals and make the ledger's 'has this changed since?' unanswerable."* ADR-0018
+  exists to make that question **answerable** and ADR-0022 makes voiding-on-change the designed, fail-closed
+  behaviour — its worked example is a `git pull` rewriting a definition mid-tree, and its verdict is that the
+  digest **catches** it. Citing them as reasons the file must not change is citing the fire alarm as a reason
+  not to have fires. **The real reasons are simpler and sufficient:** you cannot write a ceiling into
+  `node_modules`, and a committed copy is diffable and reviewable. **The real cost, now stated:** an upstream
+  body fix — including a prompt-injection hardening — never reaches the operator, and *nothing can detect
+  it*, because the ledger digest compares the copy against itself. "Has this definition changed since?" is
+  answerable; "is this definition current?" is not, and `npm update` is what creates that question. A
+  provenance line in the copy's `metadata:` map (the spec's sanctioned extension point) would make staleness
+  detectable at roughly the cost of the annotation block `renderGrantEnv` already writes; it is not built.
 - **Deliberate non-goals.** `init` does not scan `~/.pi/agent/skills/` (those definitions are already
   discovered and governed where they are; copying them would shadow the originals). It does not run
   `principal-pi-agents install` or know that package exists — P1, the two packages installing into different
@@ -143,8 +165,30 @@ Two deviations from the handoff's sketch, both deliberate:
 - **The startup summary is an upper bound.** It runs before the first provider request, so it classifies
   against the *inherited* grant; `deriveOwnGrant` narrows to the observed tool surface afterwards. A
   definition counted spawnable can still be refused later if its ceiling names a tool this session turns out
-  not to have. `/grants` — run after a request — is the settled answer, and the summary says nothing a spawn
-  would not.
+  not to have. `/grants` — run after a request — is the settled answer. ~~and the summary says nothing a
+  spawn would not.~~ **That clause was false and is struck (2026-08-17):** it contradicts the sentence
+  immediately before it, and a reviewer measured the case — `--tools read` with a `Read, Write` ceiling
+  prints `1 of 3 spawnable` at start and `BLOCK … capability escalation blocked` from `/grants` in the same
+  session. R-75 recorded the behaviour honestly; this sentence over-claimed on top of it.
+
+**Four consequences this ADR did not name, added 2026-08-17:**
+
+- **`init` writes into a pi SKILL ROOT, so the operator's own session loads those bodies.** `.pi/skills/` is
+  where pi discovers skills, and R-32 measured the banner: `[Skills] architect, build, debug, decide,
+  git-ops, plan, review`. Children are protected (`--no-skills` plus `--skill` per granted skill); **the top
+  session is not**. So the definitions reported as `withheld:` at startup are still loadable as instructions
+  into the session that ran `init`. That is not new behaviour for a skill root — it is what a skill root is
+  — but "withheld" reads as containment and does not mean it here.
+- **`.pi/skills/` shadows `~/.pi/agent/skills/`.** Discovery is project-first, so an operator with a curated
+  global `review` gets the package's copy written over the top of that name. This ADR's own non-goal
+  reasoned about shadowing in the *other* direction and missed that its chosen direction does the same.
+- **The startup line counts what `pi-daddy` can spawn, not what can be spawned.** P1 is untouched:
+  `principal-pi-agents install` wires the same skills into `~/.pi/agent/agents/` for pi-subagents, whose
+  `subagents:rpc:spawn` bypasses the tripwire entirely (measured, ADR-0013 Finding 6). An operator can be
+  told `withheld: debug` in a session where `debug` is spawnable, ungoverned, by the other path.
+- **A copied definition is loadable, unreviewed, from the moment `init` runs.** Nothing reads a body and
+  judges it (this ADR says so), and `init` now puts seven third-party bodies into the project. The mitigation
+  is that they arrive as a reviewable diff in version control, which is the whole reason for copying.
 
 ## Revisit trigger
 

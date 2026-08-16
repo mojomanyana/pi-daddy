@@ -33,21 +33,24 @@ cat .pi/grants.env
 
 echo
 echo "== the operator decides ONE ceiling (this is the step pi-daddy refuses to take)"
-python3 - <<'PY'
-p = ".pi/skills/review/SKILL.md"
+# `decide`, with the ceiling `principal-pi-skills` PR #30 settled on for it — re-derived from the skill's
+# own body, not from this repository's guess. Deliberately NOT `review`: that one gets `bash` in their
+# table, so it is not the read-only exemplar an earlier version of this probe and the README claimed.
+python3 - <<'EDIT'
+p = ".pi/skills/decide/SKILL.md"
 t = open(p).read()
-t = t.replace("# allowed-tools: <list the tools this skill needs, e.g. Read, Grep>", "allowed-tools: Read, Grep")
+t = t.replace("# allowed-tools: <list the tools this skill needs, e.g. Read, Grep>", "allowed-tools: read, grep, find, ls")
 open(p, "w").write(t)
-PY
-sed -i 's/^export PI_GRANTS_GRANT=.*/export PI_GRANTS_GRANT="agent:review,tool:read,tool:grep,tool:delegate"/' .pi/grants.env
-grep -n "^allowed-tools\|^export PI_GRANTS_GRANT" .pi/skills/review/SKILL.md .pi/grants.env
+EDIT
+sed -i 's/^export PI_GRANTS_GRANT=.*/export PI_GRANTS_GRANT="agent:decide,tool:read,tool:grep,tool:find,tool:ls,tool:delegate"/' .pi/grants.env
+grep -n "^allowed-tools\|^export PI_GRANTS_GRANT" .pi/skills/decide/SKILL.md .pi/grants.env
 
 echo
 echo "== a real pi session, driven over rpc — every ctx.ui.notify it emits"
 cat > drive.mjs <<EOF
 import { spawn } from "node:child_process";
 const child = spawn("pi", ["--no-session", "--no-extensions", "-e", "$PKG/extensions/grants.ts", "--mode", "rpc"], {
-  env: { ...process.env, PI_GRANTS_GRANT: "agent:review,tool:read,tool:grep,tool:delegate" },
+  env: { ...process.env, PI_GRANTS_GRANT: "agent:decide,tool:read,tool:grep,tool:find,tool:ls,tool:delegate" },
   stdio: ["pipe", "pipe", "inherit"],
 });
 let buf = "";

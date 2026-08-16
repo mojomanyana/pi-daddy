@@ -14,9 +14,23 @@ the record of how the package got here and are worth keeping; they are not worth
 
 ## 0.14.0 — `pi-daddy init`, and a startup line that names what it will and will not spawn
 
+> **Reviewed before release by five independent agents, one hypothesis each. All five found something, and
+> nine defects were fixed here** — including one that executed arbitrary code from the file this feature
+> tells you to commit (R-78), one that overwrote an operator's file and wrote through symlinks (R-79), and
+> one where the startup line blamed your `SKILL.md` files for a misconfigured environment variable (R-81).
+> **ADR-0029 came out of that review**: the generated grant is read-only by default. The reasoning for each
+> is in `docs/03-risks.md` R-78 through R-82.
+
 The pi-daddy half of making this package and a package of skills work together out of the box
 (`docs/HANDOFF-principal-pi-skills-integration.md`, items B1/B2/B4; **ADR-0028**). Nothing about grant
 resolution, enforcement, approvals or the ledger changed — this is the part before and around them.
+
+- **The generated grant is READ-ONLY by default** (ADR-0029). `init` grants what the copied skills declare
+  minus anything that can change your machine — `bash`, `write`, `edit` and the universal capabilities are
+  written **commented**, naming the definitions that need them. `init` + `source` gives a working read-only
+  setup; widening costs one deliberate uncomment. The reason: `PI_GRANTS_GRANT` is what *bounds* a declared
+  ceiling, so generating it from those ceilings would give the bound and the bounded one author, and it
+  would not be you.
 
 - **`npx pi-daddy init` scaffolds a governed project.** It reads `<cwd>/node_modules` for packages declaring
   skills in their own `package.json` (`"pi": {"skills": [...]}`, pi's convention), copies each declared
@@ -46,6 +60,26 @@ resolution, enforcement, approvals or the ledger changed — this is the part be
 
 - **A worked `principal-pi-skills` example in the README**, replacing the invented one, with every line
   produced by running the commands (`docs/probes/b2-init-principal-pi-skills`).
+
+- **Fixed before release: a skill's `allowed-tools` VALUE could execute code from the generated grant file**
+  (R-78). `ceilingForDefinition` passes `ext:`/`skill:`/`agent:` entries through as written — correct for
+  enforcement, where the catalog refuses what it does not know — so a package declaring
+  `allowed-tools: Read,ext:x";touch /tmp/pwned;PI_GRANTS_GRANT="` produced a `.pi/grants.env` that ran the
+  payload when sourced: silently, exit 0, with the variable left looking plausible. It survives
+  `--ignore-scripts` and travels in the file you commit. Declared ids are whitelisted now, `tool:*`/`agent:*`
+  from a package are refused, and the assembled grant is charset-checked before the file is written at all.
+
+- **Fixed before release: `init` overwrote an operator's file and wrote through symlinks** (R-79). The
+  presence probe was `readFile`, which treats *unreadable* as *absent* — so a permissions-restricted
+  `SKILL.md` was replaced and its ceiling **widened**, with no `--force`. And `writeFile` follows symlinks, so
+  a dangling link at a target path created the file outside the project while reporting an in-project path.
+  Both are one `open(path, "wx")`. `--force` no longer regenerates `.pi/grants.env`, and `pi-daddy init
+  --Force` is no longer accepted as a silent no-op.
+
+- **Fixed before release: the startup line blamed your files for a session-level refusal** (R-81). A session
+  at its depth limit, or with a malformed `PI_GRANTS_MAX_DEPTH`, was told its `SKILL.md` files were written
+  wrong — two lines above `/grants` saying "delegation is disabled (maxDepth 0)". A session with no
+  `tool:delegate`, which has no delegate tool at all, was told definitions were spawnable.
 
 - **Fixed before release: a skill's directory name could write a capability into the generated grant**
   (R-77). A name is interpolated into a comma-separated `PI_GRANTS_GRANT`, into a file the operator sources,

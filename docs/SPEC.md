@@ -3,7 +3,7 @@
 **The current-state document.** No history, no reasoning about alternatives, no record of how anything came
 to be decided. Where this disagrees with an ADR, the ADR is right and this file is stale — say so.
 
-Last synced against the code: **2026-08-16**, `pi-daddy` 0.14.0, pi 0.84.1, herdr 0.7.5.
+Last synced against the code: **2026-08-17**, `pi-daddy` 0.14.0, pi 0.84.1, herdr 0.7.5.
 
 ---
 
@@ -110,16 +110,36 @@ declared `SKILL.md` into `<cwd>/.pi/skills/<name>/`, and writes `<cwd>/.pi/grant
 | It declares none | The file plus a **commented** placeholder, so the copy is still *undeclared* and still unspawnable. Uncommenting it unedited yields `tool:<list`, which the catalog refuses — a working default would be pi-daddy deciding, with one keystroke in front of it. |
 | The target file exists | **Kept.** The edit an operator made to it is the capability decision. `--force` rewrites and says it discards them. |
 
-The generated grant is the **union of what the copied files declare**, one `agent:<name>` per *spawnable*
-definition, plus `tool:delegate` — without which no delegation tool is registered at all. An undeclared or
-pattern-carrying skill contributes nothing and is listed under `NOT AUTHORISED` with its fix, because
-authorising a definition nobody can spawn is authority that means something un-reviewed the moment somebody
-fills that file in. Every capability is annotated with the definition it came from, and a declared `tool:`
-id pi has no tool for (`Glob` is the live case) is flagged as a caution rather than discovered at spawn time.
+**The generated grant is read-only by default** (ADR-0029). It holds what the copied files declare **minus**
+anything that can change the machine — `tool:bash` (and whatever else `PI_GRANTS_GATED` defaults to),
+`tool:write`, `tool:edit`, `tool:edit-diff`, and the universal capabilities — plus one `agent:<name>` per
+definition that can actually run within it, plus `tool:delegate`, without which no delegation tool is
+registered at all. The withheld capabilities are written **commented**, naming the definitions that need
+them and those definitions' `agent:` ids, so widening is one deliberate uncomment.
 
-A definition whose **name** is not `[A-Za-z0-9][A-Za-z0-9._-]*` is refused with its reason (R-77): a name
-becomes a capability id in a comma-separated grant, a line in a file the operator sources, and a path, and a
-package shipping a directory called `a,tool:bash` could otherwise put `tool:bash` in a grant nobody chose.
+The reason is that `PI_GRANTS_GRANT` is what *bounds* a declared ceiling: generating it from those same
+ceilings would give the bound and the bounded a single author who is not the operator. Only `tool:bash` is
+gated by default, so a live `tool:write` would reach a child with no dialog at all.
+
+An undeclared or pattern-carrying skill contributes nothing and is listed under `NOT AUTHORISED` with its
+fix. An `agent:<other>` a ceiling names but `init` did not write is **reported, never granted** — it would
+authorise a file from any skill root. Every capability is annotated with the definition it came from, and a
+declared `tool:` id pi has no tool for (`Glob` is the live case) is flagged as a caution rather than
+discovered at spawn time.
+
+**Three refusals guard the generated file, because everything in it comes from a third party.** A definition
+whose **name** is not `[A-Za-z0-9][A-Za-z0-9._-]*` (R-77); one whose **declared capability id** is not
+`tool:/skill:/agent:<name>` or `ext:<pkg>/<tool>` (R-78 — an unchecked `ext:x";touch …` executed code when
+the file was sourced); and one declaring `tool:*` or `agent:*`, which is root authority rather than a
+description of what a skill needs. Each is refused by name with its reason, counted on the summary line, and
+exits non-zero. Beyond them, the assembled grant is charset-checked and the file is **not written at all**
+if anything unexpected got through — a backstop that does not depend on those three rules being complete,
+since twice now they were not.
+
+Writes use `open(path, "wx")`: an existing file is **kept**, and nothing is ever written **through a
+symlink** (R-79, the same property `approval-store.ts` has under ADR-0014). `--force` rewrites the
+definition copies, unlinking first so a link is replaced rather than followed, and **never** regenerates
+`.pi/grants.env` — that file is the reviewed artifact, and deleting it is how to regenerate it.
 
 Discovery reads each package's declaration and never scans for files named `SKILL.md`: a scan would offer a
 package's fixtures and its vendored copies of other people's skills as spawnable sub-agents. It does not
@@ -137,9 +157,15 @@ grants: 1 of 7 definitions spawnable — review
 ```
 
 The withheld half is the point: the grant alone never named the definitions, so "governance is working" and
-"did the install fail?" looked identical. Three withheld reasons, because they have three different fixes —
-a capability the session does not hold, a gate needing a human, and a file that cannot be spawned as
-written. It speaks even when **nothing** is spawnable, which is the state an operator most needs told.
+"did the install fail?" looked identical. **Each definition names its own missing capability** (R-82), and a
+refusal the two designated signals do not explain prints the planner's own words rather than a category
+invented here (R-81). It speaks even when **nothing** is spawnable, which is the state an operator most
+needs told.
+
+**Facts about the SESSION are answered before any definition is planned.** A grant without `tool:delegate`
+registers no delegation tool at all, and a depth bound at zero disables spawning — in both cases every
+per-definition verdict would be identical and would blame the wrong thing. The line says so in one sentence
+instead, and previews nothing.
 
 Classified by the same `planWithApprovals` a real spawn comes through, with `ctx: null` so no human is
 asked and stored approvals count exactly as they would. It is an **upper bound**: it runs before the first
@@ -377,9 +403,9 @@ bound a typo can switch off is not a bound.
 
 ```bash
 cd packages/pi-daddy
-npm test                   # 332 unit tests — pure, no pi, no network
+npm test                   # 347 unit tests — pure, no pi, no network
 npm run typecheck          # src + extensions + test + test-integration
-npm run test:integration   # 27 tests against a REAL pi process, no model tokens
+npm run test:integration   # 28 tests against a REAL pi process, no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and USE every subpath —
                            # and run the installed `pi-daddy init` bin, which is how R-73 was found
 
@@ -435,4 +461,11 @@ Stated because a gap nobody wrote down is the one that surprises somebody.
   since?"* unanswerable — but nothing announces the drift, and `init --force` is the only re-sync.
 - **The startup spawnable count is an upper bound, not an inventory** (R-75). It is classified before the
   tool surface is observed, so it can name a definition that a later spawn refuses for a tool this session
-  turns out not to have. It over-reports; it authorises nothing.
+  turns out not to have. It over-reports; it authorises nothing. It also counts only what **pi-daddy** can
+  spawn: a definition installed into `~/.pi/agent/agents/` for pi-subagents is reachable by a path this
+  package cannot see (ADR-0013 Finding 6).
+- **`init` writes into a pi skill root, so the operator's own session loads the copied bodies** as skills
+  (R-32's measured `[Skills]` banner). Children are protected by `--no-skills`; the top session is not. A
+  definition reported `withheld` at startup is still loadable as instructions there.
+- **`.pi/skills/` shadows `~/.pi/agent/skills/`**, so `init` can quietly replace a curated global definition
+  of the same name for this project.

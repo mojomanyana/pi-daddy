@@ -1,7 +1,9 @@
 # Probe — `pi-daddy init` against the real `principal-pi-skills`, end to end
 
-**Run 2026-08-16** against `principal-pi-skills@2.3.1`, `pi-daddy` 0.14.0 (working tree), pi 0.84.1, node 22.
-Transcript: `transcript-2026-08-16.txt`. Rerun: `bash docs/probes/b2-init-principal-pi-skills/probe.sh`
+**Re-run 2026-08-17** against `principal-pi-skills@2.3.1`, `pi-daddy` 0.14.0 (working tree), pi 0.84.1,
+node 22. Transcript: `transcript-2026-08-17.txt`. (The 2026-08-16 transcript was **replaced, not kept**:
+five independent reviewers found nine defects in the code that produced it, so it recorded behaviour that
+no longer exists rather than a decision anyone made. What the reviewers found is in R-73 through R-82.) Rerun: `bash docs/probes/b2-init-principal-pi-skills/probe.sh`
 (needs network for one `npm install` and `pi` on PATH; **costs no model tokens**).
 
 ## What it measures
@@ -50,9 +52,13 @@ assembled by hand — P3's seven-times-per-project cost.
 ```
 [info] grants: depth 0/2, holding [agent:review, tool:read, tool:grep, tool:delegate]
 [info] grants: 1 of 7 definitions spawnable — review
-  withheld: architect, build, debug, decide, git-ops, plan — need agent:architect, agent:build,
-  agent:debug, agent:decide, agent:git-ops, agent:plan, which this session does not hold
+  withheld: architect (needs agent:architect); build (needs agent:build); debug (needs agent:debug);
+  decide (needs agent:decide); git-ops (needs agent:git-ops); plan (needs agent:plan)
 ```
+
+Each definition names **its own** missing capability. The first version printed the union across the whole
+group, so a definition missing only `agent:architect` was reported as needing five other ids too (R-82) —
+in the line whose stated purpose is naming the fix.
 
 and `/grants` prints `allow review` plus six `BLOCK` lines naming the same six ids. That is B1 and P4: the
 grant alone never said which definitions existed, and the six-line listing needed a command the operator

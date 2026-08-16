@@ -334,8 +334,9 @@ and is left alone rather than repaired. Nothing runs this check automatically.
 ## Worked example: governing `principal-pi-skills`
 
 The abstract examples above use invented definitions. This one uses the seven skills people actually have
-installed, and every line of it was produced by running the commands
-(`docs/probes/b2-init-principal-pi-skills`, 2026-08-16, against `principal-pi-skills@2.3.1` and pi 0.84.1).
+installed. Every transcript below is **copied from a run**, not retyped — the run is
+`docs/probes/b2-init-principal-pi-skills` (2026-08-17, `principal-pi-skills@2.3.1`, pi 0.84.1), and where
+this section abridges output it says so.
 
 ```bash
 npm install pi-daddy principal-pi-skills
@@ -344,36 +345,43 @@ npx pi-daddy init
 
 ```
 found principal-pi-skills@2.3.1 — 7 skill(s), 0 declaring allowed-tools
-wrote .pi/skills/{decide,architect,plan,build,review,debug,git-ops}/SKILL.md
+wrote .pi/skills/decide/SKILL.md
+… six more `wrote` lines, one per skill …
 wrote .pi/grants.env
 
 7 skill(s) declare no allowed-tools and cannot be spawned until they do: decide, architect, plan,
 build, review, debug, git-ops. Each copy carries a commented `allowed-tools:` line. pi-daddy does
 not choose ceilings — that decision is what you review and commit, so it is yours to write.
+
+Live grant (1 capabilities): tool:delegate
 ```
 
-**That is the honest state today, and the zero is the interesting number.** `principal-pi-skills@2.3.1` — the published version —
-declares `allowed-tools` on none of its seven skills, so none of them is spawnable and `init` says so rather
-than inventing capability sets to make the output look better. (That is being fixed at the source, in their
-PR #30; until it is released, this is what `npm install` gives you.) `init` did the mechanical work — seven
-directories, seven copies, the grant file — and left the one decision that has to be a human's.
+**That is the honest state today, and the zero is the interesting number.** `principal-pi-skills@2.3.1` —
+the published version — declares `allowed-tools` on none of its seven skills, so none of them is spawnable
+and `init` says so rather than inventing capability sets to make its output look better. (It is being fixed
+at the source, in their PR #30; until that ships, this is what `npm install` gives you.) `init` did the
+mechanical work — seven directories, seven copies, the grant file — and left the one decision that has to be
+a human's.
 
-You make it, in the file:
+You make it, in the file. This is the copy `init` wrote for `decide`, with its commented block elided, and
+the ceiling is the one `principal-pi-skills` PR #30 settled on by re-deriving it from the skill's own body:
 
 ```diff
   ---
-  name: review
+  name: decide
   description: >
-    Use to review code before it lands …
+    Use when a decision needs making …
+  # pi-daddy: this skill declares no `allowed-tools`, so it CANNOT be spawned as a governed sub-agent —
+  … four more comment lines …
 - # allowed-tools: <list the tools this skill needs, e.g. Read, Grep>
-+ allowed-tools: Read, Grep
++ allowed-tools: read, grep, find, ls
   ---
 ```
 
-and in `.pi/grants.env`, which `init` wrote with every capability annotated by the definition it came from:
+and in `.pi/grants.env`, whose `PI_GRANTS_GRANT` line `init` wrote as `"tool:delegate"` — you add the rest:
 
 ```sh
-export PI_GRANTS_GRANT="agent:review,tool:read,tool:grep,tool:delegate"
+export PI_GRANTS_GRANT="agent:decide,tool:read,tool:grep,tool:find,tool:ls,tool:delegate"
 ```
 
 ```bash
@@ -381,25 +389,38 @@ source .pi/grants.env && pi
 ```
 
 ```
-grants: depth 0/2, holding [agent:review, tool:read, tool:grep, tool:delegate]
-grants: 1 of 7 definitions spawnable — review
-  withheld: architect, build, debug, decide, git-ops, plan — need agent:architect, agent:build,
-  agent:debug, agent:decide, agent:git-ops, agent:plan, which this session does not hold
+grants: depth 0/2, holding [agent:decide, tool:read, tool:grep, tool:find, tool:ls, tool:delegate]
+grants: 1 of 7 definitions spawnable — decide
+  withheld: architect (needs agent:architect); build (needs agent:build); debug (needs agent:debug);
+  git-ops (needs agent:git-ops); plan (needs agent:plan); review (needs agent:review)
 ```
 
-The second line is the one worth having. A `review` sub-agent that **physically cannot write** is a
-different object from one that has been asked not to — its own description says *"Reports findings; never
-edits"*, and now that is enforced by `--tools` rather than requested in prose. The other six are visibly
-withheld rather than quietly absent, which is the difference between *governance is working* and *did the
-install fail?*
+The second line is the one worth having. A `decide` sub-agent that **physically cannot write** is a
+different object from one that has been asked not to — and now that is enforced by `--tools` rather than
+requested in prose. The other six are visibly withheld, each naming its own missing capability, which is the
+difference between *governance is working* and *did the install fail?*
+
+**`decide` and not `review`, and the reason is worth a sentence.** An earlier version of this section used
+`review` as the read-only example and sourced that to its description saying *"Reports findings; never
+edits"* — **a string that appears nowhere in `principal-pi-skills`**. It was invented for a demo file in
+this repository and then cited back as their evidence. `review`'s real ceiling, settled upstream from its
+body, is `read, grep, find, ls, bash`: it creates a disposable worktree and runs the tests, and denied
+`bash` every verdict it returns is `UNVERIFIED`. The structurally read-only tier is `decide`, `architect`
+and `plan`.
+
+**Capabilities that can change your machine are written commented** (ADR-0029). When the seven skills do
+declare their ceilings, `init` puts `tool:read`, `tool:grep` and friends in the live grant and writes
+`tool:bash`, `tool:write` and `tool:edit` — plus the `agent:` ids of the definitions that need them — as
+commented lines naming who asked for what. `init` + `source` gives you a working read-only setup; the wide
+half costs one deliberate uncomment. The reason is that `PI_GRANTS_GRANT` is what *bounds* a declared
+ceiling, so generating it from those same ceilings would give the bound and the bounded one author, and it
+would not be you.
 
 Two things this example does **not** claim. pi-daddy governs which **tools**, never which **paths**: a
 `Write(docs/**)` is refused rather than reinterpreted, so *"an architect that may write an ADR but not your
 source"* is not expressible — the honest choice is between a document-producing agent with real write power
 and a read-only one that hands its output back for the parent to write. And the ceilings above are an
-example, not a recommendation: what each skill needs is the skill author's call, and the useful end state is
-`principal-pi-skills` declaring them itself, at which point `init` grants all seven `agent:` ids and you
-delete the ones you do not want.
+example, not a recommendation: what each skill needs is the skill author's call.
 
 ### The tripwire
 
@@ -601,7 +622,7 @@ every in-repo test passed. `npm run test:smoke` packs a tarball, installs it int
 ```bash
 npm test                   # 332 unit tests. Fast, pure, no pi, no network.
 npm run typecheck          # src + extensions + tests + integration tests
-npm run test:integration   # 27 tests against a REAL pi process. ~40s, no model tokens.
+npm run test:integration   # 28 tests against a REAL pi process. ~40s, no model tokens.
 npm run test:smoke         # pack, install into a scratch project, import and use it — and run the
                            # installed `pi-daddy init` bin, which is how R-73 was found
 PI_GRANTS_IT_MODEL=1 npm run test:integration   # + 4 end-to-end tests with a real model. ~60s, costs money.

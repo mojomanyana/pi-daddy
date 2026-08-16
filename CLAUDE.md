@@ -35,8 +35,8 @@ permissible, able to refuse or allow but never to narrow. **This package is now 
 is an argument rather than a veto. Definitions are **Agent Skills (`SKILL.md`)** files whose `allowed-tools`
 becomes the grant; the pi-subagents ceiling port is deleted; the interceptor survives only as a tripwire.
 
-**Current state: `pi-daddy` 0.14.0 — the only package.** Twenty-eight ADRs decided. 332 unit +
-27 integration tests (+4 more with a real model), typecheck and smoke clean.
+**Current state: `pi-daddy` 0.14.0 — the only package.** Twenty-nine ADRs decided. 347 unit +
+28 integration tests (+4 more with a real model), typecheck and smoke clean.
 
 **What the product claims, precisely** — this wording is load-bearing and was narrowed by ADR-0012: it
 governs the **tool surface**, i.e. which tools pi exposes to a model, enforced structurally by pi's own
@@ -52,7 +52,7 @@ can run `env -u PI_GRANTS_GRANT pi …` and get an ungoverned descendant (measur
 docs/SPEC.md              — WHAT THE PRODUCT IS, current state, no history. Read this second.
 docs/SESSION-LOG.md       — START HERE when resuming: state, verified facts, next actions. Newest on top.
 docs/03-risks.md          — live risk register. R-25 onward are current; R-01..R-24 serve the retired thesis
-docs/06-decisions/        — twenty-eight ADRs. Reversals are kept and marked: 0004→superseded, 0005 park→
+docs/06-decisions/        — twenty-nine ADRs. Reversals are kept and marked: 0004→superseded, 0005 park→
                             superseded, 0006 (magnitude claim falsified), 0007 THE REFRAME, 0008
                             attenuation + cardinality, 0009 pi-fabric (parked), 0010 approvals, 0011
                             universal capabilities, 0012 bash, 0013 pi-subagents (superseded by 0016),
@@ -106,9 +106,9 @@ refuses until a gate passes that no longer means anything. They are in git histo
 
 ```bash
 cd packages/pi-daddy
-npm test                   # 332 unit tests — fast, pure, no pi, no network
+npm test                   # 347 unit tests — fast, pure, no pi, no network
 npm run typecheck          # src + extensions + tests + integration tests
-npm run test:integration   # 27 tests vs a REAL pi process — ~40s, no model tokens
+npm run test:integration   # 28 tests vs a REAL pi process — ~40s, no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and USE it
 PI_GRANTS_IT_MODEL=1 npm run test:integration   # + 4 end-to-end with a real model (~60s, costs money)
 PI_GRANTS_KEEP_TMP=1 npm test                   # keep fixture directories for inspection after a failure

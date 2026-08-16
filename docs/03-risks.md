@@ -1368,10 +1368,15 @@ The failure mode is the reason this is `×H` rather than a footnote: **a scaffol
 is indistinguishable from one that found nothing to do.** Exit code 0, no output, no error — an operator
 would reasonably conclude their project had no skill packages and go looking in the wrong place.
 
-**Found by the smoke test, not by reasoning or review.** Every in-repo test passed: they import `main` and
-call it, which is precisely the path the guard is written to exclude. This is B-I12's shape exactly (the
-`exports` map that worked in the tree and threw for every consumer), which is why `scripts/smoke-installed.mjs`
-exists, and it has now caught the same class of defect twice.
+**Found by the smoke test, not by reasoning or review.** This is B-I12's shape exactly (the `exports` map
+that worked in the tree and threw for every consumer), which is why `scripts/smoke-installed.mjs` exists, and
+it has now caught the same class of defect twice.
+
+**Corrected 2026-08-17.** This entry originally said *"every in-repo test passed: they import `main` and call
+it, which is precisely the path the guard is written to exclude"*. **False** — `grep -rn 'from "../src/cli'
+test/ test-integration/` matched nothing: `src/cli.ts` had **no tests at all**, which is both the truthful
+account and the stronger one for this entry's own argument. Found by a reviewer re-executing the claim. The
+CLI now has tests, and they immediately caught a second defect in the same file (R-79's argv half).
 **FIXED:** `realpathSync(process.argv[1])` before comparing, wrapped in a `catch` that declines to run rather
 than throwing. The smoke test now runs the installed bin end to end and asserts on its output and the files
 it writes.
@@ -1407,11 +1412,19 @@ after any request is the settled answer.
 **Trigger:** anyone treating the startup count as an inventory — a test asserting it equals `/grants`, or a
 document quoting it as *"what this session can spawn"* without the qualifier.
 
-## R-76 · `init`'s generated grant is as wide as its widest skill — M×M, MITIGATED
+## R-76 · `init`'s generated grant is as wide as its widest skill — M×M, FIXED (ADR-0029)
 Added 2026-08-16 (ADR-0028). The grant `init` writes is the **union** of every copied definition's declared
 ceiling, so one skill declaring `Bash` puts `tool:bash` in the operator's session grant. An operator who
 sources `.pi/grants.env` without reading it has a session that may hand a shell to a child — and `bash`
 subsumes governance entirely (ADR-0012).
+
+**SUPERSEDED 2026-08-17 by ADR-0029: the wide capabilities are no longer live.** A reviewer priced the
+mitigation below and found it was one-third of what it claimed — `DEFAULT_GATED` is **only `tool:bash`**, so
+`tool:write` and `tool:edit` reached a child with no dialog at all, and the ADR's own consequence sentence
+("the edit step disappears and `init` grants all seven `agent:` ids for the operator to delete down")
+described a source-and-go workflow that would never perform the edit the mitigation assumed. `init` now emits
+`bash`, `write`, `edit` and the universal capabilities **commented**, with the definitions that need them
+named. The original reasoning is kept below because the correction is the instructive part.
 
 **Mitigated three ways rather than avoided**, because the alternative — `init` choosing a subset — is the one
 thing ADR-0028 forbids. `tool:bash` is **gated by default**, so a human is asked before any child receives
@@ -1449,6 +1462,128 @@ package ships none". Verified by mutation: deleting the check fails exactly that
 **Trigger for the shape recurring:** any new file this package *generates* whose content includes a string
 taken from a third party — a definition name, a package name, a path — in a format where a separator or a
 quote means something.
+
+
+## R-78 · A skill's `allowed-tools` VALUE could execute code from the generated grant file — H×H, FIXED
+Added **and fixed** 2026-08-17, by an independent reviewer attacking the grant file one day after R-77 was
+closed. R-77 whitelisted the definition **name**; the declared **capability id** travels to the identical
+interpolation site and was unchecked. `ceilingForDefinition` passes `ext:`, `skill:` and `agent:` entries
+through **as written** — correct for the enforcement path, where the catalog refuses what it does not know —
+so a package declaring
+
+```yaml
+allowed-tools: Read,ext:x";touch /tmp/pwned;PI_GRANTS_GRANT="
+```
+
+produced
+
+```
+export PI_GRANTS_GRANT="agent:review,ext:x";touch /tmp/pwned;PI_GRANTS_GRANT=",tool:delegate,tool:read"
+```
+
+**Reproduced end to end**: `source .pi/grants.env` — the command `init` itself prints — executed the payload,
+**silently, exit 0**, leaving `PI_GRANTS_GRANT` set to a plausible value. Backticks work identically; `$(…)`
+happens to be caught because an entry containing `(` is routed to the pattern branch, which closes one vector
+of several by accident.
+
+**Why this is `×H` rather than "an npm package can already run code at install time".** The payload lands in
+a file this workflow tells the operator to **review and commit**. It travels in version control and
+re-executes on every teammate who sources it, long after the package is gone — and it survives
+`npm install --ignore-scripts`, the posture that would otherwise contain a hostile package.
+
+**And R-77's own trigger names this case**: *"any new file this package generates whose content includes a
+string taken from a third party, in a format where a separator or a quote means something."* It was written
+about the name and not applied to the value sitting beside it, one line away.
+**FIXED:** `isSafeCapability` at discovery (a whitelist per namespace, mirroring `isSafeName`); `tool:*` and
+`agent:*` from a *package* declaration are refused separately and loudly, because "you tried to grant
+yourself everything" is a different fact from "that is not a name"; and `assertGrantIsWritable` refuses to
+write the file at all if anything outside `[A-Za-z0-9:@,._/-]` reaches the assembled grant — a backstop that
+does not depend on the enumeration above being complete, since this is the second time the enumeration was
+incomplete.
+**Trigger:** any third string reaching a generated artefact — a description, a path, a package name — and any
+new generated file at all.
+
+## R-79 · `init` overwrote an operator's file, wrote through symlinks, and never checked argv[0] — H×M, FIXED
+Added **and fixed** 2026-08-17. Four defects in one scaffolder, all found by reviewers, all reproduced here
+before being acted on.
+
+**(a) `readFile` as a presence probe conflates *unreadable* with *absent*.** An operator's `SKILL.md` with
+restrictive permissions was reported `wrote`, and their narrowed `allowed-tools: Read` was replaced by the
+package's wider `Read, Grep` — **without `--force`**. That falsifies this package's own documented rule
+(`docs/SPEC.md`: *"The target file exists → **Kept**"*) in the direction that **widens**. A FIFO at a target
+path hung the probe forever, with no timeout anywhere on the path.
+
+**(b) `writeFile` follows symlinks.** A *dangling* symlink at a target path failed the probe, so `init` took
+the "absent, so write it" branch and created the file at the link's destination, **outside the project**,
+while printing an in-project path. With `--force` it destroyed the link's target. This is **B-I6**, which
+`approval-store.ts` fixed for the approval store under ADR-0014 and documents in a comment reading *"never
+through a symlink"* — a new writer in the same package reintroducing a defect the package records as closed.
+
+**(c) `--force` silently regenerated `.pi/grants.env`.** The reviewed artifact. An operator who had deleted
+`agent:build` and added `PI_GRANTS_LEDGER` would have had both restored to generated defaults by the command
+ADR-0028 prescribes as the re-sync for R-74 — whose usage text mentions only `allowed-tools`.
+
+**(d) The unknown-option check exempted `argv[0]`.** `rest.filter((a, i) => … && i !== dirIndex + 1)` with
+`--dir` absent makes `dirIndex` `-1`, so the exemption became `i !== 0`. `pi-daddy init --Force` was accepted
+as a valid no-op run — exit 0, every file kept — which is indistinguishable from a deliberate second run and
+is *precisely* what that line's own comment says it prevents. `src/cli.ts` had **no tests**, which is how
+both this and R-73 shipped from one file.
+**FIXED:** one `open(path, "wx")` closes (a) and (b) — `O_CREAT|O_EXCL` fails on anything at the path
+including a dangling symlink, so there is no probe and no probe-to-write race; `--force` unlinks first, so it
+replaces a link rather than writing through it, and never touches `grants.env`; and `parseArgs` is now a pure
+exported function with tests.
+**Trigger:** any writer in this package that is not `open(…, "wx")` or the approval store's atomic
+`wx`+`rename`, and any argv handling that is not `parseArgs`.
+
+## R-80 · The package-containment check was lexical, so a symlink walked past it — M×M, FIXED
+Added **and fixed** 2026-08-17. `readSkill` compared `resolve(packageDir, entry)` against `packageDir`, and
+`resolve()` normalises `..` while knowing nothing about symlinks. Measured: a `pi.skills` entry pointing at a
+symlink inside the package copied a definition from **outside** it into `.pi/skills/`, and that definition's
+`allowed-tools: Bash, Write` landed in the operator's grant. Nothing in the output prints `sourcePath`, so
+the operator could not tell the copy did not come from the package on the `found` line.
+
+**Same lesson as `cli.ts`'s `realpathSync`, one day later and one file away** — R-73 was fixed by resolving a
+symlink before comparing, and this check was written afterwards without it.
+**FIXED:** both sides are `realpath`ed before the prefix test.
+**Trigger:** any path comparison in this package that is not preceded by `realpath`.
+
+## R-81 · The startup line blamed the operator's FILES for a session-level refusal — M×M, FIXED
+Added **and fixed** 2026-08-17. `summariseSpawnable` re-derived a cause from two fields of `plan.result` and
+discarded `plan.reason`. `planDelegation` has **six** refusals that leave both fields empty, so all six fell
+into the "their files are written wrong" bucket. Measured in a real pi session:
+
+```
+grants: 0 of 3 definitions spawnable
+  withheld: docs-writer, fabric-agent, undeclared — cannot be spawned as their files are written …
+    BLOCK  docs-writer — delegation is disabled (maxDepth 0)
+```
+
+Two lines apart, in one screen, from one code path. **This is R-28's shape inside the fix for R-28's shape**,
+and the module header claiming *"classified by the real planner, never by a second reading of the rules"* was
+false: the classification **was** the second reading. It sent an operator to edit three well-formed
+`SKILL.md` files when the fix was one environment variable — and the most likely way to reach it is a
+malformed `PI_GRANTS_MAX_DEPTH`, where the extension warns "spawning is disabled" and then blames the files
+two lines later.
+
+**Worse, and separately:** the line ignored `mayDelegate`. A governed session whose grant omits
+`tool:delegate` has **no `delegate` tool at all** (S-5) — verified with a probe extension calling
+`pi.getAllTools()` — and was told `1 of 3 definitions spawnable`. The one configuration where nothing can
+ever be spawned is the one the line got wrong, and it is the exact question ADR-0028 says the line exists to
+answer.
+**FIXED:** session-level facts (`mayDelegate`, depth bounds) are answered **before** any planning, in one
+sentence naming the environment; everything the two designated signals do not explain now prints the
+planner's own `reason` verbatim.
+**Trigger:** any new refusal in `planDelegation` — check whether it sets `denied` or `gatedBlocked`, or the
+bucket silently grows again.
+
+## R-82 · The withheld list printed the UNION of missing capabilities across definitions — L×M, FIXED
+Added **and fixed** 2026-08-17. `renderSpawnableSummary` grouped withheld definitions by reason and rendered
+one deduped `missing` list for the whole group, so a definition missing only `agent:undeclared` was reported
+as also needing `agent:fabric-agent`. With nine or more members both halves truncated independently, giving
+`def-0 … and 1 more — need tool:t0 … and 1 more`. **The line's stated purpose is naming the fix**, and the
+fix it named was wrong per definition. `docs/SPEC.md`'s and ADR-0028's own worked examples were instances.
+**FIXED:** rendered per definition — `architect (needs agent:architect); build (needs agent:build)`.
+**Trigger:** any aggregate rendered against a list of names rather than beside each one.
 
 ---
 
@@ -1510,3 +1645,4 @@ quote means something.
 | 2026-08-14 | R-72 | Added and fixed — five headlines (R-44, R-45, R-46, R-47, R-51) said **OPEN** for defects their own bodies recorded as FIXED, one of them *"FULLY FIXED … by ADR-0024"*. **R-59's shape inside the register R-59 lives in**, and R-59's trigger did not fire because it names `CLAUDE.md`, READMEs and the session log — the places the previous instance was found. A trigger derived from where the last one turned up finds the last one again. The replacement is mechanical: any headline whose body says FIXED | orienting-document sweep |
 | 2026-08-16 | R-73…R-76 | **The pi-daddy half of the `principal-pi-skills` integration** (handoff B1/B2/B4, ADR-0028). R-73 shipped and was caught by the smoke test: `npx pi-daddy init` printed nothing and exited 0 for every *installed* copy, because npm makes a bin a symlink and the entry-point guard compared it against `import.meta.url` — a scaffolding command that does nothing looks exactly like one with nothing to do. R-74 and R-76 are accepted consequences of `init` copying definitions and unioning their ceilings, both recorded with what mitigates them; R-75 states that the new startup line is an upper bound. **Every claim about pi and about `principal-pi-skills@2.3.1` was re-measured** — `docs/probes/b2-init-principal-pi-skills` | handoff B1/B2/B4 |
 | 2026-08-16 | R-77 | Added and fixed the same session — a skill **directory name** could write a capability into the grant `init` generates (`a,tool:bash` → `tool:bash` in `PI_GRANTS_GRANT`), because a name is interpolated into a comma-separated id list, a sourced shell file and a path at once. Reproduced against the real CLI before being written. Found by asking *what does the generated file interpolate?* — the same "where else does this shape appear?" question that found R-60, and the reason to ask it of anything that writes a file rather than reads one | handoff B1/B2/B4 |
+| 2026-08-17 | R-78…R-82 | **Five independent reviewers over PR #2, one hypothesis each — and every one found something.** R-78 is the worst and the most humbling: R-77's own trigger describes it, written the previous day about the name and never applied to the capability id beside it, and it ends in arbitrary code execution from a file this workflow tells operators to commit. R-79 collects four defects in one scaffolder, one of them **B-I6 reintroduced** in a package that documents B-I6 as closed. R-81 is R-28's shape *inside* the module whose header claims to have made R-28's shape inexpressible. **The pattern worth keeping: every finding was in the half of the change nothing had attacked** — a generated file, a CLI with no tests, a classifier written after the planner it claims to defer to | independent review of PR #2 |

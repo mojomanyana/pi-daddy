@@ -509,16 +509,43 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     const r = await runCommand({
       cwd,
       command: "/grants",
-      env: { PI_GRANTS_GRANT: "agent:docs-writer,agent:undeclared,tool:read,tool:write" },
+      // `tool:delegate` is load-bearing in this fixture and was MISSING from the first version of this
+      // test, which asserted `1 of 3 spawnable` in a session that had no delegate tool at all (R-81). The
+      // test encoded the defect; the case it should have covered is below.
+      env: { PI_GRANTS_GRANT: "agent:docs-writer,agent:undeclared,tool:read,tool:write,tool:delegate" },
     });
 
     const line = r.notifies.map((n) => n.message).find((m) => m.includes("definitions spawnable"));
     assert.ok(line, `no spawnable summary at session start — notifies were:\n${r.notifies.map((n) => n.message).join("\n")}`);
     assert.match(line, /^grants: 1 of 3 definitions spawnable — docs-writer$/m);
-    // The withheld half is the point of the line: `fabric-agent` needs an id this grant does not hold,
-    // and `undeclared` is authorised but declares no `allowed-tools`. Two different fixes, said apart.
-    assert.match(line, /withheld: fabric-agent — need agent:fabric-agent, which this session does not hold/);
-    assert.match(line, /withheld: undeclared — cannot be spawned as their files are written/);
+    // The withheld half is the point of the line, and each definition names ITS OWN fix (R-82):
+    // `fabric-agent` needs an id this grant does not hold; `undeclared` is authorised and declares no
+    // `allowed-tools`, and that clause is the PLANNER's own wording rather than a category invented by the
+    // summariser (R-81).
+    assert.match(line, /fabric-agent \(needs agent:fabric-agent\)/);
+    assert.match(line, /undeclared \(agent "undeclared" declares no `allowed-tools`/);
+  });
+
+  test("R-81: a session with no tool:delegate is told so, not told what is spawnable", async () => {
+    // `registerDelegationTools` returns early without it, so the session has NO delegate tool — and the
+    // startup line used to report definitions as spawnable in exactly that session. Measured here rather
+    // than unit-tested alone, because the claim is about what a real pi session prints.
+    //
+    // The production change that breaks this: dropping the `mayDelegate` check in `summariseSpawnable`.
+    const cwd = await projectOnce();
+    const r = await runCommand({
+      cwd,
+      command: "/grants",
+      env: { PI_GRANTS_GRANT: "agent:docs-writer,tool:read,tool:write" },
+    });
+
+    const line = r.notifies.map((n) => n.message).find((m) => m.includes("none spawnable"));
+    assert.ok(line, `expected the no-delegate line — notifies were:\n${r.notifies.map((n) => n.message).join("\n")}`);
+    assert.match(line, /3 definitions found, none spawnable — this session holds no tool:delegate/);
+    assert.ok(
+      !r.notifies.some((n) => /definitions spawnable — /.test(n.message)),
+      "a session that cannot delegate must not be told anything is spawnable",
+    );
   });
 
   test("an ungoverned session reports itself inactive", async () => {

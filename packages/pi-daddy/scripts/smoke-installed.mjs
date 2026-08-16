@@ -65,10 +65,8 @@ try {
   const skillPkg = join(work, "node_modules", "fake-skills");
   mkdirSync(join(skillPkg, "review"), { recursive: true });
   writeFileSync(join(skillPkg, "package.json"), JSON.stringify({ name: "fake-skills", version: "1.0.0", pi: { skills: ["./review"] } }));
-  writeFileSync(
-    join(skillPkg, "review", "SKILL.md"),
-    "---\nname: review\ndescription: Reports findings; never edits.\nallowed-tools: Read, Grep\n---\nReview it.\n",
-  );
+  const skillSource = "---\nname: review\ndescription: Reports findings; never edits.\nallowed-tools: Read, Grep\n---\nReview it.\n";
+  writeFileSync(join(skillPkg, "review", "SKILL.md"), skillSource);
 
   const out = run("node", ["probe.mjs"], work).trim();
   if (!out.includes("SMOKE_OK")) throw new Error(`unexpected output: ${out}`);
@@ -79,8 +77,12 @@ try {
   if (!grantEnv.includes('PI_GRANTS_GRANT="agent:review,tool:delegate,tool:grep,tool:read"')) {
     throw new Error(`init wrote the wrong grant:\n${grantEnv}`);
   }
+  // VERBATIM means byte-for-byte, so compare the whole file. The first version asserted that
+  // `allowed-tools: Read, Grep` was PRESENT, which survives a mutation that injects the six-line commented
+  // placeholder into a declared skill — an assertion whose message named a production change it could not
+  // detect. Rule 7 applies to smoke assertions too.
   const copied = readFileSync(join(work, ".pi", "skills", "review", "SKILL.md"), "utf8");
-  if (!copied.includes("allowed-tools: Read, Grep")) throw new Error("init did not copy the declaration verbatim");
+  if (copied !== skillSource) throw new Error(`init did not copy the declaration verbatim:\n${copied}`);
 
   console.log("smoke: installed package imports and runs, and `pi-daddy init` scaffolds — OK");
 } catch (error) {

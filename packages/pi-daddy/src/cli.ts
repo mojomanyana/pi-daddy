@@ -3,17 +3,23 @@
  * `pi-daddy` — the command line, which today has exactly one subcommand.
  *
  * Thin on purpose: argv in, `discoverSkillPackages` + `planInit` + `applyInit`, report out. Every decision
- * lives in `./init.ts` and `./skill-packages.ts` as functions that touch no argv and print nothing, so the
- * scaffolding is testable without running a process — the same split `extensions/grants.ts` was cut along
- * after four wiring bugs in a row lived in the part nothing could test.
+ * lives in `./init.ts`, `./grant-env.ts` and `./skill-packages.ts` as functions that touch no argv and print
+ * nothing, so the scaffolding is testable without running a process — the same split `extensions/grants.ts`
+ * was cut along after four wiring bugs in a row lived in the part nothing could test.
+ *
+ * **`parseArgs` is exported and tested, which it was not** (R-79). This file shipped with zero tests and
+ * promptly earned two of them: an entry-point guard that was false for every installed copy (R-73), and an
+ * unknown-option check that exempted `argv[0]` whenever `--dir` was absent, so `pi-daddy init --Force`
+ * was accepted in silence — the exact failure the check's own comment says it prevents.
  */
 
 import { realpathSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { relative } from "node:path";
+import { relative, resolve as resolvePath } from "node:path";
 import { pathToFileURL } from "node:url";
+import { UnsafeGrantError } from "./grant-env.ts";
 import { applyInit, planInit, type InitPlan } from "./init.ts";
-import { discoverSkillPackages } from "./skill-packages.ts";
+import { discoverSkillPackages, type RefusedSkill, type SkillPackage } from "./skill-packages.ts";
 
 const USAGE = `pi-daddy — capability governance for pi sub-agents
 
@@ -24,23 +30,90 @@ Usage:
 
 init copies each declared SKILL.md into .pi/skills/ and writes a grant naming exactly what those files
 declare. It never chooses a ceiling: a skill declaring no \`allowed-tools\` is copied with a commented
-placeholder and stays unspawnable until you fill it in. Review the files, then commit them.
+placeholder and stays unspawnable until you fill it in. Capabilities that can change your machine
+(bash, write, edit) are written COMMENTED — uncomment them deliberately. Review the files, then commit.
 
-  --force   rewrite files that already exist. This DISCARDS any \`allowed-tools\` you added.`;
+  --force   rewrite the SKILL.md copies that already exist. This DISCARDS any \`allowed-tools\` you added.
+            It never rewrites .pi/grants.env — delete that file if you want it regenerated.`;
+
+export interface ParsedArgs {
+  command: "init" | "help" | "version";
+  dir?: string;
+  force: boolean;
+  /** Non-empty means refuse: argv said something this program does not understand. */
+  errors: string[];
+}
+
+/**
+ * Parse argv. Pure, exported, and tested — argv handling is where both of this file's defects lived.
+ *
+ * Rule 8 throughout: an unrecognised option is refused rather than ignored, and `--dir` refuses a value
+ * that looks like a flag, because `init --dir --force` used to scaffold into a directory named `--force`
+ * with `force` simultaneously true.
+ */
+export function parseArgs(argv: string[]): ParsedArgs {
+  const args = argv.slice(2);
+  if (args.length === 0) return { command: "help", force: false, errors: ["no command"] };
+  if (args.includes("--help") || args.includes("-h")) return { command: "help", force: false, errors: [] };
+  if (args.includes("--version") || args.includes("-v")) return { command: "version", force: false, errors: [] };
+
+  const [command, ...rest] = args;
+  if (command !== "init") return { command: "help", force: false, errors: [`unknown command "${command}"`] };
+
+  const errors: string[] = [];
+  let dir: string | undefined;
+  let force = false;
+  for (let i = 0; i < rest.length; i += 1) {
+    const arg = rest[i];
+    if (arg === "--force") {
+      force = true;
+    } else if (arg === "--dir") {
+      const value = rest[i + 1];
+      // A flag is not a path. Without this, `--dir --force` consumed the flag as the directory AND left
+      // force on, then reported "nothing to scaffold" and exited 0 — the outcome this CLI's own comments
+      // call the worst available failure for a scaffolding command.
+      if (value === undefined || value.startsWith("-")) errors.push("--dir needs a path");
+      else {
+        dir = value;
+        i += 1;
+      }
+    } else {
+      // Was `rest.filter((a, i) => … && i !== dirIndex + 1)`, and with `--dir` absent `dirIndex` is -1, so
+      // the exemption became `i !== 0` and the FIRST argument was never checked. `init --Force` therefore
+      // parsed as a valid no-op run: it kept every file and exited 0, which is indistinguishable from a
+      // deliberate second run. Found by a reviewer, not by a test, because this file had none.
+      errors.push(`unknown option ${arg}`);
+    }
+  }
+
+  return { command: "init", dir, force, errors };
+}
 
 /** Report a plan and what came of applying it. Returns the process exit code. */
 async function init(cwd: string, force: boolean): Promise<number> {
   const packages = await discoverSkillPackages(cwd);
   if (packages.length === 0) {
     console.log(
-      `pi-daddy init: no installed package under ${relative(process.cwd(), cwd) || "."}/node_modules declares\n` +
-        `skills (a package.json "pi": {"skills": [...]} field). Nothing to scaffold.\n\n` +
+      `pi-daddy init: no installed package under ${cwd}/node_modules declares skills\n` +
+        `(a package.json "pi": {"skills": [...]} field). Nothing to scaffold.\n\n` +
         `  npm install principal-pi-skills   # seven skills; then re-run this`,
     );
     return 0;
   }
 
-  const plan = planInit(packages, cwd);
+  let plan: InitPlan;
+  try {
+    plan = planInit(packages, cwd);
+  } catch (error) {
+    // R-78's backstop reaching the surface. Nothing is written: a grant that could mean something to a
+    // shell is not a grant, and half-scaffolding a project would be worse than scaffolding none of it.
+    if (error instanceof UnsafeGrantError) {
+      console.error(`pi-daddy init: ${error.message}`);
+      return 1;
+    }
+    throw error;
+  }
+
   for (const pkg of packages) {
     const declaring = plan.skills.filter((s) => s.from === `${pkg.name}@${pkg.version}` && s.withheld === null).length;
     console.log(
@@ -49,28 +122,59 @@ async function init(cwd: string, force: boolean): Promise<number> {
         (pkg.unreadable.length > 0 ? `, ${pkg.unreadable.length} declared but unreadable (${pkg.unreadable.join(", ")})` : "") +
         // Counted on this line as well as named below it: a reader who stops at the first line must not
         // read "0 skill(s)" as "this package ships none".
-        (pkg.unsafe.length > 0 ? `, ${pkg.unsafe.length} REFUSED for an unusable name` : ""),
+        (pkg.refused.length > 0 ? `, ${pkg.refused.length} REFUSED` : ""),
     );
-    // Loud, not silent (rule 8). A refused name is either a broken package or an attempt to write a
-    // capability into someone's grant, and both want an operator's attention rather than a shorter list.
-    for (const name of pkg.unsafe) {
-      console.error(
-        `REFUSED ${pkg.name}: a skill named ${JSON.stringify(name)} cannot be governed — a definition name ` +
-          `becomes a capability id in a comma-separated grant, a line in a file you source, and a path. ` +
-          `Names must match [A-Za-z0-9][A-Za-z0-9._-]*.`,
-      );
-    }
   }
+  const refused = packages.flatMap((p) => p.refused.map((r) => ({ pkg: p, refusal: r })));
+  for (const { pkg, refusal } of refused) console.error(reportRefusal(pkg, refusal));
   for (const collision of plan.collisions) console.log(`  skipped ${collision}`);
+
+  // `--force` is destructive and says so at the moment it acts, not only in `--help` — which is the one
+  // place the operator running the command is not reading.
+  if (force) {
+    const existing = plan.skills.length;
+    console.log(
+      `\n--force: rewriting up to ${existing} SKILL.md cop${existing === 1 ? "y" : "ies"} from the installed\n` +
+        `packages. Any \`allowed-tools\` you wrote in them is DISCARDED. .pi/grants.env is never rewritten.`,
+    );
+  }
 
   const outcome = await applyInit(plan, { force });
   const short = (path: string) => relative(cwd, path) || path;
   for (const path of outcome.written) console.log(`wrote ${short(path)}`);
-  for (const path of outcome.kept) console.log(`kept  ${short(path)} (already present — --force rewrites it)`);
+  for (const path of outcome.kept) console.log(`kept  ${short(path)} (already present — left exactly as it is)`);
   for (const failure of outcome.failed) console.error(`FAILED ${short(failure.path)}: ${failure.error}`);
 
   report(plan);
-  return outcome.failed.length > 0 ? 1 : 0;
+  // A refusal is a non-zero exit so CI can see it: a package that tried to write a capability into the
+  // grant through a name or a declaration is a fact a build should be able to fail on.
+  return outcome.failed.length > 0 || refused.length > 0 ? 1 : 0;
+}
+
+/** Say what was refused and what the fix is. Each reason has a different one. */
+function reportRefusal(pkg: SkillPackage, refusal: RefusedSkill): string {
+  const head = `REFUSED ${pkg.name}: ${JSON.stringify(refusal.subject)}`;
+  switch (refusal.reason) {
+    case "unsafe-name":
+      return (
+        `${head} cannot be governed — a definition name becomes a capability id in a comma-separated ` +
+        `grant, a line in a file you source, and a path. Names must match [A-Za-z0-9][A-Za-z0-9._-]*.`
+      );
+    case "unsafe-capability":
+      return (
+        `${head} declares ${refusal.detail.join(", ")}, which cannot be written into a grant file — a ` +
+        `capability id is tool:/skill:/agent:<name> or ext:<pkg>/<tool>. A quote or a separator here ` +
+        `would end up in a file you are told to \`source\`.`
+      );
+    case "wildcard":
+      return (
+        `${head} declares ${refusal.detail.join(", ")} — that is root authority, not a description of what ` +
+        `the skill needs, and a package may not hand it to itself. ${refusal.detail.includes("tool:*") ? "tool:* satisfies EVERY capability" : "agent:* authorises every definition on disk"}. ` +
+        `Add it by hand to PI_GRANTS_GRANT if you genuinely mean it.`
+      );
+    case "not-utf8":
+      return `${head} is not valid UTF-8, so it cannot be copied verbatim — pi-daddy will not rewrite its bytes.`;
+  }
 }
 
 /** What the operator has to do next, and what pi-daddy deliberately did not do for them. */
@@ -91,20 +195,26 @@ function report(plan: InitPlan): void {
     );
   }
 
+  if (plan.withheldCapabilities.size > 0) {
+    const needed = [...plan.withheldCapabilities].map(([c, who]) => `${c} (${who.join(", ")})`).join(", ");
+    console.log(
+      `\nWITHHELD BY DEFAULT: ${needed}.\n` +
+        `These can change your machine, so they are written COMMENTED in .pi/grants.env along with the\n` +
+        `\`agent:\` ids of the definitions that need them. Uncomment deliberately — that is the decision.`,
+    );
+  }
+
   console.log(
-    `\nGrant written (${plan.grant.length} capabilities): ${plan.grant.join(", ")}\n\n` +
+    `\nLive grant (${plan.grant.length} capabilities): ${plan.grant.join(", ")}\n\n` +
       `  $EDITOR .pi/grants.env         # review it, then commit it\n` +
       `  source .pi/grants.env && pi    # /grants lists every definition and its verdict`,
   );
 }
 
 export async function main(argv: string[]): Promise<number> {
-  const args = argv.slice(2);
-  if (args.length === 0 || args.includes("--help") || args.includes("-h")) {
-    console.log(USAGE);
-    return args.length === 0 ? 1 : 0;
-  }
-  if (args.includes("--version") || args.includes("-v")) {
+  const parsed = parseArgs(argv);
+
+  if (parsed.command === "version") {
     // Read from the manifest rather than pinned here: a version literal in code is one more place to
     // forget, and this package has already had a document claiming a version that never existed.
     const { version } = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
@@ -112,27 +222,21 @@ export async function main(argv: string[]): Promise<number> {
     return 0;
   }
 
-  const [command, ...rest] = args;
-  if (command !== "init") {
-    console.error(`pi-daddy: unknown command "${command}"\n\n${USAGE}`);
+  if (parsed.errors.length > 0) {
+    const stream = parsed.errors[0] === "no command" ? console.log : console.error;
+    stream(parsed.errors[0] === "no command" ? USAGE : `pi-daddy: ${parsed.errors.join("; ")}\n\n${USAGE}`);
     return 1;
+  }
+  if (parsed.command === "help") {
+    console.log(USAGE);
+    return 0;
   }
 
-  const dirIndex = rest.indexOf("--dir");
-  const dir = dirIndex === -1 ? process.cwd() : rest[dirIndex + 1];
-  if (dirIndex !== -1 && !dir) {
-    console.error("pi-daddy init: --dir needs a path");
-    return 1;
-  }
-  const unknown = rest.filter((a, i) => a.startsWith("-") && a !== "--force" && a !== "--dir" && i !== dirIndex + 1);
-  if (unknown.length > 0) {
-    // Rule 8: an unrecognised flag is refused rather than ignored. A typo'd `--force` that silently did
-    // nothing would be indistinguishable from a run that kept every file on purpose.
-    console.error(`pi-daddy init: unknown option ${unknown.join(", ")}\n\n${USAGE}`);
-    return 1;
-  }
-
-  return init(dir, rest.includes("--force"));
+  // ABSOLUTE, always. `readSkill` compares a resolved entry against the package directory, and a relative
+  // `--dir` made that comparison false for every entry: every declared skill of every package was reported
+  // "declared but unreadable", nothing was copied, a degenerate grants.env was written anyway, and the exit
+  // code was 0 — while the message blamed the package for a defect in this line.
+  return init(resolvePath(parsed.dir ?? process.cwd()), parsed.force);
 }
 
 /**

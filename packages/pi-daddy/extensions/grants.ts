@@ -218,9 +218,15 @@ export default function (pi: ExtensionAPI) {
         // silence. There is nothing below it now; there will be.
         try {
           const line = renderSpawnableSummary(
-            await summariseSpawnable(session.definitions, (name) =>
-              planWithApprovals(session, { task: "(preview)", agent: name }, {}, null),
+            await summariseSpawnable(
+              session.definitions,
+              (name) => planWithApprovals(session, { task: "(preview)", agent: name }, {}, null),
+              // The session facts that make every per-definition verdict identical. `mayDelegate` in
+              // particular: without `tool:delegate` there is no delegate tool at all, and the line used to
+              // report definitions as spawnable in the one session where nothing can ever be spawned.
+              { mayDelegate: session.mayDelegate, depth: session.depth, maxDepth: session.maxDepth },
             ),
+            session.definitions.size,
           );
           if (line) ctx.ui.notify(line, "info");
         } catch (error) {
