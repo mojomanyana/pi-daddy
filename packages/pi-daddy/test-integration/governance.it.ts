@@ -498,6 +498,29 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     );
   });
 
+  test("B1: session start names what is spawnable AND what is withheld", async () => {
+    // P4: the startup line reported the grant and nothing else, so an operator could not tell a working
+    // install from a failed one. Measured here rather than asserted about, because the claim is about what
+    // a REAL pi session prints — the same reason every other startup control in this file is tested here.
+    //
+    // **The production change that breaks this** (rule 7): removing the `summariseSpawnable` block from
+    // `session_start`, or classifying without the planner so a withheld definition reads as spawnable.
+    const cwd = await projectOnce();
+    const r = await runCommand({
+      cwd,
+      command: "/grants",
+      env: { PI_GRANTS_GRANT: "agent:docs-writer,agent:undeclared,tool:read,tool:write" },
+    });
+
+    const line = r.notifies.map((n) => n.message).find((m) => m.includes("definitions spawnable"));
+    assert.ok(line, `no spawnable summary at session start — notifies were:\n${r.notifies.map((n) => n.message).join("\n")}`);
+    assert.match(line, /^grants: 1 of 3 definitions spawnable — docs-writer$/m);
+    // The withheld half is the point of the line: `fabric-agent` needs an id this grant does not hold,
+    // and `undeclared` is authorised but declares no `allowed-tools`. Two different fixes, said apart.
+    assert.match(line, /withheld: fabric-agent — need agent:fabric-agent, which this session does not hold/);
+    assert.match(line, /withheld: undeclared — cannot be spawned as their files are written/);
+  });
+
   test("an ungoverned session reports itself inactive", async () => {
     const cwd = await projectOnce();
     const r = await runCommand({ cwd, command: "/grants" });

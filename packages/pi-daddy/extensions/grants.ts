@@ -36,6 +36,7 @@ import { registerDelegationTools } from "./delegation.ts";
 import { grantsCommand } from "./grants-command.ts";
 import { planWithApprovals } from "./run-delegation.ts";
 import { createGrantsSession } from "./session.ts";
+import { renderSpawnableSummary, summariseSpawnable } from "./spawn-summary.ts";
 
 const SPAWN_TOOLS = new Set(["Agent", "subagent", "spawn_agent"]);
 
@@ -207,6 +208,29 @@ export default function (pi: ExtensionAPI) {
           `grants: depth ${session.depth}/${session.maxDepth}, holding [${session.ownGrant.join(", ") || "nothing"}]`,
           "info",
         );
+        // B1 / P4. The grant alone never named the definitions, never said where they came from, and never
+        // said which ones were being WITHHELD — so an operator who had just installed a package of
+        // `SKILL.md` files could not tell governance-is-working from did-the-install-fail. Classified by the
+        // real planner (see `./spawn-summary.ts`), never by a second reading of the rules.
+        //
+        // Its own try/catch, and not because `summariseSpawnable` throws today: this is the R-60 shape
+        // exactly — one added `await` inside the blanket catch cancelling every control below it in
+        // silence. There is nothing below it now; there will be.
+        try {
+          const line = renderSpawnableSummary(
+            await summariseSpawnable(session.definitions, (name) =>
+              planWithApprovals(session, { task: "(preview)", agent: name }, {}, null),
+            ),
+          );
+          if (line) ctx.ui.notify(line, "info");
+        } catch (error) {
+          ctx.ui.notify(
+            `grants: could not work out which definitions are spawnable ` +
+              `(${error instanceof Error ? error.message : String(error)}) — run /grants for the per-definition ` +
+              `verdict. Nothing about the grant or its enforcement depends on this line.`,
+            "warning",
+          );
+        }
       }
     } catch (error) {
       // Rule 8 — fail closed, and be LOUD about it. Swallowing is still right: a startup fault must not
