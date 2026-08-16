@@ -32,6 +32,27 @@ import type { Capability } from "./resolve.ts";
 import type { SkillPackage } from "./skill-packages.ts";
 
 /** Why a discovered skill is not authorised in the generated grant. `null` means it is. */
+/**
+ * How many of `from`'s skills actually **declare** a ceiling.
+ *
+ * Exported because the number is printed to an operator and was wrong: `cli.ts` filtered on
+ * `withheld === null`, which is false for all three `WithholdReason`s — so a skill that declares
+ * `allowed-tools` perfectly well and merely needs a withheld capability counted as not declaring one.
+ * Against `principal-pi-skills` that printed *"7 skill(s), 3 declaring allowed-tools"* while all seven
+ * declared. R-28's shape: a diagnostic disagreeing with the thing it describes.
+ *
+ * **It was invisible until the integration worked.** Before ceilings shipped, none of the seven declared
+ * and the line read *"0 declaring"* — correct by coincidence, for the wrong reason. A count that is right
+ * only while the interesting case is absent is the kind this project keeps finding.
+ *
+ * `undeclared` is the only reason that means "did not declare". `pattern` declared something this package
+ * refuses to reinterpret, and `needs-withheld` declared something fine that the operator must opt into —
+ * both are declarations.
+ */
+export function countDeclaring(skills: PlannedSkill[], from: string): number {
+  return skills.filter((s) => s.from === from && s.withheld !== "undeclared").length;
+}
+
 export type WithholdReason = "undeclared" | "pattern" | "needs-withheld";
 
 export interface PlannedSkill {

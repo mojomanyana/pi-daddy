@@ -28,6 +28,7 @@ import { chmod, mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { ceilingForDefinition, parseSkillDefinition } from "../src/definitions.ts";
+import { countDeclaring, type PlannedSkill, type WithholdReason } from "../src/init.ts";
 import { parseArgs } from "../src/cli.ts";
 import { assertGrantIsWritable, UnsafeGrantError } from "../src/grant-env.ts";
 import { applyInit, planInit, withPlaceholder } from "../src/init.ts";
@@ -480,4 +481,40 @@ test("R-79: argv is parsed, and the first argument is checked like every other",
     errors: [],
   });
   assert.equal(parseArgs(["node", "cli", "wat"]).errors[0], 'unknown command "wat"');
+});
+
+test("R-73: `declaring` counts declarations, not authorisations", async () => {
+  // The line an operator reads first: "found principal-pi-skills@2.3.1 — 7 skill(s), N declaring
+  // allowed-tools". It filtered on `withheld === null`, which is false for ALL THREE WithholdReasons, so a
+  // skill declaring a perfectly good ceiling that merely needs `bash` counted as not declaring one. Against
+  // the real package that printed "3 declaring" while all seven declared.
+  //
+  // **The production change that breaks this test** (rule 7): reverting the filter to `withheld === null`.
+  //
+  // It was invisible until the integration worked. Before principal-pi-skills shipped ceilings, none of the
+  // seven declared and the line read "0 declaring" — correct by coincidence, for the wrong reason.
+  const skill = (name: string, withheld: WithholdReason | null): PlannedSkill => ({
+    name,
+    from: "pkg@1.0.0",
+    sourcePath: `/n/pkg/${name}/SKILL.md`,
+    targetPath: `/p/.pi/skills/${name}/SKILL.md`,
+    content: "---\n---\n",
+    ceiling: [],
+    withheld,
+    notes: [],
+  });
+
+  const skills = [
+    skill("decide", null),               // declares, fully authorised
+    skill("build", "needs-withheld"),    // declares; needs bash/edit/write
+    skill("review", "needs-withheld"),   // declares; needs bash
+    skill("odd", "pattern"),             // declares, but a sub-tool pattern we refuse to reinterpret
+    skill("bare", "undeclared"),         // the ONLY one that did not declare
+    skill("other", null),                // different package — must not be counted
+  ];
+  skills[5].from = "elsewhere@2.0.0";
+
+  assert.equal(countDeclaring(skills, "pkg@1.0.0"), 4, "four of the five declared; only `bare` did not");
+  assert.equal(countDeclaring(skills, "elsewhere@2.0.0"), 1, "scoped to the package asked about");
+  assert.equal(countDeclaring(skills, "absent@0.0.0"), 0);
 });

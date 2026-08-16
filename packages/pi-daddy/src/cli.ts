@@ -18,7 +18,7 @@ import { readFile } from "node:fs/promises";
 import { relative, resolve as resolvePath } from "node:path";
 import { pathToFileURL } from "node:url";
 import { UnsafeGrantError } from "./grant-env.ts";
-import { applyInit, planInit, type InitPlan } from "./init.ts";
+import { applyInit, countDeclaring, planInit, type InitPlan } from "./init.ts";
 import { discoverSkillPackages, type RefusedSkill, type SkillPackage } from "./skill-packages.ts";
 
 const USAGE = `pi-daddy — capability governance for pi sub-agents
@@ -115,7 +115,7 @@ async function init(cwd: string, force: boolean): Promise<number> {
   }
 
   for (const pkg of packages) {
-    const declaring = plan.skills.filter((s) => s.from === `${pkg.name}@${pkg.version}` && s.withheld === null).length;
+    const declaring = countDeclaring(plan.skills, `${pkg.name}@${pkg.version}`);
     console.log(
       `found ${pkg.name}@${pkg.version} — ${pkg.skills.length} skill(s), ` +
         `${declaring} declaring allowed-tools` +
