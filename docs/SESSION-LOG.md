@@ -169,6 +169,17 @@ while the commit claimed both gaps were stated; and the one git-spawning test wo
 `docs/maintenance`). **Seven mutations now fail the suite, measured, where the docstring had claimed four and
 one of those survived.**
 
+**Recorded because rule 10 says to, on the day rule 10 landed: two outward-facing artifacts were corrupted by
+shell backtick expansion.** PR #6's title lost `` `main` `` and shipped as *"docs+guard:  is only advanced..."*
+until it was patched; #7's squash-commit message on `main` (`6832ac1`) lost `` `files` ``, `` `test/` `` and
+`` `hooks/pre-commit` ``, leaving two broken sentences. **That one stays** — it is pushed, and rule 10 forbids
+rewriting history to tidy a cosmetic defect; #7's body carries the intact text. Cause both times: backticks
+inside a double-quoted shell string are command substitution, and `python3 -c "...\`x\`..."` interpolates
+before Python ever sees it. **The pattern that avoids it:** write the JSON with a quoted heredoc
+(`<<'PY'`) or a file, never a double-quoted `-c`. Cheap, and it failed twice in one session before being
+written down — a title is visible, but a merge-commit message nobody rereads is exactly the artifact that
+rots unnoticed.
+
 **What to copy from this pass.** Assigning each reviewer a single falsifiable lens produced almost no
 overlap: the factual-claims reviewer found the composited anecdote, the rendering reviewer measured the
 108-character wrap and cleared the two rendering worries by *actually rendering* rather than reasoning, and
