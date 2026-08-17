@@ -5,6 +5,10 @@ to be decided. Where this disagrees with an ADR, the ADR is right and this file 
 
 Last synced against the code: **2026-08-17**, `pi-daddy` 0.16.0, pi 0.84.2, herdr 0.7.5.
 
+**herdr's own contracts are now checked by `test-integration/herdr.it.ts`** against a live server, in an isolated
+workspace it creates and closes. That suite exists because three shipping defects hid behind the unit fake — the
+fake is a *claim* about herdr, and nothing checked the claim.
+
 ---
 
 ## The claim
