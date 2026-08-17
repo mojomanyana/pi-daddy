@@ -352,3 +352,87 @@ test("R-65: the exit sweep is bounded in TOTAL, not per call", async () => {
   assert.ok(openPaneCount() > 0, "and what it did not reach stays tracked rather than being silently dropped");
   reapOpenPanes(() => {});
 });
+
+test("ADR-0032: the pane's output is reported while the child is still running", async () => {
+  // The production change that breaks this: reading the pane only after `waitForSettled` returns, which is what
+  // made a herdr child a black box for its whole run.
+  const seen: string[] = [];
+  const fake = fakeHerdr({
+    getSequence: [
+      { agent_status: "working", state_change_seq: 11 },
+      { agent_status: "working", state_change_seq: 12 },
+      { agent_status: "idle", state_change_seq: 13 },
+    ],
+    output: "partial progress",
+  });
+  await runHerdrPane({ ...request(), exec: fake.exec, pollIntervalMs: 1, onOutput: (chunk) => seen.push(chunk) });
+  assert.ok(seen.length > 0, "nothing was reported before the child settled");
+  assert.ok(fake.verbs().filter((v) => v === "agent read").length >= 2, "the pane must be read while it runs");
+});
+
+test("ADR-0032: only the NEW suffix is reported, because `agent read` returns the whole terminal", async () => {
+  // Reporting the reply verbatim on every poll would repeat the entire buffer once per interval: the block
+  // would show the child's first line forever and the transcript would grow quadratically.
+  const seen: string[] = [];
+  let call = 0;
+  const growing = ["line one\n", "line one\nline two\n", "line one\nline two\nline three\n"];
+  const fake = fakeHerdr({
+    getSequence: [
+      { agent_status: "working", state_change_seq: 11 },
+      { agent_status: "working", state_change_seq: 12 },
+      { agent_status: "idle", state_change_seq: 13 },
+    ],
+  });
+  const exec: HerdrExec = async (args) => {
+    if (args.slice(0, 2).join(" ") === "agent read") {
+      const body = growing[Math.min(call++, growing.length - 1)];
+      return { code: 0, stdout: JSON.stringify({ id: "x", result: { output: body } }), stderr: "" };
+    }
+    return fake.exec(args);
+  };
+  await runHerdrPane({ ...request(), exec, pollIntervalMs: 1, onOutput: (chunk) => seen.push(chunk) });
+  const streamed = seen.join("");
+  assert.equal(streamed.match(/line one/g)?.length, 1, `"line one" reported more than once: ${JSON.stringify(streamed)}`);
+});
+
+test("ADR-0032: a rewritten terminal reports the whole buffer rather than nothing", async () => {
+  // A cleared screen or a spinner means the new text is NOT a superstring of the old. Reporting nothing there
+  // would silently stop the stream for the rest of the run.
+  const seen: string[] = [];
+  let call = 0;
+  const rewritten = ["aaaa\n", "bbbb\n", "bbbb\n"];
+  const fake = fakeHerdr({
+    getSequence: [
+      { agent_status: "working", state_change_seq: 11 },
+      { agent_status: "idle", state_change_seq: 12 },
+    ],
+  });
+  const exec: HerdrExec = async (args) => {
+    if (args.slice(0, 2).join(" ") === "agent read") {
+      return { code: 0, stdout: JSON.stringify({ id: "x", result: { output: rewritten[Math.min(call++, 2)] } }), stderr: "" };
+    }
+    return fake.exec(args);
+  };
+  await runHerdrPane({ ...request(), exec, pollIntervalMs: 1, onOutput: (chunk) => seen.push(chunk) });
+  assert.match(seen.join(""), /bbbb/);
+});
+
+test("ADR-0032: the pane id reaches the caller as soon as it exists, so a human can switch to a LIVE child", async () => {
+  const ids: string[] = [];
+  const fake = fakeHerdr();
+  await runHerdrPane({ ...request(), exec: fake.exec, onPane: (paneId) => ids.push(paneId) });
+  assert.deepEqual(ids, ["w1:p9"]);
+});
+
+test("ADR-0032: an onOutput that throws does not break the run", async () => {
+  const fake = fakeHerdr();
+  const out = await runHerdrPane({
+    ...request(),
+    exec: fake.exec,
+    pollIntervalMs: 1,
+    onOutput: () => {
+      throw new Error("renderer exploded");
+    },
+  });
+  assert.equal(out.code, 0);
+});

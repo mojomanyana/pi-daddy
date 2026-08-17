@@ -157,6 +157,13 @@ export async function runOneDelegation(
   budget: number | undefined,
   ctx: DelegationToolContext,
   signal: AbortSignal | undefined,
+  /**
+   * Progress for the parent's status block (ADR-0032). Optional, so nothing here depends on being watched.
+   *
+   * One sink for both executors: the herdr path additionally reports a pane id, and the process path never
+   * has one. Every field is display-only — the child's answer is still the returned outcome.
+   */
+  onProgress?: (update: { chunk?: string; paneId?: string; state?: "running" | "completed" | "failed" }) => void,
 ): Promise<DelegationOutcome> {
   // pi resolves a BARE model id to an unauthenticated provider and the child dies at startup — the id
   // alone is not enough, it must be qualified with its provider (`Model<Api>` carries both).
@@ -251,6 +258,10 @@ export async function runOneDelegation(
         signal,
         timeoutMs: timeoutFromEnv(process.env[ENV_CHILD_TIMEOUT]),
         keepPane: process.env[ENV_HERDR_KEEP_PANE] === "1",
+        // ADR-0032. The pane id arrives first and is what a human switches to; the output follows as the child
+        // works. Both are display only.
+        onPane: onProgress ? (paneId) => onProgress({ paneId, state: "running" }) : undefined,
+        onOutput: onProgress ? (chunk) => onProgress({ chunk }) : undefined,
       })
     : await runChild({
         command: "pi",
@@ -262,6 +273,9 @@ export async function runOneDelegation(
         cwd: ctx.cwd,
         signal,
         timeoutMs: timeoutFromEnv(process.env[ENV_CHILD_TIMEOUT]),
+        // No pane on this path, so streaming is the ONLY observability a subprocess child can have — which is
+        // why ADR-0032 chose the streaming option over status lines alone.
+        onOutput: onProgress ? (chunk) => onProgress({ chunk }) : undefined,
       });
 
   // G8: a child that failed is reported as a failure. A non-zero exit, a timeout and a truncated flood

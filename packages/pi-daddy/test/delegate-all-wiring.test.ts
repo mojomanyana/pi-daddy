@@ -308,3 +308,52 @@ test("ADR-0031: PI_GRANTS_HERDR=0 spawns nothing through herdr and does not refu
     },
   );
 });
+
+test("ADR-0032: delegate_all renders ONE status block covering every child", async () => {
+  // `onUpdate` replaces the tool's rendered result, so one painter per child would have each overwriting the
+  // others and the operator would watch a single child flicker. The production change that breaks this:
+  // building a reporter per child instead of per call.
+  const frames: string[] = [];
+  const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate" });
+  const onUpdate = (partial: { content: Array<{ text: string }> }) => void frames.push(partial.content[0].text);
+
+  await tools
+    .get("delegate_all")!
+    .execute("t", { children: refusedChildren(3) }, undefined, onUpdate as never, ctx)
+    .catch(() => undefined);
+
+  assert.ok(frames.length > 0, "a fan-out must paint at least the settled frame");
+  const last = frames[frames.length - 1];
+  assert.match(last, /3 children/, "one block, and it counts all of them");
+  assert.equal(last.match(/failed/g)?.length, 3, "every child's end state must show, not just the first");
+});
+
+test("ADR-0032: delegate paints too — it is the one-child case of the same block", async () => {
+  // `_onUpdate` was discarded here, so a single delegation showed the bare word `delegate` for up to ten
+  // minutes. The production change that breaks this: renaming it back to `_onUpdate`.
+  const frames: string[] = [];
+  const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate" });
+  const onUpdate = (partial: { content: Array<{ text: string }> }) => void frames.push(partial.content[0].text);
+
+  await tools
+    .get("delegate")!
+    .execute("t", { task: "audit", tools: ["write"] }, undefined, onUpdate as never, ctx)
+    .catch(() => undefined);
+
+  assert.ok(frames.length > 0);
+  assert.match(frames[frames.length - 1], /1 child/);
+});
+
+test("ADR-0032: the block names the executor it is running under", async () => {
+  // So a transcript read later says where those children ran, matching the ledger and the banner.
+  const frames: string[] = [];
+  const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate", [ENV_HERDR]: "0" });
+  const onUpdate = (partial: { content: Array<{ text: string }> }) => void frames.push(partial.content[0].text);
+
+  await tools
+    .get("delegate")!
+    .execute("t", { task: "audit", tools: ["write"] }, undefined, onUpdate as never, ctx)
+    .catch(() => undefined);
+
+  assert.match(frames[frames.length - 1], /captured subprocesses/);
+});

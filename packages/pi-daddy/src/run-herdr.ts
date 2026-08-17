@@ -28,6 +28,7 @@ import type { ChildRunResult } from "./run-child.ts";
 import { DEFAULT_MAX_OUTPUT_BYTES, DEFAULT_TIMEOUT_MS } from "./run-child.ts";
 import { trackPane, untrackPane } from "./pane-reaper.ts";
 import { defaultExec, parseReply, type HerdrExec } from "./herdr-cli.ts";
+import { POLL_INTERVAL_MS, readPane, waitForSettled } from "./herdr-poll.ts";
 
 /**
  * Re-exported so importers of the executor still reach the protocol at the name they always used.
@@ -36,6 +37,13 @@ import { defaultExec, parseReply, type HerdrExec } from "./herdr-cli.ts";
  * **unmodified** across this extraction — that is the only available proof the move changed no behaviour.
  */
 export { type HerdrExec, parseReply } from "./herdr-cli.ts";
+/**
+ * Re-exported so `test/run-herdr.test.ts` and any importer keep reaching these where they always were.
+ *
+ * `POLL_INTERVAL_MS` and `newSuffix` moved to `./herdr-poll.ts` under the 400-line ceiling; the names are part
+ * of this module's surface and moving a file should not move an export.
+ */
+export { POLL_INTERVAL_MS, newSuffix, readPane, waitForSettled, type PollTarget } from "./herdr-poll.ts";
 
 export interface HerdrRunRequest {
   /** `planSpawn` args **without** the prompt — see `prompt`. */
@@ -66,6 +74,24 @@ export interface HerdrRunRequest {
    */
   keepPane?: boolean;
   exec?: HerdrExec;
+  /**
+   * Pane text as it appears, for the parent's progress display (ADR-0032).
+   *
+   * **Display only**, exactly as in `runChild`: the child's answer is still the returned `text`. Only the text
+   * the pane has GAINED since the last read is passed — see `newSuffix` for why that matters.
+   *
+   * Exceptions are swallowed; a renderer must not be able to break a governed run.
+   */
+  onOutput?: (chunk: string) => void;
+  /**
+   * The pane id, reported as soon as `tab create` returns it.
+   *
+   * Separate from `onOutput` because it arrives once and arrives *early*: it is what lets the parent print a
+   * name a human can switch to **while the child is alive**, which is the whole point of the pane surviving.
+   */
+  onPane?: (paneId: string) => void;
+  /** Poll cadence override. Exists so tests do not wait `POLL_INTERVAL_MS` per state transition. */
+  pollIntervalMs?: number;
 }
 
 /**
@@ -90,11 +116,6 @@ export function splitSystemPrompt(args: string[]): { args: string[]; systemPromp
   return { args: [...args.slice(0, at), ...args.slice(at + 2)], systemPrompt: args[at + 1] };
 }
 
-/** Statuses herdr reports for a settled agent. `blocked` counts: it is waiting for a human, not working. */
-const TERMINAL = new Set(["idle", "done", "blocked"]);
-
-/** How often to poll `agent get` while waiting for the child to settle. */
-export const POLL_INTERVAL_MS = 750;
 /** How often to retry `agent start` while a freshly created pane is still reaching its shell prompt. */
 export const PANE_READY_POLL_MS = 300;
 
@@ -197,6 +218,17 @@ export async function runHerdrPane(request: HerdrRunRequest): Promise<ChildRunRe
     if (tabId && (closed || request.keepPane)) untrackPane(tabId);
   };
 
+  // ADR-0032: the pane exists and has a name, so tell the caller NOW. A pane id that arrives with the result is
+  // useless — the point is switching to a child while it is still working. Guarded because a renderer must not
+  // be able to strand a pane we have already created.
+  if (request.onPane) {
+    try {
+      request.onPane(paneId);
+    } catch {
+      /* display only */
+    }
+  }
+
   try {
     const started = await startAgent(exec, request.name, paneId, effectiveArgs, deadline);
     if (started.error) return { ...empty, spawnError: `herdr agent start failed: ${started.error}` };
@@ -207,7 +239,7 @@ export async function runHerdrPane(request: HerdrRunRequest): Promise<ChildRunRe
     const prompted = parseReply(await exec(["agent", "prompt", request.name, request.prompt]));
     if (prompted.error) return { ...empty, spawnError: `herdr agent prompt failed: ${prompted.error}` };
 
-    const settled = await waitForSettled(exec, request, before, deadline);
+    const settled = await waitForSettled(exec, request, before, deadline, maxOutputBytes);
     if (settled.aborted || settled.timedOut) {
       // Still read: a timed-out child usually produced something, and a partial answer labelled partial is
       // more useful than none. R-03's rule — a missing result must never look like an empty one.
@@ -264,71 +296,4 @@ async function startAgent(
 function seqOf(result: Record<string, unknown> | undefined): number {
   const agent = (result?.agent ?? {}) as { state_change_seq?: number };
   return typeof agent.state_change_seq === "number" ? agent.state_change_seq : -1;
-}
-
-/**
- * Wait for the child to settle, without accepting the state it was already in.
- *
- * **R-33, measured.** `herdr agent wait --until idle` called right after `agent prompt` returned
- * *immediately*, matching the agent's **pre-existing** idle state with `state_change_seq` unchanged — a
- * reply indistinguishable from a completed run. For fan-out that is not an inconvenience but a
- * correctness bug: an orchestrator would "collect" N children that never ran and merge N empty results
- * into a confident summary (R-03 with a new cause).
- *
- * So this polls `agent get` and requires **both** that the status is terminal **and** that
- * `state_change_seq` has advanced past the value observed before prompting. `agent wait` is deliberately
- * not used at all: its contract cannot express "settled *after* this point".
- */
-async function waitForSettled(
-  exec: HerdrExec,
-  request: HerdrRunRequest,
-  before: number,
-  deadline: number,
-): Promise<{ status?: string; timedOut?: boolean; aborted?: boolean; spawnError?: string }> {
-  for (;;) {
-    if (request.signal?.aborted) return { aborted: true };
-    if (Date.now() >= deadline) return { timedOut: true };
-
-    const reply = parseReply(await exec(["agent", "get", request.name]));
-    if (reply.error) return { spawnError: `herdr agent get failed: ${reply.error}` };
-
-    const agent = (reply.result?.agent ?? reply.result ?? {}) as { agent_status?: string; state_change_seq?: number };
-    const status = agent.agent_status;
-    const seq = typeof agent.state_change_seq === "number" ? agent.state_change_seq : -1;
-
-    if (status && TERMINAL.has(status) && seq > before) return { status };
-
-    await new Promise((r) => setTimeout(r, Math.min(POLL_INTERVAL_MS, Math.max(0, deadline - Date.now()))));
-  }
-}
-
-/**
- * Read the pane's contents.
- *
- * `agent read` is the ONE command that does not return herdr's JSON envelope — it writes the terminal's
- * text straight to stdout. Running it through `parseReply` turned every successful read into
- * "unparseable herdr reply", i.e. reported the child's actual answer as a failure to read it. Found by the
- * end-to-end run; the unit fake had been written to the envelope shape and so agreed with the bug.
- *
- * A JSON envelope is still accepted first, because an `error` reply here IS JSON and must not be mistaken
- * for terminal output.
- */
-async function readPane(exec: HerdrExec, name: string, maxOutputBytes: number): Promise<{ text: string; truncated: boolean }> {
-  const reply = await exec(["agent", "read", name]);
-  let text: string;
-  try {
-    const parsed = JSON.parse(reply.stdout) as { result?: Record<string, unknown>; error?: { message?: string } };
-    if (parsed.error) {
-      return { text: `[grants] could not read the agent pane: ${parsed.error.message ?? "unknown error"}`, truncated: false };
-    }
-    const raw = parsed.result?.output ?? parsed.result?.text ?? parsed.result?.content ?? "";
-    text = typeof raw === "string" ? raw : JSON.stringify(raw);
-  } catch {
-    text = reply.stdout;
-  }
-  if (Buffer.byteLength(text) <= maxOutputBytes) return { text, truncated: false };
-  // Keep the TAIL, not the head: a terminal's useful content is its most recent output, and the head is
-  // the startup banner. `runChild` keeps the head because it streams and must stop a runaway producer;
-  // here the output is already complete, so the choice is free and the tail is the answer.
-  return { text: text.slice(-maxOutputBytes), truncated: true };
 }
