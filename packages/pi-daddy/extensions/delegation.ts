@@ -22,6 +22,7 @@ import {
   throttle,
   type ChildProgress,
 } from "../src/progress.ts";
+import { registerChainTool } from "./delegate-chain.ts";
 import { runOneDelegation } from "./run-delegation.ts";
 import { type GrantsSession } from "./session.ts";
 
@@ -314,6 +315,11 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       };
     },
   });
+
+  // ADR-0033. Registered here so all three tools appear together and share the `mayDelegate` guard, but its logic
+  // lives in its own file: `delegate` and `delegate_all` differ only in cardinality, while a chain differs in
+  // composition, and this file is near the 400-line ceiling.
+  registerChainTool(pi, session);
 
   return {
     // Written through the CONSTRUCTED schema (`properties.agent`) rather than the object handed to

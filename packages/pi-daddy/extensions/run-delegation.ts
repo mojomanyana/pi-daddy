@@ -198,9 +198,16 @@ export async function runOneDelegation(
     }) => void;
     /** Approvals already obtained by the caller — see `planWithApprovals`. `delegate_chain` uses it. */
     preApproved?: InheritableApproval[];
+    /**
+     * The child whose output composed this child's task (ADR-0033).
+     *
+     * Recorded, never acted on: it exists so "who wrote this instruction?" is answerable from the trail, which is
+     * the question the chain's framed-rather-than-enforced handoff makes worth asking.
+     */
+    taskFrom?: string;
   } = {},
 ): Promise<DelegationOutcome> {
-  const { onProgress, preApproved } = options;
+  const { onProgress, preApproved, taskFrom } = options;
   // pi resolves a BARE model id to an unauthenticated provider and the child dies at startup — the id
   // alone is not enough, it must be qualified with its provider (`Model<Api>` carries both).
   const defaultModel = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
@@ -256,6 +263,7 @@ export async function runOneDelegation(
         // ADR-0031: where this child actually ran. Read off the live session, which the probe has settled
         // by now, so the record and the executor cannot disagree.
         executor: session.executor.kind,
+        taskFrom,
         requested: plan.requested,
         parentGrant: session.ownGrant,
         result: plan.result,
