@@ -1383,6 +1383,39 @@ it writes.
 **Trigger for the shape recurring:** any new package entry point — a `bin`, an `exports` subpath, an
 `imports` alias — that no test exercises through an *installed* copy.
 
+## R-75 · `init` found nothing when you installed the way pi tells you to — M×H, FIXED
+Added **and fixed** 2026-08-17. Found by running the documented setup in a **clean environment** rather than
+by reading it — every previous test of `init` used `npm install` into the project, which is the layout the
+documents described and not the one pi produces.
+
+```
+pi install npm:principal-pi-skills
+  → $PI_CODING_AGENT_DIR/npm/node_modules/principal-pi-skills
+  → the project gets NO node_modules at all
+
+pi-daddy init
+  → "no installed package under <cwd>/node_modules declares skills.
+     npm install principal-pi-skills"
+```
+
+**It told an operator to install a package they had just installed.** `discoverSkillPackages` searched only
+`<cwd>/node_modules`, and `pi install` — the pi-native path, and the **only** one that registers a package
+so pi will auto-load its extension — does not put it there.
+
+**FIXED:** both roots are searched, project first, so a copy pinned in a repository outranks the
+machine-wide one and a name in both yields one package rather than two. `init`'s remedy message now names
+every root it looked in and offers `pi install` first.
+
+**It also falsified three of this project's own documents**, which had all said `npm install pi-daddy`. That
+instruction appeared to work only because the developer's `~/.pi/agent/settings.json` already listed
+`npm:pi-daddy` from an earlier session — the classic shape of a claim verified on a machine that had been
+prepared without anyone noticing.
+
+**Widening discovery immediately broke six unit tests**, because they then read the developer's real
+`~/.pi/agent/npm`. That is R-40's lesson a second time — a test that reads real user state is not a test —
+and each now gets an isolated `PI_CODING_AGENT_DIR`, the same fix the approval store already carries.
+**Trigger:** any discovery that reads a path outside a test's own temp directory.
+
 ## R-74 · A definition copied by `init` does not track the package it came from — L×M, ACCEPTED
 Added 2026-08-16 (ADR-0028). `pi-daddy init` copies each declared `SKILL.md` into `.pi/skills/`, so
 `npm update principal-pi-skills` changes `node_modules` and leaves the governed copies exactly as they were.
@@ -1646,3 +1679,4 @@ fix it named was wrong per definition. `docs/SPEC.md`'s and ADR-0028's own worke
 | 2026-08-16 | R-73…R-76 | **The pi-daddy half of the `principal-pi-skills` integration** (handoff B1/B2/B4, ADR-0028). R-73 shipped and was caught by the smoke test: `npx pi-daddy init` printed nothing and exited 0 for every *installed* copy, because npm makes a bin a symlink and the entry-point guard compared it against `import.meta.url` — a scaffolding command that does nothing looks exactly like one with nothing to do. R-74 and R-76 are accepted consequences of `init` copying definitions and unioning their ceilings, both recorded with what mitigates them; R-75 states that the new startup line is an upper bound. **Every claim about pi and about `principal-pi-skills@2.3.1` was re-measured** — `docs/probes/b2-init-principal-pi-skills` | handoff B1/B2/B4 |
 | 2026-08-16 | R-77 | Added and fixed the same session — a skill **directory name** could write a capability into the grant `init` generates (`a,tool:bash` → `tool:bash` in `PI_GRANTS_GRANT`), because a name is interpolated into a comma-separated id list, a sourced shell file and a path at once. Reproduced against the real CLI before being written. Found by asking *what does the generated file interpolate?* — the same "where else does this shape appear?" question that found R-60, and the reason to ask it of anything that writes a file rather than reads one | handoff B1/B2/B4 |
 | 2026-08-17 | R-78…R-82 | **Five independent reviewers over PR #2, one hypothesis each — and every one found something.** R-78 is the worst and the most humbling: R-77's own trigger describes it, written the previous day about the name and never applied to the capability id beside it, and it ends in arbitrary code execution from a file this workflow tells operators to commit. R-79 collects four defects in one scaffolder, one of them **B-I6 reintroduced** in a package that documents B-I6 as closed. R-81 is R-28's shape *inside* the module whose header claims to have made R-28's shape inexpressible. **The pattern worth keeping: every finding was in the half of the change nothing had attacked** — a generated file, a CLI with no tests, a classifier written after the planner it claims to defer to | independent review of PR #2 |
+| 2026-08-17 | R-75, ADR-0030 | **The setup was wrong, and only running it in a clean environment showed that.** `pi install` registers a package with pi and installs it to the agent root; `npm install` does neither, and three documents said to use it. `init` searched only the project root and told operators to install what they had just installed. Both fixed. ADR-0030 adds a grant store **outside** the workspace so `/grants init` can govern a session with no restart — ADR-0014's reasoning applied to the ceiling instead of the approvals, with the environment still winning so propagation stays single-channel | the two-step setup |

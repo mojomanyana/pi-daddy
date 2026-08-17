@@ -3,7 +3,7 @@
 **The current-state document.** No history, no reasoning about alternatives, no record of how anything came
 to be decided. Where this disagrees with an ADR, the ADR is right and this file is stale — say so.
 
-Last synced against the code: **2026-08-17**, `pi-daddy` 0.14.0, pi 0.84.1, herdr 0.7.5.
+Last synced against the code: **2026-08-17**, `pi-daddy` 0.15.0, pi 0.84.1, herdr 0.7.5.
 
 ---
 
@@ -110,6 +110,28 @@ combination: any `SKILL.md` appearing in either skill root would run with a shel
 
 Anything pi-daddy needs beyond the standard goes under the spec's `metadata:` map with `pi-daddy-` keys —
 never as invented top-level frontmatter, so the file stays valid for every other tool that reads it.
+
+## Where a grant comes from
+
+**Two sources, and the environment always wins** (ADR-0030).
+
+`PI_GRANTS_GRANT` is the propagation channel to children and the way CI configures a run. When it is absent,
+a session reads the grant stored for **this directory** at `$PI_CODING_AGENT_DIR/grants/<slug>-<hash>.json`
+— written by `/grants init`, which asks about the withheld capabilities only and applies the answer to the
+running session without a restart.
+
+**The store is outside the workspace, and that is the design.** A grant is a ceiling; a ceiling a governed
+child can rewrite is not one. `<cwd>/.pi/grants.env` is writable by any child holding `tool:write`, which is
+ADR-0014's self-defeating case exactly — the reason persisted approvals were moved out of the workspace.
+`.pi/grants.env` is still written and still worth committing: it is the **reviewable record** of the
+decision, not what the enforcer reads.
+
+A stored grant is **never inherited**. Children are governed by the environment their parent writes, so
+propagation stays single-channel. Deleting the stored file un-governs the directory; `/grants` prints its
+path.
+
+**Governance is still opt-in.** There are now two ways to opt in — set the variable, or run `/grants init`
+here — and both are deliberate human acts. Nothing governs a directory that did nothing.
 
 ## Getting definitions onto disk: `pi-daddy init`
 
@@ -404,7 +426,7 @@ loudly.
 
 | Variable | Default | Notes |
 |---|---|---|
-| `PI_GRANTS_GRANT` | unset ⇒ **ungoverned** | Presence switches governance on. An ungoverned session publishes no governance variables at all, so "inactive" cannot quietly govern descendants. |
+| `PI_GRANTS_GRANT` | unset ⇒ **ungoverned unless this directory has a stored grant** | Presence switches governance on and **always outranks the store** (ADR-0030) — it is how a child is governed and how CI is configured. An ungoverned session publishes no governance variables at all, so "inactive" cannot quietly govern descendants. |
 | `PI_GRANTS_MAX_DEPTH` / `PI_GRANTS_DEPTH` | `2` / `0` | Depth is set by the parent, not by hand. |
 | `PI_GRANTS_GATED` | `tool:bash` when governed | `""` gates nothing. Closed under subsumption. |
 | `PI_GRANTS_APPROVED` | unset | `capability@subject#sha256` entries, inherited, clamped, and verified against the definition the child loaded (ADR-0022). |
@@ -423,9 +445,9 @@ bound a typo can switch off is not a bound.
 
 ```bash
 cd packages/pi-daddy
-npm test                   # 353 unit tests — pure, no pi, no network
+npm test                   # 364 unit tests — pure, no pi, no network
 npm run typecheck          # src + extensions + test + test-integration
-npm run test:integration   # 28 tests against a REAL pi process, no model tokens
+npm run test:integration   # 32 tests against a REAL pi process, no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and USE every subpath —
                            # and run the installed `pi-daddy init` bin, which is how R-73 was found
 

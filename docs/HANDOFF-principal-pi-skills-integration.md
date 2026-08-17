@@ -279,7 +279,7 @@ example with the real one people will actually have installed.
 ## What the operator experiences afterwards
 
 ```bash
-npm install pi-daddy principal-pi-skills
+npm install pi-daddy principal-pi-skills   # ← WRONG, see the note below
 npx principal-pi-agents install
 npx pi-daddy init
 source .pi/grants.env
@@ -293,6 +293,14 @@ grants: 4 definitions spawnable — decide, architect, plan, review (3 more need
 
 Five commands, no YAML edited by hand, and the second line makes it **obvious** that both packages are
 active and what each is contributing.
+
+> **Corrected 2026-08-17 (R-75, ADR-0030).** The sketch above says `npm install`, and that is not how pi
+> packages are installed: `pi install npm:<name>` registers the package in pi's settings, which is what
+> makes the extension auto-load, and it installs to `$PI_CODING_AGENT_DIR/npm/node_modules` rather than the
+> project. `init` searched only `<cwd>/node_modules`, so it found nothing for anyone who followed pi's own
+> instructions. Discovery now searches both roots. The realised flow is also shorter than this sketch —
+> `pi install` ×2, then `/grants init` inside pi, with no `source` and no restart. See
+> [`RUNNING-IT.md`](RUNNING-IT.md).
 
 ---
 

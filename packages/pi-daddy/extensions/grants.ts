@@ -39,7 +39,7 @@ import { runInit } from "./init-command.ts";
 import type { Capability } from "../src/resolve.ts";
 
 import { planWithApprovals } from "./run-delegation.ts";
-import { createGrantsSession, type GrantsSession } from "./session.ts";
+import { createGrantsSession, loadProjectDefinitions, type GrantsSession } from "./session.ts";
 import { renderSpawnableSummary, summariseSpawnable } from "./spawn-summary.ts";
 
 const SPAWN_TOOLS = new Set(["Agent", "subagent", "spawn_agent"]);
@@ -87,9 +87,7 @@ export default function (pi: ExtensionAPI) {
       // delegate by `tools:`, and an operator whose `agent:` spawns have all started failing deserves to
       // know it was the *scan* that broke rather than the grant.
       try {
-        session.definitions = await loadDefinitions(ctx.cwd);
-        session.catalogReady = buildCatalog({ cwd: ctx.cwd, observedTools: session.observedTools });
-        session.catalog = await session.catalogReady;
+        await loadProjectDefinitions(session, ctx.cwd);
       } catch (error) {
         ctx.ui.notify(
           `grants: could not read this project's definitions or capability catalog ` +
@@ -386,7 +384,11 @@ export default function (pi: ExtensionAPI) {
           // says so: stored approvals count exactly as they would for a spawn, and no human is asked
           // (R-38). Passing `ctx` here would let `/grants` raise a dialog, and passing `hasUI: false` would
           // make every gated definition report "no interactive user" instead of what actually blocks it.
-          runInit: () => runInit(session, ctx),
+          runInit: () =>
+            runInit(session, ctx, async () => {
+              await loadProjectDefinitions(session, ctx.cwd);
+              delegation.refreshSpawnable();
+            }),
           previewDelegation: (name: string) =>
             planWithApprovals(session, { task: "(preview)", agent: name }, {}, null),
         },

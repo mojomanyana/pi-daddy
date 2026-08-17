@@ -10,7 +10,7 @@
 import { discoverSkillPackages } from "../src/skill-packages.ts";
 import { applyInit, planInit } from "../src/init.ts";
 import { saveGrant, grantStorePath } from "../src/grant-store.ts";
-import type { Capability } from "../src/resolve.ts";
+import { expandSubsumed, SUBSUMPTION, type Capability } from "../src/resolve.ts";
 import type { GrantsSession } from "./session.ts";
 
 /**
@@ -26,7 +26,20 @@ import type { GrantsSession } from "./session.ts";
  * — that is the same outcome `pi-daddy init` writes by default, reached deliberately rather than by
  * omission.
  */
-export async function runInit(session: GrantsSession, ctx: any): Promise<void> {
+export async function runInit(
+  session: GrantsSession,
+  ctx: any,
+  /**
+   * Reload definitions and the catalog, and re-describe the delegation tools.
+   *
+   * **Without this the grant goes live and the definitions do not** — `session.definitions` and the catalog
+   * are read at `session_start`, which is before `init` wrote a single file, so a session would hold
+   * `agent:review` while believing no definition of that name exists. `/grants` showed `0 skill,
+   * 0 agent-type` and no verdicts, and the model would have been told `Available: none` — R-39 exactly,
+   * reintroduced by a feature whose whole selling point is "no restart". Found by running it.
+   */
+  refresh: () => Promise<void>,
+): Promise<void> {
   const packages = await discoverSkillPackages(ctx.cwd);
   if (packages.length === 0) {
     ctx.ui.notify(
@@ -51,8 +64,23 @@ export async function runInit(session: GrantsSession, ctx: any): Promise<void> {
   const grant = new Set<Capability>(plan.grant);
   const granted: string[] = [];
   const declined: string[] = [];
+  /** Withheld capabilities a previous *yes* already conferred, so no question was asked about them. */
+  const alreadyConferred: string[] = [];
 
   for (const [capability, neededBy] of plan.withheldCapabilities) {
+    // **Do not ask a question whose answer cannot matter.** `tool:bash` subsumes `write`, `edit` and
+    // `edit-diff` (`SUBSUMPTION`, `src/resolve.ts`), so once bash is granted those are already conferred.
+    // The first version asked anyway: an operator could answer *no* to `tool:write`, watch `/grants` allow
+    // `build` with `tool:write`, and reasonably conclude the dialog was decorative. It was — that is R-47's
+    // shape, a control that appears to do something and does not, inside a control built to prevent it.
+    //
+    // Reported rather than silently skipped, because "you already granted this" is the useful sentence and
+    // silence is what made it confusing.
+    if (expandSubsumed([...grant]).includes(capability)) {
+      alreadyConferred.push(`${capability} (via ${subsumedBy([...grant], capability) ?? "a granted capability"})`);
+      for (const name of neededBy) grant.add(`agent:${name}` as Capability);
+      continue;
+    }
     const answer = await ctx.ui.select(
       `grants: grant ${capability} to sub-agents?\n  needed by: ${neededBy.join(", ")}\n` +
         `  this can change your machine — ${capability === "tool:bash" ? "and bash also confers write and edit" : "it is not gated, so no dialog at spawn time"}`,
@@ -83,10 +111,22 @@ export async function runInit(session: GrantsSession, ctx: any): Promise<void> {
   // Live, without a restart — the whole point of the store. Only after a successful write, so what runs and
   // what is recorded cannot disagree.
   session.adoptGrant(finalGrant);
+  // Order matters: the grant first, then the reload, because `refreshSpawnable` filters the definitions it
+  // advertises through `maySpawnDefinition` against the grant the session now holds.
+  await refresh();
 
   lines.push(`  stored at ${grantStorePath(ctx.cwd)} — outside this project, so no child can rewrite it`);
   if (granted.length > 0) lines.push(`  GRANTED: ${granted.join(", ")}`);
+  if (alreadyConferred.length > 0) {
+    lines.push(`  ALREADY CONFERRED, not asked about: ${alreadyConferred.join(", ")}`);
+  }
   if (declined.length > 0) lines.push(`  withheld: ${declined.join("; ")}`);
   lines.push(`  live now (${finalGrant.length} capabilities) — no restart. /grants shows the verdicts.`);
   ctx.ui.notify(lines.join("\n"), "info");
+}
+
+/** Which held capability confers `capability`, for a message that names the cause rather than the effect. */
+function subsumedBy(held: Capability[], capability: Capability): Capability | null {
+  for (const h of held) if ((SUBSUMPTION[h] ?? []).includes(capability)) return h;
+  return null;
 }

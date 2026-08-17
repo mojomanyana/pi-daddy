@@ -13,47 +13,46 @@ below is read from the source, not remembered.
 ### 1. Install
 
 ```bash
-npm install pi-daddy principal-pi-skills
+pi install npm:pi-daddy
+pi install npm:principal-pi-skills
 ```
 
-No `-e` flag anywhere. `pi-daddy` declares `pi.extensions`, so pi auto-loads it for an installed package.
+**`pi install`, not `npm install`.** It fetches the package *and registers it in pi's settings*, which is
+what makes pi auto-load the extension — presence in `node_modules` alone does nothing. It installs into
+`$PI_CODING_AGENT_DIR/npm/node_modules`, so your project may have no `node_modules` at all, and that is
+normal. `npm install` into the project also works and pins the version for a team, but then the extension
+needs `-e ./node_modules/pi-daddy/extensions/grants.ts`. `pi-daddy init` searches **both** locations.
 
-### 2. Scaffold
+### 2. Start pi and scaffold — from inside
 
-```bash
-npx pi-daddy init
+```
+pi
+/grants init
 ```
 
+`init` copies each skill **byte for byte** into `.pi/skills/` and chooses no ceiling. Then it asks about the
+capabilities it will **not** grant on its own — the ones that can change your machine:
+
 ```
-found principal-pi-skills@2.4.0 — 7 skill(s), 7 declaring allowed-tools
-wrote .pi/skills/{decide,architect,plan,build,review,debug,git-ops}/SKILL.md
-wrote .pi/grants.env
-
-WITHHELD BY DEFAULT: tool:bash (build, review, debug, git-ops), tool:edit (build), tool:write (build).
-Live grant (8 capabilities): agent:architect, agent:decide, agent:plan, tool:delegate, …
-```
-
-`init` copies each skill **byte for byte** and chooses no ceiling. It writes a file for you to read.
-
-### 3. Read the file — this is the actual security step
-
-```bash
-$EDITOR .pi/grants.env
+grants: grant tool:bash to sub-agents?
+  needed by: build, review, debug, git-ops
+  this can change your machine — and bash also confers write and edit
+  [No] [Yes]
 ```
 
-It is commented throughout and tells you what each definition declares, what is withheld, and why.
-**Commit it.** From here the capability decision is in version control and reviewable like any other code.
+Three or four questions, not a dozen. The read-only capabilities each skill declares are already bounded
+twice — by the ceiling its author wrote and by pi's `--tools` — so they are not the decision. These are.
 
-### 4. Start
+Answering **No** is a real answer: those definitions stay unspawnable and `/grants` says so.
 
-```bash
-source .pi/grants.env && pi
-```
+The result is stored **outside your project** (`$PI_CODING_AGENT_DIR/grants/…`) and applied to the session
+you are already in — **no restart, no `source`** (ADR-0030). Outside, because a grant is a *ceiling*, and a
+ceiling a child holding `tool:write` could rewrite is not a ceiling.
 
-### 5. Confirm before trusting it
+### 3. Confirm before trusting it
 
-Type `/grants` in pi. Costs nothing, calls no model, and runs the **real planner** — so it cannot disagree
-with what a spawn would do:
+`/grants` costs nothing, calls no model, and runs the **real planner** — so it cannot disagree with what a
+spawn would actually do:
 
 ```
 grants: ACTIVE
@@ -66,30 +65,18 @@ grants: ACTIVE
     BLOCK  review  — does not hold agent:review
 ```
 
-Three work now. Four are withheld because they need `bash`, and that is step 6.
+That is the whole setup. To change your mind later, run `/grants init` again — or delete the stored file,
+whose path `/grants` prints, and the directory is ungoverned again.
 
-### 6. Enable the executing tier — deliberately
+### The alternative: an environment variable
 
-`review`, `debug`, `build` and `git-ops` cannot run yet. This is the design, not a gap: `review` and
-`debug` create a disposable git worktree and run your tests in it; `build` writes code. All four need
-`bash`, and **`bash` subsumes `write` and `edit`** — a ceiling holding it is a full-authority ceiling.
-
-In `.pi/grants.env`, uncomment what you want and add the matching `agent:` ids:
+`PI_GRANTS_GRANT` **always wins over the store**, because it is how a *child* is governed and how CI is
+configured. `init` also writes `.pi/grants.env` — commit it: it is the reviewable record of the decision,
+diffable in a PR, even though it is no longer what the enforcer reads.
 
 ```bash
-export PI_GRANTS_GRANT="agent:architect,agent:decide,agent:plan,\
-agent:build,agent:review,agent:debug,agent:git-ops,\
-tool:delegate,tool:find,tool:grep,tool:ls,tool:read,\
-tool:bash,tool:edit,tool:write"
-
-export PI_GRANTS_LEDGER=".pi/grants.jsonl"     # recommended — see Part 4
+source .pi/grants.env && pi     # explicit, and what CI does
 ```
-
-Then `source .pi/grants.env` and restart pi.
-
-**`tool:bash` is gated by default**, so pi asks you before any child receives a shell — once per
-capability, with *allow once / this session / always*. `tool:write` and `tool:edit` are **not** gated, so
-granting those above is the whole decision for them.
 
 ---
 

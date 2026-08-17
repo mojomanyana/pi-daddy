@@ -49,9 +49,17 @@ because the skill's author cannot know your threat model.
 ## The short way (0.14.0)
 
 ```bash
-npm install pi-daddy principal-pi-skills
-npx pi-daddy init
+pi install npm:pi-daddy
+pi install npm:principal-pi-skills
+pi                      # then, inside pi:
+/grants init
 ```
+
+**`pi install`, not `npm install`** — it registers the package with pi, which is what makes the extension
+auto-load; presence in `node_modules` alone does nothing. `/grants init` asks only about the capabilities
+that can change your machine and applies the answer to the running session, no restart (ADR-0030).
+`npx pi-daddy init` does the same scaffolding from a shell, and both search pi's install root as well as
+the project's.
 
 ```
 found principal-pi-skills@2.3.1 — 7 skill(s), 0 declaring allowed-tools
@@ -88,8 +96,15 @@ The long form of the same thing — what `init` writes, and why each line is the
 ### 1. Install both
 
 ```bash
-npm install pi-daddy principal-pi-skills
+pi install npm:pi-daddy
+pi install npm:principal-pi-skills
 ```
+
+**`pi install`, not `npm install`.** It fetches the package *and registers it in pi's settings*, which is
+what makes pi auto-load the extension — presence in `node_modules` alone does nothing. It installs into
+`$PI_CODING_AGENT_DIR/npm/node_modules`, so your project may have no `node_modules` at all, and that is
+normal. `npm install` into the project also works and pins the version for a team, but then the extension
+needs `-e ./node_modules/pi-daddy/extensions/grants.ts`. `pi-daddy init` searches **both** locations.
 
 ### 2. Copy a skill in and declare its tools
 
