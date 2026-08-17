@@ -93,6 +93,32 @@ resolution, enforcement, approvals or the ledger changed — this is the part be
   defect as the `exports` map that worked in the tree and threw for every consumer, and the second time that
   script has caught it.
 
+## 0.17.0 — `delegate_chain`
+
+**Sub-agents in sequence, each seeing the previous one's output** (ADR-0033). The third and last spawn tool, and the
+one that removes the last reason to keep an ungoverned spawner installed alongside this one.
+
+- **The handoff is fenced, labelled and nonce-delimited.** A chain makes step N's task the output of a governed
+  child, which is the highest-authority text a child receives after its own `SKILL.md`. The label is *framing* — a
+  determined injection can argue with it — but the **nonce is mechanism**: minted after the producing child
+  finished, so it cannot forge a closing delimiter. ADR-0033 records the stronger option (quarantine to a file the
+  next step must `read`) as the prepared answer if framing proves insufficient.
+- **Gated once, for the union, and exactly.** An approval is keyed `capability@subject` and the task is never part
+  of it, so the union is fully determined before later steps have tasks. Four of a typical seven definitions hold
+  `tool:bash`; per-step gating meant four dialogs minutes apart.
+- **Declined means nothing runs.** Running only the ungated steps would return a partial result that reads like a
+  complete one.
+- **A failed step aborts the rest**, and everything completed still comes back.
+- **`taskFrom` in the ledger** — which child's output composed this step's task. The question a
+  framing-not-enforcement handoff makes worth answering.
+
+**What to do about it:** a chain spends one budget unit per step, so a seven-step pipeline needs
+`PI_GRANTS_FANOUT=12` (the default is 8). At most 8 steps.
+
+**Also:** `test-integration/herdr.it.ts` now checks herdr's own contracts against a real server in an isolated
+workspace — the gap that hid three shipping defects in 0.16.0, where the unit fake was a *claim* about herdr that
+nothing verified.
+
 ## 0.16.0 — children you can watch, in panes chosen for you
 
 **If herdr is running, your sub-agents now run in herdr panes without you configuring anything — and the

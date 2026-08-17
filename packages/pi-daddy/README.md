@@ -181,6 +181,22 @@ delegate_all({ children: [ {…}, {…}, {…} ] })                  // several 
 | Holds `read,delegate`; tries `tools:["read","write"]` | Tool **error**: `cannot grant tool:write — this session does not hold it (capability escalation blocked)`; ledger `denied:["tool:write"]`, `blocked:true` |
 | `PI_GRANTS_LEDGER` pointed somewhere unwritable | Delegation **refused** — asking for an audit trail makes it a precondition |
 
+### Three ways to delegate
+
+| Tool | Shape |
+| :--- | :--- |
+| `delegate` | one sub-agent |
+| `delegate_all` | several **at once**, independent and unaware of each other |
+| `delegate_chain` | several **in order**, each receiving the previous one's output |
+
+A chain's handoff is wrapped in a labelled, **nonce-delimited** fence, so the previous agent's output arrives as
+data — and because the nonce is minted after that agent finished, it cannot forge a closing delimiter to escape its
+own fence. The label itself is framing and this README will not pretend otherwise; the nonce is the mechanism.
+
+A chain is **gated as one unit**: every step is planned first and you are asked **once** for the union of what they
+need, not once per step. Decline and nothing runs. A failed step stops the rest, and you still get everything that
+completed. Each step spends one unit of the fan-out budget, so a seven-step pipeline wants `PI_GRANTS_FANOUT=12`.
+
 ### Two executors, one plan
 
 Either a captured child process, or a visible, attachable **herdr** pane — the same governed argv, the same

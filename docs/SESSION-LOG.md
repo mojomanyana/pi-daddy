@@ -97,6 +97,44 @@ That convention is why every reversal here was survivable, and there have been f
 ---
 
 
+## 2026-08-17 (chain) — 0.17.0: `delegate_chain`, and a herdr suite that would have caught the blockers
+
+**Built the integration test FIRST, deliberately.** Three of 0.16.0's defects hid behind an injected `exec` fake, so
+`test-integration/herdr.it.ts` now checks herdr's own contracts against a live server: 12 tests, no model tokens,
+~20s, in a workspace it creates and closes so an operator's layout is untouched. Verified it can fail — re-allowing
+dots in the agent-name charset fails five of them, including the one written for that blocker.
+
+**One thing to carry forward about `node:test`:** it evaluates a test's `{ skip }` option when the test is
+**defined**, before any `before()` hook. The first version probed in `before`, so all twelve skipped and the suite
+reported `pass 0` while looking perfectly healthy. Module-level `await` runs first.
+
+**Then ADR-0033 (`delegate_chain`), accepted and shipped in five commits.** `src/chain.ts` is the handoff, pure;
+`extensions/delegate-chain.ts` is the tool. Every step goes through `runOneDelegation`, so no governance rule is
+re-implemented — what a chain adds is composition, one gate instead of N, a budget unit per step, and abort.
+
+**Three defects in my own work, all caught by a test or the compiler rather than by reading:**
+
+1. **I reused `takeBytes` for the handoff, which keeps the HEAD.** A handoff needs the tail — a summary's conclusion
+   is at its end, which is why `readPane` keeps the tail too. The head-keeping version silently discarded exactly
+   the part of a step's answer the next step needed. `tailBytes` now walks code points backwards.
+2. **Adding `preApproved` as a seventh positional parameter put it in front of `onProgress`**, and two call sites
+   silently passed a progress sink where approvals were expected. TypeScript caught it only because the types
+   happen to differ — luck, not a control, and **R-28 was exactly a defect in an argument list**. The optional tail
+   is now one options object, which makes the mistake unspellable.
+3. **A framing sentence wrapped across two lines** put a newline in the middle of a phrase a test asserts verbatim.
+
+**And one test of mine could not fail — found by mutation, which is the only way it could have been.** "A chain asks
+ONCE for the union" declines at the gate, so the chain aborts and **no step ever runs**: dropping `preApproved`
+entirely left it green, because the count was 1 from aborting rather than from the steps being satisfied. That is
+precisely the shape a reviewer found on the previous branch — **a fixture that never spawns cannot test what happens
+after spawning.** There is now a second test where the operator allows, all three steps run, and the count must
+still be one.
+
+**Mutation testing has earned a permanent place.** It caught the one thing six careful tests did not, twice in two
+days. Write the test, then break the code and check the test notices.
+
+---
+
 ## 2026-08-17 (review) — six reviewers, eighteen defects, two shipping blockers
 
 **The single most valuable hour of this project so far, and the case for never merging a self-reviewed branch.**
