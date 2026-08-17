@@ -15,7 +15,18 @@ import { join } from "node:path";
 
 const pkgDir = new URL("..", import.meta.url).pathname;
 const work = mkdtempSync(join(tmpdir(), "grants-smoke-"));
-const run = (cmd, args, cwd) => execFileSync(cmd, args, { cwd, encoding: "utf8", stdio: "pipe" });
+// **`PI_CODING_AGENT_DIR` is pinned into the scratch dir, and that is not tidiness.** `init` searches pi's
+// own install root as well as the project's (R-75), so without this the probe reads whatever the developer
+// happens to have installed machine-wide and asserts against it. It broke the moment discovery was widened:
+// the fixture expected one skill and found this machine's `principal-pi-skills` too. R-40's lesson, third
+// occurrence — a test that reads real user state is not a test.
+const run = (cmd, args, cwd) =>
+  execFileSync(cmd, args, {
+    cwd,
+    encoding: "utf8",
+    stdio: "pipe",
+    env: { ...process.env, PI_CODING_AGENT_DIR: join(cwd, ".agent-home") },
+  });
 
 try {
   const packed = run("npm", ["pack", "--pack-destination", work], pkgDir).trim().split("\n").pop();
