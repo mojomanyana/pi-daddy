@@ -116,6 +116,10 @@ PI_GRANTS_KEEP_TMP=1 npm test                   # keep fixture directories for i
 
 ## Hard Rules
 
+- **Every change lands through a pull request — never commit to `main`.** No size exemption; check the branch
+  *before* the first edit, because the way this rule gets broken is drifting onto `main` after a merge rather than
+  deciding to. Rule 10 in `docs/WORKING-RULES.md` says why: the PR is where the reviews live, and the reviews are
+  what caught the two critical governance defects that four green suites did not.
 - **The working rules are `docs/WORKING-RULES.md`** — documentation, evidence and terminology discipline,
   nine of them, and they are the ones that carried this project. They lived in
   `.claude/rules/phase-gates.md` until 2026-08-14; that path is local-only now, and documents dated before

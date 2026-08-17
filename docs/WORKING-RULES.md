@@ -61,8 +61,23 @@ rule.
    an under-counted ceiling. Both are paired with a message naming the variable, because a silent
    safe-mode is as confusing as a silent unsafe one.
 
+## Change discipline
+
+10. **Every change lands through a pull request. Never commit to `main`.** No exemption for docs-only or one-line
+    changes — the rule is stated as *always* precisely so there is nothing to argue about at the margin.
+
+    **The PR is where this project's review happens, and review is what has caught every serious defect in it.** Six
+    independent reviewers across two rounds found a critical governance flaw in the same feature *twice*, in work that
+    was already green on four suites, manually verified, and had a PR description written. A commit that reaches
+    `main` without one skips the single step with that track record, and loses the diff and the written rationale
+    that make a change re-examinable a month later.
+
+    Added 2026-08-18, after eleven commits went straight to `main` — not by decision, but by drifting: the session
+    happened to still be on `main` after an earlier squash-merge and nobody checked. **So the practical form of the
+    rule is: check the branch before the first edit of a task, not before the commit.**
+
 ## Terminology discipline
 
-9. **"Workflow skills"** = `.claude/skills/` (process tooling for this workspace). The runtime
+11. **"Workflow skills"** = `.claude/skills/` (process tooling for this workspace). The runtime
    tools/skills this project governs are called **"tools"** or **"runtime skills"** in all documents —
    never bare "skills" where it could be ambiguous.
