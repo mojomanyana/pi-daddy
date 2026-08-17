@@ -522,11 +522,16 @@ At most 64 KiB crosses, keeping the **tail** (a summary's conclusion is at its e
 than dropped, because dropping it silently would make every step start from nothing while the chain looked like it
 worked.
 
-**Gated as one unit, and the gate is exact.** Every step is planned before any runs, and the union of their gated
-capabilities is asked about **once**. That is not an approximation: an approval is keyed `capability@subject` and
-the task is never part of it (ADR-0021), so the union is fully determined before steps 2..N have tasks. A declined
-union spawns nothing — running only the ungated steps would return a partial result that reads like a complete one.
-Cardinality is checked before the gate, so a chain too long for the budget never interrupts anyone.
+**Gated upfront, one dialog per `capability@subject`.** Every step is planned before any runs, and every gate it
+will hit is raised **before the first step starts** — so approvals arrive together rather than interrupting a running
+pipeline. There is at most one dialog per capability *and subject*: an approval is keyed `capability@subject`, so a
+single dialog covering several definitions would be asking about one and spending the answer on the rest, which is
+what ADR-0014's A-S6 forbids. A four-definition chain gating `bash` asks about each definition once.
+
+The set of gates is fully determined before steps 2..N have tasks, because an approval key never contains the task
+(ADR-0021). A declined gate spawns **nothing** — running only the ungated steps would return a partial result that
+reads like a complete one — and the refusal is recorded in the ledger. Cardinality and the executor are both checked
+*before* the gate, so a chain that cannot run never interrupts anyone.
 
 **Each step spends one unit of the fan-out budget**, so a seven-step pipeline needs `PI_GRANTS_FANOUT` above the
 default of 8. At most 8 steps (`MAX_CHAIN_STEPS`, derived from `MAX_CHILDREN_PER_CALL` so the two cannot drift).

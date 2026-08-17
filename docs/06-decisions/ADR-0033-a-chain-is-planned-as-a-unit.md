@@ -146,6 +146,59 @@ and this package is not one.
 **A chain is not a new privilege path.** No step can hold what the session does not, and `agent:<name>` is
 required per step exactly as for a single `delegate`.
 
+## AMENDED 2026-08-17 — decision 2 was not implementable, and implementing it faithfully was a privilege path
+
+Three independent reviewers attacked the implementation; two found this from different briefs.
+
+**"The gate asks once, upfront, for the union" cannot be built.** An approval is keyed `capability@subject`, so **one
+dialog means one subject**. A union spanning `build`, `review`, `debug` and `git-ops` therefore asks about *one* of
+them and spends the answer on the other three. The dialog this ADR illustrates — *"this chain needs `tool:bash` for
+build, review, debug, git-ops"* — does not exist and cannot.
+
+**What that cost, measured rather than reasoned:**
+
+- `shaper` ran with a gated capability on a yes given for `digger`, from one dialog naming only `digger`. **ADR-0014's
+  A-S6 — "an approval given for one agent type cannot satisfy another" — falsified.**
+- The persisted variant needed **no dialog at all**: a later session running `digger, shaper` satisfied `shaper`'s
+  gate from a 30-day entry keyed to `digger`. Nobody was ever asked about `shaper`, in any session, for 30 days.
+- Hardcoding `path: "definition"` offered *Always allow in this project (30 days)* for a step's **model-chosen**
+  `tools:` list — which a plain `delegate({tools:[…]})` is denied, because ADR-0019's reasoning is that *"a key the
+  model controls is not a key"*. A privilege path reachable by putting one `agent:` step in front.
+- `bodySha256` was stamped from the union's single subject, so ADR-0022's pin was verified against one definition's
+  instructions while the capability was spent on another's — and the mispinned entry is what that other definition's
+  own children inherited.
+
+**The decision is narrowed to what is achievable and still worth having: every dialog is raised UPFRONT, before any
+step runs, and there is at most one per `capability@subject`.** For the operator's own pipeline that is two dialogs
+together at the start rather than two arriving minutes apart mid-run — which was the point all along. "Once" was the
+wrong word for it.
+
+**The root cause was one line in the planner, not in the chain**, and that is the more useful finding.
+`planDelegation` matched `approved` by bare capability name, which was safe only because every existing caller
+pre-filtered by subject in `resolveApprovals`. That made `approved` a footgun for any *new* caller, and this feature
+was the new caller. Subject matching is enforced in the planner now, so the property holds by construction rather
+than by every author remembering — a no-op on the pre-existing paths, which is what a defence-in-depth check should
+look like.
+
+**Two further corrections in the same pass.** The executor-refusal check must run *before* the gate — a chain hoists
+its gate above `runOneDelegation`, bypassing the ordering added for exactly this hazard the previous day, so an
+operator could approve `bash` for a child that could never exist. And a gate-refused chain now writes a ledger line;
+it previously wrote none, contradicting `docs/SPEC.md`'s *"one record per governed decision — including refusals"* and
+leaving `/grants ledger`'s approval tally blind to every chain.
+
+**Decision 1's handoff is also not "verbatim" as claimed**, and was not from the first commit: `String.replaceAll`
+interprets `$` forms in a string replacement, so a `build` step summarising a shell script had `$$` and `$'…'`
+silently rewritten, and `$&` reinserted a literal `{previous}` — the exact outcome `replaceAll` was chosen to
+prevent. Fixed with a replacer function. `HANDOFF_MAX_BYTES` also drops to 32 KiB: at 64 KiB two placeholders
+exceeded Linux's 131,072-byte argv limit, because the cap had been sized against the child's *output* cap rather than
+the limit that actually applies.
+
+**What this says about the ADR process here, and it is not comfortable.** This decision was written with options
+weighed, a worked example, and the operator's own choice recorded — and its central mechanism was still
+unimplementable, in a way three reviewers found in under an hour and the author did not find while implementing it
+faithfully. **A decision that names a mechanism should be checked against the layer that would have to enforce it
+before it is Accepted.** One `grep` for where approvals are keyed would have caught this at writing time.
+
 ## Consequences
 
 **Positive.** The ungoverned spawner loses its last justification: everything the operator kept it for is

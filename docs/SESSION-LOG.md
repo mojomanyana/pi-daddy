@@ -97,6 +97,56 @@ That convention is why every reversal here was survivable, and there have been f
 ---
 
 
+## 2026-08-17 (chain review) — the ADR itself was wrong, and that is the finding to keep
+
+**Three reviewers, one hypothesis each. All three found real defects; two found the same critical from different
+briefs.** Fixed forward on the operator's call. `npm test` **2m19s → 14.9s**.
+
+**ADR-0033's central mechanism was not implementable, and implementing it faithfully produced a privilege path.**
+The decision said *"the gate asks once, upfront, for the union"* and illustrated a dialog reading *"this chain needs
+`tool:bash` for build, review, debug, git-ops"*. **That dialog cannot exist**: an approval is keyed
+`capability@subject`, so one dialog means one subject. Measured consequences — `shaper` running on a yes given for
+`digger`; a 30-day entry keyed to `digger` satisfying `shaper` in later sessions with **no dialog at all**; a
+model-chosen `tools:` list being offered *Always allow in this project*, which a plain `delegate` is denied.
+
+**The lesson is about the ADR process, not the code.** That decision had options weighed, a worked example, and the
+operator's recorded choice — and its mechanism was still impossible, found by reviewers in under an hour and missed by
+the author while implementing it faithfully. **A decision that names a mechanism must be checked against the layer
+that would enforce it before it is Accepted.** One grep for where approvals are keyed would have caught it at writing
+time. That sentence is now in the ADR.
+
+**The root cause was one line in the planner, not in the chain**, and that is the more useful half. `planDelegation`
+matched `approved` by bare capability name — safe only because every existing caller pre-filtered by subject
+upstream. That made `approved` a footgun for any *new* caller, and this feature was the new caller. Enforcing subject
+matching in the planner makes the property hold by construction; it is a no-op on the old paths. **Ask "is this safe
+because of the code, or because of who happens to call it?"**
+
+**Two defects were yesterday's, reintroduced on a new path.** The executor-refusal check ran after the gate again,
+because a chain hoists its gate above `runOneDelegation` — so the ordering fixed the previous day was simply bypassed.
+And a refused chain wrote no ledger line at all. **A fix applied at one call site is not a fix; ask where else the
+shape appears.**
+
+**The handoff was never verbatim.** `String.replaceAll` interprets `$` in a *replacement*, so a `build` step
+summarising a shell script had `$$` and `$'…'` silently rewritten, and `$&` reinserted a literal `{previous}` — the
+exact outcome `replaceAll` was chosen to prevent. No adversary needed.
+
+**Three of my tests could not fail, and one was worse than useless:**
+- Deleting the handoff entirely left all 489 green; the test that claimed to cover it only pinned `taskFrom`.
+- All 11 fence tests passed with the body moved OUTSIDE the fence, because `indexOf(">>>")` latched onto a *forged*
+  delimiter in the hostile text.
+- My replacement for the gate test used `composeStepTask` without importing it, so it failed **unconditionally** and
+  proved nothing. **Mutation-checking caught that one before it was kept** — a test that always fails looks like
+  coverage in a red run and like a flake in a green one.
+
+**And I broke the two-tier test design.** Five chain tests spawned real `pi` children calling a real model, so the
+unit suite needed network and credentials and ran 66s/127s/346s while `CLAUDE.md` advertised it as *"fast, pure, no
+pi, no network"*. Moved to the opt-in tier; verified the moved file really runs by executing one for real.
+
+**Three sessions running, mutation testing has found what careful tests missed every single time.** It is no longer a
+technique to remember — write the test, break the code, check the test notices, and do it before believing the test.
+
+---
+
 ## 2026-08-17 (chain) — 0.17.0: `delegate_chain`, and a herdr suite that would have caught the blockers
 
 **Built the integration test FIRST, deliberately.** Three of 0.16.0's defects hid behind an injected `exec` fake, so

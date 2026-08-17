@@ -193,8 +193,9 @@ A chain's handoff is wrapped in a labelled, **nonce-delimited** fence, so the pr
 data — and because the nonce is minted after that agent finished, it cannot forge a closing delimiter to escape its
 own fence. The label itself is framing and this README will not pretend otherwise; the nonce is the mechanism.
 
-A chain is **gated as one unit**: every step is planned first and you are asked **once** for the union of what they
-need, not once per step. Decline and nothing runs. A failed step stops the rest, and you still get everything that
+A chain is **gated upfront**: every step is planned first, and every approval it needs is asked for *before the
+first step starts* — together, rather than interrupting a running pipeline. One dialog per capability *and*
+definition, because an approval for one definition must never satisfy another. Decline any of them and nothing runs. A failed step stops the rest, and you still get everything that
 completed. Each step spends one unit of the fan-out budget, so a seven-step pipeline wants `PI_GRANTS_FANOUT=12`.
 
 ### Two executors, one plan

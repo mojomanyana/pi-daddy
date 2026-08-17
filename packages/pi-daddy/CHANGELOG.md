@@ -103,9 +103,11 @@ one that removes the last reason to keep an ungoverned spawner installed alongsi
   determined injection can argue with it — but the **nonce is mechanism**: minted after the producing child
   finished, so it cannot forge a closing delimiter. ADR-0033 records the stronger option (quarantine to a file the
   next step must `read`) as the prepared answer if framing proves insufficient.
-- **Gated once, for the union, and exactly.** An approval is keyed `capability@subject` and the task is never part
-  of it, so the union is fully determined before later steps have tasks. Four of a typical seven definitions hold
-  `tool:bash`; per-step gating meant four dialogs minutes apart.
+- **Gated upfront: one dialog per capability *and* definition, all before the first step runs.** Approvals arrive
+  together instead of interrupting a running pipeline. Not one dialog for everything — an approval is keyed
+  `capability@subject`, so a single dialog spanning several definitions would ask about one and spend the answer on
+  the rest. ADR-0033 originally specified that, three reviewers found it was a privilege path, and the ADR carries
+  the amendment.
 - **Declined means nothing runs.** Running only the ungated steps would return a partial result that reads like a
   complete one.
 - **A failed step aborts the rest**, and everything completed still comes back.
