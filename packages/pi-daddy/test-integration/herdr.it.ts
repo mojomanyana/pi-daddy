@@ -30,7 +30,7 @@
 
 import assert from "node:assert/strict";
 import { after, describe, test } from "node:test";
-import { defaultExec, parseReply, probeHerdr, resolveWorkspace } from "../src/herdr-cli.ts";
+import { defaultExec, parseReply, probeHerdr } from "../src/herdr-cli.ts";
 import { uniqueAgentName } from "../src/herdr-name.ts";
 
 /** Interactive pi that holds no tools and needs no model: enough to become a detectable agent. */
@@ -212,10 +212,26 @@ describe("herdr assumptions, against a real server", () => {
     assert.ok(root.tab_id?.startsWith(`${workspace}:`), "and the tab id must carry it");
   });
 
-  test("resolveWorkspace prefers the explicit override over the inherited one", { skip: skipIf() }, () => {
-    // Pure, but asserted against the REAL variable name herdr sets, which is the part a unit test cannot know.
-    assert.equal(resolveWorkspace({ HERDR_WORKSPACE_ID: "wZ" }), "wZ");
-    assert.equal(resolveWorkspace({ HERDR_WORKSPACE_ID: "wZ", PI_GRANTS_HERDR_WORKSPACE: "wY" }), "wY");
+  test("herdr really does set HERDR_WORKSPACE_ID in a pane it creates", { skip: skipIf() }, async () => {
+    // **Replaces a test that talked to no server.** The old one called `resolveWorkspace` with a hand-made object,
+    // duplicating five assertions already in `test/herdr-cli.test.ts` — and was skipped on exactly the machines that
+    // lack herdr, so it added nothing anywhere. Its comment claimed to assert "the REAL variable name herdr sets",
+    // which it did not.
+    //
+    // This asserts the fact `resolveWorkspace` actually depends on, and which no unit test can know: that herdr
+    // exports `HERDR_WORKSPACE_ID` into a pane, matching the workspace it was created in.
+    const created = parseReply(await defaultExec(["tab", "create", "--label", "wsvar", "--workspace", workspace!, "--cwd", process.cwd()]));
+    const root = (created.result?.root_pane ?? {}) as { pane_id?: string };
+    assert.ok(root.pane_id);
+
+    await defaultExec(["pane", "send-text", root.pane_id!, "echo WS=$HERDR_WORKSPACE_ID\n"]);
+    let seen = "";
+    for (let attempt = 0; attempt < 25; attempt += 1) {
+      await new Promise((r) => setTimeout(r, 300));
+      seen = (await defaultExec(["pane", "read", root.pane_id!])).stdout;
+      if (seen.includes("WS=")) break;
+    }
+    assert.match(seen, new RegExp(`WS=${workspace}`), "resolveWorkspace inherits this variable; it must exist");
   });
 
   test("`tab close` is the kill: after it, herdr no longer knows the agent", { skip: skipIf() }, async () => {

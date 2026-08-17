@@ -26,7 +26,7 @@ import { DELEGATE_CAPABILITY, agentCapability, maySpawnDefinition, normaliseCapa
 // charged to every caller for a line count they did not cause.
 export { DELEGATE_CAPABILITY, agentCapability, maySpawnDefinition, normaliseCapability } from "./capabilities.ts";
 import { ENV_APPROVED, ENV_DEPTH, ENV_FANOUT, ENV_GATED, ENV_GRANT, ENV_LEDGER, ENV_MAX_DEPTH, ENV_PARENT_ID } from "./propagation.ts";
-import { inheritApprovals, type InheritableApproval } from "./approval.ts";
+import { DELEGATE_SUBJECT, inheritApprovals, type InheritableApproval } from "./approval.ts";
 import { suggestForUnknown, unknownCapabilities, type Catalog } from "./catalog.ts";
 
 export interface DelegationRequest {
@@ -273,7 +273,11 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
     }
   }
 
-  const approvedCapabilities = (ctx.approved ?? []).map((a) => a.capability);
+  // ADR-0014's A-S6 — an approval for one subject cannot satisfy another — enforced HERE, not only upstream in
+  // `resolveApprovals`. Matching bare names made `approved` a footgun for any new caller, and `delegate_chain`
+  // stepped in it: pre-filling approvals skipped that layer entirely. See ADR-0033's amendment.
+  const subject = request.agent ?? DELEGATE_SUBJECT;
+  const approvedCapabilities = (ctx.approved ?? []).filter((a) => a.subject === subject).map((a) => a.capability);
   const result = resolve({
     requested,
     parentGrant: ctx.ownGrant,

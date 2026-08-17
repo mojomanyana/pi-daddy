@@ -1,98 +1,26 @@
 /**
- * Wiring tests for `delegate_chain` — the tool as the extension actually registers it (ADR-0033).
+ * Wiring tests for `delegate_chain` — the PURE half (ADR-0033).
  *
- * `src/chain.ts` is pure and `test/chain.test.ts` covers the handoff; this loads the real extension against a fake
- * `pi` and invokes the registered tool, because R-28 was a defect **in an argument list** that no pure test could
- * see — and this feature threads a new argument (`preApproved`) through two functions.
+ * Every test here refuses or aborts before a child is spawned, so this file stays fast, deterministic, and free of
+ * network, model and credentials. The tests that let a step actually run live in
+ * `test-integration/delegate-chain.it.ts`, because a real `pi` child always calls a model.
  *
- * **`PI_GRANTS_HERDR=0` throughout.** An unset variable means *probe*, and `session_start` probes, so leaving it
- * would shell out to whatever herdr is running on the machine under test and pick a different executor here than
- * in CI.
+ * **`PI_GRANTS_HERDR=0` throughout** — an unset variable means *probe*, and `session_start` probes, so leaving it
+ * would shell out to whatever herdr happens to be running on the machine under test.
  */
 
 import assert from "node:assert/strict";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { after, afterEach, test } from "node:test";
-import grantsExtension from "../extensions/grants.ts";
 import { ENV_HERDR } from "../src/executor.ts";
 import { MAX_CHAIN_STEPS } from "../src/fanout.ts";
-import { ENV_APPROVED, ENV_DEPTH, ENV_FANOUT, ENV_GATED, ENV_GRANT, ENV_LEDGER, ENV_MAX_DEPTH, ENV_PARENT_ID } from "../src/propagation.ts";
+import { ENV_FANOUT, ENV_GRANT, ENV_LEDGER } from "../src/propagation.ts";
+import { definition, harness, restoreEnv } from "./chain-harness.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
 after(cleanupTempDirs);
-
-const KEYS = [ENV_GRANT, ENV_DEPTH, ENV_MAX_DEPTH, ENV_GATED, ENV_APPROVED, ENV_LEDGER, ENV_FANOUT, ENV_PARENT_ID, ENV_HERDR];
-const saved = new Map<string, string | undefined>();
-
-afterEach(() => {
-  for (const [k, v] of saved) v === undefined ? delete process.env[k] : (process.env[k] = v);
-  saved.clear();
-});
-
-interface ToolSpec {
-  name: string;
-  parameters?: unknown;
-  execute: (id: string, params: Record<string, unknown>, signal: undefined, onUpdate: unknown, ctx: unknown) => Promise<unknown>;
-}
-
-/** A definition holding exactly `allowedTools`, so a step's ceiling is whatever the test needs. */
-async function definition(dir: string, name: string, allowedTools: string): Promise<void> {
-  await mkdir(join(dir, ".pi", "skills", name), { recursive: true });
-  await writeFile(
-    join(dir, ".pi", "skills", name, "SKILL.md"),
-    `---\nname: ${name}\ndescription: Does ${name} work.\nallowed-tools: ${allowedTools}\n---\nDo the ${name} job.`,
-    "utf8",
-  );
-}
-
-/**
- * How the fake operator answers the gate.
- *
- * `"decline"` keeps a test fast because nothing spawns — but a test that declines can only prove *that* a dialog
- * appeared, never what happens afterwards. **That distinction cost me a test.** The first version of "asks ONCE"
- * declined, so no step ever ran, and dropping `preApproved` entirely left it green: the count was 1 because the
- * chain aborted at the gate, not because the steps were satisfied. Found by mutation, which is the only way it
- * could have been.
- */
-type GateAnswer = "decline" | "allow-session";
-
-async function harness(env: Record<string, string>, existingDir?: string, answer: GateAnswer = "decline") {
-  const dir = existingDir ?? (await tempDir("grants-chain-"));
-  for (const k of KEYS) if (!saved.has(k)) saved.set(k, process.env[k]);
-  for (const k of KEYS) delete process.env[k];
-  Object.assign(process.env, { [ENV_HERDR]: "0", ...env });
-
-  const tools = new Map<string, ToolSpec>();
-  const hooks = new Map<string, (e: unknown, c: unknown) => unknown>();
-  const selects: string[] = [];
-  const ctx = {
-    cwd: dir,
-    hasUI: true,
-    ui: {
-      notify: () => {},
-      // Records every dialog and DECLINES. Counting dialogs is the point of most of this file; declining keeps it
-      // fast, because nothing spawns.
-      select: async (title: string, options: string[]) => {
-        selects.push(title);
-        if (answer === "decline") return undefined;
-        // "Allow for this session" — enough for later steps to be satisfied from `preApproved` without touching
-        // the persisted store, which a test must never write to.
-        return options.find((o) => o.includes("this session")) ?? options[1];
-      },
-    },
-  };
-
-  grantsExtension({
-    on: (name: string, handler: (e: unknown, c: unknown) => unknown) => void hooks.set(name, handler),
-    registerTool: (spec: ToolSpec) => void tools.set(spec.name, spec),
-    registerCommand: () => {},
-    getAllTools: () => ["read", "grep", "write", "bash", "delegate"].map((name) => ({ name })),
-  } as never);
-
-  await hooks.get("session_start")!({}, ctx);
-  return { dir, tools, ctx, selects };
-}
+afterEach(restoreEnv);
 
 test("delegate_chain is registered beside the other two, and only when the session may delegate", async () => {
   const { tools } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate" });
@@ -118,35 +46,6 @@ test("the three tool descriptions do not contradict each other about shape", asy
   assert.doesNotMatch(all, /ONE AFTER ANOTHER/);
 });
 
-test("ADR-0033: a chain asks ONCE for the union of its gated capabilities", async () => {
-  // Four of the operator's seven definitions hold tool:bash, which is gated by default (ADR-0012), so per-step
-  // gating meant four dialogs minutes apart — R-25's fatigue shape.
-  //
-  // **This test also carries `preApproved`.** If that threading breaks, each step re-opens the dialog and the count
-  // goes up. That is why there is no separate test for it.
-  const dir = await tempDir("grants-chain-");
-  await definition(dir, "digger", "Read, Bash");
-  await definition(dir, "shaper", "Read, Bash");
-  await definition(dir, "reader", "Read");
-
-  const { tools, ctx, selects } = await harness(
-    { [ENV_GRANT]: "agent:digger,agent:shaper,agent:reader,tool:read,tool:bash,tool:delegate", [ENV_FANOUT]: "12" },
-    dir,
-  );
-
-  await tools
-    .get("delegate_chain")!
-    .execute(
-      "c",
-      { steps: [{ task: "dig", agent: "digger" }, { task: "shape {previous}", agent: "shaper" }, { task: "read {previous}", agent: "reader" }] },
-      undefined,
-      undefined,
-      ctx,
-    )
-    .catch(() => undefined);
-
-  assert.equal(selects.length, 1, `expected one dialog for the whole chain, got ${selects.length}: ${JSON.stringify(selects)}`);
-});
 
 test("ADR-0033: a chain refused at the gate spawns NOTHING", async () => {
   // Fail closed as a unit. Running only the ungated steps would return a partial result that reads like a complete
@@ -217,82 +116,8 @@ test("ADR-0033: the step template tells the model about the placeholder", async 
   assert.match(described, /appended/, "and it must say what happens if the placeholder is omitted");
 });
 
-test("ADR-0033: step N receives step N-1's output, inside the fence", async () => {
-  // The whole feature. Children really run here (`tools: ["read"]` needs no gate and no model — the child is a
-  // real `pi` that exits), so the handoff is observed rather than simulated.
-  //
-  // The production change that breaks this: passing `step.task` straight through instead of `composeStepTask`.
-  const ledger = join(await tempDir("grants-chain-"), "ledger.jsonl");
-  const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate", [ENV_LEDGER]: ledger, [ENV_FANOUT]: "12" });
 
-  const result = (await tools
-    .get("delegate_chain")!
-    .execute(
-      "c",
-      { steps: [{ task: "first", tools: ["read"] }, { task: "second saw: {previous}", tools: ["read"] }] },
-      undefined,
-      undefined,
-      ctx,
-    )
-    .catch((error: Error) => ({ content: [{ text: error.message }] }))) as { content: Array<{ text: string }> };
 
-  const text = result.content[0].text;
-  assert.match(text, /step 1/);
-  assert.match(text, /step 2/, "both steps must be reported");
-
-  // The second step's ledger record must name the first as the author of its task.
-  const lines = (await readFile(ledger, "utf8")).trim().split("\n").map((l) => JSON.parse(l));
-  const second = lines.find((r) => r.childId?.endsWith(".2"));
-  assert.ok(second, "the second step must have a record");
-  assert.equal(second.taskFrom, lines.find((r) => r.childId?.endsWith(".1"))?.childId, "and must name its predecessor");
-});
-
-test("ADR-0033: step 1 names no predecessor", async () => {
-  const ledger = join(await tempDir("grants-chain-"), "ledger.jsonl");
-  const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate", [ENV_LEDGER]: ledger, [ENV_FANOUT]: "12" });
-  await tools
-    .get("delegate_chain")!
-    .execute("c", { steps: [{ task: "only", tools: ["read"] }] }, undefined, undefined, ctx)
-    .catch(() => undefined);
-
-  const first = (await readFile(ledger, "utf8")).trim().split("\n").map((l) => JSON.parse(l))[0];
-  assert.equal(first.taskFrom, undefined, "an empty string here would assert a predecessor that does not exist");
-});
-
-test("ADR-0033: a failed step ABORTS the rest and still returns what completed", async () => {
-  // Continuing would make the next step's task an error message, which is never what an orchestrator wants. Partial
-  // results still come back labelled — R-03's rule.
-  //
-  // Step 2 asks for `tool:write`, which this session does not hold, so it is refused and the chain stops.
-  const ledger = join(await tempDir("grants-chain-"), "ledger.jsonl");
-  const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate", [ENV_LEDGER]: ledger, [ENV_FANOUT]: "12" });
-
-  const result = (await tools
-    .get("delegate_chain")!
-    .execute(
-      "c",
-      {
-        steps: [
-          { task: "first", tools: ["read"] },
-          { task: "second {previous}", tools: ["write"] },
-          { task: "third {previous}", tools: ["read"] },
-        ],
-      },
-      undefined,
-      undefined,
-      ctx,
-    )
-    .catch((error: Error) => ({ content: [{ text: error.message }] }))) as { content: Array<{ text: string }> };
-
-  const text = result.content[0].text;
-  assert.match(text, /step 1 — completed/, "what completed must still be returned");
-  assert.match(text, /step 2 .*FAILED/);
-  assert.doesNotMatch(text, /step 3/, "the third step must never have run");
-  assert.match(text, /stopped at step 2/, "and the abort must be stated, not inferred");
-
-  const ids = (await readFile(ledger, "utf8")).trim().split("\n").map((l) => JSON.parse(l).childId);
-  assert.ok(!ids.some((id: string) => id?.endsWith(".3")), "step 3 must not appear in the ledger at all");
-});
 
 test("ADR-0033: a chain whose FIRST step fails throws rather than returning text", async () => {
   // Nothing completed, so there is no partial result — and a tool that returns text when nothing ran is how a wrong
@@ -307,63 +132,118 @@ test("ADR-0033: a chain whose FIRST step fails throws rather than returning text
   );
 });
 
-test("ADR-0033: each step gets its own hierarchical ledger id", async () => {
-  // F8's property, extended to a chain: two steps must never be confusable, and the ids must read as a tree.
-  const ledger = join(await tempDir("grants-chain-"), "ledger.jsonl");
-  const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate", [ENV_LEDGER]: ledger, [ENV_FANOUT]: "12" });
+
+
+test("ADR-0033: every gate is raised UPFRONT, one per capability@subject", async () => {
+  // **The corrected guarantee.** ADR-0033 promised one dialog for the whole chain; that is not implementable,
+  // because an approval is keyed `capability@subject` and one dialog means one subject — asking once for a union
+  // spanning several definitions is asking about one and spending the answer on the rest. What IS achievable, and
+  // was the actual point, is that every dialog is raised before any step runs: two together at the start rather
+  // than two arriving minutes apart mid-pipeline.
+  //
+  // `digger` and `shaper` both gate `tool:bash`; `reader` gates nothing. So: two subjects, two dialogs.
+  //
+  // The production change that breaks this: gating inside the run loop, or collapsing the groups back into one
+  // union.
+  const dir = await tempDir("grants-chain-");
+  await definition(dir, "digger", "Read, Bash");
+  await definition(dir, "shaper", "Read, Bash");
+  await definition(dir, "reader", "Read");
+
+  const { tools, ctx, selects } = await harness(
+    { [ENV_GRANT]: "agent:digger,agent:shaper,agent:reader,tool:read,tool:bash,tool:delegate", [ENV_FANOUT]: "12" },
+    dir,
+  );
+
   await tools
     .get("delegate_chain")!
     .execute(
       "c",
-      { steps: [{ task: "a", tools: ["read"] }, { task: "b {previous}", tools: ["read"] }, { task: "c {previous}", tools: ["read"] }] },
+      { steps: [{ task: "dig", agent: "digger" }, { task: "shape {previous}", agent: "shaper" }, { task: "read {previous}", agent: "reader" }] },
       undefined,
       undefined,
       ctx,
     )
     .catch(() => undefined);
 
-  const ids = (await readFile(ledger, "utf8")).trim().split("\n").map((l) => JSON.parse(l).childId);
-  assert.equal(new Set(ids).size, ids.length, "no two steps may share an id");
-  assert.deepEqual(ids.slice(0, 3), ["d0.1", "d0.2", "d0.3"]);
+  assert.equal(selects.length, 2, `expected one dialog per gated subject, got ${selects.length}: ${JSON.stringify(selects)}`);
+  assert.ok(selects.some((t) => t.includes("digger")), "digger must be named to the operator");
+  assert.ok(selects.some((t) => t.includes("shaper")), "and so must shaper — that is the whole point");
 });
 
-test("ADR-0033: once the union is APPROVED, no step asks again", async () => {
-  // **This is the test that actually pins `preApproved`, and it exists because the obvious one did not.**
+test("ADR-0033: the dialog NAMES the step's task, as a single delegate does", async () => {
+  // It passed `undefined` where `delegate` passes `request.task`, so the operator was asked to approve `bash` for a
+  // definition with no indication of what it was about to do.
+  const dir = await tempDir("grants-chain-");
+  await definition(dir, "digger", "Read, Bash");
+  const { tools, ctx, selects } = await harness(
+    { [ENV_GRANT]: "agent:digger,tool:read,tool:bash,tool:delegate", [ENV_FANOUT]: "12" },
+    dir,
+  );
+
+  await tools
+    .get("delegate_chain")!
+    .execute("c", { steps: [{ task: "excavate the north field", agent: "digger" }] }, undefined, undefined, ctx)
+    .catch(() => undefined);
+
+  assert.ok(selects.length >= 1);
+  assert.match(selects[0], /excavate the north field/, "the operator must see what the step will do");
+});
+
+
+test("ADR-0033: A-S6 holds across a chain — one definition's yes cannot satisfy another", async () => {
+  // **The critical defect, pinned.** Three reviewers found that the chain's single-subject union let a yes given for
+  // `digger` authorise `shaper`, and that a 30-day entry keyed to `digger` satisfied `shaper` in every later session
+  // with no dialog at all. ADR-0014's A-S6 says an approval for one agent type cannot satisfy another.
   //
-  // "asks ONCE for the union" declines at the gate, so the chain aborts and no step ever runs — dropping
-  // `preApproved` left it green. Here the operator ALLOWS, all three steps run, and the dialog count must still be
-  // one. Verified by mutation: removing `preApproved` from the step options makes this fail with three dialogs.
+  // Here the operator is asked twice; the fake declines both, so the chain refuses. What this pins is that `shaper`
+  // is asked about AT ALL — under the old union it never was.
   //
-  // That is the same shape a reviewer found on the previous branch: a fixture that never spawns cannot test what
-  // happens after spawning.
+  // The production change that breaks this: removing the `a.subject === subject` filter in `planDelegation`, or
+  // collapsing the gate groups.
   const dir = await tempDir("grants-chain-");
   await definition(dir, "digger", "Read, Bash");
   await definition(dir, "shaper", "Read, Bash");
-
   const { tools, ctx, selects } = await harness(
     { [ENV_GRANT]: "agent:digger,agent:shaper,tool:read,tool:bash,tool:delegate", [ENV_FANOUT]: "12" },
     dir,
-    "allow-session",
   );
 
-  const result = (await tools
-    .get("delegate_chain")!
-    .execute(
-      "c",
-      {
-        steps: [
-          { task: "dig", agent: "digger" },
-          { task: "shape {previous}", agent: "shaper" },
-          { task: "dig again {previous}", agent: "digger" },
-        ],
-      },
-      undefined,
-      undefined,
-      ctx,
-    )
-    .catch((error: Error) => ({ content: [{ text: error.message }] }))) as { content: Array<{ text: string }> };
+  await assert.rejects(
+    () =>
+      tools
+        .get("delegate_chain")!
+        .execute("c", { steps: [{ task: "dig", agent: "digger" }, { task: "shape {previous}", agent: "shaper" }] }, undefined, undefined, ctx),
+    /chain refused/,
+  );
 
-  assert.equal(selects.length, 1, `expected ONE dialog for three gated steps, got ${selects.length}`);
-  // And the steps must genuinely have run, or this proves nothing — the trap the first version fell into.
-  assert.match(result.content[0].text, /step 3/, "all three steps must have been reached");
+  const asked = selects.join(" | ");
+  assert.match(asked, /digger/);
+  assert.match(asked, /shaper/, "shaper must be named to a human, not covered by digger's answer");
 });
+
+test("ADR-0033: a `tools:`-only step is never offered a 30-day project-wide approval", async () => {
+  // **A privilege path, and the ugliest finding of the review.** The gate hardcoded `path: "definition"`, which
+  // offers *Always allow in this project (30 days)*. So a step's MODEL-CHOSEN `tools:` list could obtain a
+  // persisted approval keyed to a definition — something a plain `delegate({tools:[...]})` is denied, because
+  // ADR-0019's reasoning is that "a key the model controls is not a key".
+  //
+  // The production change that breaks this: hardcoding the path again instead of deriving it from the subject.
+  const { tools, ctx, selects, offered } = await harness(
+    { [ENV_GRANT]: "tool:read,tool:bash,tool:delegate", [ENV_FANOUT]: "12" },
+    undefined,
+  );
+
+  await tools
+    .get("delegate_chain")!
+    .execute("c", { steps: [{ task: "poke about", tools: ["read", "bash"] }] }, undefined, undefined, ctx)
+    .catch(() => undefined);
+
+  assert.equal(selects.length, 1, "sanity: the gate must have been reached");
+  assert.ok(offered.length > 0, "the fake must have recorded the options it was shown");
+  assert.ok(
+    !offered.flat().some((o) => /30 days/.test(o)),
+    `a <delegate> subject must not be offered a persisted scope; got ${JSON.stringify(offered.flat())}`,
+  );
+});
+

@@ -189,18 +189,55 @@ test("the wildcard is never inherited as an approval", () => {
 });
 
 test("delegate hands the child only approvals for capabilities it was actually granted", () => {
+  // **Fixture corrected, not the assertion.** It requested `tools: ["read","write"]` — a `tools:` form, whose
+  // approval subject is `<delegate>` (ADR-0019) — while supplying approvals keyed to the definition `docs-writer`.
+  // That combination only ever worked because `planDelegation` matched approvals by bare capability NAME and
+  // ignored the subject, which is the defect that let `delegate_chain` satisfy one definition's gate with another
+  // definition's yes. With subjects enforced, this request is correctly refused for `tool:write`.
+  //
+  // The property under test is unchanged and is about the CHILD: only a capability that was actually granted
+  // reaches it, so an approval for something withheld (`tool:bash`) must not travel.
   const plan = planDelegation(
-    { task: "edit the docs", tools: ["read", "write"] },
+    { task: "edit the docs", agent: "docs-writer" },
     {
-      ownGrant: ["tool:read", "tool:write", "tool:bash"],
+      // `agent:docs-writer` too — ADR-0017 requires the session to hold the id before the file is even read.
+      ownGrant: ["agent:docs-writer", "tool:read", "tool:write", "tool:bash"],
       depth: 0,
       maxDepth: 2,
       gated: ["tool:write", "tool:bash"],
+      definitions: new Map([
+        ["docs-writer", { name: "docs-writer", allowedTools: "Read Write", body: "Write docs.", source: "/x/docs-writer/SKILL.md" } as never],
+      ]),
       approved: [{ capability: "tool:write", subject: "docs-writer", scope: "session", bodySha256: "body-digest" }, { capability: "tool:bash", subject: "docs-writer", scope: "session", bodySha256: "body-digest" }],
     },
   );
   assert.equal(plan.ok, true, plan.reason ?? "expected ok");
   assert.equal(plan.env[ENV_APPROVED], "tool:write@docs-writer#body-digest", "bash was approved but not granted to this child");
+});
+
+test("an approval for one definition does NOT satisfy another — ADR-0014's A-S6, enforced in the planner", () => {
+  // **This is the property whose absence let a chain's first step authorise every later one.** Subject matching used
+  // to live only in `resolveApprovals`, so any caller passing `approved` directly — which is exactly what
+  // `delegate_chain`'s upfront gate did — bypassed it entirely. Enforcing it in `planDelegation` makes it hold by
+  // construction for every caller instead of by everyone remembering.
+  //
+  // The production change that breaks this: dropping the `a.subject === subject` filter in `planDelegation`.
+  const plan = planDelegation(
+    { task: "dig", agent: "digger" },
+    {
+      ownGrant: ["agent:digger", "tool:read", "tool:bash"],
+      depth: 0,
+      maxDepth: 2,
+      gated: ["tool:bash"],
+      definitions: new Map([
+        ["digger", { name: "digger", allowedTools: "Read Bash", body: "Dig.", source: "/x/digger/SKILL.md" } as never],
+      ]),
+      // Approved for a DIFFERENT definition.
+      approved: [{ capability: "tool:bash", subject: "shaper", scope: "session", bodySha256: "other-body" }],
+    },
+  );
+  assert.equal(plan.ok, false, "another definition's approval must not satisfy this gate");
+  assert.match(String(plan.reason), /tool:bash/);
 });
 
 test("an approved capability the child was NOT granted never reaches it", () => {

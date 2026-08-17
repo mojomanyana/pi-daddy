@@ -32,7 +32,20 @@ import { randomBytes } from "node:crypto";
  * next child's context on its predecessor's transcript. 64 KiB is a generous summary and a poor transcript, which
  * is the right side of that line for a handoff.
  */
-export const HANDOFF_MAX_BYTES = 64 * 1024;
+export const HANDOFF_MAX_BYTES = 32 * 1024;
+
+/**
+ * What actually bounds a composed task: Linux's per-argv-element limit, `MAX_ARG_STRLEN` = 32 pages = 131,072 bytes.
+ *
+ * **Measured, and it is why `HANDOFF_MAX_BYTES` is 32 KiB rather than 64.** At 64 KiB a template using `{previous}`
+ * **twice** produced a 131,502-byte argv element and the spawn failed with `E2BIG` — loudly, so rule 8 was
+ * satisfied, but the cap had been sized against the child's 1 MiB *output* limit with no reference to the limit that
+ * really applies. A predecessor could trip it deliberately. At 32 KiB even four placeholders fit.
+ *
+ * The herdr executor is unaffected — the task travels via `agent prompt`, not argv — but the bound has to hold for
+ * the executor that is *not* the default too.
+ */
+export const MAX_ARG_STRLEN = 131_072;
 
 /** Where a step's template asks for its predecessor's output. Familiar from the `subagent` extension it replaces. */
 export const PLACEHOLDER = "{previous}";
@@ -78,15 +91,20 @@ function tailBytes(text: string, budget: number): string {
  *
  * The tail is kept rather than the head, for `readPane`'s reason — a summary's conclusion is at its end.
  */
-export function fenceHandoff(output: string, nonce = randomBytes(16).toString("hex")): string {
+export function fenceHandoff(output: string): string {
+  const nonce = randomBytes(16).toString("hex");
   const full = Buffer.byteLength(output);
   const kept = tailBytes(output, HANDOFF_MAX_BYTES);
   const truncated = Buffer.byteLength(kept) < full;
 
   const body = output.length === 0 ? "(the previous step produced no output)" : kept;
+  // Tagged with the nonce, for the same reason the delimiters are. Untagged, a child could emit this line
+  // byte-identically and make its COMPLETE answer look partial to the next step — cheap to prevent, since the
+  // nonce is already in hand. The reverse (suppressing a real notice) was never possible: ours is appended after
+  // truncation.
   const notice = truncated
-    ? `\n[grants] the previous step's output was truncated to the last ${HANDOFF_MAX_BYTES} bytes of ${full}; ` +
-      `what is above is its ending, not its whole answer.`
+    ? `\n[grants ${nonce}] the previous step's output was truncated to the last ${HANDOFF_MAX_BYTES} bytes of ` +
+      `${full}; what is above is its ending, not its whole answer.`
     : "";
 
   return [
@@ -119,9 +137,38 @@ export function fenceHandoff(output: string, nonce = randomBytes(16).toString("h
  * `{previous}`, which reads to a child as an unfilled template and is the sort of thing a model remarks on rather
  * than works around.
  */
-export function composeStepTask(template: string, previous: string | undefined, nonce?: string): string {
+export function composeStepTask(template: string, previous: string | undefined): string {
   if (previous === undefined) return template;
-  const fenced = fenceHandoff(previous, nonce);
-  if (template.includes(PLACEHOLDER)) return template.replaceAll(PLACEHOLDER, fenced);
+  const fenced = fenceHandoff(previous);
+  // **A FUNCTION, not a string.** `String.replaceAll` interprets `$` forms in a string replacement, so a child's own
+  // output was silently rewritten: `$&` inserted the matched text — putting a literal `{previous}` back into the
+  // task, the exact thing `replaceAll` was chosen to prevent — while `` $` `` and `$'` spliced in the template's own
+  // text around the placeholder. It needs no adversary: a `build` step summarising a shell script prints `$$` for a
+  // PID and `$'…'` for ANSI-C quoting, and `wrote pidfile with $$` reached the next step as `wrote pidfile with $`.
+  // A replacer function is inserted verbatim, which is what ADR-0033 claims and what this now is.
+  if (template.includes(PLACEHOLDER)) return template.replaceAll(PLACEHOLDER, () => fenced);
   return `${template}\n\n${fenced}`;
+}
+
+/** One chain step as `runOneDelegation` takes it: the operator's spec with its task composed. */
+export interface ChainStep {
+  task: string;
+  agent?: string;
+  tools?: string[];
+  model?: string;
+}
+
+/**
+ * Build the spec for one step — the operator's step plus the composed task.
+ *
+ * **Extracted so the composition is reachable by a test.** It was inline in the run loop, and a reviewer deleted it
+ * (`task: step.task`) with **all 489 tests still green**: the chain's entire reason for existing could be removed
+ * without anything noticing, because the test that claimed to cover it only pinned the `taskFrom` ledger field.
+ *
+ * This does not make the *binding* untestable-to-testable by itself — see the note in
+ * `test/delegate-chain-wiring.test.ts` about what remains uncovered and why — but it does put the composition under
+ * a real unit test instead of under a title.
+ */
+export function chainStepSpec(step: ChainStep, previous: string | undefined): ChainStep {
+  return { ...step, task: composeStepTask(step.task, previous) };
 }

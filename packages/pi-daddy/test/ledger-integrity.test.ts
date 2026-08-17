@@ -14,6 +14,7 @@
 import assert from "node:assert/strict";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { readFileSync } from "node:fs";
 import { after, test } from "node:test";
 import { makeCatalog } from "../src/catalog.ts";
 import type { SkillDefinition } from "../src/definitions.ts";
@@ -505,6 +506,14 @@ test("ADR-0033: a NON-chained spawn asserts no prior author", () => {
   assert.ok(!("taskFrom" in record), "and the key should be absent, not present-and-undefined");
 });
 
-test("ADR-0033: MAX_CHAIN_STEPS is derived from MAX_CHILDREN_PER_CALL so the two cannot drift", () => {
-  assert.equal(MAX_CHAIN_STEPS, MAX_CHILDREN_PER_CALL);
+test("ADR-0033: MAX_CHAIN_STEPS is DERIVED from MAX_CHILDREN_PER_CALL, not merely equal to it", () => {
+  // Asserting equality could only ever fail AFTER the drift it exists to prevent: replacing the derivation with a
+  // literal `8` passed. So the source is asserted instead, which is the only way to catch a copy before it diverges.
+  assert.equal(MAX_CHAIN_STEPS, MAX_CHILDREN_PER_CALL, "sanity");
+  const source = readFileSync(new URL("../src/fanout.ts", import.meta.url), "utf8");
+  assert.match(
+    source,
+    /export const MAX_CHAIN_STEPS = MAX_CHILDREN_PER_CALL;/,
+    "it must be defined AS the other constant; a literal here drifts silently",
+  );
 });

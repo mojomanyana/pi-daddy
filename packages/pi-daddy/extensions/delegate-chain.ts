@@ -20,11 +20,12 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import type { InheritableApproval } from "../src/approval.ts";
 import { DELEGATE_SUBJECT } from "../src/approval.ts";
-import { composeStepTask, PLACEHOLDER } from "../src/chain.ts";
+import { chainStepSpec, PLACEHOLDER } from "../src/chain.ts";
 import { planDelegation } from "../src/delegate.ts";
 import { MAX_CHAIN_STEPS, childSpawnId, splitBudget } from "../src/fanout.ts";
 import { PAINT_INTERVAL_MS, appendTail, emptyTail, renderProgress, replaceTail, throttle, type ChildProgress } from "../src/progress.ts";
 import type { Capability } from "../src/resolve.ts";
+import { appendRecord, buildRecord } from "../src/ledger.ts";
 import { obtainApprovals, snapshotOf } from "./approvals.ts";
 import { runOneDelegation } from "./run-delegation.ts";
 import type { GrantsSession } from "./session.ts";
@@ -37,23 +38,39 @@ interface StepSpec {
   model?: string;
 }
 
+/** One subject's gated capabilities, and the task of the first step that needed them. */
+interface GateGroup {
+  subject: string;
+  /** `"definition"` offers `always`; `"delegate"` must not (ADR-0019). Derived per group, never assumed. */
+  path: "definition" | "delegate";
+  capabilities: Capability[];
+  /** Shown in the dialog, so an operator sees WHAT the step will do — as a single `delegate` does. */
+  task: string;
+}
+
 /**
- * Every gated capability the whole chain will need, and which definition each belongs to.
+ * Every gate the chain will hit, **grouped by the subject an approval is keyed to**.
  *
- * Collected by planning each step with **no UI** — `planWithApprovals` is deliberately not used, because it would
- * open a dialog per step during the very phase whose purpose is to ask once. `planDelegation` is the pure planner
- * underneath it.
+ * **Grouped, not unioned — and that is a correction to ADR-0033.** The ADR specified one dialog for the whole
+ * chain, illustrated as *"this chain needs `tool:bash` for build, review, debug, git-ops"*. **That dialog cannot
+ * exist.** An approval is keyed `capability@subject`, so one dialog means one subject; asking once for a union
+ * spanning four definitions is asking about one of them and spending the answer on the other three. Three
+ * independent reviewers found it, and the measured consequence was that a 30-day entry keyed to `build` satisfied
+ * `review` and `git-ops` in every later session with no dialog at all — ADR-0014's A-S6 falsified.
  *
- * A step's task is unknown at this point for everything after the first; that is fine, and the module header says
- * why. `"(planning)"` is a placeholder that reaches no child and is never stored.
+ * So the guarantee is narrowed to what is actually achievable and still worth having: **every dialog is raised
+ * upfront, before any step runs, and there is at most one per `capability@subject`.** For the operator's own
+ * pipeline that is two dialogs together at the start rather than two arriving minutes apart mid-run, which was the
+ * point.
+ *
+ * Planned with **no UI** — `planWithApprovals` would open a dialog per step during the very phase whose purpose is
+ * to ask upfront. `planDelegation` is the pure planner underneath it.
+ *
+ * A step's task is unknown here for everything after the first, which is fine: an approval key never contains the
+ * task (ADR-0021), so the set of gates is fully determined without it. `"(planning)"` reaches no child.
  */
-async function unionOfGates(
-  session: GrantsSession,
-  steps: StepSpec[],
-  perStepBudget: number,
-): Promise<{ gated: Capability[]; subjects: Map<Capability, string> }> {
-  const gated: Capability[] = [];
-  const subjects = new Map<Capability, string>();
+async function gateGroups(session: GrantsSession, steps: StepSpec[], perStepBudget: number): Promise<GateGroup[]> {
+  const groups = new Map<string, GateGroup>();
   const context = await session.delegationContext();
 
   for (const [index, step] of steps.entries()) {
@@ -61,18 +78,26 @@ async function unionOfGates(
       { task: "(planning)", agent: step.agent, tools: step.tools, model: step.model },
       { ...context, fanoutBudget: perStepBudget, spawnId: session.ownSpawnId, childSpawnId: childSpawnId(session.ownSpawnId, index) },
     );
+    if (plan.result.gatedBlocked.length === 0) continue;
+
+    const subject = step.agent ?? DELEGATE_SUBJECT;
+    const group =
+      groups.get(subject) ??
+      // `path` follows the subject, exactly as `runOneDelegation` derives it. Hardcoding `"definition"` offered
+      // *Always allow in this project (30 days)* for a model-chosen `tools:` list — the one thing ADR-0019 says
+      // must never be persisted, because "a key the model controls is not a key".
+      { subject, path: step.agent ? ("definition" as const) : ("delegate" as const), capabilities: [], task: step.task };
     for (const capability of plan.result.gatedBlocked) {
-      if (subjects.has(capability)) continue;
-      gated.push(capability);
-      // The subject an approval is keyed to: the definition when there is one, `<delegate>` otherwise (ADR-0019).
-      subjects.set(capability, step.agent ?? DELEGATE_SUBJECT);
+      if (!group.capabilities.includes(capability)) group.capabilities.push(capability);
     }
+    groups.set(subject, group);
   }
-  return { gated, subjects };
+  return [...groups.values()];
 }
 
 export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): void {
-  if (!session.mayDelegate) return;
+  // No `mayDelegate` guard here: `registerDelegationTools` already returns before calling this, so a second check
+  // was dead code that made the leaf half of a wiring test pass for the wrong reason. The guard lives in one place.
 
   const stepShape = Type.Object({
     task: Type.String({
@@ -107,36 +132,74 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
     async execute(_toolCallId, args, signal, onUpdate, ctx) {
       const steps = args.steps ?? [];
 
-      // Cardinality first, before any planning: a chain too long for the budget must not raise a dialog on its way
-      // to being refused. `splitBudget` is reused rather than re-derived, so a chain and a fan-out cannot disagree
-      // about what the budget means.
+      // **Every cheap refusal happens before any human is asked.** Yesterday's lesson on the `delegate` path: with
+      // `PI_GRANTS_HERDR=1` and herdr down, the gate ran first, an operator approved `bash`, a 30-day entry was
+      // written, and the delegation was then refused anyway. `runOneDelegation` checks the executor before its own
+      // gate; a chain hoists its gate above `runOneDelegation`, so the check has to be repeated here or that
+      // ordering is simply bypassed.
+      if (session.executor.refusal) throw new Error(`chain refused: ${session.executor.refusal}`);
+
+      // Cardinality next, still before the gate. `splitBudget` is reused rather than re-derived, so a chain and a
+      // fan-out cannot disagree about what the budget means.
       const split = splitBudget(session.fanoutBudget, steps.length);
       if (!split.ok) throw new Error(`chain refused: ${split.reason}`);
 
-      // ONE gate for the whole chain. See `unionOfGates` and the module header for why this is exact.
-      const { gated, subjects } = await unionOfGates(session, steps, split.perChild);
-      let preApproved: InheritableApproval[] = [];
-      if (gated.length > 0) {
-        // Keyed to the FIRST subject that needed each capability, which is what the dialog names. A capability
-        // gated for two definitions is asked about once; each step then re-checks it against its own ceiling, so
-        // nothing is widened by sharing the answer.
-        const outcome = await obtainApprovals(session, gated, subjects.get(gated[0]) ?? DELEGATE_SUBJECT, "definition", ctx, undefined, signal);
-        if (outcome.approved.length < gated.length) {
-          // Fail closed, and spawn NOTHING. Running the steps that happen to be ungated would be a partial chain
-          // whose output looks like a whole one.
-          const missing = gated.filter((c) => !outcome.approved.includes(c));
-          throw new Error(
-            `chain refused: ${missing.join(", ")} ${missing.length === 1 ? "was" : "were"} not approved, so no ` +
-              `step ran. A chain is gated as a unit — running only its ungated steps would return a partial ` +
-              `result that reads like a complete one.${outcome.reason ? ` (${outcome.reason})` : ""}`,
-          );
+      // One dialog per `capability@subject`, all raised now — see `gateGroups` for why this is grouped rather than
+      // unioned, and what ADR-0033 got wrong.
+      const groups = await gateGroups(session, steps, split.perChild);
+      const preApproved: InheritableApproval[] = [];
+      const declined: Capability[] = [];
+      let humanDenied = false;
+
+      for (const group of groups) {
+        const outcome = await obtainApprovals(session, group.capabilities, group.subject, group.path, ctx, group.task, signal);
+        humanDenied = humanDenied || outcome.humanDenied;
+        for (const capability of group.capabilities) {
+          if (!outcome.approved.includes(capability)) {
+            declined.push(capability);
+            continue;
+          }
+          preApproved.push({
+            capability,
+            subject: group.subject,
+            scope: outcome.scopes[capability] ?? ("once" as const),
+            // Pinned to THIS subject's body. It was stamped from the union's single subject, so ADR-0022's pin was
+            // verified against one definition's instructions while the capability was spent on another's — and that
+            // mispinned entry is what the other definition's own children inherited.
+            bodySha256: snapshotOf(session, group.subject)?.bodySha256,
+          });
         }
-        preApproved = outcome.approved.map((capability) => ({
-          capability,
-          subject: subjects.get(capability) ?? DELEGATE_SUBJECT,
-          scope: outcome.scopes[capability] ?? ("once" as const),
-          bodySha256: snapshotOf(session, subjects.get(capability) ?? DELEGATE_SUBJECT)?.bodySha256,
-        }));
+      }
+
+      if (declined.length > 0) {
+        // **Recorded before it is thrown.** A gate-refused chain used to leave no ledger line at all, which
+        // contradicts `docs/SPEC.md`'s "one record per governed decision — including refusals" and leaves
+        // `/grants ledger`'s approval tally blind to every chain. A human was asked and said no; that is exactly
+        // the event the trail exists for.
+        if (session.ledgerPath) {
+          await appendRecord(
+            { path: session.ledgerPath, strict: true },
+            buildRecord({
+              parentId: session.ownSpawnId,
+              childId: childSpawnId(session.ownSpawnId, 0),
+              depth: session.depth + 1,
+              agentType: steps[0]?.agent ?? "delegate_chain",
+              requested: declined,
+              parentGrant: session.ownGrant,
+              result: { effective: [], denied: [], clipped: [], gatedBlocked: declined, universal: [], subsumedBy: [] },
+              blocked: true,
+              humanDenied,
+              reason: `chain refused: ${declined.join(", ")} not approved; no step ran`,
+              executor: session.executor.kind,
+              now: new Date(),
+            }),
+          ).catch(() => undefined);
+        }
+        throw new Error(
+          `chain refused: ${declined.join(", ")} ${declined.length === 1 ? "was" : "were"} not approved, so no ` +
+            `step ran. A chain is gated as a unit — running only its ungated steps would return a partial ` +
+            `result that reads like a complete one.`,
+        );
       }
 
       const children: ChildProgress[] = steps.map((step) => ({
@@ -159,7 +222,7 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
         const childId = childSpawnId(session.ownSpawnId, index);
         const outcome = await runOneDelegation(
           session,
-          { ...step, task: composeStepTask(step.task, previous) },
+          chainStepSpec(step, previous),
           { parentId: session.ownSpawnId, childId },
           split.perChild,
           ctx,
