@@ -123,7 +123,7 @@ someone else's runtime.** Concretely:
    so the package remains testable and usable without herdr; herdr is what makes fan-out *visible and
    attachable*, which is the reason it was made a requirement.
 
-   > **Dated note, 2026-08-17 — point 6's SELECTION mechanism is amended by ADR-0031 (Proposed).** How the
+   > **Dated note, 2026-08-17 — point 6's SELECTION mechanism is amended by ADR-0031 (Accepted 2026-08-17).** How the
    > executor is chosen changed: `PI_GRANTS_HERDR` unset now means *probe for a reachable herdr server*
    > rather than *use `runChild`*. The refusal recorded here and in `docs/SPEC.md:398` — "never
    > auto-detected from `herdr` being on `PATH`" — still holds as written; a binary on `PATH` decides

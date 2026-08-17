@@ -155,6 +155,63 @@ would become "exit pi", on every session rather than the opt-in ones.
 Streaming is display only, and the two must not be conflated: a truncated or partial stream that could be read
 as the answer is R-03's defect — a missing result indistinguishable from an empty one — with a new cause.
 
+## AMENDED 2026-08-17 — two sentences of this decision were false, and one of them was a governance claim
+
+Six independent reviewers attacked the implementation. Two findings falsify text above rather than merely
+correcting code, so they are recorded here instead of being quietly fixed.
+
+**1. "The agent is still stopped when its call ends" is FALSE. `herdr agent stop` does not exist.** Measured
+against herdr 0.7.5, which lists `list get read send-keys prompt rename focus wait attach start explain`; the
+phantom command exits 0, so nothing noticed. `docs/probes/g16-herdr` asserted it worked, in a rerun block that was
+never run — that probe now carries a falsification note.
+
+This mattered more than a stray call. **Closing the tab is the only kill herdr offers**, so "the pane survives its
+tool call" and "the child has stopped" cannot both be true. Before this ADR the `finally` closed the tab and the
+question never arose. After it, a child that timed out or was aborted **kept running with its grant** after its
+result had been reported to the orchestrator. That is a governance failure, not untidiness.
+
+**The decision is narrowed accordingly**: a child that **settled** keeps its pane, which is the whole feature; a
+child that did **not** settle — timeout, abort, failed start, failed prompt, unreadable pane — has its tab closed
+at once, because that is the only way to stop it. The non-goal "the child does not outlive the tool call" is now
+enforced by mechanism rather than asserted.
+
+**A second consequence, and it was a shipping blocker.** herdr binds an agent name to its **tab** and frees it
+only on close. Names derive from the ledger child id, which is constant (`d0.1`) for every plain blocking
+`delegate` — so once panes outlived their calls, the **first** delegation of a turn worked and every later one
+failed with `agent_name_taken`, on the executor ADR-0031 had just made the default. Names are now uniquified
+inside `runHerdrPane`, next to the constraint they serve.
+
+**2. The eight-pane cap was argued from sequential delegates only, and killed concurrent siblings.** This ADR
+justifies the cap by "thirty sequential `delegate` calls". pi executes tool calls **in parallel** by default, so
+one assistant message can hold `delegate_all(8)` *and* a `delegate` — and the trim closed the oldest pane whether
+or not its child was still working. Measured: two `delegate_all(8)` in one message killed **8 of 16 children
+mid-work**, each reported as "could not be started" with its partial output discarded, while the ledger recorded
+all sixteen as provisioned.
+
+**The cap may now reclaim only settled panes.** If every open pane is live it is exceeded rather than enforced —
+a pane too many costs an operator a keystroke; a killed child costs them the work.
+
+**3. "Output older than the last three lines … is in the pane while the pane lives, and in the returned result
+afterwards" is false on the herdr path** whenever the pane scrolls or exceeds the output cap: the result is a
+fresh `readPane`, i.e. the tail. Streamed output can vanish from both. The result now says so when it is
+truncated, which is the honest version of the claim.
+
+**4. The streaming design was wrong about its own substrate.** `agent read` returns a **snapshot of a bounded
+terminal**, and the implementation diffed it as an append-only stream. Scrolling and cap-truncation both break
+that diff permanently: measured **51 MiB streamed for ~600 bytes of real output**, and the append-shaped join
+fabricated lines the child never printed. The herdr path now reports a bounded snapshot the consumer *replaces*.
+"Bounded by the existing `maxOutputBytes` cap" above was true per read and false cumulatively.
+
+**5. A pre-existing defect surfaced underneath all of this: the herdr executor could never start a definition
+spawn at all.** herdr requires an agent name matching `[a-z][a-z0-9_-]{0,31}`, and this package builds
+`<definition>-<childId>` where a child id is hierarchical (`d0.1`). The **dot** is outside the grammar, so
+`agent start review-d0.1` was rejected with `invalid_agent_name` — from the day the executor was written, invisible
+because the unit fake accepts any name and the integration suite never reaches a real spawn. Found by running two
+real spawns against the live daemon while verifying the fix above; names are now sanitised and both start.
+
+That is not this ADR's defect, but it is this ADR's business: it means the pane executor had **never** worked for
+the `agent:` path, so nothing that follows about pane lifetime had ever run in anger before this branch.
+
 ## What this makes untrue
 
 `docs/SPEC.md:394-395` describes `runHerdrPane` as owning no child lifecycle beyond the call, and the

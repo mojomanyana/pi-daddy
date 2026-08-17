@@ -9,7 +9,7 @@
 
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
-import { runHerdrPane, splitSystemPrompt, type HerdrExec } from "../src/run-herdr.ts";
+import { runHerdrPane, splitSystemPrompt, uniqueAgentName, type HerdrExec } from "../src/run-herdr.ts";
 import { MAX_OPEN_PANES, markPaneSettled, openPaneCount, reapOpenPanes, reapOpenPanesAsync, trackPane, trimOpenPanes } from "../src/pane-reaper.ts";
 import { DEFAULT_SNAPSHOT_LINES } from "../src/herdr-poll.ts";
 import { MAX_CHILDREN_PER_CALL } from "../src/fanout.ts";
@@ -695,6 +695,33 @@ test("each spawn gets a UNIQUE agent name, because herdr binds a name to its tab
     fake.calls.find((c) => c[0] === "agent" && c[1] === "start")![2];
   assert.notEqual(nameOf(first), nameOf(second), "two spawns from one base name must not collide");
   for (const fake of [first, second]) {
-    assert.match(nameOf(fake), /^child-1#\d+$/, "and the base must stay readable in the name");
+    assert.match(nameOf(fake), /^child-1-\d+$/, "and the base must stay readable in the name");
+  }
+});
+
+test("every agent name satisfies herdr's grammar, dotted ledger ids included", () => {
+  // **A PRE-EXISTING defect, and the more serious half of the two.** herdr rejects a name that does not match
+  // `[a-z][a-z0-9_-]{0,31}` — measured from its own message: "agent name must start with a lowercase letter and
+  // contain only lowercase letters, digits, '-' or '_' (1-32 characters)".
+  //
+  // Callers build `${definition}-${childId}`, and a ledger child id is hierarchical: `d0.1`, `d0.1.2`. Those DOTS
+  // are outside the grammar, so `agent start review-d0.1` has always been rejected — every `delegate({agent})` on
+  // the herdr path failed at `agent start`, since the executor was written. Nothing saw it: this suite's fake
+  // accepts any name, and the integration suite never reaches a real herdr spawn. It surfaced only by running two
+  // real spawns against the live daemon, both of which now start.
+  //
+  // The production change that breaks this: passing a name through without sanitising it.
+  const grammar = /^[a-z][a-z0-9_-]{0,31}$/;
+  for (const base of [
+    "review-d0.1", // the real shape, and the one that was rejected
+    "git-ops-d0.3.2", // a grandchild
+    "A_Weird.Name!!", // uppercase and punctuation
+    "9leading-digit", // must not start with a digit
+    "-leading-dash",
+    "\u65e5\u672c\u8a9e", // sanitises to nothing, so a fallback is required
+    "x".repeat(80), // must be truncated to 32
+  ]) {
+    const name = uniqueAgentName(base);
+    assert.match(name, grammar, `${JSON.stringify(base)} produced an invalid herdr agent name: ${name}`);
   }
 });

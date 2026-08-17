@@ -28,6 +28,7 @@ import { MAX_OPEN_PANES, markPaneSettled, trackPane, trimOpenPanes, untrackPane 
 import { defaultExec, parseReply, type HerdrExec } from "./herdr-cli.ts";
 import { readPane, waitForSettled } from "./herdr-poll.ts";
 import { stageSystemPrompt } from "./herdr-stage.ts";
+import { uniqueAgentName } from "./herdr-name.ts";
 
 /**
  * Re-exported so importers of the executor still reach the protocol at the name they always used.
@@ -38,6 +39,8 @@ import { stageSystemPrompt } from "./herdr-stage.ts";
 export { type HerdrExec, parseReply } from "./herdr-cli.ts";
 /** Re-exported: `splitSystemPrompt` moved to `./herdr-stage.ts` under the ceiling, its tests import it here. */
 export { splitSystemPrompt, stageSystemPrompt } from "./herdr-stage.ts";
+/** Re-exported: the name rules moved to `./herdr-name.ts` under the ceiling; tests import them here. */
+export { uniqueAgentName } from "./herdr-name.ts";
 /**
  * Re-exported so `test/run-herdr.test.ts` and any importer keep reaching these where they always were.
  *
@@ -103,31 +106,6 @@ export interface HerdrRunRequest {
 /** How often to retry `agent start` while a freshly created pane is still reaching its shell prompt. */
 export const PANE_READY_POLL_MS = 300;
 
-/** Monotonic within this process. See `uniqueAgentName`. */
-let spawnSeq = 0;
-
-/**
- * Make a herdr agent name that cannot collide with a live one.
- *
- * **Measured, and a shipping defect without it.** herdr binds an agent name to its **tab**, and only closing
- * the tab frees the name: a second `agent start` with a name still held returns
- * `agent_name_taken: agent <name> is already used; … tab_id=…`. `herdr agent stop` does not exist (see
- * `cleanup`), so nothing else releases it.
- *
- * Callers build a name from the definition and the ledger child id — and for a plain blocking `delegate` that
- * id is **constant** (`d0.1`, index 0 of the session), so every delegation in a session asked for the same
- * name. That was harmless while the pane closed at the end of each call. Once ADR-0032 kept panes alive to
- * `agent_settled`, the **first** delegation of a turn worked and every later one failed with
- * `agent_name_taken`, on the executor ADR-0031 had just made the default.
- *
- * Uniquified HERE rather than at the call site, so no caller can forget: the constraint belongs to herdr, and
- * this module is the only thing that talks to herdr. The suffix is a counter rather than a random token so a
- * pane label stays readable and reproducible within a run.
- */
-export function uniqueAgentName(base: string): string {
-  spawnSeq += 1;
-  return `${base}#${spawnSeq}`;
-}
 
 /**
  * Run one governed child in a pane and return its output.

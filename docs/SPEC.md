@@ -410,7 +410,7 @@ the thing ADR-0016 point 6 refused: a binary with no server behind it would make
 `tab create`, on a path nobody chose. Only a reachable server counts.
 
 **The choice is announced three times**, which is what makes deciding it automatically defensible: at session
-start, in `/grants` (`executor  …`), and per child in the ledger's `executor` field. The banner appears whenever
+start, in `/grants` (`executor  …`), and per child in the ledger's `executor` field — which `/grants ledger` tallies, so it is readable without `jq`. The banner appears whenever
 a session *can* spawn — including an ungoverned one, which still registers `delegate`.
 
 A child's pane defaults to the **parent's own herdr workspace** (`HERDR_WORKSPACE_ID`, which herdr sets in
@@ -443,33 +443,44 @@ debug    agent debug-d0.2    pane w7:t13   running  0:42
   Found it: Date parsing assumes local tz.
 ```
 
-Fixed height (four lines per child), no braiding between children, and the pane id on screen **while the child
-is alive** — which is the difference between a pane you can switch to and one you learn about after it closed.
-Repainting is throttled to 250ms with a guaranteed trailing frame, so the block always ends showing the settled
-state.
+**Bounded** in height *and* width: five lines per child (header, up to three of tail, a blank separator) and 200
+characters per line. Both bounds are needed — a line cap is what actually bounds the block, because eight children
+each printing one megabyte-long line rendered 25 lines and 8 MiB. No braiding between children, and the pane id on
+screen **while the child is alive**, which is the difference between a pane you can switch to and one you learn
+about after it closed. Repainting is throttled to 250ms with a guaranteed trailing frame.
 
-Both executors stream: `runChild` through a callback on its existing output funnel, `runHerdrPane` by polling
-`agent read` and reporting only what the terminal has *gained* (the command returns the whole buffer, so
-reporting it verbatim each poll would repeat everything once per interval).
+The two executors report **differently, and the difference is not cosmetic**. `runChild` genuinely *streams*: a
+callback on its existing output funnel, appended. `runHerdrPane` reports a **snapshot** — `agent read` returns the
+whole terminal, so the last few lines are re-sent each poll and the consumer *replaces* what it holds. Treating
+that snapshot as a stream is what produced a measured 89,000× amplification and fabricated lines no child printed.
 
-**The block is a display and never the result.** The tool's answer is still what the child returned; output
-older than the last three lines lives in the pane and in that answer, not in the transcript.
+**The block is a display and never the result.** The tool's answer is still what the child returned. On the herdr
+path, output older than the tail may be in *neither* — a pane that scrolled or exceeded the output cap returns only
+its tail, and the result says so when it is truncated.
 
 ## Pane lifetime
 
-**A pane belongs to the agent run, not to the tool call.** It is no longer closed when its child settles — a
-twenty-second child's pane was gone before anyone could switch to it. It is swept when the run settles
-(`agent_settled`), asynchronously, with process `exit` as the backstop.
+**A pane belongs to the agent run, not to the tool call — if its child settled.** A child that answered keeps its
+pane, because a twenty-second child's pane was gone before anyone could switch to it; it is swept when the run
+settles (`agent_settled`), asynchronously, with process `exit` as the backstop.
+
+**A child that did NOT settle loses its tab immediately.** Timeout, abort, failed start, failed prompt, unreadable
+pane: closing the tab is the **only** way to stop a herdr agent — `herdr agent stop` does not exist — so leaving
+the pane would leave a governed child working with its grant after its result had been reported. Each spawn also
+gets a **unique** agent name, because herdr binds a name to its tab and frees it only on close.
 
 `agent_settled` rather than `turn_end`: `turn_end` fires at the end of each provider round-trip, no later than
 the `finally` it would have replaced, so building on it would have changed nothing.
 
-**At most 8 panes are open at once** (`MAX_CHILDREN_PER_CALL`); opening a ninth closes the oldest and says so.
-The bound is needed because a plain blocking `delegate` spends nothing from the fan-out budget, so a long run of
-sequential delegations would otherwise accumulate panes without limit.
+**At most 8 panes are open at once** (`MAX_CHILDREN_PER_CALL`); opening a ninth closes the oldest **settled** one
+and says so. The bound is needed because a plain blocking `delegate` spends nothing from the fan-out budget, so a
+long run of delegations would otherwise accumulate panes without limit.
 
-The agent is still stopped when its call ends — a pane outliving the call does not mean a governed child keeps
-working in it. What survives is a terminal with its scrollback.
+**Only settled panes are reclaimable, and if every open pane is live the cap yields rather than enforcing.** pi
+runs tool calls in parallel by default, so one message can hold `delegate_all(8)` plus a `delegate` — and a trim
+that took the oldest pane regardless killed live siblings (measured: 8 of 16 children). A pane too many costs a
+keystroke; a killed child costs the work. The cap also stops holding if herdr refuses a close, which it reports
+rather than hides.
 
 `PI_GRANTS_HERDR_KEEP_PANE=1` means *not even at `agent_settled`*.
 
@@ -508,7 +519,7 @@ loudly.
 | `PI_GRANTS_CHILD_TIMEOUT` | `600` | Seconds. Inherited. |
 | `PI_GRANTS_HERDR` | unset (= probe) | `1` demands herdr panes and refuses if unreachable; `0` demands subprocesses; unset probes. |
 | `PI_GRANTS_HERDR_WORKSPACE` | the parent's `HERDR_WORKSPACE_ID` | Which herdr workspace a child's pane goes in. |
-| `PI_GRANTS_HERDR_KEEP_PANE` | unset | Keep panes past `agent_settled`, for inspection. |
+| `PI_GRANTS_HERDR_KEEP_PANE` | unset | Keep panes past `agent_settled`, for inspection. No sweep closes them. |
 | `PI_CODING_AGENT_DIR` | `~/.pi/agent` | pi's own variable, listed because it decides where persisted approvals live — one file per project under `grants-approvals/`. |
 
 **Malformed configuration disables spawning rather than falling back**, and says which variable it was — a

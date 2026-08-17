@@ -154,7 +154,47 @@ herdr agent stop probe-gov
 Findings 4 and 5 are visible in the startup banner of that same run — no second run needed.
 For §3's floor, repeat with `--no-tools --no-skills --no-context-files` in a fresh pane.
 
-**Cleanup.** `herdr agent stop` ends the agent but leaves the pane.
+**Cleanup.** ~~`herdr agent stop` ends the agent but leaves the pane.~~
+
+> **FALSIFIED 2026-08-17, and this is the most important correction in this file.** **`herdr agent stop` does not
+> exist.** Measured against the same herdr 0.7.5 this probe documents: `herdr agent` lists
+> `list get read send-keys prompt rename focus wait attach start explain`, and `herdr agent stop <name>` prints
+> the usage banner and **exits 0** — which any wrapper reading only the exit code records as success.
+>
+> **How it got here is the lesson.** This line sits in the *How to rerun* block: it was written as an
+> instruction for a future run, never executed, and therefore never measured — in a document whose entire purpose
+> is that its claims were. Working rule 5 says *"measure before asserting, and say which you did"*; a rerun
+> recipe is the one place in a probe where that is easy to forget, because the surrounding text really was
+> measured. **The correction directly below this one is a different usage mistake in the same section**, which
+> should have been a warning that this block was the file's soft spot.
+>
+> **What it cost, four days later.** Three call sites in `pi-daddy` issued `agent stop` on the strength of this
+> line. ADR-0032 then made panes outlive their tool call, and built its safety claim — *"the agent is still
+> stopped here… what survives is a terminal, not a running descendant"* — on top of it. Both were false: a child
+> that timed out or was aborted **kept working with its grant** after its result had been reported, and because
+> herdr frees an agent name only when its tab closes, the **second `delegate` of every turn** failed with
+> `agent_name_taken`. Found by an independent reviewer running the command; see ADR-0032's amendment.
+>
+> **The real cleanup is `herdr tab close <tab-id>`**, which does end the child — verified: no `pi` process
+> survives it. There is no way to stop a herdr agent while keeping its pane.
+
+> **SECOND FINDING, same run — agent names have a grammar this probe never recorded.** herdr rejects a name that
+> does not match `[a-z][a-z0-9_-]{0,31}`, in its own words: *"agent name must start with a lowercase letter and
+> contain only lowercase letters, digits, `-` or `_` (1-32 characters)"*.
+>
+> This probe's own examples (`probe-gov`, `dupname`) all happen to satisfy it, so the constraint was invisible —
+> and `pi-daddy` builds a name as `<definition>-<childId>` where a ledger child id is **hierarchical**: `d0.1`,
+> `d0.1.2`. **The dots are outside the grammar**, so `agent start review-d0.1 …` is rejected with
+> `invalid_agent_name` and **every `delegate({agent})` on the herdr path failed at `agent start`** from the day the
+> executor was written.
+>
+> Neither suite could see it: the unit fake accepts whatever name it is handed, and the integration suite never
+> reaches a real herdr spawn. It surfaced from two real spawns against the live daemon — the same run that
+> falsified `agent stop`. **Verified fixed:** two spawns from the base `review-d0.1` now produce
+> `review-d0-1-1` and `review-d0-1-2`, and both `STARTED` against real herdr with real interactive pi argv.
+>
+> The lesson repeats the one above: a probe that only ever used well-formed inputs recorded no constraint on
+> inputs. Where a substrate validates something, the probe should try to violate it.
 
 > **Corrected 2026-08-12 (later).** This section originally said `send-keys` "did not close" the panes and
 > that cleanup was manual. **That was wrong, and the cause was my own usage:** `herdr agent send-keys`

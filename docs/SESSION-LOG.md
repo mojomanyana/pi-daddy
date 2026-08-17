@@ -97,6 +97,78 @@ That convention is why every reversal here was survivable, and there have been f
 ---
 
 
+## 2026-08-17 (review) — six reviewers, eighteen defects, two shipping blockers
+
+**The single most valuable hour of this project so far, and the case for never merging a self-reviewed branch.**
+0.16.0 was implemented, verified four ways (461 tests, typecheck, integration, smoke), manually checked against the
+real herdr daemon, and had a PR written for it. Then six independent agents each got **one written hypothesis** and
+no permission to fix anything. **Every one found something. None found what its hypothesis predicted.**
+
+**Two were shipping blockers, and both came from the same root cause: an unverified line in a probe.**
+
+`docs/probes/g16-herdr/README.md` said, in its *How to rerun* block, *"`herdr agent stop` ends the agent but leaves
+the pane."* **That command does not exist.** It prints the usage banner and exits 0, which any wrapper reading only
+the exit code records as success. Three call sites were built on it, and ADR-0032 built a *governance claim* on it
+— "the agent is still stopped… what survives is a terminal, not a running descendant."
+
+**The lesson is where the false line was, not that it existed.** A rerun recipe is the one place in a probe where
+"measure before asserting" is easy to forget, because everything around it *was* measured. There is even a dated
+correction immediately below it about a different usage mistake in the same block — which should have been the
+warning. **Rule 5 needs to cover rerun instructions explicitly**, and the probe now carries a falsification note
+saying so.
+
+What it cost: a child that timed out or aborted **kept working with its grant** after its result was reported; and
+because herdr frees an agent name only when its tab closes, the **second `delegate` of every turn** died with
+`agent_name_taken` — on the executor ADR-0031 had just made the default. Neither was reachable by any test in the
+suite, because the unit tests inject a fake `exec` that answered `agent stop` cheerfully and the integration suite
+never reaches a real herdr spawn.
+
+**Four defects were found by MUTATING production code and watching the tests stay green.** That technique earned
+its place permanently:
+- The `delegate_all` "one status block" test passed with a reporter per child — its fixture never spawned, so no
+  sink ever fired and `frames.length === 1`. The during-run painting ADR-0032 is *about* was untested.
+- The tripwire's "says which is which" test passed on the fully **inverted** message.
+- Its sibling executed **zero assertions** (a conditional guard on a message containing no digits).
+- Hardcoding both ledger call sites to `executor: "process"` left all 442 tests green.
+
+**Three findings were about my own fixes creating the next defect**, which is the shape to watch:
+- The R-60 guard hardcoded `grants.ts`; splitting the file under the ceiling moved ten of its thirteen controls out
+  of scope, and it passed vacuously — R-60's shape inside the guard *for* R-60, in the commit whose message says
+  the guard was obeyed.
+- The executor disclosure was gated on `governed` rather than `mayDelegate`, so an ungoverned session would have
+  relocated its children into panes in silence: ADR-0031's own rejected objection, inside its fix.
+- The streaming fix bounded the *unit* count when the budget was in *bytes* — the same defect as the 1924-byte one
+  it replaced, one layer down.
+
+**And the design error worth remembering: I treated a snapshot source as a stream.** `agent read` returns the whole
+terminal; diffing it as append-only broke permanently the moment a pane scrolled or passed the output cap —
+measured **51 MiB streamed for 600 bytes of real output**. Four separate findings (amplification, fabricated text,
+unbounded line growth, repeated real output) were all that one mistake. The fix was not a better diff; it was
+admitting the substrate is a snapshot and having the consumer *replace*.
+
+**Also found: the README was never updated.** Two reviewers independently. SPEC was corrected for every claim;
+`packages/pi-daddy/README.md` — the file **npm publishes** — still said "Opt-in, never auto-detected", the exact
+sentence ADR-0031 reverses and that R-62's own re-rating note on this branch calls false. **When a decision changes
+behaviour, grep for the claim, not for the file you happened to be editing.**
+
+**And then verifying the fix found a third blocker the reviewers had not reached.** Two real spawns against the
+live daemon — the cheapest possible check — showed that herdr enforces an agent-name grammar
+(`[a-z][a-z0-9_-]{0,31}`) that this package has always violated: names are `<definition>-<childId>` and a child id
+is hierarchical (`d0.1`), so **`agent start review-d0.1` has been rejected since the executor was written**. The
+herdr path had never once started a definition spawn. Both suites were green throughout, because the unit fake
+accepts any name and the integration suite never reaches a real herdr spawn.
+
+**Two probe facts falsified in one run, and both for the same reason: the probe only ever used well-formed inputs
+and never executed its own cleanup advice.** Where a substrate *validates* something, a probe has to try to violate
+it; where a probe gives a rerun recipe, that recipe has to have been run.
+
+Verified fixed against real herdr: two spawns from base `review-d0.1` produce `review-d0-1-1` and `review-d0-1-2`,
+and both start with real interactive pi argv.
+
+ADR-0032 carries a five-point amendment; ADR-0031 is unaffected. R-62's re-rating stands.
+
+---
+
 ## 2026-08-17 (later still) — 0.16.0 shipped: probed executor, visible children
 
 **ADR-0031 and ADR-0032 accepted and implemented in twelve tasks on `feat/observable-governed-children`.**

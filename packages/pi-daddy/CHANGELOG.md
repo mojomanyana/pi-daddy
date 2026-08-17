@@ -111,9 +111,13 @@ a path nobody chose — so only a *reachable* server counts. This reverses part 
 refused auto-detection on the grounds that a run must not "silently relocate"; the answer to *silently* is that
 the executor is now named at session start, in `/grants`, and per child in the ledger.
 
-**What to do about it:** nothing, unless you relied on an unset variable meaning subprocesses. If you did,
-set `PI_GRANTS_HERDR=0` — and note that a stale `PI_GRANTS_HERDR=1` in a shell profile will now **refuse**
-delegations on machines without herdr, including CI, rather than falling back. That refusal is deliberate.
+**What to do about it:** nothing, unless you relied on an unset variable meaning subprocesses. If you did, set
+`PI_GRANTS_HERDR=0`.
+
+A stale `PI_GRANTS_HERDR=1` in a shell profile still breaks delegation on a machine without herdr — **as it did in
+0.15.0**, where every child failed at `tab create`. There was never a fallback to lose. What changed is that the
+failure is reported at session start, names the variable, and says what to set instead, rather than surfacing as a
+per-delegation spawn error.
 
 ### A running delegation is visible (ADR-0032)
 
@@ -141,8 +145,38 @@ at once, with process `exit` as the backstop. `PI_GRANTS_HERDR_KEEP_PANE=1` stil
 A child's pane also defaults to the **parent's own herdr workspace** now, so switching to one is a tab away
 rather than a workspace away.
 
+### Fixed before release — eighteen defects from six independent reviewers
+
+Everything above was implemented, then attacked by six reviewers with one written hypothesis each. Two were
+shipping blockers, and they change what the herdr path guarantees:
+
+- **`herdr agent stop` does not exist.** Measured against herdr 0.7.5. Three call sites issued it for nothing, and
+  `docs/probes/g16-herdr` asserted it worked — from a rerun block that was never run. Closing the tab is the only
+  kill herdr offers, so an unsettled child now loses its tab at once; leaving it would have left a governed child
+  working with its grant after its result was reported.
+- **herdr binds an agent name to its tab.** With panes outliving their calls, the **second `delegate` of every
+  turn** failed with `agent_name_taken`. Names are now unique per spawn.
+- **The 8-pane cap killed live siblings**, because pi runs tool calls in parallel by default. Only *settled* panes
+  are reclaimable now; if they are all live the cap yields rather than enforcing.
+- **The pane reader amplified output 89,000×** once a pane scrolled or passed the output cap: `agent read` returns
+  a snapshot of a bounded terminal and was being diffed as an append-only stream.
+- **The output cap counted bytes but truncated by UTF-16 code units** — 2048 bytes through the 1024 default on
+  non-ASCII — and a multi-byte character split across a pipe boundary became U+FFFD **in the child's answer**.
+  Both pre-existing, both fixed.
+- **A failed pane read came back as the child's successful answer**, and a truncated pane never said so.
+- **The session-start executor line never reached pi's TUI**, because consecutive `info` notifies overwrite each
+  other — which also means `holding [...]` has been silently overwritten since the spawnable summary was added.
+  All info lines are now one message.
+- **The approval dialog ran before the refusal**, so a demanded-but-unreachable herdr could bank a 30-day approval
+  for a delegation it then refused.
+
+Six tests that could not fail were rewritten, each re-verified by re-applying the mutation that had defeated it,
+and coverage was added where it was simply absent — including that nothing verified a real spawn records
+`executor: "herdr"`. 461 unit tests, up from 442.
+
 ### Also
 
+- **`/grants ledger` tallies executors**, so "which children ran in panes?" no longer needs `jq`.
 - **The tripwire names `delegate_all`.** It said only *"Use `delegate` instead"*, and a request for parallel
   work was answered with a single sequential call as a result.
 - **The ledger records `executor` per child** — required, not optional. The executor is decided by a probe now,
