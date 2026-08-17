@@ -365,6 +365,34 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     assert.ok(!/approvals  /.test(text), "precondition: there are no approvals here, which is the whole point");
   });
 
+  test("R-74: an unknown /grants subcommand is refused, not silently ignored", async () => {
+    // `/grants init` — a command that does not exist — printed the ordinary status screen with the word
+    // dropped, so it read as though init had run. `/grants ledgr` behaved identically. A diagnostic that
+    // answers a question nobody asked is indistinguishable from success, which is the failure shape this
+    // package's risk register is mostly about.
+    const cwd = await projectOnce();
+    const r = await runCommand({ cwd, command: "/grants init", env: { PI_GRANTS_GRANT: "tool:read" } });
+    const text = r.notifies.map((n) => n.message).join("\n");
+
+    assert.match(text, /unknown subcommand "init" — did nothing/, "it must say it did nothing");
+    assert.match(text, /Known: ledger, approvals, revoke/, "and what it does know");
+    assert.ok(!/holding    /.test(text), "and must NOT print the status screen, which is what made it look fine");
+  });
+
+  test("R-74: a KNOWN subcommand and plain /grants are both unaffected", async () => {
+    // The other half. Refusing the unknown must not refuse the known — and bare `/grants`, whose `sub` is
+    // undefined rather than a wrong word, is the case a naive `sub !== known` check would break.
+    const cwd = await projectOnce();
+    const bare = await runCommand({ cwd, command: "/grants", env: { PI_GRANTS_GRANT: "tool:read" } });
+    assert.match(bare.notifies.map((n) => n.message).join("\n"), /holding    /, "bare /grants still reports");
+
+    const approvals = await runCommand({ cwd, command: "/grants approvals", env: { PI_GRANTS_GRANT: "tool:read" } });
+    assert.ok(
+      !/unknown subcommand/.test(approvals.notifies.map((n) => n.message).join("\n")),
+      "a known verb must not be refused",
+    );
+  });
+
   test("R-34: a corrupt ledger is reported at session start, unasked", async () => {
     // Detection existed and nothing ran it: `/grants ledger` found a torn line only if an operator thought
     // to look. A check you have to know to run is a feature, not a control. This drives `/grants` — NOT

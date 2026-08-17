@@ -51,6 +51,9 @@ export interface GrantsCommandContext {
  */
 const PREVIEW_LIMIT = 12;
 
+/** The verbs `/grants` answers to. Anything else is refused rather than silently treated as no verb. */
+const KNOWN_SUBCOMMANDS: readonly string[] = ["ledger", "approvals", "revoke"];
+
 export const grantsCommand = {
   description:
     "Show this session's capability grant, delegation depth, and known agent-type ceilings; " +
@@ -262,6 +265,20 @@ handler: async (args: string, ctx: any) => {
           outcome === "revoked" ? "info" : outcome === "absent" ? "warning" : "error",
         );
       }
+      return;
+    }
+
+    // **An unrecognised subcommand is refused, not ignored (R-74).** Every `sub` that is not a known verb
+    // fell through to this status screen with the word silently dropped, so `/grants init` — a command that
+    // does not exist — printed a healthy-looking report and read as though it had run. `/grants ledgr` did
+    // the same. A diagnostic that answers a question nobody asked is worse than one that refuses: it is
+    // indistinguishable from success, which is the shape this package spends most of its risk register on.
+    if (sub !== undefined && !KNOWN_SUBCOMMANDS.includes(sub)) {
+      ctx.ui.notify(
+        `grants: unknown subcommand "${sub}" — did nothing. Known: ${KNOWN_SUBCOMMANDS.join(", ")}. ` +
+          `Plain /grants shows this session's status.`,
+        "warning",
+      );
       return;
     }
 
