@@ -425,3 +425,15 @@ test("ADR-0031: a pre-0.16 ledger line, which has no executor field, still parse
   assert.equal(report.ok, true, "a line without `executor` must not read as corrupt");
   assert.equal(report.records, 1, "and it must still be counted");
 });
+
+/**
+ * **`preApproved` is deliberately NOT tested here**, and the reason is worth writing down.
+ *
+ * The property is "a step handed an approval does not ask again", and the only honest way to observe it is through
+ * the feature that uses it: `test/delegate-chain-wiring.test.ts`'s "a chain asks ONCE for the union" fails if the
+ * threading breaks, because a chain would then raise one dialog per step. A test here would have to reach
+ * `runOneDelegation` directly, and this harness deliberately does not expose the session — the first attempt faked
+ * it and asserted nothing.
+ *
+ * Recorded rather than left as an absence, so nobody adds the contrived version back.
+ */

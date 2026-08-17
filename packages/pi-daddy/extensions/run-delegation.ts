@@ -22,6 +22,7 @@ import type { Capability } from "../src/resolve.ts";
 import { ENV_CHILD_TIMEOUT, runChild, timeoutFromEnv } from "../src/run-child.ts";
 import { runHerdrPane } from "../src/run-herdr.ts";
 import { obtainApprovals, republishable, snapshotOf, type ApprovalOutcome, type ApprovalUIContext } from "./approvals.ts";
+import type { InheritableApproval } from "../src/approval.ts";
 import { resolveWorkspace } from "../src/herdr-cli.ts";
 import { ENV_HERDR_KEEP_PANE, type GrantsSession } from "./session.ts";
 
@@ -72,12 +73,23 @@ export async function planWithApprovals(
   extra: Record<string, unknown>,
   ctx: ApprovalUIContext | null,
   signal?: AbortSignal,
+  /**
+   * Approvals a caller has ALREADY obtained, so this plan does not ask again — ADR-0033's upfront gate.
+   *
+   * `delegate_chain` collects the union of its steps' gated capabilities and asks once, then hands the answer to
+   * every step. Without this each step would re-open the dialog *after* the operator had already answered for the
+   * whole chain, which is R-25's fatigue shape with nothing bought.
+   *
+   * It cannot widen anything: `planDelegation` intersects `approved` with the grant on every path, so a
+   * pre-approval for something the session does not hold is still refused. What it changes is who is asked.
+   */
+  preApproved?: InheritableApproval[],
 ): Promise<GatedPlan> {
   // Spelled ONCE. It is asked for twice — when the human is prompted, and when the answer is fed back into
   // the re-plan — and two spellings of one argument is the defect R-28 was.
   const approvalSubject = request.agent ?? DELEGATE_SUBJECT;
 
-  let plan = planDelegation(request, { ...(await session.delegationContext()), ...extra });
+  let plan = planDelegation(request, { ...(await session.delegationContext(preApproved)), ...extra });
   if (plan.ok || !shouldSeekApproval(plan.result)) return { plan };
 
   let approval: ApprovalOutcome | undefined;
@@ -163,17 +175,32 @@ export async function runOneDelegation(
    * One sink for both executors: the herdr path additionally reports a pane id, and the process path never
    * has one. Every field is display-only — the child's answer is still the returned outcome.
    */
-  onProgress?: (update: {
-    /** Appended (process executor: a genuine byte stream). */
-    chunk?: string;
-    /** Replaces (herdr executor: a snapshot of a bounded terminal). The two are NOT interchangeable. */
-    snapshot?: string[];
-    paneId?: string;
-    /** The name herdr actually knows this child by — minted in `runHerdrPane`, so it cannot be derived. */
-    agentName?: string;
-    state?: "running" | "completed" | "failed";
-  }) => void,
+  /**
+   * The optional tail, as ONE object rather than positional arguments.
+   *
+   * **R-28's lesson, applied before it cost anything.** Adding `preApproved` as a seventh positional parameter put
+   * it in front of `onProgress`, and two existing call sites silently passed a progress sink where approvals were
+   * expected. TypeScript caught it only because the types happen to differ — which is luck, not a control, and
+   * R-28 was precisely "a defect in an argument list that 226 pure tests could not see". An object makes the
+   * mistake unspellable.
+   */
+  options: {
+    /** Progress for the parent's status block (ADR-0032). Display only. */
+    onProgress?: (update: {
+      /** Appended (process executor: a genuine byte stream). */
+      chunk?: string;
+      /** Replaces (herdr executor: a snapshot of a bounded terminal). The two are NOT interchangeable. */
+      snapshot?: string[];
+      paneId?: string;
+      /** The name herdr actually knows this child by — minted in `runHerdrPane`, so it cannot be derived. */
+      agentName?: string;
+      state?: "running" | "completed" | "failed";
+    }) => void;
+    /** Approvals already obtained by the caller — see `planWithApprovals`. `delegate_chain` uses it. */
+    preApproved?: InheritableApproval[];
+  } = {},
 ): Promise<DelegationOutcome> {
+  const { onProgress, preApproved } = options;
   // pi resolves a BARE model id to an unauthenticated provider and the child dies at startup — the id
   // alone is not enough, it must be qualified with its provider (`Model<Api>` carries both).
   const defaultModel = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
@@ -198,7 +225,14 @@ export async function runOneDelegation(
   // Planning and the gate live in `planWithApprovals`, shared with the `/grants` preview so the two cannot
   // disagree (R-38). This call is the enforcing one when a human may be asked: `ctx` is passed unless the
   // executor has already made the outcome certain.
-  let { plan, approval: approvalOutcome } = await planWithApprovals(session, request, extra, refusal ? null : ctx, signal);
+  let { plan, approval: approvalOutcome } = await planWithApprovals(
+    session,
+    request,
+    extra,
+    refusal ? null : ctx,
+    signal,
+    preApproved,
+  );
 
   // Applied in front of the ledger write below, so the record describes a refusal rather than a spawn. Turning
   // `plan.ok` off reuses the existing blocked-record path, so this adds a reason rather than a second refusal

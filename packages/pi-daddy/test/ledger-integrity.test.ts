@@ -19,6 +19,7 @@ import { makeCatalog } from "../src/catalog.ts";
 import type { SkillDefinition } from "../src/definitions.ts";
 import { planDelegation } from "../src/delegate.ts";
 import { appendRecord, buildRecord, isEscalationAttempt, verifyLedger } from "../src/ledger.ts";
+import { MAX_CHAIN_STEPS, MAX_CHILDREN_PER_CALL } from "../src/fanout.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
 after(cleanupTempDirs);
@@ -473,4 +474,37 @@ test("ADR-0031: the executor survives a round trip through the ledger file", asy
   const report = await verifyLedger(path);
   assert.equal(report.ok, true, "the new field must not make a line unparseable");
   assert.equal(report.records, 1);
+});
+
+test("ADR-0033: a chained step records WHICH child composed its task", () => {
+  // Without this, "who wrote this instruction?" is unanswerable — and that is the question ADR-0033's handoff
+  // decision makes worth asking, since the fence is framing rather than enforcement. No other field carries it:
+  // `agentType` names the definition and `definitionDigest` names its instructions.
+  //
+  // The production change that breaks this: dropping `taskFrom` from buildRecord.
+  const base = {
+    parentId: "d0", childId: "d0.2", depth: 1, agentType: "review",
+    requested: ["tool:read"], parentGrant: ["tool:read"],
+    result: { effective: ["tool:read"], denied: [], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
+    blocked: false, executor: "process" as const, now: new Date("2026-08-17T12:00:00Z"),
+  };
+
+  assert.equal(buildRecord({ ...base, taskFrom: "d0.1" }).taskFrom, "d0.1");
+});
+
+test("ADR-0033: a NON-chained spawn asserts no prior author", () => {
+  // Optional, unlike `executor`, and the asymmetry is the point: an empty string would claim a predecessor that
+  // does not exist. The production change that breaks this: making the field required, or defaulting it to "".
+  const record = buildRecord({
+    parentId: "d0", childId: "d0.1", depth: 1, agentType: "review",
+    requested: ["tool:read"], parentGrant: ["tool:read"],
+    result: { effective: ["tool:read"], denied: [], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
+    blocked: false, executor: "process", now: new Date(),
+  });
+  assert.equal(record.taskFrom, undefined);
+  assert.ok(!("taskFrom" in record), "and the key should be absent, not present-and-undefined");
+});
+
+test("ADR-0033: MAX_CHAIN_STEPS is derived from MAX_CHILDREN_PER_CALL so the two cannot drift", () => {
+  assert.equal(MAX_CHAIN_STEPS, MAX_CHILDREN_PER_CALL);
 });

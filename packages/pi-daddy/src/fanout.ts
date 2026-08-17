@@ -33,6 +33,16 @@ export const DEFAULT_FANOUT_BUDGET = 8;
  */
 export const MAX_CHILDREN_PER_CALL = 8;
 
+/**
+ * Steps a single `delegate_chain` may contain — ADR-0033.
+ *
+ * **Derived from `MAX_CHILDREN_PER_CALL` so the two cannot drift.** A chain is not concurrent, so the blast-radius
+ * argument for that constant does not apply directly; what does apply is that one tool call should not be able to
+ * create an unbounded number of descendants, and eight is already a long pipeline. Sharing the number also means an
+ * operator learns one bound rather than two.
+ */
+export const MAX_CHAIN_STEPS = MAX_CHILDREN_PER_CALL;
+
 /** Read the budget from the environment, failing to the default on absent *or* malformed input. */
 export function budgetFromEnv(raw: string | undefined): number {
   const parsed = parseBound(raw);

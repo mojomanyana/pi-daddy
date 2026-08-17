@@ -208,7 +208,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
         session.fanoutBudget,
         ctx,
         signal,
-        progress.sink(0),
+        { onProgress: progress.sink(0) },
       );
       progress.settle([outcome]);
 
@@ -278,7 +278,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
             split.perChild,
             ctx,
             signal,
-            progress.sink(index),
+            { onProgress: progress.sink(index) },
           ),
         ),
       );

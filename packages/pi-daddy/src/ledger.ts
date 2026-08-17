@@ -122,6 +122,18 @@ export interface GrantRecord {
    * *would* have used, because a refused spawn has no executor of its own.
    */
   executor: ExecutorKind;
+  /**
+   * The child whose OUTPUT composed this child's task — ADR-0033.
+   *
+   * **Optional, unlike `executor`, and the asymmetry is deliberate.** A non-chained spawn has no prior author, and
+   * an empty string would assert one. Present only on chain steps after the first.
+   *
+   * Why it is recorded at all: a chain makes step N's task the output of a governed child, and ADR-0033's chosen
+   * handoff is *framing* rather than enforcement. So "who wrote this instruction?" is exactly the question that
+   * decision makes worth asking, and it is unanswerable from any other field — `agentType` names the definition,
+   * `definitionDigest` names its instructions, and neither says where the TASK came from.
+   */
+  taskFrom?: string;
 }
 
 export interface LedgerOptions {
@@ -154,6 +166,8 @@ export function buildRecord(args: {
   definitionDigest?: DefinitionDigest;
   /** Where the child ran (ADR-0031). Required: the probe's answer survives nowhere else. */
   executor: ExecutorKind;
+  /** The child whose output composed this task (ADR-0033). Absent for anything but a chain step. */
+  taskFrom?: string;
   now: Date;
 }): GrantRecord {
   // R-46: the scalar is a SUMMARY, emitted only when it cannot mislead. `buildRecord` derives it rather
@@ -169,6 +183,7 @@ export function buildRecord(args: {
     depth: args.depth,
     agentType: args.agentType,
     executor: args.executor,
+    ...(args.taskFrom ? { taskFrom: args.taskFrom } : {}),
     requested: args.requested,
     parentGrant: args.parentGrant,
     effective: args.result.effective,
