@@ -35,7 +35,7 @@ permissible, able to refuse or allow but never to narrow. **This package is now 
 is an argument rather than a veto. Definitions are **Agent Skills (`SKILL.md`)** files whose `allowed-tools`
 becomes the grant; the pi-subagents ceiling port is deleted; the interceptor survives only as a tripwire.
 
-**Current state: `pi-daddy` 0.17.0 — the only package.** Thirty-three ADRs decided. 505 unit +
+**Current state: `pi-daddy` 0.17.1 — the only package.** Thirty-three ADRs decided. 505 unit +
 44 integration tests, plus an opt-in tier behind `PI_GRANTS_IT_MODEL=1` that spawns real children;
 typecheck and smoke clean.
 

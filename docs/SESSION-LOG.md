@@ -11,7 +11,7 @@ decisions; this file holds state and next actions. Newest entry on top.
 `hooks/pre-commit` enforces it once `git config core.hooksPath hooks` is set in your clone. This line is at
 the top because the rule was broken by drift, and this file is what a session actually reads first.
 
-**State: green.** `pi-daddy` **0.17.0** — the only package. **505 unit + 44 integration tests** (measured
+**State: green.** `pi-daddy` **0.17.1** — the only package. **505 unit + 44 integration tests** (measured
 2026-08-18), plus an opt-in tier behind `PI_GRANTS_IT_MODEL=1`; typecheck clean, smoke clean.
 **Thirty-three** ADRs decided. The three numbers above were stale by three versions until 2026-08-18 —
 R-59's shape in the file `CLAUDE.md` names as the first thing to read.
