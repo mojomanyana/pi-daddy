@@ -36,8 +36,7 @@ import { runInit } from "./init-command.ts";
 import { planWithApprovals } from "./run-delegation.ts";
 import { createGrantsSession, loadProjectDefinitions, resolveExecutor, type GrantsSession } from "./session.ts";
 import { reportSessionStart } from "./session-report.ts";
-
-const SPAWN_TOOLS = new Set(["Agent", "subagent", "spawn_agent"]);
+import { SPAWN_TOOLS, tripwireReason } from "./tripwire.ts";
 
 export default function (pi: ExtensionAPI) {
   // The path pi loads as the extension, so a child granted `tool:delegate` can be started with `-e <this>`.
@@ -228,11 +227,7 @@ export default function (pi: ExtensionAPI) {
   pi.on("tool_call", async (event) => {
     if (!session.governed || !SPAWN_TOOLS.has(event.toolName)) return undefined;
 
-    const reason =
-      `grants: "${event.toolName}" spawns sub-agents outside this session's governance — refused. ` +
-      `This session grants capabilities by spawning them itself (\`delegate\`), so a child created by ` +
-      `another extension would hold whatever that extension decided, with no grant, no depth bound and ` +
-      `no ledger entry. Use \`delegate\` instead. If you meant to run ungoverned, unset PI_GRANTS_GRANT.`;
+    const reason = tripwireReason(event.toolName);
 
     if (session.ledgerPath) {
       // Recorded like any other refusal: an audit that omits the spawns we turned away cannot answer
