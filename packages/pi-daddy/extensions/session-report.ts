@@ -154,6 +154,20 @@ export async function reportSessionStart(session: GrantsSession, ctx: SessionRep
       );
     }
   }
+  // ADR-0031 rests on this line existing: an executor chosen by a probe is only defensible if it is announced.
+  //
+  // **`mayDelegate`, not `governed`** — and that distinction is a defect caught in review before it shipped.
+  // An UNGOVERNED session still registers `delegate` and still spawns (`mayDelegate` is true when
+  // `!governed`), so gating this on `governed` would have relocated an ungoverned session's children into
+  // herdr panes and said nothing about it. That is precisely the "silently" objection ADR-0031 claims to have
+  // discharged, reappearing inside the fix for it — R-28's shape, in the one configuration nobody tests.
+  //
+  // The guard is not simply dropped because a session that cannot spawn at all has no executor worth naming.
+  if (session.mayDelegate) {
+    // Level tracks severity: a demanded-but-unreachable herdr means every delegation will refuse, which is an
+    // error rather than an FYI.
+    ctx.ui.notify(`grants: executor — ${session.executor.disclosure}`, session.executor.refusal ? "error" : "info");
+  }
   if (session.governed) {
     ctx.ui.notify(
       `grants: depth ${session.depth}/${session.maxDepth}, holding [${session.ownGrant.join(", ") || "nothing"}]`,

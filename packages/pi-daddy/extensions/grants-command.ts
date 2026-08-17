@@ -13,6 +13,7 @@
  */
 
 import type { Capability } from "../src/resolve.ts";
+import type { ExecutorChoice } from "../src/executor.ts";
 import type { Catalog } from "../src/catalog.ts";
 import type { SkillDefinition } from "../src/definitions.ts";
 import type { GatedPlan } from "./run-delegation.ts";
@@ -23,6 +24,13 @@ export interface GrantsCommandContext {
   cwd: string;
   governed: boolean;
   ownGrant: Capability[];
+  /**
+   * Which executor this session settled on, and why — ADR-0031.
+   *
+   * The whole `ExecutorChoice` rather than a rendered string, so this command cannot compose a different
+   * sentence from the one the session banner printed. Two spellings of one fact is R-28.
+   */
+  executor: ExecutorChoice;
   observed: boolean;
   depth: number;
   maxDepth: number;
@@ -71,7 +79,7 @@ handler: async (args: string, ctx: any) => {
     // Everything this command may see, named in one place. Previously these were whatever happened to be in
     // the enclosing closure — which is how a diagnostic came to disagree with the enforcer (R-28).
     const {
-      cwd, governed, ownGrant, observed, depth, maxDepth, ledgerPath,
+      cwd, governed, ownGrant, executor, observed, depth, maxDepth, ledgerPath,
       catalog, definitions, sessionApprovals, inheritedApprovals, snapshotOf, previewDelegation,
     } = ctx.grants as GrantsCommandContext;
 
@@ -300,6 +308,12 @@ handler: async (args: string, ctx: any) => {
     const lines = [
       governed ? "grants: ACTIVE" : "grants: inactive (set PI_GRANTS_GRANT to govern this session)",
       `  holding    ${ownGrant.join(", ") || "(nothing)"}${observed ? " (observed)" : " (inherited, not yet observed)"}`,
+      // ADR-0031/0032. This screen named the grant, the depth, the ledger, the approvals and the catalog, and
+      // never said WHERE children run — so an operator on a machine where herdr hosts their whole workspace
+      // could not discover that their children were invisible subprocesses. That gap is what produced
+      // ADR-0031, and its probe is only defensible because this line exists. Placed next to `holding` so the
+      // two facts about what a spawn will be sit together.
+      `  executor   ${executor.disclosure}`,
       `  depth      ${depth} of max ${maxDepth}${maxDepth <= 0 ? " (spawning disabled)" : ""}`,
       `  ledger     ${ledgerPath ?? "(not recording — set PI_GRANTS_LEDGER)"}`,
       `  approvals  ${sessionApprovals.size} this session, ${valid.size} persisted` +

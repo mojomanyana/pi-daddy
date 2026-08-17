@@ -250,6 +250,7 @@ export default function (pi: ExtensionAPI) {
           cwd: session.cwd,
           governed: session.governed,
           ownGrant: session.ownGrant,
+          executor: session.executor,
           observed: session.observed,
           depth: session.depth,
           maxDepth: session.maxDepth,
