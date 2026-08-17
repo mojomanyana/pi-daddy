@@ -77,6 +77,10 @@
       "types": "./dist/executor.d.ts",
       "default": "./dist/executor.js"
     },
+    "./progress": {
+      "types": "./dist/progress.d.ts",
+      "default": "./dist/progress.js"
+    },
     "./run-child": {
       "types": "./dist/run-child.d.ts",
       "default": "./dist/run-child.js"
