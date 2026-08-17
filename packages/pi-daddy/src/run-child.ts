@@ -10,7 +10,34 @@
  */
 
 import { spawn } from "node:child_process";
+import { StringDecoder } from "node:string_decoder";
 import { parseBound } from "./propagation.ts";
+
+/**
+ * The longest prefix of `text` that fits in `budget` BYTES, never splitting a character.
+ *
+ * Both halves matter. Truncating by `String.prototype.slice` counts UTF-16 code units against a byte budget,
+ * which overruns by the encoding width of whatever the child printed. Truncating the *buffer* instead would
+ * respect the budget and split a multi-byte character or a surrogate pair, putting a lone `\ud83d` in the
+ * result. So the walk is by code POINT (`for…of` iterates code points, keeping surrogate pairs whole) and the
+ * budget is checked in bytes before each one is admitted.
+ *
+ * Exported for the test that feeds it CJK and emoji: an ASCII-only test cannot fail on any of this, which is
+ * exactly why the original defect survived a test named for it.
+ */
+export function takeBytes(text: string, budget: number): string {
+  if (budget <= 0) return "";
+  if (Buffer.byteLength(text) <= budget) return text;
+  let out = "";
+  let used = 0;
+  for (const character of text) {
+    const size = Buffer.byteLength(character);
+    if (used + size > budget) break;
+    out += character;
+    used += size;
+  }
+  return out;
+}
 
 /**
  * Operator override for the child wall-clock limit, in seconds.
@@ -99,6 +126,9 @@ export function runChild(request: ChildRunRequest): Promise<ChildRunResult> {
       return;
     }
 
+    // One decoder for BOTH streams is deliberate: they are already interleaved into one `text`, and two
+    // decoders would each hold their own partial character, so a split byte could surface out of order.
+    const decoder = new StringDecoder("utf8");
     let text = "";
     let bytes = 0;
     let truncated = false;
@@ -143,18 +173,35 @@ export function runChild(request: ChildRunRequest): Promise<ChildRunResult> {
 
     const capture = (chunk: unknown) => {
       if (truncated) return;
-      const s = String(chunk);
-      bytes += Buffer.byteLength(s);
-      if (bytes > maxOutputBytes) {
-        // Keep what fits, mark it, and stop the child: an unbounded producer must not be able to
-        // exhaust the orchestrator's memory just because it was granted a tool that prints.
-        text += s;
-        text = text.slice(0, maxOutputBytes);
+      // **Decoded through a StringDecoder, not `String(chunk)`.** A pipe splits on byte boundaries, not
+      // character ones, so a multi-byte character straddling two `data` events was decoded as two invalid
+      // halves and became U+FFFD — in the child's ANSWER, not merely the display. Measured: 300,000 bytes of
+      // CJK produced **twelve** replacement characters, because 65536 % 3 == 1. Emoji happened to survive
+      // (65536 % 4 == 0), which is why width-dependent corruption went unnoticed. The decoder holds the
+      // partial bytes until the rest arrives.
+      const s = decoder.write(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
+      if (s.length === 0) return;
+
+      const size = Buffer.byteLength(s);
+      if (bytes + size > maxOutputBytes) {
+        // Keep what fits, mark it, and stop the child: an unbounded producer must not be able to exhaust the
+        // orchestrator's memory just because it was granted a tool that prints.
+        //
+        // **Trimmed by BYTES, and that is a fix rather than a refinement.** This was
+        // `text.slice(0, maxOutputBytes)` — a count of UTF-16 code units against a budget measured in bytes,
+        // so any non-ASCII output overran the cap by its own encoding width: 300 bytes of CJK through a
+        // 100-byte cap, and a measured **2048 bytes through the real 1024 default**. It is the same defect as
+        // the 1924-byte one already fixed here, one layer down: that fix bounded the *unit* count, and the
+        // budget was never in units. An odd cap also split a surrogate pair, putting a lone `\ud83d` into
+        // both the transcript and the returned answer.
+        text += takeBytes(s, maxOutputBytes - bytes);
+        bytes = maxOutputBytes;
         truncated = true;
         flush();
         stop();
         return;
       }
+      bytes += size;
       text += s;
       flush();
     };

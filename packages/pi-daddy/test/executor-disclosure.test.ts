@@ -15,6 +15,8 @@
  */
 
 import assert from "node:assert/strict";
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { after, afterEach, test } from "node:test";
 import grantsExtension from "../extensions/grants.ts";
 import { ENV_HERDR } from "../src/executor.ts";
@@ -35,8 +37,8 @@ interface CommandSpec {
   handler: (args: string, ctx: unknown) => Promise<void>;
 }
 
-async function harness(env: Record<string, string>) {
-  const dir = await tempDir("grants-disclosure-");
+async function harness(env: Record<string, string>, existingDir?: string) {
+  const dir = existingDir ?? (await tempDir("grants-disclosure-"));
   for (const k of KEYS) if (!saved.has(k)) saved.set(k, process.env[k]);
   for (const k of KEYS) delete process.env[k];
   Object.assign(process.env, env);
@@ -62,7 +64,20 @@ async function harness(env: Record<string, string>) {
   return { notices, commands, ctx, dir };
 }
 
-const executorLine = (notices: string[]) => notices.find((n) => n.includes("executor")) ?? "";
+/**
+ * The executor line as an operator would actually receive it.
+ *
+ * **Anchored on the banner's real prefix, and split out of the JOINED notify.** Two defects shaped this helper.
+ * A reviewer showed that `notices.find(n => n.includes("executor"))` also matches `grants.ts`'s fallback warning
+ * ("could not settle which executor to use … using the captured subprocess … Set PI_GRANTS_HERDR=0"), which
+ * satisfies both `/captured subprocess/` and `/PI_GRANTS_HERDR=0/` — so two simultaneous faults passed. And a
+ * second reviewer showed that pi's TUI OVERWRITES consecutive `info` notifies, so the lines are now delivered as
+ * one joined message; a helper that searched whole notices would have missed that entirely.
+ */
+const executorLine = (notices: string[]) =>
+  notices
+    .flatMap((n) => n.split("\n"))
+    .find((line) => line.startsWith("grants: executor — ")) ?? "";
 
 test("a governed session that can delegate names its executor at session start", async () => {
   const { notices } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate", [ENV_HERDR]: "0" });
@@ -128,4 +143,33 @@ test("/grants and the session banner never disagree about the executor", async (
   const shared = banner.replace(/^grants: executor — /, "").trim();
   assert.ok(shared.length > 0);
   assert.ok(row.includes(shared), `\`/grants\` row ${JSON.stringify(row)} must carry the banner's own wording`);
+});
+
+test("every info line arrives in ONE notify, because pi overwrites consecutive ones", async () => {
+  // **The delivery property, which nothing asserted before.** Measured against real pi 0.84.2: `notify(…,"info")`
+  // maps to `showStatus`, which replaces the previous status text in place for back-to-back calls. Emitting the
+  // executor line, the `holding [...]` line and the spawnable summary as three notifies meant only the LAST
+  // survived on screen — so ADR-0031's disclosure and "the one sign governance is on" were both invisible in
+  // every governed session with definitions.
+  //
+  // The production change that breaks this: splitting the joined message back into per-line notifies.
+  const dir = await tempDir("grants-disclosure-");
+  await mkdir(join(dir, ".pi", "skills", "reviewer"), { recursive: true });
+  await writeFile(
+    join(dir, ".pi", "skills", "reviewer", "SKILL.md"),
+    "---\nname: reviewer\ndescription: Reviews a diff.\nallowed-tools: Read\n---\nReview the diff.",
+    "utf8",
+  );
+
+  const { notices } = await harness(
+    { [ENV_GRANT]: "agent:reviewer,tool:read,tool:delegate", [ENV_HERDR]: "0" },
+    dir,
+  );
+
+  const info = notices.filter((n) => n.startsWith("grants: executor") || n.includes("holding [") || n.includes("spawnable"));
+  assert.equal(info.length, 1, `expected one joined info notify, got ${info.length}: ${JSON.stringify(info)}`);
+  // And all three facts must be inside it — a single notify that dropped one would be the same defect.
+  assert.match(info[0], /grants: executor — /);
+  assert.match(info[0], /holding \[/);
+  assert.match(info[0], /spawnable/);
 });

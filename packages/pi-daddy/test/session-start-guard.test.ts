@@ -28,6 +28,20 @@ import { test } from "node:test";
 const HOOK = join(import.meta.dirname, "..", "extensions", "grants.ts");
 
 /**
+ * The session-start REPORTER, which now holds most of what this guard was written to protect.
+ *
+ * **Added because the guard silently stopped covering ten of the thirteen controls it exists for.** Splitting
+ * `grants.ts` under the 400-line ceiling moved the ledger-integrity check and the spawnable summary — and every
+ * `ctx.ui.notify` around them — into `session-report.ts`, which this file did not read. The guard kept passing,
+ * over three awaits instead of five, and would have kept passing while a bare `await` added to the reporter
+ * cancelled the executor disclosure, the `holding [...]` line and the ledger check in silence.
+ *
+ * That is R-60's exact shape, inside the guard FOR R-60, introduced by the commit whose message says the guard
+ * was obeyed. A guard whose scope a refactor can shrink without failing is not a guard.
+ */
+const REPORTER = join(import.meta.dirname, "..", "extensions", "session-report.ts");
+
+/**
  * The `session_start` hook body, by brace balance from its `pi.on(` line.
  *
  * Deliberately crude. A real parser would be more correct and would also be a second thing to maintain;
@@ -48,12 +62,10 @@ function sessionStartBody(source: string): string {
   assert.fail("unbalanced braces while extracting the session_start body");
 }
 
-test("R-60: every await in session_start is inside its own try", async () => {
-  const body = sessionStartBody(await readFile(HOOK, "utf8"));
-  const lines = body.split("\n");
+/** Every `await` in `source` that is not inside a `try` opened deeper than `baseDepth`. */
+function unguardedAwaits(source: string, baseDepth: number): string[] {
+  const lines = source.split("\n");
 
-  // Track nesting relative to the hook's own blanket try, which is depth 1. An `await` is guarded when it
-  // sits inside a `try` opened deeper than that one — i.e. a `try` of its own.
   let tryDepth = 0;
   const unguarded: string[] = [];
 
@@ -63,14 +75,27 @@ test("R-60: every await in session_start is inside its own try", async () => {
     if (/\btry\s*\{/.test(text)) tryDepth += 1;
     // A `catch` closes the innermost `try` for our purposes: anything after it is no longer covered by it.
     if (/^\}\s*catch\b/.test(text)) tryDepth -= 1;
-    // The blanket try is depth 1; anything guarded by a nested one is at 2 or more.
-    if (/\bawait\b/.test(text) && tryDepth < 2) unguarded.push(`line ${index + 1}: ${text.slice(0, 90)}`);
+    if (/\bawait\b/.test(text) && tryDepth < baseDepth) unguarded.push(`line ${index + 1}: ${text.slice(0, 90)}`);
   }
+  return unguarded;
+}
 
-  assert.deepEqual(
-    unguarded,
-    [],
-    "an await here inherits R-60: if it throws, every control below it is cancelled and the blanket catch " +
-      `is the only thing that notices. Give it its own try/catch that says what could not be checked.\n  ${unguarded.join("\n  ")}`,
-  );
+const WHY =
+  "an await here inherits R-60: if it throws, every control below it is cancelled and the blanket catch " +
+  "is the only thing that notices. Give it its own try/catch that says what could not be checked.";
+
+test("R-60: every await in session_start is inside its own try", async () => {
+  // The hook's own blanket try is depth 1, so a guarded await sits at 2 or more.
+  const unguarded = unguardedAwaits(sessionStartBody(await readFile(HOOK, "utf8")), 2);
+  assert.deepEqual(unguarded, [], `${WHY}\n  ${unguarded.join("\n  ")}`);
+});
+
+test("R-60: every await in the session-start REPORTER is inside its own try", async () => {
+  // `reportSessionStart` has no blanket try of its own — `grants.ts` wraps the call — so any `try` here is a
+  // control's own, and the base depth is 1 rather than 2.
+  //
+  // The production change that breaks this: adding a bare `await` to `session-report.ts`, which is precisely
+  // what the split made possible and invisible.
+  const unguarded = unguardedAwaits(await readFile(REPORTER, "utf8"), 1);
+  assert.deepEqual(unguarded, [], `${WHY}\n  ${unguarded.join("\n  ")}`);
 });

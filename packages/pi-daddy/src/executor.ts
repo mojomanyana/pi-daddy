@@ -92,6 +92,23 @@ export function chooseExecutor(raw: string | undefined, probe: HerdrProbe | null
   if (probe?.ok) {
     return { kind: "herdr", forced: false, probed: true, disclosure: "herdr panes (probed — herdr is answering)" };
   }
+  if (probe === null) {
+    // **The pre-probe seed, and it must not claim a probe happened.** `createGrantsSession` builds a choice
+    // synchronously with `probe: null` because S-5 forces the factory to run before any hook; `resolveExecutor`
+    // replaces it during `session_start`. This branch previously fell through to the one below and reported
+    // `probed: true` with the word "(probed)" in its disclosure — a fabricated observation, indistinguishable
+    // from a real negative probe.
+    //
+    // Unreachable in practice today (pi awaits the `session_start` emit before the first prompt, verified by a
+    // reviewer against real pi), which is exactly why it is worth making honest rather than leaving to be
+    // discovered: if a throw ever strands a session on this reading, the disclosure should say so.
+    return {
+      kind: "process",
+      forced: false,
+      probed: false,
+      disclosure: "not yet probed — settling at session start",
+    };
+  }
   return {
     kind: "process",
     forced: false,

@@ -18,6 +18,7 @@ import {
   appendTail,
   emptyTail,
   renderProgress,
+  replaceTail,
   throttle,
   type ChildProgress,
 } from "../src/progress.ts";
@@ -58,16 +59,26 @@ function progressReporter(
 
   return {
     /** One sink per child index, shaped for `runOneDelegation`'s `onProgress`. */
-    sink: (index: number) => (update: { chunk?: string; paneId?: string; state?: ChildProgress["state"] }) => {
+    sink: (index: number) => (update: {
+      chunk?: string;
+      snapshot?: string[];
+      paneId?: string;
+      agentName?: string;
+      state?: ChildProgress["state"];
+    }) => {
       const child = children[index];
       if (!child) return;
-      if (update.paneId) {
-        child.paneId = update.paneId;
-        // The agent name is what `runOneDelegation` passed to herdr, so it is derivable rather than plumbed —
-        // one fewer field to keep in step, and the two cannot disagree about a child's identity.
-        child.agentName = `${child.label}-${childIdOf(session, index)}`;
-      }
+      if (update.paneId) child.paneId = update.paneId;
+      // **Reported, not derived.** It used to be rebuilt here from the label and the child id, which was true
+      // until `runHerdrPane` began uniquifying the name to stop herdr's `agent_name_taken` — after which the
+      // block named an agent that did not exist, and an operator following it would find nothing. The name is
+      // known only where it is minted, so it travels from there.
+      if (update.agentName) child.agentName = update.agentName;
+      // Two shapes, deliberately distinct, because the two executors are: a subprocess APPENDS bytes, a pane
+      // reports a SNAPSHOT that replaces. Collapsing them into one "output" field is what caused the herdr
+      // path's amplification, so the difference is spelled out in the type rather than remembered.
       if (update.chunk) child.tail = appendTail(child.tail, update.chunk);
+      if (update.snapshot) child.tail = replaceTail(update.snapshot);
       if (update.state) child.state = update.state;
       else if (child.state === "starting") child.state = "running";
       paint.call();
@@ -84,11 +95,6 @@ function progressReporter(
       paint.flush();
     },
   };
-}
-
-/** The ledger id this child was given, so the status block names the same agent herdr does. */
-function childIdOf(session: GrantsSession, index: number): string {
-  return childSpawnId(session.ownSpawnId, index);
 }
 
 export interface DelegationRegistration {

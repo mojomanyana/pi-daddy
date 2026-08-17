@@ -3,8 +3,11 @@
  *
  * Three properties are load-bearing rather than cosmetic, and each has a test:
  *
- *  - **Fixed height.** Four lines per child, so eight children is ~34 lines and the block cannot grow with the
- *    child's output. A block that grows per chunk is the interleaved option that was rejected.
+ *  - **Bounded height AND bounded width.** Five lines per child — header, up to `TAIL_LINES` of tail, and a
+ *    blank separator — so eight children is at most 42 lines, plus `MAX_LINE_CHARS` per line. The width half was
+ *    missing and the omission mattered: a line cap is what actually bounds the block, because eight children
+ *    each printing one megabyte-long line rendered 25 lines and 8 MiB. "Four lines per child" was also simply
+ *    wrong arithmetic — the separator was never counted.
  *  - **No braiding.** Each child's text stays under its own header, which is what a chronological stream of two
  *    concurrent children cannot offer.
  *  - **The pane id is on screen while the child is alive.** That is the entire difference between a pane you can
@@ -19,6 +22,26 @@
 
 /** Lines of context kept per child. Three, because four children of four lines each is already a screenful. */
 export const TAIL_LINES = 3;
+
+/**
+ * Longest a single displayed line may be.
+ *
+ * **The line COUNT cap was never a height cap, and this is what makes the module header's claim true.** A child
+ * printing a minified bundle, a base64 blob or single-line JSON produces one line of megabytes, so
+ * `TAIL_LINES` bounded nothing that matters: eight such children rendered **25 lines and 8 MiB — about 84,000
+ * wrapped rows** — and were repainted every `PAINT_INTERVAL_MS`. Measured. The test asserting "fixed height"
+ * passed throughout, because 25 ≤ 34.
+ *
+ * 200 is a little over two rows on a wide terminal: enough to read a long path or a stack frame, short enough
+ * that eight children cannot flood the screen.
+ */
+export const MAX_LINE_CHARS = 200;
+
+/** Trim one display line to `MAX_LINE_CHARS`, saying so rather than cutting silently (R-48). */
+function clampLine(line: string): string {
+  if (line.length <= MAX_LINE_CHARS) return line;
+  return `${line.slice(0, MAX_LINE_CHARS)}… (+${line.length - MAX_LINE_CHARS} chars)`;
+}
 
 export type ChildState = "starting" | "running" | "completed" | "failed";
 
@@ -76,17 +99,34 @@ export function appendTail(tail: Tail, chunk: string): Tail {
   const lines = [...tail.lines];
 
   // The first part continues the previous line when that line was left open.
+  //
+  // **Clamped on every write, not only at render.** A child that never emits a newline keeps extending one
+  // line, and an unclamped join grew it without bound — measured at 12,692 characters from a pane that never
+  // held more than 16. Clamping here also bounds what is retained, not merely what is shown.
   if (tail.open && lines.length > 0) {
-    lines[lines.length - 1] = lastAfterCarriageReturn(lines[lines.length - 1] + parts[0]);
+    lines[lines.length - 1] = clampLine(lastAfterCarriageReturn(lines[lines.length - 1] + parts[0]));
   } else if (parts[0].trim().length > 0) {
-    lines.push(lastAfterCarriageReturn(parts[0]));
+    lines.push(clampLine(lastAfterCarriageReturn(parts[0])));
   }
 
   for (const part of parts.slice(1)) {
-    if (part.trim().length > 0) lines.push(lastAfterCarriageReturn(part));
+    if (part.trim().length > 0) lines.push(clampLine(lastAfterCarriageReturn(part)));
   }
 
   return { lines: lines.slice(-TAIL_LINES), open: !chunk.endsWith("\n") };
+}
+
+/**
+ * Replace a tail wholesale from a pane SNAPSHOT — the herdr path's counterpart to `appendTail`.
+ *
+ * `agent read` returns a snapshot of a bounded terminal, so the right operation is *replace*, not *append*.
+ * Appending snapshots is what fabricated text the child never printed: a pane whose bottom line was
+ * `working on step 29` followed by a re-report beginning `line30` rendered `working on step 29line30`.
+ * Measured. `open` is always false here, because a snapshot is never mid-line as far as the display is
+ * concerned — there is nothing further to join onto.
+ */
+export function replaceTail(lines: string[]): Tail {
+  return { lines: lines.slice(-TAIL_LINES).map(clampLine), open: false };
 }
 
 /**
@@ -118,7 +158,9 @@ export function renderProgress(children: ChildProgress[], executorKind: "herdr" 
     lines.push(header.join("   "));
     // Sliced again here as well as in `appendTail`, so a caller that assembled a `Tail` by hand cannot make the
     // block unbounded. The height guarantee belongs to the renderer, not to its inputs.
-    for (const line of child.tail.lines.slice(-TAIL_LINES)) lines.push(`  ${line}`);
+    // Clamped again here as well as on write, so a caller that assembled a `Tail` by hand cannot make the block
+    // unbounded either. The height guarantee belongs to the renderer, not to its inputs.
+    for (const line of child.tail.lines.slice(-TAIL_LINES)) lines.push(`  ${clampLine(line)}`);
     lines.push("");
   }
 

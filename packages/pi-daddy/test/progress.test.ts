@@ -13,8 +13,10 @@ import {
   PAINT_INTERVAL_MS,
   TAIL_LINES,
   appendTail,
+  MAX_LINE_CHARS,
   emptyTail,
   renderProgress,
+  replaceTail,
   throttle,
   type ChildProgress,
 } from "../src/progress.ts";
@@ -79,12 +81,65 @@ test("a running child's header carries its agent, pane, state and elapsed time",
   }
 });
 
-test("the block is fixed height — four lines per child plus a header", () => {
+test("the block is bounded in height, counted as an operator's screen counts it", () => {
+  // **Rewritten twice over, because both halves of the original were wrong.**
+  //
+  // It asserted `<= 8*4 + 2` AFTER filtering out blank lines — which discarded exactly the blank separator that
+  // made the claim false. Real height is FIVE lines per child (header + up to TAIL_LINES + separator): measured
+  // 41 raw lines for 8 children with full tails, while the filtered count was 33 and the test passed. And a
+  // reviewer showed that removing `.slice(-TAIL_LINES)` from the renderer left it green, because the fixture
+  // supplied pre-trimmed tails.
+  //
+  // So: count RAW lines, use the true arithmetic, and give one child an over-long tail so the renderer's own
+  // bound is what is under test rather than its input's.
   const children = Array.from({ length: 8 }, (_, i) =>
-    child({ label: `c${i}`, agentName: `c${i}-d0.${i + 1}`, paneId: `w7:t${i}` }),
+    child({
+      label: `c${i}`,
+      agentName: `c${i}-d0.${i + 1}`,
+      paneId: `w7:t${i}`,
+      tail: { lines: Array.from({ length: 20 }, (_, n) => `line ${n}`), open: false },
+    }),
   );
-  const lines = renderProgress(children, "herdr", 1000).split("\n").filter((l) => l.trim().length > 0);
-  assert.ok(lines.length <= 8 * 4 + 2, `expected a bounded block, got ${lines.length} lines`);
+  const raw = renderProgress(children, "herdr", 1000).split("\n");
+  assert.ok(raw.length <= 8 * (TAIL_LINES + 2) + 2, `expected a bounded block, got ${raw.length} raw lines`);
+});
+
+test("the block is bounded in WIDTH, which is what actually bounds it", () => {
+  // **The line COUNT cap was never a height cap.** A child printing a minified bundle, base64, or single-line
+  // JSON produces one line of megabytes: eight of them rendered 25 lines and 8 MiB — about 84,000 wrapped rows —
+  // repainted every PAINT_INTERVAL_MS, while the "fixed height" test passed because 25 <= 34. Measured.
+  //
+  // The production change that breaks this: removing `clampLine`.
+  const huge = "x".repeat(1_000_000);
+  const children = Array.from({ length: 8 }, (_, i) =>
+    child({ label: `c${i}`, tail: { lines: [huge], open: false } }),
+  );
+  const block = renderProgress(children, "herdr", 1000);
+  assert.ok(block.length < 8 * (MAX_LINE_CHARS + 200) + 500, `block was ${block.length} chars`);
+  assert.match(block, /chars\)/, "and it must SAY it trimmed rather than cutting silently");
+});
+
+test("appendTail clamps an ever-growing open line, so a child with no newline cannot run away", () => {
+  // Measured before the clamp: 12,692 characters retained from a pane that never held more than 16, because the
+  // open-line join had no bound. Clamped on WRITE, not only at render, so what is retained is bounded too.
+  let tail = appendTail(emptyTail, "start");
+  for (let i = 0; i < 500; i += 1) tail = appendTail(tail, "y".repeat(50));
+  assert.ok(tail.lines[0].length <= MAX_LINE_CHARS + 40, `line grew to ${tail.lines[0].length}`);
+});
+
+test("replaceTail REPLACES, because a pane read is a snapshot and not a stream", () => {
+  // Appending snapshots fabricated text the child never printed: a bottom line of `working on step 29` followed
+  // by a re-report beginning `line30` rendered `working on step 29line30`. Measured.
+  const first = replaceTail(["a", "b"]);
+  const second = replaceTail(["c", "d"]);
+  assert.deepEqual(second.lines, ["c", "d"], "the previous snapshot must be gone, not joined");
+  assert.equal(second.open, false, "a snapshot is never mid-line");
+  assert.deepEqual(first.lines, ["a", "b"], "and it must not mutate what it replaced");
+});
+
+test("replaceTail is bounded in both directions", () => {
+  assert.equal(replaceTail(Array.from({ length: 50 }, (_, i) => `l${i}`)).lines.length, TAIL_LINES);
+  assert.ok(replaceTail(["z".repeat(9999)]).lines[0].length <= MAX_LINE_CHARS + 40);
 });
 
 test("a child with a long tail is still only three lines of it", () => {

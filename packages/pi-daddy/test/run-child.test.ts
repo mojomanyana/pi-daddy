@@ -13,7 +13,7 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { runChild } from "../src/run-child.ts";
+import { runChild, takeBytes } from "../src/run-child.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
 after(cleanupTempDirs);
@@ -157,8 +157,61 @@ test("ADR-0032: streaming respects the same byte cap as capture", async () => {
     onOutput: (chunk) => chunks.push(chunk),
   });
   assert.equal(result.truncated, true);
-  assert.ok(
-    Buffer.byteLength(chunks.join("")) <= 1024 + 100,
-    `streamed ${Buffer.byteLength(chunks.join(""))} bytes past a 1024 cap`,
-  );
+  // **Exact, not `<= cap + 100`.** The slack had no derivation, and a reviewer showed it hid a real 60-byte
+  // over-emission: injecting one extra write past the cap left the test green. The invariant is exact by
+  // construction — what is streamed is a prefix of `text` — so the assertion should be too.
+  assert.ok(Buffer.byteLength(chunks.join("")) <= 1024, `streamed ${Buffer.byteLength(chunks.join(""))} bytes past 1024`);
+  assert.ok(Buffer.byteLength(result.text) <= 1024, "and the result must respect it as well");
+});
+
+test("ADR-0032: the cap holds in BYTES for non-ASCII, and never splits a character", async () => {
+  // **The defect an ASCII-only test could not see.** `bytes` counted UTF-8 bytes while the trim counted UTF-16
+  // code units, so any non-ASCII output overran by its encoding width: 300 bytes of CJK through a 100-byte cap,
+  // and a measured 2048 bytes through the real 1024 default. An odd cap also split a surrogate pair, putting a
+  // lone \ud83d into both the transcript and the returned answer.
+  //
+  // The production change that breaks this: trimming with `text.slice(0, maxOutputBytes)` again.
+  for (const [name, expr] of [
+    ["CJK", "'\\u4F60'.repeat(200)"],
+    ["emoji", "'\\u{1F600}'.repeat(200)"],
+    ["mixed", "('a\\u4F60\\u{1F600}').repeat(200)"],
+  ] as const) {
+    const chunks: string[] = [];
+    const result = await runChild({
+      command: process.execPath,
+      args: ["-e", `process.stdout.write(${expr})`],
+      env: process.env,
+      cwd: process.cwd(),
+      maxOutputBytes: 101, // odd on purpose: this is where a naive byte slice splits a character
+      onOutput: (chunk) => chunks.push(chunk),
+    });
+    assert.ok(Buffer.byteLength(result.text) <= 101, `${name}: result was ${Buffer.byteLength(result.text)} bytes`);
+    assert.ok(Buffer.byteLength(chunks.join("")) <= 101, `${name}: stream was over the cap`);
+    assert.ok(!/[\uD800-\uDFFF]/.test(result.text.replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, "")), `${name}: lone surrogate`);
+    assert.ok(!result.text.includes("\uFFFD"), `${name}: a character was corrupted`);
+  }
+});
+
+test("ADR-0032: a multi-byte character split across stdout chunks is not corrupted", async () => {
+  // Pre-existing on main and measured: `String(chunk)` decodes each `data` Buffer independently, so a character
+  // straddling a 65536-byte pipe boundary became U+FFFD — in the child's ANSWER. 300,000 bytes of CJK produced
+  // twelve of them, because 65536 % 3 == 1. Emoji happened to survive (65536 % 4 == 0), which is why
+  // width-dependent corruption went unnoticed. The production change that breaks this: dropping StringDecoder.
+  const result = await runChild({
+    command: process.execPath,
+    args: ["-e", "process.stdout.write('\u4F60'.repeat(100000))"],
+    env: process.env,
+    cwd: process.cwd(),
+  });
+  assert.equal(result.truncated, false, "300000 bytes is under the 1 MiB default");
+  assert.equal(result.text.length, 100000, "every character must survive the chunk boundaries");
+  assert.ok(!result.text.includes("\uFFFD"), "and none may be replaced");
+});
+
+test("takeBytes keeps whole characters and respects the budget exactly", () => {
+  assert.equal(takeBytes("abc", 2), "ab");
+  assert.equal(takeBytes("\u4F60\u4F60", 4), "\u4F60", "3-byte characters: 4 bytes fits exactly one");
+  assert.equal(takeBytes("\u{1F600}", 3), "", "a 4-byte character does not fit in 3 and must not be halved");
+  assert.equal(takeBytes("abc", 0), "");
+  assert.equal(takeBytes("abc", 99), "abc", "under budget passes through untouched");
 });

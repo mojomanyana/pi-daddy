@@ -18,8 +18,15 @@ export type HerdrExec = (args: string[]) => Promise<{ code: number | null; stdou
 export const defaultExec: HerdrExec = (args) =>
   new Promise((settle) => {
     execFile("herdr", args, { maxBuffer: 32 * 1024 * 1024 }, (error, stdout, stderr) => {
-      const code = error && typeof (error as { code?: unknown }).code === "number" ? (error as { code: number }).code : error ? 1 : 0;
-      settle({ code, stdout: String(stdout), stderr: String(stderr) });
+      const raw = (error as { code?: unknown } | null)?.code;
+      const code = typeof raw === "number" ? raw : error ? 1 : 0;
+      // **A string `code` is a spawn failure, and it used to be thrown away.** `ENOENT` — herdr not installed —
+      // arrives as `code: "ENOENT"`, so the numeric test failed, the message was dropped, and an operator with
+      // `PI_GRANTS_HERDR=1` on a machine without herdr was told *"herdr is not answering (unparseable herdr
+      // reply: (no output))"* rather than that the binary is missing. Rule 8 wants the loud version, and this is
+      // the first diagnostic such an operator meets.
+      const spawnFailure = typeof raw === "string" ? `herdr could not be run (${raw}): ${error?.message ?? ""}` : "";
+      settle({ code, stdout: String(stdout), stderr: spawnFailure || String(stderr) });
     });
   });
 
@@ -93,6 +100,9 @@ export async function probeHerdr(options: { exec?: HerdrExec; timeoutMs?: number
 /** herdr's own variable, set in every pane it creates. Measured 2026-08-17; documented nowhere. */
 export const ENV_PARENT_WORKSPACE = "HERDR_WORKSPACE_ID";
 
+/** The operator's explicit override. Defined here because this is the only module that reads it. */
+export const ENV_HERDR_WORKSPACE = "PI_GRANTS_HERDR_WORKSPACE";
+
 /**
  * Which herdr workspace a governed child's pane belongs in.
  *
@@ -109,7 +119,7 @@ export const ENV_PARENT_WORKSPACE = "HERDR_WORKSPACE_ID";
  * fail `tab create` on a path nobody chose.
  */
 export function resolveWorkspace(env: NodeJS.ProcessEnv): string | undefined {
-  const explicit = env.PI_GRANTS_HERDR_WORKSPACE?.trim();
+  const explicit = env[ENV_HERDR_WORKSPACE]?.trim();
   if (explicit) return explicit;
   return env[ENV_PARENT_WORKSPACE]?.trim() || undefined;
 }

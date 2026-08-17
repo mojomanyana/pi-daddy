@@ -27,10 +27,22 @@ test("the refusal names delegate_all, not just delegate", () => {
   assert.match(reason, /`delegate`/, "and so must the single one");
 });
 
-test("the refusal says WHICH is which, so a parallel request is not answered serially", () => {
-  // Naming both and leaving the model to guess would reproduce the original defect with more words.
+test("the refusal maps each tool to the right shape, direction included", () => {
+  // **Rewritten because the first version could not fail.** It asserted
+  // `/delegate_all[^.]*concurrent|concurrent[^.]*delegate_all/i`, which only requires the two words to co-occur
+  // in one sentence — so a reviewer inverted the mapping to "use `delegate` to run several CONCURRENTLY, or
+  // `delegate_all` for a single sub-agent" and all eight tests stayed green. That inversion IS the defect this
+  // file exists for. Direction is now asserted in both directions.
   const reason = tripwireReason("subagent");
-  assert.match(reason, /delegate_all[^.]*concurrent|concurrent[^.]*delegate_all/i);
+
+  // Stated as ORDERING rather than as a `doesNotMatch`, because both tools are named in one sentence and any
+  // negative pattern wide enough to catch the inversion also catches the correct text. Ordering is exactly the
+  // property that differs between the two.
+  const single = reason.indexOf("`delegate` for a single");
+  const concurrent = reason.indexOf("`delegate_all` to run several CONCURRENTLY");
+  assert.notEqual(single, -1, "`delegate` must be the one tied to a single sub-agent");
+  assert.notEqual(concurrent, -1, "`delegate_all` must be the one tied to running several concurrently");
+  assert.ok(single < concurrent, "and the single form should be offered first, as the simpler default");
 });
 
 test("the refusal names the tool that was refused, so the model knows what to stop using", () => {
@@ -65,9 +77,20 @@ test("the tripwire watches the third-party spawn tool names it was written for",
   }
 });
 
-test("the message does not promise a child count it cannot deliver", () => {
-  // If it names a limit, that limit must be the real one. A description disagreeing with the enforcer is R-28.
+test("the message names no child count at all, so it cannot disagree with the enforcer", () => {
+  // **Rewritten: the first version asserted NOTHING.** It matched `/(\d+)\s+(?:concurrent|children|at once)/i`
+  // and acted only `if (claimed)` — and the message contains no digit, so the body ran zero assertions. It also
+  // imported `MAX_CHILDREN_PER_CALL` decoratively: changing that constant could not fail it.
+  //
+  // The honest form is the inverse. The message deliberately quotes no limit, so it can never drift from
+  // `MAX_CHILDREN_PER_CALL` (R-28: a description that disagrees with the enforcer). If someone adds a number,
+  // this fails and they must either remove it or derive it from the constant.
   const reason = tripwireReason("subagent");
-  const claimed = reason.match(/(\d+)\s+(?:concurrent|children|at once)/i);
-  if (claimed) assert.equal(Number(claimed[1]), MAX_CHILDREN_PER_CALL);
+  const digits = reason.match(/\d+/g);
+  assert.equal(
+    digits,
+    null,
+    `the refusal quotes ${JSON.stringify(digits)}; either drop it or derive it from MAX_CHILDREN_PER_CALL ` +
+      `(currently ${MAX_CHILDREN_PER_CALL}), because a hardcoded limit here drifts silently`,
+  );
 });

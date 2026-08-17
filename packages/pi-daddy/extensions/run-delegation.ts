@@ -163,7 +163,16 @@ export async function runOneDelegation(
    * One sink for both executors: the herdr path additionally reports a pane id, and the process path never
    * has one. Every field is display-only — the child's answer is still the returned outcome.
    */
-  onProgress?: (update: { chunk?: string; paneId?: string; state?: "running" | "completed" | "failed" }) => void,
+  onProgress?: (update: {
+    /** Appended (process executor: a genuine byte stream). */
+    chunk?: string;
+    /** Replaces (herdr executor: a snapshot of a bounded terminal). The two are NOT interchangeable. */
+    snapshot?: string[];
+    paneId?: string;
+    /** The name herdr actually knows this child by — minted in `runHerdrPane`, so it cannot be derived. */
+    agentName?: string;
+    state?: "running" | "completed" | "failed";
+  }) => void,
 ): Promise<DelegationOutcome> {
   // pi resolves a BARE model id to an unauthenticated provider and the child dies at startup — the id
   // alone is not enough, it must be qualified with its provider (`Model<Api>` carries both).
@@ -171,20 +180,31 @@ export async function runOneDelegation(
   const request = { task: spec.task, agent: spec.agent, tools: spec.tools, model: spec.model ?? defaultModel };
   const extra = { fanoutBudget: budget, spawnId: ids.parentId, childSpawnId: ids.childId };
 
-  // Planning and the gate live in `planWithApprovals`, shared with the `/grants` preview so the two cannot
-  // disagree (R-38). This call is the enforcing one: it passes `ctx`, so a human CAN be asked.
-  let { plan, approval: approvalOutcome } = await planWithApprovals(session, request, extra, ctx, signal);
-
   // ADR-0031: herdr was DEMANDED (`PI_GRANTS_HERDR=1`) and is not answering. Refused rather than relocated —
   // the operator chose that over falling back, so the ledger can never name a child that ran somewhere nobody
   // chose.
   //
-  // Refused HERE, in front of the ledger write below, and that placement is the point: a record written before
-  // the refusal would describe a child that never existed, while a refusal recorded *after* the executor tried
-  // would already have created a pane. Turning `plan.ok` off means the existing blocked-record path handles it
-  // unchanged, so this adds a reason rather than a second refusal mechanism.
-  if (session.executor.refusal) {
-    plan = { ...plan, ok: false, reason: `grants: ${session.executor.refusal}` };
+  // **Decided BEFORE the gate, and the ordering is a fix.** This sat after `planWithApprovals`, which opens the
+  // approval dialog — so with herdr down a human was asked to approve `tool:bash`, answered *Always*, and was
+  // then refused anyway. Measured: the answer still reached `process.env.PI_GRANTS_APPROVED`, still wrote a
+  // **30-day project-wide** entry to the persisted store, and still produced a ledger line asserting a human
+  // approved `bash` for a child that never existed. A refused operation must not leave authority behind, and
+  // asking for permission that cannot be used is R-25's fatigue shape with nothing bought.
+  //
+  // `ctx: null` rather than skipping the plan entirely: the ledger still gets a full, honest record of what was
+  // requested and refused, and stored approvals still count toward it — nothing is *hidden*, only nobody is
+  // *asked*. It is the same argument `/grants` uses for its preview.
+  const refusal = session.executor.refusal;
+  // Planning and the gate live in `planWithApprovals`, shared with the `/grants` preview so the two cannot
+  // disagree (R-38). This call is the enforcing one when a human may be asked: `ctx` is passed unless the
+  // executor has already made the outcome certain.
+  let { plan, approval: approvalOutcome } = await planWithApprovals(session, request, extra, refusal ? null : ctx, signal);
+
+  // Applied in front of the ledger write below, so the record describes a refusal rather than a spawn. Turning
+  // `plan.ok` off reuses the existing blocked-record path, so this adds a reason rather than a second refusal
+  // mechanism.
+  if (refusal) {
+    plan = { ...plan, ok: false, reason: `grants: ${refusal}` };
   }
 
   // G6 / B-I3: no `&& plan.result` guard — `planDelegation` always carries one now.
@@ -258,10 +278,14 @@ export async function runOneDelegation(
         signal,
         timeoutMs: timeoutFromEnv(process.env[ENV_CHILD_TIMEOUT]),
         keepPane: process.env[ENV_HERDR_KEEP_PANE] === "1",
-        // ADR-0032. The pane id arrives first and is what a human switches to; the output follows as the child
-        // works. Both are display only.
-        onPane: onProgress ? (paneId) => onProgress({ paneId, state: "running" }) : undefined,
-        onOutput: onProgress ? (chunk) => onProgress({ chunk }) : undefined,
+        // ADR-0032. The pane id arrives first and is what a human switches to; the pane's tail follows as the
+        // child works. Both are display only.
+        //
+        // `snapshot`, not `chunk`: `agent read` returns a snapshot of a bounded terminal, and the sink must
+        // REPLACE what it holds. Treating it as a stream produced an 89,000× amplification and fabricated lines
+        // the child never printed — see `tailLines` in `src/herdr-poll.ts`.
+        onPane: onProgress ? (paneId, agentName) => onProgress({ paneId, agentName, state: "running" }) : undefined,
+        onSnapshot: onProgress ? (snapshot) => onProgress({ snapshot }) : undefined,
       })
     : await runChild({
         command: "pi",

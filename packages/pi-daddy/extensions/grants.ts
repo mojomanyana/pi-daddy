@@ -64,6 +64,10 @@ export default function (pi: ExtensionAPI) {
     // When they do not, the session is governed by a different directory's decision than the one it is
     // working in, which is exactly the confusion a grant must never cause, so it is said out loud rather
     // than left to be inferred from a surprising refusal. Sync, so it is not the R-60 shape.
+    // Inside no try of its own, and that is deliberate: it is synchronous, so it cannot be the R-60 shape. A
+    // reviewer noted it sits before the try that contains `resolveExecutor` — which is the right order, because
+    // this warning is about WHICH directory's grant was read and must reach the operator even if everything
+    // after it fails.
     if (session.storeCwd !== ctx.cwd && process.env[ENV_GRANT] === undefined) {
       ctx.ui.notify(
         `grants: this session's stored grant was read for ${session.storeCwd}, but pi is working in ` +
@@ -98,11 +102,18 @@ export default function (pi: ExtensionAPI) {
       try {
         await resolveExecutor(session);
       } catch (error) {
+        // Says what is actually true of the state left behind, which depends on the variable: with
+        // `PI_GRANTS_HERDR=1` the session holds a REFUSAL and every delegation fails, so telling the operator
+        // "using the captured subprocess" would be the opposite of what happens. The old wording asserted the
+        // fallback unconditionally.
         ctx.ui.notify(
           `grants: could not settle which executor to use ` +
-            `(${error instanceof Error ? error.message : String(error)}) — using the captured subprocess, ` +
-            `which needs nothing installed. Set PI_GRANTS_HERDR=0 to make that explicit, or 1 to demand ` +
-            `herdr panes.`,
+            `(${error instanceof Error ? error.message : String(error)}) — ` +
+            (session.executor.refusal
+              ? `PI_GRANTS_HERDR=1 still demands herdr, so every delegation in this session will refuse. ` +
+                `Unset it to let this session probe, or set 0 to choose subprocesses.`
+              : `using the captured subprocess, which needs nothing installed. Set PI_GRANTS_HERDR=0 to make ` +
+                `that explicit, or 1 to demand herdr panes.`),
           "warning",
         );
       }
@@ -126,10 +137,17 @@ export default function (pi: ExtensionAPI) {
         await reportSessionStart(session, ctx);
       } catch (error) {
         ctx.ui.notify(
+          // Names the CHECKS as well as the display lines. The first version listed only "the grant, the
+          // executor and the spawnable definitions" — which understated it: a throw partway through the reporter
+          // also skips the legacy/shared approval-store notices and the **ledger-corruption check**, which is an
+          // error rather than an FYI. Telling an operator that three lines are missing, when a control also did
+          // not run, is the reassuring half of the truth.
           `grants: the session-start report could not be produced ` +
-            `(${error instanceof Error ? error.message : String(error)}) — so the grant, the executor and the ` +
-            `spawnable definitions were not printed. Run /grants for all three. Governance itself is ` +
-            `unaffected: it is enforced by --tools when a child is spawned.`,
+            `(${error instanceof Error ? error.message : String(error)}) — the grant, the executor and the ` +
+            `spawnable definitions were not printed, AND the checks that run alongside them did not complete: ` +
+            `ledger integrity was not verified and any ignored-approvals notices were not shown. Run /grants and ` +
+            `/grants ledger for all of it. Governance itself is unaffected: it is enforced by --tools when a ` +
+            `child is spawned.`,
           "warning",
         );
       }

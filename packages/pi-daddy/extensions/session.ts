@@ -60,13 +60,17 @@ import { republishable } from "./approvals.ts";
  */
 export { ENV_HERDR } from "../src/executor.ts";
 /**
- * herdr workspace for spawned panes.
+ * herdr workspace for spawned panes — re-exported from where it is actually READ.
  *
- * **Read via `resolveWorkspace`, not directly.** Omitting it no longer means "let herdr choose": it falls back
- * to the parent's own `HERDR_WORKSPACE_ID`, because a child in a different workspace from the pi session that
- * spawned it makes switching to it a workspace hop (ADR-0032). This name is the operator's explicit override.
+ * It was declared here and read nowhere: `resolveWorkspace` reads the string literal, so the constant and the
+ * literal could drift with nothing binding them. Re-exporting the single definition keeps this the place a reader
+ * looks for a `PI_GRANTS_*` name without letting two spellings exist.
+ *
+ * Omitting the variable no longer means "let herdr choose": it falls back to the parent's own
+ * `HERDR_WORKSPACE_ID`, because a child in a different workspace from the session that spawned it makes switching
+ * to it a workspace hop (ADR-0032). This name is the operator's explicit override.
  */
-export const ENV_HERDR_WORKSPACE = "PI_GRANTS_HERDR_WORKSPACE";
+export { ENV_HERDR_WORKSPACE } from "../src/herdr-cli.ts";
 /** Keep each child's pane after it finishes, for inspection. Off by default: fan-out would flood it. */
 export const ENV_HERDR_KEEP_PANE = "PI_GRANTS_HERDR_KEEP_PANE";
 

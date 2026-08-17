@@ -19,6 +19,7 @@ import grantsExtension from "../extensions/grants.ts";
 import { MAX_CHILDREN_PER_CALL } from "../src/fanout.ts";
 import { ENV_APPROVED, ENV_DEPTH, ENV_FANOUT, ENV_GATED, ENV_GRANT, ENV_LEDGER, ENV_MAX_DEPTH, ENV_PARENT_ID } from "../src/propagation.ts";
 import { ENV_HERDR } from "../src/executor.ts";
+import { verifyLedger } from "../src/ledger.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
 after(cleanupTempDirs);
@@ -309,23 +310,34 @@ test("ADR-0031: PI_GRANTS_HERDR=0 spawns nothing through herdr and does not refu
   );
 });
 
-test("ADR-0032: delegate_all renders ONE status block covering every child", async () => {
-  // `onUpdate` replaces the tool's rendered result, so one painter per child would have each overwriting the
-  // others and the operator would watch a single child flicker. The production change that breaks this:
-  // building a reporter per child instead of per call.
+test("ADR-0032: delegate_all paints DURING the run, one block covering every child", async () => {
+  // **Rewritten because the first version could not fail.** A reviewer built a reporter per child instead of per
+  // call — the exact change the test's own comment named — and it stayed green, for two reasons: it inspected only
+  // the LAST frame (and the call-level `settle()` always runs last, so the final frame is combined either way),
+  // and its `refusedChildren` fixture meant no child ever spawned, so **no sink ever fired and `frames.length`
+  // was 1**. The during-run painting that ADR-0032 is entirely about was untested.
+  //
+  // This drives children that really run: `PI_GRANTS_HERDR=0` with a `node` that prints and exits, so `runChild`
+  // streams for real. Then EVERY frame must carry every child, not merely the last one.
   const frames: string[] = [];
-  const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate" });
+  const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate", [ENV_HERDR]: "0" });
   const onUpdate = (partial: { content: Array<{ text: string }> }) => void frames.push(partial.content[0].text);
 
   await tools
     .get("delegate_all")!
-    .execute("t", { children: refusedChildren(3) }, undefined, onUpdate as never, ctx)
+    .execute(
+      "t",
+      { children: [{ task: "one", tools: ["read"] }, { task: "two", tools: ["read"] }] },
+      undefined,
+      onUpdate as never,
+      ctx,
+    )
     .catch(() => undefined);
 
-  assert.ok(frames.length > 0, "a fan-out must paint at least the settled frame");
-  const last = frames[frames.length - 1];
-  assert.match(last, /3 children/, "one block, and it counts all of them");
-  assert.equal(last.match(/failed/g)?.length, 3, "every child's end state must show, not just the first");
+  assert.ok(frames.length >= 1, "a fan-out must paint");
+  for (const [index, frame] of frames.entries()) {
+    assert.match(frame, /2 children/, `frame ${index} lost a child: ${JSON.stringify(frame.slice(0, 120))}`);
+  }
 });
 
 test("ADR-0032: delegate paints too — it is the one-child case of the same block", async () => {
@@ -356,4 +368,60 @@ test("ADR-0032: the block names the executor it is running under", async () => {
     .catch(() => undefined);
 
   assert.match(frames[frames.length - 1], /captured subprocesses/);
+});
+
+test("ADR-0031: the ledger records the executor a REAL spawn ran under, not a constant", async () => {
+  // **The highest-value gap a reviewer found.** Hardcoding BOTH ledger call sites to `executor: "process"` left
+  // all 442 tests green, because the three `ledger-integrity` tests pass the value in themselves — they exercise
+  // `buildRecord`'s plumbing, never the wiring. So ADR-0031's stated reason for making the field required
+  // ("nothing outside the record preserves which argv ran") was itself unverified.
+  //
+  // This drives the real extension end to end and reads the real ledger file, once per executor. The production
+  // change that breaks it: hardcoding either call site, or dropping `session.executor.kind`.
+  for (const [herdr, expected] of [["0", "process"], ["1", "herdr"]] as const) {
+    const dir = await tempDir("grants-executor-ledger-");
+    const ledger = join(dir, "ledger.jsonl");
+    // PATH is emptied for the herdr case so the probe fails and the delegation refuses — a refusal still writes a
+    // record, and the executor it names must be the one the session settled on, not a default.
+    const realPath = process.env.PATH;
+    if (herdr === "1") process.env.PATH = "";
+    try {
+      const { tools, ctx } = await harness({
+        [ENV_GRANT]: "tool:read,tool:delegate",
+        [ENV_LEDGER]: ledger,
+        [ENV_HERDR]: herdr,
+      });
+      await tools
+        .get("delegate")!
+        .execute("t", { task: "audit", tools: ["write"] }, undefined, undefined, ctx)
+        .catch(() => undefined);
+    } finally {
+      process.env.PATH = realPath;
+    }
+
+    const lines = (await readFile(ledger, "utf8")).trim().split("\n").filter(Boolean).map((l) => JSON.parse(l));
+    assert.ok(lines.length >= 1, `no record written for PI_GRANTS_HERDR=${herdr}`);
+    for (const record of lines) {
+      assert.equal(record.executor, expected, `PI_GRANTS_HERDR=${herdr} must record executor ${expected}`);
+    }
+  }
+});
+
+test("ADR-0031: a pre-0.16 ledger line, which has no executor field, still parses", async () => {
+  // The field is REQUIRED in TypeScript and absent from every line 0.15.0 wrote. A reviewer proved the read path
+  // does not care (`verifyLedger` validates only `Array.isArray(parsed.denied)`) — but nothing pinned it, so a
+  // future `if (!parsed.executor) throw` would silently reclassify every older ledger as corrupt with a green
+  // suite. This is that pin.
+  const dir = await tempDir("grants-legacy-ledger-");
+  const ledger = join(dir, "ledger.jsonl");
+  const legacy = {
+    ts: "2026-08-16T10:00:00.000Z", parentId: "d0", childId: "d0.1", depth: 1, agentType: "review",
+    requested: ["tool:read"], parentGrant: ["tool:read"], effective: ["tool:read"],
+    denied: [], clipped: [], gatedBlocked: [], blocked: false,
+  };
+  await writeFile(ledger, `${JSON.stringify(legacy)}\n`, "utf8");
+
+  const report = await verifyLedger(ledger);
+  assert.equal(report.ok, true, "a line without `executor` must not read as corrupt");
+  assert.equal(report.records, 1, "and it must still be counted");
 });

@@ -163,15 +163,36 @@ export async function reportSessionStart(session: GrantsSession, ctx: SessionRep
   // discharged, reappearing inside the fix for it — R-28's shape, in the one configuration nobody tests.
   //
   // The guard is not simply dropped because a session that cannot spawn at all has no executor worth naming.
-  if (session.mayDelegate) {
-    // Level tracks severity: a demanded-but-unreachable herdr means every delegation will refuse, which is an
-    // error rather than an FYI.
-    ctx.ui.notify(`grants: executor — ${session.executor.disclosure}`, session.executor.refusal ? "error" : "info");
+  // **Every `info` line is joined into ONE notify, and that is a fix rather than formatting.**
+  //
+  // Measured against real pi 0.84.2 in a pty: `notify(…, "info")` maps to `showStatus`, which **replaces the
+  // previous status text in place** when the last two transcript children are the pair it created — which is
+  // exactly the case for back-to-back notifies. So consecutive `info` calls overwrite each other, and only the
+  // last survives. In a governed session with definitions that meant the executor line AND the
+  // `holding [...]` line were both gone, leaving only the spawnable summary — and `grants.ts` calls
+  // `holding [...]` "the one sign governance is on". **That half is a pre-existing defect**, true since the
+  // spawnable summary was added; ADR-0031's disclosure merely became its third victim.
+  //
+  // Six tests asserted these lines were *composed*. None asserted they were *delivered*: the unit harness
+  // pushes to an array and the integration harness runs `--mode rpc`, where each notify is its own JSON line.
+  // Both are replace-free, so neither could see this.
+  //
+  // Warnings and errors are NOT folded in — they go to different components (`showError`), survive on their
+  // own, and each says something an operator may need to act on separately.
+  const info: string[] = [];
+
+  if (session.mayDelegate && !session.executor.refusal) {
+    info.push(`grants: executor — ${session.executor.disclosure}`);
   }
+  if (session.mayDelegate && session.executor.refusal) {
+    // An error, not an FYI: every delegation in this session will refuse. Emitted separately because `error`
+    // routes elsewhere and therefore is not at risk of being overwritten.
+    ctx.ui.notify(`grants: executor — ${session.executor.disclosure}`, "error");
+  }
+
   if (session.governed) {
-    ctx.ui.notify(
+    info.push(
       `grants: depth ${session.depth}/${session.maxDepth}, holding [${session.ownGrant.join(", ") || "nothing"}]`,
-      "info",
     );
     // B1 / P4. The grant alone never named the definitions, never said where they came from, and never
     // said which ones were being WITHHELD — so an operator who had just installed a package of
@@ -180,7 +201,7 @@ export async function reportSessionStart(session: GrantsSession, ctx: SessionRep
     //
     // Its own try/catch, and not because `summariseSpawnable` throws today: this is the R-60 shape
     // exactly — one added `await` inside the blanket catch cancelling every control below it in
-    // silence. There is nothing below it now; there will be.
+    // silence.
     try {
       const line = renderSpawnableSummary(
         await summariseSpawnable(
@@ -193,7 +214,7 @@ export async function reportSessionStart(session: GrantsSession, ctx: SessionRep
         ),
         session.definitions.size,
       );
-      if (line) ctx.ui.notify(line, "info");
+      if (line) info.push(line);
     } catch (error) {
       ctx.ui.notify(
         `grants: could not work out which definitions are spawnable ` +
@@ -203,4 +224,8 @@ export async function reportSessionStart(session: GrantsSession, ctx: SessionRep
       );
     }
   }
+
+  // One call, so nothing can overwrite anything else. `/grants` already worked this way, which is why its
+  // multi-line status screen has always survived while these separate lines did not.
+  if (info.length > 0) ctx.ui.notify(info.join("\n"), "info");
 }
