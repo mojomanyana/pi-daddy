@@ -123,6 +123,16 @@ someone else's runtime.** Concretely:
    so the package remains testable and usable without herdr; herdr is what makes fan-out *visible and
    attachable*, which is the reason it was made a requirement.
 
+   > **Dated note, 2026-08-17 — point 6's SELECTION mechanism is amended by ADR-0031 (Proposed).** How the
+   > executor is chosen changed: `PI_GRANTS_HERDR` unset now means *probe for a reachable herdr server*
+   > rather than *use `runChild`*. The refusal recorded here and in `docs/SPEC.md:398` — "never
+   > auto-detected from `herdr` being on `PATH`" — still holds as written; a binary on `PATH` decides
+   > nothing. What changed is that a **server that answers** is a different and stronger test, and the
+   > "silently" half of the objection is discharged by ADR-0032's disclosure. **Everything else in point 6
+   > stands**: `planSpawn` owns the argv, both executors enforce the identical grant, and `runChild` remains
+   > the dependency-free fallback that keeps this package working without herdr. The Decision above is
+   > deliberately not edited.
+
 **For v1 this means** the PR-review scenario works end to end: N narrow reviewers, each with its own tools,
 its own skills, its own system prompt and no knowledge of the others, running in parallel panes, harvested
 and merged by the parent, which then delegates a fixer under a different grant.

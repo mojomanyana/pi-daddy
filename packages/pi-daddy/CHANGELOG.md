@@ -93,6 +93,63 @@ resolution, enforcement, approvals or the ledger changed — this is the part be
   defect as the `exports` map that worked in the tree and threw for every consumer, and the second time that
   script has caught it.
 
+## 0.16.0 — children you can watch, in panes chosen for you
+
+**If herdr is running, your sub-agents now run in herdr panes without you configuring anything — and the
+parent shows what each one is doing while it works.** Two ADRs, shipped together.
+
+### `PI_GRANTS_HERDR` is three-state, and unset now means *probe* (ADR-0031)
+
+| Value | Behaviour |
+| :--- | :--- |
+| unset | Probe once at session start (`herdr tab list`, 2s bound). A server that **answers** ⇒ herdr panes; anything else ⇒ captured subprocess. |
+| `1` | Demand herdr. **Every delegation refuses** if it is unreachable — no fallback. |
+| `0` | Demand the captured subprocess. No probe. |
+
+**Not a `PATH` check.** A binary with no server behind it would make every delegation fail at `tab create`, on
+a path nobody chose — so only a *reachable* server counts. This reverses part of ADR-0016 point 6, which
+refused auto-detection on the grounds that a run must not "silently relocate"; the answer to *silently* is that
+the executor is now named at session start, in `/grants`, and per child in the ledger.
+
+**What to do about it:** nothing, unless you relied on an unset variable meaning subprocesses. If you did,
+set `PI_GRANTS_HERDR=0` — and note that a stale `PI_GRANTS_HERDR=1` in a shell profile will now **refuse**
+delegations on machines without herdr, including CI, rather than falling back. That refusal is deliberate.
+
+### A running delegation is visible (ADR-0032)
+
+Both tools discarded pi's `onUpdate`, so a delegation showed the bare word `delegate` from the call until the
+result — up to ten minutes, and the same one word for all eight children of a `delegate_all`. Now there is one
+status block per call, redrawn in place, with a three-line tail per child and its herdr agent and pane id:
+
+```
+2 children · herdr panes
+
+review   agent review-d0.1   pane w7:t12   running  0:42
+  3 findings so far: unchecked nil at
+  session.ts:88, missing expiry compare…
+```
+
+Both executors stream. The block is a **display, never the result** — the answer is still what the child
+returned.
+
+### Panes live until you get your prompt back
+
+A pane used to be destroyed the instant its child settled, so a twenty-second child's pane was gone before
+anyone could switch to it. Panes now belong to the **agent run** and are swept at `agent_settled`, capped at 8
+at once, with process `exit` as the backstop. `PI_GRANTS_HERDR_KEEP_PANE=1` still means *not even then*.
+
+A child's pane also defaults to the **parent's own herdr workspace** now, so switching to one is a tab away
+rather than a workspace away.
+
+### Also
+
+- **The tripwire names `delegate_all`.** It said only *"Use `delegate` instead"*, and a request for parallel
+  work was answered with a single sequential call as a result.
+- **The ledger records `executor` per child** — required, not optional. The executor is decided by a probe now,
+  so nothing outside the record preserves which one ran, and the two paths do not produce the same argv.
+- **R-62 re-rated L×L → M×L.** Its "low severity" rested on the herdr executor being opt-in, which is no
+  longer true. The failure is unchanged; how often anyone meets it is not.
+
 ## 0.15.0 — `/grants init`, a grant that survives without an env var, and a setup that was wrong
 
 **Setup is two steps instead of five, and one of the five was wrong.**
