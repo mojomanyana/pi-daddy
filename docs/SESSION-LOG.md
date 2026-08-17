@@ -97,6 +97,185 @@ That convention is why every reversal here was survivable, and there have been f
 ---
 
 
+## 2026-08-17 (review) — six reviewers, eighteen defects, two shipping blockers
+
+**The single most valuable hour of this project so far, and the case for never merging a self-reviewed branch.**
+0.16.0 was implemented, verified four ways (461 tests, typecheck, integration, smoke), manually checked against the
+real herdr daemon, and had a PR written for it. Then six independent agents each got **one written hypothesis** and
+no permission to fix anything. **Every one found something. None found what its hypothesis predicted.**
+
+**Two were shipping blockers, and both came from the same root cause: an unverified line in a probe.**
+
+`docs/probes/g16-herdr/README.md` said, in its *How to rerun* block, *"`herdr agent stop` ends the agent but leaves
+the pane."* **That command does not exist.** It prints the usage banner and exits 0, which any wrapper reading only
+the exit code records as success. Three call sites were built on it, and ADR-0032 built a *governance claim* on it
+— "the agent is still stopped… what survives is a terminal, not a running descendant."
+
+**The lesson is where the false line was, not that it existed.** A rerun recipe is the one place in a probe where
+"measure before asserting" is easy to forget, because everything around it *was* measured. There is even a dated
+correction immediately below it about a different usage mistake in the same block — which should have been the
+warning. **Rule 5 needs to cover rerun instructions explicitly**, and the probe now carries a falsification note
+saying so.
+
+What it cost: a child that timed out or aborted **kept working with its grant** after its result was reported; and
+because herdr frees an agent name only when its tab closes, the **second `delegate` of every turn** died with
+`agent_name_taken` — on the executor ADR-0031 had just made the default. Neither was reachable by any test in the
+suite, because the unit tests inject a fake `exec` that answered `agent stop` cheerfully and the integration suite
+never reaches a real herdr spawn.
+
+**Four defects were found by MUTATING production code and watching the tests stay green.** That technique earned
+its place permanently:
+- The `delegate_all` "one status block" test passed with a reporter per child — its fixture never spawned, so no
+  sink ever fired and `frames.length === 1`. The during-run painting ADR-0032 is *about* was untested.
+- The tripwire's "says which is which" test passed on the fully **inverted** message.
+- Its sibling executed **zero assertions** (a conditional guard on a message containing no digits).
+- Hardcoding both ledger call sites to `executor: "process"` left all 442 tests green.
+
+**Three findings were about my own fixes creating the next defect**, which is the shape to watch:
+- The R-60 guard hardcoded `grants.ts`; splitting the file under the ceiling moved ten of its thirteen controls out
+  of scope, and it passed vacuously — R-60's shape inside the guard *for* R-60, in the commit whose message says
+  the guard was obeyed.
+- The executor disclosure was gated on `governed` rather than `mayDelegate`, so an ungoverned session would have
+  relocated its children into panes in silence: ADR-0031's own rejected objection, inside its fix.
+- The streaming fix bounded the *unit* count when the budget was in *bytes* — the same defect as the 1924-byte one
+  it replaced, one layer down.
+
+**And the design error worth remembering: I treated a snapshot source as a stream.** `agent read` returns the whole
+terminal; diffing it as append-only broke permanently the moment a pane scrolled or passed the output cap —
+measured **51 MiB streamed for 600 bytes of real output**. Four separate findings (amplification, fabricated text,
+unbounded line growth, repeated real output) were all that one mistake. The fix was not a better diff; it was
+admitting the substrate is a snapshot and having the consumer *replace*.
+
+**Also found: the README was never updated.** Two reviewers independently. SPEC was corrected for every claim;
+`packages/pi-daddy/README.md` — the file **npm publishes** — still said "Opt-in, never auto-detected", the exact
+sentence ADR-0031 reverses and that R-62's own re-rating note on this branch calls false. **When a decision changes
+behaviour, grep for the claim, not for the file you happened to be editing.**
+
+**And then verifying the fix found a third blocker the reviewers had not reached.** Two real spawns against the
+live daemon — the cheapest possible check — showed that herdr enforces an agent-name grammar
+(`[a-z][a-z0-9_-]{0,31}`) that this package has always violated: names are `<definition>-<childId>` and a child id
+is hierarchical (`d0.1`), so **`agent start review-d0.1` has been rejected since the executor was written**. The
+herdr path had never once started a definition spawn. Both suites were green throughout, because the unit fake
+accepts any name and the integration suite never reaches a real herdr spawn.
+
+**Two probe facts falsified in one run, and both for the same reason: the probe only ever used well-formed inputs
+and never executed its own cleanup advice.** Where a substrate *validates* something, a probe has to try to violate
+it; where a probe gives a rerun recipe, that recipe has to have been run.
+
+Verified fixed against real herdr: two spawns from base `review-d0.1` produce `review-d0-1-1` and `review-d0-1-2`,
+and both start with real interactive pi argv.
+
+ADR-0032 carries a five-point amendment; ADR-0031 is unaffected. R-62's re-rating stands.
+
+---
+
+## 2026-08-17 (later still) — 0.16.0 shipped: probed executor, visible children
+
+**ADR-0031 and ADR-0032 accepted and implemented in twelve tasks on `feat/observable-governed-children`.**
+442 unit + 32 integration tests, typecheck clean. `docs/plans/2026-08-17-observable-governed-children.md` is the
+plan; ADR-0033 (chain) is deliberately still **Proposed** and un-planned — it wanted `progress.ts` and the
+executor choice to exist first.
+
+**Three guards refused something and each was obeyed rather than raised.** This is the part worth copying.
+
+1. **`test/session-start-guard.test.ts`** refused the first version of Task 1: the new
+   `await reportSessionStart` had no `try` of its own. R-60 enforced structurally, working exactly as intended.
+2. **`test/file-size.test.ts`** refused `run-herdr.ts` at **404** after the output polling landed. Split to
+   `src/herdr-poll.ts` along the seam the plan had named in advance — *observing* an agent versus *starting and
+   cleaning up after* one. `extensions/grants.ts` was at **398** before any of this began, which is why Tasks 1
+   and 2 are extractions rather than features.
+3. **Two pre-existing `run-herdr` tests** asserted the pane-closes-in-`finally` contract ADR-0032 reverses. They
+   were **rewritten with a note saying what changed and which property survives**, not deleted. A third failure
+   was test pollution: panes now outlive each test, so the reaper tests were asserting against panes their
+   predecessors left behind — fixed with an `afterEach` that drains the registry.
+
+**Two defects were caught by review before they shipped, and both are worth remembering:**
+
+- **The executor disclosure was gated on `session.governed`.** An ungoverned session still registers `delegate`
+  and still spawns, so that version would have relocated its children into herdr panes **in silence** — which
+  is ADR-0031's own rejected objection reappearing inside the fix for it. It is `session.mayDelegate` now, and
+  reintroducing the old guard fails two tests (verified by doing it).
+- **`PI_GRANTS_HERDR_WORKSPACE` defaulted to "let herdr choose".** herdr sets `HERDR_WORKSPACE_ID` in every pane
+  it creates — measured, documented nowhere — so children were landing in a different workspace from the session
+  that spawned them, making "switch between them" a workspace hop. It inherits the parent's workspace now.
+
+**One defect the tests caught that reading did not.** `runChild`'s streaming first emitted the raw chunk, which
+pushed **1924 bytes through a 1024-byte cap** on the truncating write: the cap bounded memory and not the screen
+it had just been extended to protect. The fix is to derive what is streamed from `text`, so it is *by
+construction* a prefix of what is returned.
+
+**And one hazard that turned out to be false, checked before it cost anything.** `--no-extensions` does not stop
+a governed child appearing as a herdr agent — `docs/probes/g16-herdr/README.md:40-47` already recorded it.
+
+**The wiring harness now pins `PI_GRANTS_HERDR=0`, and that line is load-bearing**: unset means probe, and
+`session_start` runs the probe, so without it the suite would shell out to whatever herdr is running on the
+developer's machine and choose a different executor here than in CI. Two tests deliberately empty `PATH` instead
+of mocking, so `defaultExec` is exercised end to end.
+
+**Verified against the real daemon**, not only fakes: the probe answers `{ok: true}` here, unset selects herdr
+panes, and `resolveWorkspace` returns `w7` — the workspace this session runs in.
+
+**`turn_end` is not the turn-end hook.** It fires per provider round-trip, no later than the `finally` it would
+have replaced. `agent_settled` is the one that means "the operator has their prompt back". Do not re-derive this.
+
+---
+
+## 2026-08-17 (later) — the operator ran it for real, and could not see anything
+
+**No code changed. Three ADRs proposed (0031, 0032, 0033), all from one observation: the operator ran a real
+governed fan-out and asked why nothing appeared in herdr.** Nothing was broken. `PI_GRANTS_HERDR` was unset,
+which is the documented default, and they had never been told the variable existed.
+
+**Two facts established by execution, both worth not re-deriving.**
+
+**ADR-0030's init loop works end to end against a real project.** `~/.pi/agent/grants/bookie-pi-skills-675c4e2b56973e2f.json`
+was written by `/grants init` at 10:06Z today, granting seven `agent:` ids plus six tools for
+`/home/alavanja/repos/bookie-pi-skills`, and the seven scaffolded `SKILL.md` files sit in that project's
+`.pi/skills/`. `/grants` in that session listed all seven as `allow` with their effective tool sets. **The
+NEXT SESSION list above still implies this is unproven; it is not.**
+
+**`principal-pi-skills@2.3.1` still declares no `allowed-tools` anywhere** — grepped the whole installed
+package. **Handoff item A1 has NOT landed**, and the note above ("until A1 lands, `init` correctly reports
+`0 declaring allowed-tools` and the operator writes seven ceilings by hand") remains exactly true. The seven
+working definitions above are the *scaffolded* ones, not the package's.
+
+**One thing I got wrong, and the correction is the useful part.** I identified the refused `subagent` tool as
+`@tintinweb/pi-subagents`, the package ADR-0013/0016 discuss. It is not, and no such npm package is installed.
+It is a **hand-installed directory drop-in** at `~/.pi/agent/extensions/subagent/` (`index.ts` 1015 lines,
+`agents.ts` 126, dated 2026-08-03) which pi auto-loads in **every session on this machine** regardless of
+`settings.json`. It registers a tool named `subagent` (`index.ts:462`), spawns a `pi` process per invocation,
+and supports single / parallel / **chain** modes reading definitions from `~/.pi/agent/agents/`. The lesson is
+the ordinary one: **a familiar name in a tripwire's allowlist is not evidence about what is installed.** The
+tripwire fired correctly either way — it matches on tool *name*, which is all it ever claimed to do.
+
+The second drop-in in that directory, `herdr-agent-state.ts`, **is** third-party and legitimate: installed and
+managed by herdr (`HERDR_INTEGRATION_ID=pi`, version 6), registers **no tools** — four hooks only — so the
+tripwire never sees it.
+
+**A hypothesis checked before it was brought to the operator, and false.** `--no-extensions` (`src/spawn.ts:76`)
+does **not** stop a governed child appearing as a herdr agent. `docs/probes/g16-herdr/README.md:40-47` already
+records a child launched as `pi --no-session --no-extensions --tools read` with herdr emitting `agent_started`
+and a live `state_change_seq`. Herdr registers the agent because `herdr agent start --kind pi` was called, not
+because an extension reported in from inside the child. **The probe answered it; no new measurement was
+needed.**
+
+**`turn_end` is not the hook it sounds like.** It fires per provider round-trip
+(`pi-coding-agent/dist/core/extensions/types.d.ts:557`), i.e. no later than the `finally` that already closes a
+pane. `agent_settled` (`:547`) is the one that means "the operator has their prompt back" — and herdr's own pi
+integration drives its busy/idle display from `agent_start`/`agent_settled`, which is independent
+corroboration. Designing pane lifetime against `turn_end` would have shipped a no-op.
+
+**R-62 has a dated note**: its L×L rating is justified by *"the herdr executor is opt-in"*, which ADR-0031
+removes. Re-rate it in the change that ships 0031, not before.
+
+**Still open, and they are decisions rather than code:** all three ADRs are **Proposed**. ADR-0031 reverses
+part of ADR-0016 point 6 (which now carries a dated note pointing at it) and makes `docs/SPEC.md:398` false as
+written; ADR-0032 makes `docs/SPEC.md:394-395,438` false as written. **Neither SPEC nor the risk register was
+edited to match, deliberately** — the code does not do this yet, and a spec that describes unbuilt behaviour is
+worse than one that lags.
+
+---
+
 ## 2026-08-17 — five reviewers, nine defects, and the trigger I wrote and did not apply
 
 **The independent pass on PR #2: five agents, one written hypothesis each, none of them allowed to fix

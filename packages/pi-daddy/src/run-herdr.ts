@@ -21,16 +21,33 @@
  * child. Humans are not this project's threat model, but nothing here should be read as containing one.
  */
 
-import { execFile } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { rm } from "node:fs/promises";
 import type { ChildRunResult } from "./run-child.ts";
 import { DEFAULT_MAX_OUTPUT_BYTES, DEFAULT_TIMEOUT_MS } from "./run-child.ts";
-import { trackPane, untrackPane } from "./pane-reaper.ts";
+import { MAX_OPEN_PANES, markPaneSettled, trackPane, trimOpenPanes, untrackPane } from "./pane-reaper.ts";
+import { defaultExec, parseReply, type HerdrExec } from "./herdr-cli.ts";
+import { readPane, waitForSettled } from "./herdr-poll.ts";
+import { stageSystemPrompt } from "./herdr-stage.ts";
+import { uniqueAgentName } from "./herdr-name.ts";
 
-/** One herdr CLI invocation. Injectable so every rule below is testable without herdr installed. */
-export type HerdrExec = (args: string[]) => Promise<{ code: number | null; stdout: string; stderr: string }>;
+/**
+ * Re-exported so importers of the executor still reach the protocol at the name they always used.
+ *
+ * Deliberate rather than lazy: `test/run-herdr.test.ts` imports `HerdrExec` from here and must pass
+ * **unmodified** across this extraction — that is the only available proof the move changed no behaviour.
+ */
+export { type HerdrExec, parseReply } from "./herdr-cli.ts";
+/** Re-exported: `splitSystemPrompt` moved to `./herdr-stage.ts` under the ceiling, its tests import it here. */
+export { splitSystemPrompt, stageSystemPrompt } from "./herdr-stage.ts";
+/** Re-exported: the name rules moved to `./herdr-name.ts` under the ceiling; tests import them here. */
+export { uniqueAgentName } from "./herdr-name.ts";
+/**
+ * Re-exported so `test/run-herdr.test.ts` and any importer keep reaching these where they always were.
+ *
+ * `POLL_INTERVAL_MS` and `newSuffix` moved to `./herdr-poll.ts` under the 400-line ceiling; the names are part
+ * of this module's surface and moving a file should not move an export.
+ */
+export { DEFAULT_SNAPSHOT_LINES, POLL_INTERVAL_MS, readPane, tailLines, waitForSettled, type PollTarget } from "./herdr-poll.ts";
 
 export interface HerdrRunRequest {
   /** `planSpawn` args **without** the prompt — see `prompt`. */
@@ -61,65 +78,34 @@ export interface HerdrRunRequest {
    */
   keepPane?: boolean;
   exec?: HerdrExec;
+  /**
+   * The pane's last few lines, re-reported every poll — a SNAPSHOT the consumer REPLACES, not appends.
+   *
+   * **Display only**, exactly as in `runChild`: the child's answer is still the returned `text`. Unlike
+   * `runChild`'s `onOutput`, this is not a stream: `agent read` returns a snapshot of a bounded terminal, and
+   * the previous append-shaped design produced an 89,000× amplification once a pane scrolled or passed the
+   * output cap. See `tailLines` in `./herdr-poll.ts`.
+   *
+   * Exceptions are swallowed; a renderer must not be able to break a governed run.
+   */
+  onSnapshot?: (lines: string[]) => void;
+  /** How many pane lines to report per poll. Defaults to `DEFAULT_SNAPSHOT_LINES`. */
+  snapshotLines?: number;
+  /**
+   * The pane id, reported as soon as `tab create` returns it.
+   *
+   * Separate from `onOutput` because it arrives once and arrives *early*: it is what lets the parent print a
+   * name a human can switch to **while the child is alive**, which is the whole point of the pane surviving.
+   */
+  onPane?: (paneId: string, agentName: string) => void;
+  /** Poll cadence override. Exists so tests do not wait `POLL_INTERVAL_MS` per state transition. */
+  pollIntervalMs?: number;
 }
 
-/**
- * Move a multi-line `--append-system-prompt` out of argv, because herdr cannot encode it.
- *
- * **Measured.** `herdr agent start` types the argv into the pane's shell, so a value containing newlines
- * is rejected outright: `invalid_agent_argument — agent arguments cannot be encoded safely for the target
- * shell`. A definition's `SKILL.md` body is always multi-line, so every `delegate({agent})` spawn would
- * fail on this path.
- *
- * pi accepts a **file path** there as readily as literal text (`resolvePromptInput` + `existsSync` in
- * `dist/core/resource-loader.js`), so the fix is to write the body to a temp file and pass its path — one
- * short, shell-safe argument.
- *
- * The split lives here rather than in `planSpawn` because the constraint is **herdr's**, not pi's: the
- * direct executor passes the same text inline with no trouble, and a plan builder that pre-emptively wrote
- * temp files for everybody would be paying one executor's tax on both paths.
- */
-export function splitSystemPrompt(args: string[]): { args: string[]; systemPrompt?: string } {
-  const at = args.indexOf("--append-system-prompt");
-  if (at === -1 || at + 1 >= args.length) return { args };
-  return { args: [...args.slice(0, at), ...args.slice(at + 2)], systemPrompt: args[at + 1] };
-}
 
-/** Statuses herdr reports for a settled agent. `blocked` counts: it is waiting for a human, not working. */
-const TERMINAL = new Set(["idle", "done", "blocked"]);
-
-/** How often to poll `agent get` while waiting for the child to settle. */
-export const POLL_INTERVAL_MS = 750;
 /** How often to retry `agent start` while a freshly created pane is still reaching its shell prompt. */
 export const PANE_READY_POLL_MS = 300;
 
-const defaultExec: HerdrExec = (args) =>
-  new Promise((settle) => {
-    execFile("herdr", args, { maxBuffer: 32 * 1024 * 1024 }, (error, stdout, stderr) => {
-      const code = error && typeof (error as { code?: unknown }).code === "number" ? (error as { code: number }).code : error ? 1 : 0;
-      settle({ code, stdout: String(stdout), stderr: String(stderr) });
-    });
-  });
-
-/**
- * Parse herdr's JSON envelope. Every command replies `{id, result}` or `{id, error:{code,message}}`.
- *
- * `stderr` is folded into the message because the first end-to-end run failed with an EMPTY stdout and the
- * real reason on stderr, producing the useless diagnostic "unparseable herdr reply: ". A wrapper that
- * hides the substrate's own error message costs more time than it saves.
- */
-function parseReply(reply: { stdout: string; stderr: string }): { result?: Record<string, unknown>; error?: string } {
-  try {
-    const parsed = JSON.parse(reply.stdout) as { result?: Record<string, unknown>; error?: { message?: string; code?: string } };
-    if (parsed.error) return { error: parsed.error.message ?? parsed.error.code ?? "herdr reported an error" };
-    return { result: parsed.result };
-  } catch {
-    // A non-JSON reply is a herdr-version or PATH problem, not a governance decision. Surfaced as a spawn
-    // error so the caller reports "could not start" rather than "the child produced nothing".
-    const detail = [reply.stdout.trim(), reply.stderr.trim()].filter((t) => t.length > 0).join(" | ");
-    return { error: `unparseable herdr reply: ${detail.slice(0, 300) || "(no output)"}` };
-  }
-}
 
 /**
  * Run one governed child in a pane and return its output.
@@ -152,28 +138,29 @@ export async function runHerdrPane(request: HerdrRunRequest): Promise<ChildRunRe
     };
   }
 
-  // A multi-line system prompt becomes a file; see `splitSystemPrompt`. Removed in `cleanup`, so a
-  // definition's instructions do not accumulate in /tmp across a fan-out.
-  const split = splitSystemPrompt(request.args);
-  let promptDir: string | undefined;
-  let effectiveArgs = split.args;
-  if (split.systemPrompt !== undefined) {
-    try {
-      promptDir = await mkdtemp(join(tmpdir(), "grants-herdr-"));
-      const file = join(promptDir, "system-prompt.md");
-      await writeFile(file, split.systemPrompt, "utf8");
-      effectiveArgs = [...split.args, "--append-system-prompt", file];
-    } catch (error) {
-      return { ...empty, spawnError: `could not stage the system prompt for herdr: ${String(error)}` };
-    }
-  }
+  // A multi-line system prompt becomes a file; see `stageSystemPrompt`. Removed on every path that does not
+  // end up tracking a pane, because only a tracked pane's dir is reachable by a sweep.
+  const staged = await stageSystemPrompt(request.args);
+  if (staged.error) return { ...empty, spawnError: staged.error };
+  const promptDir = staged.promptDir;
+  const effectiveArgs = staged.args;
 
   const create = ["tab", "create", "--label", request.name, "--cwd", request.cwd];
   if (request.workspace) create.push("--workspace", request.workspace);
   for (const [key, value] of Object.entries(request.env)) create.push("--env", `${key}=${value}`);
 
+  // The name herdr will actually know this agent by. Every later command in this function uses `agentName`,
+  // never `request.name`, which is only a base.
+  const agentName = uniqueAgentName(request.name);
   const created = parseReply(await exec(create));
-  if (created.error) return { ...empty, spawnError: `herdr tab create failed: ${created.error}` };
+  if (created.error) {
+    // **The staged prompt is removed here too.** This path returned without touching it, and nothing tracked it,
+    // so neither sweep could ever reach it — a permanent `/tmp/grants-herdr-*` per failed `tab create`. Measured
+    // by a reviewer, who also found leftovers from earlier runs already sitting in `/tmp`. It is the most likely
+    // failure on a machine where herdr is not running, i.e. the common case.
+    if (promptDir) await rm(promptDir, { recursive: true, force: true }).catch(() => undefined);
+    return { ...empty, spawnError: `herdr tab create failed: ${created.error}` };
+  }
 
   const rootPane = (created.result?.root_pane ?? {}) as { pane_id?: string; tab_id?: string };
   const paneId = rootPane.pane_id;
@@ -182,7 +169,33 @@ export async function runHerdrPane(request: HerdrRunRequest): Promise<ChildRunRe
   // so registering later leaves a window — one herdr round-trip wide — in which a killed process orphans a
   // tab nothing would reap. The normal path had no such window and the error path did, which is backwards:
   // the error path is the one more likely to be taken while something is already going wrong.
-  if (tabId && !request.keepPane) trackPane({ tab: tabId, name: request.name, promptDir });
+  if (tabId && request.keepPane && promptDir) {
+    // `keepPane` keeps the PANE, and the staged prompt with it — a human inspecting the pane may want to see
+    // what the child was told. Registered `settled` so the trim never touches it, but registered nonetheless so
+    // the `exit` sweep can remove the temp dir rather than leaving one per kept pane forever. Measured: this
+    // path leaked a `/tmp/grants-herdr-*` that neither sweep could reach.
+    trackPane({ tab: tabId, name: agentName, promptDir, settled: true, keepTab: true });
+  }
+  if (tabId && !request.keepPane) {
+    trackPane({ tab: tabId, name: agentName, promptDir });
+    // ADR-0032: panes now live until `agent_settled`, so they accumulate across one agent run — and a plain
+    // blocking `delegate` spends nothing from the fan-out budget, so the count is otherwise unbounded. Trimmed
+    // here rather than at settle time so the bound holds DURING a long run, not only after it.
+    //
+    // Whatever is closed is reported through `onOutput` rather than dropped: an operator whose pane vanished
+    // while they were reading it deserves to know why (R-48's rule, applied to a display).
+    const dropped = await trimOpenPanes(exec);
+    if (dropped.length > 0 && request.onSnapshot) {
+      try {
+        request.onSnapshot([
+          `[grants] closed ${dropped.length} older pane(s) to stay within the ${MAX_OPEN_PANES}-pane limit: ` +
+            dropped.join(", "),
+        ]);
+      } catch {
+        /* display only */
+      }
+    }
+  }
 
   if (!paneId) {
     // The tab may exist even though the reply carried no pane id, and this return used to be BEFORE
@@ -193,65 +206,115 @@ export async function runHerdrPane(request: HerdrRunRequest): Promise<ChildRunRe
       // reaper's problem rather than being dropped on the assumption that it worked.
       if (reply !== undefined && !parseReply(reply).error) untrackPane(tabId);
     }
-    // `keepPane` keeps the staged prompt for the same reason `cleanup` does — a human inspecting the pane
-    // may want to see what the child was told. This branch used to remove it unconditionally, which threw
-    // that away on the one path where there is no agent in the pane to ask instead.
+    // There is no agent in this pane to ask, so the staged prompt has no reader — remove it. Kept only under
+    // `keepPane`, where the operator asked to inspect whatever exists.
     if (promptDir && !request.keepPane) await rm(promptDir, { recursive: true, force: true }).catch(() => undefined);
     return { ...empty, spawnError: "herdr tab create returned no pane id" };
   }
 
-  /** Close what we opened, whatever happened. A leaked pane per child is how fan-out fills a workspace. */
-  const cleanup = async () => {
-    await exec(["agent", "stop", request.name]).catch(() => undefined);
-    let closed = false;
-    if (!request.keepPane && tabId) {
-      // **The reply must be PARSED, not merely awaited.** `defaultExec` resolves with `{code: 1}` on
-      // failure and never rejects, so the `.catch` here was dead code and a herdr that REFUSED to close the
-      // pane looked identical to one that closed it. The pane was then untracked, so the exit reaper — the
-      // one thing built for exactly this failure — would not retry it. The single case the reaper exists
-      // for was the case that disabled it.
-      const reply = await exec(["tab", "close", tabId]).catch(() => undefined);
-      closed = reply !== undefined && !parseReply(reply).error;
+  /**
+   * End this call. **A child that did not settle has its tab closed, because that is the only way to stop it.**
+   *
+   * ADR-0032 keeps a pane alive past its tool call so a human can read it. The original version of that also
+   * called `herdr agent stop` and claimed *"the agent is still stopped here… what survives is a terminal, not a
+   * running descendant."* **`herdr agent stop` does not exist.** Measured against herdr 0.7.5: the `agent`
+   * subcommands are `list get read send-keys prompt rename focus wait attach start explain`, and `agent stop`
+   * prints the usage banner and exits 0 — which `defaultExec` reports as a success, so nothing ever noticed.
+   * `docs/probes/g16-herdr/README.md` asserted it worked, in a *How to rerun* block that was never run.
+   *
+   * So there is exactly one kill available: closing the tab. That forces the distinction below.
+   *
+   *  - **Settled cleanly** (`idle`/`done`/`blocked` with an advanced counter): the child has answered and is
+   *    sitting idle. Its pane stays, which is the whole feature, and the `agent_settled` sweep reaps it.
+   *  - **Anything else** — a timeout, an abort, a failed start, a failed prompt, an unreadable pane: the child
+   *    may still be **working, with its grant**, after its tool call has already returned a result. Leaving
+   *    that running is a governance failure, not an untidy workspace, so the tab is closed here and now.
+   *
+   * `keepPane` is the operator overriding the whole question, and it is honoured either way: nothing is tracked
+   * and nothing is closed, which is what "keep this pane for me to inspect" has to mean.
+   */
+  const cleanup = async (settledCleanly: boolean) => {
+    if (request.keepPane) return;
+    if (settledCleanly) return;
+    if (!tabId) return;
+    const reply = await exec(["tab", "close", tabId]).catch(() => undefined);
+    // Untracked only if provably closed — R-62's rule. A close herdr refused stays the reaper's problem rather
+    // than being dropped on the assumption that it worked.
+    if (reply !== undefined && !parseReply(reply).error) {
+      untrackPane(tabId);
+      if (promptDir) await rm(promptDir, { recursive: true, force: true }).catch(() => undefined);
     }
-    // Kept when the pane is kept: a human inspecting the pane may want to see what the child was told.
-    if (promptDir && !request.keepPane) await rm(promptDir, { recursive: true, force: true }).catch(() => undefined);
-    // Untrack only what is genuinely gone. A pane we failed to close stays registered so `exit` tries once
-    // more; `openPaneCount()` is what a test asserts to prove the registry does not grow per delegation.
-    if (tabId && (closed || request.keepPane)) untrackPane(tabId);
   };
 
+  // ADR-0032: the pane exists and has a name, so tell the caller NOW. A pane id that arrives with the result is
+  // useless — the point is switching to a child while it is still working. Guarded because a renderer must not
+  // be able to strand a pane we have already created.
+  if (request.onPane) {
+    try {
+      request.onPane(paneId, agentName);
+    } catch {
+      /* display only */
+    }
+  }
+
+  // Set only on the one path where the child answered and stopped working. Everything else — including an
+  // early `return` from a failed start or prompt — leaves it false, so `cleanup` closes the tab.
+  let settledCleanly = false;
+
   try {
-    const started = await startAgent(exec, request.name, paneId, effectiveArgs, deadline);
+    const started = await startAgent(exec, agentName, paneId, effectiveArgs, deadline);
     if (started.error) return { ...empty, spawnError: `herdr agent start failed: ${started.error}` };
 
     // The state counter BEFORE prompting is what makes the wait correct — see the R-33 note below.
     const before = seqOf(started.result);
 
-    const prompted = parseReply(await exec(["agent", "prompt", request.name, request.prompt]));
+    const prompted = parseReply(await exec(["agent", "prompt", agentName, request.prompt]));
     if (prompted.error) return { ...empty, spawnError: `herdr agent prompt failed: ${prompted.error}` };
 
-    const settled = await waitForSettled(exec, request, before, deadline);
+    const settled = await waitForSettled(exec, { ...request, name: agentName }, before, deadline, maxOutputBytes);
     if (settled.aborted || settled.timedOut) {
       // Still read: a timed-out child usually produced something, and a partial answer labelled partial is
       // more useful than none. R-03's rule — a missing result must never look like an empty one.
-      const partial = await readPane(exec, request.name, maxOutputBytes);
-      return { ...empty, ...settled, text: partial.text, truncated: partial.truncated };
+      const partial = await readPane(exec, agentName, maxOutputBytes);
+      return { ...empty, ...settled, text: partial.readFailed ? "" : partial.text, truncated: partial.truncated };
     }
     if (settled.spawnError) return { ...empty, spawnError: settled.spawnError };
 
-    const out = await readPane(exec, request.name, maxOutputBytes);
+    const out = await readPane(exec, agentName, maxOutputBytes);
+    // **A failed read is a failed spawn, not an empty answer.** This branch used to return `readPane`'s own
+    // diagnostic as `text` with `code: 0`, so the orchestrator received
+    // `[grants] could not read the agent pane: …` **as the sub-agent's report** — R-03 exactly, and measured.
+    // The child may well have done its work; what we cannot do is claim to know what it said.
+    if (out.readFailed) {
+      return {
+        ...empty,
+        spawnError:
+          `the child settled but its pane could not be read (${out.readFailed}), so its answer is unknown. ` +
+          `The work may have been done — check pane ${paneId} if it is still open.`,
+      };
+    }
+    settledCleanly = true;
+    // The trim may now reclaim this pane if the cap is exceeded. Until this point it must not: closing the tab
+    // kills the child, and the child was still working.
+    if (tabId) markPaneSettled(tabId);
     return {
       code: settled.status === "blocked" ? 1 : 0,
-      text:
+      // `truncated` is returned in the result too, but it was never SAID on this path, so a model received a
+      // tail with no indication that a head existed. The direct executor has always flagged it; a delegation
+      // that silently drops the first megabyte of an answer is the same defect wearing the other executor.
+      text: [
+        out.truncated ? `[grants] this pane exceeded the output cap; only its most recent output is below.\n` : "",
+        out.text,
         settled.status === "blocked"
-          ? `${out.text}\n\n[grants] this agent is BLOCKED waiting for a human in pane ${paneId}.`
-          : out.text,
+          ? `\n\n[grants] this agent is BLOCKED waiting for a human in pane ${paneId}.`
+          : "",
+      ].join(""),
       truncated: out.truncated,
       timedOut: false,
       aborted: false,
     };
   } finally {
-    await cleanup();
+    await cleanup(settledCleanly);
   }
 }
 
@@ -287,71 +350,4 @@ async function startAgent(
 function seqOf(result: Record<string, unknown> | undefined): number {
   const agent = (result?.agent ?? {}) as { state_change_seq?: number };
   return typeof agent.state_change_seq === "number" ? agent.state_change_seq : -1;
-}
-
-/**
- * Wait for the child to settle, without accepting the state it was already in.
- *
- * **R-33, measured.** `herdr agent wait --until idle` called right after `agent prompt` returned
- * *immediately*, matching the agent's **pre-existing** idle state with `state_change_seq` unchanged — a
- * reply indistinguishable from a completed run. For fan-out that is not an inconvenience but a
- * correctness bug: an orchestrator would "collect" N children that never ran and merge N empty results
- * into a confident summary (R-03 with a new cause).
- *
- * So this polls `agent get` and requires **both** that the status is terminal **and** that
- * `state_change_seq` has advanced past the value observed before prompting. `agent wait` is deliberately
- * not used at all: its contract cannot express "settled *after* this point".
- */
-async function waitForSettled(
-  exec: HerdrExec,
-  request: HerdrRunRequest,
-  before: number,
-  deadline: number,
-): Promise<{ status?: string; timedOut?: boolean; aborted?: boolean; spawnError?: string }> {
-  for (;;) {
-    if (request.signal?.aborted) return { aborted: true };
-    if (Date.now() >= deadline) return { timedOut: true };
-
-    const reply = parseReply(await exec(["agent", "get", request.name]));
-    if (reply.error) return { spawnError: `herdr agent get failed: ${reply.error}` };
-
-    const agent = (reply.result?.agent ?? reply.result ?? {}) as { agent_status?: string; state_change_seq?: number };
-    const status = agent.agent_status;
-    const seq = typeof agent.state_change_seq === "number" ? agent.state_change_seq : -1;
-
-    if (status && TERMINAL.has(status) && seq > before) return { status };
-
-    await new Promise((r) => setTimeout(r, Math.min(POLL_INTERVAL_MS, Math.max(0, deadline - Date.now()))));
-  }
-}
-
-/**
- * Read the pane's contents.
- *
- * `agent read` is the ONE command that does not return herdr's JSON envelope — it writes the terminal's
- * text straight to stdout. Running it through `parseReply` turned every successful read into
- * "unparseable herdr reply", i.e. reported the child's actual answer as a failure to read it. Found by the
- * end-to-end run; the unit fake had been written to the envelope shape and so agreed with the bug.
- *
- * A JSON envelope is still accepted first, because an `error` reply here IS JSON and must not be mistaken
- * for terminal output.
- */
-async function readPane(exec: HerdrExec, name: string, maxOutputBytes: number): Promise<{ text: string; truncated: boolean }> {
-  const reply = await exec(["agent", "read", name]);
-  let text: string;
-  try {
-    const parsed = JSON.parse(reply.stdout) as { result?: Record<string, unknown>; error?: { message?: string } };
-    if (parsed.error) {
-      return { text: `[grants] could not read the agent pane: ${parsed.error.message ?? "unknown error"}`, truncated: false };
-    }
-    const raw = parsed.result?.output ?? parsed.result?.text ?? parsed.result?.content ?? "";
-    text = typeof raw === "string" ? raw : JSON.stringify(raw);
-  } catch {
-    text = reply.stdout;
-  }
-  if (Buffer.byteLength(text) <= maxOutputBytes) return { text, truncated: false };
-  // Keep the TAIL, not the head: a terminal's useful content is its most recent output, and the head is
-  // the startup banner. `runChild` keeps the head because it streams and must stop a runaway producer;
-  // here the output is already complete, so the choice is free and the tail is the answer.
-  return { text: text.slice(-maxOutputBytes), truncated: true };
 }

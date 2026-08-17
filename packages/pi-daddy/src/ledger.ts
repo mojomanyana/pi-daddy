@@ -23,6 +23,7 @@ import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { withFileLock } from "./file-lock.ts";
 import { dirname } from "node:path";
 import type { Capability, ResolveResult } from "./resolve.ts";
+import type { ExecutorKind } from "./executor.ts";
 import type { DefinitionDigest } from "./definitions.ts";
 import { DELEGATE_SUBJECT } from "./approval.ts";
 import type { ApprovalScope, ApprovalSource } from "./approval.ts";
@@ -107,6 +108,20 @@ export interface GrantRecord {
    * it. Absent for a `tools:`-style delegation, which has no definition.
    */
   definitionDigest?: DefinitionDigest;
+  /**
+   * WHERE this child ran — ADR-0031.
+   *
+   * **Required rather than optional**, which is unusual in this record and deliberate. Before ADR-0031 the
+   * executor was a variable an operator set, so "which one ran?" was answerable from configuration after the
+   * fact. It is now decided by a **runtime probe** at session start, so nothing outside the record preserves
+   * the answer — and the two paths do not produce the same argv, because the herdr plan withholds `--print`
+   * (`delegationContext.interactive`). A trail that cannot say where a child ran cannot be read back
+   * reliably, and reading it back is the only reason it exists.
+   *
+   * Written on refusals too, including the tripwire's: the honest value there is the executor the session
+   * *would* have used, because a refused spawn has no executor of its own.
+   */
+  executor: ExecutorKind;
 }
 
 export interface LedgerOptions {
@@ -137,6 +152,8 @@ export function buildRecord(args: {
   humanDenied?: boolean;
   gateOutcome?: PromptOutcomeKind;
   definitionDigest?: DefinitionDigest;
+  /** Where the child ran (ADR-0031). Required: the probe's answer survives nowhere else. */
+  executor: ExecutorKind;
   now: Date;
 }): GrantRecord {
   // R-46: the scalar is a SUMMARY, emitted only when it cannot mislead. `buildRecord` derives it rather
@@ -151,6 +168,7 @@ export function buildRecord(args: {
     childId: args.childId,
     depth: args.depth,
     agentType: args.agentType,
+    executor: args.executor,
     requested: args.requested,
     parentGrant: args.parentGrant,
     effective: args.result.effective,

@@ -3,7 +3,7 @@
 **The current-state document.** No history, no reasoning about alternatives, no record of how anything came
 to be decided. Where this disagrees with an ADR, the ADR is right and this file is stale — say so.
 
-Last synced against the code: **2026-08-17**, `pi-daddy` 0.15.0, pi 0.84.1, herdr 0.7.5.
+Last synced against the code: **2026-08-17**, `pi-daddy` 0.16.0, pi 0.84.2, herdr 0.7.5.
 
 ---
 
@@ -390,13 +390,32 @@ it.
 
 Same plan, two places to run it:
 
-- **`runChild`** (default) — a captured child process. Needs nothing installed.
-- **`runHerdrPane`** (`PI_GRANTS_HERDR=1`) — a visible, attachable [herdr](https://herdr.dev) pane. We build
-  the argv, so the model never touches it. herdr owns the pane lifecycle, so this package needs no child
-  registry.
+- **`runChild`** — a captured child process. Needs nothing installed.
+- **`runHerdrPane`** — a visible, attachable [herdr](https://herdr.dev) pane. We build the argv, so the model
+  never touches it.
 
-Opt-in, never auto-detected from `herdr` being on `PATH`: where a governed child executes is an operator
-decision, not a consequence of what happens to be installed.
+**Which one runs is decided by a probe, not by a variable's absence (ADR-0031).** `PI_GRANTS_HERDR` is
+three-state:
+
+| Value | Behaviour |
+| :--- | :--- |
+| unset | Probe once at session start (`herdr tab list`, 2s bound). A server that **answers** ⇒ herdr panes; anything else ⇒ captured subprocess. |
+| `1` | Demand herdr. The probe still runs, a failure is reported at session start, and **every delegation then refuses** — there is no fallback. |
+| `0` | Demand the captured subprocess. No probe. |
+
+An unrecognised value falls back to the subprocess and says so, naming the variable.
+
+**Still never auto-detected from `herdr` being on `PATH`.** That distinction is the whole of why this is not
+the thing ADR-0016 point 6 refused: a binary with no server behind it would make every delegation fail at
+`tab create`, on a path nobody chose. Only a reachable server counts.
+
+**The choice is announced three times**, which is what makes deciding it automatically defensible: at session
+start, in `/grants` (`executor  …`), and per child in the ledger's `executor` field — which `/grants ledger` tallies, so it is readable without `jq`. The banner appears whenever
+a session *can* spawn — including an ungoverned one, which still registers `delegate`.
+
+A child's pane defaults to the **parent's own herdr workspace** (`HERDR_WORKSPACE_ID`, which herdr sets in
+every pane it creates), so switching to a child is a tab away rather than a workspace away.
+`PI_GRANTS_HERDR_WORKSPACE` overrides it.
 
 herdr specifics, all measured (`docs/probes/g16-herdr`): the grant goes on the **pane** (`agent start` has
 no `--env`, but a pane's environment reaches the shell that launches the agent); a multi-line system prompt
@@ -405,18 +424,81 @@ is staged to a temp file because `agent start` types argv into a shell and rejec
 `agent start` is retried while it comes up; and settling requires a terminal status **and** an advanced
 `state_change_seq`, because `agent wait --until idle` matches the state the agent was already in.
 
-**Pane cleanup covers everything except being killed outright.** A run closes its own pane in a `finally`,
-and panes still open are closed again on process `exit` — which covers a normal exit and `process.exit()`,
-and does **not** cover SIGKILL or a SIGTERM nothing else in the process is listening for, because Node runs
-no `exit` handlers there. `herdr tab close <id>` is the remedy for an orphan. No signal handler is installed
-by design: one here would suppress Node's default termination and turn pi's *"interrupt this turn"* into
-*"exit pi"*, on every session rather than the opt-in ones.
+## Watching a delegation run
+
+A delegation used to be a black box: both tools discarded pi's `onUpdate`, so the parent's screen showed the
+bare word `delegate` from the call until the result — up to ten minutes, and the same one word for all eight
+children of a `delegate_all`. ADR-0032 changed that.
+
+**One status block per call**, redrawn in place, with a three-line tail per child:
+
+```
+2 children · herdr panes
+
+review   agent review-d0.1   pane w7:t12   running  0:42
+  3 findings so far: unchecked nil at
+  session.ts:88, missing expiry compare…
+
+debug    agent debug-d0.2    pane w7:t13   running  0:42
+  Found it: Date parsing assumes local tz.
+```
+
+**Bounded** in height *and* width: five lines per child (header, up to three of tail, a blank separator) and 200
+characters per line. Both bounds are needed — a line cap is what actually bounds the block, because eight children
+each printing one megabyte-long line rendered 25 lines and 8 MiB. No braiding between children, and the pane id on
+screen **while the child is alive**, which is the difference between a pane you can switch to and one you learn
+about after it closed. Repainting is throttled to 250ms with a guaranteed trailing frame.
+
+The two executors report **differently, and the difference is not cosmetic**. `runChild` genuinely *streams*: a
+callback on its existing output funnel, appended. `runHerdrPane` reports a **snapshot** — `agent read` returns the
+whole terminal, so the last few lines are re-sent each poll and the consumer *replaces* what it holds. Treating
+that snapshot as a stream is what produced a measured 89,000× amplification and fabricated lines no child printed.
+
+**The block is a display and never the result.** The tool's answer is still what the child returned. On the herdr
+path, output older than the tail may be in *neither* — a pane that scrolled or exceeded the output cap returns only
+its tail, and the result says so when it is truncated.
+
+## Pane lifetime
+
+**A pane belongs to the agent run, not to the tool call — if its child settled.** A child that answered keeps its
+pane, because a twenty-second child's pane was gone before anyone could switch to it; it is swept when the run
+settles (`agent_settled`), asynchronously, with process `exit` as the backstop.
+
+**A child that did NOT settle loses its tab immediately.** Timeout, abort, failed start, failed prompt, unreadable
+pane: closing the tab is the **only** way to stop a herdr agent — `herdr agent stop` does not exist — so leaving
+the pane would leave a governed child working with its grant after its result had been reported. Each spawn also
+gets a **unique** agent name, because herdr binds a name to its tab and frees it only on close.
+
+`agent_settled` rather than `turn_end`: `turn_end` fires at the end of each provider round-trip, no later than
+the `finally` it would have replaced, so building on it would have changed nothing.
+
+**At most 8 panes are open at once** (`MAX_CHILDREN_PER_CALL`); opening a ninth closes the oldest **settled** one
+and says so. The bound is needed because a plain blocking `delegate` spends nothing from the fan-out budget, so a
+long run of delegations would otherwise accumulate panes without limit.
+
+**Only settled panes are reclaimable, and if every open pane is live the cap yields rather than enforcing.** pi
+runs tool calls in parallel by default, so one message can hold `delegate_all(8)` plus a `delegate` — and a trim
+that took the oldest pane regardless killed live siblings (measured: 8 of 16 children). A pane too many costs a
+keystroke; a killed child costs the work. The cap also stops holding if herdr refuses a close, which it reports
+rather than hides.
+
+`PI_GRANTS_HERDR_KEEP_PANE=1` means *not even at `agent_settled`*.
+
+**Cleanup covers everything except being killed outright.** SIGKILL, and a SIGTERM nothing else in the process
+is listening for, run no `exit` handlers — by Node's design — so a pane can still be orphaned there;
+`herdr tab close <id>` is the remedy. No signal handler is installed by design: one here would suppress Node's
+default termination and turn pi's *"interrupt this turn"* into *"exit pi"*. **Since the executor is now probed
+rather than opted into, this is the common path on a machine running herdr rather than a rare one** — see R-62.
 
 ## The tripwire
 
 The `tool_call` hook refuses third-party spawn tools (`Agent`, `subagent`, `spawn_agent`) in a governed
 session, and records the refusal. Such a spawn would create a descendant this package did not provision,
 does not bound, and does not record.
+
+**The refusal names both governed tools** — `delegate` for one child, `delegate_all` for several concurrently.
+It named only `delegate` until 2026-08-17, and an operator's request for parallel work was answered with a
+single sequential call as a result: a refusal that points at the wrong replacement gets obeyed badly.
 
 **It is not complete and does not claim to be:** `subagents:rpc:spawn` reaches `manager.spawn()` over the
 event bus and never produces a `tool_call`, so a tool-name check cannot see it. It catches the ordinary case
@@ -435,7 +517,9 @@ loudly.
 | `PI_GRANTS_PARENT_ID` | `d0` | Ledger identity; set by the parent. |
 | `PI_GRANTS_LEDGER` | unset ⇒ not recording | Setting it makes it load-bearing. |
 | `PI_GRANTS_CHILD_TIMEOUT` | `600` | Seconds. Inherited. |
-| `PI_GRANTS_HERDR` / `_WORKSPACE` / `_KEEP_PANE` | unset | herdr executor. |
+| `PI_GRANTS_HERDR` | unset (= probe) | `1` demands herdr panes and refuses if unreachable; `0` demands subprocesses; unset probes. |
+| `PI_GRANTS_HERDR_WORKSPACE` | the parent's `HERDR_WORKSPACE_ID` | Which herdr workspace a child's pane goes in. |
+| `PI_GRANTS_HERDR_KEEP_PANE` | unset | Keep panes past `agent_settled`, for inspection. No sweep closes them. |
 | `PI_CODING_AGENT_DIR` | `~/.pi/agent` | pi's own variable, listed because it decides where persisted approvals live — one file per project under `grants-approvals/`. |
 
 **Malformed configuration disables spawning rather than falling back**, and says which variable it was — a

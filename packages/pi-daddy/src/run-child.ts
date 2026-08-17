@@ -10,7 +10,34 @@
  */
 
 import { spawn } from "node:child_process";
+import { StringDecoder } from "node:string_decoder";
 import { parseBound } from "./propagation.ts";
+
+/**
+ * The longest prefix of `text` that fits in `budget` BYTES, never splitting a character.
+ *
+ * Both halves matter. Truncating by `String.prototype.slice` counts UTF-16 code units against a byte budget,
+ * which overruns by the encoding width of whatever the child printed. Truncating the *buffer* instead would
+ * respect the budget and split a multi-byte character or a surrogate pair, putting a lone `\ud83d` in the
+ * result. So the walk is by code POINT (`for…of` iterates code points, keeping surrogate pairs whole) and the
+ * budget is checked in bytes before each one is admitted.
+ *
+ * Exported for the test that feeds it CJK and emoji: an ASCII-only test cannot fail on any of this, which is
+ * exactly why the original defect survived a test named for it.
+ */
+export function takeBytes(text: string, budget: number): string {
+  if (budget <= 0) return "";
+  if (Buffer.byteLength(text) <= budget) return text;
+  let out = "";
+  let used = 0;
+  for (const character of text) {
+    const size = Buffer.byteLength(character);
+    if (used + size > budget) break;
+    out += character;
+    used += size;
+  }
+  return out;
+}
 
 /**
  * Operator override for the child wall-clock limit, in seconds.
@@ -40,6 +67,20 @@ export interface ChildRunRequest {
   /** Wall-clock cap. On expiry: SIGTERM, then SIGKILL after `killGraceMs`. */
   timeoutMs?: number;
   killGraceMs?: number;
+  /**
+   * Called with each chunk as it arrives, for the parent's progress display (ADR-0032).
+   *
+   * **Display only, and the distinction is load-bearing.** The child's answer is still `text`, assembled here
+   * and returned; a caller must never treat what it saw streamed as the result. A partial stream that could be
+   * mistaken for a complete answer is R-03's defect — a missing result indistinguishable from an empty one —
+   * with a new cause.
+   *
+   * Bounded by the same `maxOutputBytes` as `text`, so the cap governs the transcript and not merely memory.
+   *
+   * Exceptions are swallowed: a renderer is not a governance control, and one that throws must not kill a
+   * governed child mid-task.
+   */
+  onOutput?: (chunk: string) => void;
 }
 
 export interface ChildRunResult {
@@ -85,6 +126,9 @@ export function runChild(request: ChildRunRequest): Promise<ChildRunResult> {
       return;
     }
 
+    // One decoder for BOTH streams is deliberate: they are already interleaved into one `text`, and two
+    // decoders would each hold their own partial character, so a split byte could surface out of order.
+    const decoder = new StringDecoder("utf8");
     let text = "";
     let bytes = 0;
     let truncated = false;
@@ -101,20 +145,65 @@ export function runChild(request: ChildRunRequest): Promise<ChildRunResult> {
       timers.push(setTimeout(() => child.kill("SIGKILL"), killGraceMs));
     };
 
+    /** How much of `text` the progress display has already been shown. */
+    let emittedUpTo = 0;
+
+    /**
+     * Stream whatever `text` has gained since the last call.
+     *
+     * **Derived from `text` rather than from the incoming chunk**, and that is the whole correctness argument:
+     * what gets streamed is then *by construction* a prefix of what gets returned, so the output cap bounds the
+     * parent's transcript exactly as it bounds the result. The first version emitted the raw chunk and pushed
+     * 1924 bytes through a 1024-byte cap on the truncating write — the cap bounded memory and not the screen
+     * it had just been extended to protect. Found by the test, not by reading it.
+     *
+     * Swallowing is deliberate: `onOutput` renders, and a renderer that throws must not become a way to kill a
+     * governed child. Nothing downstream depends on it having run.
+     */
+    const flush = () => {
+      if (!request.onOutput || text.length <= emittedUpTo) return;
+      const chunk = text.slice(emittedUpTo);
+      emittedUpTo = text.length;
+      try {
+        request.onOutput(chunk);
+      } catch {
+        /* display only */
+      }
+    };
+
     const capture = (chunk: unknown) => {
       if (truncated) return;
-      const s = String(chunk);
-      bytes += Buffer.byteLength(s);
-      if (bytes > maxOutputBytes) {
-        // Keep what fits, mark it, and stop the child: an unbounded producer must not be able to
-        // exhaust the orchestrator's memory just because it was granted a tool that prints.
-        text += s;
-        text = text.slice(0, maxOutputBytes);
+      // **Decoded through a StringDecoder, not `String(chunk)`.** A pipe splits on byte boundaries, not
+      // character ones, so a multi-byte character straddling two `data` events was decoded as two invalid
+      // halves and became U+FFFD — in the child's ANSWER, not merely the display. Measured: 300,000 bytes of
+      // CJK produced **twelve** replacement characters, because 65536 % 3 == 1. Emoji happened to survive
+      // (65536 % 4 == 0), which is why width-dependent corruption went unnoticed. The decoder holds the
+      // partial bytes until the rest arrives.
+      const s = decoder.write(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
+      if (s.length === 0) return;
+
+      const size = Buffer.byteLength(s);
+      if (bytes + size > maxOutputBytes) {
+        // Keep what fits, mark it, and stop the child: an unbounded producer must not be able to exhaust the
+        // orchestrator's memory just because it was granted a tool that prints.
+        //
+        // **Trimmed by BYTES, and that is a fix rather than a refinement.** This was
+        // `text.slice(0, maxOutputBytes)` — a count of UTF-16 code units against a budget measured in bytes,
+        // so any non-ASCII output overran the cap by its own encoding width: 300 bytes of CJK through a
+        // 100-byte cap, and a measured **2048 bytes through the real 1024 default**. It is the same defect as
+        // the 1924-byte one already fixed here, one layer down: that fix bounded the *unit* count, and the
+        // budget was never in units. An odd cap also split a surrogate pair, putting a lone `\ud83d` into
+        // both the transcript and the returned answer.
+        text += takeBytes(s, maxOutputBytes - bytes);
+        bytes = maxOutputBytes;
         truncated = true;
+        flush();
         stop();
         return;
       }
+      bytes += size;
       text += s;
+      flush();
     };
 
     child.stdout?.on("data", capture);

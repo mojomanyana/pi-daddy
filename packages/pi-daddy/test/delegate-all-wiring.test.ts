@@ -18,11 +18,13 @@ import { after, afterEach, test } from "node:test";
 import grantsExtension from "../extensions/grants.ts";
 import { MAX_CHILDREN_PER_CALL } from "../src/fanout.ts";
 import { ENV_APPROVED, ENV_DEPTH, ENV_FANOUT, ENV_GATED, ENV_GRANT, ENV_LEDGER, ENV_MAX_DEPTH, ENV_PARENT_ID } from "../src/propagation.ts";
+import { ENV_HERDR } from "../src/executor.ts";
+import { verifyLedger } from "../src/ledger.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
 after(cleanupTempDirs);
 
-const KEYS = [ENV_GRANT, ENV_DEPTH, ENV_MAX_DEPTH, ENV_GATED, ENV_APPROVED, ENV_LEDGER, ENV_FANOUT, ENV_PARENT_ID];
+const KEYS = [ENV_GRANT, ENV_DEPTH, ENV_MAX_DEPTH, ENV_GATED, ENV_APPROVED, ENV_LEDGER, ENV_FANOUT, ENV_PARENT_ID, ENV_HERDR];
 const saved = new Map<string, string | undefined>();
 
 afterEach(() => {
@@ -42,7 +44,14 @@ async function harness(env: Record<string, string>, existingDir?: string) {
   const dir = existingDir ?? (await tempDir("grants-fanout-"));
   for (const k of KEYS) if (!saved.has(k)) saved.set(k, process.env[k]);
   for (const k of KEYS) delete process.env[k];
-  Object.assign(process.env, env);
+  // `PI_GRANTS_HERDR=0` by DEFAULT, and this line is load-bearing rather than tidy-up.
+  //
+  // ADR-0031 made an unset variable mean *probe*, and `resolveExecutor` runs inside `session_start` — which
+  // this harness calls. Leaving it unset would run a real `herdr tab list` against whatever is on the
+  // developer's machine, so this suite would select panes here and subprocesses in CI, from the same source.
+  // A test whose outcome depends on which daemons happen to be running is not a test. `0` skips the probe
+  // entirely; a test that wants the other paths overrides it and says why.
+  Object.assign(process.env, { [ENV_HERDR]: "0", ...env });
 
   const tools = new Map<string, ToolSpec>();
   const hooks = new Map<string, (e: unknown, c: unknown) => unknown>();
@@ -245,4 +254,174 @@ test("R-39: a definition the session may NOT spawn is not advertised", async () 
 
   const described = agentDescriptionOf(tools.get("delegate")!);
   assert.match(described, /Available: none/, "an unauthorised definition must not be advertised (ADR-0017)");
+});
+
+test("ADR-0031: a session that DEMANDED herdr and cannot reach it refuses every delegation", async () => {
+  // **The refusal must land in the PLANNER's path, not at the executor.** A child that reaches `tab create`
+  // has already had its ledger line written, so a refusal any later would record a spawn that never happened
+  // — and one any earlier could not know the probe's answer. The production change that breaks this: moving
+  // the `session.executor.refusal` check into `runHerdrPane`, or making `1` fall back to a subprocess.
+  //
+  // The probe is made to fail for real rather than mocked: `PATH` is emptied for the duration, so
+  // `execFile("herdr", …)` cannot resolve the binary and `defaultExec` is exercised end to end. That is why
+  // this test is worth having on top of `test/executor.test.ts`, which covers the table in isolation.
+  const realPath = process.env.PATH;
+  process.env.PATH = "";
+  try {
+    const { tools } = await harness({
+      [ENV_GRANT]: "tool:read,tool:delegate",
+      [ENV_HERDR]: "1",
+    });
+
+    await assert.rejects(
+      () => tools.get("delegate")!.execute("c1", { task: "read the file", tools: ["read"] }, undefined, undefined, {
+        cwd: process.cwd(),
+        ui: { notify: () => {}, select: async () => undefined },
+        hasUI: false,
+      }),
+      (error: Error) => {
+        assert.match(error.message, /PI_GRANTS_HERDR/, "the refusal must name the variable that caused it");
+        assert.match(error.message, /refused/);
+        return true;
+      },
+    );
+  } finally {
+    process.env.PATH = realPath;
+  }
+});
+
+test("ADR-0031: PI_GRANTS_HERDR=0 spawns nothing through herdr and does not refuse", async () => {
+  // The other side of the same switch: an operator who ruled herdr out must be unaffected by whether herdr is
+  // running. This is also the configuration every other test in this file runs under, asserted once so the
+  // harness default above is not merely assumed.
+  const { tools } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate", [ENV_HERDR]: "0" });
+  // A capability the session does not hold, so it is refused for THAT reason and never spawned — the same
+  // trick the rest of this suite uses to stay fast. What matters is which reason comes back.
+  await assert.rejects(
+    () => tools.get("delegate")!.execute("c1", { task: "write a file", tools: ["write"] }, undefined, undefined, {
+      cwd: process.cwd(),
+      ui: { notify: () => {}, select: async () => undefined },
+      hasUI: false,
+    }),
+    (error: Error) => {
+      assert.doesNotMatch(error.message, /PI_GRANTS_HERDR/, "a PI_GRANTS_HERDR=0 session must never blame herdr");
+      return true;
+    },
+  );
+});
+
+test("ADR-0032: delegate_all paints DURING the run, one block covering every child", async () => {
+  // **Rewritten because the first version could not fail.** A reviewer built a reporter per child instead of per
+  // call — the exact change the test's own comment named — and it stayed green, for two reasons: it inspected only
+  // the LAST frame (and the call-level `settle()` always runs last, so the final frame is combined either way),
+  // and its `refusedChildren` fixture meant no child ever spawned, so **no sink ever fired and `frames.length`
+  // was 1**. The during-run painting that ADR-0032 is entirely about was untested.
+  //
+  // This drives children that really run: `PI_GRANTS_HERDR=0` with a `node` that prints and exits, so `runChild`
+  // streams for real. Then EVERY frame must carry every child, not merely the last one.
+  const frames: string[] = [];
+  const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate", [ENV_HERDR]: "0" });
+  const onUpdate = (partial: { content: Array<{ text: string }> }) => void frames.push(partial.content[0].text);
+
+  await tools
+    .get("delegate_all")!
+    .execute(
+      "t",
+      { children: [{ task: "one", tools: ["read"] }, { task: "two", tools: ["read"] }] },
+      undefined,
+      onUpdate as never,
+      ctx,
+    )
+    .catch(() => undefined);
+
+  assert.ok(frames.length >= 1, "a fan-out must paint");
+  for (const [index, frame] of frames.entries()) {
+    assert.match(frame, /2 children/, `frame ${index} lost a child: ${JSON.stringify(frame.slice(0, 120))}`);
+  }
+});
+
+test("ADR-0032: delegate paints too — it is the one-child case of the same block", async () => {
+  // `_onUpdate` was discarded here, so a single delegation showed the bare word `delegate` for up to ten
+  // minutes. The production change that breaks this: renaming it back to `_onUpdate`.
+  const frames: string[] = [];
+  const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate" });
+  const onUpdate = (partial: { content: Array<{ text: string }> }) => void frames.push(partial.content[0].text);
+
+  await tools
+    .get("delegate")!
+    .execute("t", { task: "audit", tools: ["write"] }, undefined, onUpdate as never, ctx)
+    .catch(() => undefined);
+
+  assert.ok(frames.length > 0);
+  assert.match(frames[frames.length - 1], /1 child/);
+});
+
+test("ADR-0032: the block names the executor it is running under", async () => {
+  // So a transcript read later says where those children ran, matching the ledger and the banner.
+  const frames: string[] = [];
+  const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate", [ENV_HERDR]: "0" });
+  const onUpdate = (partial: { content: Array<{ text: string }> }) => void frames.push(partial.content[0].text);
+
+  await tools
+    .get("delegate")!
+    .execute("t", { task: "audit", tools: ["write"] }, undefined, onUpdate as never, ctx)
+    .catch(() => undefined);
+
+  assert.match(frames[frames.length - 1], /captured subprocesses/);
+});
+
+test("ADR-0031: the ledger records the executor a REAL spawn ran under, not a constant", async () => {
+  // **The highest-value gap a reviewer found.** Hardcoding BOTH ledger call sites to `executor: "process"` left
+  // all 442 tests green, because the three `ledger-integrity` tests pass the value in themselves — they exercise
+  // `buildRecord`'s plumbing, never the wiring. So ADR-0031's stated reason for making the field required
+  // ("nothing outside the record preserves which argv ran") was itself unverified.
+  //
+  // This drives the real extension end to end and reads the real ledger file, once per executor. The production
+  // change that breaks it: hardcoding either call site, or dropping `session.executor.kind`.
+  for (const [herdr, expected] of [["0", "process"], ["1", "herdr"]] as const) {
+    const dir = await tempDir("grants-executor-ledger-");
+    const ledger = join(dir, "ledger.jsonl");
+    // PATH is emptied for the herdr case so the probe fails and the delegation refuses — a refusal still writes a
+    // record, and the executor it names must be the one the session settled on, not a default.
+    const realPath = process.env.PATH;
+    if (herdr === "1") process.env.PATH = "";
+    try {
+      const { tools, ctx } = await harness({
+        [ENV_GRANT]: "tool:read,tool:delegate",
+        [ENV_LEDGER]: ledger,
+        [ENV_HERDR]: herdr,
+      });
+      await tools
+        .get("delegate")!
+        .execute("t", { task: "audit", tools: ["write"] }, undefined, undefined, ctx)
+        .catch(() => undefined);
+    } finally {
+      process.env.PATH = realPath;
+    }
+
+    const lines = (await readFile(ledger, "utf8")).trim().split("\n").filter(Boolean).map((l) => JSON.parse(l));
+    assert.ok(lines.length >= 1, `no record written for PI_GRANTS_HERDR=${herdr}`);
+    for (const record of lines) {
+      assert.equal(record.executor, expected, `PI_GRANTS_HERDR=${herdr} must record executor ${expected}`);
+    }
+  }
+});
+
+test("ADR-0031: a pre-0.16 ledger line, which has no executor field, still parses", async () => {
+  // The field is REQUIRED in TypeScript and absent from every line 0.15.0 wrote. A reviewer proved the read path
+  // does not care (`verifyLedger` validates only `Array.isArray(parsed.denied)`) — but nothing pinned it, so a
+  // future `if (!parsed.executor) throw` would silently reclassify every older ledger as corrupt with a green
+  // suite. This is that pin.
+  const dir = await tempDir("grants-legacy-ledger-");
+  const ledger = join(dir, "ledger.jsonl");
+  const legacy = {
+    ts: "2026-08-16T10:00:00.000Z", parentId: "d0", childId: "d0.1", depth: 1, agentType: "review",
+    requested: ["tool:read"], parentGrant: ["tool:read"], effective: ["tool:read"],
+    denied: [], clipped: [], gatedBlocked: [], blocked: false,
+  };
+  await writeFile(ledger, `${JSON.stringify(legacy)}\n`, "utf8");
+
+  const report = await verifyLedger(ledger);
+  assert.equal(report.ok, true, "a line without `executor` must not read as corrupt");
+  assert.equal(report.records, 1, "and it must still be counted");
 });

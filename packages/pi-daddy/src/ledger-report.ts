@@ -28,6 +28,20 @@ export interface LedgerReport {
   /** Records where an agent asked for more than it held — ADR-0008's designated signal. */
   escalationAttempts: number;
   /**
+   * How many records ran under each executor, plus how many name none — ADR-0031.
+   *
+   * **Added because the field was written and never read, which is R-51's shape exactly.** R-51 was
+   * `definitionDigest`: recorded from the start, absent from every report, so the questions ADR-0018 advertised
+   * needed hand-written `jq`. `executor` arrived the same way — `src/ledger.ts` justifies making it *required*
+   * with "reading it back is the only reason it exists", and nothing read it back. `docs/SPEC.md` claims the
+   * executor is "announced three times… per child in the ledger"; without this the third announcement was to
+   * `jq` only.
+   *
+   * `unknown` counts pre-0.16 lines, which have no such field. Reported rather than folded into `process`,
+   * because "written before the executor was recorded" and "ran as a subprocess" are different facts.
+   */
+  executors: { herdr: number; process: number; unknown: number };
+  /**
    * Every distinct set of instructions this ledger saw run, with how many spawns used it (R-51).
    *
    * ADR-0018 advertises that a record answers *"did these four children run the same instructions?"* and
@@ -113,6 +127,7 @@ export async function verifyLedger(path: string): Promise<LedgerReport> {
         records: 0,
         corrupt: [],
         escalationAttempts: 0,
+        executors: { herdr: 0, process: 0, unknown: 0 },
         definitions: [],
         approvals: {
           bySource: { prompt: 0, session: 0, persisted: 0, inherited: 0 },
@@ -132,6 +147,7 @@ export async function verifyLedger(path: string): Promise<LedgerReport> {
   const digests = new Map<string, { name: string; source: string; sha256: string; spawns: number }>();
   let records = 0;
   let escalationAttempts = 0;
+  const executors = { herdr: 0, process: 0, unknown: 0 };
   const bySource: Record<ApprovalSource, number> = { prompt: 0, session: 0, persisted: 0, inherited: 0 };
   // `capability@subject` seen per source, so the report can state a bound as well as a raw count.
   const distinct: Record<ApprovalSource, Set<string>> = {
@@ -153,6 +169,10 @@ export async function verifyLedger(path: string): Promise<LedgerReport> {
       if (!Array.isArray(parsed.denied)) throw new Error("not a grant record");
       records += 1;
       if (isEscalationAttempt(parsed)) escalationAttempts += 1;
+      const executor = (parsed as { executor?: unknown }).executor;
+      if (executor === "herdr") executors.herdr += 1;
+      else if (executor === "process") executors.process += 1;
+      else executors.unknown += 1;
       if (parsed.humanDenied) {
         humanDenied += 1;
         const subject = parsed.agentType === undefined || parsed.agentType === "delegate" ? DELEGATE_SUBJECT : parsed.agentType;
@@ -209,6 +229,7 @@ export async function verifyLedger(path: string): Promise<LedgerReport> {
     records,
     corrupt,
     escalationAttempts,
+    executors,
     definitions: [...digests.values()].sort((a, b) => a.name.localeCompare(b.name) || a.sha256.localeCompare(b.sha256)),
     approvals: {
       bySource,

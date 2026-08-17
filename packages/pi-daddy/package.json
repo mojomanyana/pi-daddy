@@ -1,6 +1,6 @@
 {
   "name": "pi-daddy",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "description": "Capability governance for pi sub-agents: spawn Agent Skills (SKILL.md) definitions whose allowed-tools becomes a grant that can only narrow going down a delegation tree, enforced by pi's own --tools allowlist, with an append-only ledger.",
   "keywords": [
     "pi-package",
@@ -68,6 +68,22 @@
     "./run-herdr": {
       "types": "./dist/run-herdr.d.ts",
       "default": "./dist/run-herdr.js"
+    },
+    "./herdr-poll": {
+      "types": "./dist/herdr-poll.d.ts",
+      "default": "./dist/herdr-poll.js"
+    },
+    "./herdr-cli": {
+      "types": "./dist/herdr-cli.d.ts",
+      "default": "./dist/herdr-cli.js"
+    },
+    "./executor": {
+      "types": "./dist/executor.d.ts",
+      "default": "./dist/executor.js"
+    },
+    "./progress": {
+      "types": "./dist/progress.d.ts",
+      "default": "./dist/progress.js"
     },
     "./run-child": {
       "types": "./dist/run-child.d.ts",

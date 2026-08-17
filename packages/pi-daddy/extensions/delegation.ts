@@ -13,8 +13,89 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { maySpawnDefinition } from "../src/delegate.ts";
 import { MAX_CHILDREN_PER_CALL, childSpawnId, splitBudget } from "../src/fanout.ts";
+import {
+  PAINT_INTERVAL_MS,
+  appendTail,
+  emptyTail,
+  renderProgress,
+  replaceTail,
+  throttle,
+  type ChildProgress,
+} from "../src/progress.ts";
 import { runOneDelegation } from "./run-delegation.ts";
 import { type GrantsSession } from "./session.ts";
+
+/**
+ * Wire a set of children to pi's partial-result channel — ADR-0032.
+ *
+ * **One block for the whole call**, not one per child: `onUpdate` replaces the tool's rendered result, so N
+ * independent painters would each overwrite the others and the operator would see one child flickering.
+ * `delegate` is simply the one-child case of the same thing, which is why both tools come through here.
+ *
+ * Painting is throttled, and the trailing frame matters more than the throttling: without it the final paint —
+ * the one showing every child settled — is the one most likely to be dropped, so the block would freeze
+ * mid-run. `flush()` at the end is what guarantees the last state is the one left on screen.
+ *
+ * **Nothing here is the result.** The tool's content still comes from each child's returned text.
+ */
+function progressReporter(
+  session: GrantsSession,
+  labels: string[],
+  onUpdate: ((partial: { content: Array<{ type: "text"; text: string }> }) => void) | undefined,
+) {
+  const started = Date.now();
+  const children: ChildProgress[] = labels.map((label) => ({
+    label,
+    state: "starting",
+    startedAt: started,
+    tail: emptyTail,
+  }));
+
+  const paint = throttle(() => {
+    onUpdate?.({
+      content: [{ type: "text", text: renderProgress(children, session.executor.kind, Date.now()) }],
+    });
+  }, PAINT_INTERVAL_MS);
+
+  return {
+    /** One sink per child index, shaped for `runOneDelegation`'s `onProgress`. */
+    sink: (index: number) => (update: {
+      chunk?: string;
+      snapshot?: string[];
+      paneId?: string;
+      agentName?: string;
+      state?: ChildProgress["state"];
+    }) => {
+      const child = children[index];
+      if (!child) return;
+      if (update.paneId) child.paneId = update.paneId;
+      // **Reported, not derived.** It used to be rebuilt here from the label and the child id, which was true
+      // until `runHerdrPane` began uniquifying the name to stop herdr's `agent_name_taken` — after which the
+      // block named an agent that did not exist, and an operator following it would find nothing. The name is
+      // known only where it is minted, so it travels from there.
+      if (update.agentName) child.agentName = update.agentName;
+      // Two shapes, deliberately distinct, because the two executors are: a subprocess APPENDS bytes, a pane
+      // reports a SNAPSHOT that replaces. Collapsing them into one "output" field is what caused the herdr
+      // path's amplification, so the difference is spelled out in the type rather than remembered.
+      if (update.chunk) child.tail = appendTail(child.tail, update.chunk);
+      if (update.snapshot) child.tail = replaceTail(update.snapshot);
+      if (update.state) child.state = update.state;
+      else if (child.state === "starting") child.state = "running";
+      paint.call();
+    },
+    /** Record how each child ended and leave the final frame on screen. */
+    settle: (outcomes: Array<{ ok: boolean }>) => {
+      const at = Date.now();
+      outcomes.forEach((outcome, index) => {
+        const child = children[index];
+        if (!child) return;
+        child.state = outcome.ok ? "completed" : "failed";
+        child.settledAt = at;
+      });
+      paint.flush();
+    },
+  };
+}
 
 export interface DelegationRegistration {
   /**
@@ -113,7 +194,10 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       "written by the operator. Use 'tools' only when no definition fits. Grant 'delegate' if the " +
       "sub-agent must itself delegate further; withhold it to make the sub-agent a leaf.",
     parameters: delegateParams,
-    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+    async execute(_toolCallId, params, signal, onUpdate, ctx) {
+      // ADR-0032: one child, same block. `_onUpdate` was discarded here, so a delegation showed the bare word
+      // `delegate` for up to DEFAULT_TIMEOUT_MS — ten minutes of nothing.
+      const progress = progressReporter(session, [params.agent ?? "delegate"], onUpdate as never);
       const outcome = await runOneDelegation(
         session,
         { task: params.task, agent: params.agent, tools: params.tools, model: params.model },
@@ -124,7 +208,9 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
         session.fanoutBudget,
         ctx,
         signal,
+        progress.sink(0),
       );
+      progress.settle([outcome]);
 
       if (!outcome.ok) {
         // THROW, do not return. `AgentToolResult` has no `isError` field: pi sets it only when `execute`
@@ -168,7 +254,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       "when independent tasks can proceed in parallel — several reviewers over one diff, say — and read " +
       "every child's outcome, because one can be refused while the others succeed.",
     parameters: delegateAllParams,
-    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+    async execute(_toolCallId, params, signal, onUpdate, ctx) {
       const children = params.children ?? [];
       const split = splitBudget(session.fanoutBudget, children.length);
       if (!split.ok) {
@@ -176,6 +262,10 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
         // normal result would read to the orchestrator as a successful fan-out of zero children.
         throw new Error(`fan-out refused: ${split.reason}`);
       }
+
+      // ADR-0032: ONE status block covering every child. `onUpdate` replaces the tool's rendered result, so a
+      // painter per child would have each overwriting the others.
+      const progress = progressReporter(session, children.map((c) => c.agent ?? "delegate"), onUpdate as never);
 
       // Concurrent by construction. Each child gets its own budget share and its own ledger id, so the
       // records form a tree and two siblings can never be confused for one another.
@@ -188,9 +278,11 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
             split.perChild,
             ctx,
             signal,
+            progress.sink(index),
           ),
         ),
       );
+      progress.settle(outcomes);
 
       const failed = outcomes.filter((o) => !o.ok);
       // Every child is reported, including the ones that failed. R-03's rule: a missing result must never

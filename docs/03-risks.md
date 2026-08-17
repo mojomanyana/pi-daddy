@@ -946,11 +946,33 @@ out in three documents, for a question asked once.
 **Trigger:** any count in this package presented as an answer rather than a bound. The tell is a sentence of
 the form *"each of these is an X"* about records that were not counted per X.
 
-## R-62 · A killed process orphans one herdr pane per in-flight child — L×L, FIXED IN PART
+## R-62 · A killed process orphans one herdr pane per in-flight child — **M**×L, FIXED IN PART
 Added **and fixed in part** 2026-08-14. `runHerdrPane` closes its pane in a `finally`, which covers a thrown
 error and a timeout and **not the process being killed**, so an interrupted fan-out left a pane per child —
 and `docs/probes/g16-herdr` records that an orphaned pane is not trivially closable afterwards. Low severity
 throughout: the herdr executor is opt-in and `PI_GRANTS_HERDR` is off by default.
+
+> **RE-RATED 2026-08-17 (L×L → M×L), because ADR-0031 removed the premise the old rating rested on.** "Low
+> severity throughout" was justified above by *"the herdr executor is opt-in and `PI_GRANTS_HERDR` is off by
+> default"*. **That sentence is now false**: an unset variable means *probe*, so on any machine running herdr
+> the pane path is the **default**. An orphaned pane after SIGKILL has gone from a rare opt-in-only outcome to
+> the ordinary consequence of killing a session mid-fan-out.
+>
+> **Likelihood rises; impact does not.** The failure is unchanged — some stale tabs, remedied by
+> `herdr tab close <id>` — and nothing about the grant, the ledger or enforcement is affected. What changed is
+> how often anyone meets it.
+>
+> **Neither ADR-0031 nor ADR-0032 fixes it, and both say so.** SIGKILL runs no `exit` handler by design, and
+> the refusal below still stands for exactly the reason it always did. ADR-0032 *does* move the ordinary close
+> point from the per-call `finally` to `agent_settled` — so panes are now open for **longer** in the normal
+> case, which widens the window rather than narrowing it. It also caps concurrent panes at 8
+> (`MAX_CHILDREN_PER_CALL`), which bounds how many a kill can orphan; that cap is the one thing here that cuts
+> the other way.
+>
+> **What would change the rating again:** a report of orphaned panes actually accumulating in real use. The
+> mitigation on the table is not a signal handler (refused, below) but a startup sweep — closing panes labelled
+> by a `pi-daddy` prefix that no live process owns. That has its own hazard, since a label is not proof of
+> ownership, and it is not worth designing against a failure nobody has hit yet.
 
 **FIXED IN PART (0.13.0)** — `src/pane-reaper.ts` tracks open panes and closes them on `exit`. The coverage
 is stated rather than implied, because the gap is the interesting half:

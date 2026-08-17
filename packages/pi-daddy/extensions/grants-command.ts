@@ -13,6 +13,7 @@
  */
 
 import type { Capability } from "../src/resolve.ts";
+import type { ExecutorChoice } from "../src/executor.ts";
 import type { Catalog } from "../src/catalog.ts";
 import type { SkillDefinition } from "../src/definitions.ts";
 import type { GatedPlan } from "./run-delegation.ts";
@@ -23,6 +24,13 @@ export interface GrantsCommandContext {
   cwd: string;
   governed: boolean;
   ownGrant: Capability[];
+  /**
+   * Which executor this session settled on, and why — ADR-0031.
+   *
+   * The whole `ExecutorChoice` rather than a rendered string, so this command cannot compose a different
+   * sentence from the one the session banner printed. Two spellings of one fact is R-28.
+   */
+  executor: ExecutorChoice;
   observed: boolean;
   depth: number;
   maxDepth: number;
@@ -71,7 +79,7 @@ handler: async (args: string, ctx: any) => {
     // Everything this command may see, named in one place. Previously these were whatever happened to be in
     // the enclosing closure — which is how a diagnostic came to disagree with the enforcer (R-28).
     const {
-      cwd, governed, ownGrant, observed, depth, maxDepth, ledgerPath,
+      cwd, governed, ownGrant, executor, observed, depth, maxDepth, ledgerPath,
       catalog, definitions, sessionApprovals, inheritedApprovals, snapshotOf, previewDelegation,
     } = ctx.grants as GrantsCommandContext;
 
@@ -102,6 +110,17 @@ handler: async (args: string, ctx: any) => {
         `  integrity  ${report.ok ? "OK" : `${report.corrupt.length} UNPARSEABLE LINE(S)`}`,
       ];
       for (const bad of report.corrupt.slice(0, 5)) lines.push(`    line ${bad.line}: ${bad.text}`);
+      // ADR-0031, and R-51's lesson applied on the day the field was added rather than a release later: a field
+      // the writer sets and no diagnostic reads is one that needs `jq`, and `docs/SPEC.md` claims the executor is
+      // announced "per child in the ledger". `unknown` is shown only when present, because on a fresh ledger it
+      // is always zero and a permanent zero is noise; on an upgraded one it is the count of pre-0.16 lines, which
+      // is worth seeing.
+      lines.push(
+        `  executors  ${report.executors.herdr} herdr pane(s) · ${report.executors.process} subprocess(es)` +
+          (report.executors.unknown > 0
+            ? ` · ${report.executors.unknown} not recorded (written before 0.16.0, which added the field)`
+            : ""),
+      );
       // R-51. ADR-0018 advertises that the ledger answers "did these four children run the same
       // instructions?" and "has this definition changed since?" — and nothing read `definitionDigest`, so
       // both needed hand-written jq and the second was not reproducible with `sha256sum` (the digest covers
@@ -300,6 +319,12 @@ handler: async (args: string, ctx: any) => {
     const lines = [
       governed ? "grants: ACTIVE" : "grants: inactive (set PI_GRANTS_GRANT to govern this session)",
       `  holding    ${ownGrant.join(", ") || "(nothing)"}${observed ? " (observed)" : " (inherited, not yet observed)"}`,
+      // ADR-0031/0032. This screen named the grant, the depth, the ledger, the approvals and the catalog, and
+      // never said WHERE children run — so an operator on a machine where herdr hosts their whole workspace
+      // could not discover that their children were invisible subprocesses. That gap is what produced
+      // ADR-0031, and its probe is only defensible because this line exists. Placed next to `holding` so the
+      // two facts about what a spawn will be sit together.
+      `  executor   ${executor.disclosure}`,
       `  depth      ${depth} of max ${maxDepth}${maxDepth <= 0 ? " (spawning disabled)" : ""}`,
       `  ledger     ${ledgerPath ?? "(not recording — set PI_GRANTS_LEDGER)"}`,
       `  approvals  ${sessionApprovals.size} this session, ${valid.size} persisted` +

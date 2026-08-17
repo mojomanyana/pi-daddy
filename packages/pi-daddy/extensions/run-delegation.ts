@@ -22,7 +22,8 @@ import type { Capability } from "../src/resolve.ts";
 import { ENV_CHILD_TIMEOUT, runChild, timeoutFromEnv } from "../src/run-child.ts";
 import { runHerdrPane } from "../src/run-herdr.ts";
 import { obtainApprovals, republishable, snapshotOf, type ApprovalOutcome, type ApprovalUIContext } from "./approvals.ts";
-import { ENV_HERDR_KEEP_PANE, ENV_HERDR_WORKSPACE, type GrantsSession } from "./session.ts";
+import { resolveWorkspace } from "../src/herdr-cli.ts";
+import { ENV_HERDR_KEEP_PANE, type GrantsSession } from "./session.ts";
 
 /** What one child was asked to do. The shape both tools accept, per child. */
 interface ChildSpec {
@@ -156,6 +157,22 @@ export async function runOneDelegation(
   budget: number | undefined,
   ctx: DelegationToolContext,
   signal: AbortSignal | undefined,
+  /**
+   * Progress for the parent's status block (ADR-0032). Optional, so nothing here depends on being watched.
+   *
+   * One sink for both executors: the herdr path additionally reports a pane id, and the process path never
+   * has one. Every field is display-only — the child's answer is still the returned outcome.
+   */
+  onProgress?: (update: {
+    /** Appended (process executor: a genuine byte stream). */
+    chunk?: string;
+    /** Replaces (herdr executor: a snapshot of a bounded terminal). The two are NOT interchangeable. */
+    snapshot?: string[];
+    paneId?: string;
+    /** The name herdr actually knows this child by — minted in `runHerdrPane`, so it cannot be derived. */
+    agentName?: string;
+    state?: "running" | "completed" | "failed";
+  }) => void,
 ): Promise<DelegationOutcome> {
   // pi resolves a BARE model id to an unauthenticated provider and the child dies at startup — the id
   // alone is not enough, it must be qualified with its provider (`Model<Api>` carries both).
@@ -163,9 +180,32 @@ export async function runOneDelegation(
   const request = { task: spec.task, agent: spec.agent, tools: spec.tools, model: spec.model ?? defaultModel };
   const extra = { fanoutBudget: budget, spawnId: ids.parentId, childSpawnId: ids.childId };
 
+  // ADR-0031: herdr was DEMANDED (`PI_GRANTS_HERDR=1`) and is not answering. Refused rather than relocated —
+  // the operator chose that over falling back, so the ledger can never name a child that ran somewhere nobody
+  // chose.
+  //
+  // **Decided BEFORE the gate, and the ordering is a fix.** This sat after `planWithApprovals`, which opens the
+  // approval dialog — so with herdr down a human was asked to approve `tool:bash`, answered *Always*, and was
+  // then refused anyway. Measured: the answer still reached `process.env.PI_GRANTS_APPROVED`, still wrote a
+  // **30-day project-wide** entry to the persisted store, and still produced a ledger line asserting a human
+  // approved `bash` for a child that never existed. A refused operation must not leave authority behind, and
+  // asking for permission that cannot be used is R-25's fatigue shape with nothing bought.
+  //
+  // `ctx: null` rather than skipping the plan entirely: the ledger still gets a full, honest record of what was
+  // requested and refused, and stored approvals still count toward it — nothing is *hidden*, only nobody is
+  // *asked*. It is the same argument `/grants` uses for its preview.
+  const refusal = session.executor.refusal;
   // Planning and the gate live in `planWithApprovals`, shared with the `/grants` preview so the two cannot
-  // disagree (R-38). This call is the enforcing one: it passes `ctx`, so a human CAN be asked.
-  let { plan, approval: approvalOutcome } = await planWithApprovals(session, request, extra, ctx, signal);
+  // disagree (R-38). This call is the enforcing one when a human may be asked: `ctx` is passed unless the
+  // executor has already made the outcome certain.
+  let { plan, approval: approvalOutcome } = await planWithApprovals(session, request, extra, refusal ? null : ctx, signal);
+
+  // Applied in front of the ledger write below, so the record describes a refusal rather than a spawn. Turning
+  // `plan.ok` off reuses the existing blocked-record path, so this adds a reason rather than a second refusal
+  // mechanism.
+  if (refusal) {
+    plan = { ...plan, ok: false, reason: `grants: ${refusal}` };
+  }
 
   // G6 / B-I3: no `&& plan.result` guard — `planDelegation` always carries one now.
   if (session.ledgerPath) {
@@ -179,6 +219,9 @@ export async function runOneDelegation(
         childId: ids.childId,
         depth: plan.childDepth,
         agentType: spec.agent ?? "delegate",
+        // ADR-0031: where this child actually ran. Read off the live session, which the probe has settled
+        // by now, so the record and the executor cannot disagree.
+        executor: session.executor.kind,
         requested: plan.requested,
         parentGrant: session.ownGrant,
         result: plan.result,
@@ -208,10 +251,14 @@ export async function runOneDelegation(
   // G8: bounded output, a wall-clock timeout with SIGTERM->SIGKILL escalation, and an abort observed
   // even if it happened before we got here. See src/run-child.ts for why each one exists.
   //
-  // ADR-0016 point 6: two executors, one plan. `runChild` is the default because it needs nothing
-  // installed; herdr gives the same governed argv a VISIBLE, attachable pane. Opt-in per session rather
-  // than auto-detected — a governed run must not silently relocate because a binary is on PATH.
-  const output = session.useHerdr
+  // ADR-0016 point 6: two executors, one plan. `runChild` needs nothing installed; herdr gives the same
+  // governed argv a VISIBLE, attachable pane.
+  //
+  // **Which one is chosen was reversed by ADR-0031**: the session probes for a reachable herdr server at
+  // startup rather than waiting to be told. Still never detected from a binary on `PATH` — only from a server
+  // that answered — and the choice is disclosed at session start, in `/grants`, and per child in the ledger.
+  // Read live off `session.executor`, because the probe finishes after this module is loaded.
+  const output = session.executor.kind === "herdr"
     ? await runHerdrPane({
         args: plan.args.slice(0, -1),
         // The task is delivered as a prompt, so it never reaches argv at all. `plan.args` still ends
@@ -223,10 +270,22 @@ export async function runOneDelegation(
         env: plan.env,
         cwd: ctx.cwd,
         name: `${spec.agent ?? "delegate"}-${ids.childId}`,
-        workspace: process.env[ENV_HERDR_WORKSPACE],
+        // Was `process.env[ENV_HERDR_WORKSPACE]`, i.e. "omitted lets herdr choose" — which put children in a
+        // different workspace from the pi session that spawned them, so switching to one meant hopping
+        // workspaces rather than tabs. `resolveWorkspace` prefers the operator's explicit answer and otherwise
+        // inherits the parent's own `HERDR_WORKSPACE_ID` (measured; herdr sets it in every pane it creates).
+        workspace: resolveWorkspace(process.env),
         signal,
         timeoutMs: timeoutFromEnv(process.env[ENV_CHILD_TIMEOUT]),
         keepPane: process.env[ENV_HERDR_KEEP_PANE] === "1",
+        // ADR-0032. The pane id arrives first and is what a human switches to; the pane's tail follows as the
+        // child works. Both are display only.
+        //
+        // `snapshot`, not `chunk`: `agent read` returns a snapshot of a bounded terminal, and the sink must
+        // REPLACE what it holds. Treating it as a stream produced an 89,000× amplification and fabricated lines
+        // the child never printed — see `tailLines` in `src/herdr-poll.ts`.
+        onPane: onProgress ? (paneId, agentName) => onProgress({ paneId, agentName, state: "running" }) : undefined,
+        onSnapshot: onProgress ? (snapshot) => onProgress({ snapshot }) : undefined,
       })
     : await runChild({
         command: "pi",
@@ -238,6 +297,9 @@ export async function runOneDelegation(
         cwd: ctx.cwd,
         signal,
         timeoutMs: timeoutFromEnv(process.env[ENV_CHILD_TIMEOUT]),
+        // No pane on this path, so streaming is the ONLY observability a subprocess child can have — which is
+        // why ADR-0032 chose the streaming option over status lines alone.
+        onOutput: onProgress ? (chunk) => onProgress({ chunk }) : undefined,
       });
 
   // G8: a child that failed is reported as a failure. A non-zero exit, a timeout and a truncated flood

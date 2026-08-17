@@ -13,7 +13,7 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { runChild } from "../src/run-child.ts";
+import { runChild, takeBytes } from "../src/run-child.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
 after(cleanupTempDirs);
@@ -98,4 +98,120 @@ test("aborting mid-run kills the child", async () => {
 test("a command that does not exist is reported rather than thrown", async () => {
   const r = await runChild(node("", { command: "/nonexistent/definitely-not-a-binary" }));
   assert.ok(r.spawnError, "a spawn failure must surface as a result the tool can report");
+});
+
+test("ADR-0032: onOutput sees each chunk as it arrives, and the result is still whole", async () => {
+  // The production change that breaks this: dropping onOutput, or calling it after `close` — the entire point
+  // is that the parent can render progress BEFORE the child finishes. A delegation was a black box for up to
+  // DEFAULT_TIMEOUT_MS, and this is the half of the fix that works without herdr.
+  const chunks: string[] = [];
+  const result = await runChild({
+    command: process.execPath,
+    args: ["-e", "process.stdout.write('one\\n'); setTimeout(() => process.stdout.write('two\\n'), 30)"],
+    env: process.env,
+    cwd: process.cwd(),
+    onOutput: (chunk) => chunks.push(chunk),
+  });
+  assert.equal(result.code, 0);
+  assert.match(chunks.join(""), /one/);
+  assert.match(chunks.join(""), /two/);
+  assert.match(result.text, /one\ntwo/, "streaming must not replace the assembled result");
+});
+
+test("ADR-0032: stderr is streamed too, because capture is one funnel for both", async () => {
+  const chunks: string[] = [];
+  await runChild({
+    command: process.execPath,
+    args: ["-e", "process.stderr.write('a warning')"],
+    env: process.env,
+    cwd: process.cwd(),
+    onOutput: (chunk) => chunks.push(chunk),
+  });
+  assert.match(chunks.join(""), /a warning/);
+});
+
+test("ADR-0032: onOutput throwing does not kill the child — a renderer is not a governance control", async () => {
+  const result = await runChild({
+    command: process.execPath,
+    args: ["-e", "process.stdout.write('hi')"],
+    env: process.env,
+    cwd: process.cwd(),
+    onOutput: () => {
+      throw new Error("renderer exploded");
+    },
+  });
+  assert.equal(result.code, 0);
+  assert.equal(result.text, "hi");
+});
+
+test("ADR-0032: streaming respects the same byte cap as capture", async () => {
+  // Otherwise the cap would bound memory and not the transcript, and a runaway producer would flood the
+  // parent's screen through the one path that was added to make it readable.
+  const chunks: string[] = [];
+  const result = await runChild({
+    command: process.execPath,
+    args: ["-e", "for (let i = 0; i < 5000; i++) process.stdout.write('x'.repeat(100))"],
+    env: process.env,
+    cwd: process.cwd(),
+    maxOutputBytes: 1024,
+    onOutput: (chunk) => chunks.push(chunk),
+  });
+  assert.equal(result.truncated, true);
+  // **Exact, not `<= cap + 100`.** The slack had no derivation, and a reviewer showed it hid a real 60-byte
+  // over-emission: injecting one extra write past the cap left the test green. The invariant is exact by
+  // construction — what is streamed is a prefix of `text` — so the assertion should be too.
+  assert.ok(Buffer.byteLength(chunks.join("")) <= 1024, `streamed ${Buffer.byteLength(chunks.join(""))} bytes past 1024`);
+  assert.ok(Buffer.byteLength(result.text) <= 1024, "and the result must respect it as well");
+});
+
+test("ADR-0032: the cap holds in BYTES for non-ASCII, and never splits a character", async () => {
+  // **The defect an ASCII-only test could not see.** `bytes` counted UTF-8 bytes while the trim counted UTF-16
+  // code units, so any non-ASCII output overran by its encoding width: 300 bytes of CJK through a 100-byte cap,
+  // and a measured 2048 bytes through the real 1024 default. An odd cap also split a surrogate pair, putting a
+  // lone \ud83d into both the transcript and the returned answer.
+  //
+  // The production change that breaks this: trimming with `text.slice(0, maxOutputBytes)` again.
+  for (const [name, expr] of [
+    ["CJK", "'\\u4F60'.repeat(200)"],
+    ["emoji", "'\\u{1F600}'.repeat(200)"],
+    ["mixed", "('a\\u4F60\\u{1F600}').repeat(200)"],
+  ] as const) {
+    const chunks: string[] = [];
+    const result = await runChild({
+      command: process.execPath,
+      args: ["-e", `process.stdout.write(${expr})`],
+      env: process.env,
+      cwd: process.cwd(),
+      maxOutputBytes: 101, // odd on purpose: this is where a naive byte slice splits a character
+      onOutput: (chunk) => chunks.push(chunk),
+    });
+    assert.ok(Buffer.byteLength(result.text) <= 101, `${name}: result was ${Buffer.byteLength(result.text)} bytes`);
+    assert.ok(Buffer.byteLength(chunks.join("")) <= 101, `${name}: stream was over the cap`);
+    assert.ok(!/[\uD800-\uDFFF]/.test(result.text.replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, "")), `${name}: lone surrogate`);
+    assert.ok(!result.text.includes("\uFFFD"), `${name}: a character was corrupted`);
+  }
+});
+
+test("ADR-0032: a multi-byte character split across stdout chunks is not corrupted", async () => {
+  // Pre-existing on main and measured: `String(chunk)` decodes each `data` Buffer independently, so a character
+  // straddling a 65536-byte pipe boundary became U+FFFD — in the child's ANSWER. 300,000 bytes of CJK produced
+  // twelve of them, because 65536 % 3 == 1. Emoji happened to survive (65536 % 4 == 0), which is why
+  // width-dependent corruption went unnoticed. The production change that breaks this: dropping StringDecoder.
+  const result = await runChild({
+    command: process.execPath,
+    args: ["-e", "process.stdout.write('\u4F60'.repeat(100000))"],
+    env: process.env,
+    cwd: process.cwd(),
+  });
+  assert.equal(result.truncated, false, "300000 bytes is under the 1 MiB default");
+  assert.equal(result.text.length, 100000, "every character must survive the chunk boundaries");
+  assert.ok(!result.text.includes("\uFFFD"), "and none may be replaced");
+});
+
+test("takeBytes keeps whole characters and respects the budget exactly", () => {
+  assert.equal(takeBytes("abc", 2), "ab");
+  assert.equal(takeBytes("\u4F60\u4F60", 4), "\u4F60", "3-byte characters: 4 bytes fits exactly one");
+  assert.equal(takeBytes("\u{1F600}", 3), "", "a 4-byte character does not fit in 3 and must not be halved");
+  assert.equal(takeBytes("abc", 0), "");
+  assert.equal(takeBytes("abc", 99), "abc", "under budget passes through untouched");
 });

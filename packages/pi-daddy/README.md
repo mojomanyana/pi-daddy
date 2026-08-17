@@ -183,11 +183,19 @@ delegate_all({ children: [ {…}, {…}, {…} ] })                  // several 
 
 ### Two executors, one plan
 
-Default is a captured child process. `PI_GRANTS_HERDR=1` runs each child in a visible, attachable **herdr**
-pane instead — the same governed argv, the same `--tools` enforcement, somewhere you can watch it.
+Either a captured child process, or a visible, attachable **herdr** pane — the same governed argv, the same
+`--tools` enforcement, somewhere you can watch it.
 
-Opt-in and never auto-detected: where a governed child executes is an operator decision, not a consequence
-of what happens to be on `PATH`. Constraints found by building it are in `docs/probes/g16-herdr` — herdr has
+**Which one runs is decided by a probe (ADR-0031).** `PI_GRANTS_HERDR` is three-state: **unset** probes once at
+session start (`herdr tab list`, 2s bound) and uses panes if a server *answers*; **`1`** demands herdr and
+**refuses every delegation** if it is unreachable, rather than quietly relocating; **`0`** demands subprocesses and
+skips the probe. Which one was chosen is printed at session start, shown by `/grants`, and recorded per child in
+the ledger.
+
+Still **never auto-detected from `herdr` being on `PATH`** — a binary with no server behind it would make every
+delegation fail at `tab create`, on a path nobody chose. Only a reachable server counts.
+
+A child's pane goes in **your own herdr workspace** by default, so switching to one is a tab away. Constraints found by building it are in `docs/probes/g16-herdr` — herdr has
 no `--env` (the grant rides on the pane, which the agent's shell inherits), `agent start` types argv into a
 shell so a multi-line argument must be staged to a file, and `agent wait --until idle` matches the state the
 agent was *already* in, so settling requires a state counter to advance.
@@ -461,9 +469,9 @@ everything below it.
 | `PI_GRANTS_CHILD_TIMEOUT` | `600` (seconds) | Wall-clock limit for a child. Inherited by descendants — an operator preference, deliberately *not* attenuating state. |
 | `PI_GRANTS_FANOUT` | `8` | **Subtree budget**: total descendants this session may create. Attenuates downward like depth. Malformed or `0` falls back to the default — a bound a typo can switch off is not a bound. |
 | `PI_GRANTS_PARENT_ID` | `d0` | This session's ledger id; set by the parent. Makes sibling records joinable into a tree. |
-| `PI_GRANTS_HERDR` | unset | `1` runs children in visible **herdr** panes instead of captured processes. Opt-in, never auto-detected: where a governed child executes is an operator decision, not a consequence of what is on `PATH`. |
-| `PI_GRANTS_HERDR_WORKSPACE` | unset | herdr workspace for spawned panes. |
-| `PI_GRANTS_HERDR_KEEP_PANE` | unset | `1` keeps each child's pane for inspection. Off by default: a fan-out would flood the workspace. |
+| `PI_GRANTS_HERDR` | unset ⇒ **probe** | Three-state. Unset probes for a reachable herdr and uses panes if one answers; `1` demands panes and refuses every delegation if herdr is unreachable; `0` demands captured subprocesses. Never detected from `herdr` merely being on `PATH`. |
+| `PI_GRANTS_HERDR_WORKSPACE` | the parent's `HERDR_WORKSPACE_ID` | herdr workspace for spawned panes. Defaults to the workspace this session is in, so a child is a tab away rather than a workspace away. |
+| `PI_GRANTS_HERDR_KEEP_PANE` | unset | `1` keeps each child's pane for inspection, and no sweep closes it. Off by default: a fan-out would flood the workspace. |
 | `PI_CODING_AGENT_DIR` | `~/.pi/agent` | pi's own variable, not ours — but it decides where persisted approvals live, so it is listed here. |
 
 **A malformed value disables spawning; it never falls back to a default.** An unreadable
@@ -669,11 +677,18 @@ Known gaps, stated because a gap nobody wrote down is the one that surprises som
 - **`bash` escapes governance.** Out of scope by decision (ADR-0012).
 - **`subagents:rpc:spawn` bypasses the tripwire.** Unfixable from here.
 - **The ledger is verified at session start** when one is configured: a damaged trail announces itself, an intact one stays quiet.
-- **Pane cleanup covers everything except being killed outright.** A run closes its pane in a `finally`,
-  and anything still open is closed on process `exit` — which does **not** cover SIGKILL, nor a SIGTERM
-  nothing else in the process is listening for, because Node runs no `exit` handlers there. `herdr tab
-  close <id>` is the remedy. No signal handler is installed, deliberately: one here would suppress Node's
-  default termination and turn pi's *"interrupt this turn"* into *"exit pi"* (R-62).
+- **A pane outlives its tool call only if its child settled.** A child that answered keeps its pane so you can
+  read it, and it is swept when you get your prompt back (`agent_settled`), with process `exit` as a backstop. A
+  child that did **not** settle — timeout, abort, failed start — loses its tab at once, because closing the tab is
+  the only way to stop a herdr agent (`herdr agent stop` does not exist). At most 8 panes are open at once, and
+  only *settled* ones are ever reclaimed: if they are all live the cap yields rather than killing a child.
+- **Pane cleanup does not cover being killed outright.** SIGKILL, and a SIGTERM nothing else is listening for,
+  run no `exit` handlers — by Node's design — so a pane can be orphaned; `herdr tab close <id>` is the remedy. No
+  signal handler is installed, deliberately: one here would suppress Node's default termination and turn pi's
+  *"interrupt this turn"* into *"exit pi"* (R-62, re-rated M×L now that panes are the default path).
+- **A running delegation is visible.** One status block per call — per child: its definition, its herdr agent, its
+  pane id, its state, elapsed time, and the last three lines it printed. Bounded in height and width, so a fan-out
+  cannot flood your screen. It is a **display, never the result**.
 - **A definition's *instructions* are governed only by identity.** `agent:<name>` says which file may be
   spawned and the digest says which version ran, but nothing reads a body and judges what it says — the
   operator authorises a file, and its contents are their responsibility.
