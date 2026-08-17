@@ -192,6 +192,9 @@ export async function runOneDelegation(
         childId: ids.childId,
         depth: plan.childDepth,
         agentType: spec.agent ?? "delegate",
+        // ADR-0031: where this child actually ran. Read off the live session, which the probe has settled
+        // by now, so the record and the executor cannot disagree.
+        executor: session.executor.kind,
         requested: plan.requested,
         parentGrant: session.ownGrant,
         result: plan.result,

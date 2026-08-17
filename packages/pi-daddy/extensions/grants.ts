@@ -218,6 +218,7 @@ export default function (pi: ExtensionAPI) {
           agentType: event.toolName,
           // The wildcard is the honest record: an unknown spawner was going to hand this child whatever
           // IT decided, and we have no way to know what that would have been.
+          executor: session.executor.kind,
           requested: [WILDCARD],
           parentGrant: session.ownGrant,
           result: { effective: [], denied: [WILDCARD], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },

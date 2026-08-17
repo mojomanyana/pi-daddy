@@ -161,6 +161,7 @@ test("ledger flags escalation attempts and records what was refused", () => {
     parentGrant: ["tool:read"],
     result,
     blocked: false,
+    executor: "process",
     now: new Date("2026-08-09T00:00:00Z"),
   });
   assert.equal(isEscalationAttempt(record), true);
@@ -179,6 +180,7 @@ test("ledger does not flag a clean grant", () => {
     parentGrant: ["tool:read"],
     result,
     blocked: false,
+    executor: "process",
     now: new Date("2026-08-09T00:00:00Z"),
   });
   assert.equal(isEscalationAttempt(record), false);
@@ -235,6 +237,7 @@ test("the ledger records what was approved and where the yes came from", () => {
     approved: ["tool:write"],
     approvalSources: { "tool:write": "prompt" },
     approvalScopes: { "tool:write": "once" },
+    executor: "process",
     now: new Date("2026-08-09T00:00:00.000Z"),
   });
   assert.deepEqual(record.approved, ["tool:write"]);
@@ -267,6 +270,7 @@ test("R-46: a mixed-provenance approval set does not claim a human was asked abo
     approved: ["tool:bash", "tool:write"],
     approvalSources: { "tool:bash": "persisted", "tool:write": "prompt" },
     approvalScopes: { "tool:bash": "once", "tool:write": "session" },
+    executor: "process",
     now: new Date("2026-08-09T00:00:00.000Z"),
   });
 
@@ -293,6 +297,7 @@ test("a human saying no is recorded distinctly from an escalation attempt", () =
     result,
     blocked: true,
     humanDenied: true,
+    executor: "process",
     now: new Date("2026-08-09T00:00:00.000Z"),
   });
   assert.equal(record.humanDenied, true);
@@ -315,6 +320,7 @@ test("a gate hit with nobody present is neither an escalation nor a human refusa
     parentGrant: ["tool:write"],
     result,
     blocked: true,
+    executor: "process",
     now: new Date("2026-08-09T00:00:00.000Z"),
   });
   assert.equal(record.humanDenied, undefined);
@@ -333,6 +339,7 @@ test("existing records are unaffected — the new fields are absent, not null", 
     parentGrant: ["tool:read"],
     result,
     blocked: false,
+    executor: "process",
     now: new Date("2026-08-09T00:00:00.000Z"),
   });
   const round = JSON.parse(JSON.stringify(record));
@@ -352,6 +359,7 @@ test("defined-but-falsy approval fields do not leak into the audit record", () =
     blocked: false,
     approved: [],  // explicitly defined but empty
     humanDenied: false,  // explicitly defined but false
+    executor: "process",
     now: new Date("2026-08-09T00:00:00.000Z"),
   });
   const round = JSON.parse(JSON.stringify(record));

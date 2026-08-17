@@ -49,7 +49,7 @@ const recordFor = (plan: ReturnType<typeof planDelegation>, parentGrant: string[
     result: plan.result,
     blocked: !plan.ok,
     reason: plan.reason,
-    now: new Date(),
+    executor: "process", now: new Date(),
   });
 
 test("an ALLOWED wildcard spawn is not recorded as an escalation attempt", () => {
@@ -150,7 +150,7 @@ test("appendRecord writes one JSON line per record, appending", async () => {
     parentGrant: ["tool:read"],
     result: { effective: ["tool:read"], denied: [], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
     blocked: false,
-    now: new Date(),
+    executor: "process", now: new Date(),
   });
 
   await appendRecord({ path }, record);
@@ -216,7 +216,7 @@ test("F13: a ledger of concurrent appends is fully parseable", async () => {
           parentGrant: big,
           result: { effective: big, denied: [], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
           blocked: false,
-          now: new Date(),
+          executor: "process", now: new Date(),
         }),
       ),
     ),
@@ -235,7 +235,7 @@ test("verifyLedger reports a torn line instead of ignoring it", async () => {
   await appendRecord({ path }, buildRecord({
     parentId: "d0", childId: "d0.1", depth: 1, requested: [], parentGrant: [],
     result: { effective: [], denied: [], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
-    blocked: false, now: new Date(),
+    blocked: false, executor: "process", now: new Date(),
   }));
   await writeFile(path, `${await readFile(path, "utf8")}{"parentId":"d0","childId":"d0.2","dep\n`, "utf8");
 
@@ -263,7 +263,7 @@ test("verifyLedger counts escalation attempts, so the one signal is readable", a
     await appendRecord({ path }, buildRecord({
       parentId: "d0", childId: "d0.1", depth: 1, requested: [], parentGrant: [],
       result: { effective: [], denied, clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
-      blocked: denied.length > 0, now: new Date(),
+      blocked: denied.length > 0, executor: "process", now: new Date(),
     }));
   }
   const report = await verifyLedger(path);
@@ -280,7 +280,7 @@ test("ADR-0020: verifyLedger tallies where each yes came from, per capability", 
     appendRecord({ path }, buildRecord({
       parentId: "d0", childId: "d0.1", depth: 1, requested: [], parentGrant: [],
       result: { effective: [], denied: [], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
-      blocked: false, now: new Date(), approvalSources: approvalSources as never,
+      blocked: false, executor: "process", now: new Date(), approvalSources: approvalSources as never,
       ...(humanDenied ? { humanDenied: true } : {}),
     } as never));
 
@@ -310,7 +310,7 @@ test("ADR-0020: records are counted separately from distinct capability@subject 
     appendRecord({ path }, buildRecord({
       parentId: "d0", childId: "d0.1", depth: 1, agentType, requested: [], parentGrant: [],
       result: { effective: [], denied: [], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
-      blocked: false, now: new Date(), approvalSources: { "tool:write": "persisted" } as never,
+      blocked: false, executor: "process", now: new Date(), approvalSources: { "tool:write": "persisted" } as never,
     } as never));
 
   for (let i = 0; i < 5; i += 1) await spawn("deploy");
@@ -408,7 +408,7 @@ test("R-69: the four kinds of unsatisfied gate are distinguishable in the record
   const record = (gateOutcome: "no-ui" | "dismissed" | "error" | "declined" | "granted") =>
     buildRecord({
       parentId: "d0", childId: "d0.1", depth: 1, agentType: "deploy", requested: ["tool:bash"],
-      parentGrant: ["tool:bash"], result: blocked, blocked: true, now: new Date(),
+      parentGrant: ["tool:bash"], result: blocked, blocked: true, executor: "process", now: new Date(),
       humanDenied: gateOutcome === "declined", gateOutcome,
     });
 
@@ -424,4 +424,53 @@ test("R-69: the four kinds of unsatisfied gate are distinguishable in the record
   // The four unsatisfied kinds must be mutually distinguishable — the whole point.
   const kinds = (["no-ui", "dismissed", "error", "declined"] as const).map((k) => record(k).gateOutcome);
   assert.equal(new Set(kinds).size, 4, "four causes, four values, no free-text parsing");
+});
+
+test("ADR-0031: a record names the executor, because the argv differs between them", () => {
+  // The production change that breaks this: dropping `executor` from buildRecord, or making it optional.
+  //
+  // Why it must be recorded at all: before ADR-0031 the executor was a variable an operator set, so "which one
+  // ran?" was answerable from configuration afterwards. It is now decided by a runtime probe at session start,
+  // and the herdr plan withholds `--print` — so two records with identical capabilities can describe different
+  // argv, and nothing outside the record preserves which.
+  const shape = {
+    parentId: "d0", childId: "d0.1", depth: 1, agentType: "review",
+    requested: ["tool:read"], parentGrant: ["tool:read"],
+    result: { effective: ["tool:read"], denied: [], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
+    blocked: false, now: new Date("2026-08-17T12:00:00Z"),
+  };
+
+  assert.equal(buildRecord({ ...shape, executor: "herdr" }).executor, "herdr");
+  assert.equal(buildRecord({ ...shape, executor: "process" }).executor, "process");
+});
+
+test("ADR-0031: a REFUSED spawn still names an executor — the one the session would have used", () => {
+  // A refused spawn has no executor of its own, and omitting the field would make "which refusals came from a
+  // herdr session?" unanswerable. The honest value is what the session had settled on.
+  const record = buildRecord({
+    parentId: "d0", childId: "d0.1", depth: 1, agentType: "review",
+    requested: ["tool:bash"], parentGrant: ["tool:read"],
+    result: { effective: [], denied: ["tool:bash"], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
+    blocked: true, reason: "exceeds the parent grant", executor: "herdr", now: new Date(),
+  });
+  assert.equal(record.blocked, true);
+  assert.equal(record.executor, "herdr");
+});
+
+test("ADR-0031: the executor survives a round trip through the ledger file", async () => {
+  // Written AND read back: a field the writer sets and the parser drops is the shape R-51 was.
+  const dir = await tempDir("grants-executor-");
+  const path = join(dir, "ledger.jsonl");
+  await appendRecord({ path }, buildRecord({
+    parentId: "d0", childId: "d0.1", depth: 1, requested: [], parentGrant: [],
+    result: { effective: [], denied: [], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
+    blocked: false, executor: "herdr", now: new Date(),
+  }));
+
+  const [line] = (await readFile(path, "utf8")).trim().split("\n");
+  assert.equal(JSON.parse(line).executor, "herdr");
+
+  const report = await verifyLedger(path);
+  assert.equal(report.ok, true, "the new field must not make a line unparseable");
+  assert.equal(report.records, 1);
 });
