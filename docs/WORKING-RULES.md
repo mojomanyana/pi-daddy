@@ -66,3 +66,44 @@ rule.
 9. **"Workflow skills"** = `.claude/skills/` (process tooling for this workspace). The runtime
    tools/skills this project governs are called **"tools"** or **"runtime skills"** in all documents —
    never bare "skills" where it could be ambiguous.
+
+## Change discipline
+
+10. **`main` is only ever advanced by merging a pull request.** Never edit or commit while checked out on
+    `main`, and never push to it — merging your own PR advances `main` by design, which is the rule working
+    rather than a breach of it. **No exemption by size or kind:** docs-only, one-line, version bumps,
+    reverts and hotfixes all take the same path. Amending, rebasing and force-pushing *your own open PR
+    branch* are fine, as is merging `main` into it; rule 2 is about documents, not about git.
+
+    **Check the branch before the first edit of a task, not before the commit** — that is where this control
+    has to fire, because the failure it answers was not a decision. Eleven commits (`b7c0475..26e778f`)
+    reached `main` on 2026-08-18 while a session sat there after an earlier squash-merge and nobody looked.
+    R-85 carries the trigger. **If you find work already on `main`, do not rewrite history:** unpushed, `git
+    switch -c <branch>` at HEAD and then `git branch -f main origin/main`; already pushed, leave it and
+    record the SHAs in the session log. A bad record is cheaper than a force-push. This paragraph is here
+    because the first draft of this rule said only "never commit to `main`", and a reviewer pointed out that
+    a prohibition with no recovery procedure is an invitation to `git reset --hard` on unrecoverable work.
+
+    **A pull request is the venue, not the review.** Anything touching behaviour gets at least one
+    independent pass — a review subagent with a written hypothesis, or the operator — recorded in the PR
+    before it merges; a docs-only change may merge on the author's own read, said out loud in the PR. What
+    the venue buys by itself is the diff, the written rationale, and the PR number as a durable index from a
+    line of code back to why it is there. The evidence for the *pass* is `docs/SESSION-LOG.md` 2026-08-17
+    (review): six reviewers, eighteen defects, two shipping blockers, in work already green on four suites,
+    manually checked against a real herdr daemon, with a PR description written. And ADR-0033's two rounds
+    of three reviewers each, both finding a critical governance defect in one feature — **a feature that
+    never went through a PR at all: it is those eleven commits.**
+
+    One PR per landed change, and a change may cover several tasks; **the ADR, the SPEC update and the
+    session-log entry ship inside the PR of the work they describe**, never a second PR narrating the first.
+    This governs tracked files only — gitignored paths (`.claude/`, the grant store) are outside it, and by
+    rule 1 outside the record until something tracked says so.
+
+    **Enforcement, stated because an unstated absence reads as enforcement.** `hooks/pre-commit` refuses a
+    commit on `main` and names the recovery; it is wired **per clone** by `git config core.hooksPath hooks`,
+    so if that command prints nothing the hook is inert. `test/branch-guard.test.ts` proves the script
+    refuses — not that your clone installed it. `main` has **no** branch protection on GitHub, so a direct
+    push still succeeds; requiring a PR there, with zero required approvals, is the server-side half and
+    costs a single maintainer nothing. And `pre-commit` is never invoked for a clean merge, cherry-pick or
+    revert, so those land on `main` unguarded — the hook catches the *drift* this rule was written for, not
+    every route to `main`.

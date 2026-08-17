@@ -1,0 +1,61 @@
+#!/bin/sh
+# Working rule 10 — `main` is only ever advanced by merging a pull request.
+#
+# **This is the drift catcher, and drift is the recorded failure.** Eleven commits reached `main` on
+# 2026-08-18 because a session was still checked out there after an earlier squash-merge and nobody
+# looked. The remedy in the rule is "check the branch before the first edit", which is the same control
+# that had already failed once — a rule cannot fire an interrupt. This can.
+#
+# Rule 8's shape: refuse, and be loud about which branch and what to do instead.
+#
+# **Wired by `git config core.hooksPath hooks`**, which is per-clone and NOT carried by the repository.
+# `git config core.hooksPath` printing nothing means this file is inert. `docs/WORKING-RULES.md` rule 10
+# says so, because an unstated absence reads as enforcement.
+#
+# Not a security boundary: `--no-verify` bypasses it and so does unsetting `core.hooksPath`. It is not
+# meant to stop a decision, only to stop an accident.
+#
+# **What it deliberately does NOT catch**, because `pre-commit` never runs for these: a clean `git merge`
+# (that is `pre-merge-commit`), and `git cherry-pick`/`git revert` that apply without conflict. A local
+# `git merge --squash` followed by `git commit` IS refused, and that is intended rather than overlooked — a
+# branch squashed straight onto `main` never passed through a pull request, which is the thing rule 10 is
+# about. Use the waiver if you mean it.
+
+branch=$(git symbolic-ref --short -q HEAD) || exit 0   # detached HEAD (rebase, bisect): nothing to guard
+[ "$branch" = "main" ] || exit 0
+
+# **An in-progress merge, cherry-pick or revert is not drift, and refusing it is a trap.** A CLEAN merge runs
+# `pre-merge-commit`, not this hook — but a CONFLICTED one concludes with a literal `git commit`, which lands
+# here. Refusing that is unescapable: `git switch -c` is rejected outright while merging, so the recovery this
+# hook prints does not apply and git's own hint is `git merge --quit`, which throws the conflict resolution
+# away. Found by review, and it is the prose defect this rule was rewritten to remove ("a prohibition with no
+# usable recovery") reintroduced in shell. These three markers are written by git and removed when the
+# operation completes or aborts, so they cannot silently linger and disable the guard.
+git_dir=$(git rev-parse --git-dir 2>/dev/null) || exit 0
+for marker in MERGE_HEAD CHERRY_PICK_HEAD REVERT_HEAD; do
+  if [ -e "$git_dir/$marker" ]; then exit 0; fi
+done
+
+if [ "$PI_DADDY_ALLOW_MAIN" = "1" ]; then
+  echo "pre-commit: PI_DADDY_ALLOW_MAIN=1 set — allowing this commit on main. Working rule 10 waived." >&2
+  exit 0
+fi
+
+cat >&2 <<'MSG'
+
+  REFUSED: you are on `main`, and `main` is only advanced by merging a pull request.
+
+  This is working rule 10 (docs/WORKING-RULES.md). You have almost certainly drifted here after a
+  merge rather than decided to be here — that is exactly how the last eleven commits happened.
+
+  Your work is not lost and nothing needs rewriting. Move it to a branch:
+
+      git switch -c <branch>          # your staged changes come with you
+      git commit                      # then push and open a PR
+
+  If this really must land on `main` (and it almost never must):
+
+      PI_DADDY_ALLOW_MAIN=1 git commit ...
+
+MSG
+exit 1

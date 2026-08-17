@@ -972,6 +972,45 @@ falsified on the ordinary path, and it shipped in 0.16.0.
 **One test of 498 catches it** — `test/propagation.test.ts`'s A-S6 case — which is thin for a property this load
 bearing, and is the honest reason this is rated M rather than L on likelihood of recurrence.
 
+## R-85 · Work lands on `main` by drift rather than by decision — M×M, FIXED IN PART 2026-08-18
+Added 2026-08-18. Eleven commits (`b7c0475..26e778f`) reached `main` with no pull request. Not a decision: the
+session was still checked out on `main` after PR #5 was squash-merged, and no one looked before the first edit.
+Every review this project has run found something — R-78…R-82 came out of one such pass — so the work that
+skips the PR is the work with no independent pass over it, and **ADR-0033's two critical governance defects
+are in exactly these eleven commits.**
+
+**Why this is a risk entry and not only a rule.** By rule 1 a failure mode lives here, with a trigger. The
+first draft of working rule 10 recorded the incident inside the remedy and nowhere else, which leaves a future
+session no way to ask whether it recurred.
+
+**FIXED IN PART.** `hooks/pre-commit` refuses a commit on `main`, names the branch and gives the recovery
+(rule 8's shape), with `test/branch-guard.test.ts` proving the script refuses — **seven mutations of the hook
+fail it**, including deleting it. Three gaps stay, all deliberate and all stated in rule 10 rather than
+implied: the hook is wired **per clone** by `git config core.hooksPath hooks` and is inert until then; `main`
+has no GitHub branch protection, so a direct `git push` still succeeds; and `pre-commit` never runs for a
+clean merge, cherry-pick or revert, so those reach `main` unguarded.
+
+**The fix's own review found the fix repeating the defect it removed.** The first hook refused a **conflicted**
+merge on `main` — a clean merge runs `pre-merge-commit` and never reaches it, but a conflicted one finishes
+with a literal `git commit` that does — and in that state `git switch -c`, the recovery the hook itself
+prints, is rejected by git outright. The only escape git suggests is `git merge --quit`, which discards the
+conflict resolution. **That is "a prohibition with no usable recovery" reintroduced in shell, one commit after
+being removed from the prose**, and it is this project's most repeated shape: a fix containing the defect it
+fixed. Now exempted via `MERGE_HEAD`/`CHERRY_PICK_HEAD`/`REVERT_HEAD`.
+
+**It recurred within the hour, which is the honest part of this entry.** Verifying the hook, `git stash -u`
+swept the then-untracked hook aside, so the test commit on `main` succeeded — the guard was absent at the one
+moment it was being tested. The commit was empty and unpushed and was undone with `git branch -f main
+origin/main`, which is the recovery rule 10 prescribes. **A guard that a routine command can remove is a
+guard with a hole**, and the hole closes only when the hook is tracked *and* `core.hooksPath` is set in the
+clone — the state this repository is now in.
+
+**Trigger:** `git log --first-parent --oneline 26e778f..origin/main | grep -vE '\(#[0-9]+\)$|Merge pull
+request #'` — any output is a commit that reached `main` without a PR. **The first version of this trigger was
+useless and a reviewer measured it: unbounded, it flagged 87 of 89 commits, and it also flagged the two real
+PR merges**, because GitHub's merge-commit subject puts `#N` in a prefix rather than a `(#N)` suffix. Bounded
+at the rule's own start it is silent on today's history and returns exactly 11 over the incident range.
+
 ## R-84 · One `session` yes to a model-chosen tool list pre-authorises the whole subtree — M×M, OPEN by decision
 Added 2026-08-18, measured. `<delegate>` is a **fixed literal** subject: `inheritApprovals` exempts it from
 ADR-0022's body pin (nothing to pin — there is no definition), and `republishable` re-emits it unchanged. So a single
@@ -1749,3 +1788,4 @@ fix it named was wrong per definition. `docs/SPEC.md`'s and ADR-0028's own worke
 | 2026-08-16 | R-77 | Added and fixed the same session — a skill **directory name** could write a capability into the grant `init` generates (`a,tool:bash` → `tool:bash` in `PI_GRANTS_GRANT`), because a name is interpolated into a comma-separated id list, a sourced shell file and a path at once. Reproduced against the real CLI before being written. Found by asking *what does the generated file interpolate?* — the same "where else does this shape appear?" question that found R-60, and the reason to ask it of anything that writes a file rather than reads one | handoff B1/B2/B4 |
 | 2026-08-17 | R-78…R-82 | **Five independent reviewers over PR #2, one hypothesis each — and every one found something.** R-78 is the worst and the most humbling: R-77's own trigger describes it, written the previous day about the name and never applied to the capability id beside it, and it ends in arbitrary code execution from a file this workflow tells operators to commit. R-79 collects four defects in one scaffolder, one of them **B-I6 reintroduced** in a package that documents B-I6 as closed. R-81 is R-28's shape *inside* the module whose header claims to have made R-28's shape inexpressible. **The pattern worth keeping: every finding was in the half of the change nothing had attacked** — a generated file, a CLI with no tests, a classifier written after the planner it claims to defer to | independent review of PR #2 |
 | 2026-08-17 | R-75, ADR-0030 | **The setup was wrong, and only running it in a clean environment showed that.** `pi install` registers a package with pi and installs it to the agent root; `npm install` does neither, and three documents said to use it. `init` searched only the project root and told operators to install what they had just installed. Both fixed. ADR-0030 adds a grant store **outside** the workspace so `/grants init` can govern a session with no restart — ADR-0014's reasoning applied to the ceiling instead of the approvals, with the environment still winning so propagation stays single-channel | the two-step setup |
+| 2026-08-18 | R-85 | Added, **fixed in part** — eleven commits reached `main` with no PR, by drift rather than decision, and ADR-0033's two critical governance defects are among them. Working rule 10 rewritten after five independent reviewers: the first draft's `never commit to main` forbade the merge the rule requires and offered no recovery, which invites a force-push. Now enforced by `hooks/pre-commit` plus `test/branch-guard.test.ts`, with both remaining gaps (per-clone wiring, no branch protection) stated rather than implied. **It recurred while being verified** — `git stash -u` removed the untracked hook mid-test | independent review of PR #6 |
