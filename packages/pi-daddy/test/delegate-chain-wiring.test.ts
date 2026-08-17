@@ -15,7 +15,7 @@ import { join } from "node:path";
 import { after, afterEach, test } from "node:test";
 import { ENV_HERDR } from "../src/executor.ts";
 import { MAX_CHAIN_STEPS } from "../src/fanout.ts";
-import { ENV_FANOUT, ENV_GRANT, ENV_LEDGER } from "../src/propagation.ts";
+import { ENV_FANOUT, ENV_GATED, ENV_GRANT, ENV_LEDGER } from "../src/propagation.ts";
 import { definition, harness, restoreEnv } from "./chain-harness.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
@@ -119,17 +119,38 @@ test("ADR-0033: the step template tells the model about the placeholder", async 
 
 
 
-test("ADR-0033: a chain whose FIRST step fails throws rather than returning text", async () => {
-  // Nothing completed, so there is no partial result — and a tool that returns text when nothing ran is how a wrong
-  // summary gets written (R-03).
-  const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate", [ENV_FANOUT]: "12" });
+test("ADR-0033: a step that can NEVER run refuses the chain before anyone is asked", async () => {
+  // **Rewritten: this used to assert the chain got as far as running step 1 and failing.** It now refuses during
+  // planning, which is stronger — a step refused for something no approval can lift (here `tool:write`, which the
+  // session does not hold) must not reach the gate at all, or its dialog banks authority for a spawn that can never
+  // happen. That was a measured privilege path: a model appending one unheld capability got `tool:bash` pre-approved
+  // for the whole session.
+  //
+  // The production change that breaks this: dropping the `shouldSeekApproval` check in `planChain`.
+  //
+  // The step asks for an unheld `agent:` id alongside a gated `tool:bash`. `agent:ghost` cannot be granted and no
+  // approval can lift it, so `denied` is non-empty and the whole step is doomed. (An earlier version of this fixture
+  // used `tool:write`, which the session did NOT hold — and it was grantable anyway, because `tool:bash` subsumes
+  // write. A capability that looks unheld is not necessarily denied.)
+  const { tools, ctx, selects } = await harness({ [ENV_GRANT]: "tool:read,tool:bash,tool:delegate", [ENV_GATED]: "tool:bash", [ENV_FANOUT]: "12" });
   await assert.rejects(
     () =>
       tools
         .get("delegate_chain")!
-        .execute("c", { steps: [{ task: "nope", tools: ["write"] }, { task: "never {previous}", tools: ["read"] }] }, undefined, undefined, ctx),
-    /chain failed at its first step/,
+        .execute(
+          "c",
+          { steps: [{ task: "nope", tools: ["bash", "agent:ghost"] }, { task: "never {previous}", tools: ["read"] }] },
+          undefined,
+          undefined,
+          ctx,
+        ),
+    (error: Error) => {
+      assert.match(error.message, /chain refused at step 1/);
+      assert.match(error.message, /nobody was \n?asked|nobody was asked/, "and it must say nobody was asked");
+      return true;
+    },
   );
+  assert.equal(selects.length, 0, "a doomed step must not raise a dialog — `tool:bash` was gated and never asked about");
 });
 
 
@@ -153,6 +174,10 @@ test("ADR-0033: every gate is raised UPFRONT, one per capability@subject", async
   const { tools, ctx, selects } = await harness(
     { [ENV_GRANT]: "agent:digger,agent:shaper,agent:reader,tool:read,tool:bash,tool:delegate", [ENV_FANOUT]: "12" },
     dir,
+    // `allow-then-decline`, so two dialogs are raised and the chain then refuses — which keeps this test PURE. An
+    // approving fixture would let step 1 run, and a real `pi` child always calls a model: that is how the unit suite
+    // silently became a 2-minute network-bound run once already.
+    "allow-then-decline",
   );
 
   await tools
@@ -166,6 +191,9 @@ test("ADR-0033: every gate is raised UPFRONT, one per capability@subject", async
     )
     .catch(() => undefined);
 
+  // Not a plain decline: the gate loop now STOPS at the first refusal, because every dialog after the outcome is
+  // fixed banks authority for a chain that will not run. So a declining fixture would see one dialog and prove
+  // nothing about the second subject — approve the first, refuse the second.
   assert.equal(selects.length, 2, `expected one dialog per gated subject, got ${selects.length}: ${JSON.stringify(selects)}`);
   assert.ok(selects.some((t) => t.includes("digger")), "digger must be named to the operator");
   assert.ok(selects.some((t) => t.includes("shaper")), "and so must shaper — that is the whole point");
@@ -199,14 +227,21 @@ test("ADR-0033: A-S6 holds across a chain — one definition's yes cannot satisf
   // Here the operator is asked twice; the fake declines both, so the chain refuses. What this pins is that `shaper`
   // is asked about AT ALL — under the old union it never was.
   //
-  // The production change that breaks this: removing the `a.subject === subject` filter in `planDelegation`, or
-  // collapsing the gate groups.
+  // The production change that breaks this: collapsing the per-capability gate requests back into one union.
+  //
+  // It previously also named "removing the `a.subject === subject` filter in `planDelegation`" — **and that does not
+  // break this test**, because this fixture refuses at the gate and never reaches the planner's approval matching.
+  // Naming a change that does not bite is the rule-7 failure this file spends most of its comments on, so: the filter
+  // is pinned by `test/propagation.test.ts`'s A-S6 case, and by nothing else in 498 tests (R-83).
   const dir = await tempDir("grants-chain-");
   await definition(dir, "digger", "Read, Bash");
   await definition(dir, "shaper", "Read, Bash");
+  // Approve the FIRST dialog and decline the second: that is the only arrangement in which both subjects are asked
+  // AND the chain still refuses, now that the loop stops at the first no.
   const { tools, ctx, selects } = await harness(
     { [ENV_GRANT]: "agent:digger,agent:shaper,tool:read,tool:bash,tool:delegate", [ENV_FANOUT]: "12" },
     dir,
+    "allow-then-decline",
   );
 
   await assert.rejects(
@@ -247,3 +282,61 @@ test("ADR-0033: a `tools:`-only step is never offered a 30-day project-wide appr
   );
 });
 
+
+
+test("ADR-0033: a demanded-but-unreachable herdr refuses the chain BEFORE any dialog", async () => {
+  // **Shipped with no test, so re-breaking it cost nothing.** The executor check was hoisted above the gate for the
+  // reason recorded on the `delegate` path a day earlier — with `PI_GRANTS_HERDR=1` and herdr down, an operator was
+  // asked to approve `bash` for a child that could never exist, and the yes was banked for 30 days. A reviewer moved
+  // the check back below `planChain` and all 496 tests stayed green.
+  //
+  // PATH is emptied so the real probe genuinely fails.
+  const dir = await tempDir("grants-chain-");
+  await definition(dir, "digger", "Read, Bash");
+  const realPath = process.env.PATH;
+  process.env.PATH = "";
+  try {
+    const { tools, ctx, selects } = await harness(
+      { [ENV_GRANT]: "agent:digger,tool:read,tool:bash,tool:delegate", [ENV_HERDR]: "1", [ENV_FANOUT]: "12" },
+      dir,
+    );
+    await assert.rejects(
+      () => tools.get("delegate_chain")!.execute("c", { steps: [{ task: "dig", agent: "digger" }] }, undefined, undefined, ctx),
+      /PI_GRANTS_HERDR/,
+    );
+    assert.equal(selects.length, 0, "nobody may be asked to approve a capability for a child that cannot be started");
+  } finally {
+    process.env.PATH = realPath;
+  }
+});
+
+test("ADR-0033: a gate-refused chain WRITES a ledger line naming the refused subject", async () => {
+  // **Also shipped with no test.** Disabling the `appendRecord` block entirely left 496 green, because the
+  // neighbouring "spawns NOTHING" test filters for `blocked === false` and an empty file satisfies that.
+  //
+  // And the line must name the subject that was actually refused. It used to hardcode step 1's identity, so with
+  // `digger` approved and `shaper` declined the trail asserted a human had denied the capability for **digger** —
+  // while the approval store said they approved it for digger. Two records asserting opposite facts is R-28's shape.
+  const dir = await tempDir("grants-chain-");
+  await definition(dir, "digger", "Read, Bash");
+  await definition(dir, "shaper", "Read, Bash");
+  const ledger = join(dir, "ledger.jsonl");
+
+  const { tools, ctx } = await harness(
+    { [ENV_GRANT]: "agent:digger,agent:shaper,tool:read,tool:bash,tool:delegate", [ENV_LEDGER]: ledger, [ENV_FANOUT]: "12" },
+    dir,
+    "allow-then-decline",
+  );
+
+  await tools
+    .get("delegate_chain")!
+    .execute("c", { steps: [{ task: "dig", agent: "digger" }, { task: "shape {previous}", agent: "shaper" }] }, undefined, undefined, ctx)
+    .catch(() => undefined);
+
+  const lines = (await readFile(ledger, "utf8")).trim().split("\n").filter(Boolean).map((l) => JSON.parse(l));
+  const refusal = lines.find((r) => r.blocked === true);
+  assert.ok(refusal, `a refused chain must leave a record; got ${JSON.stringify(lines)}`);
+  assert.equal(refusal.agentType, "shaper", "the record must name the subject that was DENIED, not the first step");
+  assert.equal(refusal.humanDenied, true, "and that a human said no");
+  assert.deepEqual(refusal.gatedBlocked, ["tool:bash"]);
+});

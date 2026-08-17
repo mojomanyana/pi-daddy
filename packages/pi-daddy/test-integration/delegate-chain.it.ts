@@ -151,4 +151,42 @@ describe("delegate_chain, with steps that really run", { skip }, () => {
     assert.equal(selects.length, 1, `one subject means one dialog, got ${selects.length}`);
     assert.match(result.content[0].text, /step 2/, "and both steps must actually have run");
   });
+
+  test("ADR-0033: a `once` answer is CONSUMED by the step that spends it", async () => {
+    // **The confused deputy, pinned.** One click of *Allow once* used to authorise every step sharing a subject:
+    // measured as three children spawned from one dialog naming step 1's task, the third having been told
+    // "…and burn the evidence". Two sequential plain `delegate` calls raise two dialogs, because a `once` answer never
+    // enters `sessionApprovals` — the chain was the outlier, and R-29 exists for this exact shape one level down.
+    //
+    // `allow-once` is also the ONLY mode that pins `preApproved` at all: `allow-session` writes `sessionApprovals`, so
+    // each step's own gate is satisfied from session state whether or not the threading works. A reviewer proved the
+    // previous test passed with `preApproved: []`.
+    //
+    // Two steps of one definition, both gating `tool:bash`, every dialog answered *once*: the second step must ask
+    // again with its OWN task, which is what `once` means.
+    const dir = await tempDir("grants-chain-");
+    await definition(dir, "digger", "Read, Bash");
+    const { tools, ctx, selects } = await harness(
+      { [ENV_GRANT]: "agent:digger,tool:read,tool:bash,tool:delegate", [ENV_FANOUT]: "12" },
+      dir,
+      "allow-once",
+    );
+  
+    await tools
+      .get("delegate_chain")!
+      .execute(
+        "c",
+        { steps: [{ task: "STEP-ONE survey the north field", agent: "digger" }, { task: "STEP-TWO {previous}", agent: "digger" }] },
+        undefined,
+        undefined,
+        ctx,
+      )
+      .catch(() => undefined);
+  
+    assert.equal(selects.length, 2, `a once answer must not cover a second step; got ${selects.length} dialog(s)`);
+    assert.ok(
+      selects.some((t) => t.includes("STEP-TWO")),
+      `the second dialog must describe the SECOND step, not the first: ${JSON.stringify(selects)}`,
+    );
+  });
 });

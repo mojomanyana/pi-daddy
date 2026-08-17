@@ -273,9 +273,9 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
     }
   }
 
-  // ADR-0014's A-S6 — an approval for one subject cannot satisfy another — enforced HERE, not only upstream in
-  // `resolveApprovals`. Matching bare names made `approved` a footgun for any new caller, and `delegate_chain`
-  // stepped in it: pre-filling approvals skipped that layer entirely. See ADR-0033's amendment.
+  // ADR-0014's A-S6 — an approval for one subject cannot satisfy another — enforced HERE, not only in
+  // `resolveApprovals`. **Not a no-op elsewhere**: the re-plan passes `republishable(session)` with every subject
+  // unfiltered, so a human's "no" for one definition was overridden by a yes for another. Measured; R-83.
   const subject = request.agent ?? DELEGATE_SUBJECT;
   const approvedCapabilities = (ctx.approved ?? []).filter((a) => a.subject === subject).map((a) => a.capability);
   const result = resolve({

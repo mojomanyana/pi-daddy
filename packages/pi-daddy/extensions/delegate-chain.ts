@@ -19,7 +19,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import type { InheritableApproval } from "../src/approval.ts";
-import { DELEGATE_SUBJECT } from "../src/approval.ts";
+import { DELEGATE_SUBJECT, shouldSeekApproval } from "../src/approval.ts";
 import { chainStepSpec, PLACEHOLDER } from "../src/chain.ts";
 import { planDelegation } from "../src/delegate.ts";
 import { MAX_CHAIN_STEPS, childSpawnId, splitBudget } from "../src/fanout.ts";
@@ -38,61 +38,80 @@ interface StepSpec {
   model?: string;
 }
 
-/** One subject's gated capabilities, and the task of the first step that needed them. */
-interface GateGroup {
+/**
+ * One dialog's worth of gate: a single capability, for a single subject, described by the step that needs it.
+ *
+ * **One request per `capability@subject`, not per subject.** Grouping by subject alone merged every `tools:`-only
+ * step under the constant `<delegate>` and froze the *first* step's task into the dialog — so an operator approved
+ * `tool:write` while reading a task that only listed files. The dialog is the one place a human learns what they are
+ * authorising, so it names the step that actually needs the capability.
+ */
+interface GateRequest {
   subject: string;
-  /** `"definition"` offers `always`; `"delegate"` must not (ADR-0019). Derived per group, never assumed. */
+  /** `"definition"` offers `always`; `"delegate"` must not (ADR-0019). Derived from the subject, never assumed. */
   path: "definition" | "delegate";
-  capabilities: Capability[];
-  /** Shown in the dialog, so an operator sees WHAT the step will do — as a single `delegate` does. */
+  capability: Capability;
+  /** The task of the step that needs this capability. */
   task: string;
 }
 
+/** Either every gate the chain will hit, or the first step that can never run and why. */
+interface ChainPlan {
+  requests: GateRequest[];
+  /** Set when a step is refused for a reason no approval can fix. The chain must refuse before asking anyone. */
+  doomed?: { step: number; reason: string };
+}
+
 /**
- * Every gate the chain will hit, **grouped by the subject an approval is keyed to**.
+ * Plan every step and collect the gates — or find a step that can never run.
  *
- * **Grouped, not unioned — and that is a correction to ADR-0033.** The ADR specified one dialog for the whole
- * chain, illustrated as *"this chain needs `tool:bash` for build, review, debug, git-ops"*. **That dialog cannot
- * exist.** An approval is keyed `capability@subject`, so one dialog means one subject; asking once for a union
- * spanning four definitions is asking about one of them and spending the answer on the other three. Three
- * independent reviewers found it, and the measured consequence was that a 30-day entry keyed to `build` satisfied
- * `review` and `git-ops` in every later session with no dialog at all — ADR-0014's A-S6 falsified.
+ * **`plan.ok` is honoured here, and ignoring it was a privilege path.** The first version read only
+ * `gatedBlocked`, so a step refused for an unheld `agent:` id, an unknown definition, an empty task or a universal
+ * capability still raised its gate and the answer was still banked. Measured: `delegate({tools:["bash","agent:x"]})`
+ * asks nobody and refuses, while the same step inside a chain raised a dialog, took *Allow for this session*, refused
+ * anyway — and left `tool:bash` pre-approved for every later delegation in the session. On the `agent:` path it
+ * banked a **30-day** entry, including for a step whose task was whitespace, whose dialog therefore read `task:`
+ * followed by nothing.
  *
- * So the guarantee is narrowed to what is actually achievable and still worth having: **every dialog is raised
- * upfront, before any step runs, and there is at most one per `capability@subject`.** For the operator's own
- * pipeline that is two dialogs together at the start rather than two arriving minutes apart mid-run, which was the
- * point.
+ * `shouldSeekApproval` is the rule every other gate in this package already applies, and its own docstring names
+ * this hazard: *"both banked against a spawn that never happened, and both reachable by a model that appends one
+ * unheld capability to an otherwise ordinary request."* The chain reimplemented the decision beside it instead of
+ * routing through it. So a doomed step now refuses the whole chain **before any dialog**, which is the same
+ * principle the executor check follows.
  *
- * Planned with **no UI** — `planWithApprovals` would open a dialog per step during the very phase whose purpose is
- * to ask upfront. `planDelegation` is the pure planner underneath it.
- *
- * A step's task is unknown here for everything after the first, which is fine: an approval key never contains the
- * task (ADR-0021), so the set of gates is fully determined without it. `"(planning)"` reaches no child.
+ * Planned with no UI: `planWithApprovals` would open a dialog per step during the very phase whose purpose is to ask
+ * upfront. A step's task is unknown for everything after the first, which is fine — an approval key never contains
+ * the task (ADR-0021), so the set of gates is fully determined without it.
  */
-async function gateGroups(session: GrantsSession, steps: StepSpec[], perStepBudget: number): Promise<GateGroup[]> {
-  const groups = new Map<string, GateGroup>();
+async function planChain(session: GrantsSession, steps: StepSpec[], perStepBudget: number): Promise<ChainPlan> {
+  const requests: GateRequest[] = [];
+  const seen = new Set<string>();
   const context = await session.delegationContext();
 
   for (const [index, step] of steps.entries()) {
+    // The real task, not a placeholder: the planner's own empty-task guard must run here rather than at spawn time,
+    // or a step with a whitespace task raises a dialog and is refused afterwards. The handoff is absent at planning
+    // time and cannot change which capabilities are gated.
     const plan = planDelegation(
-      { task: "(planning)", agent: step.agent, tools: step.tools, model: step.model },
-      { ...context, fanoutBudget: perStepBudget, spawnId: session.ownSpawnId, childSpawnId: childSpawnId(session.ownSpawnId, index) },
+      { task: step.task, agent: step.agent, tools: step.tools, model: step.model },
+      { ...context, spawnId: session.ownSpawnId, childSpawnId: childSpawnId(session.ownSpawnId, index) },
     );
-    if (plan.result.gatedBlocked.length === 0) continue;
+
+    // A gate is the ONLY refusal an approval can lift. Anything else is doomed, and asking about it banks authority
+    // for a spawn that will never happen.
+    if (!plan.ok && !shouldSeekApproval(plan.result)) {
+      return { requests: [], doomed: { step: index + 1, reason: plan.reason ?? "this step cannot run" } };
+    }
 
     const subject = step.agent ?? DELEGATE_SUBJECT;
-    const group =
-      groups.get(subject) ??
-      // `path` follows the subject, exactly as `runOneDelegation` derives it. Hardcoding `"definition"` offered
-      // *Always allow in this project (30 days)* for a model-chosen `tools:` list — the one thing ADR-0019 says
-      // must never be persisted, because "a key the model controls is not a key".
-      { subject, path: step.agent ? ("definition" as const) : ("delegate" as const), capabilities: [], task: step.task };
     for (const capability of plan.result.gatedBlocked) {
-      if (!group.capabilities.includes(capability)) group.capabilities.push(capability);
+      const key = `${capability}@${subject}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      requests.push({ subject, path: step.agent ? "definition" : "delegate", capability, task: step.task });
     }
-    groups.set(subject, group);
   }
-  return [...groups.values()];
+  return { requests };
 }
 
 export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): void {
@@ -144,61 +163,80 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
       const split = splitBudget(session.fanoutBudget, steps.length);
       if (!split.ok) throw new Error(`chain refused: ${split.reason}`);
 
-      // One dialog per `capability@subject`, all raised now — see `gateGroups` for why this is grouped rather than
-      // unioned, and what ADR-0033 got wrong.
-      const groups = await gateGroups(session, steps, split.perChild);
-      const preApproved: InheritableApproval[] = [];
-      const declined: Capability[] = [];
-      let humanDenied = false;
-
-      for (const group of groups) {
-        const outcome = await obtainApprovals(session, group.capabilities, group.subject, group.path, ctx, group.task, signal);
-        humanDenied = humanDenied || outcome.humanDenied;
-        for (const capability of group.capabilities) {
-          if (!outcome.approved.includes(capability)) {
-            declined.push(capability);
-            continue;
-          }
-          preApproved.push({
-            capability,
-            subject: group.subject,
-            scope: outcome.scopes[capability] ?? ("once" as const),
-            // Pinned to THIS subject's body. It was stamped from the union's single subject, so ADR-0022's pin was
-            // verified against one definition's instructions while the capability was spent on another's — and that
-            // mispinned entry is what the other definition's own children inherited.
-            bodySha256: snapshotOf(session, group.subject)?.bodySha256,
-          });
-        }
+      // Plan every step first. A step that can never run refuses the chain HERE, before anyone is asked — see
+      // `planChain`.
+      const chainPlan = await planChain(session, steps, split.perChild);
+      if (chainPlan.doomed) {
+        throw new Error(
+          `chain refused at step ${chainPlan.doomed.step}: ${chainPlan.doomed.reason} No step ran, and nobody was ` +
+            `asked to approve anything — a step that cannot run must not bank authority for a spawn that will ` +
+            `never happen.`,
+        );
       }
 
-      if (declined.length > 0) {
-        // **Recorded before it is thrown.** A gate-refused chain used to leave no ledger line at all, which
-        // contradicts `docs/SPEC.md`'s "one record per governed decision — including refusals" and leaves
-        // `/grants ledger`'s approval tally blind to every chain. A human was asked and said no; that is exactly
-        // the event the trail exists for.
+      // One dialog per `capability@subject`, each naming the step that needs it, all before the first step runs.
+      const preApproved: InheritableApproval[] = [];
+      let declined: { capability: Capability; subject: string } | undefined;
+      let humanDenied = false;
+
+      for (const request of chainPlan.requests) {
+        const outcome = await obtainApprovals(session, [request.capability], request.subject, request.path, ctx, request.task, signal);
+        humanDenied = humanDenied || outcome.humanDenied;
+        if (!outcome.approved.includes(request.capability)) {
+          // **Stop asking.** The chain's outcome is already fixed, and every further dialog banks authority — a
+          // `session` yes into `sessionApprovals` and an `always` yes onto disk for 30 days — for a chain that will
+          // not run. The single-delegate path breaks on the first no for the same reason.
+          declined = { capability: request.capability, subject: request.subject };
+          break;
+        }
+        preApproved.push({
+          capability: request.capability,
+          subject: request.subject,
+          scope: outcome.scopes[request.capability] ?? ("once" as const),
+          // Pinned to THIS subject's body (ADR-0022). Stamped from a single shared subject, the pin was verified
+          // against one definition's instructions while the capability was spent on another's.
+          bodySha256: snapshotOf(session, request.subject)?.bodySha256,
+        });
+      }
+
+      if (declined) {
+        // Recorded before it is thrown, and recorded against the subject that was actually refused. The first version
+        // hardcoded step 1's identity, so the trail asserted a human had denied a capability for `digger` when they
+        // had *approved* it for `digger` and denied it for `shaper` — the ledger and the approval store asserting
+        // opposite facts about the same key, which is R-28's shape.
         if (session.ledgerPath) {
+          const at = steps.findIndex((step) => (step.agent ?? DELEGATE_SUBJECT) === declined.subject);
           await appendRecord(
             { path: session.ledgerPath, strict: true },
             buildRecord({
               parentId: session.ownSpawnId,
-              childId: childSpawnId(session.ownSpawnId, 0),
+              childId: childSpawnId(session.ownSpawnId, Math.max(0, at)),
               depth: session.depth + 1,
-              agentType: steps[0]?.agent ?? "delegate_chain",
-              requested: declined,
+              agentType: declined.subject === DELEGATE_SUBJECT ? "delegate" : declined.subject,
+              requested: [declined.capability],
               parentGrant: session.ownGrant,
-              result: { effective: [], denied: [], clipped: [], gatedBlocked: declined, universal: [], subsumedBy: [] },
+              result: { effective: [], denied: [], clipped: [], gatedBlocked: [declined.capability], universal: [], subsumedBy: [] },
               blocked: true,
               humanDenied,
-              reason: `chain refused: ${declined.join(", ")} not approved; no step ran`,
+              reason: `chain refused: ${declined.capability} not approved for ${declined.subject}; no step ran`,
               executor: session.executor.kind,
               now: new Date(),
             }),
-          ).catch(() => undefined);
+          ).catch((error) => {
+            // Not swallowed. Everywhere else a `strict` ledger failure fails closed, and losing the one line that
+            // records a human's refusal is the direction rule 8 forbids — the chain refuses either way, so saying so
+            // costs nothing.
+            ctx.ui?.notify?.(
+              `grants: the chain was refused AND its ledger line could not be written (${String(error)}) — the ` +
+                `refusal happened, but this audit trail does not show it.`,
+              "error",
+            );
+          });
         }
         throw new Error(
-          `chain refused: ${declined.join(", ")} ${declined.length === 1 ? "was" : "were"} not approved, so no ` +
-            `step ran. A chain is gated as a unit — running only its ungated steps would return a partial ` +
-            `result that reads like a complete one.`,
+          `chain refused: ${declined.capability} was not approved for ${declined.subject}, so no step ran. A chain ` +
+            `is gated as a unit — running only its approved steps would return a partial result that reads like a ` +
+            `complete one.`,
         );
       }
 
@@ -217,6 +255,19 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
       const outcomes: Array<{ ok: boolean; text: string; reason?: string; step: number; agent?: string }> = [];
       let previous: string | undefined;
       let aborted = false;
+      /**
+       * Approvals still available to later steps.
+       *
+       * **`once` is consumed by the first step that spends it, and not honouring that was a confused deputy.**
+       * Measured: three steps of one definition, one dialog naming step 1's task — *"survey the north field"* — and
+       * three children spawned, the last of which had been told *"…and burn the evidence"*. Steps 2 and 3 were never
+       * described to anyone. Two sequential plain `delegate` calls raise two dialogs, because a `once` answer never
+       * enters `sessionApprovals`; the chain was the outlier. R-29 exists for this exact shape one level down.
+       *
+       * A later step needing the same capability now reaches its own gate and prompts with its OWN task, which is
+       * what `once` means.
+       */
+      let available = [...preApproved];
 
       for (const [index, step] of steps.entries()) {
         const childId = childSpawnId(session.ownSpawnId, index);
@@ -228,7 +279,21 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
           ctx,
           signal,
           {
-            preApproved,
+            preApproved: available,
+            approvalFacts: {
+              // Only this step's subject, so the record says what was authorised for THIS child rather than for the
+              // chain as a whole.
+              approved: available.filter((a) => a.subject === (step.agent ?? DELEGATE_SUBJECT)).map((a) => a.capability),
+              sources: Object.fromEntries(
+                available
+                  .filter((a) => a.subject === (step.agent ?? DELEGATE_SUBJECT))
+                  .map((a) => [a.capability, "prompt" as const]),
+              ),
+              scopes: Object.fromEntries(
+                available.filter((a) => a.subject === (step.agent ?? DELEGATE_SUBJECT)).map((a) => [a.capability, a.scope]),
+              ),
+              humanDenied: false,
+            },
             onProgress: (update) => {
               const child = children[index];
               if (!child) return;
@@ -248,6 +313,10 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
         children[index].state = outcome.ok ? "completed" : "failed";
         children[index].settledAt = Date.now();
         outcomes.push({ ok: outcome.ok, text: outcome.text, reason: outcome.reason, step: index + 1, agent: step.agent });
+
+        // Spend any `once` this step was handed, before the next step sees the list.
+        const spentSubject = step.agent ?? DELEGATE_SUBJECT;
+        available = available.filter((a) => !(a.scope === "once" && a.subject === spentSubject));
 
         if (!outcome.ok) {
           // **Abort, and mark the rest.** Continuing would make the next step's task an error message, which is

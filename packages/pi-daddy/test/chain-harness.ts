@@ -54,7 +54,23 @@ export async function definition(dir: string, name: string, allowedTools: string
  * chain aborted at the gate, not because the steps were satisfied. Found by mutation, which is the only way it
  * could have been.
  */
-export type GateAnswer = "decline" | "allow-session";
+export type GateAnswer =
+  | "decline"
+  /** Every dialog approved for the session. Note this ALSO writes `sessionApprovals`, so it cannot isolate
+   *  `preApproved` — use `allow-once` for that. */
+  | "allow-session"
+  /** Every dialog approved `once`. A `once` answer never enters `sessionApprovals`, so a later step can only be
+   *  satisfied by `preApproved` being threaded — which is what makes it the mode that pins the threading. */
+  | "allow-once"
+  /**
+   * Approve the first dialog, then click **Deny**.
+   *
+   * Deny, not dismiss. `"decline"` returns `undefined`, which pi treats as *dismissed* — a timeout or an escape — and
+   * the ledger records `gateOutcome: "dismissed"` with `humanDenied` false. Only an explicit Deny sets
+   * `humanDenied`, and the distinction is deliberate: "a person said no" and "nobody answered" call for different
+   * responses (`src/ledger.ts`). A test asserting `humanDenied` has to model the former.
+   */
+  | "allow-then-decline";
 
 export async function harness(env: Record<string, string>, existingDir?: string, answer: GateAnswer = "decline") {
   const dir = existingDir ?? (await tempDir("grants-chain-"));
@@ -77,8 +93,10 @@ export async function harness(env: Record<string, string>, existingDir?: string,
         selects.push(title);
         offered.push(options);
         if (answer === "decline") return undefined;
-        // "Allow for this session" — enough for later steps to be satisfied from `preApproved` without touching
-        // the persisted store, which a test must never write to.
+        // The literal Deny option, so `humanDenied` is set — see the `GateAnswer` note.
+        if (answer === "allow-then-decline" && selects.length > 1) return options.find((o) => /^deny$/i.test(o)) ?? options[0];
+        if (answer === "allow-once") return options.find((o) => o.includes("once")) ?? options[1];
+        // "Allow for this session" — no persisted store is touched, which a test must never do.
         return options.find((o) => o.includes("this session")) ?? options[1];
       },
     },

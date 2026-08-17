@@ -205,9 +205,20 @@ export async function runOneDelegation(
      * the question the chain's framed-rather-than-enforced handoff makes worth asking.
      */
     taskFrom?: string;
+    /**
+     * What the caller's own gate decided, for the LEDGER — not for the plan.
+     *
+     * **Required because pre-filling `approved` silences the record.** The doc comment on `planWithApprovals` above
+     * warns about exactly this: satisfying the gate on the first plan means `obtainApprovals` never runs, so
+     * `approval` is undefined and this record writes no `approved`, `approvalSources`, `approvalScopes` or
+     * `humanDenied`. Measured: a chain step that spent `tool:bash` on a human's click was indistinguishable from one
+     * where nothing was ever gated — `/grants ledger` counted it in neither `bySource` nor `unattributed`, so it did
+     * not even show up as a gap, and ADR-0010's compensating control was blind to every chain step.
+     */
+    approvalFacts?: Pick<ApprovalOutcome, "approved" | "sources" | "scopes" | "humanDenied">;
   } = {},
 ): Promise<DelegationOutcome> {
-  const { onProgress, preApproved, taskFrom } = options;
+  const { onProgress, preApproved, taskFrom, approvalFacts } = options;
   // pi resolves a BARE model id to an unauthenticated provider and the child dies at startup — the id
   // alone is not enough, it must be qualified with its provider (`Model<Api>` carries both).
   const defaultModel = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
@@ -269,10 +280,12 @@ export async function runOneDelegation(
         result: plan.result,
         blocked: !plan.ok,
         reason: plan.reason,
-        approved: approvalOutcome?.approved,
-        approvalSources: approvalOutcome?.sources,
-        approvalScopes: approvalOutcome?.scopes,
-        humanDenied: approvalOutcome?.humanDenied,
+        // `approvalOutcome` when this call's own gate ran; `approvalFacts` when a caller gated upfront on our behalf
+        // (a chain). Without the second, an approved chain step recorded nothing about the human who authorised it.
+        approved: approvalOutcome?.approved ?? approvalFacts?.approved,
+        approvalSources: approvalOutcome?.sources ?? approvalFacts?.sources,
+        approvalScopes: approvalOutcome?.scopes ?? approvalFacts?.scopes,
+        humanDenied: approvalOutcome?.humanDenied ?? approvalFacts?.humanDenied,
         gateOutcome: approvalOutcome?.gateOutcome,
         // ADR-0018: taken from the PLAN, never re-derived here. The B-I3 lesson — a call site that
         // recomputed the digest could record one the planner never used.

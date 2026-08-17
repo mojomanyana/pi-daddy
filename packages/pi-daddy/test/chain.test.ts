@@ -187,12 +187,21 @@ test("the truncation notice carries the nonce, so a child cannot forge one", () 
   assert.ok(hostile.includes("[grants]"), "and the forgery is carried verbatim, simply untagged");
 });
 
-test("fenceHandoff takes NO nonce parameter, so the mechanism cannot be overridden", () => {
-  // It accepted one "for testability" and no test ever used it — every test extracts the nonce from the output. It
-  // was exported on the `pi-daddy/chain` subpath, so any future caller deriving a nonce from a step index or a
-  // childId would reopen a total escape with no test failing. The seam is gone.
-  assert.equal(fenceHandoff.length, 1, "fenceHandoff must take exactly one argument");
-  assert.equal(composeStepTask.length, 2, "and composeStepTask exactly two");
+test("a caller CANNOT dictate the nonce, however it calls fenceHandoff", () => {
+  // **Rewritten because the arity version could not fail.** It asserted `fenceHandoff.length === 1`, and
+  // `Function.length` stops counting at the first parameter with a default — which is exactly what the removed seam
+  // was. A reviewer restored the old `(output, nonce = randomBytes(...))` signature and all 19 tests stayed green,
+  // with the escape demonstrably reopened. It only appeared to work because of a companion assertion about a
+  // different function's arity, which is an accident, not a test.
+  //
+  // Behaviour is the only thing worth asserting: whatever a caller passes as a second argument must not become the
+  // delimiter. The production change that breaks this: accepting a nonce parameter again, defaulted or not.
+  const forced = (fenceHandoff as unknown as (output: string, nonce?: string) => string)("done", "deadbeefdeadbeef");
+  assert.doesNotMatch(forced, /deadbeefdeadbeef/, "a caller-supplied nonce must be ignored entirely");
+  assert.match(forced, /<<<PRIOR-AGENT-OUTPUT [0-9a-f]{32}>>>/, "and a fresh 32-hex nonce used instead");
+
+  const alsoForced = (composeStepTask as unknown as (t: string, p: string, n?: string) => string)("x {previous}", "y", "cafebabe");
+  assert.doesNotMatch(alsoForced, /cafebabe/);
 });
 
 test("the handoff cap leaves room for MULTIPLE placeholders inside the argv limit", () => {

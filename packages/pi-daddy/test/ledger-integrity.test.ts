@@ -510,10 +510,13 @@ test("ADR-0033: MAX_CHAIN_STEPS is DERIVED from MAX_CHILDREN_PER_CALL, not merel
   // Asserting equality could only ever fail AFTER the drift it exists to prevent: replacing the derivation with a
   // literal `8` passed. So the source is asserted instead, which is the only way to catch a copy before it diverges.
   assert.equal(MAX_CHAIN_STEPS, MAX_CHILDREN_PER_CALL, "sanity");
+  // Tolerates an explicit type annotation, which is semantically identical and was rejected by the first version.
+  // The captured line is reported rather than the whole file — a failure used to dump 8 KB of `fanout.ts`.
   const source = readFileSync(new URL("../src/fanout.ts", import.meta.url), "utf8");
+  const line = source.split("\n").find((l) => l.includes("MAX_CHAIN_STEPS") && l.includes("=")) ?? "(not found)";
   assert.match(
-    source,
-    /export const MAX_CHAIN_STEPS = MAX_CHILDREN_PER_CALL;/,
-    "it must be defined AS the other constant; a literal here drifts silently",
+    line.trim(),
+    /^export const MAX_CHAIN_STEPS(: *number)? *= *MAX_CHILDREN_PER_CALL;$/,
+    `it must be defined AS the other constant; a literal drifts silently. Found: ${line.trim()}`,
   );
 });

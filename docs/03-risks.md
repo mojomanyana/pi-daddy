@@ -946,6 +946,53 @@ out in three documents, for a question asked once.
 **Trigger:** any count in this package presented as an answer rather than a bound. The tell is a sentence of
 the form *"each of these is an X"* about records that were not counted per X.
 
+## R-83 · An approval for one subject satisfied another on the PLAIN delegate path — H×M, FIXED 2026-08-18
+Added **and fixed** 2026-08-18. `planDelegation` matched `ctx.approved` by bare capability **name**, ignoring the
+subject. The fix (0.17.0) was made for `delegate_chain` and its commit message claimed it was *"a no-op on the
+pre-existing paths, because they already filtered"*. **That claim was false, and a reviewer measured why.**
+
+`planWithApprovals`' re-plan feeds the planner `[...republishable(session), ...outcome.approved]`, and
+`republishable` carries **every subject the session knows, unfiltered**. So the second of the two callers never
+pre-filtered.
+
+**Measured, with no chain involved.** Session gating `tool:bash` and `tool:write`, holding an inherited
+`tool:write@shaper`, spawning definition `digger` whose ceiling is `Read, Bash, Write`. The operator is asked twice
+and **says yes to `tool:bash` while dismissing `tool:write`**:
+
+- with the filter: refused, nothing spawned.
+- without it: `SPAWNED`, child argv `--tools bash,read,write`.
+
+**A capability the human explicitly declined for this definition was granted anyway**, satisfied by a yes given for a
+*different* definition — with `blocked:false` and `humanDenied:true` on the same ledger line. That is ADR-0014's A-S6
+falsified on the ordinary path, and it shipped in 0.16.0.
+
+**Why this entry exists even though the code is fixed.** The record attributed the defect solely to
+`delegate_chain` and described the planner change as behaviour-preserving elsewhere. A future reader could
+"simplify" the filter back out on that basis. Rule 2 and rule 5 both require the falsification to be written down.
+**One test of 498 catches it** — `test/propagation.test.ts`'s A-S6 case — which is thin for a property this load
+bearing, and is the honest reason this is rated M rather than L on likelihood of recurrence.
+
+## R-84 · One `session` yes to a model-chosen tool list pre-authorises the whole subtree — M×M, OPEN by decision
+Added 2026-08-18, measured. `<delegate>` is a **fixed literal** subject: `inheritApprovals` exempts it from
+ADR-0022's body pin (nothing to pin — there is no definition), and `republishable` re-emits it unchanged. So a single
+*session*-scoped approval for a gated capability on the `tools:` path crosses every boundary intact.
+
+Measured: a child at depth 1 holding `PI_GRANTS_APPROVED=tool:bash@<delegate>` runs `delegate({tools:["read","bash"]})`
+with **zero dialogs**, spawns a grandchild at depth 2, and that grandchild's own `PI_GRANTS_APPROVED` carries the same
+entry. Unbounded in depth and breadth, nobody asked again. Controls behave correctly: with no inherited approval the
+dialog appears, and a `tool:bash@digger` entry does **not** satisfy a `tools:` request.
+
+**The irony is the point.** `<delegate>` exists because *"a key the model controls is not a key"* (ADR-0019, R-37),
+which is why that path is denied `always` and never persisted. Session scope was left as the safe middle — and it is
+the one scope that propagates.
+
+**Open by decision, not by oversight.** Three candidate fixes, none free: refuse to inherit `<delegate>` approvals at
+all (breaks the legitimate "approve bash once for this subtree" workflow the scope exists for); key them to the
+requesting session's id (a new identity concept, and a child cannot verify its parent's); or bound them by depth
+(arbitrary). Withholding `tool:bash` from a grant already prevents it entirely, which is the remedy `docs/SPEC.md`
+already recommends. **Trigger to revisit:** any report of a descendant holding a gated capability its operator does
+not remember approving, or a request to make `<delegate>` approvals persistable.
+
 ## R-62 · A killed process orphans one herdr pane per in-flight child — **M**×L, FIXED IN PART
 Added **and fixed in part** 2026-08-14. `runHerdrPane` closes its pane in a `finally`, which covers a thrown
 error and a timeout and **not the process being killed**, so an interrupted fan-out left a pane per child —
