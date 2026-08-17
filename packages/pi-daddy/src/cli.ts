@@ -19,7 +19,7 @@ import { relative, resolve as resolvePath } from "node:path";
 import { pathToFileURL } from "node:url";
 import { UnsafeGrantError } from "./grant-env.ts";
 import { applyInit, countDeclaring, planInit, type InitPlan } from "./init.ts";
-import { discoverSkillPackages, type RefusedSkill, type SkillPackage } from "./skill-packages.ts";
+import { discoverSkillPackages, skillPackageRoots, type RefusedSkill, type SkillPackage } from "./skill-packages.ts";
 
 const USAGE = `pi-daddy — capability governance for pi sub-agents
 
@@ -93,10 +93,16 @@ export function parseArgs(argv: string[]): ParsedArgs {
 async function init(cwd: string, force: boolean): Promise<number> {
   const packages = await discoverSkillPackages(cwd);
   if (packages.length === 0) {
+    // Names BOTH roots it looked in, and offers pi's own install command first. The previous message named
+    // only `<cwd>/node_modules` and said "npm install …" — so an operator who had just run
+    // `pi install npm:principal-pi-skills`, which installs to the agent root, was told to install a package
+    // they had already installed (R-75).
     console.log(
-      `pi-daddy init: no installed package under ${cwd}/node_modules declares skills\n` +
-        `(a package.json "pi": {"skills": [...]} field). Nothing to scaffold.\n\n` +
-        `  npm install principal-pi-skills   # seven skills; then re-run this`,
+      `pi-daddy init: no installed package declares skills (a package.json "pi": {"skills": [...]} ` +
+        `field). Nothing to scaffold.\n\nLooked in:\n` +
+        skillPackageRoots(cwd).map((r) => `  ${r}\n`).join("") +
+        `\n  pi install npm:principal-pi-skills    # seven skills, and registers it with pi\n` +
+        `  npm install principal-pi-skills      # or pin it in this project instead`,
     );
     return 0;
   }

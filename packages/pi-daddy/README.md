@@ -339,9 +339,17 @@ installed. Every transcript below is **copied from a run**, not retyped — the 
 this section abridges output it says so.
 
 ```bash
-npm install pi-daddy principal-pi-skills
-npx pi-daddy init
+pi install npm:pi-daddy
+pi install npm:principal-pi-skills
+pi                      # then, inside pi:
+/grants init
 ```
+
+**`pi install`, not `npm install`** — it registers the package with pi, which is what makes the extension
+auto-load; presence in `node_modules` alone does nothing. `/grants init` asks only about the capabilities
+that can change your machine and applies the answer to the running session, no restart (ADR-0030).
+`npx pi-daddy init` does the same scaffolding from a shell, and both search pi's install root as well as
+the project's.
 
 ```
 found principal-pi-skills@2.3.1 — 7 skill(s), 0 declaring allowed-tools
