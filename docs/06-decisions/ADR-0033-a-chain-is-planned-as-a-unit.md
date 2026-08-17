@@ -199,6 +199,45 @@ unimplementable, in a way three reviewers found in under an hour and the author 
 faithfully. **A decision that names a mechanism should be checked against the layer that would have to enforce it
 before it is Accepted.** One `grep` for where approvals are keyed would have caught this at writing time.
 
+## AMENDED AGAIN 2026-08-18 — the gate was wrong twice, and both times the fix caused the next defect
+
+A second review round, three reviewers. **This is the second amendment to the same decision, and the pattern is the
+finding.**
+
+**Round two's critical: the gate read `gatedBlocked` and ignored `plan.ok`.** So a step refused for something no
+approval can lift still raised its gate, and the answer was banked. Measured: `delegate({tools:["bash","agent:ghost"]})`
+asks nobody; the same step inside a chain took *Allow for this session* and left `tool:bash` pre-approved for the whole
+session — and on the `agent:` path banked a **30-day** entry, including for a step whose task was whitespace, whose
+dialog therefore read `task:` and nothing.
+
+**`shouldSeekApproval` already encodes that rule, and its docstring names this exact hazard**: *"both banked against a
+spawn that never happened, and both reachable by a model that appends one unheld capability to an otherwise ordinary
+request."*
+
+**Two further corrections of the same kind.** A `once` answer authorised every step sharing a subject — measured as
+three children from one dialog describing only the first — where two sequential `delegate` calls raise two dialogs,
+because `once` never enters `sessionApprovals`. And a chain step that ran on a human's click recorded **no approval at
+all**, which `planWithApprovals`' own comment warns about verbatim.
+
+### What both rounds have in common
+
+**Every one of these defects is the chain reimplementing, beside an existing rule, a decision that rule already
+makes.** Round one broke A-S6 by keying a union to one subject when `resolveApprovals` already keys per subject. Round
+two broke `shouldSeekApproval`, `once` semantics and the approval record — three rules that the single-`delegate` path
+had implemented correctly all along, sitting one function away.
+
+**So the transferable rule is narrower and sharper than "write an ADR".** When a decision adds a new *caller* of an
+existing mechanism, the design work is finding every rule that mechanism's normal caller obeys and saying which of
+them the new caller inherits. This ADR did not do that, twice, and no amount of options-weighing would have caught it —
+the evidence needed was a list of what `runOneDelegation` does before and after it delegates.
+
+**A related finding worth keeping, because it points the other way.** Fixing the subject collapse required
+`planDelegation` to filter approvals by subject, and that turned out to close a **second, live escalation on the
+ordinary `delegate` path** — a human's explicit "no" for one definition overridden by a yes for another, shipped in
+0.16.0. Recorded as **R-83**. The chain was the *occasion* for finding it, not the cause. And **R-84** records a
+pre-existing hole the same investigation surfaced: a single `session`-scoped yes on the `tools:` path propagates
+through an entire subtree unchecked, for the one subject whose whole justification is that a model controls its name.
+
 ## Consequences
 
 **Positive.** The ungoverned spawner loses its last justification: everything the operator kept it for is

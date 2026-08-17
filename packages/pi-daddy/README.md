@@ -195,7 +195,9 @@ own fence. The label itself is framing and this README will not pretend otherwis
 
 A chain is **gated upfront**: every step is planned first, and every approval it needs is asked for *before the
 first step starts* — together, rather than interrupting a running pipeline. One dialog per capability *and*
-definition, because an approval for one definition must never satisfy another. Decline any of them and nothing runs. A failed step stops the rest, and you still get everything that
+definition, each naming the step that needs it, because an approval for one definition must never satisfy another.
+Decline any of them and nothing runs. A step that could never run refuses the chain **before** anyone is asked, and
+`Allow once` covers exactly one step. A failed step stops the rest, and you still get everything that
 completed. Each step spends one unit of the fan-out budget, so a seven-step pipeline wants `PI_GRANTS_FANOUT=12`.
 
 ### Two executors, one plan

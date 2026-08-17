@@ -97,6 +97,54 @@ That convention is why every reversal here was survivable, and there have been f
 ---
 
 
+## 2026-08-18 — the chain's gate was wrong TWICE, and the pattern is the lesson
+
+Second review round on `delegate_chain`: three reviewers, one critical, four high/medium. Fixed forward. **498 unit
+tests in 9.8s, pure; 44 integration; smoke clean.**
+
+**Every defect in both rounds is the same mistake wearing different clothes: the chain reimplemented, beside an
+existing rule, a decision that rule already makes.**
+
+| round | rule bypassed | what it cost |
+| :--- | :--- | :--- |
+| 1 | `resolveApprovals` keys per subject | one definition's yes authorised every other; a 30-day entry keyed to `digger` satisfied `shaper` for a month |
+| 2 | `shouldSeekApproval` | a step that could never run still raised a dialog, and the yes was banked — reachable by a model appending one unheld capability |
+| 2 | `once` semantics (R-29) | one *Allow once* spawned three children; the dialog described step 1, step 3 had been told "…and burn the evidence" |
+| 2 | the approval record (ADR-0010) | a step that ran on a human's click recorded nothing; `/grants ledger` showed it as neither attributed nor a gap |
+
+**So the transferable rule is sharper than "write an ADR", and this is the sentence to keep:** when a decision adds a
+new **caller** of an existing mechanism, the design work is enumerating every rule that mechanism's normal caller
+obeys and saying which the new caller inherits. Options-weighing cannot catch this. The evidence needed was a list of
+what `runOneDelegation` does before and after it delegates — and it is one function away.
+
+**The fix found a live defect that had nothing to do with the chain.** Making `planDelegation` filter approvals by
+subject closed a **second escalation on the ordinary `delegate` path**: a human's explicit "no" for one definition
+overridden by a yes for another, shipped in 0.16.0. My commit had claimed the change was *"a no-op on the pre-existing
+paths"* — false, because `republishable(session)` passes every subject unfiltered into the re-plan. **R-83.** The
+chain was the occasion for finding it, not the cause. **R-84** records a pre-existing hole the same probe surfaced: a
+single `session` yes on the `tools:` path propagates through a whole subtree unchecked.
+
+**Three of my tests could not fail, and one class is worth naming.** `fenceHandoff.length === 1` cannot fail because
+`Function.length` stops at the first *defaulted* parameter — which is precisely what the seam was. Assert behaviour,
+never arity. Two shipped fixes had **no test at all** and were freely re-breakable. And `preApproved` was pinned by
+nothing, because every pure test declined and the opt-in one used `allow-session`, which satisfies the gate from
+session state regardless.
+
+**And I moved a test that could not fail instead of fixing it.** The previous round's commit admitted "step N receives
+step N−1's output" only pinned a ledger field; I relocated it to the integration tier verbatim, comment included, so
+the call site was uncovered in *both* tiers. **Relocating a broken test launders it.**
+
+**Purity broke twice and both times I introduced it.** Approving a gate in a wiring test makes a step spawn a real
+`pi`, which always calls a model: 2m19s, then 1m54s, on ~13s of CPU. The rule is mechanical — **a wiring test that
+approves is an integration test.** Now proven with `pi`/`herdr` shims first on `PATH`: 498 pass, neither binary
+invoked.
+
+**Mutation testing, four sessions running, has found what careful tests missed every time — including a test of mine
+that failed unconditionally and would have read as coverage.** Verify the mutation actually bites: my first attempt at
+the executor-ordering mutation moved the check somewhere harmless and proved nothing.
+
+---
+
 ## 2026-08-17 (chain review) — the ADR itself was wrong, and that is the finding to keep
 
 **Three reviewers, one hypothesis each. All three found real defects; two found the same critical from different
