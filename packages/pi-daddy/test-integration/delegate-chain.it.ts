@@ -74,7 +74,13 @@ describe("delegate_chain, with steps that really run", { skip }, () => {
     // Continuing would make the next step's task an error message, which is never what an orchestrator wants. Partial
     // results still come back labelled — R-03's rule.
     //
-    // Step 2 asks for `tool:write`, which this session does not hold, so it is refused and the chain stops.
+    // **Step 2 must fail at RUN time, not at plan time.** It used to request a capability the session did not hold —
+    // which `planChain` now catches upfront and refuses before step 1 runs, so this test stopped exercising abort and
+    // started exercising the doomed-step path (covered separately, in the pure tier). Caught only by running the
+    // opt-in tier, which is the argument for running it before merging rather than after.
+    //
+    // A bogus provider is a genuine run-time failure: nothing validates the model at plan time, and pi resolves an
+    // unknown provider then dies at startup — the measured fact `runOneDelegation` records about bare model ids.
     const ledger = join(await tempDir("grants-chain-"), "ledger.jsonl");
     const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate", [ENV_LEDGER]: ledger, [ENV_FANOUT]: "12" });
   
@@ -85,7 +91,7 @@ describe("delegate_chain, with steps that really run", { skip }, () => {
         {
           steps: [
             { task: "first", tools: ["read"] },
-            { task: "second {previous}", tools: ["write"] },
+            { task: "second {previous}", tools: ["read"], model: "no-such-provider/no-such-model" },
             { task: "third {previous}", tools: ["read"] },
           ],
         },
