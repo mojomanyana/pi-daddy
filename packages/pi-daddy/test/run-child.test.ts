@@ -99,3 +99,66 @@ test("a command that does not exist is reported rather than thrown", async () =>
   const r = await runChild(node("", { command: "/nonexistent/definitely-not-a-binary" }));
   assert.ok(r.spawnError, "a spawn failure must surface as a result the tool can report");
 });
+
+test("ADR-0032: onOutput sees each chunk as it arrives, and the result is still whole", async () => {
+  // The production change that breaks this: dropping onOutput, or calling it after `close` — the entire point
+  // is that the parent can render progress BEFORE the child finishes. A delegation was a black box for up to
+  // DEFAULT_TIMEOUT_MS, and this is the half of the fix that works without herdr.
+  const chunks: string[] = [];
+  const result = await runChild({
+    command: process.execPath,
+    args: ["-e", "process.stdout.write('one\\n'); setTimeout(() => process.stdout.write('two\\n'), 30)"],
+    env: process.env,
+    cwd: process.cwd(),
+    onOutput: (chunk) => chunks.push(chunk),
+  });
+  assert.equal(result.code, 0);
+  assert.match(chunks.join(""), /one/);
+  assert.match(chunks.join(""), /two/);
+  assert.match(result.text, /one\ntwo/, "streaming must not replace the assembled result");
+});
+
+test("ADR-0032: stderr is streamed too, because capture is one funnel for both", async () => {
+  const chunks: string[] = [];
+  await runChild({
+    command: process.execPath,
+    args: ["-e", "process.stderr.write('a warning')"],
+    env: process.env,
+    cwd: process.cwd(),
+    onOutput: (chunk) => chunks.push(chunk),
+  });
+  assert.match(chunks.join(""), /a warning/);
+});
+
+test("ADR-0032: onOutput throwing does not kill the child — a renderer is not a governance control", async () => {
+  const result = await runChild({
+    command: process.execPath,
+    args: ["-e", "process.stdout.write('hi')"],
+    env: process.env,
+    cwd: process.cwd(),
+    onOutput: () => {
+      throw new Error("renderer exploded");
+    },
+  });
+  assert.equal(result.code, 0);
+  assert.equal(result.text, "hi");
+});
+
+test("ADR-0032: streaming respects the same byte cap as capture", async () => {
+  // Otherwise the cap would bound memory and not the transcript, and a runaway producer would flood the
+  // parent's screen through the one path that was added to make it readable.
+  const chunks: string[] = [];
+  const result = await runChild({
+    command: process.execPath,
+    args: ["-e", "for (let i = 0; i < 5000; i++) process.stdout.write('x'.repeat(100))"],
+    env: process.env,
+    cwd: process.cwd(),
+    maxOutputBytes: 1024,
+    onOutput: (chunk) => chunks.push(chunk),
+  });
+  assert.equal(result.truncated, true);
+  assert.ok(
+    Buffer.byteLength(chunks.join("")) <= 1024 + 100,
+    `streamed ${Buffer.byteLength(chunks.join(""))} bytes past a 1024 cap`,
+  );
+});

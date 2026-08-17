@@ -40,6 +40,20 @@ export interface ChildRunRequest {
   /** Wall-clock cap. On expiry: SIGTERM, then SIGKILL after `killGraceMs`. */
   timeoutMs?: number;
   killGraceMs?: number;
+  /**
+   * Called with each chunk as it arrives, for the parent's progress display (ADR-0032).
+   *
+   * **Display only, and the distinction is load-bearing.** The child's answer is still `text`, assembled here
+   * and returned; a caller must never treat what it saw streamed as the result. A partial stream that could be
+   * mistaken for a complete answer is R-03's defect — a missing result indistinguishable from an empty one —
+   * with a new cause.
+   *
+   * Bounded by the same `maxOutputBytes` as `text`, so the cap governs the transcript and not merely memory.
+   *
+   * Exceptions are swallowed: a renderer is not a governance control, and one that throws must not kill a
+   * governed child mid-task.
+   */
+  onOutput?: (chunk: string) => void;
 }
 
 export interface ChildRunResult {
@@ -101,6 +115,32 @@ export function runChild(request: ChildRunRequest): Promise<ChildRunResult> {
       timers.push(setTimeout(() => child.kill("SIGKILL"), killGraceMs));
     };
 
+    /** How much of `text` the progress display has already been shown. */
+    let emittedUpTo = 0;
+
+    /**
+     * Stream whatever `text` has gained since the last call.
+     *
+     * **Derived from `text` rather than from the incoming chunk**, and that is the whole correctness argument:
+     * what gets streamed is then *by construction* a prefix of what gets returned, so the output cap bounds the
+     * parent's transcript exactly as it bounds the result. The first version emitted the raw chunk and pushed
+     * 1924 bytes through a 1024-byte cap on the truncating write — the cap bounded memory and not the screen
+     * it had just been extended to protect. Found by the test, not by reading it.
+     *
+     * Swallowing is deliberate: `onOutput` renders, and a renderer that throws must not become a way to kill a
+     * governed child. Nothing downstream depends on it having run.
+     */
+    const flush = () => {
+      if (!request.onOutput || text.length <= emittedUpTo) return;
+      const chunk = text.slice(emittedUpTo);
+      emittedUpTo = text.length;
+      try {
+        request.onOutput(chunk);
+      } catch {
+        /* display only */
+      }
+    };
+
     const capture = (chunk: unknown) => {
       if (truncated) return;
       const s = String(chunk);
@@ -111,10 +151,12 @@ export function runChild(request: ChildRunRequest): Promise<ChildRunResult> {
         text += s;
         text = text.slice(0, maxOutputBytes);
         truncated = true;
+        flush();
         stop();
         return;
       }
       text += s;
+      flush();
     };
 
     child.stdout?.on("data", capture);
