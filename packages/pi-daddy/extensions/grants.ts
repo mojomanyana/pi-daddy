@@ -26,6 +26,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { WILDCARD } from "../src/pi-tools.ts";
 import { buildCatalog } from "../src/catalog.ts";
 import { appendRecord, buildRecord } from "../src/ledger.ts";
+import { openPaneCount, reapOpenPanesAsync } from "../src/pane-reaper.ts";
 import {
   ENV_GRANT, deriveOwnGrant, observeToolNames } from "../src/propagation.ts";
 import { snapshotOf } from "./approvals.ts";
@@ -148,6 +149,33 @@ export default function (pi: ExtensionAPI) {
       } catch {
         /* a UI that cannot be notified is the one failure there is nowhere to report */
       }
+    }
+    return undefined;
+  });
+
+  /**
+   * Reap the herdr panes this agent run opened — ADR-0032.
+   *
+   * **`agent_settled`, not `turn_end`, and that is the whole finding.** `turn_end` fires at the end of each
+   * provider round-trip, i.e. no later than the `finally` that used to close the pane — so building pane
+   * lifetime on it would have shipped a no-op that read like a feature. `agent_settled` is documented as firing
+   * once the run has fully settled with no retry, compaction or queued continuation: the moment the operator
+   * gets their prompt back. Independent corroboration that this is the right boundary: herdr's own pi
+   * integration drives its busy/idle display from `agent_start`/`agent_settled`.
+   *
+   * The sweep is ASYNC (`reapOpenPanesAsync`) rather than the `exit` handler's sync one, which is `execFileSync`
+   * with a six-second budget by necessity. Running that here would freeze pi for up to six seconds every time
+   * the operator gets their prompt back — a feature built to make work visible, stalling the thing it serves.
+   *
+   * `exit` remains the backstop. SIGKILL still orphans panes, exactly as R-62 records, and no signal handler is
+   * installed here for the reason R-62 gives: it would turn pi's "interrupt this turn" into "exit pi".
+   */
+  pi.on("agent_settled", async () => {
+    try {
+      if (session.executor.kind !== "herdr" || openPaneCount() === 0) return undefined;
+      await reapOpenPanesAsync();
+    } catch {
+      /* never throw into the agent loop; the exit handler is still the backstop */
     }
     return undefined;
   });

@@ -8,9 +8,10 @@
  */
 
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { afterEach, test } from "node:test";
 import { runHerdrPane, splitSystemPrompt, type HerdrExec } from "../src/run-herdr.ts";
-import { openPaneCount, reapOpenPanes, trackPane } from "../src/pane-reaper.ts";
+import { MAX_OPEN_PANES, openPaneCount, reapOpenPanes, reapOpenPanesAsync, trackPane, trimOpenPanes } from "../src/pane-reaper.ts";
+import { MAX_CHILDREN_PER_CALL } from "../src/fanout.ts";
 
 interface FakeOptions {
   /** `state_change_seq` reported by `agent start`, i.e. the state BEFORE prompting. */
@@ -54,6 +55,18 @@ function fakeHerdr(options: FakeOptions = {}) {
 
   return { exec, calls, verbs: () => calls.map((c) => c.slice(0, 2).join(" ")) };
 }
+
+/**
+ * Drain the pane registry between tests.
+ *
+ * **Needed as of ADR-0032**, and its absence was a real failure while implementing it. Panes used to be closed
+ * inside `runHerdrPane`, so the module-level registry was empty by the time each test returned. They now survive
+ * the tool call by design, so every test that runs one leaves an entry — and the reaper tests further down were
+ * asserting against panes their predecessors had left behind.
+ *
+ * `reapOpenPanes` with a no-op exec empties the map without needing herdr, which is what this suite is for.
+ */
+afterEach(() => void reapOpenPanes(() => {}));
 
 const request = (over: Partial<Parameters<typeof runHerdrPane>[0]> = {}) => ({
   args: ["--no-session", "--no-extensions", "--tools", "read"],
@@ -118,15 +131,25 @@ test("R-33: `agent wait` is never used, because its contract cannot express 'aft
   assert.ok(!fake.verbs().includes("agent wait"));
 });
 
-test("the pane is always closed, even when the run fails", async () => {
-  // A fan-out that leaks a pane per child fills the operator's workspace, and the probe records that an
-  // orphaned pane is not trivially closable afterwards.
+test("a FAILED run stops its agent and leaves the pane for the reaper", async () => {
+  // **Rewritten for ADR-0032, which reverses what this asserted.** It used to require `tab close` on the
+  // failure path, because the pane was scoped to the tool call. Panes now belong to the AGENT RUN and are swept
+  // at `agent_settled` — and a failed child is exactly the one whose pane an operator most wants to read, so
+  // closing it here would destroy the evidence.
+  //
+  // What survives from the original intent, and is asserted below: the agent is stopped (a pane outliving the
+  // call must not mean a governed child keeps working), and the pane is TRACKED so nothing leaks.
   const fake = fakeHerdr({ failAt: "agent prompt" });
+  const before = openPaneCount();
   const result = await runHerdrPane(request({ exec: fake.exec }));
 
   assert.match(String(result.spawnError), /prompt failed/);
-  assert.ok(fake.verbs().includes("tab close"), "cleanup must run on the failure path too");
-  assert.ok(fake.verbs().includes("agent stop"));
+  assert.ok(fake.verbs().includes("agent stop"), "the agent must still stop on the failure path");
+  assert.ok(!fake.verbs().includes("tab close"), "but the pane survives for inspection (ADR-0032)");
+  assert.equal(openPaneCount(), before + 1, "and it is tracked, so agent_settled or exit will reap it");
+
+  await reapOpenPanesAsync(fakeHerdr().exec);
+  assert.equal(openPaneCount(), before, "nothing leaks");
 });
 
 test("keepPane leaves the pane for a human to inspect", async () => {
@@ -288,14 +311,21 @@ test("a JSON error reply from agent read is still recognised as an error", async
   assert.match(result.text, /could not read the agent pane: gone/);
 });
 
-test("a completed run leaves nothing for the exit-time reaper", async () => {
-  // The registry must not grow one entry per delegation. A fan-out of eight that finished normally has
-  // nothing outstanding, so the exit hook does nothing — which is the only state it is ever in for a
-  // session that was not killed.
+test("a completed run leaves its pane for agent_settled, and the sweep clears it", async () => {
+  // **Rewritten for ADR-0032, which reverses what this asserted.** It used to require the registry to be empty
+  // after a normal run, because `cleanup` closed the tab. That is precisely the behaviour ADR-0032 removes: a
+  // pane destroyed the instant its child settles is unobservable, since a twenty-second child's pane is gone
+  // before anyone can switch to it.
+  //
+  // The property that MATTERS is unchanged and is what this now asserts: the registry does not grow without
+  // bound. One delegation leaves exactly one pane, and the sweep clears it.
   const before = openPaneCount();
   await runHerdrPane(request({ exec: fakeHerdr().exec }));
-  assert.equal(openPaneCount(), before, "cleanup ran, so the pane must be untracked");
-  assert.deepEqual(reapOpenPanes(() => {}), [], "and the reaper has nothing to close");
+  assert.equal(openPaneCount(), before + 1, "the pane is kept, and tracked");
+
+  assert.equal((await reapOpenPanesAsync(fakeHerdr().exec)).length, 1, "the agent_settled sweep closes it");
+  assert.equal(openPaneCount(), before);
+  assert.deepEqual(reapOpenPanes(() => {}), [], "and the exit backstop then has nothing left to do");
 });
 
 test("a pane orphaned by a killed process is closed by the reaper", async () => {
@@ -435,4 +465,64 @@ test("ADR-0032: an onOutput that throws does not break the run", async () => {
     },
   });
   assert.equal(out.code, 0);
+});
+
+test("ADR-0032: a completed child's pane is left OPEN, so a human can still read it", async () => {
+  // The production change that breaks this: putting `tab close` back in cleanup's finally. That is what made a
+  // twenty-second child's pane vanish before anyone could switch to it — the pane was real and unobservable.
+  const fake = fakeHerdr();
+  await runHerdrPane({ ...request(), exec: fake.exec, pollIntervalMs: 1 });
+  assert.ok(!fake.verbs().includes("tab close"), "the pane must not be closed at the end of the tool call");
+  assert.equal(openPaneCount(), 1, "and it must stay TRACKED, so agent_settled can reap it");
+
+  await reapOpenPanesAsync(fake.exec);
+  assert.equal(openPaneCount(), 0);
+});
+
+test("ADR-0032: the agent is still stopped even though the pane stays", async () => {
+  // The pane outliving the call must not mean a governed child keeps running in it.
+  const fake = fakeHerdr();
+  await runHerdrPane({ ...request(), exec: fake.exec, pollIntervalMs: 1 });
+  assert.ok(fake.verbs().includes("agent stop"));
+  await reapOpenPanesAsync(fake.exec);
+});
+
+test("ADR-0032: a ninth pane closes the OLDEST, and the cap is the fan-out per-call limit", async () => {
+  // A plain blocking `delegate` spends nothing from the fan-out budget (delegation.ts), so pane count is
+  // otherwise unbounded within one agent run: thirty sequential delegates would hold thirty panes until it
+  // settled. The production change that breaks this: dropping the trim.
+  for (let i = 0; i < MAX_OPEN_PANES + 1; i += 1) trackPane({ tab: `w1:t${i}`, name: `child-${i}` });
+  const fake = fakeHerdr();
+
+  const closed = await trimOpenPanes(fake.exec);
+
+  assert.deepEqual(closed, ["w1:t0"], "the OLDEST pane is the one to go");
+  assert.equal(openPaneCount(), MAX_OPEN_PANES);
+  await reapOpenPanesAsync(fake.exec);
+});
+
+test("ADR-0032: the pane cap equals MAX_CHILDREN_PER_CALL, so the two cannot drift", async () => {
+  assert.equal(MAX_OPEN_PANES, MAX_CHILDREN_PER_CALL);
+});
+
+test("ADR-0032: a pane herdr REFUSES to close stays tracked, so exit tries again", async () => {
+  // R-62's lesson, kept: untracking a pane we did not close disables the one thing built for that failure. The
+  // async sweep must not be more forgiving of itself than the sync one is.
+  trackPane({ tab: "w1:t1", name: "child-1" });
+  const fake = fakeHerdr({ failAt: "tab close" });
+
+  await reapOpenPanesAsync(fake.exec);
+
+  assert.equal(openPaneCount(), 1, "a pane that was not closed must remain the reaper's problem");
+  await reapOpenPanesAsync(fakeHerdr().exec);
+  assert.equal(openPaneCount(), 0);
+});
+
+test("ADR-0032: keepPane still means the reaper never touches it", async () => {
+  // `PI_GRANTS_HERDR_KEEP_PANE=1` means "not even at agent_settled" — an operator who asked to keep a pane for
+  // inspection must not have it swept when their prompt comes back.
+  const fake = fakeHerdr();
+  await runHerdrPane({ ...request(), exec: fake.exec, pollIntervalMs: 1, keepPane: true });
+  assert.equal(openPaneCount(), 0, "a kept pane must be untracked, so nothing reaps it");
+  assert.ok(!fake.verbs().includes("tab close"));
 });

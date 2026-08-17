@@ -24,6 +24,19 @@
 
 import { execFileSync } from "node:child_process";
 import { rmSync } from "node:fs";
+import { rm } from "node:fs/promises";
+import { MAX_CHILDREN_PER_CALL } from "./fanout.ts";
+import { defaultExec, parseReply, type HerdrExec } from "./herdr-cli.ts";
+
+/**
+ * How many panes may be open at once — ADR-0032.
+ *
+ * **Derived from `MAX_CHILDREN_PER_CALL` rather than declared, so the two cannot drift.** The bound is not
+ * decoration: `delegate_all` is capped per call and the fan-out budget bounds a subtree, but a plain blocking
+ * `delegate` spends **nothing** from that budget by design — so thirty sequential `delegate` calls in one agent
+ * run would otherwise hold thirty panes open until it settled.
+ */
+export const MAX_OPEN_PANES = MAX_CHILDREN_PER_CALL;
 
 export interface OpenPane {
   /** herdr tab id — what `tab close` takes. */
@@ -127,6 +140,65 @@ export function reapOpenPanes(syncExec: (args: string[]) => void = defaultSyncEx
       }
     }
     open.delete(pane.tab);
+  }
+  return closed;
+}
+
+/**
+ * Close one tracked pane. Shared by the async sweep and the trim so they cannot disagree about what "closed"
+ * means — which is the whole of R-62's lesson, one layer up.
+ *
+ * Returns whether the tab is **provably** gone. A close herdr refused leaves the pane tracked, so the `exit`
+ * handler retries it; untracking on a failed close is what disabled the one control built for that failure.
+ */
+async function closePane(exec: HerdrExec, pane: OpenPane): Promise<boolean> {
+  await exec(["agent", "stop", pane.name]).catch(() => undefined);
+  const reply = await exec(["tab", "close", pane.tab]).catch(() => undefined);
+  const closed = reply !== undefined && !parseReply(reply).error;
+  if (!closed) return false;
+  if (pane.promptDir) await rm(pane.promptDir, { recursive: true, force: true }).catch(() => undefined);
+  open.delete(pane.tab);
+  return true;
+}
+
+/**
+ * Close every outstanding pane — the `agent_settled` path (ADR-0032).
+ *
+ * **A separate function from `reapOpenPanes` rather than a shared implementation**, and the reason is not
+ * style. The sync one is `execFileSync` with a six-second total budget *by necessity*: an `exit` handler cannot
+ * await. Running that at `agent_settled` would freeze pi for up to six seconds **every time the operator gets
+ * their prompt back** — turning a feature that exists to make work visible into a stall.
+ *
+ * Both drain the same `Map`, keyed by tab id, so a double close is impossible and a pane herdr refused stays
+ * registered for whichever sweep runs next.
+ *
+ * Sequential rather than concurrent: a fan-out's panes are at most `MAX_OPEN_PANES`, and eight `tab close`
+ * calls in parallel against one herdr server buys nothing worth the burst.
+ */
+export async function reapOpenPanesAsync(exec: HerdrExec = defaultExec): Promise<string[]> {
+  const closed: string[] = [];
+  for (const pane of [...open.values()]) {
+    if (await closePane(exec, pane)) closed.push(pane.tab);
+  }
+  return closed;
+}
+
+/**
+ * Keep at most `MAX_OPEN_PANES` open, closing the oldest first.
+ *
+ * The `Map`'s insertion order **is** the age order, so no timestamp is needed — and that is why `trackPane`
+ * must never re-`set` an existing tab, which would move it to the back of the queue and make an old pane look
+ * new.
+ *
+ * Whatever it closes is returned so the caller can **say so** rather than silently dropping a pane the operator
+ * was reading (R-48's rule, applied to a display).
+ */
+export async function trimOpenPanes(exec: HerdrExec = defaultExec): Promise<string[]> {
+  const excess = open.size - MAX_OPEN_PANES;
+  if (excess <= 0) return [];
+  const closed: string[] = [];
+  for (const pane of [...open.values()].slice(0, excess)) {
+    if (await closePane(exec, pane)) closed.push(pane.tab);
   }
   return closed;
 }

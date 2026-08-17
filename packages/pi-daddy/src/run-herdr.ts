@@ -26,7 +26,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ChildRunResult } from "./run-child.ts";
 import { DEFAULT_MAX_OUTPUT_BYTES, DEFAULT_TIMEOUT_MS } from "./run-child.ts";
-import { trackPane, untrackPane } from "./pane-reaper.ts";
+import { MAX_OPEN_PANES, trackPane, trimOpenPanes, untrackPane } from "./pane-reaper.ts";
 import { defaultExec, parseReply, type HerdrExec } from "./herdr-cli.ts";
 import { POLL_INTERVAL_MS, readPane, waitForSettled } from "./herdr-poll.ts";
 
@@ -180,7 +180,26 @@ export async function runHerdrPane(request: HerdrRunRequest): Promise<ChildRunRe
   // so registering later leaves a window — one herdr round-trip wide — in which a killed process orphans a
   // tab nothing would reap. The normal path had no such window and the error path did, which is backwards:
   // the error path is the one more likely to be taken while something is already going wrong.
-  if (tabId && !request.keepPane) trackPane({ tab: tabId, name: request.name, promptDir });
+  if (tabId && !request.keepPane) {
+    trackPane({ tab: tabId, name: request.name, promptDir });
+    // ADR-0032: panes now live until `agent_settled`, so they accumulate across one agent run — and a plain
+    // blocking `delegate` spends nothing from the fan-out budget, so the count is otherwise unbounded. Trimmed
+    // here rather than at settle time so the bound holds DURING a long run, not only after it.
+    //
+    // Whatever is closed is reported through `onOutput` rather than dropped: an operator whose pane vanished
+    // while they were reading it deserves to know why (R-48's rule, applied to a display).
+    const dropped = await trimOpenPanes(exec);
+    if (dropped.length > 0 && request.onOutput) {
+      try {
+        request.onOutput(
+          `\n[grants] closed ${dropped.length} older pane(s) to stay within the ${MAX_OPEN_PANES}-pane ` +
+            `limit: ${dropped.join(", ")}\n`,
+        );
+      } catch {
+        /* display only */
+      }
+    }
+  }
 
   if (!paneId) {
     // The tab may exist even though the reply carried no pane id, and this return used to be BEFORE
@@ -198,24 +217,28 @@ export async function runHerdrPane(request: HerdrRunRequest): Promise<ChildRunRe
     return { ...empty, spawnError: "herdr tab create returned no pane id" };
   }
 
-  /** Close what we opened, whatever happened. A leaked pane per child is how fan-out fills a workspace. */
+  /**
+   * Stop the agent and release what belongs to this CALL. **The pane deliberately survives.**
+   *
+   * ADR-0032. This used to `tab close` in a `finally`, so a pane was destroyed the instant its child settled —
+   * and a twenty-second child's pane is gone before anyone can switch to it. The pane was real and
+   * unobservable, which is the worst of both. It now belongs to the **agent run**: `agent_settled` sweeps it
+   * (`reapOpenPanesAsync`), with the `exit` handler as the backstop it always was.
+   *
+   * The agent is still stopped here, and that distinction is the point — the pane outliving the tool call must
+   * not mean a governed child keeps *working* in it. What survives is a terminal with its scrollback, not a
+   * running descendant.
+   *
+   * The staged system prompt now travels with the pane rather than being removed here, because the pane may
+   * still be read; the reaper deletes it when it closes the tab.
+   *
+   * `keepPane` means "not even at `agent_settled`", so it untracks: an operator who asked to keep a pane for
+   * inspection must not have it swept the moment their prompt comes back.
+   */
   const cleanup = async () => {
     await exec(["agent", "stop", request.name]).catch(() => undefined);
-    let closed = false;
-    if (!request.keepPane && tabId) {
-      // **The reply must be PARSED, not merely awaited.** `defaultExec` resolves with `{code: 1}` on
-      // failure and never rejects, so the `.catch` here was dead code and a herdr that REFUSED to close the
-      // pane looked identical to one that closed it. The pane was then untracked, so the exit reaper — the
-      // one thing built for exactly this failure — would not retry it. The single case the reaper exists
-      // for was the case that disabled it.
-      const reply = await exec(["tab", "close", tabId]).catch(() => undefined);
-      closed = reply !== undefined && !parseReply(reply).error;
-    }
-    // Kept when the pane is kept: a human inspecting the pane may want to see what the child was told.
-    if (promptDir && !request.keepPane) await rm(promptDir, { recursive: true, force: true }).catch(() => undefined);
-    // Untrack only what is genuinely gone. A pane we failed to close stays registered so `exit` tries once
-    // more; `openPaneCount()` is what a test asserts to prove the registry does not grow per delegation.
-    if (tabId && (closed || request.keepPane)) untrackPane(tabId);
+    // `keepPane` also keeps the staged prompt, for the same reason it keeps the pane.
+    if (request.keepPane && tabId) untrackPane(tabId);
   };
 
   // ADR-0032: the pane exists and has a name, so tell the caller NOW. A pane id that arrives with the result is
