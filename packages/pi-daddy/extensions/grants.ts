@@ -33,7 +33,7 @@ import { registerDelegationTools } from "./delegation.ts";
 import { grantsCommand } from "./grants-command.ts";
 import { runInit } from "./init-command.ts";
 import { planWithApprovals } from "./run-delegation.ts";
-import { createGrantsSession, loadProjectDefinitions, type GrantsSession } from "./session.ts";
+import { createGrantsSession, loadProjectDefinitions, resolveExecutor, type GrantsSession } from "./session.ts";
 import { reportSessionStart } from "./session-report.ts";
 
 const SPAWN_TOOLS = new Set(["Agent", "subagent", "spawn_agent"]);
@@ -89,6 +89,21 @@ export default function (pi: ExtensionAPI) {
             `spawned this session, and delegation by tools: is unaffected. Governance itself is unaffected: ` +
             `it is enforced by --tools when a child is spawned.`,
           "error",
+        );
+      }
+      // ADR-0031: probe once, HERE, before anything reports — so the disclosure line can name the executor,
+      // and so a demanded-but-unreachable herdr is reported before the operator's first prompt rather than at
+      // their first delegation. Its own try, because a failure here must not cancel the controls after it
+      // (R-60), and `probeHerdr` is documented as never throwing precisely so this is belt-and-braces.
+      try {
+        await resolveExecutor(session);
+      } catch (error) {
+        ctx.ui.notify(
+          `grants: could not settle which executor to use ` +
+            `(${error instanceof Error ? error.message : String(error)}) — using the captured subprocess, ` +
+            `which needs nothing installed. Set PI_GRANTS_HERDR=0 to make that explicit, or 1 to demand ` +
+            `herdr panes.`,
+          "warning",
         );
       }
       session.publishChildEnv();

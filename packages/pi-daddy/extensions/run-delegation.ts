@@ -22,7 +22,8 @@ import type { Capability } from "../src/resolve.ts";
 import { ENV_CHILD_TIMEOUT, runChild, timeoutFromEnv } from "../src/run-child.ts";
 import { runHerdrPane } from "../src/run-herdr.ts";
 import { obtainApprovals, republishable, snapshotOf, type ApprovalOutcome, type ApprovalUIContext } from "./approvals.ts";
-import { ENV_HERDR_KEEP_PANE, ENV_HERDR_WORKSPACE, type GrantsSession } from "./session.ts";
+import { resolveWorkspace } from "../src/herdr-cli.ts";
+import { ENV_HERDR_KEEP_PANE, type GrantsSession } from "./session.ts";
 
 /** What one child was asked to do. The shape both tools accept, per child. */
 interface ChildSpec {
@@ -167,6 +168,18 @@ export async function runOneDelegation(
   // disagree (R-38). This call is the enforcing one: it passes `ctx`, so a human CAN be asked.
   let { plan, approval: approvalOutcome } = await planWithApprovals(session, request, extra, ctx, signal);
 
+  // ADR-0031: herdr was DEMANDED (`PI_GRANTS_HERDR=1`) and is not answering. Refused rather than relocated —
+  // the operator chose that over falling back, so the ledger can never name a child that ran somewhere nobody
+  // chose.
+  //
+  // Refused HERE, in front of the ledger write below, and that placement is the point: a record written before
+  // the refusal would describe a child that never existed, while a refusal recorded *after* the executor tried
+  // would already have created a pane. Turning `plan.ok` off means the existing blocked-record path handles it
+  // unchanged, so this adds a reason rather than a second refusal mechanism.
+  if (session.executor.refusal) {
+    plan = { ...plan, ok: false, reason: `grants: ${session.executor.refusal}` };
+  }
+
   // G6 / B-I3: no `&& plan.result` guard — `planDelegation` always carries one now.
   if (session.ledgerPath) {
     await appendRecord(
@@ -208,10 +221,14 @@ export async function runOneDelegation(
   // G8: bounded output, a wall-clock timeout with SIGTERM->SIGKILL escalation, and an abort observed
   // even if it happened before we got here. See src/run-child.ts for why each one exists.
   //
-  // ADR-0016 point 6: two executors, one plan. `runChild` is the default because it needs nothing
-  // installed; herdr gives the same governed argv a VISIBLE, attachable pane. Opt-in per session rather
-  // than auto-detected — a governed run must not silently relocate because a binary is on PATH.
-  const output = session.useHerdr
+  // ADR-0016 point 6: two executors, one plan. `runChild` needs nothing installed; herdr gives the same
+  // governed argv a VISIBLE, attachable pane.
+  //
+  // **Which one is chosen was reversed by ADR-0031**: the session probes for a reachable herdr server at
+  // startup rather than waiting to be told. Still never detected from a binary on `PATH` — only from a server
+  // that answered — and the choice is disclosed at session start, in `/grants`, and per child in the ledger.
+  // Read live off `session.executor`, because the probe finishes after this module is loaded.
+  const output = session.executor.kind === "herdr"
     ? await runHerdrPane({
         args: plan.args.slice(0, -1),
         // The task is delivered as a prompt, so it never reaches argv at all. `plan.args` still ends
@@ -223,7 +240,11 @@ export async function runOneDelegation(
         env: plan.env,
         cwd: ctx.cwd,
         name: `${spec.agent ?? "delegate"}-${ids.childId}`,
-        workspace: process.env[ENV_HERDR_WORKSPACE],
+        // Was `process.env[ENV_HERDR_WORKSPACE]`, i.e. "omitted lets herdr choose" — which put children in a
+        // different workspace from the pi session that spawned them, so switching to one meant hopping
+        // workspaces rather than tabs. `resolveWorkspace` prefers the operator's explicit answer and otherwise
+        // inherits the parent's own `HERDR_WORKSPACE_ID` (measured; herdr sets it in every pane it creates).
+        workspace: resolveWorkspace(process.env),
         signal,
         timeoutMs: timeoutFromEnv(process.env[ENV_CHILD_TIMEOUT]),
         keepPane: process.env[ENV_HERDR_KEEP_PANE] === "1",

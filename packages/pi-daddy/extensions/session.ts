@@ -20,6 +20,8 @@ import { makeCatalog, skillPathsFromCatalog, type Catalog } from "../src/catalog
 import type { SkillDefinition } from "../src/definitions.ts";
 import { DELEGATE_CAPABILITY, type DelegationContext } from "../src/delegate.ts";
 import { budgetFromEnv } from "../src/fanout.ts";
+import { chooseExecutor, needsProbe, ENV_HERDR, type ExecutorChoice } from "../src/executor.ts";
+import { probeHerdr } from "../src/herdr-cli.ts";
 import { WILDCARD } from "../src/pi-tools.ts";
 import {
   childEnv,
@@ -43,15 +45,27 @@ import { loadGrantSync, grantStorePath } from "../src/grant-store.ts";
 import { republishable } from "./approvals.ts";
 
 /**
- * Run governed children in herdr panes instead of captured child processes (ADR-0016 point 6).
+ * Run governed children in herdr panes instead of captured child processes.
  *
- * Opt-in, and deliberately not auto-detected from `herdr` being on PATH: where a governed child executes
- * is an operator decision, and a run that silently relocates because a binary appeared is exactly the kind
- * of invisible change this package exists to prevent. Both executors enforce the identical grant — the
- * plan is the same, only the place it runs differs.
+ * **Three-state as of ADR-0031, and absent means PROBE.** It was opt-in under ADR-0016 point 6, on the
+ * reasoning that *"a run that silently relocates because a binary appeared is exactly the kind of invisible
+ * change this package exists to prevent"* — and that sentence is still honoured, because nothing is detected
+ * from `herdr` being on `PATH`. What changed is that a **server which answers** is a different and stronger
+ * test, and the "silently" half is discharged by the disclosure line ADR-0032 adds at session start and in
+ * `/grants`. Both executors still enforce the identical grant: the plan is the same, only the place it runs
+ * differs.
+ *
+ * The table itself is a pure function in `../src/executor.ts`; re-exported here because this is where every
+ * other `PI_GRANTS_*` name lives and a reader looking for it will look here.
  */
-export const ENV_HERDR = "PI_GRANTS_HERDR";
-/** herdr workspace for spawned panes. Omitted lets herdr choose. */
+export { ENV_HERDR } from "../src/executor.ts";
+/**
+ * herdr workspace for spawned panes.
+ *
+ * **Read via `resolveWorkspace`, not directly.** Omitting it no longer means "let herdr choose": it falls back
+ * to the parent's own `HERDR_WORKSPACE_ID`, because a child in a different workspace from the pi session that
+ * spawned it makes switching to it a workspace hop (ADR-0032). This name is the operator's explicit override.
+ */
 export const ENV_HERDR_WORKSPACE = "PI_GRANTS_HERDR_WORKSPACE";
 /** Keep each child's pane after it finishes, for inspection. Off by default: fan-out would flood it. */
 export const ENV_HERDR_KEEP_PANE = "PI_GRANTS_HERDR_KEEP_PANE";
@@ -76,7 +90,18 @@ export interface GrantsSession {
   readonly malformedBounds: string[];
   readonly gated: Capability[];
   readonly ledgerPath?: string;
-  readonly useHerdr: boolean;
+  /**
+   * Which executor runs this session's children — ADR-0031.
+   *
+   * **Mutable, and for ADR-0030's reason exactly.** Settling it needs a probe, the probe is async, and this
+   * object is built *synchronously* in the extension factory — an ordering S-5 forces, since whether
+   * `delegate` is registered at all is decided there. So it starts as the un-probed reading and is replaced by
+   * `resolveExecutor` once `session_start` has probed.
+   *
+   * Nothing may capture a copy: read it through the session, live. A copy taken in the factory is a copy taken
+   * before the probe, which is the same hazard as capturing `ownGrant` before the tool surface is observed.
+   */
+  executor: ExecutorChoice;
   /** This session's ledger identity; children descend from it (F8). */
   readonly ownSpawnId: string;
   /** Descendants this subtree may still create — the cardinality bound ADR-0008 never had. */
@@ -182,6 +207,22 @@ export async function loadProjectDefinitions(session: GrantsSession, cwd: string
   session.catalog = await session.catalogReady;
 }
 
+/**
+ * Probe for herdr and settle this session's executor — ADR-0031.
+ *
+ * **Once, at session start, and never per spawn.** A fan-out whose children ran under two executors would put
+ * two different things under one call in the ledger, and the two plans differ (`--print` is withheld on the
+ * herdr path). A herdr server that dies mid-session therefore surfaces as a failed `tab create`, reported as
+ * the spawn error it is, rather than as a silent relocation of the remaining children.
+ *
+ * `probeHerdr` never throws, so this cannot either — which matters because it runs *before* the line that
+ * discloses what it decided (R-60: a throw here would cancel that line and every control after it).
+ */
+export async function resolveExecutor(session: GrantsSession): Promise<void> {
+  const raw = process.env[ENV_HERDR];
+  session.executor = chooseExecutor(raw, needsProbe(raw) ? await probeHerdr() : null);
+}
+
 export function createGrantsSession(extensionPath: string | undefined): GrantsSession {
   // Governance is opt-in: with PI_GRANTS_GRANT unset AND no stored grant for this directory, the session
   // holds the wildcard and nothing is blocked. This extension must never silently tighten a normal
@@ -221,7 +262,10 @@ export function createGrantsSession(extensionPath: string | undefined): GrantsSe
     // `PI_GRANTS_GATED=""` turns the default off; absent and empty are deliberately distinguishable.
     gated: governed ? gatedFromEnv(process.env[ENV_GATED]) : parseList(process.env[ENV_GATED]),
     ledgerPath: process.env[ENV_LEDGER],
-    useHerdr: process.env[ENV_HERDR] === "1",
+    // The un-probed reading. `resolveExecutor` replaces it at session start; until then a `1` already reads as
+    // a refusal, which is the safe direction — a delegation that somehow ran before the probe would refuse
+    // rather than quietly use the wrong executor.
+    executor: chooseExecutor(process.env[ENV_HERDR], null),
     // `ownSpawnId` comes from the parent (F8), so ids form one tree across process boundaries instead of
     // every level restarting at `d0` and the ledger becoming unjoinable.
     ownSpawnId: process.env[ENV_PARENT_ID]?.trim() || `d${depth}`,
@@ -267,7 +311,11 @@ export function createGrantsSession(extensionPath: string | undefined): GrantsSe
       // The herdr executor drives the child after starting it, so its plan must NOT carry `--print`.
       // Threaded through the plan rather than patched afterwards: the argv is what the ledger records, and
       // an executor quietly rewriting it would make the record describe a spawn that did not happen.
-      interactive: session.useHerdr,
+      //
+      // Read live off `session.executor` (ADR-0031) rather than a boolean captured in the factory: the probe
+      // has not run when this session object is built, so a captured value would plan `--print` for a session
+      // that turns out to use panes — and `runHerdrPane` refuses a plan containing `--print` by design.
+      interactive: session.executor.kind === "herdr",
       ...(approved ? { approved } : {}),
     }),
 

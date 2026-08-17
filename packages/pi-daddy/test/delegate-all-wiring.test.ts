@@ -18,11 +18,12 @@ import { after, afterEach, test } from "node:test";
 import grantsExtension from "../extensions/grants.ts";
 import { MAX_CHILDREN_PER_CALL } from "../src/fanout.ts";
 import { ENV_APPROVED, ENV_DEPTH, ENV_FANOUT, ENV_GATED, ENV_GRANT, ENV_LEDGER, ENV_MAX_DEPTH, ENV_PARENT_ID } from "../src/propagation.ts";
+import { ENV_HERDR } from "../src/executor.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
 after(cleanupTempDirs);
 
-const KEYS = [ENV_GRANT, ENV_DEPTH, ENV_MAX_DEPTH, ENV_GATED, ENV_APPROVED, ENV_LEDGER, ENV_FANOUT, ENV_PARENT_ID];
+const KEYS = [ENV_GRANT, ENV_DEPTH, ENV_MAX_DEPTH, ENV_GATED, ENV_APPROVED, ENV_LEDGER, ENV_FANOUT, ENV_PARENT_ID, ENV_HERDR];
 const saved = new Map<string, string | undefined>();
 
 afterEach(() => {
@@ -42,7 +43,14 @@ async function harness(env: Record<string, string>, existingDir?: string) {
   const dir = existingDir ?? (await tempDir("grants-fanout-"));
   for (const k of KEYS) if (!saved.has(k)) saved.set(k, process.env[k]);
   for (const k of KEYS) delete process.env[k];
-  Object.assign(process.env, env);
+  // `PI_GRANTS_HERDR=0` by DEFAULT, and this line is load-bearing rather than tidy-up.
+  //
+  // ADR-0031 made an unset variable mean *probe*, and `resolveExecutor` runs inside `session_start` — which
+  // this harness calls. Leaving it unset would run a real `herdr tab list` against whatever is on the
+  // developer's machine, so this suite would select panes here and subprocesses in CI, from the same source.
+  // A test whose outcome depends on which daemons happen to be running is not a test. `0` skips the probe
+  // entirely; a test that wants the other paths overrides it and says why.
+  Object.assign(process.env, { [ENV_HERDR]: "0", ...env });
 
   const tools = new Map<string, ToolSpec>();
   const hooks = new Map<string, (e: unknown, c: unknown) => unknown>();
@@ -245,4 +253,58 @@ test("R-39: a definition the session may NOT spawn is not advertised", async () 
 
   const described = agentDescriptionOf(tools.get("delegate")!);
   assert.match(described, /Available: none/, "an unauthorised definition must not be advertised (ADR-0017)");
+});
+
+test("ADR-0031: a session that DEMANDED herdr and cannot reach it refuses every delegation", async () => {
+  // **The refusal must land in the PLANNER's path, not at the executor.** A child that reaches `tab create`
+  // has already had its ledger line written, so a refusal any later would record a spawn that never happened
+  // — and one any earlier could not know the probe's answer. The production change that breaks this: moving
+  // the `session.executor.refusal` check into `runHerdrPane`, or making `1` fall back to a subprocess.
+  //
+  // The probe is made to fail for real rather than mocked: `PATH` is emptied for the duration, so
+  // `execFile("herdr", …)` cannot resolve the binary and `defaultExec` is exercised end to end. That is why
+  // this test is worth having on top of `test/executor.test.ts`, which covers the table in isolation.
+  const realPath = process.env.PATH;
+  process.env.PATH = "";
+  try {
+    const { tools } = await harness({
+      [ENV_GRANT]: "tool:read,tool:delegate",
+      [ENV_HERDR]: "1",
+    });
+
+    await assert.rejects(
+      () => tools.get("delegate")!.execute("c1", { task: "read the file", tools: ["read"] }, undefined, undefined, {
+        cwd: process.cwd(),
+        ui: { notify: () => {}, select: async () => undefined },
+        hasUI: false,
+      }),
+      (error: Error) => {
+        assert.match(error.message, /PI_GRANTS_HERDR/, "the refusal must name the variable that caused it");
+        assert.match(error.message, /refused/);
+        return true;
+      },
+    );
+  } finally {
+    process.env.PATH = realPath;
+  }
+});
+
+test("ADR-0031: PI_GRANTS_HERDR=0 spawns nothing through herdr and does not refuse", async () => {
+  // The other side of the same switch: an operator who ruled herdr out must be unaffected by whether herdr is
+  // running. This is also the configuration every other test in this file runs under, asserted once so the
+  // harness default above is not merely assumed.
+  const { tools } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate", [ENV_HERDR]: "0" });
+  // A capability the session does not hold, so it is refused for THAT reason and never spawned — the same
+  // trick the rest of this suite uses to stay fast. What matters is which reason comes back.
+  await assert.rejects(
+    () => tools.get("delegate")!.execute("c1", { task: "write a file", tools: ["write"] }, undefined, undefined, {
+      cwd: process.cwd(),
+      ui: { notify: () => {}, select: async () => undefined },
+      hasUI: false,
+    }),
+    (error: Error) => {
+      assert.doesNotMatch(error.message, /PI_GRANTS_HERDR/, "a PI_GRANTS_HERDR=0 session must never blame herdr");
+      return true;
+    },
+  );
 });
