@@ -21,16 +21,21 @@
  * child. Humans are not this project's threat model, but nothing here should be read as containing one.
  */
 
-import { execFile } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ChildRunResult } from "./run-child.ts";
 import { DEFAULT_MAX_OUTPUT_BYTES, DEFAULT_TIMEOUT_MS } from "./run-child.ts";
 import { trackPane, untrackPane } from "./pane-reaper.ts";
+import { defaultExec, parseReply, type HerdrExec } from "./herdr-cli.ts";
 
-/** One herdr CLI invocation. Injectable so every rule below is testable without herdr installed. */
-export type HerdrExec = (args: string[]) => Promise<{ code: number | null; stdout: string; stderr: string }>;
+/**
+ * Re-exported so importers of the executor still reach the protocol at the name they always used.
+ *
+ * Deliberate rather than lazy: `test/run-herdr.test.ts` imports `HerdrExec` from here and must pass
+ * **unmodified** across this extraction — that is the only available proof the move changed no behaviour.
+ */
+export { type HerdrExec, parseReply } from "./herdr-cli.ts";
 
 export interface HerdrRunRequest {
   /** `planSpawn` args **without** the prompt — see `prompt`. */
@@ -92,34 +97,6 @@ const TERMINAL = new Set(["idle", "done", "blocked"]);
 export const POLL_INTERVAL_MS = 750;
 /** How often to retry `agent start` while a freshly created pane is still reaching its shell prompt. */
 export const PANE_READY_POLL_MS = 300;
-
-const defaultExec: HerdrExec = (args) =>
-  new Promise((settle) => {
-    execFile("herdr", args, { maxBuffer: 32 * 1024 * 1024 }, (error, stdout, stderr) => {
-      const code = error && typeof (error as { code?: unknown }).code === "number" ? (error as { code: number }).code : error ? 1 : 0;
-      settle({ code, stdout: String(stdout), stderr: String(stderr) });
-    });
-  });
-
-/**
- * Parse herdr's JSON envelope. Every command replies `{id, result}` or `{id, error:{code,message}}`.
- *
- * `stderr` is folded into the message because the first end-to-end run failed with an EMPTY stdout and the
- * real reason on stderr, producing the useless diagnostic "unparseable herdr reply: ". A wrapper that
- * hides the substrate's own error message costs more time than it saves.
- */
-function parseReply(reply: { stdout: string; stderr: string }): { result?: Record<string, unknown>; error?: string } {
-  try {
-    const parsed = JSON.parse(reply.stdout) as { result?: Record<string, unknown>; error?: { message?: string; code?: string } };
-    if (parsed.error) return { error: parsed.error.message ?? parsed.error.code ?? "herdr reported an error" };
-    return { result: parsed.result };
-  } catch {
-    // A non-JSON reply is a herdr-version or PATH problem, not a governance decision. Surfaced as a spawn
-    // error so the caller reports "could not start" rather than "the child produced nothing".
-    const detail = [reply.stdout.trim(), reply.stderr.trim()].filter((t) => t.length > 0).join(" | ");
-    return { error: `unparseable herdr reply: ${detail.slice(0, 300) || "(no output)"}` };
-  }
-}
 
 /**
  * Run one governed child in a pane and return its output.
