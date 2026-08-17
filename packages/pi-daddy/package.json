@@ -73,6 +73,10 @@
       "types": "./dist/herdr-cli.d.ts",
       "default": "./dist/herdr-cli.js"
     },
+    "./executor": {
+      "types": "./dist/executor.d.ts",
+      "default": "./dist/executor.js"
+    },
     "./run-child": {
       "types": "./dist/run-child.d.ts",
       "default": "./dist/run-child.js"
