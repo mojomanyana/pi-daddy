@@ -37,6 +37,7 @@ import {
   parseList,
 } from "../src/propagation.ts";
 import type { Capability } from "../src/resolve.ts";
+import { loadGrantSync, grantStorePath } from "../src/grant-store.ts";
 import { republishable } from "./approvals.ts";
 
 /**
@@ -129,6 +130,23 @@ export interface GrantsSession {
    * prompted the human. A value scoped to one specific child is never written to this global channel.
    */
   publishChildEnv(): void;
+  /**
+   * The directory whose stored grant this session read, or would read. `process.cwd()` — see the note in
+   * `createGrantsSession` for why the factory cannot use `ctx.cwd`.
+   */
+  readonly storeCwd: string;
+  /**
+   * Adopt a grant decided DURING the session — `/grants init` answering a human — without a restart.
+   *
+   * Narrow by design: it sets the session's own grant and republishes, so the very next spawn is bounded by
+   * it. It does **not** reach children that already exist; those are separate processes whose environment
+   * was fixed when they started, and reaching into them is neither possible nor desirable — a child's
+   * ceiling should not move under it mid-run.
+   *
+   * Only a human can reach this. Slash commands are user-invoked; no tool exposes it, so a model cannot
+   * widen its own session's ceiling by calling something.
+   */
+  adoptGrant(grant: Capability[]): void;
 }
 
 /**
@@ -139,11 +157,24 @@ export interface GrantsSession {
  * file, and only `grants.ts` can say so about itself.
  */
 export function createGrantsSession(extensionPath: string | undefined): GrantsSession {
-  // Governance is opt-in: with PI_GRANTS_GRANT unset the session holds the wildcard and nothing is
-  // blocked. This extension must never silently tighten a normal workflow.
+  // Governance is opt-in: with PI_GRANTS_GRANT unset AND no stored grant for this directory, the session
+  // holds the wildcard and nothing is blocked. This extension must never silently tighten a normal
+  // workflow.
+  //
+  // **Two sources, and the environment always wins** (ADR-0030). The variable is how a CHILD is governed
+  // and how CI is configured, so a store that could override it would let a directory quietly widen or
+  // narrow a child its parent had already bounded. The store is consulted only when the variable is absent,
+  // which is exactly the case it was added for: a human at a terminal who ran `/grants init` here.
+  //
+  // `process.cwd()` rather than `ctx.cwd`, because this runs in the extension factory — before any hook,
+  // and therefore before `ctx` exists. That ordering is forced by S-5: whether `delegate` is registered at
+  // all is decided here, and a grant arriving later could not inform it. `session_start` re-checks the two
+  // against each other and says so if they differ, which is the only case this can get wrong.
   const grantRaw = process.env[ENV_GRANT];
-  const governed = grantRaw !== undefined;
-  const inherited: Capability[] = governed ? parseList(grantRaw) : [WILDCARD];
+  const storeCwd = process.cwd();
+  const stored = grantRaw === undefined ? loadGrantSync(storeCwd) : null;
+  const governed = grantRaw !== undefined || stored !== null;
+  const inherited: Capability[] = grantRaw !== undefined ? parseList(grantRaw) : (stored ?? [WILDCARD]);
   // G7 / A-S4 + B-I4: strict, three-way parsing that fails CLOSED. A malformed bound used to yield
   // `NaN`, and every comparison against `NaN` is false, so depth limiting switched itself off.
   const bounds = depthConfig(process.env[ENV_DEPTH], process.env[ENV_MAX_DEPTH]);
@@ -213,6 +244,16 @@ export function createGrantsSession(extensionPath: string | undefined): GrantsSe
       interactive: session.useHerdr,
       ...(approved ? { approved } : {}),
     }),
+
+    storeCwd,
+
+    adoptGrant: (grant: Capability[]) => {
+      // `governed` is not mutable on the session object, and it does not need to be: a stored grant makes
+      // the session governed at creation, and `/grants init` only ever runs in a session that just wrote
+      // one. What must change is the grant itself and what children inherit.
+      session.ownGrant = grant;
+      session.publishChildEnv();
+    },
 
     publishChildEnv: () => {
       const env = childEnv({

@@ -30,12 +30,16 @@ import { legacyApprovalsPath, sharedApprovalsPath } from "../src/approval-store.
 import { buildCatalog } from "../src/catalog.ts";
 import { loadDefinitions } from "../src/definitions.ts";
 import { appendRecord, buildRecord, verifyLedger } from "../src/ledger.ts";
-import { deriveOwnGrant, observeToolNames } from "../src/propagation.ts";
+import {
+  ENV_GRANT, deriveOwnGrant, observeToolNames } from "../src/propagation.ts";
 import { snapshotOf } from "./approvals.ts";
 import { registerDelegationTools } from "./delegation.ts";
 import { grantsCommand } from "./grants-command.ts";
+import { runInit } from "./init-command.ts";
+import type { Capability } from "../src/resolve.ts";
+
 import { planWithApprovals } from "./run-delegation.ts";
-import { createGrantsSession } from "./session.ts";
+import { createGrantsSession, type GrantsSession } from "./session.ts";
 import { renderSpawnableSummary, summariseSpawnable } from "./spawn-summary.ts";
 
 const SPAWN_TOOLS = new Set(["Agent", "subagent", "spawn_agent"]);
@@ -60,6 +64,20 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_start", async (_event, ctx) => {
     session.cwd = ctx.cwd;
+    // The one case the stored-grant lookup can get wrong (ADR-0030). The factory reads the store keyed by
+    // `process.cwd()` because it runs before any hook and therefore before `ctx` exists — and S-5 forces
+    // that ordering, since whether `delegate` is registered is decided there. Almost always the two agree.
+    // When they do not, the session is governed by a different directory's decision than the one it is
+    // working in, which is exactly the confusion a grant must never cause, so it is said out loud rather
+    // than left to be inferred from a surprising refusal. Sync, so it is not the R-60 shape.
+    if (session.storeCwd !== ctx.cwd && process.env[ENV_GRANT] === undefined) {
+      ctx.ui.notify(
+        `grants: this session's stored grant was read for ${session.storeCwd}, but pi is working in ` +
+          `${ctx.cwd}. A grant belongs to a directory, so run /grants init here, or set PI_GRANTS_GRANT ` +
+          `explicitly — the environment always wins.`,
+        "warning",
+      );
+    }
     try {
       // Guarded together, and guarded at all because of R-60 rather than because either one throws today:
       // both loaders swallow their own filesystem errors, so this catch is currently unreachable. The point
@@ -368,9 +386,11 @@ export default function (pi: ExtensionAPI) {
           // says so: stored approvals count exactly as they would for a spawn, and no human is asked
           // (R-38). Passing `ctx` here would let `/grants` raise a dialog, and passing `hasUI: false` would
           // make every gated definition report "no interactive user" instead of what actually blocks it.
+          runInit: () => runInit(session, ctx),
           previewDelegation: (name: string) =>
             planWithApprovals(session, { task: "(preview)", agent: name }, {}, null),
         },
       }),
   });
 }
+

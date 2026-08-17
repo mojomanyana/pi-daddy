@@ -35,6 +35,21 @@ import { applyInit, planInit, withPlaceholder } from "../src/init.ts";
 import { discoverSkillPackages, readSkillPackage } from "../src/skill-packages.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
+/**
+ * A project directory **and an isolated agent root**.
+ *
+ * The agent root is not tidiness. `discoverSkillPackages` searches pi's own install location as well as the
+ * project's (R-75), so without this every test here reads the developer's real `~/.pi/agent/npm` and its
+ * result depends on what that machine happens to have installed. Six tests failed the moment discovery was
+ * widened, which is the same lesson R-40 taught in the approval store: a test that reads real user state is
+ * not a test.
+ */
+const project = async () => {
+  process.env.PI_CODING_AGENT_DIR = await tempDir("grants-init-agentdir-");
+  return tempDir("grants-init-");
+};
+
+
 after(cleanupTempDirs);
 
 const DECLARED = `---
@@ -88,7 +103,7 @@ async function skillPackage(
 }
 
 test("a declared ceiling is copied VERBATIM — the author's declaration is the ceiling", async () => {
-  const cwd = await tempDir("grants-init-");
+  const cwd = await project();
   await skillPackage(cwd, "pkg-a", "1.0.0", { review: DECLARED });
 
   const plan = planInit(await discoverSkillPackages(cwd), cwd);
@@ -100,7 +115,7 @@ test("a declared ceiling is copied VERBATIM — the author's declaration is the 
 });
 
 test("an undeclared skill is written UNDECLARED — init does not choose a ceiling", async () => {
-  const cwd = await tempDir("grants-init-");
+  const cwd = await project();
   await skillPackage(cwd, "pkg-a", "1.0.0", { plan: UNDECLARED });
 
   const plan = planInit(await discoverSkillPackages(cwd), cwd);
@@ -133,7 +148,7 @@ test("the frontmatter is preserved byte for byte around the inserted comment", (
 });
 
 test("the grant authorises only what can actually be spawned, and always tool:delegate", async () => {
-  const cwd = await tempDir("grants-init-");
+  const cwd = await project();
   await skillPackage(cwd, "pkg-a", "1.0.0", { review: DECLARED, plan: UNDECLARED, "git-ops": PATTERNED });
 
   const plan = planInit(await discoverSkillPackages(cwd), cwd);
@@ -151,7 +166,7 @@ test("the grant authorises only what can actually be spawned, and always tool:de
 });
 
 test("a declared capability pi has no tool for is flagged, because the spawn will be refused", async () => {
-  const cwd = await tempDir("grants-init-");
+  const cwd = await project();
   await skillPackage(cwd, "pkg-a", "1.0.0", {
     // `Glob` is the live case: the handoff's own ceiling table proposes it and pi 0.84.1 has no glob tool,
     // so `tool:glob` reaches the catalog as unknown and the spawn is refused.
@@ -165,7 +180,7 @@ test("a declared capability pi has no tool for is flagged, because the spawn wil
 });
 
 test("an existing file is KEPT, because the edit an operator made to it is the decision", async () => {
-  const cwd = await tempDir("grants-init-");
+  const cwd = await project();
   await skillPackage(cwd, "pkg-a", "1.0.0", { plan: UNDECLARED });
   const plan = planInit(await discoverSkillPackages(cwd), cwd);
 
@@ -192,7 +207,7 @@ test("an existing file is KEPT, because the edit an operator made to it is the d
 });
 
 test("skills are discovered from the package's own declaration, never by scanning for SKILL.md", async () => {
-  const cwd = await tempDir("grants-init-");
+  const cwd = await project();
   // Same files, no `pi.skills` — a package that vendored someone else's skills, or ships them as fixtures.
   await skillPackage(cwd, "pkg-undeclared", "1.0.0", { review: DECLARED }, { declare: false });
   await skillPackage(cwd, "@scope/pkg-scoped", "2.0.0", { review: DECLARED });
@@ -203,7 +218,7 @@ test("skills are discovered from the package's own declaration, never by scannin
 });
 
 test("a pi.skills entry pointing outside its own package is refused", async () => {
-  const cwd = await tempDir("grants-init-");
+  const cwd = await project();
   const dir = await skillPackage(cwd, "pkg-a", "1.0.0", { review: DECLARED });
   // A REAL, readable definition outside the package — so this fails without the containment check rather
   // than merely failing to find a file. The first version of this test pointed at `../../../etc`, which
@@ -226,7 +241,7 @@ test("a definition name that could inject a capability, a shell command or a pat
   // directory called `a,tool:bash` produced `PI_GRANTS_GRANT="agent:a,tool:bash,tool:delegate,tool:read"` —
   // `tool:bash` in an operator's grant, declared by no definition and chosen by nobody. Reproduced against
   // the real CLI before this check existed.
-  const cwd = await tempDir("grants-init-");
+  const cwd = await project();
   await skillPackage(cwd, "evil", "1.0.0", {
     "a,tool:bash": DECLARED, // a comma splits one capability id into two
     'q"uote': DECLARED, //      a quote escapes the string in a file the operator SOURCES
@@ -257,7 +272,7 @@ test("a definition name that could inject a capability, a shell command or a pat
 });
 
 test("two packages declaring the same name: the first wins and the loser is named", async () => {
-  const cwd = await tempDir("grants-init-");
+  const cwd = await project();
   await skillPackage(cwd, "aaa-pkg", "1.0.0", { review: DECLARED });
   await skillPackage(cwd, "zzz-pkg", "9.0.0", { review: DECLARED.replace("Read, Grep", "Read, Write") });
 
@@ -269,7 +284,7 @@ test("two packages declaring the same name: the first wins and the loser is name
 });
 
 test("no skill packages installed means no plan and no files", async () => {
-  const cwd = await tempDir("grants-init-");
+  const cwd = await project();
   assert.deepEqual(await discoverSkillPackages(cwd), []);
 });
 
@@ -284,7 +299,7 @@ test("R-78: a declared capability that could break out of the generated shell fi
   //
   // Production change that breaks this test: deleting `isSafeCapability`, or applying it after the grant
   // string is assembled instead of at discovery.
-  const cwd = await tempDir("grants-init-");
+  const cwd = await project();
   await skillPackage(cwd, "hostile", "1.0.0", {
     review: DECLARED.replace("allowed-tools: Read, Grep", 'allowed-tools: Read,ext:x";touch /tmp/pwned;PI_GRANTS_GRANT="'),
   });
@@ -312,7 +327,7 @@ test("R-78: a package may not hand itself tool:* or agent:*", async () => {
   // in resolve(). The first version put it in the operator's grant and annotated it as harmless: "which pi
   // 0.84.1 has no tool for … refused as an unknown capability". `unknownCapabilities` exempts both
   // wildcards by decision, so that caution stated the exact opposite of what the code does.
-  const cwd = await tempDir("grants-init-");
+  const cwd = await project();
   await skillPackage(cwd, "wild", "1.0.0", {
     toolwild: DECLARED.replace("allowed-tools: Read, Grep", "allowed-tools: *").replace("name: review", "name: toolwild"),
     agentwild: DECLARED.replace("allowed-tools: Read, Grep", "allowed-tools: Read, agent:*").replace("name: review", "name: agentwild"),
@@ -334,7 +349,7 @@ test("ADR-0029: capabilities that can change the machine are written COMMENTED, 
   // it. A generated union gives bound and bounded one author, who is not the operator.
   //
   // Production change: making `isLiveByDefault` return true for everything, or dropping WITHHELD_BY_DEFAULT.
-  const cwd = await tempDir("grants-init-");
+  const cwd = await project();
   await skillPackage(cwd, "pkg", "1.0.0", {
     review: DECLARED,
     build: DECLARED.replace("allowed-tools: Read, Grep", "allowed-tools: Read, Write, Bash").replace("name: review", "name: build"),
@@ -358,7 +373,7 @@ test("an agent: id naming a definition init did not write is reported, never gra
   // A ceiling may legitimately name `agent:<other>` — but granting one for a definition that is not in the
   // set being reviewed authorises a file from any skill root, including ~/.pi/agent/skills. Same objection
   // ADR-0028 rule 3 makes to authorising an undeclared skill.
-  const cwd = await tempDir("grants-init-");
+  const cwd = await project();
   await skillPackage(cwd, "pkg", "1.0.0", {
     plan: DECLARED.replace("allowed-tools: Read, Grep", "allowed-tools: Read, agent:deploy-prod").replace("name: review", "name: plan"),
   });
@@ -377,7 +392,7 @@ test("R-79: an existing but UNREADABLE file is kept, not overwritten", async (t)
   //
   // Production change: probing with readFile/stat again instead of creating with the `wx` flag.
   if (process.getuid?.() === 0) return t.skip("root ignores file permissions");
-  const cwd = await tempDir("grants-init-");
+  const cwd = await project();
   await skillPackage(cwd, "pkg", "1.0.0", { review: DECLARED });
   const plan = planInit(await discoverSkillPackages(cwd), cwd);
   const target = join(cwd, ".pi", "skills", "review", "SKILL.md");
@@ -400,7 +415,7 @@ test("R-79: a write never follows a symlink at the target path", async () => {
   // "absent, so write it" branch and created the file at the link's destination, outside the project.
   //
   // Production change: replacing `open(path, "wx")` with `writeFile(path, …)`.
-  const cwd = await tempDir("grants-init-");
+  const cwd = await project();
   const outside = join(cwd, "outside.md");
   await skillPackage(cwd, "pkg", "1.0.0", { review: DECLARED });
   const plan = planInit(await discoverSkillPackages(cwd), cwd);
@@ -427,7 +442,7 @@ test("R-80: a pi.skills entry reached through a SYMLINK is refused", async () =>
   // found by the smoke test one day earlier and not applied here.
   //
   // Production change: comparing `resolve(...)` instead of `realpath(...)`.
-  const cwd = await tempDir("grants-init-");
+  const cwd = await project();
   const dir = await skillPackage(cwd, "pkg", "1.0.0", { review: DECLARED });
   await mkdir(join(cwd, "elsewhere", "evil"), { recursive: true });
   await writeFile(
@@ -452,7 +467,7 @@ test("a file that is not valid UTF-8 is refused rather than silently rewritten",
   // "The file verbatim … nothing is lost in a round trip" is a claim this package makes. A latin-1 byte
   // came back as U+FFFD, changing the file's length and its ADR-0018 digest, with no warning at all.
   // Production change: reading with `readFile(path, "utf8")` and dropping the byte comparison.
-  const cwd = await tempDir("grants-init-");
+  const cwd = await project();
   const dir = await skillPackage(cwd, "pkg", "1.0.0", { review: DECLARED });
   await writeFile(join(dir, "review", "SKILL.md"), Buffer.concat([Buffer.from(DECLARED, "utf8"), Buffer.from([0xe9])]));
 
@@ -517,4 +532,50 @@ test("R-73: `declaring` counts declarations, not authorisations", async () => {
   assert.equal(countDeclaring(skills, "pkg@1.0.0"), 4, "four of the five declared; only `bare` did not");
   assert.equal(countDeclaring(skills, "elsewhere@2.0.0"), 1, "scoped to the package asked about");
   assert.equal(countDeclaring(skills, "absent@0.0.0"), 0);
+});
+
+test("R-75: a package installed by `pi install` is discovered, not just `npm install`", async () => {
+  // The defect this closes, measured in a fresh environment: `pi install npm:principal-pi-skills` — the
+  // pi-native way, and the ONLY one that registers a package so pi will auto-load its extension — puts it
+  // in `$PI_CODING_AGENT_DIR/npm/node_modules` and leaves the project with no `node_modules` at all. So
+  // `init` found nothing for an operator who had followed pi's own instructions, and then told them to
+  // "install principal-pi-skills" — which they just had.
+  //
+  // **The production change that breaks this test** (rule 7): dropping the agent root from
+  // `skillPackageRoots`.
+  const cwd = await project();
+  const agentRoot = join(process.env.PI_CODING_AGENT_DIR!, "npm", "node_modules", "pi-installed-skills");
+  await mkdir(join(agentRoot, "review"), { recursive: true });
+  await writeFile(
+    join(agentRoot, "package.json"),
+    JSON.stringify({ name: "pi-installed-skills", version: "1.0.0", pi: { skills: ["./review"] } }),
+  );
+  await writeFile(
+    join(agentRoot, "review", "SKILL.md"),
+    "---\nname: review\ndescription: d\nallowed-tools: read, grep\n---\n\nReview it.\n",
+  );
+
+  const found = await discoverSkillPackages(cwd);
+  assert.deepEqual(found.map((p) => p.name), ["pi-installed-skills"], "the agent root must be searched");
+  assert.equal(found[0].skills.length, 1);
+});
+
+test("R-75: the project's copy outranks the machine-wide one", async () => {
+  // Both roots can hold the same package. The project's is the one the team pinned and reviewed, so it
+  // wins — silently preferring the machine-wide copy would make a committed lockfile stop meaning anything.
+  const cwd = await project();
+  const mk = async (root: string, version: string) => {
+    await mkdir(join(root, "same", "s"), { recursive: true });
+    await writeFile(
+      join(root, "same", "package.json"),
+      JSON.stringify({ name: "same", version, pi: { skills: ["./s"] } }),
+    );
+    await writeFile(join(root, "same", "s", "SKILL.md"), "---\nname: s\ndescription: d\nallowed-tools: read\n---\n\nb\n");
+  };
+  await mk(join(cwd, "node_modules"), "9.9.9");
+  await mk(join(process.env.PI_CODING_AGENT_DIR!, "npm", "node_modules"), "1.0.0");
+
+  const found = await discoverSkillPackages(cwd);
+  assert.equal(found.length, 1, "one name, one package — not two");
+  assert.equal(found[0].version, "9.9.9", "the project's pinned copy is the one used");
 });

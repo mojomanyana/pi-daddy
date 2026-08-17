@@ -43,6 +43,15 @@ export interface GrantsCommandContext {
    * R-28 discipline where it belongs: this command asks what would happen instead of working it out.
    */
   previewDelegation: (name: string) => Promise<GatedPlan>;
+  /**
+   * Run `/grants init`: scaffold definitions, ask about the withheld capabilities only, store the answer
+   * outside the workspace, and apply it to this session (ADR-0030).
+   *
+   * Injected rather than imported so this module stays what it is — a read-only diagnostic that cannot
+   * become a governance path by accident. The one command here that *writes* takes its ability to do so
+   * from the caller, visibly.
+   */
+  runInit: () => Promise<void>;
 }
 
 /**
@@ -52,7 +61,7 @@ export interface GrantsCommandContext {
 const PREVIEW_LIMIT = 12;
 
 /** The verbs `/grants` answers to. Anything else is refused rather than silently treated as no verb. */
-const KNOWN_SUBCOMMANDS: readonly string[] = ["ledger", "approvals", "revoke"];
+const KNOWN_SUBCOMMANDS: readonly string[] = ["init", "ledger", "approvals", "revoke"];
 
 export const grantsCommand = {
   description:
@@ -67,6 +76,11 @@ handler: async (args: string, ctx: any) => {
     } = ctx.grants as GrantsCommandContext;
 
     const [sub, target] = args.trim().split(/\s+/).filter(Boolean);
+
+    if (sub === "init") {
+      await ctx.grants.runInit();
+      return;
+    }
 
     if (sub === "ledger") {
       // The detector, made reachable. `verifyLedger` exists because nothing in this package had ever read

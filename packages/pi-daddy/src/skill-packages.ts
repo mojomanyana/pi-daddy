@@ -26,6 +26,7 @@
  */
 
 import { readdir, readFile, realpath } from "node:fs/promises";
+import { homedir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { ceilingForDefinition, parseSkillDefinition, type SkillDefinition } from "./definitions.ts";
 import { WILDCARD } from "./pi-tools.ts";
@@ -219,16 +220,53 @@ export async function readSkillPackage(packageDir: string): Promise<SkillPackage
  * `node_modules`: a transitive skill package is not something an operator asked to install definitions
  * from, and scaffolding one into their project would be a surprise wearing a helpful face.
  */
+/**
+ * Every place a pi package can be installed, most specific first (R-75).
+ *
+ * **Two roots, because pi has two install paths and only one of them is `npm install`.** `pi install
+ * npm:principal-pi-skills` — the documented, pi-native way, and the only one that registers the package so
+ * pi will auto-load its extension — puts it in `$PI_CODING_AGENT_DIR/npm/node_modules`, and leaves the
+ * project without a `node_modules` at all. Searching only `<cwd>/node_modules` therefore found **nothing**
+ * for an operator who followed pi's own instructions, and said "install principal-pi-skills" to somebody
+ * who just had.
+ *
+ * Measured, in a fresh `PI_CODING_AGENT_DIR` with an empty project: `pi install` populates the agent root
+ * and creates no project root.
+ *
+ * Project first when both exist, because a package pinned in the repository is the one the team agreed on.
+ */
+export function skillPackageRoots(cwd: string): string[] {
+  const agentDir = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
+  return [join(cwd, "node_modules"), join(agentDir, "npm", "node_modules")];
+}
+
 export async function discoverSkillPackages(cwd: string): Promise<SkillPackage[]> {
-  const root = join(cwd, "node_modules");
+  const dirs: string[] = [];
+  const seenNames = new Set<string>();
+  for (const root of skillPackageRoots(cwd)) await collectFrom(root, dirs);
+
+  const packages: SkillPackage[] = [];
+  for (const dir of dirs) {
+    const found = await readSkillPackage(dir);
+    // First root wins on a name collision: the project's pinned copy outranks the machine-wide one, and
+    // silently preferring the other would make a committed lockfile stop meaning anything.
+    if (found && !seenNames.has(found.name)) {
+      seenNames.add(found.name);
+      packages.push(found);
+    }
+  }
+  return packages.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Append every package directory under one `node_modules`, scoped packages included. */
+async function collectFrom(root: string, dirs: string[]): Promise<void> {
   let entries: string[];
   try {
     entries = await readdir(root);
   } catch {
-    return []; // no node_modules is a normal state, not a failure
+    return; // a root that does not exist is a normal state, not a failure
   }
 
-  const dirs: string[] = [];
   for (const entry of entries.sort()) {
     if (entry.startsWith(".")) continue; // .bin, .package-lock.json
     if (entry.startsWith("@")) {
@@ -241,11 +279,4 @@ export async function discoverSkillPackages(cwd: string): Promise<SkillPackage[]
       dirs.push(join(root, entry));
     }
   }
-
-  const packages: SkillPackage[] = [];
-  for (const dir of dirs) {
-    const found = await readSkillPackage(dir);
-    if (found) packages.push(found);
-  }
-  return packages.sort((a, b) => a.name.localeCompare(b.name));
 }

@@ -15,7 +15,7 @@
 import assert from "node:assert/strict";
 import { after, describe, test } from "node:test";
 import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { digestDefinition, parseSkillDefinition } from "../src/definitions.ts";
 import { cleanupTempDirs, fixture, piAvailable, runCommand, tempDir, verdictFor } from "./harness.ts";
 
@@ -371,11 +371,14 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     // answers a question nobody asked is indistinguishable from success, which is the failure shape this
     // package's risk register is mostly about.
     const cwd = await projectOnce();
-    const r = await runCommand({ cwd, command: "/grants init", env: { PI_GRANTS_GRANT: "tool:read" } });
+    // `ledgr` rather than `init`: this test USED to use `init`, and ADR-0030 then made init a real
+    // subcommand — so the test failed, correctly, on the change that invalidated its fixture. A typo of a
+    // real verb is the better example anyway, because it is what actually happens.
+    const r = await runCommand({ cwd, command: "/grants ledgr", env: { PI_GRANTS_GRANT: "tool:read" } });
     const text = r.notifies.map((n) => n.message).join("\n");
 
-    assert.match(text, /unknown subcommand "init" — did nothing/, "it must say it did nothing");
-    assert.match(text, /Known: ledger, approvals, revoke/, "and what it does know");
+    assert.match(text, /unknown subcommand "ledgr" — did nothing/, "it must say it did nothing");
+    assert.match(text, /Known: init, ledger, approvals, revoke/, "and what it does know");
     assert.ok(!/holding    /.test(text), "and must NOT print the status screen, which is what made it look fine");
   });
 
@@ -391,6 +394,58 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
       !/unknown subcommand/.test(approvals.notifies.map((n) => n.message).join("\n")),
       "a known verb must not be refused",
     );
+  });
+
+  test("ADR-0030: a stored grant governs the session with NO environment variable and NO restart", async () => {
+    // The reason the store exists: `source .pi/grants.env && pi` was two steps and a restart, because the
+    // grant only ever arrived through the environment. A directory that ran `/grants init` is now governed
+    // by plain `pi`.
+    const cwd = await fixture({ "docs-writer": DOCS_WRITER });
+    const agentDir = await tempDir("grants-it-storedir-");
+    const { grantStorePath } = await import("../src/grant-store.ts");
+    process.env.PI_CODING_AGENT_DIR = agentDir;
+    const storePath = grantStorePath(cwd);
+    await mkdir(dirname(storePath), { recursive: true });
+    await writeFile(
+      storePath,
+      JSON.stringify({ version: 1, cwd, grant: ["agent:docs-writer", "tool:read", "tool:write"], writtenAt: "x" }),
+      "utf8",
+    );
+
+    // No PI_GRANTS_GRANT anywhere in this run.
+    const r = await runCommand({ cwd, command: "/grants", env: { PI_CODING_AGENT_DIR: agentDir } });
+    const text = r.notifies.map((n) => n.message).join("\n");
+
+    assert.match(text, /grants: ACTIVE/, "a stored grant makes the session governed");
+    assert.match(text, /agent:docs-writer/, "and it is the STORED grant that is held");
+    assert.match(verdictFor(r, "docs-writer") ?? "", /^allow/, "and the planner uses it for real");
+  });
+
+  test("ADR-0030: PI_GRANTS_GRANT always beats the store", async () => {
+    // The precedence that keeps children and CI correct. The variable is how a CHILD is governed; a store
+    // that could override it would let a directory quietly re-widen a child its parent had bounded.
+    const cwd = await fixture({ "docs-writer": DOCS_WRITER });
+    const agentDir = await tempDir("grants-it-storedir2-");
+    const { grantStorePath } = await import("../src/grant-store.ts");
+    process.env.PI_CODING_AGENT_DIR = agentDir;
+    const storePath = grantStorePath(cwd);
+    await mkdir(dirname(storePath), { recursive: true });
+    // A deliberately WIDE store beside a deliberately NARROW environment.
+    await writeFile(
+      storePath,
+      JSON.stringify({ version: 1, cwd, grant: ["tool:*"], writtenAt: "x" }),
+      "utf8",
+    );
+
+    const r = await runCommand({
+      cwd,
+      command: "/grants",
+      env: { PI_CODING_AGENT_DIR: agentDir, PI_GRANTS_GRANT: "tool:read" },
+    });
+    const text = r.notifies.map((n) => n.message).join("\n");
+
+    assert.match(text, /holding    tool:read/, "the environment's narrow grant is what is held");
+    assert.ok(!/tool:\*/.test(text), "the store's wide grant must not appear at all");
   });
 
   test("R-34: a corrupt ledger is reported at session start, unasked", async () => {
