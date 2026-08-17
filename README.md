@@ -8,6 +8,9 @@ ledger of every grant and refusal.
 **Status:** `pi-daddy` **0.13.0**, the only package. 315 unit + 26 integration tests (+4
 more with a real model); typecheck and smoke clean.
 
+**Want to run it?** [`docs/RUNNING-IT.md`](docs/RUNNING-IT.md) — setup in six steps, then a feature built
+end to end with seven governed sub-agents, sequential where output feeds input and parallel where it does not.
+
 ## What it actually does
 
 A spawnable agent is an **Agent Skills `SKILL.md`** file — the open standard, already read by 16+ tools. Its
