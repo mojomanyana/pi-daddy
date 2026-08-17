@@ -37,6 +37,8 @@ import {
   parseList,
 } from "../src/propagation.ts";
 import type { Capability } from "../src/resolve.ts";
+import { loadDefinitions } from "../src/definitions.ts";
+import { buildCatalog } from "../src/catalog.ts";
 import { loadGrantSync, grantStorePath } from "../src/grant-store.ts";
 import { republishable } from "./approvals.ts";
 
@@ -55,8 +57,17 @@ export const ENV_HERDR_WORKSPACE = "PI_GRANTS_HERDR_WORKSPACE";
 export const ENV_HERDR_KEEP_PANE = "PI_GRANTS_HERDR_KEEP_PANE";
 
 export interface GrantsSession {
-  /** False when `PI_GRANTS_GRANT` is unset: the session holds the wildcard and nothing is governed. */
-  readonly governed: boolean;
+  /**
+   * False when neither `PI_GRANTS_GRANT` nor a stored grant applies: the session holds the wildcard and
+   * nothing is governed.
+   *
+   * **Mutable, because `/grants init` makes an ungoverned session governed mid-run.** The first version of
+   * ADR-0030 left this readonly on the reasoning that a store is read at creation and `init` only runs where
+   * one exists — which is false for the first `init` in a directory, the most common case there is. The
+   * session then bounded every spawn by the new grant while `/grants` reported "inactive", so the status
+   * line contradicted the enforcer. Found by running it.
+   */
+  governed: boolean;
   /** The upper bound handed down by the delegator, before this session's own tools are observed. */
   readonly inherited: Capability[];
   readonly depth: number;
@@ -156,6 +167,21 @@ export interface GrantsSession {
  * extension**, so a child granted `tool:delegate` can be started with `-e <that file>`. `grants.ts` is that
  * file, and only `grants.ts` can say so about itself.
  */
+/**
+ * Load this project's definitions and capability catalog into the session.
+ *
+ * **One loader, two callers.** `session_start` runs it, and so does `/grants init` — which writes the very
+ * files it reads, so a session that skipped this held `agent:review` while believing no definition of that
+ * name existed, and the model was told `Available: none` (R-39's shape, reintroduced by the feature whose
+ * selling point is "no restart"). Two copies of these three steps is how the two callers come to disagree
+ * about what loading means, so there is one.
+ */
+export async function loadProjectDefinitions(session: GrantsSession, cwd: string): Promise<void> {
+  session.definitions = await loadDefinitions(cwd);
+  session.catalogReady = buildCatalog({ cwd, observedTools: session.observedTools });
+  session.catalog = await session.catalogReady;
+}
+
 export function createGrantsSession(extensionPath: string | undefined): GrantsSession {
   // Governance is opt-in: with PI_GRANTS_GRANT unset AND no stored grant for this directory, the session
   // holds the wildcard and nothing is blocked. This extension must never silently tighten a normal
@@ -248,9 +274,11 @@ export function createGrantsSession(extensionPath: string | undefined): GrantsSe
     storeCwd,
 
     adoptGrant: (grant: Capability[]) => {
-      // `governed` is not mutable on the session object, and it does not need to be: a stored grant makes
-      // the session governed at creation, and `/grants init` only ever runs in a session that just wrote
-      // one. What must change is the grant itself and what children inherit.
+      // Governed too, not just bounded. A session that starts with no grant and then runs `/grants init` is
+      // governed from that moment: every spawn is bounded by what was just stored. Leaving this false made
+      // `/grants` print "inactive" while holding thirteen capabilities — a status line contradicting the
+      // enforcer, which is the defect R-28 is named for.
+      session.governed = true;
       session.ownGrant = grant;
       session.publishChildEnv();
     },

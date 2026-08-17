@@ -93,6 +93,38 @@ resolution, enforcement, approvals or the ledger changed — this is the part be
   defect as the `exports` map that worked in the tree and threw for every consumer, and the second time that
   script has caught it.
 
+## 0.15.0 — `/grants init`, a grant that survives without an env var, and a setup that was wrong
+
+**Setup is two steps instead of five, and one of the five was wrong.**
+
+```bash
+pi install npm:pi-daddy
+pi install npm:principal-pi-skills
+pi
+/grants init
+```
+
+- **`pi install`, not `npm install`.** This package's own documentation said `npm install`, and that is not
+  how pi packages are installed: `pi install` registers the package in pi's settings, which is what makes
+  the extension auto-load, and it installs to `$PI_CODING_AGENT_DIR/npm/node_modules` rather than the
+  project. **`init` searched only the project and so found nothing for anyone who followed pi's own
+  instructions** — telling them to install a package they had just installed. It now searches both roots,
+  project first so a pinned copy outranks the machine-wide one.
+- **`/grants init`** scaffolds definitions, asks about the capabilities that can change your machine, and
+  applies the answer to the session you are already in — **no `source`, no restart**.
+- **A grant can now come from a store**, at `$PI_CODING_AGENT_DIR/grants/<project>.json` — **outside** your
+  project, because a ceiling a child holding `tool:write` could rewrite is not a ceiling. `PI_GRANTS_GRANT`
+  **always wins**: it is how a child is governed and how CI is configured. `.pi/grants.env` is still written
+  and still worth committing — it is the reviewable record, no longer what the enforcer reads. (ADR-0030)
+- **The dialog does not ask questions whose answers cannot matter.** `tool:bash` subsumes `write` and
+  `edit`, so once bash is granted those are conferred; asking anyway let an operator answer *no* to
+  `tool:write` and then watch `build` be allowed it. It now reports them as already conferred instead.
+- **An unknown `/grants` subcommand is refused rather than ignored.** `/grants init` used to print the
+  ordinary status screen with the word silently dropped, so a command that did not exist looked like it had
+  worked.
+- **`init` counted authorisations and called them declarations** — "7 skill(s), 3 declaring allowed-tools"
+  when all seven declared.
+
 ## 0.13.0 — the approvals file gets the lock the ledger already had, and two silences end
 
 Closing the last items that were open rather than out of scope, then **red-teaming the result**: an

@@ -20,12 +20,14 @@ const work = mkdtempSync(join(tmpdir(), "grants-smoke-"));
 // happens to have installed machine-wide and asserts against it. It broke the moment discovery was widened:
 // the fixture expected one skill and found this machine's `principal-pi-skills` too. R-40's lesson, third
 // occurrence — a test that reads real user state is not a test.
+// Always `work`, never the `cwd` of the individual call: one invocation runs `npm pack` in the REPO, and
+// deriving the agent dir from its cwd would point this at a path inside the checkout.
 const run = (cmd, args, cwd) =>
   execFileSync(cmd, args, {
     cwd,
     encoding: "utf8",
     stdio: "pipe",
-    env: { ...process.env, PI_CODING_AGENT_DIR: join(cwd, ".agent-home") },
+    env: { ...process.env, PI_CODING_AGENT_DIR: join(work, ".agent-home") },
   });
 
 try {

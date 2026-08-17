@@ -12,6 +12,7 @@ import { dirname } from "node:path";
 import { after, test } from "node:test";
 import { clearGrant, grantStorePath, loadGrant, loadGrantSync, parseGrantFile, saveGrant } from "../src/grant-store.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
+import { expandSubsumed, type Capability } from "../src/resolve.ts";
 
 after(cleanupTempDirs);
 
@@ -92,4 +93,23 @@ test("clearGrant removes it, and the directory is ungoverned again", async () =>
   await saveGrant(cwd, ["tool:read"]);
   assert.equal(await clearGrant(cwd), true);
   assert.equal(loadGrantSync(cwd), null, "removing the store must actually un-govern the directory");
+});
+
+test("R-76: a capability already conferred by subsumption is not asked about", async () => {
+  // Three defects found by running `/grants init` end to end, of which this is the worst. `tool:bash`
+  // subsumes `write`, `edit` and `edit-diff`, so once bash is granted those are conferred — and the dialog
+  // asked about them anyway. An operator could answer NO to `tool:write`, then watch `/grants` allow
+  // `build` with `tool:write`, and conclude the dialog was decorative. It was: R-47's shape, inside a
+  // control built to prevent exactly that.
+  //
+  // **The production change that breaks this test** (rule 7): asking about a capability that
+  // `expandSubsumed` already reports as held.
+  const held: Capability[] = ["tool:bash"];
+  const expanded = expandSubsumed(held);
+  for (const c of ["tool:write", "tool:edit", "tool:edit-diff"] as Capability[]) {
+    assert.ok(expanded.includes(c), `${c} is conferred by bash, so asking about it is a question with no answer`);
+  }
+  // And the converse, so "skip it" has not become "skip everything": bash confers no authority to spawn.
+  assert.ok(!expandSubsumed(["tool:read"]).includes("tool:write"), "read confers nothing");
+  assert.ok(!expanded.includes("agent:build"), "a tool never confers an agent: id");
 });
