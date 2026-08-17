@@ -1,7 +1,7 @@
 # ADR-0033: a chain is planned as a unit, and a prior agent's output is data
 
 **Date:** 2026-08-17
-**Status:** Proposed
+**Status:** Accepted (2026-08-17, by the user — fenced nonce handoff, one upfront gate, one budget unit per step, abort on failure)
 **Driver:** the operator declined to remove `~/.pi/agent/extensions/subagent/` — an ungoverned second spawner
 on the same machine — **specifically because it can chain and this package cannot**. That makes the missing
 feature the thing keeping an ungoverned path alive, which is a governance argument rather than a convenience

@@ -85,6 +85,10 @@
       "types": "./dist/progress.d.ts",
       "default": "./dist/progress.js"
     },
+    "./chain": {
+      "types": "./dist/chain.d.ts",
+      "default": "./dist/chain.js"
+    },
     "./run-child": {
       "types": "./dist/run-child.d.ts",
       "default": "./dist/run-child.js"
