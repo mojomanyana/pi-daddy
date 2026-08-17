@@ -7,9 +7,14 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ## NEXT SESSION — read this, then pick one
 
-**State: green, and reviewed TWICE — by the operator, then by four independent agents.** `pi-daddy`
-**0.14.0** — the only package. **353 unit + 28 integration tests** (+**4** with a real model), typecheck
-clean, smoke clean. **Twenty-eight** ADRs decided.
+**Before your first edit: `git branch --show-current`. If it says `main`, branch.** Working rule 10, and
+`hooks/pre-commit` enforces it once `git config core.hooksPath hooks` is set in your clone. This line is at
+the top because the rule was broken by drift, and this file is what a session actually reads first.
+
+**State: green.** `pi-daddy` **0.17.0** — the only package. **502 unit + 44 integration tests** (measured
+2026-08-18), plus an opt-in tier behind `PI_GRANTS_IT_MODEL=1`; typecheck clean, smoke clean.
+**Thirty-three** ADRs decided. The three numbers above were stale by three versions until 2026-08-18 —
+R-59's shape in the file `CLAUDE.md` names as the first thing to read.
 
 **2026-08-16/17 added the pi-daddy half of the `principal-pi-skills` integration** (handoff B1/B2/B4,
 ADR-0028 and ADR-0029), then **red-teamed it with five independent agents who found nine defects** — R-78
@@ -96,6 +101,63 @@ That convention is why every reversal here was survivable, and there have been f
 
 ---
 
+
+## 2026-08-18 (review) — a twenty-line docs PR, five reviewers, eleven defects
+
+**The rule that says every change gets a PR was itself reviewed, and it needed it.** PR #6 added working rule
+10. Five independent reviewers, one lens each; **eleven findings, four of them reported independently by more
+than one reviewer.** The change was twenty lines of prose in two files.
+
+**The worst finding is that the rule forbade the merge it required.** The first draft said *"never commit to
+`main`"*. Landing a PR puts a commit on `main`; so does merging locally. A fresh session reading that
+literally either refuses to merge at all, or — the dangerous branch — tries to *repair* the state it thinks
+it created, and the two obvious repairs are `git reset --hard HEAD~11` and `git push --force`. **A
+prohibition with no recovery procedure is an invitation to destroy work.** The object of the prohibition was
+simply wrong: what must be forbidden is `main` being advanced by anything other than a merged PR. Rule 10 now
+names the recovery explicitly, and forbids rewriting history in it.
+
+**Second: the rule secured the artifact of a PR, not review, while justifying itself entirely on review.**
+`git switch -c x && gh pr create && gh pr merge` satisfies every word in under a minute with no reviewer. The
+correctly-worded version was already in this file — *"the case for never merging a self-reviewed branch"* —
+and the rule had dropped it. It is now a requirement, scoped to changes that touch behaviour.
+
+**Third: the justifying anecdote described an event that never happened.** It claimed six reviewers across
+two rounds found one critical governance flaw twice *"in work already green on four suites, manually
+verified, with a PR description written"*. Two different episodes: the six-reviewer round was 0.16.0 (PR #5,
+eighteen defects, two shipping blockers, and that is the one with four suites and a manual check), while the
+same-flaw-twice was `delegate_chain`, two rounds of three. **And `delegate_chain` never went through a PR at
+all — it is the eleven commits.** The true version is a *better* argument than the invented one: the work
+with the worst governance defects is the work that skipped the PR. Rule 5 and rule 6, on the sentence doing
+all the persuading.
+
+**Fourth, and the one worth generalising: the rule was prose, in a project that promotes violated rules to
+guards.** Every rule here that was *actually broken in practice* — the 400-line ceiling, the session-start
+guard, the risk-register headlines (R-59, then R-72) — became a mechanical check precisely because prose had
+already failed once. Rule 10 is justified by the same shape of history and shipped with nothing enforcing it:
+no hook, no CI, and `main` with no branch protection (404, checked). Now `hooks/pre-commit` plus
+`test/branch-guard.test.ts`, which three mutations of the hook fail. **Both remaining gaps are stated in the
+rule rather than implied**, because an unstated absence reads as enforcement.
+
+**Fifth, small and purely self-inflicted: the file lost rule 9.** Inserting the new section before the
+terminology one and renumbering 9 → 11 left 1-8, 10, 11 — a gap that reads as a deleted rule, in a file whose
+header boasts that the risk register cites it eighteen times. **Four of the five reviewers found this
+independently**, which is a useful calibration on what a single careful read misses. Fixed by appending the
+section instead, so nothing renumbered at all. `CLAUDE.md`'s summary of the file ("*nine of them*",
+"documentation, evidence and terminology discipline") was falsified by the very PR editing that file, three
+lines below the bullet it added.
+
+**Then the rule broke itself during verification, and that is R-85's last paragraph.** Testing whether the
+hook fires, `git stash -u` swept the still-untracked hook aside, so the commit on `main` succeeded — the
+guard was absent at the exact moment it was under test. Empty, unpushed, undone with `git branch -f main
+origin/main`, which is the recovery the rule prescribes; the procedure was needed within minutes of being
+written. **A guard a routine command can remove is a guard with a hole.**
+
+**What to copy from this pass.** Assigning each reviewer a single falsifiable lens produced almost no
+overlap: the factual-claims reviewer found the composited anecdote, the rendering reviewer measured the
+108-character wrap and cleared the two rendering worries by *actually rendering* rather than reasoning, and
+the enforcement reviewer produced the finding that changed the shape of the work. **The one thing every
+reviewer found was the numbering gap** — the cheapest defect in the diff, and the one a careful author had
+read past four times.
 
 ## 2026-08-18 — the chain's gate was wrong TWICE, and the pattern is the lesson
 

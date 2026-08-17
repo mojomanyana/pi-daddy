@@ -35,8 +35,9 @@ permissible, able to refuse or allow but never to narrow. **This package is now 
 is an argument rather than a veto. Definitions are **Agent Skills (`SKILL.md`)** files whose `allowed-tools`
 becomes the grant; the pi-subagents ceiling port is deleted; the interceptor survives only as a tripwire.
 
-**Current state: `pi-daddy` 0.17.0 — the only package.** Thirty-three ADRs decided. 489 unit +
-44 integration tests (+4 more with a real model), typecheck and smoke clean.
+**Current state: `pi-daddy` 0.17.0 — the only package.** Thirty-three ADRs decided. 502 unit +
+44 integration tests, plus an opt-in tier behind `PI_GRANTS_IT_MODEL=1` that spawns real children;
+typecheck and smoke clean.
 
 **What the product claims, precisely** — this wording is load-bearing and was narrowed by ADR-0012: it
 governs the **tool surface**, i.e. which tools pi exposes to a model, enforced structurally by pi's own
@@ -73,6 +74,8 @@ docs/probes/              — measurement evidence, all against real software. E
                             adr-0011-universal/, g1-argv/, g5-bash-escape/, g13-subagents-coupling/,
                             g16-herdr/ (herdr as an executor + four constraints found by building it),
                             b2-init-principal-pi-skills/ (the whole init loop against the real package)
+hooks/pre-commit          — working rule 10's guard: refuses a commit on `main`. Inert until you run
+                            `git config core.hooksPath hooks` — per clone, not carried by the repository
 docs/00-blueprint.md      — the architecture handoff, verbatim (immutable source input)
 docs/archive/             — SUPERSEDED, kept as evidence, never edited to match today. The retired-thesis
                             registers (discovery, assumptions, landscape, metrics), ROADMAP, gate reports,
@@ -106,22 +109,24 @@ refuses until a gate passes that no longer means anything. They are in git histo
 
 ```bash
 cd packages/pi-daddy
-npm test                   # 489 unit tests — fast, pure, no pi, no network
+npm test                   # 502 unit tests — fast, pure, no pi, no network (the branch guard spawns git)
 npm run typecheck          # src + extensions + tests + integration tests
 npm run test:integration   # 44 tests vs a REAL pi process AND a real herdr server — ~55s, no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and USE it
-PI_GRANTS_IT_MODEL=1 npm run test:integration   # + 4 end-to-end with a real model (~60s, costs money)
+PI_GRANTS_IT_MODEL=1 npm run test:integration   # + an end-to-end tier with a real model (costs money)
 PI_GRANTS_KEEP_TMP=1 npm test                   # keep fixture directories for inspection after a failure
 ```
 
 ## Hard Rules
 
-- **Every change lands through a pull request — never commit to `main`.** No size exemption; check the branch
-  *before* the first edit, because the way this rule gets broken is drifting onto `main` after a merge rather than
-  deciding to. Rule 10 in `docs/WORKING-RULES.md` says why: the PR is where the reviews live, and the reviews are
-  what caught the two critical governance defects that four green suites did not.
-- **The working rules are `docs/WORKING-RULES.md`** — documentation, evidence and terminology discipline,
-  nine of them, and they are the ones that carried this project. They lived in
+- **`main` is only ever advanced by merging a pull request** — never edit or commit while checked out on
+  it. No size exemption; check the branch *before* the first edit, because this rule gets broken by
+  drifting onto `main` after a merge rather than by deciding to. `hooks/pre-commit` refuses it once you
+  have run `git config core.hooksPath hooks`. **Rule 10 in `docs/WORKING-RULES.md` is the one to read**:
+  it has the recovery procedure for work already sitting on `main` (which is *not* a force-push), what "no
+  exemption" does and does not cover, and why a PR is the venue rather than the review.
+- **The working rules are `docs/WORKING-RULES.md`** — documentation, evidence, terminology and change
+  discipline, ten of them, and they are the ones that carried this project. They lived in
   `.claude/rules/phase-gates.md` until 2026-08-14; that path is local-only now, and documents dated before
   then cite it correctly for their date. The phase-gate rule the old filename named is **retired** — two
   packages shipped under recorded waivers. Probes still go only under `docs/probes/`.
