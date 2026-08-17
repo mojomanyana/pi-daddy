@@ -104,4 +104,6 @@ rule.
     so if that command prints nothing the hook is inert. `test/branch-guard.test.ts` proves the script
     refuses — not that your clone installed it. `main` has **no** branch protection on GitHub, so a direct
     push still succeeds; requiring a PR there, with zero required approvals, is the server-side half and
-    costs a single maintainer nothing.
+    costs a single maintainer nothing. And `pre-commit` is never invoked for a clean merge, cherry-pick or
+    revert, so those land on `main` unguarded — the hook catches the *drift* this rule was written for, not
+    every route to `main`.

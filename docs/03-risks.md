@@ -984,11 +984,19 @@ first draft of working rule 10 recorded the incident inside the remedy and nowhe
 session no way to ask whether it recurred.
 
 **FIXED IN PART.** `hooks/pre-commit` refuses a commit on `main`, names the branch and gives the recovery
-(rule 8's shape), with `test/branch-guard.test.ts` proving the script refuses — three mutations of the hook
-fail it. Two gaps stay, both deliberate and both stated in rule 10 rather than implied: the hook is wired
-**per clone** by `git config core.hooksPath hooks` and is inert until then, and `main` has no GitHub branch
-protection, so a direct `git push` still succeeds. Requiring a PR server-side with zero approvals is the
-other half and is not enabled.
+(rule 8's shape), with `test/branch-guard.test.ts` proving the script refuses — **seven mutations of the hook
+fail it**, including deleting it. Three gaps stay, all deliberate and all stated in rule 10 rather than
+implied: the hook is wired **per clone** by `git config core.hooksPath hooks` and is inert until then; `main`
+has no GitHub branch protection, so a direct `git push` still succeeds; and `pre-commit` never runs for a
+clean merge, cherry-pick or revert, so those reach `main` unguarded.
+
+**The fix's own review found the fix repeating the defect it removed.** The first hook refused a **conflicted**
+merge on `main` — a clean merge runs `pre-merge-commit` and never reaches it, but a conflicted one finishes
+with a literal `git commit` that does — and in that state `git switch -c`, the recovery the hook itself
+prints, is rejected by git outright. The only escape git suggests is `git merge --quit`, which discards the
+conflict resolution. **That is "a prohibition with no usable recovery" reintroduced in shell, one commit after
+being removed from the prose**, and it is this project's most repeated shape: a fix containing the defect it
+fixed. Now exempted via `MERGE_HEAD`/`CHERRY_PICK_HEAD`/`REVERT_HEAD`.
 
 **It recurred within the hour, which is the honest part of this entry.** Verifying the hook, `git stash -u`
 swept the then-untracked hook aside, so the test commit on `main` succeeded — the guard was absent at the one
@@ -997,8 +1005,11 @@ origin/main`, which is the recovery rule 10 prescribes. **A guard that a routine
 guard with a hole**, and the hole closes only when the hook is tracked *and* `core.hooksPath` is set in the
 clone — the state this repository is now in.
 
-**Trigger:** `git log --first-parent --oneline origin/main` showing a commit whose subject carries no `(#N)`
-pull-request suffix. Mechanical, and it does not depend on anyone remembering the incident.
+**Trigger:** `git log --first-parent --oneline 26e778f..origin/main | grep -vE '\(#[0-9]+\)$|Merge pull
+request #'` — any output is a commit that reached `main` without a PR. **The first version of this trigger was
+useless and a reviewer measured it: unbounded, it flagged 87 of 89 commits, and it also flagged the two real
+PR merges**, because GitHub's merge-commit subject puts `#N` in a prefix rather than a `(#N)` suffix. Bounded
+at the rule's own start it is silent on today's history and returns exactly 11 over the incident range.
 
 ## R-84 · One `session` yes to a model-chosen tool list pre-authorises the whole subtree — M×M, OPEN by decision
 Added 2026-08-18, measured. `<delegate>` is a **fixed literal** subject: `inheritApprovals` exempts it from

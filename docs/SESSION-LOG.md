@@ -11,7 +11,7 @@ decisions; this file holds state and next actions. Newest entry on top.
 `hooks/pre-commit` enforces it once `git config core.hooksPath hooks` is set in your clone. This line is at
 the top because the rule was broken by drift, and this file is what a session actually reads first.
 
-**State: green.** `pi-daddy` **0.17.0** — the only package. **502 unit + 44 integration tests** (measured
+**State: green.** `pi-daddy` **0.17.0** — the only package. **505 unit + 44 integration tests** (measured
 2026-08-18), plus an opt-in tier behind `PI_GRANTS_IT_MODEL=1`; typecheck clean, smoke clean.
 **Thirty-three** ADRs decided. The three numbers above were stale by three versions until 2026-08-18 —
 R-59's shape in the file `CLAUDE.md` names as the first thing to read.
@@ -151,6 +151,23 @@ hook fires, `git stash -u` swept the still-untracked hook aside, so the commit o
 guard was absent at the exact moment it was under test. Empty, unpushed, undone with `git branch -f main
 origin/main`, which is the recovery the rule prescribes; the procedure was needed within minutes of being
 written. **A guard a routine command can remove is a guard with a hole.**
+
+**Then the fixes were reviewed, and the fix had reintroduced the defect it removed.** Rule 10 says a change
+touching behaviour gets an independent pass, and the fixes added a hook and a test — behaviour. So one more
+reviewer, on the delta only. It returned **DO NOT MERGE**, correctly. `hooks/pre-commit` refused a
+**conflicted** merge on `main`: a clean merge runs `pre-merge-commit` and never reaches the hook, but a
+conflicted one finishes with a literal `git commit` that does — and in that state `git switch -c`, the recovery
+the hook itself prints, is rejected by git. The only escape git offers is `git merge --quit`, which throws away
+the conflict resolution. **"A prohibition with no usable recovery", removed from the prose and reintroduced in
+shell one commit later.** Four more: the skip condition made *deleting the hook* report `pass 0, skipped 4`
+instead of failing — rule 7 inside the file citing rule 7, and precisely R-85's recorded recurrence; the R-85
+trigger flagged 87 of 89 commits *and* both genuine PR merges, because GitHub puts `#N` in a prefix not a
+`(#N)` suffix; a third enforcement gap (clean cherry-pick and revert never invoke `pre-commit`) was unstated
+while the commit claimed both gaps were stated; and the one git-spawning test would die on any machine with
+`commit.gpgsign = true`. Two of its reported surviving mutations were also worth closing: a waiver loosened to
+`[ -n ]` (so `=0` and `=false` would *disable* the guard) and a `*main*` substring match (which would refuse
+`docs/maintenance`). **Seven mutations now fail the suite, measured, where the docstring had claimed four and
+one of those survived.**
 
 **What to copy from this pass.** Assigning each reviewer a single falsifiable lens produced almost no
 overlap: the factual-claims reviewer found the composited anecdote, the rendering reviewer measured the

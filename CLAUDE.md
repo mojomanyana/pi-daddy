@@ -35,7 +35,7 @@ permissible, able to refuse or allow but never to narrow. **This package is now 
 is an argument rather than a veto. Definitions are **Agent Skills (`SKILL.md`)** files whose `allowed-tools`
 becomes the grant; the pi-subagents ceiling port is deleted; the interceptor survives only as a tripwire.
 
-**Current state: `pi-daddy` 0.17.0 — the only package.** Thirty-three ADRs decided. 502 unit +
+**Current state: `pi-daddy` 0.17.0 — the only package.** Thirty-three ADRs decided. 505 unit +
 44 integration tests, plus an opt-in tier behind `PI_GRANTS_IT_MODEL=1` that spawns real children;
 typecheck and smoke clean.
 
@@ -109,7 +109,7 @@ refuses until a gate passes that no longer means anything. They are in git histo
 
 ```bash
 cd packages/pi-daddy
-npm test                   # 502 unit tests — fast, pure, no pi, no network (the branch guard spawns git)
+npm test                   # 505 unit tests — fast, pure, no pi, no network (the branch guard spawns git)
 npm run typecheck          # src + extensions + tests + integration tests
 npm run test:integration   # 44 tests vs a REAL pi process AND a real herdr server — ~55s, no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and USE it
