@@ -12,86 +12,25 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
-## 0.14.0 — `pi-daddy init`, and a startup line that names what it will and will not spawn
+## 0.17.1 — no functional change: the release that exists because a rule got enforced
 
-> **Reviewed before release by five independent agents, one hypothesis each. All five found something, and
-> nine defects were fixed here** — including one that executed arbitrary code from the file this feature
-> tells you to commit (R-78), one that overwrote an operator's file and wrote through symlinks (R-79), and
-> one where the startup line blamed your `SKILL.md` files for a misconfigured environment variable (R-81).
-> **ADR-0029 came out of that review**: the generated grant is read-only by default. The reasoning for each
-> is in `docs/03-risks.md` R-78 through R-82.
+**Nothing in the shipped code changed.** This tarball differs from 0.17.0 in its version and in this file,
+and that is stated here rather than dressed up, because a changelog that implies behaviour changed is worse
+than a version nobody needed. `dist/`, `src/` and `extensions/` are byte-identical to 0.17.0.
 
-The pi-daddy half of making this package and a package of skills work together out of the box
-(`docs/HANDOFF-principal-pi-skills-integration.md`, items B1/B2/B4; **ADR-0028**). Nothing about grant
-resolution, enforcement, approvals or the ledger changed — this is the part before and around them.
+What happened is in the repository, not the package: working rule 10 — **`main` is only ever advanced by
+merging a pull request** — plus `hooks/pre-commit`, which refuses a commit on `main` and names a recovery that
+is never a force-push, and `test/branch-guard.test.ts`, which pins it against seven mutations of the hook
+(tests are not published, so that file is not in this tarball either).
 
-- **The generated grant is READ-ONLY by default** (ADR-0029). `init` grants what the copied skills declare
-  minus anything that can change your machine — `bash`, `write`, `edit` and the universal capabilities are
-  written **commented**, naming the definitions that need them. `init` + `source` gives a working read-only
-  setup; widening costs one deliberate uncomment. The reason: `PI_GRANTS_GRANT` is what *bounds* a declared
-  ceiling, so generating it from those ceilings would give the bound and the bounded one author, and it
-  would not be you.
+**Why a version at all**, since nothing here changed: rule 10 says version bumps take the same path as
+everything else, and this one did — branch, PR, review, squash-merge. The rule's first draft was reviewed by
+six independent agents across two rounds that found sixteen defects, including that *"never commit to `main`"*
+forbids the merge the rule requires, and that the guard written to fix that had reproduced the same defect in
+shell. `docs/03-risks.md` R-85 and the 2026-08-18 session-log entry hold the details.
 
-- **`npx pi-daddy init` scaffolds a governed project.** It reads `<cwd>/node_modules` for packages declaring
-  skills in their own `package.json` (`"pi": {"skills": [...]}`, pi's convention), copies each declared
-  `SKILL.md` into `.pi/skills/`, and writes an annotated `.pi/grants.env`. That replaces, per skill: make a
-  directory, copy the body, hand-write frontmatter, choose a capability set with no guidance, and assemble a
-  `PI_GRANTS_GRANT` string by hand — seven times for `principal-pi-skills`.
-
-  **It chooses no ceiling, and that boundary is the whole design.** A skill that declares `allowed-tools` is
-  copied byte for byte; one that declares none is copied with a *commented* placeholder and stays
-  unspawnable until a human fills it in. The placeholder is deliberately not a working example, so
-  uncommenting it unedited fails loudly instead of granting something nobody decided. An existing file is
-  **kept**, never overwritten — that edit is the capability decision, and a second `init` run is exactly
-  when it would be destroyed. `--force` exists and says what it costs.
-
-- **Session start says how many definitions are spawnable, and names the withheld ones.** The line reported
-  the grant and never the definitions, so *"governance is working"* and *"did the install fail?"* looked
-  identical:
-
-  ```
-  grants: 1 of 7 definitions spawnable — review
-    withheld: architect, build, … — need agent:architect, …, which this session does not hold
-  ```
-
-  Classified by the same planner a real spawn comes through (no human is asked, stored approvals count), and
-  it speaks even when **nothing** is spawnable — which is the state most worth being told about. It is an
-  upper bound: it runs before the tool surface is observed, and `/grants` is the settled answer.
-
-- **A worked `principal-pi-skills` example in the README**, replacing the invented one, with every line
-  produced by running the commands (`docs/probes/b2-init-principal-pi-skills`).
-
-- **Fixed before release: a skill's `allowed-tools` VALUE could execute code from the generated grant file**
-  (R-78). `ceilingForDefinition` passes `ext:`/`skill:`/`agent:` entries through as written — correct for
-  enforcement, where the catalog refuses what it does not know — so a package declaring
-  `allowed-tools: Read,ext:x";touch /tmp/pwned;PI_GRANTS_GRANT="` produced a `.pi/grants.env` that ran the
-  payload when sourced: silently, exit 0, with the variable left looking plausible. It survives
-  `--ignore-scripts` and travels in the file you commit. Declared ids are whitelisted now, `tool:*`/`agent:*`
-  from a package are refused, and the assembled grant is charset-checked before the file is written at all.
-
-- **Fixed before release: `init` overwrote an operator's file and wrote through symlinks** (R-79). The
-  presence probe was `readFile`, which treats *unreadable* as *absent* — so a permissions-restricted
-  `SKILL.md` was replaced and its ceiling **widened**, with no `--force`. And `writeFile` follows symlinks, so
-  a dangling link at a target path created the file outside the project while reporting an in-project path.
-  Both are one `open(path, "wx")`. `--force` no longer regenerates `.pi/grants.env`, and `pi-daddy init
-  --Force` is no longer accepted as a silent no-op.
-
-- **Fixed before release: the startup line blamed your files for a session-level refusal** (R-81). A session
-  at its depth limit, or with a malformed `PI_GRANTS_MAX_DEPTH`, was told its `SKILL.md` files were written
-  wrong — two lines above `/grants` saying "delegation is disabled (maxDepth 0)". A session with no
-  `tool:delegate`, which has no delegate tool at all, was told definitions were spawnable.
-
-- **Fixed before release: a skill's directory name could write a capability into the generated grant**
-  (R-77). A name is interpolated into a comma-separated `PI_GRANTS_GRANT`, into a file the operator sources,
-  and into a path. A package shipping a directory called `a,tool:bash` produced
-  `PI_GRANTS_GRANT="agent:a,tool:bash,…"` — `tool:bash` in an operator's grant, declared by no definition.
-  Names are now whitelisted at discovery and a refusal is printed with its reason.
-
-- **Fixed before release: `npx pi-daddy init` printed nothing and exited 0 for every installed copy** (R-73).
-  npm installs a bin as a symlink, so `process.argv[1]` is the link and the entry-point guard compared it
-  against the real file's URL. Caught by the smoke test, which now runs the installed bin — the same class of
-  defect as the `exports` map that worked in the tree and threw for every consumer, and the second time that
-  script has caught it.
+**Also fixed here:** this file claimed "Newest first" while 0.14.0 sat above 0.17.0, 0.16.0 and 0.15.0. The
+order is now what the sentence says it is.
 
 ## 0.17.0 — `delegate_chain`
 
@@ -243,6 +182,87 @@ pi
   worked.
 - **`init` counted authorisations and called them declarations** — "7 skill(s), 3 declaring allowed-tools"
   when all seven declared.
+
+## 0.14.0 — `pi-daddy init`, and a startup line that names what it will and will not spawn
+
+> **Reviewed before release by five independent agents, one hypothesis each. All five found something, and
+> nine defects were fixed here** — including one that executed arbitrary code from the file this feature
+> tells you to commit (R-78), one that overwrote an operator's file and wrote through symlinks (R-79), and
+> one where the startup line blamed your `SKILL.md` files for a misconfigured environment variable (R-81).
+> **ADR-0029 came out of that review**: the generated grant is read-only by default. The reasoning for each
+> is in `docs/03-risks.md` R-78 through R-82.
+
+The pi-daddy half of making this package and a package of skills work together out of the box
+(`docs/HANDOFF-principal-pi-skills-integration.md`, items B1/B2/B4; **ADR-0028**). Nothing about grant
+resolution, enforcement, approvals or the ledger changed — this is the part before and around them.
+
+- **The generated grant is READ-ONLY by default** (ADR-0029). `init` grants what the copied skills declare
+  minus anything that can change your machine — `bash`, `write`, `edit` and the universal capabilities are
+  written **commented**, naming the definitions that need them. `init` + `source` gives a working read-only
+  setup; widening costs one deliberate uncomment. The reason: `PI_GRANTS_GRANT` is what *bounds* a declared
+  ceiling, so generating it from those ceilings would give the bound and the bounded one author, and it
+  would not be you.
+
+- **`npx pi-daddy init` scaffolds a governed project.** It reads `<cwd>/node_modules` for packages declaring
+  skills in their own `package.json` (`"pi": {"skills": [...]}`, pi's convention), copies each declared
+  `SKILL.md` into `.pi/skills/`, and writes an annotated `.pi/grants.env`. That replaces, per skill: make a
+  directory, copy the body, hand-write frontmatter, choose a capability set with no guidance, and assemble a
+  `PI_GRANTS_GRANT` string by hand — seven times for `principal-pi-skills`.
+
+  **It chooses no ceiling, and that boundary is the whole design.** A skill that declares `allowed-tools` is
+  copied byte for byte; one that declares none is copied with a *commented* placeholder and stays
+  unspawnable until a human fills it in. The placeholder is deliberately not a working example, so
+  uncommenting it unedited fails loudly instead of granting something nobody decided. An existing file is
+  **kept**, never overwritten — that edit is the capability decision, and a second `init` run is exactly
+  when it would be destroyed. `--force` exists and says what it costs.
+
+- **Session start says how many definitions are spawnable, and names the withheld ones.** The line reported
+  the grant and never the definitions, so *"governance is working"* and *"did the install fail?"* looked
+  identical:
+
+  ```
+  grants: 1 of 7 definitions spawnable — review
+    withheld: architect, build, … — need agent:architect, …, which this session does not hold
+  ```
+
+  Classified by the same planner a real spawn comes through (no human is asked, stored approvals count), and
+  it speaks even when **nothing** is spawnable — which is the state most worth being told about. It is an
+  upper bound: it runs before the tool surface is observed, and `/grants` is the settled answer.
+
+- **A worked `principal-pi-skills` example in the README**, replacing the invented one, with every line
+  produced by running the commands (`docs/probes/b2-init-principal-pi-skills`).
+
+- **Fixed before release: a skill's `allowed-tools` VALUE could execute code from the generated grant file**
+  (R-78). `ceilingForDefinition` passes `ext:`/`skill:`/`agent:` entries through as written — correct for
+  enforcement, where the catalog refuses what it does not know — so a package declaring
+  `allowed-tools: Read,ext:x";touch /tmp/pwned;PI_GRANTS_GRANT="` produced a `.pi/grants.env` that ran the
+  payload when sourced: silently, exit 0, with the variable left looking plausible. It survives
+  `--ignore-scripts` and travels in the file you commit. Declared ids are whitelisted now, `tool:*`/`agent:*`
+  from a package are refused, and the assembled grant is charset-checked before the file is written at all.
+
+- **Fixed before release: `init` overwrote an operator's file and wrote through symlinks** (R-79). The
+  presence probe was `readFile`, which treats *unreadable* as *absent* — so a permissions-restricted
+  `SKILL.md` was replaced and its ceiling **widened**, with no `--force`. And `writeFile` follows symlinks, so
+  a dangling link at a target path created the file outside the project while reporting an in-project path.
+  Both are one `open(path, "wx")`. `--force` no longer regenerates `.pi/grants.env`, and `pi-daddy init
+  --Force` is no longer accepted as a silent no-op.
+
+- **Fixed before release: the startup line blamed your files for a session-level refusal** (R-81). A session
+  at its depth limit, or with a malformed `PI_GRANTS_MAX_DEPTH`, was told its `SKILL.md` files were written
+  wrong — two lines above `/grants` saying "delegation is disabled (maxDepth 0)". A session with no
+  `tool:delegate`, which has no delegate tool at all, was told definitions were spawnable.
+
+- **Fixed before release: a skill's directory name could write a capability into the generated grant**
+  (R-77). A name is interpolated into a comma-separated `PI_GRANTS_GRANT`, into a file the operator sources,
+  and into a path. A package shipping a directory called `a,tool:bash` produced
+  `PI_GRANTS_GRANT="agent:a,tool:bash,…"` — `tool:bash` in an operator's grant, declared by no definition.
+  Names are now whitelisted at discovery and a refusal is printed with its reason.
+
+- **Fixed before release: `npx pi-daddy init` printed nothing and exited 0 for every installed copy** (R-73).
+  npm installs a bin as a symlink, so `process.argv[1]` is the link and the entry-point guard compared it
+  against the real file's URL. Caught by the smoke test, which now runs the installed bin — the same class of
+  defect as the `exports` map that worked in the tree and threw for every consumer, and the second time that
+  script has caught it.
 
 ## 0.13.0 — the approvals file gets the lock the ledger already had, and two silences end
 
