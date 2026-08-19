@@ -102,6 +102,36 @@ That convention is why every reversal here was survivable, and there have been f
 
 ---
 
+## 2026-08-20 — the 0.18.0 candidate was taken over and re-verified, then opened as a PR
+
+The work below reached `origin/feat/assurance-runtime-primitives` as a single commit named `tmp work`
+with **no pull request**, which is rule 10's venue missing rather than its review. Taken over here: the
+commit was given a real message and the branch was opened as a PR so the diff, the rationale and a PR
+number exist.
+
+**Independently re-verified on a different machine (Node v24.14.0, not the v26.7.0 of the original
+measurement):** 558/558 unit, 44/44 non-model integration, typecheck, installed-package smoke, and
+`docs/probes/g34-runtime-enforcement/probe.mjs` — every finding in the committed transcript reproduced,
+including both SIGTERM and SIGKILL recoveries and the literal hostile argv. The paid `PI_GRANTS_IT_MODEL=1`
+tier was again **not** run.
+
+**One claim in the entry below was false and is now true.** It said `git diff --check` passed; it did not —
+three markdown hard line breaks (trailing double-spaces) in `docs/HANDOFF-principal-pi-skills-v3-assurance.md`
+and `docs/probes/g34-runtime-enforcement/README.md` tripped it. Those headers are bullet lists now and the
+check is clean. A verification list is worth exactly what its least-checked line is worth.
+
+**Two notes left open for the reviewer, neither a blocker, both recorded so the PR does not imply a
+cleaner read than it got.** In `workspace.ts`, `release()` swallows a failed metadata write with
+`.catch(() => undefined)`, so the record stays `state:"active"` and the *next* acquirer reports
+`recovered: true` when nothing was actually recovered — a false recovery signal, not a lost lock. In
+`check-runner.ts`, the `finally` block calls `lease.release()`, which can itself throw
+`WORKSPACE_LEASE_STALE` and mask the original error on the way out. Both fail closed.
+
+**The operator's pass is still outstanding.** Four automated review rounds (R-91…R-98) and this
+re-verification are what the PR carries; rule 10 wants a human on anything touching behaviour, and this
+touches a great deal of it. Do not merge or publish without it.
+
+
 ## 2026-08-19 — 0.18.0 candidate: generic assurance runtime primitives
 
 Implemented ADR-0034 against the immutable principal-pi-skills PR #31 contract at

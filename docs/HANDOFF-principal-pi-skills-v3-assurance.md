@@ -1,8 +1,8 @@
 # Handoff — principal-pi-skills v3 assurance to pi-daddy 0.18
 
-**Contract pin:** `mojomanyana/principal-pi-skills` PR #31 head
-`961f8ccbdb2a12e92db1e1b2d4ab7ca50f9d7d21`  
-**Verified:** 2026-08-19, GitHub `spec-lint` check `SUCCESS`; PR head still matched the pin.  
+- **Contract pin:** `mojomanyana/principal-pi-skills` PR #31 head
+  `961f8ccbdb2a12e92db1e1b2d4ab7ca50f9d7d21`
+- **Verified:** 2026-08-19, GitHub `spec-lint` check `SUCCESS`; PR head still matched the pin.
 **Do not install unpublished npm `3.0.0`.** Integrate from the pinned source/PR until that project makes a
 separate release decision.
 

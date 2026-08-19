@@ -1,7 +1,7 @@
 # Probe — generic runtime enforcement primitives (ADR-0034)
 
-**Date:** 2026-08-19  
-**Environment:** Linux, Node v26.7.0, util-linux `flock` 2.41.3.
+- **Date:** 2026-08-19
+- **Environment:** Linux, Node v26.7.0, util-linux `flock` 2.41.3.
 
 ## What it measures
 
