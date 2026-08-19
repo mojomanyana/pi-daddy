@@ -35,9 +35,9 @@ permissible, able to refuse or allow but never to narrow. **This package is now 
 is an argument rather than a veto. Definitions are **Agent Skills (`SKILL.md`)** files whose `allowed-tools`
 becomes the grant; the pi-subagents ceiling port is deleted; the interceptor survives only as a tripwire.
 
-**Current state: `pi-daddy` 0.17.1 — the only package.** Thirty-three ADRs decided. 505 unit +
-44 integration tests, plus an opt-in tier behind `PI_GRANTS_IT_MODEL=1` that spawns real children;
-typecheck and smoke clean.
+**Current candidate: `pi-daddy` 0.18.0 — the only package, not yet merged or released.** Thirty-four ADRs
+decided. 558 unit + 44 integration tests, plus an opt-in tier behind `PI_GRANTS_IT_MODEL=1` that spawns
+real children; typecheck, build, smoke and the Linux runtime-enforcement probe are clean.
 
 **What the product claims, precisely** — this wording is load-bearing and was narrowed by ADR-0012: it
 governs the **tool surface**, i.e. which tools pi exposes to a model, enforced structurally by pi's own
@@ -53,7 +53,7 @@ can run `env -u PI_GRANTS_GRANT pi …` and get an ungoverned descendant (measur
 docs/SPEC.md              — WHAT THE PRODUCT IS, current state, no history. Read this second.
 docs/SESSION-LOG.md       — START HERE when resuming: state, verified facts, next actions. Newest on top.
 docs/03-risks.md          — live risk register. R-25 onward are current; R-01..R-24 serve the retired thesis
-docs/06-decisions/        — twenty-nine ADRs. Reversals are kept and marked: 0004→superseded, 0005 park→
+docs/06-decisions/        — thirty-four ADRs. Reversals are kept and marked: 0004→superseded, 0005 park→
                             superseded, 0006 (magnitude claim falsified), 0007 THE REFRAME, 0008
                             attenuation + cardinality, 0009 pi-fabric (parked), 0010 approvals, 0011
                             universal capabilities, 0012 bash, 0013 pi-subagents (superseded by 0016),
@@ -68,7 +68,9 @@ docs/06-decisions/        — twenty-nine ADRs. Reversals are kept and marked: 0
                             0027 THE PACKAGE IS `pi-daddy` — and the one rename that went through the
                             historical record, with what it made untrue listed, 0028 `pi-daddy init`
                             scaffolds a grant it REFUSES to decide, and session start names what is
-                            spawnable (handoff items B1/B2/B4)
+                            spawnable (handoff items B1/B2/B4); 0029-0033 cover safe init defaults,
+                            stored grants, executor probing, live observability and sequential chains;
+                            0034 adds generic runtime-enforcement primitives for external controllers
 docs/probes/              — measurement evidence, all against real software. Each has a "what this does
                             not establish" section: baseline/, pi-fabric-eval/, approval-ux/,
                             adr-0011-universal/, g1-argv/, g5-bash-escape/, g13-subagents-coupling/,
@@ -81,10 +83,10 @@ docs/archive/             — SUPERSEDED, kept as evidence, never edited to matc
                             registers (discovery, assumptions, landscape, metrics), ROADMAP, gate reports,
                             both code reviews, the old specs, the completed implementation plan, and the
                             dead upstream proposal. See its README for why each stopped being current.
-packages/pi-daddy  — THE PRODUCT (0.14.0): SKILL.md definitions, resolver, ledger, delegate +
-                            delegate_all, catalog, human approval, two executors (process | herdr pane),
-                            and `pi-daddy init` — the CLI that scaffolds definitions and a grant WITHOUT
-                            choosing a ceiling (ADR-0028)
+packages/pi-daddy  — THE PRODUCT (0.18.0 candidate): SKILL.md definitions, resolver, v2 ledger,
+                            delegate/delegate_all/delegate_chain, catalog, bound human approval, two
+                            executors (process | herdr pane), governed-writer leases, named checks, and
+                            `pi-daddy init` — scaffolding that does not choose a ceiling (ADR-0028)
                           (pi-token-audit was DELETED by ADR-0025 — one package to keep documents true
                             about is the point. The G10 falsification stays in docs/probes/, which is
                             where the value always was.)
@@ -109,7 +111,7 @@ refuses until a gate passes that no longer means anything. They are in git histo
 
 ```bash
 cd packages/pi-daddy
-npm test                   # 505 unit tests — fast, pure, no pi, no network (the branch guard spawns git)
+npm test                   # 558 unit tests — fast, pure, no pi, no network (the branch guard spawns git)
 npm run typecheck          # src + extensions + tests + integration tests
 npm run test:integration   # 44 tests vs a REAL pi process AND a real herdr server — ~55s, no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and USE it

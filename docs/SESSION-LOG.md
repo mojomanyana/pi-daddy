@@ -11,10 +11,10 @@ decisions; this file holds state and next actions. Newest entry on top.
 `hooks/pre-commit` enforces it once `git config core.hooksPath hooks` is set in your clone. This line is at
 the top because the rule was broken by drift, and this file is what a session actually reads first.
 
-**State: green.** `pi-daddy` **0.17.1** — the only package. **505 unit + 44 integration tests** (measured
-2026-08-18), plus an opt-in tier behind `PI_GRANTS_IT_MODEL=1`; typecheck clean, smoke clean.
-**Thirty-three** ADRs decided. The three numbers above were stale by three versions until 2026-08-18 —
-R-59's shape in the file `CLAUDE.md` names as the first thing to read.
+**State: 0.18.0 candidate on `feat/assurance-runtime-primitives`, not merged or released.** **558 unit +
+44 integration tests** (measured 2026-08-19), plus an opt-in tier behind `PI_GRANTS_IT_MODEL=1`; typecheck,
+build, installed-package smoke and the Linux runtime-enforcement probe are clean. **Thirty-four** ADRs
+are decided. The paid/model tier was not run; it requires separate authorization.
 
 **2026-08-16/17 added the pi-daddy half of the `principal-pi-skills` integration** (handoff B1/B2/B4,
 ADR-0028 and ADR-0029), then **red-teamed it with five independent agents who found nine defects** — R-78
@@ -28,8 +28,9 @@ not ours** — `principal-pi-skills` declaring `allowed-tools` on its seven skil
 and the operator writes seven ceilings by hand. **Do not resolve A1 from here**: the handoff's proposed
 table is unresolved and self-contradicting, and the ceiling belongs to whoever wrote the skill.
 
-**The known-open list is empty of code.** What remains needs a human: item 1 needs weeks of real usage, and
-items 6 and 7 are closed by decision. See the table below before assuming otherwise.
+**Before release, the 0.18.0 candidate needs a human/PR review.** Four independent automated review rounds
+found and fixed assurance bypasses through R-98; do not merge or publish from this session. The older known-open list below remains unchanged:
+item 1 needs weeks of real usage, and items 6 and 7 are closed by decision.
 
 **The four unreviewed changes were reviewed by the operator on 2026-08-14 and three produced a finding**
 (R-60's guard, R-61's fourth state, R-63's twentyfold bias). **What made that review work is worth copying**:
@@ -39,7 +40,7 @@ rather than costing a pass. Write the hypotheses down; verify them before asking
 
 ```bash
 cd packages/pi-daddy && npm test && npm run typecheck && npm run test:integration && npm run test:smoke
-PI_GRANTS_IT_MODEL=1 npm run test:integration   # the 4 model-driven ones — ~60s, costs money
+PI_GRANTS_IT_MODEL=1 npm run test:integration   # the 3 model-driven ones — ~60s, costs money
 ```
 
 **2026-08-13/14 took this from 0.9.0 to 0.12.1: nine ADRs (0017–0025) and R-38 through R-59.** The shape of
@@ -101,6 +102,29 @@ That convention is why every reversal here was survivable, and there have been f
 
 ---
 
+## 2026-08-19 — 0.18.0 candidate: generic assurance runtime primitives
+
+Implemented ADR-0034 against the immutable principal-pi-skills PR #31 contract at
+`961f8ccbdb2a12e92db1e1b2d4ab7ca50f9d7d21` (head rechecked; `spec-lint` was green). The package remains
+role/profile-agnostic: opaque correlation joins, internally computed task/capability approval bindings,
+operator-registered Git worktrees, kernel-backed governed-writer leases, stable structured refusals, a
+no-shell named-check runner, and v2 joinable ledger events. Correlated approvals bind task, definition,
+requested/effective grant, workspace/context and parent; bound answers do not inherit. Approval ledger facts
+now include source/scope and, where meaningful, persisted expiry or consumed one-use count.
+
+Measured on Linux: same-root writers conflict before process start, distinct roots run concurrently,
+SIGTERM/SIGKILL release the kernel lease, the next holder records recovery, a child starts in the validated
+CWD with unchanged `--tools`, and hostile check argv remains literal. `BLOCKED_CRITICAL_ASSURANCE` emitted
+by a child remains a failed delegation with the token unchanged. The herdr integration test had a pre-existing
+bad readiness predicate (`/WS=\S/` matched the echoed `$HERDR_WORKSPACE_ID` command); the exact-value wait is
+now measured green rather than hidden by a larger sleep.
+
+Final verification after the review fixes: 558/558 unit, 44/44 non-model integration, typecheck, build,
+installed-package smoke, `git diff --check`, and `docs/probes/g34-runtime-enforcement/probe.mjs` all pass. The paid/model tier was not
+run because project policy requires separate authorization. No push, publish, tag or destructive operation
+was performed. Automated reviewers found and drove fixes for R-91…R-98; the final rerun above is clean.
+Next: human review and a PR; give principal-pi-skills integrators
+`docs/HANDOFF-principal-pi-skills-v3-assurance.md` and keep the pinned source contract until upstream releases.
 
 ## 2026-08-18 (review) — a twenty-line docs PR, five reviewers, eleven defects
 

@@ -15,6 +15,7 @@
  */
 
 import { parseInherited, type InheritableApproval } from "../src/approval.ts";
+import type { ApprovalBinding } from "../src/correlation.ts";
 import { createApprovalGateProvider } from "../src/approval-prompt.ts";
 import { makeCatalog, skillPathsFromCatalog, type Catalog } from "../src/catalog.ts";
 import type { SkillDefinition } from "../src/definitions.ts";
@@ -117,6 +118,8 @@ export interface GrantsSession {
 
   /** Approval keys approved for this session. In memory only — this dies with the process. */
   readonly sessionApprovals: Set<string>;
+  /** Exact bindings for correlated approvals; these never inherit across a delegation boundary. */
+  readonly sessionApprovalBindings: Map<string, ApprovalBinding>;
   /**
    * Approvals inherited from the delegator, already clamped to this session's grant upstream.
    *
@@ -288,6 +291,7 @@ export function createGrantsSession(extensionPath: string | undefined): GrantsSe
     extensionPath,
 
     sessionApprovals: new Set<string>(),
+    sessionApprovalBindings: new Map<string, ApprovalBinding>(),
     inheritedApprovals: parseInherited(process.env[ENV_APPROVED]),
     approvalGateFor: createApprovalGateProvider(),
 

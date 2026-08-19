@@ -156,6 +156,8 @@ export interface ChainStep {
   agent?: string;
   tools?: string[];
   model?: string;
+  correlation?: import("./correlation.ts").CorrelationMetadata;
+  workspace?: { workspace_id: string; access: import("./workspace.ts").WorkspaceAccess };
 }
 
 /**

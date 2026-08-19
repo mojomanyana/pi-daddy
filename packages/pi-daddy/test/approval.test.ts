@@ -241,12 +241,15 @@ test("a session approval satisfies without prompting", () => {
   assert.deepEqual(r.approved, ["tool:write"]);
   assert.deepEqual(r.needsPrompt, []);
   assert.equal(r.sources["tool:write"], "session");
+  assert.equal(r.scopes["tool:write"], "session");
 });
 
 test("a persisted approval satisfies without prompting", () => {
   const r = RA({ gated: ["tool:write"], persisted: new Map([["tool:write@docs-writer", entry()]]) });
   assert.deepEqual(r.approved, ["tool:write"]);
   assert.equal(r.sources["tool:write"], "persisted");
+  assert.equal(r.scopes["tool:write"], "always");
+  assert.equal(r.expiresAt["tool:write"], entry().expiresAt);
 });
 
 test("an inherited approval satisfies, and outranks session and persisted in reporting", () => {
@@ -258,6 +261,7 @@ test("an inherited approval satisfies, and outranks session and persisted in rep
   });
   assert.deepEqual(r.approved, ["tool:write"]);
   assert.equal(r.sources["tool:write"], "inherited");
+  assert.equal(r.scopes["tool:write"], "session");
 });
 
 test("a persisted approval for a DIFFERENT subject does not satisfy", () => {

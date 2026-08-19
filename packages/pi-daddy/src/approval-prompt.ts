@@ -36,8 +36,10 @@ export interface PromptRequest {
   /** Agent type name, or `DELEGATE_SUBJECT` on the delegate path. */
   subject: string;
   path: ApprovalPath;
-  /** Shown to the human for context. Never part of a key. */
+  /** Shown to the human for context. Never itself part of a key. */
   task?: string;
+  /** Trusted exact-scope identity; bound requests single-flight only with an identical binding. */
+  bindingKey?: string;
   signal?: AbortSignal;
 }
 
@@ -194,7 +196,7 @@ export function createApprovalGate(
         };
       }
 
-      const key = approvalKey(request.capability, request.subject);
+      const key = `${approvalKey(request.capability, request.subject)}${request.bindingKey ? `#${request.bindingKey}` : ""}`;
 
       // R-29. Join an in-flight dialog, but only *keep* its answer if that answer was about more than one
       // spawn. A `once` belongs to whichever caller the human was actually looking at — the title shows

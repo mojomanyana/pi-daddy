@@ -1,0 +1,144 @@
+# ADR-0034: runtime enforcement primitives for external controllers
+
+**Date:** 2026-08-19
+**Status:** Accepted (implementation owner mandate; upstream contract pinned below)
+**Driver:** `principal-pi-skills` PR #31 critical-assurance handoff; R-86…R-89; ADR-0008,
+ADR-0012, ADR-0014, ADR-0018, ADR-0021, ADR-0022 and ADR-0026.
+
+## Context
+
+An external workflow controller needs to join its run/task/workspace state to pi-daddy's capability
+records, bind a gated approval to one exact delegation, coordinate a single governed writer per
+workspace, and run named checks without handing a verifier an unrestricted shell. These are generic
+runtime properties. The controller's assurance profiles, role names and state machine do not belong in
+pi-daddy.
+
+The immutable integration input is `principal-pi-skills` PR #31 head
+`961f8ccbdb2a12e92db1e1b2d4ab7ca50f9d7d21`. On 2026-08-19 GitHub reported its `spec-lint` check
+**SUCCESS**, and the PR head was still exactly that SHA. The contract uses schema version `1.0`, opaque
+assurance sources `default|flag|alias|natural-language|policy|user|user-downgrade`, a structured scope,
+RFC 3339 `activated_at`, exact candidate `tree_sha`, and sequence freshness floors. pi-daddy preserves
+those values for correlation and does not interpret them.
+
+Five existing boundaries constrain the implementation:
+
+1. Capability authority remains
+   `effective = (requested ∩ parentGrant ∩ ceiling) \ (gated \ approved)`. Correlation cannot grant.
+2. `allowed-tools` is a ceiling. An absent declaration is NONE.
+3. pi-daddy governs tools, not paths. `WRITER_ROOT` can be validated as an initial CWD, never confined.
+4. `bash` can escape governance (ADR-0012). A lease cannot stop it or any unrelated process from writing.
+5. Existing callers provide no correlation or workspace data. Their behavior must remain unchanged.
+
+Approvals already pin a definition's ceiling and body digest, carry their subject across boundaries,
+expire persisted entries after 30 days, consume `once` exactly once under concurrency, and refuse late
+approval after the call lifetime (ADR-0026). Missing are exact task/request/effective-grant and optional
+workspace/context/parent bindings. ADR-0021 forbids storing task text *or a task hash*. The new requirement
+makes the hash necessary, so this ADR narrows that decision: task **text remains forbidden**, while an
+internally-computed SHA-256 may be stored as an identity with the privacy limit stated.
+
+## Options considered
+
+### Option 1 — process-local maps and locks
+
+Keep correlation and approvals in memory and use a `Map<workspace, owner>` for writers.
+
+**Buys:** the smallest implementation and no platform dependency. **Costs:** separate pi processes can both
+be writers, SIGKILL leaks ownership, and parent failure has no recovery story. It misses the scenario that
+forced the feature and is rejected.
+
+### Option 2 — reuse the existing mtime-stale file lock
+
+Use `withFileLock` for the full child lifetime.
+
+**Buys:** no new mechanism. **Costs:** it deliberately transfers ownership after ten seconds without checking
+liveness. A valid ten-minute child, stopped process, laptop suspend or debugger pause would therefore admit
+a second writer. That behavior is acceptable only for sub-100ms ledger/store writes and is unsafe for a
+workspace lease. Rejected.
+
+### Option 3 — kernel-held writer lease, opaque correlation, and a no-shell check subpath (chosen)
+
+Use util-linux `flock` held by a helper process whose stdin is owned by the parent. The kernel releases the
+lock when the helper exits; parent death closes the pipe, and the helper stops the attached process or herdr
+tab before releasing. Token-checked metadata distinguishes clean release from recovery of an owner that died.
+Read-only children take no exclusive lock; writers for one canonical root contend on
+the same lock, independent of model-chosen workspace IDs.
+
+Add optional correlation and workspace inputs to governed delegation. Internally compute the task,
+requested-capability and effective-capability digests; keep external digest-looking fields under an
+explicitly non-authoritative correlation object. A caller's read/write label cannot lower coordination below
+what its requested tools require. New approval bindings are exact and non-inheritable;
+legacy unbound approval behavior remains only for calls that provide no new binding context.
+
+Add a purpose-specific library subpath for named checks. Operator-owned definitions contain an absolute
+executable and argv array. The runner uses `spawn` directly, a validated initial workspace, a sensitive-name
+filter plus explicit environment allowlist, timeout/output bounds, and a receipt over executable, argv, cwd,
+timing, exit/signal, output digest, and Git head/candidate tree computed with a temporary index and verified
+again after execution under an exclusive coordination lease. The exact hashed executable bytes are staged
+privately and executed. It is not a model-facing arbitrary-command interface.
+
+**Buys:** same-workspace writer exclusion survives process boundaries; kernel cleanup handles SIGTERM,
+SIGKILL and parent failure; the check seam avoids shell parsing; all artifacts join by external IDs without
+making those IDs authority. **Costs:** writer leases require a measured `flock` implementation and fail
+closed where it is unavailable; task hashes permit dictionary guessing of low-entropy tasks; the ledger
+needs a versioned event union; check executables remain arbitrary code.
+
+## Decision
+
+Choose Option 3.
+
+- Correlation is optional, copied verbatim as bounded JSON metadata, and never consulted for capability
+  resolution. The planner separately records trusted digests it computes itself.
+- A bound approval covers the effective definition/body, exact task, requested/effective capability sets,
+  optional workspace/context IDs, and parent delegation ID. It cannot cross a delegation boundary. `once`
+  remains a one-use approval; persisted approvals retain an explicit expiry. Legacy calls without binding
+  context retain the current key/scopes for compatibility.
+- Workspace IDs resolve through an operator-owned registry. The registered root is realpathed, verified as
+  a Git-registered worktree, used as the initial CWD, and keyed by canonical root for writer exclusion.
+- The writer lease coordinates **pi-daddy-governed children only**. It is not a filesystem lock, sandbox,
+  proof of prompt compliance, or implementation of another controller's `writer` field.
+- The check runner accepts a named ID only. It performs no shell interpolation and claims no network or
+  filesystem isolation unless a future implementation supplies and records an actual OS sandbox.
+- Ledger format v2 is an append-only event union: capability decision, workspace lease, child lifecycle and
+  check receipt. The reader keeps accepting legacy grant records. The ledger says what authority was
+  granted/refused and what process outcome was observed; it never says an external assurance gate passed.
+- Stable refusal codes accompany, rather than replace, existing human diagnostics. The upstream token
+  `BLOCKED_CRITICAL_ASSURANCE` is metadata/output owned by the controller and must pass through unchanged.
+
+## Consequences
+
+**Positive**
+
+- Same canonical workspace means at most one governed writer before spawn; different roots remain
+  concurrent.
+- Crash recovery is an observed kernel-lock fact rather than an age guess.
+- Candidate tree and committed head remain separate join fields.
+- Existing callers that omit the new fields keep their current grants, CWD and approval behavior.
+- No principal-pi-skills role/profile/event vocabulary enters pi-daddy policy.
+
+**Negative**
+
+- util-linux `flock` is a platform requirement for write leases, and `setpriv --pdeathsig` couples writer
+  subprocess/check death to the parent. Unsupported or ambiguous state refuses rather than silently falling
+  back to an in-memory lock or uncoupled process.
+- A task digest is linkable and susceptible to guessing. The ledger must never add task text, arguments or
+  results, and operators should treat the digest as sensitive metadata rather than anonymization.
+- A process started without a shell can itself invoke one; package-manager lifecycle scripts and arbitrary
+  test binaries remain arbitrary code.
+- Lifecycle/release records can be absent after abrupt death; the next successful acquisition records
+  recovery. Detecting a lost final tail still requires an external ledger anchor, as before.
+
+**Deliberate non-goals**
+
+- Path confinement, prevention of writes by unrelated processes, containment of `bash`, network isolation,
+  and interpretation/enforcement of external assurance profiles or gates.
+
+## Revisit trigger
+
+- pi or Node exposes a portable native advisory-lock API: replace the helper while preserving the lease
+  contract.
+- A supported platform lacks `flock` and has a measured workload needing writer leases: decide a native
+  adapter rather than weakening to mtime or memory.
+- A low-entropy task is recovered from its ledger digest: move task identity to a keyed digest supplied by a
+  trusted controller, with key management decided separately.
+- A check requires real filesystem/network containment: add an OS-sandbox executor and record the sandbox
+  identity; do not widen the meaning of the current receipt.

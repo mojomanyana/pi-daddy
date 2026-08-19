@@ -50,6 +50,10 @@ try {
       `import { PI_BUILTIN_TOOLS, WILDCARD } from "pi-daddy/pi-tools";`,
       `import { planInit, withPlaceholder } from "pi-daddy/init";`,
       `import { discoverSkillPackages } from "pi-daddy/skill-packages";`,
+      `import { digestTask, buildApprovalBinding } from "pi-daddy/correlation";`,
+      `import { refusal, GovernanceRefusal } from "pi-daddy/refusals";`,
+      `import { defaultWorkspaceLeaseDir } from "pi-daddy/workspace";`,
+      `import { buildCheckEnvironment } from "pi-daddy/check-runner";`,
       // Exercise it, don't just import it: a module that loads but throws on use is not "working".
       `const r = resolve({ requested: ["tool:read"], parentGrant: ["tool:read", "tool:write"] });`,
       `assertNarrowing(r);`,
@@ -67,6 +71,11 @@ try {
       `if (withPlaceholder("---\\nname: x\\ndescription: d\\n---\\nb", false).includes("\\nallowed-tools:")) throw new Error("init invented a ceiling");`,
       `const pkgs = await discoverSkillPackages(process.cwd());`,
       `if (planInit(pkgs, process.cwd()).grant.join() !== "agent:review,tool:delegate,tool:grep,tool:read") throw new Error("init grant wrong: " + planInit(pkgs, process.cwd()).grant);`,
+      `const binding = buildApprovalBinding({task:"t",requested:["tool:read"],effective:["tool:read"],parentId:"d0"});`,
+      `if (binding.task_sha256 !== digestTask("t")) throw new Error("correlation export broken");`,
+      `if (new GovernanceRefusal(refusal("GATED_UNAPPROVED", "no")).code !== "GATED_UNAPPROVED") throw new Error("refusal export broken");`,
+      `if (!defaultWorkspaceLeaseDir({PI_CODING_AGENT_DIR: process.cwd()}).includes("workspace-leases")) throw new Error("workspace export broken");`,
+      `if (buildCheckEnvironment({executable:process.execPath,argv:[],env:{SAFE:"yes",SECRET_TOKEN:"no"}}).SECRET_TOKEN) throw new Error("check env leaked");`,
       `console.log("SMOKE_OK");`,
     ].join("\n"),
   );

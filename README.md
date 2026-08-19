@@ -5,8 +5,9 @@ deliberate subset of what it holds and withholds the rest. Sub-agents may delega
 subset of what they themselves hold — enforced by **pi's own `--tools` allowlist**, with an append-only
 ledger of every grant and refusal.
 
-**Status:** `pi-daddy` **0.15.0**, the only package. 364 unit + 32 integration tests (+4
-more with a real model); typecheck and smoke clean.
+**Status:** `pi-daddy` **0.18.0 candidate** on this branch, not yet released; `0.17.1` remains the current
+release. 558 unit + 44 non-model integration tests, with a separately authorized real-model tier;
+typecheck, build, installed-package smoke and the Linux runtime probe are clean.
 
 **Want to run it?** [`docs/RUNNING-IT.md`](docs/RUNNING-IT.md) — setup in six steps, then a feature built
 end to end with seven governed sub-agents, sequential where output feeds input and parallel where it does not.
@@ -81,7 +82,7 @@ npm test                   # 287 unit tests — pure, no pi, no network
 npm run typecheck          # src + extensions + test + test-integration
 npm run test:integration   # 23 tests against a REAL pi process, no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and USE every subpath
-PI_GRANTS_IT_MODEL=1 npm run test:integration   # + 4 end-to-end with a real model (~60s, costs money)
+PI_GRANTS_IT_MODEL=1 npm run test:integration   # + 3 end-to-end with a real model (~60s, costs money)
 ```
 
 ## How this project works

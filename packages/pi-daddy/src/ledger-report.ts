@@ -21,8 +21,12 @@ import { isEscalationAttempt } from "./ledger.ts";
 export interface LedgerReport {
   /** False when the file is absent — a configuration state, not damage. */
   exists: boolean;
-  /** Lines that parsed as records. */
+  /** Capability-decision records (legacy or v2). */
   records: number;
+  /** Every parsed ledger event, including lifecycle and lease events. */
+  events: number;
+  workspaceLeases: { acquired: number; refused: number; released: number; timeout: number; recovered: number };
+  lifecycle: { starting: number; completed: number; failed: number };
   /** Lines that did not, with 1-based line numbers so the report is actionable. */
   corrupt: Array<{ line: number; text: string }>;
   /** Records where an agent asked for more than it held — ADR-0008's designated signal. */
@@ -116,6 +120,28 @@ export interface LedgerReport {
  * Deliberately reports rather than repairs. A corrupt line is evidence; rewriting the file to make it parse
  * would destroy the one artifact an investigation has.
  */
+function validV2Base(event: Record<string, unknown>): boolean {
+  return event.ledgerVersion === 2 && typeof event.ts === "string";
+}
+
+function requireV2(event: Record<string, unknown>, fields: string[]): void {
+  if (!validV2Base(event) || fields.some((field) => typeof event[field] !== "string" || event[field] === "")) {
+    throw new Error("invalid versioned ledger event");
+  }
+}
+
+function requireCapabilityDecision(event: Record<string, unknown>): void {
+  requireV2(event, ["parentId", "childId", "executor", "taskDigest"]);
+  for (const field of ["requested", "parentGrant", "effective", "denied", "clipped", "gatedBlocked"]) {
+    if (!Array.isArray(event[field]) || !(event[field] as unknown[]).every((value) => typeof value === "string")) {
+      throw new Error("invalid capability decision arrays");
+    }
+  }
+  if (!Number.isInteger(event.depth) || typeof event.blocked !== "boolean" || !/^[a-f0-9]{64}$/i.test(String(event.taskDigest))) {
+    throw new Error("invalid capability decision identity");
+  }
+}
+
 export async function verifyLedger(path: string): Promise<LedgerReport> {
   let text: string;
   try {
@@ -125,6 +151,9 @@ export async function verifyLedger(path: string): Promise<LedgerReport> {
       return {
         exists: false,
         records: 0,
+        events: 0,
+        workspaceLeases: { acquired: 0, refused: 0, released: 0, timeout: 0, recovered: 0 },
+        lifecycle: { starting: 0, completed: 0, failed: 0 },
         corrupt: [],
         escalationAttempts: 0,
         executors: { herdr: 0, process: 0, unknown: 0 },
@@ -146,6 +175,9 @@ export async function verifyLedger(path: string): Promise<LedgerReport> {
   // Keyed by name+digest: one name with two entries is the signal that the definition changed mid-ledger.
   const digests = new Map<string, { name: string; source: string; sha256: string; spawns: number }>();
   let records = 0;
+  let events = 0;
+  const workspaceLeases = { acquired: 0, refused: 0, released: 0, timeout: 0, recovered: 0 };
+  const lifecycle = { starting: 0, completed: 0, failed: 0 };
   let escalationAttempts = 0;
   const executors = { herdr: 0, process: 0, unknown: 0 };
   const bySource: Record<ApprovalSource, number> = { prompt: 0, session: 0, persisted: 0, inherited: 0 };
@@ -165,9 +197,37 @@ export async function verifyLedger(path: string): Promise<LedgerReport> {
     // A trailing newline yields one empty final element, which is normal rather than damage.
     if (raw.trim().length === 0) return;
     try {
-      const parsed = JSON.parse(raw) as GrantRecord;
+      const event = JSON.parse(raw) as Record<string, unknown>;
+      if (event.ledgerVersion !== undefined && event.event === undefined) {
+        throw new Error("versioned ledger line has no event discriminator");
+      }
+      if (event.event === "workspace_lease") {
+        requireV2(event, ["childId", "workspaceId", "root", "access"]);
+        const outcome = typeof event.outcome === "string" ? event.outcome : "";
+        if (!Object.hasOwn(workspaceLeases, outcome)) throw new Error("invalid workspace lease event");
+        workspaceLeases[outcome as keyof typeof workspaceLeases] += 1;
+        events += 1;
+        return;
+      }
+      if (event.event === "child_lifecycle") {
+        requireV2(event, ["childId", "executor"]);
+        const state = typeof event.state === "string" ? event.state : "";
+        if (!Object.hasOwn(lifecycle, state)) throw new Error("invalid child lifecycle event");
+        lifecycle[state as keyof typeof lifecycle] += 1;
+        events += 1;
+        return;
+      }
+      if (event.event === "check_receipt") {
+        requireV2(event, ["childId", "receiptId", "workspaceId", "checkId", "treeSha"]);
+        events += 1;
+        return;
+      }
+      if (event.event !== undefined && event.event !== "capability_decision") throw new Error("unknown ledger event");
+      const parsed = event as unknown as GrantRecord;
+      if (event.event === "capability_decision") requireCapabilityDecision(event);
       if (!Array.isArray(parsed.denied)) throw new Error("not a grant record");
       records += 1;
+      events += 1;
       if (isEscalationAttempt(parsed)) escalationAttempts += 1;
       const executor = (parsed as { executor?: unknown }).executor;
       if (executor === "herdr") executors.herdr += 1;
@@ -227,6 +287,9 @@ export async function verifyLedger(path: string): Promise<LedgerReport> {
   return {
     exists: true,
     records,
+    events,
+    workspaceLeases,
+    lifecycle,
     corrupt,
     escalationAttempts,
     executors,

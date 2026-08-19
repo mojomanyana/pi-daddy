@@ -12,6 +12,31 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## 0.18.0 — generic runtime enforcement for external controllers
+
+- Optional correlation metadata joins capability decisions to run/task/workspace/context IDs, candidate
+  `tree_sha`, sequence floors and opaque policy metadata. Trusted task/definition/request/effective digests
+  are computed separately; supplied IDs and digests never grant authority.
+- Correlated gated approvals bind the exact definition, task, requested/effective capabilities,
+  workspace/context and parent. They do not inherit. Legacy calls without correlation keep their existing
+  approval behavior. Persisted approvals retain the 30-day expiry; `once` remains one-use. Concurrent exact
+  scopes never share a dialog or rebind one human answer to another task.
+- Operator-registered Git worktrees can be selected by ID. The child starts at the validated canonical root;
+  a kernel `flock` permits at most one pi-daddy-governed writer per canonical root. Caller `read` cannot
+  lower write-capable grants; parent death stops the attached process/herdr tab before recovery. This is
+  coordination, **not path confinement** and not exclusion of unrelated writers or detached bash children.
+- Stable refusal codes accompany existing human diagnostics.
+- `pi-daddy/check-runner` runs operator-named executable+argv definitions without shell interpolation,
+  with an environment allowlist, timeout/output bounds, privately staged exact executable bytes, and
+  pre/post-verified Git HEAD/candidate-tree receipts under an exclusive coordination lease. Arbitrary
+  executables remain arbitrary code; no filesystem/network sandbox is claimed.
+- **Ledger format v2:** append-only capability, workspace-lease, child-lifecycle and check-receipt events.
+  The new reader accepts legacy grant lines. External readers that assume every line is a grant record must
+  switch on `event` before consuming a v2 stream.
+
+New public subpaths: `pi-daddy/correlation`, `pi-daddy/refusals`, `pi-daddy/workspace`, and
+`pi-daddy/check-runner`.
+
 ## 0.17.1 — no functional change: the release that exists because a rule got enforced
 
 **Nothing in the shipped code changed.** This tarball differs from 0.17.0 in its version and in this file,

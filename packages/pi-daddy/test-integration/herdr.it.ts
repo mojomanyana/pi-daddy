@@ -229,10 +229,10 @@ describe("herdr assumptions, against a real server", () => {
     for (let attempt = 0; attempt < 25; attempt += 1) {
       await new Promise((r) => setTimeout(r, 300));
       seen = (await defaultExec(["pane", "read", root.pane_id!])).stdout;
-      // `/WS=\S/`, not `includes("WS=")`: the echoed COMMAND LINE already contains `WS=$HERDR_WORKSPACE_ID`, so a
-      // bare substring check can break before the output lands. False failure only, never a false pass — but a flake
-      // is still a flake.
-      if (/WS=\S/.test(seen)) break;
+      // Wait for the VALUE, not merely a non-space character. `$HERDR_WORKSPACE_ID` in the echoed command also
+      // matches `/WS=\S/`, so that predicate broke on the command line before the shell produced output — a
+      // deterministic false failure on a pane whose shell took longer than the first 300ms poll.
+      if (seen.includes(`WS=${workspace}`)) break;
     }
     assert.match(seen, new RegExp(`WS=${workspace}`), "resolveWorkspace inherits this variable; it must exist");
   });

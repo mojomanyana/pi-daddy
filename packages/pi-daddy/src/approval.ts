@@ -11,6 +11,7 @@
 
 import { WILDCARD } from "./pi-tools.ts";
 import type { Capability, ResolveResult } from "./resolve.ts";
+import { approvalBindingsEqual, type ApprovalBinding } from "./correlation.ts";
 
 /** How far a single yes reaches in time. */
 export type ApprovalScope = "once" | "session" | "always";
@@ -110,6 +111,11 @@ export interface InheritableApproval {
    * no file to hash — and, per ADR-0019, is never persisted or offered `always` for the same reason.
    */
   bodySha256?: string;
+  /**
+   * Exact delegation binding for controllers that supply correlation/workspace context (ADR-0034).
+   * Bound approvals are deliberately not inherited: authority for one task must not become subtree-wide.
+   */
+  binding?: ApprovalBinding;
 }
 
 /**
@@ -133,7 +139,7 @@ export function inheritApprovals(approved: InheritableApproval[], grant: Capabil
   return [
     ...new Set(
       approved
-        .filter((a) => a.scope !== "once" && a.capability !== WILDCARD && held.has(a.capability))
+        .filter((a) => a.scope !== "once" && a.binding === undefined && a.capability !== WILDCARD && held.has(a.capability))
         // A definition subject MUST carry a pin to cross a boundary (ADR-0022, hardened after F1).
         //
         // `verifyInherited` honours an unpinned entry by decision — `<delegate>` names no file and a
@@ -234,6 +240,8 @@ export interface ApprovalEntry {
    * predates 0.10.0 and cannot be verified, which `entryVerdict` treats as changed: fail closed.
    */
   bodyAtApproval?: string;
+  /** Exact task/grant/workspace/context/parent binding for correlated controller calls (ADR-0034). */
+  binding?: ApprovalBinding;
 }
 
 export type EntryVerdict =
@@ -310,9 +318,14 @@ export interface ResolveApprovalsInput {
   subject: string;
   /** Approval KEYS approved for this session, in memory only. */
   sessionApprovals: ReadonlySet<string>;
-  /** Persisted entries by key, ALREADY validity-filtered by the store. */
+  /** Exact bindings for correlated session approvals. Kept separate so legacy keys remain compatible. */
+  sessionApprovalBindings?: ReadonlyMap<string, ApprovalBinding>;
+  /** Persisted entries by key, ALREADY definition/expiry-filtered by the store. */
   persisted: ReadonlyMap<string, ApprovalEntry>;
-  /** Capabilities approved further up the tree and inherited with the grant. */
+  /** When present, only an exact binding may satisfy this gate. */
+  expectedBinding?: ApprovalBinding;
+  /** Same-key persisted entries dropped specifically because their expiry passed. */
+  expiredKeys?: ReadonlySet<string>;
   /**
    * `capability@subject` keys inherited from the delegator (ADR-0014).
    *
@@ -326,7 +339,12 @@ export interface ResolveApprovalsResult {
   approved: Capability[];
   /** Gated capabilities still requiring a live human. */
   needsPrompt: Capability[];
+  /** A same-key approval existed but named another task/workspace/context/parent. */
+  scopeMismatched: Capability[];
+  expired: Capability[];
   sources: Record<Capability, ApprovalSource>;
+  scopes: Record<Capability, ApprovalScope>;
+  expiresAt: Record<Capability, string>;
 }
 
 /**
@@ -342,23 +360,38 @@ export function resolveApprovals(input: ResolveApprovalsInput): ResolveApprovals
   const inherited = input.inherited ?? new Set<string>();
   const approved: Capability[] = [];
   const needsPrompt: Capability[] = [];
-  const sources: Record<Capability, ApprovalSource> = {};
+  const scopeMismatched: Capability[] = [];
+  const expired: Capability[] = [];
+  const sources: Record<Capability, ApprovalSource> = {}, scopes: Record<Capability, ApprovalScope> = {};
+  const expiresAt: Record<Capability, string> = {};
 
   for (const capability of [...new Set(input.gated)].sort()) {
     const key = approvalKey(capability, input.subject);
-    if (inherited.has(key)) {
-      approved.push(capability);
-      sources[capability] = "inherited";
-    } else if (input.sessionApprovals.has(key)) {
-      approved.push(capability);
-      sources[capability] = "session";
-    } else if (input.persisted.has(key)) {
-      approved.push(capability);
-      sources[capability] = "persisted";
+    const expected = input.expectedBinding;
+    const sessionBinding = input.sessionApprovalBindings?.get(key);
+    const persisted = input.persisted.get(key);
+    const inheritedApplies = expected === undefined && inherited.has(key);
+    const legacySessionApplies = expected === undefined && input.sessionApprovals.has(key);
+    const boundSessionApplies = expected !== undefined && approvalBindingsEqual(sessionBinding, expected);
+    const persistedApplies = persisted !== undefined && (
+      expected === undefined ? persisted.binding === undefined : approvalBindingsEqual(persisted.binding, expected)
+    );
+
+    if (inheritedApplies) {
+      approved.push(capability); sources[capability] = "inherited"; scopes[capability] = "session";
+    } else if (legacySessionApplies || boundSessionApplies) {
+      approved.push(capability); sources[capability] = "session"; scopes[capability] = "session";
+    } else if (persistedApplies) {
+      approved.push(capability); sources[capability] = "persisted"; scopes[capability] = "always";
+      expiresAt[capability] = persisted!.expiresAt;
     } else {
       needsPrompt.push(capability);
+      if (input.expiredKeys?.has(key)) expired.push(capability);
+      else if (expected !== undefined && (sessionBinding !== undefined || persisted !== undefined || input.sessionApprovals.has(key))) {
+        scopeMismatched.push(capability);
+      }
     }
   }
 
-  return { approved, needsPrompt, sources };
+  return { approved, needsPrompt, scopeMismatched, expired, sources, scopes, expiresAt };
 }

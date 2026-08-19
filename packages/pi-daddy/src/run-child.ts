@@ -81,6 +81,8 @@ export interface ChildRunRequest {
    * governed child mid-task.
    */
   onOutput?: (chunk: string) => void;
+  /** Security hook called immediately after spawn, before output handling (for lease attachment). */
+  onSpawn?: (pid: number) => void;
 }
 
 export interface ChildRunResult {
@@ -90,6 +92,8 @@ export interface ChildRunResult {
   truncated: boolean;
   timedOut: boolean;
   aborted: boolean;
+  /** Signal that ended the process, separate from the nullable numeric exit code. */
+  signal?: NodeJS.Signals | null;
   /** Set when the process could not be started at all. */
   spawnError?: string;
 }
@@ -123,6 +127,17 @@ export function runChild(request: ChildRunRequest): Promise<ChildRunResult> {
       });
     } catch (error) {
       settle({ code: null, text: "", truncated: false, timedOut: false, aborted: false, spawnError: String(error) });
+      return;
+    }
+    try {
+      if (child.pid !== undefined) request.onSpawn?.(child.pid);
+    } catch (error) {
+      const failed = { code: null, text: "", truncated: false, timedOut: false, aborted: false, spawnError: String(error) };
+      child.stdout?.destroy();
+      child.stderr?.destroy();
+      child.once("error", () => settle(failed));
+      child.once("close", () => settle(failed));
+      child.kill("SIGKILL");
       return;
     }
 
@@ -227,12 +242,19 @@ export function runChild(request: ChildRunRequest): Promise<ChildRunResult> {
       done = true;
       clearTimers();
       request.signal?.removeEventListener("abort", onAbort);
+      child.stdout?.destroy();
+      child.stderr?.destroy();
       settle(result);
     };
 
     child.on("error", (error) =>
       finish({ code: null, text, truncated, timedOut, aborted, spawnError: String(error) }),
     );
-    child.on("close", (code) => finish({ code, text, truncated, timedOut, aborted }));
+    // `close` waits for every inherited pipe, including one retained by a detached grandchild. Once the
+    // governed PID exits, allow a short drain and settle anyway so timeout/output bounds remain bounds.
+    child.on("exit", (code, signal) => {
+      timers.push(setTimeout(() => finish({ code, signal, text, truncated, timedOut, aborted }), 100));
+    });
+    child.on("close", (code, signal) => finish({ code, signal, text, truncated, timedOut, aborted }));
   });
 }

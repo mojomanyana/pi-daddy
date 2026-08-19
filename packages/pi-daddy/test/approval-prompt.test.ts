@@ -317,6 +317,24 @@ test("R-29: a 'session' answer IS shared, because it is genuinely about the sess
   assert.equal(titles.length, 1, "and it must only be asked once");
 });
 
+test("exact bound approvals never share a dialog across different tasks/workspaces", async () => {
+  let dialogs = 0;
+  const gate = createApprovalGateProvider()({
+    hasUI: true,
+    mode: "interactive",
+    ui: {
+      notify: () => {},
+      select: async () => { dialogs += 1; await new Promise((r) => setTimeout(r, 20)); return SCOPE_LABELS.session; },
+    },
+  });
+  const shared = { capability: "tool:bash", subject: "<delegate>", path: "delegate" as const };
+  await Promise.all([
+    gate.request({ ...shared, task: "task A", bindingKey: "binding-a" }),
+    gate.request({ ...shared, task: "task B", bindingKey: "binding-b" }),
+  ]);
+  assert.equal(dialogs, 2, "a human must see both exact scopes; one answer cannot be rebound by a waiter");
+});
+
 test("R-29: a refusal is shared too — one 'Deny' does not become three dialogs", async () => {
   const { ui, titles } = countingUI("Deny");
   const gate = createApprovalGateProvider()({ ui, hasUI: true, mode: "interactive" });

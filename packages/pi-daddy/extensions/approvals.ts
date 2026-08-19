@@ -28,6 +28,8 @@ import type { createApprovalGate } from "../src/approval-prompt.ts";
 import { timeoutMsFromEnv, type PromptOutcomeKind } from "../src/approval-prompt.ts";
 import { ceilingForDefinition, digestDefinition } from "../src/definitions.ts";
 import type { Capability } from "../src/resolve.ts";
+import { approvalBindingDigest, type ApprovalBinding } from "../src/correlation.ts";
+import type { RefusalCode } from "../src/refusals.ts";
 import type { GrantsSession } from "./session.ts";
 
 /**
@@ -102,6 +104,8 @@ export interface ApprovalOutcome {
    * and the behaviour that was already in place.
    */
   scopes: Record<Capability, ApprovalScope>;
+  /** Complete scope map for the ledger, including inherited, session, and persisted answers. */
+  recordedScopes: Record<Capability, ApprovalScope>;
   /**
    * Where EACH approved capability's yes came from (R-46).
    *
@@ -110,6 +114,10 @@ export interface ApprovalOutcome {
    * always computed this map; the bug was that it was thrown away.
    */
   sources: Record<Capability, ApprovalSource>;
+  /** Exact binding per approved capability when this is a correlated controller call. */
+  bindings: Record<Capability, ApprovalBinding>;
+  expiresAt: Record<Capability, string>;
+  uses: Record<Capability, { max: number; remaining: number }>;
   humanDenied: boolean;
   /**
    * Which of the five prompt outcomes ended the loop, when one did (ADR-0026's F5).
@@ -119,6 +127,7 @@ export interface ApprovalOutcome {
    * dismissal is a queue or a longer timeout, `no-ui` is an operator pre-approving, `error` is a defect.
    */
   gateOutcome?: PromptOutcomeKind;
+  refusalCode?: RefusalCode;
   reason?: string;
 }
 
@@ -143,8 +152,9 @@ export async function storedApprovals(
   session: GrantsSession,
   gated: Capability[],
   subject: string,
+  expectedBinding?: ApprovalBinding,
 ): Promise<ResolveApprovalsResult> {
-  const { valid } = await loadApprovals({
+  const { valid, dropped } = await loadApprovals({
     cwd: session.cwd,
     now: new Date(),
     snapshotOf: (name) => snapshotOf(session, name),
@@ -153,7 +163,10 @@ export async function storedApprovals(
     gated,
     subject,
     sessionApprovals: session.sessionApprovals,
+    sessionApprovalBindings: session.sessionApprovalBindings,
     persisted: valid,
+    expectedBinding,
+    expiredKeys: new Set(dropped.filter((item) => item.verdict === "expired").map((item) => item.key)),
     // ADR-0022. Verified HERE rather than at parse time because it needs `session.definitions`, which
     // arrives at `session_start` — after the session object is built.
     inherited: verifyInherited(session.inheritedApprovals, (name) => snapshotOf(session, name)),
@@ -180,11 +193,23 @@ export async function obtainApprovals(
   ctx: ApprovalUIContext | null,
   task?: string,
   signal?: AbortSignal,
+  expectedBinding?: ApprovalBinding,
 ): Promise<ApprovalOutcome> {
   const snapshot = (name: string) => snapshotOf(session, name);
-  const pre = await storedApprovals(session, gatedBlocked, subject);
+  const pre = await storedApprovals(session, gatedBlocked, subject, expectedBinding);
+  const preBindings: Record<Capability, ApprovalBinding> = {};
+  if (expectedBinding) for (const capability of pre.approved) preBindings[capability] = expectedBinding;
   if (ctx === null || pre.needsPrompt.length === 0) {
-    return { approved: pre.approved, sources: pre.sources, scopes: {}, humanDenied: false };
+    return {
+      approved: pre.approved,
+      sources: pre.sources,
+      scopes: {},
+      recordedScopes: pre.scopes,
+      bindings: preBindings,
+      expiresAt: pre.expiresAt,
+      uses: {},
+      humanDenied: false,
+    };
   }
 
   // The gate PROVIDER lives on the session, not here: `obtainApprovals` runs once per `tool_call` and once
@@ -203,12 +228,20 @@ export async function obtainApprovals(
   // about — so a mixed set reports exactly which yes came from where.
   const sources: Record<Capability, ApprovalSource> = { ...pre.sources };
   const scopes: Record<Capability, ApprovalScope> = {};
+  const recordedScopes: Record<Capability, ApprovalScope> = { ...pre.scopes };
+  const bindings: Record<Capability, ApprovalBinding> = { ...preBindings };
+  const expiresAt: Record<Capability, string> = { ...pre.expiresAt };
+  const uses: Record<Capability, { max: number; remaining: number }> = {};
   let humanDenied = false;
   let gateOutcome: PromptOutcomeKind | undefined;
+  let refusalCode: RefusalCode | undefined;
   let reason: string | undefined;
 
   for (const capability of pre.needsPrompt) {
-    const outcome = await gate.request({ capability, subject, path, task, signal });
+    const outcome = await gate.request({
+      capability, subject, path, task, signal,
+      ...(expectedBinding ? { bindingKey: approvalBindingDigest(expectedBinding) } : {}),
+    });
     if (outcome.scope === null) {
       // Forward the gate's own discriminant rather than re-deriving it from `hasUI`: `hasUI` is true in
       // RPC mode too, so an automated client's timeout or dismissal there would misreport as "a human
@@ -219,6 +252,11 @@ export async function obtainApprovals(
       // so "was there an operator who timed out, or was there nobody?" had no answer, and the two want
       // different fixes. It was computed here all along and thrown away.
       gateOutcome = outcome.kind;
+      refusalCode = pre.expired.includes(capability)
+        ? "APPROVAL_EXPIRED"
+        : pre.scopeMismatched.includes(capability)
+          ? "APPROVAL_SCOPE_MISMATCH"
+          : "GATED_UNAPPROVED";
       reason = outcome.reason;
       break;
     }
@@ -230,9 +268,14 @@ export async function obtainApprovals(
     // were not.
     sources[capability] = outcome.joined ? "session" : "prompt";
     scopes[capability] = outcome.scope;
+    recordedScopes[capability] = outcome.scope;
+    if (expectedBinding) bindings[capability] = expectedBinding;
+    if (outcome.scope === "once") uses[capability] = { max: 1, remaining: 0 };
 
     if (outcome.scope === "session" || outcome.scope === "always") {
-      session.sessionApprovals.add(approvalKey(capability, subject));
+      const key = approvalKey(capability, subject);
+      if (expectedBinding) session.sessionApprovalBindings.set(key, expectedBinding);
+      else session.sessionApprovals.add(key);
     }
     if (outcome.scope === "always") {
       const now = new Date();
@@ -242,6 +285,8 @@ export async function obtainApprovals(
       // "type-missing" or "type-changed". Writing it is not unsafe (it fails closed), it is simply a
       // dead entry that silently accumulates in the file. Skip it and say so, taking the same
       // downgrade-to-session path as a failed write below: the human's yes still stands.
+      const expires = expiryFor(now);
+      expiresAt[capability] = expires;
       const written =
         current === null
           ? false
@@ -250,12 +295,13 @@ export async function obtainApprovals(
               approvalKey(capability, subject),
               {
                 approvedAt: now.toISOString(),
-                expiresAt: expiryFor(now),
+                expiresAt: expires,
                 cwd: session.cwd,
                 grantAtApproval: current.ceiling,
                 // ADR-0019: the tools AND the instructions the human actually saw. Pinning only the
                 // former would let a rewritten body inherit a yes that was given about different text.
                 bodyAtApproval: current.bodySha256,
+                ...(expectedBinding ? { binding: expectedBinding } : {}),
                 // The TASK is deliberately absent (ADR-0021). It is shown in the dialog, where a human
                 // needs it, and never written down, because the model assembles it from the parent's
                 // context and it can carry anything the parent could see.
@@ -276,10 +322,24 @@ export async function obtainApprovals(
         // The human's yes stands; only the cache failed. Downgrade THIS capability, not the set — under
         // the old scalar this also rewrote the scope of every other capability answered in the same call.
         scopes[capability] = "session";
+        recordedScopes[capability] = "session";
+        delete expiresAt[capability];
       }
     }
     session.publishChildEnv(); // a new session approval widens what children may inherit — republish now
   }
 
-  return { approved, sources, scopes, humanDenied, gateOutcome, reason };
+  return {
+    approved,
+    sources,
+    scopes,
+    recordedScopes,
+    bindings,
+    expiresAt,
+    uses,
+    humanDenied,
+    gateOutcome,
+    refusalCode,
+    reason,
+  };
 }

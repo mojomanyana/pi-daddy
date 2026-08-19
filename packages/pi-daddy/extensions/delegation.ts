@@ -23,7 +23,9 @@ import {
   type ChildProgress,
 } from "../src/progress.ts";
 import { registerChainTool } from "./delegate-chain.ts";
+import { GovernanceRefusal, refusal } from "../src/refusals.ts";
 import { runOneDelegation } from "./run-delegation.ts";
+import { isCriticalAssuranceBlock, type DelegationOutcome } from "./execute-child.ts";
 import { type GrantsSession } from "./session.ts";
 
 /**
@@ -150,11 +152,42 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
     `Name of a definition to spawn — its allowed-tools become the grant and its instructions ` +
     `become the sub-agent's system prompt. Available: ${names.join(", ") || "none"}.`;
 
+  const correlationShape = Type.Object({
+    schema_version: Type.Optional(Type.String()),
+    run_id: Type.Optional(Type.String()),
+    task_id: Type.Optional(Type.String()),
+    workspace_id: Type.Optional(Type.String()),
+    context_id: Type.Optional(Type.String()),
+    phase: Type.Optional(Type.String()),
+    assurance: Type.Optional(Type.String()),
+    assurance_effective: Type.Optional(Type.String()),
+    policy_label: Type.Optional(Type.String()),
+    assurance_source: Type.Optional(Type.String()),
+    assurance_scope: Type.Optional(Type.Any()),
+    activated_at: Type.Optional(Type.String()),
+    plan_digest: Type.Optional(Type.String()),
+    definition_digest: Type.Optional(Type.String()),
+    task_digest: Type.Optional(Type.String()),
+    base_sha: Type.Optional(Type.String()),
+    head_sha: Type.Optional(Type.String()),
+    tree_sha: Type.Optional(Type.String()),
+    event_seq: Type.Optional(Type.Number()),
+    last_change_seq: Type.Optional(Type.Number()),
+    last_authority_seq: Type.Optional(Type.Number()),
+    check_receipt_id: Type.Optional(Type.String()),
+  });
+  const workspaceShape = Type.Object({
+    workspace_id: Type.String({ description: "ID from the operator-owned workspace registry." }),
+    access: Type.Union([Type.Literal("read"), Type.Literal("write")]),
+  });
+
   const childShape = Type.Object({
     task: Type.String({ description: "The task for this sub-agent. It receives only this." }),
     agent: Type.Optional(Type.String({ description: describeAgent(spawnable()) })),
     tools: Type.Optional(Type.Array(Type.String(), { description: "Capabilities, when no 'agent' fits." })),
     model: Type.Optional(Type.String({ description: "Model as provider/id. Defaults to this session's." })),
+    correlation: Type.Optional(correlationShape),
+    workspace: Type.Optional(workspaceShape),
   });
 
   const delegateAllParams = Type.Object({
@@ -184,6 +217,8 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
             "Defaults to this session's model, already provider-qualified.",
         }),
       ),
+      correlation: Type.Optional(correlationShape),
+      workspace: Type.Optional(workspaceShape),
   });
 
   pi.registerTool({
@@ -201,7 +236,14 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       const progress = progressReporter(session, [params.agent ?? "delegate"], onUpdate as never);
       const outcome = await runOneDelegation(
         session,
-        { task: params.task, agent: params.agent, tools: params.tools, model: params.model },
+        {
+          task: params.task,
+          agent: params.agent,
+          tools: params.tools,
+          model: params.model,
+          correlation: params.correlation,
+          workspace: params.workspace,
+        },
         { parentId: session.ownSpawnId, childId: childSpawnId(session.ownSpawnId, 0) },
         // A single blocking delegation spends nothing from the subtree budget: cardinality is already
         // bounded to one by the call being blocking, which is the accident fan-out removes. Passing the
@@ -214,12 +256,15 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       progress.settle([outcome]);
 
       if (!outcome.ok) {
+        if (isCriticalAssuranceBlock(outcome)) throw new Error(outcome.text);
         // THROW, do not return. `AgentToolResult` has no `isError` field: pi sets it only when `execute`
         // throws (`pi-agent-core/dist/agent-loop.js` — a normal return is hardcoded `isError: false`).
         // Returning `isError: true` was silently discarded, so every refusal this package made was
         // recorded by pi as a SUCCESSFUL tool call. Found by the integration suite on its first run.
         const detail = outcome.text ? `\n\n${outcome.text}` : "";
-        throw new Error(`delegation refused: ${outcome.reason}${detail}`);
+        const message = `delegation refused: ${outcome.reason}${detail}`;
+        if (outcome.refusal) throw new GovernanceRefusal({ ...outcome.refusal, message });
+        throw new Error(message);
       }
 
       return {
@@ -261,7 +306,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       if (!split.ok) {
         // Thrown, not returned: a returned `isError` is discarded by pi, so a refusal that came back as a
         // normal result would read to the orchestrator as a successful fan-out of zero children.
-        throw new Error(`fan-out refused: ${split.reason}`);
+        throw new GovernanceRefusal(refusal("FANOUT_EXCEEDED", `fan-out refused: ${split.reason}`));
       }
 
       // ADR-0032: ONE status block covering every child. `onUpdate` replaces the tool's rendered result, so a
@@ -270,20 +315,25 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
 
       // Concurrent by construction. Each child gets its own budget share and its own ledger id, so the
       // records form a tree and two siblings can never be confused for one another.
+      let infrastructureError: unknown;
       const outcomes = await Promise.all(
-        children.map((child, index) =>
-          runOneDelegation(
-            session,
-            child,
-            { parentId: session.ownSpawnId, childId: childSpawnId(session.ownSpawnId, index) },
-            split.perChild,
-            ctx,
-            signal,
-            { onProgress: progress.sink(index) },
-          ),
-        ),
+        children.map(async (child, index): Promise<DelegationOutcome> => {
+          try {
+            return await runOneDelegation(
+              session, child,
+              { parentId: session.ownSpawnId, childId: childSpawnId(session.ownSpawnId, index) },
+              split.perChild, ctx, signal, { onProgress: progress.sink(index) },
+            );
+          } catch (error) {
+            infrastructureError ??= error;
+            return { ok: false, text: "", reason: "delegation infrastructure failed", granted: [], depth: session.depth + 1, exitCode: null };
+          }
+        }),
       );
       progress.settle(outcomes);
+      const criticalBlock = outcomes.find(isCriticalAssuranceBlock);
+      if (criticalBlock) throw new Error(criticalBlock.text);
+      if (infrastructureError) throw infrastructureError;
 
       const failed = outcomes.filter((o) => !o.ok);
       // Every child is reported, including the ones that failed. R-03's rule: a missing result must never
@@ -301,7 +351,12 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       if (failed.length === children.length) {
         // All of them failed, so there is no partial result to hand back — and a tool that returns text
         // when nothing ran is exactly how a wrong summary gets written.
-        throw new Error(`fan-out failed: every child was refused or failed.\n\n${report}`);
+        const message = `fan-out failed: every child was refused or failed.\n\n${report}`;
+        const codes = [...new Set(failed.flatMap((outcome) => outcome.refusal?.code ?? []))];
+        if (codes.length === 1 && failed.every((outcome) => outcome.refusal)) {
+          throw new GovernanceRefusal(refusal(codes[0], message, { failed: failed.length }));
+        }
+        throw new Error(message);
       }
 
       return {
@@ -311,6 +366,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
           failed: failed.length,
           budgetPerChild: split.perChild,
           granted: outcomes.map((o) => o.granted),
+          refusals: outcomes.map((o) => o.refusal ?? null),
         },
       };
     },

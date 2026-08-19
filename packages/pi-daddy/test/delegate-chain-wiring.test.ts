@@ -132,7 +132,11 @@ test("ADR-0033: a step that can NEVER run refuses the chain before anyone is ask
   // approval can lift it, so `denied` is non-empty and the whole step is doomed. (An earlier version of this fixture
   // used `tool:write`, which the session did NOT hold — and it was grantable anyway, because `tool:bash` subsumes
   // write. A capability that looks unheld is not necessarily denied.)
-  const { tools, ctx, selects } = await harness({ [ENV_GRANT]: "tool:read,tool:bash,tool:delegate", [ENV_GATED]: "tool:bash", [ENV_FANOUT]: "12" });
+  const ledger = join(await tempDir("chain-doomed-ledger-"), "ledger.jsonl");
+  const { tools, ctx, selects } = await harness({
+    [ENV_GRANT]: "tool:read,tool:bash,tool:delegate", [ENV_GATED]: "tool:bash",
+    [ENV_FANOUT]: "12", [ENV_LEDGER]: ledger,
+  });
   await assert.rejects(
     () =>
       tools
@@ -144,13 +148,18 @@ test("ADR-0033: a step that can NEVER run refuses the chain before anyone is ask
           undefined,
           ctx,
         ),
-    (error: Error) => {
+    (error: Error & { code?: string }) => {
+      assert.equal(error.code, "UNKNOWN_TOOL");
       assert.match(error.message, /chain refused at step 1/);
       assert.match(error.message, /nobody was \n?asked|nobody was asked/, "and it must say nobody was asked");
       return true;
     },
   );
   assert.equal(selects.length, 0, "a doomed step must not raise a dialog — `tool:bash` was gated and never asked about");
+  const record = JSON.parse((await readFile(ledger, "utf8")).trim());
+  assert.equal(record.refusal.code, "UNKNOWN_TOOL");
+  assert.match(record.taskDigest, /^[a-f0-9]{64}$/);
+  assert.ok(record.requested.includes("agent:ghost"));
 });
 
 
@@ -334,9 +343,12 @@ test("ADR-0033: a gate-refused chain WRITES a ledger line naming the refused sub
     .catch(() => undefined);
 
   const lines = (await readFile(ledger, "utf8")).trim().split("\n").filter(Boolean).map((l) => JSON.parse(l));
-  const refusal = lines.find((r) => r.blocked === true);
+  const refusal = lines.find((record) => record.humanDenied === true);
   assert.ok(refusal, `a refused chain must leave a record; got ${JSON.stringify(lines)}`);
   assert.equal(refusal.agentType, "shaper", "the record must name the subject that was DENIED, not the first step");
-  assert.equal(refusal.humanDenied, true, "and that a human said no");
   assert.deepEqual(refusal.gatedBlocked, ["tool:bash"]);
+  const banked = lines.find((record) => record.agentType === "digger" && record.approved?.includes("tool:bash"));
+  assert.ok(banked, "an earlier approval that remains active must not disappear when a later gate declines");
+  assert.equal(banked.approvalSources["tool:bash"], "prompt");
+  assert.equal(banked.refusal, undefined, "a banked yes must not retain the stale pre-approval refusal");
 });
