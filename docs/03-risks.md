@@ -2146,12 +2146,16 @@ naming `prod` — which reads as authorised routing, because every other dimensi
 is. The failure is not "a control is weaker than it looks"; it is "the record asserts an authorisation
 nobody granted".
 
+**MEASURED 2026-08-20 — `docs/probes/g36-workspace-attenuation`.** No longer inferred: the escalation
+reproduces against real Git worktrees and a real kernel lease, driving the production propagation path. The
+grandchild planned with **no refusal**, resolved `prod`, took an exclusive **write** lease, and would start
+there. The probe's control is the load-bearing half — the grant and depth attenuated through the *same*
+child environment, so this is an asymmetry rather than "everything inherits".
+
 **Not yet mitigated.** ADR-0035 proposes a `workspace:<id>` capability namespace so routing attenuates
-through `resolve()` like everything else. It is **Proposed, not Accepted**, and deliberately blocked on the
-one input R-26 had and this does not: a transitivity probe against a real spawn. The escalation above is
-derived from reading `run-delegation.ts`, `workspace-runtime.ts` and `propagation.ts` and from the absence
-of any `ownGrant` reference on that path — rule 5 says measure before asserting, and this has not been
-measured.
+through `resolve()` like everything else. Its blocking input is now satisfied, and it remains **Proposed**:
+acceptance is a deliberate second step, and what the probe still does not show — that a model would choose
+the escalation, across a real process boundary — is what a reviewer should weigh.
 
 **Interim guidance for an operator:** do not register workspaces of differing sensitivity in one session.
 There is no capability to gate today, so `PI_GRANTS_GATED` cannot help.

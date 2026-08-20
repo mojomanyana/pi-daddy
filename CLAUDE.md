@@ -94,7 +94,10 @@ docs/probes/              — measurement evidence, all against real software. E
                             b2-init-principal-pi-skills/ (the whole init loop against the real package),
                             g34-runtime-enforcement/ (kernel writer leases, crash recovery, literal argv),
                             g35-flock-fd-inheritance/ (`flock`'s command INHERITS the lock fd — the probe
-                            that settled two reviewers who had measured it and disagreed)
+                            that settled two reviewers who had measured it and disagreed),
+                            g36-workspace-attenuation/ (routing does NOT attenuate — a child routed to
+                            staging took a write lease on prod, while grant and depth narrowed in the
+                            same child env; R-131, ADR-0035's blocking input)
 hooks/pre-commit          — working rule 10's guard: refuses a commit on `main`. Inert until you run
                             `git config core.hooksPath hooks` — per clone, not carried by the repository
 docs/00-blueprint.md      — the architecture handoff, verbatim (immutable source input)

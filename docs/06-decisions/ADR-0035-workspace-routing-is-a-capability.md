@@ -37,11 +37,20 @@ parallel one.
 (`docs/probes/g35-flock-fd-inheritance`, R-99). The registry is operator-owned and a child cannot invent an
 entry. This ADR is only about *which registered entry a descendant may choose*.
 
-**Unvalidated input, stated plainly.** No probe measures a multi-level workspace escalation. The sequence
-above is derived from reading `run-delegation.ts`, `workspace-runtime.ts` and `propagation.ts`, and from
-the absence of any authorisation check on that path. **A transitivity probe should exist before this is
-Accepted** — R-26's equivalent was found by exactly such a test, and this project's own rule 5 says measure
-before asserting. That is the one blocking input.
+**MEASURED 2026-08-20 — `docs/probes/g36-workspace-attenuation`.** This paragraph previously recorded the
+sequence as derived from reading three files, with a transitivity probe named as the one blocking input.
+That probe now exists and **confirms the escalation**: a child routed to `staging`, holding nothing that
+names `prod`, planned a grandchild for `prod` with **no refusal** (`grandchild_refusal_code: null`),
+resolved it, took an exclusive **write** lease, and would start there (`grandchild_cwd_marker: "prod"`).
+
+The control is what makes it evidence rather than a demonstration: through the *same* child environment the
+grant narrowed from `read,write,delegate` to `read` and depth advanced 0 → 1. Two dimensions attenuate and
+one does not, in one code path, in one run. `PI_GRANTS_WORKSPACE_REGISTRY` is confirmed absent from
+`GRANT_ENV_KEYS`, and the child can enumerate both registered ids.
+
+It drives the real production path with no model and no spawned `pi`, so it re-runs free. **Read its "what
+this does not establish" section before quoting it** — it does not show that a model would choose the
+escalation, and it observes no real process boundary.
 
 ## Options considered
 
@@ -175,9 +184,13 @@ A `workspace:prod:write` grammar is a second decision and would make this ADR an
 
 ## Revisit trigger
 
-- **The blocking input:** a transitivity probe under `docs/probes/` demonstrating the multi-level escalation
-  against a real spawn. R-26's equivalent was found by a test; this decision should not be Accepted on a
-  code-read alone.
+- ~~**The blocking input:** a transitivity probe demonstrating the multi-level escalation.~~ **Satisfied
+  2026-08-20** by `docs/probes/g36-workspace-attenuation`. What a reviewer should still weigh before
+  acceptance: it observes no real process boundary and no model, so "the mechanism permits this" is
+  measured while "an agent would do it" is not.
+- **When the fix lands:** the probe gains a case showing the refusal, and its control should show the
+  asymmetry disappearing. A probe that only ever measures the defect stops being evidence once the defect
+  is gone.
 - Any grant containing `workspace:*` observed on a descendant — R-26's trigger, in the new namespace.
 - An operator registering workspaces of differing sensitivity and reporting that the capability edit is
   onerous enough that they widen to `workspace:*` — that is R-25's fatigue shape, and it would mean the

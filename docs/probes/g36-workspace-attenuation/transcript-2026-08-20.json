@@ -1,0 +1,26 @@
+{
+  "node": "v24.14.0",
+  "platform": "linux",
+  "findings": {
+    "level1_planned": true,
+    "level1_effective": [
+      "tool:delegate",
+      "tool:read",
+      "tool:write"
+    ],
+    "registry_in_grant_env_keys": false,
+    "registry_inherited_by_child": true,
+    "control_depth_attenuated": true,
+    "control_grant_attenuated": true,
+    "child_can_enumerate_workspaces": [
+      "prod",
+      "staging"
+    ],
+    "grandchild_planned": true,
+    "grandchild_refusal_code": null,
+    "grandchild_resolved_prod_root": true,
+    "grandchild_write_lease_on_prod": "write",
+    "grandchild_cwd_marker": "prod",
+    "conclusion": "CONFIRMED: routing does not attenuate — a child routed to staging took a write lease on prod and would start there, while the grant and depth attenuated through the same child environment"
+  }
+}
