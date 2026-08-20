@@ -1,0 +1,123 @@
+#!/usr/bin/env node
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import {
+  buildCheckReceiptLedgerEvent,
+  buildChildLifecycleEvent,
+  buildRecord,
+  buildWorkspaceLeaseEvent,
+} from "../src/ledger.ts";
+import type { CorrelationMetadata } from "../src/correlation.ts";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const fixtureDir = join(here, "..", "contracts", "ledger", "v2", "fixtures");
+
+const correlation: CorrelationMetadata = {
+  schema_version: "1.0",
+  run_id: "run-contract-001",
+  task_id: "task-contract-001",
+  workspace_id: "workspace-contract",
+  context_id: "context-contract",
+  phase: "verify",
+  assurance: "critical",
+  assurance_effective: "critical",
+  policy_label: "policy-contract",
+  assurance_source: "policy",
+  assurance_scope: { kind: "changed-files", paths: ["src/**"], include_untracked: true },
+  activated_at: "2026-08-20T12:00:00.000Z",
+  plan_digest: "1".repeat(64),
+  definition_digest: "2".repeat(64),
+  task_digest: "3".repeat(64),
+  base_sha: "4".repeat(40),
+  head_sha: "5".repeat(40),
+  tree_sha: "6".repeat(40),
+  event_seq: 21,
+  last_change_seq: 18,
+  last_authority_seq: 20,
+  check_receipt_id: "7".repeat(64),
+};
+
+/** Deterministic examples produced through the same builders as production ledger lines. */
+export function buildLedgerV2ContractFixtures() {
+  return {
+    "capability-decision.json": buildRecord({
+      parentId: "d0",
+      childId: "d0.1",
+      depth: 1,
+      agentType: "build",
+      requested: ["tool:bash", "tool:read"],
+      parentGrant: ["agent:build", "tool:bash", "tool:read"],
+      result: {
+        effective: ["tool:bash", "tool:read"],
+        denied: [],
+        clipped: [],
+        gatedBlocked: [],
+        universal: [],
+        subsumedBy: [],
+      },
+      blocked: true,
+      reason: "workspace-contract already has a governed writer",
+      approved: ["tool:bash", "tool:read"],
+      approvalSources: { "tool:bash": "persisted", "tool:read": "prompt" },
+      approvalScopes: { "tool:bash": "always", "tool:read": "once" },
+      approvalExpiresAt: { "tool:bash": "2026-09-19T12:00:00.000Z" },
+      approvalUses: { "tool:read": { max: 1, remaining: 0 } },
+      definitionDigest: {
+        name: "build",
+        source: "/operator/skills/build/SKILL.md",
+        sha256: "8".repeat(64),
+      },
+      executor: "process",
+      taskFrom: "d0.0",
+      taskDigest: "9".repeat(64),
+      refusal: {
+        code: "WORKSPACE_WRITE_CONFLICT",
+        message: "workspace-contract already has a governed writer",
+        details: { workspace_id: "workspace-contract", retryable: true, holder_depth: 1 },
+      },
+      correlation,
+      now: new Date("2026-08-20T12:00:01.000Z"),
+    }),
+    "workspace-lease.json": buildWorkspaceLeaseEvent({
+      childId: "d0.1",
+      workspaceId: "workspace-contract",
+      root: "/worktrees/contract",
+      access: "write",
+      outcome: "acquired",
+      recovered: "unknown",
+      correlation,
+      now: new Date("2026-08-20T12:00:02.000Z"),
+    }),
+    "child-lifecycle.json": buildChildLifecycleEvent({
+      childId: "d0.1",
+      state: "failed",
+      executor: "process",
+      exitCode: null,
+      signal: null,
+      aborted: true,
+      reason: "child did not start",
+      correlation,
+      now: new Date("2026-08-20T12:00:03.000Z"),
+    }),
+    "check-receipt.json": buildCheckReceiptLedgerEvent({
+      childId: "check:spec-lint:00000000-0000-4000-8000-000000000000",
+      receiptId: "a".repeat(64),
+      workspaceId: "workspace-contract",
+      checkId: "spec-lint",
+      treeSha: "b".repeat(40),
+      correlation,
+      now: new Date("2026-08-20T12:00:04.000Z"),
+    }),
+  };
+}
+
+export async function writeLedgerV2ContractFixtures(): Promise<void> {
+  await mkdir(fixtureDir, { recursive: true });
+  for (const [name, event] of Object.entries(buildLedgerV2ContractFixtures())) {
+    await writeFile(join(fixtureDir, name), `${JSON.stringify(event, null, 2)}\n`, "utf8");
+  }
+}
+
+const invoked = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (invoked) await writeLedgerV2ContractFixtures();

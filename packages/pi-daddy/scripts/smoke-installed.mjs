@@ -54,6 +54,11 @@ try {
       `import { refusal, GovernanceRefusal } from "pi-daddy/refusals";`,
       `import { defaultWorkspaceLeaseDir } from "pi-daddy/workspace";`,
       `import { buildCheckEnvironment } from "pi-daddy/check-runner";`,
+      `import ledgerV2Schema from "pi-daddy/contracts/ledger/v2/ledger-event.schema.json" with { type: "json" };`,
+      `import capabilityFixture from "pi-daddy/contracts/ledger/v2/fixtures/capability-decision.json" with { type: "json" };`,
+      `import leaseFixture from "pi-daddy/contracts/ledger/v2/fixtures/workspace-lease.json" with { type: "json" };`,
+      `import lifecycleFixture from "pi-daddy/contracts/ledger/v2/fixtures/child-lifecycle.json" with { type: "json" };`,
+      `import receiptFixture from "pi-daddy/contracts/ledger/v2/fixtures/check-receipt.json" with { type: "json" };`,
       // Exercise it, don't just import it: a module that loads but throws on use is not "working".
       `const r = resolve({ requested: ["tool:read"], parentGrant: ["tool:read", "tool:write"] });`,
       `assertNarrowing(r);`,
@@ -76,6 +81,8 @@ try {
       `if (new GovernanceRefusal(refusal("GATED_UNAPPROVED", "no")).code !== "GATED_UNAPPROVED") throw new Error("refusal export broken");`,
       `if (!defaultWorkspaceLeaseDir({PI_CODING_AGENT_DIR: process.cwd()}).includes("workspace-leases")) throw new Error("workspace export broken");`,
       `if (buildCheckEnvironment({executable:process.execPath,argv:[],env:{SAFE:"yes",SECRET_TOKEN:"no"}}).SECRET_TOKEN) throw new Error("check env leaked");`,
+      `if (ledgerV2Schema.$id !== "https://github.com/mojomanyana/pi-daddy/contracts/ledger/v2/ledger-event.schema.json") throw new Error("ledger v2 schema export broken");`,
+      `if ([capabilityFixture, leaseFixture, lifecycleFixture, receiptFixture].map((event) => event.event).join() !== "capability_decision,workspace_lease,child_lifecycle,check_receipt") throw new Error("ledger v2 fixture exports broken");`,
       `console.log("SMOKE_OK");`,
     ].join("\n"),
   );

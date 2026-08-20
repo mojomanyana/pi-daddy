@@ -11,6 +11,7 @@ export {
 export {
   appendLedgerEvent,
   appendRecord,
+  buildCheckReceiptLedgerEvent,
   buildChildLifecycleEvent,
   buildRecord,
   buildWorkspaceLeaseEvent,

@@ -1,0 +1,95 @@
+{
+  "ledgerVersion": 2,
+  "event": "capability_decision",
+  "ts": "2026-08-20T12:00:01.000Z",
+  "parentId": "d0",
+  "childId": "d0.1",
+  "depth": 1,
+  "agentType": "build",
+  "executor": "process",
+  "taskFrom": "d0.0",
+  "taskDigest": "9999999999999999999999999999999999999999999999999999999999999999",
+  "correlation": {
+    "schema_version": "1.0",
+    "run_id": "run-contract-001",
+    "task_id": "task-contract-001",
+    "workspace_id": "workspace-contract",
+    "context_id": "context-contract",
+    "phase": "verify",
+    "assurance": "critical",
+    "assurance_effective": "critical",
+    "policy_label": "policy-contract",
+    "assurance_source": "policy",
+    "assurance_scope": {
+      "kind": "changed-files",
+      "paths": [
+        "src/**"
+      ],
+      "include_untracked": true
+    },
+    "activated_at": "2026-08-20T12:00:00.000Z",
+    "plan_digest": "1111111111111111111111111111111111111111111111111111111111111111",
+    "definition_digest": "2222222222222222222222222222222222222222222222222222222222222222",
+    "task_digest": "3333333333333333333333333333333333333333333333333333333333333333",
+    "base_sha": "4444444444444444444444444444444444444444",
+    "head_sha": "5555555555555555555555555555555555555555",
+    "tree_sha": "6666666666666666666666666666666666666666",
+    "event_seq": 21,
+    "last_change_seq": 18,
+    "last_authority_seq": 20,
+    "check_receipt_id": "7777777777777777777777777777777777777777777777777777777777777777"
+  },
+  "refusal": {
+    "code": "WORKSPACE_WRITE_CONFLICT",
+    "message": "workspace-contract already has a governed writer",
+    "details": {
+      "workspace_id": "workspace-contract",
+      "retryable": true,
+      "holder_depth": 1
+    }
+  },
+  "requested": [
+    "tool:bash",
+    "tool:read"
+  ],
+  "parentGrant": [
+    "agent:build",
+    "tool:bash",
+    "tool:read"
+  ],
+  "effective": [
+    "tool:bash",
+    "tool:read"
+  ],
+  "denied": [],
+  "clipped": [],
+  "gatedBlocked": [],
+  "blocked": true,
+  "reason": "workspace-contract already has a governed writer",
+  "approved": [
+    "tool:bash",
+    "tool:read"
+  ],
+  "approvalSources": {
+    "tool:bash": "persisted",
+    "tool:read": "prompt"
+  },
+  "approvalScopes": {
+    "tool:bash": "always",
+    "tool:read": "once"
+  },
+  "approvalExpiresAt": {
+    "tool:bash": "2026-09-19T12:00:00.000Z"
+  },
+  "approvalUses": {
+    "tool:read": {
+      "max": 1,
+      "remaining": 0
+    }
+  },
+  "definitionDigest": {
+    "name": "build",
+    "source": "/operator/skills/build/SKILL.md",
+    "sha256": "8888888888888888888888888888888888888888888888888888888888888888"
+  }
+}

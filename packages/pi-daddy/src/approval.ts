@@ -14,10 +14,12 @@ import type { Capability, ResolveResult } from "./resolve.ts";
 import { approvalBindingsEqual, type ApprovalBinding } from "./correlation.ts";
 
 /** How far a single yes reaches in time. */
-export type ApprovalScope = "once" | "session" | "always";
+export const APPROVAL_SCOPES = ["once", "session", "always"] as const;
+export type ApprovalScope = typeof APPROVAL_SCOPES[number];
 
 /** Where a yes came from, for the ledger. These call for different follow-ups, so they stay distinct. */
-export type ApprovalSource = "prompt" | "session" | "persisted" | "inherited";
+export const APPROVAL_SOURCES = ["prompt", "session", "persisted", "inherited"] as const;
+export type ApprovalSource = typeof APPROVAL_SOURCES[number];
 
 /** Which call site is asking. Determines the scopes offered — see `offeredScopes`. */
 export type ApprovalPath = "definition" | "delegate";

@@ -11,10 +11,11 @@ decisions; this file holds state and next actions. Newest entry on top.
 `hooks/pre-commit` enforces it once `git config core.hooksPath hooks` is set in your clone. This line is at
 the top because the rule was broken by drift, and this file is what a session actually reads first.
 
-**State: 0.18.0 candidate on `feat/assurance-runtime-primitives`, not merged or released.** **587 unit +
-44 integration tests** (measured 2026-08-20, after a second review pass), plus a **10**-test opt-in tier behind `PI_GRANTS_IT_MODEL=1`;
-typecheck, build, installed-package smoke and both Linux probes clean. **Thirty-four** ADRs are decided,
-0034 amended after review. The paid/model tier was not run; it requires separate authorization.
+**Release state, re-verified 2026-08-20:** PR #12 is merged. Repository `main`, peeled tag `v0.18.1`, and
+the npm `pi-daddy@0.18.1` `gitHead` all point at `8feaacbdf6003c783225e375b61874a599963f47`;
+the latest GitHub Release remains `v0.17.1`. The focused `feat/ledger-v2-contract-artifacts` branch merged
+that main at `a26e2f2` and now has **596 unit + 44 integration tests**. The **10**-test opt-in model tier
+remains separately authorized and was not run.
 
 **A six-reviewer pass on 2026-08-20 rewrote the risk on this branch — read R-99…R-118 and the ADR-0034
 amendment before touching it.** The capability invariant held everywhere; the runtime half did not. And
@@ -33,11 +34,10 @@ not ours** — `principal-pi-skills` declaring `allowed-tools` on its seven skil
 and the operator writes seven ceilings by hand. **Do not resolve A1 from here**: the handoff's proposed
 table is unresolved and self-contradicting, and the ceiling belongs to whoever wrote the skill.
 
-**Before release, the 0.18.0 candidate needs the OPERATOR's review.** Ten automated review rounds have now
-found and fixed assurance bypasses through R-118, and the last six found things the first four missed —
-including four regressions those rounds had *claimed*. That is the argument for a human, not against one. Do
-not merge or publish from a session. The older known-open list below remains unchanged: item 1 needs weeks
-of real usage, and items 6 and 7 are closed by decision.
+**Before the next package release, the ledger-contract follow-up needs review, a PR, and an explicit version
+decision.** Publishing a stable schema/fixture path is new public API; this branch does not change the package
+version, publish, move a tag, create a GitHub Release, or run the model tier. The older known-open list below
+remains unchanged: item 1 needs weeks of real usage, and items 6 and 7 are closed by decision.
 
 **The four unreviewed changes were reviewed by the operator on 2026-08-14 and three produced a finding**
 (R-60's guard, R-61's fourth state, R-63's twentyfold bias). **What made that review work is worth copying**:
@@ -106,6 +106,32 @@ every one of them was a control that read as live and was not.
 
 That convention is why every reversal here was survivable, and there have been five. Then update
 `docs/SPEC.md` in the same change — a spec that lags the code is worse than no spec.
+
+---
+
+## 2026-08-20 — canonical ledger v2 contract follow-up
+
+Started from clean `dde8eeb5632113d4a54705e16dc22ce70740fd4f` (merged PR #9, peeled `v0.18.0`)
+on `feat/ledger-v2-contract-artifacts`. The handoff said npm remained at 0.17.1; re-measurement before editing
+found `npm view pi-daddy` reporting `latest: 0.18.0`, published at `2026-08-20T17:13:42.521Z`, with
+`gitHead` equal to the main SHA. No publication happened in this session. GitHub's latest Release object is
+still `v0.17.1`, so the current split is main/tag/npm 0.18.0 versus GitHub Release 0.17.1.
+
+The follow-up adds the actual `ledgerVersion: 2` wire contract to the next package candidate as a closed
+draft 2020-12 schema and four deterministic fixtures generated through the production event builders. The installed-package smoke imports
+every artifact through its public package export. ADR-0034's third amendment and SPEC define dispatch:
+unversioned/undiscriminated lines are legacy 0.17 grants; explicit v2 must validate; every unsupported
+explicit version fails closed rather than falling back to legacy. The known runtime limitations are unchanged.
+
+Verification: `npm ci` completed with 0 vulnerabilities (npm blocked two dependency install scripts);
+**591/591 unit** using absolute `/home/neman/.nvm/versions/node/v26.7.0/bin/node`, **44/44 non-model
+integration**, typecheck, build, installed-package smoke and `git diff --check` pass. `npm pack --dry-run`
+contains all six contract files (schema, README and four fixtures) among 232 entries. An independent final
+review returned **APPROVE** after earlier passes found and fixed over-claimed reader validation, premature
+"shipped" wording, digest-builder/schema mismatch, and empty-digest legacy downgrade. The integration command
+printed the three opt-in suite declarations as skipped by their `PI_GRANTS_IT_MODEL=1` guard while its Node
+summary reported 44 pass, 0 fail, 0 skipped; the ten model-driven tests behind those declarations were not
+run. No commit, push, tag, GitHub Release, npm publish or version change was performed.
 
 ---
 

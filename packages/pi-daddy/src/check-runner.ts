@@ -5,9 +5,8 @@ import { basename, isAbsolute, join } from "node:path";
 import { normaliseCorrelation, type CorrelationMetadata } from "./correlation.ts";
 import {
   appendLedgerEvent,
+  buildCheckReceiptLedgerEvent,
   buildWorkspaceLeaseEvent,
-  type CheckReceiptLedgerEvent,
-  LEDGER_VERSION,
 } from "./ledger.ts";
 import { computeGitCandidateIdentity } from "./git-identity.ts";
 import { runChild } from "./run-child.ts";
@@ -272,12 +271,13 @@ export async function runNamedCheck(input: {
     };
     const receipt: CheckReceipt = { receipt_id: receiptId(body), ...body };
     if (input.ledgerPath) {
-      const event: CheckReceiptLedgerEvent = {
-        ledgerVersion: LEDGER_VERSION, event: "check_receipt", ts: ended.toISOString(), childId: ownerId,
-        receiptId: receipt.receipt_id, workspaceId: input.workspace.workspaceId, checkId: input.checkId,
-        treeSha: receipt.tree_sha, ...(correlation ? { correlation } : {}),
-      };
-      await appendLedgerEvent({ path: input.ledgerPath, strict: true }, event);
+      await appendLedgerEvent(
+        { path: input.ledgerPath, strict: true },
+        buildCheckReceiptLedgerEvent({
+          childId: ownerId, receiptId: receipt.receipt_id, workspaceId: input.workspace.workspaceId,
+          checkId: input.checkId, treeSha: receipt.tree_sha, correlation, now: ended,
+        }),
+      );
     }
     return { output: result.text, exitCode: result.code, signal: result.signal ?? null, receipt };
   } catch (error) {

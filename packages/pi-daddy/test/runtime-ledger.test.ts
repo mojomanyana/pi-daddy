@@ -63,7 +63,7 @@ test("lease and lifecycle events append without being counted as capability reco
   assert.equal((await readFile(path, "utf8")).trim().split("\n").length, 4);
 });
 
-test("versioned events missing join fields are corrupt rather than counted healthy", async () => {
+test("invalid v2 lines and unsupported explicit versions are corrupt rather than legacy", async () => {
   const path = join(await tempDir("runtime-ledger-invalid-v2-"), "ledger.jsonl");
   const { writeFile } = await import("node:fs/promises");
   await writeFile(path, [
@@ -71,10 +71,11 @@ test("versioned events missing join fields are corrupt rather than counted healt
     { ledgerVersion: 2, event: "capability_decision", ts: new Date().toISOString(), parentId: "d0", childId: "d0.1", executor: "process", denied: [] },
     { ledgerVersion: 2, event: "check_receipt", ts: new Date().toISOString(), childId: "c1", receiptId: "r", workspaceId: "w", checkId: "x" },
     { ledgerVersion: 2, denied: [] },
+    { ledgerVersion: 3, event: "capability_decision", ts: new Date().toISOString(), parentId: "d0", childId: "d0.1", executor: "process", taskDigest: "a".repeat(64), requested: [], parentGrant: [], effective: [], denied: [], clipped: [], gatedBlocked: [], depth: 1, blocked: false },
   ].map((event) => JSON.stringify(event)).join("\n") + "\n");
   const report = await verifyLedger(path);
   assert.equal(report.ok, false);
-  assert.equal(report.corrupt.length, 4);
+  assert.equal(report.corrupt.length, 5);
   assert.deepEqual(report.lifecycle, { starting: 0, completed: 0, failed: 0 });
 });
 

@@ -5,7 +5,7 @@ to be decided. This file is authoritative for present behavior; ADRs record why 
 date. If code and this file disagree, report and repair the stale current-state claim rather than re-deriving
 present behavior from historical ADRs.
 
-Last synced against the code: **2026-08-19**, `pi-daddy` 0.18.0, pi 0.84.2, herdr 0.7.5.
+Last synced against the code: **2026-08-20**, `pi-daddy` 0.18.1, pi 0.84.2, herdr 0.7.5.
 
 **herdr's own contracts are now checked by `test-integration/herdr.it.ts`** against a live server, in an isolated
 workspace it creates and closes. That suite exists because three shipping defects hid behind the unit fake — the
@@ -364,6 +364,23 @@ Append-only JSONL at `PI_GRANTS_LEDGER`. Ledger format v2 is an event union: `ca
 `workspace_lease`, `child_lifecycle`, and `check_receipt`. Every governed capability decision is recorded —
 **including refusals**, which are the interesting ones. The current reader also accepts legacy grant lines
 with no version/event discriminator.
+
+**This source candidate packages a canonical machine contract**, rather than reconstructing it from prose;
+it is not present in the already-published npm 0.18.1 and needs the next authorized package release.
+`pi-daddy/contracts/ledger/v2/ledger-event.schema.json` is a closed JSON Schema draft 2020-12 union, and
+`pi-daddy/contracts/ledger/v2/fixtures/*.json` are deterministic records generated through the production
+builders. Repository copies live under `packages/pi-daddy/contracts/ledger/v2/`; the generator is
+`scripts/generate-ledger-v2-contract.ts`. The schema covers nested correlation, trusted task/definition
+digests, approval source/scope/expiry/use facts, structured refusals, and lifecycle nulls.
+
+Compatibility dispatch is exact. A line with neither `ledgerVersion` nor `event` is a legacy 0.17
+`GrantRecord` and remains readable, but is outside the v2 schema. A line explicitly naming
+`ledgerVersion: 2` must carry one of the four event discriminators and satisfy its complete field set.
+Any unsupported explicit version, missing discriminator, or unknown discriminator fails closed; a consumer
+must never reinterpret it as legacy. pi-daddy's `verifyLedger` enforces that version/discriminator boundary
+and required join fields, while full nested validation is the schema consumer's job. Because the schema is
+closed, adding/removing a field, event or enum member, changing requiredness, or changing meaning requires a
+new ledger version and versioned artifact path.
 
 Ids are hierarchical and derived: a child of `d0` is `d0.1`, its own second child `d0.1.2`. Ancestry reads
 from the id alone with no join, and it is reproducible, so two runs of the same fan-out produce a diffable
@@ -778,7 +795,7 @@ bound a typo can switch off is not a bound.
 
 ```bash
 cd packages/pi-daddy
-npm test                   # 587 unit tests — pure, no pi, no network
+npm test                   # 596 unit tests — pure, no pi, no network
 npm run typecheck          # src + extensions + test + test-integration
 npm run test:integration   # 44 tests against a REAL pi process/herdr server, no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and USE every subpath —

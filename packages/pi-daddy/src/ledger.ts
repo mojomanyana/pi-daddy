@@ -34,11 +34,17 @@ import type { StructuredRefusal } from "./refusals.ts";
 import type { RuntimeLedgerEvent } from "./ledger-events.ts";
 
 export const LEDGER_VERSION = 2 as const;
+export const LEDGER_EVENT_KINDS = [
+  "capability_decision", "workspace_lease", "child_lifecycle", "check_receipt",
+] as const;
+export type LedgerEventKind = typeof LEDGER_EVENT_KINDS[number];
+export const LEDGER_GATE_OUTCOMES = ["declined", "dismissed", "no-ui", "error"] as const;
+export type LedgerGateOutcome = typeof LEDGER_GATE_OUTCOMES[number];
 
 export interface LedgerEventBase {
   /** Optional only on the legacy-compatible `GrantRecord` public type; every v2 event builder writes it. */
   ledgerVersion?: typeof LEDGER_VERSION;
-  event?: "capability_decision" | "workspace_lease" | "child_lifecycle" | "check_receipt";
+  event?: LedgerEventKind;
   ts: string;
   childId?: string;
   correlation?: CorrelationMetadata;
@@ -104,7 +110,7 @@ export interface GrantRecord extends LedgerEventBase {
   /** Present only when the source was a live prompt, and only when one scope covers the whole set. */
   approvalScope?: ApprovalScope;
   /** A human was asked and declined. Distinct from `denied`, which is an escalation attempt. */
-  humanDenied?: boolean;
+  humanDenied?: true;
   /**
    * WHY a gate went unsatisfied, when the answer was not a yes.
    *
@@ -120,9 +126,10 @@ export interface GrantRecord extends LedgerEventBase {
    * say *"nobody was there to ask"* and be believed, so it is recorded rather than inferred.
    *
    * **Privacy is unchanged**: this is a fixed five-member enum, not text — nothing model-authored, nothing
-   * a task could carry.
+   * a task could carry. The prompt has five outcomes, but `granted` is deliberately omitted from the
+   * four-member ledger enum because the approval source/scope fields already record a yes.
    */
-  gateOutcome?: PromptOutcomeKind;
+  gateOutcome?: LedgerGateOutcome;
   /**
    * WHICH operator-authored instructions this child was given (ADR-0018).
    *
@@ -208,6 +215,12 @@ export function buildRecord(args: {
   refusal?: StructuredRefusal;
   now: Date;
 }): GrantRecord {
+  if (args.taskDigest !== undefined && !/^[a-f0-9]{64}$/i.test(args.taskDigest)) {
+    throw new TypeError("taskDigest must be a SHA-256 hex digest");
+  }
+  if (args.definitionDigest && !/^[a-f0-9]{64}$/i.test(args.definitionDigest.sha256)) {
+    throw new TypeError("definitionDigest.sha256 must be a SHA-256 hex digest");
+  }
   // R-46: the scalar is a SUMMARY, emitted only when it cannot mislead. `buildRecord` derives it rather
   // than accepting it, so a call site cannot supply one that disagrees with the map beside it.
   const sources = args.approvalSources ?? {};
@@ -217,7 +230,7 @@ export function buildRecord(args: {
   return {
     // A trusted task digest is what distinguishes a v2 capability event from the legacy construction API.
     // Production delegation always supplies it; old TypeScript callers remain able to append legacy lines.
-    ...(args.taskDigest ? { ledgerVersion: LEDGER_VERSION, event: "capability_decision" as const } : {}),
+    ...(args.taskDigest !== undefined ? { ledgerVersion: LEDGER_VERSION, event: "capability_decision" as const } : {}),
     ts: args.now.toISOString(),
     parentId: args.parentId,
     childId: args.childId,
@@ -225,7 +238,7 @@ export function buildRecord(args: {
     agentType: args.agentType,
     executor: args.executor,
     ...(args.taskFrom ? { taskFrom: args.taskFrom } : {}),
-    ...(args.taskDigest ? { taskDigest: args.taskDigest } : {}),
+    ...(args.taskDigest !== undefined ? { taskDigest: args.taskDigest } : {}),
     ...(args.correlation ? { correlation: structuredClone(args.correlation) } : {}),
     ...(args.refusal ? { refusal: structuredClone(args.refusal) } : {}),
     requested: args.requested,
@@ -302,11 +315,22 @@ export function isEscalationAttempt(record: GrantRecord): boolean {
 }
 
 export {
+  CHILD_LIFECYCLE_STATES,
+  CHILD_PROCESS_SIGNALS,
+  WORKSPACE_ACCESSES,
+  WORKSPACE_LEASE_OUTCOMES,
+  WORKSPACE_RECOVERY_VALUES,
+  buildCheckReceiptLedgerEvent,
   buildChildLifecycleEvent,
   buildWorkspaceLeaseEvent,
+  type CapabilityDecisionEvent,
   type ChildLifecycleEvent,
+  type ChildLifecycleState,
+  type ChildProcessSignal,
   type CheckReceiptLedgerEvent,
   type RuntimeLedgerEvent,
+  type WorkspaceAccess,
   type WorkspaceLeaseEvent,
   type WorkspaceLeaseOutcome,
+  type WorkspaceRecovery,
 } from "./ledger-events.ts";
