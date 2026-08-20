@@ -128,6 +128,28 @@ try {
   }
   findings.grandchild_cwd_marker = observedCwd;
 
+  // ---------------------------------------------------------------- level 1, AFTER ADR-0035
+  // The same escalation, planned by a caller that does NOT hold the routing capability. Added when the fix
+  // landed, because the ADR's own revisit trigger says a probe that only ever measures the defect stops
+  // being evidence once the defect is gone.
+  const guarded = planDelegation(
+    { task: "escalate to prod", tools: ["read", "write"], boundWorkspaceId: "prod" },
+    { ownGrant: level1.effective, depth: 1, maxDepth: 3, gated: [], spawnId: "d0.1", childSpawnId: "d0.1.2" },
+  );
+  findings.after_fix_refusal_code = guarded.refusal?.code ?? null;
+  findings.after_fix_denied = guarded.result?.denied ?? [];
+
+  // And the control's mirror image: a caller that HOLDS it routes, so the guard is not simply refusing
+  // everything. This is the asymmetry disappearing.
+  const authorised = planDelegation(
+    { task: "work in prod", tools: ["read"], boundWorkspaceId: "prod" },
+    {
+      ownGrant: [...level1.effective, "workspace:prod"],
+      depth: 1, maxDepth: 3, gated: [], spawnId: "d0.1", childSpawnId: "d0.1.3",
+    },
+  );
+  findings.after_fix_authorised_routes = authorised.ok;
+
   findings.conclusion =
     findings.registry_inherited_by_child
     && findings.grandchild_refusal_code === null
@@ -136,9 +158,18 @@ try {
     && findings.grandchild_cwd_marker === "prod"
     && findings.control_grant_attenuated
     && findings.control_depth_attenuated
-      ? "CONFIRMED: routing does not attenuate — a child routed to staging took a write lease on prod and "
-        + "would start there, while the grant and depth attenuated through the same child environment"
+      ? "CONFIRMED (pre-ADR-0035 mechanism): the registry inherits, the child enumerates both ids, and "
+        + "resolving plus leasing prod succeeds from a child routed to staging, while the grant and depth "
+        + "attenuated through the same child environment"
       : "NOT REPRODUCED on this build — read the findings above before trusting either reading";
+
+  findings.fix_conclusion =
+    findings.after_fix_refusal_code === "WORKSPACE_NOT_AUTHORIZED"
+    && findings.after_fix_denied.includes("workspace:prod")
+    && findings.after_fix_authorised_routes === true
+      ? "FIXED by ADR-0035: the same escalation is refused as WORKSPACE_NOT_AUTHORIZED and recorded in "
+        + "`denied`, while a caller holding workspace:prod still routes — the asymmetry is gone"
+      : "THE FIX IS NOT IN EFFECT on this build";
 } finally {
   for (const lease of leases) await lease.release("probe-complete").catch(() => undefined);
   await rm(dir, { recursive: true, force: true });

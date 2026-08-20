@@ -75,6 +75,16 @@ import { WILDCARD } from "./pi-tools.ts";
  * `tool:*` — authority to grant every tool — which made the safe configuration the laborious one.
  */
 export const AGENT_WILDCARD: Capability = "agent:*";
+/**
+ * `workspace:*` covers any `workspace:<id>` — ADR-0035, and the second namespace wildcard.
+ *
+ * Added as a deliberate edit, which is what the comment in `resolve()` below asks for: there is no
+ * generalised `<ns>:*` rule, so a namespace does not acquire a wildcard by existing. Unlike `agent:*` this
+ * one is **not inheritable** (`childEnv` strips it) — R-26's rule, because a root that handed
+ * `workspace:*` down would make routing attenuation meaningless below the root, which is the exact defect
+ * R-131 records.
+ */
+export const WORKSPACE_WILDCARD: Capability = "workspace:*";
 
 export interface ResolveInput {
   /** What the delegating agent asked to give the child. */
@@ -149,8 +159,11 @@ export function resolve(input: ResolveInput): ResolveResult {
    * spellings of one rule, and the enforcing one was wrong.
    */
   const anyCapability = held.has(WILDCARD);
+  const anyWorkspace = held.has(WORKSPACE_WILDCARD);
   const covered = (c: Capability): boolean =>
-    parent.has(c) || anyCapability || (anyDefinition && c.startsWith("agent:"));
+    parent.has(c) || anyCapability
+    || (anyDefinition && c.startsWith("agent:"))
+    || (anyWorkspace && c.startsWith("workspace:"));
   const ceiling = input.ceiling === undefined ? null : new Set(input.ceiling);
   const gated = new Set(input.gated ?? []);
   const approved = new Set(input.approved ?? []);

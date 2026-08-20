@@ -9,6 +9,9 @@ import {
 } from "../src/resolve.ts";
 import { buildRecord, isEscalationAttempt } from "../src/ledger.ts";
 import { planSpawn } from "../src/spawn.ts";
+import { WORKSPACE_WILDCARD } from "../src/resolve.ts";
+import { normaliseCapability, workspaceCapability } from "../src/capabilities.ts";
+import { childEnv, ENV_GRANT } from "../src/propagation.ts";
 
 const R = (over: Partial<Parameters<typeof resolve>[0]> = {}) =>
   resolve({ requested: [], parentGrant: [], ...over });
@@ -402,4 +405,68 @@ test("ADR-0023: agent:* does not exempt a definition id from a gate", () => {
   });
   assert.deepEqual(r.gatedBlocked, ["agent:deploy"], "covered by the wildcard, still gated");
   assert.deepEqual(r.effective, []);
+});
+
+/**
+ * ADR-0035 — workspace routing is a capability, so it attenuates like every other one.
+ *
+ * Before this, routing was the ONE governance dimension that did not: the registry inherited into every
+ * child and nothing checked the caller's authority, so a child routed to `staging` could route its
+ * grandchild to `prod`. Measured in `docs/probes/g36-workspace-attenuation` (R-131).
+ *
+ * The production changes that break these: dropping `workspace:` from `normaliseCapability`'s prefix set;
+ * removing `WORKSPACE_WILDCARD` from `covered()`; or removing it from `childEnv`'s inheritance filter.
+ */
+test("a workspace capability is a capability, and resolves like one", () => {
+  // Not normalised to `tool:workspace:x` — it is its own namespace.
+  assert.equal(normaliseCapability("workspace:prod"), "workspace:prod");
+  assert.equal(workspaceCapability("prod"), "workspace:prod");
+
+  // Held exactly: granted.
+  assert.deepEqual(
+    resolve({ requested: ["workspace:prod"], parentGrant: ["workspace:prod"], gated: [] }).effective,
+    ["workspace:prod"],
+  );
+  // Not held: denied, and visible as an escalation rather than silently dropped.
+  const escalation = resolve({ requested: ["workspace:prod"], parentGrant: ["workspace:staging"], gated: [] });
+  assert.deepEqual(escalation.effective, []);
+  assert.deepEqual(escalation.denied, ["workspace:prod"]);
+});
+
+test("`workspace:*` covers any workspace, and `tool:*` still covers everything", () => {
+  assert.deepEqual(
+    resolve({ requested: ["workspace:prod"], parentGrant: [WORKSPACE_WILDCARD], gated: [] }).effective,
+    ["workspace:prod"],
+  );
+  // Governance is opt-in: an ungoverned session holds `tool:*` and must keep routing anywhere.
+  assert.deepEqual(
+    resolve({ requested: ["workspace:prod"], parentGrant: ["tool:*"], gated: [] }).effective,
+    ["workspace:prod"],
+  );
+  // But `agent:*` does not leak across namespaces — there is no generalised `<ns>:*` rule.
+  assert.deepEqual(
+    resolve({ requested: ["workspace:prod"], parentGrant: ["agent:*"], gated: [] }).denied,
+    ["workspace:prod"],
+  );
+});
+
+test("a workspace capability never reaches pi's --tools", () => {
+  // `--tools` is the enforcement point for TOOLS. A workspace id is enforced by pi-daddy before spawn, and
+  // leaking it into the allowlist would make pi refuse an unknown tool name.
+  assert.deepEqual(toPiToolsAllowlist(["tool:read", "workspace:prod"]), ["read"]);
+  assert.equal(toPiToolsAllowlist(["workspace:prod"]), null);
+});
+
+test("`workspace:*` is held but never inherited, while `agent:*` is", () => {
+  // R-26's rule, one namespace over: a descendant holding `workspace:*` could route anywhere the registry
+  // lists, which is exactly the attenuation failure this ADR closes. `agent:*` is deliberately different —
+  // ADR-0023 decided a session authorised for any definition passes that on.
+  const env = childEnv({
+    ownGrant: ["tool:read", WORKSPACE_WILDCARD, "workspace:prod", "agent:*"],
+    depth: 0, maxDepth: 2, gated: [], approved: [],
+  });
+  const inherited = env[ENV_GRANT].split(",");
+  assert.equal(inherited.includes(WORKSPACE_WILDCARD), false, "the workspace wildcard must not descend");
+  assert.equal(inherited.includes("workspace:prod"), true, "an enumerated workspace does descend");
+  assert.equal(inherited.includes("agent:*"), true, "agent:* is unchanged by this ADR");
 });

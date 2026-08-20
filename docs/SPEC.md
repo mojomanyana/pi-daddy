@@ -467,7 +467,17 @@ which a devcontainer plus a host makes ordinary, take exclusive locks on differe
 itself the single governed writer. A bind-mounted worktree whose `realpath` differs between namespaces
 changes the key itself. Unresolved; see the ADR-0034 amendment.
 
-**Which registered root a child may select does not attenuate.** The registry path inherits into every
+**Which registered root a child may select is a capability (ADR-0035, 0.19.0).** Routing a child to
+workspace `W` requires `workspace:W` in the caller's effective grant; without it the delegation is refused
+`WORKSPACE_NOT_AUTHORIZED` and the id is recorded in `denied`, so a routing escalation counts as an
+escalation. `workspace:*` covers the namespace but is **held, never inherited** — a descendant holding it
+could route anywhere the registry lists, which is the failure this closes. `tool:*` still satisfies it,
+because governance is opt-in. A `workspace:` id never reaches pi's `--tools`.
+
+Two authorities, not one: the caller needs `workspace:W` to route a child there, and that child needs it in
+its own grant to route further — so it attenuates by the same mechanism as everything else.
+
+**Before 0.19.0 it did not attenuate**, and that shipped in 0.18.0. The registry path inherits into every
 governed child and `workspace_id` is a model-facing parameter validated against the registry, with no check
 that the caller was authorised for that workspace — so a child routed to `staging` can route its grandchild
 to `prod`. Depth, fan-out budget, the grant, the gated set and approvals all attenuate; the initial working

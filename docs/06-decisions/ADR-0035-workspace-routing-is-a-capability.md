@@ -1,7 +1,7 @@
 # ADR-0035: workspace routing is a capability, and therefore attenuates
 
 **Date:** 2026-08-20
-**Status:** Proposed
+**Status:** Accepted (2026-08-20)
 **Driver:** The ADR-0034 second amendment's *"does NOT resolve"* list — workspace routing is the one
 governance dimension that does not attenuate. Constrained by ADR-0008 (the attenuation invariant and its
 cardinality companion), ADR-0012 (the product claim is the tool surface), ADR-0017 and ADR-0024 (a
@@ -54,7 +54,7 @@ escalation, and it observes no real process boundary.
 
 ## Options considered
 
-### Option 1 — a `workspace:<id>` capability namespace (proposed)
+### Option 1 — a `workspace:<id>` capability namespace (CHOSEN)
 
 Routing becomes a capability like any other: `workspace:staging` in a grant means "may route a child here".
 `resolve()` already intersects requested against parent grant against ceiling, so attenuation is inherited
@@ -196,3 +196,48 @@ A `workspace:prod:write` grammar is a second decision and would make this ADR an
   onerous enough that they widen to `workspace:*` — that is R-25's fatigue shape, and it would mean the
   scaffolding in `init` is not doing its job.
 - A measured need for a child not to *learn* a workspace exists: adopt Option 2 alongside this.
+
+---
+
+## Accepted 2026-08-20 — and what implementing it changed
+
+Acceptance was a second step, per this project's own ADR discipline: the blocking input was satisfied by
+`docs/probes/g36-workspace-attenuation` first, and the decision was walked through before the status moved.
+
+**Implemented as decided**, with one thing the code taught that the decision did not anticipate:
+
+- `normaliseCapability` gained the fifth prefix; `WORKSPACE_WILDCARD` was added to `resolve()`'s `covered()`
+  as a deliberate edit — which is exactly what that function's own comment asks for, since there is no
+  generalised `<ns>:*` rule and a namespace must not acquire a wildcard by existing.
+- `mayRouteToWorkspace` mirrors `maySpawnDefinition`, and the refusal mirrors `DEFINITION_NOT_AUTHORIZED`:
+  recorded in `denied`, so `isEscalationAttempt` and every audit query see a routing escalation as an
+  escalation.
+- **`workspace:*` is held but never inherited** (`childEnv` strips it), for R-26's reason. `agent:*` is
+  deliberately left inheritable — ADR-0023 decided that, and definitions are ceilings rather than roots.
+  The asymmetry between the two namespace wildcards is now intentional and written down in `propagation.ts`.
+- **`tool:*` still satisfies a workspace capability.** Governance is opt-in, so an ungoverned session must
+  keep routing anywhere. Refusing it there would be R-28's shape — the enforcing code disagreeing with the
+  documented rule — which is precisely how `resolve()` broke at 0.11.2.
+- A `workspace:` id cannot reach pi's `--tools`: `toPiToolsAllowlist` filters to `tool:`/`ext:`. Verified by
+  test, because a leak would make pi refuse an unknown tool name and the failure would look unrelated.
+
+**What implementation revealed.** The decision said "routing requires `workspace:W` in the caller's
+effective grant" as though that were one rule. It is two, and both are needed:
+
+1. the **caller's** authority to route a child — checked against `ctx.ownGrant`, which is the new guard;
+2. the **child's** authority to route further — which it only has if the parent put `workspace:W` in the
+   child's requested set, because the child's grant is its `effective`.
+
+So a parent must deliberately pass routing authority down, and it attenuates by the same mechanism as
+everything else. That is the behaviour the ADR wanted, arrived at by two paths rather than one, and the
+Decision above understated it.
+
+**The migration is real and was measured on this repository's own suite:** four test fixtures that routed to
+a workspace began refusing until granted `workspace:w1`, which is exactly the one-line edit an operator
+faces. Two other fixtures were touched by mistake first and reverted — a reminder that "grant it everywhere
+the string appears" is the wrong migration; grant it where routing actually happens.
+
+**Still true, and unchanged by this ADR:** everything in the non-goals above. In particular this does not
+confine paths, and a child holding `bash` can still write to any worktree (ADR-0012,
+`docs/probes/g5-bash-escape`). The probe's own limits also stand — it observes no model and no real process
+boundary.

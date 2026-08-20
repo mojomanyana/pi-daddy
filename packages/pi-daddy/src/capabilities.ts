@@ -12,7 +12,7 @@
  * *what one delegation does*.
  */
 
-import { AGENT_WILDCARD, type Capability } from "./resolve.ts";
+import { AGENT_WILDCARD, WORKSPACE_WILDCARD, type Capability } from "./resolve.ts";
 import { WILDCARD } from "./pi-tools.ts";
 
 /** The capability that authorises spawning a definition (ADR-0017). `tool:*` satisfies any of them. */
@@ -44,8 +44,34 @@ export const DELEGATE_CAPABILITY: Capability = "tool:delegate";
 /** Accept `read` or `tool:read` or `ext:pkg/tool` and normalise to a capability id. */
 export function normaliseCapability(raw: string): Capability {
   const value = raw.trim();
-  if (value.startsWith("tool:") || value.startsWith("ext:") || value.startsWith("skill:") || value.startsWith("agent:")) {
+  if (
+    value.startsWith("tool:") || value.startsWith("ext:") || value.startsWith("skill:")
+    || value.startsWith("agent:") || value.startsWith("workspace:")
+  ) {
     return value;
   }
   return `tool:${value}`;
+}
+
+/** The capability that authorises routing a child to one registered workspace (ADR-0035). */
+export function workspaceCapability(workspaceId: string): Capability {
+  return `workspace:${workspaceId}`;
+}
+
+/**
+ * May this session route a child to workspace `id`?
+ *
+ * Mirrors `maySpawnDefinition` deliberately — same shape, same wildcard handling, same reason. Routing was
+ * the one governance dimension that did not attenuate (R-131, measured in
+ * `docs/probes/g36-workspace-attenuation`): the registry inherited into every child and nothing checked the
+ * caller's authority, so a child routed to `staging` could route its grandchild to `prod`.
+ *
+ * `tool:*` satisfies it because governance is opt-in — an ungoverned session holds the wildcard and must
+ * keep working exactly as before.
+ */
+export function mayRouteToWorkspace(ownGrant: readonly Capability[], workspaceId: string): boolean {
+  const held = new Set(ownGrant);
+  return held.has(WILDCARD)
+    || held.has(WORKSPACE_WILDCARD)
+    || held.has(workspaceCapability(workspaceId));
 }

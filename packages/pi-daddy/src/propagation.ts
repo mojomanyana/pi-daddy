@@ -27,6 +27,7 @@
 
 import type { Capability } from "./resolve.ts";
 import { WILDCARD } from "./pi-tools.ts";
+import { WORKSPACE_WILDCARD } from "./resolve.ts";
 import { inheritApprovals, type InheritableApproval } from "./approval.ts";
 
 export const ENV_GRANT = "PI_GRANTS_GRANT";
@@ -248,7 +249,12 @@ export interface ChildEnvInput {
  */
 export function childEnv(input: ChildEnvInput): Record<string, string> {
   if (input.governed === false) return {};
-  const inheritable = input.ownGrant.filter((c) => c !== WILDCARD);
+  // Both wildcards are HELD but never INHERITED. `tool:*` for R-26's reason — a root that handed it down
+  // let every descendant reacquire the full catalog. `workspace:*` for the same reason one namespace over
+  // (R-131): a descendant holding it could route anywhere the registry lists, which is the attenuation
+  // failure ADR-0035 exists to close. `agent:*` is deliberately NOT stripped — ADR-0023 decided that a
+  // session authorised for any definition passes that on, and definitions are ceilings rather than roots.
+  const inheritable = input.ownGrant.filter((c) => c !== WILDCARD && c !== WORKSPACE_WILDCARD);
   const env: Record<string, string> = {
     [ENV_GRANT]: inheritable.join(","),
     [ENV_DEPTH]: String(input.depth + 1),

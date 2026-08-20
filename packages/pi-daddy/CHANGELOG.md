@@ -12,6 +12,27 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## 0.19.0 — workspace routing is a capability (unreleased)
+
+- **BREAKING — routing a child to a registered workspace now requires `workspace:<id>` in the caller's
+  grant.** Every grant that routes must add it; a delegation naming a workspace the session does not hold
+  is refused `WORKSPACE_NOT_AUTHORIZED`, with the id recorded in `denied` so it counts as an escalation.
+
+  Until now this was the one governance dimension that did **not** attenuate: the registry inherited into
+  every governed child and nothing checked the caller's authority, so a child routed to `staging` could
+  route its grandchild to `prod` — with a real lease, a validated CWD, and a ledger line naming `prod`.
+  Measured in `docs/probes/g36-workspace-attenuation`, decided in ADR-0035, tracked as R-131.
+
+  Failing open for compatibility was considered and rejected: it would have made an attenuation fix opt-in.
+  The migration is one line per grant, and `PI_GRANTS_GATED=workspace:prod` now also works, which was not
+  possible before.
+
+- `workspace:*` covers the namespace but is **held, never inherited** — R-26's rule, because a descendant
+  holding it could route anywhere the registry lists. `agent:*` is unchanged and still inherits.
+- `tool:*` still satisfies a workspace capability: governance is opt-in and an ungoverned session must keep
+  routing anywhere.
+- A `workspace:` id never reaches pi's `--tools`.
+
 ## 0.18.0 — generic runtime enforcement for external controllers
 
 - Optional correlation metadata joins capability decisions to run/task/workspace/context IDs, candidate

@@ -85,8 +85,8 @@ docs/06-decisions/        — thirty-five ADRs. Reversals are kept and marked: 0
                             spawnable (handoff items B1/B2/B4); 0029-0033 cover safe init defaults,
                             stored grants, executor probing, live observability and sequential chains;
                             0034 adds generic runtime-enforcement primitives for external controllers
-                            (amended twice after review), 0035 PROPOSED — workspace routing is a capability,
-                            because today it is the one governance dimension that does NOT attenuate (R-131)
+                            (amended twice after review), 0035 workspace routing is a capability — it was
+                            the one dimension that did NOT attenuate until 0.19.0 (R-131, probe g36)
 docs/probes/              — measurement evidence, all against real software. Each has a "what this does
                             not establish" section: baseline/, pi-fabric-eval/, approval-ux/,
                             adr-0011-universal/, g1-argv/, g5-bash-escape/, g13-subagents-coupling/,

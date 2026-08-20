@@ -2128,7 +2128,7 @@ finding.**
 They are comment-only changes with no behaviour, but rule 10 lets a docs-only change merge on the author's
 own read, so mislabelling one is not free. The label was wrong; the diff is what it is.
 
-## R-131 · Workspace routing does not attenuate — H×H, OPEN (shipped in 0.18.0)
+## R-131 · Workspace routing does not attenuate — H×H, FIXED (shipped broken in 0.18.0)
 
 Added 2026-08-20, and **live on npm as of 0.18.0**. `ENV_WORKSPACE_REGISTRY` is not in `GRANT_ENV_KEYS`, so
 it inherits into every governed child; `workspace_id` is a model-facing parameter on all three delegation
@@ -2152,10 +2152,18 @@ grandchild planned with **no refusal**, resolved `prod`, took an exclusive **wri
 there. The probe's control is the load-bearing half — the grant and depth attenuated through the *same*
 child environment, so this is an asymmetry rather than "everything inherits".
 
-**Not yet mitigated.** ADR-0035 proposes a `workspace:<id>` capability namespace so routing attenuates
-through `resolve()` like everything else. Its blocking input is now satisfied, and it remains **Proposed**:
-acceptance is a deliberate second step, and what the probe still does not show — that a model would choose
-the escalation, across a real process boundary — is what a reviewer should weigh.
+**FIXED 2026-08-20 by ADR-0035 (Accepted), landing in 0.19.0.** Routing is now a `workspace:<id>`
+capability: the caller must hold it, the refusal is `WORKSPACE_NOT_AUTHORIZED` recorded in `denied` so an
+escalation counts as one, `workspace:*` is held but never inherited (R-26's rule), and `tool:*` still
+satisfies it because governance is opt-in. The probe now measures both sides — the original mechanism and
+the refusal — so it keeps being evidence after the defect is gone.
+
+**Breaking, deliberately.** Every grant that routes must add the capability; failing open for compatibility
+would have made an attenuation fix opt-in. Measured on this repository's own suite: four fixtures began
+refusing until granted, which is the one-line edit an operator faces.
+
+**What is still not shown:** that a model would choose the escalation, and that it crosses a real process
+boundary. The probe's own "does not establish" section says so.
 
 **Interim guidance for an operator:** do not register workspaces of differing sensitivity in one session.
 There is no capability to gate today, so `PI_GRANTS_GATED` cannot help.
@@ -2236,3 +2244,4 @@ or a workspace transitivity test failing once one exists.
 | 2026-08-20 | R-119…R-129 | **Six reviewers over the FIX commits, and the fixes claimed properties the code did not have.** The invariant held a third time; the runtime half did not. Three critical: a terminal append still `strict: true` under four documents saying otherwise (R-119); the anti-silence mechanism satisfied nowhere (R-120); `unbankApprovals` both too narrow and too broad (R-121). R-122 shows the marquee R-106 fix was itself undefended — deleting all four guards left 580/580 green — and over-corrected. **R-127 records a regression claim corrected twice and still not satisfied**, with the test deleted rather than weakened to pass; R-128 the process error of editing a tree five reviewers were mutating; R-129 that the audit everything rests on has no artifact. Also fixed: a failing lease test hung the runner past 900s, which is how a suite that CAUGHT a defect reads as untested | six-reviewer pass over the fix commits |
 | 2026-08-20 | R-130 | Added and fixed — the two findings the mutation auditor left open at the new HEAD: the `{release:true}` clean-release handshake was unpinned (deleting it left 586/586 green, so a deliberate handover would have been treated as a crash), and a test of mine overstated what the wiring does with `context_id`. Also records that the auditor corrected its OWN recommendation — pinning `truncated` would have introduced a bug — and that `a882595`'s `docs:` label was wrong for a commit touching five production files | mutation re-verification at the fixed HEAD |
 | 2026-08-20 | R-131, ADR-0035 | Added — **workspace routing does not attenuate, and it shipped in 0.18.0.** A child routed to `staging` can route its grandchild to `prod`, and unlike ADR-0012's accepted `bash` escape it leaves a complete, correct-looking ledger record asserting an authorisation nobody granted. R-26's shape in a namespace added five ADRs later. ADR-0035 proposes `workspace:<id>` as a capability so it attenuates through the existing `resolve()` path, and is deliberately left **Proposed** pending a transitivity probe — the evidence R-26 had and this does not | ADR-0034's unresolved list |
+| 2026-08-20 | R-131, ADR-0035 | **Measured, then fixed.** `docs/probes/g36-workspace-attenuation` confirmed the escalation against real worktrees and a real lease — grandchild planned with no refusal, took a write lease on `prod`, would have started there — with the control showing grant and depth attenuating through the same child environment. ADR-0035 Accepted and implemented: routing is a capability, `WORKSPACE_NOT_AUTHORIZED` is recorded in `denied`, and `workspace:*` is held but never inherited. All four parts mutation-verified; the probe now measures the refusal too | ADR-0035 |

@@ -21,6 +21,12 @@
     "grandchild_resolved_prod_root": true,
     "grandchild_write_lease_on_prod": "write",
     "grandchild_cwd_marker": "prod",
-    "conclusion": "CONFIRMED: routing does not attenuate — a child routed to staging took a write lease on prod and would start there, while the grant and depth attenuated through the same child environment"
+    "after_fix_refusal_code": "WORKSPACE_NOT_AUTHORIZED",
+    "after_fix_denied": [
+      "workspace:prod"
+    ],
+    "after_fix_authorised_routes": true,
+    "conclusion": "CONFIRMED (pre-ADR-0035 mechanism): the registry inherits, the child enumerates both ids, and resolving plus leasing prod succeeds from a child routed to staging, while the grant and depth attenuated through the same child environment",
+    "fix_conclusion": "FIXED by ADR-0035: the same escalation is refused as WORKSPACE_NOT_AUTHORIZED and recorded in `denied`, while a caller holding workspace:prod still routes — the asymmetry is gone"
   }
 }

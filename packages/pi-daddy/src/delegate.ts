@@ -6,7 +6,14 @@
 import { planSpawn } from "./spawn.ts";
 import { ceilingForDefinition, digestDefinition, type DefinitionDigest, type SkillDefinition } from "./definitions.ts";
 import { assertNarrowing, type Capability, type ResolveResult } from "./resolve.ts";
-import { DELEGATE_CAPABILITY, agentCapability, maySpawnDefinition, normaliseCapability } from "./capabilities.ts";
+import {
+  DELEGATE_CAPABILITY,
+  agentCapability,
+  mayRouteToWorkspace,
+  maySpawnDefinition,
+  normaliseCapability,
+  workspaceCapability,
+} from "./capabilities.ts";
 
 // Re-exported so the split stays internal: `delegate.ts` has been the import site for these since 0.6.0 and
 // four modules plus the test suite name it. Moving the definitions without moving the door would be churn
@@ -70,6 +77,31 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
     return denied({ ...empty, reason: `delegation depth limit reached (${ctx.maxDepth})` }, "DEPTH_EXCEEDED");
   }
   if (!request.task?.trim()) return denied({ ...empty, reason: "a delegation needs a task" }, "TASK_MISSING");
+
+  // ADR-0035. Routing a child to a registered workspace is an authority the CALLER must hold, checked here
+  // for the same reason `maySpawnDefinition` is checked below: it is a governance question about this
+  // session, answerable before anything is said about the target.
+  //
+  // Recorded as a denial rather than a bare refusal, exactly as DEFINITION_NOT_AUTHORIZED is: asking to
+  // route somewhere this session was not granted IS an attempt to exceed the grant, so it belongs in
+  // `denied` where `isEscalationAttempt` and every audit query can see it. Before this, nothing checked —
+  // the registry inherited into every child and a child routed to `staging` could route its grandchild to
+  // `prod` (R-131, measured in `docs/probes/g36-workspace-attenuation`).
+  if (request.boundWorkspaceId && !mayRouteToWorkspace(ctx.ownGrant, request.boundWorkspaceId)) {
+    const authorising = workspaceCapability(request.boundWorkspaceId);
+    const held = ctx.ownGrant.filter((c) => c.startsWith("workspace:")).sort();
+    return denied({
+      ...empty,
+      requested: [authorising],
+      result: { ...empty.result, denied: [authorising] },
+      reason:
+        `cannot route a child to workspace "${request.boundWorkspaceId}" — this session does not hold ` +
+        `${authorising}. ` +
+        (held.length > 0
+          ? `It may route to: ${held.join(", ")}.`
+          : `It may route to no workspace at all; add ${authorising} to its grant to allow this one.`),
+    }, "WORKSPACE_NOT_AUTHORIZED");
+  }
 
   // ADR-0016. A named definition replaces the model's tool list with an operator-authored ceiling.
   let requested: Capability[];
