@@ -38,12 +38,24 @@ test("a correlated plan computes trusted task and approval bindings", () => {
   assert.equal(plan.approvalBinding?.definition_sha256, plan.definitionDigest?.sha256);
 });
 
-test("correlation alone cannot put a workspace or context into the binding", () => {
-  // The values are identical to the trusted ones in the test above; only the SOURCE differs. Reading them
-  // out of correlation is what let a bound approval be spent in a workspace the child never entered.
+/**
+ * `planDelegation` ignores correlation when building the binding — it uses only the trusted parameters.
+ *
+ * Scoped to the PLANNER deliberately, because the name this test used to carry ("correlation alone cannot
+ * put a workspace or context into the binding") overstated what the product does. It is true of the
+ * workspace: `run-delegation.ts` and `delegate-chain.ts` both take `boundWorkspaceId` from the routing
+ * spec, which is registry-resolved and leased. It is NOT true of the context: both extensions pass
+ * `boundContextId: spec.correlation?.context_id`, i.e. the model's own claim, by design — `context_id` can
+ * only ever narrow a binding and a mismatch fails closed, which is why it is allowed to be caller-declared.
+ *
+ * So this pins the planner's indifference to correlation, and says out loud what the extension layer does
+ * instead. Nothing here pins the trusted-source property at the extension layer, which is where R-110
+ * actually happened — recorded rather than implied.
+ */
+test("the planner builds a binding from its trusted parameters, never from correlation", () => {
   const claimed = planDelegation({ task: "probe one failure", agent: "debugger", correlation }, base);
-  assert.equal(claimed.approvalBinding?.workspace_id, undefined);
-  assert.equal(claimed.approvalBinding?.context_id, undefined);
+  assert.equal(claimed.approvalBinding?.workspace_id, undefined, "no trusted workspace was supplied");
+  assert.equal(claimed.approvalBinding?.context_id, undefined, "no context was supplied either");
   assert.equal(claimed.correlation?.workspace_id, "w1", "the join metadata is still preserved verbatim");
 });
 

@@ -11,7 +11,7 @@ decisions; this file holds state and next actions. Newest entry on top.
 `hooks/pre-commit` enforces it once `git config core.hooksPath hooks` is set in your clone. This line is at
 the top because the rule was broken by drift, and this file is what a session actually reads first.
 
-**State: 0.18.0 candidate on `feat/assurance-runtime-primitives`, not merged or released.** **586 unit +
+**State: 0.18.0 candidate on `feat/assurance-runtime-primitives`, not merged or released.** **587 unit +
 44 integration tests** (measured 2026-08-20, after a second review pass), plus a **10**-test opt-in tier behind `PI_GRANTS_IT_MODEL=1`;
 typecheck, build, installed-package smoke and both Linux probes clean. **Thirty-four** ADRs are decided,
 0034 amended after review. The paid/model tier was not run; it requires separate authorization.
@@ -149,7 +149,7 @@ ignored-vs-not — measured, an untracked file *does* change `tree_sha`. Also co
 longer reach the binding at all" (`context_id` still does), the probe README's "precisely because" causal
 claim for something it only greps, and my own test docstring calling a load-sensitive test "deterministic".
 
-Verification: **586/586 unit**, typecheck, no module over the ceiling. The paid tier was again not run.
+Verification: **587/587 unit**, typecheck, no module over the ceiling. The paid tier was again not run.
 
 **What I would do differently, since it is the second time:** the mechanical guards this project already
 trusts — the line ceiling, the branch guard, the refusal enumeration — have never had this failure. Prose

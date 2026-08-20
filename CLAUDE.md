@@ -36,7 +36,7 @@ is an argument rather than a veto. Definitions are **Agent Skills (`SKILL.md`)**
 becomes the grant; the pi-subagents ceiling port is deleted; the interceptor survives only as a tripwire.
 
 **Current candidate: `pi-daddy` 0.18.0 — the only package, not yet merged or released.** Thirty-four ADRs
-decided (0034 amended TWICE after review). 586 unit + 44 integration tests, plus a 10-test opt-in tier behind
+decided (0034 amended TWICE after review). 587 unit + 44 integration tests, plus a 10-test opt-in tier behind
 `PI_GRANTS_IT_MODEL=1` that spawns real children; typecheck, build, smoke and both Linux probes clean.
 
 **A six-reviewer pass over this candidate found the capability invariant intact on every path and the
@@ -128,7 +128,7 @@ refuses until a gate passes that no longer means anything. They are in git histo
 
 ```bash
 cd packages/pi-daddy
-npm test                   # 586 unit tests — fast, pure, no pi, no network (the branch guard spawns git)
+npm test                   # 587 unit tests — fast, pure, no pi, no network (the branch guard spawns git)
 npm run typecheck          # src + extensions + tests + integration tests
 npm run test:integration   # 44 tests vs a REAL pi process AND a real herdr server — ~55s, no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and USE it

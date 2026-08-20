@@ -778,7 +778,7 @@ bound a typo can switch off is not a bound.
 
 ```bash
 cd packages/pi-daddy
-npm test                   # 586 unit tests — pure, no pi, no network
+npm test                   # 587 unit tests — pure, no pi, no network
 npm run typecheck          # src + extensions + test + test-integration
 npm run test:integration   # 44 tests against a REAL pi process/herdr server, no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and USE every subpath —

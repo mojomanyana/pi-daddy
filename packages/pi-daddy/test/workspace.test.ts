@@ -462,3 +462,40 @@ test("attaching a child to a dead lease is refused, not ignored", () => {
     );
   })();
 });
+
+/**
+ * A CLEAN release must not look like a crash to the helper.
+ *
+ * The `{release:true}` line is the only thing distinguishing "the owner handed the lease back" from "the
+ * owner died" — on stdin close the helper signals the attached process unless it was told the release was
+ * deliberate. Deleting that write left all 586 tests green, so the distinction was carried by one unpinned
+ * line: after a normal handover the helper would SIGTERM whatever holds the attached pid, which under pid
+ * reuse (R-101, accepted) is an unrelated process.
+ *
+ * The production change that breaks this: removing the `{release:true}` write from `release()`.
+ */
+test("a clean release leaves the attached process alone", async () => {
+  const root = await gitWorkspace();
+  const leaseDir = await tempDir("workspace-leases-");
+  const workspace = await validateRegisteredWorkspace({ workspaceId: "w1", registeredRoot: root });
+  const lease = await trackedLease({ workspace, access: "write", leaseDir, ownerId: "clean" });
+
+  // A process the helper is told to clean up if its owner dies. It must survive a deliberate release.
+  const attached = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+  try {
+    await once(attached, "spawn");
+    lease.attachProcess(attached.pid!);
+    assert.equal(await lease.release("completed"), "released");
+
+    // The helper exits on stdin close either way; what differs is whether it signals first. Give it longer
+    // than its own SIGTERM→SIGKILL escalation (500ms) plus its exit timer (750ms).
+    await new Promise((resolve) => setTimeout(resolve, 1400));
+    assert.equal(
+      attached.killed || attached.exitCode !== null || attached.signalCode !== null,
+      false,
+      "a deliberate handover must not be treated as a crash",
+    );
+  } finally {
+    attached.kill("SIGKILL");
+  }
+});

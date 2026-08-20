@@ -2099,6 +2099,35 @@ normally park a measurement that load-bearing under `docs/probes/`. Nobody can r
 that costs: a coverage claim derived from an audit no one can reproduce. The second round's mutations are
 likewise recorded only in commit messages.
 
+## R-130 · Two findings the second review could not close, closed on re-verification — L×M, FIXED
+
+Added and fixed 2026-08-20. The mutation auditor re-ran against the fixed HEAD and reported five of its
+seven findings closed. Two it could not speak to, both now settled:
+
+- **The clean-release handshake was unpinned.** `{release:true}` is the only thing distinguishing "the owner
+  handed the lease back" from "the owner died" — on stdin close the helper signals the attached process
+  unless told the release was deliberate. Deleting that one write left **586/586 green**. So after a normal
+  handover the helper would SIGTERM whatever held the attached pid, which under pid reuse (R-101, accepted)
+  is an unrelated process. The auditor could not re-test it because `workspace-lease.ts` had been rewritten
+  under it; re-derived here, and now pinned by a test that fails when the write is removed.
+- **A test of mine claimed more than the wiring supports.** "correlation alone cannot put a workspace or
+  context into the binding" is true of the workspace and false of the context: both extensions pass
+  `boundContextId: spec.correlation?.context_id` **by design**, because `context_id` can only narrow a
+  binding and a mismatch fails closed. Rescoped to the planner, with the extension-layer behaviour stated in
+  the docstring — and with the residual named: nothing pins the trusted-source property at the extension
+  layer, which is where R-110 actually happened.
+
+**The auditor also corrected one of its own recommendations, which is worth recording.** It had listed
+`truncated` among the guards to pin on `isCriticalAssuranceBlock`; the fix deliberately removed it, because
+the executor keeps the HEAD of the output and the token matches at byte 0, so a genuine veto with a long
+rationale is still genuine. Implementing that recommendation literally would have introduced the bug the
+fix exists to prevent. **A reviewer's recommendation deserves the same re-derivation as a reviewer's
+finding.**
+
+**And a fair hit on a commit message.** `a882595` is labelled `docs:` and also edits five production files.
+They are comment-only changes with no behaviour, but rule 10 lets a docs-only change merge on the author's
+own read, so mislabelling one is not free. The label was wrong; the diff is what it is.
+
 ---
 
 ## Register log
@@ -2170,3 +2199,4 @@ likewise recorded only in commit messages.
 | 2026-08-20 | R-93, R-97, R-98 | **Corrected, not rewritten (rule 2).** All three claimed a regression per fix; a 17-mutation audit on a confirmed-green baseline found **four** of those regressions absent — R-93's token guard, R-97's sibling-await, and two of R-98's four. The tests named for them passed for other reasons. All four now fail when the guard is removed. A claimed regression nobody re-derived is indistinguishable from an absent one | six-reviewer pass over the 0.18.0 candidate |
 | 2026-08-20 | R-99…R-118 | **Six independent reviewers over the unmerged 0.18.0 candidate, and the capability invariant held on every path any of them could construct** — no fail-open in authority resolution. What they found instead: the writer lease reporting handovers the kernel never performed (R-99, R-100, measured in `docs/probes/g35-flock-fd-inheritance`, which settled a disagreement between two reviewers who had reached opposite conclusions); a bound approval spendable outside the workspace it named (R-110); correlation as a model-writable text channel into the append-only ledger (R-111); a refused delegation banking a 30-day approval (R-113, the same shape as R-96 a third time); and a ledger with no vocabulary for lost, retained or uncontended leases (R-103…R-105). **The headline finding was not a defect but an absence**: eight guards holding up ADR-0034's advertised properties could each be deleted with 558/558 still green, in a project whose own rule 7 says a test that cannot fail is worse than none. R-101 and R-118 are accepted with their reasons stated | six-reviewer pass over the 0.18.0 candidate |
 | 2026-08-20 | R-119…R-129 | **Six reviewers over the FIX commits, and the fixes claimed properties the code did not have.** The invariant held a third time; the runtime half did not. Three critical: a terminal append still `strict: true` under four documents saying otherwise (R-119); the anti-silence mechanism satisfied nowhere (R-120); `unbankApprovals` both too narrow and too broad (R-121). R-122 shows the marquee R-106 fix was itself undefended — deleting all four guards left 580/580 green — and over-corrected. **R-127 records a regression claim corrected twice and still not satisfied**, with the test deleted rather than weakened to pass; R-128 the process error of editing a tree five reviewers were mutating; R-129 that the audit everything rests on has no artifact. Also fixed: a failing lease test hung the runner past 900s, which is how a suite that CAUGHT a defect reads as untested | six-reviewer pass over the fix commits |
+| 2026-08-20 | R-130 | Added and fixed — the two findings the mutation auditor left open at the new HEAD: the `{release:true}` clean-release handshake was unpinned (deleting it left 586/586 green, so a deliberate handover would have been treated as a crash), and a test of mine overstated what the wiring does with `context_id`. Also records that the auditor corrected its OWN recommendation — pinning `truncated` would have introduced a bug — and that `a882595`'s `docs:` label was wrong for a commit touching five production files | mutation re-verification at the fixed HEAD |
