@@ -5,9 +5,10 @@ deliberate subset of what it holds and withholds the rest. Sub-agents may delega
 subset of what they themselves hold — enforced by **pi's own `--tools` allowlist**, with an append-only
 ledger of every grant and refusal.
 
-**Status:** `pi-daddy` **0.18.0 candidate** on this branch, not yet released; `0.17.1` remains the current
-release. 587 unit + 44 non-model integration tests, with a separately authorized real-model tier;
-typecheck, build, installed-package smoke and the Linux runtime probe are clean.
+**Release state (verified 2026-08-20):** PR #9 is merged; repository `main` and tag `v0.18.0` point at
+`dde8eeb5632113d4a54705e16dc22ce70740fd4f`. npm's `latest` is also `0.18.0`; the latest GitHub Release is
+still `v0.17.1`. This follow-up branch has 591 unit + 44 non-model integration tests, with a separately
+authorized real-model tier; no model tests are run without explicit authorization.
 
 **Want to run it?** [`docs/RUNNING-IT.md`](docs/RUNNING-IT.md) — setup in six steps, then a feature built
 end to end with seven governed sub-agents, sequential where output feeds input and parallel where it does not.
@@ -78,7 +79,7 @@ somebody.
 
 ```bash
 cd packages/pi-daddy
-npm test                   # 587 unit tests — pure, no pi, no network
+npm test                   # 591 unit tests — pure, no pi, no network
 npm run typecheck          # src + extensions + test + test-integration
 npm run test:integration   # 44 tests against a REAL pi process, no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and USE every subpath

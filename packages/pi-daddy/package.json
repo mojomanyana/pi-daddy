@@ -128,7 +128,9 @@
     "./check-runner": {
       "types": "./dist/check-runner.d.ts",
       "default": "./dist/check-runner.js"
-    }
+    },
+    "./contracts/ledger/v2/ledger-event.schema.json": "./contracts/ledger/v2/ledger-event.schema.json",
+    "./contracts/ledger/v2/fixtures/*.json": "./contracts/ledger/v2/fixtures/*.json"
   },
   "bin": {
     "pi-daddy": "./dist/cli.js"
@@ -137,6 +139,7 @@
     "dist",
     "extensions",
     "src",
+    "contracts",
     "README.md",
     "CHANGELOG.md",
     "LICENSE"
@@ -146,6 +149,7 @@
     "typecheck": "tsc -p tsconfig.check.json",
     "test": "node --test test/*.test.ts",
     "test:integration": "node --test test-integration/*.it.ts",
+    "contracts:generate": "node scripts/generate-ledger-v2-contract.ts",
     "prepack": "npm run build",
     "test:smoke": "node scripts/smoke-installed.mjs"
   },

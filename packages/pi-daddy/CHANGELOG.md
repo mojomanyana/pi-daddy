@@ -12,6 +12,16 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## Unreleased
+
+- Ship a canonical JSON Schema draft 2020-12 contract for `ledgerVersion: 2` plus deterministic fixtures for
+  all four event types, generated through the production builders. Stable package export paths let external
+  harnesses pin the real contract instead of maintaining a parallel format.
+- Add a check-receipt event builder and use it on the production named-check path, so every checked-in fixture
+  is produced by the same builder that emits the corresponding ledger line.
+- Document strict version dispatch: legacy 0.17 grant records have no explicit version; unsupported explicit
+  versions fail closed and are never reinterpreted as legacy.
+
 ## 0.18.0 — generic runtime enforcement for external controllers
 
 - Optional correlation metadata joins capability decisions to run/task/workspace/context IDs, candidate

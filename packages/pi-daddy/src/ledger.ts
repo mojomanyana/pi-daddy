@@ -208,6 +208,12 @@ export function buildRecord(args: {
   refusal?: StructuredRefusal;
   now: Date;
 }): GrantRecord {
+  if (args.taskDigest !== undefined && !/^[a-f0-9]{64}$/i.test(args.taskDigest)) {
+    throw new TypeError("taskDigest must be a SHA-256 hex digest");
+  }
+  if (args.definitionDigest && !/^[a-f0-9]{64}$/i.test(args.definitionDigest.sha256)) {
+    throw new TypeError("definitionDigest.sha256 must be a SHA-256 hex digest");
+  }
   // R-46: the scalar is a SUMMARY, emitted only when it cannot mislead. `buildRecord` derives it rather
   // than accepting it, so a call site cannot supply one that disagrees with the map beside it.
   const sources = args.approvalSources ?? {};
@@ -217,7 +223,7 @@ export function buildRecord(args: {
   return {
     // A trusted task digest is what distinguishes a v2 capability event from the legacy construction API.
     // Production delegation always supplies it; old TypeScript callers remain able to append legacy lines.
-    ...(args.taskDigest ? { ledgerVersion: LEDGER_VERSION, event: "capability_decision" as const } : {}),
+    ...(args.taskDigest !== undefined ? { ledgerVersion: LEDGER_VERSION, event: "capability_decision" as const } : {}),
     ts: args.now.toISOString(),
     parentId: args.parentId,
     childId: args.childId,
@@ -225,7 +231,7 @@ export function buildRecord(args: {
     agentType: args.agentType,
     executor: args.executor,
     ...(args.taskFrom ? { taskFrom: args.taskFrom } : {}),
-    ...(args.taskDigest ? { taskDigest: args.taskDigest } : {}),
+    ...(args.taskDigest !== undefined ? { taskDigest: args.taskDigest } : {}),
     ...(args.correlation ? { correlation: structuredClone(args.correlation) } : {}),
     ...(args.refusal ? { refusal: structuredClone(args.refusal) } : {}),
     requested: args.requested,
@@ -302,6 +308,7 @@ export function isEscalationAttempt(record: GrantRecord): boolean {
 }
 
 export {
+  buildCheckReceiptLedgerEvent,
   buildChildLifecycleEvent,
   buildWorkspaceLeaseEvent,
   type ChildLifecycleEvent,

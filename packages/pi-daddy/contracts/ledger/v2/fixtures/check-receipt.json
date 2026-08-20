@@ -1,0 +1,40 @@
+{
+  "ledgerVersion": 2,
+  "event": "check_receipt",
+  "ts": "2026-08-20T12:00:04.000Z",
+  "childId": "check:spec-lint:00000000-0000-4000-8000-000000000000",
+  "receiptId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "workspaceId": "workspace-contract",
+  "checkId": "spec-lint",
+  "treeSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "correlation": {
+    "schema_version": "1.0",
+    "run_id": "run-contract-001",
+    "task_id": "task-contract-001",
+    "workspace_id": "workspace-contract",
+    "context_id": "context-contract",
+    "phase": "verify",
+    "assurance": "critical",
+    "assurance_effective": "critical",
+    "policy_label": "policy-contract",
+    "assurance_source": "policy",
+    "assurance_scope": {
+      "kind": "changed-files",
+      "paths": [
+        "src/**"
+      ],
+      "include_untracked": true
+    },
+    "activated_at": "2026-08-20T12:00:00.000Z",
+    "plan_digest": "1111111111111111111111111111111111111111111111111111111111111111",
+    "definition_digest": "2222222222222222222222222222222222222222222222222222222222222222",
+    "task_digest": "3333333333333333333333333333333333333333333333333333333333333333",
+    "base_sha": "4444444444444444444444444444444444444444",
+    "head_sha": "5555555555555555555555555555555555555555",
+    "tree_sha": "6666666666666666666666666666666666666666",
+    "event_seq": 21,
+    "last_change_seq": 18,
+    "last_authority_seq": 20,
+    "check_receipt_id": "7777777777777777777777777777777777777777777777777777777777777777"
+  }
+}

@@ -107,6 +107,31 @@ export function buildWorkspaceLeaseEvent(args: {
   };
 }
 
+export function buildCheckReceiptLedgerEvent(args: {
+  childId: string;
+  receiptId: string;
+  workspaceId: string;
+  checkId: string;
+  treeSha: string;
+  correlation?: CorrelationMetadata;
+  now: Date;
+}): CheckReceiptLedgerEvent {
+  if (!/^[a-f0-9]{64}$/i.test(args.receiptId)) {
+    throw new TypeError("receiptId must be a SHA-256 hex digest");
+  }
+  return {
+    ledgerVersion: LEDGER_VERSION,
+    event: "check_receipt",
+    ts: args.now.toISOString(),
+    childId: args.childId,
+    receiptId: args.receiptId,
+    workspaceId: args.workspaceId,
+    checkId: args.checkId,
+    treeSha: args.treeSha,
+    ...(args.correlation ? { correlation: structuredClone(args.correlation) } : {}),
+  };
+}
+
 export function buildChildLifecycleEvent(args: {
   childId: string;
   state: "starting" | "completed" | "failed";
