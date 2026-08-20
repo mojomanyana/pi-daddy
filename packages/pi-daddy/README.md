@@ -193,12 +193,13 @@ A chain's handoff is wrapped in a labelled, **nonce-delimited** fence, so the pr
 data — and because the nonce is minted after that agent finished, it cannot forge a closing delimiter to escape its
 own fence. The label itself is framing and this README will not pretend otherwise; the nonce is the mechanism.
 
-A chain is **gated upfront**: every step is planned first, and every approval it needs is asked for *before the
-first step starts* — together, rather than interrupting a running pipeline. One dialog per capability *and*
-definition, each naming the step that needs it, because an approval for one definition must never satisfy another.
-Decline any of them and nothing runs. A step that could never run refuses the chain **before** anyone is asked, and
-`Allow once` covers exactly one step. A failed step stops the rest, and you still get everything that
-completed. Each step spends one unit of the fan-out budget, so a seven-step pipeline wants `PI_GRANTS_FANOUT=12`.
+A legacy uncorrelated chain is **gated upfront**: every step is planned first, and every approval it needs is
+asked for before the first step starts. Exact correlated steps gate only after their composed task exists;
+binding a template and spending it on different generated instructions would be false assurance. One dialog
+per capability and definition names the step that needs it. Decline an upfront gate and nothing runs. A step
+that could never run refuses before anyone is asked; `Allow once` covers exactly the step it named. A failed
+step stops the rest, and you still get everything completed—except `BLOCKED_CRITICAL_ASSURANCE`, which
+remains a failed tool call. Each step spends one unit of the fan-out budget.
 
 ### Two executors, one plan
 
@@ -269,11 +270,10 @@ cannot make the next legitimate write destroy every other entry.
 
 **Other properties worth knowing:**
 
-- **An approval rides down the tree with the grant**, intersected with what each child actually receives at
-  every hop, so `approved ⊆ grant` holds at every level. An approval unblocks part of a grant; it can never
-  widen one. `once` is **dropped** on inheritance — the most conservative answer a human can give must not
-  produce the least conservative outcome — and the subject is **kept**, so a `<delegate>` approval no longer
-  matches any subject one hop down.
+- **Legacy session/always approvals ride down the tree with the grant**, intersected with what each child
+  actually receives, so `approved ⊆ grant` holds at every level. `once` is dropped. A correlated approval
+  instead binds the exact definition, task, requested/effective sets, workspace/context and parent, and
+  never crosses a delegation boundary — approval for one probe cannot become subtree authority.
 - **Concurrent callers share one dialog per `capability@subject`, but only share the *answer* when it was
   about more than one spawn.** `session`, `always`, a decline and an error answer everyone; **a `once` is
   consumed by exactly one caller** and the rest are asked their own question. Measured before the fix: four
@@ -319,6 +319,28 @@ Seven further tests in that file cost no model tokens and cover the reload and e
 `ctx.ui.select` call the TUI dialog serves; **the TUI's own rendering is not exercised.** The earlier
 transcripts in `docs/probes/approval-ux` describe an interceptor path that no longer exists — they are kept
 as the record of that run and are not a description of this version.
+
+## Runtime enforcement for external controllers (0.18.0)
+
+All fields are optional; existing callers behave unchanged.
+
+- `correlation` carries join-only run/task/workspace/context IDs, opaque policy metadata, base/head/tree SHAs
+  and sequence floors. Supplied IDs/digests never authorize; trusted digests are computed separately.
+- `workspace: {workspace_id, access}` resolves through `PI_GRANTS_WORKSPACE_REGISTRY`, validates a canonical
+  Git worktree root, and sets initial CWD. A caller cannot label a write-capable grant read-only. Kernel
+  util-linux `flock` allows one **pi-daddy-governed** writer per canonical root; `setpriv --pdeathsig` plus
+  helper attachment stops the writer process or herdr tab on parent death before release. This does not confine paths or exclude unrelated writers; `bash` remains an escape.
+- Refusals retain current prose and add stable codes such as `CAPABILITY_ESCALATION`,
+  `GATED_UNAPPROVED`, `APPROVAL_SCOPE_MISMATCH`, and `WORKSPACE_WRITE_CONFLICT`.
+- Ledger v2 adds joinable capability, lease, lifecycle and check-receipt events while reading legacy lines.
+- `pi-daddy/check-runner` selects an operator-named absolute executable+argv definition, never a shell
+  command string. It strips sensitive inherited environment, enforces timeout/output caps, executes a
+  private copy of the exact executable bytes it hashed, and pre/post-verifies Git head/candidate-tree
+  identity under an exclusive coordination lease. The executable remains arbitrary code; no filesystem or
+  network sandbox is claimed.
+
+Public subpaths: `pi-daddy/correlation`, `pi-daddy/refusals`, `pi-daddy/workspace`,
+`pi-daddy/check-runner`.
 
 ## Running it
 
@@ -485,8 +507,10 @@ everything below it.
 | `PI_GRANTS_APPROVED` | unset | Inherited `capability@subject#sha256` entries; set by the parent, clamped to the child's own grant, and honoured only against the definition body the child itself loaded (ADR-0022). |
 | `PI_GRANTS_APPROVAL_TIMEOUT` | `120` (seconds) | How long a dialog waits. `0` or an unreadable value means **no timeout**: waiting forever denies nothing, so it is the safe reading of a value we do not understand. |
 | `PI_GRANTS_LEDGER` | unset → not recording | **Setting this makes the ledger load-bearing** — see below. |
+| `PI_GRANTS_WORKSPACE_REGISTRY` | unset | Operator-owned `{version:1, workspaces:{id:{path}}}` file, required only for workspace-routed spawns. |
+| `PI_GRANTS_WORKSPACE_LEASE_DIR` | under `$PI_CODING_AGENT_DIR/pi-daddy/` | Kernel writer locks and ownership metadata. |
 | `PI_GRANTS_CHILD_TIMEOUT` | `600` (seconds) | Wall-clock limit for a child. Inherited by descendants — an operator preference, deliberately *not* attenuating state. |
-| `PI_GRANTS_FANOUT` | `8` | **Subtree budget**: total descendants this session may create. Attenuates downward like depth. Malformed or `0` falls back to the default — a bound a typo can switch off is not a bound. |
+| `PI_GRANTS_FANOUT` | `8` | Per-call width and downward subtree budget; not a session-total counter. Malformed or `0` falls back to the default. |
 | `PI_GRANTS_PARENT_ID` | `d0` | This session's ledger id; set by the parent. Makes sibling records joinable into a tree. |
 | `PI_GRANTS_HERDR` | unset ⇒ **probe** | Three-state. Unset probes for a reachable herdr and uses panes if one answers; `1` demands panes and refuses every delegation if herdr is unreachable; `0` demands captured subprocesses. Never detected from `herdr` merely being on `PATH`. |
 | `PI_GRANTS_HERDR_WORKSPACE` | the parent's `HERDR_WORKSPACE_ID` | herdr workspace for spawned panes. Defaults to the workspace this session is in, so a child is a tab away rather than a workspace away. |
@@ -508,7 +532,10 @@ is broken after 10s.
 
 ## The ledger
 
-Append-only JSONL. One record per governed decision, **including refusals**, which are the interesting ones.
+Append-only JSONL. Version 2 records capability decisions plus workspace-lease, child-lifecycle and
+check-receipt events. Every per-child capability decision is present, **including refusals**; call-level
+schema/cardinality rejections that create no child ID are not capability events. The reader still accepts
+legacy grant-only lines.
 
 Ids are hierarchical and derived: a child of `d0` is `d0.1`, its own second child `d0.1.2`. Ancestry reads
 from the id alone with no join, and it is reproducible, so two runs of the same fan-out produce a diffable
@@ -516,9 +543,10 @@ ledger. `denied` non-empty is the one designated escalation signal — **an agen
 hold is an escalation attempt, and it is invisible without a record.**
 
 **Privacy is a property of this file, and the boundary is exact: capability ids, counts and identifiers only
-— never prompts, tool arguments or results.** The `definitionDigest` is on the identifier side of that line:
-it names a version of operator-authored text already committed to a repository. The **task** is on the other
-side and is never recorded, in any field.
+— never prompts, task text, tool arguments or results.** Trusted `definitionDigest` and `taskDigest` values
+identify the exact operator body and task. A predictable task can be guessed from SHA-256, so its digest is
+sensitive/linkable metadata, not anonymization. Caller-supplied digest-looking values remain under
+`correlation` and never authorize.
 
 ## Propagation is race-free by construction
 
@@ -655,12 +683,12 @@ every in-repo test passed. `npm run test:smoke` packs a tarball, installs it int
 ## Testing
 
 ```bash
-npm test                   # 353 unit tests. Fast, pure, no pi, no network.
+npm test                   # 587 unit tests. Fast, pure, no pi, no network.
 npm run typecheck          # src + extensions + tests + integration tests
-npm run test:integration   # 28 tests against a REAL pi process. ~40s, no model tokens.
+npm run test:integration   # 44 tests against a REAL pi process. ~55s, no model tokens.
 npm run test:smoke         # pack, install into a scratch project, import and use it — and run the
                            # installed `pi-daddy init` bin, which is how R-73 was found
-PI_GRANTS_IT_MODEL=1 npm run test:integration   # + 4 end-to-end tests with a real model. ~60s, costs money.
+PI_GRANTS_IT_MODEL=1 npm run test:integration   # + 10 end-to-end tests with a real model. Costs money.
 ```
 
 The resolver is a pure function, which is deliberate: it is the only place an escalation could be
@@ -685,15 +713,16 @@ its own author the day after it was added: rather than raise the cap, `delegatio
 
 ## Status
 
-**0.14.0 — usable, and honest about scope.** What exists and is verified against real pi: the resolver, the
-ledger with an integrity reader, the spawn planner, `SKILL.md` definitions with `allowed-tools` as an
-enforced ceiling, `delegate` and `delegate_all` with a subtree budget, two executors, and human approval for
-gated capabilities (once / session / always, inheritable down the tree, persisted for `always` and pinned to
-both the tools and the instructions).
+**0.18.0 — generic runtime enforcement, still honest about scope.** The governed spawn path now includes
+optional correlation, exact task-bound approvals, registered-worktree CWD validation, OS-backed governed
+writer leases, structured refusals, lifecycle/lease ledger events, and a no-shell named-check subpath. All
+new spawn fields are optional; legacy callers retain their behavior.
 
 Known gaps, stated because a gap nobody wrote down is the one that surprises somebody:
 
-- **`bash` escapes governance.** Out of scope by decision (ADR-0012).
+- **`bash` escapes governance.** Out of scope by decision (ADR-0012); workspace routing and leases do not contain it.
+- **A workspace lease coordinates only pi-daddy-governed writers.** It is not a filesystem sandbox and cannot stop unrelated processes. The measured writer path currently requires util-linux `flock`.
+- **A named check is arbitrary code without shell interpolation.** It may write, use the network, invoke a shell or leave descendants; no OS containment is claimed.
 - **`subagents:rpc:spawn` bypasses the tripwire.** Unfixable from here.
 - **The ledger is verified at session start** when one is configured: a damaged trail announces itself, an intact one stays quiet.
 - **A pane outlives its tool call only if its child settled.** A child that answered keeps its pane so you can

@@ -1726,6 +1726,408 @@ fix it named was wrong per definition. `docs/SPEC.md`'s and ADR-0028's own worke
 **FIXED:** rendered per definition — `architect (needs agent:architect); build (needs agent:build)`.
 **Trigger:** any aggregate rendered against a list of names rather than beside each one.
 
+## R-86 · A workspace lease is mistaken for filesystem confinement — M×H, OPEN BOUNDARY
+Added 2026-08-19 by ADR-0034. A kernel writer lease can ensure that two **pi-daddy-governed** writer
+spawns do not start concurrently for one canonical worktree. It cannot stop the operator, an IDE, Git
+hooks, another agent runtime, or a child holding `bash` from writing there. Initial-CWD realpath validation
+likewise prevents accidental misrouting and nothing after spawn.
+
+**Mitigation:** key leases by canonical root rather than caller ID; say “governed writer coordination” in
+API, ledger and docs; keep ADR-0012's bash warning beside the workspace contract. Strong confinement needs
+an OS sandbox or constrained broker.
+**Trigger:** any claim containing “contained to WRITER_ROOT”, “read-only filesystem”, or “single writer”
+without the governed-process qualifier; any write observed from outside the lease holder while the lease is
+present.
+
+## R-87 · Crash recovery admits a second writer on a guessed stale timeout — M×H, MITIGATED BY DESIGN
+Added 2026-08-19 by ADR-0034. Reusing `withFileLock` for a child lifetime would transfer ownership after
+10 seconds based only on mtime. A healthy ten-minute child paused by SIGSTOP, suspend or a debugger would
+then overlap its successor.
+
+**Mitigation:** the workspace lease is a kernel `flock` held by a helper process. Recovery occurs only after
+the kernel lock is acquirable; active metadata then records that the prior owner died. Unsupported or
+ambiguous locking refuses with `WORKSPACE_LEASE_STALE` rather than falling back.
+**Trigger:** two holders for one canonical root; any recovery while the prior helper still owns the kernel
+lock; any in-memory or mtime-only fallback added to the write path.
+
+## R-88 · Correlation metadata is mistaken for authorization — M×H, MITIGATED BY SEPARATION
+Added 2026-08-19 by ADR-0034. Run/task/workspace/context IDs, assurance labels/scopes and external digest
+fields may be model- or controller-supplied. If they are compared as proof of identity, a caller can mint
+the value that authorizes it.
+
+**Mitigation:** external values live under `correlation`; capability decisions use the existing grant,
+ceiling and gate plus internally computed definition/task/request/effective digests. Approval matching may
+bind supplied workspace/context values but never treats them as authority by themselves.
+**Trigger:** any authorization branch reading `correlation`; a supplied `definition_digest` or `task_digest`
+being preferred over the planner's computed digest.
+
+## R-89 · A task digest is a privacy identifier, not anonymization — M×M, ACCEPTED
+Added 2026-08-19 by ADR-0034, narrowing ADR-0021. Critical assurance requires exact task identity in an
+approval and joinable ledger. Storing SHA-256 avoids task text but a short or predictable task can be guessed
+from a dictionary; equality across runs is also visible.
+
+**Mitigation:** never store task text, tool arguments or results; label the digest sensitive/linkable; keep
+caller-supplied task digests separate from the trusted computed one. A keyed digest is deferred because it
+introduces key distribution and prevents independent recomputation.
+**Trigger:** a real task recovered by guessing its digest, or an operator requiring unlinkability between
+ledgers.
+
+## R-90 · A load-bearing ledger failure strands a live writer lease — M×H, FIXED
+Added and fixed 2026-08-19 while testing ADR-0034's cleanup claim. Workspace setup acquired the kernel lock
+and then wrote the `workspace_lease` event. If that append failed, the catch path tried to record another
+event and rethrew, but the acquired lease was scoped inside the `try` and never released. The OS would
+recover it when the parent exited; a still-live pi session could not start another governed writer.
+
+**FIXED:** setup retains the lease across the error boundary and releases it before any best-effort refusal
+record. Child execution now also encloses executor invocation and terminal lifecycle writes in the release
+`finally`, not only the successful-return branch. A regression test makes the acquired-event append fail,
+then acquires the same canonical-root lease in the same process.
+**Trigger:** any operation inserted between lease acquisition and the `finally`, especially a load-bearing
+ledger append; any cleanup whose resource handle is declared inside the `try` that can fail after acquisition.
+
+## R-91…R-95 · Independent review found five assurance bypasses — H×H, FIXED
+Added and fixed 2026-08-19 before release. Three independent reviews found:
+
+- **R-91:** single-flight keyed only `capability@subject`, so concurrent exact-bound tasks could share one
+  session/always answer and each waiter stamped its own task binding onto it. The binding digest is now part
+  of the queue identity; different exact scopes raise different dialogs.
+- **R-92:** model-facing `access:"read"` could suppress a writer lease even for `write`/`edit`/`bash`.
+  Coordination access is now conservatively derived from trusted requested capabilities; caller `write` may
+  tighten and caller `read` cannot loosen.
+- **R-93:** parent SIGKILL released the helper's lock while the actual process/herdr agent survived. The lease
+  helper now owns crash cleanup for an attached PID/tab and releases only afterwards; token-checked metadata
+  prevents a stale lease object overwriting a successor.
+- **R-94:** check receipts promoted caller-supplied head/tree into top-level “exact” identity. Head and the
+  temporary-index candidate tree are now computed under the lease, checked against any supplied value, and
+  recomputed after the check; workspace change yields no receipt. Executable bytes are copied privately and
+  hashed before spawn, so later configured-path replacement does not change what runs or invalidate the receipt.
+- **R-95:** a grandchild retaining stdout/stderr could keep `runChild` pending after the governed PID was
+  killed. Settlement now drains briefly after PID exit and does not wait forever for inherited pipes. This
+  does not kill arbitrary detached descendants or claim containment.
+
+**Trigger:** removing the binding digest from prompt queue identity; consulting declared access without the
+grant; releasing before attached-resource cleanup; copying correlation identity into a receipt; waiting only
+for pipe `close` after process `exit`.
+
+## R-96…R-97 · The first review fixes had aggregate-path copies of the defects — H×H, FIXED
+Added and fixed 2026-08-20 in the required re-review. **R-96:** chain upfront approvals were tracked only by
+subject, so one tools-only step could be attributed approvals intended for another and consume every `once`
+for `<delegate>`; when a later gate declined, earlier session/persisted answers remained active but vanished
+from the ledger. Approvals now retain intended step+capability for attribution/consumption and every banked
+answer is recorded even when no step runs. **R-97:** single delegate still wrapped the upstream critical token,
+fan-out could return while siblings were running if one infrastructure path threw, and mixed failures could
+borrow one child's refusal code. The exact token now fails unchanged on all three tools; fan-out catches and
+awaits every sibling before rethrowing infrastructure failure; aggregate codes require every failure to carry
+the same code. Partial results include per-child refusals.
+
+The same pass made v2 validation require its join/identity fields, attached named checks to crash cleanup,
+closed settled writer panes before lease release, executed privately staged executable bytes rather than a
+racy pathname, and destroys inherited output pipes after bounded drain.
+**Trigger:** any aggregate path that reconstructs approval/refusal/lifecycle semantics beside the single-child
+path; any writer resource that can stay live after its lease event says released.
+
+## R-98 · Final review found evidence/lease races after the happy-path fixes — H×H, FIXED
+Added and fixed 2026-08-20. A herdr writer tab-close refusal still returned normally on two paths, so the
+caller released its lease around a live promptable pane. A named check could lose its helper while a blocked
+receipt append was in progress and still emit evidence. Fan-out preferred an infrastructure exception over a
+sibling's exact critical-block token. Versioned ledger lines could omit the event discriminator and be read
+as legacy. All now fail closed: failed writer close throws and retains the helper/lease; checks finish and
+release the measured candidate lease before writing a receipt and emit none on lease loss; the critical token
+wins after every sibling settles; any line carrying `ledgerVersion` must satisfy v2 discrimination/fields.
+**Trigger:** a receipt written before its resource's terminal ownership fact; a cleanup failure converted to
+normal return; “legacy” selected from field absence without first rejecting a present version marker.
+
+**Amended 2026-08-20 (six-reviewer pass), and the amendment is a correction to this entry, R-93 and
+R-97.** Rule 2: the note is added, the original text above is left alone. All three said or implied that
+each fix carries a regression. A mutation audit — 17 mutations, each applied to production code on a
+confirmed-green baseline and restored — showed **four of those claimed regressions do not exist**:
+
+- **R-93's second half** ("token-checked metadata prevents a stale lease object overwriting a
+  successor"). Changing `if (current?.token === token)` to `if (true)` left the suite green. The test
+  named for it killed the recorded pid FIRST, so `release()` short-circuited on a dead holder and the
+  token comparison was never reached. R-93's first half was genuinely pinned.
+- **R-97's "awaits every sibling before rethrowing".** Replacing `infrastructureError ??= error` with
+  `throw error` — so `Promise.all` rejects early and abandons live siblings — left the suite green.
+- **R-98's "retains the helper/lease".** The throw was tested; the retention, which is the actual safety
+  property, was not. `retainWriterLease = false` left the suite green.
+- **R-98's "the critical token wins after every sibling settles".** Swapping the two throws so an
+  infrastructure error wins left the suite green; no test constructed a fan-out with both.
+
+R-90, R-91, R-92, R-94, R-95, R-96 and R-98's other two halves were each mutation-verified as genuinely
+pinned. All four gaps above now have tests that fail when the guard is removed. **A claimed regression
+nobody re-derived is indistinguishable from an absent one**, which is why this correction is here rather
+than in a commit message.
+
+---
+
+## R-99 · `flock`'s command inherits the lock fd, so teardown released nothing — H×H, FIXED
+
+Added and fixed 2026-08-20. **Measured, and it settled a disagreement between two reviewers who both said
+they had measured it** — one reported an orphan keeping the lock, the other reported `FD_CLOEXEC` making it
+a stray-process leak only. `docs/probes/g35-flock-fd-inheritance` shows the exec'd command holds an fd on
+the lock file, survives SIGKILL of the wrapper, and keeps the lock (`exit 73` on reacquisition) until it
+dies; `-o/--close` exists precisely because inheriting is the default, and pi-daddy does not pass it.
+
+Two teardown paths SIGKILLed only the wrapper. On the readiness-timeout path the helper's pid is usually
+still unknown, so killing the recorded pid is not a fix either. **Consequence:** a stranded lock, reported
+to every later acquisition as `WORKSPACE_WRITE_CONFLICT` — the one message an operator would use to conclude
+another agent is writing. Separately, `release()` **threw** from a path every caller runs in a `finally`, so
+a dead helper turned a COMPLETED child into an exception with no output: the model could not tell "the work
+never happened" from "the work happened and we lost the receipt", which is R-03's rule.
+
+Fixed: the holder gets its own process group and teardown kills the group (which also stops a stray terminal
+signal from releasing a live writer's lock); `release()` returns `released | released-unrecorded | lost` and
+never throws; `executePlannedChild` reports a teardown failure alongside its result instead of in place of
+it. **Trigger:** any cleanup path that can throw, or that kills a wrapper rather than the process holding
+the resource.
+
+## R-100 · `recovered` lied in both directions — M×H, FIXED
+
+Added and fixed 2026-08-20. ADR-0034 sells "crash recovery is an observed kernel-lock fact rather than an
+age guess". Two ways the observation was of something that never happened: an **unreadable** predecessor
+record read as `recovered: false`, silently downgrading "the previous writer may have died mid-write" to the
+reassuring answer; and a swallowed release write left `state: "active"`, so the next owner recorded a crash
+after a clean handover. Absent and unreadable are now different facts, `recovered` has a third state
+(`"unknown"`), and "recorded" means this owner actually wrote its own handover — `released-unrecorded`
+otherwise. **Trigger:** a best-effort write whose failure changes what a later reader concludes.
+
+## R-101 · The lease helper signals a recorded pid with no identity check — L×H, ACCEPTED
+
+Added 2026-08-20, **not fixed.** On parent death the helper SIGTERMs, then SIGKILLs, the pid it was told to
+attach — with no `/proc/<pid>` start-time check. In the window where the child exits and the parent dies
+before releasing, that pid may have been recycled and the helper signals an unrelated process. Accepted
+rather than fixed: the check belongs inside a one-line embedded helper where a bug is harder to see than the
+race is to hit, and the blast radius is bounded by the parent's own uid. **Revisit if** the helper grows a
+real module, or if anyone observes it killing something it did not start.
+
+## R-102 · The herdr close loop retried forever while holding the lock — M×H, FIXED
+
+Added and fixed 2026-08-20. `herdr tab close` was retried at 1s intervals with no cap, no deadline and no
+give-up, while holding the kernel lock — so a pane closed by hand, a downed daemon, a missing binary or a
+mid-run herdr upgrade stranded that worktree **permanently**, with no lease command in `/grants` and no
+recovery short of finding an anonymous `flock`/`node -e` pid. ADR-0034 licenses "stops the attached process
+or herdr tab before releasing"; it does not license never releasing. Now bounded, and it releases anyway
+with a marker file naming the tab: **an unreleasable lock is worse than a recorded failure to close.**
+
+## R-103…R-105 · The ledger had no words for what the lease actually did — M×H, FIXED
+
+Added and fixed 2026-08-20. `WorkspaceLeaseOutcome` was `acquired | refused | released | timeout |
+recovered`, so three different facts were all recorded as `released` or `acquired`:
+
+- **R-103:** a lease **lost** under a live governed writer was recorded as `released, reason: cancelled` —
+  byte-identical to an operator pressing stop. A count of lost leases is exactly the number an operator
+  auditing this feature needs, and it was unrepresentable. `lost` added, plus `CHILD_*` refusal codes so the
+  two are distinguishable to an external controller as well as to a reader.
+- **R-104:** a deliberately **retained** lease (herdr tab would not close) wrote no terminal event at all,
+  so the successor's `recovered: true` blamed a crash on a known-good path. `retained` added.
+- **R-105:** a **read** lease, which takes no kernel lock, was recorded as `acquired` — overstating how many
+  exclusions the kernel performed. `uncontended` added, and `verifyLedger` counts them separately.
+
+**Trigger:** any outcome union where two materially different facts share a member.
+
+## R-106 · A child could mint the upstream controller's verdict — M×H, FIXED
+
+Added and fixed 2026-08-20. `isCriticalAssuranceBlock` matched on `!ok` plus the child's own captured stdout
+starting with `BLOCKED_CRITICAL_ASSURANCE`, and the caller then threw that text, **discarding** the
+governance-authored reason and the structured refusal. So a timeout, a cancellation, a lost writer lease or a
+truncated answer could all be reported to the parent as a clean upstream veto — and under ADR-0012's threat
+model the child's output can carry content it merely read from a repository. The token is now honoured only
+when the child otherwise exited cleanly non-zero: a process killed mid-sentence has not been assessed by
+anybody's gate. ADR-0034's pass-through requirement is unchanged.
+
+## R-107…R-109 · Refusals an external controller could not identify — M×M, FIXED
+
+Added and fixed 2026-08-20. ADR-0034 promises "stable refusal codes accompany, rather than replace, existing
+human diagnostics". Three groups had none. **R-107:** no execution-phase failure carried a code, so a lost
+lease, a timeout, a cancellation, a missing `setpriv` (a *documented platform requirement*) and an ordinary
+non-zero exit were indistinguishable free text. **R-108:** the catch that recorded an executor failure used
+a strict ledger append, so its own failure replaced the error it was recording — including
+`HerdrWriterCloseError`, whose meaning is "a lease is retained". **R-109:** five planner paths returned a
+reason with no code, among them the `assertNarrowing` violation — ADR-0011's invariant, the hardest rule this
+package enforces, and the one refusal a controller switching on `error.code` would misclassify as an
+internal error. All coded now, and `test/refusals.test.ts` is length-checked against the whole union because
+it previously enumerated eleven of eighteen members.
+
+## R-110 · A bound approval could be spent outside the workspace it named — H×H, FIXED
+
+Added and fixed 2026-08-20. `buildApprovalBinding` read `workspace_id` and `context_id` straight out of
+**caller-supplied** `correlation` into what the comment one line above calls the trusted,
+internally-computed scope. Worked sequence, all in one session: approve a delegation carrying a real
+`workspace` spec — registry-resolved, realpathed, leased, human asked — then re-issue the byte-identical
+task with `correlation.workspace_id` set and **no** `workspace` field. No registry lookup, no lease, the
+parent's own cwd, every digest matching, and the persisted approval is spent; the ledger names a workspace
+the child never entered. The guard that would have caught it can only fire when there is a spec to disagree
+with.
+
+No capability escalation — the grant is unchanged — but the "exact workspace scope" property advertised in
+ADR-0034, `docs/SPEC.md` and the package README was false for the two components that came from the caller.
+The binding now takes trusted values only and does not accept a `CorrelationMetadata` at all; scope follows
+the routing spec. `context_id` is still included and is documented as a caller-declared label that narrows
+only. **Trigger:** any field that crosses from a "non-authoritative" structure into one documented as
+trusted.
+
+## R-111 · Correlation was a model-writable text channel into the append-only ledger — H×H, FIXED
+
+Added and fixed 2026-08-20. `src/ledger.ts` states the invariant in its own header — capability ids, counts
+and identifiers only, never prompts, tool arguments or results — and ADR-0034 repeats that the ledger must
+never carry task text. But `correlation` is a **model-facing tool parameter** on all three delegation tools,
+`assurance_scope` was declared `Type.Any()`, and `normaliseCorrelation` checked only "is a JSON object, under
+32 KB": no key whitelist, no per-field bound, undeclared keys surviving the round trip. A model could write
+32 KB of arbitrary text into every v2 event through it, and disabling the cap entirely left the suite green.
+Now a whitelist of the pinned schema 1.0 field set, each string bounded at 512 characters,
+`assurance_scope` at 4 KB, sequence numbers required finite. An undeclared key is refused **by name**: if
+upstream adds a field, an actionable break beats a silent secrets sink.
+
+## R-112 · The correlation bound threw past every recorder — M×M, FIXED
+
+Added and fixed 2026-08-20. `normaliseCorrelation` threw a bare `Error` from outside every try in
+`planDelegation`, so an oversized correlation produced a governed refusal with **no code and no ledger line
+at all** — the ledger file was never even created. This is the G6/B-I3 class that `src/delegate.ts`'s own
+comment says it exists to close, reopened by a new pre-`resolve()` throw site. Caught and recorded now.
+
+## R-113 · A refused delegation still banked the human's approval — H×H, FIXED
+
+Added and fixed 2026-08-20. `extensions/run-delegation.ts` states the rule — "a refused operation must not
+leave authority behind" — and moved the executor check above the gate to honour it. The **adjacent path kept
+the defect**: the load-bearing ledger append runs after the gate, and its failure denies the delegation, so
+an operator clicks *Always*, a 30-day project-wide entry reaches disk, `PI_GRANTS_APPROVED` is republished to
+children, and the spawn never happens. A lock timeout under fan-out is a documented condition, so no
+adversary is required. The gate now records what it banked and the refusal takes it back, saying so out loud
+if the store was busy and an entry still stands. **This is the third occurrence of one defect shape** (the
+executor path, then the chain path as R-96, now here), which is the argument for fixing shapes rather than
+sites.
+
+## R-114…R-115 · A failed check left evidence of a clean run — M×H, FIXED
+
+Added and fixed 2026-08-20. **R-114:** `CHECK_IDENTITY_MISMATCH` — "the workspace changed while the check
+ran", the strongest evidence-integrity signal the feature has — wrote no ledger record at all, while the
+`finally` wrote `released, reason: completed`. The trail for a check whose workspace was mutated mid-run read
+like a clean run with no receipt. **R-115:** those `finally`/`catch` ledger appends were strict, so an append
+failure replaced the refusal it was recording. Every throw out of `runNamedCheck` is now ledgered as a lease
+refusal, and both records are best-effort-but-loud.
+
+## R-116…R-117 · Fan-out discarded what it caught — M×H, FIXED
+
+Added and fixed 2026-08-20. **R-116:** `infrastructureError ??= error` kept the first sibling's error and
+dropped every other with no log anywhere — and one of the droppable ones is `HerdrWriterCloseError`, a
+*resource-retention notice* rather than a per-child failure, so nobody was told a lease was held with no
+owner until the process exited. Each swallowed child also reported the same contentless
+`"delegation infrastructure failed"` with no code. **R-117:** the critical-assurance token was checked first
+and threw past the infrastructure error entirely. The token still wins — it is the answer the caller is
+waiting for — but the infrastructure failure rides along in an `AggregateError`. Mixed refusal codes now
+survive a total failure in `details`, under an aggregate code that is deliberately not any child's.
+
+## R-118 · The worktree-membership check is defence-in-depth with no test — L×L, ACCEPTED
+
+Added 2026-08-20. Deleting `registeredWorktrees.includes(registered)` from `validateRegisteredWorkspace`
+leaves the suite green, and unlike the other four guards audited that day this one resisted every attempt to
+construct a case where it is the only check that fires — the `rev-parse --show-toplevel` comparison catches a
+non-repository, a path inside a worktree, and a broken gitdir link. Recorded as accepted rather than given a
+test that would pass for a different reason. **Revisit if** anyone finds the case, or concludes the check is
+genuinely redundant and removes it deliberately.
+
+## R-119…R-126 · The FIXES claimed properties the code did not have — H×H, FIXED
+
+Added and fixed 2026-08-20, by six independent reviewers over the *fix commits* for R-99…R-118. The
+capability invariant held a third time; every entry below is the runtime half, and they share one cause
+worth naming above the list: **the claim was written before the code satisfied it.** That is R-93/R-97/R-98's
+shape — an asserted property with nothing forcing it — now committed on both sides of a review.
+
+- **R-119 (critical):** the terminal `child_lifecycle` append was still `strict: true`, while its own
+  docstring, `docs/SPEC.md`, the ADR-0034 amendment and R-99's entry all four said terminal observations are
+  best-effort. A contended ledger lock still discarded a completed child's output — and every sibling's under
+  `delegate_all`. Only the comment had changed.
+- **R-120 (critical):** the `onFailure` mechanism added *to prevent silent appends* was satisfied nowhere —
+  two empty callbacks, one of them guarding the R-114 evidence record, three lines under a comment saying
+  "loud". A third fed an array nothing read on the throw path.
+- **R-121 (critical):** `unbankApprovals` was gated on `ledgerDenied`, missing three other post-gate
+  refusals — most reachably a human declining the SECOND of two gated capabilities, which needs no fault at
+  all. And it revoked by `capability@subject` with no ownership check, so a joined gate or a
+  legacy-then-bound sequence let one refused delegation destroy an approval a live sibling was running under.
+  `"absent"` from `revokeApproval` also counted as revoked, though `loadApprovals` excludes stale-but-present
+  entries that later revive.
+- **R-122:** R-106's fix over-corrected — `truncated` in the guard rejected a genuine 1 MB veto, breaking
+  the pass-through ADR-0034 pins in the fix meant to protect it. And deleting all four non-text guards left
+  580/580 green: the marquee fix, undefended. `childFailureOutcome`'s `text: ""` was likewise the only thing
+  making the laundering path unreachable, and nothing held it.
+- **R-123:** R-102's marker file had no reader anywhere — an unreleasable lock traded for a silent one.
+- **R-124:** R-104 was fixed in the release event's wording only. A retained lease never wrote
+  `state: "released"`, so the successor still reported `recovered: true` — the blame `retained` exists to
+  remove.
+- **R-125:** the check runner's `releaseReason` stayed `"completed"` through every throw, so a refused
+  check's LAST lease event still read as a clean run and `verifyLedger` still counted a clean release.
+  R-114's fix put a line beside the misleading one instead of correcting it. Separately, the refusal path
+  released the workspace through an unguarded `strict: true` append, on the path where the ledger is already
+  known unwritable.
+- **R-126:** `LeaseReleaseOutcome` conflated three facts under `released-unrecorded` — the alarm (nobody
+  recorded the handover), the healthy case (a successor already owns the record), and a read lease that never
+  locked. It is five members now, and `release()` is memoized so a second call cannot invent a handover.
+
+**A test that hung the runner, fixed.** With a lease guard mutated, `test/workspace.test.ts` printed its
+failure and hung past 900 seconds: the failing test never reached its `release()`, so a live `flock` kept
+node's event loop alive. On CI that turns a one-line assertion failure into a job timeout with no summary —
+and it is how an auditor gets a false "untested" reading from a suite that did catch the defect. Measured
+after an `after()` reaper: 900+s → 4s clean failure, no orphans.
+
+## R-127 · R-97's regression claim is corrected a SECOND time, not satisfied — L×M, OPEN
+
+Added 2026-08-20. The R-93/R-97/R-98 correction note above says all four previously-absent regressions "now
+have tests that fail when the guard is removed." For R-97 that is still false. The mutation that stayed
+green was at the **call site** — `infrastructureError ??= error` plus an early throw — and the fix extracted
+the logic into `throwFanoutInfrastructure`, which the new tests exercise directly with hand-built arrays.
+Nothing drives the `catch` that feeds it, and it is not reachable from the wiring layer: children fail as
+*refusals*, which land in `outcomes` normally and never throw.
+
+A test written for it was **deleted rather than weakened until it passed**. So: the extraction is a real
+improvement, the pure function is genuinely pinned, and the call site is not. **Correcting a false
+regression claim by making another one is the finding here** — recorded in the same file as the correction
+it repeats.
+
+## R-128 · Five review agents and an editor shared one working tree — M×L, PROCESS, FIXED BY SEQUENCING
+
+Added 2026-08-20. Reviewers were authorised to mutate production code and restore it. One reasonably read a
+dirty tree as its own mess and ran `git checkout -- .` twice, discarding four in-flight fixes and producing a
+phantom `commit (amend)` in the reflog that took a while to explain. The agents behaved correctly; the
+sequencing was wrong. **Either give each reviewer its own `git worktree`, or do not edit while a review is
+running.** Also measured: two concurrent `npm test` runs fail each other, while the docs advertise the suite
+as "fast, pure, no pi, no network" — worth knowing before it goes in a matrix build.
+
+## R-129 · The 17-mutation audit has no artifact — L×M, OPEN
+
+Added 2026-08-20. `docs/03-risks.md` and the session log both rest on "a 17-mutation audit", and rule 5 would
+normally park a measurement that load-bearing under `docs/probes/`. Nobody can re-run it, and R-127 is what
+that costs: a coverage claim derived from an audit no one can reproduce. The second round's mutations are
+likewise recorded only in commit messages.
+
+## R-130 · Two findings the second review could not close, closed on re-verification — L×M, FIXED
+
+Added and fixed 2026-08-20. The mutation auditor re-ran against the fixed HEAD and reported five of its
+seven findings closed. Two it could not speak to, both now settled:
+
+- **The clean-release handshake was unpinned.** `{release:true}` is the only thing distinguishing "the owner
+  handed the lease back" from "the owner died" — on stdin close the helper signals the attached process
+  unless told the release was deliberate. Deleting that one write left **586/586 green**. So after a normal
+  handover the helper would SIGTERM whatever held the attached pid, which under pid reuse (R-101, accepted)
+  is an unrelated process. The auditor could not re-test it because `workspace-lease.ts` had been rewritten
+  under it; re-derived here, and now pinned by a test that fails when the write is removed.
+- **A test of mine claimed more than the wiring supports.** "correlation alone cannot put a workspace or
+  context into the binding" is true of the workspace and false of the context: both extensions pass
+  `boundContextId: spec.correlation?.context_id` **by design**, because `context_id` can only narrow a
+  binding and a mismatch fails closed. Rescoped to the planner, with the extension-layer behaviour stated in
+  the docstring — and with the residual named: nothing pins the trusted-source property at the extension
+  layer, which is where R-110 actually happened.
+
+**The auditor also corrected one of its own recommendations, which is worth recording.** It had listed
+`truncated` among the guards to pin on `isCriticalAssuranceBlock`; the fix deliberately removed it, because
+the executor keeps the HEAD of the output and the token matches at byte 0, so a genuine veto with a long
+rationale is still genuine. Implementing that recommendation literally would have introduced the bug the
+fix exists to prevent. **A reviewer's recommendation deserves the same re-derivation as a reviewer's
+finding.**
+
+**And a fair hit on a commit message.** `a882595` is labelled `docs:` and also edits five production files.
+They are comment-only changes with no behaviour, but rule 10 lets a docs-only change merge on the author's
+own read, so mislabelling one is not free. The label was wrong; the diff is what it is.
+
 ---
 
 ## Register log
@@ -1789,3 +2191,12 @@ fix it named was wrong per definition. `docs/SPEC.md`'s and ADR-0028's own worke
 | 2026-08-17 | R-78…R-82 | **Five independent reviewers over PR #2, one hypothesis each — and every one found something.** R-78 is the worst and the most humbling: R-77's own trigger describes it, written the previous day about the name and never applied to the capability id beside it, and it ends in arbitrary code execution from a file this workflow tells operators to commit. R-79 collects four defects in one scaffolder, one of them **B-I6 reintroduced** in a package that documents B-I6 as closed. R-81 is R-28's shape *inside* the module whose header claims to have made R-28's shape inexpressible. **The pattern worth keeping: every finding was in the half of the change nothing had attacked** — a generated file, a CLI with no tests, a classifier written after the planner it claims to defer to | independent review of PR #2 |
 | 2026-08-17 | R-75, ADR-0030 | **The setup was wrong, and only running it in a clean environment showed that.** `pi install` registers a package with pi and installs it to the agent root; `npm install` does neither, and three documents said to use it. `init` searched only the project root and told operators to install what they had just installed. Both fixed. ADR-0030 adds a grant store **outside** the workspace so `/grants init` can govern a session with no restart — ADR-0014's reasoning applied to the ceiling instead of the approvals, with the environment still winning so propagation stays single-channel | the two-step setup |
 | 2026-08-18 | R-85 | Added, **fixed in part** — eleven commits reached `main` with no PR, by drift rather than decision, and ADR-0033's two critical governance defects are among them. Working rule 10 rewritten after five independent reviewers: the first draft's `never commit to main` forbade the merge the rule requires and offered no recovery, which invites a force-push. Now enforced by `hooks/pre-commit` plus `test/branch-guard.test.ts`, with both remaining gaps (per-clone wiring, no branch protection) stated rather than implied. **It recurred while being verified** — `git stash -u` removed the untracked hook mid-test | independent review of PR #6 |
+| 2026-08-19 | R-86…R-89 | Added for ADR-0034 — lease mistaken for confinement, timeout-based stale takeover, correlation mistaken for authority, and task-digest privacy. The chosen writer mechanism is kernel `flock`; correlation is separated from trusted digests; task text remains forbidden | principal-pi-skills v3 assurance integration |
+| 2026-08-19 | R-90 | Added and fixed — a load-bearing ledger append after kernel-lock acquisition could strand that writer lease for the life of the still-running parent. Lease ownership now survives the error boundary and every executor path releases in `finally`; regression forces the append failure and reacquires the same root | runtime cleanup audit |
+| 2026-08-19 | R-91…R-95 | Added and fixed from three independent reviews — exact-bound single-flight rebinding, caller-underdeclared workspace access, child surviving parent lease release, untrusted receipt head/tree, and inherited-pipe timeout escape. Each now has a regression and narrowed boundary text | independent 0.18.0 review |
+| 2026-08-20 | R-96…R-97 | Added and fixed in re-review — chain approval attribution/consumption and unaudited banked answers; critical-token wrapping, fan-out early rejection and false aggregate codes. The pass also tightened v2 validation, named-check crash attachment, staged executable identity and pipe cleanup | independent 0.18.0 re-review |
+| 2026-08-20 | R-98 | Added and fixed in final review — herdr close failure releasing a live writer, check lease-loss racing receipt append, infrastructure error masking the critical token, and versioned lines bypassing v2 validation | final independent 0.18.0 review |
+| 2026-08-20 | R-93, R-97, R-98 | **Corrected, not rewritten (rule 2).** All three claimed a regression per fix; a 17-mutation audit on a confirmed-green baseline found **four** of those regressions absent — R-93's token guard, R-97's sibling-await, and two of R-98's four. The tests named for them passed for other reasons. All four now fail when the guard is removed. A claimed regression nobody re-derived is indistinguishable from an absent one | six-reviewer pass over the 0.18.0 candidate |
+| 2026-08-20 | R-99…R-118 | **Six independent reviewers over the unmerged 0.18.0 candidate, and the capability invariant held on every path any of them could construct** — no fail-open in authority resolution. What they found instead: the writer lease reporting handovers the kernel never performed (R-99, R-100, measured in `docs/probes/g35-flock-fd-inheritance`, which settled a disagreement between two reviewers who had reached opposite conclusions); a bound approval spendable outside the workspace it named (R-110); correlation as a model-writable text channel into the append-only ledger (R-111); a refused delegation banking a 30-day approval (R-113, the same shape as R-96 a third time); and a ledger with no vocabulary for lost, retained or uncontended leases (R-103…R-105). **The headline finding was not a defect but an absence**: eight guards holding up ADR-0034's advertised properties could each be deleted with 558/558 still green, in a project whose own rule 7 says a test that cannot fail is worse than none. R-101 and R-118 are accepted with their reasons stated | six-reviewer pass over the 0.18.0 candidate |
+| 2026-08-20 | R-119…R-129 | **Six reviewers over the FIX commits, and the fixes claimed properties the code did not have.** The invariant held a third time; the runtime half did not. Three critical: a terminal append still `strict: true` under four documents saying otherwise (R-119); the anti-silence mechanism satisfied nowhere (R-120); `unbankApprovals` both too narrow and too broad (R-121). R-122 shows the marquee R-106 fix was itself undefended — deleting all four guards left 580/580 green — and over-corrected. **R-127 records a regression claim corrected twice and still not satisfied**, with the test deleted rather than weakened to pass; R-128 the process error of editing a tree five reviewers were mutating; R-129 that the audit everything rests on has no artifact. Also fixed: a failing lease test hung the runner past 900s, which is how a suite that CAUGHT a defect reads as untested | six-reviewer pass over the fix commits |
+| 2026-08-20 | R-130 | Added and fixed — the two findings the mutation auditor left open at the new HEAD: the `{release:true}` clean-release handshake was unpinned (deleting it left 586/586 green, so a deliberate handover would have been treated as a crash), and a test of mine overstated what the wiring does with `context_id`. Also records that the auditor corrected its OWN recommendation — pinning `truncated` would have introduced a bug — and that `a882595`'s `docs:` label was wrong for a commit touching five production files | mutation re-verification at the fixed HEAD |

@@ -36,6 +36,7 @@ import { withFileLock } from "./file-lock.ts";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { entryVerdict, type ApprovalEntry, type EntryVerdict, type SubjectSnapshot } from "./approval.ts";
+import { isApprovalBinding } from "./correlation.ts";
 
 interface ApprovalFile {
   version: 1;
@@ -148,7 +149,8 @@ function isValidEntryShape(entry: unknown): entry is ApprovalEntry {
     typeof obj.approvedAt === "string" &&
     typeof obj.expiresAt === "string" &&
     typeof obj.cwd === "string" &&
-    Array.isArray(obj.grantAtApproval)
+    Array.isArray(obj.grantAtApproval) &&
+    (obj.binding === undefined || isApprovalBinding(obj.binding))
   );
 }
 
@@ -173,6 +175,7 @@ function sanitise(valid: Map<string, ApprovalEntry>): Record<string, ApprovalEnt
         cwd: e.cwd,
         grantAtApproval: e.grantAtApproval,
         ...(e.bodyAtApproval !== undefined ? { bodyAtApproval: e.bodyAtApproval } : {}),
+        ...(e.binding !== undefined ? { binding: structuredClone(e.binding) } : {}),
       },
     ]),
   );

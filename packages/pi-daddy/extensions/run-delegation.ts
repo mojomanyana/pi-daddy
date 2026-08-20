@@ -11,20 +11,29 @@
  * tool surface is observed.
  */
 
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
 import { DELEGATE_SUBJECT, shouldSeekApproval } from "../src/approval.ts";
-import { maySpawnDefinition, planDelegation } from "../src/delegate.ts";
-import { MAX_CHILDREN_PER_CALL, childSpawnId, splitBudget } from "../src/fanout.ts";
+import { planDelegation } from "../src/delegate.ts";
 import { appendRecord, buildRecord } from "../src/ledger.ts";
-import { mergeChildEnv } from "../src/propagation.ts";
-import type { Capability } from "../src/resolve.ts";
-import { ENV_CHILD_TIMEOUT, runChild, timeoutFromEnv } from "../src/run-child.ts";
-import { runHerdrPane } from "../src/run-herdr.ts";
-import { obtainApprovals, republishable, snapshotOf, type ApprovalOutcome, type ApprovalUIContext } from "./approvals.ts";
+import {
+  obtainApprovals,
+  republishable,
+  snapshotOf,
+  unbankApprovals,
+  type ApprovalOutcome,
+  type ApprovalUIContext,
+} from "./approvals.ts";
 import type { InheritableApproval } from "../src/approval.ts";
-import { resolveWorkspace } from "../src/herdr-cli.ts";
-import { ENV_HERDR_KEEP_PANE, type GrantsSession } from "./session.ts";
+import type { GrantsSession } from "./session.ts";
+import type { CorrelationMetadata } from "../src/correlation.ts";
+import { GovernanceRefusal, refusal as structuredRefusal } from "../src/refusals.ts";
+import { executePlannedChild, type DelegationOutcome } from "./execute-child.ts";
+import {
+  governedWorkspaceAccess,
+  prepareDelegationWorkspace,
+  releaseDelegationWorkspace,
+  type DelegationWorkspaceSpec,
+  type PreparedWorkspace,
+} from "./workspace-runtime.ts";
 
 /** What one child was asked to do. The shape both tools accept, per child. */
 interface ChildSpec {
@@ -32,6 +41,8 @@ interface ChildSpec {
   agent?: string;
   tools?: string[];
   model?: string;
+  correlation?: CorrelationMetadata;
+  workspace?: DelegationWorkspaceSpec;
 }
 
 /**
@@ -106,6 +117,7 @@ export async function planWithApprovals(
       ctx,
       request.task,
       signal,
+      plan.approvalBinding,
     );
     const outcome = approval;
     if (outcome.approved.length > 0) {
@@ -128,26 +140,27 @@ export async function planWithApprovals(
             // headline property was false on the hot path, for the approvals it was written to cover.
             // Taken from this session's snapshot, the same source `republishable` uses.
             bodySha256: snapshotOf(session, approvalSubject)?.bodySha256,
+            ...(outcome.bindings[capability] ? { binding: outcome.bindings[capability] } : {}),
           })),
         ])),
         ...extra,
       });
     }
-    if (!plan.ok && approval.reason) plan = { ...plan, reason: approval.reason };
+    if (!plan.ok && approval.reason) {
+      plan = {
+        ...plan,
+        reason: approval.reason,
+        ...(approval.refusalCode
+          ? { refusal: structuredRefusal(approval.refusalCode, approval.reason) }
+          : {}),
+      };
+    }
   } catch (error) {
-    plan = { ...plan, reason: `grants: approval flow failed, denying (${String(error)})` };
+    const message = `grants: approval flow failed, denying (${String(error)})`;
+    plan = { ...plan, reason: message, refusal: structuredRefusal("APPROVAL_FLOW_FAILED", message) };
   }
 
   return { plan, approval };
-}
-
-interface DelegationOutcome {
-  ok: boolean;
-  text: string;
-  reason?: string;
-  granted: Capability[];
-  depth: number;
-  exitCode: number | null;
 }
 
 /**
@@ -215,14 +228,27 @@ export async function runOneDelegation(
      * where nothing was ever gated — `/grants ledger` counted it in neither `bySource` nor `unattributed`, so it did
      * not even show up as a gap, and ADR-0010's compensating control was blind to every chain step.
      */
-    approvalFacts?: Pick<ApprovalOutcome, "approved" | "sources" | "scopes" | "humanDenied">;
+    approvalFacts?: Pick<ApprovalOutcome, "approved" | "sources" | "scopes" | "expiresAt" | "uses" | "humanDenied">;
   } = {},
 ): Promise<DelegationOutcome> {
   const { onProgress, preApproved, taskFrom, approvalFacts } = options;
   // pi resolves a BARE model id to an unauthenticated provider and the child dies at startup — the id
   // alone is not enough, it must be qualified with its provider (`Model<Api>` carries both).
   const defaultModel = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
-  const request = { task: spec.task, agent: spec.agent, tools: spec.tools, model: spec.model ?? defaultModel };
+  const request = {
+    task: spec.task,
+    agent: spec.agent,
+    tools: spec.tools,
+    model: spec.model ?? defaultModel,
+    correlation: spec.workspace
+      ? { ...(spec.correlation ?? {}), workspace_id: spec.workspace.workspace_id }
+      : spec.correlation,
+    // The binding's workspace comes from the ROUTING SPEC, which is resolved against the operator
+    // registry and leased before any human is asked — never from `correlation`, which is a model-supplied
+    // claim that nothing validates when no spec accompanies it (R-110).
+    boundWorkspaceId: spec.workspace?.workspace_id,
+    boundContextId: spec.correlation?.context_id,
+  };
   const extra = { fanoutBudget: budget, spawnId: ids.parentId, childSpawnId: ids.childId };
 
   // ADR-0031: herdr was DEMANDED (`PI_GRANTS_HERDR=1`) and is not answering. Refused rather than relocated —
@@ -239,24 +265,47 @@ export async function runOneDelegation(
   // `ctx: null` rather than skipping the plan entirely: the ledger still gets a full, honest record of what was
   // requested and refused, and stored approvals still count toward it — nothing is *hidden*, only nobody is
   // *asked*. It is the same argument `/grants` uses for its preview.
-  const refusal = session.executor.refusal;
-  // Planning and the gate live in `planWithApprovals`, shared with the `/grants` preview so the two cannot
-  // disagree (R-38). This call is the enforcing one when a human may be asked: `ctx` is passed unless the
-  // executor has already made the outcome certain.
-  let { plan, approval: approvalOutcome } = await planWithApprovals(
-    session,
-    request,
-    extra,
-    refusal ? null : ctx,
-    signal,
-    preApproved,
-  );
+  const executorRefusal = session.executor.refusal;
+  let preparedWorkspace: PreparedWorkspace | undefined;
+  let approvalOutcome: ApprovalOutcome | undefined;
+  let plan: ReturnType<typeof planDelegation>;
+  let ledgerDenied = false;
 
-  // Applied in front of the ledger write below, so the record describes a refusal rather than a spawn. Turning
-  // `plan.ok` off reuses the existing blocked-record path, so this adds a reason rather than a second refusal
-  // mechanism.
-  if (refusal) {
-    plan = { ...plan, ok: false, reason: `grants: ${refusal}` };
+  if (spec.workspace && !executorRefusal) {
+    // Check non-liftable refusals before taking a lease, and take the lease before asking a human. This
+    // preserves both anti-race rules: a doomed spawn cannot bank approval, and a conflicting writer starts
+    // no child process.
+    const preview = await planWithApprovals(session, request, extra, null, signal, preApproved);
+    plan = preview.plan;
+    if (plan.ok || shouldSeekApproval(plan.result)) {
+      try {
+        preparedWorkspace = await prepareDelegationWorkspace({
+          spec: { ...spec.workspace, access: governedWorkspaceAccess(spec.workspace.access, plan.requested) },
+          correlation: spec.correlation,
+          childId: ids.childId,
+          signal,
+          ledgerPath: session.ledgerPath,
+        });
+        request.correlation = preparedWorkspace.correlation;
+        const gated = await planWithApprovals(session, request, extra, ctx, signal, preApproved);
+        plan = gated.plan;
+        approvalOutcome = gated.approval;
+      } catch (error) {
+        const value = error instanceof GovernanceRefusal
+          ? { code: error.code, message: error.message, ...(error.details ? { details: error.details } : {}) }
+          : structuredRefusal("WORKSPACE_LEASE_STALE", `workspace setup failed (${String(error)})`);
+        plan = { ...plan, ok: false, reason: value.message, refusal: value };
+      }
+    }
+  } else {
+    const gated = await planWithApprovals(session, request, extra, executorRefusal ? null : ctx, signal, preApproved);
+    plan = gated.plan;
+    approvalOutcome = gated.approval;
+  }
+
+  if (executorRefusal) {
+    const message = `grants: ${executorRefusal}`;
+    plan = { ...plan, ok: false, reason: message, refusal: structuredRefusal("EXECUTOR_UNAVAILABLE", message) };
   }
 
   // G6 / B-I3: no `&& plan.result` guard — `planDelegation` always carries one now.
@@ -284,104 +333,65 @@ export async function runOneDelegation(
         // (a chain). Without the second, an approved chain step recorded nothing about the human who authorised it.
         approved: approvalOutcome?.approved ?? approvalFacts?.approved,
         approvalSources: approvalOutcome?.sources ?? approvalFacts?.sources,
-        approvalScopes: approvalOutcome?.scopes ?? approvalFacts?.scopes,
+        approvalScopes: approvalOutcome?.recordedScopes ?? approvalFacts?.scopes,
+        approvalExpiresAt: approvalOutcome?.expiresAt ?? approvalFacts?.expiresAt,
+        approvalUses: approvalOutcome?.uses ?? approvalFacts?.uses,
         humanDenied: approvalOutcome?.humanDenied ?? approvalFacts?.humanDenied,
         gateOutcome: approvalOutcome?.gateOutcome,
         // ADR-0018: taken from the PLAN, never re-derived here. The B-I3 lesson — a call site that
         // recomputed the digest could record one the planner never used.
         definitionDigest: plan.definitionDigest,
+        taskDigest: plan.taskDigest,
+        correlation: plan.correlation,
+        refusal: plan.refusal,
         now: new Date(),
       }),
     ).catch((error) => {
       // G6 / A-R4 + B-I2: fail closed. This path PROVISIONS, so an unrecorded delegation would be a
       // child running with granted capabilities and no audit line.
-      plan = { ...plan, ok: false, reason: `grants: ledger write failed, denying — ${String(error)}` };
+      plan = {
+        ...plan,
+        ok: false,
+        reason: `grants: ledger write failed, denying — ${String(error)}`,
+        refusal: structuredRefusal("LEDGER_WRITE_FAILED", `grants: ledger write failed, denying — ${String(error)}`),
+      };
+      ledgerDenied = true;
     });
   }
 
   if (!plan.ok) {
-    return { ok: false, text: "", reason: plan.reason, granted: [], depth: plan.childDepth, exitCode: null };
-  }
-
-  // G8: bounded output, a wall-clock timeout with SIGTERM->SIGKILL escalation, and an abort observed
-  // even if it happened before we got here. See src/run-child.ts for why each one exists.
-  //
-  // ADR-0016 point 6: two executors, one plan. `runChild` needs nothing installed; herdr gives the same
-  // governed argv a VISIBLE, attachable pane.
-  //
-  // **Which one is chosen was reversed by ADR-0031**: the session probes for a reachable herdr server at
-  // startup rather than waiting to be told. Still never detected from a binary on `PATH` — only from a server
-  // that answered — and the choice is disclosed at session start, in `/grants`, and per child in the ledger.
-  // Read live off `session.executor`, because the probe finishes after this module is loaded.
-  const output = session.executor.kind === "herdr"
-    ? await runHerdrPane({
-        args: plan.args.slice(0, -1),
-        // The task is delivered as a prompt, so it never reaches argv at all. `plan.args` still ends
-        // with the neutralised task (planSpawn is executor-agnostic), hence the slice — and the leading
-        // space `neutralisePrompt` added is stripped because there is no parser to defend against here.
-        prompt: plan.args[plan.args.length - 1].trimStart(),
-        // Grant/depth/ledger go on the PANE: `herdr agent start` has no --env, but a pane's environment
-        // reaches the shell that launches the agent (docs/probes/g16-herdr).
-        env: plan.env,
-        cwd: ctx.cwd,
-        name: `${spec.agent ?? "delegate"}-${ids.childId}`,
-        // Was `process.env[ENV_HERDR_WORKSPACE]`, i.e. "omitted lets herdr choose" — which put children in a
-        // different workspace from the pi session that spawned them, so switching to one meant hopping
-        // workspaces rather than tabs. `resolveWorkspace` prefers the operator's explicit answer and otherwise
-        // inherits the parent's own `HERDR_WORKSPACE_ID` (measured; herdr sets it in every pane it creates).
-        workspace: resolveWorkspace(process.env),
-        signal,
-        timeoutMs: timeoutFromEnv(process.env[ENV_CHILD_TIMEOUT]),
-        keepPane: process.env[ENV_HERDR_KEEP_PANE] === "1",
-        // ADR-0032. The pane id arrives first and is what a human switches to; the pane's tail follows as the
-        // child works. Both are display only.
-        //
-        // `snapshot`, not `chunk`: `agent read` returns a snapshot of a bounded terminal, and the sink must
-        // REPLACE what it holds. Treating it as a stream produced an 89,000× amplification and fabricated lines
-        // the child never printed — see `tailLines` in `src/herdr-poll.ts`.
-        onPane: onProgress ? (paneId, agentName) => onProgress({ paneId, agentName, state: "running" }) : undefined,
-        onSnapshot: onProgress ? (snapshot) => onProgress({ snapshot }) : undefined,
-      })
-    : await runChild({
-        command: "pi",
-        args: plan.args,
-        // Explicit per-child env — the parent's own grant vars must not leak in. A plain spread would
-        // not achieve that: a key `plan.env` does not set is a key the parent's value survives into, so
-        // `mergeChildEnv` strips every governance variable first and lets only the plan put them back.
-        env: mergeChildEnv(process.env, plan.env),
-        cwd: ctx.cwd,
-        signal,
-        timeoutMs: timeoutFromEnv(process.env[ENV_CHILD_TIMEOUT]),
-        // No pane on this path, so streaming is the ONLY observability a subprocess child can have — which is
-        // why ADR-0032 chose the streaming option over status lines alone.
-        onOutput: onProgress ? (chunk) => onProgress({ chunk }) : undefined,
+    // EVERY refusal reached after the gate ran. Gating on `ledgerDenied` left three post-gate refusals
+    // stranding a 30-day approval — most reachably a human declining the SECOND of two gated capabilities,
+    // which needs no fault at all. The predicate is now the rule itself, so it cannot drift from it again.
+    if (ctx) await unbankApprovals(session, ctx, approvalOutcome?.banked);
+    // Guarded: this contains a `strict: true` append, and on the path where the ledger is already known
+    // unwritable an unguarded call replaced the governance refusal, and its code, with a ledger error.
+    try {
+      await releaseDelegationWorkspace({
+        prepared: preparedWorkspace, childId: ids.childId, ledgerPath: session.ledgerPath, reason: "refused",
       });
-
-  // G8: a child that failed is reported as a failure. A non-zero exit, a timeout and a truncated flood
-  // all used to come back as ordinary tool results, so the orchestrator read them as answers.
-  if (output.spawnError || output.aborted || output.timedOut || output.code !== 0) {
-    const why = output.spawnError
-      ? `could not be started: ${output.spawnError}`
-      : output.aborted
-        ? "was cancelled"
-        : output.timedOut
-          ? "exceeded its time limit and was killed"
-          : `exited with code ${output.code}`;
+    } catch (error) {
+      plan = { ...plan, reason: `${plan.reason ?? "refused"}; workspace release record failed: ${String(error)}` };
+    }
     return {
       ok: false,
-      text: output.text.trim(),
-      reason: `the sub-agent ${why}`,
-      granted: plan.effective,
+      text: "",
+      reason: plan.reason,
+      granted: [],
       depth: plan.childDepth,
-      exitCode: output.code,
+      exitCode: null,
+      ...(plan.refusal ? { refusal: plan.refusal } : {}),
     };
   }
 
-  return {
-    ok: true,
-    text: output.text.trim(),
-    granted: plan.effective,
-    depth: plan.childDepth,
-    exitCode: output.code,
-  };
+  return executePlannedChild({
+    session,
+    plan,
+    agent: spec.agent,
+    childId: ids.childId,
+    cwd: ctx.cwd,
+    preparedWorkspace,
+    signal,
+    onProgress,
+  });
 }

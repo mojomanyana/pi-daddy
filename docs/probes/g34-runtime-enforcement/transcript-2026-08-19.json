@@ -1,0 +1,15 @@
+{
+  "node": "v26.7.0",
+  "platform": "linux",
+  "findings": {
+    "same_workspace_conflict": "WORKSPACE_WRITE_CONFLICT",
+    "distinct_workspace_parallel": "acquired",
+    "sigterm_recovery": "recovered-after-child-stop",
+    "sigkill_recovery": "recovered-after-child-stop",
+    "check_exit": 0,
+    "check_cwd": "/tmp/pi-daddy-g34-workspace-YFhmey",
+    "argv_literal": true,
+    "shell_marker_absent": true,
+    "receipt_id": "6a473a60677f0acba8e3f21fb2af17595b687ec025fa78d8a7ceefd53250426d"
+  }
+}

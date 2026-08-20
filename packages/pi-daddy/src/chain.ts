@@ -29,7 +29,7 @@ import { randomBytes } from "node:crypto";
  * How much of a step's output crosses to the next step.
  *
  * A child may return up to `DEFAULT_MAX_OUTPUT_BYTES` (1 MiB); pasting that into a task would spend most of the
- * next child's context on its predecessor's transcript. 64 KiB is a generous summary and a poor transcript, which
+ * next child's context on its predecessor's transcript. 32 KiB is a generous summary and a poor transcript, which
  * is the right side of that line for a handoff.
  */
 export const HANDOFF_MAX_BYTES = 32 * 1024;
@@ -156,6 +156,8 @@ export interface ChainStep {
   agent?: string;
   tools?: string[];
   model?: string;
+  correlation?: import("./correlation.ts").CorrelationMetadata;
+  workspace?: { workspace_id: string; access: import("./workspace.ts").WorkspaceAccess };
 }
 
 /**

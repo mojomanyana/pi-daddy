@@ -12,7 +12,7 @@
 
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { after, afterEach, test } from "node:test";
 import grantsExtension from "../extensions/grants.ts";
@@ -21,10 +21,20 @@ import { ENV_APPROVED, ENV_DEPTH, ENV_FANOUT, ENV_GATED, ENV_GRANT, ENV_LEDGER, 
 import { ENV_HERDR } from "../src/executor.ts";
 import { verifyLedger } from "../src/ledger.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
+import {
+  acquireWorkspaceLease,
+  ENV_WORKSPACE_LEASE_DIR,
+  ENV_WORKSPACE_REGISTRY,
+  validateRegisteredWorkspace,
+} from "../src/workspace.ts";
+import { execFileSync } from "node:child_process";
 
 after(cleanupTempDirs);
 
-const KEYS = [ENV_GRANT, ENV_DEPTH, ENV_MAX_DEPTH, ENV_GATED, ENV_APPROVED, ENV_LEDGER, ENV_FANOUT, ENV_PARENT_ID, ENV_HERDR];
+const KEYS = [
+  ENV_GRANT, ENV_DEPTH, ENV_MAX_DEPTH, ENV_GATED, ENV_APPROVED, ENV_LEDGER, ENV_FANOUT, ENV_PARENT_ID,
+  ENV_HERDR, ENV_WORKSPACE_REGISTRY, ENV_WORKSPACE_LEASE_DIR,
+];
 const saved = new Map<string, string | undefined>();
 
 afterEach(() => {
@@ -129,13 +139,44 @@ test("every child is reported, and an all-failed fan-out throws rather than retu
   const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate" });
   await assert.rejects(
     () => tools.get("delegate_all")!.execute("t", { children: refusedChildren(3) }, undefined, undefined, ctx),
-    (error: Error) => {
+    (error: Error & { code?: string }) => {
+      assert.equal(error.code, "CAPABILITY_ESCALATION");
       assert.match(error.message, /every child was refused/);
       for (const n of [1, 2, 3]) assert.match(error.message, new RegExp(`child ${n} — FAILED`), `child ${n} must appear`);
       assert.match(error.message, /tool:write/, "and the reason must name the capability");
       return true;
     },
   );
+});
+
+test("mixed all-failed fan-out does not assign one child's refusal code to the aggregate", async () => {
+  const bin = await tempDir("grants-mixed-failure-shim-");
+  await writeFile(join(bin, "pi"), "#!/usr/bin/env node\nprocess.exit(1)\n");
+  await chmod(join(bin, "pi"), 0o755);
+  const oldPath = process.env.PATH;
+  process.env.PATH = `${bin}:${oldPath}`;
+  try {
+    const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate" });
+    await assert.rejects(
+      () => tools.get("delegate_all")!.execute("mixed", {
+        children: [{ task: "denied", tools: ["write"] }, { task: "runtime", tools: ["read"] }],
+      }, undefined, undefined, ctx),
+      (error: Error & { code?: string; details?: Record<string, unknown> }) => {
+        // The name of this test is the invariant: no CHILD's code may become the aggregate's. It used to
+        // be checked by asserting no code at all, which also threw away the machine-readable half — on
+        // total failure `details.refusals` is not returned, so the codes existed nowhere. They are named
+        // in `details` now, under an aggregate code that is deliberately not any child's.
+        assert.equal(error.code, "FANOUT_FAILED");
+        assert.match(error.message, /every child was refused or failed/);
+        const codes = String(error.details?.codes ?? "").split(",").filter(Boolean);
+        assert.ok(codes.length > 1, `mixed codes must all survive, got ${JSON.stringify(codes)}`);
+        assert.equal(codes.includes("FANOUT_FAILED"), false, "the aggregate code is not a child's code");
+        return true;
+      },
+    );
+  } finally {
+    process.env.PATH = oldPath;
+  }
 });
 
 test("F8: concurrent siblings get distinct, hierarchical ledger ids", async () => {
@@ -407,6 +448,253 @@ test("ADR-0031: the ledger records the executor a REAL spawn ran under, not a co
   }
 });
 
+async function registeredWorkspaceFixture() {
+  const dir = await tempDir("grants-workspace-wiring-");
+  execFileSync("git", ["init", "-q"], { cwd: dir });
+  execFileSync("git", ["config", "user.email", "test@example.invalid"], { cwd: dir });
+  execFileSync("git", ["config", "user.name", "Test"], { cwd: dir });
+  await writeFile(join(dir, "README.md"), "x\n");
+  execFileSync("git", ["add", "."], { cwd: dir });
+  execFileSync("git", ["commit", "-qm", "base"], { cwd: dir });
+  const configDir = await tempDir("grants-workspace-config-");
+  const registry = join(configDir, "registry.json");
+  const leaseDir = join(configDir, "leases");
+  await writeFile(registry, JSON.stringify({ version: 1, workspaces: { w1: { path: dir } } }));
+  return { dir, registry, leaseDir };
+}
+
+test("BLOCKED_CRITICAL_ASSURANCE from a child remains a failed delegation and the token is unchanged", async () => {
+  const bin = await tempDir("grants-pi-blocked-shim-");
+  const shim = join(bin, "pi");
+  await writeFile(shim, "#!/usr/bin/env node\nprocess.stdout.write('BLOCKED_CRITICAL_ASSURANCE\\nMissing controls:\\n- review');process.exit(3)\n");
+  await chmod(shim, 0o755);
+  const oldPath = process.env.PATH;
+  process.env.PATH = `${bin}:${oldPath}`;
+  try {
+    const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate" });
+    await assert.rejects(
+      () => tools.get("delegate")!.execute("blocked", { task: "gate", tools: ["read"] }, undefined, undefined, ctx),
+      (error: Error) => {
+        assert.equal(error.message, "BLOCKED_CRITICAL_ASSURANCE\nMissing controls:\n- review");
+        return true;
+      },
+    );
+  } finally {
+    process.env.PATH = oldPath;
+  }
+});
+
+test("fan-out and chain cannot turn one BLOCKED_CRITICAL_ASSURANCE child into partial success", async () => {
+  const bin = await tempDir("grants-pi-partial-blocked-shim-");
+  const shim = join(bin, "pi");
+  await writeFile(shim, `#!/usr/bin/env node
+const blocked=process.argv.join(' ').includes('BLOCKME');
+process.stdout.write(blocked?'BLOCKED_CRITICAL_ASSURANCE\\nMissing controls:\\n- review':'OK');
+process.exit(blocked?3:0);
+`);
+  await chmod(shim, 0o755);
+  const oldPath = process.env.PATH;
+  process.env.PATH = `${bin}:${oldPath}`;
+  try {
+    const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate" });
+    for (const [name, args] of [
+      ["delegate_all", { children: [{ task: "good", tools: ["read"] }, { task: "BLOCKME", tools: ["read"] }] }],
+      ["delegate_chain", { steps: [{ task: "good", tools: ["read"] }, { task: "BLOCKME", tools: ["read"] }] }],
+    ] as const) {
+      await assert.rejects(
+        () => tools.get(name)!.execute("blocked", args, undefined, undefined, ctx),
+        (error: Error) => {
+          assert.equal(error.message, "BLOCKED_CRITICAL_ASSURANCE\nMissing controls:\n- review");
+          return true;
+        },
+      );
+    }
+  } finally {
+    process.env.PATH = oldPath;
+  }
+});
+
+test("partial chain results retain per-step structured refusals", async () => {
+  const bin = await tempDir("grants-chain-refusal-shim-");
+  await writeFile(join(bin, "pi"), "#!/usr/bin/env node\nprocess.stdout.write('OK')\n");
+  await chmod(join(bin, "pi"), 0o755);
+  const oldPath = process.env.PATH;
+  process.env.PATH = `${bin}:${oldPath}`;
+  try {
+    const { tools, ctx } = await harness({
+      [ENV_GRANT]: "tool:read,tool:bash,tool:delegate", [ENV_GATED]: "tool:bash",
+    });
+    Object.assign(ctx, { hasUI: false, mode: "rpc" });
+    const result = await tools.get("delegate_chain")!.execute("partial", {
+      steps: [
+        { task: "first", tools: ["read"] },
+        { task: "second", tools: ["bash"], correlation: { run_id: "run-1" } },
+      ],
+    }, undefined, undefined, ctx) as { details: { refusals: Array<{ code?: string } | null> } };
+    assert.equal(result.details.refusals[0], null);
+    assert.equal(result.details.refusals[1]?.code, "GATED_UNAPPROVED");
+  } finally {
+    process.env.PATH = oldPath;
+  }
+});
+
+test("chain once approvals are attributed and consumed by the step/capability they named", async () => {
+  const bin = await tempDir("grants-chain-once-shim-");
+  const shim = join(bin, "pi");
+  await writeFile(shim, "#!/usr/bin/env node\nprocess.stdout.write('OK')\n");
+  await chmod(shim, 0o755);
+  const ledger = join(await tempDir("grants-chain-once-ledger-"), "ledger.jsonl");
+  const oldPath = process.env.PATH;
+  process.env.PATH = `${bin}:${oldPath}`;
+  try {
+    const { tools, ctx } = await harness({
+      [ENV_GRANT]: "tool:read,tool:bash,tool:delegate", [ENV_GATED]: "tool:read,tool:bash", [ENV_LEDGER]: ledger,
+    });
+    let prompts = 0;
+    Object.assign(ctx, { hasUI: true, mode: "rpc" });
+    (ctx.ui as { select: () => Promise<string | undefined> }).select = async () => { prompts += 1; return "Allow once"; };
+    await tools.get("delegate_chain")!.execute("once", {
+      steps: [{ task: "read", tools: ["read"] }, { task: "shell", tools: ["bash"] }],
+    }, undefined, undefined, ctx);
+    assert.equal(prompts, 2, "the step-2 approval must not be spent or re-prompted on step 1");
+    const decisions = (await readFile(ledger, "utf8")).trim().split("\n").map((line) => JSON.parse(line))
+      .filter((event) => event.event === "capability_decision" && !event.blocked);
+    assert.deepEqual(decisions.map((record) => record.approved), [["tool:read"], ["tool:bash"]]);
+  } finally {
+    process.env.PATH = oldPath;
+  }
+});
+
+test("a correlated session approval cannot replay for a different task", async () => {
+  const bin = await tempDir("grants-pi-binding-shim-");
+  const shim = join(bin, "pi");
+  await writeFile(shim, "#!/usr/bin/env node\nprocess.stdout.write('OK')\n");
+  await chmod(shim, 0o755);
+  const oldPath = process.env.PATH;
+  process.env.PATH = `${bin}:${oldPath}`;
+  try {
+    const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:bash,tool:delegate" });
+    let prompts = 0;
+    Object.assign(ctx, { hasUI: true, mode: "rpc" });
+    (ctx.ui as { select: () => Promise<string | undefined> }).select = async () => {
+      prompts += 1;
+      return prompts === 1 ? "Allow for this session" : undefined;
+    };
+    const common = { tools: ["bash"], correlation: { run_id: "run-1", task_id: "task-1", context_id: "ctx-1" } };
+    await tools.get("delegate")!.execute("a", { ...common, task: "probe exact failure" }, undefined, undefined, ctx);
+    await tools.get("delegate")!.execute("b", { ...common, task: "probe exact failure" }, undefined, undefined, ctx);
+    assert.equal(prompts, 1, "same exact binding may reuse the session answer");
+    await assert.rejects(
+      () => tools.get("delegate")!.execute("c", { ...common, task: "probe a different failure" }, undefined, undefined, ctx),
+      (error: Error & { code?: string }) => {
+        assert.equal(error.code, "APPROVAL_SCOPE_MISMATCH");
+        assert.match(error.message, /^delegation refused: .*dismissed/);
+        return true;
+      },
+    );
+    assert.equal(prompts, 2, "a different task must ask again rather than replay");
+  } finally {
+    process.env.PATH = oldPath;
+  }
+});
+
+test("a failed always-store write is ledgered as session-only with no fake expiry", async () => {
+  const dir = await tempDir("grants-persist-downgrade-");
+  await mkdir(join(dir, ".pi", "skills", "worker"), { recursive: true });
+  await writeFile(join(dir, ".pi", "skills", "worker", "SKILL.md"),
+    "---\nname: worker\ndescription: works\nallowed-tools: Bash\n---\nWork.\n");
+  const ledger = join(dir, "ledger.jsonl");
+  const bin = await tempDir("grants-persist-downgrade-bin-");
+  await writeFile(join(bin, "pi"), "#!/usr/bin/env node\nprocess.stdout.write('OK')\n");
+  await chmod(join(bin, "pi"), 0o755);
+  const oldPath = process.env.PATH;
+  const oldAgentDir = process.env.PI_CODING_AGENT_DIR;
+  process.env.PATH = `${bin}:${oldPath}`;
+  process.env.PI_CODING_AGENT_DIR = "/dev/null";
+  try {
+    const { tools, ctx } = await harness({
+      [ENV_GRANT]: "agent:worker,tool:bash,tool:delegate", [ENV_LEDGER]: ledger,
+    }, dir);
+    Object.assign(ctx, { hasUI: true, mode: "rpc" });
+    (ctx.ui as { select: () => Promise<string | undefined> }).select = async () => "Always allow in this project (30 days)";
+    await tools.get("delegate")!.execute("persist", { task: "work", agent: "worker" }, undefined, undefined, ctx);
+    const record = (await readFile(ledger, "utf8")).trim().split("\n").map((line) => JSON.parse(line))
+      .find((event) => event.event === "capability_decision");
+    assert.equal(record.approvalScopes["tool:bash"], "session");
+    assert.equal(record.approvalExpiresAt, undefined);
+  } finally {
+    process.env.PATH = oldPath;
+    if (oldAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = oldAgentDir;
+  }
+});
+
+test("a write-capable child cannot underdeclare read access to bypass a writer conflict", async () => {
+  const { dir, registry, leaseDir } = await registeredWorkspaceFixture();
+  const ledger = join(await tempDir("grants-workspace-ledger-"), "ledger.jsonl");
+  const workspace = await validateRegisteredWorkspace({ workspaceId: "w1", registeredRoot: dir });
+  const held = await acquireWorkspaceLease({ workspace, access: "write", leaseDir, ownerId: "existing" });
+  try {
+    const { tools, ctx } = await harness({
+      [ENV_GRANT]: "tool:read,tool:bash,tool:delegate",
+      [ENV_LEDGER]: ledger,
+      [ENV_WORKSPACE_REGISTRY]: registry,
+      [ENV_WORKSPACE_LEASE_DIR]: leaseDir,
+    }, dir);
+    await assert.rejects(
+      () => tools.get("delegate")!.execute("t", {
+        task: "write despite the label",
+        tools: ["bash"],
+        workspace: { workspace_id: "w1", access: "read" },
+        correlation: { schema_version: "1.0", run_id: "run-1", task_id: "task-1", tree_sha: "a".repeat(40) },
+      }, undefined, undefined, ctx),
+      (error: Error & { code?: string }) => {
+        assert.equal(error.code, "WORKSPACE_WRITE_CONFLICT");
+        assert.match(error.message, /^delegation refused: .*active pi-daddy-governed writer/);
+        return true;
+      },
+    );
+    const lines = (await readFile(ledger, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+    const refusedLease = lines.find((line) => line.event === "workspace_lease" && line.outcome === "refused");
+    assert.ok(refusedLease);
+    assert.equal(refusedLease.access, "write", "trusted capabilities override the model's read label");
+    const decision = lines.find((line) => line.event === "capability_decision");
+    assert.equal(decision.refusal.code, "WORKSPACE_WRITE_CONFLICT");
+    assert.equal(lines.some((line) => line.event === "child_lifecycle"), false, "no process reached starting");
+  } finally {
+    await held.release("test-complete");
+  }
+});
+
+test("a governed process starts in the validated workspace with the same effective --tools", async () => {
+  const { dir, registry, leaseDir } = await registeredWorkspaceFixture();
+  const bin = await tempDir("grants-pi-shim-");
+  const shim = join(bin, "pi");
+  await writeFile(shim, `#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify({cwd:process.cwd(),argv:process.argv.slice(2)}))\n`);
+  await chmod(shim, 0o755);
+  const oldPath = process.env.PATH;
+  process.env.PATH = `${bin}:${oldPath}`;
+  try {
+    const { tools, ctx } = await harness({
+      [ENV_GRANT]: "tool:read,tool:delegate",
+      [ENV_WORKSPACE_REGISTRY]: registry,
+      [ENV_WORKSPACE_LEASE_DIR]: leaseDir,
+    }, dir);
+    const result = await tools.get("delegate")!.execute("t", {
+      task: "report",
+      tools: ["read"],
+      workspace: { workspace_id: "w1", access: "read" },
+      correlation: { run_id: "run-1", task_id: "task-1", workspace_id: "w1" },
+    }, undefined, undefined, ctx) as { content: Array<{ text: string }> };
+    const child = JSON.parse(result.content[0].text);
+    assert.equal(child.cwd, dir);
+    const at = child.argv.indexOf("--tools");
+    assert.equal(child.argv[at + 1], "read", "workspace routing must not widen the grant");
+  } finally {
+    process.env.PATH = oldPath;
+  }
+});
+
 test("ADR-0031: a pre-0.16 ledger line, which has no executor field, still parses", async () => {
   // The field is REQUIRED in TypeScript and absent from every line 0.15.0 wrote. A reviewer proved the read path
   // does not care (`verifyLedger` validates only `Array.isArray(parsed.denied)`) — but nothing pinned it, so a
@@ -425,4 +713,3 @@ test("ADR-0031: a pre-0.16 ledger line, which has no executor field, still parse
   assert.equal(report.ok, true, "a line without `executor` must not read as corrupt");
   assert.equal(report.records, 1, "and it must still be counted");
 });
-

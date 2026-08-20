@@ -11,8 +11,11 @@
 
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { join } from "node:path";
 import { after, test } from "node:test";
+import { pathToFileURL } from "node:url";
 import { runChild, takeBytes } from "../src/run-child.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
@@ -40,6 +43,12 @@ test("captures stderr as well as stdout", async () => {
   assert.ok(r.text.includes("BOOM"));
 });
 
+test("exit signal is captured separately from the exit code", async () => {
+  const r = await runChild(node("process.kill(process.pid, 'SIGTERM')"));
+  assert.equal(r.code, null);
+  assert.equal(r.signal, "SIGTERM");
+});
+
 test("a non-zero exit is reported, not disguised as success", async () => {
   // The caller turns this into `isError`. Previously a child that died still returned its output as a
   // normal tool result, so the orchestrator read a failure as an answer.
@@ -59,6 +68,33 @@ test("a hanging child is killed at the timeout", async () => {
   const r = await runChild(node("setInterval(() => {}, 1000)", { timeoutMs: 300 }));
   assert.equal(r.timedOut, true, "a hung child used to hold the orchestrator's turn open forever");
   assert.notEqual(r.code, 0);
+});
+
+test("a descendant retaining output pipes cannot make the timeout unbounded", async () => {
+  const started = Date.now();
+  const result = await runChild({
+    command: process.execPath,
+    args: ["-e", `const {spawn}=require('child_process');spawn(process.execPath,['-e','setTimeout(()=>{},1000)'],{stdio:['ignore','inherit','inherit']});setInterval(()=>{},1000)`],
+    env: process.env,
+    cwd: process.cwd(),
+    timeoutMs: 30,
+    killGraceMs: 20,
+  });
+  assert.equal(result.timedOut, true);
+  assert.ok(Date.now() - started < 500, "inherited pipes must not extend the hard bound");
+});
+
+test("retained descendant pipes do not keep the controller process alive after settlement", async () => {
+  const moduleUrl = pathToFileURL(join(process.cwd(), "src", "run-child.ts")).href;
+  const code = `
+    import {runChild} from ${JSON.stringify(moduleUrl)};
+    await runChild({command:process.execPath,args:["-e",${JSON.stringify(`const{spawn}=require("child_process");spawn(process.execPath,["-e","setTimeout(()=>{},3000)"],{stdio:["ignore","inherit","inherit"]});setInterval(()=>{},1000)`)}],env:process.env,cwd:process.cwd(),timeoutMs:30,killGraceMs:20});
+    process.stdout.write("DONE\\n");
+  `;
+  const started = Date.now();
+  const controller = spawn(process.execPath, ["--input-type=module", "-e", code], { stdio: ["ignore", "pipe", "pipe"] });
+  await once(controller, "close");
+  assert.ok(Date.now() - started < 1000, "destroyed read ends must not keep the event loop alive");
 });
 
 test("a child ignoring SIGTERM is still killed", async () => {

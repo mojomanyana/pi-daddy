@@ -11,10 +11,15 @@ decisions; this file holds state and next actions. Newest entry on top.
 `hooks/pre-commit` enforces it once `git config core.hooksPath hooks` is set in your clone. This line is at
 the top because the rule was broken by drift, and this file is what a session actually reads first.
 
-**State: green.** `pi-daddy` **0.17.1** — the only package. **505 unit + 44 integration tests** (measured
-2026-08-18), plus an opt-in tier behind `PI_GRANTS_IT_MODEL=1`; typecheck clean, smoke clean.
-**Thirty-three** ADRs decided. The three numbers above were stale by three versions until 2026-08-18 —
-R-59's shape in the file `CLAUDE.md` names as the first thing to read.
+**State: 0.18.0 candidate on `feat/assurance-runtime-primitives`, not merged or released.** **587 unit +
+44 integration tests** (measured 2026-08-20, after a second review pass), plus a **10**-test opt-in tier behind `PI_GRANTS_IT_MODEL=1`;
+typecheck, build, installed-package smoke and both Linux probes clean. **Thirty-four** ADRs are decided,
+0034 amended after review. The paid/model tier was not run; it requires separate authorization.
+
+**A six-reviewer pass on 2026-08-20 rewrote the risk on this branch — read R-99…R-118 and the ADR-0034
+amendment before touching it.** The capability invariant held everywhere; the runtime half did not. And
+**four regressions the register claimed were absent**, so re-derive any claimed regression here rather than
+trusting the entry.
 
 **2026-08-16/17 added the pi-daddy half of the `principal-pi-skills` integration** (handoff B1/B2/B4,
 ADR-0028 and ADR-0029), then **red-teamed it with five independent agents who found nine defects** — R-78
@@ -28,8 +33,11 @@ not ours** — `principal-pi-skills` declaring `allowed-tools` on its seven skil
 and the operator writes seven ceilings by hand. **Do not resolve A1 from here**: the handoff's proposed
 table is unresolved and self-contradicting, and the ceiling belongs to whoever wrote the skill.
 
-**The known-open list is empty of code.** What remains needs a human: item 1 needs weeks of real usage, and
-items 6 and 7 are closed by decision. See the table below before assuming otherwise.
+**Before release, the 0.18.0 candidate needs the OPERATOR's review.** Ten automated review rounds have now
+found and fixed assurance bypasses through R-118, and the last six found things the first four missed —
+including four regressions those rounds had *claimed*. That is the argument for a human, not against one. Do
+not merge or publish from a session. The older known-open list below remains unchanged: item 1 needs weeks
+of real usage, and items 6 and 7 are closed by decision.
 
 **The four unreviewed changes were reviewed by the operator on 2026-08-14 and three produced a finding**
 (R-60's guard, R-61's fourth state, R-63's twentyfold bias). **What made that review work is worth copying**:
@@ -39,7 +47,7 @@ rather than costing a pass. Write the hypotheses down; verify them before asking
 
 ```bash
 cd packages/pi-daddy && npm test && npm run typecheck && npm run test:integration && npm run test:smoke
-PI_GRANTS_IT_MODEL=1 npm run test:integration   # the 4 model-driven ones — ~60s, costs money
+PI_GRANTS_IT_MODEL=1 npm run test:integration   # the 10 model-driven ones — costs money
 ```
 
 **2026-08-13/14 took this from 0.9.0 to 0.12.1: nine ADRs (0017–0025) and R-38 through R-59.** The shape of
@@ -101,6 +109,160 @@ That convention is why every reversal here was survivable, and there have been f
 
 ---
 
+## 2026-08-20 (second review) — six reviewers over the FIXES, and the fixes claimed what the code did not do
+
+**Asked for after the first pass, and it found more than the first pass did.** Six independent reviewers over
+`40783e3..HEAD` — my own fix commits. R-119…R-129.
+
+**The invariant held a third time.** Nobody could widen `effective`. Every finding is the runtime half, and
+they share one cause: **the claim was written before the code satisfied it.** Three critical —
+
+- the terminal `child_lifecycle` append was still `strict: true` while its own docstring, `docs/SPEC.md`, the
+  ADR amendment and R-99's entry all four said otherwise, so a contended lock still destroyed a completed
+  child's output (R-119);
+- the `onFailure` mechanism added *to prevent silent appends* was satisfied nowhere — two empty callbacks,
+  one guarding the evidence record (R-120);
+- `unbankApprovals` was gated on one refusal path and revoked by key with no ownership check, so a human
+  declining the second of two gated capabilities stranded a 30-day approval, and a joined gate let one
+  refusal destroy a live sibling's authority (R-121).
+
+**The marquee fix was itself undefended.** Deleting all four non-text guards from
+`isCriticalAssuranceBlock` left 580/580 green — R-106, the headline of the commit that introduced it. And it
+had over-corrected: `truncated` rejected a genuine 1 MB veto, breaking the pass-through ADR-0034 pins.
+
+**A test hung the runner and that mattered more than it sounds.** With a lease guard mutated,
+`test/workspace.test.ts` printed its failure then hung past 900s — the failing test never reached its
+`release()`, so a live `flock` kept the event loop alive. On CI a one-line assertion failure becomes a job
+timeout with no summary, which is exactly how a suite that CAUGHT a defect reads as untested. 900+s → 4s
+after an `after()` reaper.
+
+**Six of seven unpinned guards now have mutation-verified tests. The seventh I could not honestly pin** —
+the fan-out infrastructure `catch` is unreachable from the wiring layer, so R-97's claim is corrected a
+second time rather than satisfied, and the test I wrote for it was **deleted rather than weakened until it
+passed** (R-127). Two others are ACCEPTED with reasons: R-128 (five reviewers and an editor in one working
+tree — one reasonably ran `git checkout -- .` on my in-flight work, which is a sequencing error of mine, not
+theirs) and R-129 (the 17-mutation audit has no artifact under `docs/probes/`, and R-127 is what that costs).
+
+**Nine documentation claims contradicted the code, four of them introduced by the commit whose purpose was
+correcting documentation.** The sharpest: I changed a SPEC sentence to say "tracked content" when the axis is
+ignored-vs-not — measured, an untracked file *does* change `tree_sha`. Also corrected: "correlation values no
+longer reach the binding at all" (`context_id` still does), the probe README's "precisely because" causal
+claim for something it only greps, and my own test docstring calling a load-sensitive test "deterministic".
+
+Verification: **587/587 unit**, typecheck, no module over the ceiling. The paid tier was again not run.
+
+**What I would do differently, since it is the second time:** the mechanical guards this project already
+trusts — the line ceiling, the branch guard, the refusal enumeration — have never had this failure. Prose
+beside a fix has now had it twice. When a fix advertises a property, the same commit should add the check
+that forces it, or the claim should not be written.
+
+## 2026-08-20 (review) — six reviewers over the candidate: the invariant held, the runtime half did not
+
+**Requested after the takeover below, and it changed the merge decision.** Six independent reviewers over
+`git diff origin/main...feat/assurance-runtime-primitives`: general correctness, silent failures, test
+coverage, type design, an adversarial architecture pass, and comment/doc accuracy. None was told what the
+takeover had already found, so overlap is signal.
+
+**The good news first, because it is the load-bearing part.** Every reviewer that looked for it confirmed
+`effective = (requested ∩ parentGrant ∩ ceiling) \ (gated \ approved)` holds on every path they could
+construct. Correlation never reaches `resolve()`. Bound approvals never reach `ENV_APPROVED`. Write access is
+derived from the trusted requested set, not the model's label. The approval layer carries an independent
+binding-equality backstop. **No fail-open in capability authority.**
+
+**The headline finding was an absence, not a defect.** A 17-mutation audit on a confirmed-green baseline
+showed **eight guards holding up ADR-0034's advertised properties could each be deleted with 558/558 still
+passing** — including "a bound approval cannot cross a delegation boundary", which the ADR, the SPEC and the
+README all state, and which two mutations broke silently. In a project whose own rule 7 says a test that
+cannot fail is worse than none, after three recorded review rounds, that was the thing not to merge past.
+**And four regressions the register claimed for R-93, R-97 and R-98 do not exist** — the tests named for them
+passed for other reasons. Corrected in place by dated note, per rule 2.
+
+**Two reviewers contradicted each other on the one thing that mattered most, and both said they had measured
+it**: whether SIGKILLing the `flock` wrapper releases the lock. So it was measured here —
+`docs/probes/g35-flock-fd-inheritance`. The exec'd command **inherits the lock fd**, survives the wrapper,
+and keeps the lock; `-o/--close` exists because inheriting is the default and pi-daddy does not pass it. The
+`FD_CLOEXEC` reading was wrong. **Do not take a reviewer's "I measured it" as measurement** — that is what
+`docs/probes/` is for, and this is the second time a probe has been written to settle careful reasoning.
+
+Fixed, and the four re-derived guards each have a test that fails when removed (the rest were tested but not mutation-audited — corrected 2026-08-20, see R-127): R-99…R-105 (the lease reporting handovers the
+kernel never performed, and a ledger with no words for lost/retained/uncontended), R-106 (a child minting the
+upstream controller's verdict out of a timeout), R-107…R-109 (refusals an external controller could not
+identify, including ADR-0011's narrowing violation), R-110 (a bound approval spendable outside the workspace
+it named — two of six identity components came from caller-supplied correlation), R-111 (correlation as a
+model-writable 32 KB text channel into the append-only ledger, against that file's own header), R-112,
+R-113 (a refused delegation banking a 30-day approval — the same shape as R-96, a third time),
+R-114…R-117.
+
+**Accepted with reasons, not silently:** R-101 (pid recycling in the embedded helper) and R-118 (the
+worktree-membership check is defence-in-depth and I could not construct a case where it is the only guard
+that fires — recorded rather than given a test that would pass for another reason).
+
+**Not resolved, and listed in the ADR-0034 amendment so nobody mistakes this for finished:** workspace
+routing is the one governance dimension that does **not** attenuate (a child in `staging` can route its
+grandchild to `prod`); a persisted binding pins *text*, not tree state, so a 30-day approval replays at an
+unreviewed `head_sha`, while `delegate_chain`'s per-run nonce makes *Always* unable to apply at all; the
+dialog discloses three of the six bound components; `tree_sha` is blind to `.gitignore`d paths and `.git`
+itself, so a check can install a hook and report an unchanged tree; and the lease key omits the lease
+directory, so two agent roots each believe they are the single writer.
+
+Verification after the fixes: **580/580 unit, 44/44 non-model integration, typecheck, build,
+installed-package smoke, `git diff --check`, and both probes** (g34 and the new g35). Six new modules exist
+only because four files crossed the 400-line ceiling during the work and it was split rather than raised.
+The paid tier was again not run.
+
+## 2026-08-20 — the 0.18.0 candidate was taken over and re-verified, then opened as a PR
+
+The work below reached `origin/feat/assurance-runtime-primitives` as a single commit named `tmp work`
+with **no pull request**, which is rule 10's venue missing rather than its review. Taken over here: the
+commit was given a real message and the branch was opened as a PR so the diff, the rationale and a PR
+number exist.
+
+**Independently re-verified on a different machine (Node v24.14.0, not the v26.7.0 of the original
+measurement):** 558/558 unit, 44/44 non-model integration, typecheck, installed-package smoke, and
+`docs/probes/g34-runtime-enforcement/probe.mjs` — every finding in the committed transcript reproduced,
+including both SIGTERM and SIGKILL recoveries and the literal hostile argv. The paid `PI_GRANTS_IT_MODEL=1`
+tier was again **not** run.
+
+**One claim in the entry below was false and is now true.** It said `git diff --check` passed; it did not —
+three markdown hard line breaks (trailing double-spaces) in `docs/HANDOFF-principal-pi-skills-v3-assurance.md`
+and `docs/probes/g34-runtime-enforcement/README.md` tripped it. Those headers are bullet lists now and the
+check is clean. A verification list is worth exactly what its least-checked line is worth.
+
+**Two notes left open for the reviewer, neither a blocker, both recorded so the PR does not imply a
+cleaner read than it got.** In `workspace.ts`, `release()` swallows a failed metadata write with
+`.catch(() => undefined)`, so the record stays `state:"active"` and the *next* acquirer reports
+`recovered: true` when nothing was actually recovered — a false recovery signal, not a lost lock. In
+`check-runner.ts`, the `finally` block calls `lease.release()`, which can itself throw
+`WORKSPACE_LEASE_STALE` and mask the original error on the way out. Both fail closed.
+
+**The operator's pass is still outstanding.** Four automated review rounds (R-91…R-98) and this
+re-verification are what the PR carries; rule 10 wants a human on anything touching behaviour, and this
+touches a great deal of it. Do not merge or publish without it.
+
+
+## 2026-08-19 — 0.18.0 candidate: generic assurance runtime primitives
+
+Implemented ADR-0034 against the immutable principal-pi-skills PR #31 contract at
+`961f8ccbdb2a12e92db1e1b2d4ab7ca50f9d7d21` (head rechecked; `spec-lint` was green). The package remains
+role/profile-agnostic: opaque correlation joins, internally computed task/capability approval bindings,
+operator-registered Git worktrees, kernel-backed governed-writer leases, stable structured refusals, a
+no-shell named-check runner, and v2 joinable ledger events. Correlated approvals bind task, definition,
+requested/effective grant, workspace/context and parent; bound answers do not inherit. Approval ledger facts
+now include source/scope and, where meaningful, persisted expiry or consumed one-use count.
+
+Measured on Linux: same-root writers conflict before process start, distinct roots run concurrently,
+SIGTERM/SIGKILL release the kernel lease, the next holder records recovery, a child starts in the validated
+CWD with unchanged `--tools`, and hostile check argv remains literal. `BLOCKED_CRITICAL_ASSURANCE` emitted
+by a child remains a failed delegation with the token unchanged. The herdr integration test had a pre-existing
+bad readiness predicate (`/WS=\S/` matched the echoed `$HERDR_WORKSPACE_ID` command); the exact-value wait is
+now measured green rather than hidden by a larger sleep.
+
+Final verification after the review fixes: 558/558 unit, 44/44 non-model integration, typecheck, build,
+installed-package smoke, `git diff --check`, and `docs/probes/g34-runtime-enforcement/probe.mjs` all pass. The paid/model tier was not
+run because project policy requires separate authorization. No push, publish, tag or destructive operation
+was performed. Automated reviewers found and drove fixes for R-91…R-98; the final rerun above is clean.
+Next: human review and a PR; give principal-pi-skills integrators
+`docs/HANDOFF-principal-pi-skills-v3-assurance.md` and keep the pinned source contract until upstream releases.
 
 ## 2026-08-18 (review) — a twenty-line docs PR, five reviewers, eleven defects
 

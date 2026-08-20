@@ -9,7 +9,7 @@
 
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
-import { runHerdrPane, splitSystemPrompt, uniqueAgentName, type HerdrExec } from "../src/run-herdr.ts";
+import { HerdrWriterCloseError, runHerdrPane, splitSystemPrompt, uniqueAgentName, type HerdrExec } from "../src/run-herdr.ts";
 import { MAX_OPEN_PANES, markPaneSettled, openPaneCount, reapOpenPanes, reapOpenPanesAsync, trackPane, trimOpenPanes } from "../src/pane-reaper.ts";
 import { DEFAULT_SNAPSHOT_LINES } from "../src/herdr-poll.ts";
 import { MAX_CHILDREN_PER_CALL } from "../src/fanout.ts";
@@ -539,6 +539,21 @@ test("ADR-0032: a completed child's pane is left OPEN, so a human can still read
   assert.equal(openPaneCount(), 0);
 });
 
+test("a settled writer pane is closed before its workspace lease can be released", async () => {
+  const fake = fakeHerdr();
+  await runHerdrPane({ ...request(), exec: fake.exec, pollIntervalMs: 1, closeOnSettle: true });
+  assert.ok(fake.verbs().includes("tab close"));
+  assert.equal(openPaneCount(), 0);
+});
+
+test("a writer pane close failure is loud so its lease can remain held", async () => {
+  const fake = fakeHerdr({ failAt: "tab close" });
+  await assert.rejects(
+    () => runHerdrPane({ ...request(), exec: fake.exec, pollIntervalMs: 1, closeOnSettle: true }),
+    HerdrWriterCloseError,
+  );
+});
+
 test("ADR-0032: a settled pane is marked reclaimable and closed by the sweep, WITHOUT `agent stop`", async () => {
   // **Rewritten: `herdr agent stop` does not exist.** Measured against herdr 0.7.5 — the `agent` subcommands are
   // `list get read send-keys prompt rename focus wait attach start explain`, and `agent stop` prints the usage
@@ -656,6 +671,16 @@ test("a tab create that returns NO pane id closes the tab and leaks nothing", as
   const verbs = inner.calls.map((c) => c.slice(0, 3).join(" "));
   assert.ok(verbs.includes("tab close w1:t77"), "a half-created tab must be closed, not orphaned");
   assert.equal(openPaneCount(), before, "and nothing may stay tracked");
+});
+
+test("a malformed writer tab that cannot close retains its lease signal", async () => {
+  const exec: HerdrExec = async (args) => {
+    if (args[0] === "tab" && args[1] === "create") {
+      return { code: 0, stdout: JSON.stringify({ id: "x", result: { root_pane: { tab_id: "w1:t77" } } }), stderr: "" };
+    }
+    return { code: 1, stdout: JSON.stringify({ id: "x", error: { message: "close failed" } }), stderr: "" };
+  };
+  await assert.rejects(() => runHerdrPane(request({ exec, closeOnSettle: true })), HerdrWriterCloseError);
 });
 
 test("a tab create that FAILS removes the staged system prompt", async () => {

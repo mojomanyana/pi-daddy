@@ -37,7 +37,11 @@ test("no risk headline says OPEN while its body records a fix", { skip: existsSy
   const stale: string[] = [];
   for (let i = 1; i < parts.length; i += 2) {
     const headline = parts[i];
-    const body = parts[i + 1] ?? "";
+    // Stop at the next `## ` heading of ANY kind, not just the next risk headline. The LAST entry's body
+    // otherwise ran to end of file and swallowed the register log, whose rows legitimately say "fixed" —
+    // so a trailing OPEN entry was flagged for wording that belongs to a different section. The guard was
+    // right that this file needs checking and wrong about where one entry ends.
+    const body = (parts[i + 1] ?? "").split(/^## /m)[0];
     // `, OPEN` is the status suffix. Matching the bare word would flag R-72, whose TITLE is about the word.
     if (!/,\s*OPEN\s*$/m.test(headline)) continue;
     if (/\bFIXED\b|\bCLOSED\b/.test(body)) stale.push(headline.trim());

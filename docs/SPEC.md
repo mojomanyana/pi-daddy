@@ -1,9 +1,11 @@
 # pi-daddy — what it is, precisely
 
 **The current-state document.** No history, no reasoning about alternatives, no record of how anything came
-to be decided. Where this disagrees with an ADR, the ADR is right and this file is stale — say so.
+to be decided. This file is authoritative for present behavior; ADRs record why a decision was taken on its
+date. If code and this file disagree, report and repair the stale current-state claim rather than re-deriving
+present behavior from historical ADRs.
 
-Last synced against the code: **2026-08-17**, `pi-daddy` 0.16.0, pi 0.84.2, herdr 0.7.5.
+Last synced against the code: **2026-08-19**, `pi-daddy` 0.18.0, pi 0.84.2, herdr 0.7.5.
 
 **herdr's own contracts are now checked by `test-integration/herdr.it.ts`** against a live server, in an isolated
 workspace it creates and closes. That suite exists because three shipping defects hid behind the unit fake — the
@@ -328,17 +330,26 @@ second, and the fourth used to be reported as the third — each one claiming mo
 fresh process that re-reads from disk, so without this a `git pull` mid-tree let a descendant run rewritten
 instructions under a yes given about the old ones. `<delegate>` carries no digest, having no file to hash.
 
-**The task is never stored** (ADR-0021). It is shown in the dialog, where a human needs it, and written
-nowhere — the same rule the ledger states, now true of the approval store as well. The write path projects
-entries through a whitelist of declared fields, so no future field can reach disk by accident.
+**Task text is never stored.** ADR-0034 narrows ADR-0021 in one explicit way: a correlated approval stores
+an internally-computed SHA-256 identity, not the text. That digest is linkable and guessable for predictable
+tasks; it is an identity, not anonymization. The write path projects entries through a whitelist of declared
+fields, so no undeclared field can reach disk by accident.
+
+When a spawn supplies correlation/workspace context, each yes is bound to the effective definition/body,
+exact task digest, requested/effective capability digests, optional workspace/context IDs, and parent
+ledger ID. A mismatch yields `APPROVAL_SCOPE_MISMATCH`; an expired same-key entry yields
+`APPROVAL_EXPIRED`. Bound approvals do **not** cross a delegation boundary, so permission for one debug
+probe cannot become subtree authority. Existing callers that supply no binding context retain the legacy
+subject-scoped behavior.
 
 Concurrent callers share **one dialog** per `capability@subject`, but only share the *answer* when it was
 about more than one spawn. `session`, `always`, a decline and an error answer everyone; **a `once` is
 consumed by exactly one caller** and the rest are asked their own question. Without that, one *Allow once*
 authorised every concurrent child while the human had seen only the first task.
 
-An approval never crosses a delegation boundary: `once` is dropped on inheritance, and what does cross is
-clamped to the child's own grant, so `approved ⊆ grant` holds at every level.
+A legacy `once` never crosses a delegation boundary; legacy `session`/`always` approvals that do cross are
+clamped to the child's own grant, so `approved ⊆ grant` holds at every level. Task-bound approvals never
+cross at all.
 
 **`/grants` previews each definition through the same code path a spawn takes** — plan, then satisfy the
 gate from stored approvals — differing in one respect: it never asks a human, and never claims one is
@@ -349,8 +360,10 @@ and reported such a definition as blocked.
 
 ## The ledger
 
-Append-only JSONL at `PI_GRANTS_LEDGER`. One record per governed decision — **including refusals**, which
-are the interesting ones.
+Append-only JSONL at `PI_GRANTS_LEDGER`. Ledger format v2 is an event union: `capability_decision`,
+`workspace_lease`, `child_lifecycle`, and `check_receipt`. Every governed capability decision is recorded —
+**including refusals**, which are the interesting ones. The current reader also accepts legacy grant lines
+with no version/event discriminator.
 
 Ids are hierarchical and derived: a child of `d0` is `d0.1`, its own second child `d0.1.2`. Ancestry reads
 from the id alone with no join, and it is reproducible, so two runs of the same fan-out produce a diffable
@@ -370,6 +383,10 @@ the first one; and a ledger that **cannot be read at all**, naming the errno and
 stays a query — the escalation count in particular, because a control that speaks every session is one an
 operator learns to skip. A ledger that does not exist yet is not a fault.
 
+Each capability decision records approval source and scope per capability. Persisted answers also record
+their expiry; a consumed `once` answer records `{max:1, remaining:0}`. Session lifetime has no invented
+wall-clock expiry or use count.
+
 `/grants ledger` also tallies **where each approval came from** — `prompt`, `session`, `persisted`,
 `inherited` — which is the evidence ADR-0020 named for deciding whether the persistence layer earns its
 keep. It prints raw record counts **and** distinct `capability@subject` pairs, and says which is which:
@@ -378,17 +395,185 @@ first would have been a prompt and the rest are satisfied from the in-memory ses
 before per-capability sources existed are reported as *not counted*.
 
 **Privacy is a property of this file, and the boundary is exact.** Capability ids, counts and identifiers
-only — *never prompts, tool arguments or results.* A spawn that names a definition records a
-`definitionDigest` of `{name, source, sha256}` over the body (ADR-0018): an **identifier** for
-operator-authored text already committed to a repository, which names a version without reproducing it.
-**The task is never recorded**, in any field — it is assembled by the model from the parent's context and
-could carry anything the parent could see.
+only — *never prompts, task text, tool arguments or results.* A spawn that names a definition records a
+trusted `definitionDigest` of `{name, source, sha256}` over the body and a trusted `taskDigest` over the
+exact task. Task hashes can be guessed and compared, so treat them as sensitive identifiers, not redaction.
+Caller-supplied digest-looking values remain under `correlation` and are never used as proof of identity or
+authorization.
 
 So the ledger answers *"did these four children run the same instructions?"* (compare digests) and *"has
 this definition changed since?"* (rehash the file). It does **not** answer *what the instructions said* —
 if the file is gone or altered, the digest proves the loss rather than recovering the text — and matching
 digests say nothing about whether the child behaved as intended. It identifies text; it does not evaluate
 it.
+
+## Correlation metadata
+
+Every spawn may carry optional, non-authoritative metadata for joining an external controller's records:
+`run_id`, `task_id`, `workspace_id`, `context_id`, `phase`, opaque assurance/effective-policy label,
+assurance source/scope/activation time, plan/definition/task digests, base/head/tree SHAs, event sequence,
+`last_change_seq`, `last_authority_seq`, and a check receipt ID. The structured scope and source values are
+copied as bounded JSON; pi-daddy does not own or interpret their vocabulary.
+
+The separation is structural: external values are under `correlation`; `definitionDigest`, `taskDigest` and
+approval-binding capability digests are computed internally. Capability resolution reads only requested,
+parent grant, definition ceiling, gate and matching approval. Correlation can make an existing approval more
+specific; it can never grant a capability.
+
+Two things that sentence does **not** say, both stated here because a reader took it for the whole story
+(R-110). A supplied `head_sha`/`tree_sha` that disagrees with the measured one **refuses** a check, so an
+untrusted field can withhold evidence even though it cannot confer authority; and the *presence* of
+`correlation` is what selects the exact-bound approval regime over the legacy subject-scoped one, so the mode
+is chosen by an optional model-supplied field. Both directions fail closed. The binding's **workspace** scope no longer
+comes from correlation: it comes from the routing spec, which is registry-resolved and leased before any
+human is asked. **`context_id` still does** — it is a caller-declared label that nothing validates, kept in
+the binding because it can only ever NARROW it and a mismatch fails closed. "No longer reach at all" was
+too strong, and the risk register had it right while this file did not.
+
+Committed `head_sha` and candidate `tree_sha` remain separate. A check receipt ID includes the candidate
+tree, so a non-ignored content change produces a different receipt even when HEAD is unchanged.
+
+**`tree_sha` is not the exact content of the working tree, and this claim was previously stronger than the
+measurement.** It is computed with `git add -A` against a temporary index, which honours `.gitignore`,
+`core.excludesFile` and `$GIT_DIR/info/exclude`, and records only a gitlink for a submodule. So a check that
+writes ignored paths (`dist/`, `node_modules/`, `.env`), installs a `.git/hooks/post-commit`, sets
+`core.hooksPath`, writes a ref, or modifies a submodule's working tree leaves both `head_sha` and `tree_sha`
+unchanged. Computing the identity also writes blob objects into the real `.git/objects`, so it is not a
+read-only measurement. See the ADR-0034 amendment; this is unresolved rather than fixed.
+
+## Workspace routing and governed-writer leases
+
+A model-facing delegation may name `{workspace_id, access: "read"|"write"}` only. `access:"read"` cannot
+lower a grant containing `write`, `edit`, `bash`, or an unknown/custom tool: pi-daddy derives `write`
+conservatively from the trusted requested capability set. The ID resolves through
+the operator-owned JSON file at `PI_GRANTS_WORKSPACE_REGISTRY` (`{version:1, workspaces:{id:{path}}}`). Before
+spawn pi-daddy realpaths that path, verifies it is the root of a Git-registered worktree, and uses it as the
+child's initial CWD. A correlation workspace ID that disagrees is refused.
+
+**This is validation against accidental misrouting, not path confinement.** `WRITER_ROOT` is an intended
+workspace. `read`, `write`, `edit` and especially `bash` are not path-scoped; a child can leave the root,
+address absolute paths or spawn another process. Strong confinement needs an OS sandbox or constrained
+broker.
+
+Read-only children take no exclusive lease and may coexist with each other or with a writer. A write-capable
+child holds a kernel `flock` keyed by the canonical root, not by the caller's workspace ID: aliases cannot
+create two locks. One canonical worktree therefore has at most one **pi-daddy-governed** writer *among
+sessions sharing a lease directory and a mount namespace*; writers for different roots can run concurrently.
+A conflict is refused before child process start.
+
+That qualifier is load-bearing and was missing. The lock file lives under `PI_GRANTS_WORKSPACE_LEASE_DIR` (or
+`PI_CODING_AGENT_DIR`), and the directory is **not** part of the key — so two sessions disagreeing about it,
+which a devcontainer plus a host makes ordinary, take exclusive locks on different files and each reports
+itself the single governed writer. A bind-mounted worktree whose `realpath` differs between namespaces
+changes the key itself. Unresolved; see the ADR-0034 amendment.
+
+**Which registered root a child may select does not attenuate.** The registry path inherits into every
+governed child and `workspace_id` is a model-facing parameter validated against the registry, with no check
+that the caller was authorised for that workspace — so a child routed to `staging` can route its grandchild
+to `prod`. Depth, fan-out budget, the grant, the gated set and approvals all attenuate; the initial working
+directory does not. Stated as a gap rather than a decision: ADR-0034's non-goals cover *path confinement* and
+say nothing about *root selection*, and closing it needs its own ADR.
+
+**Lease outcomes in the ledger.** `acquired` means the kernel actually excluded somebody; `uncontended` is a
+read lease, which takes no lock at all; `recovered` means the predecessor's record said `active`, and
+`recovered: "unknown"` means that record could not be read — which is *less* evidence than a crash, never
+proof of a clean handover. On the way out: `released`, `released-unrecorded` (the lock went back but the
+record did not, so the next owner would otherwise report a recovery that never happened), `lost` (the lock
+evaporated under a live governed writer — **not** the same fact as an operator cancelling), `retained` (kept
+deliberately because a herdr writer tab would not close, so the pane may still be live), `timeout` and
+`refused`. Every one of those four additions exists because the fact was previously recorded as `released` or
+`acquired`, making the ledger assert a handover or an exclusion that did not happen.
+
+`release()` never throws. Almost every caller runs it from a cleanup path — the exception is the check
+runner, which releases mid-flow on purpose so that lease loss cannot race a blocked receipt append — and a
+throwing cleanup discarded a completed child's entire output while blaming the ledger — so the outcome is a value the caller records. A
+terminal lifecycle or lease-release append is likewise best-effort **and loud**: those are observations
+written after the child has already run, where failing closed prevents nothing, and a teardown failure is
+reported alongside the result rather than in place of it. `capability_decision`, which provisions, still
+fails closed.
+
+The lock is held by a helper whose stdin belongs to the parent. Normal completion, timeout and cancellation
+release explicitly. The governed process PID or herdr tab is attached to the lock helper; parent failure
+terminates/closes that resource before releasing the kernel lock. A raw descendant deliberately detached via
+`bash` remains ADR-0012's OS-containment boundary. The next owner sees still-active metadata and records
+`recovered`; stale holders cannot overwrite its tokened metadata. A herdr writer pane must close before
+release; if herdr refuses, the call fails and the independent helper retains the lease rather than admitting a
+successor around a live prompt. No age guess authorizes takeover. If `flock`
+is unavailable or ownership metadata cannot be written, acquisition fails closed with
+`WORKSPACE_LEASE_STALE`. Governed writer subprocesses and named checks also use util-linux `setpriv`
+with a parent-death signal; absence fails the process start rather than silently dropping crash coupling.
+
+The lease does not exclude an IDE, hook, unrelated process, another runtime or a child that escapes through
+`bash`. Another controller's `writer` field is protocol metadata, not proof this lease exists.
+
+**Correlation is bounded by a whitelist, not only by a size cap.** The accepted field set is exactly the
+pinned schema 1.0 contract; each string is capped at 512 characters, `assurance_scope` at 4 KB, sequence
+numbers must be finite, and an **undeclared key is refused by name**. This is a privacy control, not
+tidiness: `correlation` is a model-facing parameter on all three delegation tools and is copied verbatim onto
+every append-only ledger event, so an unbounded free-form object was a channel for writing arbitrary text
+into a file that carries no prompts, arguments or results (R-111). If upstream adds a field, the refusal
+names it — an actionable break beats a silent secrets sink.
+
+**What this does not close.** `assurance_scope` is exempt from the per-field character bound and is copied
+verbatim with no validation inside it, so up to 4 KB of caller-authored structure still reaches every event,
+and the tool schemas still declare it `Type.Any()`. Adding the ~21 bounded string fields, the channel is
+narrowed from 32 KB to roughly 14 KB rather than closed. `schema_version` is also accepted as any string and
+never compared to `"1.0"`, so an upstream 1.1 breaks on a field name rather than on the version — the
+actionable message was available and is not used.
+
+## Stable refusals
+
+**Every** refusal has `{code, message, details?}`. Human diagnostics remain the same; direct API errors
+expose `error.code`, and ledger decisions carry the same object. `src/refusals.ts` holds the complete union
+and `test/refusals.test.ts` is length-checked against it, so a code cannot be added or dropped without the
+enumeration failing — it previously listed eleven of eighteen members, which made the seven `CHECK_*` codes
+the ones most likely to be deleted while the guard stayed green.
+
+"Every" is now accurate and was not: five planner paths returned a reason with no code — empty task, unknown
+definition name, a pattern ceiling `--tools` cannot express, an unresolvable skill path, and the
+`assertNarrowing` violation. That last one is ADR-0011's invariant, the hardest rule this package enforces,
+and a controller distinguishing "refused by policy" from "internal error" by the presence of a code would
+have misclassified it (R-109). Execution-phase failures were likewise codeless, so a lost writer lease, a
+timeout, a cancellation and a missing `setpriv` were indistinguishable free text (R-107).
+
+A principal controller's `BLOCKED_CRITICAL_ASSURANCE` token and exit-code semantics remain the controller's
+contract. pi-daddy **propagates** the text (trimmed) unchanged as a failed tool call and deliberately never
+writes it to the ledger, because it is child output and the ledger carries no prompts, arguments or results.
+It never converts a blocked external gate into inline success or claims that code requirements passed.
+
+The token is honoured only when the child otherwise exited **cleanly non-zero**. Matching on output text
+alone let a timeout, a cancellation, a lost writer lease or a truncated answer all be reported to the parent
+as a clean upstream veto, with the governance-authored reason and refusal code discarded on the way — and
+under ADR-0012's threat model that output can carry content the child merely read (R-106). A process killed
+mid-sentence has not been assessed by anybody's gate.
+
+## Named check runner
+
+`pi-daddy/check-runner` is a library seam for reviewers/verifiers that should not receive raw `bash` solely
+to run known checks. A caller selects a named ID from operator-owned configuration. Each definition has an
+**absolute executable plus argv array**, fixed/allowlisted environment, inherited-name allowlist, workspace
+access, timeout and output cap. No shell string or interpolation is accepted.
+
+A receipt records schema/receipt/check IDs, canonical configured executable and digest of the privately
+staged bytes actually executed, exact argv and digest, validated CWD and digest, start/end, exit code and signal, timeout/abort/truncation flags,
+output digest, workspace/access, computed head/tree, and correlation. Head and candidate tree are measured
+under the lease with a temporary Git index before execution and verified again afterwards; a supplied
+head/tree may match but cannot override them. A workspace whose **non-ignored** content changed yields no
+receipt; see the `tree_sha` limits above for what the comparison cannot see.
+
+The axis is ignored-vs-not, **not** tracked-vs-not — an earlier edit here said "tracked" and was wrong.
+Measured: `git add -A` stages an untracked non-ignored file, so it changes `tree_sha` and refuses the check;
+a `.gitignore`d path does not. The configured executable
+is copied to a private staging path and those exact hashed bytes are executed, eliminating pathname replacement
+between hashing and spawn. Every evidence check takes the exclusive governed-writer coordination lease—even
+when configured `workspace_access` is `read`—so its two candidate snapshots cannot overlap another governed
+writer. Check lease acquisition/refusal/release is ledgered under the same check-run ID. Sensitive inherited variables — including
+pi-daddy grant state and common token/secret names — are removed even if requested.
+
+**No OS containment is claimed.** An arbitrary executable is arbitrary code; a test can write files, invoke
+a shell, access the network or spawn a process that outlives it. “No shell interpolation” describes this
+runner's spawn boundary only. Network/filesystem isolation belongs in a future executor backed by a measured
+OS sandbox and would need its sandbox identity in the receipt.
 
 ## Executors
 
@@ -517,19 +702,20 @@ child has finished, so that child never saw it and cannot emit a matching closin
 fence. ADR-0033 records quarantining the output to a file the next step must `read` as the prepared answer if
 framing proves insufficient.
 
-At most 64 KiB crosses, keeping the **tail** (a summary's conclusion is at its end), and truncation is stated
+At most 32 KiB crosses, keeping the **tail** (a summary's conclusion is at its end), and truncation is stated
 *inside* the fence. `{previous}` marks where it goes; a template that omits it gets the handoff appended rather
 than dropped, because dropping it silently would make every step start from nothing while the chain looked like it
 worked.
 
-**Gated upfront, one dialog per `capability@subject`.** Every step is planned before any runs, and every gate it
-will hit is raised **before the first step starts** — so approvals arrive together rather than interrupting a running
-pipeline. There is at most one dialog per capability *and subject*: an approval is keyed `capability@subject`, so a
-single dialog covering several definitions would be asking about one and spending the answer on the rest, which is
-what ADR-0014's A-S6 forbids. A four-definition chain gating `bash` asks about each definition once.
+**Legacy gates are raised upfront, one dialog per `capability@subject`.** Every uncorrelated step is planned
+before any runs, so those approvals arrive together rather than interrupting a running pipeline. There is at most
+one dialog per capability *and subject*: combining definitions would ask about one and spend the answer on the rest,
+which ADR-0014's A-S6 forbids.
 
-The set of gates is fully determined before steps 2..N have tasks, because an approval key never contains the task
-(ADR-0021). Each dialog names **the step that needs that capability**, not the first step in the chain.
+A correlated approval is different: ADR-0034 binds the exact task digest. Step N's final task includes step N−1's
+output and does not exist upfront, so a correlated chain step gates only when its composed task exists. Binding the
+template and spending it on different instructions would be false assurance. Existing uncorrelated chains retain
+their upfront behavior.
 
 **Nothing that cannot run reaches a dialog.** Cardinality, the executor, and every step's own plan are checked first:
 a step refused for anything an approval cannot lift — an unheld `agent:` id, an unknown definition, an empty task —
@@ -577,6 +763,8 @@ loudly.
 | `PI_GRANTS_FANOUT` | `8` | Subtree budget. |
 | `PI_GRANTS_PARENT_ID` | `d0` | Ledger identity; set by the parent. |
 | `PI_GRANTS_LEDGER` | unset ⇒ not recording | Setting it makes it load-bearing. |
+| `PI_GRANTS_WORKSPACE_REGISTRY` | unset | Operator-owned `{version:1, workspaces:{id:{path}}}` file. Required only when a spawn names a workspace. |
+| `PI_GRANTS_WORKSPACE_LEASE_DIR` | `$PI_CODING_AGENT_DIR/pi-daddy/workspace-leases` | Kernel-lock files and ownership metadata for governed writers. |
 | `PI_GRANTS_CHILD_TIMEOUT` | `600` | Seconds. Inherited. |
 | `PI_GRANTS_HERDR` | unset (= probe) | `1` demands herdr panes and refuses if unreachable; `0` demands subprocesses; unset probes. |
 | `PI_GRANTS_HERDR_WORKSPACE` | the parent's `HERDR_WORKSPACE_ID` | Which herdr workspace a child's pane goes in. |
@@ -590,13 +778,13 @@ bound a typo can switch off is not a bound.
 
 ```bash
 cd packages/pi-daddy
-npm test                   # 364 unit tests — pure, no pi, no network
+npm test                   # 587 unit tests — pure, no pi, no network
 npm run typecheck          # src + extensions + test + test-integration
-npm run test:integration   # 32 tests against a REAL pi process, no model tokens
+npm run test:integration   # 44 tests against a REAL pi process/herdr server, no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and USE every subpath —
                            # and run the installed `pi-daddy init` bin, which is how R-73 was found
 
-PI_GRANTS_IT_MODEL=1 npm run test:integration   # + 4 with a real model (~60s, costs money)
+PI_GRANTS_IT_MODEL=1 npm run test:integration   # + 10 with a real model (costs money)
 ```
 
 The model tier is where the **whole** chain is observed: model → `tool_call` → decision → argv → a child
@@ -607,7 +795,9 @@ landing on disk, a *different* process honouring it with no prompt, and a body e
 
 Stated because a gap nobody wrote down is the one that surprises somebody.
 
-- **`bash` escapes governance.** Out of scope by decision (ADR-0012).
+- **`bash` escapes governance.** Out of scope by decision (ADR-0012). Workspace CWD validation and writer leases do not change that.
+- **Workspace leases coordinate only cooperating pi-daddy children.** They do not exclude unrelated processes or confine paths. The measured implementation currently requires util-linux `flock`; unsupported platforms refuse write leases.
+- **Named checks are arbitrary code without shell interpolation, not sandboxed code.** Tests can write, use the network, invoke a shell or leave descendants unless an OS sandbox separately contains them.
 - **`subagents:rpc:spawn` bypasses the tripwire.** Unfixable from here.
 - **Pane cleanup is not leak-proof.** Cleanup runs in a `finally`, which covers thrown errors but not the
   process being killed. There is no reaper.

@@ -12,6 +12,60 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## 0.18.0 — generic runtime enforcement for external controllers
+
+- Optional correlation metadata joins capability decisions to run/task/workspace/context IDs, candidate
+  `tree_sha`, sequence floors and opaque policy metadata. Trusted task/definition/request/effective digests
+  are computed separately; supplied IDs and digests never grant authority.
+- Correlated gated approvals bind the exact definition, task, requested/effective capabilities,
+  workspace/context and parent. They do not inherit. Legacy calls without correlation keep their existing
+  approval behavior. Persisted approvals retain the 30-day expiry; `once` remains one-use. Concurrent exact
+  scopes never share a dialog or rebind one human answer to another task.
+- Operator-registered Git worktrees can be selected by ID. The child starts at the validated canonical root;
+  a kernel `flock` permits at most one pi-daddy-governed writer per canonical root. Caller `read` cannot
+  lower write-capable grants; parent death stops the attached process/herdr tab before recovery. This is
+  coordination, **not path confinement** and not exclusion of unrelated writers or detached bash children.
+- Stable refusal codes accompany existing human diagnostics.
+- `pi-daddy/check-runner` runs operator-named executable+argv definitions without shell interpolation,
+  with an environment allowlist, timeout/output bounds, privately staged exact executable bytes, and
+  pre/post-verified Git HEAD/candidate-tree receipts under an exclusive coordination lease. Arbitrary
+  executables remain arbitrary code; no filesystem/network sandbox is claimed.
+- **BREAKING — ledger format v2:** append-only capability, workspace-lease, child-lifecycle and
+  check-receipt events. The new reader accepts legacy grant lines. Three things a consumer must know, two of
+  which are compile-or-run breaks rather than advisories:
+  - External readers that assume every line is a grant record must **switch on `event`** first.
+  - `LedgerReport` (published via `pi-daddy/ledger`) gained **required** fields — `events`,
+    `workspaceLeases`, `lifecycle`. Any TypeScript consumer that constructs one, or handles it
+    exhaustively, breaks at compile time.
+  - `report.records` **changed meaning**: it counted every parsed line and now counts capability decisions
+    only, with lease/lifecycle/receipt lines going to `events`. A consumer reading it as "ledger lines"
+    silently gets a different number.
+  - A line carrying `ledgerVersion` is now **rejected as corrupt** unless it satisfies the full v2 field
+    set, which matters to anyone who hand-writes or re-emits ledger lines.
+- **BREAKING — `correlation` is a whitelist.** Only the pinned schema 1.0 field set is accepted; strings are
+  capped at 512 characters, `assurance_scope` at 4 KB, and an **undeclared key is refused by name** rather
+  than passed through. A caller sending extra fields must stop. This is a privacy control: `correlation` is
+  model-facing and copied verbatim onto every append-only event, so an unbounded object was a channel for
+  writing arbitrary text into a file that carries no prompts, arguments or results.
+- **BREAKING for direct API callers — `WorkspaceLease.release()` returns
+  `"released" | "released-unrecorded" | "lost"` and no longer throws**, and `recovered` is
+  `boolean | "unknown"`. `WorkspaceLeaseOutcome` gains `uncontended`, `released-unrecorded`, `lost` and
+  `retained`. Code that relied on `release()` rejecting must read the value instead.
+- **Fixes from a six-reviewer pass over this candidate before release.** The capability invariant held on
+  every path any reviewer could construct; these are the runtime half. `flock`'s command inherits the lock
+  file descriptor (measured — `docs/probes/g35-flock-fd-inheritance`), so teardown killing only the wrapper
+  stranded the lock and reported it to everyone else as a conflict. `recovered` could assert a crash after a
+  clean handover and hide a real one. The herdr close loop retried forever while holding the lock. A bound
+  approval could be spent outside the workspace it named, because two of its six identity components were
+  read from caller-supplied correlation. A refused delegation could leave a 30-day approval on disk. A child
+  could mint the upstream controller's `BLOCKED_CRITICAL_ASSURANCE` verdict out of a timeout. Fan-out
+  discarded every sibling error but the first. Five planner refusals and every execution-phase failure
+  carried no stable code. See `docs/03-risks.md` R-99…R-118 and the ADR-0034 amendment, which also lists
+  what the pass did **not** resolve.
+
+New public subpaths: `pi-daddy/correlation`, `pi-daddy/refusals`, `pi-daddy/workspace`, and
+`pi-daddy/check-runner`.
+
 ## 0.17.1 — no functional change: the release that exists because a rule got enforced
 
 **Nothing in the shipped code changed.** This tarball differs from 0.17.0 in its version and in this file,

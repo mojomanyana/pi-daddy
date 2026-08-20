@@ -98,10 +98,21 @@ export interface HerdrRunRequest {
    * name a human can switch to **while the child is alive**, which is the whole point of the pane surviving.
    */
   onPane?: (paneId: string, agentName: string) => void;
+  /** Security hook for attaching a writer lease to the tab. Unlike display callbacks, errors fail the run. */
+  onTab?: (tabId: string) => void;
+  /** Close even a settled pane before releasing a writer lease; no post-lease prompt may remain live. */
+  closeOnSettle?: boolean;
   /** Poll cadence override. Exists so tests do not wait `POLL_INTERVAL_MS` per state transition. */
   pollIntervalMs?: number;
 }
 
+
+export class HerdrWriterCloseError extends Error {
+  constructor(tabId: string) {
+    super(`herdr writer tab ${tabId} could not be closed; retaining its workspace lease`);
+    this.name = "HerdrWriterCloseError";
+  }
+}
 
 /** How often to retry `agent start` while a freshly created pane is still reaching its shell prompt. */
 export const PANE_READY_POLL_MS = 300;
@@ -176,14 +187,27 @@ export async function runHerdrPane(request: HerdrRunRequest): Promise<ChildRunRe
     // path leaked a `/tmp/grants-herdr-*` that neither sweep could reach.
     trackPane({ tab: tabId, name: agentName, promptDir, settled: true, keepTab: true });
   }
+  if (tabId && !request.keepPane) trackPane({ tab: tabId, name: agentName, promptDir });
+
+  // Attach before the first post-create await. If the parent dies after this point, the independent lock
+  // helper closes the tab before releasing the writer lease.
+  if (request.onTab) {
+    try {
+      if (!tabId) throw new Error("herdr returned no tab id for writer-lease attachment");
+      request.onTab(tabId);
+    } catch (error) {
+      if (tabId && !request.keepPane) {
+        const closed = await exec(["tab", "close", tabId]).catch(() => undefined);
+        if (closed === undefined || parseReply(closed).error) throw new HerdrWriterCloseError(tabId);
+      }
+      return { ...empty, spawnError: `workspace writer lease could not attach to herdr tab (${String(error)})` };
+    }
+  }
+
   if (tabId && !request.keepPane) {
-    trackPane({ tab: tabId, name: agentName, promptDir });
     // ADR-0032: panes now live until `agent_settled`, so they accumulate across one agent run — and a plain
     // blocking `delegate` spends nothing from the fan-out budget, so the count is otherwise unbounded. Trimmed
     // here rather than at settle time so the bound holds DURING a long run, not only after it.
-    //
-    // Whatever is closed is reported through `onOutput` rather than dropped: an operator whose pane vanished
-    // while they were reading it deserves to know why (R-48's rule, applied to a display).
     const dropped = await trimOpenPanes(exec);
     if (dropped.length > 0 && request.onSnapshot) {
       try {
@@ -204,7 +228,11 @@ export async function runHerdrPane(request: HerdrRunRequest): Promise<ChildRunRe
       const reply = await exec(["tab", "close", tabId]).catch(() => undefined);
       // Same rule as `cleanup`: untrack only what is provably gone, so a close herdr refused stays the
       // reaper's problem rather than being dropped on the assumption that it worked.
-      if (reply !== undefined && !parseReply(reply).error) untrackPane(tabId);
+      if (reply === undefined || parseReply(reply).error) {
+        if (request.closeOnSettle) throw new HerdrWriterCloseError(tabId);
+      } else {
+        untrackPane(tabId);
+      }
     }
     // There is no agent in this pane to ask, so the staged prompt has no reader — remove it. Kept only under
     // `keepPane`, where the operator asked to inspect whatever exists.
@@ -235,15 +263,17 @@ export async function runHerdrPane(request: HerdrRunRequest): Promise<ChildRunRe
    */
   const cleanup = async (settledCleanly: boolean) => {
     if (request.keepPane) return;
-    if (settledCleanly) return;
+    if (settledCleanly && !request.closeOnSettle) return;
     if (!tabId) return;
     const reply = await exec(["tab", "close", tabId]).catch(() => undefined);
-    // Untracked only if provably closed — R-62's rule. A close herdr refused stays the reaper's problem rather
-    // than being dropped on the assumption that it worked.
-    if (reply !== undefined && !parseReply(reply).error) {
-      untrackPane(tabId);
-      if (promptDir) await rm(promptDir, { recursive: true, force: true }).catch(() => undefined);
+    // Untracked only if provably closed — R-62's rule. A writer close failure must retain the lease;
+    // otherwise a still-promptable pane can overlap the successor admitted by a clean release.
+    if (reply === undefined || parseReply(reply).error) {
+      if (request.closeOnSettle) throw new HerdrWriterCloseError(tabId);
+      return;
     }
+    untrackPane(tabId);
+    if (promptDir) await rm(promptDir, { recursive: true, force: true }).catch(() => undefined);
   };
 
   // ADR-0032: the pane exists and has a name, so tell the caller NOW. A pane id that arrives with the result is

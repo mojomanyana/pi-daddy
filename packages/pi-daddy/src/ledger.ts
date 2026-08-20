@@ -28,9 +28,29 @@ import type { DefinitionDigest } from "./definitions.ts";
 import { DELEGATE_SUBJECT } from "./approval.ts";
 import type { ApprovalScope, ApprovalSource } from "./approval.ts";
 import type { PromptOutcomeKind } from "./approval-prompt.ts";
+import type { CorrelationMetadata } from "./correlation.ts";
+import type { StructuredRefusal } from "./refusals.ts";
+// Type-only, so the cycle with ./ledger-events.ts is erased at runtime.
+import type { RuntimeLedgerEvent } from "./ledger-events.ts";
 
-export interface GrantRecord {
+export const LEDGER_VERSION = 2 as const;
+
+export interface LedgerEventBase {
+  /** Optional only on the legacy-compatible `GrantRecord` public type; every v2 event builder writes it. */
+  ledgerVersion?: typeof LEDGER_VERSION;
+  event?: "capability_decision" | "workspace_lease" | "child_lifecycle" | "check_receipt";
   ts: string;
+  childId?: string;
+  correlation?: CorrelationMetadata;
+}
+
+export interface GrantRecord extends LedgerEventBase {
+  /**
+   * Present only when a trusted `taskDigest` was supplied — that is what makes a line v2. `buildRecord`
+   * does NOT always emit it, and the comment here used to say it did while the emission site 200 lines
+   * down said the opposite. Two comments asserting contradictory facts about one field is R-28's shape.
+   */
+  event?: "capability_decision";
   parentId: string;
   childId: string;
   depth: number;
@@ -77,6 +97,10 @@ export interface GrantRecord {
    * one capability while claiming to describe the set was not merely a reporting defect.
    */
   approvalScopes?: Record<Capability, ApprovalScope>;
+  /** Persisted approval expiry, by capability. Session-scoped approvals have no wall-clock expiry. */
+  approvalExpiresAt?: Record<Capability, string>;
+  /** Count bounds where one exists. A consumed `once` approval records `{max:1, remaining:0}`. */
+  approvalUses?: Record<Capability, { max: number; remaining: number }>;
   /** Present only when the source was a live prompt, and only when one scope covers the whole set. */
   approvalScope?: ApprovalScope;
   /** A human was asked and declined. Distinct from `denied`, which is an escalation attempt. */
@@ -134,6 +158,10 @@ export interface GrantRecord {
    * `definitionDigest` names its instructions, and neither says where the TASK came from.
    */
   taskFrom?: string;
+  /** Trusted SHA-256 of the exact task; task text remains forbidden (ADR-0034). */
+  taskDigest?: string;
+  /** Stable machine-readable refusal accompanying `reason`. */
+  refusal?: StructuredRefusal;
 }
 
 export interface LedgerOptions {
@@ -146,6 +174,11 @@ export interface LedgerOptions {
    * closed. Set false only where the ledger is advisory.
    */
   strict?: boolean;
+  /**
+   * Called when a NON-strict append failed. Required in spirit rather than in types: a caller that opts
+   * out of failing closed still has to say something, or the ledger silently develops holes.
+   */
+  onFailure?: (error: unknown) => void;
 }
 
 export function buildRecord(args: {
@@ -161,6 +194,8 @@ export function buildRecord(args: {
   approved?: Capability[];
   approvalSources?: Record<Capability, ApprovalSource>;
   approvalScopes?: Record<Capability, ApprovalScope>;
+  approvalExpiresAt?: Record<Capability, string>;
+  approvalUses?: Record<Capability, { max: number; remaining: number }>;
   humanDenied?: boolean;
   gateOutcome?: PromptOutcomeKind;
   definitionDigest?: DefinitionDigest;
@@ -168,6 +203,9 @@ export function buildRecord(args: {
   executor: ExecutorKind;
   /** The child whose output composed this task (ADR-0033). Absent for anything but a chain step. */
   taskFrom?: string;
+  taskDigest?: string;
+  correlation?: CorrelationMetadata;
+  refusal?: StructuredRefusal;
   now: Date;
 }): GrantRecord {
   // R-46: the scalar is a SUMMARY, emitted only when it cannot mislead. `buildRecord` derives it rather
@@ -177,6 +215,9 @@ export function buildRecord(args: {
   const scopes = args.approvalScopes ?? {};
   const distinctScopes = [...new Set(Object.values(scopes))];
   return {
+    // A trusted task digest is what distinguishes a v2 capability event from the legacy construction API.
+    // Production delegation always supplies it; old TypeScript callers remain able to append legacy lines.
+    ...(args.taskDigest ? { ledgerVersion: LEDGER_VERSION, event: "capability_decision" as const } : {}),
     ts: args.now.toISOString(),
     parentId: args.parentId,
     childId: args.childId,
@@ -184,6 +225,9 @@ export function buildRecord(args: {
     agentType: args.agentType,
     executor: args.executor,
     ...(args.taskFrom ? { taskFrom: args.taskFrom } : {}),
+    ...(args.taskDigest ? { taskDigest: args.taskDigest } : {}),
+    ...(args.correlation ? { correlation: structuredClone(args.correlation) } : {}),
+    ...(args.refusal ? { refusal: structuredClone(args.refusal) } : {}),
     requested: args.requested,
     parentGrant: args.parentGrant,
     effective: args.result.effective,
@@ -197,6 +241,10 @@ export function buildRecord(args: {
     ...(Object.keys(sources).length > 0 ? { approvalSources: sources } : {}),
     ...(distinctScopes.length === 1 ? { approvalScope: distinctScopes[0] } : {}),
     ...(Object.keys(scopes).length > 0 ? { approvalScopes: scopes } : {}),
+    ...(args.approvalExpiresAt && Object.keys(args.approvalExpiresAt).length > 0
+      ? { approvalExpiresAt: args.approvalExpiresAt }
+      : {}),
+    ...(args.approvalUses && Object.keys(args.approvalUses).length > 0 ? { approvalUses: args.approvalUses } : {}),
     ...(args.humanDenied ? { humanDenied: true } : {}),
     // Written whenever a gate was reached and not satisfied by a yes. `granted` is omitted deliberately —
     // an approved spawn already says so through `approvalSources`, and a field that appears on every record
@@ -228,8 +276,8 @@ export { verifyLedger, type LedgerReport } from "./ledger-report.ts";
 const withLedgerLock = <T>(path: string, write: () => Promise<T>): Promise<T> =>
   withFileLock(path, "grant ledger", write);
 
-export async function appendRecord(options: LedgerOptions, record: GrantRecord): Promise<void> {
-  const line = `${JSON.stringify(record)}\n`;
+export async function appendLedgerEvent(options: LedgerOptions, event: RuntimeLedgerEvent | GrantRecord): Promise<void> {
+  const line = `${JSON.stringify(event)}\n`;
   try {
     await mkdir(dirname(options.path), { recursive: true });
     // O_APPEND alone is not enough once several processes write to one ledger — see `withLedgerLock`.
@@ -238,10 +286,27 @@ export async function appendRecord(options: LedgerOptions, record: GrantRecord):
     if (options.strict ?? true) {
       throw new Error(`grant ledger write failed (failing closed): ${String(error)}`);
     }
+    // A non-strict append is a deliberate choice not to fail closed. It is NOT a choice to be silent:
+    // a silent safe-mode is as confusing as a silent unsafe one, so the caller is always told.
+    options.onFailure?.(error);
   }
+}
+
+export async function appendRecord(options: LedgerOptions, record: GrantRecord): Promise<void> {
+  return appendLedgerEvent(options, record);
 }
 
 /** True when this record shows an agent asking for more than it holds. */
 export function isEscalationAttempt(record: GrantRecord): boolean {
   return record.denied.length > 0;
 }
+
+export {
+  buildChildLifecycleEvent,
+  buildWorkspaceLeaseEvent,
+  type ChildLifecycleEvent,
+  type CheckReceiptLedgerEvent,
+  type RuntimeLedgerEvent,
+  type WorkspaceLeaseEvent,
+  type WorkspaceLeaseOutcome,
+} from "./ledger-events.ts";

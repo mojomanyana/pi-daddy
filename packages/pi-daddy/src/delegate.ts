@@ -1,24 +1,11 @@
 /**
- * Governed delegation — provisioning, not merely enforcement.
- *
- * The `tool_call` interceptor can only *permit or refuse* a `pi-subagents` spawn, because that package's
- * `Agent` tool has no `tools` parameter. When we do the spawning ourselves the grant becomes an argument,
- * which is what "give them some tools but not others" actually requires.
- *
- * Two properties fall out of owning the spawn:
- *
- *  1. **No propagation race at all.** Each child receives its own explicit `env` object, so nothing is
- *     written to the shared `process.env`. The interceptor's constraint (only parent-level facts may be
- *     pushed, because the channel is global) does not apply here.
- *  2. **Depth control by capability.** `tool:delegate` is itself a capability. Grant it and the child can
- *     sub-delegate; withhold it and the child is a leaf. No separate depth mechanism is required, though
- *     `maxDepth` remains as a cheap backstop.
+ * Governed delegation planning. Owning the spawn makes the grant an argument; each child receives its own
+ * environment, and `tool:delegate` determines whether it is a delegator or a leaf.
  */
 
 import { planSpawn } from "./spawn.ts";
 import { ceilingForDefinition, digestDefinition, type DefinitionDigest, type SkillDefinition } from "./definitions.ts";
-import { resolve, assertNarrowing, type Capability, type ResolveResult } from "./resolve.ts";
-import { AGENT_WILDCARD } from "./resolve.ts";
+import { assertNarrowing, type Capability, type ResolveResult } from "./resolve.ts";
 import { DELEGATE_CAPABILITY, agentCapability, maySpawnDefinition, normaliseCapability } from "./capabilities.ts";
 
 // Re-exported so the split stays internal: `delegate.ts` has been the import site for these since 0.6.0 and
@@ -26,128 +13,41 @@ import { DELEGATE_CAPABILITY, agentCapability, maySpawnDefinition, normaliseCapa
 // charged to every caller for a line count they did not cause.
 export { DELEGATE_CAPABILITY, agentCapability, maySpawnDefinition, normaliseCapability } from "./capabilities.ts";
 import { ENV_APPROVED, ENV_DEPTH, ENV_FANOUT, ENV_GATED, ENV_GRANT, ENV_LEDGER, ENV_MAX_DEPTH, ENV_PARENT_ID } from "./propagation.ts";
-import { DELEGATE_SUBJECT, inheritApprovals, type InheritableApproval } from "./approval.ts";
+import { inheritApprovals, type InheritableApproval } from "./approval.ts";
 import { suggestForUnknown, unknownCapabilities, type Catalog } from "./catalog.ts";
+import { GovernanceRefusal, refusal, type RefusalCode, type StructuredRefusal } from "./refusals.ts";
+import {
+  digestTask,
+  normaliseCorrelation,
+  type ApprovalBinding,
+  type CorrelationMetadata,
+} from "./correlation.ts";
+import { resolveDelegationApproval } from "./delegation-approval.ts";
+import type { Delegation, DelegationContext, DelegationRequest } from "./delegate-types.ts";
+export type { Delegation, DelegationContext, DelegationRequest } from "./delegate-types.ts";
 
-export interface DelegationRequest {
-  task: string;
-  /**
-   * Capabilities the delegator wants the child to hold.
-   *
-   * Optional since ADR-0016: prefer `agent`, which names an operator-authored definition. This form
-   * lets the MODEL choose the capability set, which is the weaker arrangement — it is still bounded by
-   * the session grant (ADR-0008), so it cannot escalate, but nothing about it was reviewed by a human.
-   */
-  tools?: string[];
-  /**
-   * Name of a `SKILL.md` definition to spawn (ADR-0016).
-   *
-   * When given, the definition's `allowed-tools` is the ceiling and its body is the child's system
-   * prompt. The model chooses only *which* definition and *what* task; the capability set is the
-   * operator's, written down in a file.
-   */
-  agent?: string;
-  model?: string;
-  provider?: string;
-  thinking?: string;
-}
-
-export interface DelegationContext {
-  ownGrant: Capability[];
-  depth: number;
-  maxDepth: number;
-  gated: Capability[];
-  /**
-   * Approvals in force for this delegation, with subject and scope (ADR-0014).
-   *
-   * One source of truth for two different questions. The **gate check here** honours every entry,
-   * including `once` — that approval applies to *this* spawn, which is exactly what the human said yes
-   * to. What crosses to the CHILD is `inheritApprovals`, which drops `once` and keeps the subject, so
-   * the same list cannot silently authorise a subtree.
-   */
-  approved?: InheritableApproval[];
-  ledgerPath?: string;
-  /** Path to this extension, so a child granted `tool:delegate` can delegate in turn. */
-  extensionPath?: string;
-  /** Live capability catalog. When supplied, capabilities absent from it are refused as unknown. */
-  catalog?: Catalog;
-  /**
-   * Absolute path per skill NAME, from the catalog's `source` field (R-32).
-   *
-   * Without it every granted `skill:` capability is unresolvable and the delegation is refused, which
-   * is the correct direction: a caller that cannot say where a skill lives cannot honestly grant it.
-   */
-  skillPaths?: Record<string, string>;
-  /** Let the child load `AGENTS.md` / `CLAUDE.md`. Default false — see `planSpawn`. */
-  contextFiles?: boolean;
-  /** Known `SKILL.md` definitions by name, for `DelegationRequest.agent` (ADR-0016). */
-  definitions?: Map<string, SkillDefinition>;
-  /**
-   * Build an INTERACTIVE plan — no `--print` — for an executor that drives the child after starting it.
-   *
-   * `runHerdrPane` requires this: `--print` makes pi process the prompt and exit, so it never reaches the
-   * interactive readiness `herdr agent start` waits for and the agent is never detected. Default is the
-   * non-interactive plan, because a governed child should not sit waiting for a human by accident.
-   */
-  interactive?: boolean;
-  /**
-   * Total descendants this session may still create (`src/fanout.ts`). Split among children by the caller.
-   *
-   * Omitted means unbounded, which is the pre-fan-out behaviour and correct for a single blocking
-   * delegation — the accident that used to bound cardinality to one.
-   */
-  fanoutBudget?: number;
-  /** This session's ledger id, so a child's `parentId` names its real parent (F8). */
-  spawnId?: string;
-  /** Ledger id assigned to THIS child, distinguishing it from its siblings (F8). */
-  childSpawnId?: string;
-}
-
-export interface Delegation {
-  ok: boolean;
-  reason?: string;
-  args: string[];
-  /** Per-child environment — never merged into the parent's process.env. */
-  env: Record<string, string>;
-  effective: Capability[];
-  /**
-   * The result this plan was made from. **Required** (B-I3): while it was optional the extension
-   * guarded its ledger write with `if (ledgerPath && plan.result)`, silently dropping every refusal
-   * that returned before `resolve()` ran. The type is what keeps a new early exit auditable.
-   */
-  result: ResolveResult;
-  childDepth: number;
-  /**
-   * The capabilities this delegation asked for, whatever route named them.
-   *
-   * Carried on the plan rather than re-derived by the caller (the B-I3 lesson): with `agent`, the
-   * request names a DEFINITION and the capabilities come from its `allowed-tools`, so a ledger that
-   * read the tool parameters would record an empty request for every definition spawn.
-   */
-  requested: Capability[];
-  /** Ledger id for this child, if the caller assigned one (F8). */
-  childId?: string;
-  /**
-   * Which operator-authored instructions this spawn used (ADR-0018).
-   *
-   * Absent for a `tools:`-style delegation, which has no definition and therefore no instructions to
-   * identify — and absent on an ADR-0017 authorisation refusal, which is decided before the file is read.
-   */
-  definitionDigest?: DefinitionDigest;
-}
-
-/**
- * Plan a governed delegation. Pure: returns argv and env, spawns nothing.
- *
- * Fails closed on depth, on any requested capability the delegator does not hold, on gated capabilities
- * without approval, and on a grant that cannot narrow (a universal capability slipping through).
- */
 export function planDelegation(request: DelegationRequest, ctx: DelegationContext): Delegation {
   const childDepth = ctx.depth + 1;
+  const denied = (plan: Delegation, code: RefusalCode): Delegation =>
+    plan.reason ? { ...plan, refusal: refusal(code, plan.reason) } : plan;
   // G6 / B-I3: every refusal carries a result, including the four below that return before `resolve()`
   // is ever called. The extension guarded its ledger write with `if (ledgerPath && plan.result)`, so
   // those four governance decisions — disabled, too deep, no task, unknown capability — were never
   // audited at all. An empty result is the honest record: nothing was resolved, and that is the fact.
+  // Bounded/whitelisted correlation is a REFUSAL, not an exception escaping the planner. It is reachable
+  // from a model-facing tool parameter on all three delegation tools, and throwing from here produced a
+  // governed refusal with no code and no ledger line at all — the ledger file was never even created
+  // (R-112). Caught here so it becomes an ordinary recorded decision.
+  let correlation: CorrelationMetadata | undefined;
+  let correlationRefused: StructuredRefusal | undefined;
+  try {
+    correlation = normaliseCorrelation(request.correlation);
+  } catch (error) {
+    correlationRefused = error instanceof GovernanceRefusal
+      ? { code: error.code, message: error.message, ...(error.details ? { details: error.details } : {}) }
+      : refusal("CORRELATION_INVALID", String(error instanceof Error ? error.message : error));
+  }
+  const taskDigest = digestTask(request.task ?? "");
   const empty: Delegation = {
     ok: false,
     args: [],
@@ -155,14 +55,21 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
     effective: [],
     childDepth,
     requested: [],
+    taskDigest,
+    ...(correlation ? { correlation } : {}),
     result: { effective: [], denied: [], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
   };
 
-  if (ctx.maxDepth <= 0) return { ...empty, reason: "delegation is disabled (maxDepth 0)" };
-  if (childDepth > ctx.maxDepth) {
-    return { ...empty, reason: `delegation depth limit reached (${ctx.maxDepth})` };
+  if (correlationRefused) {
+    return { ...empty, reason: correlationRefused.message, refusal: correlationRefused };
   }
-  if (!request.task?.trim()) return { ...empty, reason: "a delegation needs a task" };
+  if (ctx.maxDepth <= 0) {
+    return denied({ ...empty, reason: "delegation is disabled (maxDepth 0)" }, "DEPTH_EXCEEDED");
+  }
+  if (childDepth > ctx.maxDepth) {
+    return denied({ ...empty, reason: `delegation depth limit reached (${ctx.maxDepth})` }, "DEPTH_EXCEEDED");
+  }
+  if (!request.task?.trim()) return denied({ ...empty, reason: "a delegation needs a task" }, "TASK_MISSING");
 
   // ADR-0016. A named definition replaces the model's tool list with an operator-authored ceiling.
   let requested: Capability[];
@@ -179,12 +86,12 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
     // here is simply an error.
     if (!definition) {
       const known = [...(ctx.definitions?.keys() ?? [])].sort();
-      return {
+      return denied({
         ...empty,
         reason:
           `unknown agent "${request.agent}"` +
           (known.length > 0 ? ` — known definitions: ${known.join(", ")}` : " — no definitions were found"),
-      };
+      }, "UNKNOWN_DEFINITION");
     }
 
     // ADR-0017: authorisation comes BEFORE anything is said about the file. Which definitions this
@@ -198,7 +105,7 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
     if (!maySpawnDefinition(ctx.ownGrant, definition.name)) {
       const authorising = agentCapability(definition.name);
       const held = ctx.ownGrant.filter((c) => c.startsWith("agent:")).sort();
-      return {
+      return denied({
         ...empty,
         requested: [authorising],
         result: { ...empty.result, denied: [authorising] },
@@ -208,7 +115,7 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
           (held.length > 0
             ? `It may spawn: ${held.join(", ")}.`
             : `It may spawn no definitions at all; add ${authorising} to its grant to allow this one.`),
-      };
+      }, "DEFINITION_NOT_AUTHORIZED");
     }
 
     // ADR-0018. Recorded from here on — after authorisation, because the digest is a fact about a file
@@ -224,21 +131,21 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
 
     const ceiling = ceilingForDefinition(definition);
     if (ceiling.undeclared) {
-      return {
+      return denied({
         ...empty,
         reason:
           `agent "${definition.name}" declares no \`allowed-tools\`, so it cannot be spawned — add one ` +
           `to ${definition.source}. An undeclared capability set is treated as NONE, never as everything.`,
-      };
+      }, "UNDECLARED_TOOLS");
     }
     if (ceiling.patterns.length > 0) {
-      return {
+      return denied({
         ...empty,
         reason:
           `agent "${definition.name}" restricts a tool with a pattern (${ceiling.patterns.join(", ")}), ` +
           `which pi's --tools cannot express — it matches whole tool names only. Granting the bare tool ` +
           `would widen the declaration and dropping it would silently narrow, so neither is done.`,
-      };
+      }, "CEILING_PATTERNS_UNRESOLVED");
     }
     requested = ceiling.capabilities;
     systemPrompt = definition.body;
@@ -262,59 +169,40 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
           return s === null ? null : `${c} → did you mean ${s}?`;
         })
         .filter((h): h is string => h !== null);
-      return {
+      return denied({
         ...empty,
         requested,
         reason:
           `unknown capabilit${unknown.length === 1 ? "y" : "ies"}: ${unknown.join(", ")} — not present in ` +
           `this session's catalog (typo, or an uninstalled package?)` +
           (hints.length > 0 ? ` — ${hints.join("; ")}` : ""),
-      };
+      }, "UNKNOWN_TOOL");
     }
   }
 
-  // ADR-0014's A-S6 — an approval for one subject cannot satisfy another — enforced HERE, not only in
-  // `resolveApprovals`. **Not a no-op elsewhere**: the re-plan passes `republishable(session)` with every subject
-  // unfiltered, so a human's "no" for one definition was overridden by a yes for another. Measured; R-83.
-  const subject = request.agent ?? DELEGATE_SUBJECT;
-  const approvedCapabilities = (ctx.approved ?? []).filter((a) => a.subject === subject).map((a) => a.capability);
-  const result = resolve({
+  const { result, approvalBinding, bindingMismatch } = resolveDelegationApproval({
+    task: request.task,
+    agent: request.agent,
+    boundWorkspaceId: request.boundWorkspaceId,
+    boundContextId: request.boundContextId,
     requested,
     parentGrant: ctx.ownGrant,
     gated: ctx.gated,
-    approved: approvedCapabilities,
+    approved: ctx.approved,
+    spawned,
+    definitionDigest,
+    correlation,
+    parentId: ctx.spawnId ?? `d${ctx.depth}`,
   });
-
-  /**
-   * ADR-0024: gating `agent:<name>` asks a human before that definition runs.
-   *
-   * `gatedBlocked` is a filter over `requested`, and for a definition spawn `requested` is the definition's
-   * CEILING — so the id that authorises it was never a candidate, and `PI_GRANTS_GATED=agent:deploy` did
-   * nothing at all on the path an operator writing it means. It half-worked when some *other* definition
-   * passed the id down in its own `allowed-tools`, which is worse than not working (R-47, R-25's shape).
-   *
-   * Evaluated here rather than by adding the id to `requested`, and that is the load-bearing part: a
-   * capability in `requested` flows to `effective`, which becomes the CHILD's grant — so the child would
-   * hold `agent:deploy` and could spawn `deploy` itself without anyone being asked. This is the parent's
-   * authority to run the definition *now*, not something the child receives.
-   *
-   * `agent:*` in the gate covers every definition, so "ask me before any definition runs" is one variable.
-   */
-  if (spawned) {
-    const authorising = agentCapability(spawned.name);
-    const gatedHere = ctx.gated.includes(authorising) || ctx.gated.includes(AGENT_WILDCARD);
-    if (gatedHere && !approvedCapabilities.includes(authorising)) {
-      result.gatedBlocked = [...result.gatedBlocked, authorising];
-    }
-  }
+  if (approvalBinding) Object.assign(empty, { approvalBinding });
 
   if (result.denied.length > 0) {
-    return {
+    return denied({
       ...empty,
       requested,
       result,
       reason: `cannot grant ${result.denied.join(", ")} — this session does not hold it (capability escalation blocked)`,
-    };
+    }, "CAPABILITY_ESCALATION");
   }
   // ADR-0011: narrowing is checked BEFORE the gate, and the order is load-bearing rather than
   // stylistic. `assertNarrowing` refuses regardless of approval, so with the old order this returned
@@ -324,10 +212,20 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
   try {
     assertNarrowing(result);
   } catch (error) {
-    return { ...empty, requested, result, reason: String(error instanceof Error ? error.message : error) };
+    // ADR-0011's narrowing invariant is the hardest rule this package enforces, and it was the one
+    // refusal an external controller could not identify by code (R-109).
+    return denied(
+      { ...empty, requested, result, reason: String(error instanceof Error ? error.message : error) },
+      "NARROWING_VIOLATED",
+    );
   }
   if (result.gatedBlocked.length > 0) {
-    return { ...empty, requested, result, reason: `${result.gatedBlocked.join(", ")} requires explicit approval` };
+    const code = bindingMismatch ? "APPROVAL_SCOPE_MISMATCH" : "GATED_UNAPPROVED";
+    const suffix = bindingMismatch ? " (an approval exists, but its task/workspace/context scope does not match)" : "";
+    return denied(
+      { ...empty, requested, result, reason: `${result.gatedBlocked.join(", ")} requires explicit approval${suffix}` },
+      code,
+    );
   }
 
   const canSubDelegate = result.effective.includes(DELEGATE_CAPABILITY);
@@ -349,14 +247,14 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
   // not contain. `unknownCapabilities` above catches names absent from the catalog entirely; this
   // catches one that is known but whose path we could not resolve, which is a different fault.
   if (plan.unresolvedSkills.length > 0) {
-    return {
+    return denied({
       ...empty,
       requested,
       result,
       reason:
         `cannot locate ${plan.unresolvedSkills.join(", ")} on disk — granted but unresolvable, so the ` +
         `child would silently lack it`,
-    };
+    }, "DEFINITION_UNREADABLE");
   }
 
   // A child may only delegate further if it was granted the capability AND has the extension to do it.
@@ -394,6 +292,9 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
     childDepth,
     requested,
     childId: ctx.childSpawnId,
+    taskDigest,
+    ...(correlation ? { correlation } : {}),
+    ...(approvalBinding ? { approvalBinding } : {}),
     ...(definitionDigest ? { definitionDigest } : {}),
   };
 }
