@@ -472,7 +472,7 @@ governed child and `workspace_id` is a model-facing parameter validated against 
 that the caller was authorised for that workspace — so a child routed to `staging` can route its grandchild
 to `prod`. Depth, fan-out budget, the grant, the gated set and approvals all attenuate; the initial working
 directory does not. Stated as a gap rather than a decision: ADR-0034's non-goals cover *path confinement* and
-say nothing about *root selection*, and closing it needs its own ADR.
+say nothing about *root selection*. **ADR-0035 proposes closing it** with a `workspace:<id>` capability so routing attenuates through the existing resolver; it is Proposed, not Accepted, pending a transitivity probe. Tracked as R-131.
 
 **Lease outcomes in the ledger.** `acquired` means the kernel actually excluded somebody; `uncontended` is a
 read lease, which takes no lock at all; `recovered` means the predecessor's record said `active`, and

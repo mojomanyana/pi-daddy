@@ -2128,6 +2128,37 @@ finding.**
 They are comment-only changes with no behaviour, but rule 10 lets a docs-only change merge on the author's
 own read, so mislabelling one is not free. The label was wrong; the diff is what it is.
 
+## R-131 · Workspace routing does not attenuate — H×H, OPEN (shipped in 0.18.0)
+
+Added 2026-08-20, and **live on npm as of 0.18.0**. `ENV_WORKSPACE_REGISTRY` is not in `GRANT_ENV_KEYS`, so
+it inherits into every governed child; `workspace_id` is a model-facing parameter on all three delegation
+tools; and `prepareDelegationWorkspace` validates the id against the registry while checking nothing about
+whether the caller was authorised for it. A child routed to `staging` can therefore route its grandchild to
+`prod`, with a real lease, a validated CWD, and a ledger line naming `prod`.
+
+**This is R-26 one namespace over** — a wildcard that leaked down the tree until attenuation was meaningless
+below the root, found there by a three-level transitivity test. Depth, fan-out, grant, gated and approvals
+all attenuate; the initial working directory does not.
+
+**Why it is worse than ADR-0012's `bash` escape, which is accepted.** That escape produces **no ledger line
+at all**, and the absence is the signal. This produces a complete, correct-looking capability decision
+naming `prod` — which reads as authorised routing, because every other dimension in that record genuinely
+is. The failure is not "a control is weaker than it looks"; it is "the record asserts an authorisation
+nobody granted".
+
+**Not yet mitigated.** ADR-0035 proposes a `workspace:<id>` capability namespace so routing attenuates
+through `resolve()` like everything else. It is **Proposed, not Accepted**, and deliberately blocked on the
+one input R-26 had and this does not: a transitivity probe against a real spawn. The escalation above is
+derived from reading `run-delegation.ts`, `workspace-runtime.ts` and `propagation.ts` and from the absence
+of any `ownGrant` reference on that path — rule 5 says measure before asserting, and this has not been
+measured.
+
+**Interim guidance for an operator:** do not register workspaces of differing sensitivity in one session.
+There is no capability to gate today, so `PI_GRANTS_GATED` cannot help.
+
+**Trigger:** any descendant `workspace_lease` event whose `root` is not the root its parent was routed to;
+or a workspace transitivity test failing once one exists.
+
 ---
 
 ## Register log
@@ -2200,3 +2231,4 @@ own read, so mislabelling one is not free. The label was wrong; the diff is what
 | 2026-08-20 | R-99…R-118 | **Six independent reviewers over the unmerged 0.18.0 candidate, and the capability invariant held on every path any of them could construct** — no fail-open in authority resolution. What they found instead: the writer lease reporting handovers the kernel never performed (R-99, R-100, measured in `docs/probes/g35-flock-fd-inheritance`, which settled a disagreement between two reviewers who had reached opposite conclusions); a bound approval spendable outside the workspace it named (R-110); correlation as a model-writable text channel into the append-only ledger (R-111); a refused delegation banking a 30-day approval (R-113, the same shape as R-96 a third time); and a ledger with no vocabulary for lost, retained or uncontended leases (R-103…R-105). **The headline finding was not a defect but an absence**: eight guards holding up ADR-0034's advertised properties could each be deleted with 558/558 still green, in a project whose own rule 7 says a test that cannot fail is worse than none. R-101 and R-118 are accepted with their reasons stated | six-reviewer pass over the 0.18.0 candidate |
 | 2026-08-20 | R-119…R-129 | **Six reviewers over the FIX commits, and the fixes claimed properties the code did not have.** The invariant held a third time; the runtime half did not. Three critical: a terminal append still `strict: true` under four documents saying otherwise (R-119); the anti-silence mechanism satisfied nowhere (R-120); `unbankApprovals` both too narrow and too broad (R-121). R-122 shows the marquee R-106 fix was itself undefended — deleting all four guards left 580/580 green — and over-corrected. **R-127 records a regression claim corrected twice and still not satisfied**, with the test deleted rather than weakened to pass; R-128 the process error of editing a tree five reviewers were mutating; R-129 that the audit everything rests on has no artifact. Also fixed: a failing lease test hung the runner past 900s, which is how a suite that CAUGHT a defect reads as untested | six-reviewer pass over the fix commits |
 | 2026-08-20 | R-130 | Added and fixed — the two findings the mutation auditor left open at the new HEAD: the `{release:true}` clean-release handshake was unpinned (deleting it left 586/586 green, so a deliberate handover would have been treated as a crash), and a test of mine overstated what the wiring does with `context_id`. Also records that the auditor corrected its OWN recommendation — pinning `truncated` would have introduced a bug — and that `a882595`'s `docs:` label was wrong for a commit touching five production files | mutation re-verification at the fixed HEAD |
+| 2026-08-20 | R-131, ADR-0035 | Added — **workspace routing does not attenuate, and it shipped in 0.18.0.** A child routed to `staging` can route its grandchild to `prod`, and unlike ADR-0012's accepted `bash` escape it leaves a complete, correct-looking ledger record asserting an authorisation nobody granted. R-26's shape in a namespace added five ADRs later. ADR-0035 proposes `workspace:<id>` as a capability so it attenuates through the existing `resolve()` path, and is deliberately left **Proposed** pending a transitivity probe — the evidence R-26 had and this does not | ADR-0034's unresolved list |
