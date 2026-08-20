@@ -2128,6 +2128,48 @@ finding.**
 They are comment-only changes with no behaviour, but rule 10 lets a docs-only change merge on the author's
 own read, so mislabelling one is not free. The label was wrong; the diff is what it is.
 
+## R-132 · A capability id containing a comma mints authority the root never held — H×H, FIXED
+
+Added and fixed 2026-08-20. **Present in published 0.18.0**, verified against `origin/main` before the fix
+was written. Predates ADR-0035 and is unrelated to it.
+
+`PI_GRANTS_GRANT` is comma-separated and `parseList` splits it. A capability id containing a comma was
+admitted by a wildcard's **prefix** rule — `"agent:x,tool:bash"` starts with `agent:`, so `agent:*` covered
+it — written verbatim into the child's grant, and split by the child into two capabilities. Measured:
+
+```
+ownGrant: ["agent:*", "tool:read", "tool:delegate"]     ← root never holds tool:bash
+tools:    ["read", "delegate", "agent:x,tool:bash"]
+→ denied: []
+→ child grant parses as ["agent:x", "tool:bash", "tool:delegate", "tool:read"]
+```
+
+The child holds a real `tool:bash`. `denied` is empty, so `isEscalationAttempt` sees nothing and the ledger
+line reads as an ordinary authorised delegation. **Minting authority with a clean audit record** is the
+precise harm this package exists to prevent, and it is worse than R-131's shape because no configuration
+mistake is required — only a wildcard, which is a documented supported root grant (R-26 is written about
+exactly it).
+
+`tool:*` is affected identically, since it covers every namespace.
+
+**The codebase predicted this channel and guarded a different one.** `grant-env.ts` refuses to *write* a
+grants file containing characters outside a capability id, and says why: *"the third channel — whatever it
+turns out to be — should cost a refusal rather than an injection. A guard that depends on my enumeration
+being complete is not a guard."* Propagation was that third channel and had no backstop.
+
+**Fixed with two guards, both mutation-verified.** `covered()` refuses to grant a malformed id, so it lands
+in `denied` and is recorded as the escalation attempt it is rather than throwing. And both grant writers
+refuse to emit one, loudly — unreachable by construction, which is the point of a backstop.
+
+Deliberately a blocklist of structurally dangerous characters (comma, CR, LF, NUL, surrounding whitespace)
+rather than the full grammar whitelist `isSafeCapability` applies at the generation boundary. This is the
+enforcement path and must keep accepting whatever ids operators already have; a security patch to a
+released version should not invent a new way to refuse a legitimate setup. Verified: `ext:@scope/pkg/tool`,
+`skill:my-skill`, `agent:my_agent` and both wildcards are unaffected.
+
+**Trigger:** any capability id in a grant, a ledger record or a refusal containing a character outside
+`[A-Za-z0-9:@._/*-]`; or a child grant whose parsed length exceeds its parent's.
+
 ---
 
 ## Register log
@@ -2200,3 +2242,4 @@ own read, so mislabelling one is not free. The label was wrong; the diff is what
 | 2026-08-20 | R-99…R-118 | **Six independent reviewers over the unmerged 0.18.0 candidate, and the capability invariant held on every path any of them could construct** — no fail-open in authority resolution. What they found instead: the writer lease reporting handovers the kernel never performed (R-99, R-100, measured in `docs/probes/g35-flock-fd-inheritance`, which settled a disagreement between two reviewers who had reached opposite conclusions); a bound approval spendable outside the workspace it named (R-110); correlation as a model-writable text channel into the append-only ledger (R-111); a refused delegation banking a 30-day approval (R-113, the same shape as R-96 a third time); and a ledger with no vocabulary for lost, retained or uncontended leases (R-103…R-105). **The headline finding was not a defect but an absence**: eight guards holding up ADR-0034's advertised properties could each be deleted with 558/558 still green, in a project whose own rule 7 says a test that cannot fail is worse than none. R-101 and R-118 are accepted with their reasons stated | six-reviewer pass over the 0.18.0 candidate |
 | 2026-08-20 | R-119…R-129 | **Six reviewers over the FIX commits, and the fixes claimed properties the code did not have.** The invariant held a third time; the runtime half did not. Three critical: a terminal append still `strict: true` under four documents saying otherwise (R-119); the anti-silence mechanism satisfied nowhere (R-120); `unbankApprovals` both too narrow and too broad (R-121). R-122 shows the marquee R-106 fix was itself undefended — deleting all four guards left 580/580 green — and over-corrected. **R-127 records a regression claim corrected twice and still not satisfied**, with the test deleted rather than weakened to pass; R-128 the process error of editing a tree five reviewers were mutating; R-129 that the audit everything rests on has no artifact. Also fixed: a failing lease test hung the runner past 900s, which is how a suite that CAUGHT a defect reads as untested | six-reviewer pass over the fix commits |
 | 2026-08-20 | R-130 | Added and fixed — the two findings the mutation auditor left open at the new HEAD: the `{release:true}` clean-release handshake was unpinned (deleting it left 586/586 green, so a deliberate handover would have been treated as a crash), and a test of mine overstated what the wiring does with `context_id`. Also records that the auditor corrected its OWN recommendation — pinning `truncated` would have introduced a bug — and that `a882595`'s `docs:` label was wrong for a commit touching five production files | mutation re-verification at the fixed HEAD |
+| 2026-08-20 | R-132 | Added and **fixed** — a capability id containing a comma was admitted by a wildcard's prefix rule and split by the child into several capabilities, minting `tool:bash` from a root that never held it with `denied: []` and a clean-looking ledger line. **Present in published 0.18.0**, verified against `origin/main`; predates ADR-0035, which widened the surface with a second injectable namespace. Two guards, both mutation-verified. The channel was predicted verbatim by `grant-env.ts`'s own comment and guarded everywhere except propagation | found reviewing PR #10 |

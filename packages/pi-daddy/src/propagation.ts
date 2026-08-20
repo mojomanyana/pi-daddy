@@ -28,6 +28,7 @@
 import type { Capability } from "./resolve.ts";
 import { WILDCARD } from "./pi-tools.ts";
 import { inheritApprovals, type InheritableApproval } from "./approval.ts";
+import { assertCapabilitiesArePropagatable } from "./capabilities.ts";
 
 export const ENV_GRANT = "PI_GRANTS_GRANT";
 /**
@@ -250,7 +251,7 @@ export function childEnv(input: ChildEnvInput): Record<string, string> {
   if (input.governed === false) return {};
   const inheritable = input.ownGrant.filter((c) => c !== WILDCARD);
   const env: Record<string, string> = {
-    [ENV_GRANT]: inheritable.join(","),
+    [ENV_GRANT]: (assertCapabilitiesArePropagatable(inheritable), inheritable.join(",")),
     [ENV_DEPTH]: String(input.depth + 1),
     [ENV_MAX_DEPTH]: String(input.maxDepth),
   };
