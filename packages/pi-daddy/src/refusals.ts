@@ -10,6 +10,19 @@ export const REFUSAL_CODES = [
   "DEPTH_EXCEEDED",
   "FANOUT_EXCEEDED",
   "EXECUTOR_UNAVAILABLE",
+  // Execution-phase outcomes. Without these, an external controller could distinguish a policy refusal
+  // from an internal error but not a lost writer lease from a user pressing stop (R-103).
+  "CHILD_TIMED_OUT",
+  "CHILD_CANCELLED",
+  "CHILD_EXIT_NONZERO",
+  // Planner refusals that previously carried a message and no code at all — including the narrowing
+  // violation, which is the hardest rule this package enforces (R-109).
+  "TASK_MISSING",
+  "UNKNOWN_DEFINITION",
+  "CEILING_PATTERNS_UNRESOLVED",
+  "NARROWING_VIOLATED",
+  "DEFINITION_UNREADABLE",
+  "CORRELATION_TOO_LARGE",
   "WORKSPACE_NOT_REGISTERED",
   "WORKSPACE_WRITE_CONFLICT",
   "WORKSPACE_LEASE_STALE",

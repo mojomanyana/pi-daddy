@@ -25,7 +25,10 @@ export interface LedgerReport {
   records: number;
   /** Every parsed ledger event, including lifecycle and lease events. */
   events: number;
-  workspaceLeases: { acquired: number; refused: number; released: number; timeout: number; recovered: number };
+  workspaceLeases: {
+    acquired: number; uncontended: number; refused: number; released: number;
+    releasedUnrecorded: number; lost: number; retained: number; timeout: number; recovered: number;
+  };
   lifecycle: { starting: number; completed: number; failed: number };
   /** Lines that did not, with 1-based line numbers so the report is actionable. */
   corrupt: Array<{ line: number; text: string }>;
@@ -120,6 +123,18 @@ export interface LedgerReport {
  * Deliberately reports rather than repairs. A corrupt line is evidence; rewriting the file to make it parse
  * would destroy the one artifact an investigation has.
  */
+const LEASE_OUTCOME_COUNTERS: Record<string, keyof LedgerReport["workspaceLeases"]> = {
+  acquired: "acquired",
+  uncontended: "uncontended",
+  refused: "refused",
+  released: "released",
+  "released-unrecorded": "releasedUnrecorded",
+  lost: "lost",
+  retained: "retained",
+  timeout: "timeout",
+  recovered: "recovered",
+};
+
 function validV2Base(event: Record<string, unknown>): boolean {
   return event.ledgerVersion === 2 && typeof event.ts === "string";
 }
@@ -152,7 +167,7 @@ export async function verifyLedger(path: string): Promise<LedgerReport> {
         exists: false,
         records: 0,
         events: 0,
-        workspaceLeases: { acquired: 0, refused: 0, released: 0, timeout: 0, recovered: 0 },
+        workspaceLeases: { acquired: 0, uncontended: 0, refused: 0, released: 0, releasedUnrecorded: 0, lost: 0, retained: 0, timeout: 0, recovered: 0 },
         lifecycle: { starting: 0, completed: 0, failed: 0 },
         corrupt: [],
         escalationAttempts: 0,
@@ -176,7 +191,7 @@ export async function verifyLedger(path: string): Promise<LedgerReport> {
   const digests = new Map<string, { name: string; source: string; sha256: string; spawns: number }>();
   let records = 0;
   let events = 0;
-  const workspaceLeases = { acquired: 0, refused: 0, released: 0, timeout: 0, recovered: 0 };
+  const workspaceLeases = { acquired: 0, uncontended: 0, refused: 0, released: 0, releasedUnrecorded: 0, lost: 0, retained: 0, timeout: 0, recovered: 0 };
   const lifecycle = { starting: 0, completed: 0, failed: 0 };
   let escalationAttempts = 0;
   const executors = { herdr: 0, process: 0, unknown: 0 };
@@ -204,8 +219,12 @@ export async function verifyLedger(path: string): Promise<LedgerReport> {
       if (event.event === "workspace_lease") {
         requireV2(event, ["childId", "workspaceId", "root", "access"]);
         const outcome = typeof event.outcome === "string" ? event.outcome : "";
-        if (!Object.hasOwn(workspaceLeases, outcome)) throw new Error("invalid workspace lease event");
-        workspaceLeases[outcome as keyof typeof workspaceLeases] += 1;
+        // Explicit map, not a name match: the ledger's outcome vocabulary and these counter names are
+        // allowed to differ, and a valid event must never be counted as corruption because a counter
+        // happens to be spelled differently.
+        const counter = LEASE_OUTCOME_COUNTERS[outcome];
+        if (!counter) throw new Error("invalid workspace lease event");
+        workspaceLeases[counter] += 1;
         events += 1;
         return;
       }

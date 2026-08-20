@@ -14,6 +14,8 @@ import {
   type ValidatedWorkspace,
   type WorkspaceAccess,
   type WorkspaceLease,
+  leaseAcquisitionOutcome,
+  type LeaseReleaseOutcome,
 } from "../src/workspace.ts";
 
 export interface DelegationWorkspaceSpec {
@@ -77,7 +79,7 @@ export async function prepareDelegationWorkspace(input: {
           workspaceId: workspace.workspaceId,
           root: workspace.root,
           access: input.spec.access,
-          outcome: lease.recovered ? "recovered" : "acquired",
+          outcome: leaseAcquisitionOutcome(input.spec.access, lease.recovered),
           recovered: lease.recovered,
           correlation,
           now: new Date(),
@@ -111,14 +113,24 @@ export async function prepareDelegationWorkspace(input: {
   }
 }
 
+/**
+ * Records what release actually DID, rather than asserting a handover. `release()` cannot throw
+ * (R-99), so this is safe to call from a `finally` without destroying the caller's result — which is
+ * the whole reason it returns a value. `retained` is a deliberate non-release and is reported as such
+ * so the next owner's `recovered: true` does not blame a healthy path (R-104).
+ */
 export async function releaseDelegationWorkspace(input: {
   prepared: PreparedWorkspace | undefined;
   childId: string;
   ledgerPath?: string;
   reason: string;
-}): Promise<void> {
-  if (!input.prepared) return;
-  await input.prepared.lease.release(input.reason);
+  /** Deliberately keep the lease: a herdr writer tab would not close, so the pane may still be live. */
+  retain?: boolean;
+}): Promise<LeaseReleaseOutcome | "retained" | undefined> {
+  if (!input.prepared) return undefined;
+  const outcome: LeaseReleaseOutcome | "retained" = input.retain
+    ? "retained"
+    : await input.prepared.lease.release(input.reason);
   if (input.ledgerPath) {
     await appendLedgerEvent(
       { path: input.ledgerPath, strict: true },
@@ -127,11 +139,22 @@ export async function releaseDelegationWorkspace(input: {
         workspaceId: input.prepared.workspace.workspaceId,
         root: input.prepared.workspace.root,
         access: input.prepared.lease.access,
-        outcome: input.reason === "timeout" ? "timeout" : "released",
+        outcome: leaseReleaseLedgerOutcome(outcome, input.reason),
         releaseReason: input.reason,
         correlation: input.prepared.correlation,
         now: new Date(),
       }),
     );
   }
+  return outcome;
+}
+
+function leaseReleaseLedgerOutcome(
+  outcome: LeaseReleaseOutcome | "retained",
+  reason: string,
+): "timeout" | "released" | "released-unrecorded" | "lost" | "retained" {
+  if (outcome === "retained") return "retained";
+  if (outcome === "lost") return "lost";
+  if (outcome === "released-unrecorded") return "released-unrecorded";
+  return reason === "timeout" ? "timeout" : "released";
 }

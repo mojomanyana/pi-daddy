@@ -55,7 +55,10 @@ test("lease and lifecycle events append without being counted as capability reco
   assert.equal(report.ok, true);
   assert.equal(report.records, 1);
   assert.equal(report.events, 4);
-  assert.deepEqual(report.workspaceLeases, { acquired: 1, refused: 0, released: 1, timeout: 0, recovered: 0 });
+  assert.deepEqual(report.workspaceLeases, {
+    acquired: 1, uncontended: 0, refused: 0, released: 1, releasedUnrecorded: 0,
+    lost: 0, retained: 0, timeout: 0, recovered: 0,
+  });
   assert.deepEqual(report.lifecycle, { starting: 0, completed: 1, failed: 0 });
   assert.equal((await readFile(path, "utf8")).trim().split("\n").length, 4);
 });

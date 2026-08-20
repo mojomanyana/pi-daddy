@@ -30,10 +30,12 @@ import type { ApprovalScope, ApprovalSource } from "./approval.ts";
 import type { PromptOutcomeKind } from "./approval-prompt.ts";
 import type { CorrelationMetadata } from "./correlation.ts";
 import type { StructuredRefusal } from "./refusals.ts";
+// Type-only, so the cycle with ./ledger-events.ts is erased at runtime.
+import type { RuntimeLedgerEvent } from "./ledger-events.ts";
 
 export const LEDGER_VERSION = 2 as const;
 
-interface LedgerEventBase {
+export interface LedgerEventBase {
   /** Optional only on the legacy-compatible `GrantRecord` public type; every v2 event builder writes it. */
   ledgerVersion?: typeof LEDGER_VERSION;
   event?: "capability_decision" | "workspace_lease" | "child_lifecycle" | "check_receipt";
@@ -158,51 +160,6 @@ export interface GrantRecord extends LedgerEventBase {
   refusal?: StructuredRefusal;
 }
 
-export type WorkspaceLeaseOutcome = "acquired" | "refused" | "released" | "timeout" | "recovered";
-
-export interface WorkspaceLeaseEvent extends LedgerEventBase {
-  ledgerVersion: typeof LEDGER_VERSION;
-  event: "workspace_lease";
-  childId: string;
-  workspaceId: string;
-  root: string;
-  access: "read" | "write";
-  outcome: WorkspaceLeaseOutcome;
-  recovered?: boolean;
-  releaseReason?: string;
-  refusal?: StructuredRefusal;
-}
-
-export interface ChildLifecycleEvent extends LedgerEventBase {
-  ledgerVersion: typeof LEDGER_VERSION;
-  event: "child_lifecycle";
-  childId: string;
-  state: "starting" | "completed" | "failed";
-  executor: ExecutorKind;
-  exitCode?: number | null;
-  signal?: NodeJS.Signals | null;
-  timedOut?: boolean;
-  aborted?: boolean;
-  truncated?: boolean;
-  reason?: string;
-}
-
-export interface CheckReceiptLedgerEvent extends LedgerEventBase {
-  ledgerVersion: typeof LEDGER_VERSION;
-  event: "check_receipt";
-  childId: string;
-  receiptId: string;
-  workspaceId: string;
-  checkId: string;
-  treeSha: string;
-}
-
-export type RuntimeLedgerEvent =
-  | (GrantRecord & { ledgerVersion: typeof LEDGER_VERSION; event: "capability_decision" })
-  | WorkspaceLeaseEvent
-  | ChildLifecycleEvent
-  | CheckReceiptLedgerEvent;
-
 export interface LedgerOptions {
   /** Path to the JSONL file. Parent directories are created on demand. */
   path: string;
@@ -213,6 +170,11 @@ export interface LedgerOptions {
    * closed. Set false only where the ledger is advisory.
    */
   strict?: boolean;
+  /**
+   * Called when a NON-strict append failed. Required in spirit rather than in types: a caller that opts
+   * out of failing closed still has to say something, or the ledger silently develops holes.
+   */
+  onFailure?: (error: unknown) => void;
 }
 
 export function buildRecord(args: {
@@ -310,64 +272,6 @@ export { verifyLedger, type LedgerReport } from "./ledger-report.ts";
 const withLedgerLock = <T>(path: string, write: () => Promise<T>): Promise<T> =>
   withFileLock(path, "grant ledger", write);
 
-export function buildWorkspaceLeaseEvent(args: {
-  childId: string;
-  workspaceId: string;
-  root: string;
-  access: "read" | "write";
-  outcome: WorkspaceLeaseOutcome;
-  recovered?: boolean;
-  releaseReason?: string;
-  refusal?: StructuredRefusal;
-  correlation?: CorrelationMetadata;
-  now: Date;
-}): WorkspaceLeaseEvent {
-  return {
-    ledgerVersion: LEDGER_VERSION,
-    event: "workspace_lease",
-    ts: args.now.toISOString(),
-    childId: args.childId,
-    workspaceId: args.workspaceId,
-    root: args.root,
-    access: args.access,
-    outcome: args.outcome,
-    ...(args.recovered ? { recovered: true } : {}),
-    ...(args.releaseReason ? { releaseReason: args.releaseReason } : {}),
-    ...(args.refusal ? { refusal: structuredClone(args.refusal) } : {}),
-    ...(args.correlation ? { correlation: structuredClone(args.correlation) } : {}),
-  };
-}
-
-export function buildChildLifecycleEvent(args: {
-  childId: string;
-  state: "starting" | "completed" | "failed";
-  executor: ExecutorKind;
-  exitCode?: number | null;
-  signal?: NodeJS.Signals | null;
-  timedOut?: boolean;
-  aborted?: boolean;
-  truncated?: boolean;
-  reason?: string;
-  correlation?: CorrelationMetadata;
-  now: Date;
-}): ChildLifecycleEvent {
-  return {
-    ledgerVersion: LEDGER_VERSION,
-    event: "child_lifecycle",
-    ts: args.now.toISOString(),
-    childId: args.childId,
-    state: args.state,
-    executor: args.executor,
-    ...(args.exitCode !== undefined ? { exitCode: args.exitCode } : {}),
-    ...(args.signal !== undefined ? { signal: args.signal } : {}),
-    ...(args.timedOut ? { timedOut: true } : {}),
-    ...(args.aborted ? { aborted: true } : {}),
-    ...(args.truncated ? { truncated: true } : {}),
-    ...(args.reason ? { reason: args.reason } : {}),
-    ...(args.correlation ? { correlation: structuredClone(args.correlation) } : {}),
-  };
-}
-
 export async function appendLedgerEvent(options: LedgerOptions, event: RuntimeLedgerEvent | GrantRecord): Promise<void> {
   const line = `${JSON.stringify(event)}\n`;
   try {
@@ -378,6 +282,9 @@ export async function appendLedgerEvent(options: LedgerOptions, event: RuntimeLe
     if (options.strict ?? true) {
       throw new Error(`grant ledger write failed (failing closed): ${String(error)}`);
     }
+    // A non-strict append is a deliberate choice not to fail closed. It is NOT a choice to be silent:
+    // a silent safe-mode is as confusing as a silent unsafe one, so the caller is always told.
+    options.onFailure?.(error);
   }
 }
 
@@ -389,3 +296,13 @@ export async function appendRecord(options: LedgerOptions, record: GrantRecord):
 export function isEscalationAttempt(record: GrantRecord): boolean {
   return record.denied.length > 0;
 }
+
+export {
+  buildChildLifecycleEvent,
+  buildWorkspaceLeaseEvent,
+  type ChildLifecycleEvent,
+  type CheckReceiptLedgerEvent,
+  type RuntimeLedgerEvent,
+  type WorkspaceLeaseEvent,
+  type WorkspaceLeaseOutcome,
+} from "./ledger-events.ts";

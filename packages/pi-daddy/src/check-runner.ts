@@ -17,6 +17,7 @@ import {
   defaultWorkspaceLeaseDir,
   type ValidatedWorkspace,
   type WorkspaceAccess,
+  leaseAcquisitionOutcome,
 } from "./workspace.ts";
 
 export interface CheckDefinition {
@@ -176,7 +177,8 @@ export async function runNamedCheck(input: {
           { path: input.ledgerPath, strict: true },
           buildWorkspaceLeaseEvent({
             childId: ownerId, workspaceId: input.workspace.workspaceId, root: input.workspace.root, access: leaseAccess,
-            outcome: lease.recovered ? "recovered" : "acquired", recovered: lease.recovered, correlation, now: new Date(),
+            outcome: leaseAcquisitionOutcome(leaseAccess, lease.recovered), recovered: lease.recovered,
+            correlation, now: new Date(),
           }),
         );
       } catch (error) {
