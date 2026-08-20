@@ -16,6 +16,17 @@ export interface BankedApproval {
   subject: string;
   /** True when a 30-day entry reached the on-disk store, which outlives the process. */
   persisted: boolean;
+  /**
+   * False when this call did not CREATE the authority — it joined a dialog another delegation had already
+   * opened, or the key was already standing from an earlier grant.
+   *
+   * Load-bearing: unbanking revoked by `capability@subject` with no ownership check, so one refused
+   * delegation could destroy an approval a live sibling was running under. Two reachable shapes — a
+   * joined gate (one human answer shared by concurrent waiters, each recording it as its own) and a
+   * legacy-then-bound sequence, where a bound call re-prompts over a plain key that already exists and
+   * then deletes both on refusal. Only what this call actually created may be taken back.
+   */
+  owned: boolean;
 }
 
 /**
@@ -32,11 +43,17 @@ export async function unbankApprovals(
   if (!banked || banked.length === 0) return;
   const stranded: string[] = [];
   for (const entry of banked) {
+    // Never take back authority this call did not create — see `owned`.
+    if (!entry.owned) continue;
     session.sessionApprovals.delete(entry.key);
     session.sessionApprovalBindings.delete(entry.key);
     if (!entry.persisted) continue;
     const outcome = await revokeApproval(session.cwd, entry.key, (subject) => snapshotOf(session, subject), new Date());
-    if (outcome !== "revoked" && outcome !== "absent") stranded.push(entry.key);
+    // `"absent"` is NOT proof the entry is gone. `revokeApproval` reports it when the key is missing from
+    // the *valid* set, and `loadApprovals` excludes entries whose ceiling or body digest no longer
+    // matches — those are still physically in the file and revive the moment they validate again. So an
+    // entry that is merely stale reads as "nothing to revoke" and is silently left standing.
+    if (outcome !== "revoked") stranded.push(entry.key);
   }
   // Children inherit from the published set, so it must shrink with the session state, not after it.
   session.publishChildEnv();

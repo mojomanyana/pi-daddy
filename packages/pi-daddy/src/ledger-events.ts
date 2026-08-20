@@ -96,7 +96,11 @@ export function buildWorkspaceLeaseEvent(args: {
     root: args.root,
     access: args.access,
     outcome: args.outcome,
-    ...(args.recovered ? { recovered: args.recovered } : {}),
+    // `!== undefined`, not truthiness. `recovered: false` — a POSITIVE assertion that the predecessor
+    // handed over cleanly — was dropped while the truthy `"unknown"` survived, so absence meant both
+    // "clean" and "never supplied". R-100's whole argument is that absence of evidence is not evidence,
+    // and this was the one line discarding the evidence.
+    ...(args.recovered !== undefined ? { recovered: args.recovered } : {}),
     ...(args.releaseReason ? { releaseReason: args.releaseReason } : {}),
     ...(args.refusal ? { refusal: structuredClone(args.refusal) } : {}),
     ...(args.correlation ? { correlation: structuredClone(args.correlation) } : {}),

@@ -8,6 +8,8 @@ import { pathToFileURL } from "node:url";
 import { after, test } from "node:test";
 import {
   acquireWorkspaceLease,
+  leaseAcquisitionOutcome,
+  leaseReleaseLedgerOutcome,
   loadWorkspaceRegistry,
   resolveWorkspace,
   validateRegisteredWorkspace,
@@ -15,7 +17,27 @@ import {
 import { GovernanceRefusal } from "../src/refusals.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
+/**
+ * Reap lease holders even when a test FAILS.
+ *
+ * Measured: with a guard mutated, this file printed `not ok` and then hung past 900 seconds — the failing
+ * test never reached its `release()`, so the live `flock` plus helper kept node's event loop alive. On CI
+ * that turns a one-line assertion failure into a job timeout with no summary, and it is how an auditor
+ * gets a false "untested" reading from a suite that actually caught the defect.
+ */
+const acquired: { release: (reason?: string) => Promise<unknown> }[] = [];
+async function reapLeases() {
+  for (const lease of acquired.splice(0)) await lease.release("test-teardown").catch(() => undefined);
+}
+after(reapLeases);
 after(cleanupTempDirs);
+
+/** Acquire a lease that is released no matter how the test ends. */
+async function trackedLease(input: Parameters<typeof acquireWorkspaceLease>[0]) {
+  const lease = await acquireWorkspaceLease(input);
+  acquired.push(lease);
+  return lease;
+}
 
 async function gitWorkspace() {
   const root = await tempDir("workspace-root-");
@@ -50,9 +72,9 @@ test("read/read and read/write may share a workspace", async () => {
   const root = await gitWorkspace();
   const leaseDir = await tempDir("workspace-leases-");
   const workspace = await validateRegisteredWorkspace({ workspaceId: "w1", registeredRoot: root });
-  const readA = await acquireWorkspaceLease({ workspace, access: "read", leaseDir, ownerId: "read-a" });
-  const readB = await acquireWorkspaceLease({ workspace, access: "read", leaseDir, ownerId: "read-b" });
-  const writer = await acquireWorkspaceLease({ workspace, access: "write", leaseDir, ownerId: "writer" });
+  const readA = await trackedLease({ workspace, access: "read", leaseDir, ownerId: "read-a" });
+  const readB = await trackedLease({ workspace, access: "read", leaseDir, ownerId: "read-b" });
+  const writer = await trackedLease({ workspace, access: "write", leaseDir, ownerId: "writer" });
   await Promise.all([readA.release("completed"), readB.release("completed"), writer.release("completed")]);
 });
 
@@ -63,7 +85,7 @@ test("same-workspace writers conflict before work while distinct workspaces proc
   const a = await validateRegisteredWorkspace({ workspaceId: "a", registeredRoot: rootA });
   const sameRootDifferentId = await validateRegisteredWorkspace({ workspaceId: "alias", registeredRoot: rootA });
   const b = await validateRegisteredWorkspace({ workspaceId: "b", registeredRoot: rootB });
-  const first = await acquireWorkspaceLease({ workspace: a, access: "write", leaseDir, ownerId: "first" });
+  const first = await trackedLease({ workspace: a, access: "write", leaseDir, ownerId: "first" });
   await assert.rejects(
     () => acquireWorkspaceLease({ workspace: sameRootDifferentId, access: "write", leaseDir, ownerId: "second" }),
     (error: unknown) => {
@@ -71,7 +93,7 @@ test("same-workspace writers conflict before work while distinct workspaces proc
       return true;
     },
   );
-  const other = await acquireWorkspaceLease({ workspace: b, access: "write", leaseDir, ownerId: "other" });
+  const other = await trackedLease({ workspace: b, access: "write", leaseDir, ownerId: "other" });
   await Promise.all([first.release("completed"), other.release("completed")]);
 });
 
@@ -115,7 +137,7 @@ test("parent SIGKILL stops the attached writer before releasing the lease", asyn
   const workspace = await validateRegisteredWorkspace({ workspaceId: "w1", registeredRoot: root });
   let recovered;
   for (let i = 0; i < 100; i += 1) {
-    try { recovered = await acquireWorkspaceLease({ workspace, access: "write", leaseDir, ownerId: "next" }); break; }
+    try { recovered = await trackedLease({ workspace, access: "write", leaseDir, ownerId: "next" }); break; }
     catch (error) {
       if ((error as GovernanceRefusal).code !== "WORKSPACE_WRITE_CONFLICT") throw error;
       await new Promise((r) => setTimeout(r, 25));
@@ -137,7 +159,7 @@ test("a stale lease object cannot overwrite a successor's active metadata", asyn
   const root = await gitWorkspace();
   const leaseDir = await tempDir("workspace-leases-");
   const workspace = await validateRegisteredWorkspace({ workspaceId: "w1", registeredRoot: root });
-  const stale = await acquireWorkspaceLease({ workspace, access: "write", leaseDir, ownerId: "stale" });
+  const stale = await trackedLease({ workspace, access: "write", leaseDir, ownerId: "stale" });
   const metadataPath = join(leaseDir, (await readdir(leaseDir)).find((name) => name.endsWith(".json"))!);
 
   const successor = {
@@ -147,7 +169,10 @@ test("a stale lease object cannot overwrite a successor's active metadata", asyn
   await writeFile(metadataPath, `${JSON.stringify(successor)}\n`);
 
   const outcome = await stale.release("stale-release");
-  assert.equal(outcome, "released-unrecorded", "a stale owner must not claim it recorded a handover");
+  // `released-superseded`, not `released-unrecorded`: declining to overwrite a LIVE successor's record is
+  // the token guard working, not a fault. Conflating the two made the one value that means "somebody must
+  // be told" indistinguishable from the healthy case.
+  assert.equal(outcome, "released-superseded", "a stale owner must not claim it recorded a handover");
   const after = JSON.parse(await readFile(metadataPath, "utf8"));
   assert.equal(after.owner_id, "second");
   assert.equal(after.token, "successor-token");
@@ -158,7 +183,7 @@ test("release reports `lost` instead of throwing when the helper is already gone
   const root = await gitWorkspace();
   const leaseDir = await tempDir("workspace-leases-");
   const workspace = await validateRegisteredWorkspace({ workspaceId: "w1", registeredRoot: root });
-  const lease = await acquireWorkspaceLease({ workspace, access: "write", leaseDir, ownerId: "doomed" });
+  const lease = await trackedLease({ workspace, access: "write", leaseDir, ownerId: "doomed" });
   const metadataPath = join(leaseDir, (await readdir(leaseDir)).find((name) => name.endsWith(".json"))!);
   process.kill(JSON.parse(await readFile(metadataPath, "utf8")).pid, "SIGKILL");
   await lease.lost;
@@ -171,7 +196,7 @@ test("killing the recorded helper pid really does free the kernel lock", async (
   const root = await gitWorkspace();
   const leaseDir = await tempDir("workspace-leases-");
   const workspace = await validateRegisteredWorkspace({ workspaceId: "w1", registeredRoot: root });
-  const first = await acquireWorkspaceLease({ workspace, access: "write", leaseDir, ownerId: "first" });
+  const first = await trackedLease({ workspace, access: "write", leaseDir, ownerId: "first" });
   const metadataPath = join(leaseDir, (await readdir(leaseDir)).find((name) => name.endsWith(".json"))!);
   // The recorded pid must be the HELPER, which is what actually holds the lock file descriptor: `flock`
   // is not passed `--close`, so killing only the wrapper leaves the lock held by an orphan and every
@@ -180,7 +205,7 @@ test("killing the recorded helper pid really does free the kernel lock", async (
   await first.lost;
   let second;
   for (let i = 0; i < 60 && !second; i += 1) {
-    try { second = await acquireWorkspaceLease({ workspace, access: "write", leaseDir, ownerId: "second" }); }
+    try { second = await trackedLease({ workspace, access: "write", leaseDir, ownerId: "second" }); }
     catch (error) {
       assert.equal((error as GovernanceRefusal).code, "WORKSPACE_WRITE_CONFLICT");
       await new Promise((r) => setTimeout(r, 20));
@@ -194,13 +219,13 @@ test("an unreadable predecessor record yields `unknown` recovery, never a clean 
   const root = await gitWorkspace();
   const leaseDir = await tempDir("workspace-leases-");
   const workspace = await validateRegisteredWorkspace({ workspaceId: "w1", registeredRoot: root });
-  const first = await acquireWorkspaceLease({ workspace, access: "write", leaseDir, ownerId: "first" });
+  const first = await trackedLease({ workspace, access: "write", leaseDir, ownerId: "first" });
   const metadataPath = join(leaseDir, (await readdir(leaseDir)).find((name) => name.endsWith(".json"))!);
   assert.equal(await first.release("done"), "released");
   // Truncated, hand-edited, or written by a future version. Reading this as `recovered: false` silently
   // downgrades "the previous writer may have died mid-write" to the reassuring answer (R-100).
   await writeFile(metadataPath, "{\"version\":1,\"state\":");
-  const next = await acquireWorkspaceLease({ workspace, access: "write", leaseDir, ownerId: "next" });
+  const next = await trackedLease({ workspace, access: "write", leaseDir, ownerId: "next" });
   assert.equal(next.recovered, "unknown");
   await next.release("test-complete");
 });
@@ -276,7 +301,7 @@ test("SIGKILL releases the kernel lease and the next owner records recovery", as
   let recovered;
   for (let i = 0; i < 40; i += 1) {
     try {
-      recovered = await acquireWorkspaceLease({ workspace, access: "write", leaseDir, ownerId: "recovery" });
+      recovered = await trackedLease({ workspace, access: "write", leaseDir, ownerId: "recovery" });
       break;
     } catch (error) {
       if ((error as GovernanceRefusal).code !== "WORKSPACE_WRITE_CONFLICT") throw error;
@@ -371,4 +396,64 @@ test("a malformed workspace registry grants nothing, loudly", async () => {
       return true;
     },
   );
+});
+
+/**
+ * `leaseAcquisitionOutcome` had no test at all, while its docstring asserted two R-numbered properties.
+ * Both branches were deletable with the whole suite green: `read → "acquired"` drops R-105, and
+ * `recovered === true → "acquired"` drops R-100.
+ */
+test("an acquisition outcome never claims an exclusion the kernel did not perform", () => {
+  // A read lease takes no lock, so it cannot be an acquisition (R-105).
+  assert.equal(leaseAcquisitionOutcome("read", false), "uncontended");
+  assert.equal(leaseAcquisitionOutcome("read", true), "uncontended", "access decides first");
+  assert.equal(leaseAcquisitionOutcome("read", "unknown"), "uncontended");
+  // Only a CONFIRMED dead predecessor is a recovery. "unknown" is less evidence than a crash, not more,
+  // so it must not be reported as one (R-100) — but it must not silently read as clean either.
+  assert.equal(leaseAcquisitionOutcome("write", true), "recovered");
+  assert.equal(leaseAcquisitionOutcome("write", false), "acquired");
+  assert.equal(leaseAcquisitionOutcome("write", "unknown"), "acquired");
+});
+
+/**
+ * The release vocabulary is the observability half of R-99/R-100/R-104 — the entire reason `release()`
+ * returns a value instead of throwing. Misrouting `released-unrecorded`, `lost` and `retained` all to
+ * `released` left the suite green, because the only assertion on the new counters was that they were zero.
+ */
+test("a release outcome maps to the ledger word that means it", () => {
+  assert.equal(leaseReleaseLedgerOutcome("released", "completed"), "released");
+  assert.equal(leaseReleaseLedgerOutcome("released", "timeout"), "timeout");
+  // The alarm: the lock went back but the record does not say so, so the NEXT owner would report a
+  // recovery that never happened unless this is ledgered distinctly.
+  assert.equal(leaseReleaseLedgerOutcome("released-unrecorded", "completed"), "released-unrecorded");
+  assert.equal(leaseReleaseLedgerOutcome("released-unrecorded", "timeout"), "released-unrecorded");
+  // Healthy: a successor already owns the record. Previously indistinguishable from the alarm.
+  assert.equal(leaseReleaseLedgerOutcome("released-superseded", "completed"), "released");
+  // The lock evaporated under a live writer — NOT the same fact as an operator pressing stop.
+  assert.equal(leaseReleaseLedgerOutcome("lost", "cancelled"), "lost");
+  // Kept deliberately because a herdr writer tab would not close; the pane may still be live.
+  assert.equal(leaseReleaseLedgerOutcome("retained", "failed"), "retained");
+  // A read lease never locked, so it never handed anything back.
+  assert.equal(leaseReleaseLedgerOutcome("not-held", "completed"), "uncontended");
+});
+
+test("attaching a child to a dead lease is refused, not ignored", () => {
+  // Deleting this guard left the suite green. Attaching to a lease whose helper is gone means the child
+  // runs with no crash-cleanup owner, which is R-93's failure mode one layer down.
+  return (async () => {
+    const root = await gitWorkspace();
+    const leaseDir = await tempDir("workspace-leases-");
+    const workspace = await validateRegisteredWorkspace({ workspaceId: "w1", registeredRoot: root });
+    const lease = await trackedLease({ workspace, access: "write", leaseDir, ownerId: "doomed" });
+    const metadataPath = join(leaseDir, (await readdir(leaseDir)).find((name) => name.endsWith(".json"))!);
+    process.kill(JSON.parse(await readFile(metadataPath, "utf8")).pid, "SIGKILL");
+    await lease.lost;
+    assert.throws(
+      () => lease.attachProcess(process.pid),
+      (error: unknown) => {
+        assert.equal((error as GovernanceRefusal).code, "WORKSPACE_LEASE_STALE");
+        return true;
+      },
+    );
+  })();
 });

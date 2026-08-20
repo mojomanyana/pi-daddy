@@ -94,19 +94,21 @@ test("correlation is a whitelist of the pinned contract, not a free-form blob", 
   };
   assert.deepEqual(normaliseCorrelation(declared), declared);
 
-  for (const [label, value, expected] of [
-    ["an undeclared key", { run_id: "r", smuggled: "the entire task text" }, /outside the pinned schema/],
-    ["an over-long declared field", { run_id: "z".repeat(600) }, /exceeds 512 characters/],
-    ["an over-large assurance_scope", { assurance_scope: { blob: "z".repeat(5000) } }, /assurance_scope exceeds/],
-    ["a non-string where a string belongs", { run_id: 7 }, /run_id must be a string/],
+  for (const [label, value, expected, code] of [
+    ["an undeclared key", { run_id: "r", smuggled: "the entire task text" }, /outside the pinned schema/, "CORRELATION_INVALID"],
+    ["an over-long declared field", { run_id: "z".repeat(600) }, /exceeds 512 characters/, "CORRELATION_TOO_LARGE"],
+    ["an over-large assurance_scope", { assurance_scope: { blob: "z".repeat(5000) } }, /assurance_scope exceeds/, "CORRELATION_TOO_LARGE"],
+    ["a non-string where a string belongs", { run_id: 7 }, /run_id must be a string/, "CORRELATION_INVALID"],
     // `Infinity`/`NaN` serialise to `null` and are dropped, which is the right answer for a value JSON
     // cannot carry. A STRING where a sequence number belongs does survive, and must be refused.
-    ["a string where a sequence number belongs", { event_seq: "41" }, /event_seq must be a finite number/],
+    ["a string where a sequence number belongs", { event_seq: "41" }, /event_seq must be a finite number/, "CORRELATION_INVALID"],
   ] as const) {
     assert.throws(
       () => normaliseCorrelation(value as never),
       (error: Error & { code?: string }) => {
-        assert.equal(error.code, "CORRELATION_INVALID", label);
+        // A SIZE refusal is retryable by truncating; an undeclared field is not. The two carried one code,
+        // so `CORRELATION_TOO_LARGE` was declared in the taxonomy and constructed nowhere.
+        assert.equal(error.code, code, label);
         assert.match(error.message, expected, label);
         return true;
       },
@@ -120,7 +122,7 @@ test("correlation is a whitelist of the pinned contract, not a free-form blob", 
   // alone breaks nothing here. It stays as defence-in-depth for the next field somebody adds.
   assert.throws(
     () => normaliseCorrelation({ assurance_scope: { blob: "z".repeat(64 * 1024) } } as never),
-    (error: Error & { code?: string }) => error.code === "CORRELATION_INVALID",
+    (error: Error & { code?: string }) => error.code === "CORRELATION_TOO_LARGE",
   );
 });
 
@@ -133,6 +135,8 @@ test("an oversized correlation is a RECORDED refusal, not an exception escaping 
     { ownGrant: ["tool:read"], depth: 0, maxDepth: 2, gated: [], spawnId: "d0" },
   );
   assert.equal(plan.ok, false);
-  assert.equal(plan.refusal?.code, "CORRELATION_INVALID");
+  // Oversize now carries the size code, and the point of the test is that it is RECORDED at all — it used
+  // to throw past every recorder, producing a refusal with no code and no ledger line.
+  assert.equal(plan.refusal?.code, "CORRELATION_TOO_LARGE");
   assert.ok(plan.result, "a refusal still carries a result, so it is auditable (G6/B-I3)");
 });

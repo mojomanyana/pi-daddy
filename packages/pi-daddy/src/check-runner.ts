@@ -18,6 +18,7 @@ import {
   type ValidatedWorkspace,
   type WorkspaceAccess,
   leaseAcquisitionOutcome,
+  leaseReleaseLedgerOutcome,
 } from "./workspace.ts";
 
 export interface CheckDefinition {
@@ -150,6 +151,8 @@ export async function runNamedCheck(input: {
   const correlation = normaliseCorrelation(input.correlation);
   let lease: Awaited<ReturnType<typeof acquireWorkspaceLease>> | undefined;
   let stagedDir: string | undefined;
+  /** Failures of best-effort RECORDS, reported alongside whatever actually happened — never instead of it. */
+  const notes: string[] = [];
   let releaseReason = "failed";
   try {
     try {
@@ -216,6 +219,10 @@ export async function runNamedCheck(input: {
     });
     const ended = new Date();
     releaseReason = input.signal?.aborted ? "cancelled" : result.timedOut ? "timeout" : result.aborted ? "failed" : "completed";
+    // Every throw below re-stamps this. Without that, a check refused for CHECK_IDENTITY_MISMATCH still
+    // wrote `released / completed` from the `finally` — the LAST lease event for that owner — so the trail
+    // still read like a clean run and `verifyLedger` still counted a clean release. The R-114 fix added a
+    // refusal line beside the misleading one instead of correcting it.
     if (result.spawnError) throw new GovernanceRefusal(refusal(
       "EXECUTOR_UNAVAILABLE", `check ${JSON.stringify(input.checkId)} could not start its constrained executor`,
       { check_id: input.checkId },
@@ -237,7 +244,11 @@ export async function runNamedCheck(input: {
     }
     // The candidate is now measured and the process is dead. End the lease before writing the receipt so
     // lease loss cannot race a blocked ledger append and leave behind evidence from an unprotected run.
-    await lease.release(releaseReason);
+    // Record what release actually DID. This asserted `released` unconditionally and threw the outcome
+    // away, so the evidence path reproduced the very defect the outcome union was added to expose: a lost
+    // or unrecorded handover ledgered as a clean one, with `lease = undefined` stopping the `finally` from
+    // ever noticing (R-100/R-103, found while reviewing the fix for R-99).
+    const releaseOutcome = await lease.release(releaseReason);
     lease = undefined;
     if (leaseLost) throw new GovernanceRefusal(refusal(
       "WORKSPACE_LEASE_STALE", `check ${JSON.stringify(input.checkId)} lost its workspace lease before receipt`,
@@ -247,7 +258,7 @@ export async function runNamedCheck(input: {
       { path: input.ledgerPath, strict: true },
       buildWorkspaceLeaseEvent({
         childId: ownerId, workspaceId: input.workspace.workspaceId, root: input.workspace.root, access: leaseAccess,
-        outcome: releaseReason === "timeout" ? "timeout" : "released", releaseReason, correlation, now: new Date(),
+        outcome: leaseReleaseLedgerOutcome(releaseOutcome, releaseReason), releaseReason, correlation, now: new Date(),
       }),
     );
     const body: Omit<CheckReceipt, "receipt_id"> = {
@@ -270,6 +281,11 @@ export async function runNamedCheck(input: {
     }
     return { output: result.text, exitCode: result.code, signal: result.signal ?? null, receipt };
   } catch (error) {
+    // The run did not complete, so the release must not be recorded as if it had. Without this the
+    // `finally` wrote `released / completed` as the LAST lease event for a refused check, so the trail
+    // still read like a clean run and `verifyLedger` still counted a clean release — the R-114 fix put a
+    // refusal line beside the misleading one instead of correcting it.
+    if (releaseReason === "completed") releaseReason = "refused";
     // The single most important negative result this feature can produce — CHECK_IDENTITY_MISMATCH, "the
     // workspace changed while the check ran" — used to leave NO ledger evidence at all, while the
     // `finally` recorded `released, reason: completed`, so the trail read like a clean run (R-114).
@@ -281,7 +297,11 @@ export async function runNamedCheck(input: {
           // append that threw here would substitute "ledger write failed" for the evidence-integrity
           // refusal that actually happened (R-115).
           strict: false,
-          onFailure: () => {},
+          // NOT empty. `onFailure` exists because a non-strict append is a choice not to fail closed and
+          // never a choice to be silent — the comment above says "loud", and an empty callback is the
+          // definition of swallowing. This guards the evidence record itself, so losing it silently is
+          // how a mutated workspace came to leave a trail that read like a clean run.
+          onFailure: (cause) => { notes.push(`check refusal record failed: ${String(cause)}`); },
         },
         buildWorkspaceLeaseEvent({
           childId: ownerId, workspaceId: input.workspace.workspaceId, root: input.workspace.root, access: leaseAccess,
@@ -301,7 +321,11 @@ export async function runNamedCheck(input: {
       // above: a `finally` that throws destroys whatever the caller was already returning or raising.
       const outcome = await lease.release(releaseReason);
       if (input.ledgerPath) await appendLedgerEvent(
-        { path: input.ledgerPath, strict: false, onFailure: () => {} },
+        {
+          path: input.ledgerPath,
+          strict: false,
+          onFailure: (cause) => { notes.push(`check lease release record failed: ${String(cause)}`); },
+        },
         buildWorkspaceLeaseEvent({
           childId: ownerId, workspaceId: input.workspace.workspaceId, root: input.workspace.root, access: leaseAccess,
           outcome: outcome === "lost"

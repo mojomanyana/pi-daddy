@@ -289,9 +289,14 @@ export async function obtainApprovals(
 
     if (outcome.scope === "session" || outcome.scope === "always") {
       const key = approvalKey(capability, subject);
+      // Whether THIS call created the authority, decided before we add it. `joined` means a human answer
+      // opened by another delegation was shared with us; an existing key means it was already standing.
+      // Either way it is not ours to take back if we are refused — see `BankedApproval.owned`.
+      const owned = !outcome.joined
+        && !(expectedBinding ? session.sessionApprovalBindings.has(key) : session.sessionApprovals.has(key));
       if (expectedBinding) session.sessionApprovalBindings.set(key, expectedBinding);
       else session.sessionApprovals.add(key);
-      banked.push({ key, capability, subject, persisted: false });
+      banked.push({ key, capability, subject, persisted: false, owned });
     }
     if (outcome.scope === "always") {
       const now = new Date();

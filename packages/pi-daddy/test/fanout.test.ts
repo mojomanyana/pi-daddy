@@ -15,6 +15,7 @@ import {
   childSpawnId,
   splitBudget,
 } from "../src/fanout.ts";
+import { isCriticalAssuranceBlock } from "../extensions/execute-child.ts";
 import {
   childFailureOutcome,
   throwFanoutInfrastructure,
@@ -178,4 +179,61 @@ test("mixed refusal codes all survive a total fan-out failure", () => {
   // One shared code is still reported as that code — the aggregate is not a downgrade.
   const uniform = totalFanoutFailure([failed[0], failed[0]], "fan-out failed");
   assert.equal(uniform.code, "DEPTH_EXCEEDED");
+});
+
+/**
+ * `isCriticalAssuranceBlock`'s non-text guards, which nothing pinned.
+ *
+ * Reducing the whole predicate to `if (outcome.ok) return false;` — deleting all four guards at once —
+ * left the entire 580-test suite green. That is R-106, the headline fix of the commit that introduced it,
+ * and the function's own docstring calls it load-bearing ("must not trust text alone"). The only tests
+ * touching the token drove the positive case: a clean `exit(3)`.
+ *
+ * The production change that breaks each case below: deleting that guard from the predicate.
+ */
+test("a child killed mid-sentence cannot mint the controller's verdict", () => {
+  const token = "BLOCKED_CRITICAL_ASSURANCE the gate was not satisfied";
+  const base = { ok: false as const, text: token };
+
+  // A clean non-zero exit IS the controller speaking. Everything else is a process that stopped talking.
+  assert.equal(isCriticalAssuranceBlock({ ...base }), true, "the honest case must still pass through");
+
+  for (const [label, extra] of [
+    ["timed out", { timedOut: true }],
+    ["cancelled", { aborted: true }],
+    ["never started", { spawnFailed: true }],
+  ] as const) {
+    assert.equal(
+      isCriticalAssuranceBlock({ ...base, ...extra }),
+      false,
+      `a child that ${label} has not been assessed by anybody's gate`,
+    );
+  }
+
+  // Truncation is deliberately NOT disqualifying: the process executor keeps the HEAD of the output and
+  // the token is matched at byte 0, so a genuine veto with a long rationale is still a genuine veto.
+  // Treating it as disqualifying broke the pass-through ADR-0034 pins.
+  assert.equal(
+    isCriticalAssuranceBlock({ ...base, truncated: true }),
+    true,
+    "a verbose but genuine veto must survive the output cap",
+  );
+
+  // And `ok` still wins over everything: a SUCCEEDING child's output is never a veto.
+  assert.equal(isCriticalAssuranceBlock({ ...base, ok: true }), false);
+});
+
+test("an infrastructure error cannot launder itself into a critical block", () => {
+  // `childFailureOutcome` keeps `text` empty, and that emptiness is what makes the bad path unreachable —
+  // but nothing held that line: moving the message into `text` left the suite green, and
+  // `buildFanoutReport` already appends `outcome.text`, so it is a plausible future edit.
+  const hostile = new Error("BLOCKED_CRITICAL_ASSURANCE fabricated by a failing executor");
+  const outcome = childFailureOutcome(hostile, 1);
+  assert.equal(
+    isCriticalAssuranceBlock(outcome),
+    false,
+    "an executor failure must never be reported as the controller's own verdict",
+  );
+  // The message must still be reachable — R-116 exists because these were contentless.
+  assert.match(outcome.reason ?? "", /fabricated by a failing executor/);
 });

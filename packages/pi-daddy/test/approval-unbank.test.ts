@@ -65,3 +65,50 @@ test("a delegation refused AFTER the gate gives back the authority it banked", a
     "a refused delegation must not leave a session approval published to children",
   );
 });
+
+/**
+ * Unbanking must take back only what THIS call created.
+ *
+ * `unbankApprovals` revoked by `capability@subject` with no ownership check, so a refused delegation could
+ * destroy an approval a live sibling was running under. Two reachable shapes: a joined gate — one human
+ * answer shared by concurrent waiters, each recording it as its own — and a legacy-then-bound sequence,
+ * where a bound call re-prompts over a plain key that already exists and then deletes both on refusal.
+ *
+ * Driven directly because the sequence needs one delegation to SUCCEED while another is refused, which the
+ * wiring harness cannot stage without spawning. The production change that breaks it: deleting the
+ * `if (!entry.owned) continue;` guard.
+ */
+test("unbanking leaves alone the authority another delegation banked", async () => {
+  const { unbankApprovals } = await import("../extensions/approval-banking.ts");
+  const notes: string[] = [];
+  const sessionApprovals = new Set<string>(["tool:bash@reviewer", "tool:write@reviewer"]);
+  const sessionApprovalBindings = new Map<string, never>();
+  let republished = 0;
+  const session = {
+    cwd: await tempDir("unbank-ownership-"),
+    sessionApprovals,
+    sessionApprovalBindings,
+    definitions: new Map(),
+    publishChildEnv: () => { republished += 1; },
+  };
+
+  await unbankApprovals(
+    session as never,
+    { ui: { notify: (message: string) => notes.push(message) } },
+    [
+      // Ours: created by this call, so it comes back.
+      { key: "tool:bash@reviewer", capability: "tool:bash", subject: "reviewer", persisted: false, owned: true },
+      // Not ours: a joined dialog, or a key that was already standing. Must survive.
+      { key: "tool:write@reviewer", capability: "tool:write", subject: "reviewer", persisted: false, owned: false },
+    ],
+  );
+
+  assert.equal(sessionApprovals.has("tool:bash@reviewer"), false, "authority this call banked is taken back");
+  assert.equal(
+    sessionApprovals.has("tool:write@reviewer"),
+    true,
+    "authority another delegation banked must survive this one's refusal",
+  );
+  assert.equal(republished, 1, "children must be re-published from the narrowed set exactly once");
+  assert.deepEqual(notes, [], "nothing was stranded, so nothing is reported");
+});

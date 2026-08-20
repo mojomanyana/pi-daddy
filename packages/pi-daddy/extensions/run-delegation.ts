@@ -360,16 +360,19 @@ export async function runOneDelegation(
   }
 
   if (!plan.ok) {
-    // This is the ONE refusal decided after the gate has already run, so it is the one that can strand
-    // authority a human just granted. `run-delegation` moved the executor check above the gate for
-    // exactly this reason; the ledger-failure path kept the defect (R-113). Take it back before returning.
-    if (ledgerDenied && ctx) await unbankApprovals(session, ctx, approvalOutcome?.banked);
-    await releaseDelegationWorkspace({
-      prepared: preparedWorkspace,
-      childId: ids.childId,
-      ledgerPath: session.ledgerPath,
-      reason: "refused",
-    });
+    // EVERY refusal reached after the gate ran. Gating on `ledgerDenied` left three post-gate refusals
+    // stranding a 30-day approval — most reachably a human declining the SECOND of two gated capabilities,
+    // which needs no fault at all. The predicate is now the rule itself, so it cannot drift from it again.
+    if (ctx) await unbankApprovals(session, ctx, approvalOutcome?.banked);
+    // Guarded: this contains a `strict: true` append, and on the path where the ledger is already known
+    // unwritable an unguarded call replaced the governance refusal, and its code, with a ledger error.
+    try {
+      await releaseDelegationWorkspace({
+        prepared: preparedWorkspace, childId: ids.childId, ledgerPath: session.ledgerPath, reason: "refused",
+      });
+    } catch (error) {
+      plan = { ...plan, reason: `${plan.reason ?? "refused"}; workspace release record failed: ${String(error)}` };
+    }
     return {
       ok: false,
       text: "",

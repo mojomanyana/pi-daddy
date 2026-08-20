@@ -36,7 +36,12 @@ export interface DelegationOutcome {
 export function isCriticalAssuranceBlock(
   outcome: Pick<DelegationOutcome, "ok" | "text" | "timedOut" | "aborted" | "truncated" | "spawnFailed">,
 ): boolean {
-  if (outcome.ok || outcome.timedOut || outcome.aborted || outcome.truncated || outcome.spawnFailed) return false;
+  // `truncated` is deliberately NOT here. The process executor keeps the HEAD of the output
+  // (`run-child.ts` slices to the cap and stops appending) and the token is matched at byte 0, so a
+  // genuine veto with a rationale over the output cap is still a genuine veto — rejecting it broke the
+  // pass-through ADR-0034 pins, in the fix that was supposed to protect it. What must be rejected is a
+  // child that never finished speaking: killed, cancelled, or never started.
+  if (outcome.ok || outcome.timedOut || outcome.aborted || outcome.spawnFailed) return false;
   return outcome.text.trimStart().startsWith("BLOCKED_CRITICAL_ASSURANCE");
 }
 
@@ -135,7 +140,16 @@ export async function executePlannedChild(input: {
     if (session.ledgerPath) {
       terminalAttempted = true;
       await appendLedgerEvent(
-        { path: session.ledgerPath, strict: true },
+        {
+          path: session.ledgerPath,
+          // NOT strict, and this line is the whole point of R-99. The child has already run: failing
+          // closed here prevents nothing and used to discard a completed child's entire output while
+          // blaming "ledger" — under `delegate_all` it discarded every sibling's work too. The docstring
+          // above, `docs/SPEC.md` and the ADR-0034 amendment all promised this; only the comment changed.
+          // `capability_decision`, which PROVISIONS, still fails closed.
+          strict: false,
+          onFailure: (cause) => teardownFailures.push(`child lifecycle record failed: ${String(cause)}`),
+        },
         buildChildLifecycleEvent({
           childId,
           state: childFailed ? "failed" : "completed",
@@ -224,7 +238,10 @@ export async function executePlannedChild(input: {
       );
     }
     await teardown();
-    throw error;
+    // Attached, not dropped. `withTeardownNotes` was applied on both return paths and neither throw path,
+    // so a failed lease-release record — the thing that makes the NEXT owner report a phantom crash — was
+    // collected into an array nothing read.
+    throw errorWithTeardownNotes(error, teardownFailures);
   }
 
   /**
@@ -232,6 +249,25 @@ export async function executePlannedChild(input: {
    * orchestrator "ledger write failed" and nothing else made a completed delegation indistinguishable
    * from one that never happened, which is the one confusion this package must never create (R-99).
    */
+/**
+ * Surfaces a failed best-effort RECORD without displacing the failure it was recording. A
+ * `GovernanceRefusal` keeps its `code`, so a controller switching on it still sees the real refusal
+ * rather than a ledger complaint. pi renders only `error.message` (its `createErrorToolResult` drops
+ * everything else), so the notes go INTO the message — an `AggregateError.errors` array would be invisible.
+ */
+function errorWithTeardownNotes(error: unknown, notes: readonly string[]): unknown {
+  if (notes.length === 0) return error;
+  if (error instanceof GovernanceRefusal) {
+    return new GovernanceRefusal({
+      code: error.code,
+      message: [error.message, ...notes].join("; "),
+      ...(error.details ? { details: error.details } : {}),
+    });
+  }
+  if (error instanceof Error) return new Error([error.message, ...notes].join("; "), { cause: error });
+  return error;
+}
+
   function withTeardownNotes(outcome: DelegationOutcome): DelegationOutcome {
     if (teardownFailures.length === 0) return outcome;
     return { ...outcome, reason: [outcome.reason, ...teardownFailures].filter(Boolean).join("; ") };

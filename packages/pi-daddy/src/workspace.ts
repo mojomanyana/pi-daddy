@@ -129,6 +129,7 @@ export {
   acquireWorkspaceLease,
   defaultWorkspaceLeaseDir,
   leaseAcquisitionOutcome,
+  leaseReleaseLedgerOutcome,
   type LeaseReleaseOutcome,
   type WorkspaceLease,
 } from "./workspace-lease.ts";

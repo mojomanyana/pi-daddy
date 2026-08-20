@@ -72,6 +72,16 @@ function correlationRefusal(message: string, details?: Record<string, string | n
 }
 
 /**
+ * Size refusals get their own code, because they call for a different response: "you sent too much" is
+ * retryable by truncating, "you sent a field we do not recognise" is not. `CORRELATION_TOO_LARGE` was
+ * declared in the taxonomy and constructed nowhere, so the union advertised a distinction the code did not
+ * make — and the enumeration test kept the dead member green.
+ */
+function correlationTooLarge(message: string, details?: Record<string, string | number>): GovernanceRefusal {
+  return new GovernanceRefusal(refusal("CORRELATION_TOO_LARGE", `correlation metadata: ${message}`, details));
+}
+
+/**
  * Snapshot bounded JSON metadata so a caller cannot mutate a record after planning, and so nothing
  * unbounded or undeclared can reach the ledger through it.
  *
@@ -89,7 +99,7 @@ export function normaliseCorrelation(input: CorrelationMetadata | undefined): Co
   }
   if (encoded === undefined) throw correlationRefusal("must be a JSON object");
   if (Buffer.byteLength(encoded) > MAX_CORRELATION_BYTES) {
-    throw correlationRefusal(`exceeds ${MAX_CORRELATION_BYTES} bytes`, { limit: MAX_CORRELATION_BYTES });
+    throw correlationTooLarge(`exceeds ${MAX_CORRELATION_BYTES} bytes`, { limit: MAX_CORRELATION_BYTES });
   }
   const parsed = JSON.parse(encoded) as unknown;
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
@@ -111,7 +121,7 @@ export function normaliseCorrelation(input: CorrelationMetadata | undefined): Co
     if (key === "assurance_scope") {
       const size = Buffer.byteLength(JSON.stringify(value) ?? "");
       if (size > MAX_CORRELATION_SCOPE_BYTES) {
-        throw correlationRefusal(
+        throw correlationTooLarge(
           `assurance_scope exceeds ${MAX_CORRELATION_SCOPE_BYTES} bytes`,
           { limit: MAX_CORRELATION_SCOPE_BYTES, actual: size },
         );
@@ -128,7 +138,7 @@ export function normaliseCorrelation(input: CorrelationMetadata | undefined): Co
     }
     if (typeof value !== "string") throw correlationRefusal(`${key} must be a string`, { field: key });
     if (value.length > MAX_CORRELATION_FIELD_CHARS) {
-      throw correlationRefusal(
+      throw correlationTooLarge(
         `${key} exceeds ${MAX_CORRELATION_FIELD_CHARS} characters`,
         { field: key, limit: MAX_CORRELATION_FIELD_CHARS, actual: value.length },
       );

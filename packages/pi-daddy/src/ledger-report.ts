@@ -17,6 +17,7 @@ import { DELEGATE_SUBJECT } from "./approval.ts";
 import type { ApprovalSource } from "./approval.ts";
 import type { GrantRecord } from "./ledger.ts";
 import { isEscalationAttempt } from "./ledger.ts";
+import type { WorkspaceLeaseOutcome } from "./ledger-events.ts";
 
 export interface LedgerReport {
   /** False when the file is absent — a configuration state, not damage. */
@@ -123,7 +124,10 @@ export interface LedgerReport {
  * Deliberately reports rather than repairs. A corrupt line is evidence; rewriting the file to make it parse
  * would destroy the one artifact an investigation has.
  */
-const LEASE_OUTCOME_COUNTERS: Record<string, keyof LedgerReport["workspaceLeases"]> = {
+// Keyed by the UNION, not by `string`. Typed loosely, adding a `WorkspaceLeaseOutcome` member without a
+// counter compiled fine and then made `verifyLedger` file the package's own valid event as CORRUPTION —
+// the worst available outcome for an integrity signal, since real damage becomes noise.
+const LEASE_OUTCOME_COUNTERS: Record<WorkspaceLeaseOutcome, keyof LedgerReport["workspaceLeases"]> = {
   acquired: "acquired",
   uncontended: "uncontended",
   refused: "refused",
@@ -222,7 +226,9 @@ export async function verifyLedger(path: string): Promise<LedgerReport> {
         // Explicit map, not a name match: the ledger's outcome vocabulary and these counter names are
         // allowed to differ, and a valid event must never be counted as corruption because a counter
         // happens to be spelled differently.
-        const counter = LEASE_OUTCOME_COUNTERS[outcome];
+        const counter = Object.hasOwn(LEASE_OUTCOME_COUNTERS, outcome)
+          ? LEASE_OUTCOME_COUNTERS[outcome as WorkspaceLeaseOutcome]
+          : undefined;
         if (!counter) throw new Error("invalid workspace lease event");
         workspaceLeases[counter] += 1;
         events += 1;

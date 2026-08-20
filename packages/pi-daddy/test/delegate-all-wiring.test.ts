@@ -713,4 +713,3 @@ test("ADR-0031: a pre-0.16 ledger line, which has no executor field, still parse
   assert.equal(report.ok, true, "a line without `executor` must not read as corrupt");
   assert.equal(report.records, 1, "and it must still be counted");
 });
-

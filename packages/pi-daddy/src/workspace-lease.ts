@@ -1,4 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
+import {
+  atomicMetadata,
+  leasePaths,
+  readMetadata,
+  type LeaseMetadata,
+  type LeaseReleaseOutcome,
+  type WorkspaceLease,
+} from "./lease-record.ts";
+export type { LeaseReleaseOutcome, WorkspaceLease } from "./lease-record.ts";
 import { once } from "node:events";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -31,84 +40,22 @@ process.stdin.on("data",chunk=>{buffered+=chunk;for(;;){const i=buffered.indexOf
 process.stdin.on("end",()=>{if(clean||!target)return process.exit(0);if(target.process_pid){try{process.kill(target.process_pid,"SIGTERM")}catch{return process.exit(0)}setTimeout(()=>{try{process.kill(target.process_pid,"SIGKILL")}catch{}},500);return setTimeout(()=>process.exit(0),750);}let left=Number(process.env.PI_DADDY_LEASE_CLOSE_ATTEMPTS||10);const giveUp=()=>{try{if(process.env.PI_DADDY_LEASE_MARKER)writeFileSync(process.env.PI_DADDY_LEASE_MARKER,JSON.stringify({reason:"herdr-close-failed",herdr_tab:target.herdr_tab})+"\\n")}catch{}process.exit(0)};const close=()=>execFile("herdr",["tab","close",target.herdr_tab],error=>{if(!error)return process.exit(0);if(--left<=0)return giveUp();setTimeout(close,1000)});close();});
 process.stdin.resume();`;
 
-interface LeaseMetadata {
-  version: 1;
-  state: "active" | "released";
-  token: string;
-  owner_id: string;
-  workspace_id: string;
-  root: string;
-  pid: number;
-  acquired_at: string;
-  released_at?: string;
-  release_reason?: string;
-}
-
-export interface WorkspaceLease {
-  workspace: ValidatedWorkspace;
-  access: WorkspaceAccess;
-  ownerId: string;
-  /**
-   * `true` only when the kernel lock was free but metadata said the prior owner never released.
-   * `"unknown"` when the prior owner's record could not be read at all — that is not evidence of a
-   * clean handover and must not be recorded as one (R-100).
-   */
-  recovered: boolean | "unknown";
-  /** Attach the governed resource so parent death cleans it before the kernel lock is released. */
-  attachProcess(pid: number): void;
-  attachHerdrTab(tabId: string): void;
-  /** Resolves only when the kernel-lock helper exits before explicit release. */
-  lost: Promise<Error>;
-  /**
-   * NEVER throws. A cleanup function that can throw destroys its caller's return value — a completed
-   * child's entire output was discarded this way (R-99) — so the outcome is a VALUE the caller records:
-   *   `"released"`            the kernel lock was handed back and the handover recorded;
-   *   `"released-unrecorded"` the lock was handed back but the record failed, so the NEXT owner will
-   *                           report a recovery that did not happen unless this is ledgered;
-   *   `"lost"`                the helper was already gone, so this owner never released anything.
-   */
-  release(reason?: string): Promise<LeaseReleaseOutcome>;
-}
-
-export type LeaseReleaseOutcome = "released" | "released-unrecorded" | "lost";
-
-function leasePaths(leaseDir: string, root: string) {
-  // Canonical root, never caller-chosen workspace ID: aliases for one worktree must contend.
-  const key = createHash("sha256").update(root, "utf8").digest("hex");
-  return {
-    lock: join(leaseDir, `${key}.lock`),
-    metadata: join(leaseDir, `${key}.json`),
-    marker: join(leaseDir, `${key}.close-failed.json`),
-  };
-}
-
-async function atomicMetadata(path: string, value: LeaseMetadata): Promise<void> {
-  const temp = `${path}.${process.pid}.${randomUUID()}.tmp`;
-  await writeFile(temp, `${JSON.stringify(value, null, 2)}\n`, { encoding: "utf8", flag: "wx", mode: 0o600 });
-  await rename(temp, path);
-}
-
 /**
- * `null` means no prior owner was recorded. `"malformed"` means a record exists and cannot be read,
- * which is strictly LESS evidence than a readable "active" one and must never read as a clean handover
- * (R-100). Absent and unreadable are different facts; conflating them silently erases a real recovery.
+ * The ledger outcome for a release. ONE definition, exported, because two call sites had their own copies
+ * and the check runner's copy asserted `released` unconditionally — reproducing in the evidence path the
+ * exact defect this union was added to expose (R-100/R-103).
  */
-async function readMetadata(path: string): Promise<LeaseMetadata | null | "malformed"> {
-  let raw: string;
-  try {
-    raw = await readFile(path, "utf8");
-  } catch (error) {
-    return (error as NodeJS.ErrnoException)?.code === "ENOENT" ? null : "malformed";
-  }
-  try {
-    const value = JSON.parse(raw) as Partial<LeaseMetadata>;
-    if (value?.version !== 1) return "malformed";
-    if (value.state !== "active" && value.state !== "released") return "malformed";
-    if (typeof value.token !== "string" || !value.token) return "malformed";
-    return value as LeaseMetadata;
-  } catch {
-    return "malformed";
-  }
+export function leaseReleaseLedgerOutcome(
+  outcome: LeaseReleaseOutcome | "retained",
+  reason: string,
+): "timeout" | "released" | "released-unrecorded" | "lost" | "retained" | "uncontended" {
+  if (outcome === "retained") return "retained";
+  if (outcome === "lost") return "lost";
+  if (outcome === "released-unrecorded") return "released-unrecorded";
+  if (outcome === "not-held") return "uncontended";
+  // `released-superseded` is a clean handover as far as the ledger is concerned: the lock went back and the
+  // record is correct — it just belongs to somebody else now.
+  return reason === "timeout" ? "timeout" : "released";
 }
 
 /**
@@ -142,8 +89,11 @@ export async function acquireWorkspaceLease(input: {
       recovered: false,
       attachProcess: () => {},
       attachHerdrTab: () => {},
+      markRetained: async () => {},
+      readCloseFailure: async () => null,
       lost: new Promise(() => {}),
-      release: async () => "released",
+      // No kernel lock was ever taken, so there is no handover to claim (R-105, release side).
+      release: async () => "not-held",
     };
   }
   if (input.signal?.aborted) {
@@ -259,14 +209,19 @@ export async function acquireWorkspaceLease(input: {
     ));
   }
 
-  let released = false;
+  // TWO variables, deliberately. `releasing` goes up the instant release begins, because the handshake
+  // below closes the helper on purpose — and if `lost` could still fire during it, an intentional release
+  // would report itself as a lost lease. `settled` memoizes the ANSWER, so a second call cannot invent a
+  // clean handover. Collapsing these into one flag set at the end broke every check-runner test.
+  let releasing = false;
+  let settled: LeaseReleaseOutcome | undefined;
   let lose!: (error: Error) => void;
   const lost = new Promise<Error>((resolveLost) => { lose = resolveLost; });
   const lostError = () => new Error(`workspace writer lease helper exited for ${input.workspace.workspaceId}`);
-  holder.once("close", () => { if (!released) lose(lostError()); });
+  holder.once("close", () => { if (!releasing) lose(lostError()); });
   if (holder.exitCode !== null || holder.signalCode !== null) queueMicrotask(() => lose(lostError()));
   const attach = (value: { process_pid: number } | { herdr_tab: string }) => {
-    if (released || holder.exitCode !== null || holder.signalCode !== null || !holder.stdin?.writable) {
+    if (releasing || holder.exitCode !== null || holder.signalCode !== null || !holder.stdin?.writable) {
       throw new GovernanceRefusal(refusal(
         "WORKSPACE_LEASE_STALE", `writer lease for ${input.workspace.workspaceId} was lost before child attachment`,
       ));
@@ -281,19 +236,41 @@ export async function acquireWorkspaceLease(input: {
     attachProcess(pid) { attach({ process_pid: pid }); },
     attachHerdrTab(tabId) { attach({ herdr_tab: tabId }); },
     lost,
+    async markRetained(reason = "retained") {
+      // Deliberately does NOT touch the kernel lock or the helper: the pane may still be live. It only
+      // stops the record from looking like a crash.
+      const current = await readMetadata(paths.metadata);
+      if (current !== "malformed" && current?.token === token) {
+        await atomicMetadata(paths.metadata, {
+          ...metadata, state: "released", released_at: new Date().toISOString(), release_reason: `retained:${reason}`,
+        }).catch(() => undefined);
+      }
+    },
+    async readCloseFailure() {
+      try {
+        return JSON.parse(await readFile(paths.marker, "utf8")) as { reason: string; herdr_tab?: string };
+      } catch {
+        return null;
+      }
+    },
     async release(reason = "completed"): Promise<LeaseReleaseOutcome> {
-      if (released) return "released";
-      released = true;
+      // Memoized, not a boolean. A second call used to answer "released" whatever the first returned, so a
+      // retry — or a `finally` after an explicit release — read a clean handover that never happened.
+      if (settled) return settled;
+      releasing = true;
       // Already gone: this owner never released anything, and saying so is the caller's business to
       // record. Throwing here discarded completed work and masked the real error (R-99).
-      if (holder.exitCode !== null || holder.signalCode !== null) return "lost";
+      if (holder.exitCode !== null || holder.signalCode !== null) return (settled = "lost");
 
       // Default FALSE: "recorded" must mean this owner actually wrote its own handover. Anything else —
       // an unreadable record, or a successor's token in place of ours — means the lock goes back but the
       // record does not say so, and the NEXT owner will report a recovery that never happened unless the
       // caller ledgers it (R-100). Only the current token may mark the handover, so a stale lease object
       // can never overwrite a live successor.
-      let recorded = false;
+      // Three outcomes, because they call for three different responses: we wrote our handover; a
+      // successor already owns the record and we correctly left it alone; or the record is unreadable or
+      // unwritable and somebody has to be told.
+      let how: LeaseReleaseOutcome = "released-unrecorded";
       const current = await readMetadata(paths.metadata);
       if (current !== "malformed" && current?.token === token) {
         try {
@@ -303,10 +280,13 @@ export async function acquireWorkspaceLease(input: {
             released_at: new Date().toISOString(),
             release_reason: reason,
           });
-          recorded = true;
+          how = "released";
         } catch {
-          recorded = false;
+          how = "released-unrecorded";
         }
+      } else if (current !== "malformed" && current !== null) {
+        // A live successor's record. Declining to overwrite it is the token guard working, not a fault.
+        how = "released-superseded";
       }
 
       holder.stdin?.write(`${JSON.stringify({ release: true })}\n`);
@@ -316,7 +296,7 @@ export async function acquireWorkspaceLease(input: {
       }
       // The helper holds the lock fd in its own right, so the wrapper alone is not enough (R-99).
       if (holder.exitCode === null && holder.signalCode === null) hardKill();
-      return recorded ? "released" : "released-unrecorded";
+      return (settled = how);
     },
   };
 }

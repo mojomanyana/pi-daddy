@@ -128,8 +128,11 @@ export async function releaseDelegationWorkspace(input: {
   retain?: boolean;
 }): Promise<LeaseReleaseOutcome | "retained" | undefined> {
   if (!input.prepared) return undefined;
+  // A retained lease writes no `state: "released"`, so the record stays `active` and the NEXT owner reads
+  // it as a crash — the exact blame `retained` was added to remove. Marking it keeps the successor honest;
+  // R-104 was fixed in the release event's wording only.
   const outcome: LeaseReleaseOutcome | "retained" = input.retain
-    ? "retained"
+    ? (await input.prepared.lease.markRetained(input.reason), "retained")
     : await input.prepared.lease.release(input.reason);
   if (input.ledgerPath) {
     await appendLedgerEvent(
