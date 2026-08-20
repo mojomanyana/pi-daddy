@@ -14,6 +14,7 @@
 
 import { AGENT_WILDCARD, type Capability } from "./resolve.ts";
 import { WILDCARD } from "./pi-tools.ts";
+import { GovernanceRefusal, refusal } from "./refusals.ts";
 
 /** The capability that authorises spawning a definition (ADR-0017). `tool:*` satisfies any of them. */
 export const agentCapability = (name: string): Capability => `agent:${name}`;
@@ -48,4 +49,56 @@ export function normaliseCapability(raw: string): Capability {
     return value;
   }
   return `tool:${value}`;
+}
+
+/**
+ * Characters that make a capability id mean something OTHER than one capability.
+ *
+ * A capability id is never a list. `PI_GRANTS_GRANT` is comma-separated and `parseList` trims and splits
+ * it, so a comma inside a single id means the child reads it as several — including ones nothing granted.
+ * Newlines are here for the same reason one level out: the grant travels through an environment variable
+ * and, via `assertGrantIsWritable`, a shell-sourced file.
+ *
+ * **Measured, on the published 0.18.0.** A root holding `agent:*` (or `tool:*`) that requested
+ * `agent:x,tool:bash` had it admitted by the wildcard's prefix rule, written verbatim into the child's
+ * grant, and split by the child into `agent:x` + `tool:bash` — minting a capability the root never held,
+ * with `denied: []` so nothing recorded an escalation and the ledger line looked clean.
+ *
+ * Deliberately a blocklist of structurally dangerous characters rather than the full grammar whitelist in
+ * `isSafeCapability`. That whitelist is right where it lives — the boundary that GENERATES a grant — but
+ * this is the enforcement path, which must keep accepting whatever ids operators already have. A security
+ * patch to a released version should close the hole without inventing a new way to refuse a legitimate
+ * setup. `grant-env.ts` predicted this channel: "the third channel — whatever it turns out to be — should
+ * cost a refusal rather than an injection."
+ */
+const CAPABILITY_ID_SEPARATORS = /[,\r\n\0]/;
+
+/** False when an id would be read as more than one capability by any channel that carries it. */
+export function isWellFormedCapability(id: string): boolean {
+  return id.length > 0 && !CAPABILITY_ID_SEPARATORS.test(id) && id.trim() === id;
+}
+
+/**
+ * The write-side backstop, for every channel that joins capabilities into one string.
+ *
+ * `covered()` already refuses to GRANT a malformed id, so this should be unreachable — which is exactly
+ * why it exists. `grant-env.ts` says it better than I can: "the third channel — whatever it turns out to
+ * be — should cost a refusal rather than an injection. A guard that depends on my enumeration being
+ * complete is not a guard." The propagation channel turned out to be that third channel, and it had no
+ * backstop while the file-writing channel did.
+ *
+ * Loud rather than silently filtered: a malformed id here means something upstream admitted one, and
+ * dropping it quietly would hide the defect that produced it.
+ */
+export function assertCapabilitiesArePropagatable(grant: readonly Capability[]): void {
+  const malformed = grant.filter((c) => !isWellFormedCapability(c));
+  if (malformed.length === 0) return;
+  throw new GovernanceRefusal(refusal(
+    "GRANT_ID_MALFORMED",
+    `refusing to build a child environment: ${JSON.stringify(malformed)} contain characters that are not ` +
+    `part of a capability id. The grant is comma-separated, so a child would read these as several ` +
+    `capabilities — including ones nothing granted. Report this: a malformed id reached propagation, ` +
+    `which means a guard upstream admitted it.`,
+    { malformed: malformed.join(" ") },
+  ));
 }

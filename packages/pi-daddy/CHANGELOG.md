@@ -12,6 +12,24 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## 0.18.1 — SECURITY: a capability id containing a comma minted authority
+
+**Upgrade if you use `tool:*` or `agent:*` in any grant.** Present in 0.18.0 and every earlier published
+version that has the wildcard prefix rules.
+
+`PI_GRANTS_GRANT` is comma-separated. A capability id containing a comma was admitted by a wildcard's
+**prefix** rule — `agent:x,tool:bash` starts with `agent:`, so a root holding `agent:*` covered it — then
+written verbatim into the child's grant and split by the child into two capabilities. The child received a
+real `tool:bash` from a tree whose root never held it, `denied` was empty, so nothing recorded an
+escalation and the ledger line read as an ordinary authorised delegation.
+
+`tool:*` is affected identically, since it covers every namespace.
+
+Fixed with two guards: a malformed id can no longer be **granted** (it lands in `denied` and is recorded as
+the escalation attempt it is), and neither grant writer will **emit** one. No legitimate id is affected —
+`ext:@scope/pkg/tool`, `skill:my-skill`, `agent:my_agent` and both wildcards are unchanged. Tracked as
+R-132.
+
 ## 0.18.0 — generic runtime enforcement for external controllers
 
 - Optional correlation metadata joins capability decisions to run/task/workspace/context IDs, candidate

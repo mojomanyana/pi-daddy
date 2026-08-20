@@ -15,6 +15,7 @@ import {
   parseList,
 } from "../src/propagation.ts";
 import { planDelegation } from "../src/delegate.ts";
+import { isWellFormedCapability } from "../src/capabilities.ts";
 
 test("the race is gone by construction: child env depends only on parent-level facts", () => {
   // Two different concurrent spawns from the same parent must inherit byte-identical environments.
@@ -289,4 +290,64 @@ test("mergeChildEnv does not mutate the environment it was handed", () => {
   const parentEnv = { [ENV_APPROVED]: "tool:write" };
   mergeChildEnv(parentEnv, {});
   assert.equal(parentEnv[ENV_APPROVED], "tool:write", "the live process.env must survive a spawn intact");
+});
+
+/**
+ * A capability id is never a list.
+ *
+ * **Measured on the published 0.18.0 before this fix.** A root holding `agent:*` (or `tool:*`) that
+ * requested `agent:x,tool:bash` had it admitted by the wildcard's PREFIX rule — `"agent:x,tool:bash"`
+ * starts with `agent:` — written verbatim into the child's `PI_GRANTS_GRANT`, and split by the child's
+ * own `parseList` into two capabilities. The child received a real `tool:bash` from a tree whose root
+ * never held it, `denied` was empty, and the ledger line looked clean. That is minting authority, in the
+ * package whose entire purpose is to prevent it.
+ *
+ * Two guards, because `grant-env.ts` already argued for exactly this shape: refuse to GRANT it, and refuse
+ * to WRITE it, since "a guard that depends on my enumeration being complete is not a guard".
+ *
+ * The production changes that break these: removing `isWellFormedCapability` from `covered()` in
+ * `resolve.ts`, or removing the `assertCapabilitiesArePropagatable` call from either grant writer.
+ */
+test("a comma in a capability id is refused, not split into extra capabilities", () => {
+  const ownGrant = ["agent:*", "tool:read", "tool:delegate"];
+  const plan = planDelegation(
+    { task: "t", tools: ["read", "delegate", "agent:x,tool:bash"] },
+    { depth: 0, maxDepth: 3, spawnId: "d0", childSpawnId: "d0.1", ownGrant, gated: [] },
+  );
+  assert.equal(plan.ok, false, "a wildcard prefix must not admit an id that is really two");
+  assert.equal(plan.refusal?.code, "CAPABILITY_ESCALATION");
+  // Recorded, so the attempt is visible to `isEscalationAttempt` and every audit query rather than silent.
+  assert.deepEqual(plan.result.denied, ["agent:x,tool:bash"]);
+
+  // The same shape through `tool:*`, which covers every namespace.
+  const viaWildcard = planDelegation(
+    { task: "t", tools: ["tool:x,tool:bash"] },
+    { depth: 0, maxDepth: 3, spawnId: "d0", childSpawnId: "d0.2", ownGrant: ["tool:*"], gated: [] },
+  );
+  assert.deepEqual(viaWildcard.result.denied, ["tool:x,tool:bash"]);
+});
+
+test("a legitimate grant is unaffected, including the exotic id forms", () => {
+  // The fix must not narrow what an operator can already express. `ext:` ids carry `/` and may be
+  // npm-scoped; `skill:`/`agent:` names carry `-` and `_`.
+  for (const id of ["tool:read", "ext:@scope/pkg/web_search", "skill:my-skill", "agent:my_agent", "tool:*", "agent:*"]) {
+    assert.equal(isWellFormedCapability(id), true, id);
+  }
+  for (const id of ["agent:x,tool:bash", "tool:a\nb", "tool:a\rb", " tool:read", "tool:read ", ""]) {
+    assert.equal(isWellFormedCapability(id), false, JSON.stringify(id));
+  }
+});
+
+test("the write-side backstop refuses rather than emitting a splittable grant", () => {
+  // Unreachable through `covered()` — which is the point. It fires only if something upstream admitted a
+  // malformed id, and it is loud so that defect surfaces instead of being quietly filtered away.
+  assert.throws(
+    () => childEnv({ ownGrant: ["tool:read", "agent:x,tool:bash"], depth: 0, maxDepth: 2, gated: [], approved: [] }),
+    (error: Error & { code?: string }) => {
+      assert.equal(error.code, "GRANT_ID_MALFORMED");
+      assert.match(error.message, /would read these as several capabilities/);
+      return true;
+    },
+  );
+  assert.doesNotThrow(() => childEnv({ ownGrant: ["tool:read"], depth: 0, maxDepth: 2, gated: [], approved: [] }));
 });
