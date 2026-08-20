@@ -287,3 +287,88 @@ test("SIGKILL releases the kernel lease and the next owner records recovery", as
   assert.equal(recovered.recovered, true);
   await recovered.release("recovered");
 });
+
+/**
+ * ADR-0034's stated negative: "Unsupported or ambiguous state refuses rather than silently falling back to
+ * an in-memory lock." `acquireWorkspaceLease` declares `flockCommand` and `acquisitionTimeoutMs` — seams
+ * that exist ONLY for testing — and no test used either, so the fail-closed half of the writer-lease design
+ * was unverified. Silently falling back here would mean two governed writers believing they were alone.
+ */
+test("no working flock means no lease, never an unlocked one", async () => {
+  const root = await gitWorkspace();
+  const leaseDir = await tempDir("workspace-leases-");
+  const workspace = await validateRegisteredWorkspace({ workspaceId: "w1", registeredRoot: root });
+  await assert.rejects(
+    () => acquireWorkspaceLease({
+      workspace, access: "write", leaseDir, ownerId: "no-flock",
+      flockCommand: join(root, "definitely-not-a-real-flock"),
+    }),
+    (error: unknown) => {
+      assert.equal((error as GovernanceRefusal).code, "WORKSPACE_LEASE_STALE");
+      return true;
+    },
+  );
+});
+
+/**
+ * ADR-0034: "The registered root is realpathed, verified as a Git-registered worktree." Deleting the
+ * `git worktree list` membership check left the suite green, because every fixture in this file `git init`s
+ * first — so the worktree list always contained the root and the check could never fire. An operator-owned
+ * config file whose path validator is untested is the same shape as R-77/R-78.
+ */
+test("a registered root that is not a Git worktree is refused", async () => {
+  const plain = await tempDir("workspace-not-git-");
+  await assert.rejects(
+    () => validateRegisteredWorkspace({ workspaceId: "w1", registeredRoot: plain }),
+    (error: unknown) => {
+      assert.equal((error as GovernanceRefusal).code, "WORKSPACE_NOT_REGISTERED");
+      return true;
+    },
+  );
+
+  // A path INSIDE a worktree is not its root either: it would silently move the child's initial cwd.
+  const root = await gitWorkspace();
+  const inside = join(root, "nested");
+  await mkdir(inside, { recursive: true });
+  await assert.rejects(
+    () => validateRegisteredWorkspace({ workspaceId: "w1", registeredRoot: inside }),
+    (error: unknown) => {
+      assert.equal((error as GovernanceRefusal).code, "WORKSPACE_NOT_REGISTERED");
+      return true;
+    },
+  );
+});
+
+test("a malformed workspace registry grants nothing, loudly", async () => {
+  const root = await gitWorkspace();
+  const dir = await tempDir("workspace-bad-registry-");
+  const cases: Record<string, unknown> = {
+    "wrong-version.json": { version: 2, workspaces: { w1: { path: root } } },
+    "workspaces-is-an-array.json": { version: 1, workspaces: [{ path: root }] },
+    "no-workspaces.json": { version: 1 },
+    "relative-path.json": { version: 1, workspaces: { w1: { path: "relative/dir" } } },
+    "empty-id.json": { version: 1, workspaces: { "": { path: root } } },
+    "path-is-not-a-string.json": { version: 1, workspaces: { w1: { path: 7 } } },
+  };
+  for (const [name, body] of Object.entries(cases)) {
+    const path = join(dir, name);
+    await writeFile(path, JSON.stringify(body));
+    await assert.rejects(
+      () => loadWorkspaceRegistry(path),
+      (error: unknown) => {
+        assert.equal((error as GovernanceRefusal).code, "WORKSPACE_NOT_REGISTERED", name);
+        return true;
+      },
+      name,
+    );
+  }
+
+  // Unreadable is also refused, rather than read as "no workspaces are registered".
+  await assert.rejects(
+    () => loadWorkspaceRegistry(join(dir, "does-not-exist.json")),
+    (error: unknown) => {
+      assert.equal((error as GovernanceRefusal).code, "WORKSPACE_NOT_REGISTERED");
+      return true;
+    },
+  );
+});

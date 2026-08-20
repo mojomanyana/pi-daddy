@@ -31,6 +31,9 @@ import type { Capability } from "../src/resolve.ts";
 import { approvalBindingDigest, type ApprovalBinding } from "../src/correlation.ts";
 import type { RefusalCode } from "../src/refusals.ts";
 import type { GrantsSession } from "./session.ts";
+import type { BankedApproval } from "./approval-banking.ts";
+export { unbankApprovals } from "./approval-banking.ts";
+export type { BankedApproval } from "./approval-banking.ts";
 
 /**
  * What a subject looks like right now, for the confused-deputy check in the approval store.
@@ -127,6 +130,17 @@ export interface ApprovalOutcome {
    * dismissal is a queue or a longer timeout, `no-ui` is an operator pre-approving, `error` is a defect.
    */
   gateOutcome?: PromptOutcomeKind;
+  /**
+   * Authority this gate LEFT BEHIND: session keys added, and 30-day entries written to disk.
+   *
+   * Recorded so a caller that refuses after the gate can take it back. `run-delegation.ts` already
+   * documents the rule at length — "a refused operation must not leave authority behind" — and moved the
+   * executor check before the gate to honour it. The adjacent path did not: an operator clicks *Always*,
+   * the load-bearing ledger append then fails (a lock timeout under fan-out is a documented condition),
+   * the delegation is refused, and a project-wide 30-day approval survives for a spawn that never
+   * happened (R-113).
+   */
+  banked?: BankedApproval[];
   refusalCode?: RefusalCode;
   reason?: string;
 }
@@ -233,6 +247,7 @@ export async function obtainApprovals(
   const expiresAt: Record<Capability, string> = { ...pre.expiresAt };
   const uses: Record<Capability, { max: number; remaining: number }> = {};
   let humanDenied = false;
+  const banked: BankedApproval[] = [];
   let gateOutcome: PromptOutcomeKind | undefined;
   let refusalCode: RefusalCode | undefined;
   let reason: string | undefined;
@@ -276,6 +291,7 @@ export async function obtainApprovals(
       const key = approvalKey(capability, subject);
       if (expectedBinding) session.sessionApprovalBindings.set(key, expectedBinding);
       else session.sessionApprovals.add(key);
+      banked.push({ key, capability, subject, persisted: false });
     }
     if (outcome.scope === "always") {
       const now = new Date();
@@ -309,6 +325,12 @@ export async function obtainApprovals(
               snapshot,
               now,
             );
+      if (written) {
+        // Mark the on-disk half so a later refusal knows there is a file entry to take back, not just a
+        // session key that dies with the process.
+        const persistedKey = approvalKey(capability, subject);
+        for (const entry of banked) if (entry.key === persistedKey) entry.persisted = true;
+      }
       if (!written) {
         // The human already said yes; the security decision stands. Only the convenience cache
         // failed, so this downgrades scope rather than refusing the delegation (see approval-store.ts).
@@ -341,5 +363,6 @@ export async function obtainApprovals(
     gateOutcome,
     refusalCode,
     reason,
+    banked,
   };
 }

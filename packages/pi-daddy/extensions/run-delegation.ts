@@ -14,7 +14,14 @@
 import { DELEGATE_SUBJECT, shouldSeekApproval } from "../src/approval.ts";
 import { planDelegation } from "../src/delegate.ts";
 import { appendRecord, buildRecord } from "../src/ledger.ts";
-import { obtainApprovals, republishable, snapshotOf, type ApprovalOutcome, type ApprovalUIContext } from "./approvals.ts";
+import {
+  obtainApprovals,
+  republishable,
+  snapshotOf,
+  unbankApprovals,
+  type ApprovalOutcome,
+  type ApprovalUIContext,
+} from "./approvals.ts";
 import type { InheritableApproval } from "../src/approval.ts";
 import type { GrantsSession } from "./session.ts";
 import type { CorrelationMetadata } from "../src/correlation.ts";
@@ -262,6 +269,7 @@ export async function runOneDelegation(
   let preparedWorkspace: PreparedWorkspace | undefined;
   let approvalOutcome: ApprovalOutcome | undefined;
   let plan: ReturnType<typeof planDelegation>;
+  let ledgerDenied = false;
 
   if (spec.workspace && !executorRefusal) {
     // Check non-liftable refusals before taking a lease, and take the lease before asking a human. This
@@ -341,11 +349,21 @@ export async function runOneDelegation(
     ).catch((error) => {
       // G6 / A-R4 + B-I2: fail closed. This path PROVISIONS, so an unrecorded delegation would be a
       // child running with granted capabilities and no audit line.
-      plan = { ...plan, ok: false, reason: `grants: ledger write failed, denying — ${String(error)}` };
+      plan = {
+        ...plan,
+        ok: false,
+        reason: `grants: ledger write failed, denying — ${String(error)}`,
+        refusal: structuredRefusal("LEDGER_WRITE_FAILED", `grants: ledger write failed, denying — ${String(error)}`),
+      };
+      ledgerDenied = true;
     });
   }
 
   if (!plan.ok) {
+    // This is the ONE refusal decided after the gate has already run, so it is the one that can strand
+    // authority a human just granted. `run-delegation` moved the executor check above the gate for
+    // exactly this reason; the ledger-failure path kept the defect (R-113). Take it back before returning.
+    if (ledgerDenied && ctx) await unbankApprovals(session, ctx, approvalOutcome?.banked);
     await releaseDelegationWorkspace({
       prepared: preparedWorkspace,
       childId: ids.childId,

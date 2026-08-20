@@ -22,20 +22,54 @@ const ctx = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
-test("the refusal taxonomy includes the stable critical-assurance integration codes", () => {
-  for (const code of [
-    "CAPABILITY_ESCALATION",
-    "DEFINITION_NOT_AUTHORIZED",
-    "UNDECLARED_TOOLS",
-    "UNKNOWN_TOOL",
-    "GATED_UNAPPROVED",
-    "APPROVAL_EXPIRED",
-    "APPROVAL_SCOPE_MISMATCH",
-    "DEPTH_EXCEEDED",
-    "FANOUT_EXCEEDED",
-    "WORKSPACE_WRITE_CONFLICT",
-    "WORKSPACE_LEASE_STALE",
-  ]) assert.ok(REFUSAL_CODES.includes(code as never), code);
+/**
+ * The complete refusal union, listed by hand.
+ *
+ * Listed COMPLETELY and length-checked, because the previous version of this guard enumerated eleven of
+ * eighteen members — so the seven `CHECK_*`/`EXECUTOR_*` codes could be deleted from `REFUSAL_CODES` with
+ * this test still green, which is the exact failure mode the guard exists to prevent. Adding a code to the
+ * union without adding it here now fails.
+ */
+const ENUMERATED = [
+  "CAPABILITY_ESCALATION",
+  "DEFINITION_NOT_AUTHORIZED",
+  "UNDECLARED_TOOLS",
+  "UNKNOWN_TOOL",
+  "GATED_UNAPPROVED",
+  "APPROVAL_EXPIRED",
+  "APPROVAL_SCOPE_MISMATCH",
+  "APPROVAL_FLOW_FAILED",
+  "DEPTH_EXCEEDED",
+  "FANOUT_EXCEEDED",
+  "EXECUTOR_UNAVAILABLE",
+  "CHILD_TIMED_OUT",
+  "CHILD_CANCELLED",
+  "CHILD_EXIT_NONZERO",
+  "TASK_MISSING",
+  "UNKNOWN_DEFINITION",
+  "CEILING_PATTERNS_UNRESOLVED",
+  "NARROWING_VIOLATED",
+  "DEFINITION_UNREADABLE",
+  "CORRELATION_TOO_LARGE",
+  "CORRELATION_INVALID",
+  "LEDGER_WRITE_FAILED",
+  "FANOUT_FAILED",
+  "WORKSPACE_NOT_REGISTERED",
+  "WORKSPACE_WRITE_CONFLICT",
+  "WORKSPACE_LEASE_STALE",
+  "CHECK_NOT_CONFIGURED",
+  "CHECK_CONFIGURATION_INVALID",
+  "CHECK_IDENTITY_UNAVAILABLE",
+  "CHECK_IDENTITY_MISMATCH",
+] as const;
+
+test("the refusal taxonomy is enumerated in full, so it cannot silently shrink or drift", () => {
+  for (const code of ENUMERATED) assert.ok(REFUSAL_CODES.includes(code as never), `missing from the union: ${code}`);
+  assert.deepEqual(
+    [...REFUSAL_CODES].sort(),
+    [...ENUMERATED].sort(),
+    "the union and this enumeration must match exactly — add new codes here too",
+  );
 });
 
 test("structured refusals retain actionable human text", () => {

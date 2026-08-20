@@ -15,6 +15,12 @@ import {
   childSpawnId,
   splitBudget,
 } from "../src/fanout.ts";
+import {
+  childFailureOutcome,
+  throwFanoutInfrastructure,
+  totalFanoutFailure,
+} from "../extensions/fanout-outcome.ts";
+import { GovernanceRefusal, refusal } from "../src/refusals.ts";
 
 test("spawning spends from the budget before the remainder is shared", () => {
   // The parent pays one unit per child it creates. Without that, spawning would be free for the parent and
@@ -95,4 +101,81 @@ test("F8: sibling ids are distinct, hierarchical and reproducible", () => {
   // Reproducible: the same fan-out yields the same ids, which is what makes a ledger diffable. A random
   // id would satisfy uniqueness and lose this.
   assert.equal(childSpawnId("d0", 0), childSpawnId("d0", 0));
+});
+
+/**
+ * The aggregation `delegate_all` performs, tested directly.
+ *
+ * These exist because the mutation audit found three of the risk register's claimed regressions absent:
+ * R-97's "fan-out catches and awaits every sibling before rethrowing" and two of R-98's four fixes could
+ * each be reverted with the whole suite staying green. The wiring tests drive the real tool but cannot
+ * construct the awkward combinations — a critical block *and* an infrastructure throw in one call — so the
+ * aggregation is now a pure module and these are unit tests of it.
+ */
+test("every sibling's infrastructure error survives, not just the first", () => {
+  const first = new Error("herdr writer tab would not close");
+  const second = new Error("workspace lease went stale");
+  const outcomes = [childFailureOutcome(first, 1), childFailureOutcome(second, 1)];
+
+  assert.throws(
+    () => throwFanoutInfrastructure(outcomes, [first, second]),
+    (error: unknown) => {
+      assert.ok(error instanceof AggregateError, "two failures must not collapse into one");
+      assert.deepEqual((error as AggregateError).errors, [first, second]);
+      return true;
+    },
+  );
+
+  // One error is still raised as itself, so an ordinary single failure keeps its identity and its type.
+  assert.throws(() => throwFanoutInfrastructure(outcomes, [first]), (error: unknown) => error === first);
+});
+
+test("a critical-assurance block outranks infrastructure noise without hiding it", () => {
+  const retained = new Error("herdr writer tab would not close — lease retained");
+  const blocked = {
+    ok: false, text: "BLOCKED_CRITICAL_ASSURANCE gate not satisfied", reason: "exited with code 3",
+    granted: [], depth: 1, exitCode: 3,
+  };
+
+  // The token wins — it is the answer the caller is waiting for, and ADR-0034 requires it unchanged.
+  assert.throws(
+    () => throwFanoutInfrastructure([blocked], []),
+    (error: unknown) => {
+      assert.equal((error as Error).message, blocked.text);
+      return true;
+    },
+  );
+
+  // But a retained writer lease must not vanish behind it: nobody was told a lease was held with no owner.
+  assert.throws(
+    () => throwFanoutInfrastructure([blocked], [retained]),
+    (error: unknown) => {
+      assert.ok(error instanceof AggregateError);
+      assert.equal((error as AggregateError).message, blocked.text, "the upstream token is still the message");
+      assert.deepEqual((error as AggregateError).errors, [retained]);
+      return true;
+    },
+  );
+});
+
+test("a swallowed child reports which error it swallowed", () => {
+  const outcome = childFailureOutcome(new GovernanceRefusal(refusal("WORKSPACE_LEASE_STALE", "lease went stale")), 2);
+  assert.equal(outcome.ok, false);
+  assert.equal(outcome.refusal?.code, "WORKSPACE_LEASE_STALE");
+  assert.match(outcome.reason ?? "", /lease went stale/);
+  assert.equal(outcome.depth, 2);
+});
+
+test("mixed refusal codes all survive a total fan-out failure", () => {
+  const failed = [
+    { ok: false, text: "", reason: "a", granted: [], depth: 1, exitCode: null, refusal: refusal("DEPTH_EXCEEDED", "a") },
+    { ok: false, text: "", reason: "b", granted: [], depth: 1, exitCode: null, refusal: refusal("GATED_UNAPPROVED", "b") },
+  ];
+  const mixed = totalFanoutFailure(failed, "fan-out failed");
+  assert.equal(mixed.code, "FANOUT_FAILED");
+  assert.equal(mixed.details?.codes, "DEPTH_EXCEEDED,GATED_UNAPPROVED");
+
+  // One shared code is still reported as that code — the aggregate is not a downgrade.
+  const uniform = totalFanoutFailure([failed[0], failed[0]], "fan-out failed");
+  assert.equal(uniform.code, "DEPTH_EXCEEDED");
 });

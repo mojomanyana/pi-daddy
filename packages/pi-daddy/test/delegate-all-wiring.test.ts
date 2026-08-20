@@ -161,9 +161,16 @@ test("mixed all-failed fan-out does not assign one child's refusal code to the a
       () => tools.get("delegate_all")!.execute("mixed", {
         children: [{ task: "denied", tools: ["write"] }, { task: "runtime", tools: ["read"] }],
       }, undefined, undefined, ctx),
-      (error: Error & { code?: string }) => {
-        assert.equal(error.code, undefined);
+      (error: Error & { code?: string; details?: Record<string, unknown> }) => {
+        // The name of this test is the invariant: no CHILD's code may become the aggregate's. It used to
+        // be checked by asserting no code at all, which also threw away the machine-readable half — on
+        // total failure `details.refusals` is not returned, so the codes existed nowhere. They are named
+        // in `details` now, under an aggregate code that is deliberately not any child's.
+        assert.equal(error.code, "FANOUT_FAILED");
         assert.match(error.message, /every child was refused or failed/);
+        const codes = String(error.details?.codes ?? "").split(",").filter(Boolean);
+        assert.ok(codes.length > 1, `mixed codes must all survive, got ${JSON.stringify(codes)}`);
+        assert.equal(codes.includes("FANOUT_FAILED"), false, "the aggregate code is not a child's code");
         return true;
       },
     );

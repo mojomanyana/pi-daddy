@@ -25,6 +25,12 @@ import {
 import { registerChainTool } from "./delegate-chain.ts";
 import { GovernanceRefusal, refusal } from "../src/refusals.ts";
 import { runOneDelegation } from "./run-delegation.ts";
+import {
+  buildFanoutReport,
+  childFailureOutcome,
+  throwFanoutInfrastructure,
+  totalFanoutFailure,
+} from "./fanout-outcome.ts";
 import { isCriticalAssuranceBlock, type DelegationOutcome } from "./execute-child.ts";
 import { type GrantsSession } from "./session.ts";
 
@@ -315,7 +321,12 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
 
       // Concurrent by construction. Each child gets its own budget share and its own ledger id, so the
       // records form a tree and two siblings can never be confused for one another.
-      let infrastructureError: unknown;
+      // EVERY sibling's error, not just the first. `??=` discarded the rest with no log anywhere, and one
+      // of the discardable ones is `HerdrWriterCloseError`, whose entire meaning is "a pane may still be
+      // live and its writer lease is deliberately retained" — a resource-retention notice, not a per-child
+      // failure. Losing it meant nobody was told a lease is held with no owner until the process exits
+      // (R-116).
+      const infrastructureErrors: unknown[] = [];
       const outcomes = await Promise.all(
         children.map(async (child, index): Promise<DelegationOutcome> => {
           try {
@@ -325,38 +336,29 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
               split.perChild, ctx, signal, { onProgress: progress.sink(index) },
             );
           } catch (error) {
-            infrastructureError ??= error;
-            return { ok: false, text: "", reason: "delegation infrastructure failed", granted: [], depth: session.depth + 1, exitCode: null };
+            infrastructureErrors.push(error);
+            return childFailureOutcome(error, session.depth + 1);
           }
         }),
       );
       progress.settle(outcomes);
-      const criticalBlock = outcomes.find(isCriticalAssuranceBlock);
-      if (criticalBlock) throw new Error(criticalBlock.text);
-      if (infrastructureError) throw infrastructureError;
+      // The upstream controller's verdict outranks our own infrastructure noise — it is the answer the
+      // caller is waiting for, and ADR-0034 requires it to pass through unchanged. But an infrastructure
+      // failure must not VANISH behind it, which is what happened when a retained-lease error and a
+      // critical block landed in the same fan-out (R-117).
+      throwFanoutInfrastructure(outcomes, infrastructureErrors);
 
       const failed = outcomes.filter((o) => !o.ok);
       // Every child is reported, including the ones that failed. R-03's rule: a missing result must never
       // be indistinguishable from an empty one, and a fan-out that hid its refusals would let an
       // orchestrator summarise four reviews when only three happened.
-      const report = outcomes
-        .map((outcome, index) => {
-          const label = `### child ${index + 1}${children[index].agent ? ` (${children[index].agent})` : ""}`;
-          return outcome.ok
-            ? `${label} — completed\n\n${outcome.text || "(no output)"}`
-            : `${label} — FAILED: ${outcome.reason}${outcome.text ? `\n\n${outcome.text}` : ""}`;
-        })
-        .join("\n\n---\n\n");
+      const report = buildFanoutReport(outcomes, children);
 
       if (failed.length === children.length) {
         // All of them failed, so there is no partial result to hand back — and a tool that returns text
         // when nothing ran is exactly how a wrong summary gets written.
         const message = `fan-out failed: every child was refused or failed.\n\n${report}`;
-        const codes = [...new Set(failed.flatMap((outcome) => outcome.refusal?.code ?? []))];
-        if (codes.length === 1 && failed.every((outcome) => outcome.refusal)) {
-          throw new GovernanceRefusal(refusal(codes[0], message, { failed: failed.length }));
-        }
-        throw new Error(message);
+        throw totalFanoutFailure(failed, message);
       }
 
       return {

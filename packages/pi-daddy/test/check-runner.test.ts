@@ -240,3 +240,117 @@ test("timeout and output cap remain hard bounds, and timeout releases the writer
   assert.equal(flood.receipt.truncated, true);
   assert.ok(Buffer.byteLength(flood.output) <= 128);
 });
+
+/**
+ * The check runner's whole refusal surface had zero coverage: `CHECK_NOT_CONFIGURED`,
+ * `CHECK_CONFIGURATION_INVALID`, `CHECK_IDENTITY_UNAVAILABLE` and `EXECUTOR_UNAVAILABLE` appeared nowhere
+ * in `test/`, and `test/refusals.test.ts` — whose stated job is guarding the stable taxonomy — enumerated
+ * eleven of the codes and omitted every `CHECK_*` one. So ADR-0034's "the check runner accepts a named ID
+ * only" bullet was asserted and undefended.
+ */
+test("a check the operator did not configure is refused by name", async () => {
+  const ws = await workspace();
+  await assert.rejects(
+    () => runNamedCheck({ checkId: "nosuch", registry: { version: 1, checks: {} }, workspace: ws }),
+    (error: Error & { code?: string }) => {
+      assert.equal(error.code, "CHECK_NOT_CONFIGURED");
+      return true;
+    },
+  );
+});
+
+test("a malformed check definition is refused rather than normalised", async () => {
+  const ws = await workspace();
+  const cases: Record<string, unknown> = {
+    "relative-executable": { executable: "node", argv: [] },
+    "argv-not-an-array": { executable: process.execPath, argv: "-e 1" },
+    "argv-holds-a-non-string": { executable: process.execPath, argv: ["-e", 7] },
+    "zero-timeout": { executable: process.execPath, argv: ["-e", "1"], timeout_ms: 0 },
+    "negative-output-bound": { executable: process.execPath, argv: ["-e", "1"], max_output_bytes: -1 },
+  };
+  for (const [checkId, definition] of Object.entries(cases)) {
+    await assert.rejects(
+      () => runNamedCheck({
+        checkId,
+        registry: { version: 1, checks: { [checkId]: definition } } as never,
+        workspace: ws,
+      }),
+      (error: Error & { code?: string }) => {
+        assert.equal(error.code, "CHECK_CONFIGURATION_INVALID", checkId);
+        return true;
+      },
+      checkId,
+    );
+  }
+
+  // The registry envelope itself, not just an entry inside it.
+  await assert.rejects(
+    () => runNamedCheck({ checkId: "x", registry: { version: 2, checks: {} } as never, workspace: ws }),
+    (error: Error & { code?: string }) => {
+      assert.equal(error.code, "CHECK_CONFIGURATION_INVALID");
+      return true;
+    },
+  );
+});
+
+test("an evidence check declared `read` still takes the exclusive writer lease", async () => {
+  // `src/check-runner.ts` hardcodes `leaseAccess = "write"` with a comment explaining that a check's
+  // pre/post candidate identities are worthless if another governed writer can interleave. Changing that
+  // line to `leaseAccess = access` left the suite green, so the comment was the only thing enforcing it.
+  const ws = await workspace();
+  const leaseDir = await tempDir("check-read-lease-");
+  const held = await acquireWorkspaceLease({ workspace: ws, access: "write", leaseDir, ownerId: "other-writer" });
+  try {
+    await assert.rejects(
+      () => runNamedCheck({
+        checkId: "declared-read",
+        registry: {
+          version: 1,
+          checks: { "declared-read": { executable: process.execPath, argv: ["-e", "1"], workspace_access: "read" } },
+        },
+        workspace: ws,
+        leaseDir,
+      }),
+      (error: Error & { code?: string }) => {
+        assert.equal(error.code, "WORKSPACE_WRITE_CONFLICT");
+        return true;
+      },
+      "a read-declared check must still contend for the workspace",
+    );
+  } finally {
+    await held.release("test-complete");
+  }
+});
+
+test("the staged copy is what executes, not the configured pathname", async () => {
+  // SPEC calls this "those exact hashed bytes are executed, eliminating pathname replacement between
+  // hashing and spawn". The existing digest test cannot see the difference — all of its assertions hold
+  // when the original file is executed in place — so swapping `stagedExecutable` back to `executable` left
+  // the suite green and the whole TOCTOU staging step was undefended.
+  //
+  // `$0` is the discriminator: the staged copy lives in a `pi-daddy-check-exec-*` temp directory, the
+  // configured one does not.
+  const ws = await workspace();
+  const scriptDir = await tempDir("check-staging-src-");
+  const script = join(scriptDir, "whoami.sh");
+  await writeFile(script, "#!/bin/sh\nprintf '%s' \"$0\"\n", { mode: 0o755 });
+
+  const result = await runNamedCheck({
+    checkId: "staged-identity",
+    registry: { version: 1, checks: { "staged-identity": { executable: script, argv: [] } } },
+    workspace: ws,
+    leaseDir: await tempDir("check-staging-lease-"),
+  });
+
+  assert.equal(result.exitCode, 0);
+  assert.match(
+    result.output.trim(),
+    /pi-daddy-check-exec-/,
+    `the check must run from its private staged copy, not ${script}`,
+  );
+  assert.equal(
+    result.output.trim().startsWith(scriptDir),
+    false,
+    "running the configured pathname reopens the hash-then-spawn replacement window",
+  );
+});

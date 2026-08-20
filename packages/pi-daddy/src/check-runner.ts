@@ -269,15 +269,47 @@ export async function runNamedCheck(input: {
       await appendLedgerEvent({ path: input.ledgerPath, strict: true }, event);
     }
     return { output: result.text, exitCode: result.code, signal: result.signal ?? null, receipt };
+  } catch (error) {
+    // The single most important negative result this feature can produce — CHECK_IDENTITY_MISMATCH, "the
+    // workspace changed while the check ran" — used to leave NO ledger evidence at all, while the
+    // `finally` recorded `released, reason: completed`, so the trail read like a clean run (R-114).
+    if (input.ledgerPath) {
+      await appendLedgerEvent(
+        {
+          path: input.ledgerPath,
+          // Best effort, and loud: this records a failure, so it must not replace the failure. A strict
+          // append that threw here would substitute "ledger write failed" for the evidence-integrity
+          // refusal that actually happened (R-115).
+          strict: false,
+          onFailure: () => {},
+        },
+        buildWorkspaceLeaseEvent({
+          childId: ownerId, workspaceId: input.workspace.workspaceId, root: input.workspace.root, access: leaseAccess,
+          outcome: "refused",
+          refusal: error instanceof GovernanceRefusal
+            ? { code: error.code, message: error.message, ...(error.details ? { details: error.details } : {}) }
+            : refusal("CHECK_IDENTITY_UNAVAILABLE", `check ${JSON.stringify(input.checkId)} failed (${String(error)})`),
+          correlation, now: new Date(),
+        }),
+      );
+    }
+    throw error;
   } finally {
     if (stagedDir) await rm(stagedDir, { recursive: true, force: true });
     if (lease) {
-      await lease.release(releaseReason);
+      // `release()` cannot throw (R-99), and the record of it is best-effort for the same reason as
+      // above: a `finally` that throws destroys whatever the caller was already returning or raising.
+      const outcome = await lease.release(releaseReason);
       if (input.ledgerPath) await appendLedgerEvent(
-        { path: input.ledgerPath, strict: true },
+        { path: input.ledgerPath, strict: false, onFailure: () => {} },
         buildWorkspaceLeaseEvent({
           childId: ownerId, workspaceId: input.workspace.workspaceId, root: input.workspace.root, access: leaseAccess,
-          outcome: releaseReason === "timeout" ? "timeout" : "released", releaseReason, correlation, now: new Date(),
+          outcome: outcome === "lost"
+            ? "lost"
+            : outcome === "released-unrecorded"
+              ? "released-unrecorded"
+              : releaseReason === "timeout" ? "timeout" : "released",
+          releaseReason, correlation, now: new Date(),
         }),
       );
     }

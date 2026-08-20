@@ -71,3 +71,68 @@ test("candidate tree identity is separate from committed HEAD identity", () => {
   assert.equal(a.head_sha, b.head_sha);
   assert.notEqual(a.tree_sha, b.tree_sha);
 });
+
+/**
+ * `correlation` is a MODEL-FACING tool parameter on all three delegation tools, and it is copied verbatim
+ * onto every append-only ledger event. `src/ledger.ts` states the invariant in its own header — capability
+ * ids, counts and identifiers only, never prompts, tool arguments or results — and ADR-0034 repeats that
+ * the ledger must never carry task text.
+ *
+ * The bound was "is a JSON object, under 32 KB" with no key whitelist and no per-field length limit, and
+ * `assurance_scope` was declared `Type.Any()`. So a model could write 32 KB of arbitrary text into the
+ * ledger through it, and disabling the cap entirely left the suite green (R-111).
+ */
+test("correlation is a whitelist of the pinned contract, not a free-form blob", async () => {
+  const { normaliseCorrelation } = await import("../src/correlation.ts");
+
+  // Every declared field still survives untouched — the contract requires passing them through unchanged.
+  const declared = {
+    schema_version: "1.0", run_id: "run-1", task_id: "task-2", workspace_id: "writer-2",
+    context_id: "review-spec-2", phase: "review-specification", assurance_effective: "critical",
+    assurance_source: "natural-language", assurance_scope: { type: "selectors", selectors: ["src/auth/**"] },
+    activated_at: "2026-08-19T20:00:00Z", event_seq: 41, last_change_seq: 30, last_authority_seq: 38,
+  };
+  assert.deepEqual(normaliseCorrelation(declared), declared);
+
+  for (const [label, value, expected] of [
+    ["an undeclared key", { run_id: "r", smuggled: "the entire task text" }, /outside the pinned schema/],
+    ["an over-long declared field", { run_id: "z".repeat(600) }, /exceeds 512 characters/],
+    ["an over-large assurance_scope", { assurance_scope: { blob: "z".repeat(5000) } }, /assurance_scope exceeds/],
+    ["a non-string where a string belongs", { run_id: 7 }, /run_id must be a string/],
+    // `Infinity`/`NaN` serialise to `null` and are dropped, which is the right answer for a value JSON
+    // cannot carry. A STRING where a sequence number belongs does survive, and must be refused.
+    ["a string where a sequence number belongs", { event_seq: "41" }, /event_seq must be a finite number/],
+  ] as const) {
+    assert.throws(
+      () => normaliseCorrelation(value as never),
+      (error: Error & { code?: string }) => {
+        assert.equal(error.code, "CORRELATION_INVALID", label);
+        assert.match(error.message, expected, label);
+        return true;
+      },
+      label,
+    );
+  }
+
+  // A 64 KB blob is refused — though by the `assurance_scope` bound, which fires first. Stated plainly
+  // because it matters for what this test does NOT cover: the 32 KB total cap is now unreachable
+  // (22 declared fields at 512 characters plus a 4 KB scope cannot sum to it), so disabling that cap
+  // alone breaks nothing here. It stays as defence-in-depth for the next field somebody adds.
+  assert.throws(
+    () => normaliseCorrelation({ assurance_scope: { blob: "z".repeat(64 * 1024) } } as never),
+    (error: Error & { code?: string }) => error.code === "CORRELATION_INVALID",
+  );
+});
+
+test("an oversized correlation is a RECORDED refusal, not an exception escaping the planner", async () => {
+  const { planDelegation } = await import("../src/delegate.ts");
+  // It threw a bare `Error` from outside every try in `planDelegation`, so this produced a governed
+  // refusal with no code and no ledger line at all — the ledger file was never even created (R-112).
+  const plan = planDelegation(
+    { task: "read one file", tools: ["read"], correlation: { assurance_scope: "z".repeat(40 * 1024) } as never },
+    { ownGrant: ["tool:read"], depth: 0, maxDepth: 2, gated: [], spawnId: "d0" },
+  );
+  assert.equal(plan.ok, false);
+  assert.equal(plan.refusal?.code, "CORRELATION_INVALID");
+  assert.ok(plan.result, "a refusal still carries a result, so it is auditable (G6/B-I3)");
+});
