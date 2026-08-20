@@ -50,16 +50,17 @@ test("approval binding changes for task, capability, workspace, context, parent,
     effective: ["tool:bash", "tool:read"],
     definitionSha256: "d".repeat(64),
     parentId: "d0",
-    correlation: upstream,
+    workspaceId: upstream.workspace_id,
+    contextId: upstream.context_id,
   });
   const digest = approvalBindingDigest(base);
   const variants = [
-    buildApprovalBinding({ task: "different task", requested: base.requested, effective: base.effective, definitionSha256: base.definition_sha256, parentId: base.parent_id, correlation: upstream }),
-    buildApprovalBinding({ task: "debug this probe", requested: ["tool:read"], effective: base.effective, definitionSha256: base.definition_sha256, parentId: base.parent_id, correlation: upstream }),
-    buildApprovalBinding({ task: "debug this probe", requested: base.requested, effective: base.effective, definitionSha256: "e".repeat(64), parentId: base.parent_id, correlation: upstream }),
-    buildApprovalBinding({ task: "debug this probe", requested: base.requested, effective: base.effective, definitionSha256: base.definition_sha256, parentId: "d9", correlation: upstream }),
-    buildApprovalBinding({ task: "debug this probe", requested: base.requested, effective: base.effective, definitionSha256: base.definition_sha256, parentId: base.parent_id, correlation: { ...upstream, workspace_id: "workspace-b" } }),
-    buildApprovalBinding({ task: "debug this probe", requested: base.requested, effective: base.effective, definitionSha256: base.definition_sha256, parentId: base.parent_id, correlation: { ...upstream, context_id: "review-spec-2" } }),
+    buildApprovalBinding({ task: "different task", requested: base.requested, effective: base.effective, definitionSha256: base.definition_sha256, parentId: base.parent_id, workspaceId: upstream.workspace_id, contextId: upstream.context_id }),
+    buildApprovalBinding({ task: "debug this probe", requested: ["tool:read"], effective: base.effective, definitionSha256: base.definition_sha256, parentId: base.parent_id, workspaceId: upstream.workspace_id, contextId: upstream.context_id }),
+    buildApprovalBinding({ task: "debug this probe", requested: base.requested, effective: base.effective, definitionSha256: "e".repeat(64), parentId: base.parent_id, workspaceId: upstream.workspace_id, contextId: upstream.context_id }),
+    buildApprovalBinding({ task: "debug this probe", requested: base.requested, effective: base.effective, definitionSha256: base.definition_sha256, parentId: "d9", workspaceId: upstream.workspace_id, contextId: upstream.context_id }),
+    buildApprovalBinding({ task: "debug this probe", requested: base.requested, effective: base.effective, definitionSha256: base.definition_sha256, parentId: base.parent_id, workspaceId: "workspace-b", contextId: upstream.context_id }),
+    buildApprovalBinding({ task: "debug this probe", requested: base.requested, effective: base.effective, definitionSha256: base.definition_sha256, parentId: base.parent_id, workspaceId: upstream.workspace_id, contextId: "review-spec-2" }),
   ];
   for (const variant of variants) assert.notEqual(approvalBindingDigest(variant), digest);
 });

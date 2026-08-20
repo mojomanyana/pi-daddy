@@ -25,7 +25,15 @@ export function resolveDelegationApproval(input: {
   approved?: InheritableApproval[];
   spawned?: SkillDefinition;
   definitionDigest?: DefinitionDigest;
+  /**
+   * Present iff this call is task-bound. Its VALUES never enter the binding — only its presence selects
+   * the exact-bound regime over the legacy subject-scoped one.
+   */
   correlation?: CorrelationMetadata;
+  /** Trusted: an id that was resolved against the operator registry and leased. Never a caller claim. */
+  boundWorkspaceId?: string;
+  /** Caller-declared label. Narrows the binding only; asserts nothing about enforcement. */
+  boundContextId?: string;
   parentId: string;
 }): { result: ResolveResult; approvalBinding?: ApprovalBinding; bindingMismatch: boolean } {
   const subject = input.agent ?? DELEGATE_SUBJECT;
@@ -62,7 +70,8 @@ export function resolveDelegationApproval(input: {
         effective: potential.effective,
         definitionSha256: input.definitionDigest?.sha256,
         parentId: input.parentId,
-        correlation: input.correlation,
+        workspaceId: input.boundWorkspaceId,
+        contextId: input.boundContextId,
       })
     : undefined;
 

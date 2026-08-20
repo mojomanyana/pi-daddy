@@ -104,6 +104,9 @@ async function planChain(session: GrantsSession, steps: StepSpec[], perStepBudge
         correlation: step.workspace
           ? { ...(step.correlation ?? {}), workspace_id: step.workspace.workspace_id }
           : step.correlation,
+        // Routing spec, not the model's correlation claim — see R-110 in `src/correlation.ts`.
+        boundWorkspaceId: step.workspace?.workspace_id,
+        boundContextId: step.correlation?.context_id,
       },
       { ...context, spawnId: session.ownSpawnId, childSpawnId: childSpawnId(session.ownSpawnId, index) },
     );

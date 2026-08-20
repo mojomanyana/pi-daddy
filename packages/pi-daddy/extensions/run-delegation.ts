@@ -236,6 +236,11 @@ export async function runOneDelegation(
     correlation: spec.workspace
       ? { ...(spec.correlation ?? {}), workspace_id: spec.workspace.workspace_id }
       : spec.correlation,
+    // The binding's workspace comes from the ROUTING SPEC, which is resolved against the operator
+    // registry and leased before any human is asked — never from `correlation`, which is a model-supplied
+    // claim that nothing validates when no spec accompanies it (R-110).
+    boundWorkspaceId: spec.workspace?.workspace_id,
+    boundContextId: spec.correlation?.context_id,
   };
   const extra = { fanoutBudget: budget, spawnId: ids.parentId, childSpawnId: ids.childId };
 
