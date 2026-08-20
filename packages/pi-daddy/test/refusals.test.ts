@@ -32,6 +32,7 @@ const ctx = (over: Record<string, unknown> = {}) => ({
  */
 const ENUMERATED = [
   "CAPABILITY_ESCALATION",
+  "GRANT_ID_MALFORMED",
   "DEFINITION_NOT_AUTHORIZED",
   "UNDECLARED_TOOLS",
   "UNKNOWN_TOOL",
