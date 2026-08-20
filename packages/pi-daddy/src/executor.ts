@@ -18,7 +18,8 @@ import type { HerdrProbe } from "./herdr-cli.ts";
 
 export const ENV_HERDR = "PI_GRANTS_HERDR";
 
-export type ExecutorKind = "herdr" | "process";
+export const EXECUTOR_KINDS = ["process", "herdr"] as const;
+export type ExecutorKind = typeof EXECUTOR_KINDS[number];
 
 export interface ExecutorChoice {
   kind: ExecutorKind;

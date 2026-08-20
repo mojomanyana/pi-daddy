@@ -9,6 +9,24 @@ import type { ExecutorKind } from "./executor.ts";
 import type { CorrelationMetadata } from "./correlation.ts";
 import type { StructuredRefusal } from "./refusals.ts";
 
+export const WORKSPACE_ACCESSES = ["read", "write"] as const;
+export type WorkspaceAccess = typeof WORKSPACE_ACCESSES[number];
+
+export const WORKSPACE_RECOVERY_VALUES = [false, true, "unknown"] as const;
+export type WorkspaceRecovery = typeof WORKSPACE_RECOVERY_VALUES[number];
+
+export const CHILD_LIFECYCLE_STATES = ["starting", "completed", "failed"] as const;
+export type ChildLifecycleState = typeof CHILD_LIFECYCLE_STATES[number];
+
+/** The complete Node signal vocabulary accepted by a v2 child-lifecycle event. */
+export const CHILD_PROCESS_SIGNALS = [
+  "SIGABRT", "SIGALRM", "SIGBUS", "SIGCHLD", "SIGCONT", "SIGFPE", "SIGHUP", "SIGILL", "SIGINT", "SIGIO",
+  "SIGIOT", "SIGKILL", "SIGPIPE", "SIGPOLL", "SIGPROF", "SIGPWR", "SIGQUIT", "SIGSEGV", "SIGSTKFLT",
+  "SIGSTOP", "SIGSYS", "SIGTERM", "SIGTRAP", "SIGTSTP", "SIGTTIN", "SIGTTOU", "SIGUNUSED", "SIGURG",
+  "SIGUSR1", "SIGUSR2", "SIGVTALRM", "SIGWINCH", "SIGXCPU", "SIGXFSZ", "SIGBREAK", "SIGLOST", "SIGINFO",
+] as const satisfies readonly NodeJS.Signals[];
+export type ChildProcessSignal = typeof CHILD_PROCESS_SIGNALS[number];
+
 /**
  * `released` is a handover this owner performed. FOUR members were added by the 0.18.0 review pass, and
  * they were not all previously recorded the same way — `uncontended` was recorded as an *acquisition*, and
@@ -20,16 +38,11 @@ import type { StructuredRefusal } from "./refusals.ts";
  *   `uncontended` a read lease took no kernel lock at all, so counting it as an acquisition
  *              overstated how many exclusions the kernel actually performed (R-105).
  */
-export type WorkspaceLeaseOutcome =
-  | "acquired"
-  | "uncontended"
-  | "refused"
-  | "released"
-  | "released-unrecorded"
-  | "lost"
-  | "retained"
-  | "timeout"
-  | "recovered";
+export const WORKSPACE_LEASE_OUTCOMES = [
+  "acquired", "uncontended", "refused", "released", "released-unrecorded", "lost", "retained", "timeout",
+  "recovered",
+] as const;
+export type WorkspaceLeaseOutcome = typeof WORKSPACE_LEASE_OUTCOMES[number];
 
 export interface WorkspaceLeaseEvent extends LedgerEventBase {
   ledgerVersion: typeof LEDGER_VERSION;
@@ -37,10 +50,10 @@ export interface WorkspaceLeaseEvent extends LedgerEventBase {
   childId: string;
   workspaceId: string;
   root: string;
-  access: "read" | "write";
+  access: WorkspaceAccess;
   outcome: WorkspaceLeaseOutcome;
   /** `"unknown"` when the prior owner's record was unreadable — not evidence of a clean handover. */
-  recovered?: boolean | "unknown";
+  recovered?: WorkspaceRecovery;
   releaseReason?: string;
   refusal?: StructuredRefusal;
 }
@@ -49,13 +62,13 @@ export interface ChildLifecycleEvent extends LedgerEventBase {
   ledgerVersion: typeof LEDGER_VERSION;
   event: "child_lifecycle";
   childId: string;
-  state: "starting" | "completed" | "failed";
+  state: ChildLifecycleState;
   executor: ExecutorKind;
   exitCode?: number | null;
-  signal?: NodeJS.Signals | null;
-  timedOut?: boolean;
-  aborted?: boolean;
-  truncated?: boolean;
+  signal?: ChildProcessSignal | null;
+  timedOut?: true;
+  aborted?: true;
+  truncated?: true;
   reason?: string;
 }
 
@@ -69,8 +82,14 @@ export interface CheckReceiptLedgerEvent extends LedgerEventBase {
   treeSha: string;
 }
 
+export type CapabilityDecisionEvent = GrantRecord & {
+  ledgerVersion: typeof LEDGER_VERSION;
+  event: "capability_decision";
+  taskDigest: string;
+};
+
 export type RuntimeLedgerEvent =
-  | (GrantRecord & { ledgerVersion: typeof LEDGER_VERSION; event: "capability_decision" })
+  | CapabilityDecisionEvent
   | WorkspaceLeaseEvent
   | ChildLifecycleEvent
   | CheckReceiptLedgerEvent;
@@ -79,9 +98,9 @@ export function buildWorkspaceLeaseEvent(args: {
   childId: string;
   workspaceId: string;
   root: string;
-  access: "read" | "write";
+  access: WorkspaceAccess;
   outcome: WorkspaceLeaseOutcome;
-  recovered?: boolean | "unknown";
+  recovered?: WorkspaceRecovery;
   releaseReason?: string;
   refusal?: StructuredRefusal;
   correlation?: CorrelationMetadata;
@@ -134,10 +153,10 @@ export function buildCheckReceiptLedgerEvent(args: {
 
 export function buildChildLifecycleEvent(args: {
   childId: string;
-  state: "starting" | "completed" | "failed";
+  state: ChildLifecycleState;
   executor: ExecutorKind;
   exitCode?: number | null;
-  signal?: NodeJS.Signals | null;
+  signal?: ChildProcessSignal | null;
   timedOut?: boolean;
   aborted?: boolean;
   truncated?: boolean;

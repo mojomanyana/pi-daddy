@@ -35,11 +35,11 @@ permissible, able to refuse or allow but never to narrow. **This package is now 
 is an argument rather than a veto. Definitions are **Agent Skills (`SKILL.md`)** files whose `allowed-tools`
 becomes the grant; the pi-subagents ceiling port is deleted; the interceptor survives only as a tripwire.
 
-**Current release state, verified 2026-08-20:** PR #9 is merged; `main` and tag `v0.18.0` point at
-`dde8eeb5632113d4a54705e16dc22ce70740fd4f`, and npm `latest` is `0.18.0`. The latest GitHub Release is
-still `v0.17.1`. Thirty-four ADRs are decided (0034 amended after review). This follow-up branch has 591
-unit + 44 integration tests, plus a 10-test opt-in tier behind `PI_GRANTS_IT_MODEL=1` that is not run without
-explicit authorization.
+**Current release state, verified 2026-08-20:** PR #12 is merged; `main`, tag `v0.18.1`, and npm `latest`
+point at `8feaacbdf6003c783225e375b61874a599963f47`. The latest GitHub Release is still `v0.17.1`.
+Thirty-four ADRs are decided (0034 amended after review). This follow-up branch has 596 unit + 44 integration
+tests, plus a 10-test opt-in tier behind `PI_GRANTS_IT_MODEL=1` that is not run without explicit
+authorization.
 
 **A six-reviewer pass over the 0.18.0 work found the capability invariant intact on every path and the
 RUNTIME half full of holes** — R-99…R-118, and the ADR-0034 amendment lists what it did *not* resolve
@@ -102,7 +102,7 @@ docs/archive/             — SUPERSEDED, kept as evidence, never edited to matc
                             registers (discovery, assumptions, landscape, metrics), ROADMAP, gate reports,
                             both code reviews, the old specs, the completed implementation plan, and the
                             dead upstream proposal. See its README for why each stopped being current.
-packages/pi-daddy  — THE PRODUCT (0.18.0): SKILL.md definitions, resolver, v2 ledger,
+packages/pi-daddy  — THE PRODUCT (0.18.1): SKILL.md definitions, resolver, v2 ledger,
                             delegate/delegate_all/delegate_chain, catalog, bound human approval, two
                             executors (process | herdr pane), governed-writer leases, named checks, and
                             `pi-daddy init` — scaffolding that does not choose a ceiling (ADR-0028)
@@ -130,7 +130,7 @@ refuses until a gate passes that no longer means anything. They are in git histo
 
 ```bash
 cd packages/pi-daddy
-npm test                   # 591 unit tests — fast, pure, no pi, no network (the branch guard spawns git)
+npm test                   # 596 unit tests — fast, pure, no pi, no network (the branch guard spawns git)
 npm run typecheck          # src + extensions + tests + integration tests
 npm run test:integration   # 44 tests vs a REAL pi process AND a real herdr server — ~55s, no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and USE it

@@ -11,12 +11,11 @@ decisions; this file holds state and next actions. Newest entry on top.
 `hooks/pre-commit` enforces it once `git config core.hooksPath hooks` is set in your clone. This line is at
 the top because the rule was broken by drift, and this file is what a session actually reads first.
 
-**Release state, re-verified 2026-08-20:** PR #9 is merged. Repository `main`, peeled tag `v0.18.0`, and
-the npm `pi-daddy@0.18.0` `gitHead` all point at `dde8eeb5632113d4a54705e16dc22ce70740fd4f`;
-npm `latest` is `0.18.0`. The latest GitHub Release remains `v0.17.1`. The current work is the focused
-`feat/ledger-v2-contract-artifacts` branch from that clean SHA. It has **591 unit + 44 integration tests**
-when the contract tests below are included; the **10**-test opt-in model tier remains separately authorized
-and was not run.
+**Release state, re-verified 2026-08-20:** PR #12 is merged. Repository `main`, peeled tag `v0.18.1`, and
+the npm `pi-daddy@0.18.1` `gitHead` all point at `8feaacbdf6003c783225e375b61874a599963f47`;
+the latest GitHub Release remains `v0.17.1`. The focused `feat/ledger-v2-contract-artifacts` branch merged
+that main at `a26e2f2` and now has **596 unit + 44 integration tests**. The **10**-test opt-in model tier
+remains separately authorized and was not run.
 
 **A six-reviewer pass on 2026-08-20 rewrote the risk on this branch — read R-99…R-118 and the ADR-0034
 amendment before touching it.** The capability invariant held everywhere; the runtime half did not. And

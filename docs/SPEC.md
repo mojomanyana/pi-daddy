@@ -5,7 +5,7 @@ to be decided. This file is authoritative for present behavior; ADRs record why 
 date. If code and this file disagree, report and repair the stale current-state claim rather than re-deriving
 present behavior from historical ADRs.
 
-Last synced against the code: **2026-08-20**, `pi-daddy` 0.18.0, pi 0.84.2, herdr 0.7.5.
+Last synced against the code: **2026-08-20**, `pi-daddy` 0.18.1, pi 0.84.2, herdr 0.7.5.
 
 **herdr's own contracts are now checked by `test-integration/herdr.it.ts`** against a live server, in an isolated
 workspace it creates and closes. That suite exists because three shipping defects hid behind the unit fake — the
@@ -366,7 +366,7 @@ Append-only JSONL at `PI_GRANTS_LEDGER`. Ledger format v2 is an event union: `ca
 with no version/event discriminator.
 
 **This source candidate packages a canonical machine contract**, rather than reconstructing it from prose;
-it is not present in the already-published npm 0.18.0 and needs the next authorized package release.
+it is not present in the already-published npm 0.18.1 and needs the next authorized package release.
 `pi-daddy/contracts/ledger/v2/ledger-event.schema.json` is a closed JSON Schema draft 2020-12 union, and
 `pi-daddy/contracts/ledger/v2/fixtures/*.json` are deterministic records generated through the production
 builders. Repository copies live under `packages/pi-daddy/contracts/ledger/v2/`; the generator is
@@ -795,7 +795,7 @@ bound a typo can switch off is not a bound.
 
 ```bash
 cd packages/pi-daddy
-npm test                   # 591 unit tests — pure, no pi, no network
+npm test                   # 596 unit tests — pure, no pi, no network
 npm run typecheck          # src + extensions + test + test-integration
 npm run test:integration   # 44 tests against a REAL pi process/herdr server, no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and USE every subpath —

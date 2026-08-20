@@ -1,6 +1,28 @@
 # Handoff — canonical ledger v2 contract
 
-## Git and release state
+## Completion and integration update — 2026-08-20
+
+This section supersedes the operational Git/release state and the proposed-PR instructions below; those
+sections are retained as the record of the handoff before the work was committed.
+
+- The contract work was committed as `6bda1c9` and pushed in
+  [PR #11](https://github.com/mojomanyana/pi-daddy/pull/11). It is no longer uncommitted or unpushed.
+- While PR #11 was open, [PR #12](https://github.com/mojomanyana/pi-daddy/pull/12) advanced `main`, tag
+  `v0.18.1`, and npm `latest` to `8feaacb`. That published security fix added the reachable
+  `GRANT_ID_MALFORMED` refusal.
+- PR #11 merged the new `main` into its public branch at `a26e2f2`, preserving both changelog sections and
+  adding `GRANT_ID_MALFORMED` to the canonical v2 refusal enum. It belongs in v2 because 0.18.1 already
+  emits it; omitting it would make the new canonical schema reject a published v2 event.
+- The post-merge review added exact schema-to-production vocabulary, top-level and nested field inventory,
+  requiredness, and minimal/maximal builder-shape checks, so those closed-contract dimensions cannot drift
+  silently.
+- PR #10 remains the follow-up and must merge after PR #11. It must not add the unshipped
+  `WORKSPACE_NOT_AUTHORIZED` code to closed v2; unauthorized workspace routing can use the existing
+  `CAPABILITY_ESCALATION` refusal with the exact `workspace:<id>` in `denied` and `details.workspace_id`.
+- Nothing from PR #11 has been published. The latest GitHub Release remains `v0.17.1`; package/tag/npm state
+  is 0.18.1, and the contract artifacts remain a candidate for the next release.
+
+## Git and release state (superseded snapshot before commit)
 
 - Base: `dde8eeb5632113d4a54705e16dc22ce70740fd4f` (`main`, peeled `v0.18.0`, merged PR #9).
 - Current HEAD: `dde8eeb5632113d4a54705e16dc22ce70740fd4f`; all work remains uncommitted on
@@ -86,7 +108,10 @@ reported:
 smoke: installed package imports and runs, and `pi-daddy init` scaffolds — OK
 ```
 
-## Verification
+## Verification (superseded pre-commit snapshot)
+
+The completion update above records the current state; these results are retained as the verification
+performed before the original contract commit and subsequent 0.18.1 integration.
 
 - `npm ci`: completed; 0 vulnerabilities. npm blocked the pre/postinstall scripts of `@google/genai` and
   `protobufjs` under its current allow-scripts policy.
@@ -123,7 +148,10 @@ smoke: installed package imports and runs, and `pi-daddy init` scaffolds — OK
 - The approval dialog still does not disclose every exact binding component.
 - `bash`, unrelated processes, and named-check executables remain outside filesystem/network containment.
 
-## Version decision
+## Version decision (superseded pre-0.18.1 snapshot)
+
+The 0.18.1 option discussed below is no longer available: 0.18.1 was subsequently published by PR #12,
+and the completion update records the current next-release recommendation.
 
 Do not attempt to republish 0.18.0: npm already contains it. **Recommend a minor release (0.19.0), not a
 patch**, because this change adds stable public package export paths, a canonical compatibility obligation,
@@ -131,7 +159,7 @@ and a new exported check-receipt builder. Runtime v2 line semantics are unchange
 only if the owner classifies the missing artifact as packaging/documentation repair. The repository's prior
 practice uses minor releases for new public features; no version was changed here.
 
-## Proposed PR
+## Proposed PR (superseded; PR #11 opened)
 
 **Title:** `feat: publish canonical ledger v2 contract`
 

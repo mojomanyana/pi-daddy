@@ -355,7 +355,7 @@ Dispatch on version before event: no `ledgerVersion`/`event` is a legacy 0.17 gr
 2 must validate as one of the four events; every other explicit version fails closed and must never be read
 as legacy. `verifyLedger` enforces that dispatch boundary and required join fields; full nested validation
 uses the schema. The v2 schema is closed, so a field/event/enum/requiredness or semantic change requires a new
-ledger version and versioned artifact path. The already-published npm 0.18.0 does not contain these files;
+ledger version and versioned artifact path. The already-published npm 0.18.1 does not contain these files;
 they require the next authorized package release. See `contracts/ledger/v2/README.md` for the field inventory
 and compatibility rules.
 
@@ -700,7 +700,7 @@ every in-repo test passed. `npm run test:smoke` packs a tarball, installs it int
 ## Testing
 
 ```bash
-npm test                   # 591 unit tests. Fast, pure, no pi, no network.
+npm test                   # 596 unit tests. Fast, pure, no pi, no network.
 npm run typecheck          # src + extensions + tests + integration tests
 npm run test:integration   # 44 tests against a REAL pi process. ~55s, no model tokens.
 npm run test:smoke         # pack, install into a scratch project, import and use it — and run the
@@ -729,6 +729,10 @@ digest fail *open* fails exactly one test; deleting the body comparison fails th
 its own author the day after it was added: rather than raise the cap, `delegation.ts` was split.
 
 ## Status
+
+**0.18.1 — security fix for malformed capability IDs.** Capability IDs containing comma, CR, LF, NUL or
+surrounding whitespace are refused before resolution and again before grant serialization, preventing a
+wildcard-covered string from splitting into authority the parent never held.
 
 **0.18.0 — generic runtime enforcement, still honest about scope.** The governed spawn path now includes
 optional correlation, exact task-bound approvals, registered-worktree CWD validation, OS-backed governed
