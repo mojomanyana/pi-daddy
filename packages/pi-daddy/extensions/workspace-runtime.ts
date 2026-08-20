@@ -115,7 +115,9 @@ export async function prepareDelegationWorkspace(input: {
 
 /**
  * Records what release actually DID, rather than asserting a handover. `release()` cannot throw
- * (R-99), so this is safe to call from a `finally` without destroying the caller's result — which is
+ * (R-99) — but THIS function still can, through its own strict append, so callers wrap it rather than
+ * calling it bare from a `finally`. An earlier version of this comment claimed the opposite, and the
+ * refusal path took it at its word. Returning a value rather than throwing is
  * the whole reason it returns a value. `retained` is a deliberate non-release and is reported as such
  * so the next owner's `recovered: true` does not blame a healthy path (R-104).
  */

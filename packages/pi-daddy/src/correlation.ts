@@ -39,7 +39,11 @@ export interface CorrelationMetadata {
 }
 
 const MAX_CORRELATION_BYTES = 32 * 1024;
-/** Per-field bound. Every declared field is an id, a digest, a label or a timestamp. */
+/**
+ * Per-field bound on the STRING fields — most are an id, a digest, a label or a timestamp. It does not
+ * apply to the three sequence numbers or to `assurance_scope`, which are checked separately; an earlier
+ * version of this comment claimed it covered every declared field.
+ */
 const MAX_CORRELATION_FIELD_CHARS = 512;
 /** `assurance_scope` is the one structured field, so it gets its own, larger bound. */
 const MAX_CORRELATION_SCOPE_BYTES = 4 * 1024;

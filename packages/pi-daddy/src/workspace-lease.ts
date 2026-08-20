@@ -121,7 +121,8 @@ export async function acquireWorkspaceLease(input: {
   let helperPid: number | undefined;
   let stderr = "";
   /**
-   * Kill the HELPER first, then the wrapper. `flock` does not pass `--close`, so the helper inherits
+   * Kill the whole holder GROUP — one signal, no ordering. (The pid-by-pid fallback below is the
+   * only path that kills in sequence, and only when the group is already reaped.) `flock` does not pass `--close`, so the helper inherits
    * the lock file descriptor and holds the lock in its own right — killing only `flock` leaves the
    * lock HELD by an orphan, and every later acquisition then reports WORKSPACE_WRITE_CONFLICT, which
    * is the one message an operator would use to conclude another agent is writing. Measured in

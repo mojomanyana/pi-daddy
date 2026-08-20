@@ -424,12 +424,14 @@ Two things that sentence does **not** say, both stated here because a reader too
 (R-110). A supplied `head_sha`/`tree_sha` that disagrees with the measured one **refuses** a check, so an
 untrusted field can withhold evidence even though it cannot confer authority; and the *presence* of
 `correlation` is what selects the exact-bound approval regime over the legacy subject-scoped one, so the mode
-is chosen by an optional model-supplied field. Both directions fail closed. Correlation values no longer
-reach the approval binding at all: its workspace scope comes from the routing spec, which is
-registry-resolved and leased before any human is asked.
+is chosen by an optional model-supplied field. Both directions fail closed. The binding's **workspace** scope no longer
+comes from correlation: it comes from the routing spec, which is registry-resolved and leased before any
+human is asked. **`context_id` still does** — it is a caller-declared label that nothing validates, kept in
+the binding because it can only ever NARROW it and a mismatch fails closed. "No longer reach at all" was
+too strong, and the risk register had it right while this file did not.
 
 Committed `head_sha` and candidate `tree_sha` remain separate. A check receipt ID includes the candidate
-tree, so a tracked-content change produces a different receipt even when HEAD is unchanged.
+tree, so a non-ignored content change produces a different receipt even when HEAD is unchanged.
 
 **`tree_sha` is not the exact content of the working tree, and this claim was previously stronger than the
 measurement.** It is computed with `git add -A` against a temporary index, which honours `.gitignore`,
@@ -482,8 +484,9 @@ deliberately because a herdr writer tab would not close, so the pane may still b
 `refused`. Every one of those four additions exists because the fact was previously recorded as `released` or
 `acquired`, making the ledger assert a handover or an exclusion that did not happen.
 
-`release()` never throws. Every caller runs it from a cleanup path, and a throwing cleanup discarded a
-completed child's entire output while blaming the ledger — so the outcome is a value the caller records. A
+`release()` never throws. Almost every caller runs it from a cleanup path — the exception is the check
+runner, which releases mid-flow on purpose so that lease loss cannot race a blocked receipt append — and a
+throwing cleanup discarded a completed child's entire output while blaming the ledger — so the outcome is a value the caller records. A
 terminal lifecycle or lease-release append is likewise best-effort **and loud**: those are observations
 written after the child has already run, where failing closed prevents nothing, and a teardown failure is
 reported alongside the result rather than in place of it. `capability_decision`, which provisions, still
@@ -510,6 +513,13 @@ tidiness: `correlation` is a model-facing parameter on all three delegation tool
 every append-only ledger event, so an unbounded free-form object was a channel for writing arbitrary text
 into a file that carries no prompts, arguments or results (R-111). If upstream adds a field, the refusal
 names it — an actionable break beats a silent secrets sink.
+
+**What this does not close.** `assurance_scope` is exempt from the per-field character bound and is copied
+verbatim with no validation inside it, so up to 4 KB of caller-authored structure still reaches every event,
+and the tool schemas still declare it `Type.Any()`. Adding the ~21 bounded string fields, the channel is
+narrowed from 32 KB to roughly 14 KB rather than closed. `schema_version` is also accepted as any string and
+never compared to `"1.0"`, so an upstream 1.1 breaks on a field name rather than on the version — the
+actionable message was available and is not used.
 
 ## Stable refusals
 
@@ -548,8 +558,12 @@ A receipt records schema/receipt/check IDs, canonical configured executable and 
 staged bytes actually executed, exact argv and digest, validated CWD and digest, start/end, exit code and signal, timeout/abort/truncation flags,
 output digest, workspace/access, computed head/tree, and correlation. Head and candidate tree are measured
 under the lease with a temporary Git index before execution and verified again afterwards; a supplied
-head/tree may match but cannot override them. A workspace whose **tracked** content changed yields no
-receipt; see the `tree_sha` limits above for what the comparison cannot see. The configured executable
+head/tree may match but cannot override them. A workspace whose **non-ignored** content changed yields no
+receipt; see the `tree_sha` limits above for what the comparison cannot see.
+
+The axis is ignored-vs-not, **not** tracked-vs-not — an earlier edit here said "tracked" and was wrong.
+Measured: `git add -A` stages an untracked non-ignored file, so it changes `tree_sha` and refuses the check;
+a `.gitignore`d path does not. The configured executable
 is copied to a private staging path and those exact hashed bytes are executed, eliminating pathname replacement
 between hashing and spawn. Every evidence check takes the exclusive governed-writer coordination lease—even
 when configured `workspace_access` is `read`—so its two candidate snapshots cannot overlap another governed
@@ -764,7 +778,7 @@ bound a typo can switch off is not a bound.
 
 ```bash
 cd packages/pi-daddy
-npm test                   # 580 unit tests — pure, no pi, no network
+npm test                   # 586 unit tests — pure, no pi, no network
 npm run typecheck          # src + extensions + test + test-integration
 npm run test:integration   # 44 tests against a REAL pi process/herdr server, no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and USE every subpath —

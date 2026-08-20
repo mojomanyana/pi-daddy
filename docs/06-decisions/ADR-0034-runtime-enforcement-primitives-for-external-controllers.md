@@ -254,3 +254,65 @@ Recorded because a review that produced twenty register entries and no open item
   workspace self-conflicts. This is a classification problem, not a policy one.
 - **R-101** (pid recycling in the helper) and **R-118** (an untested defence-in-depth check) are accepted with
   their reasons in the register.
+
+---
+
+## Second amendment, 2026-08-20 — six reviewers over the FIRST amendment's own fixes
+
+Appended, nothing above edited. The register entries are R-119…R-129.
+
+**The invariant held a third time.** No reviewer could construct a path where correlation, a binding or a
+workspace label widens `effective`.
+
+**What the first amendment decided and the code did not do.** Three of its four new decisions were true of
+the comments and false of the code when written:
+
+- *"A terminal observation is not an authorization record… those appends are best-effort and loud"* — the
+  terminal `child_lifecycle` append was still `strict: true`, so a contended lock still destroyed a
+  completed child's output (R-119).
+- *"a non-strict append now reports its failure rather than swallowing it"* — the mechanism that makes that
+  possible was wired to two empty callbacks, one guarding the evidence record itself (R-120).
+- *"A refused operation must not leave authority behind — on every path"* — the take-back was gated on one
+  path, and a human declining the second of two gated capabilities strands a 30-day approval with no fault
+  at all (R-121).
+
+All three are now code rather than prose, each pinned by a test that fails when the guard is removed.
+
+**One decision is narrowed.** The first amendment made truncation disqualify the upstream token. That was
+wrong: the process executor keeps the HEAD of the output and the token is matched at byte 0, so a genuine
+veto with a long rationale is still a genuine veto, and rejecting it broke the pass-through this ADR pins.
+Only a child that never finished speaking — killed, cancelled, or never started — is disqualified (R-122).
+
+**One decision is added.** `release()` is memoized and its outcome union distinguishes the alarm (nobody
+recorded the handover) from the healthy case (a successor owns the record) and from a read lease that never
+locked. Conflating them meant the one value requiring action was indistinguishable from two that do not
+(R-126).
+
+### What this amendment does NOT resolve
+
+The first amendment's unresolved list stands unchanged — workspace routing still does not attenuate, a
+persisted binding still pins text rather than tree state, the dialog still discloses three of six bound
+components, `tree_sha` is still blind to ignored paths, and the lease key still omits the lease directory.
+Added to it:
+
+- **`assurance_scope` is exempt from the per-field bound** and copied verbatim with no inner validation, so
+  roughly 14 KB of caller-authored text still reaches every event. R-111 was narrowed 8×, not closed, and
+  no document said so until now.
+- **`schema_version` is never compared to `"1.0"`.** The field naming the pinned schema is unvalidated while
+  unknown fields are fatal, so an upstream 1.1 breaks on a field name rather than on the version — the
+  actionable message was available for free. A third option nobody weighed: refuse by version, and record
+  dropped keys rather than refusing them.
+- **The fan-out infrastructure `catch` is unreachable from the wiring layer**, so R-97's regression claim is
+  corrected a second time rather than satisfied (R-127). The test written for it was deleted rather than
+  weakened until it passed.
+- **Two runtime value-import cycles** now exist among the split modules, safe only because nothing reads a
+  cross-module binding at module-evaluation time — a condition a future top-level `const` would violate with
+  a `ReferenceError` no test covers.
+- **The audit this all rests on has no artifact** (R-129). Rule 5 would park a 17-mutation measurement under
+  `docs/probes/`; R-127 is what its absence costs.
+
+**The lesson worth carrying, stated plainly because it has now happened on both sides of a review:** a claim
+written beside a fix is not the fix. Every critical finding in this round was a comment, a SPEC paragraph or
+an ADR sentence that described an intention as an accomplished fact. The mechanical guards this project
+already trusts — the line ceiling, the branch guard, the refusal enumeration — are the ones that never had
+this failure.

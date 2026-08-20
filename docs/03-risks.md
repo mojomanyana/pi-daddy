@@ -2026,6 +2026,79 @@ non-repository, a path inside a worktree, and a broken gitdir link. Recorded as 
 test that would pass for a different reason. **Revisit if** anyone finds the case, or concludes the check is
 genuinely redundant and removes it deliberately.
 
+## R-119…R-126 · The FIXES claimed properties the code did not have — H×H, FIXED
+
+Added and fixed 2026-08-20, by six independent reviewers over the *fix commits* for R-99…R-118. The
+capability invariant held a third time; every entry below is the runtime half, and they share one cause
+worth naming above the list: **the claim was written before the code satisfied it.** That is R-93/R-97/R-98's
+shape — an asserted property with nothing forcing it — now committed on both sides of a review.
+
+- **R-119 (critical):** the terminal `child_lifecycle` append was still `strict: true`, while its own
+  docstring, `docs/SPEC.md`, the ADR-0034 amendment and R-99's entry all four said terminal observations are
+  best-effort. A contended ledger lock still discarded a completed child's output — and every sibling's under
+  `delegate_all`. Only the comment had changed.
+- **R-120 (critical):** the `onFailure` mechanism added *to prevent silent appends* was satisfied nowhere —
+  two empty callbacks, one of them guarding the R-114 evidence record, three lines under a comment saying
+  "loud". A third fed an array nothing read on the throw path.
+- **R-121 (critical):** `unbankApprovals` was gated on `ledgerDenied`, missing three other post-gate
+  refusals — most reachably a human declining the SECOND of two gated capabilities, which needs no fault at
+  all. And it revoked by `capability@subject` with no ownership check, so a joined gate or a
+  legacy-then-bound sequence let one refused delegation destroy an approval a live sibling was running under.
+  `"absent"` from `revokeApproval` also counted as revoked, though `loadApprovals` excludes stale-but-present
+  entries that later revive.
+- **R-122:** R-106's fix over-corrected — `truncated` in the guard rejected a genuine 1 MB veto, breaking
+  the pass-through ADR-0034 pins in the fix meant to protect it. And deleting all four non-text guards left
+  580/580 green: the marquee fix, undefended. `childFailureOutcome`'s `text: ""` was likewise the only thing
+  making the laundering path unreachable, and nothing held it.
+- **R-123:** R-102's marker file had no reader anywhere — an unreleasable lock traded for a silent one.
+- **R-124:** R-104 was fixed in the release event's wording only. A retained lease never wrote
+  `state: "released"`, so the successor still reported `recovered: true` — the blame `retained` exists to
+  remove.
+- **R-125:** the check runner's `releaseReason` stayed `"completed"` through every throw, so a refused
+  check's LAST lease event still read as a clean run and `verifyLedger` still counted a clean release.
+  R-114's fix put a line beside the misleading one instead of correcting it. Separately, the refusal path
+  released the workspace through an unguarded `strict: true` append, on the path where the ledger is already
+  known unwritable.
+- **R-126:** `LeaseReleaseOutcome` conflated three facts under `released-unrecorded` — the alarm (nobody
+  recorded the handover), the healthy case (a successor already owns the record), and a read lease that never
+  locked. It is five members now, and `release()` is memoized so a second call cannot invent a handover.
+
+**A test that hung the runner, fixed.** With a lease guard mutated, `test/workspace.test.ts` printed its
+failure and hung past 900 seconds: the failing test never reached its `release()`, so a live `flock` kept
+node's event loop alive. On CI that turns a one-line assertion failure into a job timeout with no summary —
+and it is how an auditor gets a false "untested" reading from a suite that did catch the defect. Measured
+after an `after()` reaper: 900+s → 4s clean failure, no orphans.
+
+## R-127 · R-97's regression claim is corrected a SECOND time, not satisfied — L×M, OPEN
+
+Added 2026-08-20. The R-93/R-97/R-98 correction note above says all four previously-absent regressions "now
+have tests that fail when the guard is removed." For R-97 that is still false. The mutation that stayed
+green was at the **call site** — `infrastructureError ??= error` plus an early throw — and the fix extracted
+the logic into `throwFanoutInfrastructure`, which the new tests exercise directly with hand-built arrays.
+Nothing drives the `catch` that feeds it, and it is not reachable from the wiring layer: children fail as
+*refusals*, which land in `outcomes` normally and never throw.
+
+A test written for it was **deleted rather than weakened until it passed**. So: the extraction is a real
+improvement, the pure function is genuinely pinned, and the call site is not. **Correcting a false
+regression claim by making another one is the finding here** — recorded in the same file as the correction
+it repeats.
+
+## R-128 · Five review agents and an editor shared one working tree — M×L, PROCESS, FIXED BY SEQUENCING
+
+Added 2026-08-20. Reviewers were authorised to mutate production code and restore it. One reasonably read a
+dirty tree as its own mess and ran `git checkout -- .` twice, discarding four in-flight fixes and producing a
+phantom `commit (amend)` in the reflog that took a while to explain. The agents behaved correctly; the
+sequencing was wrong. **Either give each reviewer its own `git worktree`, or do not edit while a review is
+running.** Also measured: two concurrent `npm test` runs fail each other, while the docs advertise the suite
+as "fast, pure, no pi, no network" — worth knowing before it goes in a matrix build.
+
+## R-129 · The 17-mutation audit has no artifact — L×M, OPEN
+
+Added 2026-08-20. `docs/03-risks.md` and the session log both rest on "a 17-mutation audit", and rule 5 would
+normally park a measurement that load-bearing under `docs/probes/`. Nobody can re-run it, and R-127 is what
+that costs: a coverage claim derived from an audit no one can reproduce. The second round's mutations are
+likewise recorded only in commit messages.
+
 ---
 
 ## Register log
@@ -2096,3 +2169,4 @@ genuinely redundant and removes it deliberately.
 | 2026-08-20 | R-98 | Added and fixed in final review — herdr close failure releasing a live writer, check lease-loss racing receipt append, infrastructure error masking the critical token, and versioned lines bypassing v2 validation | final independent 0.18.0 review |
 | 2026-08-20 | R-93, R-97, R-98 | **Corrected, not rewritten (rule 2).** All three claimed a regression per fix; a 17-mutation audit on a confirmed-green baseline found **four** of those regressions absent — R-93's token guard, R-97's sibling-await, and two of R-98's four. The tests named for them passed for other reasons. All four now fail when the guard is removed. A claimed regression nobody re-derived is indistinguishable from an absent one | six-reviewer pass over the 0.18.0 candidate |
 | 2026-08-20 | R-99…R-118 | **Six independent reviewers over the unmerged 0.18.0 candidate, and the capability invariant held on every path any of them could construct** — no fail-open in authority resolution. What they found instead: the writer lease reporting handovers the kernel never performed (R-99, R-100, measured in `docs/probes/g35-flock-fd-inheritance`, which settled a disagreement between two reviewers who had reached opposite conclusions); a bound approval spendable outside the workspace it named (R-110); correlation as a model-writable text channel into the append-only ledger (R-111); a refused delegation banking a 30-day approval (R-113, the same shape as R-96 a third time); and a ledger with no vocabulary for lost, retained or uncontended leases (R-103…R-105). **The headline finding was not a defect but an absence**: eight guards holding up ADR-0034's advertised properties could each be deleted with 558/558 still green, in a project whose own rule 7 says a test that cannot fail is worse than none. R-101 and R-118 are accepted with their reasons stated | six-reviewer pass over the 0.18.0 candidate |
+| 2026-08-20 | R-119…R-129 | **Six reviewers over the FIX commits, and the fixes claimed properties the code did not have.** The invariant held a third time; the runtime half did not. Three critical: a terminal append still `strict: true` under four documents saying otherwise (R-119); the anti-silence mechanism satisfied nowhere (R-120); `unbankApprovals` both too narrow and too broad (R-121). R-122 shows the marquee R-106 fix was itself undefended — deleting all four guards left 580/580 green — and over-corrected. **R-127 records a regression claim corrected twice and still not satisfied**, with the test deleted rather than weakened to pass; R-128 the process error of editing a tree five reviewers were mutating; R-129 that the audit everything rests on has no artifact. Also fixed: a failing lease test hung the runner past 900s, which is how a suite that CAUGHT a defect reads as untested | six-reviewer pass over the fix commits |

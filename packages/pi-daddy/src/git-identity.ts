@@ -13,7 +13,12 @@ export interface GitCandidateIdentity {
   treeSha: string;
 }
 
-/** Compute HEAD plus exact tracked/untracked candidate content without changing the real index. */
+/** Compute HEAD plus NON-IGNORED tracked/untracked candidate content without changing the real index.
+ *
+ * NOT the exact working tree: `git add -A` honours `.gitignore`, `core.excludesFile` and
+ * `$GIT_DIR/info/exclude`, and records only a gitlink for a submodule. And it is not read-only — it writes
+ * blob objects into the real `.git/objects`. `docs/SPEC.md` retracted the word "exact"; this comment said
+ * it for one more round. */
 export async function computeGitCandidateIdentity(workspace: ValidatedWorkspace): Promise<GitCandidateIdentity> {
   const dir = await mkdtemp(join(tmpdir(), "pi-daddy-index-"));
   const index = join(dir, "index");

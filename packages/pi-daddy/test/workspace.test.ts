@@ -231,7 +231,12 @@ test("an unreadable predecessor record yields `unknown` recovery, never a clean 
 });
 
 /**
- * Pins the GROUP kill in teardown, deterministically.
+ * Pins the GROUP kill in teardown.
+ *
+ * NOT deterministic, despite an earlier version of this line saying so: the group kill enumerates members
+ * at call time, so a stand-in child forked in the same instant as the deadline can survive. Observed
+ * failing once under heavy concurrent load, passing 7/7 otherwise. It fails SAFE — a false failure, never
+ * a false pass.
  *
  * `flock` is not passed `--close`, so the helper it execs inherits the lock file descriptor and holds
  * the lock in its own right — measured in `docs/probes/g35-flock-fd-inheritance`. On the readiness

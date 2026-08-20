@@ -6,7 +6,7 @@ subset of what they themselves hold — enforced by **pi's own `--tools` allowli
 ledger of every grant and refusal.
 
 **Status:** `pi-daddy` **0.18.0 candidate** on this branch, not yet released; `0.17.1` remains the current
-release. 580 unit + 44 non-model integration tests, with a separately authorized real-model tier;
+release. 586 unit + 44 non-model integration tests, with a separately authorized real-model tier;
 typecheck, build, installed-package smoke and the Linux runtime probe are clean.
 
 **Want to run it?** [`docs/RUNNING-IT.md`](docs/RUNNING-IT.md) — setup in six steps, then a feature built
@@ -78,7 +78,7 @@ somebody.
 
 ```bash
 cd packages/pi-daddy
-npm test                   # 580 unit tests — pure, no pi, no network
+npm test                   # 586 unit tests — pure, no pi, no network
 npm run typecheck          # src + extensions + test + test-integration
 npm run test:integration   # 44 tests against a REAL pi process, no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and USE every subpath

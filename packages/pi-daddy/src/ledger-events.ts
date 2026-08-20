@@ -10,9 +10,9 @@ import type { CorrelationMetadata } from "./correlation.ts";
 import type { StructuredRefusal } from "./refusals.ts";
 
 /**
- * `released` is a handover this owner performed. The three added by the 0.18.0 review pass exist
- * because each was previously recorded as `released`, which made the ledger assert a handover that
- * did not happen:
+ * `released` is a handover this owner performed. FOUR members were added by the 0.18.0 review pass, and
+ * they were not all previously recorded the same way — `uncontended` was recorded as an *acquisition*, and
+ * `lost` was recorded as nothing at all, because the old `release()` threw before the append ran:
  *   `lost`     the kernel lock went away under a live governed writer — NOT the same fact as a user
  *              cancelling, which is what it used to be indistinguishable from (R-103);
  *   `retained` the lease was deliberately kept because a herdr writer tab would not close, so the

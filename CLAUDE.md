@@ -36,7 +36,7 @@ is an argument rather than a veto. Definitions are **Agent Skills (`SKILL.md`)**
 becomes the grant; the pi-subagents ceiling port is deleted; the interceptor survives only as a tripwire.
 
 **Current candidate: `pi-daddy` 0.18.0 — the only package, not yet merged or released.** Thirty-four ADRs
-decided (0034 amended after review). 580 unit + 44 integration tests, plus a 10-test opt-in tier behind
+decided (0034 amended TWICE after review). 586 unit + 44 integration tests, plus a 10-test opt-in tier behind
 `PI_GRANTS_IT_MODEL=1` that spawns real children; typecheck, build, smoke and both Linux probes clean.
 
 **A six-reviewer pass over this candidate found the capability invariant intact on every path and the
@@ -45,6 +45,13 @@ RUNTIME half full of holes** — R-99…R-118, and the ADR-0034 amendment lists 
 absence rather than a defect: eight guards holding up the ADR's advertised properties could each be deleted
 with the whole suite green. **If you are about to trust a claimed regression here, re-derive it** — four in
 the register turned out not to exist.
+
+**A SECOND pass over those fixes found R-119…R-129, and its lesson is the one to carry: a claim written
+beside a fix is not the fix.** Every critical finding both times was a comment, a SPEC paragraph or an ADR
+sentence describing an intention as an accomplished fact — including three of the first amendment's own new
+decisions. The mechanical guards here (line ceiling, branch guard, refusal enumeration) have never had this
+failure. **When a fix advertises a property, add the check that forces it in the same commit, or do not write
+the claim.**
 
 **What the product claims, precisely** — this wording is load-bearing and was narrowed by ADR-0012: it
 governs the **tool surface**, i.e. which tools pi exposes to a model, enforced structurally by pi's own
@@ -121,7 +128,7 @@ refuses until a gate passes that no longer means anything. They are in git histo
 
 ```bash
 cd packages/pi-daddy
-npm test                   # 580 unit tests — fast, pure, no pi, no network (the branch guard spawns git)
+npm test                   # 586 unit tests — fast, pure, no pi, no network (the branch guard spawns git)
 npm run typecheck          # src + extensions + tests + integration tests
 npm run test:integration   # 44 tests vs a REAL pi process AND a real herdr server — ~55s, no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and USE it

@@ -11,8 +11,8 @@ decisions; this file holds state and next actions. Newest entry on top.
 `hooks/pre-commit` enforces it once `git config core.hooksPath hooks` is set in your clone. This line is at
 the top because the rule was broken by drift, and this file is what a session actually reads first.
 
-**State: 0.18.0 candidate on `feat/assurance-runtime-primitives`, not merged or released.** **580 unit +
-44 integration tests** (measured 2026-08-20), plus a **10**-test opt-in tier behind `PI_GRANTS_IT_MODEL=1`;
+**State: 0.18.0 candidate on `feat/assurance-runtime-primitives`, not merged or released.** **586 unit +
+44 integration tests** (measured 2026-08-20, after a second review pass), plus a **10**-test opt-in tier behind `PI_GRANTS_IT_MODEL=1`;
 typecheck, build, installed-package smoke and both Linux probes clean. **Thirty-four** ADRs are decided,
 0034 amended after review. The paid/model tier was not run; it requires separate authorization.
 
@@ -109,6 +109,53 @@ That convention is why every reversal here was survivable, and there have been f
 
 ---
 
+## 2026-08-20 (second review) — six reviewers over the FIXES, and the fixes claimed what the code did not do
+
+**Asked for after the first pass, and it found more than the first pass did.** Six independent reviewers over
+`40783e3..HEAD` — my own fix commits. R-119…R-129.
+
+**The invariant held a third time.** Nobody could widen `effective`. Every finding is the runtime half, and
+they share one cause: **the claim was written before the code satisfied it.** Three critical —
+
+- the terminal `child_lifecycle` append was still `strict: true` while its own docstring, `docs/SPEC.md`, the
+  ADR amendment and R-99's entry all four said otherwise, so a contended lock still destroyed a completed
+  child's output (R-119);
+- the `onFailure` mechanism added *to prevent silent appends* was satisfied nowhere — two empty callbacks,
+  one guarding the evidence record (R-120);
+- `unbankApprovals` was gated on one refusal path and revoked by key with no ownership check, so a human
+  declining the second of two gated capabilities stranded a 30-day approval, and a joined gate let one
+  refusal destroy a live sibling's authority (R-121).
+
+**The marquee fix was itself undefended.** Deleting all four non-text guards from
+`isCriticalAssuranceBlock` left 580/580 green — R-106, the headline of the commit that introduced it. And it
+had over-corrected: `truncated` rejected a genuine 1 MB veto, breaking the pass-through ADR-0034 pins.
+
+**A test hung the runner and that mattered more than it sounds.** With a lease guard mutated,
+`test/workspace.test.ts` printed its failure then hung past 900s — the failing test never reached its
+`release()`, so a live `flock` kept the event loop alive. On CI a one-line assertion failure becomes a job
+timeout with no summary, which is exactly how a suite that CAUGHT a defect reads as untested. 900+s → 4s
+after an `after()` reaper.
+
+**Six of seven unpinned guards now have mutation-verified tests. The seventh I could not honestly pin** —
+the fan-out infrastructure `catch` is unreachable from the wiring layer, so R-97's claim is corrected a
+second time rather than satisfied, and the test I wrote for it was **deleted rather than weakened until it
+passed** (R-127). Two others are ACCEPTED with reasons: R-128 (five reviewers and an editor in one working
+tree — one reasonably ran `git checkout -- .` on my in-flight work, which is a sequencing error of mine, not
+theirs) and R-129 (the 17-mutation audit has no artifact under `docs/probes/`, and R-127 is what that costs).
+
+**Nine documentation claims contradicted the code, four of them introduced by the commit whose purpose was
+correcting documentation.** The sharpest: I changed a SPEC sentence to say "tracked content" when the axis is
+ignored-vs-not — measured, an untracked file *does* change `tree_sha`. Also corrected: "correlation values no
+longer reach the binding at all" (`context_id` still does), the probe README's "precisely because" causal
+claim for something it only greps, and my own test docstring calling a load-sensitive test "deterministic".
+
+Verification: **586/586 unit**, typecheck, no module over the ceiling. The paid tier was again not run.
+
+**What I would do differently, since it is the second time:** the mechanical guards this project already
+trusts — the line ceiling, the branch guard, the refusal enumeration — have never had this failure. Prose
+beside a fix has now had it twice. When a fix advertises a property, the same commit should add the check
+that forces it, or the claim should not be written.
+
 ## 2026-08-20 (review) — six reviewers over the candidate: the invariant held, the runtime half did not
 
 **Requested after the takeover below, and it changed the merge decision.** Six independent reviewers over
@@ -137,7 +184,7 @@ and keeps the lock; `-o/--close` exists because inheriting is the default and pi
 `FD_CLOEXEC` reading was wrong. **Do not take a reviewer's "I measured it" as measurement** — that is what
 `docs/probes/` is for, and this is the second time a probe has been written to settle careful reasoning.
 
-Fixed, each with a test that fails when the guard is removed: R-99…R-105 (the lease reporting handovers the
+Fixed, and the four re-derived guards each have a test that fails when removed (the rest were tested but not mutation-audited — corrected 2026-08-20, see R-127): R-99…R-105 (the lease reporting handovers the
 kernel never performed, and a ledger with no words for lost/retained/uncontended), R-106 (a child minting the
 upstream controller's verdict out of a timeout), R-107…R-109 (refusals an external controller could not
 identify, including ADR-0011's narrowing violation), R-110 (a bound approval spendable outside the workspace
