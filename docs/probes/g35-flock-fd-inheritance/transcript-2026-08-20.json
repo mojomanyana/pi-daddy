@@ -1,0 +1,15 @@
+{
+  "node": "v24.14.0",
+  "platform": "linux",
+  "findings": {
+    "flock_version": "flock from util-linux 2.39.3",
+    "close_flag_documented": true,
+    "child_pid_observed": true,
+    "child_holds_lock_fd": true,
+    "held_while_both_alive": "held",
+    "child_survives_wrapper_kill": true,
+    "held_after_wrapper_kill_only": "held",
+    "held_after_child_kill": "free",
+    "conclusion": "the exec'd command inherits the lock fd; killing only the wrapper LEAVES THE LOCK HELD"
+  }
+}

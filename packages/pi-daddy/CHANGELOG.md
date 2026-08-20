@@ -30,9 +30,38 @@ the record of how the package got here and are worth keeping; they are not worth
   with an environment allowlist, timeout/output bounds, privately staged exact executable bytes, and
   pre/post-verified Git HEAD/candidate-tree receipts under an exclusive coordination lease. Arbitrary
   executables remain arbitrary code; no filesystem/network sandbox is claimed.
-- **Ledger format v2:** append-only capability, workspace-lease, child-lifecycle and check-receipt events.
-  The new reader accepts legacy grant lines. External readers that assume every line is a grant record must
-  switch on `event` before consuming a v2 stream.
+- **BREAKING — ledger format v2:** append-only capability, workspace-lease, child-lifecycle and
+  check-receipt events. The new reader accepts legacy grant lines. Three things a consumer must know, two of
+  which are compile-or-run breaks rather than advisories:
+  - External readers that assume every line is a grant record must **switch on `event`** first.
+  - `LedgerReport` (published via `pi-daddy/ledger`) gained **required** fields — `events`,
+    `workspaceLeases`, `lifecycle`. Any TypeScript consumer that constructs one, or handles it
+    exhaustively, breaks at compile time.
+  - `report.records` **changed meaning**: it counted every parsed line and now counts capability decisions
+    only, with lease/lifecycle/receipt lines going to `events`. A consumer reading it as "ledger lines"
+    silently gets a different number.
+  - A line carrying `ledgerVersion` is now **rejected as corrupt** unless it satisfies the full v2 field
+    set, which matters to anyone who hand-writes or re-emits ledger lines.
+- **BREAKING — `correlation` is a whitelist.** Only the pinned schema 1.0 field set is accepted; strings are
+  capped at 512 characters, `assurance_scope` at 4 KB, and an **undeclared key is refused by name** rather
+  than passed through. A caller sending extra fields must stop. This is a privacy control: `correlation` is
+  model-facing and copied verbatim onto every append-only event, so an unbounded object was a channel for
+  writing arbitrary text into a file that carries no prompts, arguments or results.
+- **BREAKING for direct API callers — `WorkspaceLease.release()` returns
+  `"released" | "released-unrecorded" | "lost"` and no longer throws**, and `recovered` is
+  `boolean | "unknown"`. `WorkspaceLeaseOutcome` gains `uncontended`, `released-unrecorded`, `lost` and
+  `retained`. Code that relied on `release()` rejecting must read the value instead.
+- **Fixes from a six-reviewer pass over this candidate before release.** The capability invariant held on
+  every path any reviewer could construct; these are the runtime half. `flock`'s command inherits the lock
+  file descriptor (measured — `docs/probes/g35-flock-fd-inheritance`), so teardown killing only the wrapper
+  stranded the lock and reported it to everyone else as a conflict. `recovered` could assert a crash after a
+  clean handover and hide a real one. The herdr close loop retried forever while holding the lock. A bound
+  approval could be spent outside the workspace it named, because two of its six identity components were
+  read from caller-supplied correlation. A refused delegation could leave a 30-day approval on disk. A child
+  could mint the upstream controller's `BLOCKED_CRITICAL_ASSURANCE` verdict out of a timeout. Fan-out
+  discarded every sibling error but the first. Five planner refusals and every execution-phase failure
+  carried no stable code. See `docs/03-risks.md` R-99…R-118 and the ADR-0034 amendment, which also lists
+  what the pass did **not** resolve.
 
 New public subpaths: `pi-daddy/correlation`, `pi-daddy/refusals`, `pi-daddy/workspace`, and
 `pi-daddy/check-runner`.

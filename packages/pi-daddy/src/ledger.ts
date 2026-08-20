@@ -45,7 +45,11 @@ export interface LedgerEventBase {
 }
 
 export interface GrantRecord extends LedgerEventBase {
-  /** Optional in the construction type for pre-v2 TypeScript callers; `buildRecord` always emits it. */
+  /**
+   * Present only when a trusted `taskDigest` was supplied — that is what makes a line v2. `buildRecord`
+   * does NOT always emit it, and the comment here used to say it did while the emission site 200 lines
+   * down said the opposite. Two comments asserting contradictory facts about one field is R-28's shape.
+   */
   event?: "capability_decision";
   parentId: string;
   childId: string;

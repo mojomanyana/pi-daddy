@@ -11,10 +11,15 @@ decisions; this file holds state and next actions. Newest entry on top.
 `hooks/pre-commit` enforces it once `git config core.hooksPath hooks` is set in your clone. This line is at
 the top because the rule was broken by drift, and this file is what a session actually reads first.
 
-**State: 0.18.0 candidate on `feat/assurance-runtime-primitives`, not merged or released.** **558 unit +
-44 integration tests** (measured 2026-08-19), plus an opt-in tier behind `PI_GRANTS_IT_MODEL=1`; typecheck,
-build, installed-package smoke and the Linux runtime-enforcement probe are clean. **Thirty-four** ADRs
-are decided. The paid/model tier was not run; it requires separate authorization.
+**State: 0.18.0 candidate on `feat/assurance-runtime-primitives`, not merged or released.** **580 unit +
+44 integration tests** (measured 2026-08-20), plus a **10**-test opt-in tier behind `PI_GRANTS_IT_MODEL=1`;
+typecheck, build, installed-package smoke and both Linux probes clean. **Thirty-four** ADRs are decided,
+0034 amended after review. The paid/model tier was not run; it requires separate authorization.
+
+**A six-reviewer pass on 2026-08-20 rewrote the risk on this branch — read R-99…R-118 and the ADR-0034
+amendment before touching it.** The capability invariant held everywhere; the runtime half did not. And
+**four regressions the register claimed were absent**, so re-derive any claimed regression here rather than
+trusting the entry.
 
 **2026-08-16/17 added the pi-daddy half of the `principal-pi-skills` integration** (handoff B1/B2/B4,
 ADR-0028 and ADR-0029), then **red-teamed it with five independent agents who found nine defects** — R-78
@@ -28,9 +33,11 @@ not ours** — `principal-pi-skills` declaring `allowed-tools` on its seven skil
 and the operator writes seven ceilings by hand. **Do not resolve A1 from here**: the handoff's proposed
 table is unresolved and self-contradicting, and the ceiling belongs to whoever wrote the skill.
 
-**Before release, the 0.18.0 candidate needs a human/PR review.** Four independent automated review rounds
-found and fixed assurance bypasses through R-98; do not merge or publish from this session. The older known-open list below remains unchanged:
-item 1 needs weeks of real usage, and items 6 and 7 are closed by decision.
+**Before release, the 0.18.0 candidate needs the OPERATOR's review.** Ten automated review rounds have now
+found and fixed assurance bypasses through R-118, and the last six found things the first four missed —
+including four regressions those rounds had *claimed*. That is the argument for a human, not against one. Do
+not merge or publish from a session. The older known-open list below remains unchanged: item 1 needs weeks
+of real usage, and items 6 and 7 are closed by decision.
 
 **The four unreviewed changes were reviewed by the operator on 2026-08-14 and three produced a finding**
 (R-60's guard, R-61's fourth state, R-63's twentyfold bias). **What made that review work is worth copying**:
@@ -40,7 +47,7 @@ rather than costing a pass. Write the hypotheses down; verify them before asking
 
 ```bash
 cd packages/pi-daddy && npm test && npm run typecheck && npm run test:integration && npm run test:smoke
-PI_GRANTS_IT_MODEL=1 npm run test:integration   # the 3 model-driven ones — ~60s, costs money
+PI_GRANTS_IT_MODEL=1 npm run test:integration   # the 10 model-driven ones — costs money
 ```
 
 **2026-08-13/14 took this from 0.9.0 to 0.12.1: nine ADRs (0017–0025) and R-38 through R-59.** The shape of
@@ -101,6 +108,60 @@ That convention is why every reversal here was survivable, and there have been f
 `docs/SPEC.md` in the same change — a spec that lags the code is worse than no spec.
 
 ---
+
+## 2026-08-20 (review) — six reviewers over the candidate: the invariant held, the runtime half did not
+
+**Requested after the takeover below, and it changed the merge decision.** Six independent reviewers over
+`git diff origin/main...feat/assurance-runtime-primitives`: general correctness, silent failures, test
+coverage, type design, an adversarial architecture pass, and comment/doc accuracy. None was told what the
+takeover had already found, so overlap is signal.
+
+**The good news first, because it is the load-bearing part.** Every reviewer that looked for it confirmed
+`effective = (requested ∩ parentGrant ∩ ceiling) \ (gated \ approved)` holds on every path they could
+construct. Correlation never reaches `resolve()`. Bound approvals never reach `ENV_APPROVED`. Write access is
+derived from the trusted requested set, not the model's label. The approval layer carries an independent
+binding-equality backstop. **No fail-open in capability authority.**
+
+**The headline finding was an absence, not a defect.** A 17-mutation audit on a confirmed-green baseline
+showed **eight guards holding up ADR-0034's advertised properties could each be deleted with 558/558 still
+passing** — including "a bound approval cannot cross a delegation boundary", which the ADR, the SPEC and the
+README all state, and which two mutations broke silently. In a project whose own rule 7 says a test that
+cannot fail is worse than none, after three recorded review rounds, that was the thing not to merge past.
+**And four regressions the register claimed for R-93, R-97 and R-98 do not exist** — the tests named for them
+passed for other reasons. Corrected in place by dated note, per rule 2.
+
+**Two reviewers contradicted each other on the one thing that mattered most, and both said they had measured
+it**: whether SIGKILLing the `flock` wrapper releases the lock. So it was measured here —
+`docs/probes/g35-flock-fd-inheritance`. The exec'd command **inherits the lock fd**, survives the wrapper,
+and keeps the lock; `-o/--close` exists because inheriting is the default and pi-daddy does not pass it. The
+`FD_CLOEXEC` reading was wrong. **Do not take a reviewer's "I measured it" as measurement** — that is what
+`docs/probes/` is for, and this is the second time a probe has been written to settle careful reasoning.
+
+Fixed, each with a test that fails when the guard is removed: R-99…R-105 (the lease reporting handovers the
+kernel never performed, and a ledger with no words for lost/retained/uncontended), R-106 (a child minting the
+upstream controller's verdict out of a timeout), R-107…R-109 (refusals an external controller could not
+identify, including ADR-0011's narrowing violation), R-110 (a bound approval spendable outside the workspace
+it named — two of six identity components came from caller-supplied correlation), R-111 (correlation as a
+model-writable 32 KB text channel into the append-only ledger, against that file's own header), R-112,
+R-113 (a refused delegation banking a 30-day approval — the same shape as R-96, a third time),
+R-114…R-117.
+
+**Accepted with reasons, not silently:** R-101 (pid recycling in the embedded helper) and R-118 (the
+worktree-membership check is defence-in-depth and I could not construct a case where it is the only guard
+that fires — recorded rather than given a test that would pass for another reason).
+
+**Not resolved, and listed in the ADR-0034 amendment so nobody mistakes this for finished:** workspace
+routing is the one governance dimension that does **not** attenuate (a child in `staging` can route its
+grandchild to `prod`); a persisted binding pins *text*, not tree state, so a 30-day approval replays at an
+unreviewed `head_sha`, while `delegate_chain`'s per-run nonce makes *Always* unable to apply at all; the
+dialog discloses three of the six bound components; `tree_sha` is blind to `.gitignore`d paths and `.git`
+itself, so a check can install a hook and report an unchanged tree; and the lease key omits the lease
+directory, so two agent roots each believe they are the single writer.
+
+Verification after the fixes: **580/580 unit, 44/44 non-model integration, typecheck, build,
+installed-package smoke, `git diff --check`, and both probes** (g34 and the new g35). Six new modules exist
+only because four files crossed the 400-line ceiling during the work and it was split rather than raised.
+The paid tier was again not run.
 
 ## 2026-08-20 — the 0.18.0 candidate was taken over and re-verified, then opened as a PR
 

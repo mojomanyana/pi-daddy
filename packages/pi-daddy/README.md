@@ -683,12 +683,12 @@ every in-repo test passed. `npm run test:smoke` packs a tarball, installs it int
 ## Testing
 
 ```bash
-npm test                   # 353 unit tests. Fast, pure, no pi, no network.
+npm test                   # 580 unit tests. Fast, pure, no pi, no network.
 npm run typecheck          # src + extensions + tests + integration tests
-npm run test:integration   # 28 tests against a REAL pi process. ~40s, no model tokens.
+npm run test:integration   # 44 tests against a REAL pi process. ~55s, no model tokens.
 npm run test:smoke         # pack, install into a scratch project, import and use it — and run the
                            # installed `pi-daddy init` bin, which is how R-73 was found
-PI_GRANTS_IT_MODEL=1 npm run test:integration   # + 3 end-to-end tests with a real model. ~60s, costs money.
+PI_GRANTS_IT_MODEL=1 npm run test:integration   # + 10 end-to-end tests with a real model. Costs money.
 ```
 
 The resolver is a pure function, which is deliberate: it is the only place an escalation could be

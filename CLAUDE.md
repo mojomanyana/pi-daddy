@@ -36,8 +36,15 @@ is an argument rather than a veto. Definitions are **Agent Skills (`SKILL.md`)**
 becomes the grant; the pi-subagents ceiling port is deleted; the interceptor survives only as a tripwire.
 
 **Current candidate: `pi-daddy` 0.18.0 — the only package, not yet merged or released.** Thirty-four ADRs
-decided. 558 unit + 44 integration tests, plus an opt-in tier behind `PI_GRANTS_IT_MODEL=1` that spawns
-real children; typecheck, build, smoke and the Linux runtime-enforcement probe are clean.
+decided (0034 amended after review). 580 unit + 44 integration tests, plus a 10-test opt-in tier behind
+`PI_GRANTS_IT_MODEL=1` that spawns real children; typecheck, build, smoke and both Linux probes clean.
+
+**A six-reviewer pass over this candidate found the capability invariant intact on every path and the
+RUNTIME half full of holes** — R-99…R-118, and the ADR-0034 amendment lists what it did *not* resolve
+(workspace routing does not attenuate; a persisted binding pins text, not tree state). The headline was an
+absence rather than a defect: eight guards holding up the ADR's advertised properties could each be deleted
+with the whole suite green. **If you are about to trust a claimed regression here, re-derive it** — four in
+the register turned out not to exist.
 
 **What the product claims, precisely** — this wording is load-bearing and was narrowed by ADR-0012: it
 governs the **tool surface**, i.e. which tools pi exposes to a model, enforced structurally by pi's own
@@ -75,7 +82,10 @@ docs/probes/              — measurement evidence, all against real software. E
                             not establish" section: baseline/, pi-fabric-eval/, approval-ux/,
                             adr-0011-universal/, g1-argv/, g5-bash-escape/, g13-subagents-coupling/,
                             g16-herdr/ (herdr as an executor + four constraints found by building it),
-                            b2-init-principal-pi-skills/ (the whole init loop against the real package)
+                            b2-init-principal-pi-skills/ (the whole init loop against the real package),
+                            g34-runtime-enforcement/ (kernel writer leases, crash recovery, literal argv),
+                            g35-flock-fd-inheritance/ (`flock`'s command INHERITS the lock fd — the probe
+                            that settled two reviewers who had measured it and disagreed)
 hooks/pre-commit          — working rule 10's guard: refuses a commit on `main`. Inert until you run
                             `git config core.hooksPath hooks` — per clone, not carried by the repository
 docs/00-blueprint.md      — the architecture handoff, verbatim (immutable source input)
@@ -111,7 +121,7 @@ refuses until a gate passes that no longer means anything. They are in git histo
 
 ```bash
 cd packages/pi-daddy
-npm test                   # 558 unit tests — fast, pure, no pi, no network (the branch guard spawns git)
+npm test                   # 580 unit tests — fast, pure, no pi, no network (the branch guard spawns git)
 npm run typecheck          # src + extensions + tests + integration tests
 npm run test:integration   # 44 tests vs a REAL pi process AND a real herdr server — ~55s, no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and USE it
