@@ -6,7 +6,7 @@ import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { promisify } from "node:util";
 import { GovernanceRefusal, refusal } from "./refusals.ts";
-import { isWellFormedCapability, workspaceCapability } from "./capabilities.ts";
+import { isSafeCapability, workspaceCapability } from "./capabilities.ts";
 
 const execFileAsync = promisify(execFile);
 export const ENV_WORKSPACE_REGISTRY = "PI_GRANTS_WORKSPACE_REGISTRY";
@@ -171,19 +171,20 @@ export async function loadWorkspaceRegistry(
         { registry_path: path, workspace_id: id },
       ));
     }
-    // ADR-0035 made a registry id the tail of a CAPABILITY id (`workspace:<id>`), which means this file is
-    // now an input to the grant grammar and has to obey it. 0.18.1 was a security release for one comma:
-    // grants are comma-joined and comma-split, so an operator who registered `a,b` and wrote
-    // `workspace:a,b` would have got `workspace:a` **plus `tool:b`** — authority nobody typed — and still
-    // could not route, because the exact id never matched. Refused at the registry, where the operator can
-    // see the file, rather than at the far end of a split.
-    if (!isWellFormedCapability(workspaceCapability(id))) {
+    // ADR-0035 made a registry id the tail of a CAPABILITY id (`workspace:<id>`), so this file is an input
+    // to the grant grammar and has to obey it — the STRICT one. This shipped with the loose
+    // `isWellFormedCapability` blocklist, and review measured what that let through: an id of `*` minted
+    // `WORKSPACE_WILDCARD` (an operator naming one worktree held routing over all of them), an id with a
+    // space became two capabilities because `ceilingForDefinition` splits on `[\s,]+`, and quote/`$()` ids
+    // reached a generated file whose own instructions say to paste them into `PI_GRANTS_GRANT`. See
+    // `isSafeCapability`, which is now the one grammar for both channels into that file.
+    if (!isSafeCapability(workspaceCapability(id))) {
       throw new GovernanceRefusal(refusal(
         "GRANT_ID_MALFORMED",
         `workspace registry id ${JSON.stringify(id)} cannot be used: since ADR-0035 an id becomes the ` +
-          `capability ${JSON.stringify(workspaceCapability(id))}, and grants are comma-separated, so an id ` +
-          `containing a comma or surrounding whitespace would be read as several capabilities — including ` +
-          `ones nothing granted. Rename it in ${path}.`,
+          `capability ${JSON.stringify(workspaceCapability(id))}, which must match [A-Za-z0-9][A-Za-z0-9._-]* ` +
+          `— so no spaces, quotes, commas, wildcards or shell metacharacters. An id outside that either ` +
+          `splits into several capabilities or reaches a file you are told to source. Rename it in ${path}.`,
         { registry_path: path, workspace_id: id },
       ));
     }

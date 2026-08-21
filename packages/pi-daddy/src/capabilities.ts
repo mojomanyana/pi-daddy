@@ -112,6 +112,41 @@ export function isWellFormedCapability(id: string): boolean {
 }
 
 /**
+ * The STRICT grammar: a whitelist of what a capability id may look like, not a blocklist of what it may not.
+ *
+ * **Two consumers, and they are two different reasons for the same rule.** It lives here rather than in
+ * either of them because it shipped in one and was needed by both:
+ *
+ *  1. `skill-packages.ts` — the boundary that GENERATES a grant. R-77/R-78: a package declaring
+ *     `allowed-tools: Read,ext:x";touch /tmp/pwned;PI_GRANTS_GRANT="` produced a `.pi/grants.env` that ran
+ *     arbitrary code the moment an operator sourced the line `init` prints.
+ *  2. `workspace.ts` — the operator registry, since ADR-0035 made a registry id the tail of a capability id
+ *     (`workspace:<id>`). That made the registry an input to this grammar, and it got the LOOSE
+ *     `isWellFormedCapability` blocklist instead, which review showed costs three things:
+ *     an id of literally `*` loaded and minted `WORKSPACE_WILDCARD`, so an operator naming ONE worktree held
+ *     routing authority over every id in the registry including ones added later;
+ *     an id containing a space became TWO capabilities, because `ceilingForDefinition` splits `allowed-tools`
+ *     on `[\s,]+` — `allowed-tools: read, workspace:prod bash` measured as
+ *     `['tool:bash','tool:read','workspace:prod']`, i.e. routing over production plus a shell, neither typed
+ *     by anyone (0.18.1's comma, one namespace over);
+ *     and quote/`$()`/backtick ids reached the `ROUTABLE WORKSPACES` block of the generated file, whose own
+ *     instructions tell the operator to paste them into `PI_GRANTS_GRANT`.
+ *
+ * **A blocklist was the wrong shape for this and the comment on `isWellFormedCapability` says why it is the
+ * right shape THERE**: that one guards the enforcement path, which must keep accepting whatever ids operators
+ * already have. A registry is a file the operator writes and can rename, so refusing a hostile id costs
+ * nothing — and `grant-env.ts`'s standing warning applies to it exactly: *"the third channel — whatever it
+ * turns out to be — should cost a refusal rather than an injection."* The registry was the third channel.
+ */
+export function isSafeCapability(id: Capability): boolean {
+  const segment = "[A-Za-z0-9][A-Za-z0-9._-]*";
+  return (
+    new RegExp(`^(tool|skill|agent|workspace):${segment}$`).test(id) ||
+    new RegExp(`^ext:(@${segment}/)?${segment}/${segment}$`).test(id)
+  );
+}
+
+/**
  * The write-side backstop, for every channel that joins capabilities into one string.
  *
  * `covered()` already refuses to GRANT a malformed id, so this should be unreachable — which is exactly

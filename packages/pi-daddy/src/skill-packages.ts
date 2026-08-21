@@ -31,6 +31,7 @@ import { join, resolve, sep } from "node:path";
 import { ceilingForDefinition, parseSkillDefinition, type SkillDefinition } from "./definitions.ts";
 import { WILDCARD } from "./pi-tools.ts";
 import { AGENT_WILDCARD, WORKSPACE_WILDCARD, type Capability } from "./resolve.ts";
+import { isSafeCapability } from "./capabilities.ts";
 
 export interface DiscoveredSkill {
   definition: SkillDefinition;
@@ -117,13 +118,9 @@ export function isSafeName(name: string): boolean {
  * something that "is not a name". A namespace has to be added here as well as to the enforcing path, and
  * that is the whole lesson of the review this came out of.
  */
-export function isSafeCapability(id: Capability): boolean {
-  const segment = "[A-Za-z0-9][A-Za-z0-9._-]*";
-  return (
-    new RegExp(`^(tool|skill|agent|workspace):${segment}$`).test(id) ||
-    new RegExp(`^ext:(@${segment}/)?${segment}/${segment}$`).test(id)
-  );
-}
+// Imported as well as re-exported: a bare `export … from` does not bind the name in this module's scope, and
+// `refusalFor` below calls it. Re-exported because this has been the import site since 0.13.0.
+export { isSafeCapability };
 
 /**
  * The ids that confer authority over a whole namespace. A package declaring one is claiming it, not

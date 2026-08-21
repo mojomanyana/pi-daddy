@@ -29,9 +29,10 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { ceilingForDefinition, parseSkillDefinition } from "../src/definitions.ts";
 import { countDeclaring, type PlannedSkill, type WithholdReason } from "../src/init.ts";
-import { parseArgs } from "../src/cli.ts";
+import { main, parseArgs } from "../src/cli.ts";
 import { assertGrantIsWritable, UnsafeGrantError } from "../src/grant-env.ts";
-import { applyInit, planInit, withPlaceholder } from "../src/init.ts";
+import { applyInit, planInit, registeredWorkspaceIds, withPlaceholder } from "../src/init.ts";
+import { buildCatalog } from "../src/catalog.ts";
 import { discoverSkillPackages, readSkillPackage } from "../src/skill-packages.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
@@ -290,7 +291,15 @@ test("init scaffolds the registered workspaces, commented, and grants none of th
     deployer: DECLARED.replace("Read, Grep", "Read, workspace:prod"),
   });
 
-  const plan = planInit(await discoverSkillPackages(cwd), cwd, ["prod", "staging"]);
+  const packages = await discoverSkillPackages(cwd);
+  // **Asserted first, and a mutation audit is why.** Every other assertion below is satisfied *more* strongly
+  // by the package being dropped entirely — `routableWorkspaces` comes from the registry ids, and
+  // `grant.includes("agent:deployer") === false` passes both when the definition is withheld and when it
+  // never existed. So reverting `isSafeCapability`'s `workspace` alternative left this test green while
+  // silently making a routing package unusable. Pin the discovery, and the declared half stops being inert.
+  assert.deepEqual(packages[0].refused, [], "a package declaring routing must not be refused as unsafe");
+  const plan = planInit(packages, cwd, ["prod", "staging"]);
+  assert.deepEqual(plan.skills.map((s) => s.name), ["deployer"], "and it must actually be written");
 
   assert.deepEqual(plan.routableWorkspaces, ["workspace:prod", "workspace:staging"]);
   assert.equal(
@@ -316,6 +325,82 @@ test("init scaffolds the registered workspaces, commented, and grants none of th
   const noRegistry = planInit(await discoverSkillPackages(bare), bare, []);
   assert.deepEqual(noRegistry.routableWorkspaces, []);
   assert.equal(noRegistry.grantEnvContent.includes("ROUTABLE WORKSPACES"), false);
+});
+
+/**
+ * The registry-reading half of the feature, through the entry point an operator actually runs.
+ *
+ * **A mutation audit found this whole chain untested.** Every existing case calls `planInit(pkgs, cwd, [ids])`
+ * with the ids handed in by the test, so `registeredWorkspaceIds`, both `planInit` call sites and both
+ * `buildCatalog` wirings were each revertible with the suite green — and the docstring above claims "dropping
+ * `registeredWorkspaceIds()` from either `planInit` caller" breaks a test, which was false for both. It is the
+ * same shortcut probe g36 took and got caught for: exercise the mechanism, skip the wiring.
+ *
+ * This drives `main(["init"])` against a real registry file, so the wiring is what is under test.
+ *
+ * Breaks by: dropping `await registeredWorkspaceIds()` from `src/cli.ts`'s `planInit` call, or making
+ * `registeredWorkspaceIds` return `[]`.
+ */
+test("`pi-daddy init` reads the real registry — the wiring, not just the plan", async () => {
+  const cwd = await project();
+  await skillPackage(cwd, "plain-pkg", "1.0.0", { review: DECLARED });
+  const registry = join(cwd, "registry.json");
+  await writeFile(registry, JSON.stringify({
+    version: 1,
+    workspaces: { "prod-1": { path: cwd }, sandbox: { path: cwd } },
+  }), "utf8");
+
+  const previous = process.env.PI_GRANTS_WORKSPACE_REGISTRY;
+  process.env.PI_GRANTS_WORKSPACE_REGISTRY = registry;
+  try {
+    // `registeredWorkspaceIds` reading a real file, positively — the FIFO case only proves it returns [].
+    assert.deepEqual(await registeredWorkspaceIds(), ["prod-1", "sandbox"]);
+
+    assert.equal(await main(["node", "cli", "init", "--dir", cwd]), 0);
+    const written = await readFile(join(cwd, ".pi", "grants.env"), "utf8");
+    assert.match(written, /# ROUTABLE WORKSPACES/);
+    assert.match(written, /^#   workspace:prod-1$/m);
+    assert.match(written, /^#   workspace:sandbox$/m);
+    const live = /export PI_GRANTS_GRANT="([^"]*)"/.exec(written)?.[1] ?? "";
+    assert.equal(live.includes("workspace:"), false, live);
+
+    // And the catalog wiring, which is the other consumer of the same read.
+    const catalog = await buildCatalog({
+      cwd,
+      observedTools: null,
+      registryPath: process.env.PI_GRANTS_WORKSPACE_REGISTRY,
+    });
+    assert.deepEqual(catalog.byKind("workspace"), ["workspace:prod-1", "workspace:sandbox"]);
+  } finally {
+    if (previous === undefined) delete process.env.PI_GRANTS_WORKSPACE_REGISTRY;
+    else process.env.PI_GRANTS_WORKSPACE_REGISTRY = previous;
+  }
+});
+
+/**
+ * A package claiming a whole namespace is a *claim*, not a typo — and the two get different sentences.
+ *
+ * `wildcardsIn` learned `workspace:*` when ADR-0035's review found `isSafeCapability` had not; a mutation
+ * audit then found nothing asserted it, so a package declaring `workspace:*` could silently go back to being
+ * reported as "not a name". The distinction is the whole reason `refusalFor` orders its checks the way it
+ * does: *"a wildcard is a deliberate claim, an unsafe id is probably a typo or an attack."*
+ *
+ * Breaks by: removing `WORKSPACE_WILDCARD` from `wildcardsIn`.
+ */
+test("a package claiming a namespace wildcard is reported as a claim, not as a bad name", async () => {
+  const cwd = await project();
+  await skillPackage(cwd, "wild-pkg", "1.0.0", {
+    router: DECLARED.replace("Read, Grep", "Read, workspace:*"),
+    spawner: DECLARED.replace("Read, Grep", "Read, agent:*"),
+  });
+
+  const refused = (await discoverSkillPackages(cwd))[0].refused;
+  assert.deepEqual(
+    refused.map((r) => [r.subject, r.reason]).sort(),
+    [["router", "wildcard"], ["spawner", "wildcard"]],
+    "both namespace wildcards are wildcard CLAIMS, not unsafe names",
+  );
+  assert.deepEqual(refused.find((r) => r.subject === "router")?.detail, ["workspace:*"]);
 });
 
 test("two packages declaring the same name: the first wins and the loser is named", async () => {

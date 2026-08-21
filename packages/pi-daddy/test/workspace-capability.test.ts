@@ -280,12 +280,37 @@ test("a registry id that would not survive the grant grammar is refused at load"
   const trailing = await write("trailing.json", { version: 1, workspaces: { "prod ": { path: "/w/p" } } });
   await assert.rejects(loadWorkspaceRegistry(trailing), (e: Error & { code?: string }) => e.code === "GRANT_ID_MALFORMED");
 
-  // A well-formed id still loads, so the guard is not simply refusing everything. And an INTERNAL space is
-  // deliberately allowed: only characters that make one id read as several are refused, which is the line
-  // 0.18.1 drew on purpose — "a security patch should close the hole without inventing a new way to refuse
-  // a legitimate setup". `workspace: prod` is one capability in every channel that carries it.
-  const fine = await write("fine.json", { version: 1, workspaces: { "prod-1": { path: "/w/p" }, "east us": { path: "/w/e" } } });
-  assert.deepEqual(Object.keys((await loadWorkspaceRegistry(fine)).workspaces).sort(), ["east us", "prod-1"]);
+  // **An internal space is refused, and an earlier version of this test asserted the opposite.** It blessed
+  // `"east us"` and claimed "`workspace: prod` is one capability in every channel that carries it". That is
+  // false, and the channel is one file over: `ceilingForDefinition` splits `allowed-tools` on `[\s,]+`.
+  assert.deepEqual(
+    ceilingForDefinition({
+      name: "d", description: "", allowedTools: "read, workspace:prod bash", body: "", source: "/s",
+    } as SkillDefinition).capabilities,
+    ["tool:bash", "tool:read", "workspace:prod"],
+    "one space in a registry id buys routing over PRODUCTION plus a shell, neither of them typed",
+  );
+  const spaced = await write("spaced.json", { version: 1, workspaces: { "east us": { path: "/w/e" } } });
+  await assert.rejects(loadWorkspaceRegistry(spaced), (e: Error & { code?: string }) => e.code === "GRANT_ID_MALFORMED");
+
+  // A wildcard as an id minted WORKSPACE_WILDCARD: an operator naming ONE worktree held routing authority
+  // over every id in the registry, including ones added later, while `workspace:*` was simultaneously
+  // unusable for delegation. Two reviewers found this independently.
+  const star = await write("star.json", { version: 1, workspaces: { "*": { path: "/w/one" } } });
+  await assert.rejects(loadWorkspaceRegistry(star), (e: Error & { code?: string }) => e.code === "GRANT_ID_MALFORMED");
+
+  // The shell metacharacters that reached the generated file's ROUTABLE WORKSPACES block, whose own
+  // instructions tell the operator to paste the id into PI_GRANTS_GRANT (R-77/R-78's argument).
+  for (const hostile of ['a";touch /tmp/pwned;x="', "a$(id)", "a`id`", "a;b", "a'b", "a[31m", "..", "a/b"]) {
+    const p = await write(`hostile-${Buffer.from(hostile).toString("hex").slice(0, 12)}.json`,
+      { version: 1, workspaces: { [hostile]: { path: "/w/x" } } });
+    await assert.rejects(loadWorkspaceRegistry(p), (e: Error & { code?: string }) => e.code === "GRANT_ID_MALFORMED",
+      `${JSON.stringify(hostile)} must be refused at the registry`);
+  }
+
+  // A well-formed id still loads, so the guard is not simply refusing everything.
+  const fine = await write("fine.json", { version: 1, workspaces: { "prod-1": { path: "/w/p" }, "east.us_2": { path: "/w/e" } } });
+  assert.deepEqual(Object.keys((await loadWorkspaceRegistry(fine)).workspaces).sort(), ["east.us_2", "prod-1"]);
 });
 
 /**
