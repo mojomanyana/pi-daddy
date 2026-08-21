@@ -6,7 +6,7 @@ import { after, test } from "node:test";
 import { Compile } from "typebox/compile";
 import {
   buildLedgerV2ContractFixtures,
-  syncLedgerV2RefusalEnum,
+  generateLedgerV2Contract,
 } from "../scripts/generate-ledger-v2-contract.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
@@ -334,8 +334,14 @@ test("the schema accepts every minimal, maximal, and enumerated builder shape", 
  * hand-written JSON file to edit. Every future refusal code had the same ambush waiting.
  *
  * This pins the mechanism rather than the state: the sync function is what makes the assertion below
- * satisfiable by running a command. **Breaks by:** deleting the `syncLedgerV2RefusalEnum` call from the
- * script's entry point, or reverting it to leave the enum alone.
+ * satisfiable by running a command.
+ *
+ * **Breaks by:** reverting `syncLedgerV2RefusalEnum` to leave the enum alone, or dropping it from
+ * `generateLedgerV2Contract`. That second half used to be unfalsifiable and was claimed anyway — the entry
+ * point called the two steps inline, and a test can call an exported function but not the inside of an
+ * `if (invoked)` block. A mutation audit found the claim false, so the entry point became a one-liner over
+ * the function this test drives. The same fix shape as the site checklist: make the thing you assert be the
+ * thing that runs.
  */
 test("regenerating the contract restores the refusal enum from REFUSAL_CODES", async () => {
   const dir = await tempDir("pi-daddy-contract-");
@@ -348,7 +354,9 @@ test("regenerating the contract restores the refusal enum from REFUSAL_CODES", a
   await writeFile(copy, JSON.stringify(drifted, null, 2), "utf8");
   assert.notDeepEqual(drifted.$defs.refusalCode.enum, [...REFUSAL_CODES], "precondition: the copy is stale");
 
-  await syncLedgerV2RefusalEnum(copy);
+  // Driven through `generateLedgerV2Contract`, the function the script's entry point calls, so dropping the
+  // sync from it fails here.
+  await generateLedgerV2Contract(copy);
 
   const synced = await json(copy) as { $defs: { refusalCode: { enum: string[] } } };
   assert.deepEqual(synced.$defs.refusalCode.enum, [...REFUSAL_CODES]);

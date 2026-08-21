@@ -105,9 +105,13 @@ test("routing attenuates three levels down, and terminates where the id was not 
 /**
  * SITE 5 — `delegate.ts`, the path a DELEGATED child's grant actually travels.
  *
- * Breaks by: reverting `delegate.ts` to `result.effective.join(",")`, or deleting the `NARROWING_VIOLATED`
- * refusal. The pre-existing test for this rule asserted on `childEnv`, which is the *interceptor* path — so
- * the rule was enforced on one route and advertised for both.
+ * Breaks by: deleting the `NARROWING_VIOLATED` refusal. (An earlier docstring here also named "reverting
+ * `delegate.ts` to `result.effective`" — that edit fails the R-135 case below, not this one, as R-135's own
+ * docstring says. A breaker list that names the wrong case is the same defect as one that names none: it
+ * tells the next reader a guard is defended when something else is defending it.)
+ *
+ * The pre-existing test for this rule asserted on `childEnv`, which is the *interceptor* path — so the rule
+ * was enforced on one route and advertised for both.
  */
 test("`workspace:*` cannot be handed to a child by either route", () => {
   // The delegation route refuses outright rather than stripping: a child recorded as granted something it
@@ -164,8 +168,19 @@ test("R-135: a delegated child never inherits `tool:*`, on the path that actuall
 });
 
 /**
- * An approval banked for a capability the child never receives would be authority with nothing to spend it
- * on. Breaks by: reverting `ENV_APPROVED` to clamp against `result.effective`.
+ * An approval descends only for a capability the child actually holds.
+ *
+ * **This case does NOT guard `delegate.ts`'s `ENV_APPROVED` clamp, and an earlier docstring claimed it did.**
+ * It said "breaks by reverting `ENV_APPROVED` to clamp against `result.effective`"; a mutation audit applied
+ * exactly that and the suite stayed green. Two reasons, both worth keeping written down: `inheritApprovals`
+ * already drops `WILDCARD` internally, and the only other difference — `WORKSPACE_WILDCARD` — cannot reach
+ * `result.effective` at all, because the `NARROWING_VIOLATED` refusal rejects it first. So the clamp is
+ * **unreachable defence-in-depth**, in the same category as `assertCapabilitiesArePropagatable`, whose own
+ * comment says it "should be unreachable — which is exactly why it exists".
+ *
+ * Kept, because a backstop behind one guard is cheap and this codebase has been bitten by removing them. The
+ * false claim is what got deleted. What this case DOES pin: an approval for a held capability reaches the
+ * child, which breaks if `inheritApprovals` stops matching or if site 4 regresses.
  */
 test("inherited approvals are clamped to what the child actually inherits", () => {
   const plan = planDelegation(

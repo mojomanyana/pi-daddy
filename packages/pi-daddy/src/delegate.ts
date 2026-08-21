@@ -5,15 +5,13 @@
 
 import { planSpawn } from "./spawn.ts";
 import { ceilingForDefinition, digestDefinition, type DefinitionDigest, type SkillDefinition } from "./definitions.ts";
-import { WORKSPACE_WILDCARD, assertNarrowing, type Capability, type ResolveResult } from "./resolve.ts";
-import { WILDCARD } from "./pi-tools.ts";
+import { assertNarrowing, type Capability, type ResolveResult } from "./resolve.ts";
+import { checkRoutingAuthority, checkWorkspaceWildcardRequest } from "./routing-authority.ts";
 import {
   DELEGATE_CAPABILITY,
   agentCapability,
-  mayRouteToWorkspace,
   maySpawnDefinition,
   normaliseCapability,
-  workspaceCapability,
 } from "./capabilities.ts";
 
 // Re-exported so the split stays internal: `delegate.ts` has been the import site for these since 0.6.0 and
@@ -35,7 +33,7 @@ import {
 } from "./correlation.ts";
 import { resolveDelegationApproval } from "./delegation-approval.ts";
 import type { Delegation, DelegationContext, DelegationRequest } from "./delegate-types.ts";
-import { assertCapabilitiesArePropagatable, isSafeCapability } from "./capabilities.ts";
+import { assertCapabilitiesArePropagatable } from "./capabilities.ts";
 export type { Delegation, DelegationContext, DelegationRequest } from "./delegate-types.ts";
 
 export function planDelegation(request: DelegationRequest, ctx: DelegationContext): Delegation {
@@ -83,48 +81,15 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
   }
   if (!request.task?.trim()) return denied({ ...empty, reason: "a delegation needs a task" }, "TASK_MISSING");
 
-  // ADR-0035. Routing a child to a registered workspace is an authority the CALLER must hold, checked here
-  // for the same reason `maySpawnDefinition` is checked below: it is a governance question about this
-  // session, answerable before anything is said about the target.
-  //
-  // Recorded as a denial rather than a bare refusal, exactly as DEFINITION_NOT_AUTHORIZED is: asking to
-  // route somewhere this session was not granted IS an attempt to exceed the grant, so it belongs in
-  // `denied` where `isEscalationAttempt` and every audit query can see it. Before this, nothing checked —
-  // the registry inherited into every child and a child routed to `staging` could route its grandchild to
-  // `prod` (R-131, measured in `docs/probes/g36-workspace-attenuation`).
-  //
-  // Well-formedness FIRST, because `boundWorkspaceId` is a model-facing tool parameter and the next line
-  // turns it into a capability id. `workspace_id: "prod,tool:bash"` produced a WORKSPACE_NOT_AUTHORIZED
-  // whose `denied` array held `workspace:prod,tool:bash` — no authority minted (the refusal is terminal),
-  // but `denied` is the channel `isEscalationAttempt` and `/grants ledger` count, and seeding it with an id
-  // that re-splits into two capabilities makes the one signal that matters unparseable. `GRANT_ID_MALFORMED`
-  // already exists and says the true thing; 0.18.1 is what happens when a comma goes unremarked.
-  // `!== undefined`, not truthiness: `workspace_id: ""` is falsy, so it skipped BOTH this check and the
-  // authority check below and failed closed much later at `resolveWorkspace` with `denied: []` — an
-  // unauthorised routing attempt invisible to `isEscalationAttempt`. An empty id is a malformed id.
-  if (request.boundWorkspaceId !== undefined && !isSafeCapability(workspaceCapability(request.boundWorkspaceId))) {
+  // ADR-0035's routing guards live in `routing-authority.ts` with their rationale; both are checked here,
+  // before anything is said about the target, because they are governance questions about the SESSION.
+  const routing = checkRoutingAuthority(request.boundWorkspaceId, ctx.ownGrant);
+  if (routing) {
     return denied({
       ...empty,
-      reason:
-        `workspace id ${JSON.stringify(request.boundWorkspaceId)} is not usable as a capability id — it ` +
-        `would become ${JSON.stringify(workspaceCapability(request.boundWorkspaceId))}, and a grant is ` +
-        `comma-separated, so this would be read as several capabilities.`,
-    }, "GRANT_ID_MALFORMED");
-  }
-  if (request.boundWorkspaceId !== undefined && !mayRouteToWorkspace(ctx.ownGrant, request.boundWorkspaceId)) {
-    const authorising = workspaceCapability(request.boundWorkspaceId);
-    const held = ctx.ownGrant.filter((c) => c.startsWith("workspace:")).sort();
-    return denied({
-      ...empty,
-      requested: [authorising],
-      result: { ...empty.result, denied: [authorising] },
-      reason:
-        `cannot route a child to workspace "${request.boundWorkspaceId}" — this session does not hold ` +
-        `${authorising}. ` +
-        (held.length > 0
-          ? `It may route to: ${held.join(", ")}.`
-          : `It may route to no workspace at all; add ${authorising} to its grant to allow this one.`),
-    }, "WORKSPACE_NOT_AUTHORIZED");
+      ...(routing.denied ? { requested: routing.denied, result: { ...empty.result, denied: routing.denied } } : {}),
+      reason: routing.reason,
+    }, routing.code);
   }
 
   // ADR-0016. A named definition replaces the model's tool list with an operator-authored ceiling.
@@ -236,32 +201,11 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
     }
   }
 
-  // ADR-0035, and the reason this is a REFUSAL rather than a silent strip. `workspace:*` is held and never
-  // inherited, so a child that "was granted" it would receive an env without it — the ledger would record
-  // an authority the child does not have, which is the mirror image of the defect R-131 records and just as
-  // unreadable. `childEnv` strips it from a session's OWN grant because a root legitimately holds it; asking
-  // to hand it to a child is a different act, and the honest answer is no.
-  //
-  // `NARROWING_VIOLATED` is the existing code for "this grant would not actually narrow", which is exactly
-  // what handing routing authority over every registered root to a child does. `tool:*` reaches the same
-  // outcome through `assertNarrowing` below; this is that rule, one namespace over.
-  //
-  // Only when the caller actually HOLDS it. A caller that does not is attempting an escalation, and the
-  // refusal below would tell it "the wildcard is held, never inherited" — a sentence that is false about a
-  // session holding nothing of the sort — while leaving `denied` empty, so `isEscalationAttempt` and
-  // `/grants ledger` never counted a model probing `tools: ["workspace:*"]`. Falling through instead lets
-  // `resolve()` deny it as uncovered, which is what `agent:*` and `tool:*` already do, and puts the attempt
-  // where every audit query looks. The comment fifty lines above states this rule; this is it applied.
-  const holdsWorkspaceWildcard = ctx.ownGrant.includes(WORKSPACE_WILDCARD) || ctx.ownGrant.includes(WILDCARD);
-  if (requested.includes(WORKSPACE_WILDCARD) && holdsWorkspaceWildcard) {
-    return denied({
-      ...empty,
-      requested,
-      reason:
-        `cannot grant ${WORKSPACE_WILDCARD} to a child — it is held, never inherited, because a descendant ` +
-        `holding it could route anywhere the registry lists and routing would stop attenuating below here. ` +
-        `Name the workspaces this child may route to instead (workspace:<id>, one per id).`,
-    }, "NARROWING_VIOLATED");
+  // See `checkWorkspaceWildcardRequest`: refused for a HOLDER (the ledger must not record authority the
+  // child will not receive), and left to `resolve()` for anyone else, so the probe lands in `denied`.
+  const wildcardRequest = checkWorkspaceWildcardRequest(requested, ctx.ownGrant);
+  if (wildcardRequest) {
+    return denied({ ...empty, requested, reason: wildcardRequest.reason }, wildcardRequest.code);
   }
 
   const { result, approvalBinding, bindingMismatch } = resolveDelegationApproval({

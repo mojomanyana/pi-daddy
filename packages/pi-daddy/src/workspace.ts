@@ -24,6 +24,17 @@ export type WorkspaceAccess = "read" | "write";
 export interface WorkspaceRegistryFile {
   version: 1;
   workspaces: Record<string, { path: string }>;
+  /**
+   * Where this was loaded from, carried so a refusal can NAME it.
+   *
+   * `docs/SPEC.md` claimed an unregistered id is refused "with `WORKSPACE_NOT_REGISTERED`, which names the
+   * file", and `catalog.ts` justified exempting the whole namespace from the unknown check on the strength of
+   * that — *"a second, weaker check here can only turn that precise refusal into a misleading one"*. The
+   * refusal named no file: the registry object had no idea where it came from. Carried on the object rather
+   * than passed per call so a caller cannot forget it. Optional because a hand-built literal (tests,
+   * `workspaceEntries` fixtures) has no source.
+   */
+  source?: string;
 }
 
 export interface ValidatedWorkspace {
@@ -189,7 +200,7 @@ export async function loadWorkspaceRegistry(
       ));
     }
   }
-  return { version: 1, workspaces: structuredClone(file.workspaces) };
+  return { version: 1, workspaces: structuredClone(file.workspaces), source: path };
 }
 
 /**
@@ -302,11 +313,14 @@ export async function registeredWorkspaceIds(registryPath = process.env[ENV_WORK
 
 export async function resolveWorkspace(registry: WorkspaceRegistryFile, workspaceId: string): Promise<ValidatedWorkspace> {
   const registered = Object.hasOwn(registry.workspaces, workspaceId) ? registry.workspaces[workspaceId] : undefined;
+  const known = Object.keys(registry.workspaces).sort();
   if (!registered) {
     throw new GovernanceRefusal(refusal(
       "WORKSPACE_NOT_REGISTERED",
-      `workspace ${JSON.stringify(workspaceId)} is not present in the operator-owned registry`,
-      { workspace_id: workspaceId },
+      `workspace ${JSON.stringify(workspaceId)} is not present in the operator-owned registry` +
+        (registry.source ? ` ${registry.source}` : "") +
+        (known.length > 0 ? ` — it lists: ${known.join(", ")}` : " — it lists nothing"),
+      { workspace_id: workspaceId, ...(registry.source ? { registry_path: registry.source } : {}) },
     ));
   }
   return validateRegisteredWorkspace({ workspaceId, registeredRoot: registered.path });

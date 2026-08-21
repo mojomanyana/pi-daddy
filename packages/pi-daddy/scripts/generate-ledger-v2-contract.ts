@@ -144,8 +144,19 @@ export async function syncLedgerV2RefusalEnum(target = schemaPath): Promise<void
   await writeFile(target, `${JSON.stringify(schema, null, 2)}\n`, "utf8");
 }
 
-const invoked = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
-if (invoked) {
+/**
+ * Everything `npm run contracts:generate` does, as ONE exported function.
+ *
+ * The entry point used to call the two steps itself, which made "somebody drops the enum sync from the
+ * script" unfalsifiable: a test can call an exported function, and it cannot call the inside of an
+ * `if (invoked)` block. The docstring in `test/ledger-contract.test.ts` named exactly that edit as a breaker
+ * and a mutation audit showed it was not one. Now the entry point is a one-liner over a function the test
+ * drives, so the two cannot diverge.
+ */
+export async function generateLedgerV2Contract(schemaTarget?: string): Promise<void> {
   await writeLedgerV2ContractFixtures();
-  await syncLedgerV2RefusalEnum();
+  await syncLedgerV2RefusalEnum(schemaTarget);
 }
+
+const invoked = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (invoked) await generateLedgerV2Contract();
