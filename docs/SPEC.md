@@ -106,7 +106,8 @@ Only the first two name tools, and **only those two are filtered against a sessi
 — an observation says nothing about a namespace that is not tools. `workspace:` is filtered against nothing:
 the operator registry is its authority and an unregistered id is refused at the point of use with
 `WORKSPACE_NOT_REGISTERED`, which names the file. One list in the code — `CAPABILITY_NAMESPACE_PREFIXES` —
-is what every site reads, because a namespace added to some of them and not others is how three of the
+is read by the two sites that parse an id's namespace — `normaliseCapability` and `ceilingForDefinition` —
+because a namespace added to one and not the other is how three of the
 ADR-0035 review defects happened.
 
 **Three wildcards, and no two are equivalent.** `tool:*` is authority to grant every tool and satisfies any
@@ -516,17 +517,25 @@ makes a three-level chain terminate rather than continue.
 
 `PI_GRANTS_GATED=workspace:W` asks a human before a child is routed there, through ADR-0024's mechanism —
 the id is the *caller's* authority for this one delegation and never joins the child's grant. `workspace:*`
-in the gate covers every id. `pi-daddy init` lists the registered ids commented in `.pi/grants.env` and
+in the gate covers every id **for routing** — but `resolve()`'s gate check is exact-match with no wildcard
+rule, so `PI_GRANTS_GATED=workspace:*` does NOT gate handing a `workspace:<id>` to a child, while
+`PI_GRANTS_GATED=workspace:prod` gates both. Widening the gate to the wildcard therefore loses a control;
+enumerate the ids you mean. (Same asymmetry as `agent:*`, inherited rather than introduced here.)
+`pi-daddy init` lists the registered ids commented in `.pi/grants.env` and
 grants none of them; routing is never live by default, including when a package's `allowed-tools` declares
 one.
 
-**Two enforcement classes, and the difference matters.** `tool:` and `ext:` capabilities are enforced
+**Enforcement classes, and the difference matters.** `tool:` and `ext:` capabilities are enforced
 *structurally*, by pi's own `--tools` allowlist, which is the product's load-bearing claim (ADR-0012).
 `agent:<name>` (ADR-0017/0024) and `workspace:<id>` (ADR-0035) are enforced by **pi-daddy itself**, before
 the child is spawned: nothing in pi refuses them, so they hold exactly as far as this package is in the
-path. A child holding `bash` escapes both classes (`docs/probes/g5-bash-escape`), and a child that reaches
-`pi` without this extension escapes the second class only. Read every `workspace:` guarantee below with that
-scope attached.
+path. `skill:<name>` is a third case and belongs in neither — it is enforced by pi's `--no-skills` plus
+`--skill` flags, which are structural like `--tools` but a different mechanism, and the first version of
+this paragraph omitted it while sounding exhaustive over all five namespaces.
+
+A child holding `bash` escapes every class (`docs/probes/g5-bash-escape`), and a child that reaches `pi`
+without this extension escapes the pi-daddy-enforced class only. Read every `workspace:` guarantee below
+with that scope attached.
 
 The library surface is outside it. `runNamedCheck` — the ADR-0034 primitive for external controllers,
 exported from `pi-daddy` — takes an already-resolved workspace and acquires a lease with no capability

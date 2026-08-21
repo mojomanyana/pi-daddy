@@ -53,8 +53,11 @@ the record of how the package got here and are worth keeping; they are not worth
 
 ### Fixed before release — found reviewing this change
 
-None of these ever shipped; they were defects in 0.19.0's own development, caught by two review passes and a
-mutation battery. Listed because the ADR claimed three of them as done (R-133, ADR-0035's amendment).
+The first group never shipped — they were defects in 0.19.0's own development, caught by two review passes
+and a mutation battery, and are listed because ADR-0035 claimed three of them as done (R-133, and that ADR's
+amendment). **The two entries under "Present in earlier releases" below DID ship**, and an earlier draft of
+this section put them under this heading, telling operators the `tool:*` attenuation escape could not affect
+them.
 
 - **Routing terminated below the root instead of attenuating.** `unknownCapabilities` did not know the
   namespace, and a catalog is always present in a real session, so every requested `workspace:<id>` was
@@ -67,16 +70,21 @@ mutation battery. Listed because the ADR claimed three of them as done (R-133, A
   capability this release makes mandatory.
 - `subsumedBy` reported `workspace:*`-covered ids as subsumed, contradicting its own rule.
 
+### Present in earlier releases — read these before upgrading
+
+**Upgrade if you run governed delegation trees, and read R-135 first.**
+
 - **R-135, and it is not part of this feature.** `tool:*` was reaching delegated children. R-26's rule —
   a wildcard is held, never inherited — was enforced only in `childEnv`, the interceptor path, while
-  `delegate.ts` (the path that spawns, since 0.6.0) applied no filter, and `tool:*` is not universal enough
+  `delegate.ts` (the path that spawns, since 0.7.0 — ADR-0016) applied no filter, and `tool:*` is not universal enough
   for `assertNarrowing` to stop. A parent holding `tool:*` and delegating `tools: ["tool:*"]` gave its child
   `tool:*`, so attenuation ended at the root. **Present in every published version.** One shared
   `inheritableGrant` now serves both paths. If you run governed delegation trees, this is the entry to read.
 
 - **R-134.** Session start no longer warns that a gated `agent:` id "does NOT gate spawning that definition".
   That was R-47's partial fix in 0.11.1 and false from 0.12.0, when ADR-0024's gate landed. The warning
-  outlived the defect by six releases, and the integration suite required it to, while advising operators to
+  outlived the defect across eight published versions (0.13.0 through 0.18.1), and the integration suite
+  required it to, while advising operators to
   remove a control that works.
 
 - The v2 ledger contract's `refusalCode` enum is now **generated** from `REFUSAL_CODES` by

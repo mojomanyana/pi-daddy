@@ -47,8 +47,13 @@ export const DELEGATE_CAPABILITY: Capability = "tool:delegate";
  *
  * **One list, because there were three and adding a namespace only updated some of them.** ADR-0035 taught
  * `normaliseCapability` about `workspace:` and left `ceilingForDefinition` (which mangled it into
- * `tool:workspace:<id>`) and `isSafeCapability` (which called it malformed) behind. Anything that has to
- * answer "is this a namespaced id?" reads this; a fifth namespace is one entry, not a fourth divergence.
+ * `tool:workspace:<id>`) and `isSafeCapability` (which called it malformed) behind. The two places that parse
+ * an id's namespace read this, so a fifth namespace is one entry rather than a third divergence.
+ *
+ * **Not every prefix decision in the package** — `catalog.ts`, `grant-env.ts`, `resolve.ts` (twice),
+ * `routing-authority.ts`, `init.ts` and `isSafeCapability`'s own regex each test a prefix inline. Stated
+ * because SPEC claimed this list was "what every site reads" and it is not; consolidating those is a
+ * separate change, and pretending it happened is the defect this list exists to prevent.
  *
  * `docs/SPEC.md`'s grammar section is the prose statement of the same list and is kept in step with it.
  */

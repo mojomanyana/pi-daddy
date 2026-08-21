@@ -12,6 +12,10 @@
  * here.** That is the only form of the lesson that survives a session ending.
  *
  * Every test names the production edit that breaks it (rule 7). None of them passes on `92ccbb8`.
+ *
+ * Cases are labelled by SITE NAME, not by number. They were numbered, and the numbers said 4, 5, 6, 8, 10 —
+ * implying ten sites where every document said nine, with the two missing numbers landing on the two sites
+ * that had no case at all. A count is a claim, and this file exists because a count was wrong.
  */
 
 import assert from "node:assert/strict";
@@ -55,7 +59,7 @@ const ctx = (over: Record<string, unknown> = {}) => ({
 });
 
 /**
- * SITE 4 — `catalog.ts` `unknownCapabilities`. The one that mattered most.
+ * SITE — `catalog.ts` `unknownCapabilities`. The one that mattered most.
  *
  * Breaks by: removing `workspace:` from the `exempt` predicate in `unknownCapabilities`.
  *
@@ -103,7 +107,7 @@ test("routing attenuates three levels down, and terminates where the id was not 
 });
 
 /**
- * SITE 5 — `delegate.ts`, the path a DELEGATED child's grant actually travels.
+ * SITE — `delegate.ts`, the path a DELEGATED child's grant actually travels.
  *
  * Breaks by: deleting the `NARROWING_VIOLATED` refusal. (An earlier docstring here also named "reverting
  * `delegate.ts` to `result.effective`" — that edit fails the R-135 case below, not this one, as R-135's own
@@ -196,7 +200,7 @@ test("inherited approvals are clamped to what the child actually inherits", () =
 });
 
 /**
- * SITE 6 — `delegation-approval.ts`. ADR-0035 claimed this in three places and never built it.
+ * SITE — `delegation-approval.ts`. ADR-0035 claimed this in three places and never built it.
  *
  * Breaks by: deleting the `boundWorkspaceId` call to `gateAuthority` in `resolveDelegationApproval`.
  *
@@ -240,7 +244,7 @@ test("PI_GRANTS_GATED=workspace:<id> asks a human before routing there", () => {
 });
 
 /**
- * SITE 8 — `definitions.ts` `ceilingForDefinition`.
+ * SITE — `definitions.ts` `ceilingForDefinition`.
  *
  * Breaks by: dropping `workspace:` from `CAPABILITY_NAMESPACE_PREFIXES`, which is now the single list
  * `normaliseCapability` reads too — so one edit can no longer make the two disagree.
@@ -256,7 +260,7 @@ test("a definition may declare a workspace it routes to, and the id survives int
 });
 
 /**
- * SITE 10 — `resolve.ts` `subsumedBy`, which contradicted its own F9 rule.
+ * SITE — `resolve.ts` `subsumedBy`, which contradicted its own F9 rule.
  *
  * Breaks by: removing the `anyWorkspace` clause from `subsumedBy`.
  */

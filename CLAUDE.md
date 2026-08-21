@@ -38,7 +38,7 @@ becomes the grant; the pi-subagents ceiling port is deleted; the interceptor sur
 **Current release state, verified 2026-08-21:** npm `latest` and tag `v0.18.1` point at
 `8feaacbdf6003c783225e375b61874a599963f47`; `main` has since taken PR #11 (the canonical ledger v2
 contract). The latest GitHub Release is still `v0.17.1`. **PR #10 — ADR-0035, 0.19.0, workspace routing as a
-capability — is OPEN and is where the current work is.** Thirty-five ADRs are decided (0034 amended twice,
+capability — is OPEN and is where the current work is.** Thirty-five ADRs are decided (0034 amended three times,
 0035 amended after review). That branch has 615 unit + 44 integration tests, plus a 10-test opt-in tier
 behind `PI_GRANTS_IT_MODEL=1` that is not run without explicit authorization.
 

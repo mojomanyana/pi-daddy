@@ -76,7 +76,8 @@ This satisfies ADR-0035's stated blocking input.
   `planDelegation`. A real session always has one (`delegationContext()` awaits `catalogReady`), and
   `unknownCapabilities` did not know the `workspace:` namespace — so every requested `workspace:<id>` was
   refused `UNKNOWN_TOOL` and **no child could be granted a workspace capability at all**. The
-  `after_fix_authorised_routes: true` line below is true of the path this probe drives and was false of the
+  `after_fix_authorised_routes: true` line in `transcript-2026-08-20.json` is true of the path this probe
+  drives and was false of the
   path production drives. Routing terminated below the root rather than attenuating, and the probe reported
   the fix as working. Recorded here because "we measured it" is what carried ADR-0035 to Accepted. Found by
   review (R-133); pinned now by `test/workspace-capability.test.ts`, which builds a catalog because that is
@@ -86,9 +87,12 @@ This satisfies ADR-0035's stated blocking input.
 - **That a model would do it.** No model runs here. The probe shows the mechanism permits the escalation,
   not that an agent chooses it. `workspace_id` being a model-facing tool parameter is what makes the
   question live, and that is a reading of the schema, not a measurement of behaviour.
-- **That ADR-0035's fix works.** This measures the defect only. Nothing here exercises a `workspace:<id>`
-  capability, because none exists yet — when it does, this probe should gain a fourth-level case showing the
-  refusal, and the control should show the *same* asymmetry disappearing.
+- ~~**That ADR-0035's fix works.** This measures the defect only. Nothing here exercises a `workspace:<id>`
+  capability, because none exists yet.~~ **Stale from 2026-08-20 and corrected 2026-08-21:** the probe gained
+  `after_fix_*` cases when the fix landed, so it no longer "measures the defect only". Left struck rather
+  than deleted, because a limitations section that quietly drops a limitation is how the section stops being
+  trustworthy — and because this bullet sat directly above the one that matters, where the fix it claimed not
+  to measure was measured on a path production does not take.
 - **Anything about a real `pi` child.** No process is spawned. Step 6 reads the marker through the resolved
   root rather than from inside a live governed child, so it establishes "this is the directory the child
   would be given", not "a child was observed running there". The CWD wiring itself is covered by

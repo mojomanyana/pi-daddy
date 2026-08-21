@@ -20,8 +20,9 @@ the top dated entry below; what a resuming session needs:
    re-run since the doc commit.** The unit suite and typecheck are green. Run all of them before pushing.
 2. **The reusable finding is R-133: a capability namespace is a nine-site change.** ADR-0035 taught three.
    `test/workspace-capability.test.ts` is organised **by site** for that reason — a tenth site or a fifth
-   namespace adds a case there, and `CAPABILITY_NAMESPACE_PREFIXES` collapses three of the sites into one
-   list so they cannot drift apart again.
+   namespace adds a case there, and `CAPABILITY_NAMESPACE_PREFIXES` collapses the TWO id-parsing sites into one
+   list (six other prefix decisions remain open-coded, including `isSafeCapability`'s regex — the very site
+   that got left behind) so they cannot drift apart again.
 3. **R-135 is the one to read if you only read one.** Not an ADR-0035 defect — R-26's wildcard rule was
    enforced only in `childEnv` (the interceptor path ADR-0016 demoted to a tripwire), so `delegate.ts`, the
    path that actually spawns, handed `tool:*` to delegated children in **every published version**. Found
@@ -146,7 +147,8 @@ on `agent:`, and every site that already handled `agent:` was a site that needed
 (`normaliseCapability`, `resolve()`'s wildcard rule, `childEnv`'s filter). The other six each produced a
 defect, which is close enough to one-for-one that the *count* is the lesson rather than any individual bug.
 R-133 carries it; `test/workspace-capability.test.ts` is organised **by site** so the checklist is
-executable; `CAPABILITY_NAMESPACE_PREFIXES` collapses three sites into one list.
+executable; `CAPABILITY_NAMESPACE_PREFIXES` collapses the two id-parsing sites into one list. (First written
+as "three sites" and as "what every site reads"; there are two readers and six open-coded copies.)
 
 **Severe, and it inverted the ADR's own claim.** `unknownCapabilities` never learned the namespace and
 `delegationContext()` always supplies a catalog, so every requested `workspace:<id>` was refused
@@ -175,7 +177,8 @@ exactly like a guard on both. One exported `inheritableGrant`, called from both,
 
 **R-134**, also found while fixing rather than reviewing: session start warned that a gated `agent:` id
 *"does NOT gate spawning that definition — a human is never asked"*. It was R-47's PARTIAL fix in 0.11.1,
-false from **0.12.0** (`4673348`) when ADR-0024's gate landed — six releases, not three; I first wrote
+false from **0.12.0** (`4673348`) when ADR-0024's gate landed — eight published versions, 0.13.0 through
+0.18.1, not the three I first claimed; I first wrote
 0.18.0 and was wrong, because `dde8eeb` only moved the code into `delegation-approval.ts`. ADR-0024's Costs
 section leaned on that warning as its mitigation and nothing retired it when its own decision falsified it.
 
@@ -200,8 +203,9 @@ so it confirmed the mechanism while driving a path production does not take — 
 working. A probe that constructs its own inputs can confirm a mechanism and still miss the wiring. "We
 measured it" is what carried this ADR to Accepted.
 
-**Verification.** 615 unit + typecheck green. **Eleven mutations, eleven named failures**, plus two more for
-the `init` scaffolding. `test/temp-hygiene.test.ts` caught both new suites missing `after(cleanupTempDirs)`
+**Verification.** 615 unit + typecheck green. **The mutation claim in this entry was itself wrong** — see
+R-133. "Eleven mutations, eleven named failures" counted the eleven applied and hid the two sites with no
+test at all, plus three docstrings naming breakers that did not break. Corrected in the follow-up commits. `test/temp-hygiene.test.ts` caught both new suites missing `after(cleanupTempDirs)`
 and `test/risk-register-status.test.ts` passes on the three new entries — the local mechanical guards doing
 exactly what they are for. Integration, smoke, build, the g36 probe and the line ceiling are **not** re-run
 since the documentation commit; do that before pushing.

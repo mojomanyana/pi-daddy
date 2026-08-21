@@ -298,7 +298,9 @@ Nothing in the Decision. It adds a cost that was not costed: **a capability name
 — `normaliseCapability`, `covered()`, the inheritance filter on both paths, `unknownCapabilities`,
 `ceilingForDefinition`, `isSafeCapability`/`wildcardsIn`, `subsumedBy`, the per-delegation gate, and the
 operator-facing scaffold. `test/workspace-capability.test.ts` is organised by site for that reason, and
-`CAPABILITY_NAMESPACE_PREFIXES` collapses three of them into one list. A tenth site, or a fifth namespace,
+`CAPABILITY_NAMESPACE_PREFIXES` collapses the two that parse an id's namespace into one list — not all nine,
+and this amendment first said three; six prefix decisions remain open-coded, `isSafeCapability`'s regex among
+them. A tenth site, or a fifth namespace,
 adds a case there.
 
 Option 2 (strip the registry, re-supply a narrowed one per child) remains available as defence-in-depth and

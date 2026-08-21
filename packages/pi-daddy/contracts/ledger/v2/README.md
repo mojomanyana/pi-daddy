@@ -32,7 +32,7 @@ pinned it — which is why `WORKSPACE_NOT_AUTHORIZED` (ADR-0035) could join `ref
 release rather than forcing a v3 for one refusal code. Recorded here rather than left to inference, because
 the rule as written forbids exactly that edit and a reader comparing the two would be right to.
 
-This is the only such amendment and there will not be another: from 0.19.0 the enum is **generated** from
+This is the only such amendment for `refusalCode`: from 0.19.0 that enum is **generated** from
 `REFUSAL_CODES` by `scripts/generate-ledger-v2-contract.ts`, and `test/ledger-contract.test.ts` holds the two
 equal. So a new refusal code is now a visible, mechanical change to this artifact — which is what makes the
 rule above enforceable instead of aspirational. Before that it was hand-maintained beside the array it had to

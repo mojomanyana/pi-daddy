@@ -135,7 +135,10 @@ export function resolve(input: ResolveInput): ResolveResult {
   const parent =
     input.subsumption === false ? held : new Set(expandSubsumed(input.parentGrant));
   /**
-   * `agent:*` covers any `agent:<name>` — ADR-0023, and the ONLY wildcard rule in this function.
+   * `agent:*` covers any `agent:<name>` — ADR-0023. It was the only wildcard rule in this function when
+   * that was written; ADR-0035 added a third, so `covered()` now has `tool:*`, `agent:*` and `workspace:*`.
+   * There is still no GENERALISED `<ns>:*` rule: each is a deliberate edit, which is the property worth
+   * keeping. Corrected because the sentence sat eighty lines above "all THREE wildcards are excluded".
    *
    * `resolve` is otherwise exact-match plus subsumption, deliberately: `tool:*` works not because anything
    * here understands it, but because `deriveOwnGrant` *enumerates* a session's observed tool names beside
