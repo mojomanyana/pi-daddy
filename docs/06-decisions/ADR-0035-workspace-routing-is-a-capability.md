@@ -305,3 +305,51 @@ adds a case there.
 
 Option 2 (strip the registry, re-supply a narrowed one per child) remains available as defence-in-depth and
 remains not taken. Nothing here changes the non-goals.
+
+---
+
+## Second amendment — 2026-08-21, after a third review pass over the first amendment's own fixes
+
+**Accepted still stands. The first amendment's fixes had the same defect the first amendment was written
+about**, which is now three passes running and worth stating as a pattern rather than an accident.
+
+Six reviewers over the fix commit. The capability invariant held on every path any of them could construct —
+three-level attenuation genuinely works on the production path, the gate refactor was behaviour-preserving
+across 960 input combinations, no leak of the authorising id, and the anti-race rules hold. What they found
+was in the *claims* and in two new defects the fixes themselves introduced.
+
+### Two blockers, both created by the fix
+
+1. **A blocking registry path hung `session_start`.** Making `buildCatalog` and `registeredWorkspaceIds` read
+   the registry put a bare `readFile` inside session start, so a FIFO stopped the session before every
+   control after it. R-79's class, reintroduced beside the comment that documents it (R-136).
+2. **`/grants init`'s dialog granted routing live off a package's declaration.** `runInit` walked
+   `withheldCapabilities` and offered every entry, so one "Yes" persisted `workspace:prod` — while the file
+   the same command generates says "Not granted for you". Two surfaces of one command disagreeing, which is
+   R-28's shape *inside* the fix for R-28. `runInit` had no test at all.
+
+### And the fix reopened one of its own arguments
+
+`governedWorkspaceAccess` required every requested capability to be a known read-only tool. Making
+`workspace:<id>` grantable to a child therefore turned *route this child read-only* into an exclusive writer
+lease that recorded `access: "write"` — a record asserting more than anybody claimed, which is the mirror of
+the defect this ADR exists to close, pointing the other way.
+
+### The registry-integrity gap, now enforced
+
+This ADR's Context calls the registry "operator-owned" as a fact. Nothing checked it, and routing attenuated
+by **id** rather than by **destination** — so a child holding `workspace:staging` and `tool:write` could
+repoint that entry at any other worktree. Closed by two mechanisms (R-137), and the pair is the point:
+ownership and mode cannot help, because a governed child runs as the same uid as its parent. A content pin
+does. Detection rather than prevention, recorded as such.
+
+### What this says about the "nine sites" lesson
+
+It was right and it was not enough. Every site got taught, and the *fixes* then needed their own pass — so
+the generalisable rule is weaker than the first amendment implied: adding a namespace is a nine-site change
+**and** the sites you touch need the same adversarial read as the ones you missed. The first amendment's
+"eleven mutations, eleven named failures" counted the mutations applied rather than the coverage achieved, and
+two of its six site fixes were revertible with the suite green — one of them the guard that stops `init`
+granting routing.
+
+Nothing here changes the Decision or the non-goals. Option 2 remains available and remains not taken.

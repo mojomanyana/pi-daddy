@@ -324,6 +324,45 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
    * Now asserts the behaviour ADR-0024 actually shipped. **Breaks by:** removing the `gateAuthority` call
    * for `input.spawned` in `resolveDelegationApproval`, which is the real R-47 fix.
    */
+  /**
+   * The session-start registry WIRING, in a real `pi` process — the last unguarded edit from the mutation
+   * audit.
+   *
+   * `session.ts` and `grants.ts` pass `registryPath` to `buildCatalog`, and both were revertible with the
+   * whole unit suite green: every unit test builds a catalog by hand or calls `planInit` with ids supplied
+   * directly, so nothing exercised a real session reading a real registry file. That is the same shortcut
+   * probe g36 took and got caught for — test the mechanism, skip the wiring — and it is why this case lives
+   * here rather than in `test/`, where it could only have been faked.
+   *
+   * **Breaks by:** dropping `registryPath` from `buildCatalog`'s call in `extensions/session.ts`, or dropping
+   * the `workspace` term from `/grants`'s catalog line.
+   */
+  test("ADR-0035: a real session reads the registry and lists what it may route to", async () => {
+    const cwd = await projectOnce();
+    const registry = join(await tempDir("grants-it-registry-"), "registry.json");
+    await mkdir(dirname(registry), { recursive: true });
+    await writeFile(registry, JSON.stringify({
+      version: 1,
+      workspaces: { "prod-1": { path: cwd }, sandbox: { path: cwd } },
+    }), "utf8");
+
+    const r = await runCommand({
+      cwd,
+      command: "/grants",
+      env: {
+        PI_GRANTS_GRANT: "tool:read,tool:delegate,workspace:sandbox",
+        PI_GRANTS_WORKSPACE_REGISTRY: registry,
+      },
+    });
+    const text = r.notifies.map((n) => n.message).join("\n");
+
+    assert.match(text, /2 workspace/, "the catalog counted the registered ids");
+    assert.match(text, /routable\s+workspace:prod-1, workspace:sandbox/, "and lists them");
+    // The listing is the CATALOG, not the grant: `prod-1` appears because it is registered, and holding it is
+    // a separate question the line says out loud. Display is never authority.
+    assert.match(text, /held ones only are usable/);
+  });
+
   test("R-47/ADR-0024: gating an agent: id gates the SPAWN, and says so", async () => {
     const cwd = await projectOnce();
     const r = await runCommand({

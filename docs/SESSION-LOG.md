@@ -11,31 +11,28 @@ decisions; this file holds state and next actions. Newest entry on top.
 `hooks/pre-commit` enforces it once `git config core.hooksPath hooks` is set in your clone. This line is at
 the top because the rule was broken by drift, and this file is what a session actually reads first.
 
-**2026-08-21 — PR #10 (ADR-0035, 0.19.0) is OPEN and this is the work.** Two review passes plus a mutation
-battery; fixes are on `fix/adr-0035-review`, to be pushed onto `adr/0035-workspace-attenuation` so PR #10
-merges correct rather than being narrated by a second PR. **615 unit + 44 integration.** The full account is
-the top dated entry below; what a resuming session needs:
+**2026-08-21 — PR #10 (ADR-0035, 0.19.0) is OPEN and this is the work.** Three independent review passes
+have now run over it; the fixes for the third are on `fix/adr-0035-review`, to be pushed onto
+`adr/0035-workspace-attenuation` so PR #10 merges correct rather than being narrated by a second PR.
+**624 unit + 45 integration.** The full account is the top dated entry below; what a resuming session needs:
 
-1. **`npm run test:integration`, `test:smoke`, `build`, the g36 probe and the line ceiling have not been
-   re-run since the doc commit.** The unit suite and typecheck are green. Run all of them before pushing.
-2. **The reusable finding is R-133: a capability namespace is a nine-site change.** ADR-0035 taught three.
-   `test/workspace-capability.test.ts` is organised **by site** for that reason — a tenth site or a fifth
-   namespace adds a case there, and `CAPABILITY_NAMESPACE_PREFIXES` collapses the TWO id-parsing sites into one
-   list (six other prefix decisions remain open-coded, including `isSafeCapability`'s regex — the very site
-   that got left behind) so they cannot drift apart again.
-3. **R-135 is the one to read if you only read one.** Not an ADR-0035 defect — R-26's wildcard rule was
-   enforced only in `childEnv` (the interceptor path ADR-0016 demoted to a tripwire), so `delegate.ts`, the
-   path that actually spawns, handed `tool:*` to delegated children in **every published version**. Found
-   because a mutation failed no test, which is the whole argument for mutation-verifying rather than
-   counting green.
-4. **Still open, deliberately:** `correlation.workspace_id` with no routing spec is unguarded (R-110). It
-   takes no lease and sets no CWD, so it is not the escalation — but ADR-0035 rejected Option 4 on the
-   ground that the defect "produces a complete, correct-looking record naming `prod`", and that record is
-   still producible through correlation alone. Either guard it or write down that the argument is half
-   closed. **Do not let this merge unrecorded a third time.**
+1. **The generalisable rule, twice refined.** Adding a capability namespace is a nine-site change (R-133) —
+   **and the sites you touch need the same adversarial read as the ones you missed** (R-136, R-137), because
+   the fixes for the second pass contained two shipping blockers of their own. `test/workspace-capability.test.ts`
+   is the executable checklist, labelled by site NAME.
+2. **A count is a claim.** Both earlier passes stated a mutation count that measured what had been checked
+   rather than what was covered, and in both cases edits were revertible with the suite green. Prefer "every
+   fix has a named test, verified by reverting it" over a number, and re-run the battery from a script file —
+   shell escaping silently produced a passing check against an unmodified file twice.
+3. **R-135 is still the one to read if you only read one**, and it is the entry a user needs: `tool:*` reached
+   delegated children in every published version.
+4. **Still open, deliberately:** R-138 (four pre-existing findings) and **R-110** — `correlation.workspace_id`
+   with no routing spec still produces a correct-looking record naming a workspace nobody authorised. It takes
+   no lease and sets no CWD, so it is not the escalation, but it is half of the argument ADR-0035 used to
+   reject Option 4 and it has now survived three reviews. **Do not let this merge unrecorded a fourth time.**
 5. Option 2 from ADR-0035 (strip the registry, re-supply a narrowed one per child) remains available as
-   defence-in-depth and remains not taken — a child can still *enumerate* ids it may not use.
-
+   defence-in-depth and remains not taken — a child can still *enumerate* ids it may not use, though it can no
+   longer change what one means (R-137).
 
 **Release state, re-verified 2026-08-20:** PR #12 is merged. Repository `main`, peeled tag `v0.18.1`, and
 the npm `pi-daddy@0.18.1` `gitHead` all point at `8feaacbdf6003c783225e375b61874a599963f47`;
@@ -132,6 +129,57 @@ every one of them was a control that read as live and was not.
 
 That convention is why every reversal here was survivable, and there have been five. Then update
 `docs/SPEC.md` in the same change — a spec that lags the code is worse than no spec.
+
+---
+
+## 2026-08-21 (third pass + fixes) — the fixes needed the same review the defects did
+
+**Six reviewers over `52135ca`, the fix commit from the entry below.** Branch `fix/adr-0035-review`. The
+headline: the *behaviour* was sound — attenuation holds on every path a reviewer could construct, the gate
+refactor was behaviour-preserving over 960 input combinations, the anti-race rules hold — and the *claims*
+were not, for the third pass in a row.
+
+**Two shipping blockers, both introduced by the fix.** A blocking registry path hung `session_start`, because
+making the catalog read the registry put a bare `readFile` there (R-136, R-79's class again — and
+`AbortSignal.timeout` does not rescue it, which the first attempt proved by still hanging; `stat` before
+`open` is the fix). And `/grants init`'s dialog granted routing live off a package declaration while the file
+that same command generates said "Not granted for you" — R-28 inside the fix for R-28, in a function that had
+no test at all.
+
+**Ten single edits from the fix commit were revertible with the suite green**, two of them deletable
+*together*, and one of those two was the guard stopping `init` granting routing. Its own "eleven mutations,
+eleven named failures" counted what was checked rather than what was covered. Every site has a case now, and
+the labels are names because the numbers implied ten sites where every document said nine — with the two
+missing numbers landing exactly on the two sites that had none.
+
+**R-137: routing attenuated by id, not by destination**, and the operator chose enforcement over recording it.
+Two mechanisms, and the pair is the lesson: ownership and mode cannot close it, because a governed child runs
+as the same uid as its parent. A content pin does — root pins, descendants inherit verbatim, mismatch refuses.
+Detection, not prevention.
+
+**A regression the fix created:** `governedWorkspaceAccess` turned *route this child read-only* into an
+exclusive writer lease recording `access: "write"`, because making `workspace:<id>` grantable meant a non-tool
+id reached a check that required every capability to be a read-only tool. Fixing only `workspace:` would not
+have fixed it — `tool:delegate` tripped the same check.
+
+**Sixteen prose claims corrected, all mine.** The one that mattered: the CHANGELOG said *"None of these ever
+shipped"* over R-135, which is present in every published version, so an operator deciding whether to upgrade
+was told the `tool:*` escape could not affect them. Also `CAPABILITY_NAMESPACE_PREFIXES` has two readers and
+not "every site"; SPEC's enforcement taxonomy omitted `skill:`; the gate wildcard claim was true of routing
+only; and the stale-warning window was eight published versions, not the six I had already corrected it to
+from three.
+
+**Verification.** 624 unit · 45 integration · typecheck · build · smoke · probes · line ceiling. Every fix in
+this pass mutation-verified individually, including four re-run after extracting
+`src/routing-authority.ts` — `delegate.ts` hit 403 lines and was split rather than have its rationale trimmed.
+Two mutation checks initially reported success against an unmodified file because shell escaping mangled the
+patch; a harness that can pass without mutating is the same category as a test that cannot fail, so both were
+re-run from a file-based script.
+
+**Left open on purpose, recorded as R-138** so it is not rediscovered as new: the herdr pane's conditional env
+leak, `adoptGrant` widening a child's grant, `isGated`'s wildcard asymmetry (inherited from `agent:*`), and one
+dialog conferring two authorities. R-110 also still stands, and is now in its third review unrecorded as
+resolved.
 
 ---
 
