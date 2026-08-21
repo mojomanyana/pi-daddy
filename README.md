@@ -5,10 +5,20 @@ deliberate subset of what it holds and withholds the rest. Sub-agents may delega
 subset of what they themselves hold — enforced by **pi's own `--tools` allowlist**, with an append-only
 ledger of every grant and refusal.
 
-**Release state (verified 2026-08-20):** PR #12 is merged; repository `main`, tag `v0.18.1`, and npm's
-`latest` point at `8feaacbdf6003c783225e375b61874a599963f47`. The latest GitHub Release is still
-`v0.17.1`. This follow-up branch has 596 unit + 44 non-model integration tests, with a separately authorized
-real-model tier; no model tests are run without explicit authorization.
+**Release state (verified 2026-08-21):** PR #11 is merged and repository `main` is
+`1948b9406c13c9730f2fc103e68023d6e58c5e85`, carrying 596 unit + 44 non-model integration tests, all passing.
+**What is published is older than `main`.** The package source reads `0.18.1`, but tag `v0.18.1` and npm's
+`latest` both point at `8feaacbdf6003c783225e375b61874a599963f47` — the commit *before* the canonical ledger
+v2 contract landed. So `packages/pi-daddy/contracts/`, and the `contracts` entries in `files` and `exports`
+that ship it, are on `main` and **absent from the published npm `0.18.1`**: installing the package today does
+not get you the schema, and the version number no longer tells the two apart. Closing that needs the next
+authorized version bump and release. The latest GitHub Release is still `v0.17.1`. The real-model tier is
+separately authorized and is not run without it.
+
+**One standing exception to any readiness claim:** workspace routing does not attenuate on `main`. ADR-0035
+and its implementation are on PR #10, an open draft that must not merge, so a descendant doing recursive
+critical work can still be routed to a registered workspace its parent was never granted. See
+`docs/SESSION-LOG.md` for what remains on that branch.
 
 **Want to run it?** [`docs/RUNNING-IT.md`](docs/RUNNING-IT.md) — setup in six steps, then a feature built
 end to end with seven governed sub-agents, sequential where output feeds input and parallel where it does not.

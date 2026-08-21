@@ -35,11 +35,29 @@ permissible, able to refuse or allow but never to narrow. **This package is now 
 is an argument rather than a veto. Definitions are **Agent Skills (`SKILL.md`)** files whose `allowed-tools`
 becomes the grant; the pi-subagents ceiling port is deleted; the interceptor survives only as a tripwire.
 
-**Current release state, verified 2026-08-20:** PR #12 is merged; `main`, tag `v0.18.1`, and npm `latest`
-point at `8feaacbdf6003c783225e375b61874a599963f47`. The latest GitHub Release is still `v0.17.1`.
-Thirty-four ADRs are decided (0034 amended after review). This follow-up branch has 596 unit + 44 integration
-tests, plus a 10-test opt-in tier behind `PI_GRANTS_IT_MODEL=1` that is not run without explicit
-authorization.
+**Current release state, verified 2026-08-21:** PR #11 is merged and `main` is
+`1948b9406c13c9730f2fc103e68023d6e58c5e85`. **Source is ahead of everything published:** the package reads
+`0.18.1`, but tag `v0.18.1` and npm `latest` both point at `8feaacbdf6003c783225e375b61874a599963f47`, the
+commit before the canonical ledger v2 contract. `packages/pi-daddy/contracts/ledger/v2/` and the `contracts`
+entries in `files`/`exports` are therefore on `main` and **not in npm `0.18.1`** — same version number, two
+different payloads, which is exactly the confusion to keep in mind before citing "0.18.1" as if it were one
+thing. The latest GitHub Release is still `v0.17.1`. Thirty-four ADRs are decided (0034 amended after
+review). **`main` itself** — not a follow-up branch; `feat/ledger-v2-contract-artifacts` is merged — carries
+596 unit + 44 integration tests, all passing, plus a 10-test opt-in tier behind `PI_GRANTS_IT_MODEL=1` that
+is not run without explicit authorization.
+
+**Workspace routing still does not attenuate on `main`, and it is the standing exception to any readiness
+claim.** ADR-0035 and its implementation live on **PR #10 (`adr/0035-workspace-attenuation`), an open draft
+at `92ccbb8` that must not merge** — its own latest comment records 601/602 unit tests with the canonical
+refusal-enum contract test failing, and its propagation, wildcard-attenuation, gating, `init` and G36
+production-path evidence work is unfinished. Until it or an equivalent fix lands, recursive critical work can
+route a descendant to a registered workspace its parent was not granted. **No full READY verdict is
+available**: a matrix over the released baseline must carry this as an explicit exception and may be no
+stronger than READY WITH EXPLICIT EXCEPTIONS.
+
+**This clone is shared with other sessions.** One of them checked out `pr10` under an in-progress task on
+2026-08-21 and two measurements were briefly attributed to the wrong tree. **Print `git rev-parse HEAD` in
+the same command as any measurement you intend to write down**, or take a worktree.
 
 **A six-reviewer pass over the 0.18.0 work found the capability invariant intact on every path and the
 RUNTIME half full of holes** — R-99…R-118, and the ADR-0034 amendment lists what it did *not* resolve
