@@ -16,14 +16,22 @@
 
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { writeFile } from "node:fs/promises";
+import { chmod, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
 import { join } from "node:path";
 import { planDelegation } from "../src/delegate.ts";
 import { makeCatalog, classifyToolNames, unknownCapabilities, workspaceEntries } from "../src/catalog.ts";
 import { WORKSPACE_WILDCARD, resolve } from "../src/resolve.ts";
 import { ENV_APPROVED, ENV_GRANT, inheritableGrant } from "../src/propagation.ts";
 import { ceilingForDefinition, type SkillDefinition } from "../src/definitions.ts";
-import { loadWorkspaceRegistry } from "../src/workspace.ts";
+import {
+  establishRegistryPin,
+  loadWorkspaceRegistry,
+  registryDigest,
+  registryPin,
+} from "../src/workspace.ts";
+import { registeredWorkspaceIds } from "../src/init.ts";
+import { buildCatalog } from "../src/catalog.ts";
 import { DELEGATE_SUBJECT, type InheritableApproval } from "../src/approval.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
@@ -289,6 +297,123 @@ test("a malformed model-supplied workspace id is refused as malformed, not as un
   const plan = planDelegation({ task: "t", tools: ["read"], boundWorkspaceId: "prod,tool:bash" }, ctx() as never);
   assert.equal(plan.refusal?.code, "GRANT_ID_MALFORMED");
   assert.deepEqual(plan.result.denied, [], "an unparseable id must not be seeded into the escalation channel");
+});
+
+/**
+ * Routing attenuated by ID and not by DESTINATION, which review showed made the capability name something a
+ * descendant could redefine.
+ *
+ * ADR-0035 asserts the registry is "operator-owned" as a fact. Nothing enforced it, and a child holding
+ * `workspace:staging` plus `tool:write` — not `bash`, so squarely inside ADR-0012's scope — could rewrite the
+ * `staging` entry to point at any other Git worktree and route its grandchild there with a real exclusive
+ * write lease. Measured in review.
+ *
+ * **Two mechanisms, because one is not enough and saying so matters.** The mode/ownership check refuses a
+ * registry another *user* could rewrite; it cannot help here at all, because a governed child runs as the
+ * same uid as its parent and no file mode distinguishes them. The pin is what closes this: the root records
+ * the registry's digest, every descendant inherits it verbatim, and a mismatch refuses.
+ *
+ * Breaks by: deleting the `assertRegistryUnchanged` call in `loadWorkspaceRegistry`; or letting
+ * `establishRegistryPin` overwrite an inherited pin, which is a descendant re-minting its own tampering.
+ */
+test("a descendant cannot repoint the registry entry it holds at another worktree", async () => {
+  const dir = await tempDir("pi-daddy-pin-");
+  const path = join(dir, "registry.json");
+  const honest = { version: 1, workspaces: { staging: { path: "/w/staging" }, prod: { path: "/w/prod" } } };
+  await writeFile(path, JSON.stringify(honest), "utf8");
+
+  // The ROOT pins what it read. No pin inherited, so it establishes one.
+  const rootEnv: NodeJS.ProcessEnv = { PI_GRANTS_WORKSPACE_REGISTRY: path };
+  await establishRegistryPin(rootEnv);
+  const pin = rootEnv.PI_GRANTS_WORKSPACE_PIN;
+  assert.match(pin ?? "", /^[0-9a-f]{64}:[0-9a-f]{64}$/, "a pin names the file as well as its contents");
+  assert.ok(pin?.endsWith(registryDigest(JSON.stringify(honest))));
+
+  // Unchanged registry: the descendant reads it fine.
+  assert.deepEqual(Object.keys((await loadWorkspaceRegistry(path, pin)).workspaces).sort(), ["prod", "staging"]);
+
+  // THE ATTACK: the child rewrites `staging` to point at prod's worktree, keeping the id it legitimately
+  // holds. Before the pin this resolved, leased and started a grandchild in prod.
+  const tampered = { version: 1, workspaces: { staging: { path: "/w/prod" }, prod: { path: "/w/prod" } } };
+  await writeFile(path, JSON.stringify(tampered), "utf8");
+
+  // A DESCENDANT must inherit the pin VERBATIM. Asserted *after* the tampering on purpose: re-minting an
+  // unchanged file produces the same digest, so checking before this point cannot fail — which is precisely
+  // the decoration rule 7 warns about, and this test asserted exactly that until a mutation caught it.
+  // Here, a re-minting `establishRegistryPin` would pin the child's own edit and the attack would succeed.
+  const childEnvVars: NodeJS.ProcessEnv = { PI_GRANTS_WORKSPACE_REGISTRY: path, PI_GRANTS_WORKSPACE_PIN: pin };
+  await establishRegistryPin(childEnvVars);
+  assert.equal(childEnvVars.PI_GRANTS_WORKSPACE_PIN, pin, "an inherited pin is never recomputed");
+  assert.notEqual(
+    childEnvVars.PI_GRANTS_WORKSPACE_PIN,
+    registryPin(path, JSON.stringify(tampered)),
+    "a descendant must not be able to re-pin over its own edit",
+  );
+
+  await assert.rejects(loadWorkspaceRegistry(path, pin), (e: Error & { code?: string }) => {
+    assert.equal(e.code, "WORKSPACE_REGISTRY_CHANGED");
+    assert.match(e.message, /has changed since this delegation tree started/);
+    return true;
+  });
+
+  // And the ROOT — which holds no pin — is unaffected, so an operator editing their own registry between
+  // sessions is not broken by this.
+  assert.deepEqual(Object.keys((await loadWorkspaceRegistry(path, undefined)).workspaces).sort(), ["prod", "staging"]);
+});
+
+/**
+ * The half Unix CAN express: nobody else may rewrite it. Refuses rather than trusting.
+ *
+ * Breaks by: removing the uid or mode check in `loadWorkspaceRegistry`.
+ */
+test("a registry anyone else could rewrite is refused", async () => {
+  const dir = await tempDir("pi-daddy-mode-");
+  const path = join(dir, "registry.json");
+  await writeFile(path, JSON.stringify({ version: 1, workspaces: { prod: { path: "/w/prod" } } }), "utf8");
+
+  await chmod(path, 0o644);
+  assert.deepEqual(Object.keys((await loadWorkspaceRegistry(path, undefined)).workspaces), ["prod"], "0644 is fine");
+
+  for (const mode of [0o666, 0o646, 0o662] as const) {
+    await chmod(path, mode);
+    await assert.rejects(loadWorkspaceRegistry(path, undefined), (e: Error & { code?: string }) => {
+      assert.equal(e.code, "WORKSPACE_NOT_REGISTERED");
+      assert.match(e.message, /group- or world-writable/);
+      return true;
+    }, `mode ${mode.toString(8)} must be refused`);
+  }
+  await chmod(path, 0o600);
+  assert.deepEqual(Object.keys((await loadWorkspaceRegistry(path, undefined)).workspaces), ["prod"], "0600 is fine");
+});
+
+/**
+ * R-79's defect class, reintroduced by 0.19.0's new readers and caught before release.
+ *
+ * `buildCatalog` and `registeredWorkspaceIds` are awaited inside `session_start`, so a blocking path there
+ * stopped the session before every control after it — and `delegate` awaits the same promise. An
+ * `AbortSignal` does NOT fix this: a FIFO blocks inside `open(2)` before any read begins, so the signal is
+ * never observed. `stat` first is the fix.
+ *
+ * Breaks by: removing the `isFile()` check, or replacing it with a signal-only timeout.
+ */
+test("a registry that is not a regular file is refused, not waited on", async () => {
+  const dir = await tempDir("pi-daddy-fifo-");
+  const fifo = join(dir, "registry.json");
+  await new Promise<void>((ok, no) => execFile("mkfifo", [fifo], (e) => (e ? no(e) : ok())));
+
+  const started = Date.now();
+  await assert.rejects(loadWorkspaceRegistry(fifo, undefined), (e: Error & { code?: string }) => {
+    assert.equal(e.code, "WORKSPACE_NOT_REGISTERED");
+    assert.match(e.message, /not a regular file/);
+    return true;
+  });
+  assert.ok(Date.now() - started < 1_000, "must refuse immediately rather than block on open(2)");
+
+  // And the soft-failing readers return rather than hanging the session.
+  assert.deepEqual(await registeredWorkspaceIds(fifo), []);
+  const catalog = await buildCatalog({ cwd: dir, observedTools: null, registryPath: fifo });
+  assert.deepEqual(catalog.byKind("workspace"), []);
+  assert.ok(Date.now() - started < 5_000, "session start must not block");
 });
 
 /** The catalog enumerates registered workspaces for `/grants` and `init`. Display, never authority. */

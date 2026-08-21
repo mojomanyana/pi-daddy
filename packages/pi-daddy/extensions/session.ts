@@ -42,7 +42,7 @@ import {
 import type { Capability } from "../src/resolve.ts";
 import { loadDefinitions } from "../src/definitions.ts";
 import { buildCatalog } from "../src/catalog.ts";
-import { ENV_WORKSPACE_REGISTRY } from "../src/workspace.ts";
+import { ENV_WORKSPACE_REGISTRY, establishRegistryPin } from "../src/workspace.ts";
 import { loadGrantSync, grantStorePath } from "../src/grant-store.ts";
 import { republishable } from "./approvals.ts";
 
@@ -211,6 +211,9 @@ export interface GrantsSession {
  */
 export async function loadProjectDefinitions(session: GrantsSession, cwd: string): Promise<void> {
   session.definitions = await loadDefinitions(cwd);
+  // Before anything reads the registry: pin its contents if this session is the root of its tree. A
+  // descendant already carries the pin and this is a no-op for it, which is the point — see `registryDigest`.
+  await establishRegistryPin();
   session.catalogReady = buildCatalog({
     cwd,
     observedTools: session.observedTools,
