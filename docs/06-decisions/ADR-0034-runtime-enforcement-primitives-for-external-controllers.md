@@ -316,3 +316,39 @@ written beside a fix is not the fix. Every critical finding in this round was a 
 an ADR sentence that described an intention as an accomplished fact. The mechanical guards this project
 already trusts — the line ceiling, the branch guard, the refusal enumeration — are the ones that never had
 this failure.
+
+---
+
+## Third amendment, 2026-08-20 — the v2 wire contract becomes a packaged artifact
+
+PR #9 merged and tagged the implementation while the only complete description of a v2 JSONL line remained
+TypeScript plus prose. An external skill harness would therefore have to duplicate the event union and guess
+at optionality, nested approval/refusal shapes and nullability — creating the parallel contract this project
+already rejects for governance rules.
+
+Decided additionally:
+
+- The next authorized package release will ship a closed JSON Schema draft 2020-12 union at the versioned
+  public path `pi-daddy/contracts/ledger/v2/ledger-event.schema.json` and one deterministic fixture per event under the
+  adjacent `fixtures/` path.
+- Fixtures are generated through the real `buildRecord`, workspace-lease, child-lifecycle and check-receipt
+  builders. A test compares checked-in artifacts to fresh builder output, and installed-package smoke imports
+  the schema and every fixture.
+- A line with no version/event discriminator remains the legacy 0.17 `GrantRecord`. Once a line explicitly
+  names a version it is never eligible for that fallback: version 2 must validate as a known event and every
+  unsupported explicit version fails closed. pi-daddy's reader enforces that dispatch boundary and required
+  join fields; full nested validation belongs to consumers of the schema.
+- The v2 schema is frozen as a closed contract. Adding/removing a field, event or enum member, changing
+  requiredness, or changing a field's meaning requires a new ledger version and a new versioned artifact
+  path. Documentation-only clarification and additional examples may remain within the path when they do not
+  change which records validate.
+
+**Cost:** this turns previously published TypeScript behavior into an explicit public compatibility
+obligation. The artifact itself is new public API and therefore needs a patch-versus-minor release decision;
+this amendment does not choose or apply a package version.
+
+**Not resolved:** every limitation listed by the two amendments above remains — workspace routing does not
+attenuate; persisted approvals do not bind head/tree/freshness; the operator dialog is incomplete; candidate
+identity omits ignored and Git-internal state; lease identity omits the lease directory; `assurance_scope`
+and `schema_version` remain under-validated; access classification remains conservative; and the runtime
+module cycles remain. Publishing their wire representation is not repairing them.

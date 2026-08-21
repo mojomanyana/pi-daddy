@@ -2171,6 +2171,48 @@ There is no capability to gate today, so `PI_GRANTS_GATED` cannot help.
 **Trigger:** any descendant `workspace_lease` event whose `root` is not the root its parent was routed to;
 or a workspace transitivity test failing once one exists.
 
+## R-132 · A capability id containing a comma mints authority the root never held — H×H, FIXED
+
+Added and fixed 2026-08-20. **Present in published 0.18.0**, verified against `origin/main` before the fix
+was written. Predates ADR-0035 and is unrelated to it.
+
+`PI_GRANTS_GRANT` is comma-separated and `parseList` splits it. A capability id containing a comma was
+admitted by a wildcard's **prefix** rule — `"agent:x,tool:bash"` starts with `agent:`, so `agent:*` covered
+it — written verbatim into the child's grant, and split by the child into two capabilities. Measured:
+
+```
+ownGrant: ["agent:*", "tool:read", "tool:delegate"]     ← root never holds tool:bash
+tools:    ["read", "delegate", "agent:x,tool:bash"]
+→ denied: []
+→ child grant parses as ["agent:x", "tool:bash", "tool:delegate", "tool:read"]
+```
+
+The child holds a real `tool:bash`. `denied` is empty, so `isEscalationAttempt` sees nothing and the ledger
+line reads as an ordinary authorised delegation. **Minting authority with a clean audit record** is the
+precise harm this package exists to prevent, and it is worse than R-131's shape because no configuration
+mistake is required — only a wildcard, which is a documented supported root grant (R-26 is written about
+exactly it).
+
+`tool:*` is affected identically, since it covers every namespace.
+
+**The codebase predicted this channel and guarded a different one.** `grant-env.ts` refuses to *write* a
+grants file containing characters outside a capability id, and says why: *"the third channel — whatever it
+turns out to be — should cost a refusal rather than an injection. A guard that depends on my enumeration
+being complete is not a guard."* Propagation was that third channel and had no backstop.
+
+**Fixed with two guards, both mutation-verified.** `covered()` refuses to grant a malformed id, so it lands
+in `denied` and is recorded as the escalation attempt it is rather than throwing. And both grant writers
+refuse to emit one, loudly — unreachable by construction, which is the point of a backstop.
+
+Deliberately a blocklist of structurally dangerous characters (comma, CR, LF, NUL, surrounding whitespace)
+rather than the full grammar whitelist `isSafeCapability` applies at the generation boundary. This is the
+enforcement path and must keep accepting whatever ids operators already have; a security patch to a
+released version should not invent a new way to refuse a legitimate setup. Verified: `ext:@scope/pkg/tool`,
+`skill:my-skill`, `agent:my_agent` and both wildcards are unaffected.
+
+**Trigger:** any capability id in a grant, a ledger record or a refusal containing a character outside
+`[A-Za-z0-9:@._/*-]`; or a child grant whose parsed length exceeds its parent's.
+
 ---
 
 ## Register log
@@ -2245,3 +2287,4 @@ or a workspace transitivity test failing once one exists.
 | 2026-08-20 | R-130 | Added and fixed — the two findings the mutation auditor left open at the new HEAD: the `{release:true}` clean-release handshake was unpinned (deleting it left 586/586 green, so a deliberate handover would have been treated as a crash), and a test of mine overstated what the wiring does with `context_id`. Also records that the auditor corrected its OWN recommendation — pinning `truncated` would have introduced a bug — and that `a882595`'s `docs:` label was wrong for a commit touching five production files | mutation re-verification at the fixed HEAD |
 | 2026-08-20 | R-131, ADR-0035 | Added — **workspace routing does not attenuate, and it shipped in 0.18.0.** A child routed to `staging` can route its grandchild to `prod`, and unlike ADR-0012's accepted `bash` escape it leaves a complete, correct-looking ledger record asserting an authorisation nobody granted. R-26's shape in a namespace added five ADRs later. ADR-0035 proposes `workspace:<id>` as a capability so it attenuates through the existing `resolve()` path, and is deliberately left **Proposed** pending a transitivity probe — the evidence R-26 had and this does not | ADR-0034's unresolved list |
 | 2026-08-20 | R-131, ADR-0035 | **Measured, then fixed.** `docs/probes/g36-workspace-attenuation` confirmed the escalation against real worktrees and a real lease — grandchild planned with no refusal, took a write lease on `prod`, would have started there — with the control showing grant and depth attenuating through the same child environment. ADR-0035 Accepted and implemented: routing is a capability, `WORKSPACE_NOT_AUTHORIZED` is recorded in `denied`, and `workspace:*` is held but never inherited. All four parts mutation-verified; the probe now measures the refusal too | ADR-0035 |
+| 2026-08-20 | R-132 | Added and **fixed** — a capability id containing a comma was admitted by a wildcard's prefix rule and split by the child into several capabilities, minting `tool:bash` from a root that never held it with `denied: []` and a clean-looking ledger line. **Present in published 0.18.0**, verified against `origin/main`; predates ADR-0035, which widened the surface with a second injectable namespace. Two guards, both mutation-verified. The channel was predicted verbatim by `grant-env.ts`'s own comment and guarded everywhere except propagation | found reviewing PR #10 |

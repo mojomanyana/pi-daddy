@@ -62,6 +62,7 @@ export function expandSubsumed(grant: Capability[]): Capability[] {
 }
 
 import { WILDCARD } from "./pi-tools.ts";
+import { isWellFormedCapability } from "./capabilities.ts";
 
 /**
  * "Any definition" — ADR-0023, and one of two wildcards this module understands.
@@ -160,10 +161,16 @@ export function resolve(input: ResolveInput): ResolveResult {
    */
   const anyCapability = held.has(WILDCARD);
   const anyWorkspace = held.has(WORKSPACE_WILDCARD);
+  // A malformed id is never covered — not by an exact hold, and above all not by a wildcard's PREFIX rule,
+  // which is how `agent:x,tool:bash` got admitted and then split into two capabilities in the child.
+  // Landing in `denied` is the right outcome rather than a throw: it fails closed AND records an
+  // escalation attempt, so the ledger shows the attempt instead of a clean line.
   const covered = (c: Capability): boolean =>
-    parent.has(c) || anyCapability
-    || (anyDefinition && c.startsWith("agent:"))
-    || (anyWorkspace && c.startsWith("workspace:"));
+    isWellFormedCapability(c)
+    && (parent.has(c) || anyCapability
+      || (anyDefinition && c.startsWith("agent:"))
+      || (anyWorkspace && c.startsWith("workspace:")));
+
   const ceiling = input.ceiling === undefined ? null : new Set(input.ceiling);
   const gated = new Set(input.gated ?? []);
   const approved = new Set(input.approved ?? []);

@@ -31,6 +31,7 @@ import {
 } from "./correlation.ts";
 import { resolveDelegationApproval } from "./delegation-approval.ts";
 import type { Delegation, DelegationContext, DelegationRequest } from "./delegate-types.ts";
+import { assertCapabilitiesArePropagatable } from "./capabilities.ts";
 export type { Delegation, DelegationContext, DelegationRequest } from "./delegate-types.ts";
 
 export function planDelegation(request: DelegationRequest, ctx: DelegationContext): Delegation {
@@ -298,7 +299,7 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
   }
 
   const env: Record<string, string> = {
-    [ENV_GRANT]: result.effective.join(","),
+    [ENV_GRANT]: (assertCapabilitiesArePropagatable(result.effective), result.effective.join(",")),
     [ENV_DEPTH]: String(childDepth),
     [ENV_MAX_DEPTH]: String(ctx.maxDepth),
   };

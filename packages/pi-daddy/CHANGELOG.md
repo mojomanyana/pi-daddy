@@ -14,6 +14,14 @@ the record of how the package got here and are worth keeping; they are not worth
 
 ## 0.19.0 — workspace routing is a capability (unreleased)
 
+- Ship a canonical JSON Schema draft 2020-12 contract for `ledgerVersion: 2` plus deterministic fixtures for
+  all four event types, generated through the production builders. Stable package export paths let external
+  harnesses pin the real contract instead of maintaining a parallel format.
+- Add a check-receipt event builder and use it on the production named-check path, so every checked-in fixture
+  is produced by the same builder that emits the corresponding ledger line.
+- Document strict version dispatch: legacy 0.17 grant records have no explicit version; unsupported explicit
+  versions fail closed and are never reinterpreted as legacy.
+
 - **BREAKING — routing a child to a registered workspace now requires `workspace:<id>` in the caller's
   grant.** Every grant that routes must add it; a delegation naming a workspace the session does not hold
   is refused `WORKSPACE_NOT_AUTHORIZED`, with the id recorded in `denied` so it counts as an escalation.
@@ -32,6 +40,24 @@ the record of how the package got here and are worth keeping; they are not worth
 - `tool:*` still satisfies a workspace capability: governance is opt-in and an ungoverned session must keep
   routing anywhere.
 - A `workspace:` id never reaches pi's `--tools`.
+
+## 0.18.1 — SECURITY: a capability id containing a comma minted authority
+
+**Upgrade if you use `tool:*` or `agent:*` in any grant.** Present in 0.18.0 and every earlier published
+version that has the wildcard prefix rules.
+
+`PI_GRANTS_GRANT` is comma-separated. A capability id containing a comma was admitted by a wildcard's
+**prefix** rule — `agent:x,tool:bash` starts with `agent:`, so a root holding `agent:*` covered it — then
+written verbatim into the child's grant and split by the child into two capabilities. The child received a
+real `tool:bash` from a tree whose root never held it, `denied` was empty, so nothing recorded an
+escalation and the ledger line read as an ordinary authorised delegation.
+
+`tool:*` is affected identically, since it covers every namespace.
+
+Fixed with two guards: a malformed id can no longer be **granted** (it lands in `denied` and is recorded as
+the escalation attempt it is), and neither grant writer will **emit** one. No legitimate id is affected —
+`ext:@scope/pkg/tool`, `skill:my-skill`, `agent:my_agent` and both wildcards are unchanged. Tracked as
+R-132.
 
 ## 0.18.0 — generic runtime enforcement for external controllers
 

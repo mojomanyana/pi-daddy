@@ -1,0 +1,632 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/mojomanyana/pi-daddy/contracts/ledger/v2/ledger-event.schema.json",
+  "title": "pi-daddy ledgerVersion 2 event",
+  "description": "One JSON object per JSONL line. This schema covers only explicit ledgerVersion 2 events; legacy GrantRecord lines have no version/event discriminator and are intentionally outside this schema.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/capabilityDecision"
+    },
+    {
+      "$ref": "#/$defs/workspaceLease"
+    },
+    {
+      "$ref": "#/$defs/childLifecycle"
+    },
+    {
+      "$ref": "#/$defs/checkReceipt"
+    }
+  ],
+  "$defs": {
+    "correlation": {
+      "type": "object",
+      "description": "Opaque, non-authoritative controller metadata. String and aggregate byte limits are additionally enforced by the runtime and cannot be represented exactly in JSON Schema.",
+      "properties": {
+        "schema_version": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "run_id": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "task_id": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "workspace_id": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "context_id": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "phase": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "assurance": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "assurance_effective": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "policy_label": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "assurance_source": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "assurance_scope": {},
+        "activated_at": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "plan_digest": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "definition_digest": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "task_digest": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "base_sha": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "head_sha": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "tree_sha": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "event_seq": {
+          "type": "number"
+        },
+        "last_change_seq": {
+          "type": "number"
+        },
+        "last_authority_seq": {
+          "type": "number"
+        },
+        "check_receipt_id": {
+          "type": "string",
+          "maxLength": 512
+        }
+      },
+      "additionalProperties": false
+    },
+    "refusalCode": {
+      "type": "string",
+      "enum": [
+        "CAPABILITY_ESCALATION",
+        "GRANT_ID_MALFORMED",
+        "DEFINITION_NOT_AUTHORIZED",
+        "UNDECLARED_TOOLS",
+        "UNKNOWN_TOOL",
+        "GATED_UNAPPROVED",
+        "APPROVAL_EXPIRED",
+        "APPROVAL_SCOPE_MISMATCH",
+        "APPROVAL_FLOW_FAILED",
+        "DEPTH_EXCEEDED",
+        "FANOUT_EXCEEDED",
+        "EXECUTOR_UNAVAILABLE",
+        "CHILD_TIMED_OUT",
+        "CHILD_CANCELLED",
+        "CHILD_EXIT_NONZERO",
+        "TASK_MISSING",
+        "UNKNOWN_DEFINITION",
+        "CEILING_PATTERNS_UNRESOLVED",
+        "NARROWING_VIOLATED",
+        "DEFINITION_UNREADABLE",
+        "CORRELATION_TOO_LARGE",
+        "CORRELATION_INVALID",
+        "LEDGER_WRITE_FAILED",
+        "FANOUT_FAILED",
+        "WORKSPACE_NOT_REGISTERED",
+        "WORKSPACE_WRITE_CONFLICT",
+        "WORKSPACE_LEASE_STALE",
+        "CHECK_NOT_CONFIGURED",
+        "CHECK_CONFIGURATION_INVALID",
+        "CHECK_IDENTITY_UNAVAILABLE",
+        "CHECK_IDENTITY_MISMATCH"
+      ]
+    },
+    "refusal": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/refusalCode"
+        },
+        "message": {
+          "type": "string"
+        },
+        "details": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean",
+              "null"
+            ]
+          }
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "additionalProperties": false
+    },
+    "approvalSource": {
+      "type": "string",
+      "enum": [
+        "prompt",
+        "session",
+        "persisted",
+        "inherited"
+      ]
+    },
+    "approvalScope": {
+      "type": "string",
+      "enum": [
+        "once",
+        "session",
+        "always"
+      ]
+    },
+    "approvalUse": {
+      "type": "object",
+      "properties": {
+        "max": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "remaining": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "max",
+        "remaining"
+      ],
+      "additionalProperties": false
+    },
+    "definitionDigest": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{64}$"
+        }
+      },
+      "required": [
+        "name",
+        "source",
+        "sha256"
+      ],
+      "additionalProperties": false
+    },
+    "capabilityDecision": {
+      "type": "object",
+      "properties": {
+        "ledgerVersion": {
+          "const": 2
+        },
+        "event": {
+          "const": "capability_decision"
+        },
+        "ts": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "parentId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "childId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "depth": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "agentType": {
+          "type": "string"
+        },
+        "requested": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "parentGrant": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "effective": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "denied": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "clipped": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "gatedBlocked": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "blocked": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "approved": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "approvalSource": {
+          "$ref": "#/$defs/approvalSource"
+        },
+        "approvalSources": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/approvalSource"
+          }
+        },
+        "approvalScopes": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/approvalScope"
+          }
+        },
+        "approvalExpiresAt": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "approvalUses": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/approvalUse"
+          }
+        },
+        "approvalScope": {
+          "$ref": "#/$defs/approvalScope"
+        },
+        "humanDenied": {
+          "const": true
+        },
+        "gateOutcome": {
+          "type": "string",
+          "enum": [
+            "declined",
+            "dismissed",
+            "no-ui",
+            "error"
+          ]
+        },
+        "definitionDigest": {
+          "$ref": "#/$defs/definitionDigest"
+        },
+        "executor": {
+          "type": "string",
+          "enum": [
+            "process",
+            "herdr"
+          ]
+        },
+        "taskFrom": {
+          "type": "string"
+        },
+        "taskDigest": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{64}$"
+        },
+        "correlation": {
+          "$ref": "#/$defs/correlation"
+        },
+        "refusal": {
+          "$ref": "#/$defs/refusal"
+        }
+      },
+      "required": [
+        "ledgerVersion",
+        "event",
+        "ts",
+        "parentId",
+        "childId",
+        "depth",
+        "requested",
+        "parentGrant",
+        "effective",
+        "denied",
+        "clipped",
+        "gatedBlocked",
+        "blocked",
+        "executor",
+        "taskDigest"
+      ],
+      "additionalProperties": false
+    },
+    "workspaceLease": {
+      "type": "object",
+      "properties": {
+        "ledgerVersion": {
+          "const": 2
+        },
+        "event": {
+          "const": "workspace_lease"
+        },
+        "ts": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "childId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "root": {
+          "type": "string",
+          "minLength": 1
+        },
+        "access": {
+          "type": "string",
+          "enum": [
+            "read",
+            "write"
+          ]
+        },
+        "outcome": {
+          "type": "string",
+          "enum": [
+            "acquired",
+            "uncontended",
+            "refused",
+            "released",
+            "released-unrecorded",
+            "lost",
+            "retained",
+            "timeout",
+            "recovered"
+          ]
+        },
+        "recovered": {
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "const": "unknown"
+            }
+          ]
+        },
+        "releaseReason": {
+          "type": "string"
+        },
+        "refusal": {
+          "$ref": "#/$defs/refusal"
+        },
+        "correlation": {
+          "$ref": "#/$defs/correlation"
+        }
+      },
+      "required": [
+        "ledgerVersion",
+        "event",
+        "ts",
+        "childId",
+        "workspaceId",
+        "root",
+        "access",
+        "outcome"
+      ],
+      "additionalProperties": false
+    },
+    "childLifecycle": {
+      "type": "object",
+      "properties": {
+        "ledgerVersion": {
+          "const": 2
+        },
+        "event": {
+          "const": "child_lifecycle"
+        },
+        "ts": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "childId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "starting",
+            "completed",
+            "failed"
+          ]
+        },
+        "executor": {
+          "type": "string",
+          "enum": [
+            "process",
+            "herdr"
+          ]
+        },
+        "exitCode": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "signal": {
+          "oneOf": [
+            {
+              "type": "string",
+              "enum": [
+                "SIGABRT",
+                "SIGALRM",
+                "SIGBUS",
+                "SIGCHLD",
+                "SIGCONT",
+                "SIGFPE",
+                "SIGHUP",
+                "SIGILL",
+                "SIGINT",
+                "SIGIO",
+                "SIGIOT",
+                "SIGKILL",
+                "SIGPIPE",
+                "SIGPOLL",
+                "SIGPROF",
+                "SIGPWR",
+                "SIGQUIT",
+                "SIGSEGV",
+                "SIGSTKFLT",
+                "SIGSTOP",
+                "SIGSYS",
+                "SIGTERM",
+                "SIGTRAP",
+                "SIGTSTP",
+                "SIGTTIN",
+                "SIGTTOU",
+                "SIGUNUSED",
+                "SIGURG",
+                "SIGUSR1",
+                "SIGUSR2",
+                "SIGVTALRM",
+                "SIGWINCH",
+                "SIGXCPU",
+                "SIGXFSZ",
+                "SIGBREAK",
+                "SIGLOST",
+                "SIGINFO"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "timedOut": {
+          "const": true
+        },
+        "aborted": {
+          "const": true
+        },
+        "truncated": {
+          "const": true
+        },
+        "reason": {
+          "type": "string"
+        },
+        "correlation": {
+          "$ref": "#/$defs/correlation"
+        }
+      },
+      "required": [
+        "ledgerVersion",
+        "event",
+        "ts",
+        "childId",
+        "state",
+        "executor"
+      ],
+      "additionalProperties": false
+    },
+    "checkReceipt": {
+      "type": "object",
+      "properties": {
+        "ledgerVersion": {
+          "const": 2
+        },
+        "event": {
+          "const": "check_receipt"
+        },
+        "ts": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "childId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "receiptId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{64}$"
+        },
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "checkId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "treeSha": {
+          "type": "string",
+          "minLength": 1
+        },
+        "correlation": {
+          "$ref": "#/$defs/correlation"
+        }
+      },
+      "required": [
+        "ledgerVersion",
+        "event",
+        "ts",
+        "childId",
+        "receiptId",
+        "workspaceId",
+        "checkId",
+        "treeSha"
+      ],
+      "additionalProperties": false
+    }
+  }
+}
