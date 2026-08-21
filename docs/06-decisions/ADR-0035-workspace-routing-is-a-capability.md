@@ -241,3 +241,65 @@ the string appears" is the wrong migration; grant it where routing actually happ
 confine paths, and a child holding `bash` can still write to any worktree (ADR-0012,
 `docs/probes/g5-bash-escape`). The probe's own limits also stand — it observes no model and no real process
 boundary.
+
+---
+
+## Amendment — 2026-08-21, after review of PR #10
+
+**Accepted stands. Three of the things written above were not true when they were written**, and this
+amendment says which, in the ADR's own register rather than in a commit message. Rule 2: nothing above is
+edited.
+
+Two independent review passes over the PR found the guard itself correct — right place, right ordering, no
+lease taken and no approval banked on a refusal — and the **namespace taught to three of the nine sites that
+already knew about `agent:`**. The pattern, not any single defect, is the finding.
+
+### What the Decision claimed and the code did not do
+
+1. **"`PI_GRANTS_GATED=workspace:prod` asks a human before any descendant routes there (ADR-0024's
+   mechanism, unchanged)."** It did not. `resolveDelegationApproval` special-cased `agent:<name>` alone, and
+   the routing check read `ownGrant` without consulting `gated` — so the gate was accepted, recorded, and
+   silently inert. Consequences/Positive's *"An operator can gate a workspace, which is not possible today at
+   all"* was false in both directions. **Now implemented**, by generalising ADR-0024's own mechanism to a
+   list of per-delegation authorising capabilities rather than adding a second special case.
+2. **"`pi-daddy init` scaffolds the registered ids so the common path is a one-line grant edit."** `init` had
+   never heard of the workspace registry. The revisit trigger below then names operator fatigue as evidence
+   that *"the scaffolding in `init` is not doing its job"* — a trigger on something that did not exist.
+   **Now implemented**: the registered ids are listed commented in `.pi/grants.env`, and no `workspace:` id
+   is ever live by default, including one a package's `allowed-tools` declares.
+3. **"Attenuation comes for free"** — the strongest claim in the Context, and the one that inverted in
+   practice. `unknownCapabilities` never learned the namespace, and `delegationContext()` always supplies a
+   catalog, so every requested `workspace:<id>` was refused `UNKNOWN_TOOL` as *"a typo, or an uninstalled
+   package"*. **No child could ever be granted a workspace capability at all**, which means routing did not
+   attenuate below the root — it terminated there, and "two authorities, not one" was unreachable in
+   production. Free was the wrong price: a namespace costs an edit at every site that reads one.
+
+### What the probe could not see
+
+`docs/probes/g36-workspace-attenuation` is sound about what it measured and its limitations section was
+honest about the model and the process boundary. It missed defect 3 for a reason worth recording: it appends
+`workspace:prod` to `ownGrant` **by hand and builds no catalog**, so it exercised a path production does not
+take. A probe that constructs its own inputs can confirm a mechanism and still miss the wiring. Its
+limitations section now says so.
+
+### R-135, which is not this ADR's defect
+
+Chasing why one mutation failed no test turned up an older one: `childEnv`'s *"a root may HOLD `tool:*` …
+but handing it down would let every descendant reacquire the full catalog"* was enforced **only** in
+`childEnv` — the interceptor path, which ADR-0016 demoted to a tripwire. `delegate.ts`, the path that
+actually spawns, built the child's grant with no filter, and `tool:*` is not in `UNIVERSAL_CAPABILITIES`, so
+`assertNarrowing` did not catch it either. A parent holding `tool:*` and delegating `tools: ["tool:*"]` gave
+its child `tool:*`. That is R-26 live on the primary path, predating ADR-0035 entirely, and this ADR's fix
+is what exposed it. One shared `inheritableGrant` now serves both paths.
+
+### What this changes about how a namespace gets added
+
+Nothing in the Decision. It adds a cost that was not costed: **a capability namespace is a nine-site change**
+— `normaliseCapability`, `covered()`, the inheritance filter on both paths, `unknownCapabilities`,
+`ceilingForDefinition`, `isSafeCapability`/`wildcardsIn`, `subsumedBy`, the per-delegation gate, and the
+operator-facing scaffold. `test/workspace-capability.test.ts` is organised by site for that reason, and
+`CAPABILITY_NAMESPACE_PREFIXES` collapses three of them into one list. A tenth site, or a fifth namespace,
+adds a case there.
+
+Option 2 (strip the registry, re-supply a narrowed one per child) remains available as defence-in-depth and
+remains not taken. Nothing here changes the non-goals.

@@ -1,5 +1,5 @@
 import { DELEGATE_SUBJECT, type InheritableApproval } from "./approval.ts";
-import { agentCapability } from "./capabilities.ts";
+import { agentCapability, workspaceCapability } from "./capabilities.ts";
 import {
   approvalBindingsEqual,
   buildApprovalBinding,
@@ -7,7 +7,7 @@ import {
   type CorrelationMetadata,
 } from "./correlation.ts";
 import type { DefinitionDigest, SkillDefinition } from "./definitions.ts";
-import { AGENT_WILDCARD, resolve, type Capability, type ResolveResult } from "./resolve.ts";
+import { AGENT_WILDCARD, WORKSPACE_WILDCARD, resolve, type Capability, type ResolveResult } from "./resolve.ts";
 
 /**
  * Resolve the approval half of one delegation after its requested capability set is known.
@@ -44,15 +44,32 @@ export function resolveDelegationApproval(input: {
     approved: [],
   });
 
-  // ADR-0024: a definition's authorising id is gated as the PARENT's authority to run it now. It never
-  // joins requested/effective, because that would hand the child authority to recursively spawn itself.
-  let authorisingCapability: Capability | undefined;
-  if (input.spawned) {
-    const authorising = agentCapability(input.spawned.name);
-    if (input.gated.includes(authorising) || input.gated.includes(AGENT_WILDCARD)) {
-      authorisingCapability = authorising;
+  /**
+   * Authorities the PARENT is spending on this one delegation, gated as such.
+   *
+   * ADR-0024 established the shape for `agent:<name>`: the id is gated as the parent's authority to run
+   * that definition *now*, and never joins requested/effective, because that would hand the child authority
+   * to recursively spawn itself. ADR-0035 added a second member of the category — `workspace:<id>`, the
+   * authority to route this child somewhere — and shipped without it, so `PI_GRANTS_GATED=workspace:prod`
+   * was accepted, recorded, and silently inert: no human was ever asked. The ADR claimed the opposite in
+   * three places.
+   *
+   * A LIST rather than two variables on purpose. This is the third namespace whose authorising id is gated
+   * per-delegation rather than granted downward, and the first two were written as one special case each;
+   * a fourth should extend an array, not add a third `if` and a third field to thread through.
+   */
+  const authorisingCapabilities: Capability[] = [];
+  const gateAuthority = (authorising: Capability, wildcard: Capability) => {
+    if (input.gated.includes(authorising) || input.gated.includes(wildcard)) {
+      authorisingCapabilities.push(authorising);
       unapproved.gatedBlocked = [...unapproved.gatedBlocked, authorising];
     }
+  };
+  if (input.spawned) gateAuthority(agentCapability(input.spawned.name), AGENT_WILDCARD);
+  // Trusted: `boundWorkspaceId` is set only from a routing spec resolved against the operator registry,
+  // never from a model-supplied `correlation` claim (R-110).
+  if (input.boundWorkspaceId) {
+    gateAuthority(workspaceCapability(input.boundWorkspaceId), WORKSPACE_WILDCARD);
   }
 
   const potential = resolve({
@@ -92,8 +109,7 @@ export function resolveDelegationApproval(input: {
     gated: input.gated,
     approved: approvedCapabilities,
   });
-  if (authorisingCapability && !approvedCapabilities.includes(authorisingCapability)) {
-    result.gatedBlocked = [...result.gatedBlocked, authorisingCapability];
-  }
+  const stillGated = authorisingCapabilities.filter((c) => !approvedCapabilities.includes(c));
+  if (stillGated.length > 0) result.gatedBlocked = [...result.gatedBlocked, ...stillGated];
   return { result, ...(approvalBinding ? { approvalBinding } : {}), bindingMismatch };
 }

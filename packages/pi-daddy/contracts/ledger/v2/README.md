@@ -26,6 +26,18 @@ to a field it does not know. Adding/removing a field, event, enum member, requir
 field's meaning requires a new ledger version and a new versioned path. Correcting prose or adding a fixture
 that does not change accepted records does not.
 
+**The rule above binds from first publication, and v2 was first published in 0.19.0.** It was added to the
+repository during 0.19.0's development and no released version has ever carried it, so nothing can have
+pinned it — which is why `WORKSPACE_NOT_AUTHORIZED` (ADR-0035) could join `refusalCode`'s enum in that same
+release rather than forcing a v3 for one refusal code. Recorded here rather than left to inference, because
+the rule as written forbids exactly that edit and a reader comparing the two would be right to.
+
+This is the only such amendment and there will not be another: from 0.19.0 the enum is **generated** from
+`REFUSAL_CODES` by `scripts/generate-ledger-v2-contract.ts`, and `test/ledger-contract.test.ts` holds the two
+equal. So a new refusal code is now a visible, mechanical change to this artifact — which is what makes the
+rule above enforceable instead of aspirational. Before that it was hand-maintained beside the array it had to
+match, and the first code added after publication turned the suite red with no diff from the generator.
+
 ## Event field inventory
 
 All v2 events require `ledgerVersion`, `event`, and RFC 3339 `ts`; all carry a joinable `childId` and may

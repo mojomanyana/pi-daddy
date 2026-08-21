@@ -11,6 +11,31 @@ decisions; this file holds state and next actions. Newest entry on top.
 `hooks/pre-commit` enforces it once `git config core.hooksPath hooks` is set in your clone. This line is at
 the top because the rule was broken by drift, and this file is what a session actually reads first.
 
+**2026-08-21 — PR #10 (ADR-0035, 0.19.0) is OPEN and this is the work.** Two review passes plus a mutation
+battery; fixes are on `fix/adr-0035-review`, to be pushed onto `adr/0035-workspace-attenuation` so PR #10
+merges correct rather than being narrated by a second PR. **615 unit + 44 integration.** The full account is
+the top dated entry below; what a resuming session needs:
+
+1. **`npm run test:integration`, `test:smoke`, `build`, the g36 probe and the line ceiling have not been
+   re-run since the doc commit.** The unit suite and typecheck are green. Run all of them before pushing.
+2. **The reusable finding is R-133: a capability namespace is a nine-site change.** ADR-0035 taught three.
+   `test/workspace-capability.test.ts` is organised **by site** for that reason — a tenth site or a fifth
+   namespace adds a case there, and `CAPABILITY_NAMESPACE_PREFIXES` collapses three of the sites into one
+   list so they cannot drift apart again.
+3. **R-135 is the one to read if you only read one.** Not an ADR-0035 defect — R-26's wildcard rule was
+   enforced only in `childEnv` (the interceptor path ADR-0016 demoted to a tripwire), so `delegate.ts`, the
+   path that actually spawns, handed `tool:*` to delegated children in **every published version**. Found
+   because a mutation failed no test, which is the whole argument for mutation-verifying rather than
+   counting green.
+4. **Still open, deliberately:** `correlation.workspace_id` with no routing spec is unguarded (R-110). It
+   takes no lease and sets no CWD, so it is not the escalation — but ADR-0035 rejected Option 4 on the
+   ground that the defect "produces a complete, correct-looking record naming `prod`", and that record is
+   still producible through correlation alone. Either guard it or write down that the argument is half
+   closed. **Do not let this merge unrecorded a third time.**
+5. Option 2 from ADR-0035 (strip the registry, re-supply a narrowed one per child) remains available as
+   defence-in-depth and remains not taken — a child can still *enumerate* ids it may not use.
+
+
 **Release state, re-verified 2026-08-20:** PR #12 is merged. Repository `main`, peeled tag `v0.18.1`, and
 the npm `pi-daddy@0.18.1` `gitHead` all point at `8feaacbdf6003c783225e375b61874a599963f47`;
 the latest GitHub Release remains `v0.17.1`. The focused `feat/ledger-v2-contract-artifacts` branch merged
@@ -106,6 +131,85 @@ every one of them was a control that read as live and was not.
 
 That convention is why every reversal here was survivable, and there have been five. Then update
 `docs/SPEC.md` in the same change — a spec that lags the code is worse than no spec.
+
+---
+
+## 2026-08-21 (review + fixes) — a namespace is nine sites, and ADR-0035 taught three
+
+**PR #10 reviewed independently before merge, twice, then fixed.** Branch `fix/adr-0035-review` off
+`92ccbb8`. The guard ADR-0035 added is correct — right place, right ordering, no lease taken and no approval
+banked on a refusal, and all four of its advertised mutations genuinely fail a named test. Everything below
+is what surrounded it.
+
+**The one finding worth carrying: a capability namespace is a nine-site change.** `workspace:` was modelled
+on `agent:`, and every site that already handled `agent:` was a site that needed teaching. Three were taught
+(`normaliseCapability`, `resolve()`'s wildcard rule, `childEnv`'s filter). The other six each produced a
+defect, which is close enough to one-for-one that the *count* is the lesson rather than any individual bug.
+R-133 carries it; `test/workspace-capability.test.ts` is organised **by site** so the checklist is
+executable; `CAPABILITY_NAMESPACE_PREFIXES` collapses three sites into one list.
+
+**Severe, and it inverted the ADR's own claim.** `unknownCapabilities` never learned the namespace and
+`delegationContext()` always supplies a catalog, so every requested `workspace:<id>` was refused
+`UNKNOWN_TOOL` as *"a typo, or an uninstalled package"*. **No child could be granted a workspace capability
+at all.** Routing did not attenuate below the root — it *terminated* there, and "two authorities, not one",
+the finding PR #10's description leads with, was unreachable in production. The ADR's Context says
+attenuation "comes for free". It cost an edit at every site that reads a prefix.
+
+**Two more claims written beside fixes that were not the fixes**, which is this project's named failure mode
+for the third review running: `PI_GRANTS_GATED=workspace:prod` was claimed in three places and silently
+inert (measured: `ok: true`, `gatedBlocked: []`, with the control gating an ordinary tool in the same call),
+and `pi-daddy init` "scaffolds the registered ids" — the stated migration path for a **breaking change** —
+had never heard of the registry. Both are now implemented rather than struck, because the gate is one of the
+arguments that beat Option 2 and the scaffold is what makes the breakage survivable. ADR-0035's amendment
+names all three.
+
+**R-135 is older and worse than anything ADR-0035 introduced, and the mutation battery found it, not either
+reviewer.** Reverting `delegate.ts` to `result.effective` failed *no test*, which meant that call site was
+unfalsifiable. Chasing why: R-26's rule — *"a root may HOLD `tool:*` but handing it down would let every
+descendant reacquire the full catalog"* — was enforced only in `childEnv`, the **interceptor** path that
+ADR-0016 demoted to a tripwire. `delegate.ts`, the path that actually spawns, applied no filter, and `tool:*`
+is not in `UNIVERSAL_CAPABILITIES` so `assertNarrowing` did not stop it either. Measured on `92ccbb8`: a
+parent holding `tool:*` delegating `tools: ["tool:*"]` gave its child `tool:*`. **Present in every published
+version.** The rule had a test; the test asserted on the path where the rule was implemented, which reads
+exactly like a guard on both. One exported `inheritableGrant`, called from both, is the fix.
+
+**R-134**, also found while fixing rather than reviewing: session start warned that a gated `agent:` id
+*"does NOT gate spawning that definition — a human is never asked"*. It was R-47's PARTIAL fix in 0.11.1,
+false from **0.12.0** (`4673348`) when ADR-0024's gate landed — six releases, not three; I first wrote
+0.18.0 and was wrong, because `dde8eeb` only moved the code into `delegation-approval.ts`. ADR-0024's Costs
+section leaned on that warning as its mitigation and nothing retired it when its own decision falsified it.
+
+**And an integration test required the stale warning to exist**, which is how it survived: deleting the
+warning turned `governance.it.ts` red, and the test's own comment still described the pre-ADR-0024 world. A
+test pinning a superseded partial fix defends the stale claim against whoever notices. It now asserts what
+ADR-0024 shipped — the gate blocks the spawn — and that the warning is absent.
+
+**The two-PR interaction neither PR could see.** `WORKSPACE_NOT_AUTHORIZED` joined `REFUSAL_CODES` on this
+branch; PR #11 landed a *closed* v2 ledger schema on `main` whose `refusalCode` enum is hand-maintained
+beside that array, with a test asserting equality. So the merge of main turned the suite red, `npm run
+contracts:generate` produced **no diff** (it wrote fixtures only), and the PR body's "593/593" was measured
+before the merge. Worse, the v2 README's own compatibility rule says adding an **enum member** "requires a
+new ledger version and a new versioned path" — so the one-line fix was forbidden as written. Resolved by
+recording the carve-out (v2 has never been published; npm `latest` is 0.18.1, which predates the artifact,
+so nothing can have pinned it) *and* by generating the enum from `REFUSAL_CODES`, which is what makes that
+rule enforceable rather than aspirational from here on.
+
+**Why the probe missed the severe one, recorded in its own limitations section.**
+`docs/probes/g36-workspace-attenuation` appends the capability to `ownGrant` by hand and builds no catalog,
+so it confirmed the mechanism while driving a path production does not take — and reported the fix as
+working. A probe that constructs its own inputs can confirm a mechanism and still miss the wiring. "We
+measured it" is what carried this ADR to Accepted.
+
+**Verification.** 615 unit + typecheck green. **Eleven mutations, eleven named failures**, plus two more for
+the `init` scaffolding. `test/temp-hygiene.test.ts` caught both new suites missing `after(cleanupTempDirs)`
+and `test/risk-register-status.test.ts` passes on the three new entries — the local mechanical guards doing
+exactly what they are for. Integration, smoke, build, the g36 probe and the line ceiling are **not** re-run
+since the documentation commit; do that before pushing.
+
+**Left open on purpose:** `correlation.workspace_id` with no routing spec (R-110) still produces a
+correct-looking record naming a workspace nobody authorised. It takes no lease and sets no CWD, so it is not
+the escalation — but it is half of the argument ADR-0035 used to reject Option 4, and it has now survived
+three reviews unrecorded.
 
 ---
 

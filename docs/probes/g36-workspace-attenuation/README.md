@@ -71,6 +71,18 @@ This satisfies ADR-0035's stated blocking input.
 
 ## What this does not establish
 
+- **That the fix WORKS THE WAY A SESSION WOULD USE IT — added 2026-08-21, and this one bit.** The probe
+  constructs its levels by appending `workspace:prod` to `ownGrant` directly and passing **no catalog** to
+  `planDelegation`. A real session always has one (`delegationContext()` awaits `catalogReady`), and
+  `unknownCapabilities` did not know the `workspace:` namespace — so every requested `workspace:<id>` was
+  refused `UNKNOWN_TOOL` and **no child could be granted a workspace capability at all**. The
+  `after_fix_authorised_routes: true` line below is true of the path this probe drives and was false of the
+  path production drives. Routing terminated below the root rather than attenuating, and the probe reported
+  the fix as working. Recorded here because "we measured it" is what carried ADR-0035 to Accepted. Found by
+  review (R-133); pinned now by `test/workspace-capability.test.ts`, which builds a catalog because that is
+  what production has. **The general form: a probe that constructs its own inputs can confirm a mechanism
+  and still miss the wiring.** Prefer driving the same entry point a session drives, and if you must
+  shortcut it, say which shortcut you took — this section is where.
 - **That a model would do it.** No model runs here. The probe shows the mechanism permits the escalation,
   not that an agent chooses it. `workspace_id` being a model-facing tool parameter is what makes the
   question live, and that is a reading of the schema, not a measurement of behaviour.

@@ -8,7 +8,7 @@
  */
 
 import { discoverSkillPackages } from "../src/skill-packages.ts";
-import { applyInit, planInit } from "../src/init.ts";
+import { applyInit, planInit, registeredWorkspaceIds } from "../src/init.ts";
 import { saveGrant, grantStorePath } from "../src/grant-store.ts";
 import { expandSubsumed, SUBSUMPTION, type Capability } from "../src/resolve.ts";
 import type { GrantsSession } from "./session.ts";
@@ -50,7 +50,7 @@ export async function runInit(
     return;
   }
 
-  const plan = planInit(packages, ctx.cwd);
+  const plan = planInit(packages, ctx.cwd, await registeredWorkspaceIds());
   const outcome = await applyInit(plan);
   const lines = [
     `grants: ${plan.skills.length} definition(s) from ${packages.map((p) => `${p.name}@${p.version}`).join(", ")}`,

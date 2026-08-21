@@ -42,15 +42,22 @@ export function maySpawnDefinition(ownGrant: Capability[], name: string): boolea
 /** The tool name that confers the ability to delegate further. */
 export const DELEGATE_CAPABILITY: Capability = "tool:delegate";
 
+/**
+ * Every namespace a capability id may carry, as its literal prefix.
+ *
+ * **One list, because there were three and adding a namespace only updated some of them.** ADR-0035 taught
+ * `normaliseCapability` about `workspace:` and left `ceilingForDefinition` (which mangled it into
+ * `tool:workspace:<id>`) and `isSafeCapability` (which called it malformed) behind. Anything that has to
+ * answer "is this a namespaced id?" reads this; a fifth namespace is one entry, not a fourth divergence.
+ *
+ * `docs/SPEC.md`'s grammar section is the prose statement of the same list and is kept in step with it.
+ */
+export const CAPABILITY_NAMESPACE_PREFIXES = ["tool:", "ext:", "skill:", "agent:", "workspace:"] as const;
+
 /** Accept `read` or `tool:read` or `ext:pkg/tool` and normalise to a capability id. */
 export function normaliseCapability(raw: string): Capability {
   const value = raw.trim();
-  if (
-    value.startsWith("tool:") || value.startsWith("ext:") || value.startsWith("skill:")
-    || value.startsWith("agent:") || value.startsWith("workspace:")
-  ) {
-    return value;
-  }
+  if (CAPABILITY_NAMESPACE_PREFIXES.some((prefix) => value.startsWith(prefix))) return value;
   return `tool:${value}`;
 }
 

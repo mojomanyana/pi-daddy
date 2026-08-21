@@ -32,14 +32,57 @@ the record of how the package got here and are worth keeping; they are not worth
   Measured in `docs/probes/g36-workspace-attenuation`, decided in ADR-0035, tracked as R-131.
 
   Failing open for compatibility was considered and rejected: it would have made an attenuation fix opt-in.
-  The migration is one line per grant, and `PI_GRANTS_GATED=workspace:prod` now also works, which was not
-  possible before.
+  The migration is one line per grant, and `pi-daddy init` now lists the registered ids commented in
+  `.pi/grants.env` so the edit is visible from the file you already open.
 
+- `PI_GRANTS_GATED=workspace:prod` asks a human before a child is routed there, through ADR-0024's existing
+  mechanism — the id is the caller's authority for that one delegation and never joins the child's grant.
+  `workspace:*` in the gate covers every id.
 - `workspace:*` covers the namespace but is **held, never inherited** — R-26's rule, because a descendant
-  holding it could route anywhere the registry lists. `agent:*` is unchanged and still inherits.
+  holding it could route anywhere the registry lists. `agent:*` is unchanged and still inherits. Asking to
+  hand `workspace:*` to a child is refused (`NARROWING_VIOLATED`) rather than silently stripped, so the
+  ledger never records authority the child did not receive.
 - `tool:*` still satisfies a workspace capability: governance is opt-in and an ungoverned session must keep
   routing anywhere.
-- A `workspace:` id never reaches pi's `--tools`.
+- A `workspace:` id never reaches pi's `--tools`. It is enforced by pi-daddy before the spawn, which is a
+  different and weaker class than the `--tools` allowlist; `docs/SPEC.md` now states both classes explicitly.
+- A workspace id is refused if it could not survive the grant grammar — the registry became an input to it
+  when an id became the tail of a capability id, and grants are comma-separated (see 0.18.1).
+- No `workspace:` id is live by default in a generated grant, including one a package's `allowed-tools`
+  declares. Which worktree a child starts in is the operator's decision (ADR-0028).
+
+### Fixed before release — found reviewing this change
+
+None of these ever shipped; they were defects in 0.19.0's own development, caught by two review passes and a
+mutation battery. Listed because the ADR claimed three of them as done (R-133, ADR-0035's amendment).
+
+- **Routing terminated below the root instead of attenuating.** `unknownCapabilities` did not know the
+  namespace, and a catalog is always present in a real session, so every requested `workspace:<id>` was
+  refused as an unknown capability. No child could be granted one, which made the "two authorities" model
+  unreachable. This was the headline defect.
+- The `PI_GRANTS_GATED=workspace:<id>` gate above was claimed and inert.
+- `pi-daddy init` had never heard of the workspace registry.
+- `allowed-tools: workspace:prod` in a `SKILL.md` became `tool:workspace:prod`, which names nothing.
+- `isSafeCapability` rejected the namespace, so the boundary that generates grants could not emit the
+  capability this release makes mandatory.
+- `subsumedBy` reported `workspace:*`-covered ids as subsumed, contradicting its own rule.
+
+- **R-135, and it is not part of this feature.** `tool:*` was reaching delegated children. R-26's rule —
+  a wildcard is held, never inherited — was enforced only in `childEnv`, the interceptor path, while
+  `delegate.ts` (the path that spawns, since 0.6.0) applied no filter, and `tool:*` is not universal enough
+  for `assertNarrowing` to stop. A parent holding `tool:*` and delegating `tools: ["tool:*"]` gave its child
+  `tool:*`, so attenuation ended at the root. **Present in every published version.** One shared
+  `inheritableGrant` now serves both paths. If you run governed delegation trees, this is the entry to read.
+
+- **R-134.** Session start no longer warns that a gated `agent:` id "does NOT gate spawning that definition".
+  That was R-47's partial fix in 0.11.1 and false from 0.12.0, when ADR-0024's gate landed. The warning
+  outlived the defect by six releases, and the integration suite required it to, while advising operators to
+  remove a control that works.
+
+- The v2 ledger contract's `refusalCode` enum is now **generated** from `REFUSAL_CODES` by
+  `scripts/generate-ledger-v2-contract.ts` instead of hand-maintained beside it. `WORKSPACE_NOT_AUTHORIZED`
+  joins the enum in this release; `contracts/ledger/v2/README.md` records why that is a legitimate v2 edit
+  rather than a v3 (v2 has never been published, so nothing can have pinned it) and why it is the last one.
 
 ## 0.18.1 — SECURITY: a capability id containing a comma minted authority
 

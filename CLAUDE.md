@@ -35,11 +35,22 @@ permissible, able to refuse or allow but never to narrow. **This package is now 
 is an argument rather than a veto. Definitions are **Agent Skills (`SKILL.md`)** files whose `allowed-tools`
 becomes the grant; the pi-subagents ceiling port is deleted; the interceptor survives only as a tripwire.
 
-**Current release state, verified 2026-08-20:** PR #12 is merged; `main`, tag `v0.18.1`, and npm `latest`
-point at `8feaacbdf6003c783225e375b61874a599963f47`. The latest GitHub Release is still `v0.17.1`.
-Thirty-four ADRs are decided (0034 amended after review). This follow-up branch has 596 unit + 44 integration
-tests, plus a 10-test opt-in tier behind `PI_GRANTS_IT_MODEL=1` that is not run without explicit
-authorization.
+**Current release state, verified 2026-08-21:** npm `latest` and tag `v0.18.1` point at
+`8feaacbdf6003c783225e375b61874a599963f47`; `main` has since taken PR #11 (the canonical ledger v2
+contract). The latest GitHub Release is still `v0.17.1`. **PR #10 — ADR-0035, 0.19.0, workspace routing as a
+capability — is OPEN and is where the current work is.** Thirty-five ADRs are decided (0034 amended twice,
+0035 amended after review). That branch has 615 unit + 44 integration tests, plus a 10-test opt-in tier
+behind `PI_GRANTS_IT_MODEL=1` that is not run without explicit authorization.
+
+**Read `docs/SESSION-LOG.md`'s top entry before touching PR #10.** Two review passes and a mutation battery
+found that ADR-0035 taught the new `workspace:` namespace to three of the **nine** sites that already knew
+about `agent:`, and that the three properties the ADR advertised most loudly — the gate, the `init`
+scaffolding, and "attenuation comes for free" — were each written beside a fix that did not implement them.
+The generalisable rule is now in the ADR's amendment and in R-133: **a capability namespace is a nine-site
+change**, and `test/workspace-capability.test.ts` is organised by site so the checklist is executable rather
+than remembered. R-135, found by the mutation battery rather than by either reviewer, is the older and worse
+one: R-26's wildcard rule had been enforced only on the interceptor path, so `tool:*` reached delegated
+children in every published version.
 
 **A six-reviewer pass over the 0.18.0 work found the capability invariant intact on every path and the
 RUNTIME half full of holes** — R-99…R-118, and the ADR-0034 amendment lists what it did *not* resolve
@@ -107,7 +118,7 @@ docs/archive/             — SUPERSEDED, kept as evidence, never edited to matc
                             registers (discovery, assumptions, landscape, metrics), ROADMAP, gate reports,
                             both code reviews, the old specs, the completed implementation plan, and the
                             dead upstream proposal. See its README for why each stopped being current.
-packages/pi-daddy  — THE PRODUCT (0.18.1): SKILL.md definitions, resolver, v2 ledger,
+packages/pi-daddy  — THE PRODUCT (0.19.0, unreleased — PR #10): SKILL.md definitions, resolver, v2 ledger,
                             delegate/delegate_all/delegate_chain, catalog, bound human approval, two
                             executors (process | herdr pane), governed-writer leases, named checks, and
                             `pi-daddy init` — scaffolding that does not choose a ceiling (ADR-0028)
@@ -135,7 +146,7 @@ refuses until a gate passes that no longer means anything. They are in git histo
 
 ```bash
 cd packages/pi-daddy
-npm test                   # 596 unit tests — fast, pure, no pi, no network (the branch guard spawns git)
+npm test                   # 615 unit tests — fast, pure, no pi, no network (the branch guard spawns git)
 npm run typecheck          # src + extensions + tests + integration tests
 npm run test:integration   # 44 tests vs a REAL pi process AND a real herdr server — ~55s, no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and USE it

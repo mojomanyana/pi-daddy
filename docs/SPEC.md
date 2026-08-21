@@ -101,18 +101,36 @@ attempt reaches the escalation signal. It attenuates like everything else: a def
 may list `agent:other`, which is how a delegator is told which definitions **it** may spawn, and a parent can
 never hand down one it does not hold. The id authorises; it is never passed to `--tools`.
 
-Capability ids are `tool:<name>`, `ext:<pkg>/<tool>`, `skill:<name>` and `agent:<name>`. Only the first two
-name tools, and **only those two are filtered against a session's observed tool surface** — an observation
-says nothing about a namespace that is not tools.
+Capability ids are `tool:<name>`, `ext:<pkg>/<tool>`, `skill:<name>`, `agent:<name>` and `workspace:<id>`.
+Only the first two name tools, and **only those two are filtered against a session's observed tool surface**
+— an observation says nothing about a namespace that is not tools. `workspace:` is filtered against nothing:
+the operator registry is its authority and an unregistered id is refused at the point of use with
+`WORKSPACE_NOT_REGISTERED`, which names the file. One list in the code — `CAPABILITY_NAMESPACE_PREFIXES` —
+is what every site reads, because a namespace added to some of them and not others is how three of the
+ADR-0035 review defects happened.
 
-**Two wildcards, and they are not equivalent.** `tool:*` is authority to grant every tool and satisfies any
-capability. **`agent:*`** (ADR-0023) covers any `agent:<name>` and confers **no tool authority at all**, so
+**Three wildcards, and no two are equivalent.** `tool:*` is authority to grant every tool and satisfies any
+capability, including `agent:` and `workspace:` ids, because governance is opt-in and an ungoverned session
+holds it. **`agent:*`** (ADR-0023) covers any `agent:<name>` and confers **no tool authority at all**, so
 `agent:*,tool:read` may spawn every definition on disk and hand each of them nothing but `read`. It exists
 because that configuration was otherwise unexpressible and the workaround was `tool:*` — the least safe
-option on the menu. It is the **only** wildcard rule in `resolve()`; there is deliberately no general
-`<namespace>:*`. Unlike `tool:*` it is inheritable, because it grants no tools and every definition a
-descendant runs is still clipped to that descendant's own grant. `agent:*` beside `tool:bash` is a poor
-combination: any `SKILL.md` appearing in either skill root would run with a shell.
+option on the menu. **`workspace:*`** (ADR-0035) covers any `workspace:<id>` and likewise confers no tool
+authority.
+
+There is still deliberately **no general `<namespace>:*` rule**: each of the three is a separate edit in
+`resolve()`, so a new namespace does not acquire a wildcard merely by existing.
+
+Inheritance is where they differ, and it is the property most easily got wrong. `agent:*` **is** inheritable
+— it grants no tools and every definition a descendant runs is still clipped to that descendant's own grant.
+`tool:*` and `workspace:*` are **held and never inherited**: handing either down would let a descendant
+reacquire the whole catalog or the whole registry, which makes attenuation meaningless below the root (R-26,
+and R-131 one namespace over). That strip applies on **both** paths a child's grant can travel — the
+delegation path and the interceptor path — via one shared `inheritableGrant`; it was enforced on only the
+second until 0.19.0 (R-135). Asking to hand `workspace:*` to a child is refused outright rather than
+stripped, so the ledger never records authority a child did not receive.
+
+`agent:*` beside `tool:bash` is a poor combination: any `SKILL.md` appearing in either skill root would run
+with a shell.
 
 Anything pi-daddy needs beyond the standard goes under the spec's `metadata:` map with `pi-daddy-` keys —
 never as invented top-level frontmatter, so the file stays valid for every other tool that reads it.
@@ -492,14 +510,35 @@ could route anywhere the registry lists, which is the failure this closes. `tool
 because governance is opt-in. A `workspace:` id never reaches pi's `--tools`.
 
 Two authorities, not one: the caller needs `workspace:W` to route a child there, and that child needs it in
-its own grant to route further — so it attenuates by the same mechanism as everything else.
+its own grant to route further — so it attenuates by the same mechanism as everything else. A caller routing
+a child somewhere does **not** thereby give the child the id: it must be granted explicitly, which is what
+makes a three-level chain terminate rather than continue.
 
-**Before 0.19.0 it did not attenuate**, and that shipped in 0.18.0. The registry path inherits into every
-governed child and `workspace_id` is a model-facing parameter validated against the registry, with no check
-that the caller was authorised for that workspace — so a child routed to `staging` can route its grandchild
-to `prod`. Depth, fan-out budget, the grant, the gated set and approvals all attenuate; the initial working
-directory does not. Stated as a gap rather than a decision: ADR-0034's non-goals cover *path confinement* and
-say nothing about *root selection*. **ADR-0035 proposes closing it** with a `workspace:<id>` capability so routing attenuates through the existing resolver; it is Proposed, not Accepted, pending a transitivity probe. Tracked as R-131.
+`PI_GRANTS_GATED=workspace:W` asks a human before a child is routed there, through ADR-0024's mechanism —
+the id is the *caller's* authority for this one delegation and never joins the child's grant. `workspace:*`
+in the gate covers every id. `pi-daddy init` lists the registered ids commented in `.pi/grants.env` and
+grants none of them; routing is never live by default, including when a package's `allowed-tools` declares
+one.
+
+**Two enforcement classes, and the difference matters.** `tool:` and `ext:` capabilities are enforced
+*structurally*, by pi's own `--tools` allowlist, which is the product's load-bearing claim (ADR-0012).
+`agent:<name>` (ADR-0017/0024) and `workspace:<id>` (ADR-0035) are enforced by **pi-daddy itself**, before
+the child is spawned: nothing in pi refuses them, so they hold exactly as far as this package is in the
+path. A child holding `bash` escapes both classes (`docs/probes/g5-bash-escape`), and a child that reaches
+`pi` without this extension escapes the second class only. Read every `workspace:` guarantee below with that
+scope attached.
+
+The library surface is outside it. `runNamedCheck` — the ADR-0034 primitive for external controllers,
+exported from `pi-daddy` — takes an already-resolved workspace and acquires a lease with no capability
+check. "Which registered root a child may select is a capability" is a statement about the three delegation
+tools, not about a controller calling the package directly.
+
+**Before 0.19.0 routing did not attenuate at all**, and that shipped in 0.18.0: the registry path inherited
+into every governed child and `workspace_id` was a model-facing parameter validated against the registry with
+no check on the caller's authority, so a child routed to `staging` could route its grandchild to `prod` with
+a real lease, a validated CWD, and a ledger line naming `prod`. Measured in
+`docs/probes/g36-workspace-attenuation`; decided by ADR-0035; tracked as R-131, now fixed. What is stated
+above is the behaviour from 0.19.0 on.
 
 **Lease outcomes in the ledger.** `acquired` means the kernel actually excluded somebody; `uncontended` is a
 read lease, which takes no lock at all; `recovered` means the predecessor's record said `active`, and

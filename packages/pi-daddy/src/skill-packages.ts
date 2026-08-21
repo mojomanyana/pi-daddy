@@ -30,7 +30,7 @@ import { homedir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { ceilingForDefinition, parseSkillDefinition, type SkillDefinition } from "./definitions.ts";
 import { WILDCARD } from "./pi-tools.ts";
-import { AGENT_WILDCARD, type Capability } from "./resolve.ts";
+import { AGENT_WILDCARD, WORKSPACE_WILDCARD, type Capability } from "./resolve.ts";
 
 export interface DiscoveredSkill {
   definition: SkillDefinition;
@@ -107,21 +107,31 @@ export function isSafeName(name: string): boolean {
  * grants), which is right for the enforcement path — the catalog refuses what it does not know — and is
  * exactly why the check has to be here, at the boundary that *generates* rather than the one that enforces.
  *
- * The grammar is the one `docs/SPEC.md` documents: `tool:<name>`, `skill:<name>`, `agent:<name>`, and
- * `ext:<pkg>/<tool>` where `<pkg>` may be npm-scoped. No wildcards — those are refused separately and
- * loudly, because "you tried to grant yourself everything" is a different fact from "that is not a name".
+ * The grammar is the one `docs/SPEC.md` documents: `tool:<name>`, `skill:<name>`, `agent:<name>`,
+ * `workspace:<id>`, and `ext:<pkg>/<tool>` where `<pkg>` may be npm-scoped. No wildcards — those are refused
+ * separately and loudly, because "you tried to grant yourself everything" is a different fact from "that is
+ * not a name".
+ *
+ * `workspace:` was absent until 2026-08-21, so the boundary that GENERATES grants could not emit the one
+ * capability ADR-0035's breaking change made mandatory: a package needing to route was reported as declaring
+ * something that "is not a name". A namespace has to be added here as well as to the enforcing path, and
+ * that is the whole lesson of the review this came out of.
  */
 export function isSafeCapability(id: Capability): boolean {
   const segment = "[A-Za-z0-9][A-Za-z0-9._-]*";
   return (
-    new RegExp(`^(tool|skill|agent):${segment}$`).test(id) ||
+    new RegExp(`^(tool|skill|agent|workspace):${segment}$`).test(id) ||
     new RegExp(`^ext:(@${segment}/)?${segment}/${segment}$`).test(id)
   );
 }
 
-/** The two ids that confer root authority. A package declaring one is claiming it, not describing a need. */
+/**
+ * The ids that confer authority over a whole namespace. A package declaring one is claiming it, not
+ * describing a need — so it is reported as a *wildcard claim* rather than as a malformed name, which is a
+ * different sentence to show an operator. `workspace:*` belongs here for the same reason `agent:*` does.
+ */
 function wildcardsIn(capabilities: Capability[]): Capability[] {
-  return capabilities.filter((c) => c === WILDCARD || c === AGENT_WILDCARD);
+  return capabilities.filter((c) => c === WILDCARD || c === AGENT_WILDCARD || c === WORKSPACE_WILDCARD);
 }
 
 /**

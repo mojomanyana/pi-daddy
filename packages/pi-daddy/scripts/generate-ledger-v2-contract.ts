@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
@@ -9,9 +9,12 @@ import {
   buildWorkspaceLeaseEvent,
 } from "../src/ledger.ts";
 import type { CorrelationMetadata } from "../src/correlation.ts";
+import { REFUSAL_CODES } from "../src/refusals.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const fixtureDir = join(here, "..", "contracts", "ledger", "v2", "fixtures");
+const contractDir = join(here, "..", "contracts", "ledger", "v2");
+const fixtureDir = join(contractDir, "fixtures");
+const schemaPath = join(contractDir, "ledger-event.schema.json");
 
 const correlation: CorrelationMetadata = {
   schema_version: "1.0",
@@ -119,5 +122,30 @@ export async function writeLedgerV2ContractFixtures(): Promise<void> {
   }
 }
 
+/**
+ * Sync the schema's `refusalCode` enum to `REFUSAL_CODES`, which is its only source of truth.
+ *
+ * **This script wrote fixtures and nothing else, and that was the defect.** The schema — including a closed
+ * enum of every refusal code — was hand-maintained beside a `REFUSAL_CODES` array it had to match exactly,
+ * with `ledger-contract.test.ts` asserting the equality. So adding `WORKSPACE_NOT_AUTHORIZED` in `src/`
+ * turned the suite red, `npm run contracts:generate` produced no diff, and the only route back to green was
+ * for somebody to notice which hand-written JSON file to edit. Every future refusal code had the same
+ * ambush waiting. Derived now: the test that caught it becomes a check on this function rather than a
+ * tripwire on human memory.
+ *
+ * Only the enum is generated. The rest of the schema stays hand-authored on purpose — it encodes decisions
+ * (`additionalProperties: false`, the `const: true` flags, the discriminated union) that no generator should
+ * be inventing, and `contracts/ledger/v2/README.md` is the compatibility contract for changing them.
+ */
+export async function syncLedgerV2RefusalEnum(target = schemaPath): Promise<void> {
+  const raw = await readFile(target, "utf8");
+  const schema = JSON.parse(raw) as { $defs: { refusalCode: { enum: string[] } } };
+  schema.$defs.refusalCode.enum = [...REFUSAL_CODES];
+  await writeFile(target, `${JSON.stringify(schema, null, 2)}\n`, "utf8");
+}
+
 const invoked = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
-if (invoked) await writeLedgerV2ContractFixtures();
+if (invoked) {
+  await writeLedgerV2ContractFixtures();
+  await syncLedgerV2RefusalEnum();
+}

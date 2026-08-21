@@ -310,11 +310,21 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     assert.match(text, /NOTE docs-writer ran under more than one version/);
   });
 
-  test("R-47: gating an agent: id warns that it does not gate spawning", async () => {
-    // `gatedBlocked` filters `requested`, and for a definition spawn `requested` is the definition's
-    // ceiling — which never contains `agent:<name>`, because ADR-0017's authorisation check is a separate
-    // ungated branch. So this configuration reads as a control and is not one (R-25's shape). Enforcing it
-    // is a behaviour change and wants a decision; being silent about it is indefensible either way.
+  /**
+   * R-47, and **this test asserted the wrong half of it for six releases** (R-134).
+   *
+   * R-47 was fixed twice. *"PARTLY FIXED 2026-08-14 (0.11.1): a startup warning named the inert entry"*,
+   * then *"FULLY FIXED 2026-08-14 (0.12.0) by ADR-0024: the authorising id is evaluated against the
+   * gate"* — `4673348`, "gating a definition asks before it runs". The full fix made the warning false and
+   * nothing removed either the warning or this test, so from 0.12.0 through 0.18.1 the integration suite
+   * *required* the session banner to tell operators that a working control does nothing, and advised them
+   * to withhold the capability instead. A test pinning a superseded partial fix is worse than no test: it
+   * defends the stale claim against the person who notices.
+   *
+   * Now asserts the behaviour ADR-0024 actually shipped. **Breaks by:** removing the `gateAuthority` call
+   * for `input.spawned` in `resolveDelegationApproval`, which is the real R-47 fix.
+   */
+  test("R-47/ADR-0024: gating an agent: id gates the SPAWN, and says so", async () => {
     const cwd = await projectOnce();
     const r = await runCommand({
       cwd,
@@ -322,10 +332,16 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
       env: { PI_GRANTS_GRANT: "agent:docs-writer,tool:read,tool:write", PI_GRANTS_GATED: "agent:docs-writer" },
     });
 
-    const warning = r.notifies.find((n) => n.message.includes("does NOT gate spawning"));
-    assert.ok(warning, "an operator who wrote a gate that does nothing must be told");
-    assert.match(warning.message, /agent:docs-writer/);
-    assert.match(warning.message, /withhold the agent: capability/, "and told what to do instead");
+    assert.match(
+      verdictFor(r, "docs-writer") ?? "",
+      /agent:docs-writer requires explicit approval/,
+      "the authorising id is evaluated against the gate, so a human is asked before the definition runs",
+    );
+    assert.equal(
+      r.notifies.find((n) => n.message.includes("does NOT gate spawning")),
+      undefined,
+      "and the operator is NOT told the gate is inert, because since 0.12.0 it is not",
+    );
   });
 
   test("R-70: a ledger of nothing but declines still reports them", async () => {

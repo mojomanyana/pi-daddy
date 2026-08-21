@@ -42,6 +42,7 @@ import {
 import type { Capability } from "../src/resolve.ts";
 import { loadDefinitions } from "../src/definitions.ts";
 import { buildCatalog } from "../src/catalog.ts";
+import { ENV_WORKSPACE_REGISTRY } from "../src/workspace.ts";
 import { loadGrantSync, grantStorePath } from "../src/grant-store.ts";
 import { republishable } from "./approvals.ts";
 
@@ -210,7 +211,14 @@ export interface GrantsSession {
  */
 export async function loadProjectDefinitions(session: GrantsSession, cwd: string): Promise<void> {
   session.definitions = await loadDefinitions(cwd);
-  session.catalogReady = buildCatalog({ cwd, observedTools: session.observedTools });
+  session.catalogReady = buildCatalog({
+    cwd,
+    observedTools: session.observedTools,
+    // ADR-0035: `workspace:<id>` is a capability, so the registered ids belong in the catalog the same way
+    // discovered definitions do — for `/grants` to list what this session may route to and for `init` to
+    // scaffold them. Read live rather than cached at load, because the registry is an operator file.
+    registryPath: process.env[ENV_WORKSPACE_REGISTRY],
+  });
   session.catalog = await session.catalogReady;
 }
 

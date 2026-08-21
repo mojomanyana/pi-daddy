@@ -330,6 +330,15 @@ All fields are optional; existing callers behave unchanged.
   Git worktree root, and sets initial CWD. A caller cannot label a write-capable grant read-only. Kernel
   util-linux `flock` allows one **pi-daddy-governed** writer per canonical root; `setpriv --pdeathsig` plus
   helper attachment stops the writer process or herdr tab on parent death before release. This does not confine paths or exclude unrelated writers; `bash` remains an escape.
+
+  **BREAKING in 0.19.0 — routing now requires a capability.** A delegation naming `workspace_id: W` needs
+  `workspace:W` in the caller's grant, or it is refused `WORKSPACE_NOT_AUTHORIZED`. Every grant that routes
+  must add it: `PI_GRANTS_GRANT="tool:read,tool:delegate,workspace:W"`. `pi-daddy init` lists the registered
+  ids commented in `.pi/grants.env`. A child can only route on to ids it was granted itself, so this is also
+  the list of what any descendant could reach; `workspace:*` exists but is held and never inherited, which
+  makes it the wrong answer for anything but a single-worktree setup. `PI_GRANTS_GATED=workspace:W` asks a
+  human first. Enforced by pi-daddy before the spawn, not by pi's `--tools` — see `docs/SPEC.md` on the two
+  enforcement classes.
 - Refusals retain current prose and add stable codes such as `CAPABILITY_ESCALATION`,
   `GATED_UNAPPROVED`, `APPROVAL_SCOPE_MISMATCH`, and `WORKSPACE_WRITE_CONFLICT`.
 - Ledger v2 adds joinable capability, lease, lifecycle and check-receipt events while reading legacy lines.

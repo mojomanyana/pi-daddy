@@ -213,7 +213,16 @@ export function resolve(input: ResolveInput): ResolveResult {
     // F9: capabilities covered by a WILDCARD are not "subsumed" — this field means "the grant is broader
     // than its list suggests", which is the `bash`-covers-`grep` warning. A wildcard holder already knows
     // its grant is broad; listing every id under it would bury the signal the field exists to carry.
-    subsumedBy: effective.filter((c) => !held.has(c) && !anyCapability && !(anyDefinition && c.startsWith("agent:"))),
+    //
+    // All THREE wildcards are excluded. `anyWorkspace` was missing, so a caller holding `workspace:*` saw
+    // its own `workspace:prod` reported as subsumed while the `agent:*` holder correctly saw nothing — the
+    // field contradicting its own rule, and a false "broader than it looks" flag in the ledger and in
+    // `/grants`. Every wildcard added to `covered()` above needs a line here; that is now three for three.
+    subsumedBy: effective.filter((c) =>
+      !held.has(c)
+      && !anyCapability
+      && !(anyDefinition && c.startsWith("agent:"))
+      && !(anyWorkspace && c.startsWith("workspace:"))),
   };
 }
 

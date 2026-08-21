@@ -6,6 +6,7 @@ import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { promisify } from "node:util";
 import { GovernanceRefusal, refusal } from "./refusals.ts";
+import { isWellFormedCapability, workspaceCapability } from "./capabilities.ts";
 
 const execFileAsync = promisify(execFile);
 export const ENV_WORKSPACE_REGISTRY = "PI_GRANTS_WORKSPACE_REGISTRY";
@@ -49,6 +50,22 @@ export async function loadWorkspaceRegistry(path: string): Promise<WorkspaceRegi
       throw new GovernanceRefusal(refusal(
         "WORKSPACE_NOT_REGISTERED",
         `workspace registry entry ${JSON.stringify(id)} must name an absolute path`,
+        { registry_path: path, workspace_id: id },
+      ));
+    }
+    // ADR-0035 made a registry id the tail of a CAPABILITY id (`workspace:<id>`), which means this file is
+    // now an input to the grant grammar and has to obey it. 0.18.1 was a security release for one comma:
+    // grants are comma-joined and comma-split, so an operator who registered `a,b` and wrote
+    // `workspace:a,b` would have got `workspace:a` **plus `tool:b`** — authority nobody typed — and still
+    // could not route, because the exact id never matched. Refused at the registry, where the operator can
+    // see the file, rather than at the far end of a split.
+    if (!isWellFormedCapability(workspaceCapability(id))) {
+      throw new GovernanceRefusal(refusal(
+        "GRANT_ID_MALFORMED",
+        `workspace registry id ${JSON.stringify(id)} cannot be used: since ADR-0035 an id becomes the ` +
+          `capability ${JSON.stringify(workspaceCapability(id))}, and grants are comma-separated, so an id ` +
+          `containing a comma or surrounding whitespace would be read as several capabilities — including ` +
+          `ones nothing granted. Rename it in ${path}.`,
         { registry_path: path, workspace_id: id },
       ));
     }

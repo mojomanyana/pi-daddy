@@ -853,6 +853,11 @@ every definition. The id is deliberately **not** added to `requested` or `effect
 authority to run the definition now, and putting it in `effective` would place it in the *child's* grant and
 let the child re-spawn that definition with nobody asked. This also closes the gap ADR-0023 recorded against
 itself — `agent:*` finally has its "except".
+**AND THE PARTIAL FIX OUTLIVED THE FULL ONE BY SIX RELEASES — see R-134, added 2026-08-21.** The 0.11.1
+warning above stayed in the session banner through 0.18.1, telling operators that the 0.12.0 gate does
+nothing and to withhold the capability instead, with an integration test requiring it to. Removed there.
+The lesson for this register: when an entry records two fixes, the second one's commit is also the moment to
+delete the first one's mitigation — nothing here prompts for that, and nothing did.
 
 ## R-48 · `/grants` silently truncated its verdict list at 12 — L/M×L/M, FIXED
 Added **and fixed** 2026-08-13, same pass. The listing sliced to 12 definitions with no indication that it
@@ -2215,6 +2220,109 @@ released version should not invent a new way to refuse a legitimate setup. Verif
 
 ---
 
+## R-133 · A capability namespace is a nine-site change, and ADR-0035 did three — H×H, FIXED
+
+Added and fixed 2026-08-21, reviewing PR #10 before it merged. **Never published**: ADR-0035 is unreleased,
+so this was caught inside the release that introduced it.
+
+ADR-0035 minted `workspace:<id>` and taught `normaliseCapability`, `resolve()`'s wildcard rule, and
+`childEnv`'s inheritance filter. Six other sites already handled `agent:` and were not touched, and the
+review found roughly one defect per untouched site. **The pattern is the risk; the individual defects are
+symptoms.**
+
+The severe one: `unknownCapabilities` never learned the namespace, and `delegationContext()` always supplies
+a catalog, so every requested `workspace:<id>` was refused `UNKNOWN_TOOL` as *"a typo, or an uninstalled
+package"*. **No child could ever hold a workspace capability**, so routing did not attenuate below the root
+— it terminated there, and the ADR's headline "two authorities, not one" was unreachable in production. An
+attenuation fix that makes the dimension unusable below depth 0 is not the fix it advertised.
+
+The rest: `PI_GRANTS_GATED=workspace:prod` was accepted and inert while the ADR claimed a gate in three
+places; `ceilingForDefinition` turned `allowed-tools: workspace:prod` into `tool:workspace:prod`;
+`isSafeCapability` — the boundary that *generates* grants — called the newly mandatory capability malformed;
+`subsumedBy` reported a false "broader than it looks" flag; and `init` had never heard of the registry the
+ADR said it scaffolded.
+
+**Why the probe missed it.** `docs/probes/g36-workspace-attenuation` appends the capability to `ownGrant` by
+hand and builds no catalog, so it confirmed the mechanism while exercising a path production does not take.
+Recorded because "we measured it" was the reason this went in with a Decision that could not run.
+
+**Fixed** by teaching all six sites, collapsing three into `CAPABILITY_NAMESPACE_PREFIXES`, and organising
+`test/workspace-capability.test.ts` **by site** so the checklist is executable. Eleven mutations, eleven
+named failures.
+
+**Trigger:** a sixth namespace, or any new site that branches on a capability prefix, landing without a case
+in `test/workspace-capability.test.ts`. Also: any ADR claiming attenuation "comes for free".
+
+---
+
+## R-134 · An operator warning told them to delete a control that works — M×M, FIXED
+
+Added and fixed 2026-08-21. **Present in published 0.18.0 and 0.18.1.** Found while fixing R-133, not by
+either review pass.
+
+`session-report.ts` warned, at session start, that an `agent:` id in `PI_GRANTS_GATED` *"does NOT gate
+spawning that definition — the authorisation check for a definition is separate and ungated, so a human is
+never asked"*, and advised withholding the capability instead.
+
+**It is R-47's own partial fix, outliving R-47's full fix by six releases.** R-47 records both: *"PARTLY
+FIXED 2026-08-14 (0.11.1): a startup warning named the inert entry"*, then *"FULLY FIXED 2026-08-14 (0.12.0)
+by ADR-0024"*. `4673348` — "gating a definition asks before it runs" — is where a gated `agent:<name>` began
+blocking the spawn. So the warning was true for one release and false for 0.12.0 through 0.18.1. (First
+recorded here as "false from 0.18.0", which was wrong: `dde8eeb` only moved the code into
+`delegation-approval.ts`. Corrected same day.)
+
+**ADR-0024's own Costs section leaned on this warning** — *"mitigated by the fact that the warning shipped
+hours earlier tells them it currently does nothing"* — and nothing retired it when that very decision
+falsified it. The banner talked operators out of a working control, which is R-28's shape in the direction
+that loses a gate.
+
+**How it survived is the part worth keeping: a test required it.** `test-integration/governance.it.ts`
+asserted the warning's presence — *"an operator who wrote a gate that does nothing must be told"* — with a
+comment describing the pre-ADR-0024 mechanism. So deleting the stale claim turned the suite red, and the
+suite was defending the claim against whoever noticed. **A test pinning a superseded partial fix is worse
+than no test.** It now asserts what ADR-0024 shipped, and that the warning is gone.
+
+**Fixed** by deleting the warning rather than rewording it: both namespaces are gated now, so there is no
+live inert case, and a warning with no live case is the next stale claim. A second stale block above the
+neighbouring `agent:*`-with-`bash` warning, still explaining why R-47 was "warned rather than enforced", went
+with it.
+
+**Trigger:** any operator-facing notify() text asserting that a configuration does nothing — those are claims
+about code and they expire. Also: any test whose *name* asserts an absence of enforcement ("warns that it
+does not…"). When the enforcement lands, that test becomes the thing protecting the old story.
+
+---
+
+## R-135 · R-26's rule was never enforced on the path that actually spawns — H×H, FIXED
+
+Added and fixed 2026-08-21. **Present in every published version since ADR-0016** made this package the
+spawner. Predates ADR-0035; found by the mutation battery for R-133's fix.
+
+*"A root may HOLD `tool:*` — that is authority to grant anything — but handing it down would let every
+descendant reacquire the full catalog, which makes attenuation meaningless below the root"* is `childEnv`'s
+docstring. `childEnv` is the **interceptor** path — the one ADR-0016 demoted to a tripwire. `delegate.ts`,
+the path that actually spawns, built the child's `PI_GRANTS_GRANT` from `result.effective` with **no
+filter**, and `tool:*` is not in `UNIVERSAL_CAPABILITIES` (only `fabric_exec` is), so `assertNarrowing` did
+not catch it either.
+
+Measured on `92ccbb8`: a parent holding `tool:*` and delegating `tools: ["tool:*"]` produced
+`PI_GRANTS_GRANT="tool:*"` in the child. That child could then hand its own grandchildren anything at all.
+**Attenuation ended at the root**, which is precisely R-26, on the primary path, for eleven releases.
+
+**How it stayed hidden is the reusable part.** The rule had a test, and the test asserted on `childEnv` —
+the path where the rule *was* implemented. A guard and its test on the same one of two routes reads exactly
+like a guard on both. This is why the fix is one exported `inheritableGrant` called from both places rather
+than a second filter: two spellings of one rule is R-28, and R-28 is the most repeated entry in this
+register.
+
+**Fixed** and pinned by a test that asserts on `plan.env`, the delegation path, and fails when
+`delegate.ts` is reverted.
+
+**Trigger:** any rule about grants enforced at one call site when two build a child environment. Grep for
+`ENV_GRANT` assignments; there should be exactly two, both calling the same helper.
+
+---
+
 ## Register log
 
 | Date | ID | Change | By |
@@ -2288,3 +2396,4 @@ released version should not invent a new way to refuse a legitimate setup. Verif
 | 2026-08-20 | R-131, ADR-0035 | Added — **workspace routing does not attenuate, and it shipped in 0.18.0.** A child routed to `staging` can route its grandchild to `prod`, and unlike ADR-0012's accepted `bash` escape it leaves a complete, correct-looking ledger record asserting an authorisation nobody granted. R-26's shape in a namespace added five ADRs later. ADR-0035 proposes `workspace:<id>` as a capability so it attenuates through the existing `resolve()` path, and is deliberately left **Proposed** pending a transitivity probe — the evidence R-26 had and this does not | ADR-0034's unresolved list |
 | 2026-08-20 | R-131, ADR-0035 | **Measured, then fixed.** `docs/probes/g36-workspace-attenuation` confirmed the escalation against real worktrees and a real lease — grandchild planned with no refusal, took a write lease on `prod`, would have started there — with the control showing grant and depth attenuating through the same child environment. ADR-0035 Accepted and implemented: routing is a capability, `WORKSPACE_NOT_AUTHORIZED` is recorded in `denied`, and `workspace:*` is held but never inherited. All four parts mutation-verified; the probe now measures the refusal too | ADR-0035 |
 | 2026-08-20 | R-132 | Added and **fixed** — a capability id containing a comma was admitted by a wildcard's prefix rule and split by the child into several capabilities, minting `tool:bash` from a root that never held it with `denied: []` and a clean-looking ledger line. **Present in published 0.18.0**, verified against `origin/main`; predates ADR-0035, which widened the surface with a second injectable namespace. Two guards, both mutation-verified. The channel was predicted verbatim by `grant-env.ts`'s own comment and guarded everywhere except propagation | found reviewing PR #10 |
+| 2026-08-21 | R-133, R-134, R-135, ADR-0035 amended | **Two review passes over PR #10 before it merged: the guard was right and the namespace was taught to three of nine sites.** R-133 is the pattern — the severe symptom being that `unknownCapabilities` never learned `workspace:`, so with a catalog present (always, in production) no child could be granted one and routing *terminated* below the root rather than attenuating, making the ADR's headline "two authorities, not one" unreachable. Also inert: the gate ADR-0035 claimed three times, and the `init` scaffolding it offered as the migration path for a breaking change. R-135 fell out of the mutation battery and is **older and worse**: R-26's own rule was enforced only in `childEnv`, so `delegate.ts` — the path that spawns since ADR-0016 — handed `tool:*` to children for eleven releases, with the rule's test asserting on the other route. R-134 is a session-start warning that told operators to delete a control that had worked since **0.12.0** — six releases — which ADR-0024's Costs section had explicitly relied on, and which an integration test *required* to exist, so the stale claim was defended by the suite. Eleven mutations, eleven named failures; `test/workspace-capability.test.ts` is organised by site so the checklist is executable | second and third review passes over PR #10 |

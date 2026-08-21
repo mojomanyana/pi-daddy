@@ -24,8 +24,9 @@ import { join } from "node:path";
 import { loadDefinitions, type SkillDefinition } from "./definitions.ts";
 import { PI_BUILTIN_TOOLS, WILDCARD } from "./pi-tools.ts";
 import { AGENT_WILDCARD, type Capability } from "./resolve.ts";
+import { loadWorkspaceRegistry, type WorkspaceRegistryFile } from "./workspace.ts";
 
-export type CapabilityKind = "builtin" | "extension" | "skill" | "agentType";
+export type CapabilityKind = "builtin" | "extension" | "skill" | "agentType" | "workspace";
 
 export interface CatalogEntry {
   capability: Capability;
@@ -112,6 +113,22 @@ export function definitionEntries(definitions: Map<string, SkillDefinition>): Ca
   }));
 }
 
+/**
+ * Registered workspaces, as `workspace:<id>` capabilities (ADR-0035).
+ *
+ * For DISPLAY and SCAFFOLDING only — `/grants` listing what this session may route to, and `init` offering
+ * the ids without choosing among them (ADR-0028). It is deliberately **not** what `unknownCapabilities`
+ * checks against; see the comment there.
+ *
+ * The operator registry is the authority on which ids exist, exactly as it is at `resolveWorkspace`. This
+ * enumerates it; it does not decide anything.
+ */
+export function workspaceEntries(registry: WorkspaceRegistryFile, source?: string): CatalogEntry[] {
+  return Object.keys(registry.workspaces)
+    .sort()
+    .map((id) => ({ capability: `workspace:${id}` as Capability, kind: "workspace" as const, ...(source ? { source } : {}) }));
+}
+
 /** Assemble a catalog from parts. Pure, so it is testable without a filesystem. */
 export function makeCatalog(entries: CatalogEntry[]): Catalog {
   const deduped = new Map<Capability, CatalogEntry>();
@@ -131,8 +148,23 @@ export function makeCatalog(entries: CatalogEntry[]): Catalog {
 export async function buildCatalog(input: {
   cwd: string;
   observedTools: string[] | null;
+  /** Operator workspace registry (`PI_GRANTS_WORKSPACE_REGISTRY`). Absent or unreadable yields no entries. */
+  registryPath?: string;
 }): Promise<Catalog> {
-  const [skills, definitions] = await Promise.all([loadSkills(input.cwd), loadDefinitions(input.cwd)]);
+  const [skills, definitions, workspaces] = await Promise.all([
+    loadSkills(input.cwd),
+    loadDefinitions(input.cwd),
+    // Fails SOFT, and only because nothing here is an authority. A malformed registry must not stop a
+    // session from starting — `loadWorkspaceRegistry` throws a GovernanceRefusal naming the file, and that
+    // refusal is the operator's signal at the point of USE, where routing actually depends on it. Swallowing
+    // it there would be unsafe; swallowing it here costs a display list.
+    input.registryPath
+      ? loadWorkspaceRegistry(input.registryPath).then(
+          (r) => workspaceEntries(r, input.registryPath),
+          () => [] as CatalogEntry[],
+        )
+      : Promise.resolve([] as CatalogEntry[]),
+  ]);
   return makeCatalog([
     // pi's built-ins are seeded unconditionally, because they are known statically and the catalog is
     // consulted BEFORE any provider request has happened — `/grants` runs at that point. Without this,
@@ -148,6 +180,7 @@ export async function buildCatalog(input: {
     ...(input.observedTools ? classifyToolNames(input.observedTools) : []),
     ...skills,
     ...definitionEntries(definitions),
+    ...workspaces,
   ]);
 }
 
@@ -165,7 +198,23 @@ export function unknownCapabilities(requested: Capability[], catalog: Catalog): 
   // refused it BEFORE `resolve` could apply ADR-0023's rule. That made the ADR's "a parent holding
   // `agent:*` may hand down `agent:*`" false, and made a definition declaring `allowed-tools: agent:*`
   // unspawnable from any grant. The wildcard is live only at the root without this.
-  return requested.filter((c) => c !== WILDCARD && c !== AGENT_WILDCARD && !catalog.has(c)).sort();
+  //
+  // `workspace:` is exempt as a NAMESPACE, not merely at its wildcard, and that asymmetry is deliberate.
+  // ADR-0035 minted the namespace and taught `normaliseCapability`, `resolve` and `childEnv` about it, but
+  // not this line — so with a catalog present (and `delegationContext` always supplies one) every requested
+  // `workspace:<id>` was refused UNKNOWN_TOOL as *"a typo, or an uninstalled package"*. A child could
+  // therefore never be granted a workspace capability at all, which made routing stop dead below the root
+  // instead of attenuating, and made the ADR's own "two authorities, not one" unreachable in production.
+  //
+  // Exempt rather than catalogued-and-checked because the operator registry is the authority and it is
+  // consulted where it matters: `resolveWorkspace` refuses an unregistered id with WORKSPACE_NOT_REGISTERED,
+  // naming the registry. A second, weaker check here can only turn that precise refusal into a misleading
+  // one — and it would do so for reasons that have nothing to do with the id, like a registry this session
+  // cannot read. `buildCatalog` still ENUMERATES workspaces, for `/grants` and for `init`'s scaffold; that
+  // is display, and display is not authority. Same trade-off the built-ins comment above states and accepts.
+  const exempt = (c: Capability) =>
+    c === WILDCARD || c === AGENT_WILDCARD || c.startsWith("workspace:");
+  return requested.filter((c) => !exempt(c) && !catalog.has(c)).sort();
 }
 
 /**

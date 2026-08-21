@@ -271,6 +271,53 @@ test("a definition name that could inject a capability, a shell command or a pat
   for (const skill of plan.skills) assert.match(skill.targetPath, /\.pi\/skills\/[A-Za-z0-9][A-Za-z0-9._-]*\/SKILL\.md$/);
 });
 
+/**
+ * ADR-0035's stated migration path for a breaking change, which did not exist until now.
+ *
+ * The ADR says `init` "scaffolds the registered ids so the common path is a one-line grant edit", and its
+ * revisit trigger says operator fatigue "would mean the scaffolding in `init` is not doing its job" — a
+ * trigger on something never built. `init` had never heard of the workspace registry.
+ *
+ * **The production changes that break this**, in this suite's idiom: dropping `registeredWorkspaceIds()`
+ * from either `planInit` caller; removing the `ROUTABLE WORKSPACES` block from `renderGrantEnv`; or letting
+ * `isLiveByDefault` return true for a `workspace:` id, which would silently grant routing authority because
+ * a package asked for it — the exact line this suite exists to hold.
+ */
+test("init scaffolds the registered workspaces, commented, and grants none of them", async () => {
+  const cwd = await project();
+  // A package that declares routing it needs. Even declared, the id must not go live.
+  await skillPackage(cwd, "deploy-pkg", "1.0.0", {
+    deployer: DECLARED.replace("Read, Grep", "Read, workspace:prod"),
+  });
+
+  const plan = planInit(await discoverSkillPackages(cwd), cwd, ["prod", "staging"]);
+
+  assert.deepEqual(plan.routableWorkspaces, ["workspace:prod", "workspace:staging"]);
+  assert.equal(
+    plan.grant.some((c) => c.startsWith("workspace:")),
+    false,
+    "init must not choose which worktree a child starts in",
+  );
+  assert.match(plan.grantEnvContent, /# ROUTABLE WORKSPACES/);
+  assert.match(plan.grantEnvContent, /^#   workspace:prod$/m, "offered, commented");
+  assert.match(plan.grantEnvContent, /^#   workspace:staging$/m, "including one nothing declared");
+  assert.match(plan.grantEnvContent, /WORKSPACE_NOT_AUTHORIZED/, "the refusal it explains is named");
+  // The live line is the thing an operator sources: it must not contain a workspace id anywhere.
+  const live = /export PI_GRANTS_GRANT="([^"]*)"/.exec(plan.grantEnvContent)?.[1] ?? "";
+  assert.equal(live.includes("workspace:"), false, live);
+
+  // A definition needing a withheld capability is not authorised to run either — the existing rule, which
+  // now also covers routing, so `agent:deployer` stays out of the grant until `workspace:prod` is granted.
+  assert.equal(plan.grant.includes("agent:deployer"), false);
+
+  // No registry configured and nothing declared: the section is absent rather than empty.
+  const bare = await project();
+  await skillPackage(bare, "plain-pkg", "1.0.0", { review: DECLARED });
+  const noRegistry = planInit(await discoverSkillPackages(bare), bare, []);
+  assert.deepEqual(noRegistry.routableWorkspaces, []);
+  assert.equal(noRegistry.grantEnvContent.includes("ROUTABLE WORKSPACES"), false);
+});
+
 test("two packages declaring the same name: the first wins and the loser is named", async () => {
   const cwd = await project();
   await skillPackage(cwd, "aaa-pkg", "1.0.0", { review: DECLARED });

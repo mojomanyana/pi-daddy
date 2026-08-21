@@ -18,7 +18,7 @@ import { readFile } from "node:fs/promises";
 import { relative, resolve as resolvePath } from "node:path";
 import { pathToFileURL } from "node:url";
 import { UnsafeGrantError } from "./grant-env.ts";
-import { applyInit, countDeclaring, planInit, type InitPlan } from "./init.ts";
+import { applyInit, countDeclaring, planInit, registeredWorkspaceIds, type InitPlan } from "./init.ts";
 import { discoverSkillPackages, skillPackageRoots, type RefusedSkill, type SkillPackage } from "./skill-packages.ts";
 
 const USAGE = `pi-daddy — capability governance for pi sub-agents
@@ -109,7 +109,7 @@ async function init(cwd: string, force: boolean): Promise<number> {
 
   let plan: InitPlan;
   try {
-    plan = planInit(packages, cwd);
+    plan = planInit(packages, cwd, await registeredWorkspaceIds());
   } catch (error) {
     // R-78's backstop reaching the surface. Nothing is written: a grant that could mean something to a
     // shell is not a grant, and half-scaffolding a project would be worse than scaffolding none of it.
