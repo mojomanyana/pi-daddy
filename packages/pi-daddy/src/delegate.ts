@@ -6,6 +6,7 @@
 import { planSpawn } from "./spawn.ts";
 import { ceilingForDefinition, digestDefinition, type DefinitionDigest, type SkillDefinition } from "./definitions.ts";
 import { WORKSPACE_WILDCARD, assertNarrowing, type Capability, type ResolveResult } from "./resolve.ts";
+import { WILDCARD } from "./pi-tools.ts";
 import {
   DELEGATE_CAPABILITY,
   agentCapability,
@@ -34,7 +35,7 @@ import {
 } from "./correlation.ts";
 import { resolveDelegationApproval } from "./delegation-approval.ts";
 import type { Delegation, DelegationContext, DelegationRequest } from "./delegate-types.ts";
-import { assertCapabilitiesArePropagatable, isWellFormedCapability } from "./capabilities.ts";
+import { assertCapabilitiesArePropagatable, isSafeCapability } from "./capabilities.ts";
 export type { Delegation, DelegationContext, DelegationRequest } from "./delegate-types.ts";
 
 export function planDelegation(request: DelegationRequest, ctx: DelegationContext): Delegation {
@@ -98,7 +99,10 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
   // but `denied` is the channel `isEscalationAttempt` and `/grants ledger` count, and seeding it with an id
   // that re-splits into two capabilities makes the one signal that matters unparseable. `GRANT_ID_MALFORMED`
   // already exists and says the true thing; 0.18.1 is what happens when a comma goes unremarked.
-  if (request.boundWorkspaceId && !isWellFormedCapability(workspaceCapability(request.boundWorkspaceId))) {
+  // `!== undefined`, not truthiness: `workspace_id: ""` is falsy, so it skipped BOTH this check and the
+  // authority check below and failed closed much later at `resolveWorkspace` with `denied: []` — an
+  // unauthorised routing attempt invisible to `isEscalationAttempt`. An empty id is a malformed id.
+  if (request.boundWorkspaceId !== undefined && !isSafeCapability(workspaceCapability(request.boundWorkspaceId))) {
     return denied({
       ...empty,
       reason:
@@ -107,7 +111,7 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
         `comma-separated, so this would be read as several capabilities.`,
     }, "GRANT_ID_MALFORMED");
   }
-  if (request.boundWorkspaceId && !mayRouteToWorkspace(ctx.ownGrant, request.boundWorkspaceId)) {
+  if (request.boundWorkspaceId !== undefined && !mayRouteToWorkspace(ctx.ownGrant, request.boundWorkspaceId)) {
     const authorising = workspaceCapability(request.boundWorkspaceId);
     const held = ctx.ownGrant.filter((c) => c.startsWith("workspace:")).sort();
     return denied({
@@ -241,7 +245,15 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
   // `NARROWING_VIOLATED` is the existing code for "this grant would not actually narrow", which is exactly
   // what handing routing authority over every registered root to a child does. `tool:*` reaches the same
   // outcome through `assertNarrowing` below; this is that rule, one namespace over.
-  if (requested.includes(WORKSPACE_WILDCARD)) {
+  //
+  // Only when the caller actually HOLDS it. A caller that does not is attempting an escalation, and the
+  // refusal below would tell it "the wildcard is held, never inherited" — a sentence that is false about a
+  // session holding nothing of the sort — while leaving `denied` empty, so `isEscalationAttempt` and
+  // `/grants ledger` never counted a model probing `tools: ["workspace:*"]`. Falling through instead lets
+  // `resolve()` deny it as uncovered, which is what `agent:*` and `tool:*` already do, and puts the attempt
+  // where every audit query looks. The comment fifty lines above states this rule; this is it applied.
+  const holdsWorkspaceWildcard = ctx.ownGrant.includes(WORKSPACE_WILDCARD) || ctx.ownGrant.includes(WILDCARD);
+  if (requested.includes(WORKSPACE_WILDCARD) && holdsWorkspaceWildcard) {
     return denied({
       ...empty,
       requested,

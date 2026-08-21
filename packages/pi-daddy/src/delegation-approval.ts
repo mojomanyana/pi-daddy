@@ -109,7 +109,16 @@ export function resolveDelegationApproval(input: {
     gated: input.gated,
     approved: approvedCapabilities,
   });
-  const stillGated = authorisingCapabilities.filter((c) => !approvedCapabilities.includes(c));
+  // Filtered against what `resolve()` already listed, not just against approvals. In the ORDINARY chained
+  // configuration — route the child to `prod` AND grant it `workspace:prod` so it can route onward — the
+  // authorising id and the requested id are spelled identically, so appending unconditionally produced
+  // `gatedBlocked: ["workspace:prod","workspace:prod"]`, which reached the refusal text a model reads
+  // (*"workspace:prod, workspace:prod requires explicit approval"*) and the append-only ledger, whose schema
+  // has no `uniqueItems`. The old `agent:`-only code had the same shape and never hit it, because a
+  // self-recursive `agent:X` ceiling is not a thing anybody writes.
+  const stillGated = authorisingCapabilities.filter(
+    (c) => !approvedCapabilities.includes(c) && !result.gatedBlocked.includes(c),
+  );
   if (stillGated.length > 0) result.gatedBlocked = [...result.gatedBlocked, ...stillGated];
   return { result, ...(approvalBinding ? { approvalBinding } : {}), bindingMismatch };
 }

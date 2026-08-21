@@ -442,6 +442,62 @@ test("a registry that is not a regular file is refused, not waited on", async ()
   assert.ok(Date.now() - started < 5_000, "session start must not block");
 });
 
+/**
+ * `denied` is the one escalation signal, and three refusals were bypassing it.
+ *
+ * `isEscalationAttempt` and `/grants ledger` read `denied`. A refusal that leaves it empty is invisible to
+ * both, so a model can probe repeatedly and nothing counts it. Review found three ways in, all measured:
+ * `workspace_id: ""` was falsy so it skipped both guards and failed closed much later with `denied: []`; a
+ * requested `workspace:*` from a caller holding nothing of the sort got `NARROWING_VIOLATED` with an empty
+ * `denied` **and** a reason asserting the wildcard "is held" to a session that held it not; and a bare
+ * `workspace:` passed the namespace exemption entirely.
+ *
+ * Breaks by: reverting either `request.boundWorkspaceId !== undefined` to a truthiness check; dropping the
+ * `holdsWorkspaceWildcard` condition; or exempting `workspace:` in `unknownCapabilities` without requiring a
+ * well-formed id.
+ */
+test("an unauthorised routing probe always lands in `denied`, whatever shape it takes", () => {
+  // Empty id: malformed, not "no workspace".
+  const empty = planDelegation({ task: "t", tools: ["read"], boundWorkspaceId: "" }, ctx() as never);
+  assert.equal(empty.refusal?.code, "GRANT_ID_MALFORMED", empty.reason ?? "");
+
+  // `workspace:*` requested by a caller that does NOT hold it is an escalation, counted as one.
+  const probe = planDelegation(
+    { task: "t", tools: ["workspace:*"] },
+    ctx({ ownGrant: ["tool:read", "tool:delegate", "workspace:prod"] }) as never,
+  );
+  assert.equal(probe.refusal?.code, "CAPABILITY_ESCALATION", probe.reason ?? "");
+  assert.deepEqual(probe.result.denied, [WORKSPACE_WILDCARD], "the probe is visible to isEscalationAttempt");
+  // ...and the same request from a caller that DOES hold it still gets the honest narrowing refusal.
+  const holder = planDelegation(
+    { task: "t", tools: ["workspace:*"] },
+    ctx({ ownGrant: ["tool:read", "tool:delegate", WORKSPACE_WILDCARD] }) as never,
+  );
+  assert.equal(holder.refusal?.code, "NARROWING_VIOLATED", holder.reason ?? "");
+
+  // A bare namespace prefix names nothing and must not ride the exemption into a grant.
+  assert.deepEqual(unknownCapabilities(["workspace:"], catalog), ["workspace:"]);
+});
+
+/**
+ * One authority, one entry. The ordinary chained-routing shape produced two.
+ *
+ * Route the child to `prod` *and* grant it `workspace:prod` so it can route onward — the configuration
+ * ADR-0035's "two authorities" model is *for* — spelled the authorising id and the requested id identically,
+ * so the gate appended a duplicate that reached the refusal text a model reads and the append-only ledger.
+ *
+ * Breaks by: dropping the `!result.gatedBlocked.includes(c)` filter in `resolveDelegationApproval`.
+ */
+test("a gated capability that is also requested is listed once", () => {
+  const plan = planDelegation(
+    { task: "t", tools: ["read", "workspace:prod"], boundWorkspaceId: "prod" },
+    ctx({ gated: ["workspace:prod"] }) as never,
+  );
+  assert.equal(plan.ok, false);
+  assert.deepEqual(plan.result.gatedBlocked, ["workspace:prod"], "the parent's authority and the child's grant are one entry");
+  assert.doesNotMatch(plan.reason ?? "", /workspace:prod, workspace:prod/);
+});
+
 /** The catalog enumerates registered workspaces for `/grants` and `init`. Display, never authority. */
 test("registered workspaces are catalogued, and marked as their own kind", () => {
   assert.deepEqual(catalog.byKind("workspace"), ["workspace:prod", "workspace:staging"]);

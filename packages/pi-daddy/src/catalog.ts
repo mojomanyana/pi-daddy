@@ -23,8 +23,9 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { loadDefinitions, type SkillDefinition } from "./definitions.ts";
 import { PI_BUILTIN_TOOLS, WILDCARD } from "./pi-tools.ts";
-import { AGENT_WILDCARD, type Capability } from "./resolve.ts";
+import { AGENT_WILDCARD, WORKSPACE_WILDCARD, type Capability } from "./resolve.ts";
 import { loadWorkspaceRegistry, type WorkspaceRegistryFile } from "./workspace.ts";
+import { isSafeCapability } from "./capabilities.ts";
 
 export type CapabilityKind = "builtin" | "extension" | "skill" | "agentType" | "workspace";
 
@@ -212,8 +213,16 @@ export function unknownCapabilities(requested: Capability[], catalog: Catalog): 
   // one — and it would do so for reasons that have nothing to do with the id, like a registry this session
   // cannot read. `buildCatalog` still ENUMERATES workspaces, for `/grants` and for `init`'s scaffold; that
   // is display, and display is not authority. Same trade-off the built-ins comment above states and accepts.
+  // The workspace exemption requires a WELL-FORMED id, not merely the prefix. A bare `workspace:` names
+  // nothing, and exempting it let it reach a child's grant and the ledger as authority over no workspace at
+  // all — an exemption for ids the registry is authoritative about should not also cover ids no registry
+  // could contain.
+  // `WORKSPACE_WILDCARD` is listed with the other two because it is GRAMMAR, and `isSafeCapability` refuses
+  // wildcards by design — so folding it into the namespace test below un-exempts it. Caught by the tests for
+  // the previous two fixes, which is the checklist paying for itself.
   const exempt = (c: Capability) =>
-    c === WILDCARD || c === AGENT_WILDCARD || c.startsWith("workspace:");
+    c === WILDCARD || c === AGENT_WILDCARD || c === WORKSPACE_WILDCARD
+    || (c.startsWith("workspace:") && isSafeCapability(c));
   return requested.filter((c) => !exempt(c) && !catalog.has(c)).sort();
 }
 

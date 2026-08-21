@@ -330,9 +330,19 @@ handler: async (args: string, ctx: any) => {
       `  approvals  ${sessionApprovals.size} this session, ${valid.size} persisted` +
         `${inheritedApprovals.size > 0 ? `, ${inheritedApprovals.size} inherited` : ""}` +
         ` — /grants approvals`,
+      // Every kind the catalog can hold is named, and the numbers add up to the total on purpose. `workspace`
+      // was missing when ADR-0035's review added the kind: the total counted them and the breakdown did not,
+      // so `catalog 16 capabilities — 9 builtin, 0 extension, 2 skill, 2 agent-type` printed a sum of 13. And
+      // the comment that justified putting workspaces in the catalog said it was "for `/grants` to list what
+      // this session may route to", which nothing then did — the claim was in the commit and the behaviour
+      // was not. A kind added without a term here silently stops adding up.
       `  catalog    ${catalog.all.length} capabilities — ` +
         `${catalog.byKind("builtin").length} builtin, ${catalog.byKind("extension").length} extension, ` +
-        `${catalog.byKind("skill").length} skill, ${catalog.byKind("agentType").length} agent-type`,
+        `${catalog.byKind("skill").length} skill, ${catalog.byKind("agentType").length} agent-type, ` +
+        `${catalog.byKind("workspace").length} workspace`,
+      ...(catalog.byKind("workspace").length > 0
+        ? [`  routable   ${catalog.byKind("workspace").join(", ")} — held ones only are usable (ADR-0035)`]
+        : []),
     ];
     // Runs the REAL planner AND the real approval step over each definition, so this listing cannot
     // disagree with what a spawn would do — the R-28 lesson, kept structural rather than remembered.
