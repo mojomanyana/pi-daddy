@@ -278,6 +278,28 @@ export async function establishRegistryPin(env: NodeJS.ProcessEnv = process.env)
   }
 }
 
+/**
+ * The registered workspace ids, for `planInit` to scaffold and `/grants` to list. `[]` when there is no registry or it is broken.
+ *
+ * Fails SOFT, and only because nothing here is an authority: this decides which ids appear as COMMENTS in a
+ * generated file. `loadWorkspaceRegistry` throws a GovernanceRefusal naming the file, and that refusal is
+ * the operator's signal at the point of use, where routing genuinely depends on it. Swallowing it there
+ * would be unsafe; swallowing it here costs a suggestion. Same argument as `buildCatalog`'s.
+ *
+ * Lives here rather than in `init.ts` because it reads the filesystem, and `planInit` — the centrepiece of
+ * that module — documents itself as "Pure: no filesystem". It is a registry concern; this is where the
+ * registry lives. Moved when `init.ts` crossed the 400-line ceiling, which this project splits for rather
+ * than raising (`delegate.ts` at 413, `grants.ts` at 398).
+ */
+export async function registeredWorkspaceIds(registryPath = process.env[ENV_WORKSPACE_REGISTRY]): Promise<string[]> {
+  if (!registryPath) return [];
+  try {
+    return Object.keys((await loadWorkspaceRegistry(registryPath)).workspaces).sort();
+  } catch {
+    return [];
+  }
+}
+
 export async function resolveWorkspace(registry: WorkspaceRegistryFile, workspaceId: string): Promise<ValidatedWorkspace> {
   const registered = Object.hasOwn(registry.workspaces, workspaceId) ? registry.workspaces[workspaceId] : undefined;
   if (!registered) {

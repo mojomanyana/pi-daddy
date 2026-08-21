@@ -29,8 +29,9 @@ import {
   loadWorkspaceRegistry,
   registryDigest,
   registryPin,
+  registeredWorkspaceIds,
 } from "../src/workspace.ts";
-import { registeredWorkspaceIds } from "../src/init.ts";
+
 import { buildCatalog } from "../src/catalog.ts";
 import { DELEGATE_SUBJECT, type InheritableApproval } from "../src/approval.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";

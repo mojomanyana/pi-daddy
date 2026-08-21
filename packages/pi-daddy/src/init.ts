@@ -30,7 +30,6 @@ import { ALWAYS_LIVE, assertGrantIsWritable, isLiveByDefault, renderGrantEnv, ty
 import { PI_BUILTIN_TOOLS } from "./pi-tools.ts";
 import type { Capability } from "./resolve.ts";
 import type { SkillPackage } from "./skill-packages.ts";
-import { ENV_WORKSPACE_REGISTRY, loadWorkspaceRegistry } from "./workspace.ts";
 
 /** Why a discovered skill is not authorised in the generated grant. `null` means it is. */
 /**
@@ -130,23 +129,6 @@ export function withPlaceholder(text: string, declared: boolean, note: string[] 
   return opening + body + eol + note.join(eol) + close + text.slice(full.length);
 }
 
-/**
- * The registered workspace ids, for `planInit` to scaffold. `[]` when there is no registry or it is broken.
- *
- * Fails SOFT, and only because nothing here is an authority: this decides which ids appear as COMMENTS in a
- * generated file. `loadWorkspaceRegistry` throws a GovernanceRefusal naming the file, and that refusal is
- * the operator's signal at the point of use, where routing genuinely depends on it. Swallowing it there
- * would be unsafe; swallowing it here costs a suggestion. Same argument as `buildCatalog`'s.
- */
-export async function registeredWorkspaceIds(registryPath = process.env[ENV_WORKSPACE_REGISTRY]): Promise<string[]> {
-  if (!registryPath) return [];
-  try {
-    return Object.keys((await loadWorkspaceRegistry(registryPath)).workspaces).sort();
-  } catch {
-    return [];
-  }
-}
-
 /** `tool:` ids pi 0.84.1 has no tool for. `delegate` is this package's own, hence the exemption. */
 function unknownToolIds(capabilities: Capability[]): Capability[] {
   const builtins = new Set<string>(PI_BUILTIN_TOOLS);
@@ -223,6 +205,20 @@ export function planInit(
   for (const skill of declared) {
     for (const capability of skill.ceiling) {
       if (isLiveByDefault(capability)) continue;
+      // A routing destination is withheld but does NOT belong in this map, and the difference is not
+      // cosmetic. This map drives two things: the "WITHHELD BY DEFAULT — these can change your machine"
+      // block, and `/grants init`'s dialog. Review found a `workspace:` id reaching both — described to the
+      // operator with `tool:bash`'s rationale (routing does not change your machine, and unlike `bash` it
+      // *is* gateable), and then granted **live and persisted** on one "Yes", off a third-party package's
+      // declaration. That is the rule `grant-env.ts` states — "does not become live because a package asked
+      // for it" — honoured by the rendered file and broken by the dialog beside it: two surfaces of one
+      // command disagreeing, which is R-28's shape inside the fix for R-28.
+      //
+      // Which worktree a child starts in is not derivable from a declaration (ADR-0028), so `init` lists
+      // routing and never grants it. `routableWorkspaces` below is where these go; the definition that
+      // declared one still loses its live `agent:` id via the `needs-withheld` pass, so nothing becomes
+      // spawnable behind the operator's back either.
+      if (capability.startsWith("workspace:")) continue;
       withheldCapabilities.set(capability, [...(withheldCapabilities.get(capability) ?? []), skill.name]);
     }
   }

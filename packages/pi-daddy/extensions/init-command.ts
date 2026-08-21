@@ -8,9 +8,11 @@
  */
 
 import { discoverSkillPackages } from "../src/skill-packages.ts";
-import { applyInit, planInit, registeredWorkspaceIds } from "../src/init.ts";
+import { applyInit, planInit } from "../src/init.ts";
+import { registeredWorkspaceIds } from "../src/workspace.ts";
 import { saveGrant, grantStorePath } from "../src/grant-store.ts";
 import { expandSubsumed, SUBSUMPTION, type Capability } from "../src/resolve.ts";
+import { DEFAULT_GATED } from "../src/propagation.ts";
 import type { GrantsSession } from "./session.ts";
 
 /**
@@ -81,9 +83,19 @@ export async function runInit(
       for (const name of neededBy) grant.add(`agent:${name}` as Capability);
       continue;
     }
+    // The consequence sentence is per capability. It used to hand every non-`bash` id `bash`'s rationale —
+    // "this can change your machine … it is not gated, so no dialog at spawn time" — which was two claims,
+    // both wrong for anything that is gated by default, and wrong twice over for a routing id (review). An
+    // operator deciding on the strength of a false sentence is worse off than one who was not asked.
+    const gatedAtSpawn = DEFAULT_GATED.includes(capability);
     const answer = await ctx.ui.select(
       `grants: grant ${capability} to sub-agents?\n  needed by: ${neededBy.join(", ")}\n` +
-        `  this can change your machine — ${capability === "tool:bash" ? "and bash also confers write and edit" : "it is not gated, so no dialog at spawn time"}`,
+        `  this can change your machine — ` +
+        (capability === "tool:bash"
+          ? "and bash also confers write and edit"
+          : gatedAtSpawn
+            ? "a human is still asked at spawn time"
+            : "it is not gated, so no dialog at spawn time"),
       ["No", "Yes"],
     );
     if (answer === "Yes") {
@@ -121,6 +133,17 @@ export async function runInit(
     lines.push(`  ALREADY CONFERRED, not asked about: ${alreadyConferred.join(", ")}`);
   }
   if (declined.length > 0) lines.push(`  withheld: ${declined.join("; ")}`);
+  // Routing is LISTED, never granted (ADR-0028) — so the operator has to be told it exists, or the listing is
+  // invisible to anyone running `/grants init` in-session rather than reading the generated file. 0.19.0 made
+  // `workspace:<id>` mandatory for routing, so this is also the migration hint, and a breaking change whose
+  // migration is only discoverable by opening a file is not much of a migration.
+  if (plan.routableWorkspaces.length > 0) {
+    lines.push(
+      `  ROUTABLE WORKSPACES, listed and NOT granted: ${plan.routableWorkspaces.join(", ")}`,
+      `    routing a child to one needs its id in the grant (ADR-0035); add the ones this project may use to ` +
+        `${plan.grantEnvPath}. Which worktree a child starts in is not something a package can declare for you.`,
+    );
+  }
   lines.push(`  live now (${finalGrant.length} capabilities) — no restart. /grants shows the verdicts.`);
   ctx.ui.notify(lines.join("\n"), "info");
 }

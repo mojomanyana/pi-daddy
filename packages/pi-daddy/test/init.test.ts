@@ -31,8 +31,12 @@ import { ceilingForDefinition, parseSkillDefinition } from "../src/definitions.t
 import { countDeclaring, type PlannedSkill, type WithholdReason } from "../src/init.ts";
 import { main, parseArgs } from "../src/cli.ts";
 import { assertGrantIsWritable, UnsafeGrantError } from "../src/grant-env.ts";
-import { applyInit, planInit, registeredWorkspaceIds, withPlaceholder } from "../src/init.ts";
+import { applyInit, planInit, withPlaceholder } from "../src/init.ts";
+import { registeredWorkspaceIds } from "../src/workspace.ts";
 import { buildCatalog } from "../src/catalog.ts";
+import { runInit } from "../extensions/init-command.ts";
+import { grantStorePath } from "../src/grant-store.ts";
+import type { Capability } from "../src/resolve.ts";
 import { discoverSkillPackages, readSkillPackage } from "../src/skill-packages.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
@@ -375,6 +379,70 @@ test("`pi-daddy init` reads the real registry — the wiring, not just the plan"
     if (previous === undefined) delete process.env.PI_GRANTS_WORKSPACE_REGISTRY;
     else process.env.PI_GRANTS_WORKSPACE_REGISTRY = previous;
   }
+});
+
+/**
+ * `/grants init`'s DIALOG — the surface that had no test at all, which is why it was a shipping blocker.
+ *
+ * `planInit`/`renderGrantEnv` say "Not granted for you" about a routing id and list it commented.
+ * `runInit` walked the same `withheldCapabilities` map and **offered** each entry, so one "Yes" put
+ * `workspace:prod` into the adopted *and* persisted grant — off a third-party package's `allowed-tools`. Two
+ * surfaces of one command disagreeing about the rule `grant-env.ts` states, which is R-28's shape inside the
+ * fix for R-28. The dialog also described routing with `tool:bash`'s rationale: "this can change your
+ * machine … it is not gated, so no dialog at spawn time" — routing changes nothing on your machine, and
+ * unlike `bash` it *is* gateable.
+ *
+ * Answering **Yes to everything** on purpose: the property is that no answer can confer routing, not that a
+ * careful operator avoids it.
+ *
+ * Breaks by: removing the `workspace:` skip in `planInit`'s `withheldCapabilities` loop, which puts routing
+ * ids back in the dialog and back under "these can change your machine".
+ */
+test("`/grants init`'s dialog cannot confer a routing capability, whatever the operator answers", async () => {
+  const cwd = await project();
+  await skillPackage(cwd, "deploy-pkg", "1.0.0", {
+    deployer: DECLARED.replace("Read, Grep", "Read, Write, workspace:prod"),
+  });
+  const registry = join(cwd, "registry.json");
+  await writeFile(registry, JSON.stringify({ version: 1, workspaces: { prod: { path: cwd } } }), "utf8");
+
+  const asked: string[] = [];
+  const notices: string[] = [];
+  let adopted: readonly string[] = [];
+  const ctx = {
+    cwd,
+    ui: {
+      select: async (prompt: string) => { asked.push(prompt); return "Yes"; },
+      notify: (m: string) => { notices.push(m); },
+    },
+  };
+  const session = { adoptGrant: (g: readonly Capability[]) => { adopted = g; } };
+
+  const previous = process.env.PI_GRANTS_WORKSPACE_REGISTRY;
+  process.env.PI_GRANTS_WORKSPACE_REGISTRY = registry;
+  try {
+    await runInit(session as never, ctx as never, async () => {});
+  } finally {
+    if (previous === undefined) delete process.env.PI_GRANTS_WORKSPACE_REGISTRY;
+    else process.env.PI_GRANTS_WORKSPACE_REGISTRY = previous;
+  }
+
+  assert.equal(
+    adopted.some((c) => c.startsWith("workspace:")),
+    false,
+    `a "Yes" must not confer routing — adopted ${JSON.stringify(adopted)}`,
+  );
+  // The stored grant is the same decision, persisted; a live grant and a stored one must not disagree.
+  const stored = JSON.parse(await readFile(grantStorePath(cwd), "utf8")) as { grant: string[] };
+  assert.equal(stored.grant.some((c) => c.startsWith("workspace:")), false, JSON.stringify(stored.grant));
+
+  // It WAS asked about `tool:write`, so the dialog still works — this is not "the loop stopped running".
+  assert.equal(asked.length, 1, JSON.stringify(asked));
+  assert.match(asked[0], /grant tool:write to sub-agents\?/);
+  assert.equal(asked.some((q) => q.includes("workspace:")), false, "and never about a routing destination");
+
+  // And the operator is told where routing lives instead of being silently denied it.
+  assert.match(notices.join("\n"), /ROUTABLE WORKSPACES|workspace:prod/);
 });
 
 /**

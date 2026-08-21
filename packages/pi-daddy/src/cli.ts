@@ -18,7 +18,8 @@ import { readFile } from "node:fs/promises";
 import { relative, resolve as resolvePath } from "node:path";
 import { pathToFileURL } from "node:url";
 import { UnsafeGrantError } from "./grant-env.ts";
-import { applyInit, countDeclaring, planInit, registeredWorkspaceIds, type InitPlan } from "./init.ts";
+import { applyInit, countDeclaring, planInit, type InitPlan } from "./init.ts";
+import { registeredWorkspaceIds } from "./workspace.ts";
 import { discoverSkillPackages, skillPackageRoots, type RefusedSkill, type SkillPackage } from "./skill-packages.ts";
 
 const USAGE = `pi-daddy — capability governance for pi sub-agents
