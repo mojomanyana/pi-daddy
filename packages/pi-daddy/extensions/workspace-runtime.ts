@@ -133,8 +133,11 @@ export async function releaseDelegationWorkspace(input: {
   // A retained lease writes no `state: "released"`, so the record stays `active` and the NEXT owner reads
   // it as a crash — the exact blame `retained` was added to remove. Marking it keeps the successor honest;
   // R-104 was fixed in the release event's wording only.
-  const outcome: LeaseReleaseOutcome | "retained" = input.retain
-    ? (await input.prepared.lease.markRetained(input.reason), "retained")
+  // **Ledger what happened, not what was intended (R-152).** This used to discard `markRetained`'s result and
+  // write the word "retained" unconditionally, so a helper that had already died, or a lease already released,
+  // was still recorded as a pane that may still be live.
+  const outcome: LeaseReleaseOutcome = input.retain
+    ? await input.prepared.lease.markRetained(input.reason)
     : await input.prepared.lease.release(input.reason);
   if (input.ledgerPath) {
     await appendLedgerEvent(

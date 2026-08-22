@@ -53,13 +53,18 @@ export interface WorkspaceLease {
    * Needed because a retained lease never calls `release()`, so the metadata stays `state: "active"` and
    * whoever acquires next reports `recovered: true` — blaming a crash on a known-good path.
    */
-  markRetained(reason?: string): Promise<void>;
+  /**
+   * Record that the lease is being KEPT rather than handed back, and answer what actually happened — the
+   * caller ledgers this word (R-152). It is not always `retained`: a helper that has already died makes the
+   * fact `lost`, and a lease already settled by `release()` keeps the outcome it had.
+   */
+  markRetained(reason?: string): Promise<LeaseReleaseOutcome>;
   /** Reads the give-up marker the helper leaves when it could not close a herdr writer tab. */
   readCloseFailure(): Promise<{ reason: string; herdr_tab?: string } | null>;
 }
 
 /**
- * What a release actually did. Five members rather than three, because the first version conflated facts
+ * What a release actually did. Six members rather than three, because the first version conflated facts
  * that call for different responses — and one of them is an alarm:
  *   `released`             the lock went back and THIS owner wrote its own handover;
  *   `released-unrecorded`  the lock went back and the record does not say so, so the next owner will report
