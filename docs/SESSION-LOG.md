@@ -171,10 +171,17 @@ exist on `main`, so it is a no-op here and real the moment that branch lands —
 debt R-146 and R-152 both recorded, for good. And **integration is not covered**: 44 tests needing a real `pi`
 and a real `herdr` server, which would become decoration if faked. It stays a local gate.
 
-**It reports; it does not block.** No branch protection on `main`, so a red run stops nothing and a direct push
-still succeeds. Requiring a PR with zero approvals and CI as a required check is one settings change, and it is
-the operator's to make — R-153 and rule 10's enforcement paragraph both say so rather than implying the gap is
-closed.
+**And then the operator turned protection on, so it blocks.** `main` requires a pull request with zero
+approvals and both CI legs green; force-pushes and deletions are refused; **`enforce_admins` is on**, without
+which the rule would bind everyone except the one account able to breach it — which is exactly how R-85's
+eleven commits reached `main`. A direct push is now refused by the server rather than by a hook each clone has
+to install.
+
+**Verified by configuration and not by attempting a breach**, deliberately: bouncing a real push off `main`
+would prove it end to end and would advance `main` outside a PR if the setting were wrong, which is the single
+thing rule 10 exists to prevent. The first live proof is the PR carrying this entry — the first change here
+that *could not* have been pushed directly. The escape hatch is named in rule 10 so nobody invents one under
+pressure: one API call to lift, one to restore, and lifting it is a decision to record.
 
 **Verified locally before pushing** (node 24, `FORCE_COLOR=0`): `npm ci` at the workspace root, then 604 unit ·
 typecheck · tree clean · `--if-present` no-op · smoke. The 22.19.0 leg has no local answer — no node 22 here —

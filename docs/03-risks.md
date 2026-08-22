@@ -2378,7 +2378,7 @@ naming the test it must break.
 **Trigger:** any function whose result a caller discards in favour of a literal; and any bound validated at one
 end only.
 
-## R-153 · Every check in this repository was opt-in — H×M, FIXED in part (it reports; it does not block)
+## R-153 · Every check in this repository was opt-in — H×M, FIXED
 
 Added and fixed in part 2026-08-22. Not a defect in the product: a defect in how the product's guards were
 enforced, and the reason several of them rotted.
@@ -2415,10 +2415,17 @@ signature defect.** `npm run test:integration` — 44 tests, and the most load-b
 decoration. It stays a local gate, recorded in the session log with what it last ran against. The paid
 `PI_GRANTS_IT_MODEL=1` tier is never run unattended.
 
-**And it reports rather than blocks.** `main` has no branch protection, so a red run stops nothing and a direct
-push still succeeds. That is one settings change — require a PR, zero approvals, CI as a required check — and
-it is the half a session should not make on the operator's behalf. **Until it is on, this entry is FIXED in
-part and rule 10's enforcement paragraph says so.**
+**And as of 2026-08-22 it blocks, which is what makes this entry closed rather than half-closed.** The
+operator authorised the server-side half: `main` requires a pull request with zero approvals and both CI legs
+green, force-pushes and deletions are refused, and **`enforce_admins` is on** — without that, protection binds
+everyone except the one account that can breach it, which is precisely how R-85's eleven commits arrived.
+Read back from the API after the change: `protected: true`, required checks `["node 22.19.0", "node 24.x"]`.
+
+**Verified by configuration, not by attempting a breach** — and that distinction is the honest part. Pushing a
+commit at `main` to watch it bounce would prove it end to end, and would advance `main` outside a PR if the
+setting were wrong, which is the one thing rule 10 exists to prevent. The first live proof is therefore the PR
+that carries this paragraph: it is the first change in this repository's history that *could not* have been
+pushed directly.
 
 **PR #10 carries R-142, the entry that asked for this**, written before the catalogue existed on any branch.
 Whichever lands second reconciles them; R-142's own trigger — *"the next review pass finding a guard deletable
