@@ -126,9 +126,18 @@ describe("delegate_chain, with steps that really run", { skip }, () => {
       )
       .catch(() => undefined);
   
+    // **DISTINCT ids, not distinct LINES (R-155).** This asserted `new Set(ids).size === ids.length`, which was
+    // true when one step wrote one ledger line and false from ADR-0034 on: `execute-child.ts` appends
+    // `child_lifecycle` events alongside the planner's `capability_decision`, so one child legitimately owns
+    // several lines. Measured on the released tree: 9 lines, 3 ids — the property held and the test did not.
+    // It sat broken because this tier is opt-in and had never been run.
     const ids = (await readFile(ledger, "utf8")).trim().split("\n").map((l) => JSON.parse(l).childId);
-    assert.equal(new Set(ids).size, ids.length, "no two steps may share an id");
-    assert.deepEqual(ids.slice(0, 3), ["d0.1", "d0.2", "d0.3"]);
+    assert.deepEqual(
+      [...new Set(ids)],
+      ["d0.1", "d0.2", "d0.3"],
+      "one hierarchical id per step, in order, and no two steps confusable",
+    );
+    assert.ok(ids.length >= 3, "each step must appear at least once");
   });
 
   test("ADR-0033: two steps sharing ONE definition raise one dialog, and neither re-asks", async () => {

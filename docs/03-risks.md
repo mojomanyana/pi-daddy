@@ -3200,11 +3200,59 @@ confer the id (its `PI_GRANTS_GRANT` came back `tool:read` only); **R-135 holds*
 ledger v2 contract imports through its export path with all 32 refusal codes; and the installed `bin` symlink
 runs and prints a useful message, which is R-73's exact defect.
 
-**Not covered:** spawning a real governed child from the installed package. That needs a model turn and is the
-paid tier.
+**Then the model gap closed too, and this is the strongest evidence in the record.** The operator authorised
+model turns, so the published package spawned **real `pi` children** — and with a control, so it is evidence
+rather than a demonstration. Same prompt (*"create proof.txt containing GOVERNED; if you have no tool that can
+write files, reply exactly CANNOT_WRITE"*), same model, same package; only the grant differs:
+
+| grant handed to `planSpawn` | argv pi received | outcome |
+|---|---|---|
+| `["tool:read"]` | `--tools read` | child replied **`CANNOT_WRITE`**, no file |
+| `["tool:read","tool:write"]` | `--tools read,write` | `proof.txt` written |
+
+The child *reports* the absence rather than merely failing, and the control proves the task was achievable. So
+the claim this package exists to make — *the tool surface is enforced structurally by pi's own `--tools`
+allowlist* — is now verified through the artifact on npm, against a real model, end to end. The argv also
+carries `--no-extensions --no-skills --no-context-files --no-prompt-templates`: pi has a separate switch per
+resource class (measured long ago) and `planSpawn` passes each one.
 
 **Trigger:** any `NodeJS.*`, `Buffer` or other ambient type appearing in an exported signature while the types
 package that provides it is only a devDependency.
+
+## R-155 · A test that could no longer PASS, in the tier nobody had run — L×H, FIXED
+
+Added and fixed 2026-08-23, by running the opt-in model tier for the **first time in this project's history**.
+The operator authorised model turns; 55 tests ran, 54 passed, and the one failure was a test rather than the
+product.
+
+`test-integration/delegate-chain.it.ts`'s *"each step gets its own hierarchical ledger id"* asserted
+`new Set(ids).size === ids.length` over every `childId` in the ledger — *"no two steps may share an id"*. That
+was true when one step wrote one ledger line. From ADR-0034 on it is false by design: `execute-child.ts`
+appends `child_lifecycle` events alongside the planner's `capability_decision`, so **one child legitimately
+owns several lines.** Measured on the released tree: **9 lines, 3 ids** — the property the test exists to
+defend held perfectly, and the assertion did not.
+
+**The lesson is rule 7's mirror, and this repository had only ever written down one half.** *A test that
+cannot fail is worse than no test* — and a test that can no longer **pass** is equally dead, with the same
+cause: nobody watched it. Here the cause is structural rather than careless: **the tier is opt-in**
+(`PI_GRANTS_IT_MODEL=1`), the session log has recorded it as "not run, separately authorized" at every state
+change for the project's whole life, and CI cannot run it because it needs a real model. So the one place a
+stale assertion could hide indefinitely is exactly where it hid.
+
+Fixed to assert the property it means — the *distinct* ids are `["d0.1", "d0.2", "d0.3"]`, in order — and
+re-run against a real model: passes.
+
+**What the other 54 establish, which is the larger half of this entry.** Against real `pi` processes and a real
+model: a child is provisioned with exactly its grant and cannot exceed it; a delegation cannot grant what the
+session does not hold, and the attempt is recorded; a universal capability is refused on both grant shapes; a
+wildcard holder is still subject to a gate; `agent:<name>` is required even when the tools fit; an approval
+given in another directory authorises nothing; a `once` answer is consumed by the step that spends it; two
+steps sharing one definition raise one dialog; a corrupt ledger is reported at session start unasked; and
+**ADR-0035's own line — a real session reads the registry and lists what it may route to.**
+
+**Trigger:** any assertion in an opt-in tier that has not been run since the code it asserts on changed. The
+mechanical version: if CI cannot run a suite, its last-run date belongs in the session log beside the state it
+verified.
 
 ---
 
@@ -3295,3 +3343,4 @@ package that provides it is only a devDependency.
 | 2026-08-22 | R-153 | Added and **fixed in part** — CI exists. Eight review passes found guards deletable with the suite green because the only thing forcing rule 7 was somebody choosing to look (R-34's shape, for years). `.github/workflows/ci.yml` runs typecheck, the unit suite, a tree-cleanliness assertion, the mutation catalogue (`--if-present` until PR #10 brings it to `main`) and the installed-package smoke on every PR, across the `engines` floor and the development ceiling — with `FORCE_COLOR=0` pinned at the workflow level, which is R-143: the catalogue reported `0/20` with every guard intact in a colouring environment, and CI would have inherited that. **It reports and does not block** — no branch protection, so a red run stops nothing; integration and the model tier are deliberately not covered and the workflow says why | R-142's trigger, fired three times |
 | 2026-08-23 | R-142, R-129 | **Reconciled, not reopened.** R-142 asked for CI and is closed by R-153: the workflow runs `test:mutation` on every PR and ADR-0035's merge brought the catalogue to `main`, so that step stopped being a no-op. Its own trigger had fired twice more before CI existed — two further passes, seven more guards deletable with the suite green between them. R-129 (the 17-mutation audit had no artifact) predates the catalogue and is superseded by it | ADR-0035 merged; the record squared |
 | 2026-08-23 | R-154 | Added — **the first verification of the published ARTIFACT rather than the tree.** `pi-daddy@0.19.0` installed from the registry into a scratch project: narrowing, escalation refusal, the new `WORKSPACE_NOT_AUTHORIZED` routing refusal and its allowed counterpart, the two-authorities rule, R-135's held-but-not-inherited wildcard, the ledger v2 contract through its export path, and the `bin` symlink (R-73's defect) all confirmed. One defect found: seven published `.d.ts` files use `NodeJS.*` while `@types/node` is only a devDependency, so a TypeScript consumer with `skipLibCheck: false` and no Node types gets seven errors. One line in `peerDependencies` fixes it; it needs a release decision | post-release verification of 0.19.0 |
+| 2026-08-23 | R-155 | Added and fixed — **the opt-in model tier ran for the first time ever** (55 tests: 54 pass), and its single failure was a stale TEST, not the product: it asserted every ledger LINE had a distinct `childId`, true when a step wrote one line and false since ADR-0034 gave each child lifecycle events too — 9 lines, 3 ids, the property intact. **Rule 7's mirror, which this repository had only half written down:** a test that can no longer PASS is as dead as one that cannot fail, and an opt-in tier CI cannot run is where such a test hides indefinitely | first run of the model tier |
