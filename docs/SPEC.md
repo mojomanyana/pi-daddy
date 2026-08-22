@@ -500,8 +500,12 @@ evaporated under a live governed writer — **not** the same fact as an operator
 deliberately because a herdr writer tab would not close, so the pane may still be live), `timeout` and
 `refused`. **Retaining a lease does not detain the process that held it:** the record is written, the parent's
 references to the lock helper are dropped, and `pi` exits normally — then the helper sees EOF and runs its
-bounded `herdr tab close` attempts before releasing anyway. In published 0.18.0 and 0.18.1 it detained the
-process forever (R-146), which also disabled the pane sweep that runs on exit. Every one of those four additions exists because the fact was previously recorded as `released` or
+bounded `herdr tab close` attempts before releasing anyway — **bounded in wall clock as well as in count**,
+because a herdr that accepts the close and never answers is not a failed close, and without a per-attempt
+timeout the retry budget is unreachable and the lock is held forever. In published 0.18.0 and 0.18.1 retention
+detained the holding process indefinitely (R-146). That reached a host only where the host lets the event loop
+drain — pi's **print** mode, and any library consumer such as an ADR-0034 external controller; interactive and
+rpc mode call `process.exit()`, so there the process still left and the on-exit pane sweep still ran. Every one of those four additions exists because the fact was previously recorded as `released` or
 `acquired`, making the ledger assert a handover or an exclusion that did not happen.
 
 `release()` never throws. Almost every caller runs it from a cleanup path — the exception is the check

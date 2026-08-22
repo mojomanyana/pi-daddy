@@ -540,10 +540,13 @@ test("a retained lease releases its process, and the lock is recoverable afterwa
   try {
     let output = "";
     holder.stdout.on("data", (chunk) => { output += String(chunk); });
+    // The timer is CLEARED. Left dangling it kept the file alive for the whole deadline on every green run
+    // — +10s on a suite advertised as fast — which is the same "a bound is not free" lesson as R-146 itself.
+    let deadline: NodeJS.Timeout | undefined;
     const exited = await Promise.race([
       once(holder, "close").then(() => "exited" as const),
-      new Promise<"hung">((resolve) => setTimeout(() => resolve("hung"), 10_000)),
-    ]);
+      new Promise<"hung">((resolve) => { deadline = setTimeout(() => resolve("hung"), 10_000); }),
+    ]).finally(() => clearTimeout(deadline));
     assert.match(output, /RETAINED/, "the child never reached markRetained");
     assert.equal(
       exited,
@@ -557,6 +560,10 @@ test("a retained lease releases its process, and the lock is recoverable afterwa
   }
 
   // The lock goes back on its own, so retention is recoverable rather than a stranded worktree (R-102).
+  //
+  // **What this configuration does not cover:** `herdrCloseAttempts: 1` above. At the production default of
+  // ten attempts a second apart the lock is held for ~10s after the parent dies, which is longer than the
+  // loop below waits — so this asserts that release HAPPENS, not that it happens promptly.
   const workspace = await validateRegisteredWorkspace({ workspaceId: "w1", registeredRoot: root });
   let successor;
   for (let i = 0; i < 200 && !successor; i += 1) {
@@ -567,5 +574,64 @@ test("a retained lease releases its process, and the lock is recoverable afterwa
     }
   }
   assert.ok(successor, "the retained lock was never released, so the worktree is stranded (R-102)");
+  await successor.release("test-complete");
+});
+
+/**
+ * **R-146, second half: a bound on retries is not a bound on time.**
+ *
+ * The helper's `herdr tab close` had no `timeout`, so a herdr that ACCEPTS the close and never answers
+ * never called back — the retry counter never decremented, `giveUp()` never ran, no marker was written, and
+ * the kernel lock was held forever. That is R-102's explicitly rejected outcome, and it was masked only by
+ * the defect above: while the parent could not exit, EOF never arrived and an operator saw a hung `pi`
+ * instead of a silent strand. Measured before the fix, with the `herdr` below: parent `exit=0` in 82ms,
+ * `LOCK=HELD` with no marker, indefinitely.
+ *
+ * **The production change that breaks this test** (rule 7): removing the `{timeout, killSignal}` options
+ * from the helper's `execFile`. The successor loop then exhausts and the assertion names the strand.
+ */
+test("a herdr that hangs on close does not strand the lock forever", async () => {
+  const root = await gitWorkspace();
+  const leaseDir = await tempDir("workspace-leases-");
+  // A herdr that accepts the close and never answers — the case a retry count cannot bound.
+  const fakeBin = await tempDir("fake-herdr-");
+  await writeFile(join(fakeBin, "herdr"), "#!/bin/sh\nsleep 300\n", { mode: 0o755 });
+  const moduleUrl = pathToFileURL(join(process.cwd(), "src", "workspace.ts")).href;
+  const code = `
+    import { validateRegisteredWorkspace, acquireWorkspaceLease } from ${JSON.stringify(moduleUrl)};
+    const workspace = await validateRegisteredWorkspace({workspaceId:"w1", registeredRoot:${JSON.stringify(root)}});
+    const lease = await acquireWorkspaceLease({
+      workspace, access:"write", leaseDir:${JSON.stringify(leaseDir)}, ownerId:"retainer",
+      herdrCloseAttempts:1, herdrCloseTimeoutMs:800,
+    });
+    lease.attachHerdrTab("tab-that-hangs");
+    await lease.markRetained("herdr-close-failed");
+    process.stdout.write("RETAINED\\n");
+  `;
+  const holder = spawn(process.execPath, ["--input-type=module", "-e", code], {
+    stdio: ["ignore", "pipe", "pipe"],
+    env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH ?? ""}` },
+  });
+  try {
+    await once(holder, "close");
+    assert.equal(holder.exitCode, 0);
+  } finally {
+    holder.kill("SIGKILL");
+  }
+
+  const workspace = await validateRegisteredWorkspace({ workspaceId: "w1", registeredRoot: root });
+  let successor;
+  for (let i = 0; i < 200 && !successor; i += 1) {
+    try { successor = await trackedLease({ workspace, access: "write", leaseDir, ownerId: "successor" }); }
+    catch (error) {
+      if ((error as GovernanceRefusal).code !== "WORKSPACE_WRITE_CONFLICT") throw error;
+      await new Promise((r) => setTimeout(r, 25));
+    }
+  }
+  assert.ok(
+    successor,
+    "a hung `herdr tab close` held the writer lock with no bound and no marker — every later acquisition " +
+      "reports an active governed writer for a workspace nothing is running in (R-146, R-102)",
+  );
   await successor.release("test-complete");
 });

@@ -18,10 +18,16 @@ the record of how the package got here and are worth keeping; they are not worth
   leaves the kernel lock and the pane alone by design; it also left the parent's three pipes to the lock
   helper referenced, and the helper was never `unref`ed, so node's event loop stayed alive and `pi` could
   never exit. Measured: `exit=124` (timed out) against `exit=0` for the same sequence ending in `release()`.
-  Reached whenever the herdr executor's `tab close` fails — which means the failure that *causes* retention
-  also disabled the `process.once("exit")` pane sweep for every other pane. Present in 0.18.0 and 0.18.1.
-  Retention still holds the lock: on the parent's exit the helper makes its bounded close attempts and then
-  releases, so the worktree is recoverable (R-102) rather than stranded.
+  Reached whenever the herdr executor's `tab close` fails. **Which hosts it wedged:** those that let the loop
+  drain — pi's `-p`/print mode, and library consumers such as an ADR-0034 external controller. Interactive and
+  rpc mode call `process.exit()`, so there the process still left and the on-exit pane sweep still ran.
+  Present in 0.18.0 and 0.18.1. Retention still holds the lock: on the parent's exit the helper makes its
+  bounded close attempts and then releases, so the worktree is recoverable (R-102) rather than stranded.
+- **FIX — one `herdr tab close` attempt is now bounded in wall clock, not only in count (R-146).** The
+  helper's `execFile` had no `timeout`, so a herdr that accepted the close and never answered never called
+  back: the retry budget was unreachable, no marker was written, and the lock was held **forever** — R-102's
+  explicitly rejected outcome. Measured with a `herdr` that sleeps: before, `LOCK=HELD` with no marker
+  indefinitely; after, released with the marker written. Tunable via `herdrCloseTimeoutMs` (default 15s).
 - Ship a canonical JSON Schema draft 2020-12 contract for `ledgerVersion: 2` plus deterministic fixtures for
   all four event types, generated through the production builders. Stable package export paths let external
   harnesses pin the real contract instead of maintaining a parallel format.

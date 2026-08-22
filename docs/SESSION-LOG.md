@@ -158,11 +158,34 @@ mode=release   release -> released · EXIT event, code 0 · exit=0
 mode=retain    main() returning                         · exit=124 (timed out)
 ```
 
-**The compounding is the part worth remembering.** Retention is triggered by a herdr `tab close` that fails,
-`src/cli.ts` relies on a natural exit, and the pane reaper is a `process.once("exit")` handler — so **the
-failure that causes retention disabled the cleanup for every other pane.** R-102 had accepted stranding the
-*worktree*; nobody wrote down that it stranded the *process*, and two comments promised the strand lasted
-"until process exit", which was the one thing that could not happen.
+R-102 had accepted stranding the *worktree*; nobody wrote down that it stranded the *process*, and two
+comments promised the strand lasted "until process exit", which was the one thing that could not happen.
+
+**Then the independent review took the fix apart, and it was right twice.**
+
+1. **The fix's own safety argument was half-false, and the fix had removed the only symptom.** "Bounded
+   attempts, then release anyway" is bounded in *count*: the helper's `herdr tab close` ran through `execFile`
+   with no `timeout`, so a herdr that ACCEPTS the close and never answers never calls back — the retry budget
+   is unreachable, no marker is written, and the lock is held forever, which is R-102's explicitly rejected
+   outcome. While the parent could not exit, an operator saw a hung `pi`; after the fix, the parent leaves in
+   82ms and the strand is silent. Measured both ways (`LOCK=HELD`, no marker → `LOCK=FREE`, marker written),
+   fixed with a per-attempt wall-clock bound, and forced by a test with a `herdr` that sleeps.
+2. **A claim I repeated without checking.** The first draft said the wedge also killed the pane sweep for every
+   pane, citing `src/cli.ts` as a host that "relies on a natural exit". That sentence came from a reviewer's
+   report; `src/cli.ts` has one subcommand (`init`) and can neither hold a lease nor open a pane. Re-derived
+   against pi 0.84.2: `process.exit()` ignores pending handles **and runs exit handlers**, so only hosts that
+   let the loop drain are affected — print mode and library consumers, i.e. ADR-0034's external controllers.
+   Interactive and rpc call `process.exit()`. The hang is real; the compounding was not general.
+
+**That is the third time in two days a reviewer's finding was repeated one level on without being re-derived**
+(R-59's shape, R-144's, now this one), and the second time the re-derivation *narrowed* the claim rather than
+widening it. Verify a reported finding by execution before writing it down, including when you agree with it.
+
+**One line of my own fix was unforced** — the block unref'ed `stdin` too, and reverting just that line left the
+suite green. Removed rather than pinned; `holder.unref()` and the two output streams are each load-bearing,
+verified by reverting them separately. **R-151** records what the fix newly exposes: with exit working, the
+pane reaper and the lock helper now close the same retained tab, and `readCloseFailure()` — the marker reader
+in the advertised recovery path — has no caller anywhere.
 
 **Unref, not close, and only on the retain path.** The lock must outlive the call: when the parent exits the
 helper sees EOF and runs what it was written for — bounded close attempts, marker file, release anyway. That
@@ -170,9 +193,11 @@ is R-102's decision and it is why letting the parent go is safe, so the regressi
 property: a successor still acquires. Unref'ing at spawn was rejected — it would remove the accidental
 guarantee that a process cannot exit while a lease is still ACTIVE, which is a different decision.
 
-**Verification.** 597 unit (596 + the regression) · typecheck · register guard · line ceiling. The test fails
-on unmodified `main` with `'hung' !== 'exited'`, and fails again when the `unref` block is reverted — checked
-both directions.
+**Verification.** 598 unit (596 + two regressions) · typecheck · register guard · line ceiling
+(`workspace-lease.ts` at 362). Both guards checked in both directions: the exit test fails on unmodified `main`
+with `'hung' !== 'exited'` and again when the `unref` block is reverted; the strand test fails when the
+`{timeout, killSignal}` options are reverted. And the file got *faster* — the first draft leaked its 10s
+deadline timer, so `test/workspace.test.ts` cost 14.6s on a green run; clearing it plus both new tests is 6.7s.
 
 **Two debts, stated rather than left implicit.** `scripts/mutation-audit.mjs` lives on PR #10 and not on
 `main`, so this guard has a named regression and no catalogue entry yet; R-146's register body carries the exact

@@ -2188,10 +2188,29 @@ mode=retain    acquired write · main() returning                         · exi
 
 Reached in production from the herdr executor when `tab close` fails: `HerdrWriterCloseError` →
 `markRetained("herdr-close-failed")`. **R-102 accepted stranding the worktree; nothing recorded that it also
-stranded the process** — and the consequence compounds, because `src/cli.ts` sets `process.exitCode` and relies
-on a natural exit, and `src/pane-reaper.ts`'s `process.once("exit")` sweep therefore never runs. **The failure
-that causes retention disabled the cleanup for every other pane.** Two comments also promised the strand lasted
-*"until process exit"*, which was the one thing that could not happen.
+stranded the process.** Two comments also promised the strand lasted *"until process exit"*, which was the one
+thing that could not happen.
+
+**Which hosts it wedged — corrected by the independent review, and the correction narrows this entry.** The
+first version of it said the compounding hit every pane, citing `src/cli.ts` as a host that "sets
+`process.exitCode` and relies on a natural exit". `src/cli.ts` has one subcommand, `init`, and can neither hold
+a lease nor open a pane; the claim came from a reviewer's report and **was repeated here without being
+checked**, which is the specific trap this register keeps recording. Re-derived against pi 0.84.2:
+`process.exit()` ignores pending handles *and* runs `exit` handlers, so only a host that lets the loop drain is
+affected — pi's **print** mode (`dist/main.js`: `process.exitCode = exitCode; return;`) and any library
+consumer, i.e. exactly ADR-0034's external controllers. Interactive and rpc mode call `process.exit()`
+(`dist/modes/interactive/interactive-mode.js:3148`), so there the process still left and the on-exit pane sweep
+still ran. The hang is real; "it also broke the pane reaper for everyone" was not.
+
+**A bound on retries is not a bound on time, and this half was found by the review of the fix.** The helper's
+`herdr tab close` ran through `execFile` with **no `timeout`**, so a herdr that accepts the close and never
+answers never calls back: `--left` never decrements, `giveUp()` never runs, no marker is written, and the lock
+is held **forever** — R-102's explicitly rejected outcome. It had been masked by the defect above, because
+while the parent could not exit, EOF never arrived and an operator saw a hung `pi` instead of a silent strand.
+**So the first version of this fix removed the only symptom of an unreleasable lock.** Measured with a `herdr`
+that sleeps: before, parent `exit=0` in 82ms and `LOCK=HELD` with no marker indefinitely; after,
+`LOCK=FREE — released as advertised` with the marker written. Each attempt now carries a wall-clock timeout
+(`herdrCloseTimeoutMs`, default 15s), and `test/workspace.test.ts` forces it with a fake `herdr` that sleeps.
 
 **Fixed by unref, not by closing**, in `markRetained` only. The lock must outlive the call, so the parent drops
 its references and leaves the helper running; when the parent does exit, the helper sees EOF and runs the path
@@ -2207,12 +2226,25 @@ this fix.
 first assertion fails on a bounded deadline — verified by reverting it. Bounded on purpose: R-119 was a lease
 test that wedged the runner past 900s, which is how a suite that CAUGHT a defect reads as untested.
 
-**One debt, stated rather than left implicit.** `scripts/mutation-audit.mjs` — the pinned catalogue that makes
-rule 7 mechanical — lives on PR #10 and does not exist on `main`, so this guard has a named regression but no
-catalogue entry yet. Whichever lands second owes the entry:
-`{ name: "lease: a retained lease detains its process", file: "src/workspace-lease.ts",
-   test: "test/workspace.test.ts", find: "      holder.unref();", replace: "",
-   expect: "retained lease releases its process" }`
+**One line of the fix was itself unforced, which the review caught.** The block unref'ed `stdin` as well, and
+a line-by-line reversion showed the suite stayed green without it — R-122's shape inside the fix. Removed
+rather than pinned, since `holder.unref()` plus the two output streams are each load-bearing (verified by
+reverting them separately). The helper's docstring also justified its optional calls by citing a
+`stdio: "ignore"` caller that does not exist; corrected.
+
+**Two debts, stated rather than left implicit.** `scripts/mutation-audit.mjs` — the pinned catalogue that makes
+rule 7 mechanical — lives on PR #10 and does not exist on `main`, so these guards have named regressions but no
+catalogue entries yet. Whichever lands second owes both:
+
+```js
+{ name: "lease: a retained lease detains its process", file: "src/workspace-lease.ts",
+  test: "test/workspace.test.ts", find: "      holder.unref();", replace: "",
+  expect: "retained lease releases its process" },
+{ name: "lease: a hung herdr close is unbounded in time", file: "src/workspace-lease.ts",
+  test: "test/workspace.test.ts",
+  find: "{timeout:Number(process.env.PI_DADDY_LEASE_CLOSE_TIMEOUT_MS||15000),killSignal:\"SIGKILL\"},",
+  replace: "", expect: "hangs on close does not strand the lock forever" }
+```
 
 **PR #10 carries an OPEN copy of this entry, authored the same day.** Whichever merges second keeps this FIXED
 text; the OPEN version records what was believed while the fix was still queued.
@@ -2220,6 +2252,41 @@ text; the OPEN version records what was believed while the fix was still queued.
 **Trigger:** any `pi` session that stops responding to exit after a herdr `tab close` failure; a
 `retained:herdr-close-failed` release reason in the ledger; or any long-lived child spawned with pipes that a
 non-release path leaves referenced.
+
+## R-151 · Letting the parent exit makes the pane reaper and the lock helper close the same tab — M×M, OPEN
+
+Added 2026-08-22 by the independent review of the R-146 fix, and it exists **because** that fix works: while
+the process could never exit, the on-exit pane sweep never ran, so nothing raced.
+
+A refused writer close throws `HerdrWriterCloseError` **without** `untrackPane` — deliberately, so the pane
+"stays the reaper's problem". The retained tab is therefore still in the reaper's map when the process exits,
+and `process.once("exit")` runs before the helper's pipes close. So the reaper closes the tab first, and the
+helper then spends its whole retry budget closing a tab that is already gone.
+
+```
+threw=HerdrWriterCloseError   tabs attached to the lease helper=["w1:t9"]
+openPaneCount after the refused close = 1      ← still tracked
+  process.once("exit") sweep runs: herdr tab close w1:t9
+… helper then burns 10 attempts at 1s          t+0s..t+9s lock=HELD, t+10s lock=FREE
+marker: {"reason":"herdr-close-failed", …}     ← asserts a failure that did not happen
+```
+
+Three consequences, none of them a capability defect:
+
+- a ~10s window after `pi` has exited in which a successor is told a governed writer is active;
+- a marker file asserting a close failure that the reaper had already resolved — and **`readCloseFailure()`
+  has no caller anywhere** in `src/`, `extensions/` or `test/`, so the "marker file" step of the advertised
+  recovery path is written and never read;
+- retention is documented as *"the pane may still be live"*, while the reaper now kills that pane on the way
+  out. Both behaviours are defensible; they are not the same behaviour, and the documents describe only one.
+
+**Not fixed here.** The candidates conflict — untrack the pane on retention (contradicting "stays the reaper's
+problem"), have the reaper skip lease-attached tabs (leaking panes on the path that most needs the sweep), or
+have the helper ask before retrying — and choosing needs the herdr executor's owner rather than a patch inside
+a hang fix.
+
+**Trigger:** a `herdr-close-failed` marker for a tab that is already gone; or any second closer of a resource
+the lock helper also closes.
 
 ---
 
@@ -2295,3 +2362,4 @@ non-release path leaves referenced.
 | 2026-08-20 | R-130 | Added and fixed — the two findings the mutation auditor left open at the new HEAD: the `{release:true}` clean-release handshake was unpinned (deleting it left 586/586 green, so a deliberate handover would have been treated as a crash), and a test of mine overstated what the wiring does with `context_id`. Also records that the auditor corrected its OWN recommendation — pinning `truncated` would have introduced a bug — and that `a882595`'s `docs:` label was wrong for a commit touching five production files | mutation re-verification at the fixed HEAD |
 | 2026-08-20 | R-132 | Added and **fixed** — a capability id containing a comma was admitted by a wildcard's prefix rule and split by the child into several capabilities, minting `tool:bash` from a root that never held it with `denied: []` and a clean-looking ledger line. **Present in published 0.18.0**, verified against `origin/main`; predates ADR-0035, which widened the surface with a second injectable namespace. Two guards, both mutation-verified. The channel was predicted verbatim by `grant-env.ts`'s own comment and guarded everywhere except propagation | found reviewing PR #10 |
 | 2026-08-22 | R-146 | Added and **FIXED from `main`** — a retained writer lease stopped its own process from exiting, measured `exit=124` against `exit=0`, and the failure that causes retention (a herdr `tab close` that fails) therefore also disabled the `process.once("exit")` pane sweep for every other pane. **Present in published 0.18.0 and 0.18.1.** R-102 accepted stranding the worktree; nobody had recorded that it stranded the process, and two comments promised the strand lasted "until process exit". Fixed by dropping the parent's references on the retain path only — the lock still outlives the call, and the successor can still acquire, which the regression asserts as a second property | sixth review pass over PR #10, fixed next |
+| 2026-08-22 | R-146 corrected, R-151 | **The independent review of the R-146 fix found the fix's own safety argument half-false, and a claim repeated here unchecked.** The helper's `herdr tab close` had no wall-clock timeout, so a herdr that accepts and never answers held the lock forever with no marker — and the fix had removed the only symptom (a hung `pi`), turning R-102's rejected outcome into a silent one. Bounded now, forced by a test with a `herdr` that sleeps. The scope claim was also wrong: `process.exit()` runs exit handlers, so only hosts that let the loop drain (pi's print mode, library consumers) were wedged — `src/cli.ts` was cited as evidence and has one subcommand and no leases. One unref line was unforced and is gone. R-151 records what the fix newly exposes: the reaper and the helper now close the same tab | independent review of PR #14 |
