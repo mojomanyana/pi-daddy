@@ -50,18 +50,19 @@ const TIMEOUT_MS = 180_000;
  */
 const MUTATIONS = [
   // ── the registry reader ────────────────────────────────────────────────────
-  { name: "registry: read is unbounded again",
-    file: "src/workspace.ts", test: "test/registry-read-bound.test.ts",
-    find: "    const deadline = Date.now() + REGISTRY_READ_TIMEOUT_MS;",
-    replace: "    raw = await handle.readFile({ encoding: \"utf8\" });\n    if (false) {\n    const deadline = Date.now() + REGISTRY_READ_TIMEOUT_MS;",
-    also: [{ find: "    raw = buffer.subarray(0, filled).toString(\"utf8\");", replace: "    }" }],
-    expect: "GROWS after its size is checked" },
   { name: "registry: size ceiling removed",
     file: "src/workspace.ts", test: "test/workspace-capability.test.ts",
     find: "    if (info.size > REGISTRY_MAX_BYTES) {", replace: "    if (false) {",
     expect: "larger than the ceiling" },
-  // **Two guards in this reader are deliberately NOT in the catalogue, and saying so is the point.**
+  // **Three guards in this reader are deliberately NOT in the catalogue, and saying so is the point.**
   //
+  //  - the **bounded read loop** rather than `handle.readFile`. Its regression needs a write to land inside
+  //    the window between `fstat` and the read; a test that tries loses the race almost every time and then
+  //    passes for the wrong reason — the previous iteration's grown file trips the *size* check instead, which
+  //    looks like a pass. I shipped exactly that test, and this catalogue is what caught it: the mutation ran
+  //    in 18ms without ever reading a grown file. Measured by hand instead — reverting the loop reads a
+  //    384 MiB file and grows RSS by 778 MiB, and a reviewer won the race against the real function in 848ms
+  //    (9% of 4000 attempts), reading 192 MiB after a 29-byte measurement.
   //  - `handle.stat()` rather than `stat(path)` closes a TOCTOU. Winning that race requires a swap to land
   //    inside the window between the two calls, which is not deterministic from inside the process; a test
   //    that wins it sometimes is a flaky test, and one that never wins it is decoration.
