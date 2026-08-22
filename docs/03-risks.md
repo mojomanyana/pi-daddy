@@ -2323,9 +2323,11 @@ rather than pinned, since `holder.unref()` plus the two output streams are each 
 reverting them separately). The helper's docstring also justified its optional calls by citing a
 `stdio: "ignore"` caller that does not exist; corrected.
 
-**Two debts, stated rather than left implicit.** `scripts/mutation-audit.mjs` — the pinned catalogue that makes
-rule 7 mechanical — lives on PR #10 and does not exist on `main`, so these guards have named regressions but no
-catalogue entries yet. Whichever lands second owes both:
+**Two debts, stated rather than left implicit — and both PAID on 2026-08-22, when PR #10 merged `main`.** The
+catalogue lives on that branch and not on `main`, so these guards reached `main` with named regressions and no
+entries. All four are now pinned there (the two below plus terminal retention and the refused bound), and the
+helper-source entry targets **`src/lease-helper.ts`**, not the path written below: the same merge hit the
+400-line ceiling and moved the helper out. The entries as first written, kept because the debt is the record:
 
 ```js
 { name: "lease: a retained lease detains its process", file: "src/workspace-lease.ts",

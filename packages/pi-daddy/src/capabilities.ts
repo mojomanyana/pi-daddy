@@ -51,12 +51,17 @@ export const DELEGATE_CAPABILITY: Capability = "tool:delegate";
  * an id's namespace read this, so a fifth namespace is one entry rather than a third divergence.
  *
  * **Not every prefix decision in the package.** Inline `startsWith("` tests on a capability namespace are
- * scattered across `src/` and `extensions/`; this list is read by two of them. **The number is deliberately
- * not written here** — SPEC first claimed the list was "what every site reads", a correction said "six"
- * while its own enumeration listed seven, this docstring then said "nine" in the sentence claiming it gave
- * no number, and a re-derivation found fourteen files containing such a test. Run the grep; do not quote a
- * predecessor. Consolidating the sites is a separate change, and a count nobody re-derives is the defect
- * this list exists to prevent.
+ * scattered across `src/` and `extensions/`; this list is read by two of them. **No number is written here,
+ * and the history is why:** SPEC first claimed the list was "what every site reads"; a correction said "six"
+ * while its own enumeration listed seven; this docstring then said "nine" in the sentence claiming it gave no
+ * number; and the correction to *that* said "fourteen", which counted every file containing any
+ * `startsWith("` — CLI flags, `git worktree list` parsing, an assurance sentinel and node_modules entries
+ * among them. Four numbers, four wrong. The command, so nobody has to quote a predecessor:
+ *
+ *     grep -rl 'startsWith("\(tool:\|ext:\|agent:\|skill:\|workspace:\)' src extensions
+ *
+ * Consolidating the sites is a separate change, and a count nobody re-derives is the defect this list exists
+ * to prevent.
  *
  * `docs/SPEC.md`'s grammar section is the prose statement of the same list and is kept in step with it.
  */

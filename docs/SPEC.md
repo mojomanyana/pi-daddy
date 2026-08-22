@@ -591,6 +591,7 @@ deliberately because a herdr writer tab would not close, so the pane may still b
 `uncontended` — the ledger reporting a handover the kernel never performed, which is the R-100/R-103 class
 this vocabulary was added to expose. Disclosed and deliberately unfixed here (**R-141**); the comment in
 `src/workspace-lease.ts` claiming a single definition was wrong and now says this.
+
 **Retaining a lease does not detain the process that held it, and is terminal.** The record is written, the
 parent's references to the lock helper are dropped, and the host exits normally; a `release()` afterwards
 answers `retained` and leaves the record alone rather than claiming a handover the helper never performed. The
@@ -901,7 +902,7 @@ bound a typo can switch off is not a bound.
 
 ```bash
 cd packages/pi-daddy
-npm test                   # 633 unit tests — pure, no pi, no network
+npm test                   # 637 unit tests — pure, no pi, no network
 npm run typecheck          # src + extensions + test + test-integration
 npm run test:integration   # 45 tests against a REAL pi process/herdr server, no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and USE every subpath —

@@ -10,7 +10,9 @@ decisions; this file holds state and next actions. Newest entry on top.
 **2026-08-22 — R-146 is FIXED on `main` and UNRELEASED (PR #14).** A retained writer lease detained its own
 process, in published 0.18.0 and 0.18.1; a hung `herdr tab close` could then hold the lock forever, which the
 first draft of the fix made silent by removing the symptom. Both bounded now, retention is terminal, and the
-counts below are stale: **598 unit** on this branch. `## Unreleased` in the package CHANGELOG now carries two
+counts below are stale: **637 unit + 45 integration** on THIS branch, measured at `4a04819`. (This paragraph
+arrived from `main`, where "this branch" meant PR #14 and the number was 598 — a stale count inside the sentence
+that warns about stale counts, which is why the number is now qualified by the commit it was measured at.) `## Unreleased` in the package CHANGELOG now carries two
 entries and no version bump — shipping is a release decision. R-151 is open, from the review of that fix.
 
 **Before your first edit: `git branch --show-current`. If it says `main`, branch.** Working rule 10, and
@@ -26,7 +28,7 @@ ownership guard and left three documents selling it, one of them R-137's own bla
 risk understated itself. *A commit that removes a guard must grep for the guard's claims.* Still open and
 runtime: R-145…R-150, of which **R-146 is a hang** (a retained lease stops its own process exiting). Before
 merge: the PR body claims a registry-integrity gap is closed by a mechanism reverted two passes ago.
-**633 unit + 45 integration**, measured at `747a405`; 20/20 catalogued guards.
+**637 unit + 45 integration**, measured at `4a04819`; **24/24** catalogued guards.
 
 **2026-08-22 — PR #10 (ADR-0035, 0.19.0) is OPEN and this is the work.** FIVE independent review passes have
 now run over it, each finding defects in the previous one's fixes, and they merge inside PR #10 rather than
@@ -34,7 +36,7 @@ being narrated by a second PR. (**`fix/adr-0035-review` and `review/0035` are DO
 commit as the PR head and the second is an ancestor of it, so there is nothing on either to merge. This
 paragraph said the fixes were still to be pushed; that push had already happened, and the sixth pass was asked
 the question the stale sentence provokes.)
-**633 unit + 45 integration**, measured at `747a405`. The full account is the top dated entry below; what a resuming session needs:
+**637 unit + 45 integration · 24/24 catalogued guards**, measured at `4a04819`. The full account is the top dated entry below; what a resuming session needs:
 
 1. **The generalisable rule, twice refined.** Adding a capability namespace is a nine-site change (R-133) —
    **and the sites you touch need the same adversarial read as the ones you missed** (R-136, R-137), because

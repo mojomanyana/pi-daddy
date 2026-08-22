@@ -12,7 +12,12 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
-## 0.19.0 — workspace routing is a capability (unreleased)
+## Unreleased
+
+**These fix a hang present in published 0.18.0 and 0.18.1, and are deliberately NOT filed under 0.19.0.**
+Merging `main` into the 0.19.0 branch folded them into that section, because the CHANGELOG did not conflict and
+nobody looked — which would have gated a fix for released code on the BREAKING routing change below. Shipping
+them as 0.18.2 remains available and remains a release decision nobody has authorized.
 
 - **FIX — a retained writer lease no longer stops its own process from exiting (R-146).** `markRetained`
   leaves the kernel lock and the pane alone by design; it also left the parent's three pipes to the lock
@@ -28,6 +33,9 @@ the record of how the package got here and are worth keeping; they are not worth
   back: the retry budget was unreachable, no marker was written, and the lock was held **forever** — R-102's
   explicitly rejected outcome. Measured with a `herdr` that sleeps: before, `LOCK=HELD` with no marker
   indefinitely; after, released with the marker written. Tunable via `herdrCloseTimeoutMs` (default 15s).
+
+## 0.19.0 — workspace routing is a capability (unreleased)
+
 - Ship a canonical JSON Schema draft 2020-12 contract for `ledgerVersion: 2` plus deterministic fixtures for
   all four event types, generated through the production builders. Stable package export paths let external
   harnesses pin the real contract instead of maintaining a parallel format.

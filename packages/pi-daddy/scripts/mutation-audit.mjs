@@ -174,6 +174,9 @@ const MUTATIONS = [
   //
   // These four arrived on `main` while this branch held the catalogue, so their guards shipped with named
   // regressions and no entries — the debt R-146's register body wrote out, paid here by the merge.
+  // This one costs the full `TIMEOUT_MS`: its named test fails at ~10s and then the file wedges, because a
+  // sibling test retains a lease in the RUNNER's own process and cannot exit once this guard is gone. The
+  // named failure is what scores it; `hang: true` is deliberately absent, since a bare kill must not count.
   { name: "lease: a retained lease detains its process",
     file: "src/workspace-lease.ts", test: "test/workspace.test.ts",
     find: "      holder.unref();", replace: "",
@@ -284,7 +287,12 @@ for (const m of MUTATIONS) {
     const named = failed.some((name) => name.includes(m.expect));
     const broke = named || (killed && Boolean(m.hang));
     if (broke) {
-      console.log(`✓ ${m.name}${killed ? "  (hang, as recorded)" : ""}`);
+      // Say which of the two ways it broke. Printing "(hang, as recorded)" whenever the run was killed
+      // asserted a catalogue field that entry may not have — a claim written beside a fix, in the commit that
+      // relaxed this verdict, which is the shape this repository keeps recording.
+      console.log(`✓ ${m.name}${
+        killed ? (m.hang ? "  (hang, as recorded)" : "  (named failure, then the runner wedged — costs the full timeout)") : ""
+      }`);
     } else {
       failures++;
       console.error(
