@@ -107,8 +107,9 @@ Only the first two name tools, and **only those two are filtered against a sessi
 the operator registry is its authority and an unregistered id is refused at the point of use with
 `WORKSPACE_NOT_REGISTERED`, which names the file. One list in the code — `CAPABILITY_NAMESPACE_PREFIXES` —
 is read by the two sites that parse an id's namespace — `normaliseCapability` and `ceilingForDefinition` —
-because a namespace added to one and not the other is how three of the
-ADR-0035 review defects happened.
+because a namespace added to one and not the other is how one of the ADR-0035 review defects happened
+(`ceilingForDefinition` turning `workspace:prod` into `tool:workspace:prod`). Prefix tests elsewhere in the
+package are open-coded and are not fed by this list.
 
 **Three wildcards, and no two are equivalent.** `tool:*` is authority to grant every tool and satisfies any
 capability, including `agent:` and `workspace:` ids, because governance is opt-in and an ungoverned session
@@ -541,6 +542,26 @@ The library surface is outside it. `runNamedCheck` — the ADR-0034 primitive fo
 exported from `pi-daddy` — takes an already-resolved workspace and acquires a lease with no capability
 check. "Which registered root a child may select is a capability" is a statement about the three delegation
 tools, not about a controller calling the package directly.
+
+**The registry file itself, and what reading it refuses (0.19.0).** `PI_GRANTS_WORKSPACE_REGISTRY` must name a
+**regular file** under **1 MiB**, owned by this user or root, and **not world-writable**; anything else is
+refused `WORKSPACE_NOT_REGISTERED`, naming the file. Group-writable is permitted, because `umask 002` with
+per-user groups makes 0664 the default and exposes nothing. Each id must match `[A-Za-z0-9][A-Za-z0-9._/-]*`
+— slashes and dots are fine, so a worktree named after its branch works; whitespace, commas, `*`, shell
+metacharacters and non-ASCII are refused `GRANT_ID_MALFORMED`, because an id becomes the tail of a capability
+id and reaches both a comma-separated grant and a generated file the operator is told to paste from. One bad
+entry refuses the whole file.
+
+The read is bounded: one handle, opened `O_NONBLOCK`, `fstat`-ed as a descriptor rather than by name. That is
+what stops a FIFO at that path blocking session start, and what closes the `stat`-then-open race — a signal
+cannot do either, because the block is inside `open(2)`. An unresponsive network mount is **not** covered and
+no in-process timeout can cover it.
+
+**What the registry does NOT establish.** Routing attenuates by **id**, not by **destination**: a child
+holding `workspace:staging` and a write tool can rewrite that entry to point at another worktree and route its
+grandchild there. The guards above refuse a registry another *user* can rewrite in place; they cannot see a
+same-uid descendant, and they do not inspect the parent directory, so a writable directory defeats them by
+replacement. Open, measured, tracked as **R-137**.
 
 **Before 0.19.0 routing did not attenuate at all**, and that shipped in 0.18.0: the registry path inherited
 into every governed child and `workspace_id` was a model-facing parameter validated against the registry with

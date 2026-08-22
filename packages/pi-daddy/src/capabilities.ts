@@ -50,10 +50,11 @@ export const DELEGATE_CAPABILITY: Capability = "tool:delegate";
  * `tool:workspace:<id>`) and `isSafeCapability` (which called it malformed) behind. The two places that parse
  * an id's namespace read this, so a fifth namespace is one entry rather than a third divergence.
  *
- * **Not every prefix decision in the package** — `catalog.ts`, `grant-env.ts`, `resolve.ts` (twice),
- * `routing-authority.ts`, `init.ts` and `isSafeCapability`'s own regex each test a prefix inline. Stated
- * because SPEC claimed this list was "what every site reads" and it is not; consolidating those is a
- * separate change, and pretending it happened is the defect this list exists to prevent.
+ * **Not every prefix decision in the package.** A grep for `startsWith("` across `src/` and `extensions/`
+ * finds inline prefix tests in nine modules; this list is read by two of them. Stated without a number on
+ * purpose — SPEC first claimed the list was "what every site reads", the correction said "six" while its own
+ * enumeration listed seven, and the real figure is larger again. Consolidating them is a separate change,
+ * and a count nobody re-derives is the defect this list exists to prevent.
  *
  * `docs/SPEC.md`'s grammar section is the prose statement of the same list and is kept in step with it.
  */

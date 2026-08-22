@@ -46,8 +46,19 @@ the record of how the package got here and are worth keeping; they are not worth
   routing anywhere.
 - A `workspace:` id never reaches pi's `--tools`. It is enforced by pi-daddy before the spawn, which is a
   different and weaker class than the `--tools` allowlist; `docs/SPEC.md` now states both classes explicitly.
-- A workspace id is refused if it could not survive the grant grammar — the registry became an input to it
-  when an id became the tail of a capability id, and grants are comma-separated (see 0.18.1).
+- **BREAKING — a registry id must now match `[A-Za-z0-9][A-Za-z0-9._/-]*`.** The registry became an input to
+  the grant grammar when an id became the tail of a capability id, so ids that 0.18.0/0.18.1 accepted are now
+  refused `GRANT_ID_MALFORMED` at load, naming the file and the id. **Slashes and dots are fine** — a worktree
+  named after its branch (`feature/x`) works, and an earlier build of this release wrongly refused it by
+  reusing the tool-name grammar. Refused: whitespace (it splits `allowed-tools`), commas and newlines (they
+  split a grant — 0.18.1's defect), `*` (it collided with `workspace:*`, so registering a worktree as `*` and
+  granting `workspace:*` minted routing over the whole registry), shell metacharacters (they reach the
+  `ROUTABLE WORKSPACES` block of a generated `.pi/grants.env`, which tells you to paste them into your
+  grant), and non-ASCII (the generated file is reviewed in an editor, where control characters and
+  homoglyphs let one id render as another). One bad entry refuses the whole file, so rename before upgrading.
+- **The registry must not be world-writable, and must be owned by you or root.** Also refused: a
+  non-regular file (a FIFO there blocked session start indefinitely), and anything over 1 MiB.
+  Group-writable is allowed — `umask 002` with per-user groups makes 0664 the default and exposes nothing.
 - No `workspace:` id is live by default in a generated grant, including one a package's `allowed-tools`
   declares. Which worktree a child starts in is the operator's decision (ADR-0028).
 
@@ -55,9 +66,10 @@ the record of how the package got here and are worth keeping; they are not worth
 
 The first group never shipped — they were defects in 0.19.0's own development, caught by two review passes
 and a mutation battery, and are listed because ADR-0035 claimed three of them as done (R-133, and that ADR's
-amendment). **The two entries under "Present in earlier releases" below DID ship**, and an earlier draft of
-this section put them under this heading, telling operators the `tool:*` attenuation escape could not affect
-them.
+amendment). **The entries under "Present in earlier releases" below DID ship**, and an earlier draft of this section put
+them under this heading, telling operators the `tool:*` attenuation escape could not affect them. (That draft
+then said "two" while three bullets sat under the heading, one of which — the v2 enum — is the single item
+here that provably did *not* ship. It has moved back.)
 
 - **Routing terminated below the root instead of attenuating.** `unknownCapabilities` did not know the
   namespace, and a catalog is always present in a real session, so every requested `workspace:<id>` was
@@ -69,6 +81,12 @@ them.
 - `isSafeCapability` rejected the namespace, so the boundary that generates grants could not emit the
   capability this release makes mandatory.
 - `subsumedBy` reported `workspace:*`-covered ids as subsumed, contradicting its own rule.
+- The v2 ledger contract's `refusalCode` enum is now **generated** from `REFUSAL_CODES` by
+  `scripts/generate-ledger-v2-contract.ts` instead of hand-maintained beside it. `WORKSPACE_NOT_AUTHORIZED`
+  joins the enum in this release; `contracts/ledger/v2/README.md` records why that is a legitimate v2 edit
+  rather than a v3 — v2 has never been published, so nothing can have pinned it. It is **not** the last such
+  edit: five other closed enums in that schema are still hand-maintained beside their source arrays, with the
+  same ambush waiting for whoever adds an executor kind or a lease outcome.
 
 ### Present in earlier releases — read these before upgrading
 
@@ -86,11 +104,6 @@ them.
   outlived the defect across eight published versions (0.13.0 through 0.18.1), and the integration suite
   required it to, while advising operators to
   remove a control that works.
-
-- The v2 ledger contract's `refusalCode` enum is now **generated** from `REFUSAL_CODES` by
-  `scripts/generate-ledger-v2-contract.ts` instead of hand-maintained beside it. `WORKSPACE_NOT_AUTHORIZED`
-  joins the enum in this release; `contracts/ledger/v2/README.md` records why that is a legitimate v2 edit
-  rather than a v3 (v2 has never been published, so nothing can have pinned it) and why it is the last one.
 
 ## 0.18.1 — SECURITY: a capability id containing a comma minted authority
 

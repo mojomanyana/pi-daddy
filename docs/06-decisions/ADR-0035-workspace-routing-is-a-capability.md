@@ -298,9 +298,9 @@ Nothing in the Decision. It adds a cost that was not costed: **a capability name
 — `normaliseCapability`, `covered()`, the inheritance filter on both paths, `unknownCapabilities`,
 `ceilingForDefinition`, `isSafeCapability`/`wildcardsIn`, `subsumedBy`, the per-delegation gate, and the
 operator-facing scaffold. `test/workspace-capability.test.ts` is organised by site for that reason, and
-`CAPABILITY_NAMESPACE_PREFIXES` collapses the two that parse an id's namespace into one list — not all nine,
-and this amendment first said three; six prefix decisions remain open-coded, `isSafeCapability`'s regex among
-them. A tenth site, or a fifth namespace,
+`CAPABILITY_NAMESPACE_PREFIXES` holds the two sites that parse an id's namespace. It collapsed nothing: both
+already read one list before this pass. Prefix tests elsewhere are open-coded, in more modules than any
+version of this sentence has correctly counted — which is why it no longer gives a number. A tenth site, or a fifth namespace,
 adds a case there.
 
 Option 2 (strip the registry, re-supply a narrowed one per child) remains available as defence-in-depth and
@@ -315,7 +315,7 @@ about**, which is now three passes running and worth stating as a pattern rather
 
 Six reviewers over the fix commit. The capability invariant held on every path any of them could construct —
 three-level attenuation genuinely works on the production path, the gate refactor was behaviour-preserving
-across 960 input combinations, no leak of the authorising id, and the anti-race rules hold. What they found
+over a large generated input set (a reviewer's figure, not reproducible from this repository), no leak of the authorising id, and the anti-race rules hold. What they found
 was in the *claims* and in two new defects the fixes themselves introduced.
 
 ### Two blockers, both created by the fix
@@ -353,3 +353,49 @@ two of its six site fixes were revertible with the suite green — one of them t
 granting routing.
 
 Nothing here changes the Decision or the non-goals. Option 2 remains available and remains not taken.
+
+---
+
+## Third amendment — 2026-08-22, after a fourth review pass
+
+**Accepted still stands, and the pattern is now the finding rather than any defect.** Four passes; each
+reviewed the previous one's *fixes* and found blockers in them. That is not four unlucky commits, it is what
+this kind of change costs, and the honest statement of the rule is:
+
+> Adding a capability namespace is a nine-site change; the sites you touch need the same adversarial read as
+> the ones you missed; and each round of fixes is a new change requiring its own round.
+
+### What the fourth pass found, in the third pass's fixes
+
+- **R-136 was marked FIXED while a function the fixing commit added still hung session start on a FIFO.**
+  `establishRegistryPin` used a bare `readFile` plus a signal — the exact construction the same commit's own
+  comment calls insufficient — and ran *earlier* in session start than the readers it guarded. Three
+  reviewers found it independently. R-136's own trigger names the grep that finds it, and nobody ran it.
+- A second hang: `stat`-by-name then `readFile`-by-name is a TOCTOU any same-uid process can win, so a child
+  with `tool:write` could wedge its parent's next read. One reader holding one handle closes both.
+- **The registry pin is REVERTED** (R-137, reopened). It was defeated four ways, including a measured
+  escalation on the **herdr** executor, which `mergeChildEnv` does not reach — a pane child re-minted the pin
+  and its grandchild took a real write lease on an unauthorised root.
+- `npm test` was silently overwriting the tracked contract fixtures, so the checked-in pin repaired drift
+  instead of failing on it.
+- **Fourteen single reverts left every suite green, eight of them edits those commits added** — including the
+  whole "the refusal names the file" fix, on which `catalog.ts`'s namespace exemption is justified.
+- The id grammar reused the TOOL-name rule and refused `feature/x`, which is how git worktrees are named
+  (R-139).
+
+### The decision this changes
+
+**Registry integrity is out of this ADR.** Option 2 was declined here on stated grounds; a *different*
+mechanism arriving inside a fix commit got none of the design attention it needed, and the herdr path — which
+no existing propagation mechanism crosses — is the proof. It returns as its own ADR, with the executor
+question answered first rather than discovered. R-137 is OPEN with the attack measured.
+
+### And a discipline note, because it is the most transferable part
+
+Every numeric claim written in this branch has been wrong at least once, **including the corrections**: the
+stale-warning window went three → six → eight; the prefix-site count went "every site" → six (with seven
+listed) → more than nine; the mutation count counted what was checked rather than what was covered, twice.
+A count is a claim, and a claim beside a fix is not the fix. This ADR's amendments now say "the file is the
+list" and give no numbers, and one figure repeated here from a reviewer's report — 960 input combinations —
+was removed, because nothing in this repository reproduces it and repeating it laundered someone else's
+measurement into the record.

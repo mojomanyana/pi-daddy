@@ -853,7 +853,7 @@ every definition. The id is deliberately **not** added to `requested` or `effect
 authority to run the definition now, and putting it in `effective` would place it in the *child's* grant and
 let the child re-spawn that definition with nobody asked. This also closes the gap ADR-0023 recorded against
 itself — `agent:*` finally has its "except".
-**AND THE PARTIAL FIX OUTLIVED THE FULL ONE BY SIX RELEASES — see R-134, added 2026-08-21.** The 0.11.1
+**AND THE PARTIAL FIX OUTLIVED THE FULL ONE ACROSS EIGHT PUBLISHED VERSIONS — see R-134, added 2026-08-21.** The 0.11.1
 warning above stayed in the session banner through 0.18.1, telling operators that the 0.12.0 gate does
 nothing and to withhold the capability instead, with an integration test requiring it to. Removed there.
 The lesson for this register: when an entry records two fixes, the second one's commit is also the moment to
@@ -2247,7 +2247,9 @@ hand and builds no catalog, so it confirmed the mechanism while exercising a pat
 Recorded because "we measured it" was the reason this went in with a Decision that could not run.
 
 **Fixed** by teaching all six sites, collapsing three into `CAPABILITY_NAMESPACE_PREFIXES`, and organising
-`test/workspace-capability.test.ts` **by site** so the checklist is executable.
+`test/workspace-capability.test.ts` **by site** so the checklist is executable. (This entry also claimed the
+fix "collapsed three" prefix sites into one list; it collapsed none — both readers already shared it — and
+every count written here has been wrong at least once, which is why there is no longer a number.)
 
 **Its own verification claim was wrong, and a third pass caught that too.** This entry first said "eleven
 mutations, eleven named failures" — true of the eleven applied, and concealing that **two of the six sites
@@ -2263,15 +2265,17 @@ in `test/workspace-capability.test.ts`. Also: any ADR claiming attenuation "come
 
 ## R-134 · An operator warning told them to delete a control that works — M×M, FIXED
 
-Added and fixed 2026-08-21. **Present in published 0.18.0 and 0.18.1.** Found while fixing R-133, not by
-either review pass.
+Added and fixed 2026-08-21. **Present in published 0.13.0 through 0.18.1 — eight versions.** Found while
+fixing R-133, not by either review pass. (This line first read "0.18.0 and 0.18.1", contradicting its own
+body two paragraphs below. The status line is what an operator reads for "am I affected", so it is the one
+that must not be narrower than the truth.)
 
 `session-report.ts` warned, at session start, that an `agent:` id in `PI_GRANTS_GATED` *"does NOT gate
 spawning that definition — the authorisation check for a definition is separate and ungated, so a human is
 never asked"*, and advised withholding the capability instead.
 
 **It is R-47's own partial fix, outliving R-47's full fix across eight published versions** (0.13.0 through
-0.18.1; 0.12.0, where the gate landed, was never published).** R-47 records both: *"PARTLY
+0.18.1; 0.12.0, where the gate landed, was never published). R-47 records both: *"PARTLY
 FIXED 2026-08-14 (0.11.1): a startup warning named the inert entry"*, then *"FULLY FIXED 2026-08-14 (0.12.0)
 by ADR-0024"*. `4673348` — "gating a definition asks before it runs" — is where a gated `agent:<name>` began
 blocking the spawn. So the warning was true for one release and false for 0.12.0 through 0.18.1. (First
@@ -2356,35 +2360,47 @@ defence-in-depth for a regular file on a slow mount.
 
 ---
 
-## R-137 · Routing attenuates by ID, not by DESTINATION — H×M, FIXED (two mechanisms)
+## R-137 · Routing attenuates by ID, not by DESTINATION — H×M, OPEN
 
-Added and fixed 2026-08-21. The gap ADR-0035 asserted away: its Context calls the registry "operator-owned"
-as a fact, and nothing checked it.
+Added 2026-08-21. **Attempted, defeated four ways, and reverted 2026-08-22.** The attack is measured; the
+mechanism that was meant to close it is not in the product.
 
-A child holding `workspace:staging` **and `tool:write`** — not `bash`, so squarely inside ADR-0012's scope —
-could rewrite the `staging` entry to point at any other Git worktree and route its grandchild there, with a
-real exclusive write lease. The capability named something the child could redefine, so attenuating *which
-id* a descendant may name bought less than it appeared to.
+ADR-0035 attenuated *which id* a descendant may name and left the id→path mapping in a mutable file. A child
+holding `workspace:staging` **and `tool:write`** — not `bash`, so squarely inside ADR-0012's scope — can
+rewrite the `staging` entry to point at any other Git worktree and route its grandchild there, with a real
+exclusive write lease. **Measured end to end** against two real worktrees: the grandchild started in a root
+nobody authorised. The capability names something the child can redefine.
 
-**Two mechanisms, and the distinction is the entry.** Ownership plus a group/world-writable refusal closes
-tampering by another *user*. It cannot touch this attack at all: a governed child runs as the same uid as its
-parent, and no file mode distinguishes them. Shipping only that guard and calling the gap closed would have
-been this branch's own failure mode. What closes it is a **content pin** — the root records the registry
-digest, every descendant inherits it verbatim (`PI_GRANTS_WORKSPACE_PIN`, deliberately not in
-`GRANT_ENV_KEYS`, because it is not capability state that attenuates but a fact that must survive unchanged),
-and a mismatch refuses `WORKSPACE_REGISTRY_CHANGED`.
+**What was tried, and why it is out.** A content pin: the root records the registry's digest, descendants
+inherit it verbatim, a mismatch refuses. A fourth review pass defeated it four ways, all measured:
 
-**Detection, not prevention.** The file can still be rewritten; the next spawn refuses instead of routing
-somewhere nobody authorised. An operator editing the registry mid-session gets the same refusal, which is
-correct — the tree below them was authorised against the old contents.
+1. **It never reached a herdr child.** `mergeChildEnv` is on the process branch only; the herdr executor
+   passes `plan.env`, which carries neither the pin nor the registry path. A pane child re-minted the pin over
+   its own edit and its grandchild took a real write lease on the unauthorised root. The same gap means
+   `PI_GRANTS_WORKSPACE_LEASE_DIR` does not cross either, so a pane child's "exclusive" lease excludes nobody.
+2. **`PI_GRANTS_WORKSPACE_PIN=` failed open, permanently.** Empty is `!== undefined`, so it was never
+   re-minted, and an unparseable pin was silently treated as "not my file". An attacker able to set the
+   variable at all preferred emptying it to re-minting.
+3. **A registry unreadable at root session start left the whole tree unpinned, silently** — and ENOENT is the
+   everyday case, since `pi-daddy init` writes the registry *after* session start.
+4. **Its reader bypassed all four guards added for the same file in the same commit**, and reintroduced R-136:
+   a bare `readFile` on a FIFO hung session start forever.
 
-A pin names the FILE as well as its contents, and a test is why: pinning contents alone meant a pin
-established for one registry was enforced against a different path read later in the same process.
+**The reverted mechanism is not the finding; the venue is.** A new env var, a new refusal code and a new
+inheritance rule are an ADR, not a paragraph in an amendment — ADR-0035 explicitly declined Option 2, and a
+different mechanism arriving inside a fix commit got none of the design attention the herdr path needed. It
+returns as its own ADR.
 
-**Trigger:** any authority whose meaning is stored outside the grant. Routing was the first; a future
-`check:<id>` or `context:<id>` would be the next.
+**What DOES exist now**, and is narrower than the pin was claimed to be: the registry must be a regular file,
+under 1 MiB, owned by this user or root, and not world-writable. That refuses a registry another *user* can
+rewrite in place. It cannot touch this entry's attack at all — a governed child runs as the same uid as its
+parent, and no file mode distinguishes them — and it does not establish "nobody else may rewrite it" either,
+since it inspects the file and never its parent directory, and `rename(2)` needs only directory write
+(measured: a 0600 registry in a world-writable non-sticky directory, accepted then atomically replaced).
 
----
+**Trigger:** any authority whose meaning is stored outside the grant — routing is the first; a future
+`check:<id>` or `context:<id>` would be next. Also: an operator reporting a child that started somewhere they
+did not authorise.
 
 ## R-138 · Four findings from the PR #10 review pass, deliberately NOT fixed — M×M, OPEN
 
@@ -2412,6 +2428,44 @@ Listed so the next session does not rediscover them as new.
 
 **Trigger:** any of these appearing in a *measured* form, or a fifth namespace inheriting the same shape.
 Item 3 is the one to fix first if `isGated` is ever touched for another reason.
+
+---
+
+## R-139 · The registry id grammar is a breaking change, and was briefly the wrong grammar — M×M, FIXED
+
+Added and fixed 2026-08-22, reviewing PR #10's own fixes.
+
+ADR-0035 made a registry id the tail of a capability id, which makes the operator's registry an input to the
+grant grammar. 0.18.0/0.18.1 validated ids for nothing but non-emptiness, so ids in the wild can be any
+string, and constraining them is necessarily breaking. Two things went wrong before it was right.
+
+**First, the constraint was missing**, and two shapes were live: an id of `*` minted `WORKSPACE_WILDCARD`, so
+an operator registering one worktree as `*` and granting `workspace:*` held routing over every id in the
+registry including ones added later; and an id containing a space became **two** capabilities, because
+`ceilingForDefinition` splits `allowed-tools` on `[\s,]+` — `allowed-tools: read, workspace:prod bash`
+measured as `['tool:bash','tool:read','workspace:prod']`, i.e. routing over production plus a shell, neither
+typed by anyone. 0.18.1's comma, one namespace over. A test in the fixing commit **asserted the space case was
+safe**, which is worse than not testing it.
+
+**Then the constraint was the wrong one.** It reused `isSafeCapability` — the grammar for a TOOL NAME — which
+refused `feature/x`, `claude/issue-42`, `café`, `@scope`, `_tmp`. A git worktree is routinely named after its
+branch, so a slash is the ordinary case, and a slash splits nothing: not the comma-separated grant, not
+`allowed-tools`. Refusing it bought no safety and broke a working setup, while the justification written
+beside it said refusing an id "costs nothing" — true of a hostile id, false of `feature/x`, and renaming one
+means editing every grant and every `.pi/grants.env` that names it.
+
+**Now:** `isSafeWorkspaceId` — `[A-Za-z0-9][A-Za-z0-9._/-]*` — refuses only what breaks a channel: whitespace,
+comma/CR/LF/NUL, `*`, shell metacharacters (they reach a generated file the operator is told to paste from),
+and non-ASCII. That last is a deliberate trade for a display-spoofing surface in a reviewed file, recorded as
+breaking rather than asserted to cost nothing. Documented in the CHANGELOG's breaking section, which described
+only the comma rule while the code required far more.
+
+**Not fixed:** one malformed entry refuses the whole registry, and both session-start readers fail soft, so a
+single legacy id makes every workspace invisible with no warning — rule 8's own named defect. The refusal is
+loud only at the point of use.
+
+**Trigger:** an operator reporting that a registered workspace stopped being listed after upgrading; or any
+future capability namespace whose ids come from a file rather than from a grant.
 
 ---
 
@@ -2490,3 +2544,4 @@ Item 3 is the one to fix first if `isGated` is ever touched for another reason.
 | 2026-08-20 | R-132 | Added and **fixed** — a capability id containing a comma was admitted by a wildcard's prefix rule and split by the child into several capabilities, minting `tool:bash` from a root that never held it with `denied: []` and a clean-looking ledger line. **Present in published 0.18.0**, verified against `origin/main`; predates ADR-0035, which widened the surface with a second injectable namespace. Two guards, both mutation-verified. The channel was predicted verbatim by `grant-env.ts`'s own comment and guarded everywhere except propagation | found reviewing PR #10 |
 | 2026-08-21 | R-133, R-134, R-135, ADR-0035 amended | **Two review passes over PR #10 before it merged: the guard was right and the namespace was taught to three of nine sites.** R-133 is the pattern — the severe symptom being that `unknownCapabilities` never learned `workspace:`, so with a catalog present (always, in production) no child could be granted one and routing *terminated* below the root rather than attenuating, making the ADR's headline "two authorities, not one" unreachable. Also inert: the gate ADR-0035 claimed three times, and the `init` scaffolding it offered as the migration path for a breaking change. R-135 fell out of the mutation battery and is **older and worse**: R-26's own rule was enforced only in `childEnv`, so `delegate.ts` — the path that spawns since ADR-0016 — handed `tool:*` to children for eleven releases, with the rule's test asserting on the other route. R-134 is a session-start warning that told operators to delete a control that had worked since **0.12.0** — six releases — which ADR-0024's Costs section had explicitly relied on, and which an integration test *required* to exist, so the stale claim was defended by the suite. Eleven mutations, eleven named failures; `test/workspace-capability.test.ts` is organised by site so the checklist is executable | second and third review passes over PR #10 |
 | 2026-08-21 | R-136, R-137, R-138 | **A third review pass, six reviewers, over the fixes for the second.** Two shipping blockers, both introduced by the fix commit: a blocking registry path hung `session_start` (R-136, R-79's class again, and `AbortSignal` did not rescue it — `stat` before `open` did), and `/grants init`'s dialog granted routing live off a package declaration while the file it generates said "Not granted for you". R-137 closes the gap ADR-0035 asserted away, with **two** mechanisms because ownership and mode cannot distinguish a child from its parent at the same uid — the content pin is what actually closes it. **Ten single edits from the fix commit were revertible with the suite green**, including two of the six site fixes deletable *together*, and its own "eleven mutations, eleven named failures" was a count of what was checked rather than of what was covered. R-138 records four pre-existing findings left unfixed on purpose | third review pass over PR #10 |
+| 2026-08-22 | R-136, R-137 reopened, R-139 | **A fourth pass, six reviewers over the third pass's fixes — and R-136 was marked FIXED while a function added by the fixing commit still hung session start on a FIFO.** Three reviewers found it independently; a real `pi` produced zero notifies and timed out. R-136's own trigger ("grep for `readFile` reached from `loadProjectDefinitions`") found it, and nobody ran the trigger. A second hang existed too: `stat`-by-name then `readFile`-by-name is a TOCTOU any same-uid process can win. One reader holding one handle (`open(O_NONBLOCK)` + `fstat` the descriptor) closes both. **R-137's pin is reverted** — defeated four ways, including a measured escalation on the herdr executor, which no existing mechanism crosses. **Fourteen single reverts left every suite green, eight of them edits those commits added**, including the whole "names the file" fix and the pin's own wiring; `npm test` was also silently overwriting tracked contract fixtures. R-139 records the id-grammar break | fourth review pass over PR #10 |

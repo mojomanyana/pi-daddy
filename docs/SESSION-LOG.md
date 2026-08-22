@@ -132,11 +132,61 @@ That convention is why every reversal here was survivable, and there have been f
 
 ---
 
+## 2026-08-22 (fourth pass + fixes) — R-136 was marked FIXED while a new function still hung
+
+**Six reviewers over `52135ca..ee6e66e`, the third pass's fixes.** The behaviour was largely sound — the
+routing invariant held on every path any reviewer could construct — and the fixes contained two shipping
+blockers, fourteen revertible-with-green edits, and a fabricated measurement.
+
+**The one that matters: `establishRegistryPin`, added by the commit that fixed the session-start hang, hung
+session start.** Bare `readFile` plus a signal, which is precisely what its sibling's comment four lines away
+calls insufficient, awaited *before* the readers it guarded. Three reviewers found it independently; a real
+`pi` gave zero notifies and timed out at 20s. **R-136's own stated trigger is the grep that finds it.** A
+trigger nobody runs is a note, not a control.
+
+A second hang: `stat`-by-name then `readFile`-by-name is a TOCTOU, winnable by any same-uid process — so a
+child with `tool:write` could wedge its parent. Both are closed by one reader holding one handle:
+`open(O_RDONLY|O_NONBLOCK)`, `fstat` the descriptor, then read. `O_NONBLOCK` is what bounds a FIFO; a signal
+cannot, because the block is inside `open(2)`.
+
+**The pin is reverted and R-137 is OPEN again.** Four defeats, including a measured escalation on the herdr
+executor: `mergeChildEnv` is process-path only, so a pane child re-minted the pin and its grandchild took a
+real exclusive write lease on an unauthorised worktree. Also: `PI_GRANTS_WORKSPACE_PIN=` failed open
+permanently, an unreadable registry left the whole tree unpinned silently, and the pin's reader bypassed all
+four guards added for the same file in the same commit. The venue was the mistake — a new env var, refusal code
+and inheritance rule belong in an ADR, not in a fix commit.
+
+**`npm test` was overwriting tracked contract fixtures**, so the checked-in pin repaired builder drift instead
+of failing on it, and "fast, pure" was false.
+
+**A read-leased child was writing into the leased root**, because `ENV_LEDGER` was relative and a routed
+child's cwd *is* that root. Fixed at the cause; it also repairs a pre-existing audit split where a routed
+subtree's ledger went to a file `/grants ledger` never read.
+
+**`pi-daddy init` had gone silent** about a definition it copied and cannot spawn — the CLI `report()` had no
+test, so the regression landed unnoticed while the fix that caused it argued that migrations must be
+discoverable.
+
+**Fourteen reverts left every suite green, eight of them ours** — including the entire "names the file" fix
+(four independent halves) and the pin's own wiring, in the commit titled *"guard the last unwired edit"*. And
+the FIFO test could only **hang**, never fail: in one batch that read as `pass 620 / fail 0`, a smaller
+apparently-green run.
+
+**The discipline lesson, which is the transferable part.** Every number written in this branch has been wrong at
+least once, including the corrections — and "960 input combinations" was repeated from a reviewer's report into
+the ADR and this log as evidence, when nothing here reproduces it. Counts are out; the file is the list.
+
+**Verification.** 628 unit · 45 integration · typecheck · build · smoke · probes · line ceiling. Every fix
+mutation-verified individually, from a file-based harness that checks the file actually changed first.
+
+---
+
 ## 2026-08-21 (third pass + fixes) — the fixes needed the same review the defects did
 
 **Six reviewers over `52135ca`, the fix commit from the entry below.** Branch `fix/adr-0035-review`. The
 headline: the *behaviour* was sound — attenuation holds on every path a reviewer could construct, the gate
-refactor was behaviour-preserving over 960 input combinations, the anti-race rules hold — and the *claims*
+refactor was reported behaviour-preserving over a large generated input set — a reviewer's number, which
+this repository cannot reproduce and which should not have been written here as evidence — the anti-race rules hold — and the *claims*
 were not, for the third pass in a row.
 
 **Two shipping blockers, both introduced by the fix.** A blocking registry path hung `session_start`, because
@@ -195,8 +245,9 @@ on `agent:`, and every site that already handled `agent:` was a site that needed
 (`normaliseCapability`, `resolve()`'s wildcard rule, `childEnv`'s filter). The other six each produced a
 defect, which is close enough to one-for-one that the *count* is the lesson rather than any individual bug.
 R-133 carries it; `test/workspace-capability.test.ts` is organised **by site** so the checklist is
-executable; `CAPABILITY_NAMESPACE_PREFIXES` collapses the two id-parsing sites into one list. (First written
-as "three sites" and as "what every site reads"; there are two readers and six open-coded copies.)
+executable. `CAPABILITY_NAMESPACE_PREFIXES` is read by the two id-parsing sites — it collapsed nothing, since
+both already read it. Written first as "what every site reads", then as "three", then as "six"; each was
+wrong, which is the argument for not writing counts.
 
 **Severe, and it inverted the ADR's own claim.** `unknownCapabilities` never learned the namespace and
 `delegationContext()` always supplies a catalog, so every requested `workspace:<id>` was refused

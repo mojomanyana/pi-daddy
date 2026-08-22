@@ -39,11 +39,12 @@ becomes the grant; the pi-subagents ceiling port is deleted; the interceptor sur
 `8feaacbdf6003c783225e375b61874a599963f47`; `main` has since taken PR #11 (the canonical ledger v2
 contract). The latest GitHub Release is still `v0.17.1`. **PR #10 — ADR-0035, 0.19.0, workspace routing as a
 capability — is OPEN and is where the current work is.** Thirty-five ADRs are decided (0034 amended three times,
-0035 amended twice after review). That branch has 624 unit + 45 integration tests, plus a 10-test opt-in tier
+0035 amended twice after review). That branch has 628 unit + 45 integration tests, plus a 10-test opt-in tier
 behind `PI_GRANTS_IT_MODEL=1` that is not run without explicit authorization.
 
-**Read `docs/SESSION-LOG.md`'s top entry before touching PR #10 — THREE review passes have run over it.**
-The third one reviewed the second one's fixes and found two shipping blockers in them, so the rule below is
+**Read `docs/SESSION-LOG.md`'s top entry before touching PR #10 — FOUR review passes have run over it.**
+Each reviewed the previous one's FIXES and found blockers in them — the fourth found R-136 marked FIXED
+while a function the fixing commit added still hung session start. So the rule below is
 sharper than it first looked: adding a namespace is a nine-site change **and the sites you touch need the
 same adversarial read as the ones you missed**. Both earlier passes also stated a mutation count that
 measured what had been checked rather than what was covered.
@@ -152,7 +153,7 @@ refuses until a gate passes that no longer means anything. They are in git histo
 
 ```bash
 cd packages/pi-daddy
-npm test                   # 624 unit tests — fast, pure, no pi, no network (the branch guard spawns git)
+npm test                   # 628 unit tests — fast, no pi, no network (the branch guard spawns git)
 npm run typecheck          # src + extensions + tests + integration tests
 npm run test:integration   # 45 tests vs a REAL pi process AND a real herdr server — ~55s, no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and USE it
