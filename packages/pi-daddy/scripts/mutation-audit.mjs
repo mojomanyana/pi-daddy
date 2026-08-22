@@ -19,6 +19,11 @@
  *
  *  - **A mutation that does not apply reports success.** Shell escaping silently mangled two patches and the
  *    green result meant nothing. Every entry asserts its `find` occurs exactly once before patching.
+ *  - **A parser that cannot read the reporter reports every guard as missing.** Measured 2026-08-22: this
+ *    printed `0/20 guards forced a named failure` with all twenty guards intact, because the session's
+ *    environment exports `FORCE_COLOR=3` and the matcher was anchored past the escape sequence. The
+ *    parsing now lives in `scripts/mutation-parse.ts`, is tested by `test/mutation-audit.test.ts`, and an
+ *    unreadable transcript is reported as unreadable instead of as twenty missing guards.
  *  - **A mutation whose failure mode is a HANG reports `fail 0`.** `node --test` cancels the pending test and
  *    prints a summary with two `cancelled` and zero failures; grepping the summary sees success. Every run is
  *    under an external timeout, and a timeout counts as "broke the test" only when the entry says so.
@@ -34,6 +39,7 @@
  */
 
 import { readFile, writeFile } from "node:fs/promises";
+import { failedTestNames, reporterWasReadable } from "./mutation-parse.ts";
 import { execFile } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -174,7 +180,12 @@ const runSuite = (testFile) =>
   new Promise((resolve) => {
     const child = execFile(
       process.execPath, ["--test", testFile],
-      { cwd: root, timeout: TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024, killSignal: "SIGKILL" },
+      // `FORCE_COLOR` in the ambient environment made `node --test` colour its output and the parser blind
+      // to it — 0/20 with every guard intact, 2026-08-22. `scripts/mutation-parse.ts` strips ANSI anyway;
+      // this pins the input as well, because two independent defences is the standard the catalogue holds
+      // its own entries to.
+      { cwd: root, timeout: TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024, killSignal: "SIGKILL",
+        env: { ...process.env, FORCE_COLOR: "0", NO_COLOR: "1" } },
       (error, stdout) => resolve({ stdout, killed: Boolean(error && error.killed) }),
     );
     child.on("error", () => resolve({ stdout: "", killed: true }));
@@ -225,7 +236,17 @@ for (const m of MUTATIONS) {
     // was recorded as proven. That is the class of defect this script exists to catch, in this script, found by
     // the reviewer who suggested writing it. (The `^# fail` half never matched either: the spec reporter
     // prints `ℹ fail N`.)
-    const failed = [...stdout.matchAll(/^\s*✖ (.+?)(?: \(\d|$)/gm)].map((x) => x[1]);
+    const failed = failedTestNames(stdout);
+    // **"I saw no failure" and "I saw nothing" are different sentences.** Only one of them is a verdict on
+    // the guard, and conflating them is what printed `0/20` here on 2026-08-22.
+    if (!killed && !reporterWasReadable(stdout)) {
+      failures++;
+      console.error(
+        `\u2717 ${m.name}\n    the auditor could not read ${m.test}'s output — this is NO verdict on the guard\n` +
+        `    no test-name line matched; run \`node --test ${m.test}\` by hand and see scripts/mutation-parse.ts`,
+      );
+      continue;
+    }
     const broke = killed ? Boolean(m.hang) : failed.some((name) => name.includes(m.expect));
     if (broke) {
       console.log(`✓ ${m.name}${killed ? "  (hang, as recorded)" : ""}`);

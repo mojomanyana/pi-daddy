@@ -2579,6 +2579,49 @@ content) is the suggested route.
 **Trigger:** the next review pass finding a guard deletable with the suite green. If that happens while this
 entry is still OPEN, the answer is CI and not a sixth pass.
 
+## R-143 · The mutation audit reported every guard missing, in the environment it is run in — M×H, FIXED
+
+Added and fixed 2026-08-22, reviewing PR #10 before it merged. **Never published** — the auditor is unreleased
+tooling that arrived on this branch.
+
+`npm run test:mutation` printed **`0/20 guards forced a named failure`** at `0a62a42`, and once per entry:
+*"a guard nothing forces is not a guard — add the check, or remove the guard."* All twenty guards were intact.
+The same sweep, same tree, same commit, re-run with `FORCE_COLOR=0` printed **`20/20`**.
+
+The cause is one line. `node --test`'s spec reporter colours its output when `FORCE_COLOR` is set, this
+project is developed in sessions that export `FORCE_COLOR=3`, and the failure matcher was anchored `^\s*✖` —
+an escape sequence is not whitespace, so it matched nothing, in every entry, always.
+
+**Why this is worse than a check that flakes.** The auditor's whole purpose is to stop a session trusting a
+guard nothing forces. Blind, it accuses twenty guards at once — so the honest response to its output is a
+sweep of twenty "fixes" to code that was already correct, which is the loop rule 7's catalogue exists to end.
+It fails loudly, as rule 8 wants, and says something false at volume. **"I saw no failure" and "I saw nothing"
+are different sentences, and only one of them is a verdict on a guard.**
+
+**Fixed**, with the parsing extracted to `scripts/mutation-parse.ts` so it can itself be tested:
+
+- ANSI is stripped before matching, and `test/mutation-audit.test.ts` forces it — reverting the strip fails
+  three of its four tests (verified by reverting it).
+- The spawned suite gets `FORCE_COLOR=0` / `NO_COLOR=1`, so the input is pinned as well as the parser.
+- A positive control. `reporterWasReadable` distinguishes an unreadable transcript from a clean one, and the
+  harness now reports *"the auditor could not read `<file>`'s output — this is NO verdict on the guard"*.
+  Verified by pointing an entry at a test file that does not exist.
+
+**Its relation to R-142, which stays open.** That entry says the audit is not a control until CI runs it. This
+one is the sharper half: it was not a control **in the environment where it was actually being run** — and CI
+inheriting a coloured reporter would have gone red on twenty healthy guards, which is how a control gets
+switched off rather than fixed. R-142's trigger says the answer to another unforced guard is CI rather than a
+sixth pass; the amendment is that CI must also pin the reporter's environment, or it measures its own terminal.
+
+**What this does not establish.** That the twenty guards are the right twenty — R-142's exclusion list and
+reviewer D's complement audit are the question of coverage, and this entry is only about the instrument being
+readable. And the `FORCE_COLOR=0` pin in the spawned environment is redundancy, not the defence: nothing forces
+it, which is said here rather than implied.
+
+**Trigger:** any `test:mutation` run reporting more than two entries unforced at once — the prior is a broken
+instrument, not twenty deleted guards. And any new parse of a child process's stdout in this repository that
+does not strip ANSI first.
+
 ---
 
 ## Register log
@@ -2658,3 +2701,4 @@ entry is still OPEN, the answer is CI and not a sixth pass.
 | 2026-08-21 | R-136, R-137, R-138 | **A third review pass, six reviewers, over the fixes for the second.** Two shipping blockers, both introduced by the fix commit: a blocking registry path hung `session_start` (R-136, R-79's class again, and `AbortSignal` did not rescue it — `stat` before `open` did), and `/grants init`'s dialog granted routing live off a package declaration while the file it generates said "Not granted for you". R-137 closes the gap ADR-0035 asserted away, with **two** mechanisms because ownership and mode cannot distinguish a child from its parent at the same uid — the content pin is what actually closes it. **Ten single edits from the fix commit were revertible with the suite green**, including two of the six site fixes deletable *together*, and its own "eleven mutations, eleven named failures" was a count of what was checked rather than of what was covered. R-138 records four pre-existing findings left unfixed on purpose | third review pass over PR #10 |
 | 2026-08-22 | R-136, R-137 reopened, R-139 | **A fourth pass, six reviewers over the third pass's fixes — and R-136 was marked FIXED while a function added by the fixing commit still hung session start on a FIFO.** Three reviewers found it independently; a real `pi` produced zero notifies and timed out. R-136's own trigger ("grep for `readFile` reached from `loadProjectDefinitions`") found it, and nobody ran the trigger. A second hang existed too: `stat`-by-name then `readFile`-by-name is a TOCTOU any same-uid process can win. One reader holding one handle (`open(O_NONBLOCK)` + `fstat` the descriptor) closes both. **R-137's pin is reverted** — defeated four ways, including a measured escalation on the herdr executor, which no existing mechanism crosses. **Fourteen single reverts left every suite green, eight of them edits those commits added**, including the whole "names the file" fix and the pin's own wiring; `npm test` was also silently overwriting tracked contract fixtures. R-139 records the id-grammar break | fourth review pass over PR #10 |
 | 2026-08-22 | R-139…R-142, PR #10 narrowed | **A fifth pass, six reviewers over the fourth pass's fixes, and the response was structural rather than another round of patches.** Two blockers: the 1 MiB ceiling bounded the file and not the read (`handle.readFile` re-`fstat`s internally, so holding one handle closed the NAME race and left the SIZE race — 192 MiB read after a 29-byte measurement, race won in 848ms), and the id grammar had a FIFTH site, `isSafeCapability`, which refused the `feature/x` shape the release advertises and dropped the whole definition. **PR #10 was then narrowed to ADR-0035**: registry ownership/mode → R-137, the ledger-path and `tool:delegate` work → R-141, two pre-existing session-start hangs → R-140. And `npm run test:mutation` makes rule 7 mechanical — twenty pinned patch/test pairs, which caught four bad entries of its own, a test of mine that passed for the wrong reason, and a predicate bug in itself that had made its first "20/20" meaningless. R-142 records that it is not a control until CI runs it | fifth review pass over PR #10 |
+| 2026-08-22 | R-143 | Added and fixed — `npm run test:mutation` reported **0/20 guards forced** at `0a62a42` with every guard intact, because this environment exports `FORCE_COLOR=3` and the failure matcher was anchored past the escape sequence; colour off, the same sweep printed 20/20. A control that cannot read its instrument accuses twenty guards at once, which is the loop rule 7's catalogue exists to end. Parser extracted and tested, colour pinned in the spawned suite, and an unreadable transcript now says so instead of scoring the guard | sixth review pass over PR #10 |
