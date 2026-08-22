@@ -25,7 +25,7 @@ import { loadDefinitions, type SkillDefinition } from "./definitions.ts";
 import { PI_BUILTIN_TOOLS, WILDCARD } from "./pi-tools.ts";
 import { AGENT_WILDCARD, WORKSPACE_WILDCARD, type Capability } from "./resolve.ts";
 import { loadWorkspaceRegistry, type WorkspaceRegistryFile } from "./workspace.ts";
-import { isSafeCapability } from "./capabilities.ts";
+import { isSafeWorkspaceId } from "./capabilities.ts";
 
 export type CapabilityKind = "builtin" | "extension" | "skill" | "agentType" | "workspace";
 
@@ -222,7 +222,7 @@ export function unknownCapabilities(requested: Capability[], catalog: Catalog): 
   // the previous two fixes, which is the checklist paying for itself.
   const exempt = (c: Capability) =>
     c === WILDCARD || c === AGENT_WILDCARD || c === WORKSPACE_WILDCARD
-    || (c.startsWith("workspace:") && isSafeCapability(c));
+    || (c.startsWith("workspace:") && isSafeWorkspaceId(c.slice("workspace:".length)));
   return requested.filter((c) => !exempt(c) && !catalog.has(c)).sort();
 }
 

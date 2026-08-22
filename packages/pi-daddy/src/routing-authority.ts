@@ -12,7 +12,7 @@
  * assembling records. `denied` is present exactly when the attempt should count as an escalation.
  */
 
-import { mayRouteToWorkspace, isSafeCapability, workspaceCapability } from "./capabilities.ts";
+import { mayRouteToWorkspace, isSafeWorkspaceId, workspaceCapability } from "./capabilities.ts";
 import { WORKSPACE_WILDCARD, type Capability } from "./resolve.ts";
 import { WILDCARD } from "./pi-tools.ts";
 import type { RefusalCode } from "./refusals.ts";
@@ -54,18 +54,21 @@ export function checkRoutingAuthority(
 ): RoutingRefusal | null {
   if (boundWorkspaceId === undefined) return null;
   const authorising = workspaceCapability(boundWorkspaceId);
-  if (!isSafeCapability(authorising)) {
+  if (!isSafeWorkspaceId(boundWorkspaceId)) {
     return {
       code: "GRANT_ID_MALFORMED",
       reason:
         `workspace id ${JSON.stringify(boundWorkspaceId)} is not usable as a capability id — it would ` +
-        `become ${JSON.stringify(authorising)}, which must match [A-Za-z0-9][A-Za-z0-9._-]*, so no spaces, ` +
-        `quotes, commas or wildcards. A grant is comma-separated, so an id outside that would be read as ` +
-        `several capabilities.`,
+        `become ${JSON.stringify(authorising)}, and an id must match [A-Za-z0-9][A-Za-z0-9._/-]*. Slashes ` +
+        `and dots are fine; spaces, quotes, commas, wildcards, shell metacharacters and non-ASCII are not.`,
     };
   }
   if (mayRouteToWorkspace(ownGrant, boundWorkspaceId)) return null;
-  const held = ownGrant.filter((c) => c.startsWith("workspace:")).sort();
+  // Filtered by the grammar too: an id that cannot pass `isSafeWorkspaceId` is refused on every
+  // attempt, so listing it here points the model at a destination it can never reach.
+  const held = ownGrant
+    .filter((c) => c.startsWith("workspace:") && isSafeWorkspaceId(c.slice("workspace:".length)))
+    .sort();
   return {
     code: "WORKSPACE_NOT_AUTHORIZED",
     // Recorded as a denial rather than a bare refusal, exactly as DEFINITION_NOT_AUTHORIZED is: asking to

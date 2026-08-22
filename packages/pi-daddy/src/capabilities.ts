@@ -143,6 +143,33 @@ export function isWellFormedCapability(id: string): boolean {
  * nothing — and `grant-env.ts`'s standing warning applies to it exactly: *"the third channel — whatever it
  * turns out to be — should cost a refusal rather than an injection."* The registry was the third channel.
  */
+/**
+ * A workspace registry id, which is NOT a tool name and needed its own rule.
+ *
+ * `isSafeCapability` was reused here first, and that was the error: it is the grammar for a *tool* name, and
+ * it refused ids that published 0.18.1 accepted — `feature/x` above all. Git worktrees are routinely named
+ * after their branch, so a slash is the ordinary case, and a slash splits nothing: not the comma-separated
+ * grant, not `allowed-tools`' `[\s,]+`. Refusing it bought no safety and broke the common setup.
+ *
+ * What is refused, and why each one earns it:
+ *  - **whitespace** — `ceilingForDefinition` splits `allowed-tools` on `[\s,]+`, so `workspace:prod bash`
+ *    measured as `['tool:bash','tool:read','workspace:prod']`: routing over production plus a shell, neither
+ *    typed by anyone. 0.18.1's comma, one namespace over.
+ *  - **comma, CR, LF, NUL** — split a grant.
+ *  - **`*`** — collides with `WORKSPACE_WILDCARD`, so registering a worktree as `*` and granting
+ *    `workspace:*` believing it named that one root minted routing authority over the whole registry.
+ *  - **quotes, `$`, backticks, `;`, `&`, `|`, `<`, `>`, `(`, `)`, `\`, `#`** — reach the ROUTABLE WORKSPACES
+ *    block of a generated `.pi/grants.env`, whose own instructions tell the operator to paste the id into
+ *    `PI_GRANTS_GRANT`. Sourcing the file was safe; following its instructions executed. R-77/R-78.
+ *  - **control characters and non-ASCII** — the generated file is reviewed in an editor and `/grants` prints
+ *    these; backspace and ANSI escapes let one id render as another. This is the one refusal that costs a
+ *    legitimate user something (a non-English worktree name), and it is a deliberate trade recorded as
+ *    breaking rather than asserted to cost nothing.
+ */
+export function isSafeWorkspaceId(id: string): boolean {
+  return /^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(id);
+}
+
 export function isSafeCapability(id: Capability): boolean {
   const segment = "[A-Za-z0-9][A-Za-z0-9._-]*";
   return (

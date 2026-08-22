@@ -28,13 +28,7 @@ import { makeCatalog, classifyToolNames, unknownCapabilities, workspaceEntries }
 import { WORKSPACE_WILDCARD, resolve } from "../src/resolve.ts";
 import { ENV_APPROVED, ENV_GRANT, inheritableGrant } from "../src/propagation.ts";
 import { ceilingForDefinition, type SkillDefinition } from "../src/definitions.ts";
-import {
-  establishRegistryPin,
-  loadWorkspaceRegistry,
-  registryDigest,
-  registryPin,
-  registeredWorkspaceIds,
-} from "../src/workspace.ts";
+import { loadWorkspaceRegistry, registeredWorkspaceIds } from "../src/workspace.ts";
 
 import { buildCatalog } from "../src/catalog.ts";
 import { DELEGATE_SUBJECT, type InheritableApproval } from "../src/approval.ts";
@@ -321,16 +315,41 @@ test("a registry id that would not survive the grant grammar is refused at load"
 
   // The shell metacharacters that reached the generated file's ROUTABLE WORKSPACES block, whose own
   // instructions tell the operator to paste the id into PI_GRANTS_GRANT (R-77/R-78's argument).
-  for (const hostile of ['a";touch /tmp/pwned;x="', "a$(id)", "a`id`", "a;b", "a'b", "a[31m", "..", "a/b"]) {
+  for (const hostile of [
+    'a";touch /tmp/pwned;x="', "a$(id)", "a" + String.fromCharCode(96) + "id", "a;b", "a'b",
+    "a|b", "a&b", "a>b", "a#b", "a[31m", "..", "caf\u00e9", "_leading", "-leading",
+  ]) {
     const p = await write(`hostile-${Buffer.from(hostile).toString("hex").slice(0, 12)}.json`,
       { version: 1, workspaces: { [hostile]: { path: "/w/x" } } });
     await assert.rejects(loadWorkspaceRegistry(p), (e: Error & { code?: string }) => e.code === "GRANT_ID_MALFORMED",
       `${JSON.stringify(hostile)} must be refused at the registry`);
   }
 
-  // A well-formed id still loads, so the guard is not simply refusing everything.
-  const fine = await write("fine.json", { version: 1, workspaces: { "prod-1": { path: "/w/p" }, "east.us_2": { path: "/w/e" } } });
-  assert.deepEqual(Object.keys((await loadWorkspaceRegistry(fine)).workspaces).sort(), ["east.us_2", "prod-1"]);
+  // **A SLASH IS DELIBERATELY ALLOWED**, and this is the case the first version of this guard got wrong.
+  // Git worktrees are routinely named after their branch, so `feature/x` is the ordinary id — and a slash
+  // splits nothing: not the comma-separated grant, not `allowed-tools`' `[\s,]+`. Reusing the TOOL-name
+  // grammar refused it and broke a configuration published 0.18.1 accepted, for no safety at all.
+  const fine = await write("fine.json", {
+    version: 1,
+    workspaces: {
+      "prod-1": { path: "/w/p" }, "east.us_2": { path: "/w/e" },
+      "feature/x": { path: "/w/f" }, "claude/issue-42": { path: "/w/c" },
+    },
+  });
+  assert.deepEqual(
+    Object.keys((await loadWorkspaceRegistry(fine)).workspaces).sort(),
+    ["claude/issue-42", "east.us_2", "feature/x", "prod-1"],
+    "a branch-named worktree is the ordinary case and must load",
+  );
+  // And it routes, end to end — not merely loads.
+  assert.equal(
+    planDelegation(
+      { task: "t", tools: ["read"], boundWorkspaceId: "feature/x" },
+      ctx({ ownGrant: ["tool:read", "tool:delegate", "workspace:feature/x"] }) as never,
+    ).ok,
+    true,
+    "a slash id must survive the planner too, not just the loader",
+  );
 });
 
 /**
@@ -345,71 +364,21 @@ test("a malformed model-supplied workspace id is refused as malformed, not as un
 });
 
 /**
- * Routing attenuated by ID and not by DESTINATION, which review showed made the capability name something a
- * descendant could redefine.
+ * The half Unix CAN express — narrowly, and the narrow statement is the point.
  *
- * ADR-0035 asserts the registry is "operator-owned" as a fact. Nothing enforced it, and a child holding
- * `workspace:staging` plus `tool:write` — not `bash`, so squarely inside ADR-0012's scope — could rewrite the
- * `staging` entry to point at any other Git worktree and route its grandchild there with a real exclusive
- * write lease. Measured in review.
+ * This refuses a WORLD-writable registry: any local user could otherwise redirect a governed child into a
+ * worktree nobody authorised. It does **not** establish "nobody else may rewrite it", which an earlier
+ * version of this comment claimed. Two measured reasons: the check inspects the file and never its parent
+ * directory, and `rename(2)`/`unlink(2)` need only directory write — a 0600 registry in a world-writable
+ * non-sticky directory was accepted and then atomically replaced. And it cannot touch a same-uid child at
+ * all, which is R-137's territory and is now recorded OPEN rather than half-blocked.
  *
- * **Two mechanisms, because one is not enough and saying so matters.** The mode/ownership check refuses a
- * registry another *user* could rewrite; it cannot help here at all, because a governed child runs as the
- * same uid as its parent and no file mode distinguishes them. The pin is what closes this: the root records
- * the registry's digest, every descendant inherits it verbatim, and a mismatch refuses.
+ * Group-writable is deliberately ALLOWED. `umask 002` with per-user groups (Debian/Ubuntu
+ * `USERGROUPS_ENAB`) produces 0664 for every file the operator creates, and refusing that broke a
+ * configuration published 0.18.1 accepted while exposing nothing — the group has one member.
  *
- * Breaks by: deleting the `assertRegistryUnchanged` call in `loadWorkspaceRegistry`; or letting
- * `establishRegistryPin` overwrite an inherited pin, which is a descendant re-minting its own tampering.
- */
-test("a descendant cannot repoint the registry entry it holds at another worktree", async () => {
-  const dir = await tempDir("pi-daddy-pin-");
-  const path = join(dir, "registry.json");
-  const honest = { version: 1, workspaces: { staging: { path: "/w/staging" }, prod: { path: "/w/prod" } } };
-  await writeFile(path, JSON.stringify(honest), "utf8");
-
-  // The ROOT pins what it read. No pin inherited, so it establishes one.
-  const rootEnv: NodeJS.ProcessEnv = { PI_GRANTS_WORKSPACE_REGISTRY: path };
-  await establishRegistryPin(rootEnv);
-  const pin = rootEnv.PI_GRANTS_WORKSPACE_PIN;
-  assert.match(pin ?? "", /^[0-9a-f]{64}:[0-9a-f]{64}$/, "a pin names the file as well as its contents");
-  assert.ok(pin?.endsWith(registryDigest(JSON.stringify(honest))));
-
-  // Unchanged registry: the descendant reads it fine.
-  assert.deepEqual(Object.keys((await loadWorkspaceRegistry(path, pin)).workspaces).sort(), ["prod", "staging"]);
-
-  // THE ATTACK: the child rewrites `staging` to point at prod's worktree, keeping the id it legitimately
-  // holds. Before the pin this resolved, leased and started a grandchild in prod.
-  const tampered = { version: 1, workspaces: { staging: { path: "/w/prod" }, prod: { path: "/w/prod" } } };
-  await writeFile(path, JSON.stringify(tampered), "utf8");
-
-  // A DESCENDANT must inherit the pin VERBATIM. Asserted *after* the tampering on purpose: re-minting an
-  // unchanged file produces the same digest, so checking before this point cannot fail — which is precisely
-  // the decoration rule 7 warns about, and this test asserted exactly that until a mutation caught it.
-  // Here, a re-minting `establishRegistryPin` would pin the child's own edit and the attack would succeed.
-  const childEnvVars: NodeJS.ProcessEnv = { PI_GRANTS_WORKSPACE_REGISTRY: path, PI_GRANTS_WORKSPACE_PIN: pin };
-  await establishRegistryPin(childEnvVars);
-  assert.equal(childEnvVars.PI_GRANTS_WORKSPACE_PIN, pin, "an inherited pin is never recomputed");
-  assert.notEqual(
-    childEnvVars.PI_GRANTS_WORKSPACE_PIN,
-    registryPin(path, JSON.stringify(tampered)),
-    "a descendant must not be able to re-pin over its own edit",
-  );
-
-  await assert.rejects(loadWorkspaceRegistry(path, pin), (e: Error & { code?: string }) => {
-    assert.equal(e.code, "WORKSPACE_REGISTRY_CHANGED");
-    assert.match(e.message, /has changed since this delegation tree started/);
-    return true;
-  });
-
-  // And the ROOT — which holds no pin — is unaffected, so an operator editing their own registry between
-  // sessions is not broken by this.
-  assert.deepEqual(Object.keys((await loadWorkspaceRegistry(path, undefined)).workspaces).sort(), ["prod", "staging"]);
-});
-
-/**
- * The half Unix CAN express: nobody else may rewrite it. Refuses rather than trusting.
- *
- * Breaks by: removing the uid or mode check in `loadWorkspaceRegistry`.
+ * Breaks by: removing the mode check. The uid check is deliberately UNGUARDED by any test, because a test
+ * cannot create a file owned by another user; that is stated here rather than claimed as verified.
  */
 test("a registry anyone else could rewrite is refused", async () => {
   const dir = await tempDir("pi-daddy-mode-");
@@ -417,18 +386,23 @@ test("a registry anyone else could rewrite is refused", async () => {
   await writeFile(path, JSON.stringify({ version: 1, workspaces: { prod: { path: "/w/prod" } } }), "utf8");
 
   await chmod(path, 0o644);
-  assert.deepEqual(Object.keys((await loadWorkspaceRegistry(path, undefined)).workspaces), ["prod"], "0644 is fine");
+  assert.deepEqual(Object.keys((await loadWorkspaceRegistry(path)).workspaces), ["prod"], "0644 is fine");
 
-  for (const mode of [0o666, 0o646, 0o662] as const) {
+  for (const mode of [0o666, 0o646, 0o607] as const) {
     await chmod(path, mode);
-    await assert.rejects(loadWorkspaceRegistry(path, undefined), (e: Error & { code?: string }) => {
+    await assert.rejects(loadWorkspaceRegistry(path), (e: Error & { code?: string }) => {
       assert.equal(e.code, "WORKSPACE_NOT_REGISTERED");
-      assert.match(e.message, /group- or world-writable/);
+      assert.match(e.message, /world-writable/);
       return true;
     }, `mode ${mode.toString(8)} must be refused`);
   }
-  await chmod(path, 0o600);
-  assert.deepEqual(Object.keys((await loadWorkspaceRegistry(path, undefined)).workspaces), ["prod"], "0600 is fine");
+  for (const mode of [0o600, 0o664, 0o660] as const) {
+    await chmod(path, mode);
+    assert.deepEqual(
+      Object.keys((await loadWorkspaceRegistry(path)).workspaces), ["prod"],
+      `mode ${mode.toString(8)} is a normal umask result and must load`,
+    );
+  }
 });
 
 /**
@@ -441,13 +415,13 @@ test("a registry anyone else could rewrite is refused", async () => {
  *
  * Breaks by: removing the `isFile()` check, or replacing it with a signal-only timeout.
  */
-test("a registry that is not a regular file is refused, not waited on", async () => {
+test("a registry that is not a regular file is refused, not waited on", { timeout: 5_000 }, async () => {
   const dir = await tempDir("pi-daddy-fifo-");
   const fifo = join(dir, "registry.json");
   await new Promise<void>((ok, no) => execFile("mkfifo", [fifo], (e) => (e ? no(e) : ok())));
 
   const started = Date.now();
-  await assert.rejects(loadWorkspaceRegistry(fifo, undefined), (e: Error & { code?: string }) => {
+  await assert.rejects(loadWorkspaceRegistry(fifo), (e: Error & { code?: string }) => {
     assert.equal(e.code, "WORKSPACE_NOT_REGISTERED");
     assert.match(e.message, /not a regular file/);
     return true;
