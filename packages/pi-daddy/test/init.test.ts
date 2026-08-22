@@ -524,6 +524,36 @@ test("a capability the operator gated is described as gated, not as ungated", as
 });
 
 /**
+ * A package may declare a slash-bearing workspace id — the FIFTH site of the grammar split.
+ *
+ * `isSafeWorkspaceId` allowed `/` because a git worktree is routinely named after its branch, and three
+ * sites were converted to it. `isSafeCapability` — used by `refusalFor`, the boundary that GENERATES grants —
+ * was not, so a package declaring `allowed-tools: Read, workspace:feature/x` had its whole definition
+ * dropped, `init` exited 1, and the operator was told "a capability id is `tool:`/`skill:`/`agent:<name>` or
+ * `ext:<pkg>/<tool>`", which does not mention the namespace. The CHANGELOG told them slashes were fine.
+ *
+ * **The release's advertised id shape was unusable through its own migration path.** That is R-133's lesson
+ * one level up: splitting a grammar is itself a multi-site change.
+ *
+ * Breaks by: reverting `isSafeCapability`'s `workspace:` delegation to the tool-name segment.
+ */
+test("a package may declare a branch-named workspace id, and init copies it", async () => {
+  const cwd = await project();
+  await skillPackage(cwd, "route-pkg", "1.0.0", {
+    deployer: DECLARED.replace("Read, Grep", "Read, workspace:feature/x"),
+  });
+
+  const packages = await discoverSkillPackages(cwd);
+  assert.deepEqual(packages[0].refused, [], "a slash id must not be reported as an unsafe capability");
+  const plan = planInit(packages, cwd, ["feature/x"]);
+  assert.deepEqual(plan.skills.map((s) => s.name), ["deployer"], "and the definition must be copied");
+  assert.deepEqual(plan.routableWorkspaces, ["workspace:feature/x"]);
+  // Still withheld, exactly as any other routing id: legal to declare is not the same as granted.
+  assert.equal(plan.grant.some((c) => c.startsWith("workspace:")), false);
+  assert.equal(plan.grant.includes("agent:deployer"), false);
+});
+
+/**
  * A package claiming a whole namespace is a *claim*, not a typo — and the two get different sentences.
  *
  * `wildcardsIn` learned `workspace:*` when ADR-0035's review found `isSafeCapability` had not; a mutation

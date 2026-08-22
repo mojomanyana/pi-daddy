@@ -134,10 +134,45 @@ export async function loadWorkspaceRegistry(path: string): Promise<WorkspaceRegi
         { registry_path: path },
       ));
     }
-    // Bounded for a regular file on a slow or wedged mount, where the read can stall between chunks. It does
-    // NOT cover a stalled open — `O_NONBLOCK` returns for a FIFO, but an unresponsive network mount blocks
-    // the open itself and no in-process timeout can reach that. Stated, not fixed.
-    raw = await handle.readFile({ encoding: "utf8", signal: AbortSignal.timeout(REGISTRY_READ_TIMEOUT_MS) });
+    // **A BOUNDED read, not a bounded FILE.** `handle.readFile` re-`fstat`s the descriptor internally and
+    // reads whatever the size is *then*, so the check above bounded nothing: holding the handle defeats the
+    // NAME re-resolution, not the SIZE re-read. Measured by review — a same-uid writer `ftruncate`d the same
+    // inode between the two and `loadWorkspaceRegistry` read **192 MiB after measuring 29 bytes**, 467 MiB
+    // RSS, race won in 848ms and 9% of attempts with a weaker hammer. At session start.
+    //
+    // Reading into a fixed buffer of `REGISTRY_MAX_BYTES + 1` makes the ceiling structural: a file that grew
+    // is refused on overflow rather than allocated. The attacker is the same-uid child the mode check below
+    // cannot see, which is exactly who this needed to hold against.
+    // The deadline is checked BETWEEN chunks, which is all `AbortSignal.timeout` ever did on the previous
+    // implementation — review measured 74 of 200 one-MiB reads completing in full with `signal.aborted`
+    // already true, because a signal is never observed *inside* a libuv read request. An explicit check makes
+    // the bound as real as it can be in-process, and its limit is the same one honestly stated below: a
+    // stalled `open` or a single wedged read cannot be interrupted from here.
+    const deadline = Date.now() + REGISTRY_READ_TIMEOUT_MS;
+    const buffer = Buffer.allocUnsafe(REGISTRY_MAX_BYTES + 1);
+    let filled = 0;
+    while (filled < buffer.length) {
+      if (Date.now() > deadline) {
+        throw new GovernanceRefusal(refusal(
+          "WORKSPACE_NOT_REGISTERED",
+          `workspace registry ${path} did not finish reading within ${REGISTRY_READ_TIMEOUT_MS}ms — ` +
+            `refusing rather than waiting, because session start awaits this read.`,
+          { registry_path: path },
+        ));
+      }
+      const { bytesRead } = await handle.read(buffer, filled, buffer.length - filled, filled);
+      if (bytesRead === 0) break;
+      filled += bytesRead;
+    }
+    if (filled > REGISTRY_MAX_BYTES) {
+      throw new GovernanceRefusal(refusal(
+        "WORKSPACE_NOT_REGISTERED",
+        `workspace registry ${path} exceeded the ${REGISTRY_MAX_BYTES} limit while being read — it grew ` +
+          `after its size was checked. Refusing rather than allocating it.`,
+        { registry_path: path },
+      ));
+    }
+    raw = buffer.subarray(0, filled).toString("utf8");
   } catch (error) {
     if (error instanceof GovernanceRefusal) throw error;
     const timedOut = error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError");

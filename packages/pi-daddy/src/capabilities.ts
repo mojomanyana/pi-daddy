@@ -173,8 +173,16 @@ export function isSafeWorkspaceId(id: string): boolean {
 
 export function isSafeCapability(id: Capability): boolean {
   const segment = "[A-Za-z0-9][A-Za-z0-9._-]*";
+  // `workspace:` delegates to the WORKSPACE grammar rather than reusing `segment`, and that is the fifth
+  // site of the same defect. `isSafeWorkspaceId` allows a slash because a git worktree is routinely named
+  // after its branch; `segment` does not, so this function refused `workspace:feature/x` — dropping the whole
+  // definition, exiting 1, and telling the operator "a capability id is tool:/skill:/agent:<name> or
+  // ext:<pkg>/<tool>", which does not even mention the namespace. Meanwhile the CHANGELOG told them slashes
+  // are fine. **The boundary that GENERATES grants could not emit the id shape the release advertises**, so
+  // the migration path for a breaking change was closed by the commit that documented it as open.
+  if (id.startsWith("workspace:")) return isSafeWorkspaceId(id.slice("workspace:".length));
   return (
-    new RegExp(`^(tool|skill|agent|workspace):${segment}$`).test(id) ||
+    new RegExp(`^(tool|skill|agent):${segment}$`).test(id) ||
     new RegExp(`^ext:(@${segment}/)?${segment}/${segment}$`).test(id)
   );
 }
