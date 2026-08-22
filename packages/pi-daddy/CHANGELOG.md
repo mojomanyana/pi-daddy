@@ -12,12 +12,16 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
-## Unreleased
+## 0.19.0 — workspace routing is a capability (2026-08-23)
 
-**These fix a hang present in published 0.18.0 and 0.18.1, and are deliberately NOT filed under 0.19.0.**
-Merging `main` into the 0.19.0 branch folded them into that section, because the CHANGELOG did not conflict and
-nobody looked — which would have gated a fix for released code on the BREAKING routing change below. Shipping
-them as 0.18.2 remains available and remains a release decision nobody has authorized.
+**The four hang fixes below were staged for a 0.18.2 and are released here instead — a decision reversed
+deliberately, so the reversal is recorded rather than the reason vanishing.** The paragraph that stood here
+argued for cutting them as a patch so a fix for released code would not be gated on a breaking change. The
+counter-argument won: **R-131 — workspace routing does not attenuate — is a live escalation in published
+0.18.0 and 0.18.1**, a child routed to `staging` can route its grandchild to `prod` with a real lease and a
+ledger line that reads as authorised, and the fix for it *is* the breaking change. A 0.18.2 would have fixed
+one defect and left that one open, on a line that then needed supporting alongside this one. Shipping once
+fixes all three.
 
 - **FIX — a retained lease no longer reports a retention that did not happen (R-152).** `markRetained`
   returned `void` and `releaseDelegationWorkspace` hardcoded the ledger word, so a `workspace_lease` event
@@ -48,7 +52,6 @@ them as 0.18.2 remains available and remains a release decision nobody has autho
   explicitly rejected outcome. Measured with a `herdr` that sleeps: before, `LOCK=HELD` with no marker
   indefinitely; after, released with the marker written. Tunable via `herdrCloseTimeoutMs` (default 15s).
 
-## 0.19.0 — workspace routing is a capability (unreleased)
 
 - Ship a canonical JSON Schema draft 2020-12 contract for `ledgerVersion: 2` plus deterministic fixtures for
   all four event types, generated through the production builders. Stable package export paths let external

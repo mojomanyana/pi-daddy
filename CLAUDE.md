@@ -35,13 +35,12 @@ permissible, able to refuse or allow but never to narrow. **This package is now 
 is an argument rather than a veto. Definitions are **Agent Skills (`SKILL.md`)** files whose `allowed-tools`
 becomes the grant; the pi-subagents ceiling port is deleted; the interceptor survives only as a tripwire.
 
-**Current release state, verified 2026-08-22.** npm `latest` and tag `v0.18.1` both point at
-`8feaacbdf6003c783225e375b61874a599963f47`, and the latest GitHub Release is still `v0.17.1`. **`main` is
-ahead of everything published:** it has since taken PR #11 (the canonical ledger v2 contract) and PR #13, so
-`packages/pi-daddy/contracts/ledger/v2/` plus the `contracts` entries in `files`/`exports` are on `main` and
-**absent from the published `0.18.1` tarball** — one version number, two payloads, which is the confusion to
-avoid before citing "0.18.1" as if it were one thing. Shipping them is a version-bump-and-release decision
-nobody has authorized.
+**Current release state: 0.19.0, published 2026-08-23, and it is BREAKING.** Routing a child to a registered
+workspace now requires `workspace:<id>` in the caller's grant (ADR-0035); every grant that routes must add it.
+That release also carries the canonical ledger v2 contract — which had been sitting on `main` and absent from
+the published `0.18.1` tarball, one version number meaning two payloads — plus the retained-lease hang fixes
+(R-146, R-152) that were briefly staged as a 0.18.2 and released here instead: a patch would have left
+**R-131's routing escalation live** on the 0.18.x line, and the fix for R-131 is the breaking change itself.
 
 **PR #10 — ADR-0035, 0.19.0, workspace routing as a capability — is OPEN and is where the current work is.**
 Thirty-five ADRs are decided (0034 amended three times, 0035 amended three times after review). **Until it or
