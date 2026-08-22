@@ -148,14 +148,21 @@ export function renderGrantEnv(input: GrantEnvInput): string {
     for (const [capability, needed] of [...input.withheld].sort()) {
       lines.push(`#   ${capability.padEnd(width)}  (${needed.join(", ")})`);
     }
-    if (input.withheldDefinitions.length > 0) {
-      lines.push(
-        `#   …and then: ${input.withheldDefinitions.map((n) => `agent:${n}`).join(",")}`,
-        "#   Their `agent:` ids are withheld too: a definition that cannot receive what it declares would",
-        "#   be authorised to run and then refused, which is a worse answer than not being authorised.",
-      );
-    }
     lines.push("#");
+  }
+
+  // OUTSIDE the block above, and that is the fix. This is the file's only statement that a withheld
+  // definition's `agent:` id must be granted too — and it used to render only when `withheld` was non-empty,
+  // so a package whose sole withheld capability is a ROUTING id (the common read-only routing case) lost it
+  // entirely once `workspace:` ids stopped going into that map. The reason line above still said "see below"
+  // and pointed at nothing.
+  if (input.withheldDefinitions.length > 0) {
+    lines.push(
+      `#   …and then: ${input.withheldDefinitions.map((n) => `agent:${n}`).join(",")}`,
+      "#   Their `agent:` ids are withheld too: a definition that cannot receive what it declares would",
+      "#   be authorised to run and then refused, which is a worse answer than not being authorised.",
+      "#",
+    );
   }
 
   // ADR-0035. Routing became a capability in 0.19.0, which made every existing grant that routes start

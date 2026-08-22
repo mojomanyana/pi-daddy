@@ -451,6 +451,50 @@ test("`/grants init`'s dialog cannot confer a routing capability, whatever the o
 });
 
 /**
+ * `main(["init"])`'s CONSOLE OUTPUT — the surface with no test, which is why a regression landed silently.
+ *
+ * `report()` special-cases `undeclared` and `pattern` and nothing else, so `needs-withheld` reached the
+ * operator *only* through the `WITHHELD BY DEFAULT` line. Keeping `workspace:` ids out of that map — the fix
+ * that stopped `/grants init`'s dialog granting routing off a package declaration — therefore made
+ * `pi-daddy init` completely silent about a copied definition that cannot be spawned. Measured before and
+ * after by a reviewer, on the entry point the docs tell operators to run.
+ *
+ * Breaks by: deleting the ROUTABLE WORKSPACES block from `report()`, or moving the `…and then: agent:` lines
+ * back inside `renderGrantEnv`'s `withheld.size > 0` guard.
+ */
+test("`pi-daddy init` says out loud that a routing package cannot be spawned yet", async () => {
+  const cwd = await project();
+  await skillPackage(cwd, "deploy-pkg", "1.0.0", {
+    deployer: DECLARED.replace("Read, Grep", "Read, workspace:prod"),
+  });
+  const registry = join(cwd, "registry.json");
+  await writeFile(registry, JSON.stringify({ version: 1, workspaces: { prod: { path: cwd } } }), "utf8");
+
+  const written: string[] = [];
+  const realLog = console.log;
+  console.log = (...a: unknown[]) => { written.push(a.map(String).join(" ")); };
+  const previous = process.env.PI_GRANTS_WORKSPACE_REGISTRY;
+  process.env.PI_GRANTS_WORKSPACE_REGISTRY = registry;
+  try {
+    assert.equal(await main(["node", "cli", "init", "--dir", cwd]), 0);
+  } finally {
+    console.log = realLog;
+    if (previous === undefined) delete process.env.PI_GRANTS_WORKSPACE_REGISTRY;
+    else process.env.PI_GRANTS_WORKSPACE_REGISTRY = previous;
+  }
+  const out = written.join("\n");
+
+  assert.match(out, /ROUTABLE WORKSPACES: workspace:prod/);
+  assert.match(out, /WORKSPACE_NOT_AUTHORIZED/, "the refusal it explains is named");
+  assert.match(out, /cannot be spawned: deployer/, "silence about an unspawnable definition is the defect");
+  assert.doesNotMatch(out, /Live grant \([^)]*\): [^\n]*workspace:/, "and routing is still not granted");
+
+  // The generated file keeps the `agent:` instruction even though routing is its only withheld capability.
+  const env = await readFile(join(cwd, ".pi", "grants.env"), "utf8");
+  assert.match(env, /…and then: agent:deployer/);
+});
+
+/**
  * The consequence clause tells the truth for a capability the operator actually gated.
  *
  * This is the branch that was **unreachable** until the code stopped reading the `DEFAULT_GATED` constant and

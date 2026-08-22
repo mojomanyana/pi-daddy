@@ -28,7 +28,7 @@ import { makeCatalog, classifyToolNames, unknownCapabilities, workspaceEntries }
 import { WORKSPACE_WILDCARD, resolve } from "../src/resolve.ts";
 import { ENV_APPROVED, ENV_GRANT, inheritableGrant } from "../src/propagation.ts";
 import { ceilingForDefinition, type SkillDefinition } from "../src/definitions.ts";
-import { loadWorkspaceRegistry, registeredWorkspaceIds } from "../src/workspace.ts";
+import { loadWorkspaceRegistry, registeredWorkspaceIds, resolveWorkspace } from "../src/workspace.ts";
 
 import { buildCatalog } from "../src/catalog.ts";
 import { DELEGATE_SUBJECT, type InheritableApproval } from "../src/approval.ts";
@@ -489,6 +489,57 @@ test("a gated capability that is also requested is listed once", () => {
   assert.equal(plan.ok, false);
   assert.deepEqual(plan.result.gatedBlocked, ["workspace:prod"], "the parent's authority and the child's grant are one entry");
   assert.doesNotMatch(plan.reason ?? "", /workspace:prod, workspace:prod/);
+});
+
+/**
+ * The three unguarded halves of the "names the file" fix, and the size ceiling.
+ *
+ * The fourth review pass reverted each of these separately and the whole suite stayed green — four
+ * independent edits with no test between them, in the commit whose message said the compensating control "is
+ * as strong as the claim that leaned on it". It is load-bearing: `docs/SPEC.md` asserts the refusal names the
+ * file, and `catalog.ts` exempts the ENTIRE `workspace:` namespace from the unknown check *because* of that
+ * ("a second, weaker check here can only turn that precise refusal into a misleading one").
+ *
+ * Breaks by: dropping `registry.source` from the refusal message, dropping the `known` id listing, dropping
+ * `registry_path` from the details, removing `source` from the object `loadWorkspaceRegistry` returns, or
+ * removing the size ceiling.
+ */
+test("an unregistered id is refused by a message that names the file and what it does hold", async () => {
+  const dir = await tempDir("pi-daddy-names-");
+  const path = join(dir, "registry.json");
+  await writeFile(path, JSON.stringify({
+    version: 1, workspaces: { prod: { path: "/w/p" }, staging: { path: "/w/s" } },
+  }), "utf8");
+
+  const registry = await loadWorkspaceRegistry(path);
+  assert.equal(registry.source, path, "the object carries where it came from, so a caller cannot forget it");
+
+  await assert.rejects(resolveWorkspace(registry, "nope"), (e: Error & { code?: string; details?: Record<string, string> }) => {
+    assert.equal(e.code, "WORKSPACE_NOT_REGISTERED");
+    assert.match(e.message, new RegExp(path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), "names the FILE to edit");
+    assert.match(e.message, /it lists: prod, staging/, "and what it does hold");
+    assert.equal(e.details?.registry_path, path, "machine-readable for an external controller");
+    return true;
+  });
+
+  // A hand-built registry (tests, fixtures) has no source and must still produce a usable message.
+  await assert.rejects(
+    resolveWorkspace({ version: 1, workspaces: {} }, "nope"),
+    (e: Error) => /it lists nothing/.test(e.message),
+  );
+});
+
+test("a registry larger than the ceiling is refused rather than read into memory", async () => {
+  const dir = await tempDir("pi-daddy-huge-");
+  const path = join(dir, "registry.json");
+  // Just over 1 MiB of valid JSON: the ceiling must fire on SIZE, before any parse.
+  const filler = "x".repeat(1024 * 1024);
+  await writeFile(path, JSON.stringify({ version: 1, workspaces: { prod: { path: "/w/p" } }, pad: filler }), "utf8");
+  await assert.rejects(loadWorkspaceRegistry(path), (e: Error & { code?: string }) => {
+    assert.equal(e.code, "WORKSPACE_NOT_REGISTERED");
+    assert.match(e.message, /over the \d+ limit/);
+    return true;
+  });
 });
 
 /** The catalog enumerates registered workspaces for `/grants` and `init`. Display, never authority. */

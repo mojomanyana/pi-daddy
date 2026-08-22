@@ -211,6 +211,28 @@ function report(plan: InitPlan): void {
     );
   }
 
+  // ROUTING, which had no line here at all — and `report()` is the output of the command the docs tell an
+  // operator to run. Keeping `workspace:` ids out of `withheldCapabilities` (so the `/grants init` dialog
+  // could not grant them off a package declaration) removed the ONLY thing this path said about a definition
+  // that cannot be spawned: `needs-withheld` is not one of the cases handled above, so a routing package
+  // produced a copied definition, an unusable grant, and total silence.
+  //
+  // The fix that caused it argued that "a breaking change whose migration is only discoverable by opening a
+  // file is not much of a migration" — and then applied that to the in-session notify and not to the CLI.
+  if (plan.routableWorkspaces.length > 0) {
+    const blocked = plan.skills.filter((s) => s.withheld === "needs-withheld").map((s) => s.name);
+    console.log(
+      `\nROUTABLE WORKSPACES: ${plan.routableWorkspaces.join(", ")}.\n` +
+        `Routing a child to one needs its id in PI_GRANTS_GRANT (ADR-0035); without it the delegation is\n` +
+        `refused WORKSPACE_NOT_AUTHORIZED. They are listed COMMENTED in .pi/grants.env and never granted for\n` +
+        `you — which worktree a child starts in is not something a package can declare.` +
+        (blocked.length > 0
+          ? `\nUntil you grant one, these cannot be spawned: ${blocked.join(", ")} — add the capability, then\n` +
+            `their \`agent:\` ids.`
+          : ""),
+    );
+  }
+
   console.log(
     `\nLive grant (${plan.grant.length} capabilities): ${plan.grant.join(", ")}\n\n` +
       `  $EDITOR .pi/grants.env         # review it, then commit it\n` +
