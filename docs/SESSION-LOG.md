@@ -36,6 +36,40 @@ now run over it, each finding defects in the previous one's fixes; the fixes for
    the opposite until 2026-08-22, in the same commit that reverted the pin: a summary contradicting its own
    body, which is the defect the round below had just recorded.)
 
+**Release state, CORRECTED 2026-08-21 — the 2026-08-20 paragraph below is stale and kept on purpose
+(rule 2).** PR #11 merged at `1948b9406c13c9730f2fc103e68023d6e58c5e85`, and that is what repository `main`
+now points at. **The published artifacts did not move with it:** peeled tag `v0.18.1` and the npm
+`pi-daddy@0.18.1` `gitHead` both still resolve to `8feaacbdf6003c783225e375b61874a599963f47`, and the latest
+GitHub Release is still `v0.17.1`. The package source reads `0.18.1` **with the canonical-contract additions
+unreleased** — `packages/pi-daddy/contracts/ledger/v2/` plus the `contracts` entries in `files` and `exports`
+are on `main` and absent from the published 0.18.1 tarball, so *the version number no longer distinguishes
+them*. Shipping them is a version-bump-and-release decision nobody has authorized yet. Re-verified against
+`main` this session: **596 unit + 44 integration tests, all passing**, typecheck clean; the 10-test model
+tier was not run and remains separately authorized. And the work the paragraph below calls a "focused
+follow-up branch" (`feat/ledger-v2-contract-artifacts`) **is merged** — there is no pending branch for it.
+
+**The standing exception: workspace routing does not attenuate on `main`.** ADR-0035 and its implementation
+are on **PR #10 (`adr/0035-workspace-attenuation`), still a draft at
+`92ccbb818a430168d707d1d69f44e5fdfa46e8d3`, and it must not merge.** Its own latest comment records
+**601/602 unit tests**, the single failure being the canonical refusal-enum contract test: production adds
+`WORKSPACE_NOT_AUTHORIZED` while the closed v2 schema deliberately does not carry it. Still outstanding on
+that branch — propagation, wildcard attenuation, gating, `init`, and the G36 production-path evidence. Until
+it or an equivalent attenuation fix lands, recursive critical work can route a descendant to a registered
+workspace its parent was not granted. **A final full READY verdict is therefore unavailable**: a matrix over
+the released baseline must carry this as an explicit exception and may be no stronger than **READY WITH
+EXPLICIT EXCEPTIONS**.
+
+**A measurement hazard found the hard way this session, and the reason rule 5 needs a companion: this clone
+is shared, and another session checked out `pr10` underneath an in-progress task.** Two verification runs
+were attributed to `main` before `git rev-parse HEAD` showed `92ccbb8` — which is also where the 601/602
+figure comes from, and it is *not* `main`'s. Everything above was then re-derived in a dedicated `git
+worktree`, which a concurrent checkout cannot move. **Print `git rev-parse HEAD` in the same command as any
+measurement you intend to write down**, because a number is not evidence unless you can say which tree it
+came from.
+
+*(The paragraph that follows was accurate on 2026-08-20 and is left exactly as written — it records what was
+believed on its date. Superseded by the correction above.)*
+
 **Release state, re-verified 2026-08-20:** PR #12 is merged. Repository `main`, peeled tag `v0.18.1`, and
 the npm `pi-daddy@0.18.1` `gitHead` all point at `8feaacbdf6003c783225e375b61874a599963f47`;
 the latest GitHub Release remains `v0.17.1`. The focused `feat/ledger-v2-contract-artifacts` branch merged

@@ -35,12 +35,19 @@ permissible, able to refuse or allow but never to narrow. **This package is now 
 is an argument rather than a veto. Definitions are **Agent Skills (`SKILL.md`)** files whose `allowed-tools`
 becomes the grant; the pi-subagents ceiling port is deleted; the interceptor survives only as a tripwire.
 
-**Current release state, verified 2026-08-21:** npm `latest` and tag `v0.18.1` point at
-`8feaacbdf6003c783225e375b61874a599963f47`; `main` has since taken PR #11 (the canonical ledger v2
-contract). The latest GitHub Release is still `v0.17.1`. **PR #10 — ADR-0035, 0.19.0, workspace routing as a
-capability — is OPEN and is where the current work is.** Thirty-five ADRs are decided (0034 amended three times,
-0035 amended three times after review). That branch has 629 unit + 45 integration tests, plus a 10-test opt-in tier
-behind `PI_GRANTS_IT_MODEL=1` that is not run without explicit authorization.
+**Current release state, verified 2026-08-22.** npm `latest` and tag `v0.18.1` both point at
+`8feaacbdf6003c783225e375b61874a599963f47`, and the latest GitHub Release is still `v0.17.1`. **`main` is
+ahead of everything published:** it has since taken PR #11 (the canonical ledger v2 contract) and PR #13, so
+`packages/pi-daddy/contracts/ledger/v2/` plus the `contracts` entries in `files`/`exports` are on `main` and
+**absent from the published `0.18.1` tarball** — one version number, two payloads, which is the confusion to
+avoid before citing "0.18.1" as if it were one thing. Shipping them is a version-bump-and-release decision
+nobody has authorized.
+
+**PR #10 — ADR-0035, 0.19.0, workspace routing as a capability — is OPEN and is where the current work is.**
+Thirty-five ADRs are decided (0034 amended three times, 0035 amended three times after review). **Until it or
+an equivalent fix lands, workspace routing does not attenuate on `main`**: recursive critical work can route a
+descendant to a registered workspace its parent was not granted, so any readiness claim over the released
+baseline carries that as an explicit exception and is no stronger than READY WITH EXPLICIT EXCEPTIONS.
 
 **Read `docs/SESSION-LOG.md`'s top entry before touching PR #10 — FIVE review passes have run over it.**
 Each reviewed the previous one's FIXES and found blockers in them — the fourth found R-136 marked FIXED
@@ -58,6 +65,10 @@ change**, and `test/workspace-capability.test.ts` is organised by site so the ch
 than remembered. R-135, found by the mutation battery rather than by either reviewer, is the older and worse
 one: R-26's wildcard rule had been enforced only on the interceptor path, so `tool:*` reached delegated
 children in every published version.
+
+**This clone is shared with other sessions.** One of them checked out `pr10` under an in-progress task on
+2026-08-21 and two measurements were briefly attributed to the wrong tree. **Print `git rev-parse HEAD` in
+the same command as any measurement you intend to write down**, or take a worktree.
 
 **A six-reviewer pass over the 0.18.0 work found the capability invariant intact on every path and the
 RUNTIME half full of holes** — R-99…R-118, and the ADR-0034 amendment lists what it did *not* resolve
