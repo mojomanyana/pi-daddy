@@ -44,7 +44,8 @@ const TIMEOUT_MS = 180_000;
 /**
  * Each entry: patch one guard, name the test that must fail.
  *
- * `expect` is matched against the failing-test names `node --test` prints. `hang: true` means the guard's
+ * `expect` is matched against the names of the tests that FAILED — not against the transcript, which also
+ * contains the names of tests that passed. `hang: true` means the guard's
  * regression is a non-termination rather than an assertion — the honest record for a guard whose absence
  * wedges the process, and the reason a bare exit code cannot be trusted here.
  */
@@ -214,7 +215,15 @@ for (const m of MUTATIONS) {
   await writeFile(path, patched, "utf8");
   try {
     const { stdout, killed } = await runSuite(m.test);
-    const broke = killed ? Boolean(m.hang) : stdout.includes(m.expect) && /^# fail [1-9]|✖/m.test(stdout);
+    // **Match the FAILING test names, not the transcript.** The first version was
+    // `stdout.includes(m.expect) && /^# fail [1-9]|✖/`, and `node --test` prints a test's name on PASS too —
+    // so an entry scored ✓ whenever any test in that file failed and the expect string appeared anywhere,
+    // including on its own ✔ line. A mutation that broke a NEIGHBOUR while the named guard's test still passed
+    // was recorded as proven. That is the class of defect this script exists to catch, in this script, found by
+    // the reviewer who suggested writing it. (The `^# fail` half never matched either: the spec reporter
+    // prints `ℹ fail N`.)
+    const failed = [...stdout.matchAll(/^\s*✖ (.+?)(?: \(\d|$)/gm)].map((x) => x[1]);
+    const broke = killed ? Boolean(m.hang) : failed.some((name) => name.includes(m.expect));
     if (broke) {
       console.log(`✓ ${m.name}${killed ? "  (hang, as recorded)" : ""}`);
     } else {
