@@ -646,7 +646,10 @@ test("a herdr that hangs on close does not strand the lock forever", async () =>
   const root = await gitWorkspace();
   const leaseDir = await tempDir("workspace-leases-");
   // A herdr that accepts the close and never answers — the case a retry count cannot bound.
-  const fakeBin = await stubHerdr("exec sleep 5");
+  // 30s, not 5: the successor loop below waits ~5s, so a 5s stub let the un-bounded case pass by finishing
+  // just inside the window — my own orphan fix had quietly taken this guard's teeth out (rule 7). With the
+  // bound in place `execFile` SIGKILLs it at 800ms, and `exec` means the signal reaches the sleep itself.
+  const fakeBin = await stubHerdr("exec sleep 30");
   const moduleUrl = pathToFileURL(join(process.cwd(), "src", "workspace.ts")).href;
   const code = `
     import { validateRegisteredWorkspace, acquireWorkspaceLease } from ${JSON.stringify(moduleUrl)};

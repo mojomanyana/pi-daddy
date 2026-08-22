@@ -275,14 +275,21 @@ for (const m of MUTATIONS) {
       );
       continue;
     }
-    const broke = killed ? Boolean(m.hang) : failed.some((name) => name.includes(m.expect));
+    // **A kill does not erase a verdict that already printed.** Measured 2026-08-22: reverting the retain-path
+    // `unref` made the guard's own test fail at 10.0s — `✖ a retained lease releases its process` is right
+    // there in the transcript — and then wedged the runner, because a sibling test retains a lease IN THIS
+    // process and could no longer exit. The old form scored that as "the guard is not forced", which is the
+    // opposite of what happened. So: a named failure counts whenever it appears; `hang: true` is still
+    // required for a guard whose ONLY regression signature is non-termination, where nothing prints at all.
+    const named = failed.some((name) => name.includes(m.expect));
+    const broke = named || (killed && Boolean(m.hang));
     if (broke) {
       console.log(`✓ ${m.name}${killed ? "  (hang, as recorded)" : ""}`);
     } else {
       failures++;
       console.error(
         `✗ ${m.name}\n    reverting this guard did not break ${m.test} on "${m.expect}"` +
-        `${killed ? " (the run was killed and the entry does not record a hang)" : ""}\n` +
+        `${killed ? " (the run was killed, and neither the named failure nor `hang: true` was present)" : ""}\n` +
         `    a guard nothing forces is not a guard — add the check, or remove the guard`,
       );
     }

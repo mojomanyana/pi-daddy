@@ -2304,6 +2304,13 @@ project keeps recording held again: the fixes needed the same adversarial read a
   three orphans owned by init, and a mutation sweep running the suite once per entry accumulates dozens. Both
   fixed with one `stubHerdr` helper using `exec`.
 
+**And the orphan fix took a guard's teeth out, which the catalogue then caught.** Replacing the fake herdr's
+`sleep 300` with `exec sleep 5` stopped the orphaning *and* meant that without the wall-clock bound the close
+now succeeded after 5s — inside the successor loop's ~5s window, so the test passed with the guard reverted.
+A cleanup fix that quietly converts a guard into decoration is rule 7's concern arriving from the least
+suspicious direction: 30s restores the teeth, and `exec` keeps the signal reaching the sleep. **Found by the
+catalogue on its first run over these entries**, which is the argument for the catalogue in one line.
+
 **And my own new test hung the runner rather than failing — R-119, in the commit that cites R-119.** With the
 validation guard reverted, the acquisition *succeeds*, and the lease was untracked, so a live `flock` held the
 event loop open past the deadline. Routed through `trackedLease` so the `after()` reaper releases it: the
@@ -2789,6 +2796,16 @@ only the files the catalogue *patches*, while the `contract:` entry deliberately
 the tracked ledger fixtures — so an uncommitted fixture edit was destroyed silently, and was benign only
 because regeneration is byte-identical to what is committed. The check now covers everything a run can write,
 verified by dirtying a fixture and watching it refuse.
+
+**A third defect in the instrument, 2026-08-22, found by using it on the R-146 guards.** A run that gets
+KILLED was scored as "no verdict unless the entry records a hang" — even when the guard's own named failure had
+already printed. Measured: reverting the retain-path `unref` failed `✖ a retained lease releases its process` at
+10.0s and *then* wedged the runner, because a sibling test retains a lease in the runner's own process and could
+no longer exit. The auditor reported that as *"a guard nothing forces"*, which is the exact inverse of what
+happened, and the tempting response is to delete a guard that works. **A kill does not erase a verdict that
+already printed**: a named failure now counts whenever it appears, and `hang: true` remains required only where
+non-termination is the whole signature and nothing prints. The pattern across all three of this harness's
+defects is one thing — *it kept mistaking "I could not read the answer" for "the answer is no."*
 
 **What this does not establish.** That the twenty guards are the right twenty — R-142's exclusion list and
 reviewer D's complement audit are the question of coverage, and this entry is only about the instrument being
