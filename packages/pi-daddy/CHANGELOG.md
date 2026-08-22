@@ -19,6 +19,20 @@ Merging `main` into the 0.19.0 branch folded them into that section, because the
 nobody looked — which would have gated a fix for released code on the BREAKING routing change below. Shipping
 them as 0.18.2 remains available and remains a release decision nobody has authorized.
 
+- **FIX — a retained lease no longer reports a retention that did not happen (R-152).** `markRetained`
+  returned `void` and `releaseDelegationWorkspace` hardcoded the ledger word, so a `workspace_lease` event
+  said `retained` — *"the pane may still be live"* — for a helper that had already died (the fact is `lost`),
+  for a lease already cleanly released, and for a retention whose record could not be written. It now answers
+  in the release vocabulary and the caller ledgers what it says. **Breaking for direct library callers only:**
+  `WorkspaceLease.markRetained` returns `Promise<LeaseReleaseOutcome>` instead of `Promise<void>`, and
+  `LeaseReleaseOutcome` gained `retained` (so `| "retained"` unions are now redundant, not wrong).
+- **FIX — an impossible `herdr tab close` bound is rejected at both ends, and as a `RangeError` (R-152).**
+  Above `2^31 - 1` the timeout truncates — `Number.MAX_SAFE_INTEGER` becomes 1ms and SIGKILLs every close
+  attempt before herdr can act (measured: callback at 3ms for a 3s sleep) — the mirror of the `0` case, which
+  means no bound at all. Fractional counts were accepted too. **The exception type changed on purpose:** this
+  was a `GovernanceRefusal` carrying `WORKSPACE_LEASE_STALE`, which elsewhere means the lease went stale, so a
+  controller switching on codes would retry a permanent caller bug. Both bounds are now validated for read
+  leases as well, where the check previously sat below an early return and validated nothing.
 - **FIX — a retained writer lease no longer stops its own process from exiting (R-146).** `markRetained`
   leaves the kernel lock and the pane alone by design; it also left the parent's three pipes to the lock
   helper referenced, and the helper was never `unref`ed, so node's event loop stayed alive and `pi` could

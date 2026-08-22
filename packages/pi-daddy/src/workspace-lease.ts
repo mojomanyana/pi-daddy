@@ -14,7 +14,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { GovernanceRefusal, refusal } from "./refusals.ts";
 import type { ValidatedWorkspace, WorkspaceAccess } from "./workspace.ts";
-import { HELPER_SOURCE, LEASE_READY, unrefStream } from "./lease-helper.ts";
+import { assertCloseBounds, HELPER_SOURCE, LEASE_READY, unrefStream } from "./lease-helper.ts";
 
 export const ENV_WORKSPACE_LEASE_DIR = "PI_GRANTS_WORKSPACE_LEASE_DIR";
 
@@ -77,6 +77,8 @@ export async function acquireWorkspaceLease(input: {
   /** Bound on the helper's `herdr tab close` retries before it releases the lock anyway (R-102). */
   herdrCloseAttempts?: number;
 }): Promise<WorkspaceLease> {
+  // Before the read-lease return, so both paths are validated (R-152).
+  assertCloseBounds(input);
   if (input.access === "read") {
     return {
       workspace: input.workspace,
@@ -85,7 +87,9 @@ export async function acquireWorkspaceLease(input: {
       recovered: false,
       attachProcess: () => {},
       attachHerdrTab: () => {},
-      markRetained: async () => {},
+      // A read lease took no kernel lock, so there is nothing to keep: `not-held` is the same answer
+      // `release()` gives, and it is the truth rather than a retention that never happened (R-152).
+      markRetained: async () => "not-held" as const,
       readCloseFailure: async () => null,
       lost: new Promise(() => {}),
       // No kernel lock was ever taken, so there is no handover to claim (R-105, release side).
@@ -94,30 +98,6 @@ export async function acquireWorkspaceLease(input: {
   }
   if (input.signal?.aborted) {
     throw new GovernanceRefusal(refusal("WORKSPACE_WRITE_CONFLICT", `writer lease for ${input.workspace.workspaceId} was cancelled before acquisition`));
-  }
-
-  /**
-   * **A bound that is not a bound is refused rather than accepted (R-146, rule 8).** `herdrCloseTimeoutMs: 0`
-   * reads as "no limit" and Node agrees — `execFile` treats `timeout: 0` as *no timeout* (measured: the
-   * callback arrives only when the child finishes, 3004ms for a 3s sleep), which silently reinstates the
-   * unbounded hang this bound exists to prevent. Negatives behave identically. `herdrCloseAttempts: 0` is
-   * milder and equally not what a caller means by it. Both refusals name the parameter, because the callers
-   * are ADR-0034 external controllers passing values this package never chose.
-   */
-  for (const [name, value] of [
-    ["herdrCloseTimeoutMs", input.herdrCloseTimeoutMs],
-    ["herdrCloseAttempts", input.herdrCloseAttempts],
-  ] as const) {
-    if (value === undefined) continue;
-    if (!Number.isFinite(value) || value < 1) {
-      throw new GovernanceRefusal(refusal(
-        "WORKSPACE_LEASE_STALE",
-        `${name} must be a finite number of at least 1, not ${String(value)} — a zero or negative bound is ` +
-          `not "no limit", it is no bound, and this one exists so a hung herdr cannot hold the writer lock ` +
-          `forever (R-146)`,
-        { workspace_id: input.workspace.workspaceId, root: input.workspace.root },
-      ));
-    }
   }
 
   await mkdir(input.leaseDir, { recursive: true, mode: 0o700 });
@@ -265,11 +245,23 @@ export async function acquireWorkspaceLease(input: {
     async markRetained(reason = "retained") {
       // Deliberately does NOT touch the kernel lock or the helper: the pane may still be live. It only
       // stops the record from looking like a crash.
+      //
+      // **Both guards below exist because the CALLER ledgers whatever this returns (R-152).**
+      //
+      // Already settled: `release()` checked `settled` and this did not, so a completed handover could be
+      // rewritten into `retained:…` and the memoized answer flipped with it — the mirror of the defect R-146
+      // fixed, reachable by the `try { … } finally { await lease.release() }` shape this API invites.
+      if (settled) return settled;
+      // Already dead: the helper is gone and the kernel lock with it, so the fact is `lost`. Recording a
+      // retention here tells an operator a pane may still be live and tells the next owner nothing crashed —
+      // precisely the two facts R-103's outcome union was added to keep apart.
+      if (holder.exitCode !== null || holder.signalCode !== null) return (settled = "lost");
       const current = await readMetadata(paths.metadata);
+      let recorded = false;
       if (current !== "malformed" && current?.token === token) {
-        await atomicMetadata(paths.metadata, {
+        recorded = await atomicMetadata(paths.metadata, {
           ...metadata, state: "released", released_at: new Date().toISOString(), release_reason: `retained:${reason}`,
-        }).catch(() => undefined);
+        }).then(() => true, () => false);
       }
       /**
        * **It must, however, let THIS process exit (R-146).** Leaving the helper alone is the decision;
@@ -304,10 +296,16 @@ export async function acquireWorkspaceLease(input: {
        * whole fix is for.
        */
       releasing = true;
-      settled = "retained";
+      // **Settle only if the record was actually written.** An unwritable lease directory used to leave the
+      // record `state: "active"` while the ledger said `retained`, so the next owner reported a phantom
+      // `recovered: true` — and making retention terminal removed the later `release()` that would still have
+      // written the handover. Unsettled, that repair is available again; the residue is stated in R-152
+      // rather than implied, because nothing here can write a record to a directory that refuses writes.
+      if (recorded) settled = "retained";
       holder.unref();
       unrefStream(holder.stdout);
       unrefStream(holder.stderr);
+      return "retained";
     },
     async readCloseFailure() {
       try {

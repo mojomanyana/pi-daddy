@@ -102,8 +102,16 @@ rule.
     **Enforcement, stated because an unstated absence reads as enforcement.** `hooks/pre-commit` refuses a
     commit on `main` and names the recovery; it is wired **per clone** by `git config core.hooksPath hooks`,
     so if that command prints nothing the hook is inert. `test/branch-guard.test.ts` proves the script
-    refuses — not that your clone installed it. `main` has **no** branch protection on GitHub, so a direct
-    push still succeeds; requiring a PR there, with zero required approvals, is the server-side half and
-    costs a single maintainer nothing. And `pre-commit` is never invoked for a clean merge, cherry-pick or
+    refuses — not that your clone installed it. **`.github/workflows/ci.yml` runs typecheck, the unit suite,
+    a tree-cleanliness check, the mutation catalogue and the installed-package smoke on every pull request**,
+    which is the half that stops a guard rotting unnoticed. **And since 2026-08-22 it blocks:** `main` on GitHub
+    requires a pull request (zero approvals) with both CI legs green, force-pushes and deletions are refused,
+    and `enforce_admins` is **on** — without that last flag the rule would bind everyone except the only
+    account able to breach it, which is exactly how R-85's eleven commits reached `main`. A direct `git push`
+    to `main` is now rejected by the server, not by a hook somebody has to install.
+
+    **The escape hatch, named so nobody has to invent one under pressure:** protection is one API call to lift
+    (`gh api -X DELETE repos/<owner>/<repo>/branches/main/protection`) and one to restore. Lifting it is a
+    decision to record, not a workaround to reach for — and CI being unavailable is the case it exists for. And `pre-commit` is never invoked for a clean merge, cherry-pick or
     revert, so those land on `main` unguarded — the hook catches the *drift* this rule was written for, not
     every route to `main`.

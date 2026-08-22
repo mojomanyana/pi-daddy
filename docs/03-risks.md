@@ -2386,6 +2386,122 @@ a hang fix.
 **Trigger:** a `herdr-close-failed` marker for a tab that is already gone; or any second closer of a resource
 the lock helper also closes.
 
+## R-152 · `markRetained` reported a retention that had not happened, and the caller ledgered it — H×M, FIXED
+
+Added and fixed 2026-08-22, by two independent reviews of the R-146 fix in PR #14 **after it merged**. Never
+published; 0.18.2 is unreleased. Four defects, one cause: **`markRetained` returned `void`, and its only caller
+hardcoded the word.**
+
+`releaseDelegationWorkspace` wrote `(await lease.markRetained(reason), "retained")`, so the ledger asserted
+*"kept deliberately because a herdr writer tab would not close, so the pane may still be live"* in three
+situations where that is false:
+
+- **The helper was already dead.** The lock is back and nothing is running; the fact is `lost`, which is
+  exactly the distinction R-103 added the release vocabulary for. An operator reading `retained` goes looking
+  for a live pane that does not exist, and the next owner is told nothing crashed.
+- **The lease was already released.** Terminality was one-directional — `release()` checked `settled`,
+  `markRetained` did not — so a completed handover could be rewritten to `retained:…` and the memoized answer
+  flipped with it. Measured: `release() -> released`, reason `completed`; then `markRetained` →
+  `retained:herdr-close-failed`; then `release() -> retained`. **The exact mirror of the defect R-146 fixed**,
+  introduced by fixing it, reachable through the `try { … } finally { await lease.release() }` shape a public
+  export invites.
+- **The record could not be written.** The write was swallowed, and settling terminally removed the later
+  `release()` that would still have written the handover — so the record stayed `active`, the ledger said
+  `retained`, and the next owner reported a phantom `recovered: true`.
+
+**Fixed by making `markRetained` answer in the release vocabulary** (`Promise<LeaseReleaseOutcome>`), with the
+caller ledgering what it returns. Each of the four guards is forced by a named test, verified by reverting it
+one at a time — including the record-was-written gate, which was unforced on the first attempt and is now
+pinned by a test that makes the lease directory unwritable.
+
+**The bounds were also wrong at the top end, and were refusing on the wrong channel.**
+`herdrCloseTimeoutMs: Number.MAX_SAFE_INTEGER` — the plausible "effectively no limit" sentinel, given the
+argument the guard itself makes about `0` — truncates: `setTimeout` warns *"does not fit into a 32-bit signed
+integer. Timeout duration was set to 1"*, so every `herdr tab close` is SIGKILLed after 1ms, before herdr can
+act. Measured: callback at 3ms for a 3s sleep. The floor and the ceiling fail in opposite directions and both
+silently. Fractions passed too, for a parameter documented as a count.
+
+And the refusal was a `GovernanceRefusal` carrying `WORKSPACE_LEASE_STALE`, which everywhere else in this
+package means *the lease went stale or was lost* — so an ADR-0034 controller switching on codes, which is the
+reason codes exist (R-103), would classify a permanent caller bug as transient and retry a call that can never
+succeed. **A bad argument is not a governance outcome**, so it now throws a `RangeError`. The validation also
+moved above the read-lease early return, where it had been validating nothing: a controller smoke-testing its
+configuration against a read lease got a false all-clear.
+
+**Two process notes worth more than the patches.**
+
+The R-146 fix was reviewed twice before merging and both passes missed all of this, because they asked *"is
+the fix correct?"* and not *"what does the fix's own return value promise?"* The finding came from reading the
+CALLER — one line, in a different file, that discarded the result.
+
+And the line ceiling refused `workspace-lease.ts` at 435 lines here, having already refused it at 405 on the
+ADR-0035 branch. Both took the same seam (`src/lease-helper.ts`, the lock helper's own program) so the branches
+converge; the cap has never been raised, and `delegate.ts` was split at 413 the same way.
+
+**One debt, again.** `scripts/mutation-audit.mjs` lives on PR #10, so these four guards have named regressions
+and no catalogue entries. Whichever lands second owes them; the entries are the four reverts above, each
+naming the test it must break.
+
+**Trigger:** any function whose result a caller discards in favour of a literal; and any bound validated at one
+end only.
+
+## R-153 · Every check in this repository was opt-in — H×M, FIXED
+
+Added and fixed in part 2026-08-22. Not a defect in the product: a defect in how the product's guards were
+enforced, and the reason several of them rotted.
+
+**The evidence is the whole review history.** Eight passes over PR #10 found guards that could be deleted with
+the entire suite green — ten in one round, fourteen in another, seven in the eighth. Each round fixed its
+instances and none of them changed the cause: the only thing forcing rule 7 was a person choosing to run
+something. R-34 named that shape long before — *"a check an operator has to know to run is not a control, it is
+a feature"* — and the guards here that never failed this way are the mechanical ones: the line ceiling, the
+branch guard, the refusal enumeration.
+
+`.github/workflows/ci.yml` now runs, on every pull request and every push to `main`:
+
+- `npm run typecheck`, `npm test`, `npm run test:smoke`;
+- **a tree-cleanliness assertion**, because `npm test` once silently overwrote tracked ledger-contract
+  fixtures, and a suite that can edit the repository can make itself pass;
+- **`npm run test:mutation --if-present`** — the pinned catalogue, so rule 7 stops depending on someone
+  remembering. `--if-present` is deliberate and temporary: the catalogue was written on PR #10 and does not
+  exist on `main`, so the step is a no-op here and real the moment that branch lands. Said out loud, because a
+  step that silently does nothing is R-34 with a green tick.
+
+**`FORCE_COLOR=0` and `NO_COLOR=1` are pinned at the workflow level, and that line is R-143.** The catalogue
+parses `node --test`'s reporter to learn which test failed; in a colouring environment it reported
+`0/20 guards forced` with all twenty intact. A control that accuses everything is worse than one that is
+absent, and CI would have inherited exactly that. The parser strips ANSI now *and* the input is pinned — the
+two-defence standard the catalogue applies to its own entries.
+
+**Matrix: 22.19.0 and 24.x.** The floor is the `engines` field, which is a published claim nothing had ever
+tested; the ceiling is what this project is developed on.
+
+**What it does NOT cover, stated because a green badge that implies more than it checks is this project's
+signature defect.** `npm run test:integration` — 44 tests, and the most load-bearing suite here — needs a real
+`pi` process and a real `herdr` server; neither is installed in CI, and faking them would turn the suite into
+decoration. It stays a local gate, recorded in the session log with what it last ran against. The paid
+`PI_GRANTS_IT_MODEL=1` tier is never run unattended.
+
+**And as of 2026-08-22 it blocks, which is what makes this entry closed rather than half-closed.** The
+operator authorised the server-side half: `main` requires a pull request with zero approvals and both CI legs
+green, force-pushes and deletions are refused, and **`enforce_admins` is on** — without that, protection binds
+everyone except the one account that can breach it, which is precisely how R-85's eleven commits arrived.
+Read back from the API after the change: `protected: true`, required checks `["node 22.19.0", "node 24.x"]`.
+
+**Verified by configuration, not by attempting a breach** — and that distinction is the honest part. Pushing a
+commit at `main` to watch it bounce would prove it end to end, and would advance `main` outside a PR if the
+setting were wrong, which is the one thing rule 10 exists to prevent. The first live proof is therefore the PR
+that carries this paragraph: it is the first change in this repository's history that *could not* have been
+pushed directly.
+
+**PR #10 carries R-142, the entry that asked for this**, written before the catalogue existed on any branch.
+Whichever lands second reconciles them; R-142's own trigger — *"the next review pass finding a guard deletable
+with the suite green; if that happens the answer is CI and not a sixth pass"* — fired twice more before this
+landed.
+
+**Trigger:** any new check added to this repository that CI does not run; or a `--if-present` step that is
+still a no-op after PR #10 merges.
+
 ---
 
 ## R-133 · A capability namespace is a nine-site change, and ADR-0035 did three — H×H, FIXED
@@ -3109,3 +3225,5 @@ any second call site of a rule the catalogue pins on the first.
 | 2026-08-22 | R-146 | Added and **FIXED from `main`** — a retained writer lease stopped its own process from exiting, measured `exit=124` against `exit=0`, in any host that lets the event loop drain (pi's print mode, a library consumer such as an ADR-0034 external controller; interactive and rpc call `process.exit()`, so there the sweep still ran). **Present in published 0.18.0 and 0.18.1.** R-102 accepted stranding the worktree; nobody had recorded that it stranded the process, and two comments promised the strand lasted "until process exit". Fixed by dropping the parent's references on the retain path only — the lock still outlives the call, and the successor can still acquire, which the regression asserts as a second property | sixth review pass over PR #10, fixed next |
 | 2026-08-22 | R-146 corrected, R-151 | **The independent review of the R-146 fix found the fix's own safety argument half-false, and a claim repeated here unchecked.** The helper's `herdr tab close` had no wall-clock timeout, so a herdr that accepts and never answers held the lock forever with no marker — and the fix had removed the only symptom (a hung `pi`), turning R-102's rejected outcome into a silent one. Bounded now, forced by a test with a `herdr` that sleeps. The scope claim was also wrong: `process.exit()` runs exit handlers, so only hosts that let the loop drain (pi's print mode, library consumers) were wedged — `src/cli.ts` was cited as evidence and has one subcommand and no leases. One unref line was unforced and is gone. R-151 records what the fix newly exposes: the reaper and the helper now close the same tab | independent review of PR #14 |
 | 2026-08-22 | R-146 (second review) | **The review of the fix found four more, two behavioural.** Retention was not terminal — a later `release()` ran the clean handshake, overwrote `retained:herdr-close-failed` with `completed` and told the helper to exit `clean`, so the pane was abandoned and the ledger claimed a handover; `release()` now answers `retained`, which required making that a real member of `LeaseReleaseOutcome`. `herdrCloseTimeoutMs: 0` silently restored the unbounded hang, because Node reads `timeout: 0` as no timeout (measured 3004ms for a 3s sleep) — both bounds now refused loudly by name. Plus a non-hermetic test and a fake `herdr` that orphaned a `sleep` per run. **And the new refusal test hung the runner instead of failing** — R-119's shape in the commit that cites R-119 — because an unexpected success left an untracked lease holding a live `flock`: a test that proves a refusal must clean up the success it did not expect | second review of PR #14 |
+| 2026-08-22 | R-152 | Added and fixed — **`markRetained` returned `void` and its only caller hardcoded `"retained"`**, so the ledger asserted a live pane for a helper that had already died, for a lease already cleanly released (the mirror of R-146, introduced by fixing it), and for a retention whose record never landed. Now answers in the release vocabulary and the caller ledgers what it says; four guards, each forced by reverting it alone. The bounds were wrong at the top end too — `MAX_SAFE_INTEGER` truncates to 1ms and SIGKILLs every close — and refused on the governance channel, inviting a controller to retry a permanent caller bug; a bad argument now throws `RangeError`, and the check moved above the read-lease early return where it had validated nothing. **Both earlier passes asked whether the fix was correct and not what its return value promised** | independent reviews of the merged PR #14 |
+| 2026-08-22 | R-153 | Added and **fixed in part** — CI exists. Eight review passes found guards deletable with the suite green because the only thing forcing rule 7 was somebody choosing to look (R-34's shape, for years). `.github/workflows/ci.yml` runs typecheck, the unit suite, a tree-cleanliness assertion, the mutation catalogue (`--if-present` until PR #10 brings it to `main`) and the installed-package smoke on every PR, across the `engines` floor and the development ceiling — with `FORCE_COLOR=0` pinned at the workflow level, which is R-143: the catalogue reported `0/20` with every guard intact in a colouring environment, and CI would have inherited that. **It reports and does not block** — no branch protection, so a red run stops nothing; integration and the model tier are deliberately not covered and the workflow says why | R-142's trigger, fired three times |

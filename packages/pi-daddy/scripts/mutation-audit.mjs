@@ -170,6 +170,40 @@ const MUTATIONS = [
     file: "src/cli.ts", test: "test/init.test.ts",
     find: "  if (plan.routableWorkspaces.length > 0) {", replace: "  if (false) {",
     expect: "says out loud" },
+  // Two entries that stood here were SUPERSEDED by R-152 rather than deleted for convenience: the lines they
+  // patched no longer exist (`settled = "retained"` became conditional, and the bound check gained an integer
+  // test and a ceiling). Their successors are in the R-152 block above, and the harness is what noticed —
+  // a stale `find` is refused, not silently skipped.
+  // ── the retain path's reporting (R-152, merged from `main` with PR #15) ─────
+  //
+  // The second time this debt came due: these four guards reached `main` while the catalogue lived here. Two
+  // need multi-line finds, because `markRetained` deliberately mirrors `release()` and the one-line forms
+  // appear twice — the harness requires a find that occurs exactly once, which is what caught that.
+  { name: "lease: retention is not terminal against a prior release",
+    file: "src/workspace-lease.ts", test: "test/workspace.test.ts",
+    find: "      if (settled) return settled;\n      // Already dead: the helper is gone",
+    replace: "      // Already dead: the helper is gone",
+    expect: "markRetained after a clean release" },
+  { name: "lease: markRetained claims a retention on a dead helper",
+    file: "src/workspace-lease.ts", test: "test/workspace.test.ts",
+    find: "      if (holder.exitCode !== null || holder.signalCode !== null) return (settled = \"lost\");\n      const current = await readMetadata(paths.metadata);",
+    replace: "      const current = await readMetadata(paths.metadata);",
+    expect: "dead helper reports" },
+  { name: "lease: an unrecorded retention still settles",
+    file: "src/workspace-lease.ts", test: "test/workspace.test.ts",
+    find: "      if (recorded) settled = \"retained\";", replace: "      settled = \"retained\";",
+    expect: "could not be written" },
+  { name: "lease: an impossible close bound is accepted",
+    // `assertCloseBounds` moved to `lease-helper.ts` with the attempts it bounds, when the ceiling refused
+    // `workspace-lease.ts` at 402 lines.
+    file: "src/lease-helper.ts", test: "test/workspace.test.ts",
+    find: "    if (!Number.isInteger(value) || value < 1 || value > ceiling) {", replace: "    if (false) {",
+    expect: "impossible close bound" },
+  { name: "lease: the ledger word is hardcoded instead of reported",
+    file: "extensions/workspace-runtime.ts", test: "test/workspace-runtime.test.ts",
+    find: "    ? await input.prepared.lease.markRetained(input.reason)",
+    replace: "    ? ((await input.prepared.lease.markRetained(input.reason)), \"retained\")",
+    expect: "ledgered `lost`" },
   // ── the writer lease's retain path (R-146, merged from `main` with PR #14) ───
   //
   // These four arrived on `main` while this branch held the catalogue, so their guards shipped with named
@@ -187,14 +221,6 @@ const MUTATIONS = [
     find: "{timeout:Number(process.env.PI_DADDY_LEASE_CLOSE_TIMEOUT_MS||15000),killSignal:\"SIGKILL\"},",
     replace: "",
     expect: "hangs on close does not strand the lock forever" },
-  { name: "lease: retention is not terminal",
-    file: "src/workspace-lease.ts", test: "test/workspace.test.ts",
-    find: "      settled = \"retained\";", replace: "",
-    expect: "after markRetained" },
-  { name: "lease: a zero close bound is accepted",
-    file: "src/workspace-lease.ts", test: "test/workspace.test.ts",
-    find: "    if (!Number.isFinite(value) || value < 1) {", replace: "    if (false) {",
-    expect: "close bound is refused" },
   { name: "contract: npm test writes the repository again",
     file: "scripts/generate-ledger-v2-contract.ts", test: "test/ledger-contract.test.ts",
     find: "  await writeLedgerV2ContractFixtures(targets.fixtures);", replace: "  await writeLedgerV2ContractFixtures();",

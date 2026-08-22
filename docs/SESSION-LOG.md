@@ -190,6 +190,84 @@ That convention is why every reversal here was survivable, and there have been f
 
 ---
 
+## 2026-08-22 (CI) — the checks stop being opt-in
+
+**`.github/workflows/ci.yml`, and the argument for it is the review history rather than a preference.** Eight
+passes over PR #10 found guards deletable with the whole suite green — ten in one round, fourteen in another,
+seven in the eighth. Every round fixed its instances; none changed the cause. R-34 had already named it: *a
+check an operator has to know to run is not a control, it is a feature.*
+
+Runs on every pull request and every push to `main`: typecheck, the unit suite, **a tree-cleanliness
+assertion** (a suite that can edit the repository can make itself pass — `npm test` once overwrote tracked
+contract fixtures), the **mutation catalogue**, and the installed-package smoke. Matrix over the `engines`
+floor (22.19.0) and the version this is developed on (24.x) — the floor is a published claim that nothing had
+ever tested.
+
+**One line in it is R-143 and worth knowing about:** `FORCE_COLOR=0` / `NO_COLOR=1` are pinned at the workflow
+level, because the catalogue parses `node --test`'s reporter and in a colouring environment reported `0/20
+guards forced` with all twenty intact. CI would have inherited a control that accuses everything.
+
+**Two honest limits.** The mutation step is `--if-present`: the catalogue was written on PR #10 and does not
+exist on `main`, so it is a no-op here and real the moment that branch lands — which also pays the catalogue
+debt R-146 and R-152 both recorded, for good. And **integration is not covered**: 44 tests needing a real `pi`
+and a real `herdr` server, which would become decoration if faked. It stays a local gate.
+
+**And then the operator turned protection on, so it blocks.** `main` requires a pull request with zero
+approvals and both CI legs green; force-pushes and deletions are refused; **`enforce_admins` is on**, without
+which the rule would bind everyone except the one account able to breach it — which is exactly how R-85's
+eleven commits reached `main`. A direct push is now refused by the server rather than by a hook each clone has
+to install.
+
+**Verified by configuration and not by attempting a breach**, deliberately: bouncing a real push off `main`
+would prove it end to end and would advance `main` outside a PR if the setting were wrong, which is the single
+thing rule 10 exists to prevent. The first live proof is the PR carrying this entry — the first change here
+that *could not* have been pushed directly. The escape hatch is named in rule 10 so nobody invents one under
+pressure: one API call to lift, one to restore, and lifting it is a decision to record.
+
+**Verified locally before pushing** (node 24, `FORCE_COLOR=0`): `npm ci` at the workspace root, then 604 unit ·
+typecheck · tree clean · `--if-present` no-op · smoke. The 22.19.0 leg has no local answer — no node 22 here —
+so **the PR's own run is the evidence for it**, which is the right place for that experiment.
+
+---
+
+## 2026-08-22 (R-152) — the fix's caller threw its answer away
+
+**Two independent reviews of the merged R-146 work, and both found the same thing by reading the CALLER rather
+than the fix.** `markRetained` returned `void`; `releaseDelegationWorkspace` wrote
+`(await lease.markRetained(reason), "retained")`. One line, in a different file, discarding the result — and
+with it the ledger's ability to tell three different facts apart.
+
+So a `workspace_lease` event said `retained` — *"kept deliberately … the pane may still be live"* — when the
+helper was already dead (the fact is `lost`, which is what R-103's vocabulary exists for), when the lease had
+already been cleanly released, and when the retention's own record could not be written.
+
+**The second of those is the mirror of R-146, introduced by fixing R-146.** Making retention terminal was
+one-directional: `release()` checked `settled`, `markRetained` did not, so a completed handover could be
+rewritten into `retained:herdr-close-failed` and the memoized answer flipped with it. Measured end to end.
+
+**What generalises.** Both earlier passes over that fix asked *"is the fix correct?"* — and it was. Neither
+asked *"what does its return value promise, and does the caller use it?"* **A `void` return is a promise that
+nothing can be reported, and the caller will invent something.**
+
+**The bounds were wrong at the top end as well, and on the wrong channel.** `MAX_SAFE_INTEGER` truncates to
+1ms (`TimeoutOverflowWarning`), SIGKILLing every close before herdr can act — the exact mirror of `0` meaning
+no bound. And the refusal was a `GovernanceRefusal` carrying `WORKSPACE_LEASE_STALE`, so an ADR-0034 controller
+switching on codes would treat a permanent caller bug as transient and retry forever. A bad argument is not a
+governance outcome: it throws `RangeError` now. The check also moved above the read-lease early return, where
+it had been validating nothing.
+
+**Verification.** 604 unit · 44 integration · typecheck · smoke · register guard · line ceiling. Each of the
+four new guards forced by reverting it alone — and the record-was-written gate was **unforced on the first
+attempt**, then pinned by a test that makes the lease directory unwritable. The line ceiling refused
+`workspace-lease.ts` at 435 lines; split at the same seam PR #10 used (`src/lease-helper.ts`) so the branches
+converge rather than diverge.
+
+**The catalogue debt recurs:** `scripts/mutation-audit.mjs` still lives only on PR #10, so these four guards
+have named regressions and no pinned entries. That is now the second time, and it is R-142's argument for CI in
+one sentence.
+
+---
+
 ## 2026-08-22 (R-146) — a retained lease detained its own process, and it shipped
 
 **Fixed from `main`, not inside PR #10**, because it is in **published 0.18.0 and 0.18.1** and has nothing to

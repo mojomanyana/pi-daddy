@@ -1,0 +1,92 @@
+# The control R-142 asked for.
+#
+# Every review pass over PR #10 found guards that could be deleted with the whole suite green — ten in one
+# round, fourteen in another. The instances were fixed each time and the cause never changed: the only thing
+# forcing rule 7 was somebody choosing to run a check. R-34 names that shape — *"a check an operator has to
+# know to run is not a control, it is a feature"* — and the guards in this repository that never had this
+# failure are the mechanical ones: the line ceiling, the branch guard, the refusal enumeration.
+#
+# So: the suites run on every pull request, and a red run blocks nothing until branch protection is turned on
+# (see `docs/WORKING-RULES.md` rule 10, which states that gap rather than implying it is closed).
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # **R-143, and this is the line that makes the mutation catalogue trustworthy here.** `node --test` colours
+  # its reporter whenever `FORCE_COLOR` is set, and the catalogue parses that reporter to learn which test
+  # failed. In a colouring environment it reported `0/20 guards forced` with all twenty guards intact — a
+  # control that accuses everything, which is worse than one that is absent. The parser strips ANSI now, but
+  # CI pins the input too: two independent defences, the standard the catalogue holds its own entries to.
+  FORCE_COLOR: "0"
+  NO_COLOR: "1"
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The floor comes from `packages/pi-daddy/package.json`'s `engines`, and the ceiling is what this
+        # project is developed on. Both, because the floor is a published claim: the package tells npm it runs
+        # on 22.19, and nothing has ever tested that.
+        node: ["22.19.0", "24.x"]
+    name: node ${{ matrix.node }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - run: npm ci
+
+      - name: typecheck
+        working-directory: packages/pi-daddy
+        run: npm run typecheck
+
+      - name: unit tests
+        working-directory: packages/pi-daddy
+        run: npm test
+
+      # `npm test` silently overwrote tracked ledger-contract fixtures once, and the catalogue has an entry
+      # about it. A suite that edits the repository can make itself pass, so this asserts it did not.
+      - name: the suite left the tree clean
+        run: |
+          git diff --exit-code
+          test -z "$(git status --porcelain)" || { git status --porcelain; exit 1; }
+
+      # `--if-present` on purpose: the catalogue arrives with PR #10 (ADR-0035), which is where it was
+      # written. Until that lands this step is a no-op on `main` and real on the PR that carries it — stated
+      # rather than left for someone to discover, because a step that silently does nothing is R-34 again.
+      # One entry costs the full 180s harness timeout by design (its named test fails, then the runner wedges,
+      # which the entry documents), so the budget is generous.
+      - name: mutation catalogue (rule 7, as a control)
+        working-directory: packages/pi-daddy
+        timeout-minutes: 25
+        run: npm run test:mutation --if-present
+
+      - name: installed-package smoke
+        working-directory: packages/pi-daddy
+        run: npm run test:smoke
+
+# **What this does NOT cover, because a CI badge that implies more than it checks is the defect this project
+# keeps recording.**
+#
+#  - `npm run test:integration` (44 tests) needs a real `pi` process and a real `herdr` server. Neither is
+#    installed here, and faking them would make the most load-bearing suite in the repository a decoration.
+#    It stays a local gate; `docs/SESSION-LOG.md` records when it was last run and against what.
+#  - `PI_GRANTS_IT_MODEL=1` costs money and is never run unattended.
+#  - Nothing here blocks a merge yet. `main` has no branch protection, so this reports and does not enforce;
+#    the server-side half is one settings change, and rule 10 says so out loud.

@@ -1,11 +1,14 @@
 /**
  * **The lock helper: a separate program, and the parent's side of its pipes.**
  *
- * Split out of `workspace-lease.ts` on 2026-08-22 because `test/file-size.test.ts` refused that file at 405
- * lines after PR #14 merged — the same way `delegate.ts` was split at 413 rather than the cap being raised
- * (rule: when a guard fails, obey it). The seam is not arbitrary: everything here is about the process that
- * HOLDS the kernel lock — the source it runs, the readiness token it prints, and the parent-side handles that
- * keep it referenced. `workspace-lease.ts` keeps the lease lifecycle that talks to it.
+ * Split out of `workspace-lease.ts` because `test/file-size.test.ts` refused that file — at 405 lines on the
+ * ADR-0035 branch when PR #14 merged into it, and at 435 here once R-152's guards landed. Both branches take
+ * the same seam so they converge rather than diverge, and the cap has never been raised: `delegate.ts` was
+ * split at 413 the same way (rule: when a guard fails, obey it).
+ *
+ * The seam is not arbitrary. Everything here concerns the process that HOLDS the kernel lock — the source it
+ * runs, the readiness token it prints, and the parent-side handles that keep it referenced.
+ * `workspace-lease.ts` keeps the lease lifecycle that talks to it.
  */
 
 export const LEASE_READY = "PI_DADDY_LEASE_READY";
@@ -47,4 +50,48 @@ process.stdin.resume();`;
  */
 export const unrefStream = (stream: unknown): void => {
   (stream as { unref?: () => void } | null)?.unref?.();
+};
+
+/**
+ * The bounds on the helper's `herdr tab close` attempts live here, with the attempts they bound — moved out of
+ * `workspace-lease.ts` when the line ceiling refused it at 402 lines, once both this branch's ADR-0035 work and
+ * `main`'s R-152 guards had landed in it. Third time that guard has fired on this file and third time the
+ * answer was a seam rather than a bigger cap.
+ */
+/**
+ * **A bound that is not a bound throws, and it throws a `RangeError` (R-146, R-152).**
+ *
+ * Both ends fail, in opposite directions and both silently:
+ *
+ *  - `0` reads as "no limit" and Node agrees — `execFile` treats `timeout: 0` as *no* timeout (measured: the
+ *    callback for a 3s sleep arrives at 3004ms with no error), reinstating the unbounded hang the bound exists
+ *    to prevent. Negatives behave identically.
+ *  - anything above `2^31 - 1` truncates: `setTimeout` warns `TimeoutOverflowWarning … set to 1`, so
+ *    `Number.MAX_SAFE_INTEGER` — the plausible "effectively no limit" sentinel, given the argument about `0`
+ *    — SIGKILLs every `herdr tab close` after 1ms, before herdr can act. Measured: callback at 3ms.
+ *
+ * **Not a `GovernanceRefusal`.** It was one, carrying `WORKSPACE_LEASE_STALE`, which everywhere else in this
+ * package means *the lease went stale or was lost* — so an ADR-0034 controller switching on codes (the reason
+ * codes exist, R-103) would classify a permanent caller bug as transient and retry a call that can never
+ * succeed. A refusal is a governance outcome that gets ledgered; a bad argument is neither.
+ *
+ * Checked for read leases too, which the first version did not: it sat below the read-lease early return, so a
+ * controller smoke-testing its configuration against a read lease got a false all-clear.
+ */
+export const assertCloseBounds = (input: { herdrCloseTimeoutMs?: number; herdrCloseAttempts?: number }): void => {
+  const MAX_TIMER = 2_147_483_647;
+  for (const [name, value, ceiling] of [
+    ["herdrCloseTimeoutMs", input.herdrCloseTimeoutMs, MAX_TIMER],
+    ["herdrCloseAttempts", input.herdrCloseAttempts, Number.MAX_SAFE_INTEGER],
+  ] as const) {
+    if (value === undefined) continue;
+    if (!Number.isInteger(value) || value < 1 || value > ceiling) {
+      throw new RangeError(
+        `${name} must be a whole number between 1 and ${ceiling}, not ${String(value)}. Zero and negatives ` +
+          `are not "no limit" but no bound at all, a value past ${MAX_TIMER} truncates to 1ms, and a ` +
+          `fractional count is not a count — this bound exists so a hung herdr cannot hold the writer lock ` +
+          `forever (R-146).`,
+      );
+    }
+  }
 };
