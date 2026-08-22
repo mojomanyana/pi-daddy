@@ -170,6 +170,28 @@ const MUTATIONS = [
     file: "src/cli.ts", test: "test/init.test.ts",
     find: "  if (plan.routableWorkspaces.length > 0) {", replace: "  if (false) {",
     expect: "says out loud" },
+  // ── the writer lease's retain path (R-146, merged from `main` with PR #14) ───
+  //
+  // These four arrived on `main` while this branch held the catalogue, so their guards shipped with named
+  // regressions and no entries — the debt R-146's register body wrote out, paid here by the merge.
+  { name: "lease: a retained lease detains its process",
+    file: "src/workspace-lease.ts", test: "test/workspace.test.ts",
+    find: "      holder.unref();", replace: "",
+    expect: "retained lease releases its process" },
+  { name: "lease: a hung herdr close is unbounded in time",
+    // The helper source moved to `lease-helper.ts` when the line ceiling refused `workspace-lease.ts` at 405.
+    file: "src/lease-helper.ts", test: "test/workspace.test.ts",
+    find: "{timeout:Number(process.env.PI_DADDY_LEASE_CLOSE_TIMEOUT_MS||15000),killSignal:\"SIGKILL\"},",
+    replace: "",
+    expect: "hangs on close does not strand the lock forever" },
+  { name: "lease: retention is not terminal",
+    file: "src/workspace-lease.ts", test: "test/workspace.test.ts",
+    find: "      settled = \"retained\";", replace: "",
+    expect: "after markRetained" },
+  { name: "lease: a zero close bound is accepted",
+    file: "src/workspace-lease.ts", test: "test/workspace.test.ts",
+    find: "    if (!Number.isFinite(value) || value < 1) {", replace: "    if (false) {",
+    expect: "close bound is refused" },
   { name: "contract: npm test writes the repository again",
     file: "scripts/generate-ledger-v2-contract.ts", test: "test/ledger-contract.test.ts",
     find: "  await writeLedgerV2ContractFixtures(targets.fixtures);", replace: "  await writeLedgerV2ContractFixtures();",

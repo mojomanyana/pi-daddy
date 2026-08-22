@@ -591,6 +591,21 @@ deliberately because a herdr writer tab would not close, so the pane may still b
 `uncontended` — the ledger reporting a handover the kernel never performed, which is the R-100/R-103 class
 this vocabulary was added to expose. Disclosed and deliberately unfixed here (**R-141**); the comment in
 `src/workspace-lease.ts` claiming a single definition was wrong and now says this.
+**Retaining a lease does not detain the process that held it, and is terminal.** The record is written, the
+parent's references to the lock helper are dropped, and the host exits normally; a `release()` afterwards
+answers `retained` and leaves the record alone rather than claiming a handover the helper never performed. The
+helper then sees EOF and makes its `herdr tab close` attempts — **bounded in wall clock as well as in count**,
+because a herdr that accepts the close and never answers is not a failed close, and with no per-attempt timeout
+the retry budget is unreachable and the lock is held forever. **What "bounded" costs, stated rather than
+implied:** attempts × (per-attempt timeout + 1s between tries), so ~160s at the defaults of ten attempts and
+15s — during which every acquisition on that root is refused `WORKSPACE_WRITE_CONFLICT` for a workspace nothing
+is running in. Both bounds are refused if a caller passes zero or a negative value, because `timeout: 0` means
+*no* timeout to Node and would silently restore the unbounded case.
+
+In published 0.18.0 and 0.18.1 retention detained the holding process indefinitely (R-146), which reached a
+host only where the host lets the event loop drain — pi's **print** mode, and any library consumer such as an
+ADR-0034 external controller; interactive and rpc mode call `process.exit()`, so there the process still left
+and the on-exit pane sweep still ran.
 
 `release()` never throws. Almost every caller runs it from a cleanup path — the exception is the check
 runner, which releases mid-flow on purpose so that lease loss cannot race a blocked receipt append — and a

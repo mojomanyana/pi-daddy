@@ -14,6 +14,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { GovernanceRefusal, refusal } from "./refusals.ts";
 import type { ValidatedWorkspace, WorkspaceAccess } from "./workspace.ts";
+import { HELPER_SOURCE, LEASE_READY, unrefStream } from "./lease-helper.ts";
 
 export const ENV_WORKSPACE_LEASE_DIR = "PI_GRANTS_WORKSPACE_LEASE_DIR";
 
@@ -22,23 +23,6 @@ export function defaultWorkspaceLeaseDir(env: NodeJS.ProcessEnv = process.env): 
   return env[ENV_WORKSPACE_LEASE_DIR] ?? join(agentDir, "pi-daddy", "workspace-leases");
 }
 
-const LEASE_READY = "PI_DADDY_LEASE_READY";
-// The lock holder also owns crash cleanup for the governed child. If the parent dies, stdin closes;
-// the helper signals the attached process, or closes the herdr tab, before releasing flock. A raw
-// descendant deliberately detached by bash remains ADR-0012's OS-containment boundary, not a lease
-// guarantee. The process branch SIGTERMs, escalates to SIGKILL at +500ms, and releases at +750ms
-// WITHOUT confirming death (R-101). The herdr branch retries `tab close` a BOUNDED number of times
-// and then releases anyway, leaving a marker file: an unreleasable lock strands a worktree forever
-// with no in-product recovery, which is strictly worse than a recorded failure to close (R-102).
-const HELPER_SOURCE = `
-import { execFile } from "node:child_process";
-import { writeFileSync } from "node:fs";
-let clean=false, target=null, buffered="";
-process.stdout.write(${JSON.stringify(`${LEASE_READY}:`)}+process.pid+"\\n");
-process.stdin.setEncoding("utf8");
-process.stdin.on("data",chunk=>{buffered+=chunk;for(;;){const i=buffered.indexOf("\\n");if(i<0)break;const line=buffered.slice(0,i);buffered=buffered.slice(i+1);try{const value=JSON.parse(line);if(value.release)clean=true;else if(value.process_pid)target={process_pid:value.process_pid};else if(value.herdr_tab)target={herdr_tab:value.herdr_tab};}catch{}}});
-process.stdin.on("end",()=>{if(clean||!target)return process.exit(0);if(target.process_pid){try{process.kill(target.process_pid,"SIGTERM")}catch{return process.exit(0)}setTimeout(()=>{try{process.kill(target.process_pid,"SIGKILL")}catch{}},500);return setTimeout(()=>process.exit(0),750);}let left=Number(process.env.PI_DADDY_LEASE_CLOSE_ATTEMPTS||10);const giveUp=()=>{try{if(process.env.PI_DADDY_LEASE_MARKER)writeFileSync(process.env.PI_DADDY_LEASE_MARKER,JSON.stringify({reason:"herdr-close-failed",herdr_tab:target.herdr_tab})+"\\n")}catch{}process.exit(0)};const close=()=>execFile("herdr",["tab","close",target.herdr_tab],error=>{if(!error)return process.exit(0);if(--left<=0)return giveUp();setTimeout(close,1000)});close();});
-process.stdin.resume();`;
 
 /**
  * The ledger outcome for a release. Exported because call sites had their own copies and the check runner's
@@ -84,6 +68,12 @@ export async function acquireWorkspaceLease(input: {
   signal?: AbortSignal;
   flockCommand?: string;
   acquisitionTimeoutMs?: number;
+  /**
+   * Bound on how long ONE `herdr tab close` attempt may take before it counts as failed (R-146). A hung
+   * herdr is not a failed herdr: without this the attempt never returns and the retry bound below is
+   * unreachable.
+   */
+  herdrCloseTimeoutMs?: number;
   /** Bound on the helper's `herdr tab close` retries before it releases the lock anyway (R-102). */
   herdrCloseAttempts?: number;
 }): Promise<WorkspaceLease> {
@@ -106,6 +96,30 @@ export async function acquireWorkspaceLease(input: {
     throw new GovernanceRefusal(refusal("WORKSPACE_WRITE_CONFLICT", `writer lease for ${input.workspace.workspaceId} was cancelled before acquisition`));
   }
 
+  /**
+   * **A bound that is not a bound is refused rather than accepted (R-146, rule 8).** `herdrCloseTimeoutMs: 0`
+   * reads as "no limit" and Node agrees — `execFile` treats `timeout: 0` as *no timeout* (measured: the
+   * callback arrives only when the child finishes, 3004ms for a 3s sleep), which silently reinstates the
+   * unbounded hang this bound exists to prevent. Negatives behave identically. `herdrCloseAttempts: 0` is
+   * milder and equally not what a caller means by it. Both refusals name the parameter, because the callers
+   * are ADR-0034 external controllers passing values this package never chose.
+   */
+  for (const [name, value] of [
+    ["herdrCloseTimeoutMs", input.herdrCloseTimeoutMs],
+    ["herdrCloseAttempts", input.herdrCloseAttempts],
+  ] as const) {
+    if (value === undefined) continue;
+    if (!Number.isFinite(value) || value < 1) {
+      throw new GovernanceRefusal(refusal(
+        "WORKSPACE_LEASE_STALE",
+        `${name} must be a finite number of at least 1, not ${String(value)} — a zero or negative bound is ` +
+          `not "no limit", it is no bound, and this one exists so a hung herdr cannot hold the writer lock ` +
+          `forever (R-146)`,
+        { workspace_id: input.workspace.workspaceId, root: input.workspace.root },
+      ));
+    }
+  }
+
   await mkdir(input.leaseDir, { recursive: true, mode: 0o700 });
   const paths = leasePaths(input.leaseDir, input.workspace.root);
   const { spawn } = await import("node:child_process");
@@ -114,7 +128,12 @@ export async function acquireWorkspaceLease(input: {
     process.execPath, "--input-type=module", "-e", HELPER_SOURCE,
   ], {
     stdio: ["pipe", "pipe", "pipe"],
-    env: { ...process.env, PI_DADDY_LEASE_MARKER: paths.marker, PI_DADDY_LEASE_CLOSE_ATTEMPTS: String(input.herdrCloseAttempts ?? 10) },
+    env: {
+      ...process.env,
+      PI_DADDY_LEASE_MARKER: paths.marker,
+      PI_DADDY_LEASE_CLOSE_ATTEMPTS: String(input.herdrCloseAttempts ?? 10),
+      PI_DADDY_LEASE_CLOSE_TIMEOUT_MS: String(input.herdrCloseTimeoutMs ?? 15_000),
+    },
     // Own process group, for two reasons. It lets teardown kill `flock` AND the helper holding the lock
     // file descriptor as one unit even before the helper has reported its pid (R-99), and it stops a
     // stray group signal — a terminal Ctrl-C, a closed window — from releasing a live writer's lock as
@@ -252,6 +271,43 @@ export async function acquireWorkspaceLease(input: {
           ...metadata, state: "released", released_at: new Date().toISOString(), release_reason: `retained:${reason}`,
         }).catch(() => undefined);
       }
+      /**
+       * **It must, however, let THIS process exit (R-146).** Leaving the helper alone is the decision;
+       * leaving the parent's three pipes and the child handle referenced was an accident, and it meant a
+       * retained lease wedged its own process forever — measured `exit=124` against `exit=0` for the same
+       * sequence ending in `release()`.
+       *
+       * **Which hosts it actually wedged, corrected after review.** `process.exit()` runs `exit` handlers and
+       * ignores pending handles, so this only bites a host that lets the loop drain: pi's **print** mode sets
+       * `process.exitCode` and returns (`dist/main.js`), and a library consumer — an ADR-0034 external
+       * controller calling this package directly — does the same. pi's interactive and rpc modes call
+       * `process.exit()` explicitly (`dist/modes/interactive/interactive-mode.js:3148`), so there the process
+       * still leaves and `pane-reaper`'s `process.once("exit")` sweep still runs. An earlier version of this
+       * comment claimed the sweep was lost generally and cited `src/cli.ts`, which has one subcommand
+       * (`init`) and can neither hold a lease nor open a pane.
+       *
+       * Unref rather than close, because the lock must outlive this call: when the parent does exit, the
+       * helper sees EOF and runs the path it was written for — bounded `herdr tab close` attempts, a marker
+       * file, then release anyway (R-102: an unreleasable lock strands a worktree with no in-product
+       * recovery, which is strictly worse than a recorded failure to close). Narrowed to this path on
+       * purpose: at spawn it would remove the accidental guarantee that a process cannot exit while a lease
+       * is still ACTIVE, which is a different decision and not this fix.
+       */
+      /**
+       * **Terminal (R-146).** `releasing` stops a late `holder.close` being reported as a lost lease, and
+       * `settled` stops a later `release()` running the clean handshake — which it did: measured, it returned
+       * `released`, overwrote `retained:herdr-close-failed` with `completed`, and sent `{release:true}` so the
+       * helper exited `clean` and never attempted the close. The pane retention exists to protect was
+       * abandoned silently, and the ledger asserted a clean handover for a lease kept *because* a pane would
+       * not close. No in-tree caller does this — but `WorkspaceLease` is a public export and
+       * `try { … } finally { await lease.release() }` is the obvious shape for the external controllers this
+       * whole fix is for.
+       */
+      releasing = true;
+      settled = "retained";
+      holder.unref();
+      unrefStream(holder.stdout);
+      unrefStream(holder.stderr);
     },
     async readCloseFailure() {
       try {
