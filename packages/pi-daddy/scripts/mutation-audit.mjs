@@ -70,9 +70,12 @@ const MUTATIONS = [
   //  - `finally { handle.close() }` prevents a descriptor leak. Node closes a `FileHandle` on GC, so a leak
   //    does not reliably surface as an fd count within one run.
   //
-  // Both were measured by review — the swap loop hung 1 of 6 iterations with `stat`-by-name — and neither is
-  // forced by anything here. That is the honest form (the shape rule 6 asks for), not an excuse: an entry
-  // asserting a check that does not fire would be worse than the gap it hides.
+  // Each was measured by hand or by review — the swap loop hung 1 of 6 iterations with `stat`-by-name — and
+  // none is forced by anything here. That is the honest form (the shape rule 6 asks for), not an excuse: an
+  // entry asserting a check that does not fire would be worse than the gap it hides.
+  //
+  // (This sentence read "Both … neither" while the list above it said three. A stale count, in the paragraph
+  // about stale claims, in the script written to stop stale claims. Left recorded rather than quietly fixed.)
   { name: "registry: non-regular file accepted",
     file: "src/workspace.ts", test: "test/workspace-capability.test.ts",
     find: "    if (!info.isFile()) {", replace: "    if (false) {",
