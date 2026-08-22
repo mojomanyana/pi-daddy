@@ -50,11 +50,13 @@ export const DELEGATE_CAPABILITY: Capability = "tool:delegate";
  * `tool:workspace:<id>`) and `isSafeCapability` (which called it malformed) behind. The two places that parse
  * an id's namespace read this, so a fifth namespace is one entry rather than a third divergence.
  *
- * **Not every prefix decision in the package.** A grep for `startsWith("` across `src/` and `extensions/`
- * finds inline prefix tests in nine modules; this list is read by two of them. Stated without a number on
- * purpose — SPEC first claimed the list was "what every site reads", the correction said "six" while its own
- * enumeration listed seven, and the real figure is larger again. Consolidating them is a separate change,
- * and a count nobody re-derives is the defect this list exists to prevent.
+ * **Not every prefix decision in the package.** Inline `startsWith("` tests on a capability namespace are
+ * scattered across `src/` and `extensions/`; this list is read by two of them. **The number is deliberately
+ * not written here** — SPEC first claimed the list was "what every site reads", a correction said "six"
+ * while its own enumeration listed seven, this docstring then said "nine" in the sentence claiming it gave
+ * no number, and a re-derivation found fourteen files containing such a test. Run the grep; do not quote a
+ * predecessor. Consolidating the sites is a separate change, and a count nobody re-derives is the defect
+ * this list exists to prevent.
  *
  * `docs/SPEC.md`'s grammar section is the prose statement of the same list and is kept in step with it.
  */

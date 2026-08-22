@@ -56,9 +56,12 @@ the record of how the package got here and are worth keeping; they are not worth
   `ROUTABLE WORKSPACES` block of a generated `.pi/grants.env`, which tells you to paste them into your
   grant), and non-ASCII (the generated file is reviewed in an editor, where control characters and
   homoglyphs let one id render as another). One bad entry refuses the whole file, so rename before upgrading.
-- **The registry must not be world-writable, and must be owned by you or root.** Also refused: a
-  non-regular file (a FIFO there blocked session start indefinitely), and anything over 1 MiB.
-  Group-writable is allowed — `umask 002` with per-user groups makes 0664 the default and exposes nothing.
+- **The registry must be a regular file under 1 MiB** — a FIFO there blocked session start indefinitely, and
+  the read is bounded by one handle `fstat`-ed as a descriptor. **Ownership and mode are NOT checked.** An
+  earlier draft of this release added a uid/world-writable guard and this bullet promised it; `e1937cf`
+  removed the code when the change was narrowed to ADR-0035 and left the promise here for a day. Nothing in
+  0.19.0 checks who may write the registry, and a mode check would not reach the attack that matters — a
+  governed child runs as the same uid as its parent. Tracked as R-137.
 - No `workspace:` id is live by default in a generated grant, including one a package's `allowed-tools`
   declares. Which worktree a child starts in is the operator's decision (ADR-0028).
 

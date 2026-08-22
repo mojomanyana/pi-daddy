@@ -164,7 +164,7 @@ refuses until a gate passes that no longer means anything. They are in git histo
 
 ```bash
 cd packages/pi-daddy
-npm test                   # 629 unit tests — fast, no pi, no network (the branch guard spawns git)
+npm test                   # 633 unit tests — fast, no pi, no network (the branch guard spawns git)
 npm run typecheck          # src + extensions + tests + integration tests
 npm run test:integration   # 45 tests vs a REAL pi process AND a real herdr server — ~55s, no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and USE it

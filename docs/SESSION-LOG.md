@@ -14,7 +14,7 @@ the top because the rule was broken by drift, and this file is what a session ac
 **2026-08-22 — PR #10 (ADR-0035, 0.19.0) is OPEN and this is the work.** FIVE independent review passes have
 now run over it, each finding defects in the previous one's fixes; the fixes for the third are on `fix/adr-0035-review`, to be pushed onto
 `adr/0035-workspace-attenuation` so PR #10 merges correct rather than being narrated by a second PR.
-**628 unit + 45 integration.** The full account is the top dated entry below; what a resuming session needs:
+**633 unit + 45 integration**, measured at `747a405`. The full account is the top dated entry below; what a resuming session needs:
 
 1. **The generalisable rule, twice refined.** Adding a capability namespace is a nine-site change (R-133) —
    **and the sites you touch need the same adversarial read as the ones you missed** (R-136, R-137), because

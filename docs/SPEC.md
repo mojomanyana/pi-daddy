@@ -487,7 +487,7 @@ lower a grant containing `write`, `edit`, `bash`, or an unknown/custom tool: pi-
 conservatively from the trusted requested capability set. The ID resolves through
 the operator-owned JSON file at `PI_GRANTS_WORKSPACE_REGISTRY` (`{version:1, workspaces:{id:{path}}}`). Before
 spawn pi-daddy realpaths that path, verifies it is the root of a Git-registered worktree, and uses it as the
-child's initial CWD. A correlation workspace ID that disagrees is refused.
+child's initial CWD. A correlation workspace ID that disagrees **with a routing spec** is refused.
 
 **This is validation against accidental misrouting, not path confinement.** `WRITER_ROOT` is an intended
 workspace. `read`, `write`, `edit` and especially `bash` are not path-scoped; a child can leave the root,
@@ -546,9 +546,12 @@ check. "Which registered root a child may select is a capability" is a statement
 tools, not about a controller calling the package directly.
 
 **The registry file itself, and what reading it refuses (0.19.0).** `PI_GRANTS_WORKSPACE_REGISTRY` must name a
-**regular file** under **1 MiB**, owned by this user or root, and **not world-writable**; anything else is
-refused `WORKSPACE_NOT_REGISTERED`, naming the file. Group-writable is permitted, because `umask 002` with
-per-user groups makes 0664 the default and exposes nothing. Each id must match `[A-Za-z0-9][A-Za-z0-9._/-]*`
+**regular file** under **1 MiB**; anything else is refused `WORKSPACE_NOT_REGISTERED`, naming the file.
+**Ownership and mode are NOT checked.** They were, briefly: a uid/world-writable guard was added, and then
+removed with the rest of the registry-integrity work when this change was narrowed to ADR-0035 (`e1937cf`).
+Three documents including this one went on claiming it for a day — the sixth review pass found the sentence,
+not the code. A mode check could not reach the attack that matters anyway, because a governed child runs as
+the same uid as its parent; see **R-137**. Each id must match `[A-Za-z0-9][A-Za-z0-9._/-]*`
 — slashes and dots are fine, so a worktree named after its branch works; whitespace, commas, `*`, shell
 metacharacters and non-ASCII are refused `GRANT_ID_MALFORMED`, because an id becomes the tail of a capability
 id and reaches both a comma-separated grant and a generated file the operator is told to paste from. One bad
@@ -561,9 +564,10 @@ no in-process timeout can cover it.
 
 **What the registry does NOT establish.** Routing attenuates by **id**, not by **destination**: a child
 holding `workspace:staging` and a write tool can rewrite that entry to point at another worktree and route its
-grandchild there. The guards above refuse a registry another *user* can rewrite in place; they cannot see a
-same-uid descendant, and they do not inspect the parent directory, so a writable directory defeats them by
-replacement. Open, measured, tracked as **R-137**.
+grandchild there. Nothing above prevents that, and nothing above is meant to: the guards bound what reading
+the file can cost, not who may write it. A same-uid descendant is indistinguishable from its parent to any
+file mode, and the directory is never inspected, so `rename(2)` needs only directory write. Open, measured,
+tracked as **R-137**.
 
 **Before 0.19.0 routing did not attenuate at all**, and that shipped in 0.18.0: the registry path inherited
 into every governed child and `workspace_id` was a model-facing parameter validated against the registry with
@@ -581,6 +585,12 @@ evaporated under a live governed writer — **not** the same fact as an operator
 deliberately because a herdr writer tab would not close, so the pane may still be live), `timeout` and
 `refused`. Every one of those four additions exists because the fact was previously recorded as `released` or
 `acquired`, making the ledger assert a handover or an exclusion that did not happen.
+
+**One path does not use that mapping yet.** `releaseDelegationWorkspace` has a private copy without the
+`not-held` arm, so releasing a **read** lease on the delegation path is recorded `released` rather than
+`uncontended` — the ledger reporting a handover the kernel never performed, which is the R-100/R-103 class
+this vocabulary was added to expose. Disclosed and deliberately unfixed here (**R-141**); the comment in
+`src/workspace-lease.ts` claiming a single definition was wrong and now says this.
 
 `release()` never throws. Almost every caller runs it from a cleanup path — the exception is the check
 runner, which releases mid-flow on purpose so that lease loss cannot race a blocked receipt append — and a
@@ -876,9 +886,9 @@ bound a typo can switch off is not a bound.
 
 ```bash
 cd packages/pi-daddy
-npm test                   # 596 unit tests — pure, no pi, no network
+npm test                   # 633 unit tests — pure, no pi, no network
 npm run typecheck          # src + extensions + test + test-integration
-npm run test:integration   # 44 tests against a REAL pi process/herdr server, no model tokens
+npm run test:integration   # 45 tests against a REAL pi process/herdr server, no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and USE every subpath —
                            # and run the installed `pi-daddy init` bin, which is how R-73 was found
 

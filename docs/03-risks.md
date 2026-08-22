@@ -2170,6 +2170,11 @@ refusing until granted, which is the one-line edit an operator faces.
 **What is still not shown:** that a model would choose the escalation, and that it crosses a real process
 boundary. The probe's own "does not establish" section says so.
 
+**SUPERSEDED 2026-08-22 (sixth pass):** the paragraph below was written before ADR-0035 shipped the gate it
+says does not exist. `PI_GRANTS_GATED=workspace:prod` now asks a human before any descendant routes there —
+verified by execution — so the interim guidance is no longer the mitigation. Read R-145 before relying on it:
+the destination's writer lease is taken *before* the question is asked. Left as written, per rule 2.
+
 **Interim guidance for an operator:** do not register workspaces of differing sensitivity in one session.
 There is no capability to gate today, so `PI_GRANTS_GATED` cannot help.
 
@@ -2401,6 +2406,13 @@ inheritance rule are an ADR, not a paragraph in an amendment — ADR-0035 explic
 different mechanism arriving inside a fix commit got none of the design attention the herdr path needed. It
 returns as its own ADR.
 
+**CORRECTION 2026-08-22 (R-144), and it widens this entry.** The paragraph below described the ownership and
+mode guard as existing. `e1937cf` had already removed it — the same commit that wrote this entry's scope
+decision — so **nothing checks who may write the registry.** This attack therefore does not need `tool:write`
+inside a governed child at all: any local process that can write the file, or `rename(2)` into its directory,
+repoints an id for every descendant that holds it. Three reviewers found the stale claim independently. The
+paragraph is left as written, per rule 2.
+
 **What DOES exist now**, and is narrower than the pin was claimed to be: the registry must be a regular file,
 under 1 MiB, owned by this user or root, and not world-writable. That refuses a registry another *user* can
 rewrite in place. It cannot touch this entry's attack at all — a governed child runs as the same uid as its
@@ -2622,6 +2634,188 @@ it, which is said here rather than implied.
 instrument, not twenty deleted guards. And any new parse of a child process's stdout in this repository that
 does not strip ANSI first.
 
+## R-144 · The narrowing commit deleted the registry ownership guard and three documents kept selling it — H×H, FIXED (documents), and it corrects R-137's bound
+
+Added and fixed 2026-08-22, found independently by **three** of the sixth pass's four reviewers. Never
+published — 0.19.0 is unreleased.
+
+`ebad92a` added a uid/world-writable guard on `PI_GRANTS_WORKSPACE_REGISTRY`. `e1937cf` — *"narrow PR #10 to
+ADR-0035"* — removed the code and sent the question to a future ADR. It edited none of the three places that
+announce the guard: `docs/SPEC.md`'s registry paragraph (the document `CLAUDE.md` calls authoritative),
+`CHANGELOG.md`'s **BREAKING** section (what an upgrading operator reads first), and **R-137's own paragraph
+headed "What DOES exist now"**. Measured: a `0666` registry in a `0777` non-sticky directory loads with no
+refusal.
+
+**The register entry is the worst of the three, because the false sentence is doing work.** R-137 is OPEN, and
+that paragraph is the only thing bounding its blast radius — *"That refuses a registry another **user** can
+rewrite in place… It cannot touch this entry's attack at all — a governed child runs as the same uid as its
+parent."* With no check at all, R-137's attack does **not** require `tool:write` inside a governed child:
+**any** local process that can write that file, or its directory, repoints `workspace:staging` at another
+worktree, and every descendant holding that id routes there with a real exclusive write lease. The bound was
+inherited from a guard that no longer exists, so the entry understates itself.
+
+**This is CLAUDE.md's headline lesson reappearing in the register entry that records it** — *a claim written
+beside a fix is not the fix* — and the sixth pass's version is narrower and more useful: **a commit that
+REMOVES a guard has to grep for the guard's claims, exactly as a commit that adds one has to add its test.**
+Narrowing scope is not a documentation-free operation. Nothing caught it because there was never a test: the
+guard's own tests went out with the guard, so the suite stayed green at 629/629 while three documents lied.
+
+**Fixed** in the documents, not in the code — the code is the ADR-0036 question R-137 already holds. SPEC and
+the CHANGELOG now say ownership and mode are unchecked and why a mode check cannot reach the attack; R-137
+carries a dated correction of its bound.
+
+**Trigger:** any commit that deletes a check — `grep` the check's own vocabulary across `docs/` and the
+package before it lands. And any risk entry whose blast radius is bounded by a *different* entry's mechanism.
+
+---
+
+## R-145 · A gated routing attempt takes the destination's exclusive writer lease before the human is asked — M×H, OPEN
+
+Added 2026-08-22 by the sixth pass. **New behaviour created by ADR-0035**, and not a defect in any single
+line: two correct decisions compose into it.
+
+`extensions/run-delegation.ts` previews the plan, and enters `prepareDelegationWorkspace` when
+`plan.ok || shouldSeekApproval(...)`. `shouldSeekApproval` is true whenever `gatedBlocked` is non-empty and
+`denied` empty — precisely the state ADR-0035's new routing gate produces. So the lease is acquired, and only
+then is the dialog opened. `src/approval-prompt.ts` documents the default as no timeout: *"waiting forever
+denies nothing."*
+
+Measured against real worktrees and a real kernel `flock`, replaying the production ordering: caller holds
+`workspace:prod` and `tool:write`, operator sets `PI_GRANTS_GATED=workspace:prod`, the model calls
+`delegate(..., workspace: {workspace_id: "prod", access: "read"})`.
+
+```
+preview           GATED_UNAPPROVED, gatedBlocked ["workspace:prod"], denied []
+lease_acquired    true, access "write", root .../prod
+rival writer      REFUSED  WORKSPACE_WRITE_CONFLICT — "already has an active pi-daddy-governed writer"
+final             GATED_UNAPPROVED, child_ever_started false
+```
+
+So an **unapproved** routing attempt excludes every other governed writer on `prod` for the whole dialog,
+emits a `workspace_lease` `acquired`/`write` record for a child that never runs, then releases. Repeatable
+once per tool call, and reachable by the model rather than by the operator.
+
+**Why the ordering is not simply wrong.** It is ADR-0034's, and deliberate: the workspace is resolved and
+leased *before* any human is asked so that the approval binds to the exact tree the human sees (R-110). What
+changed is the subject — ADR-0035 made the routing itself the gated thing, so "resolve then ask" became
+"seize the destination, then ask whether you may go there". Reversing it needs a decision about what a bound
+approval means, which is an ADR and not a patch, and the gate is the one control an operator has for exactly
+the workspace they care most about.
+
+**What it is not:** no capability is conferred, no child starts, and the lease is released. The harm is
+availability plus a lease record whose child never existed.
+
+**Trigger:** an operator reporting `WORKSPACE_WRITE_CONFLICT` on a workspace nothing is running in; or a
+`workspace_lease acquired` with no subsequent `capability_decision` that started a child.
+
+---
+
+## R-146 · A retained writer lease stops its own process from exiting — H×M, OPEN
+
+Added 2026-08-22 by the sixth pass, **re-derived here by execution before being written** (working rule 5,
+and the habit that has twice found the reported version understated).
+
+`acquireWorkspaceLease` spawns `flock` with `stdio: ["pipe","pipe","pipe"]` and never `unref`s it, so the
+holder keeps the parent's event loop alive. Every ordinary path ends the helper's stdin, which is how the
+lease is released. `markRetained` deliberately does not — *"the pane may still be live"* — so on that path
+nothing ever closes the pipes.
+
+```
+mode=release   acquired write · release -> released · EXIT event, code 0   · exit=0
+mode=retain    acquired write · main() returning                          · exit=124 (timed out, hung)
+```
+
+Reached in production from the herdr executor when `tab close` fails: `HerdrWriterCloseError` →
+`markRetained("herdr-close-failed")`. **R-102 accepted stranding the worktree; nothing recorded that it also
+strands the process.** Three places say the opposite — SPEC's *"the lock is held by a helper whose stdin
+belongs to the parent"*, and two comments promising the strand lasts *"until process exit"*, which is the one
+thing that then cannot happen. `src/cli.ts` sets `process.exitCode` and relies on a natural exit, and
+`pane-reaper`'s `process.once("exit")` sweep cannot run either — so the failure that triggers retention also
+disables the cleanup for every other pane.
+
+**Deliberately not fixed in this PR, with the candidates named.** `holder.unref()` at spawn is one line and
+it changes lease lifetime semantics for every path: today the pipes accidentally guarantee a process cannot
+exit while it still holds a lease, and unref removes that. Ending stdin with a "keep the lock" sentinel is the
+narrower fix and needs the helper protocol extended. Either is a runtime-behaviour change in a branch that
+was narrowed specifically to stop unrelated runtime work arriving where the previous round's reviewers could
+not see it (R-142's reasoning, one layer over). **It is a hang, so it should be the next thing after this
+merges, not the thing after that.**
+
+**Trigger:** any `pi` session that stops responding to exit after a herdr `tab close` failure; or a
+`retained:herdr-close-failed` release reason in the ledger.
+
+---
+
+## R-147 · A registry the reader refuses produces no message anywhere — M×H, OPEN
+
+Added 2026-08-22 by the sixth pass. Working rule 8 says prefer failing closed **and** prefer being loud about
+it; this fails closed silently.
+
+`registeredWorkspaceIds` catches everything and returns `[]`; `buildCatalog` does the same. Exactly one
+extension surfaces a registry refusal, and only once a delegation already names a workspace. So one
+malformed id — a space in a name, which R-139's new grammar refuses, and one bad entry refuses the whole file
+by design — removes every workspace from `/grants`, from the catalog and from `init`'s `ROUTABLE WORKSPACES`
+block, with nothing printed.
+
+```
+registry: {"prod": …, "pr od": …}   ← one id with a space
+catalog workspace entries : []
+registeredWorkspaceIds()  : []
+```
+
+The operator's symptom is *"no workspaces registered"*, which is also what a correct empty registry looks
+like. **The counter-example in the same codebase is what makes this a rule-8 violation rather than a
+judgement call:** a malformed `PI_GRANTS_DEPTH` gets a notify naming the variable. R-139 made the grammar
+strict in the same release, so the population of operators who hit this is exactly the ones upgrading.
+
+**Also open, from the same reviewers, and grouped here because both are "two surfaces disagree":**
+
+- `/grants` prints the ids the **registry** lists, not the ids this session may **route to**, so a session
+  holding none is told it can route to all of them.
+- A `tool:*` or `workspace:*` root can mint, record and propagate `workspace:<id>` for an id no registry
+  contains (the catalog exempts the namespace deliberately, since the registry is the authority at point of
+  use). Not an escalation today — `resolveWorkspace` refuses — but it is a grant that becomes real the moment
+  the operator registers that id, and the ledger asserts routing authority meanwhile.
+
+**Trigger:** an operator reporting a registered workspace missing from `/grants`; or any `catch` around a
+governance refusal that returns a default instead of reporting.
+
+---
+
+## R-148 · The herdr executor gives a pane child neither the registry nor the lease directory — MEASURED 2026-08-22, OPEN
+
+Added 2026-08-22. R-138 item 1 recorded this as *"a code-read, not a measurement"* and R-137's first defeat
+asserted the lease-directory half without one. **Both halves are now measured**, which is the entry's whole
+purpose.
+
+`runHerdrPane` passes only `plan.env` to `tab create --env`; the process executor passes
+`mergeChildEnv(process.env, plan.env)`. `plan.env` carries the grant, depth, fan-out, ledger and parent id —
+not `PI_GRANTS_WORKSPACE_REGISTRY` and not `PI_GRANTS_WORKSPACE_LEASE_DIR`.
+
+```
+herdr `tab create` argv --env: GRANT, DEPTH, MAX_DEPTH, APPROVED   (no registry, no lease dir)
+process executor child:        registry = /etc/pi/parent-registry.json, leases = /run/parent-leases
+same leaseDir     → second writer REFUSED  WORKSPACE_WRITE_CONFLICT
+different leaseDir → second writer ACQUIRED on the SAME root   ← two "exclusive" governed writers
+```
+
+Two consequences, and the second is the one ADR-0035 cares about. A pane child's *authority*
+(`workspace:staging`) attenuates correctly on `plan.env`; the *meaning* of that id comes from whatever
+registry the herdr daemon's environment has — nothing, in which case the capability is silently inert, or a
+different file, in which case the id resolves to a root this operator never registered. And two governed
+writers can hold "exclusive" leases on one canonical root when the lease directories diverge, which is the
+one property the kernel `flock` design exists to provide.
+
+ADR-0035's Context rests on *"`ENV_WORKSPACE_REGISTRY` … inherits into every governed child"*. That is true
+of one executor of two, so the chosen Option 1 — *the child receives the full registry and is refused at the
+capability check* — has no meaning on the herdr path.
+
+**Still not measured:** the consequence inside a live pane. `herdr` is installed but no daemon was started,
+so the argv and the lease-directory behaviour are measured and the pane child's resolution is inferred.
+
+**Trigger:** any governance state that reaches a child through `process.env` rather than `plan.env` — the two
+executors diverge there by construction, and this is the second time (R-137 defeat 1 was the first).
+
 ---
 
 ## Register log
@@ -2702,3 +2896,4 @@ does not strip ANSI first.
 | 2026-08-22 | R-136, R-137 reopened, R-139 | **A fourth pass, six reviewers over the third pass's fixes — and R-136 was marked FIXED while a function added by the fixing commit still hung session start on a FIFO.** Three reviewers found it independently; a real `pi` produced zero notifies and timed out. R-136's own trigger ("grep for `readFile` reached from `loadProjectDefinitions`") found it, and nobody ran the trigger. A second hang existed too: `stat`-by-name then `readFile`-by-name is a TOCTOU any same-uid process can win. One reader holding one handle (`open(O_NONBLOCK)` + `fstat` the descriptor) closes both. **R-137's pin is reverted** — defeated four ways, including a measured escalation on the herdr executor, which no existing mechanism crosses. **Fourteen single reverts left every suite green, eight of them edits those commits added**, including the whole "names the file" fix and the pin's own wiring; `npm test` was also silently overwriting tracked contract fixtures. R-139 records the id-grammar break | fourth review pass over PR #10 |
 | 2026-08-22 | R-139…R-142, PR #10 narrowed | **A fifth pass, six reviewers over the fourth pass's fixes, and the response was structural rather than another round of patches.** Two blockers: the 1 MiB ceiling bounded the file and not the read (`handle.readFile` re-`fstat`s internally, so holding one handle closed the NAME race and left the SIZE race — 192 MiB read after a 29-byte measurement, race won in 848ms), and the id grammar had a FIFTH site, `isSafeCapability`, which refused the `feature/x` shape the release advertises and dropped the whole definition. **PR #10 was then narrowed to ADR-0035**: registry ownership/mode → R-137, the ledger-path and `tool:delegate` work → R-141, two pre-existing session-start hangs → R-140. And `npm run test:mutation` makes rule 7 mechanical — twenty pinned patch/test pairs, which caught four bad entries of its own, a test of mine that passed for the wrong reason, and a predicate bug in itself that had made its first "20/20" meaningless. R-142 records that it is not a control until CI runs it | fifth review pass over PR #10 |
 | 2026-08-22 | R-143 | Added and fixed — `npm run test:mutation` reported **0/20 guards forced** at `0a62a42` with every guard intact, because this environment exports `FORCE_COLOR=3` and the failure matcher was anchored past the escape sequence; colour off, the same sweep printed 20/20. A control that cannot read its instrument accuses twenty guards at once, which is the loop rule 7's catalogue exists to end. Parser extracted and tested, colour pinned in the spawned suite, and an unreadable transcript now says so instead of scoring the guard | sixth review pass over PR #10 |
+| 2026-08-22 | R-144…R-148 | **A sixth pass, four reviewers over the fifth pass's fixes, and the capability invariant held a fourth time** — three-level transitivity, both halves of two-authorities, every wildcard channel. Everything found is the claims layer and the runtime half. R-144 is the one to read: the commit that NARROWED this PR deleted the registry ownership guard and left three documents selling it, one of them R-137's own bound, so an OPEN risk understated itself — a commit that removes a guard must grep for the guard's claims. R-145 (a gated routing attempt seizes the destination's writer lease before the human is asked) and R-146 (a retained lease stops its own process exiting, re-derived here: exit=124) are runtime and left OPEN with candidates named. R-147 is rule 8: a refused registry prints nothing anywhere. R-148 measures what R-138 item 1 recorded as unmeasured — two 'exclusive' governed writers on one root when the lease dirs diverge | sixth review pass over PR #10 |

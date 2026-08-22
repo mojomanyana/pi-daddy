@@ -41,9 +41,15 @@ process.stdin.on("end",()=>{if(clean||!target)return process.exit(0);if(target.p
 process.stdin.resume();`;
 
 /**
- * The ledger outcome for a release. ONE definition, exported, because two call sites had their own copies
- * and the check runner's copy asserted `released` unconditionally — reproducing in the evidence path the
- * exact defect this union was added to expose (R-100/R-103).
+ * The ledger outcome for a release. Exported because call sites had their own copies and the check runner's
+ * asserted `released` unconditionally — reproducing in the evidence path the exact defect this union was
+ * added to expose (R-100/R-103).
+ *
+ * **It is NOT the only definition, and saying so here was wrong.** `extensions/workspace-runtime.ts` keeps a
+ * private copy with no `not-held` arm, and it is the one the whole delegation path uses — so releasing a
+ * *read* lease on a delegated child is still recorded `released`, a handover the kernel never performed.
+ * Measured; open as R-141; the sentence claiming a single definition survived two review passes because
+ * `test/workspace.test.ts` pins the `not-held` arm on THIS function, which no delegation path calls.
  */
 export function leaseReleaseLedgerOutcome(
   outcome: LeaseReleaseOutcome | "retained",
