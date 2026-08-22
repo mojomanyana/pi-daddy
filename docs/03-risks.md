@@ -2378,6 +2378,56 @@ naming the test it must break.
 **Trigger:** any function whose result a caller discards in favour of a literal; and any bound validated at one
 end only.
 
+## R-153 · Every check in this repository was opt-in — H×M, FIXED in part (it reports; it does not block)
+
+Added and fixed in part 2026-08-22. Not a defect in the product: a defect in how the product's guards were
+enforced, and the reason several of them rotted.
+
+**The evidence is the whole review history.** Eight passes over PR #10 found guards that could be deleted with
+the entire suite green — ten in one round, fourteen in another, seven in the eighth. Each round fixed its
+instances and none of them changed the cause: the only thing forcing rule 7 was a person choosing to run
+something. R-34 named that shape long before — *"a check an operator has to know to run is not a control, it is
+a feature"* — and the guards here that never failed this way are the mechanical ones: the line ceiling, the
+branch guard, the refusal enumeration.
+
+`.github/workflows/ci.yml` now runs, on every pull request and every push to `main`:
+
+- `npm run typecheck`, `npm test`, `npm run test:smoke`;
+- **a tree-cleanliness assertion**, because `npm test` once silently overwrote tracked ledger-contract
+  fixtures, and a suite that can edit the repository can make itself pass;
+- **`npm run test:mutation --if-present`** — the pinned catalogue, so rule 7 stops depending on someone
+  remembering. `--if-present` is deliberate and temporary: the catalogue was written on PR #10 and does not
+  exist on `main`, so the step is a no-op here and real the moment that branch lands. Said out loud, because a
+  step that silently does nothing is R-34 with a green tick.
+
+**`FORCE_COLOR=0` and `NO_COLOR=1` are pinned at the workflow level, and that line is R-143.** The catalogue
+parses `node --test`'s reporter to learn which test failed; in a colouring environment it reported
+`0/20 guards forced` with all twenty intact. A control that accuses everything is worse than one that is
+absent, and CI would have inherited exactly that. The parser strips ANSI now *and* the input is pinned — the
+two-defence standard the catalogue applies to its own entries.
+
+**Matrix: 22.19.0 and 24.x.** The floor is the `engines` field, which is a published claim nothing had ever
+tested; the ceiling is what this project is developed on.
+
+**What it does NOT cover, stated because a green badge that implies more than it checks is this project's
+signature defect.** `npm run test:integration` — 44 tests, and the most load-bearing suite here — needs a real
+`pi` process and a real `herdr` server; neither is installed in CI, and faking them would turn the suite into
+decoration. It stays a local gate, recorded in the session log with what it last ran against. The paid
+`PI_GRANTS_IT_MODEL=1` tier is never run unattended.
+
+**And it reports rather than blocks.** `main` has no branch protection, so a red run stops nothing and a direct
+push still succeeds. That is one settings change — require a PR, zero approvals, CI as a required check — and
+it is the half a session should not make on the operator's behalf. **Until it is on, this entry is FIXED in
+part and rule 10's enforcement paragraph says so.**
+
+**PR #10 carries R-142, the entry that asked for this**, written before the catalogue existed on any branch.
+Whichever lands second reconciles them; R-142's own trigger — *"the next review pass finding a guard deletable
+with the suite green; if that happens the answer is CI and not a sixth pass"* — fired twice more before this
+landed.
+
+**Trigger:** any new check added to this repository that CI does not run; or a `--if-present` step that is
+still a no-op after PR #10 merges.
+
 ---
 
 ## Register log
@@ -2455,3 +2505,4 @@ end only.
 | 2026-08-22 | R-146 corrected, R-151 | **The independent review of the R-146 fix found the fix's own safety argument half-false, and a claim repeated here unchecked.** The helper's `herdr tab close` had no wall-clock timeout, so a herdr that accepts and never answers held the lock forever with no marker — and the fix had removed the only symptom (a hung `pi`), turning R-102's rejected outcome into a silent one. Bounded now, forced by a test with a `herdr` that sleeps. The scope claim was also wrong: `process.exit()` runs exit handlers, so only hosts that let the loop drain (pi's print mode, library consumers) were wedged — `src/cli.ts` was cited as evidence and has one subcommand and no leases. One unref line was unforced and is gone. R-151 records what the fix newly exposes: the reaper and the helper now close the same tab | independent review of PR #14 |
 | 2026-08-22 | R-146 (second review) | **The review of the fix found four more, two behavioural.** Retention was not terminal — a later `release()` ran the clean handshake, overwrote `retained:herdr-close-failed` with `completed` and told the helper to exit `clean`, so the pane was abandoned and the ledger claimed a handover; `release()` now answers `retained`, which required making that a real member of `LeaseReleaseOutcome`. `herdrCloseTimeoutMs: 0` silently restored the unbounded hang, because Node reads `timeout: 0` as no timeout (measured 3004ms for a 3s sleep) — both bounds now refused loudly by name. Plus a non-hermetic test and a fake `herdr` that orphaned a `sleep` per run. **And the new refusal test hung the runner instead of failing** — R-119's shape in the commit that cites R-119 — because an unexpected success left an untracked lease holding a live `flock`: a test that proves a refusal must clean up the success it did not expect | second review of PR #14 |
 | 2026-08-22 | R-152 | Added and fixed — **`markRetained` returned `void` and its only caller hardcoded `"retained"`**, so the ledger asserted a live pane for a helper that had already died, for a lease already cleanly released (the mirror of R-146, introduced by fixing it), and for a retention whose record never landed. Now answers in the release vocabulary and the caller ledgers what it says; four guards, each forced by reverting it alone. The bounds were wrong at the top end too — `MAX_SAFE_INTEGER` truncates to 1ms and SIGKILLs every close — and refused on the governance channel, inviting a controller to retry a permanent caller bug; a bad argument now throws `RangeError`, and the check moved above the read-lease early return where it had validated nothing. **Both earlier passes asked whether the fix was correct and not what its return value promised** | independent reviews of the merged PR #14 |
+| 2026-08-22 | R-153 | Added and **fixed in part** — CI exists. Eight review passes found guards deletable with the suite green because the only thing forcing rule 7 was somebody choosing to look (R-34's shape, for years). `.github/workflows/ci.yml` runs typecheck, the unit suite, a tree-cleanliness assertion, the mutation catalogue (`--if-present` until PR #10 brings it to `main`) and the installed-package smoke on every PR, across the `engines` floor and the development ceiling — with `FORCE_COLOR=0` pinned at the workflow level, which is R-143: the catalogue reported `0/20` with every guard intact in a colouring environment, and CI would have inherited that. **It reports and does not block** — no branch protection, so a red run stops nothing; integration and the model tier are deliberately not covered and the workflow says why | R-142's trigger, fired three times |

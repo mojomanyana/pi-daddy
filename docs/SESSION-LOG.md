@@ -149,6 +149,39 @@ That convention is why every reversal here was survivable, and there have been f
 
 ---
 
+## 2026-08-22 (CI) — the checks stop being opt-in
+
+**`.github/workflows/ci.yml`, and the argument for it is the review history rather than a preference.** Eight
+passes over PR #10 found guards deletable with the whole suite green — ten in one round, fourteen in another,
+seven in the eighth. Every round fixed its instances; none changed the cause. R-34 had already named it: *a
+check an operator has to know to run is not a control, it is a feature.*
+
+Runs on every pull request and every push to `main`: typecheck, the unit suite, **a tree-cleanliness
+assertion** (a suite that can edit the repository can make itself pass — `npm test` once overwrote tracked
+contract fixtures), the **mutation catalogue**, and the installed-package smoke. Matrix over the `engines`
+floor (22.19.0) and the version this is developed on (24.x) — the floor is a published claim that nothing had
+ever tested.
+
+**One line in it is R-143 and worth knowing about:** `FORCE_COLOR=0` / `NO_COLOR=1` are pinned at the workflow
+level, because the catalogue parses `node --test`'s reporter and in a colouring environment reported `0/20
+guards forced` with all twenty intact. CI would have inherited a control that accuses everything.
+
+**Two honest limits.** The mutation step is `--if-present`: the catalogue was written on PR #10 and does not
+exist on `main`, so it is a no-op here and real the moment that branch lands — which also pays the catalogue
+debt R-146 and R-152 both recorded, for good. And **integration is not covered**: 44 tests needing a real `pi`
+and a real `herdr` server, which would become decoration if faked. It stays a local gate.
+
+**It reports; it does not block.** No branch protection on `main`, so a red run stops nothing and a direct push
+still succeeds. Requiring a PR with zero approvals and CI as a required check is one settings change, and it is
+the operator's to make — R-153 and rule 10's enforcement paragraph both say so rather than implying the gap is
+closed.
+
+**Verified locally before pushing** (node 24, `FORCE_COLOR=0`): `npm ci` at the workspace root, then 604 unit ·
+typecheck · tree clean · `--if-present` no-op · smoke. The 22.19.0 leg has no local answer — no node 22 here —
+so **the PR's own run is the evidence for it**, which is the right place for that experiment.
+
+---
+
 ## 2026-08-22 (R-152) — the fix's caller threw its answer away
 
 **Two independent reviews of the merged R-146 work, and both found the same thing by reading the CALLER rather

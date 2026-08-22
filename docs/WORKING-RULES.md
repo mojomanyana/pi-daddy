@@ -102,8 +102,11 @@ rule.
     **Enforcement, stated because an unstated absence reads as enforcement.** `hooks/pre-commit` refuses a
     commit on `main` and names the recovery; it is wired **per clone** by `git config core.hooksPath hooks`,
     so if that command prints nothing the hook is inert. `test/branch-guard.test.ts` proves the script
-    refuses — not that your clone installed it. `main` has **no** branch protection on GitHub, so a direct
-    push still succeeds; requiring a PR there, with zero required approvals, is the server-side half and
-    costs a single maintainer nothing. And `pre-commit` is never invoked for a clean merge, cherry-pick or
+    refuses — not that your clone installed it. **`.github/workflows/ci.yml` runs typecheck, the unit suite,
+    a tree-cleanliness check, the mutation catalogue and the installed-package smoke on every pull request**,
+    which is the half that stops a guard rotting unnoticed — but it **reports and does not block**: `main` has
+    **no** branch protection on GitHub, so a direct push still succeeds and a red run stops nothing. Requiring
+    a PR there, with zero required approvals and CI as a required check, is the server-side half and costs a
+    single maintainer nothing. Until that is on, CI is evidence rather than enforcement. And `pre-commit` is never invoked for a clean merge, cherry-pick or
     revert, so those land on `main` unguarded — the hook catches the *drift* this rule was written for, not
     every route to `main`.
