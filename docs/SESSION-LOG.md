@@ -11,9 +11,23 @@ decisions; this file holds state and next actions. Newest entry on top.
 `hooks/pre-commit` enforces it once `git config core.hooksPath hooks` is set in your clone. This line is at
 the top because the rule was broken by drift, and this file is what a session actually reads first.
 
+**2026-08-22 (sixth pass) — PR #10 is OPEN, still must not merge, and the reason is now the PR DESCRIPTION.**
+Four reviewers, R-143…R-150. The invariant held a fourth time. Read **R-143 first if you are about to run
+`npm run test:mutation`**: it reported `0/20` with every guard intact, because this environment exports
+`FORCE_COLOR=3` — fixed, and 20/20 now, but the lesson is that a control which cannot read its instrument
+accuses everything. **R-144 is the finding to carry:** the commit that narrowed this PR deleted the registry
+ownership guard and left three documents selling it, one of them R-137's own blast-radius bound, so an OPEN
+risk understated itself. *A commit that removes a guard must grep for the guard's claims.* Still open and
+runtime: R-145…R-150, of which **R-146 is a hang** (a retained lease stops its own process exiting). Before
+merge: the PR body claims a registry-integrity gap is closed by a mechanism reverted two passes ago.
+**633 unit + 45 integration**, measured at `747a405`; 20/20 catalogued guards.
+
 **2026-08-22 — PR #10 (ADR-0035, 0.19.0) is OPEN and this is the work.** FIVE independent review passes have
-now run over it, each finding defects in the previous one's fixes; the fixes for the third are on `fix/adr-0035-review`, to be pushed onto
-`adr/0035-workspace-attenuation` so PR #10 merges correct rather than being narrated by a second PR.
+now run over it, each finding defects in the previous one's fixes, and they merge inside PR #10 rather than
+being narrated by a second PR. (**`fix/adr-0035-review` and `review/0035` are DONE** — the first is the same
+commit as the PR head and the second is an ancestor of it, so there is nothing on either to merge. This
+paragraph said the fixes were still to be pushed; that push had already happened, and the sixth pass was asked
+the question the stale sentence provokes.)
 **633 unit + 45 integration**, measured at `747a405`. The full account is the top dated entry below; what a resuming session needs:
 
 1. **The generalisable rule, twice refined.** Adding a capability namespace is a nine-site change (R-133) —
@@ -165,6 +179,80 @@ every one of them was a control that read as live and was not.
 
 That convention is why every reversal here was survivable, and there have been five. Then update
 `docs/SPEC.md` in the same change — a spec that lags the code is worse than no spec.
+
+---
+
+## 2026-08-22 (sixth pass) — the instrument was blind, and the commit that removed a guard left three documents selling it
+
+**Four reviewers over PR #10, at the merge of `main` into `6f327fa` (`0a62a42`).** R-143…R-150. The lenses were
+the invariant, claims-versus-code, the runtime half, and — new this round — the **complement** of the mutation
+catalogue rather than its contents.
+
+**The invariant held a fourth time.** Three-level transitivity on the production path, both halves of
+two-authorities, every wildcard channel, the grant store, all three delegation tools, the gate paths. Nobody
+could make a child's `effective` a non-subset of its parent's. Four passes have now failed to break it; the
+runtime half and the claims layer have never once come out clean.
+
+**The instrument was blind, and it had to be fixed before anything else could be believed.**
+`npm run test:mutation` — the control the fifth pass added so rule 7 would stop depending on somebody choosing
+to look — printed **`0/20 guards forced a named failure`**, once per entry, *"a guard nothing forces is not a
+guard"*. Every guard was intact. This project is developed in sessions that export `FORCE_COLOR=3`, so
+`node --test` colours its reporter, and the failure matcher was anchored `^\s*✖` — an escape sequence is not
+whitespace. Colour off: **20/20**. R-143, found twice independently.
+
+**A blind auditor is worse than an absent one**, and this is the sharper form of R-142: it accuses twenty
+guards at once, so the honest response to its output is a sweep of twenty "fixes" to code that was already
+correct. The trap the reviewer named is the one that matters — under CI pressure the tempting repair is to
+loosen the matcher back to `stdout.includes(expect)`, which is the exact defect removed one commit earlier.
+Fixed by stripping ANSI in a parser that is itself tested, pinning the child's colour, and adding a positive
+control so *"I saw nothing"* stops being reported as *"I saw no failure"*.
+
+**R-144 is the headline, and it carries a rule this project did not have.** `ebad92a` added a uid and
+world-writable guard on the registry. `e1937cf` — *"narrow PR #10 to ADR-0035"* — removed the code and edited
+none of the three documents announcing it: SPEC's registry paragraph, the CHANGELOG's **BREAKING** section, and
+**R-137's own "What DOES exist now"**. Three of the four reviewers found it independently. The register copy is
+the damaging one, because that sentence was *bounding an open risk*: it says the attack cannot reach past a
+same-uid descendant, and with no check at all any local process that can write the file repoints routing for
+every descendant holding the id. The suite stayed green because the guard's tests went out with the guard.
+
+**So: a commit that REMOVES a guard must grep for the guard's claims, exactly as a commit that adds one must
+add its test.** Narrowing scope is not a documentation-free operation — and this is the fifth pass's own
+narrowing, which was the right call, leaving a false security claim behind it.
+
+**The fifth pass's closing line came true, and its prescription stands.** It said: *if a sixth pass finds a
+guard deletable with the suite green, the answer is CI rather than a sixth pass.* The sixth pass found
+**seven**, which is not a failure of the catalogue but of its scope — twenty pinned pairs answer "do these
+hold" and nothing answered "which are missing". One has a behavioural consequence (R-150: the catalog rebuild
+is wired on the quieter of two routes — R-28's shape, in a diff that fixes R-28's shape elsewhere) and one is
+forced only by wedging the suite. R-149 is the sharpest: the registry read deadline is deletable with the suite
+green, and the module still classifies an `AbortError` that no remaining code can produce.
+
+**What was NOT wrong, checked because the 601/602 failure invited suspicion.** Nothing was weakened to make
+this branch green. The canonical refusal enum was **extended and then made generated**, the compatibility
+waiver is written down, and its factual basis verifies — no released tag ever carried the v2 contract. Of 573
+new lines in `test/workspace-capability.test.ts` and 310 in `test/init.test.ts`, the reviewer looking for
+tautologies and feature-deletable tests found none.
+
+**Runtime findings, all left OPEN with candidates named** rather than patched into a branch narrowed precisely
+to stop unrelated runtime work arriving where the previous round's reviewers could not see it: R-145 (a gated
+routing attempt seizes the destination's exclusive writer lease *before* the human is asked, for an unbounded
+dialog), **R-146 (a retained lease stops its own process exiting — re-derived here, `exit=124` against
+`exit=0`; the same failure disables the pane reaper)**, R-147 (a refused registry prints nothing anywhere,
+against rule 8, while a malformed depth variable gets a notify), R-148 (the herdr executor passes neither the
+registry nor the lease directory, so two "exclusive" governed writers can hold one root — the measurement
+R-138 item 1 had been waiting for).
+
+**Verification, at `HEAD` printed in the same command each time.** 633 unit · 45 integration · typecheck ·
+smoke · **20/20 catalogued guards, in a colouring environment** · register guard · line ceiling. The 10-test
+model tier was not run and remains separately authorized.
+
+**What has to happen before this merges.** The PR description still tells a merger that the
+registry-integrity gap is closed by a content pin that was reverted two passes ago, and quotes a stale test
+count and a "960 input combinations" figure the ADR's own amendment withdrew. That is the document the merge
+decision is made from, so it is a blocker rather than a tidy-up. R-146 is a hang and should be the next thing
+after this lands, not the thing after that. And R-142's answer — CI running `typecheck`, `test` and
+`test:mutation` on every PR — now has a second requirement from R-143: **pin the reporter's environment, or CI
+measures its own terminal.**
 
 ---
 

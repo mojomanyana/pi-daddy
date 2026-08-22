@@ -193,13 +193,19 @@ const runSuite = (testFile) =>
 
 // **Refuse to run on a dirty tree.** A killed run leaves a mutation behind, and the next run cannot tell that
 // from a stale catalogue. Requiring cleanliness up front means `git status` is always the whole recovery.
+//
+// The paths checked are the ones a run can WRITE, which is a larger set than the ones it patches: the
+// `contract:` entry deliberately makes `npm test` regenerate the tracked fixtures, and the restore afterwards
+// only `git checkout`s the patched source. So an uncommitted fixture edit was destroyed silently — benign only
+// because regeneration happens to be byte-identical to what is committed (found by the sixth review pass).
+const COLLATERAL = ["contracts/ledger/v2"];
 const dirty = await new Promise((resolve) => {
-  execFile("git", ["status", "--porcelain", "--", ...new Set(MUTATIONS.map((m) => m.file))],
+  execFile("git", ["status", "--porcelain", "--", ...new Set([...MUTATIONS.map((m) => m.file), ...COLLATERAL])],
     { cwd: root }, (error, stdout) => resolve(error ? "" : stdout.trim()));
 });
 if (dirty) {
   console.error(
-    "Refusing to run: the files this would mutate have uncommitted changes.\n" +
+    "Refusing to run: the files this would mutate or rewrite have uncommitted changes.\n" +
     dirty.split("\n").map((l) => `    ${l}`).join("\n") +
     "\n\nCommit or stash them first. This script edits files in place, so a crash mid-run would leave a\n" +
     "mutation behind — and telling that apart from a stale catalogue costs more than committing does.",

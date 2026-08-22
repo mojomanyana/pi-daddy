@@ -2625,6 +2625,17 @@ inheriting a coloured reporter would have gone red on twenty healthy guards, whi
 switched off rather than fixed. R-142's trigger says the answer to another unforced guard is CI rather than a
 sixth pass; the amendment is that CI must also pin the reporter's environment, or it measures its own terminal.
 
+**Independently found by the sixth pass's fourth reviewer**, which is the useful part of the corroboration:
+that reviewer also named the trap, that the tempting repair under CI pressure is to loosen the matcher back to
+`stdout.includes(expect)` — the exact defect `41cbc39` had removed one commit earlier. Stripping ANSI keeps the
+strict form. Re-measured after the fix, in this environment and with colour forced on: **20/20**.
+
+**A second defect in the same harness, from the same reviewer, fixed here.** The dirty-tree refusal inspected
+only the files the catalogue *patches*, while the `contract:` entry deliberately makes `npm test` regenerate
+the tracked ledger fixtures — so an uncommitted fixture edit was destroyed silently, and was benign only
+because regeneration is byte-identical to what is committed. The check now covers everything a run can write,
+verified by dirtying a fixture and watching it refuse.
+
 **What this does not establish.** That the twenty guards are the right twenty — R-142's exclusion list and
 reviewer D's complement audit are the question of coverage, and this entry is only about the instrument being
 readable. And the `FORCE_COLOR=0` pin in the spawned environment is redundancy, not the defence: nothing forces
@@ -2816,6 +2827,66 @@ so the argv and the lease-directory behaviour are measured and the pane child's 
 **Trigger:** any governance state that reaches a child through `process.env` rather than `plan.env` — the two
 executors diverge there by construction, and this is the second time (R-137 defeat 1 was the first).
 
+## R-149 · The registry read deadline is forced by nothing, and its second timeout refusal cannot be reached — M×M, OPEN
+
+Added 2026-08-22 by the sixth pass. Both halves are in `src/workspace.ts`, the reader written to answer
+R-79/R-136.
+
+The docstring makes `REGISTRY_READ_TIMEOUT_MS` the answer to *"session start awaits this read"* and says the
+in-loop check *"makes the bound as real as it can be in-process"*. **Deleting the whole deadline block leaves
+the suite green** (629 tests, 0 failures, measured in an isolated copy). It is not in the mutation catalogue
+either, and the catalogue's exclusion list — which exists to name the reader's unforced guards — does not
+mention it, so it reads as covered.
+
+The second half is worse in a quieter way: the module still classifies `AbortError`/`TimeoutError` into a
+timeout refusal, and **no `AbortSignal` remains anywhere in it** — the signal approach was replaced by
+`open(O_NONBLOCK)` plus `fstat` on the descriptor (R-136's fourth pass). So the file carries two timeout
+refusals, one untested and one unreachable, in the guard whose whole purpose is that a session start cannot
+block.
+
+**Trigger:** any `catch` classifying an error type whose producer has been removed — grep for the producer, not
+for the handler.
+
+---
+
+## R-150 · What the catalogue does not cover, including a guard wired on the quieter of two routes — M×M, OPEN
+
+Added 2026-08-22 by the sixth pass, whose fourth reviewer was asked for the **complement** of
+`npm run test:mutation` rather than for its contents. That framing is the finding: twenty pinned pairs answer
+"do these guards hold", and nothing answered "which guards are missing from the list".
+
+**The one with a behavioural consequence.** Two sites wire the registry into `buildCatalog` — session start,
+and the once-per-session rebuild in `before_provider_request`. The integration test names the first; **the
+second is forced by nothing, unit or integration.** Measured: revert only the rebuild site and the named
+integration test still passes. If it regresses, `session.catalog` loses every workspace entry from the first
+model turn onward, so `/grants`'s workspace count and `routable …` line vanish mid-session. Display only — but
+it is **R-28's shape, two routes for one rule with the guard on the quieter one**, in a diff that fixes exactly
+that shape in `propagation.ts` (R-135). It is also structurally invisible to the catalogue, which runs one
+`test/` file per entry and therefore cannot pin an integration-only guard.
+
+**Seven guards this diff adds that nothing forces**, each verified by a single hand-revert in an isolated copy:
+the read deadline and the unreachable `timedOut` branch (R-149), the catalog rebuild above, `minLength: 1` on
+the routing parameter (redundant with `checkRoutingAuthority`, which *is* forced), the `ENV_APPROVED` clamp,
+the post-read grow check (its RSS test was removed for being unreliable, correctly), and `O_NONBLOCK`, which is
+forced **only by non-termination** — reverting it wedges the suite past 120s despite the FIFO test's own
+5-second timeout, because a pending `open(2)` keeps the process alive. Loud, but only to someone who notices
+the suite stopped rather than failed, which is the R-119 lesson about a hang reading as untested.
+
+**Two more properties of the new tests, disclosed rather than filed as defects:** two liveness assertions are
+wall-clock bounds (`< 1s`, `< 5s`) and are the only thing separating "refused" from "blocked", so a loaded
+runner turns a guarantee into a flake; and the fd-count check can pass with its `finally { close() }` deleted
+because Node closes a `FileHandle` on GC, which the docstring already says.
+
+**What this pass found genuinely forced is the larger half, and it is on record**: the whole `workspace:`
+namespace across all nine sites, both wildcard clauses, `inheritableGrant` on both routes, all three routing
+guards, the gate and its dedupe, the id grammar including `feature/x`, and every `init` path. And the answer to
+"was a test weakened to make this branch green" is **no** — the canonical refusal enum was extended and then
+made *generated*, with the waiver documented and its factual basis verified: no released tag ever carried the
+v2 contract.
+
+**Trigger:** a guard whose only forcing test lives in `test-integration/` — the catalogue cannot see it. And
+any second call site of a rule the catalogue pins on the first.
+
 ---
 
 ## Register log
@@ -2897,3 +2968,4 @@ executors diverge there by construction, and this is the second time (R-137 defe
 | 2026-08-22 | R-139…R-142, PR #10 narrowed | **A fifth pass, six reviewers over the fourth pass's fixes, and the response was structural rather than another round of patches.** Two blockers: the 1 MiB ceiling bounded the file and not the read (`handle.readFile` re-`fstat`s internally, so holding one handle closed the NAME race and left the SIZE race — 192 MiB read after a 29-byte measurement, race won in 848ms), and the id grammar had a FIFTH site, `isSafeCapability`, which refused the `feature/x` shape the release advertises and dropped the whole definition. **PR #10 was then narrowed to ADR-0035**: registry ownership/mode → R-137, the ledger-path and `tool:delegate` work → R-141, two pre-existing session-start hangs → R-140. And `npm run test:mutation` makes rule 7 mechanical — twenty pinned patch/test pairs, which caught four bad entries of its own, a test of mine that passed for the wrong reason, and a predicate bug in itself that had made its first "20/20" meaningless. R-142 records that it is not a control until CI runs it | fifth review pass over PR #10 |
 | 2026-08-22 | R-143 | Added and fixed — `npm run test:mutation` reported **0/20 guards forced** at `0a62a42` with every guard intact, because this environment exports `FORCE_COLOR=3` and the failure matcher was anchored past the escape sequence; colour off, the same sweep printed 20/20. A control that cannot read its instrument accuses twenty guards at once, which is the loop rule 7's catalogue exists to end. Parser extracted and tested, colour pinned in the spawned suite, and an unreadable transcript now says so instead of scoring the guard | sixth review pass over PR #10 |
 | 2026-08-22 | R-144…R-148 | **A sixth pass, four reviewers over the fifth pass's fixes, and the capability invariant held a fourth time** — three-level transitivity, both halves of two-authorities, every wildcard channel. Everything found is the claims layer and the runtime half. R-144 is the one to read: the commit that NARROWED this PR deleted the registry ownership guard and left three documents selling it, one of them R-137's own bound, so an OPEN risk understated itself — a commit that removes a guard must grep for the guard's claims. R-145 (a gated routing attempt seizes the destination's writer lease before the human is asked) and R-146 (a retained lease stops its own process exiting, re-derived here: exit=124) are runtime and left OPEN with candidates named. R-147 is rule 8: a refused registry prints nothing anywhere. R-148 measures what R-138 item 1 recorded as unmeasured — two 'exclusive' governed writers on one root when the lease dirs diverge | sixth review pass over PR #10 |
+| 2026-08-22 | R-149, R-150 | **The sixth pass's fourth reviewer was asked for the COMPLEMENT of the mutation catalogue rather than its contents, and that framing is the finding.** Twenty pinned pairs answer "do these hold"; nothing answered "which are missing". Seven guards this diff adds are forced by nothing — including the catalog rebuild wired on the quieter of two routes (R-28's shape, in a diff that fixes R-28's shape elsewhere) and `O_NONBLOCK`, forced only by wedging the suite. R-149 is the sharpest: the registry read deadline is deletable with the suite green, and the module still classifies an `AbortError` no code can produce. **Nothing was weakened to make the branch green** — the canonical refusal enum was extended and then made generated, waiver documented, and no released tag ever carried the v2 contract | sixth review pass over PR #10 |
