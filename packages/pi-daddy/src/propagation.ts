@@ -25,6 +25,7 @@
  * interceptor and pi handed the child more than the parent held, the intersection clamps it back.
  */
 
+import { resolve } from "node:path";
 import type { Capability } from "./resolve.ts";
 import { WILDCARD } from "./pi-tools.ts";
 import { WORKSPACE_WILDCARD } from "./resolve.ts";
@@ -263,6 +264,27 @@ export interface ChildEnvInput {
  * that fix exercised `childEnv`, which is not the path a delegated child's grant travels, so it could not
  * catch it. R-28's shape: two routes for one rule, with the guard on the quieter one. Both call this now.
  */
+/**
+ * The ledger path a CHILD should be given: absolute, resolved against this process's cwd.
+ *
+ * **A relative `PI_GRANTS_LEDGER` and a routed child are a bad pair, and `init` scaffolds a relative one**
+ * (`#export PI_GRANTS_LEDGER=".pi/grants.jsonl"`). A routed child's cwd *is* the leased worktree root, so it
+ * resolved that path inside the workspace: `<root>/.pi/grants.jsonl`, a **different file** from its parent's.
+ * Two consequences, both measured in review:
+ *
+ *  - the subtree's audit trail split off silently — `/grants ledger` on the parent's file never saw it, which
+ *    defeats the one control ADR-0010 leans on;
+ *  - the child WROTE into a root it may hold only a `read` lease on. That is what made `tool:delegate`
+ *    look like a write primitive: `mkdir` + `appendFile` created `.pi/` in the worktree, so two children
+ *    classified `read` (which takes no kernel lock at all) both mutated one root and neither excluded the
+ *    other. Resolving the path here removes the write rather than reclassifying the capability.
+ *
+ * Absolute paths pass through untouched, so an operator who wrote one sees no change.
+ */
+export function childLedgerPath(ledgerPath: string): string {
+  return resolve(ledgerPath);
+}
+
 export function inheritableGrant(grant: readonly Capability[]): Capability[] {
   return grant.filter((c) => c !== WILDCARD && c !== WORKSPACE_WILDCARD);
 }
@@ -282,7 +304,7 @@ export function childEnv(input: ChildEnvInput): Record<string, string> {
   // whatever was there before — the parent's own, unclamped `PI_GRANTS_APPROVED` — visible to every child.
   // `parseList("")` is `[]`, so an empty value reads back exactly as an absent one.
   env[ENV_APPROVED] = inheritApprovals(input.approved ?? [], inheritable).join(",");
-  if (input.ledgerPath) env[ENV_LEDGER] = input.ledgerPath;
+  if (input.ledgerPath) env[ENV_LEDGER] = childLedgerPath(input.ledgerPath);
   return env;
 }
 

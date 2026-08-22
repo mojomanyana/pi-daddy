@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { isAbsolute, join, resolve as resolvePath } from "node:path";
 import { after, test } from "node:test";
 import { governedWorkspaceAccess, prepareDelegationWorkspace } from "../extensions/workspace-runtime.ts";
+import { planDelegation } from "../src/delegate.ts";
+import { childEnv } from "../src/propagation.ts";
 import {
   acquireWorkspaceLease,
   ENV_WORKSPACE_LEASE_DIR,
@@ -24,6 +26,51 @@ test("a model cannot label a write-capable grant read-only", () => {
   // not become a way to hide one.
   assert.equal(governedWorkspaceAccess("read", ["workspace:staging", "tool:write"]), "write");
   assert.equal(governedWorkspaceAccess("read", ["agent:builder", "tool:bash"]), "write");
+});
+
+/**
+ * A `read`-leased child must not WRITE into the root it was given, and the ledger path is how it did.
+ *
+ * This is why `tool:delegate` can sit in `KNOWN_READ_ONLY_TOOLS` at all. Review measured the composition: a
+ * routed child's cwd IS the leased root; `ENV_LEDGER` was passed verbatim and `pi-daddy init` scaffolds a
+ * RELATIVE `.pi/grants.jsonl`; and a `read` lease takes no kernel lock. So two delegating children classified
+ * `read` both created `.pi/` inside one worktree and neither excluded the other — `git status` showed `?? .pi/`
+ * and a grandchild took a WRITE lease on a root already held. Classifying `tool:delegate` as non-writing was
+ * true of the capability and false of the code.
+ *
+ * Fixed at the cause: the child's ledger path is resolved absolute, so the write lands where the parent's
+ * ledger already is — which also repairs a pre-existing audit split, since a routed subtree's records used to
+ * go to a different file that `/grants ledger` never read.
+ *
+ * Breaks by: reverting either `ENV_LEDGER` assignment to pass `ledgerPath` through unresolved.
+ */
+test("a delegated child's ledger path is absolute, so it cannot write into the workspace it was given", () => {
+  const plan = planDelegation(
+    { task: "t", tools: ["read", "delegate"] },
+    { ownGrant: ["tool:read", "tool:delegate"], depth: 0, maxDepth: 3, gated: [], approved: [],
+      ledgerPath: ".pi/grants.jsonl" } as never,
+  );
+  assert.equal(plan.ok, true, plan.reason ?? "");
+  assert.equal(
+    isAbsolute(plan.env.PI_GRANTS_LEDGER ?? ""),
+    true,
+    `a relative ledger path resolves inside the child's cwd — which for a routed child is the leased root: ${plan.env.PI_GRANTS_LEDGER}`,
+  );
+  assert.equal(plan.env.PI_GRANTS_LEDGER, resolvePath(".pi/grants.jsonl"));
+
+  // The interceptor path carries the same rule.
+  const published = childEnv({
+    ownGrant: ["tool:read"], depth: 0, maxDepth: 2, gated: [], approved: [], ledgerPath: ".pi/grants.jsonl",
+  } as never);
+  assert.equal(isAbsolute(published.PI_GRANTS_LEDGER ?? ""), true);
+
+  // An absolute path an operator wrote is untouched.
+  const explicit = planDelegation(
+    { task: "t", tools: ["read"] },
+    { ownGrant: ["tool:read"], depth: 0, maxDepth: 3, gated: [], approved: [],
+      ledgerPath: "/var/log/grants.jsonl" } as never,
+  );
+  assert.equal(explicit.env.PI_GRANTS_LEDGER, "/var/log/grants.jsonl");
 });
 
 /**

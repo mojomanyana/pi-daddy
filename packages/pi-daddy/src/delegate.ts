@@ -20,6 +20,7 @@ import {
 export { DELEGATE_CAPABILITY, agentCapability, maySpawnDefinition, normaliseCapability } from "./capabilities.ts";
 import {
   ENV_APPROVED, ENV_DEPTH, ENV_FANOUT, ENV_GATED, ENV_GRANT, ENV_LEDGER, ENV_MAX_DEPTH, ENV_PARENT_ID,
+  childLedgerPath,
   inheritableGrant,
 } from "./propagation.ts";
 import { inheritApprovals, type InheritableApproval } from "./approval.ts";
@@ -319,7 +320,9 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
   // leave banked authority with nothing to spend it on — `childEnv` clamps to `inheritable` for the same
   // reason on the other path.
   env[ENV_APPROVED] = inheritApprovals(ctx.approved ?? [], inheritable).join(",");
-  if (ctx.ledgerPath) env[ENV_LEDGER] = ctx.ledgerPath;
+  // Absolute, so a routed child does not resolve it inside the worktree it was given — see
+  // `childLedgerPath`. This is what stops a `read`-leased child writing into the leased root.
+  if (ctx.ledgerPath) env[ENV_LEDGER] = childLedgerPath(ctx.ledgerPath);
 
   return {
     ok: true,

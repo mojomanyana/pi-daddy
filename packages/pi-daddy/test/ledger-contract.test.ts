@@ -355,8 +355,20 @@ test("regenerating the contract restores the refusal enum from REFUSAL_CODES", a
   assert.notDeepEqual(drifted.$defs.refusalCode.enum, [...REFUSAL_CODES], "precondition: the copy is stale");
 
   // Driven through `generateLedgerV2Contract`, the function the script's entry point calls, so dropping the
-  // sync from it fails here.
-  await generateLedgerV2Contract(copy);
+  // sync from it fails here — with BOTH targets redirected into the temp dir.
+  //
+  // **The fixture target is the whole point of this line.** Routing the test through this function without
+  // one made `npm test` overwrite the tracked `contracts/ledger/v2/fixtures/*.json`: verified by putting a
+  // marker key into a fixture, running the suite, and finding `git status` clean again. That falsified
+  // `CLAUDE.md`'s "fast, pure, no pi, no network" and, worse, turned the checked-in fixtures from a contract
+  // pin into something `npm test` repairs — builder drift would have been silently fixed instead of failing.
+  const fixtureCopies = join(dir, "fixtures");
+  await generateLedgerV2Contract({ schema: copy, fixtures: fixtureCopies });
+  assert.equal(
+    (await readFile(join(fixtureCopies, "capability-decision.json"), "utf8")).length > 0,
+    true,
+    "the fixtures were written to the temp target, not to the repository",
+  );
 
   const synced = await json(copy) as { $defs: { refusalCode: { enum: string[] } } };
   assert.deepEqual(synced.$defs.refusalCode.enum, [...REFUSAL_CODES]);

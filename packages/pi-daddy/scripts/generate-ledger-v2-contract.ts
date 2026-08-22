@@ -115,10 +115,10 @@ export function buildLedgerV2ContractFixtures() {
   };
 }
 
-export async function writeLedgerV2ContractFixtures(): Promise<void> {
-  await mkdir(fixtureDir, { recursive: true });
+export async function writeLedgerV2ContractFixtures(target = fixtureDir): Promise<void> {
+  await mkdir(target, { recursive: true });
   for (const [name, event] of Object.entries(buildLedgerV2ContractFixtures())) {
-    await writeFile(join(fixtureDir, name), `${JSON.stringify(event, null, 2)}\n`, "utf8");
+    await writeFile(join(target, name), `${JSON.stringify(event, null, 2)}\n`, "utf8");
   }
 }
 
@@ -153,9 +153,9 @@ export async function syncLedgerV2RefusalEnum(target = schemaPath): Promise<void
  * and a mutation audit showed it was not one. Now the entry point is a one-liner over a function the test
  * drives, so the two cannot diverge.
  */
-export async function generateLedgerV2Contract(schemaTarget?: string): Promise<void> {
-  await writeLedgerV2ContractFixtures();
-  await syncLedgerV2RefusalEnum(schemaTarget);
+export async function generateLedgerV2Contract(targets: { schema?: string; fixtures?: string } = {}): Promise<void> {
+  await writeLedgerV2ContractFixtures(targets.fixtures);
+  await syncLedgerV2RefusalEnum(targets.schema);
 }
 
 const invoked = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;

@@ -416,7 +416,9 @@ test("`/grants init`'s dialog cannot confer a routing capability, whatever the o
       notify: (m: string) => { notices.push(m); },
     },
   };
-  const session = { adoptGrant: (g: readonly Capability[]) => { adopted = g; } };
+  // `gated` is what the consequence sentence reads, so the stub carries it: a session object that omits it
+  // is not a session, and modelling it as one is how the sentence went untested in the first place.
+  const session = { gated: ["tool:bash"], adoptGrant: (g: readonly Capability[]) => { adopted = g; } };
 
   const previous = process.env.PI_GRANTS_WORKSPACE_REGISTRY;
   process.env.PI_GRANTS_WORKSPACE_REGISTRY = registry;
@@ -439,10 +441,42 @@ test("`/grants init`'s dialog cannot confer a routing capability, whatever the o
   // It WAS asked about `tool:write`, so the dialog still works — this is not "the loop stopped running".
   assert.equal(asked.length, 1, JSON.stringify(asked));
   assert.match(asked[0], /grant tool:write to sub-agents\?/);
+  // The CONSEQUENCE clause, which had no test — and was dead code asserting the opposite. `tool:write` is
+  // not in this session's gate, so the honest sentence is that nothing will ask again at spawn time.
+  assert.match(asked[0], /it is not gated, so no dialog at spawn time/);
   assert.equal(asked.some((q) => q.includes("workspace:")), false, "and never about a routing destination");
 
   // And the operator is told where routing lives instead of being silently denied it.
   assert.match(notices.join("\n"), /ROUTABLE WORKSPACES|workspace:prod/);
+});
+
+/**
+ * The consequence clause tells the truth for a capability the operator actually gated.
+ *
+ * This is the branch that was **unreachable** until the code stopped reading the `DEFAULT_GATED` constant and
+ * started reading `session.gated`: `tool:bash` is the only member of that constant and it is consumed by the
+ * branch above, so with `PI_GRANTS_GATED="tool:bash,tool:write"` the dialog told the operator `tool:write`
+ * "is not gated, so no dialog at spawn time" — the exact false sentence the fix claimed to have removed.
+ *
+ * Breaks by: reverting `gatedAtSpawn` to read `DEFAULT_GATED`.
+ */
+test("a capability the operator gated is described as gated, not as ungated", async () => {
+  const cwd = await project();
+  await skillPackage(cwd, "w-pkg", "1.0.0", { builder: DECLARED.replace("Read, Grep", "Read, Write") });
+
+  const asked: string[] = [];
+  const ctx = {
+    cwd,
+    ui: { select: async (p: string) => { asked.push(p); return "No"; }, notify: () => {} },
+  };
+  // The operator gated `tool:write` as well as bash — the value `renderGrantEnv` itself suggests.
+  const session = { gated: ["tool:bash", "tool:write"], adoptGrant: () => {} };
+  await runInit(session as never, ctx as never, async () => {});
+
+  const write = asked.find((q) => q.includes("grant tool:write"));
+  assert.ok(write, `expected a tool:write question, got ${JSON.stringify(asked)}`);
+  assert.match(write, /a human is still asked at spawn time/);
+  assert.doesNotMatch(write, /it is not gated/, "the sentence must not contradict the operator's own gate");
 });
 
 /**

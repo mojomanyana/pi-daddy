@@ -12,7 +12,6 @@ import { applyInit, planInit } from "../src/init.ts";
 import { registeredWorkspaceIds } from "../src/workspace.ts";
 import { saveGrant, grantStorePath } from "../src/grant-store.ts";
 import { expandSubsumed, SUBSUMPTION, type Capability } from "../src/resolve.ts";
-import { DEFAULT_GATED } from "../src/propagation.ts";
 import type { GrantsSession } from "./session.ts";
 
 /**
@@ -83,11 +82,16 @@ export async function runInit(
       for (const name of neededBy) grant.add(`agent:${name}` as Capability);
       continue;
     }
-    // The consequence sentence is per capability. It used to hand every non-`bash` id `bash`'s rationale —
-    // "this can change your machine … it is not gated, so no dialog at spawn time" — which was two claims,
-    // both wrong for anything that is gated by default, and wrong twice over for a routing id (review). An
-    // operator deciding on the strength of a false sentence is worse off than one who was not asked.
-    const gatedAtSpawn = DEFAULT_GATED.includes(capability);
+    // The consequence sentence is per capability, and it reads the gate **in effect for this session** —
+    // `session.gated`, which is `PI_GRANTS_GATED` when the operator set it and `DEFAULT_GATED` otherwise.
+    //
+    // The first version read `DEFAULT_GATED` directly, which is the compile-time constant `["tool:bash"]`, and
+    // `tool:bash` is consumed by the branch above — so the branch was **unreachable in every configuration**,
+    // and with `PI_GRANTS_GATED="tool:bash,tool:write"` (the value `renderGrantEnv` itself suggests) the
+    // dialog still printed the exact false sentence the fix claimed to remove. Dead code beside a claim that
+    // it worked, which is this project's failure mode, in the commit correcting that failure mode.
+    const gatedAtSpawn = session.gated.includes(capability)
+      || (SUBSUMPTION[capability] ?? []).some((implied) => session.gated.includes(implied));
     const answer = await ctx.ui.select(
       `grants: grant ${capability} to sub-agents?\n  needed by: ${neededBy.join(", ")}\n` +
         `  this can change your machine — ` +
