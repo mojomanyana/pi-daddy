@@ -134,6 +134,48 @@ That convention is why every reversal here was survivable, and there have been f
 
 ---
 
+## 2026-08-22 (fifth pass + fixes) — the loop was the finding, so the fix is mechanical
+
+**Six reviewers over `ee6e66e..7da7013`. Two blockers, and then a decision to stop patching the symptom.**
+
+**The 1 MiB ceiling bounded the FILE, not the read.** `handle.readFile` re-`fstat`s the descriptor internally,
+so holding one handle closed the NAME race — which the previous commit set out to do — and left the SIZE race
+untouched, which it never considered. A same-uid writer grew the same inode and the loader returned **192 MiB
+after measuring 29 bytes**, 467 MiB RSS, inside `session_start`; won in 848ms and in 9% of 4000 attempts. That
+falsified three claims in the commit that made them, including a test whose name promised "rather than read
+into memory".
+
+**And the grammar split had a fifth site.** `isSafeCapability` — the boundary that GENERATES grants — still
+used the tool-name rule, so a package declaring `allowed-tools: workspace:feature/x` was dropped whole and
+`init` exited 1, telling the operator the namespace does not exist while the CHANGELOG said slashes were fine.
+The release's advertised id shape was unusable through its own migration path.
+
+**Then the scope narrowed, and that is the substance of the round.** Five passes each found defects in the
+previous round's fixes, because the branch had grown a namespace grammar, registry hardening, a ledger-path fix
+and `init` changes on top of "routing is a capability" — so every fix landed in code the previous fix's
+reviewers had never seen. Registry ownership/mode went to R-137, the ledger and `tool:delegate` work to R-141,
+two pre-existing session-start hangs to R-140. What stayed is what ADR-0035 caused.
+
+**`npm run test:mutation` is the other half.** R-34's rule — a check an operator must know to run is not a
+control — applied to rule 7: twenty pinned `(patch → the test it must break)` pairs, so adding a guard means
+adding an entry and an entry that stops biting fails the run. It immediately earned itself: four bad entries in
+its own catalogue, a test of mine that **passed for the wrong reason** (the race never fired; the previous
+iteration's grown file tripped a different check), and a predicate bug in the harness that made its first
+"20/20" meaningless — it matched the transcript, and `node --test` prints a test's name on pass too. Found by
+the reviewer who proposed the script.
+
+**Three guards are declared unforced with their reasons** rather than given entries that would not fire. That
+is the one form five passes never faulted; the failure mode is always the other shape, measured-sounding prose
+with no check behind it.
+
+**Verification.** 629 unit · 45 integration · typecheck · build · smoke · probes g36 and g37 · line ceiling ·
+`npm test` leaves the tree clean · **20/20 catalogued guards force a named failure**.
+
+**R-142 is the honest remainder:** there is no CI in this repository, so the catalogue is still opt-in. If a
+sixth pass finds a guard deletable with the suite green, the answer is CI rather than a sixth pass.
+
+---
+
 ## 2026-08-22 (fourth pass + fixes) — R-136 was marked FIXED while a new function still hung
 
 **Six reviewers over `52135ca..ee6e66e`, the third pass's fixes.** The behaviour was largely sound — the

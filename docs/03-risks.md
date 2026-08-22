@@ -2545,6 +2545,42 @@ delegating still takes a writer lease — unchanged from 0.18.1.
 
 ---
 
+## R-142 · The mutation audit is not a control until CI runs it — M×M, OPEN
+
+Added 2026-08-22. `scripts/mutation-audit.mjs` pins twenty `(patch → the test it must break)` pairs, and it
+already caught four bad entries in its own catalogue plus a test of mine that passed for the wrong reason. But
+**there is no CI configuration anywhere in this repository**, so it is a manually-invoked npm script — and its
+own docstring quotes R-34 against exactly that: *"a check an operator has to know to run is not a control, it
+is a feature."*
+
+Five review passes each found guards deletable with the whole suite green. The instances were fixed five times;
+what did not change is that the only thing forcing rule 7 was somebody choosing to look. A pinned catalogue is
+strictly better than a habit — it names what must break, it fails loudly, and it survives the session that
+wrote it — but it is still opt-in.
+
+**The minimum that closes this:** a workflow running `typecheck`, `test` and `test:mutation` on every PR, plus
+the server-side half `docs/WORKING-RULES.md` already recommends — requiring a PR on `main` with zero required
+approvals, which costs a single maintainer nothing. Rule 10's enforcement paragraph makes the same point about
+`hooks/pre-commit`: it is wired per clone, so *"if that command prints nothing the hook is inert."* The same
+sentence is now true of this script.
+
+**Deliberately not added in this PR.** It is repository infrastructure rather than ADR-0035, and this branch
+was just narrowed for precisely that reason — every layer of scope added here landed in code the previous
+layer's reviewers had not seen. Adding CI in the commit that argues against scope creep would be the fifth
+instance of the thing.
+
+**Also open, from the same review:** the harness excludes three guards from its catalogue by design, each with
+its reason stated (winning the `fstat`/read window and the `stat`-by-name swap are not deterministic
+in-process; Node closes a `FileHandle` on GC). Those three are measured by hand and forced by nothing. That is
+the honest form, not a solved problem — a deterministic instrument for "a size measured beforehand cannot be
+trusted" would retire the first of them, and a `/proc` file (which reports `st_size` 0 and still yields
+content) is the suggested route.
+
+**Trigger:** the next review pass finding a guard deletable with the suite green. If that happens while this
+entry is still OPEN, the answer is CI and not a sixth pass.
+
+---
+
 ## Register log
 
 | Date | ID | Change | By |
@@ -2621,3 +2657,4 @@ delegating still takes a writer lease — unchanged from 0.18.1.
 | 2026-08-21 | R-133, R-134, R-135, ADR-0035 amended | **Two review passes over PR #10 before it merged: the guard was right and the namespace was taught to three of nine sites.** R-133 is the pattern — the severe symptom being that `unknownCapabilities` never learned `workspace:`, so with a catalog present (always, in production) no child could be granted one and routing *terminated* below the root rather than attenuating, making the ADR's headline "two authorities, not one" unreachable. Also inert: the gate ADR-0035 claimed three times, and the `init` scaffolding it offered as the migration path for a breaking change. R-135 fell out of the mutation battery and is **older and worse**: R-26's own rule was enforced only in `childEnv`, so `delegate.ts` — the path that spawns since ADR-0016 — handed `tool:*` to children for eleven releases, with the rule's test asserting on the other route. R-134 is a session-start warning that told operators to delete a control that had worked since **0.12.0** — six releases — which ADR-0024's Costs section had explicitly relied on, and which an integration test *required* to exist, so the stale claim was defended by the suite. Eleven mutations, eleven named failures; `test/workspace-capability.test.ts` is organised by site so the checklist is executable | second and third review passes over PR #10 |
 | 2026-08-21 | R-136, R-137, R-138 | **A third review pass, six reviewers, over the fixes for the second.** Two shipping blockers, both introduced by the fix commit: a blocking registry path hung `session_start` (R-136, R-79's class again, and `AbortSignal` did not rescue it — `stat` before `open` did), and `/grants init`'s dialog granted routing live off a package declaration while the file it generates said "Not granted for you". R-137 closes the gap ADR-0035 asserted away, with **two** mechanisms because ownership and mode cannot distinguish a child from its parent at the same uid — the content pin is what actually closes it. **Ten single edits from the fix commit were revertible with the suite green**, including two of the six site fixes deletable *together*, and its own "eleven mutations, eleven named failures" was a count of what was checked rather than of what was covered. R-138 records four pre-existing findings left unfixed on purpose | third review pass over PR #10 |
 | 2026-08-22 | R-136, R-137 reopened, R-139 | **A fourth pass, six reviewers over the third pass's fixes — and R-136 was marked FIXED while a function added by the fixing commit still hung session start on a FIFO.** Three reviewers found it independently; a real `pi` produced zero notifies and timed out. R-136's own trigger ("grep for `readFile` reached from `loadProjectDefinitions`") found it, and nobody ran the trigger. A second hang existed too: `stat`-by-name then `readFile`-by-name is a TOCTOU any same-uid process can win. One reader holding one handle (`open(O_NONBLOCK)` + `fstat` the descriptor) closes both. **R-137's pin is reverted** — defeated four ways, including a measured escalation on the herdr executor, which no existing mechanism crosses. **Fourteen single reverts left every suite green, eight of them edits those commits added**, including the whole "names the file" fix and the pin's own wiring; `npm test` was also silently overwriting tracked contract fixtures. R-139 records the id-grammar break | fourth review pass over PR #10 |
+| 2026-08-22 | R-139…R-142, PR #10 narrowed | **A fifth pass, six reviewers over the fourth pass's fixes, and the response was structural rather than another round of patches.** Two blockers: the 1 MiB ceiling bounded the file and not the read (`handle.readFile` re-`fstat`s internally, so holding one handle closed the NAME race and left the SIZE race — 192 MiB read after a 29-byte measurement, race won in 848ms), and the id grammar had a FIFTH site, `isSafeCapability`, which refused the `feature/x` shape the release advertises and dropped the whole definition. **PR #10 was then narrowed to ADR-0035**: registry ownership/mode → R-137, the ledger-path and `tool:delegate` work → R-141, two pre-existing session-start hangs → R-140. And `npm run test:mutation` makes rule 7 mechanical — twenty pinned patch/test pairs, which caught four bad entries of its own, a test of mine that passed for the wrong reason, and a predicate bug in itself that had made its first "20/20" meaningless. R-142 records that it is not a control until CI runs it | fifth review pass over PR #10 |
