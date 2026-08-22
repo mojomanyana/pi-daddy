@@ -230,7 +230,12 @@ const MUTATIONS = [
 const runSuite = (testFile) =>
   new Promise((resolve) => {
     const child = execFile(
-      process.execPath, ["--test", testFile],
+      // **The reporter is PINNED, and that is the same lesson as `FORCE_COLOR` one layer over (R-143).**
+      // `node --test` defaulted to the TAP reporter before Node 23 and to `spec` from 23 on, and this parser
+      // reads `spec` — so on the `engines` floor (22.19.0) every entry came back *"the auditor could not read
+      // the output"*, `0/27`, in CI's first real run of this catalogue. Depending on a runtime's default
+      // output format is depending on ambient state, which is exactly what the colour pin exists to refuse.
+      process.execPath, ["--test", "--test-reporter=spec", testFile],
       // `FORCE_COLOR` in the ambient environment made `node --test` colour its output and the parser blind
       // to it — 0/20 with every guard intact, 2026-08-22. `scripts/mutation-parse.ts` strips ANSI anyway;
       // this pins the input as well, because two independent defences is the standard the catalogue holds

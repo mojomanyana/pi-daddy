@@ -2925,6 +2925,22 @@ already printed**: a named failure now counts whenever it appears, and `hang: tr
 non-termination is the whole signature and nothing prints. The pattern across all three of this harness's
 defects is one thing — *it kept mistaking "I could not read the answer" for "the answer is no."*
 
+**A fourth defect in the instrument, 2026-08-23 — and this time the control caught it, which is the point.**
+CI's first real run of this catalogue (PR #10 is where it lives; on `main` the step is a no-op) reported
+**`0/27` on the `engines` floor, node 22.19.0**, while node 24 reported 27/27 on the same commit. Every entry
+said *"the auditor could not read `<file>`'s output — this is NO verdict on the guard."* Cause: `node --test`
+defaulted to the **TAP** reporter before Node 23 and to `spec` from 23 on, and this parser reads `spec`. TAP
+prints `ok 1 - name`, with no `✔`/`✖` anywhere.
+
+**The positive control is the whole reason this was a five-minute diagnosis rather than a sweep of 27
+"fixes".** The three earlier defects in this harness all read *"I could not read the answer"* as *"the answer
+is no"*; the guard added after the third one made the difference visible the first time a new environment hit
+it. The reporter is now pinned with `--test-reporter=spec`, for the same reason `FORCE_COLOR` is pinned:
+depending on a runtime's default output format is depending on ambient state.
+
+**And it is an argument for the matrix.** The floor was a published `engines` claim nothing had ever exercised;
+the catalogue had never run under it. One leg of one CI run found that.
+
 **What this does not establish.** That the twenty guards are the right twenty — R-142's exclusion list and
 reviewer D's complement audit are the question of coverage, and this entry is only about the instrument being
 readable. And the `FORCE_COLOR=0` pin in the spawned environment is redundancy, not the defence: nothing forces
