@@ -20,7 +20,7 @@
 
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { chmod, open as fsOpen, writeFile } from "node:fs/promises";
+import { open as fsOpen, readdir, rename, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { join } from "node:path";
 import { planDelegation } from "../src/delegate.ts";
@@ -68,6 +68,12 @@ test("a child CAN be granted a workspace capability — with a catalog present, 
   // And the unknown check itself: exempt as a NAMESPACE, so an id absent from the registry still passes
   // here and is refused precisely later, by `resolveWorkspace`, with WORKSPACE_NOT_REGISTERED.
   assert.deepEqual(unknownCapabilities(["workspace:prod", "workspace:never-registered", WORKSPACE_WILDCARD], catalog), []);
+  // **A SLASH id, because the exemption must cover what the registry accepts.** A mutation reverted this
+  // predicate to the TOOL-name grammar with all three suites green: every other case here uses
+  // `workspace:prod`, which both grammars accept, so nothing crossed the one channel where they differ.
+  assert.deepEqual(unknownCapabilities(["workspace:feature/x"], catalog), []);
+  // And a bare prefix still names nothing.
+  assert.deepEqual(unknownCapabilities(["workspace:"], catalog), ["workspace:"]);
   assert.deepEqual(unknownCapabilities(["tool:nonexistent"], catalog), ["tool:nonexistent"]);
 });
 
@@ -364,48 +370,6 @@ test("a malformed model-supplied workspace id is refused as malformed, not as un
 });
 
 /**
- * The half Unix CAN express — narrowly, and the narrow statement is the point.
- *
- * This refuses a WORLD-writable registry: any local user could otherwise redirect a governed child into a
- * worktree nobody authorised. It does **not** establish "nobody else may rewrite it", which an earlier
- * version of this comment claimed. Two measured reasons: the check inspects the file and never its parent
- * directory, and `rename(2)`/`unlink(2)` need only directory write — a 0600 registry in a world-writable
- * non-sticky directory was accepted and then atomically replaced. And it cannot touch a same-uid child at
- * all, which is R-137's territory and is now recorded OPEN rather than half-blocked.
- *
- * Group-writable is deliberately ALLOWED. `umask 002` with per-user groups (Debian/Ubuntu
- * `USERGROUPS_ENAB`) produces 0664 for every file the operator creates, and refusing that broke a
- * configuration published 0.18.1 accepted while exposing nothing — the group has one member.
- *
- * Breaks by: removing the mode check. The uid check is deliberately UNGUARDED by any test, because a test
- * cannot create a file owned by another user; that is stated here rather than claimed as verified.
- */
-test("a registry anyone else could rewrite is refused", async () => {
-  const dir = await tempDir("pi-daddy-mode-");
-  const path = join(dir, "registry.json");
-  await writeFile(path, JSON.stringify({ version: 1, workspaces: { prod: { path: "/w/prod" } } }), "utf8");
-
-  await chmod(path, 0o644);
-  assert.deepEqual(Object.keys((await loadWorkspaceRegistry(path)).workspaces), ["prod"], "0644 is fine");
-
-  for (const mode of [0o666, 0o646, 0o607] as const) {
-    await chmod(path, mode);
-    await assert.rejects(loadWorkspaceRegistry(path), (e: Error & { code?: string }) => {
-      assert.equal(e.code, "WORKSPACE_NOT_REGISTERED");
-      assert.match(e.message, /world-writable/);
-      return true;
-    }, `mode ${mode.toString(8)} must be refused`);
-  }
-  for (const mode of [0o600, 0o664, 0o660] as const) {
-    await chmod(path, mode);
-    assert.deepEqual(
-      Object.keys((await loadWorkspaceRegistry(path)).workspaces), ["prod"],
-      `mode ${mode.toString(8)} is a normal umask result and must load`,
-    );
-  }
-});
-
-/**
  * R-79's defect class, reintroduced by 0.19.0's new readers and caught before release.
  *
  * `buildCatalog` and `registeredWorkspaceIds` are awaited inside `session_start`, so a blocking path there
@@ -470,6 +434,15 @@ test("an unauthorised routing probe always lands in `denied`, whatever shape it 
 
   // A bare namespace prefix names nothing and must not ride the exemption into a grant.
   assert.deepEqual(unknownCapabilities(["workspace:"], catalog), ["workspace:"]);
+
+  // The refusal's "It may route to:" list is filtered by the grammar, so it cannot point a model at a
+  // destination that is refused on every attempt. Untested until a mutation removed the filter green.
+  const withJunk = planDelegation(
+    { task: "t", tools: ["read"], boundWorkspaceId: "other" },
+    ctx({ ownGrant: ["tool:read", "tool:delegate", "workspace:prod", "workspace:bad id"] }) as never,
+  );
+  assert.match(withJunk.reason ?? "", /may route to: workspace:prod\./);
+  assert.doesNotMatch(withJunk.reason ?? "", /bad id/, "an unroutable id must not be advertised");
 });
 
 /**
@@ -501,8 +474,9 @@ test("a gated capability that is also requested is listed once", () => {
  * ("a second, weaker check here can only turn that precise refusal into a misleading one").
  *
  * Breaks by: dropping `registry.source` from the refusal message, dropping the `known` id listing, dropping
- * `registry_path` from the details, removing `source` from the object `loadWorkspaceRegistry` returns, or
- * removing the size ceiling.
+ * `registry_path` from the details, or removing `source` from the object `loadWorkspaceRegistry` returns.
+ * (It also named the size ceiling; that breaks the separate ceiling test and not this one — a breaker on the
+ * wrong case tells the next reader a guard is defended when something else is defending it.)
  */
 test("an unregistered id is refused by a message that names the file and what it does hold", async () => {
   const dir = await tempDir("pi-daddy-names-");
@@ -596,6 +570,55 @@ test("a registry larger than the ceiling is refused rather than read into memory
     assert.match(e.message, /over the \d+ limit/);
     return true;
   });
+});
+
+/**
+ * `fstat` on a held descriptor, not `stat` by name — and a leaked descriptor would be worse than either.
+ *
+ * Both were revertible with every suite green. `handle.stat()` → `stat(path)` reintroduces the TOCTOU the
+ * rewrite existed to close: a same-uid process swapping a regular file for a FIFO between the check and the
+ * read hung the loader indefinitely. And dropping `finally { handle.close() }` is a plain descriptor leak on a
+ * path now reached from `session_start`, `buildCatalog` and `registeredWorkspaceIds`.
+ *
+ * The swap loop is the only way to tell the two apart, so it is here rather than described. A `timeout` is
+ * declared because the failure mode of the first half is a HANG, and a hanging file reports `fail 0` with two
+ * tests `cancelled` — anyone grepping the summary sees zero failures.
+ *
+ * **Neither half is forced by this test, and that is recorded rather than implied.** `scripts/mutation-audit.mjs`
+ * explains why: winning the swap race from inside the process is not deterministic, and Node closes a
+ * `FileHandle` on GC so a leak does not reliably surface as an fd count. What this test does force is that
+ * every attempt SETTLES — a hang here is the defect either guard exists to prevent — and it is bounded by an
+ * explicit `timeout`, because a hanging test file reports `fail 0` with tests `cancelled`.
+ */
+test("the registry is checked on the descriptor it reads, and the descriptor is always closed", { timeout: 20_000 }, async () => {
+  const dir = await tempDir("pi-daddy-toctou-");
+  const path = join(dir, "registry.json");
+  const fifo = join(dir, "fifo");
+  const good = JSON.stringify({ version: 1, workspaces: { prod: { path: "/w/p" } } });
+  await new Promise<void>((ok, no) => execFile("mkfifo", [fifo], (e) => (e ? no(e) : ok())));
+
+  const fdCount = async () => (await readdir("/proc/self/fd")).length;
+  const before = await fdCount();
+
+  // Swap a regular file and a FIFO at the same path while reading it, repeatedly. With `fstat` on the held
+  // descriptor every outcome is bounded: either a clean load or a refusal, never a wait.
+  let loaded = 0;
+  let refused = 0;
+  for (let i = 0; i < 150; i++) {
+    await writeFile(path, good, "utf8");
+    if (i % 2 === 0) {
+      await rename(path, join(dir, "away")).catch(() => {});
+      await rename(fifo, path).catch(() => {});
+    }
+    try { await loadWorkspaceRegistry(path); loaded++; } catch { refused++; }
+    await rename(path, fifo).catch(() => {});
+    await rename(join(dir, "away"), path).catch(() => {});
+  }
+  assert.equal(loaded + refused, 150, "every attempt must settle — a hang here is the defect");
+  assert.ok(refused > 0, "at least one swap must have been observed, or the race never happened");
+
+  const after = await fdCount();
+  assert.ok(after <= before + 2, `descriptors leaked across 150 reads: ${before} -> ${after}`);
 });
 
 /** The catalog enumerates registered workspaces for `/grants` and `init`. Display, never authority. */

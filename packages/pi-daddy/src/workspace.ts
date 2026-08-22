@@ -102,47 +102,15 @@ export async function loadWorkspaceRegistry(path: string): Promise<WorkspaceRegi
         { registry_path: path },
       ));
     }
-    // ADR-0035 asserts the registry is "operator-owned" and nothing checked it. This checks one narrow half
-    // of that, and the narrowness is the point — an earlier version of this comment claimed it established
-    // "nobody ELSE may rewrite it", which is false twice over:
+    // **Ownership and mode are NOT checked here, and that is a scope decision (R-137, ADR-0036).** A
+    // previous revision refused a registry not owned by this user or writable by others. Those guards are
+    // about *tamper resistance*, which is a different question from the one ADR-0035 raised, and they went in
+    // mid-review without an ADR — where they promptly acquired a false claim ("nobody ELSE may rewrite it":
+    // it inspects the file and never its parent directory, and `rename(2)` needs only directory write) and a
+    // false-positive refusal of `0664`, which `umask 002` produces for every file an operator creates.
     //
-    //  - it inspects the FILE and never its parent directory, and `rename(2)`/`unlink(2)` need only directory
-    //    write. Measured: a 0600 registry in a world-writable non-sticky directory was accepted and then
-    //    atomically replaced. `/tmp` is saved by its sticky bit; a shared project directory at 0775 is not.
-    //  - it cannot see a same-uid child at all, which is the attack R-137 records and which is now OPEN
-    //    rather than half-blocked.
-    //
-    // What it does buy: a registry any local user can write in place is refused rather than trusted.
-    const uid = typeof process.getuid === "function" ? process.getuid() : undefined;
-    if (uid !== undefined && info.uid !== uid && info.uid !== 0) {
-      throw new GovernanceRefusal(refusal(
-        "WORKSPACE_NOT_REGISTERED",
-        `workspace registry ${path} is owned by uid ${info.uid}, not by this user (${uid}) or root — ` +
-          `refusing. It decides which worktrees a delegation may be routed to.`,
-        { registry_path: path },
-      ));
-    }
-    // WORLD-writable only. Group-writable is deliberately allowed: `umask 002` with per-user groups
-    // (Debian/Ubuntu `USERGROUPS_ENAB`) makes 0664 the default for every file an operator creates, so
-    // refusing it broke a configuration published 0.18.1 accepted while exposing nothing — that group has one
-    // member. A genuinely shared group is a deliberate choice this cannot distinguish, and is not checked.
-    if ((info.mode & 0o002) !== 0) {
-      throw new GovernanceRefusal(refusal(
-        "WORKSPACE_NOT_REGISTERED",
-        `workspace registry ${path} is world-writable (mode ${(info.mode & 0o777).toString(8)}) — refusing. ` +
-          `Any local user could redirect a governed child into a worktree nobody authorised. chmod o-w it.`,
-        { registry_path: path },
-      ));
-    }
-    // **A BOUNDED read, not a bounded FILE.** `handle.readFile` re-`fstat`s the descriptor internally and
-    // reads whatever the size is *then*, so the check above bounded nothing: holding the handle defeats the
-    // NAME re-resolution, not the SIZE re-read. Measured by review — a same-uid writer `ftruncate`d the same
-    // inode between the two and `loadWorkspaceRegistry` read **192 MiB after measuring 29 bytes**, 467 MiB
-    // RSS, race won in 848ms and 9% of attempts with a weaker hammer. At session start.
-    //
-    // Reading into a fixed buffer of `REGISTRY_MAX_BYTES + 1` makes the ceiling structural: a file that grew
-    // is refused on overflow rather than allocated. The attacker is the same-uid child the mode check below
-    // cannot see, which is exactly who this needed to hold against.
+    // What IS checked above is what ADR-0035 made this reader's problem: it began reading the registry at
+    // SESSION START, so the read must be bounded and must not block. Integrity is R-137, open and measured.
     // The deadline is checked BETWEEN chunks, which is all `AbortSignal.timeout` ever did on the previous
     // implementation — review measured 74 of 200 one-MiB reads completing in full with `signal.aborted`
     // already true, because a signal is never observed *inside* a libuv read request. An explicit check makes

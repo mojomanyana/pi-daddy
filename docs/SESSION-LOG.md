@@ -11,10 +11,10 @@ decisions; this file holds state and next actions. Newest entry on top.
 `hooks/pre-commit` enforces it once `git config core.hooksPath hooks` is set in your clone. This line is at
 the top because the rule was broken by drift, and this file is what a session actually reads first.
 
-**2026-08-21 — PR #10 (ADR-0035, 0.19.0) is OPEN and this is the work.** Three independent review passes
-have now run over it; the fixes for the third are on `fix/adr-0035-review`, to be pushed onto
+**2026-08-22 — PR #10 (ADR-0035, 0.19.0) is OPEN and this is the work.** FIVE independent review passes have
+now run over it, each finding defects in the previous one's fixes; the fixes for the third are on `fix/adr-0035-review`, to be pushed onto
 `adr/0035-workspace-attenuation` so PR #10 merges correct rather than being narrated by a second PR.
-**624 unit + 45 integration.** The full account is the top dated entry below; what a resuming session needs:
+**628 unit + 45 integration.** The full account is the top dated entry below; what a resuming session needs:
 
 1. **The generalisable rule, twice refined.** Adding a capability namespace is a nine-site change (R-133) —
    **and the sites you touch need the same adversarial read as the ones you missed** (R-136, R-137), because
@@ -31,8 +31,10 @@ have now run over it; the fixes for the third are on `fix/adr-0035-review`, to b
    no lease and sets no CWD, so it is not the escalation, but it is half of the argument ADR-0035 used to
    reject Option 4 and it has now survived three reviews. **Do not let this merge unrecorded a fourth time.**
 5. Option 2 from ADR-0035 (strip the registry, re-supply a narrowed one per child) remains available as
-   defence-in-depth and remains not taken — a child can still *enumerate* ids it may not use, though it can no
-   longer change what one means (R-137).
+   defence-in-depth and remains not taken. A child can still *enumerate* ids it may not use **and can still
+   change what one means** — R-137 is OPEN, measured by `docs/probes/g37-registry-tamper`. (This line said
+   the opposite until 2026-08-22, in the same commit that reverted the pin: a summary contradicting its own
+   body, which is the defect the round below had just recorded.)
 
 **Release state, re-verified 2026-08-20:** PR #12 is merged. Repository `main`, peeled tag `v0.18.1`, and
 the npm `pi-daddy@0.18.1` `gitHead` all point at `8feaacbdf6003c783225e375b61874a599963f47`;

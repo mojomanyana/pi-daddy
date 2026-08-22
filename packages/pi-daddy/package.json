@@ -151,7 +151,8 @@
     "test:integration": "node --test test-integration/*.it.ts",
     "contracts:generate": "node scripts/generate-ledger-v2-contract.ts",
     "prepack": "npm run build",
-    "test:smoke": "node scripts/smoke-installed.mjs"
+    "test:smoke": "node scripts/smoke-installed.mjs",
+    "test:mutation": "node scripts/mutation-audit.mjs"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

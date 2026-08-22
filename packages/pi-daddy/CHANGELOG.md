@@ -85,8 +85,9 @@ here that provably did *not* ship. It has moved back.)
   `scripts/generate-ledger-v2-contract.ts` instead of hand-maintained beside it. `WORKSPACE_NOT_AUTHORIZED`
   joins the enum in this release; `contracts/ledger/v2/README.md` records why that is a legitimate v2 edit
   rather than a v3 — v2 has never been published, so nothing can have pinned it. It is **not** the last such
-  edit: five other closed enums in that schema are still hand-maintained beside their source arrays, with the
-  same ambush waiting for whoever adds an executor kind or a lease outcome.
+  edit: every other closed enum in that schema is still hand-maintained beside its source array — `test/ledger-contract.test.ts`
+  asserts each equality, so the same ambush waits for whoever adds an executor kind or a lease outcome. (First
+  written as "five"; the figure is larger and is not worth restating, since the test file is the list.)
 
 ### Present in earlier releases — read these before upgrading
 

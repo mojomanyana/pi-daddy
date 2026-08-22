@@ -192,9 +192,11 @@ discovered at spawn time.
 
 **Three refusals guard the generated file, because everything in it comes from a third party.** A definition
 whose **name** is not `[A-Za-z0-9][A-Za-z0-9._-]*` (R-77); one whose **declared capability id** is not
-`tool:/skill:/agent:<name>` or `ext:<pkg>/<tool>` (R-78 — an unchecked `ext:x";touch …` executed code when
-the file was sourced); and one declaring `tool:*` or `agent:*`, which is root authority rather than a
-description of what a skill needs. Each is refused by name with its reason, counted on the summary line, and
+`tool:/skill:/agent:<name>`, `workspace:<id>` or `ext:<pkg>/<tool>` (R-78 — an unchecked `ext:x";touch …`
+executed code when the file was sourced); and one declaring `tool:*`, `agent:*` or `workspace:*`, which is
+root authority over a namespace rather than a description of what a skill needs. A `workspace:` id is checked
+against the registry-id grammar, not the tool-name one, so a branch-named worktree (`feature/x`) is legal
+here as well — five sites had to agree about that and for a while four did. Each is refused by name with its reason, counted on the summary line, and
 exits non-zero. Beyond them, the assembled grant is charset-checked and the file is **not written at all**
 if anything unexpected got through — a backstop that does not depend on those three rules being complete,
 since twice now they were not.

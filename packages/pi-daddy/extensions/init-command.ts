@@ -90,8 +90,12 @@ export async function runInit(
     // and with `PI_GRANTS_GATED="tool:bash,tool:write"` (the value `renderGrantEnv` itself suggests) the
     // dialog still printed the exact false sentence the fix claimed to remove. Dead code beside a claim that
     // it worked, which is this project's failure mode, in the commit correcting that failure mode.
-    const gatedAtSpawn = session.gated.includes(capability)
-      || (SUBSUMPTION[capability] ?? []).some((implied) => session.gated.includes(implied));
+    // No subsumption closure here, and the absence is deliberate. A `|| SUBSUMPTION[capability]…` disjunct was
+    // added and is **dead in every configuration**: `SUBSUMPTION` has one key, `tool:bash`, and `tool:bash` is
+    // consumed by the ternary below before `gatedAtSpawn` is ever read. Two reviewers and a mutation confirmed
+    // it changed no result — dead code beside a claim that it worked, in the hunk whose comment denounces
+    // exactly that. A second `SUBSUMPTION` entry is the moment to add it back.
+    const gatedAtSpawn = session.gated.includes(capability);
     const answer = await ctx.ui.select(
       `grants: grant ${capability} to sub-agents?\n  needed by: ${neededBy.join(", ")}\n` +
         `  this can change your machine — ` +

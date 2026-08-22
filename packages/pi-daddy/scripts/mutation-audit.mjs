@@ -1,0 +1,238 @@
+#!/usr/bin/env node
+/**
+ * Rule 7, as a control instead of a habit.
+ *
+ * **Five review passes over one PR each found guards that could be deleted with the whole suite green** — ten
+ * in the third pass, fourteen in the fourth, ten in the fifth. Every round fixed the instances and none of
+ * them changed why the instances kept happening: the only thing forcing rule 7 was a person choosing to run a
+ * mutation audit afterwards. R-34 already names that shape — *"a check an operator has to know to run is not
+ * a control, it is a feature"* — and this project's own record says which guards never had this failure: the
+ * line ceiling, the branch guard, the refusal enumeration. All mechanical, all cheap.
+ *
+ * So: a pinned catalogue of `(patch, the test it must break)`. Adding a guard means adding an entry. A guard
+ * with no entry is not proven to be a guard, and an entry whose patch stops breaking its test fails the run.
+ *
+ * NOT part of `npm test`, deliberately — it edits files and runs the suite once per entry, so it is minutes
+ * rather than seconds. `npm run test:mutation`, before pushing anything that adds or changes a guard.
+ *
+ * Two hazards, both learned the hard way this session and both handled below:
+ *
+ *  - **A mutation that does not apply reports success.** Shell escaping silently mangled two patches and the
+ *    green result meant nothing. Every entry asserts its `find` occurs exactly once before patching.
+ *  - **A mutation whose failure mode is a HANG reports `fail 0`.** `node --test` cancels the pending test and
+ *    prints a summary with two `cancelled` and zero failures; grepping the summary sees success. Every run is
+ *    under an external timeout, and a timeout counts as "broke the test" only when the entry says so.
+ *    (Related: never use bash `setsid` to get an exit code — it forks and returns 0 when the shell is already
+ *    a process-group leader. Use a direct spawn, as here.)
+ *
+ * **And a third, which this script caused before it prevented it:** killing the run leaves a file mutated,
+ * because a `finally` does not execute through SIGKILL. It then reports every later entry as "the catalogue is
+ * stale", which reads like a catalogue problem and is actually a corrupted tree — and the obvious recovery,
+ * `git checkout -- src`, discards whatever uncommitted work was there too. So this refuses to start unless the
+ * files it will touch are clean, and it restores from git rather than from memory. If you kill it anyway,
+ * `git status` tells you exactly what to restore and nothing else was at risk.
+ */
+
+import { readFile, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const root = dirname(dirname(fileURLToPath(import.meta.url)));
+const TIMEOUT_MS = 180_000;
+
+/**
+ * Each entry: patch one guard, name the test that must fail.
+ *
+ * `expect` is matched against the failing-test names `node --test` prints. `hang: true` means the guard's
+ * regression is a non-termination rather than an assertion — the honest record for a guard whose absence
+ * wedges the process, and the reason a bare exit code cannot be trusted here.
+ */
+const MUTATIONS = [
+  // ── the registry reader ────────────────────────────────────────────────────
+  { name: "registry: read is unbounded again",
+    file: "src/workspace.ts", test: "test/workspace-capability.test.ts",
+    find: "    const deadline = Date.now() + REGISTRY_READ_TIMEOUT_MS;",
+    replace: "    raw = await handle.readFile({ encoding: \"utf8\" });\n    if (false) {\n    const deadline = Date.now() + REGISTRY_READ_TIMEOUT_MS;",
+    also: [{ find: "    raw = buffer.subarray(0, filled).toString(\"utf8\");", replace: "    }" }],
+    expect: "GROWS after its size is checked" },
+  { name: "registry: size ceiling removed",
+    file: "src/workspace.ts", test: "test/workspace-capability.test.ts",
+    find: "    if (info.size > REGISTRY_MAX_BYTES) {", replace: "    if (false) {",
+    expect: "larger than the ceiling" },
+  // **Two guards in this reader are deliberately NOT in the catalogue, and saying so is the point.**
+  //
+  //  - `handle.stat()` rather than `stat(path)` closes a TOCTOU. Winning that race requires a swap to land
+  //    inside the window between the two calls, which is not deterministic from inside the process; a test
+  //    that wins it sometimes is a flaky test, and one that never wins it is decoration.
+  //  - `finally { handle.close() }` prevents a descriptor leak. Node closes a `FileHandle` on GC, so a leak
+  //    does not reliably surface as an fd count within one run.
+  //
+  // Both were measured by review — the swap loop hung 1 of 6 iterations with `stat`-by-name — and neither is
+  // forced by anything here. That is the honest form (the shape rule 6 asks for), not an excuse: an entry
+  // asserting a check that does not fire would be worse than the gap it hides.
+  { name: "registry: non-regular file accepted",
+    file: "src/workspace.ts", test: "test/workspace-capability.test.ts",
+    find: "    if (!info.isFile()) {", replace: "    if (false) {",
+    expect: "not a regular file", hang: true },
+  { name: "registry: invalid JSON escapes the structured refusal",
+    file: "src/workspace.ts", test: "test/workspace.test.ts",
+    find: "    parsed = JSON.parse(raw);", replace: "    parsed = JSON.parse(raw); void 0;",
+    also: [{ find: "  } catch (error) {\n    throw new GovernanceRefusal(refusal(\n      \"WORKSPACE_NOT_REGISTERED\",\n      `workspace registry ${path} is not valid JSON (${String(error)})`,",
+             replace: "  } catch (error) {\n    throw new Error(String(error)); throw new GovernanceRefusal(refusal(\n      \"WORKSPACE_NOT_REGISTERED\",\n      `workspace registry ${path} is not valid JSON (${String(error)})`," }],
+    expect: "not valid JSON" },
+  { name: "registry: id grammar off",
+    file: "src/workspace.ts", test: "test/workspace-capability.test.ts",
+    find: "    if (!isSafeWorkspaceId(id)) {", replace: "    if (false) {",
+    expect: "would not survive the grant grammar" },
+  { name: "registry: refusal stops naming the file",
+    file: "src/workspace.ts", test: "test/workspace-capability.test.ts",
+    find: "workspaces: structuredClone(file.workspaces), source: path };",
+    replace: "workspaces: structuredClone(file.workspaces) };",
+    expect: "names the file and what it does hold" },
+
+  // ── the workspace-id grammar, at every site that reads it ──────────────────
+  { name: "grammar: slash refused again",
+    file: "src/capabilities.ts", test: "test/workspace-capability.test.ts",
+    find: "/^[A-Za-z0-9][A-Za-z0-9._/-]*$/", replace: "/^[A-Za-z0-9][A-Za-z0-9._-]*$/",
+    expect: "would not survive the grant grammar" },
+  { name: "grammar: fifth site back to the tool-name rule",
+    file: "src/capabilities.ts", test: "test/init.test.ts",
+    find: "  if (id.startsWith(\"workspace:\")) return isSafeWorkspaceId(id.slice(\"workspace:\".length));",
+    replace: "  if (id.startsWith(\"workspace:\")) return /^workspace:[A-Za-z0-9][A-Za-z0-9._-]*$/.test(id);",
+    expect: "branch-named workspace id" },
+  { name: "catalog: exemption back to the tool-name rule",
+    file: "src/catalog.ts", test: "test/workspace-capability.test.ts",
+    find: "(c.startsWith(\"workspace:\") && isSafeWorkspaceId(c.slice(\"workspace:\".length)))",
+    replace: "c.startsWith(\"workspace:\")",
+    expect: "CAN be granted a workspace capability" },
+
+  // ── routing authority ─────────────────────────────────────────────────────
+  { name: "routing: authority check removed",
+    file: "src/routing-authority.ts", test: "test/workspace-capability.test.ts",
+    find: "  if (mayRouteToWorkspace(ownGrant, boundWorkspaceId)) return null;", replace: "  if (true) return null;",
+    expect: "attenuates three levels down" },
+  { name: "routing: empty id skips the guards",
+    file: "src/routing-authority.ts", test: "test/workspace-capability.test.ts",
+    find: "  if (boundWorkspaceId === undefined) return null;", replace: "  if (!boundWorkspaceId) return null;",
+    expect: "always lands in `denied`" },
+  { name: "routing: wildcard refused for a non-holder too",
+    file: "src/routing-authority.ts", test: "test/workspace-capability.test.ts",
+    find: "  if (!ownGrant.includes(WORKSPACE_WILDCARD) && !ownGrant.includes(WILDCARD)) return null;", replace: "",
+    expect: "always lands in `denied`" },
+  { name: "routing: held list advertises unroutable ids",
+    file: "src/routing-authority.ts", test: "test/workspace-capability.test.ts",
+    find: "    .filter((c) => c.startsWith(\"workspace:\") && isSafeWorkspaceId(c.slice(\"workspace:\".length)))",
+    replace: "    .filter((c) => c.startsWith(\"workspace:\"))",
+    expect: "always lands in `denied`" },
+
+  // ── attenuation, the gate, and the operator-facing surfaces ───────────────
+  { name: "attenuation: wildcard reaches a delegated child",
+    file: "src/propagation.ts", test: "test/workspace-capability.test.ts",
+    find: "  return grant.filter((c) => c !== WILDCARD && c !== WORKSPACE_WILDCARD);",
+    replace: "  return [...grant];",
+    expect: "R-135" },
+  { name: "gate: routing authority no longer gated",
+    file: "src/delegation-approval.ts", test: "test/workspace-capability.test.ts",
+    find: "  if (input.boundWorkspaceId) {", replace: "  if (false) {",
+    expect: "asks a human before routing there" },
+  { name: "gate: duplicate entry in gatedBlocked",
+    file: "src/delegation-approval.ts", test: "test/workspace-capability.test.ts",
+    find: "    (c) => !approvedCapabilities.includes(c) && !result.gatedBlocked.includes(c),",
+    replace: "    (c) => !approvedCapabilities.includes(c),",
+    expect: "listed once" },
+  { name: "lease: non-tool capability forces a writer lease",
+    file: "extensions/workspace-runtime.ts", test: "test/workspace-runtime.test.ts",
+    find: "  const tools = requested.filter((c) => c.startsWith(\"tool:\") || c.startsWith(\"ext:\"));",
+    replace: "  const tools = requested;",
+    expect: "does not force an exclusive writer lease" },
+  { name: "init: dialog can confer routing",
+    file: "src/init.ts", test: "test/init.test.ts",
+    find: "      if (capability.startsWith(\"workspace:\")) continue;", replace: "",
+    expect: "cannot confer a routing capability" },
+  { name: "init: consequence sentence back to the constant",
+    file: "extensions/init-command.ts", test: "test/init.test.ts",
+    find: "    const gatedAtSpawn = session.gated.includes(capability);",
+    replace: "    const gatedAtSpawn = [\"tool:bash\"].includes(capability);",
+    expect: "described as gated" },
+  { name: "cli: init goes silent about a blocked routing package",
+    file: "src/cli.ts", test: "test/init.test.ts",
+    find: "  if (plan.routableWorkspaces.length > 0) {", replace: "  if (false) {",
+    expect: "says out loud" },
+  { name: "contract: npm test writes the repository again",
+    file: "scripts/generate-ledger-v2-contract.ts", test: "test/ledger-contract.test.ts",
+    find: "  await writeLedgerV2ContractFixtures(targets.fixtures);", replace: "  await writeLedgerV2ContractFixtures();",
+    expect: "restores the refusal enum" },
+];
+
+const runSuite = (testFile) =>
+  new Promise((resolve) => {
+    const child = execFile(
+      process.execPath, ["--test", testFile],
+      { cwd: root, timeout: TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024, killSignal: "SIGKILL" },
+      (error, stdout) => resolve({ stdout, killed: Boolean(error && error.killed) }),
+    );
+    child.on("error", () => resolve({ stdout: "", killed: true }));
+  });
+
+// **Refuse to run on a dirty tree.** A killed run leaves a mutation behind, and the next run cannot tell that
+// from a stale catalogue. Requiring cleanliness up front means `git status` is always the whole recovery.
+const dirty = await new Promise((resolve) => {
+  execFile("git", ["status", "--porcelain", "--", ...new Set(MUTATIONS.map((m) => m.file))],
+    { cwd: root }, (error, stdout) => resolve(error ? "" : stdout.trim()));
+});
+if (dirty) {
+  console.error(
+    "Refusing to run: the files this would mutate have uncommitted changes.\n" +
+    dirty.split("\n").map((l) => `    ${l}`).join("\n") +
+    "\n\nCommit or stash them first. This script edits files in place, so a crash mid-run would leave a\n" +
+    "mutation behind — and telling that apart from a stale catalogue costs more than committing does.",
+  );
+  process.exit(2);
+}
+
+let failures = 0;
+for (const m of MUTATIONS) {
+  const path = join(root, m.file);
+  const original = await readFile(path, "utf8");
+  const patches = [{ find: m.find, replace: m.replace }, ...(m.also ?? [])];
+  let patched = original;
+  let applied = true;
+  for (const { find, replace } of patches) {
+    // A patch that does not apply would report success. Refuse instead.
+    if (patched.split(find).length - 1 !== 1) {
+      console.error(`✗ ${m.name}\n    patch does not appear exactly once in ${m.file} — the catalogue is stale`);
+      applied = false;
+      failures++;
+      break;
+    }
+    patched = patched.replace(find, replace);
+  }
+  if (!applied) continue;
+
+  await writeFile(path, patched, "utf8");
+  try {
+    const { stdout, killed } = await runSuite(m.test);
+    const broke = killed ? Boolean(m.hang) : stdout.includes(m.expect) && /^# fail [1-9]|✖/m.test(stdout);
+    if (broke) {
+      console.log(`✓ ${m.name}${killed ? "  (hang, as recorded)" : ""}`);
+    } else {
+      failures++;
+      console.error(
+        `✗ ${m.name}\n    reverting this guard did not break ${m.test} on "${m.expect}"` +
+        `${killed ? " (the run was killed and the entry does not record a hang)" : ""}\n` +
+        `    a guard nothing forces is not a guard — add the check, or remove the guard`,
+      );
+    }
+  } finally {
+    // From git, not from the copy in memory: if this process dies between the write and here, `git checkout`
+    // is the recovery, and using the same mechanism both ways means there is only one thing to know.
+    await new Promise((resolve) => execFile("git", ["checkout", "--", m.file], { cwd: root }, () => resolve()));
+  }
+}
+
+console.log(`\n${MUTATIONS.length - failures}/${MUTATIONS.length} guards forced a named failure`);
+if (failures > 0) {
+  console.error("\nThe catalogue is the contract: every guard here must break the test it names.");
+  process.exit(1);
+}

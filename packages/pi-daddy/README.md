@@ -337,8 +337,22 @@ All fields are optional; existing callers behave unchanged.
   ids commented in `.pi/grants.env`. A child can only route on to ids it was granted itself, so this is also
   the list of what any descendant could reach; `workspace:*` exists but is held and never inherited, which
   makes it the wrong answer for anything but a single-worktree setup. `PI_GRANTS_GATED=workspace:W` asks a
-  human first. Enforced by pi-daddy before the spawn, not by pi's `--tools` — see `docs/SPEC.md` on the two
+  human first. Enforced by pi-daddy before the spawn, not by pi's `--tools` — see `docs/SPEC.md` on the
   enforcement classes.
+
+  **BREAKING in 0.19.0 — a registry id must match `[A-Za-z0-9][A-Za-z0-9._/-]*`.** An id is now the tail of a
+  capability id, so it has to survive the grant grammar. **Slashes and dots are fine**, so a worktree named
+  after its branch (`feature/x`) works. Refused, with the file and the id named: whitespace (it splits a
+  definition's `allowed-tools`), commas and newlines (they split a grant), `*` (it collided with
+  `workspace:*`), shell metacharacters (they reach a generated file you are told to paste from), non-ASCII,
+  and `@ + % = ^ ! ? ~ { } [ ]` or a leading `_`, `-` or `.`. **One bad entry refuses the whole registry**, so
+  rename before upgrading. The regex is the specification; that list is a summary.
+
+  **Also new in 0.19.0:** the registry must be a **regular file under 1 MiB**. A FIFO or device there would
+  block session start rather than fail, and the read is bounded so a file that grows after its size is checked
+  is refused rather than allocated. What is *not* checked: ownership, permissions, and whether a descendant
+  holding a write tool repointed an entry — routing attenuates by **id**, not by **destination**
+  (`docs/probes/g37-registry-tamper`, tracked as R-137).
 - Refusals retain current prose and add stable codes such as `CAPABILITY_ESCALATION`,
   `GATED_UNAPPROVED`, `APPROVAL_SCOPE_MISMATCH`, and `WORKSPACE_WRITE_CONFLICT`.
 - Ledger v2 adds joinable capability, lease, lifecycle and check-receipt events while reading legacy lines.

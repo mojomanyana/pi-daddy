@@ -249,7 +249,9 @@ Recorded because a review that produced twenty register entries and no open item
 - **The lock key does not include the lease directory.** Two sessions disagreeing about `PI_CODING_AGENT_DIR`
   — a devcontainer and a host, which the two-step setup makes normal — contend on different files and each
   reports itself the single governed writer.
-- **`access: "read"` is nearly unreachable.** Four tool names classify as read-only, so any grant containing
+- **`access: "read"` is nearly unreachable. **Amended 2026-08-22 (ADR-0035's review):** a `workspace:`, `agent:`
+or `skill:` id no longer forces a write lease, since none of them can change a file — so `read` plus a routing
+id now genuinely classifies `read`. `tool:delegate` still forces `write`; R-141 says why.** Four tool names classify as read-only, so any grant containing
   `tool:delegate`, a `skill:` or an `agent:` id forces a write lease, and read-only fan-out onto one
   workspace self-conflicts. This is a classification problem, not a policy one.
 - **R-101** (pid recycling in the helper) and **R-118** (an untested defence-in-depth check) are accepted with

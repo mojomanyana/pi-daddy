@@ -2347,8 +2347,13 @@ so delegation hung too. Measured: `exit=124` after 8s, repeatedly.
 timeout anywhere in the path"*, reintroduced by a new reader four lines from the comment documenting it.
 
 **`AbortSignal.timeout` does not fix it, and the first attempt proved that by still hanging.** A signal is
-observed between chunks; a FIFO blocks inside `open(2)` before any read begins. `stat` first is the fix — it
-does not open the file, returns in 0ms, and names what it found. A non-regular registry is refused rather
+observed between chunks; a FIFO blocks inside `open(2)` before any read begins.
+
+**Superseded 2026-08-22, and the correction matters.** This entry first said *"`stat` first is the fix"*. It
+was not: `stat`-by-name followed by `readFile`-by-name is a TOCTOU any same-uid process can win, and a
+*second* size race survived even holding one handle, because `handle.readFile` re-`fstat`s internally — a
+192 MiB file was read after a 29-byte measurement. The fix in the product is one handle opened `O_NONBLOCK`,
+`fstat`-ed as a descriptor, and read into a bounded buffer. A non-regular registry is refused rather
 than treated as empty, because a silent empty registry disables routing while looking healthy.
 
 **Not fixed, and stated rather than implied:** an unresponsive network mount blocks `stat` just as hard. No
@@ -2368,8 +2373,13 @@ mechanism that was meant to close it is not in the product.
 ADR-0035 attenuated *which id* a descendant may name and left the id→path mapping in a mutable file. A child
 holding `workspace:staging` **and `tool:write`** — not `bash`, so squarely inside ADR-0012's scope — can
 rewrite the `staging` entry to point at any other Git worktree and route its grandchild there, with a real
-exclusive write lease. **Measured end to end** against two real worktrees: the grandchild started in a root
-nobody authorised. The capability names something the child can redefine.
+exclusive write lease. **Measured** by `docs/probes/g37-registry-tamper`, which drives the real
+production path against real worktrees and a real kernel lease: the grandchild started in a root nobody
+authorised, while the *control* — the same child naming `prod` directly — was refused
+`WORKSPACE_NOT_AUTHORIZED`. So the capability check works and what moved is the thing it names.
+
+(This entry first asserted "measured end to end" with no probe in the repository, which working rule 5 counts
+as unmeasured. The probe was written afterwards, and it is the reason that sentence is now true.)
 
 **What was tried, and why it is out.** A content pin: the root records the registry's digest, descendants
 inherit it verbatim, a mismatch refuses. A fourth review pass defeated it four ways, all measured:
@@ -2454,9 +2464,13 @@ branch, so a slash is the ordinary case, and a slash splits nothing: not the com
 beside it said refusing an id "costs nothing" — true of a hostile id, false of `feature/x`, and renaming one
 means editing every grant and every `.pi/grants.env` that names it.
 
-**Now:** `isSafeWorkspaceId` — `[A-Za-z0-9][A-Za-z0-9._/-]*` — refuses only what breaks a channel: whitespace,
-comma/CR/LF/NUL, `*`, shell metacharacters (they reach a generated file the operator is told to paste from),
-and non-ASCII. That last is a deliberate trade for a display-spoofing surface in a reviewed file, recorded as
+**Now:** `isSafeWorkspaceId` — `[A-Za-z0-9][A-Za-z0-9._/-]*`. **The regex is the specification; the prose
+below is a summary and was wrong twice.** It refuses whitespace (which `allowed-tools` splits on),
+comma/CR/LF/NUL (which split a grant), `*` (it collided with the wildcard), shell metacharacters (they reach
+a generated file the operator is told to paste from), non-ASCII, **and also `@ + % = ^ ! ? ~ { } [ ]` and a
+leading `_`, `-` or `.`** — none of which breaks a channel, so `@scope` and `_tmp` are refused for tidiness
+rather than for safety. An earlier version of this entry listed those two as casualties of the *old* grammar
+that the new one rescued; it does not rescue them. That last is a deliberate trade for a display-spoofing surface in a reviewed file, recorded as
 breaking rather than asserted to cost nothing. Documented in the CHANGELOG's breaking section, which described
 only the comma rule while the code required far more.
 
@@ -2466,6 +2480,68 @@ loud only at the point of use.
 
 **Trigger:** an operator reporting that a registered workspace stopped being listed after upgrading; or any
 future capability namespace whose ids come from a file rather than from a grant.
+
+---
+
+## R-140 · Two session-start readers can block a session forever — H×M, OPEN
+
+Added 2026-08-22 by the fifth review pass, which ran R-136's own stated trigger — *"grep for `readFile`
+reached from `loadProjectDefinitions`"* — and got two hits R-136 does not cover. **Both pre-date ADR-0035 and
+are outside this PR's scope; they are recorded so the trigger's next reader does not have to rediscover them.**
+
+1. **`src/definitions.ts:227`** — `readFile(<skillroot>/<name>/SKILL.md)`, no file-type check, no bound,
+   reached from `loadProjectDefinitions`'s *first* line. Measured with a FIFO at that path: never returns, and
+   a `process.exit` watchdog could not fire because the blocked `open(2)` pins a libuv thread.
+2. **`src/grant-store.ts:91`** — `readFileSync` of the stored grant, called in the extension **factory**,
+   before any hook runs. Synchronous, so it blocks the whole event loop, it runs earlier than `session_start`,
+   and its path comes from `PI_CODING_AGENT_DIR` — the same shape of operator-supplied path as the registry.
+
+Against a real `pi`, each produced **zero bytes on stdout** and timed out, which is R-136's exact signature.
+
+**Twelve sibling readers do a bare `readFile` with no guard** (`approval-store`, `lease-record`, `file-lock`,
+`grant-store`, `ledger-report`, `definitions`, `skill-packages`, `workspace-lease`, `check-runner`). The
+registry reader is now the only hardened one, so this is a class rather than two defects — which is the
+argument for fixing it as its own change with one shared guarded reader, not one site at a time.
+
+**Trigger:** already fired twice. The rule to adopt: any `readFile` on an operator-supplied path that is
+awaited during extension construction or `session_start` needs a file-type check and a bound, and R-136's
+trigger should be run *as part of* any commit that touches session start.
+
+---
+
+## R-141 · A routed child writes into the root it may only hold a read lease on — M×M, OPEN
+
+Added 2026-08-22. **Pre-existing composition; a fix was attempted in this PR and reverted as out of scope.**
+
+Three facts compose: a routed child's cwd IS the leased worktree root (`extensions/execute-child.ts`);
+`PI_GRANTS_LEDGER` is inherited verbatim and `pi-daddy init` scaffolds a **relative** `.pi/grants.jsonl`; and
+a `read` lease takes no kernel lock at all. Measured: two delegating children classified `read` both created
+`.pi/` inside one worktree, `git status` showed `?? .pi/`, and a grandchild took a WRITE lease on a root
+already held.
+
+**The same shape is live for `PI_GRANTS_WORKSPACE_LEASE_DIR`, and there it breaks exclusion outright.**
+`defaultWorkspaceLeaseDir()` returns the env value verbatim and is called in the *delegating* process, so with
+a relative value a parent at its own cwd and a routed child at the leased root compute **different lease
+namespaces**. Measured: both acquired a write lease on the same canonical root — "mutual exclusion did not
+happen" — and the child left its lease files untracked in the worktree.
+
+A separate finding in the same area: **`governedWorkspaceAccess` only ever upgrades read→write**, so
+`("write", [])` returns `"write"`. `access` is a model-facing parameter, so a child holding no write tool can
+make its grandchild take the exclusive kernel lock on a root — a denial of service against every legitimate
+writer, with a ledger line recording `access: "write"` for a child that cannot write.
+
+And a ledger-integrity defect made reachable by the same area: `extensions/workspace-runtime.ts` keeps a
+**private copy** of `leaseReleaseLedgerOutcome` that omits the `not-held` arm, so a read lease's release is
+recorded `released` — asserting a handover that never happened. `src/workspace-lease.ts` claims "ONE
+definition, exported, because two call sites had their own copies", which is false.
+
+**Why not fixed here.** Making a child-inherited path absolute is a change to the ledger and lease plumbing,
+not to ADR-0035, and the attempted fix landed mid-review where it immediately produced a false claim about
+`tool:delegate`. `tool:delegate` is therefore NOT in `KNOWN_READ_ONLY_TOOLS`, so routing read-only while
+delegating still takes a writer lease — unchanged from 0.18.1.
+
+**Trigger:** any env-supplied path a child inherits and resolves relative to its own cwd. Grep for
+`process.env[` reached from a function called in the delegating process.
 
 ---
 

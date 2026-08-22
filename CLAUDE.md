@@ -39,7 +39,7 @@ becomes the grant; the pi-subagents ceiling port is deleted; the interceptor sur
 `8feaacbdf6003c783225e375b61874a599963f47`; `main` has since taken PR #11 (the canonical ledger v2
 contract). The latest GitHub Release is still `v0.17.1`. **PR #10 — ADR-0035, 0.19.0, workspace routing as a
 capability — is OPEN and is where the current work is.** Thirty-five ADRs are decided (0034 amended three times,
-0035 amended twice after review). That branch has 628 unit + 45 integration tests, plus a 10-test opt-in tier
+0035 amended three times after review). That branch has 628 unit + 45 integration tests, plus a 10-test opt-in tier
 behind `PI_GRANTS_IT_MODEL=1` that is not run without explicit authorization.
 
 **Read `docs/SESSION-LOG.md`'s top entry before touching PR #10 — FOUR review passes have run over it.**
@@ -105,7 +105,7 @@ docs/06-decisions/        — thirty-five ADRs. Reversals are kept and marked: 0
                             spawnable (handoff items B1/B2/B4); 0029-0033 cover safe init defaults,
                             stored grants, executor probing, live observability and sequential chains;
                             0034 adds generic runtime-enforcement primitives for external controllers
-                            (amended twice after review), 0035 workspace routing is a capability — it was
+                            (amended three times after review), 0035 workspace routing is a capability — it was
                             the one dimension that did NOT attenuate until 0.19.0 (R-131, probe g36)
 docs/probes/              — measurement evidence, all against real software. Each has a "what this does
                             not establish" section: baseline/, pi-fabric-eval/, approval-ux/,

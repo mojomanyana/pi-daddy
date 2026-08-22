@@ -26,12 +26,14 @@ export interface DelegationWorkspaceSpec {
 /**
  * Tools that cannot change a worktree.
  *
- * `tool:delegate` is here and is the one that needs justifying: it starts a child, and that child's `--tools`
- * comes from a grant this package computed by narrowing the parent's own. So delegating cannot reach a write
- * primitive the delegator did not already hold — and if it did hold one, that capability is in `requested`
- * and fails this check on its own account. Delegation is not a write primitive; it is a way to hand on less.
+ * **`tool:delegate` is deliberately NOT here, and that is a scope decision.** It was added, and it was true of
+ * the capability and false of the code: a routed child's cwd IS the leased root, `PI_GRANTS_LEDGER` was
+ * passed through relative (`init` scaffolds `.pi/grants.jsonl`), and a `read` lease takes no kernel lock — so
+ * two delegating children classified `read` both created `.pi/` in one worktree and neither excluded the
+ * other. Making `tool:delegate` non-writing requires first making every child-inherited path absolute, and
+ * that is a change to the ledger and lease plumbing rather than to ADR-0035. Tracked as R-141.
  */
-const KNOWN_READ_ONLY_TOOLS = new Set(["tool:read", "tool:grep", "tool:find", "tool:ls", "tool:delegate"]);
+const KNOWN_READ_ONLY_TOOLS = new Set(["tool:read", "tool:grep", "tool:find", "tool:ls"]);
 
 /**
  * A model may ask for stricter coordination but cannot label a write-capable grant read-only.
