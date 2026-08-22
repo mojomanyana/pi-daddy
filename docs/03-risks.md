@@ -2319,6 +2319,65 @@ a hang fix.
 **Trigger:** a `herdr-close-failed` marker for a tab that is already gone; or any second closer of a resource
 the lock helper also closes.
 
+## R-152 · `markRetained` reported a retention that had not happened, and the caller ledgered it — H×M, FIXED
+
+Added and fixed 2026-08-22, by two independent reviews of the R-146 fix in PR #14 **after it merged**. Never
+published; 0.18.2 is unreleased. Four defects, one cause: **`markRetained` returned `void`, and its only caller
+hardcoded the word.**
+
+`releaseDelegationWorkspace` wrote `(await lease.markRetained(reason), "retained")`, so the ledger asserted
+*"kept deliberately because a herdr writer tab would not close, so the pane may still be live"* in three
+situations where that is false:
+
+- **The helper was already dead.** The lock is back and nothing is running; the fact is `lost`, which is
+  exactly the distinction R-103 added the release vocabulary for. An operator reading `retained` goes looking
+  for a live pane that does not exist, and the next owner is told nothing crashed.
+- **The lease was already released.** Terminality was one-directional — `release()` checked `settled`,
+  `markRetained` did not — so a completed handover could be rewritten to `retained:…` and the memoized answer
+  flipped with it. Measured: `release() -> released`, reason `completed`; then `markRetained` →
+  `retained:herdr-close-failed`; then `release() -> retained`. **The exact mirror of the defect R-146 fixed**,
+  introduced by fixing it, reachable through the `try { … } finally { await lease.release() }` shape a public
+  export invites.
+- **The record could not be written.** The write was swallowed, and settling terminally removed the later
+  `release()` that would still have written the handover — so the record stayed `active`, the ledger said
+  `retained`, and the next owner reported a phantom `recovered: true`.
+
+**Fixed by making `markRetained` answer in the release vocabulary** (`Promise<LeaseReleaseOutcome>`), with the
+caller ledgering what it returns. Each of the four guards is forced by a named test, verified by reverting it
+one at a time — including the record-was-written gate, which was unforced on the first attempt and is now
+pinned by a test that makes the lease directory unwritable.
+
+**The bounds were also wrong at the top end, and were refusing on the wrong channel.**
+`herdrCloseTimeoutMs: Number.MAX_SAFE_INTEGER` — the plausible "effectively no limit" sentinel, given the
+argument the guard itself makes about `0` — truncates: `setTimeout` warns *"does not fit into a 32-bit signed
+integer. Timeout duration was set to 1"*, so every `herdr tab close` is SIGKILLed after 1ms, before herdr can
+act. Measured: callback at 3ms for a 3s sleep. The floor and the ceiling fail in opposite directions and both
+silently. Fractions passed too, for a parameter documented as a count.
+
+And the refusal was a `GovernanceRefusal` carrying `WORKSPACE_LEASE_STALE`, which everywhere else in this
+package means *the lease went stale or was lost* — so an ADR-0034 controller switching on codes, which is the
+reason codes exist (R-103), would classify a permanent caller bug as transient and retry a call that can never
+succeed. **A bad argument is not a governance outcome**, so it now throws a `RangeError`. The validation also
+moved above the read-lease early return, where it had been validating nothing: a controller smoke-testing its
+configuration against a read lease got a false all-clear.
+
+**Two process notes worth more than the patches.**
+
+The R-146 fix was reviewed twice before merging and both passes missed all of this, because they asked *"is
+the fix correct?"* and not *"what does the fix's own return value promise?"* The finding came from reading the
+CALLER — one line, in a different file, that discarded the result.
+
+And the line ceiling refused `workspace-lease.ts` at 435 lines here, having already refused it at 405 on the
+ADR-0035 branch. Both took the same seam (`src/lease-helper.ts`, the lock helper's own program) so the branches
+converge; the cap has never been raised, and `delegate.ts` was split at 413 the same way.
+
+**One debt, again.** `scripts/mutation-audit.mjs` lives on PR #10, so these four guards have named regressions
+and no catalogue entries. Whichever lands second owes them; the entries are the four reverts above, each
+naming the test it must break.
+
+**Trigger:** any function whose result a caller discards in favour of a literal; and any bound validated at one
+end only.
+
 ---
 
 ## Register log
@@ -2395,3 +2454,4 @@ the lock helper also closes.
 | 2026-08-22 | R-146 | Added and **FIXED from `main`** — a retained writer lease stopped its own process from exiting, measured `exit=124` against `exit=0`, in any host that lets the event loop drain (pi's print mode, a library consumer such as an ADR-0034 external controller; interactive and rpc call `process.exit()`, so there the sweep still ran). **Present in published 0.18.0 and 0.18.1.** R-102 accepted stranding the worktree; nobody had recorded that it stranded the process, and two comments promised the strand lasted "until process exit". Fixed by dropping the parent's references on the retain path only — the lock still outlives the call, and the successor can still acquire, which the regression asserts as a second property | sixth review pass over PR #10, fixed next |
 | 2026-08-22 | R-146 corrected, R-151 | **The independent review of the R-146 fix found the fix's own safety argument half-false, and a claim repeated here unchecked.** The helper's `herdr tab close` had no wall-clock timeout, so a herdr that accepts and never answers held the lock forever with no marker — and the fix had removed the only symptom (a hung `pi`), turning R-102's rejected outcome into a silent one. Bounded now, forced by a test with a `herdr` that sleeps. The scope claim was also wrong: `process.exit()` runs exit handlers, so only hosts that let the loop drain (pi's print mode, library consumers) were wedged — `src/cli.ts` was cited as evidence and has one subcommand and no leases. One unref line was unforced and is gone. R-151 records what the fix newly exposes: the reaper and the helper now close the same tab | independent review of PR #14 |
 | 2026-08-22 | R-146 (second review) | **The review of the fix found four more, two behavioural.** Retention was not terminal — a later `release()` ran the clean handshake, overwrote `retained:herdr-close-failed` with `completed` and told the helper to exit `clean`, so the pane was abandoned and the ledger claimed a handover; `release()` now answers `retained`, which required making that a real member of `LeaseReleaseOutcome`. `herdrCloseTimeoutMs: 0` silently restored the unbounded hang, because Node reads `timeout: 0` as no timeout (measured 3004ms for a 3s sleep) — both bounds now refused loudly by name. Plus a non-hermetic test and a fake `herdr` that orphaned a `sleep` per run. **And the new refusal test hung the runner instead of failing** — R-119's shape in the commit that cites R-119 — because an unexpected success left an untracked lease holding a live `flock`: a test that proves a refusal must clean up the success it did not expect | second review of PR #14 |
+| 2026-08-22 | R-152 | Added and fixed — **`markRetained` returned `void` and its only caller hardcoded `"retained"`**, so the ledger asserted a live pane for a helper that had already died, for a lease already cleanly released (the mirror of R-146, introduced by fixing it), and for a retention whose record never landed. Now answers in the release vocabulary and the caller ledgers what it says; four guards, each forced by reverting it alone. The bounds were wrong at the top end too — `MAX_SAFE_INTEGER` truncates to 1ms and SIGKILLs every close — and refused on the governance channel, inviting a controller to retry a permanent caller bug; a bad argument now throws `RangeError`, and the check moved above the read-lease early return where it had validated nothing. **Both earlier passes asked whether the fix was correct and not what its return value promised** | independent reviews of the merged PR #14 |

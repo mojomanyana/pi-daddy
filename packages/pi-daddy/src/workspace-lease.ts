@@ -14,6 +14,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { GovernanceRefusal, refusal } from "./refusals.ts";
 import type { ValidatedWorkspace, WorkspaceAccess } from "./workspace.ts";
+import { HELPER_SOURCE, LEASE_READY, unrefStream } from "./lease-helper.ts";
 
 export const ENV_WORKSPACE_LEASE_DIR = "PI_GRANTS_WORKSPACE_LEASE_DIR";
 
@@ -22,46 +23,6 @@ export function defaultWorkspaceLeaseDir(env: NodeJS.ProcessEnv = process.env): 
   return env[ENV_WORKSPACE_LEASE_DIR] ?? join(agentDir, "pi-daddy", "workspace-leases");
 }
 
-const LEASE_READY = "PI_DADDY_LEASE_READY";
-// The lock holder also owns crash cleanup for the governed child. If the parent dies, stdin closes;
-// the helper signals the attached process, or closes the herdr tab, before releasing flock. A raw
-// descendant deliberately detached by bash remains ADR-0012's OS-containment boundary, not a lease
-// guarantee. The process branch SIGTERMs, escalates to SIGKILL at +500ms, and releases at +750ms
-// WITHOUT confirming death (R-101). The herdr branch retries `tab close` a BOUNDED number of times
-// and then releases anyway, leaving a marker file: an unreleasable lock strands a worktree forever
-// with no in-product recovery, which is strictly worse than a recorded failure to close (R-102).
-//
-// **Each attempt is bounded in WALL CLOCK, not just in count (R-146).** `execFile` with no `timeout`
-// never calls back if `herdr` accepts the close and does not answer, so the retry counter never
-// decrements, `giveUp` never runs and no marker is written — the lock is held forever. That was masked
-// while the parent could not exit, because the operator saw a hung `pi` instead; measured with a `herdr`
-// that sleeps, the parent then exited in 82ms and left a silent strand, which is R-102's rejected outcome
-// reached quietly. A bound on retries is not a bound on time.
-const HELPER_SOURCE = `
-import { execFile } from "node:child_process";
-import { writeFileSync } from "node:fs";
-let clean=false, target=null, buffered="";
-process.stdout.write(${JSON.stringify(`${LEASE_READY}:`)}+process.pid+"\\n");
-process.stdin.setEncoding("utf8");
-process.stdin.on("data",chunk=>{buffered+=chunk;for(;;){const i=buffered.indexOf("\\n");if(i<0)break;const line=buffered.slice(0,i);buffered=buffered.slice(i+1);try{const value=JSON.parse(line);if(value.release)clean=true;else if(value.process_pid)target={process_pid:value.process_pid};else if(value.herdr_tab)target={herdr_tab:value.herdr_tab};}catch{}}});
-process.stdin.on("end",()=>{if(clean||!target)return process.exit(0);if(target.process_pid){try{process.kill(target.process_pid,"SIGTERM")}catch{return process.exit(0)}setTimeout(()=>{try{process.kill(target.process_pid,"SIGKILL")}catch{}},500);return setTimeout(()=>process.exit(0),750);}let left=Number(process.env.PI_DADDY_LEASE_CLOSE_ATTEMPTS||10);const giveUp=last=>{try{if(process.env.PI_DADDY_LEASE_MARKER)writeFileSync(process.env.PI_DADDY_LEASE_MARKER,JSON.stringify({reason:last&&(last.killed||last.signal==="SIGKILL")?"herdr-close-timeout":"herdr-close-failed",herdr_tab:target.herdr_tab})+"\\n")}catch{}process.exit(0)};const close=()=>execFile("herdr",["tab","close",target.herdr_tab],{timeout:Number(process.env.PI_DADDY_LEASE_CLOSE_TIMEOUT_MS||15000),killSignal:"SIGKILL"},error=>{if(!error)return process.exit(0);if(--left<=0)return giveUp(error);setTimeout(close,1000)});close();});
-process.stdin.resume();`;
-
-/**
- * `unref` the parent's end of one of the helper's pipes.
- *
- * A spawned pipe is a `net.Socket`, which has `unref`; `ChildProcess.stdin` is typed `Writable`, which does
- * not. Hence the narrow cast. The optional call is **defensive, not load-bearing** — the holder is spawned at
- * exactly one site with three pipes, so none of these is ever `null`, and an earlier version of this comment
- * claimed otherwise by citing a `stdio: "ignore"` caller that does not exist.
- *
- * Only `stdout` and `stderr` are unref'ed. `stdin` was too, until a line-by-line reversion showed the suite
- * stayed green without it — an unforced line inside the fix that exists to be forced, which is exactly the
- * shape R-122 was about.
- */
-const unrefStream = (stream: unknown): void => {
-  (stream as { unref?: () => void } | null)?.unref?.();
-};
 
 /**
  * The ledger outcome for a release. ONE definition, exported, because two call sites had their own copies
@@ -93,6 +54,44 @@ export function leaseAcquisitionOutcome(
   return recovered === true ? "recovered" : "acquired";
 }
 
+/**
+ * **A bound that is not a bound throws, and it throws a `RangeError` (R-146, R-152).**
+ *
+ * Both ends fail, in opposite directions and both silently:
+ *
+ *  - `0` reads as "no limit" and Node agrees — `execFile` treats `timeout: 0` as *no* timeout (measured: the
+ *    callback for a 3s sleep arrives at 3004ms with no error), reinstating the unbounded hang the bound exists
+ *    to prevent. Negatives behave identically.
+ *  - anything above `2^31 - 1` truncates: `setTimeout` warns `TimeoutOverflowWarning … set to 1`, so
+ *    `Number.MAX_SAFE_INTEGER` — the plausible "effectively no limit" sentinel, given the argument about `0`
+ *    — SIGKILLs every `herdr tab close` after 1ms, before herdr can act. Measured: callback at 3ms.
+ *
+ * **Not a `GovernanceRefusal`.** It was one, carrying `WORKSPACE_LEASE_STALE`, which everywhere else in this
+ * package means *the lease went stale or was lost* — so an ADR-0034 controller switching on codes (the reason
+ * codes exist, R-103) would classify a permanent caller bug as transient and retry a call that can never
+ * succeed. A refusal is a governance outcome that gets ledgered; a bad argument is neither.
+ *
+ * Checked for read leases too, which the first version did not: it sat below the read-lease early return, so a
+ * controller smoke-testing its configuration against a read lease got a false all-clear.
+ */
+const assertCloseBounds = (input: { herdrCloseTimeoutMs?: number; herdrCloseAttempts?: number }): void => {
+  const MAX_TIMER = 2_147_483_647;
+  for (const [name, value, ceiling] of [
+    ["herdrCloseTimeoutMs", input.herdrCloseTimeoutMs, MAX_TIMER],
+    ["herdrCloseAttempts", input.herdrCloseAttempts, Number.MAX_SAFE_INTEGER],
+  ] as const) {
+    if (value === undefined) continue;
+    if (!Number.isInteger(value) || value < 1 || value > ceiling) {
+      throw new RangeError(
+        `${name} must be a whole number between 1 and ${ceiling}, not ${String(value)}. Zero and negatives ` +
+          `are not "no limit" but no bound at all, a value past ${MAX_TIMER} truncates to 1ms, and a ` +
+          `fractional count is not a count — this bound exists so a hung herdr cannot hold the writer lock ` +
+          `forever (R-146).`,
+      );
+    }
+  }
+};
+
 export async function acquireWorkspaceLease(input: {
   workspace: ValidatedWorkspace;
   access: WorkspaceAccess;
@@ -110,6 +109,8 @@ export async function acquireWorkspaceLease(input: {
   /** Bound on the helper's `herdr tab close` retries before it releases the lock anyway (R-102). */
   herdrCloseAttempts?: number;
 }): Promise<WorkspaceLease> {
+  // Before the read-lease return, so both paths are validated (R-152).
+  assertCloseBounds(input);
   if (input.access === "read") {
     return {
       workspace: input.workspace,
@@ -118,7 +119,9 @@ export async function acquireWorkspaceLease(input: {
       recovered: false,
       attachProcess: () => {},
       attachHerdrTab: () => {},
-      markRetained: async () => {},
+      // A read lease took no kernel lock, so there is nothing to keep: `not-held` is the same answer
+      // `release()` gives, and it is the truth rather than a retention that never happened (R-152).
+      markRetained: async () => "not-held" as const,
       readCloseFailure: async () => null,
       lost: new Promise(() => {}),
       // No kernel lock was ever taken, so there is no handover to claim (R-105, release side).
@@ -127,30 +130,6 @@ export async function acquireWorkspaceLease(input: {
   }
   if (input.signal?.aborted) {
     throw new GovernanceRefusal(refusal("WORKSPACE_WRITE_CONFLICT", `writer lease for ${input.workspace.workspaceId} was cancelled before acquisition`));
-  }
-
-  /**
-   * **A bound that is not a bound is refused rather than accepted (R-146, rule 8).** `herdrCloseTimeoutMs: 0`
-   * reads as "no limit" and Node agrees — `execFile` treats `timeout: 0` as *no timeout* (measured: the
-   * callback arrives only when the child finishes, 3004ms for a 3s sleep), which silently reinstates the
-   * unbounded hang this bound exists to prevent. Negatives behave identically. `herdrCloseAttempts: 0` is
-   * milder and equally not what a caller means by it. Both refusals name the parameter, because the callers
-   * are ADR-0034 external controllers passing values this package never chose.
-   */
-  for (const [name, value] of [
-    ["herdrCloseTimeoutMs", input.herdrCloseTimeoutMs],
-    ["herdrCloseAttempts", input.herdrCloseAttempts],
-  ] as const) {
-    if (value === undefined) continue;
-    if (!Number.isFinite(value) || value < 1) {
-      throw new GovernanceRefusal(refusal(
-        "WORKSPACE_LEASE_STALE",
-        `${name} must be a finite number of at least 1, not ${String(value)} — a zero or negative bound is ` +
-          `not "no limit", it is no bound, and this one exists so a hung herdr cannot hold the writer lock ` +
-          `forever (R-146)`,
-        { workspace_id: input.workspace.workspaceId, root: input.workspace.root },
-      ));
-    }
   }
 
   await mkdir(input.leaseDir, { recursive: true, mode: 0o700 });
@@ -298,11 +277,23 @@ export async function acquireWorkspaceLease(input: {
     async markRetained(reason = "retained") {
       // Deliberately does NOT touch the kernel lock or the helper: the pane may still be live. It only
       // stops the record from looking like a crash.
+      //
+      // **Both guards below exist because the CALLER ledgers whatever this returns (R-152).**
+      //
+      // Already settled: `release()` checked `settled` and this did not, so a completed handover could be
+      // rewritten into `retained:…` and the memoized answer flipped with it — the mirror of the defect R-146
+      // fixed, reachable by the `try { … } finally { await lease.release() }` shape this API invites.
+      if (settled) return settled;
+      // Already dead: the helper is gone and the kernel lock with it, so the fact is `lost`. Recording a
+      // retention here tells an operator a pane may still be live and tells the next owner nothing crashed —
+      // precisely the two facts R-103's outcome union was added to keep apart.
+      if (holder.exitCode !== null || holder.signalCode !== null) return (settled = "lost");
       const current = await readMetadata(paths.metadata);
+      let recorded = false;
       if (current !== "malformed" && current?.token === token) {
-        await atomicMetadata(paths.metadata, {
+        recorded = await atomicMetadata(paths.metadata, {
           ...metadata, state: "released", released_at: new Date().toISOString(), release_reason: `retained:${reason}`,
-        }).catch(() => undefined);
+        }).then(() => true, () => false);
       }
       /**
        * **It must, however, let THIS process exit (R-146).** Leaving the helper alone is the decision;
@@ -337,10 +328,16 @@ export async function acquireWorkspaceLease(input: {
        * whole fix is for.
        */
       releasing = true;
-      settled = "retained";
+      // **Settle only if the record was actually written.** An unwritable lease directory used to leave the
+      // record `state: "active"` while the ledger said `retained`, so the next owner reported a phantom
+      // `recovered: true` — and making retention terminal removed the later `release()` that would still have
+      // written the handover. Unsettled, that repair is available again; the residue is stated in R-152
+      // rather than implied, because nothing here can write a record to a directory that refuses writes.
+      if (recorded) settled = "retained";
       holder.unref();
       unrefStream(holder.stdout);
       unrefStream(holder.stderr);
+      return "retained";
     },
     async readCloseFailure() {
       try {
