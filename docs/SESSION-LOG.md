@@ -21,7 +21,16 @@ separate authorization.
 validated CWD and a ledger line naming `prod` — every other dimension attenuated and the working directory did
 not. That shipped in 0.18.0 and is fixed on `main`, unreleased.
 
-**0.19.0 is RELEASED (2026-08-23) — the first publish since 0.18.1, and it is breaking.** Every grant that
+**0.19.0 is RELEASED and VERIFIED FROM THE REGISTRY (2026-08-23).** Installed from npm into a scratch project
+— not the packing smoke test, which installs a tarball into a project that already has the workspace's types —
+and exercised: narrowing, escalation refusal, `WORKSPACE_NOT_AUTHORIZED` without `workspace:<id>` and allowed
+with it, routing a child conferring nothing, **R-135's wildcard held but not inherited** (the defect live for
+eleven releases), the ledger v2 contract through its export path, and the installed `bin` symlink (R-73's
+defect). One packaging defect found and recorded as **R-154**: seven `.d.ts` files use `NodeJS.*` while
+`@types/node` is only a devDependency, so a TypeScript consumer with `skipLibCheck: false` and no Node types
+gets seven errors. One line in `peerDependencies` fixes it, and it needs a release decision.
+
+**0.19.0 — the first publish since 0.18.1, and it is breaking.** Every grant that
 routes a child to a registered workspace must add `workspace:<id>`; a delegation naming a workspace the session
 does not hold is refused `WORKSPACE_NOT_AUTHORIZED`. **A 0.18.2 was staged and deliberately abandoned**, and the
 reasoning is worth keeping: it would have fixed the retained-lease hang while leaving **R-131 — routing does not

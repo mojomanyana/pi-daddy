@@ -3163,6 +3163,49 @@ v2 contract.
 **Trigger:** a guard whose only forcing test lives in `test-integration/` — the catalogue cannot see it. And
 any second call site of a rule the catalogue pins on the first.
 
+## R-154 · The published type surface references types the package does not declare — L×M, OPEN
+
+Added 2026-08-23, found by installing `pi-daddy@0.19.0` **from the registry** into a scratch project rather
+than by the packing smoke test — which passes, because it installs a tarball into a project that already has
+the workspace's `@types/node`.
+
+Seven of the published `.d.ts` files use `NodeJS.*` in their public signatures (`check-runner.d.ts`,
+`herdr-cli.d.ts`, `workspace-lease.d.ts` — `NodeJS.Timeout`, `NodeJS.ProcessEnv`, `NodeJS.Signals`), and
+`@types/node` is a **devDependency**. So it is not declared for consumers at all, while `typebox` and
+`@earendil-works/pi-coding-agent` *are* declared as peers — the mechanism is already in use, which makes this
+an inconsistency rather than a considered position.
+
+Measured, three configurations of one TypeScript consumer against the published package:
+
+| consumer | result |
+|---|---|
+| no `@types/node`, `skipLibCheck: false` | **7 × `error TS2503: Cannot find namespace 'NodeJS'`**, exit 2 |
+| `@types/node` installed | clean |
+| `skipLibCheck: true` (TS's own `--init` default) | clean |
+
+**Low, and the reason is worth stating rather than assuming:** almost every Node project already has
+`@types/node`, and `skipLibCheck: true` is the common default — so the population that hits this is
+TypeScript consumers who run the strict lib check *and* have no Node types, which is a thin slice. It is
+nonetheless a published surface referring to types it does not ask for.
+
+**The fix is one line** — `"@types/node": ">=22"` in `peerDependencies`, optional via
+`peerDependenciesMeta`, matching how `typebox` is already declared. **Deliberately not shipped as 0.19.1
+today:** it needs the operator's release decision, and a version cannot be republished.
+
+**Also verified in the same pass, and worth recording because it is the first check of the ARTIFACT rather
+than the tree:** the registry install works; the invariant narrows and refuses escalation; **routing is
+refused `WORKSPACE_NOT_AUTHORIZED` without `workspace:<id>` and allowed with it**; routing a child does not
+confer the id (its `PI_GRANTS_GRANT` came back `tool:read` only); **R-135 holds** — a wildcard parent yields
+`effective: ["tool:*"]` and an *empty* child grant, which is the defect that was live for eleven releases; the
+ledger v2 contract imports through its export path with all 32 refusal codes; and the installed `bin` symlink
+runs and prints a useful message, which is R-73's exact defect.
+
+**Not covered:** spawning a real governed child from the installed package. That needs a model turn and is the
+paid tier.
+
+**Trigger:** any `NodeJS.*`, `Buffer` or other ambient type appearing in an exported signature while the types
+package that provides it is only a devDependency.
+
 ---
 
 ## Register log
@@ -3251,3 +3294,4 @@ any second call site of a rule the catalogue pins on the first.
 | 2026-08-22 | R-152 | Added and fixed — **`markRetained` returned `void` and its only caller hardcoded `"retained"`**, so the ledger asserted a live pane for a helper that had already died, for a lease already cleanly released (the mirror of R-146, introduced by fixing it), and for a retention whose record never landed. Now answers in the release vocabulary and the caller ledgers what it says; four guards, each forced by reverting it alone. The bounds were wrong at the top end too — `MAX_SAFE_INTEGER` truncates to 1ms and SIGKILLs every close — and refused on the governance channel, inviting a controller to retry a permanent caller bug; a bad argument now throws `RangeError`, and the check moved above the read-lease early return where it had validated nothing. **Both earlier passes asked whether the fix was correct and not what its return value promised** | independent reviews of the merged PR #14 |
 | 2026-08-22 | R-153 | Added and **fixed in part** — CI exists. Eight review passes found guards deletable with the suite green because the only thing forcing rule 7 was somebody choosing to look (R-34's shape, for years). `.github/workflows/ci.yml` runs typecheck, the unit suite, a tree-cleanliness assertion, the mutation catalogue (`--if-present` until PR #10 brings it to `main`) and the installed-package smoke on every PR, across the `engines` floor and the development ceiling — with `FORCE_COLOR=0` pinned at the workflow level, which is R-143: the catalogue reported `0/20` with every guard intact in a colouring environment, and CI would have inherited that. **It reports and does not block** — no branch protection, so a red run stops nothing; integration and the model tier are deliberately not covered and the workflow says why | R-142's trigger, fired three times |
 | 2026-08-23 | R-142, R-129 | **Reconciled, not reopened.** R-142 asked for CI and is closed by R-153: the workflow runs `test:mutation` on every PR and ADR-0035's merge brought the catalogue to `main`, so that step stopped being a no-op. Its own trigger had fired twice more before CI existed — two further passes, seven more guards deletable with the suite green between them. R-129 (the 17-mutation audit had no artifact) predates the catalogue and is superseded by it | ADR-0035 merged; the record squared |
+| 2026-08-23 | R-154 | Added — **the first verification of the published ARTIFACT rather than the tree.** `pi-daddy@0.19.0` installed from the registry into a scratch project: narrowing, escalation refusal, the new `WORKSPACE_NOT_AUTHORIZED` routing refusal and its allowed counterpart, the two-authorities rule, R-135's held-but-not-inherited wildcard, the ledger v2 contract through its export path, and the `bin` symlink (R-73's defect) all confirmed. One defect found: seven published `.d.ts` files use `NodeJS.*` while `@types/node` is only a devDependency, so a TypeScript consumer with `skipLibCheck: false` and no Node types gets seven errors. One line in `peerDependencies` fixes it; it needs a release decision | post-release verification of 0.19.0 |
