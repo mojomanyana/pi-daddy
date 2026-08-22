@@ -7,6 +7,12 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ## NEXT SESSION — read this, then pick one
 
+**2026-08-22 — R-146 is FIXED on `main` and UNRELEASED (PR #14).** A retained writer lease detained its own
+process, in published 0.18.0 and 0.18.1; a hung `herdr tab close` could then hold the lock forever, which the
+first draft of the fix made silent by removing the symptom. Both bounded now, retention is terminal, and the
+counts below are stale: **598 unit** on this branch. `## Unreleased` in the package CHANGELOG now carries two
+entries and no version bump — shipping is a release decision. R-151 is open, from the review of that fix.
+
 **Before your first edit: `git branch --show-current`. If it says `main`, branch.** Working rule 10, and
 `hooks/pre-commit` enforces it once `git config core.hooksPath hooks` is set in your clone. This line is at
 the top because the rule was broken by drift, and this file is what a session actually reads first.

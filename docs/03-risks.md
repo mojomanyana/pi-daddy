@@ -2226,6 +2226,37 @@ this fix.
 first assertion fails on a bounded deadline — verified by reverting it. Bounded on purpose: R-119 was a lease
 test that wedged the runner past 900s, which is how a suite that CAUGHT a defect reads as untested.
 
+**A second review pass over the fix found four more things, two of them behavioural.** The pattern this
+project keeps recording held again: the fixes needed the same adversarial read as the defect.
+
+- **Retention was not terminal, and this fix is what made it read as terminal.** `markRetained` settled
+  nothing, so a later `release()` ran the whole clean handshake. Measured: it returned `released`, overwrote
+  `retained:herdr-close-failed` with `completed`, and sent `{release:true}` so the helper exited `clean` and
+  never attempted the close — the pane retention exists to protect, abandoned silently, with the ledger
+  asserting a clean handover for a lease kept *because* a pane would not close. No in-tree caller does it;
+  `WorkspaceLease` is a public export and `try { … } finally { await lease.release() }` is the obvious shape
+  for exactly the external controllers this fix is for. `release()` now answers `retained` — which required
+  `"retained"` to become a real member of `LeaseReleaseOutcome` rather than the `| "retained"` bolted onto two
+  signatures, and that is *why* it could not say so before.
+- **`herdrCloseTimeoutMs: 0` silently restored the unbounded hang.** Node's `execFile` treats `timeout: 0` as
+  *no* timeout — measured: the callback for a 3s sleep arrived at 3004ms with no error — so a controller
+  passing `0` for "no limit" got the defect back with no message. Negatives behave the same. Both bounds are
+  now refused, loudly, naming the parameter (rule 8).
+- **The marker could not tell a refused close from one that never answered**; the timeout path now writes
+  `herdr-close-timeout`. Worth little today, because `readCloseFailure()` still has **no caller** anywhere —
+  see R-151.
+- **The first test was not hermetic and leaked processes.** It inherited the 15s default while its successor
+  loop waited 5s, so its outcome depended on whether a real `herdr` was installed — it is, here. And the fake
+  `herdr` was `sh -c 'sleep 300'`, which `execFile`'s SIGKILL does not reach past the shell: three runs left
+  three orphans owned by init, and a mutation sweep running the suite once per entry accumulates dozens. Both
+  fixed with one `stubHerdr` helper using `exec`.
+
+**And my own new test hung the runner rather than failing — R-119, in the commit that cites R-119.** With the
+validation guard reverted, the acquisition *succeeds*, and the lease was untracked, so a live `flock` held the
+event loop open past the deadline. Routed through `trackedLease` so the `after()` reaper releases it: the
+mutation now fails in 1.1s with a named assertion. **A test that proves a refusal must still clean up the
+success it did not expect.**
+
 **One line of the fix was itself unforced, which the review caught.** The block unref'ed `stdin` as well, and
 a line-by-line reversion showed the suite stayed green without it — R-122's shape inside the fix. Removed
 rather than pinned, since `holder.unref()` plus the two output streams are each load-bearing (verified by
@@ -2361,5 +2392,6 @@ the lock helper also closes.
 | 2026-08-20 | R-119…R-129 | **Six reviewers over the FIX commits, and the fixes claimed properties the code did not have.** The invariant held a third time; the runtime half did not. Three critical: a terminal append still `strict: true` under four documents saying otherwise (R-119); the anti-silence mechanism satisfied nowhere (R-120); `unbankApprovals` both too narrow and too broad (R-121). R-122 shows the marquee R-106 fix was itself undefended — deleting all four guards left 580/580 green — and over-corrected. **R-127 records a regression claim corrected twice and still not satisfied**, with the test deleted rather than weakened to pass; R-128 the process error of editing a tree five reviewers were mutating; R-129 that the audit everything rests on has no artifact. Also fixed: a failing lease test hung the runner past 900s, which is how a suite that CAUGHT a defect reads as untested | six-reviewer pass over the fix commits |
 | 2026-08-20 | R-130 | Added and fixed — the two findings the mutation auditor left open at the new HEAD: the `{release:true}` clean-release handshake was unpinned (deleting it left 586/586 green, so a deliberate handover would have been treated as a crash), and a test of mine overstated what the wiring does with `context_id`. Also records that the auditor corrected its OWN recommendation — pinning `truncated` would have introduced a bug — and that `a882595`'s `docs:` label was wrong for a commit touching five production files | mutation re-verification at the fixed HEAD |
 | 2026-08-20 | R-132 | Added and **fixed** — a capability id containing a comma was admitted by a wildcard's prefix rule and split by the child into several capabilities, minting `tool:bash` from a root that never held it with `denied: []` and a clean-looking ledger line. **Present in published 0.18.0**, verified against `origin/main`; predates ADR-0035, which widened the surface with a second injectable namespace. Two guards, both mutation-verified. The channel was predicted verbatim by `grant-env.ts`'s own comment and guarded everywhere except propagation | found reviewing PR #10 |
-| 2026-08-22 | R-146 | Added and **FIXED from `main`** — a retained writer lease stopped its own process from exiting, measured `exit=124` against `exit=0`, and the failure that causes retention (a herdr `tab close` that fails) therefore also disabled the `process.once("exit")` pane sweep for every other pane. **Present in published 0.18.0 and 0.18.1.** R-102 accepted stranding the worktree; nobody had recorded that it stranded the process, and two comments promised the strand lasted "until process exit". Fixed by dropping the parent's references on the retain path only — the lock still outlives the call, and the successor can still acquire, which the regression asserts as a second property | sixth review pass over PR #10, fixed next |
+| 2026-08-22 | R-146 | Added and **FIXED from `main`** — a retained writer lease stopped its own process from exiting, measured `exit=124` against `exit=0`, in any host that lets the event loop drain (pi's print mode, a library consumer such as an ADR-0034 external controller; interactive and rpc call `process.exit()`, so there the sweep still ran). **Present in published 0.18.0 and 0.18.1.** R-102 accepted stranding the worktree; nobody had recorded that it stranded the process, and two comments promised the strand lasted "until process exit". Fixed by dropping the parent's references on the retain path only — the lock still outlives the call, and the successor can still acquire, which the regression asserts as a second property | sixth review pass over PR #10, fixed next |
 | 2026-08-22 | R-146 corrected, R-151 | **The independent review of the R-146 fix found the fix's own safety argument half-false, and a claim repeated here unchecked.** The helper's `herdr tab close` had no wall-clock timeout, so a herdr that accepts and never answers held the lock forever with no marker — and the fix had removed the only symptom (a hung `pi`), turning R-102's rejected outcome into a silent one. Bounded now, forced by a test with a `herdr` that sleeps. The scope claim was also wrong: `process.exit()` runs exit handlers, so only hosts that let the loop drain (pi's print mode, library consumers) were wedged — `src/cli.ts` was cited as evidence and has one subcommand and no leases. One unref line was unforced and is gone. R-151 records what the fix newly exposes: the reaper and the helper now close the same tab | independent review of PR #14 |
+| 2026-08-22 | R-146 (second review) | **The review of the fix found four more, two behavioural.** Retention was not terminal — a later `release()` ran the clean handshake, overwrote `retained:herdr-close-failed` with `completed` and told the helper to exit `clean`, so the pane was abandoned and the ledger claimed a handover; `release()` now answers `retained`, which required making that a real member of `LeaseReleaseOutcome`. `herdrCloseTimeoutMs: 0` silently restored the unbounded hang, because Node reads `timeout: 0` as no timeout (measured 3004ms for a 3s sleep) — both bounds now refused loudly by name. Plus a non-hermetic test and a fake `herdr` that orphaned a `sleep` per run. **And the new refusal test hung the runner instead of failing** — R-119's shape in the commit that cites R-119 — because an unexpected success left an untracked lease holding a live `flock`: a test that proves a refusal must clean up the success it did not expect | second review of PR #14 |

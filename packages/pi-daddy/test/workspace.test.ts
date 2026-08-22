@@ -15,6 +15,7 @@ import {
   validateRegisteredWorkspace,
 } from "../src/workspace.ts";
 import { GovernanceRefusal } from "../src/refusals.ts";
+import { leasePaths } from "../src/lease-record.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
 /**
@@ -31,6 +32,21 @@ async function reapLeases() {
 }
 after(reapLeases);
 after(cleanupTempDirs);
+
+/**
+ * A stub `herdr` on `PATH`, so a test's outcome never depends on whether a real one is installed.
+ *
+ * `exec`, not a bare command: `execFile`'s timeout signals only the direct child, so an `sh` wrapper dies and
+ * leaves its `sleep` orphaned and reparented — three runs of this file left three of them owned by init, and a
+ * mutation sweep that runs the suite once per entry accumulates dozens. `exec` replaces the shell, so the
+ * signal lands on the thing that is actually sleeping. (The same shape holds in production: the helper's
+ * SIGKILL does not reach a hung `herdr`'s descendants.)
+ */
+async function stubHerdr(body: string) {
+  const dir = await tempDir("fake-herdr-");
+  await writeFile(join(dir, "herdr"), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+  return dir;
+}
 
 /** Acquire a lease that is released no matter how the test ends. */
 async function trackedLease(input: Parameters<typeof acquireWorkspaceLease>[0]) {
@@ -508,10 +524,13 @@ test("a clean release leaves the attached process alone", async () => {
  * helper kept node's event loop alive and the parent could never exit. Measured before the fix: `exit=124`
  * (timed out) against `exit=0` for the same sequence ending in `release()`.
  *
- * It is reached in production from the herdr executor when `tab close` fails, and the consequence is worse
- * than one stuck process: `src/cli.ts` sets `process.exitCode` and relies on a natural exit, and
- * `pane-reaper`'s `process.once("exit")` sweep never runs — so the failure that triggers retention also
- * disables the cleanup for every other pane.
+ * It is reached in production from the herdr executor when `tab close` fails. **Which hosts it wedged:** only
+ * those that let the event loop drain — pi's print mode (`dist/main.js` sets `process.exitCode` and returns)
+ * and library consumers, i.e. ADR-0034's external controllers. Interactive and rpc mode call `process.exit()`,
+ * which ignores pending handles *and* runs `exit` handlers, so there the process still left and the pane sweep
+ * still ran. An earlier version of this docstring said the sweep was lost generally and cited `src/cli.ts`,
+ * which has one subcommand (`init`) and can neither hold a lease nor open a pane — corrected in the source and
+ * the register and left standing here, which is the failure this project keeps recording.
  *
  * **The production change that breaks this test** (rule 7): removing the `unref` block from
  * `markRetained`. The child then never exits and the first assertion fails on the deadline — bounded here,
@@ -525,18 +544,26 @@ test("a clean release leaves the attached process alone", async () => {
 test("a retained lease releases its process, and the lock is recoverable afterwards", async () => {
   const root = await gitWorkspace();
   const leaseDir = await tempDir("workspace-leases-");
+  // Hermetic: `herdr` is stubbed and the per-attempt bound is passed, so this cannot depend on whether a real
+  // herdr is installed — it is, on the machine this was written on, and inheriting the 15s default while the
+  // successor loop waits 5s made the outcome ambient state in a suite advertised as fast and pure.
+  const fakeBin = await stubHerdr("exit 1");
   const moduleUrl = pathToFileURL(join(process.cwd(), "src", "workspace.ts")).href;
   const code = `
     import { validateRegisteredWorkspace, acquireWorkspaceLease } from ${JSON.stringify(moduleUrl)};
     const workspace = await validateRegisteredWorkspace({workspaceId:"w1", registeredRoot:${JSON.stringify(root)}});
     const lease = await acquireWorkspaceLease({
-      workspace, access:"write", leaseDir:${JSON.stringify(leaseDir)}, ownerId:"retainer", herdrCloseAttempts:1,
+      workspace, access:"write", leaseDir:${JSON.stringify(leaseDir)}, ownerId:"retainer",
+      herdrCloseAttempts:1, herdrCloseTimeoutMs:800,
     });
     lease.attachHerdrTab("tab-that-will-not-close");
     await lease.markRetained("herdr-close-failed");
     process.stdout.write("RETAINED\\n");
   `;
-  const holder = spawn(process.execPath, ["--input-type=module", "-e", code], { stdio: ["ignore", "pipe", "pipe"] });
+  const holder = spawn(process.execPath, ["--input-type=module", "-e", code], {
+    stdio: ["ignore", "pipe", "pipe"],
+    env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH ?? ""}` },
+  });
   try {
     let output = "";
     holder.stdout.on("data", (chunk) => { output += String(chunk); });
@@ -552,7 +579,8 @@ test("a retained lease releases its process, and the lock is recoverable afterwa
       exited,
       "exited",
       "a retained lease left the holding process unable to exit — the pipes to the lock helper are still " +
-        "referenced, so `pi` cannot exit and the pane reaper never runs (R-146)",
+        "referenced, so any host that waits for the loop to drain (pi's print mode, a library consumer) " +
+        "never leaves (R-146)",
     );
     assert.equal(holder.exitCode, 0);
   } finally {
@@ -594,8 +622,7 @@ test("a herdr that hangs on close does not strand the lock forever", async () =>
   const root = await gitWorkspace();
   const leaseDir = await tempDir("workspace-leases-");
   // A herdr that accepts the close and never answers — the case a retry count cannot bound.
-  const fakeBin = await tempDir("fake-herdr-");
-  await writeFile(join(fakeBin, "herdr"), "#!/bin/sh\nsleep 300\n", { mode: 0o755 });
+  const fakeBin = await stubHerdr("exec sleep 5");
   const moduleUrl = pathToFileURL(join(process.cwd(), "src", "workspace.ts")).href;
   const code = `
     import { validateRegisteredWorkspace, acquireWorkspaceLease } from ${JSON.stringify(moduleUrl)};
@@ -634,4 +661,86 @@ test("a herdr that hangs on close does not strand the lock forever", async () =>
       "reports an active governed writer for a workspace nothing is running in (R-146, R-102)",
   );
   await successor.release("test-complete");
+});
+
+/**
+ * **R-146: retention is terminal.** `markRetained` did not settle the lease, so a later `release()` ran the
+ * whole clean handshake. Measured before the fix: it returned `released`, overwrote the record's
+ * `retained:herdr-close-failed` with `completed`, and sent `{release:true}` so the helper exited `clean` and
+ * never attempted the close — the pane retention exists to protect was abandoned, and the ledger asserted a
+ * clean handover for a lease kept *because* a pane would not close.
+ *
+ * No in-tree caller does this. `WorkspaceLease` is a public export and `try { … } finally { release() }` is the
+ * obvious shape for the ADR-0034 external controllers this fix is for, which is the whole reason it matters.
+ *
+ * **The production change that breaks this test** (rule 7): removing `releasing = true` / `settled =
+ * "retained"` from `markRetained`.
+ */
+test("release() after markRetained answers `retained` and leaves the record alone", async () => {
+  const root = await gitWorkspace();
+  const leaseDir = await tempDir("workspace-leases-");
+  const fakeBin = await stubHerdr("exit 1");
+  const workspace = await validateRegisteredWorkspace({ workspaceId: "w1", registeredRoot: root });
+  const previousPath = process.env.PATH;
+  process.env.PATH = `${fakeBin}:${previousPath ?? ""}`;
+  try {
+    const lease = await trackedLease({
+      workspace, access: "write", leaseDir, ownerId: "retainer",
+      herdrCloseAttempts: 1, herdrCloseTimeoutMs: 500,
+    });
+    lease.attachHerdrTab("tab-that-will-not-close");
+    await lease.markRetained("herdr-close-failed");
+
+    const record = () => readFile(leasePaths(leaseDir, root).metadata, "utf8").then((raw) => JSON.parse(raw));
+    assert.equal((await record()).release_reason, "retained:herdr-close-failed");
+
+    assert.equal(await lease.release("completed"), "retained", "a retained lease is already settled");
+    assert.equal(
+      (await record()).release_reason,
+      "retained:herdr-close-failed",
+      "release() after retention rewrote the record, so the ledger claims a clean handover for a lease kept " +
+        "because a pane would not close (R-146)",
+    );
+  } finally {
+    process.env.PATH = previousPath;
+  }
+});
+
+/**
+ * **R-146, rule 8: a bound that is not a bound is refused rather than accepted.**
+ *
+ * `herdrCloseTimeoutMs: 0` reads as "no limit", and Node agrees — `execFile` treats `timeout: 0` as *no
+ * timeout* (measured: the callback for a 3s sleep arrived at 3004ms with no error), which silently reinstates
+ * the unbounded hang the bound exists to prevent. The callers are external controllers passing values this
+ * package never chose, so it fails closed and names the parameter.
+ *
+ * **The production change that breaks this test** (rule 7): deleting the validation loop in
+ * `acquireWorkspaceLease`.
+ */
+test("a zero or negative close bound is refused, naming the parameter", async () => {
+  const root = await gitWorkspace();
+  const leaseDir = await tempDir("workspace-leases-");
+  const workspace = await validateRegisteredWorkspace({ workspaceId: "w1", registeredRoot: root });
+
+  for (const [field, value] of [
+    ["herdrCloseTimeoutMs", 0],
+    ["herdrCloseTimeoutMs", -1],
+    ["herdrCloseAttempts", 0],
+    ["herdrCloseTimeoutMs", Number.NaN],
+  ] as const) {
+    // `trackedLease`, not a bare acquire: when this guard is reverted the acquisition SUCCEEDS, and an
+    // untracked lease leaves a live `flock` holding the event loop open — the run then hangs past the
+    // deadline instead of failing, which is R-119 exactly, and it happened here on the first try. Tracked,
+    // the `after()` reaper releases it and the mutation fails in seconds with a named assertion.
+    await assert.rejects(
+      () => trackedLease({ workspace, access: "write", leaseDir, ownerId: "o", [field]: value }),
+      (error: unknown) => {
+        assert.ok(error instanceof GovernanceRefusal);
+        assert.equal(error.code, "WORKSPACE_LEASE_STALE");
+        assert.match(error.message, new RegExp(field), "the refusal must name the parameter (rule 8)");
+        return true;
+      },
+      `${field}: ${String(value)} was accepted, so the bound is not a bound`,
+    );
+  }
 });

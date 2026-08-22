@@ -37,6 +37,16 @@ const LEASE_READY = "PI_DADDY_LEASE_READY";
 // while the parent could not exit, because the operator saw a hung `pi` instead; measured with a `herdr`
 // that sleeps, the parent then exited in 82ms and left a silent strand, which is R-102's rejected outcome
 // reached quietly. A bound on retries is not a bound on time.
+const HELPER_SOURCE = `
+import { execFile } from "node:child_process";
+import { writeFileSync } from "node:fs";
+let clean=false, target=null, buffered="";
+process.stdout.write(${JSON.stringify(`${LEASE_READY}:`)}+process.pid+"\\n");
+process.stdin.setEncoding("utf8");
+process.stdin.on("data",chunk=>{buffered+=chunk;for(;;){const i=buffered.indexOf("\\n");if(i<0)break;const line=buffered.slice(0,i);buffered=buffered.slice(i+1);try{const value=JSON.parse(line);if(value.release)clean=true;else if(value.process_pid)target={process_pid:value.process_pid};else if(value.herdr_tab)target={herdr_tab:value.herdr_tab};}catch{}}});
+process.stdin.on("end",()=>{if(clean||!target)return process.exit(0);if(target.process_pid){try{process.kill(target.process_pid,"SIGTERM")}catch{return process.exit(0)}setTimeout(()=>{try{process.kill(target.process_pid,"SIGKILL")}catch{}},500);return setTimeout(()=>process.exit(0),750);}let left=Number(process.env.PI_DADDY_LEASE_CLOSE_ATTEMPTS||10);const giveUp=last=>{try{if(process.env.PI_DADDY_LEASE_MARKER)writeFileSync(process.env.PI_DADDY_LEASE_MARKER,JSON.stringify({reason:last&&(last.killed||last.signal==="SIGKILL")?"herdr-close-timeout":"herdr-close-failed",herdr_tab:target.herdr_tab})+"\\n")}catch{}process.exit(0)};const close=()=>execFile("herdr",["tab","close",target.herdr_tab],{timeout:Number(process.env.PI_DADDY_LEASE_CLOSE_TIMEOUT_MS||15000),killSignal:"SIGKILL"},error=>{if(!error)return process.exit(0);if(--left<=0)return giveUp(error);setTimeout(close,1000)});close();});
+process.stdin.resume();`;
+
 /**
  * `unref` the parent's end of one of the helper's pipes.
  *
@@ -52,16 +62,6 @@ const LEASE_READY = "PI_DADDY_LEASE_READY";
 const unrefStream = (stream: unknown): void => {
   (stream as { unref?: () => void } | null)?.unref?.();
 };
-
-const HELPER_SOURCE = `
-import { execFile } from "node:child_process";
-import { writeFileSync } from "node:fs";
-let clean=false, target=null, buffered="";
-process.stdout.write(${JSON.stringify(`${LEASE_READY}:`)}+process.pid+"\\n");
-process.stdin.setEncoding("utf8");
-process.stdin.on("data",chunk=>{buffered+=chunk;for(;;){const i=buffered.indexOf("\\n");if(i<0)break;const line=buffered.slice(0,i);buffered=buffered.slice(i+1);try{const value=JSON.parse(line);if(value.release)clean=true;else if(value.process_pid)target={process_pid:value.process_pid};else if(value.herdr_tab)target={herdr_tab:value.herdr_tab};}catch{}}});
-process.stdin.on("end",()=>{if(clean||!target)return process.exit(0);if(target.process_pid){try{process.kill(target.process_pid,"SIGTERM")}catch{return process.exit(0)}setTimeout(()=>{try{process.kill(target.process_pid,"SIGKILL")}catch{}},500);return setTimeout(()=>process.exit(0),750);}let left=Number(process.env.PI_DADDY_LEASE_CLOSE_ATTEMPTS||10);const giveUp=()=>{try{if(process.env.PI_DADDY_LEASE_MARKER)writeFileSync(process.env.PI_DADDY_LEASE_MARKER,JSON.stringify({reason:"herdr-close-failed",herdr_tab:target.herdr_tab})+"\\n")}catch{}process.exit(0)};const close=()=>execFile("herdr",["tab","close",target.herdr_tab],{timeout:Number(process.env.PI_DADDY_LEASE_CLOSE_TIMEOUT_MS||15000),killSignal:"SIGKILL"},error=>{if(!error)return process.exit(0);if(--left<=0)return giveUp();setTimeout(close,1000)});close();});
-process.stdin.resume();`;
 
 /**
  * The ledger outcome for a release. ONE definition, exported, because two call sites had their own copies
@@ -127,6 +127,30 @@ export async function acquireWorkspaceLease(input: {
   }
   if (input.signal?.aborted) {
     throw new GovernanceRefusal(refusal("WORKSPACE_WRITE_CONFLICT", `writer lease for ${input.workspace.workspaceId} was cancelled before acquisition`));
+  }
+
+  /**
+   * **A bound that is not a bound is refused rather than accepted (R-146, rule 8).** `herdrCloseTimeoutMs: 0`
+   * reads as "no limit" and Node agrees — `execFile` treats `timeout: 0` as *no timeout* (measured: the
+   * callback arrives only when the child finishes, 3004ms for a 3s sleep), which silently reinstates the
+   * unbounded hang this bound exists to prevent. Negatives behave identically. `herdrCloseAttempts: 0` is
+   * milder and equally not what a caller means by it. Both refusals name the parameter, because the callers
+   * are ADR-0034 external controllers passing values this package never chose.
+   */
+  for (const [name, value] of [
+    ["herdrCloseTimeoutMs", input.herdrCloseTimeoutMs],
+    ["herdrCloseAttempts", input.herdrCloseAttempts],
+  ] as const) {
+    if (value === undefined) continue;
+    if (!Number.isFinite(value) || value < 1) {
+      throw new GovernanceRefusal(refusal(
+        "WORKSPACE_LEASE_STALE",
+        `${name} must be a finite number of at least 1, not ${String(value)} — a zero or negative bound is ` +
+          `not "no limit", it is no bound, and this one exists so a hung herdr cannot hold the writer lock ` +
+          `forever (R-146)`,
+        { workspace_id: input.workspace.workspaceId, root: input.workspace.root },
+      ));
+    }
   }
 
   await mkdir(input.leaseDir, { recursive: true, mode: 0o700 });
@@ -302,6 +326,18 @@ export async function acquireWorkspaceLease(input: {
        * purpose: at spawn it would remove the accidental guarantee that a process cannot exit while a lease
        * is still ACTIVE, which is a different decision and not this fix.
        */
+      /**
+       * **Terminal (R-146).** `releasing` stops a late `holder.close` being reported as a lost lease, and
+       * `settled` stops a later `release()` running the clean handshake — which it did: measured, it returned
+       * `released`, overwrote `retained:herdr-close-failed` with `completed`, and sent `{release:true}` so the
+       * helper exited `clean` and never attempted the close. The pane retention exists to protect was
+       * abandoned silently, and the ledger asserted a clean handover for a lease kept *because* a pane would
+       * not close. No in-tree caller does this — but `WorkspaceLease` is a public export and
+       * `try { … } finally { await lease.release() }` is the obvious shape for the external controllers this
+       * whole fix is for.
+       */
+      releasing = true;
+      settled = "retained";
       holder.unref();
       unrefStream(holder.stdout);
       unrefStream(holder.stderr);

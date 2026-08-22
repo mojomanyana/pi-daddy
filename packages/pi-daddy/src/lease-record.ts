@@ -77,7 +77,14 @@ export type LeaseReleaseOutcome =
   | "released-unrecorded"
   | "released-superseded"
   | "not-held"
-  | "lost";
+  | "lost"
+  /**
+   * The lease was RETAINED and is therefore already settled — `release()` after `markRetained()` answers
+   * this instead of running the clean handshake (R-146). It was previously expressible only as the
+   * `| "retained"` bolted onto two signatures, which is why `release()` could not say it and claimed
+   * `released` instead: a clean handover for a lease kept precisely because a pane would not close.
+   */
+  | "retained";
 
 export function leasePaths(leaseDir: string, root: string) {
   // Canonical root, never caller-chosen workspace ID: aliases for one worktree must contend.
