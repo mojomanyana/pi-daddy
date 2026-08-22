@@ -21,7 +21,30 @@ separate authorization.
 validated CWD and a ledger line naming `prod` — every other dimension attenuated and the working directory did
 not. That shipped in 0.18.0 and is fixed on `main`, unreleased.
 
-**0.19.0 is RELEASED (2026-08-23) — the first publish since 0.18.1, and it is breaking.** Every grant that
+**0.19.0 is RELEASED and VERIFIED FROM THE REGISTRY (2026-08-23).** Installed from npm into a scratch project
+— not the packing smoke test, which installs a tarball into a project that already has the workspace's types —
+and exercised: narrowing, escalation refusal, `WORKSPACE_NOT_AUTHORIZED` without `workspace:<id>` and allowed
+with it, routing a child conferring nothing, **R-135's wildcard held but not inherited** (the defect live for
+eleven releases), the ledger v2 contract through its export path, and the installed `bin` symlink (R-73's
+defect). **The opt-in model tier ran for the first time in this project's history — 55 tests, 54 passed.** Its one
+failure was a stale TEST, not the product (**R-155**): it asserted every ledger *line* carried a distinct
+`childId`, which stopped being true when ADR-0034 gave each child lifecycle events as well as a capability
+decision. 9 lines, 3 ids; the property held, the assertion did not. **Rule 7's mirror, and this repository had
+only written down one half:** a test that can no longer *pass* is as dead as one that cannot fail, and an
+opt-in tier CI cannot run is exactly where such a test hides. Fixed and re-run against a real model. **The
+other 54 are the point** — a child provisioned with exactly its grant and unable to exceed it, a universal
+capability refused on both grant shapes, a wildcard holder still subject to a gate, an approval from another
+directory authorising nothing, a corrupt ledger reported unasked, and ADR-0035's own line: a real session reads
+the registry and lists what it may route to.
+
+**And the model gap closed:** with model turns authorised, the published package spawned real `pi` children
+with a control — same prompt, same model, only the grant differing. `["tool:read"]` → the child replied
+**`CANNOT_WRITE`** and wrote nothing; `["tool:read","tool:write"]` → it wrote the file. The central claim,
+verified through the npm artifact against a real model. One packaging defect found and recorded as **R-154**: seven `.d.ts` files use `NodeJS.*` while
+`@types/node` is only a devDependency, so a TypeScript consumer with `skipLibCheck: false` and no Node types
+gets seven errors. One line in `peerDependencies` fixes it, and it needs a release decision.
+
+**0.19.0 — the first publish since 0.18.1, and it is breaking.** Every grant that
 routes a child to a registered workspace must add `workspace:<id>`; a delegation naming a workspace the session
 does not hold is refused `WORKSPACE_NOT_AUTHORIZED`. **A 0.18.2 was staged and deliberately abandoned**, and the
 reasoning is worth keeping: it would have fixed the retained-lease hang while leaving **R-131 — routing does not
