@@ -2170,6 +2170,57 @@ released version should not invent a new way to refuse a legitimate setup. Verif
 **Trigger:** any capability id in a grant, a ledger record or a refusal containing a character outside
 `[A-Za-z0-9:@._/*-]`; or a child grant whose parsed length exceeds its parent's.
 
+## R-146 · A retained writer lease stopped its own process from exiting — H×M, FIXED
+
+Added and fixed 2026-08-22, found by the sixth review pass over PR #10 and **re-derived by execution here
+before being acted on** (working rule 5). **Present in published 0.18.0 and 0.18.1**, and unrelated to
+ADR-0035 — which is why it is fixed from `main` rather than inside that PR.
+
+`acquireWorkspaceLease` spawns the `flock` holder with `stdio: ["pipe","pipe","pipe"]` and never `unref`s it,
+so the parent's references keep node's event loop alive. Every ordinary path ends the helper's stdin, which is
+how the lock goes back. `markRetained` deliberately does not — *"the pane may still be live"* — and nothing
+else dropped the references, so on that path the process could never exit.
+
+```
+mode=release   acquired write · release -> released · EXIT event, code 0 · exit=0
+mode=retain    acquired write · main() returning                         · exit=124 (timed out)
+```
+
+Reached in production from the herdr executor when `tab close` fails: `HerdrWriterCloseError` →
+`markRetained("herdr-close-failed")`. **R-102 accepted stranding the worktree; nothing recorded that it also
+stranded the process** — and the consequence compounds, because `src/cli.ts` sets `process.exitCode` and relies
+on a natural exit, and `src/pane-reaper.ts`'s `process.once("exit")` sweep therefore never runs. **The failure
+that causes retention disabled the cleanup for every other pane.** Two comments also promised the strand lasted
+*"until process exit"*, which was the one thing that could not happen.
+
+**Fixed by unref, not by closing**, in `markRetained` only. The lock must outlive the call, so the parent drops
+its references and leaves the helper running; when the parent does exit, the helper sees EOF and runs the path
+it was written for — bounded `herdr tab close` attempts, a marker file, then release anyway. That is R-102's
+decision, and it is why letting the parent go is safe rather than a leak: **the successor can still acquire**,
+which the regression asserts as its second property.
+
+**Deliberately narrowed to the retain path.** At spawn, `unref` would also remove an accidental guarantee —
+that a process cannot exit while a lease is still ACTIVE. Whether to keep that is a separate question and not
+this fix.
+
+**The regression, and what breaks it** (rule 7): removing the `unref` block makes the child never exit and the
+first assertion fails on a bounded deadline — verified by reverting it. Bounded on purpose: R-119 was a lease
+test that wedged the runner past 900s, which is how a suite that CAUGHT a defect reads as untested.
+
+**One debt, stated rather than left implicit.** `scripts/mutation-audit.mjs` — the pinned catalogue that makes
+rule 7 mechanical — lives on PR #10 and does not exist on `main`, so this guard has a named regression but no
+catalogue entry yet. Whichever lands second owes the entry:
+`{ name: "lease: a retained lease detains its process", file: "src/workspace-lease.ts",
+   test: "test/workspace.test.ts", find: "      holder.unref();", replace: "",
+   expect: "retained lease releases its process" }`
+
+**PR #10 carries an OPEN copy of this entry, authored the same day.** Whichever merges second keeps this FIXED
+text; the OPEN version records what was believed while the fix was still queued.
+
+**Trigger:** any `pi` session that stops responding to exit after a herdr `tab close` failure; a
+`retained:herdr-close-failed` release reason in the ledger; or any long-lived child spawned with pipes that a
+non-release path leaves referenced.
+
 ---
 
 ## Register log
@@ -2243,3 +2294,4 @@ released version should not invent a new way to refuse a legitimate setup. Verif
 | 2026-08-20 | R-119…R-129 | **Six reviewers over the FIX commits, and the fixes claimed properties the code did not have.** The invariant held a third time; the runtime half did not. Three critical: a terminal append still `strict: true` under four documents saying otherwise (R-119); the anti-silence mechanism satisfied nowhere (R-120); `unbankApprovals` both too narrow and too broad (R-121). R-122 shows the marquee R-106 fix was itself undefended — deleting all four guards left 580/580 green — and over-corrected. **R-127 records a regression claim corrected twice and still not satisfied**, with the test deleted rather than weakened to pass; R-128 the process error of editing a tree five reviewers were mutating; R-129 that the audit everything rests on has no artifact. Also fixed: a failing lease test hung the runner past 900s, which is how a suite that CAUGHT a defect reads as untested | six-reviewer pass over the fix commits |
 | 2026-08-20 | R-130 | Added and fixed — the two findings the mutation auditor left open at the new HEAD: the `{release:true}` clean-release handshake was unpinned (deleting it left 586/586 green, so a deliberate handover would have been treated as a crash), and a test of mine overstated what the wiring does with `context_id`. Also records that the auditor corrected its OWN recommendation — pinning `truncated` would have introduced a bug — and that `a882595`'s `docs:` label was wrong for a commit touching five production files | mutation re-verification at the fixed HEAD |
 | 2026-08-20 | R-132 | Added and **fixed** — a capability id containing a comma was admitted by a wildcard's prefix rule and split by the child into several capabilities, minting `tool:bash` from a root that never held it with `denied: []` and a clean-looking ledger line. **Present in published 0.18.0**, verified against `origin/main`; predates ADR-0035, which widened the surface with a second injectable namespace. Two guards, both mutation-verified. The channel was predicted verbatim by `grant-env.ts`'s own comment and guarded everywhere except propagation | found reviewing PR #10 |
+| 2026-08-22 | R-146 | Added and **FIXED from `main`** — a retained writer lease stopped its own process from exiting, measured `exit=124` against `exit=0`, and the failure that causes retention (a herdr `tab close` that fails) therefore also disabled the `process.once("exit")` pane sweep for every other pane. **Present in published 0.18.0 and 0.18.1.** R-102 accepted stranding the worktree; nobody had recorded that it stranded the process, and two comments promised the strand lasted "until process exit". Fixed by dropping the parent's references on the retain path only — the lock still outlives the call, and the successor can still acquire, which the regression asserts as a second property | sixth review pass over PR #10, fixed next |

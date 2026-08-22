@@ -499,3 +499,73 @@ test("a clean release leaves the attached process alone", async () => {
     attached.kill("SIGKILL");
   }
 });
+
+/**
+ * **R-146.** A retained lease must not stop its own process from exiting.
+ *
+ * `markRetained` deliberately leaves the kernel lock and the pane alone — the pane may still be live. It
+ * left the *pipes* alone too, and the holder was spawned with three of them and never `unref`ed, so the
+ * helper kept node's event loop alive and the parent could never exit. Measured before the fix: `exit=124`
+ * (timed out) against `exit=0` for the same sequence ending in `release()`.
+ *
+ * It is reached in production from the herdr executor when `tab close` fails, and the consequence is worse
+ * than one stuck process: `src/cli.ts` sets `process.exitCode` and relies on a natural exit, and
+ * `pane-reaper`'s `process.once("exit")` sweep never runs — so the failure that triggers retention also
+ * disables the cleanup for every other pane.
+ *
+ * **The production change that breaks this test** (rule 7): removing the `unref` block from
+ * `markRetained`. The child then never exits and the first assertion fails on the deadline — bounded here,
+ * rather than wedging the runner the way R-119's lease test did.
+ *
+ * The second assertion is the reason letting the parent go is safe rather than a leak: on parent exit the
+ * helper sees EOF, makes its BOUNDED `herdr tab close` attempts, then releases anyway (R-102 — an
+ * unreleasable lock strands a worktree with no in-product recovery, which is strictly worse than a
+ * recorded failure to close). So a successor can still acquire.
+ */
+test("a retained lease releases its process, and the lock is recoverable afterwards", async () => {
+  const root = await gitWorkspace();
+  const leaseDir = await tempDir("workspace-leases-");
+  const moduleUrl = pathToFileURL(join(process.cwd(), "src", "workspace.ts")).href;
+  const code = `
+    import { validateRegisteredWorkspace, acquireWorkspaceLease } from ${JSON.stringify(moduleUrl)};
+    const workspace = await validateRegisteredWorkspace({workspaceId:"w1", registeredRoot:${JSON.stringify(root)}});
+    const lease = await acquireWorkspaceLease({
+      workspace, access:"write", leaseDir:${JSON.stringify(leaseDir)}, ownerId:"retainer", herdrCloseAttempts:1,
+    });
+    lease.attachHerdrTab("tab-that-will-not-close");
+    await lease.markRetained("herdr-close-failed");
+    process.stdout.write("RETAINED\\n");
+  `;
+  const holder = spawn(process.execPath, ["--input-type=module", "-e", code], { stdio: ["ignore", "pipe", "pipe"] });
+  try {
+    let output = "";
+    holder.stdout.on("data", (chunk) => { output += String(chunk); });
+    const exited = await Promise.race([
+      once(holder, "close").then(() => "exited" as const),
+      new Promise<"hung">((resolve) => setTimeout(() => resolve("hung"), 10_000)),
+    ]);
+    assert.match(output, /RETAINED/, "the child never reached markRetained");
+    assert.equal(
+      exited,
+      "exited",
+      "a retained lease left the holding process unable to exit — the pipes to the lock helper are still " +
+        "referenced, so `pi` cannot exit and the pane reaper never runs (R-146)",
+    );
+    assert.equal(holder.exitCode, 0);
+  } finally {
+    holder.kill("SIGKILL");
+  }
+
+  // The lock goes back on its own, so retention is recoverable rather than a stranded worktree (R-102).
+  const workspace = await validateRegisteredWorkspace({ workspaceId: "w1", registeredRoot: root });
+  let successor;
+  for (let i = 0; i < 200 && !successor; i += 1) {
+    try { successor = await trackedLease({ workspace, access: "write", leaseDir, ownerId: "successor" }); }
+    catch (error) {
+      if ((error as GovernanceRefusal).code !== "WORKSPACE_WRITE_CONFLICT") throw error;
+      await new Promise((r) => setTimeout(r, 25));
+    }
+  }
+  assert.ok(successor, "the retained lock was never released, so the worktree is stranded (R-102)");
+  await successor.release("test-complete");
+});

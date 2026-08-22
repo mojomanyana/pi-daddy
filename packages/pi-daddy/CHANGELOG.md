@@ -14,6 +14,14 @@ the record of how the package got here and are worth keeping; they are not worth
 
 ## Unreleased
 
+- **FIX — a retained writer lease no longer stops its own process from exiting (R-146).** `markRetained`
+  leaves the kernel lock and the pane alone by design; it also left the parent's three pipes to the lock
+  helper referenced, and the helper was never `unref`ed, so node's event loop stayed alive and `pi` could
+  never exit. Measured: `exit=124` (timed out) against `exit=0` for the same sequence ending in `release()`.
+  Reached whenever the herdr executor's `tab close` fails — which means the failure that *causes* retention
+  also disabled the `process.once("exit")` pane sweep for every other pane. Present in 0.18.0 and 0.18.1.
+  Retention still holds the lock: on the parent's exit the helper makes its bounded close attempts and then
+  releases, so the worktree is recoverable (R-102) rather than stranded.
 - Ship a canonical JSON Schema draft 2020-12 contract for `ledgerVersion: 2` plus deterministic fixtures for
   all four event types, generated through the production builders. Stable package export paths let external
   harnesses pin the real contract instead of maintaining a parallel format.

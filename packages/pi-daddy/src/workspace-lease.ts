@@ -30,6 +30,17 @@ const LEASE_READY = "PI_DADDY_LEASE_READY";
 // WITHOUT confirming death (R-101). The herdr branch retries `tab close` a BOUNDED number of times
 // and then releases anyway, leaving a marker file: an unreleasable lock strands a worktree forever
 // with no in-product recovery, which is strictly worse than a recorded failure to close (R-102).
+/**
+ * `unref` the parent's end of one of the helper's pipes.
+ *
+ * A spawned pipe is a `net.Socket`, which has `unref`; `ChildProcess.stdin` is typed `Writable`, which does
+ * not. Hence the narrow cast — and the optional call is real rather than defensive, because these are `null`
+ * whenever the caller asked for `stdio: "ignore"`.
+ */
+const unrefStream = (stream: unknown): void => {
+  (stream as { unref?: () => void } | null)?.unref?.();
+};
+
 const HELPER_SOURCE = `
 import { execFile } from "node:child_process";
 import { writeFileSync } from "node:fs";
@@ -246,6 +257,25 @@ export async function acquireWorkspaceLease(input: {
           ...metadata, state: "released", released_at: new Date().toISOString(), release_reason: `retained:${reason}`,
         }).catch(() => undefined);
       }
+      /**
+       * **It must, however, let THIS process exit (R-146).** Leaving the helper alone is the decision;
+       * leaving the parent's three pipes and the child handle referenced was an accident, and it meant a
+       * retained lease wedged its own process forever — measured `exit=124` against `exit=0` for the same
+       * sequence ending in `release()`. `src/cli.ts` sets `process.exitCode` and relies on a natural exit,
+       * and `pane-reaper`'s `process.once("exit")` sweep never runs, so the failure that CAUSES retention
+       * also disabled the cleanup for every other pane.
+       *
+       * Unref rather than close, because the lock must outlive this call: when the parent does exit, the
+       * helper sees EOF and runs the path it was written for — bounded `herdr tab close` attempts, a marker
+       * file, then release anyway (R-102: an unreleasable lock strands a worktree with no in-product
+       * recovery, which is strictly worse than a recorded failure to close). Narrowed to this path on
+       * purpose: at spawn it would remove the accidental guarantee that a process cannot exit while a lease
+       * is still ACTIVE, which is a different decision and not this fix.
+       */
+      holder.unref();
+      unrefStream(holder.stdin);
+      unrefStream(holder.stdout);
+      unrefStream(holder.stderr);
     },
     async readCloseFailure() {
       try {

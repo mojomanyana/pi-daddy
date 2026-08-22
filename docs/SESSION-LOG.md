@@ -143,6 +143,44 @@ That convention is why every reversal here was survivable, and there have been f
 
 ---
 
+## 2026-08-22 (R-146) — a retained lease detained its own process, and it shipped
+
+**Fixed from `main`, not inside PR #10**, because it is in **published 0.18.0 and 0.18.1** and has nothing to
+do with ADR-0035. Found by the sixth review pass over that PR; re-derived by execution here before being
+touched, which is the habit that keeps paying.
+
+`markRetained` leaves the kernel lock and the pane alone on purpose — the pane may still be live. It also left
+the parent's three pipes to the `flock` helper referenced, and the helper was never `unref`ed, so the event
+loop stayed alive and the process could not exit.
+
+```
+mode=release   release -> released · EXIT event, code 0 · exit=0
+mode=retain    main() returning                         · exit=124 (timed out)
+```
+
+**The compounding is the part worth remembering.** Retention is triggered by a herdr `tab close` that fails,
+`src/cli.ts` relies on a natural exit, and the pane reaper is a `process.once("exit")` handler — so **the
+failure that causes retention disabled the cleanup for every other pane.** R-102 had accepted stranding the
+*worktree*; nobody wrote down that it stranded the *process*, and two comments promised the strand lasted
+"until process exit", which was the one thing that could not happen.
+
+**Unref, not close, and only on the retain path.** The lock must outlive the call: when the parent exits the
+helper sees EOF and runs what it was written for — bounded close attempts, marker file, release anyway. That
+is R-102's decision and it is why letting the parent go is safe, so the regression asserts it as a second
+property: a successor still acquires. Unref'ing at spawn was rejected — it would remove the accidental
+guarantee that a process cannot exit while a lease is still ACTIVE, which is a different decision.
+
+**Verification.** 597 unit (596 + the regression) · typecheck · register guard · line ceiling. The test fails
+on unmodified `main` with `'hung' !== 'exited'`, and fails again when the `unref` block is reverted — checked
+both directions.
+
+**Two debts, stated rather than left implicit.** `scripts/mutation-audit.mjs` lives on PR #10 and not on
+`main`, so this guard has a named regression and no catalogue entry yet; R-146's register body carries the exact
+entry for whichever branch lands second. And PR #10 holds an **OPEN** copy of R-146 plus the sixth pass's
+session-log entry and header, so both files conflict there by construction — the FIXED text is the one to keep.
+
+---
+
 ## 2026-08-20 — canonical ledger v2 contract follow-up
 
 Started from clean `dde8eeb5632113d4a54705e16dc22ce70740fd4f` (merged PR #9, peeled `v0.18.0`)

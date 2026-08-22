@@ -498,7 +498,10 @@ proof of a clean handover. On the way out: `released`, `released-unrecorded` (th
 record did not, so the next owner would otherwise report a recovery that never happened), `lost` (the lock
 evaporated under a live governed writer — **not** the same fact as an operator cancelling), `retained` (kept
 deliberately because a herdr writer tab would not close, so the pane may still be live), `timeout` and
-`refused`. Every one of those four additions exists because the fact was previously recorded as `released` or
+`refused`. **Retaining a lease does not detain the process that held it:** the record is written, the parent's
+references to the lock helper are dropped, and `pi` exits normally — then the helper sees EOF and runs its
+bounded `herdr tab close` attempts before releasing anyway. In published 0.18.0 and 0.18.1 it detained the
+process forever (R-146), which also disabled the pane sweep that runs on exit. Every one of those four additions exists because the fact was previously recorded as `released` or
 `acquired`, making the ledger assert a handover or an exclusion that did not happen.
 
 `release()` never throws. Almost every caller runs it from a cleanup path — the exception is the check
