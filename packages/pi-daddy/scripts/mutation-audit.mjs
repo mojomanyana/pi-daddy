@@ -51,7 +51,7 @@ const TIMEOUT_MS = 180_000;
 const MUTATIONS = [
   // ── the registry reader ────────────────────────────────────────────────────
   { name: "registry: read is unbounded again",
-    file: "src/workspace.ts", test: "test/workspace-capability.test.ts",
+    file: "src/workspace.ts", test: "test/registry-read-bound.test.ts",
     find: "    const deadline = Date.now() + REGISTRY_READ_TIMEOUT_MS;",
     replace: "    raw = await handle.readFile({ encoding: \"utf8\" });\n    if (false) {\n    const deadline = Date.now() + REGISTRY_READ_TIMEOUT_MS;",
     also: [{ find: "    raw = buffer.subarray(0, filled).toString(\"utf8\");", replace: "    }" }],
