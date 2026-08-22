@@ -330,6 +330,29 @@ All fields are optional; existing callers behave unchanged.
   Git worktree root, and sets initial CWD. A caller cannot label a write-capable grant read-only. Kernel
   util-linux `flock` allows one **pi-daddy-governed** writer per canonical root; `setpriv --pdeathsig` plus
   helper attachment stops the writer process or herdr tab on parent death before release. This does not confine paths or exclude unrelated writers; `bash` remains an escape.
+
+  **BREAKING in 0.19.0 — routing now requires a capability.** A delegation naming `workspace_id: W` needs
+  `workspace:W` in the caller's grant, or it is refused `WORKSPACE_NOT_AUTHORIZED`. Every grant that routes
+  must add it: `PI_GRANTS_GRANT="tool:read,tool:delegate,workspace:W"`. `pi-daddy init` lists the registered
+  ids commented in `.pi/grants.env`. A child can only route on to ids it was granted itself, so this is also
+  the list of what any descendant could reach; `workspace:*` exists but is held and never inherited, which
+  makes it the wrong answer for anything but a single-worktree setup. `PI_GRANTS_GATED=workspace:W` asks a
+  human first. Enforced by pi-daddy before the spawn, not by pi's `--tools` — see `docs/SPEC.md` on the
+  enforcement classes.
+
+  **BREAKING in 0.19.0 — a registry id must match `[A-Za-z0-9][A-Za-z0-9._/-]*`.** An id is now the tail of a
+  capability id, so it has to survive the grant grammar. **Slashes and dots are fine**, so a worktree named
+  after its branch (`feature/x`) works. Refused, with the file and the id named: whitespace (it splits a
+  definition's `allowed-tools`), commas and newlines (they split a grant), `*` (it collided with
+  `workspace:*`), shell metacharacters (they reach a generated file you are told to paste from), non-ASCII,
+  and `@ + % = ^ ! ? ~ { } [ ]` or a leading `_`, `-` or `.`. **One bad entry refuses the whole registry**, so
+  rename before upgrading. The regex is the specification; that list is a summary.
+
+  **Also new in 0.19.0:** the registry must be a **regular file under 1 MiB**. A FIFO or device there would
+  block session start rather than fail, and the read is bounded so a file that grows after its size is checked
+  is refused rather than allocated. What is *not* checked: ownership, permissions, and whether a descendant
+  holding a write tool repointed an entry — routing attenuates by **id**, not by **destination**
+  (`docs/probes/g37-registry-tamper`, tracked as R-137).
 - Refusals retain current prose and add stable codes such as `CAPABILITY_ESCALATION`,
   `GATED_UNAPPROVED`, `APPROVAL_SCOPE_MISMATCH`, and `WORKSPACE_WRITE_CONFLICT`.
 - Ledger v2 adds joinable capability, lease, lifecycle and check-receipt events while reading legacy lines.
@@ -700,9 +723,9 @@ every in-repo test passed. `npm run test:smoke` packs a tarball, installs it int
 ## Testing
 
 ```bash
-npm test                   # 596 unit tests. Fast, pure, no pi, no network.
+npm test                   # 633 unit tests. Fast, pure, no pi, no network.
 npm run typecheck          # src + extensions + tests + integration tests
-npm run test:integration   # 44 tests against a REAL pi process. ~55s, no model tokens.
+npm run test:integration   # 45 tests against a REAL pi process. ~55s, no model tokens.
 npm run test:smoke         # pack, install into a scratch project, import and use it — and run the
                            # installed `pi-daddy init` bin, which is how R-73 was found
 PI_GRANTS_IT_MODEL=1 npm run test:integration   # + 10 end-to-end tests with a real model. Costs money.

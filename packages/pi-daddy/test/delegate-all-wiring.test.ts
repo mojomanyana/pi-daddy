@@ -636,7 +636,8 @@ test("a write-capable child cannot underdeclare read access to bypass a writer c
   const held = await acquireWorkspaceLease({ workspace, access: "write", leaseDir, ownerId: "existing" });
   try {
     const { tools, ctx } = await harness({
-      [ENV_GRANT]: "tool:read,tool:bash,tool:delegate",
+      // `workspace:w1` required since ADR-0035: routing is an authority the caller must hold.
+      [ENV_GRANT]: "tool:read,tool:bash,tool:delegate,workspace:w1",
       [ENV_LEDGER]: ledger,
       [ENV_WORKSPACE_REGISTRY]: registry,
       [ENV_WORKSPACE_LEASE_DIR]: leaseDir,
@@ -676,7 +677,7 @@ test("a governed process starts in the validated workspace with the same effecti
   process.env.PATH = `${bin}:${oldPath}`;
   try {
     const { tools, ctx } = await harness({
-      [ENV_GRANT]: "tool:read,tool:delegate",
+      [ENV_GRANT]: "tool:read,tool:delegate,workspace:w1",
       [ENV_WORKSPACE_REGISTRY]: registry,
       [ENV_WORKSPACE_LEASE_DIR]: leaseDir,
     }, dir);

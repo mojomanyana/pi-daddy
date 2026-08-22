@@ -24,7 +24,7 @@
 
 import { mkdir, open, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { agentCapability } from "./capabilities.ts";
+import { agentCapability, workspaceCapability } from "./capabilities.ts";
 import { ceilingForDefinition } from "./definitions.ts";
 import { ALWAYS_LIVE, assertGrantIsWritable, isLiveByDefault, renderGrantEnv, type GrantEnvSkill } from "./grant-env.ts";
 import { PI_BUILTIN_TOOLS } from "./pi-tools.ts";
@@ -78,6 +78,8 @@ export interface InitPlan {
   grant: Capability[];
   /** Withheld capability → the definitions that declared it (ADR-0029). Emitted commented. */
   withheldCapabilities: Map<Capability, string[]>;
+  /** `workspace:<id>` this project could route to (ADR-0035). Always commented — `init` does not choose. */
+  routableWorkspaces: Capability[];
   grantEnvPath: string;
   grantEnvContent: string;
   /** Capabilities a declared ceiling names that pi 0.84.1 has no tool for — a caution, not a verdict. */
@@ -143,7 +145,20 @@ function unknownToolIds(capabilities: Capability[]): Capability[] {
  * tools at all and the whole file is inert. Everything else is emitted commented, named, and one uncomment
  * away (ADR-0029).
  */
-export function planInit(packages: SkillPackage[], cwd: string): InitPlan {
+export function planInit(
+  packages: SkillPackage[],
+  cwd: string,
+  /**
+   * Ids from the operator's workspace registry, when one is configured — read by the CALLER, because
+   * `planInit` is pure and stays that way.
+   *
+   * ADR-0035 made routing a capability and said `init` "scaffolds the registered ids so the common path is a
+   * one-line grant edit". It did not: `init` had never heard of the registry, so the ADR's own stated
+   * migration path for a breaking change did not exist. These are emitted **commented**, never live —
+   * offering the ids while refusing to choose among them is exactly ADR-0028's position.
+   */
+  registeredWorkspaceIds: readonly string[] = [],
+): InitPlan {
   const skills: PlannedSkill[] = [];
   const collisions: string[] = [];
   const seen = new Set<string>();
@@ -190,6 +205,20 @@ export function planInit(packages: SkillPackage[], cwd: string): InitPlan {
   for (const skill of declared) {
     for (const capability of skill.ceiling) {
       if (isLiveByDefault(capability)) continue;
+      // A routing destination is withheld but does NOT belong in this map, and the difference is not
+      // cosmetic. This map drives two things: the "WITHHELD BY DEFAULT — these can change your machine"
+      // block, and `/grants init`'s dialog. Review found a `workspace:` id reaching both — described to the
+      // operator with `tool:bash`'s rationale (routing does not change your machine, and unlike `bash` it
+      // *is* gateable), and then granted **live and persisted** on one "Yes", off a third-party package's
+      // declaration. That is the rule `grant-env.ts` states — "does not become live because a package asked
+      // for it" — honoured by the rendered file and broken by the dialog beside it: two surfaces of one
+      // command disagreeing, which is R-28's shape inside the fix for R-28.
+      //
+      // Which worktree a child starts in is not derivable from a declaration (ADR-0028), so `init` lists
+      // routing and never grants it. `routableWorkspaces` below is where these go; the definition that
+      // declared one still loses its live `agent:` id via the `needs-withheld` pass, so nothing becomes
+      // spawnable behind the operator's back either.
+      if (capability.startsWith("workspace:")) continue;
       withheldCapabilities.set(capability, [...(withheldCapabilities.get(capability) ?? []), skill.name]);
     }
   }
@@ -246,11 +275,19 @@ export function planInit(packages: SkillPackage[], cwd: string): InitPlan {
     ...(s.withheld ? { unspawnable: describe[s.withheld](s) } : {}),
   }));
 
+  // Registry ids the operator could route to, plus any a copied definition actually declares — a package
+  // naming `workspace:prod` is evidence that id matters here, and it must still be uncommented by hand.
+  const declaredWorkspaces = skills.flatMap((s) => s.ceiling.filter((c) => c.startsWith("workspace:")));
+  const routableWorkspaces = [
+    ...new Set([...registeredWorkspaceIds.map(workspaceCapability), ...declaredWorkspaces]),
+  ].sort();
+
   return {
     skills,
     collisions,
     grant,
     withheldCapabilities,
+    routableWorkspaces,
     grantEnvPath: join(cwd, ".pi", "grants.env"),
     grantEnvContent: renderGrantEnv({
       skills: grantEnvSkills,
@@ -259,6 +296,7 @@ export function planInit(packages: SkillPackage[], cwd: string): InitPlan {
       withheldDefinitions: skills.filter((s) => s.withheld === "needs-withheld").map((s) => s.name),
       crossReferences,
       cautions,
+      routableWorkspaces,
     }),
     cautions,
   };

@@ -29,9 +29,14 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { ceilingForDefinition, parseSkillDefinition } from "../src/definitions.ts";
 import { countDeclaring, type PlannedSkill, type WithholdReason } from "../src/init.ts";
-import { parseArgs } from "../src/cli.ts";
+import { main, parseArgs } from "../src/cli.ts";
 import { assertGrantIsWritable, UnsafeGrantError } from "../src/grant-env.ts";
 import { applyInit, planInit, withPlaceholder } from "../src/init.ts";
+import { registeredWorkspaceIds } from "../src/workspace.ts";
+import { buildCatalog } from "../src/catalog.ts";
+import { runInit } from "../extensions/init-command.ts";
+import { grantStorePath } from "../src/grant-store.ts";
+import type { Capability } from "../src/resolve.ts";
 import { discoverSkillPackages, readSkillPackage } from "../src/skill-packages.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
@@ -269,6 +274,309 @@ test("a definition name that could inject a capability, a shell command or a pat
   );
   // Every write stays under .pi/skills/, so `..` cannot place a file anywhere else.
   for (const skill of plan.skills) assert.match(skill.targetPath, /\.pi\/skills\/[A-Za-z0-9][A-Za-z0-9._-]*\/SKILL\.md$/);
+});
+
+/**
+ * ADR-0035's stated migration path for a breaking change, which did not exist until now.
+ *
+ * The ADR says `init` "scaffolds the registered ids so the common path is a one-line grant edit", and its
+ * revisit trigger says operator fatigue "would mean the scaffolding in `init` is not doing its job" — a
+ * trigger on something never built. `init` had never heard of the workspace registry.
+ *
+ * **The production changes that break this**, in this suite's idiom: dropping `registeredWorkspaceIds()`
+ * from either `planInit` caller; removing the `ROUTABLE WORKSPACES` block from `renderGrantEnv`; or letting
+ * `isLiveByDefault` return true for a `workspace:` id, which would silently grant routing authority because
+ * a package asked for it — the exact line this suite exists to hold.
+ */
+test("init scaffolds the registered workspaces, commented, and grants none of them", async () => {
+  const cwd = await project();
+  // A package that declares routing it needs. Even declared, the id must not go live.
+  await skillPackage(cwd, "deploy-pkg", "1.0.0", {
+    deployer: DECLARED.replace("Read, Grep", "Read, workspace:prod"),
+  });
+
+  const packages = await discoverSkillPackages(cwd);
+  // **Asserted first, and a mutation audit is why.** Every other assertion below is satisfied *more* strongly
+  // by the package being dropped entirely — `routableWorkspaces` comes from the registry ids, and
+  // `grant.includes("agent:deployer") === false` passes both when the definition is withheld and when it
+  // never existed. So reverting `isSafeCapability`'s `workspace` alternative left this test green while
+  // silently making a routing package unusable. Pin the discovery, and the declared half stops being inert.
+  assert.deepEqual(packages[0].refused, [], "a package declaring routing must not be refused as unsafe");
+  const plan = planInit(packages, cwd, ["prod", "staging"]);
+  assert.deepEqual(plan.skills.map((s) => s.name), ["deployer"], "and it must actually be written");
+
+  assert.deepEqual(plan.routableWorkspaces, ["workspace:prod", "workspace:staging"]);
+  assert.equal(
+    plan.grant.some((c) => c.startsWith("workspace:")),
+    false,
+    "init must not choose which worktree a child starts in",
+  );
+  assert.match(plan.grantEnvContent, /# ROUTABLE WORKSPACES/);
+  assert.match(plan.grantEnvContent, /^#   workspace:prod$/m, "offered, commented");
+  assert.match(plan.grantEnvContent, /^#   workspace:staging$/m, "including one nothing declared");
+  assert.match(plan.grantEnvContent, /WORKSPACE_NOT_AUTHORIZED/, "the refusal it explains is named");
+  // The live line is the thing an operator sources: it must not contain a workspace id anywhere.
+  const live = /export PI_GRANTS_GRANT="([^"]*)"/.exec(plan.grantEnvContent)?.[1] ?? "";
+  assert.equal(live.includes("workspace:"), false, live);
+
+  // A definition needing a withheld capability is not authorised to run either — the existing rule, which
+  // now also covers routing, so `agent:deployer` stays out of the grant until `workspace:prod` is granted.
+  assert.equal(plan.grant.includes("agent:deployer"), false);
+
+  // No registry configured and nothing declared: the section is absent rather than empty.
+  const bare = await project();
+  await skillPackage(bare, "plain-pkg", "1.0.0", { review: DECLARED });
+  const noRegistry = planInit(await discoverSkillPackages(bare), bare, []);
+  assert.deepEqual(noRegistry.routableWorkspaces, []);
+  assert.equal(noRegistry.grantEnvContent.includes("ROUTABLE WORKSPACES"), false);
+});
+
+/**
+ * The registry-reading half of the feature, through the entry point an operator actually runs.
+ *
+ * **A mutation audit found this whole chain untested.** Every existing case calls `planInit(pkgs, cwd, [ids])`
+ * with the ids handed in by the test, so `registeredWorkspaceIds`, both `planInit` call sites and both
+ * `buildCatalog` wirings were each revertible with the suite green — and the docstring above claims "dropping
+ * `registeredWorkspaceIds()` from either `planInit` caller" breaks a test, which was false for both. It is the
+ * same shortcut probe g36 took and got caught for: exercise the mechanism, skip the wiring.
+ *
+ * This drives `main(["init"])` against a real registry file, so the wiring is what is under test.
+ *
+ * Breaks by: dropping `await registeredWorkspaceIds()` from `src/cli.ts`'s `planInit` call, or making
+ * `registeredWorkspaceIds` return `[]`.
+ */
+test("`pi-daddy init` reads the real registry — the wiring, not just the plan", async () => {
+  const cwd = await project();
+  await skillPackage(cwd, "plain-pkg", "1.0.0", { review: DECLARED });
+  const registry = join(cwd, "registry.json");
+  await writeFile(registry, JSON.stringify({
+    version: 1,
+    workspaces: { "prod-1": { path: cwd }, sandbox: { path: cwd } },
+  }), "utf8");
+
+  const previous = process.env.PI_GRANTS_WORKSPACE_REGISTRY;
+  process.env.PI_GRANTS_WORKSPACE_REGISTRY = registry;
+  try {
+    // `registeredWorkspaceIds` reading a real file, positively — the FIFO case only proves it returns [].
+    assert.deepEqual(await registeredWorkspaceIds(), ["prod-1", "sandbox"]);
+
+    assert.equal(await main(["node", "cli", "init", "--dir", cwd]), 0);
+    const written = await readFile(join(cwd, ".pi", "grants.env"), "utf8");
+    assert.match(written, /# ROUTABLE WORKSPACES/);
+    assert.match(written, /^#   workspace:prod-1$/m);
+    assert.match(written, /^#   workspace:sandbox$/m);
+    const live = /export PI_GRANTS_GRANT="([^"]*)"/.exec(written)?.[1] ?? "";
+    assert.equal(live.includes("workspace:"), false, live);
+
+    // And the catalog wiring, which is the other consumer of the same read.
+    const catalog = await buildCatalog({
+      cwd,
+      observedTools: null,
+      registryPath: process.env.PI_GRANTS_WORKSPACE_REGISTRY,
+    });
+    assert.deepEqual(catalog.byKind("workspace"), ["workspace:prod-1", "workspace:sandbox"]);
+  } finally {
+    if (previous === undefined) delete process.env.PI_GRANTS_WORKSPACE_REGISTRY;
+    else process.env.PI_GRANTS_WORKSPACE_REGISTRY = previous;
+  }
+});
+
+/**
+ * `/grants init`'s DIALOG — the surface that had no test at all, which is why it was a shipping blocker.
+ *
+ * `planInit`/`renderGrantEnv` say "Not granted for you" about a routing id and list it commented.
+ * `runInit` walked the same `withheldCapabilities` map and **offered** each entry, so one "Yes" put
+ * `workspace:prod` into the adopted *and* persisted grant — off a third-party package's `allowed-tools`. Two
+ * surfaces of one command disagreeing about the rule `grant-env.ts` states, which is R-28's shape inside the
+ * fix for R-28. The dialog also described routing with `tool:bash`'s rationale: "this can change your
+ * machine … it is not gated, so no dialog at spawn time" — routing changes nothing on your machine, and
+ * unlike `bash` it *is* gateable.
+ *
+ * Answering **Yes to everything** on purpose: the property is that no answer can confer routing, not that a
+ * careful operator avoids it.
+ *
+ * Breaks by: removing the `workspace:` skip in `planInit`'s `withheldCapabilities` loop, which puts routing
+ * ids back in the dialog and back under "these can change your machine".
+ */
+test("`/grants init`'s dialog cannot confer a routing capability, whatever the operator answers", async () => {
+  const cwd = await project();
+  await skillPackage(cwd, "deploy-pkg", "1.0.0", {
+    deployer: DECLARED.replace("Read, Grep", "Read, Write, workspace:prod"),
+  });
+  const registry = join(cwd, "registry.json");
+  await writeFile(registry, JSON.stringify({ version: 1, workspaces: { prod: { path: cwd } } }), "utf8");
+
+  const asked: string[] = [];
+  const notices: string[] = [];
+  let adopted: readonly string[] = [];
+  const ctx = {
+    cwd,
+    ui: {
+      select: async (prompt: string) => { asked.push(prompt); return "Yes"; },
+      notify: (m: string) => { notices.push(m); },
+    },
+  };
+  // `gated` is what the consequence sentence reads, so the stub carries it: a session object that omits it
+  // is not a session, and modelling it as one is how the sentence went untested in the first place.
+  const session = { gated: ["tool:bash"], adoptGrant: (g: readonly Capability[]) => { adopted = g; } };
+
+  const previous = process.env.PI_GRANTS_WORKSPACE_REGISTRY;
+  process.env.PI_GRANTS_WORKSPACE_REGISTRY = registry;
+  try {
+    await runInit(session as never, ctx as never, async () => {});
+  } finally {
+    if (previous === undefined) delete process.env.PI_GRANTS_WORKSPACE_REGISTRY;
+    else process.env.PI_GRANTS_WORKSPACE_REGISTRY = previous;
+  }
+
+  assert.equal(
+    adopted.some((c) => c.startsWith("workspace:")),
+    false,
+    `a "Yes" must not confer routing — adopted ${JSON.stringify(adopted)}`,
+  );
+  // The stored grant is the same decision, persisted; a live grant and a stored one must not disagree.
+  const stored = JSON.parse(await readFile(grantStorePath(cwd), "utf8")) as { grant: string[] };
+  assert.equal(stored.grant.some((c) => c.startsWith("workspace:")), false, JSON.stringify(stored.grant));
+
+  // It WAS asked about `tool:write`, so the dialog still works — this is not "the loop stopped running".
+  assert.equal(asked.length, 1, JSON.stringify(asked));
+  assert.match(asked[0], /grant tool:write to sub-agents\?/);
+  // The CONSEQUENCE clause, which had no test — and was dead code asserting the opposite. `tool:write` is
+  // not in this session's gate, so the honest sentence is that nothing will ask again at spawn time.
+  assert.match(asked[0], /it is not gated, so no dialog at spawn time/);
+  assert.equal(asked.some((q) => q.includes("workspace:")), false, "and never about a routing destination");
+
+  // And the operator is told where routing lives instead of being silently denied it.
+  assert.match(notices.join("\n"), /ROUTABLE WORKSPACES|workspace:prod/);
+});
+
+/**
+ * `main(["init"])`'s CONSOLE OUTPUT — the surface with no test, which is why a regression landed silently.
+ *
+ * `report()` special-cases `undeclared` and `pattern` and nothing else, so `needs-withheld` reached the
+ * operator *only* through the `WITHHELD BY DEFAULT` line. Keeping `workspace:` ids out of that map — the fix
+ * that stopped `/grants init`'s dialog granting routing off a package declaration — therefore made
+ * `pi-daddy init` completely silent about a copied definition that cannot be spawned. Measured before and
+ * after by a reviewer, on the entry point the docs tell operators to run.
+ *
+ * Breaks by: deleting the ROUTABLE WORKSPACES block from `report()`, or moving the `…and then: agent:` lines
+ * back inside `renderGrantEnv`'s `withheld.size > 0` guard.
+ */
+test("`pi-daddy init` says out loud that a routing package cannot be spawned yet", async () => {
+  const cwd = await project();
+  await skillPackage(cwd, "deploy-pkg", "1.0.0", {
+    deployer: DECLARED.replace("Read, Grep", "Read, workspace:prod"),
+  });
+  const registry = join(cwd, "registry.json");
+  await writeFile(registry, JSON.stringify({ version: 1, workspaces: { prod: { path: cwd } } }), "utf8");
+
+  const written: string[] = [];
+  const realLog = console.log;
+  console.log = (...a: unknown[]) => { written.push(a.map(String).join(" ")); };
+  const previous = process.env.PI_GRANTS_WORKSPACE_REGISTRY;
+  process.env.PI_GRANTS_WORKSPACE_REGISTRY = registry;
+  try {
+    assert.equal(await main(["node", "cli", "init", "--dir", cwd]), 0);
+  } finally {
+    console.log = realLog;
+    if (previous === undefined) delete process.env.PI_GRANTS_WORKSPACE_REGISTRY;
+    else process.env.PI_GRANTS_WORKSPACE_REGISTRY = previous;
+  }
+  const out = written.join("\n");
+
+  assert.match(out, /ROUTABLE WORKSPACES: workspace:prod/);
+  assert.match(out, /WORKSPACE_NOT_AUTHORIZED/, "the refusal it explains is named");
+  assert.match(out, /cannot be spawned: deployer/, "silence about an unspawnable definition is the defect");
+  assert.doesNotMatch(out, /Live grant \([^)]*\): [^\n]*workspace:/, "and routing is still not granted");
+
+  // The generated file keeps the `agent:` instruction even though routing is its only withheld capability.
+  const env = await readFile(join(cwd, ".pi", "grants.env"), "utf8");
+  assert.match(env, /…and then: agent:deployer/);
+});
+
+/**
+ * The consequence clause tells the truth for a capability the operator actually gated.
+ *
+ * This is the branch that was **unreachable** until the code stopped reading the `DEFAULT_GATED` constant and
+ * started reading `session.gated`: `tool:bash` is the only member of that constant and it is consumed by the
+ * branch above, so with `PI_GRANTS_GATED="tool:bash,tool:write"` the dialog told the operator `tool:write`
+ * "is not gated, so no dialog at spawn time" — the exact false sentence the fix claimed to have removed.
+ *
+ * Breaks by: reverting `gatedAtSpawn` to read `DEFAULT_GATED`.
+ */
+test("a capability the operator gated is described as gated, not as ungated", async () => {
+  const cwd = await project();
+  await skillPackage(cwd, "w-pkg", "1.0.0", { builder: DECLARED.replace("Read, Grep", "Read, Write") });
+
+  const asked: string[] = [];
+  const ctx = {
+    cwd,
+    ui: { select: async (p: string) => { asked.push(p); return "No"; }, notify: () => {} },
+  };
+  // The operator gated `tool:write` as well as bash — the value `renderGrantEnv` itself suggests.
+  const session = { gated: ["tool:bash", "tool:write"], adoptGrant: () => {} };
+  await runInit(session as never, ctx as never, async () => {});
+
+  const write = asked.find((q) => q.includes("grant tool:write"));
+  assert.ok(write, `expected a tool:write question, got ${JSON.stringify(asked)}`);
+  assert.match(write, /a human is still asked at spawn time/);
+  assert.doesNotMatch(write, /it is not gated/, "the sentence must not contradict the operator's own gate");
+});
+
+/**
+ * A package may declare a slash-bearing workspace id — the FIFTH site of the grammar split.
+ *
+ * `isSafeWorkspaceId` allowed `/` because a git worktree is routinely named after its branch, and three
+ * sites were converted to it. `isSafeCapability` — used by `refusalFor`, the boundary that GENERATES grants —
+ * was not, so a package declaring `allowed-tools: Read, workspace:feature/x` had its whole definition
+ * dropped, `init` exited 1, and the operator was told "a capability id is `tool:`/`skill:`/`agent:<name>` or
+ * `ext:<pkg>/<tool>`", which does not mention the namespace. The CHANGELOG told them slashes were fine.
+ *
+ * **The release's advertised id shape was unusable through its own migration path.** That is R-133's lesson
+ * one level up: splitting a grammar is itself a multi-site change.
+ *
+ * Breaks by: reverting `isSafeCapability`'s `workspace:` delegation to the tool-name segment.
+ */
+test("a package may declare a branch-named workspace id, and init copies it", async () => {
+  const cwd = await project();
+  await skillPackage(cwd, "route-pkg", "1.0.0", {
+    deployer: DECLARED.replace("Read, Grep", "Read, workspace:feature/x"),
+  });
+
+  const packages = await discoverSkillPackages(cwd);
+  assert.deepEqual(packages[0].refused, [], "a slash id must not be reported as an unsafe capability");
+  const plan = planInit(packages, cwd, ["feature/x"]);
+  assert.deepEqual(plan.skills.map((s) => s.name), ["deployer"], "and the definition must be copied");
+  assert.deepEqual(plan.routableWorkspaces, ["workspace:feature/x"]);
+  // Still withheld, exactly as any other routing id: legal to declare is not the same as granted.
+  assert.equal(plan.grant.some((c) => c.startsWith("workspace:")), false);
+  assert.equal(plan.grant.includes("agent:deployer"), false);
+});
+
+/**
+ * A package claiming a whole namespace is a *claim*, not a typo — and the two get different sentences.
+ *
+ * `wildcardsIn` learned `workspace:*` when ADR-0035's review found `isSafeCapability` had not; a mutation
+ * audit then found nothing asserted it, so a package declaring `workspace:*` could silently go back to being
+ * reported as "not a name". The distinction is the whole reason `refusalFor` orders its checks the way it
+ * does: *"a wildcard is a deliberate claim, an unsafe id is probably a typo or an attack."*
+ *
+ * Breaks by: removing `WORKSPACE_WILDCARD` from `wildcardsIn`.
+ */
+test("a package claiming a namespace wildcard is reported as a claim, not as a bad name", async () => {
+  const cwd = await project();
+  await skillPackage(cwd, "wild-pkg", "1.0.0", {
+    router: DECLARED.replace("Read, Grep", "Read, workspace:*"),
+    spawner: DECLARED.replace("Read, Grep", "Read, agent:*"),
+  });
+
+  const refused = (await discoverSkillPackages(cwd))[0].refused;
+  assert.deepEqual(
+    refused.map((r) => [r.subject, r.reason]).sort(),
+    [["router", "wildcard"], ["spawner", "wildcard"]],
+    "both namespace wildcards are wildcard CLAIMS, not unsafe names",
+  );
+  assert.deepEqual(refused.find((r) => r.subject === "router")?.detail, ["workspace:*"]);
 });
 
 test("two packages declaring the same name: the first wins and the loser is named", async () => {

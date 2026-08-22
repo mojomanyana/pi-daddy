@@ -23,6 +23,7 @@ import { createHash } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { skillDirs } from "./catalog.ts";
+import { CAPABILITY_NAMESPACE_PREFIXES } from "./capabilities.ts";
 import type { Capability } from "./resolve.ts";
 
 /**
@@ -182,7 +183,12 @@ export function ceilingForDefinition(definition: SkillDefinition): DefinitionCei
       patterns.push(entry);
       continue;
     }
-    if (entry.startsWith("ext:") || entry.startsWith("skill:") || entry.startsWith("agent:")) {
+    // Every namespaced id passes through untouched; only a BARE tool name gets the `tool:` prefix and the
+    // lowercasing. `workspace:` was missing here after ADR-0035 taught `normaliseCapability` about it, so a
+    // definition declaring `allowed-tools: workspace:prod` produced `tool:workspace:prod` — a capability
+    // that names nothing, refused as unknown, and dropped by `init` as "probably a typo or an attack". Two
+    // spellings of one grammar with this one wrong is R-28's shape; the list is now shared.
+    if (CAPABILITY_NAMESPACE_PREFIXES.some((prefix) => entry.startsWith(prefix))) {
       capabilities.add(entry);
       continue;
     }

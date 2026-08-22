@@ -14,7 +14,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { GovernanceRefusal, refusal } from "./refusals.ts";
 import type { ValidatedWorkspace, WorkspaceAccess } from "./workspace.ts";
-import { HELPER_SOURCE, LEASE_READY, unrefStream } from "./lease-helper.ts";
+import { assertCloseBounds, HELPER_SOURCE, LEASE_READY, unrefStream } from "./lease-helper.ts";
 
 export const ENV_WORKSPACE_LEASE_DIR = "PI_GRANTS_WORKSPACE_LEASE_DIR";
 
@@ -25,9 +25,15 @@ export function defaultWorkspaceLeaseDir(env: NodeJS.ProcessEnv = process.env): 
 
 
 /**
- * The ledger outcome for a release. ONE definition, exported, because two call sites had their own copies
- * and the check runner's copy asserted `released` unconditionally — reproducing in the evidence path the
- * exact defect this union was added to expose (R-100/R-103).
+ * The ledger outcome for a release. Exported because call sites had their own copies and the check runner's
+ * asserted `released` unconditionally — reproducing in the evidence path the exact defect this union was
+ * added to expose (R-100/R-103).
+ *
+ * **It is NOT the only definition, and saying so here was wrong.** `extensions/workspace-runtime.ts` keeps a
+ * private copy with no `not-held` arm, and it is the one the whole delegation path uses — so releasing a
+ * *read* lease on a delegated child is still recorded `released`, a handover the kernel never performed.
+ * Measured; open as R-141; the sentence claiming a single definition survived two review passes because
+ * `test/workspace.test.ts` pins the `not-held` arm on THIS function, which no delegation path calls.
  */
 export function leaseReleaseLedgerOutcome(
   outcome: LeaseReleaseOutcome | "retained",
@@ -53,44 +59,6 @@ export function leaseAcquisitionOutcome(
   if (access === "read") return "uncontended";
   return recovered === true ? "recovered" : "acquired";
 }
-
-/**
- * **A bound that is not a bound throws, and it throws a `RangeError` (R-146, R-152).**
- *
- * Both ends fail, in opposite directions and both silently:
- *
- *  - `0` reads as "no limit" and Node agrees — `execFile` treats `timeout: 0` as *no* timeout (measured: the
- *    callback for a 3s sleep arrives at 3004ms with no error), reinstating the unbounded hang the bound exists
- *    to prevent. Negatives behave identically.
- *  - anything above `2^31 - 1` truncates: `setTimeout` warns `TimeoutOverflowWarning … set to 1`, so
- *    `Number.MAX_SAFE_INTEGER` — the plausible "effectively no limit" sentinel, given the argument about `0`
- *    — SIGKILLs every `herdr tab close` after 1ms, before herdr can act. Measured: callback at 3ms.
- *
- * **Not a `GovernanceRefusal`.** It was one, carrying `WORKSPACE_LEASE_STALE`, which everywhere else in this
- * package means *the lease went stale or was lost* — so an ADR-0034 controller switching on codes (the reason
- * codes exist, R-103) would classify a permanent caller bug as transient and retry a call that can never
- * succeed. A refusal is a governance outcome that gets ledgered; a bad argument is neither.
- *
- * Checked for read leases too, which the first version did not: it sat below the read-lease early return, so a
- * controller smoke-testing its configuration against a read lease got a false all-clear.
- */
-const assertCloseBounds = (input: { herdrCloseTimeoutMs?: number; herdrCloseAttempts?: number }): void => {
-  const MAX_TIMER = 2_147_483_647;
-  for (const [name, value, ceiling] of [
-    ["herdrCloseTimeoutMs", input.herdrCloseTimeoutMs, MAX_TIMER],
-    ["herdrCloseAttempts", input.herdrCloseAttempts, Number.MAX_SAFE_INTEGER],
-  ] as const) {
-    if (value === undefined) continue;
-    if (!Number.isInteger(value) || value < 1 || value > ceiling) {
-      throw new RangeError(
-        `${name} must be a whole number between 1 and ${ceiling}, not ${String(value)}. Zero and negatives ` +
-          `are not "no limit" but no bound at all, a value past ${MAX_TIMER} truncates to 1ms, and a ` +
-          `fractional count is not a count — this bound exists so a hung herdr cannot hold the writer lock ` +
-          `forever (R-146).`,
-      );
-    }
-  }
-};
 
 export async function acquireWorkspaceLease(input: {
   workspace: ValidatedWorkspace;

@@ -183,7 +183,13 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
     check_receipt_id: Type.Optional(Type.String()),
   });
   const workspaceShape = Type.Object({
-    workspace_id: Type.String({ description: "ID from the operator-owned workspace registry." }),
+    // `minLength: 1` because an empty id is not a "no workspace" signal — it is a malformed one, and the
+    // planner now says so. Refused at the schema as well as in the planner: a model-facing parameter that
+    // reaches a capability id should be bounded at both ends.
+    workspace_id: Type.String({
+      minLength: 1,
+      description: "ID from the operator-owned workspace registry. Routing here needs workspace:<id> in the grant.",
+    }),
     access: Type.Union([Type.Literal("read"), Type.Literal("write")]),
   });
 

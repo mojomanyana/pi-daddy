@@ -25,6 +25,7 @@ import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { WILDCARD } from "../src/pi-tools.ts";
 import { buildCatalog } from "../src/catalog.ts";
+import { ENV_WORKSPACE_REGISTRY } from "../src/workspace.ts";
 import { appendRecord, buildRecord } from "../src/ledger.ts";
 import { openPaneCount, reapOpenPanesAsync } from "../src/pane-reaper.ts";
 import {
@@ -216,7 +217,11 @@ export default function (pi: ExtensionAPI) {
       // Keep the handle: a concurrent `delegate` awaits this rather than reading a half-built catalog.
       // The `catch` resolves to the CURRENT catalog rather than rejecting, so a failed refresh degrades
       // to the previous view instead of failing every delegation in the session.
-      session.catalogReady = buildCatalog({ cwd: session.cwd, observedTools: names })
+      session.catalogReady = buildCatalog({
+        cwd: session.cwd,
+        observedTools: names,
+        registryPath: process.env[ENV_WORKSPACE_REGISTRY],
+      })
         .then((c) => (session.catalog = c))
         .catch(() => session.catalog);
     } catch {

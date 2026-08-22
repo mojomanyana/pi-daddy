@@ -42,6 +42,12 @@ export const WITHHELD_BY_DEFAULT: readonly Capability[] = [
 
 /** Would `init` put this capability in the live grant? */
 export function isLiveByDefault(capability: Capability): boolean {
+  // No `workspace:<id>` is ever live by default (ADR-0035), and this is the same rule the list above states
+  // rather than a new one: authority "does not become live because a package asked for it". A registry id is
+  // a *choice of where a child runs*, which is the operator's to make and cannot be inferred from a
+  // declaration — ADR-0028's whole position. Enumerated ids are unbounded, so this is a namespace test and
+  // not a list membership.
+  if (capability.startsWith("workspace:")) return false;
   return !WITHHELD_BY_DEFAULT.includes(capability);
 }
 
@@ -87,6 +93,8 @@ export interface GrantEnvInput {
   withheld: Map<Capability, string[]>;
   /** Definitions whose `agent:` id is withheld because they need a withheld capability. */
   withheldDefinitions: string[];
+  /** `workspace:<id>` ids this project could route to (ADR-0035). Rendered commented, never granted. */
+  routableWorkspaces?: Capability[];
   /** `agent:<name>` ids a ceiling names that `init` did not write here. Reported, never granted. */
   crossReferences: { from: string; capability: Capability }[];
   cautions: string[];
@@ -140,13 +148,37 @@ export function renderGrantEnv(input: GrantEnvInput): string {
     for (const [capability, needed] of [...input.withheld].sort()) {
       lines.push(`#   ${capability.padEnd(width)}  (${needed.join(", ")})`);
     }
-    if (input.withheldDefinitions.length > 0) {
-      lines.push(
-        `#   …and then: ${input.withheldDefinitions.map((n) => `agent:${n}`).join(",")}`,
-        "#   Their `agent:` ids are withheld too: a definition that cannot receive what it declares would",
-        "#   be authorised to run and then refused, which is a worse answer than not being authorised.",
-      );
-    }
+    lines.push("#");
+  }
+
+  // OUTSIDE the block above, and that is the fix. This is the file's only statement that a withheld
+  // definition's `agent:` id must be granted too — and it used to render only when `withheld` was non-empty,
+  // so a package whose sole withheld capability is a ROUTING id (the common read-only routing case) lost it
+  // entirely once `workspace:` ids stopped going into that map. The reason line above still said "see below"
+  // and pointed at nothing.
+  if (input.withheldDefinitions.length > 0) {
+    lines.push(
+      `#   …and then: ${input.withheldDefinitions.map((n) => `agent:${n}`).join(",")}`,
+      "#   Their `agent:` ids are withheld too: a definition that cannot receive what it declares would",
+      "#   be authorised to run and then refused, which is a worse answer than not being authorised.",
+      "#",
+    );
+  }
+
+  // ADR-0035. Routing became a capability in 0.19.0, which made every existing grant that routes start
+  // refusing — so the migration has to be visible from the file the operator already opens. Listed and NOT
+  // granted: which worktree a child starts in is the operator's decision and cannot be read off a
+  // declaration (ADR-0028), and granting one because a package named it is the "does not become live because
+  // a package asked for it" rule that `WITHHELD_BY_DEFAULT` above states.
+  if (input.routableWorkspaces && input.routableWorkspaces.length > 0) {
+    lines.push(
+      "# ROUTABLE WORKSPACES — routing a child to a registered worktree needs the id in PI_GRANTS_GRANT",
+      "# (ADR-0035, 0.19.0). Without it a delegation naming one is refused WORKSPACE_NOT_AUTHORIZED. Add the",
+      "# ones this project's children may start in; a child can only pass on ids it holds itself, so this is",
+      "# also the list of what any DESCENDANT could reach. Not granted for you: `workspace:*` exists but is",
+      "# held and never inherited, which makes it the wrong answer for anything but a single-worktree setup.",
+    );
+    for (const capability of input.routableWorkspaces) lines.push(`#   ${capability}`);
     lines.push("#");
   }
 

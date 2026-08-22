@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
@@ -9,9 +9,12 @@ import {
   buildWorkspaceLeaseEvent,
 } from "../src/ledger.ts";
 import type { CorrelationMetadata } from "../src/correlation.ts";
+import { REFUSAL_CODES } from "../src/refusals.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const fixtureDir = join(here, "..", "contracts", "ledger", "v2", "fixtures");
+const contractDir = join(here, "..", "contracts", "ledger", "v2");
+const fixtureDir = join(contractDir, "fixtures");
+const schemaPath = join(contractDir, "ledger-event.schema.json");
 
 const correlation: CorrelationMetadata = {
   schema_version: "1.0",
@@ -112,12 +115,48 @@ export function buildLedgerV2ContractFixtures() {
   };
 }
 
-export async function writeLedgerV2ContractFixtures(): Promise<void> {
-  await mkdir(fixtureDir, { recursive: true });
+export async function writeLedgerV2ContractFixtures(target = fixtureDir): Promise<void> {
+  await mkdir(target, { recursive: true });
   for (const [name, event] of Object.entries(buildLedgerV2ContractFixtures())) {
-    await writeFile(join(fixtureDir, name), `${JSON.stringify(event, null, 2)}\n`, "utf8");
+    await writeFile(join(target, name), `${JSON.stringify(event, null, 2)}\n`, "utf8");
   }
 }
 
+/**
+ * Sync the schema's `refusalCode` enum to `REFUSAL_CODES`, which is its only source of truth.
+ *
+ * **This script wrote fixtures and nothing else, and that was the defect.** The schema — including a closed
+ * enum of every refusal code — was hand-maintained beside a `REFUSAL_CODES` array it had to match exactly,
+ * with `ledger-contract.test.ts` asserting the equality. So adding `WORKSPACE_NOT_AUTHORIZED` in `src/`
+ * turned the suite red, `npm run contracts:generate` produced no diff, and the only route back to green was
+ * for somebody to notice which hand-written JSON file to edit. Every future refusal code had the same
+ * ambush waiting. Derived now: the test that caught it becomes a check on this function rather than a
+ * tripwire on human memory.
+ *
+ * Only the enum is generated. The rest of the schema stays hand-authored on purpose — it encodes decisions
+ * (`additionalProperties: false`, the `const: true` flags, the discriminated union) that no generator should
+ * be inventing, and `contracts/ledger/v2/README.md` is the compatibility contract for changing them.
+ */
+export async function syncLedgerV2RefusalEnum(target = schemaPath): Promise<void> {
+  const raw = await readFile(target, "utf8");
+  const schema = JSON.parse(raw) as { $defs: { refusalCode: { enum: string[] } } };
+  schema.$defs.refusalCode.enum = [...REFUSAL_CODES];
+  await writeFile(target, `${JSON.stringify(schema, null, 2)}\n`, "utf8");
+}
+
+/**
+ * Everything `npm run contracts:generate` does, as ONE exported function.
+ *
+ * The entry point used to call the two steps itself, which made "somebody drops the enum sync from the
+ * script" unfalsifiable: a test can call an exported function, and it cannot call the inside of an
+ * `if (invoked)` block. The docstring in `test/ledger-contract.test.ts` named exactly that edit as a breaker
+ * and a mutation audit showed it was not one. Now the entry point is a one-liner over a function the test
+ * drives, so the two cannot diverge.
+ */
+export async function generateLedgerV2Contract(targets: { schema?: string; fixtures?: string } = {}): Promise<void> {
+  await writeLedgerV2ContractFixtures(targets.fixtures);
+  await syncLedgerV2RefusalEnum(targets.schema);
+}
+
 const invoked = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
-if (invoked) await writeLedgerV2ContractFixtures();
+if (invoked) await generateLedgerV2Contract();

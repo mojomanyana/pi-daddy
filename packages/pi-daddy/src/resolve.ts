@@ -76,6 +76,16 @@ import { isWellFormedCapability } from "./capabilities.ts";
  * `tool:*` — authority to grant every tool — which made the safe configuration the laborious one.
  */
 export const AGENT_WILDCARD: Capability = "agent:*";
+/**
+ * `workspace:*` covers any `workspace:<id>` — ADR-0035, and the second namespace wildcard.
+ *
+ * Added as a deliberate edit, which is what the comment in `resolve()` below asks for: there is no
+ * generalised `<ns>:*` rule, so a namespace does not acquire a wildcard by existing. Unlike `agent:*` this
+ * one is **not inheritable** (`childEnv` strips it) — R-26's rule, because a root that handed
+ * `workspace:*` down would make routing attenuation meaningless below the root, which is the exact defect
+ * R-131 records.
+ */
+export const WORKSPACE_WILDCARD: Capability = "workspace:*";
 
 export interface ResolveInput {
   /** What the delegating agent asked to give the child. */
@@ -125,7 +135,10 @@ export function resolve(input: ResolveInput): ResolveResult {
   const parent =
     input.subsumption === false ? held : new Set(expandSubsumed(input.parentGrant));
   /**
-   * `agent:*` covers any `agent:<name>` — ADR-0023, and the ONLY wildcard rule in this function.
+   * `agent:*` covers any `agent:<name>` — ADR-0023. It was the only wildcard rule in this function when
+   * that was written; ADR-0035 added a third, so `covered()` now has `tool:*`, `agent:*` and `workspace:*`.
+   * There is still no GENERALISED `<ns>:*` rule: each is a deliberate edit, which is the property worth
+   * keeping. Corrected because the sentence sat eighty lines above "all THREE wildcards are excluded".
    *
    * `resolve` is otherwise exact-match plus subsumption, deliberately: `tool:*` works not because anything
    * here understands it, but because `deriveOwnGrant` *enumerates* a session's observed tool names beside
@@ -150,13 +163,17 @@ export function resolve(input: ResolveInput): ResolveResult {
    * spellings of one rule, and the enforcing one was wrong.
    */
   const anyCapability = held.has(WILDCARD);
+  const anyWorkspace = held.has(WORKSPACE_WILDCARD);
   // A malformed id is never covered — not by an exact hold, and above all not by a wildcard's PREFIX rule,
   // which is how `agent:x,tool:bash` got admitted and then split into two capabilities in the child.
   // Landing in `denied` is the right outcome rather than a throw: it fails closed AND records an
   // escalation attempt, so the ledger shows the attempt instead of a clean line.
   const covered = (c: Capability): boolean =>
     isWellFormedCapability(c)
-    && (parent.has(c) || anyCapability || (anyDefinition && c.startsWith("agent:")));
+    && (parent.has(c) || anyCapability
+      || (anyDefinition && c.startsWith("agent:"))
+      || (anyWorkspace && c.startsWith("workspace:")));
+
   const ceiling = input.ceiling === undefined ? null : new Set(input.ceiling);
   const gated = new Set(input.gated ?? []);
   const approved = new Set(input.approved ?? []);
@@ -199,7 +216,16 @@ export function resolve(input: ResolveInput): ResolveResult {
     // F9: capabilities covered by a WILDCARD are not "subsumed" — this field means "the grant is broader
     // than its list suggests", which is the `bash`-covers-`grep` warning. A wildcard holder already knows
     // its grant is broad; listing every id under it would bury the signal the field exists to carry.
-    subsumedBy: effective.filter((c) => !held.has(c) && !anyCapability && !(anyDefinition && c.startsWith("agent:"))),
+    //
+    // All THREE wildcards are excluded. `anyWorkspace` was missing, so a caller holding `workspace:*` saw
+    // its own `workspace:prod` reported as subsumed while the `agent:*` holder correctly saw nothing — the
+    // field contradicting its own rule, and a false "broader than it looks" flag in the ledger and in
+    // `/grants`. Every wildcard added to `covered()` above needs a line here; that is now three for three.
+    subsumedBy: effective.filter((c) =>
+      !held.has(c)
+      && !anyCapability
+      && !(anyDefinition && c.startsWith("agent:"))
+      && !(anyWorkspace && c.startsWith("workspace:"))),
   };
 }
 

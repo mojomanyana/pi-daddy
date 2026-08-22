@@ -27,6 +27,7 @@
 
 import type { Capability } from "./resolve.ts";
 import { WILDCARD } from "./pi-tools.ts";
+import { WORKSPACE_WILDCARD } from "./resolve.ts";
 import { inheritApprovals, type InheritableApproval } from "./approval.ts";
 import { assertCapabilitiesArePropagatable } from "./capabilities.ts";
 
@@ -247,9 +248,28 @@ export interface ChildEnvInput {
  * empty grant, so they can spawn nothing. That fails closed. It is also unreachable in normal flow,
  * because a session's first provider request always precedes its first tool call.
  */
+/**
+ * The part of a grant a child may inherit: everything but the wildcards that are HELD, never handed down.
+ *
+ * `tool:*` for R-26's reason — a root that handed it down let every descendant reacquire the full catalog.
+ * `workspace:*` for the same reason one namespace over (R-131): a descendant holding it could route anywhere
+ * the registry lists, which is the attenuation failure ADR-0035 exists to close. `agent:*` is deliberately
+ * NOT stripped — ADR-0023 decided that a session authorised for any definition passes that on, because
+ * definitions are ceilings rather than roots.
+ *
+ * **Exported, and there is exactly one spelling of this rule on purpose.** It shipped as a filter inline in
+ * `childEnv` and nowhere else, so a grant travelling the OTHER path — `delegate.ts` building a child's
+ * `PI_GRANTS_GRANT` from `result.effective` — carried `workspace:*` straight down. The test written beside
+ * that fix exercised `childEnv`, which is not the path a delegated child's grant travels, so it could not
+ * catch it. R-28's shape: two routes for one rule, with the guard on the quieter one. Both call this now.
+ */
+export function inheritableGrant(grant: readonly Capability[]): Capability[] {
+  return grant.filter((c) => c !== WILDCARD && c !== WORKSPACE_WILDCARD);
+}
+
 export function childEnv(input: ChildEnvInput): Record<string, string> {
   if (input.governed === false) return {};
-  const inheritable = input.ownGrant.filter((c) => c !== WILDCARD);
+  const inheritable = inheritableGrant(input.ownGrant);
   const env: Record<string, string> = {
     [ENV_GRANT]: (assertCapabilitiesArePropagatable(inheritable), inheritable.join(",")),
     [ENV_DEPTH]: String(input.depth + 1),

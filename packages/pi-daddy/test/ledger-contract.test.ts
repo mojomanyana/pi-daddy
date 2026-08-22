@@ -1,10 +1,16 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { test } from "node:test";
+import { after, test } from "node:test";
 import { Compile } from "typebox/compile";
-import { buildLedgerV2ContractFixtures } from "../scripts/generate-ledger-v2-contract.ts";
+import {
+  buildLedgerV2ContractFixtures,
+  generateLedgerV2Contract,
+} from "../scripts/generate-ledger-v2-contract.ts";
+import { cleanupTempDirs, tempDir } from "./tmp.ts";
+
+after(cleanupTempDirs);
 import { APPROVAL_SCOPES, APPROVAL_SOURCES } from "../src/approval.ts";
 import { PROMPT_OUTCOME_KINDS } from "../src/approval-prompt.ts";
 import { EXECUTOR_KINDS } from "../src/executor.ts";
@@ -316,6 +322,59 @@ test("the schema accepts every minimal, maximal, and enumerated builder shape", 
     childId: "check:x", receiptId: "5".repeat(64), workspaceId: "w", checkId: "x", treeSha: "tree",
     correlation: { check_receipt_id: "5".repeat(64) }, now,
   }));
+});
+
+/**
+ * The `refusalCode` enum is GENERATED, not remembered.
+ *
+ * The test below asserts `schema.$defs.refusalCode.enum === REFUSAL_CODES`, which is the right assertion —
+ * and for one release it was the only thing holding the two together, because `contracts:generate` wrote
+ * fixtures and never touched the schema. So adding `WORKSPACE_NOT_AUTHORIZED` in `src/refusals.ts` turned
+ * the suite red, running the generator produced no diff, and getting back to green required knowing which
+ * hand-written JSON file to edit. Every future refusal code had the same ambush waiting.
+ *
+ * This pins the mechanism rather than the state: the sync function is what makes the assertion below
+ * satisfiable by running a command.
+ *
+ * **Breaks by:** reverting `syncLedgerV2RefusalEnum` to leave the enum alone, or dropping it from
+ * `generateLedgerV2Contract`. That second half used to be unfalsifiable and was claimed anyway — the entry
+ * point called the two steps inline, and a test can call an exported function but not the inside of an
+ * `if (invoked)` block. A mutation audit found the claim false, so the entry point became a one-liner over
+ * the function this test drives. The same fix shape as the site checklist: make the thing you assert be the
+ * thing that runs.
+ */
+test("regenerating the contract restores the refusal enum from REFUSAL_CODES", async () => {
+  const dir = await tempDir("pi-daddy-contract-");
+  const copy = join(dir, "ledger-event.schema.json");
+  const original = await json(schemaPath) as { $defs: { refusalCode: { enum: string[] } } };
+
+  // Drift it exactly the way a new refusal code drifts it: one member short.
+  const drifted = structuredClone(original);
+  drifted.$defs.refusalCode.enum = drifted.$defs.refusalCode.enum.filter((c) => c !== "WORKSPACE_NOT_AUTHORIZED");
+  await writeFile(copy, JSON.stringify(drifted, null, 2), "utf8");
+  assert.notDeepEqual(drifted.$defs.refusalCode.enum, [...REFUSAL_CODES], "precondition: the copy is stale");
+
+  // Driven through `generateLedgerV2Contract`, the function the script's entry point calls, so dropping the
+  // sync from it fails here — with BOTH targets redirected into the temp dir.
+  //
+  // **The fixture target is the whole point of this line.** Routing the test through this function without
+  // one made `npm test` overwrite the tracked `contracts/ledger/v2/fixtures/*.json`: verified by putting a
+  // marker key into a fixture, running the suite, and finding `git status` clean again. That falsified
+  // `CLAUDE.md`'s "fast, pure, no pi, no network" and, worse, turned the checked-in fixtures from a contract
+  // pin into something `npm test` repairs — builder drift would have been silently fixed instead of failing.
+  const fixtureCopies = join(dir, "fixtures");
+  await generateLedgerV2Contract({ schema: copy, fixtures: fixtureCopies });
+  assert.equal(
+    (await readFile(join(fixtureCopies, "capability-decision.json"), "utf8")).length > 0,
+    true,
+    "the fixtures were written to the temp target, not to the repository",
+  );
+
+  const synced = await json(copy) as { $defs: { refusalCode: { enum: string[] } } };
+  assert.deepEqual(synced.$defs.refusalCode.enum, [...REFUSAL_CODES]);
+  // Only the enum is generated: everything else in the hand-authored schema is left exactly as it was.
+  assert.deepEqual({ ...synced, $defs: { ...synced.$defs, refusalCode: null } },
+    { ...original, $defs: { ...original.$defs, refusalCode: null } });
 });
 
 test("the schema pins nested correlation, approval, refusal, digest, and null contracts", async () => {

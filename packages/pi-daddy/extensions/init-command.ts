@@ -9,6 +9,7 @@
 
 import { discoverSkillPackages } from "../src/skill-packages.ts";
 import { applyInit, planInit } from "../src/init.ts";
+import { registeredWorkspaceIds } from "../src/workspace.ts";
 import { saveGrant, grantStorePath } from "../src/grant-store.ts";
 import { expandSubsumed, SUBSUMPTION, type Capability } from "../src/resolve.ts";
 import type { GrantsSession } from "./session.ts";
@@ -50,7 +51,7 @@ export async function runInit(
     return;
   }
 
-  const plan = planInit(packages, ctx.cwd);
+  const plan = planInit(packages, ctx.cwd, await registeredWorkspaceIds());
   const outcome = await applyInit(plan);
   const lines = [
     `grants: ${plan.skills.length} definition(s) from ${packages.map((p) => `${p.name}@${p.version}`).join(", ")}`,
@@ -81,9 +82,28 @@ export async function runInit(
       for (const name of neededBy) grant.add(`agent:${name}` as Capability);
       continue;
     }
+    // The consequence sentence is per capability, and it reads the gate **in effect for this session** —
+    // `session.gated`, which is `PI_GRANTS_GATED` when the operator set it and `DEFAULT_GATED` otherwise.
+    //
+    // The first version read `DEFAULT_GATED` directly, which is the compile-time constant `["tool:bash"]`, and
+    // `tool:bash` is consumed by the branch above — so the branch was **unreachable in every configuration**,
+    // and with `PI_GRANTS_GATED="tool:bash,tool:write"` (the value `renderGrantEnv` itself suggests) the
+    // dialog still printed the exact false sentence the fix claimed to remove. Dead code beside a claim that
+    // it worked, which is this project's failure mode, in the commit correcting that failure mode.
+    // No subsumption closure here, and the absence is deliberate. A `|| SUBSUMPTION[capability]…` disjunct was
+    // added and is **dead in every configuration**: `SUBSUMPTION` has one key, `tool:bash`, and `tool:bash` is
+    // consumed by the ternary below before `gatedAtSpawn` is ever read. Two reviewers and a mutation confirmed
+    // it changed no result — dead code beside a claim that it worked, in the hunk whose comment denounces
+    // exactly that. A second `SUBSUMPTION` entry is the moment to add it back.
+    const gatedAtSpawn = session.gated.includes(capability);
     const answer = await ctx.ui.select(
       `grants: grant ${capability} to sub-agents?\n  needed by: ${neededBy.join(", ")}\n` +
-        `  this can change your machine — ${capability === "tool:bash" ? "and bash also confers write and edit" : "it is not gated, so no dialog at spawn time"}`,
+        `  this can change your machine — ` +
+        (capability === "tool:bash"
+          ? "and bash also confers write and edit"
+          : gatedAtSpawn
+            ? "a human is still asked at spawn time"
+            : "it is not gated, so no dialog at spawn time"),
       ["No", "Yes"],
     );
     if (answer === "Yes") {
@@ -121,6 +141,17 @@ export async function runInit(
     lines.push(`  ALREADY CONFERRED, not asked about: ${alreadyConferred.join(", ")}`);
   }
   if (declined.length > 0) lines.push(`  withheld: ${declined.join("; ")}`);
+  // Routing is LISTED, never granted (ADR-0028) — so the operator has to be told it exists, or the listing is
+  // invisible to anyone running `/grants init` in-session rather than reading the generated file. 0.19.0 made
+  // `workspace:<id>` mandatory for routing, so this is also the migration hint, and a breaking change whose
+  // migration is only discoverable by opening a file is not much of a migration.
+  if (plan.routableWorkspaces.length > 0) {
+    lines.push(
+      `  ROUTABLE WORKSPACES, listed and NOT granted: ${plan.routableWorkspaces.join(", ")}`,
+      `    routing a child to one needs its id in the grant (ADR-0035); add the ones this project may use to ` +
+        `${plan.grantEnvPath}. Which worktree a child starts in is not something a package can declare for you.`,
+    );
+  }
   lines.push(`  live now (${finalGrant.length} capabilities) — no restart. /grants shows the verdicts.`);
   ctx.ui.notify(lines.join("\n"), "info");
 }

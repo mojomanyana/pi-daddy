@@ -6,13 +6,22 @@
 import { planSpawn } from "./spawn.ts";
 import { ceilingForDefinition, digestDefinition, type DefinitionDigest, type SkillDefinition } from "./definitions.ts";
 import { assertNarrowing, type Capability, type ResolveResult } from "./resolve.ts";
-import { DELEGATE_CAPABILITY, agentCapability, maySpawnDefinition, normaliseCapability } from "./capabilities.ts";
+import { checkRoutingAuthority, checkWorkspaceWildcardRequest } from "./routing-authority.ts";
+import {
+  DELEGATE_CAPABILITY,
+  agentCapability,
+  maySpawnDefinition,
+  normaliseCapability,
+} from "./capabilities.ts";
 
 // Re-exported so the split stays internal: `delegate.ts` has been the import site for these since 0.6.0 and
 // four modules plus the test suite name it. Moving the definitions without moving the door would be churn
 // charged to every caller for a line count they did not cause.
 export { DELEGATE_CAPABILITY, agentCapability, maySpawnDefinition, normaliseCapability } from "./capabilities.ts";
-import { ENV_APPROVED, ENV_DEPTH, ENV_FANOUT, ENV_GATED, ENV_GRANT, ENV_LEDGER, ENV_MAX_DEPTH, ENV_PARENT_ID } from "./propagation.ts";
+import {
+  ENV_APPROVED, ENV_DEPTH, ENV_FANOUT, ENV_GATED, ENV_GRANT, ENV_LEDGER, ENV_MAX_DEPTH, ENV_PARENT_ID,
+  inheritableGrant,
+} from "./propagation.ts";
 import { inheritApprovals, type InheritableApproval } from "./approval.ts";
 import { suggestForUnknown, unknownCapabilities, type Catalog } from "./catalog.ts";
 import { GovernanceRefusal, refusal, type RefusalCode, type StructuredRefusal } from "./refusals.ts";
@@ -71,6 +80,17 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
     return denied({ ...empty, reason: `delegation depth limit reached (${ctx.maxDepth})` }, "DEPTH_EXCEEDED");
   }
   if (!request.task?.trim()) return denied({ ...empty, reason: "a delegation needs a task" }, "TASK_MISSING");
+
+  // ADR-0035's routing guards live in `routing-authority.ts` with their rationale; both are checked here,
+  // before anything is said about the target, because they are governance questions about the SESSION.
+  const routing = checkRoutingAuthority(request.boundWorkspaceId, ctx.ownGrant);
+  if (routing) {
+    return denied({
+      ...empty,
+      ...(routing.denied ? { requested: routing.denied, result: { ...empty.result, denied: routing.denied } } : {}),
+      reason: routing.reason,
+    }, routing.code);
+  }
 
   // ADR-0016. A named definition replaces the model's tool list with an operator-authored ceiling.
   let requested: Capability[];
@@ -181,6 +201,13 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
     }
   }
 
+  // See `checkWorkspaceWildcardRequest`: refused for a HOLDER (the ledger must not record authority the
+  // child will not receive), and left to `resolve()` for anyone else, so the probe lands in `denied`.
+  const wildcardRequest = checkWorkspaceWildcardRequest(requested, ctx.ownGrant);
+  if (wildcardRequest) {
+    return denied({ ...empty, requested, reason: wildcardRequest.reason }, wildcardRequest.code);
+  }
+
   const { result, approvalBinding, bindingMismatch } = resolveDelegationApproval({
     task: request.task,
     agent: request.agent,
@@ -266,8 +293,14 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
     args.splice(args.length - 1, 0, "-e", ctx.extensionPath);
   }
 
+  // `inheritableGrant`, not `result.effective` directly: this is the path a DELEGATED child's grant
+  // actually travels, and the "held but never inherited" rule for `tool:*` and `workspace:*` was enforced
+  // only in `childEnv`. A parent holding `workspace:*` could request it for its child and this line handed
+  // it over, so the rule ADR-0035 advertises held by accident — masked downstream rather than enforced
+  // here. One spelling of the rule, called from both paths.
+  const inheritable = inheritableGrant(result.effective);
   const env: Record<string, string> = {
-    [ENV_GRANT]: (assertCapabilitiesArePropagatable(result.effective), result.effective.join(",")),
+    [ENV_GRANT]: (assertCapabilitiesArePropagatable(inheritable), inheritable.join(",")),
     [ENV_DEPTH]: String(childDepth),
     [ENV_MAX_DEPTH]: String(ctx.maxDepth),
   };
@@ -281,7 +314,11 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
   // `approved ⊆ grant` holds at every level (ADR-0010). Written even when empty, so this object states
   // the child's approval set outright rather than leaving it to whatever the caller merges over; see
   // `mergeChildEnv`, which is what actually stops the parent's value leaking through.
-  env[ENV_APPROVED] = inheritApprovals(ctx.approved ?? [], result.effective).join(",");
+  // Clamped to what the child actually INHERITS, not to what it was granted. The two differ only for a
+  // non-inheritable wildcard, and passing down an approval for a capability the child does not hold would
+  // leave banked authority with nothing to spend it on — `childEnv` clamps to `inheritable` for the same
+  // reason on the other path.
+  env[ENV_APPROVED] = inheritApprovals(ctx.approved ?? [], inheritable).join(",");
   if (ctx.ledgerPath) env[ENV_LEDGER] = ctx.ledgerPath;
 
   return {

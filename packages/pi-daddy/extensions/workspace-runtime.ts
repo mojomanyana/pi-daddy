@@ -23,12 +23,39 @@ export interface DelegationWorkspaceSpec {
   access: WorkspaceAccess;
 }
 
+/**
+ * Tools that cannot change a worktree.
+ *
+ * **`tool:delegate` is deliberately NOT here, and that is a scope decision.** It was added, and it was true of
+ * the capability and false of the code: a routed child's cwd IS the leased root, `PI_GRANTS_LEDGER` was
+ * passed through relative (`init` scaffolds `.pi/grants.jsonl`), and a `read` lease takes no kernel lock — so
+ * two delegating children classified `read` both created `.pi/` in one worktree and neither excluded the
+ * other. Making `tool:delegate` non-writing requires first making every child-inherited path absolute, and
+ * that is a change to the ledger and lease plumbing rather than to ADR-0035. Tracked as R-141.
+ */
 const KNOWN_READ_ONLY_TOOLS = new Set(["tool:read", "tool:grep", "tool:find", "tool:ls"]);
 
-/** A model may ask for stricter coordination but cannot label a write-capable grant read-only. */
+/**
+ * A model may ask for stricter coordination but cannot label a write-capable grant read-only.
+ *
+ * **Only a TOOL is considered, and that is a fix rather than an oversight.** The check used to require *every*
+ * requested capability to be a known read-only tool, which was correct while `tool:` and `ext:` were the only
+ * things that could appear — and became wrong the moment ADR-0035's review made `workspace:<id>` grantable to
+ * a child. Measured: `governedWorkspaceAccess("read", ["tool:read", "workspace:staging"])` returned `"write"`,
+ * so the intended shape — *route this child read-only and let it route its own grandchild* — silently took an
+ * exclusive writer lease, blocked every other writer on that root, and recorded `access: "write"` in the
+ * ledger when the operator had asked for `read`. A record asserting a stronger claim than anybody made is the
+ * same failure this whole review is about, pointing the other way.
+ *
+ * A `workspace:`, `agent:` or `skill:` id confers no filesystem ability whatsoever: routing chooses a
+ * directory, `agent:` authorises a definition whose ceiling is still clipped to the child's own grant, and
+ * `skill:` loads instructions. None of them can write, so none of them should force a writer lease. If a
+ * descendant does hold a write tool, that tool is in `requested` and this check refuses on its own terms.
+ */
 export function governedWorkspaceAccess(declared: WorkspaceAccess, requested: readonly Capability[]): WorkspaceAccess {
   if (declared === "write") return "write";
-  return requested.every((capability) => KNOWN_READ_ONLY_TOOLS.has(capability)) ? "read" : "write";
+  const tools = requested.filter((c) => c.startsWith("tool:") || c.startsWith("ext:"));
+  return tools.every((capability) => KNOWN_READ_ONLY_TOOLS.has(capability)) ? "read" : "write";
 }
 
 export interface PreparedWorkspace {

@@ -80,16 +80,6 @@ export async function reportSessionStart(session: GrantsSession, ctx: SessionRep
   } catch {
     /* never throw into the agent loop */
   }
-  // R-47. `gatedBlocked` filters `requested`, and for a definition spawn `requested` is that
-  // definition's CEILING — which never contains `agent:<name>`, because the authorisation check
-  // (ADR-0017) is a separate, ungated branch. So `PI_GRANTS_GATED=agent:deploy`, written by an operator
-  // who read "it attenuates like any other capability" and meant "ask me before deploy runs", produces
-  // no dialog and no warning. It DOES bite when a definition passes the id down in its own
-  // `allowed-tools`, so the flag half-works — which is worse than not working, and is R-25's shape in
-  // the namespace ADR-0017 just promoted out of exactly that state.
-  //
-  // Warned rather than enforced: making it gate the spawn is a behaviour change and wants a decision.
-  // Silence is the part that is indefensible either way.
   // `agent:*` grants no tools, but it authorises every definition in BOTH skill roots — including
   // `~/.pi/agent/skills/`, which other software installs into, so ADR-0017's "an operator-authored
   // file" is not true of everything it covers. Paired with a shell that is every body on disk running
@@ -103,16 +93,19 @@ export async function reportSessionStart(session: GrantsSession, ctx: SessionRep
       "warning",
     );
   }
-  const inertGates = session.gated.filter((c) => c.startsWith("agent:"));
-  if (inertGates.length > 0) {
-    ctx.ui.notify(
-      `grants: ${inertGates.join(", ")} in PI_GRANTS_GATED does NOT gate spawning that definition — ` +
-        `the authorisation check for a definition is separate and ungated, so a human is never asked. ` +
-        `It applies only where a definition passes the id down in its own allowed-tools. To control ` +
-        `which definitions may run, withhold the agent: capability from PI_GRANTS_GRANT instead.`,
-      "warning",
-    );
-  }
+  // REMOVED 2026-08-21. This warned that an `agent:` id in `PI_GRANTS_GATED` "does NOT gate spawning that
+  // definition — a human is never asked". It was R-47's PARTIAL fix (0.11.1) and became false one release
+  // later at 0.12.0, when ADR-0024's gate landed (`4673348`, "gating a definition asks before it runs") and
+  // a gated `agent:<name>` began blocking the spawn until somebody approved it. ADR-0024's own Costs section
+  // leaned on this warning — "mitigated by the fact that the warning shipped hours earlier tells them it
+  // currently does nothing" — and nothing retired it when its own decision made the mitigation false.
+  //
+  // So from 0.12.0 through 0.18.1 the session banner told operators to delete a gate that works, and
+  // `test-integration/governance.it.ts` REQUIRED it to, which is how a stale claim outlives the person who
+  // notices. It is R-28's shape in the direction that talks somebody OUT of a control. ADR-0035 then
+  // repeated the pattern one namespace over by claiming a `workspace:` gate that did not exist; both are
+  // gates now, so there is nothing inert left to warn about. Deleted rather than reworded — a warning with
+  // no live case is the next stale claim. R-134.
   // R-34. `verifyLedger` existed and nothing ran it, so a torn line was detectable and undetected —
   // and a check an operator has to know to run is not a control, it is a feature. Setting
   // `PI_GRANTS_LEDGER` already means "I want an audit trail"; noticing that the trail is damaged is

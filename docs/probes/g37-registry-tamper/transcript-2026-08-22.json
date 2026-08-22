@@ -1,0 +1,14 @@
+{
+  "probe": "g37-registry-tamper",
+  "platform": "linux",
+  "findings": {
+    "child_grant": "tool:delegate,tool:read,tool:write,workspace:staging",
+    "child_holds_prod": false,
+    "control_route_to_prod_by_name": "WORKSPACE_NOT_AUTHORIZED",
+    "route_to_staging_after_tamper": "NO REFUSAL",
+    "staging_now_resolves_to": "the prod worktree",
+    "grandchild_cwd_marker": "prod",
+    "grandchild_write_lease": "write",
+    "conclusion": "CONFIRMED: routing attenuates by ID and not by DESTINATION. A child holding only `workspace:staging` and `tool:write` repointed that id at the prod worktree and took an exclusive write lease there. The control shows the same child refused when it named `prod` directly, so the capability check works and the thing it names is what moved."
+  }
+}

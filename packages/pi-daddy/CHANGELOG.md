@@ -14,6 +14,11 @@ the record of how the package got here and are worth keeping; they are not worth
 
 ## Unreleased
 
+**These fix a hang present in published 0.18.0 and 0.18.1, and are deliberately NOT filed under 0.19.0.**
+Merging `main` into the 0.19.0 branch folded them into that section, because the CHANGELOG did not conflict and
+nobody looked — which would have gated a fix for released code on the BREAKING routing change below. Shipping
+them as 0.18.2 remains available and remains a release decision nobody has authorized.
+
 - **FIX — a retained lease no longer reports a retention that did not happen (R-152).** `markRetained`
   returned `void` and `releaseDelegationWorkspace` hardcoded the ledger word, so a `workspace_lease` event
   said `retained` — *"the pane may still be live"* — for a helper that had already died (the fact is `lost`),
@@ -42,6 +47,9 @@ the record of how the package got here and are worth keeping; they are not worth
   back: the retry budget was unreachable, no marker was written, and the lock was held **forever** — R-102's
   explicitly rejected outcome. Measured with a `herdr` that sleeps: before, `LOCK=HELD` with no marker
   indefinitely; after, released with the marker written. Tunable via `herdrCloseTimeoutMs` (default 15s).
+
+## 0.19.0 — workspace routing is a capability (unreleased)
+
 - Ship a canonical JSON Schema draft 2020-12 contract for `ledgerVersion: 2` plus deterministic fixtures for
   all four event types, generated through the production builders. Stable package export paths let external
   harnesses pin the real contract instead of maintaining a parallel format.
@@ -49,6 +57,93 @@ the record of how the package got here and are worth keeping; they are not worth
   is produced by the same builder that emits the corresponding ledger line.
 - Document strict version dispatch: legacy 0.17 grant records have no explicit version; unsupported explicit
   versions fail closed and are never reinterpreted as legacy.
+
+- **BREAKING — routing a child to a registered workspace now requires `workspace:<id>` in the caller's
+  grant.** Every grant that routes must add it; a delegation naming a workspace the session does not hold
+  is refused `WORKSPACE_NOT_AUTHORIZED`, with the id recorded in `denied` so it counts as an escalation.
+
+  Until now this was the one governance dimension that did **not** attenuate: the registry inherited into
+  every governed child and nothing checked the caller's authority, so a child routed to `staging` could
+  route its grandchild to `prod` — with a real lease, a validated CWD, and a ledger line naming `prod`.
+  Measured in `docs/probes/g36-workspace-attenuation`, decided in ADR-0035, tracked as R-131.
+
+  Failing open for compatibility was considered and rejected: it would have made an attenuation fix opt-in.
+  The migration is one line per grant, and `pi-daddy init` now lists the registered ids commented in
+  `.pi/grants.env` so the edit is visible from the file you already open.
+
+- `PI_GRANTS_GATED=workspace:prod` asks a human before a child is routed there, through ADR-0024's existing
+  mechanism — the id is the caller's authority for that one delegation and never joins the child's grant.
+  `workspace:*` in the gate covers every id.
+- `workspace:*` covers the namespace but is **held, never inherited** — R-26's rule, because a descendant
+  holding it could route anywhere the registry lists. `agent:*` is unchanged and still inherits. Asking to
+  hand `workspace:*` to a child is refused (`NARROWING_VIOLATED`) rather than silently stripped, so the
+  ledger never records authority the child did not receive.
+- `tool:*` still satisfies a workspace capability: governance is opt-in and an ungoverned session must keep
+  routing anywhere.
+- A `workspace:` id never reaches pi's `--tools`. It is enforced by pi-daddy before the spawn, which is a
+  different and weaker class than the `--tools` allowlist; `docs/SPEC.md` now states both classes explicitly.
+- **BREAKING — a registry id must now match `[A-Za-z0-9][A-Za-z0-9._/-]*`.** The registry became an input to
+  the grant grammar when an id became the tail of a capability id, so ids that 0.18.0/0.18.1 accepted are now
+  refused `GRANT_ID_MALFORMED` at load, naming the file and the id. **Slashes and dots are fine** — a worktree
+  named after its branch (`feature/x`) works, and an earlier build of this release wrongly refused it by
+  reusing the tool-name grammar. Refused: whitespace (it splits `allowed-tools`), commas and newlines (they
+  split a grant — 0.18.1's defect), `*` (it collided with `workspace:*`, so registering a worktree as `*` and
+  granting `workspace:*` minted routing over the whole registry), shell metacharacters (they reach the
+  `ROUTABLE WORKSPACES` block of a generated `.pi/grants.env`, which tells you to paste them into your
+  grant), and non-ASCII (the generated file is reviewed in an editor, where control characters and
+  homoglyphs let one id render as another). One bad entry refuses the whole file, so rename before upgrading.
+- **The registry must be a regular file under 1 MiB** — a FIFO there blocked session start indefinitely, and
+  the read is bounded by one handle `fstat`-ed as a descriptor. **Ownership and mode are NOT checked.** An
+  earlier draft of this release added a uid/world-writable guard and this bullet promised it; `e1937cf`
+  removed the code when the change was narrowed to ADR-0035 and left the promise here for a day. Nothing in
+  0.19.0 checks who may write the registry, and a mode check would not reach the attack that matters — a
+  governed child runs as the same uid as its parent. Tracked as R-137.
+- No `workspace:` id is live by default in a generated grant, including one a package's `allowed-tools`
+  declares. Which worktree a child starts in is the operator's decision (ADR-0028).
+
+### Fixed before release — found reviewing this change
+
+The first group never shipped — they were defects in 0.19.0's own development, caught by two review passes
+and a mutation battery, and are listed because ADR-0035 claimed three of them as done (R-133, and that ADR's
+amendment). **The entries under "Present in earlier releases" below DID ship**, and an earlier draft of this section put
+them under this heading, telling operators the `tool:*` attenuation escape could not affect them. (That draft
+then said "two" while three bullets sat under the heading, one of which — the v2 enum — is the single item
+here that provably did *not* ship. It has moved back.)
+
+- **Routing terminated below the root instead of attenuating.** `unknownCapabilities` did not know the
+  namespace, and a catalog is always present in a real session, so every requested `workspace:<id>` was
+  refused as an unknown capability. No child could be granted one, which made the "two authorities" model
+  unreachable. This was the headline defect.
+- The `PI_GRANTS_GATED=workspace:<id>` gate above was claimed and inert.
+- `pi-daddy init` had never heard of the workspace registry.
+- `allowed-tools: workspace:prod` in a `SKILL.md` became `tool:workspace:prod`, which names nothing.
+- `isSafeCapability` rejected the namespace, so the boundary that generates grants could not emit the
+  capability this release makes mandatory.
+- `subsumedBy` reported `workspace:*`-covered ids as subsumed, contradicting its own rule.
+- The v2 ledger contract's `refusalCode` enum is now **generated** from `REFUSAL_CODES` by
+  `scripts/generate-ledger-v2-contract.ts` instead of hand-maintained beside it. `WORKSPACE_NOT_AUTHORIZED`
+  joins the enum in this release; `contracts/ledger/v2/README.md` records why that is a legitimate v2 edit
+  rather than a v3 — v2 has never been published, so nothing can have pinned it. It is **not** the last such
+  edit: every other closed enum in that schema is still hand-maintained beside its source array — `test/ledger-contract.test.ts`
+  asserts each equality, so the same ambush waits for whoever adds an executor kind or a lease outcome. (First
+  written as "five"; the figure is larger and is not worth restating, since the test file is the list.)
+
+### Present in earlier releases — read these before upgrading
+
+**Upgrade if you run governed delegation trees, and read R-135 first.**
+
+- **R-135, and it is not part of this feature.** `tool:*` was reaching delegated children. R-26's rule —
+  a wildcard is held, never inherited — was enforced only in `childEnv`, the interceptor path, while
+  `delegate.ts` (the path that spawns, since 0.7.0 — ADR-0016) applied no filter, and `tool:*` is not universal enough
+  for `assertNarrowing` to stop. A parent holding `tool:*` and delegating `tools: ["tool:*"]` gave its child
+  `tool:*`, so attenuation ended at the root. **Present in every published version.** One shared
+  `inheritableGrant` now serves both paths. If you run governed delegation trees, this is the entry to read.
+
+- **R-134.** Session start no longer warns that a gated `agent:` id "does NOT gate spawning that definition".
+  That was R-47's partial fix in 0.11.1 and false from 0.12.0, when ADR-0024's gate landed. The warning
+  outlived the defect across eight published versions (0.13.0 through 0.18.1), and the integration suite
+  required it to, while advising operators to
+  remove a control that works.
 
 ## 0.18.1 — SECURITY: a capability id containing a comma minted authority
 

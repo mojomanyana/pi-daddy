@@ -853,6 +853,11 @@ every definition. The id is deliberately **not** added to `requested` or `effect
 authority to run the definition now, and putting it in `effective` would place it in the *child's* grant and
 let the child re-spawn that definition with nobody asked. This also closes the gap ADR-0023 recorded against
 itself — `agent:*` finally has its "except".
+**AND THE PARTIAL FIX OUTLIVED THE FULL ONE ACROSS EIGHT PUBLISHED VERSIONS — see R-134, added 2026-08-21.** The 0.11.1
+warning above stayed in the session banner through 0.18.1, telling operators that the 0.12.0 gate does
+nothing and to withhold the capability instead, with an integration test requiring it to. Removed there.
+The lesson for this register: when an entry records two fixes, the second one's commit is also the moment to
+delete the first one's mitigation — nothing here prompts for that, and nothing did.
 
 ## R-48 · `/grants` silently truncated its verdict list at 12 — L/M×L/M, FIXED
 Added **and fixed** 2026-08-13, same pass. The listing sliced to 12 definitions with no indication that it
@@ -2128,6 +2133,54 @@ finding.**
 They are comment-only changes with no behaviour, but rule 10 lets a docs-only change merge on the author's
 own read, so mislabelling one is not free. The label was wrong; the diff is what it is.
 
+## R-131 · Workspace routing does not attenuate — H×H, FIXED (shipped broken in 0.18.0)
+
+Added 2026-08-20, and **live on npm as of 0.18.0**. `ENV_WORKSPACE_REGISTRY` is not in `GRANT_ENV_KEYS`, so
+it inherits into every governed child; `workspace_id` is a model-facing parameter on all three delegation
+tools; and `prepareDelegationWorkspace` validates the id against the registry while checking nothing about
+whether the caller was authorised for it. A child routed to `staging` can therefore route its grandchild to
+`prod`, with a real lease, a validated CWD, and a ledger line naming `prod`.
+
+**This is R-26 one namespace over** — a wildcard that leaked down the tree until attenuation was meaningless
+below the root, found there by a three-level transitivity test. Depth, fan-out, grant, gated and approvals
+all attenuate; the initial working directory does not.
+
+**Why it is worse than ADR-0012's `bash` escape, which is accepted.** That escape produces **no ledger line
+at all**, and the absence is the signal. This produces a complete, correct-looking capability decision
+naming `prod` — which reads as authorised routing, because every other dimension in that record genuinely
+is. The failure is not "a control is weaker than it looks"; it is "the record asserts an authorisation
+nobody granted".
+
+**MEASURED 2026-08-20 — `docs/probes/g36-workspace-attenuation`.** No longer inferred: the escalation
+reproduces against real Git worktrees and a real kernel lease, driving the production propagation path. The
+grandchild planned with **no refusal**, resolved `prod`, took an exclusive **write** lease, and would start
+there. The probe's control is the load-bearing half — the grant and depth attenuated through the *same*
+child environment, so this is an asymmetry rather than "everything inherits".
+
+**FIXED 2026-08-20 by ADR-0035 (Accepted), landing in 0.19.0.** Routing is now a `workspace:<id>`
+capability: the caller must hold it, the refusal is `WORKSPACE_NOT_AUTHORIZED` recorded in `denied` so an
+escalation counts as one, `workspace:*` is held but never inherited (R-26's rule), and `tool:*` still
+satisfies it because governance is opt-in. The probe now measures both sides — the original mechanism and
+the refusal — so it keeps being evidence after the defect is gone.
+
+**Breaking, deliberately.** Every grant that routes must add the capability; failing open for compatibility
+would have made an attenuation fix opt-in. Measured on this repository's own suite: four fixtures began
+refusing until granted, which is the one-line edit an operator faces.
+
+**What is still not shown:** that a model would choose the escalation, and that it crosses a real process
+boundary. The probe's own "does not establish" section says so.
+
+**SUPERSEDED 2026-08-22 (sixth pass):** the paragraph below was written before ADR-0035 shipped the gate it
+says does not exist. `PI_GRANTS_GATED=workspace:prod` now asks a human before any descendant routes there —
+verified by execution — so the interim guidance is no longer the mitigation. Read R-145 before relying on it:
+the destination's writer lease is taken *before* the question is asked. Left as written, per rule 2.
+
+**Interim guidance for an operator:** do not register workspaces of differing sensitivity in one session.
+There is no capability to gate today, so `PI_GRANTS_GATED` cannot help.
+
+**Trigger:** any descendant `workspace_lease` event whose `root` is not the root its parent was routed to;
+or a workspace transitivity test failing once one exists.
+
 ## R-132 · A capability id containing a comma mints authority the root never held — H×H, FIXED
 
 Added and fixed 2026-08-20. **Present in published 0.18.0**, verified against `origin/main` before the fix
@@ -2251,6 +2304,13 @@ project keeps recording held again: the fixes needed the same adversarial read a
   three orphans owned by init, and a mutation sweep running the suite once per entry accumulates dozens. Both
   fixed with one `stubHerdr` helper using `exec`.
 
+**And the orphan fix took a guard's teeth out, which the catalogue then caught.** Replacing the fake herdr's
+`sleep 300` with `exec sleep 5` stopped the orphaning *and* meant that without the wall-clock bound the close
+now succeeded after 5s — inside the successor loop's ~5s window, so the test passed with the guard reverted.
+A cleanup fix that quietly converts a guard into decoration is rule 7's concern arriving from the least
+suspicious direction: 30s restores the teeth, and `exec` keeps the signal reaching the sleep. **Found by the
+catalogue on its first run over these entries**, which is the argument for the catalogue in one line.
+
 **And my own new test hung the runner rather than failing — R-119, in the commit that cites R-119.** With the
 validation guard reverted, the acquisition *succeeds*, and the lease was untracked, so a live `flock` held the
 event loop open past the deadline. Routed through `trackedLease` so the `after()` reaper releases it: the
@@ -2263,9 +2323,11 @@ rather than pinned, since `holder.unref()` plus the two output streams are each 
 reverting them separately). The helper's docstring also justified its optional calls by citing a
 `stdio: "ignore"` caller that does not exist; corrected.
 
-**Two debts, stated rather than left implicit.** `scripts/mutation-audit.mjs` — the pinned catalogue that makes
-rule 7 mechanical — lives on PR #10 and does not exist on `main`, so these guards have named regressions but no
-catalogue entries yet. Whichever lands second owes both:
+**Two debts, stated rather than left implicit — and both PAID on 2026-08-22, when PR #10 merged `main`.** The
+catalogue lives on that branch and not on `main`, so these guards reached `main` with named regressions and no
+entries. All four are now pinned there (the two below plus terminal retention and the refused bound), and the
+helper-source entry targets **`src/lease-helper.ts`**, not the path written below: the same merge hit the
+400-line ceiling and moved the helper out. The entries as first written, kept because the debt is the record:
 
 ```js
 { name: "lease: a retained lease detains its process", file: "src/workspace-lease.ts",
@@ -2277,8 +2339,13 @@ catalogue entries yet. Whichever lands second owes both:
   replace: "", expect: "hangs on close does not strand the lock forever" }
 ```
 
-**PR #10 carries an OPEN copy of this entry, authored the same day.** Whichever merges second keeps this FIXED
-text; the OPEN version records what was believed while the fix was still queued.
+**The OPEN copy PR #10 carried was deleted when that branch merged `main`, 2026-08-22.** It was authored the
+same day, and this is the promise it made kept. Keeping both would have left `grep '^## R-146'` returning a
+headline that says OPEN for a defect fixed and merged — **R-72's exact shape**, which this register has a
+mechanical guard about. Nothing was lost: the deleted copy's own content was the discovery recorded above, plus
+two things now false — the retracted `src/cli.ts` scope claim, and "deliberately not fixed in this PR, with the
+candidates named", which named `holder.unref()` at spawn and the stdin sentinel. The narrower fix was taken and
+the reason the spawn-wide one was rejected is above.
 
 **Trigger:** any `pi` session that stops responding to exit after a herdr `tab close` failure; a
 `retained:herdr-close-failed` release reason in the ledger; or any long-lived child spawned with pipes that a
@@ -2437,6 +2504,660 @@ still a no-op after PR #10 merges.
 
 ---
 
+## R-133 · A capability namespace is a nine-site change, and ADR-0035 did three — H×H, FIXED
+
+Added and fixed 2026-08-21, reviewing PR #10 before it merged. **Never published**: ADR-0035 is unreleased,
+so this was caught inside the release that introduced it.
+
+ADR-0035 minted `workspace:<id>` and taught `normaliseCapability`, `resolve()`'s wildcard rule, and
+`childEnv`'s inheritance filter. Six other sites already handled `agent:` and were not touched, and the
+review found roughly one defect per untouched site. **The pattern is the risk; the individual defects are
+symptoms.**
+
+The severe one: `unknownCapabilities` never learned the namespace, and `delegationContext()` always supplies
+a catalog, so every requested `workspace:<id>` was refused `UNKNOWN_TOOL` as *"a typo, or an uninstalled
+package"*. **No child could ever hold a workspace capability**, so routing did not attenuate below the root
+— it terminated there, and the ADR's headline "two authorities, not one" was unreachable in production. An
+attenuation fix that makes the dimension unusable below depth 0 is not the fix it advertised.
+
+The rest: `PI_GRANTS_GATED=workspace:prod` was accepted and inert while the ADR claimed a gate in three
+places; `ceilingForDefinition` turned `allowed-tools: workspace:prod` into `tool:workspace:prod`;
+`isSafeCapability` — the boundary that *generates* grants — called the newly mandatory capability malformed;
+`subsumedBy` reported a false "broader than it looks" flag; and `init` had never heard of the registry the
+ADR said it scaffolded.
+
+**Why the probe missed it.** `docs/probes/g36-workspace-attenuation` appends the capability to `ownGrant` by
+hand and builds no catalog, so it confirmed the mechanism while exercising a path production does not take.
+Recorded because "we measured it" was the reason this went in with a Decision that could not run.
+
+**Fixed** by teaching all six sites, collapsing three into `CAPABILITY_NAMESPACE_PREFIXES`, and organising
+`test/workspace-capability.test.ts` **by site** so the checklist is executable. (This entry also claimed the
+fix "collapsed three" prefix sites into one list; it collapsed none — both readers already shared it — and
+every count written here has been wrong at least once, which is why there is no longer a number.)
+
+**Its own verification claim was wrong, and a third pass caught that too.** This entry first said "eleven
+mutations, eleven named failures" — true of the eleven applied, and concealing that **two of the six sites
+had no test at all**: `isSafeCapability`/`wildcardsIn` and the registry-reading wiring were each revertible
+with the suite green, and three of the docstrings named breakers that did not break. A count of what you
+checked is not a measure of what is covered. Every site now has a case, each verified by applying the
+revert; the file is the list, not the number.
+
+**Trigger:** a sixth namespace, or any new site that branches on a capability prefix, landing without a case
+in `test/workspace-capability.test.ts`. Also: any ADR claiming attenuation "comes for free".
+
+---
+
+## R-134 · An operator warning told them to delete a control that works — M×M, FIXED
+
+Added and fixed 2026-08-21. **Present in published 0.13.0 through 0.18.1 — eight versions.** Found while
+fixing R-133, not by either review pass. (This line first read "0.18.0 and 0.18.1", contradicting its own
+body two paragraphs below. The status line is what an operator reads for "am I affected", so it is the one
+that must not be narrower than the truth.)
+
+`session-report.ts` warned, at session start, that an `agent:` id in `PI_GRANTS_GATED` *"does NOT gate
+spawning that definition — the authorisation check for a definition is separate and ungated, so a human is
+never asked"*, and advised withholding the capability instead.
+
+**It is R-47's own partial fix, outliving R-47's full fix across eight published versions** (0.13.0 through
+0.18.1; 0.12.0, where the gate landed, was never published). R-47 records both: *"PARTLY
+FIXED 2026-08-14 (0.11.1): a startup warning named the inert entry"*, then *"FULLY FIXED 2026-08-14 (0.12.0)
+by ADR-0024"*. `4673348` — "gating a definition asks before it runs" — is where a gated `agent:<name>` began
+blocking the spawn. So the warning was true for one release and false for 0.12.0 through 0.18.1. (First
+recorded here as "false from 0.18.0", which was wrong: `dde8eeb` only moved the code into
+`delegation-approval.ts`. Corrected same day.)
+
+**ADR-0024's own Costs section leaned on this warning** — *"mitigated by the fact that the warning shipped
+hours earlier tells them it currently does nothing"* — and nothing retired it when that very decision
+falsified it. The banner talked operators out of a working control, which is R-28's shape in the direction
+that loses a gate.
+
+**How it survived is the part worth keeping: a test required it.** `test-integration/governance.it.ts`
+asserted the warning's presence — *"an operator who wrote a gate that does nothing must be told"* — with a
+comment describing the pre-ADR-0024 mechanism. So deleting the stale claim turned the suite red, and the
+suite was defending the claim against whoever noticed. **A test pinning a superseded partial fix is worse
+than no test.** It now asserts what ADR-0024 shipped, and that the warning is gone.
+
+**Fixed** by deleting the warning rather than rewording it: both namespaces are gated now, so there is no
+live inert case, and a warning with no live case is the next stale claim. A second stale block above the
+neighbouring `agent:*`-with-`bash` warning, still explaining why R-47 was "warned rather than enforced", went
+with it.
+
+**Trigger:** any operator-facing notify() text asserting that a configuration does nothing — those are claims
+about code and they expire. Also: any test whose *name* asserts an absence of enforcement ("warns that it
+does not…"). When the enforcement lands, that test becomes the thing protecting the old story.
+
+---
+
+## R-135 · R-26's rule was never enforced on the path that actually spawns — H×H, FIXED
+
+Added and fixed 2026-08-21. **Present in every published version since ADR-0016** made this package the
+spawner. Predates ADR-0035; found by the mutation battery for R-133's fix.
+
+*"A root may HOLD `tool:*` — that is authority to grant anything — but handing it down would let every
+descendant reacquire the full catalog, which makes attenuation meaningless below the root"* is `childEnv`'s
+docstring. `childEnv` is the **interceptor** path — the one ADR-0016 demoted to a tripwire. `delegate.ts`,
+the path that actually spawns, built the child's `PI_GRANTS_GRANT` from `result.effective` with **no
+filter**, and `tool:*` is not in `UNIVERSAL_CAPABILITIES` (only `fabric_exec` is), so `assertNarrowing` did
+not catch it either.
+
+Measured on `92ccbb8`: a parent holding `tool:*` and delegating `tools: ["tool:*"]` produced
+`PI_GRANTS_GRANT="tool:*"` in the child. That child could then hand its own grandchildren anything at all.
+**Attenuation ended at the root**, which is precisely R-26, on the primary path, for eleven releases.
+
+**How it stayed hidden is the reusable part.** The rule had a test, and the test asserted on `childEnv` —
+the path where the rule *was* implemented. A guard and its test on the same one of two routes reads exactly
+like a guard on both. This is why the fix is one exported `inheritableGrant` called from both places rather
+than a second filter: two spellings of one rule is R-28, and R-28 is the most repeated entry in this
+register.
+
+**Fixed** and pinned by a test that asserts on `plan.env`, the delegation path, and fails when
+`delegate.ts` is reverted.
+
+**Trigger:** any rule about grants enforced at one call site when two build a child environment. Grep for
+`ENV_GRANT` assignments; there should be exactly two, both calling the same helper.
+
+---
+
+## R-136 · A blocking registry path hangs session start — H×M, FIXED
+
+Added and fixed 2026-08-21. **Never published**: introduced and caught inside 0.19.0's development.
+
+0.19.0 made `buildCatalog` and `registeredWorkspaceIds` read the workspace registry, and both are awaited
+inside `session_start`. A bare `readFile` on a FIFO therefore blocked the session indefinitely — before the
+`holding [...]` line, the executor probe and every control after it — and `delegate` awaits the same promise,
+so delegation hung too. Measured: `exit=124` after 8s, repeatedly.
+
+**This is R-79's defect class**, whose entry says *"a FIFO at the target path hung the probe forever, with no
+timeout anywhere in the path"*, reintroduced by a new reader four lines from the comment documenting it.
+
+**`AbortSignal.timeout` does not fix it, and the first attempt proved that by still hanging.** A signal is
+observed between chunks; a FIFO blocks inside `open(2)` before any read begins.
+
+**Superseded 2026-08-22, and the correction matters.** This entry first said *"`stat` first is the fix"*. It
+was not: `stat`-by-name followed by `readFile`-by-name is a TOCTOU any same-uid process can win, and a
+*second* size race survived even holding one handle, because `handle.readFile` re-`fstat`s internally — a
+192 MiB file was read after a 29-byte measurement. The fix in the product is one handle opened `O_NONBLOCK`,
+`fstat`-ed as a descriptor, and read into a bounded buffer. A non-regular registry is refused rather
+than treated as empty, because a silent empty registry disables routing while looking healthy.
+
+**Not fixed, and stated rather than implied:** an unresponsive network mount blocks `stat` just as hard. No
+in-process timeout can cover a stalled `open`. The size ceiling and the read signal remain as
+defence-in-depth for a regular file on a slow mount.
+
+**Trigger:** any new reader of an operator-supplied path that is awaited during `session_start`. Grep for
+`readFile` reached from `loadProjectDefinitions`.
+
+---
+
+## R-137 · Routing attenuates by ID, not by DESTINATION — H×M, OPEN
+
+Added 2026-08-21. **Attempted, defeated four ways, and reverted 2026-08-22.** The attack is measured; the
+mechanism that was meant to close it is not in the product.
+
+ADR-0035 attenuated *which id* a descendant may name and left the id→path mapping in a mutable file. A child
+holding `workspace:staging` **and `tool:write`** — not `bash`, so squarely inside ADR-0012's scope — can
+rewrite the `staging` entry to point at any other Git worktree and route its grandchild there, with a real
+exclusive write lease. **Measured** by `docs/probes/g37-registry-tamper`, which drives the real
+production path against real worktrees and a real kernel lease: the grandchild started in a root nobody
+authorised, while the *control* — the same child naming `prod` directly — was refused
+`WORKSPACE_NOT_AUTHORIZED`. So the capability check works and what moved is the thing it names.
+
+(This entry first asserted "measured end to end" with no probe in the repository, which working rule 5 counts
+as unmeasured. The probe was written afterwards, and it is the reason that sentence is now true.)
+
+**What was tried, and why it is out.** A content pin: the root records the registry's digest, descendants
+inherit it verbatim, a mismatch refuses. A fourth review pass defeated it four ways, all measured:
+
+1. **It never reached a herdr child.** `mergeChildEnv` is on the process branch only; the herdr executor
+   passes `plan.env`, which carries neither the pin nor the registry path. A pane child re-minted the pin over
+   its own edit and its grandchild took a real write lease on the unauthorised root. The same gap means
+   `PI_GRANTS_WORKSPACE_LEASE_DIR` does not cross either, so a pane child's "exclusive" lease excludes nobody.
+2. **`PI_GRANTS_WORKSPACE_PIN=` failed open, permanently.** Empty is `!== undefined`, so it was never
+   re-minted, and an unparseable pin was silently treated as "not my file". An attacker able to set the
+   variable at all preferred emptying it to re-minting.
+3. **A registry unreadable at root session start left the whole tree unpinned, silently** — and ENOENT is the
+   everyday case, since `pi-daddy init` writes the registry *after* session start.
+4. **Its reader bypassed all four guards added for the same file in the same commit**, and reintroduced R-136:
+   a bare `readFile` on a FIFO hung session start forever.
+
+**The reverted mechanism is not the finding; the venue is.** A new env var, a new refusal code and a new
+inheritance rule are an ADR, not a paragraph in an amendment — ADR-0035 explicitly declined Option 2, and a
+different mechanism arriving inside a fix commit got none of the design attention the herdr path needed. It
+returns as its own ADR.
+
+**CORRECTION 2026-08-22 (R-144), and it widens this entry.** The paragraph below described the ownership and
+mode guard as existing. `e1937cf` had already removed it — the same commit that wrote this entry's scope
+decision — so **nothing checks who may write the registry.** This attack therefore does not need `tool:write`
+inside a governed child at all: any local process that can write the file, or `rename(2)` into its directory,
+repoints an id for every descendant that holds it. Three reviewers found the stale claim independently. The
+paragraph is left as written, per rule 2.
+
+**What DOES exist now**, and is narrower than the pin was claimed to be: the registry must be a regular file,
+under 1 MiB, owned by this user or root, and not world-writable. That refuses a registry another *user* can
+rewrite in place. It cannot touch this entry's attack at all — a governed child runs as the same uid as its
+parent, and no file mode distinguishes them — and it does not establish "nobody else may rewrite it" either,
+since it inspects the file and never its parent directory, and `rename(2)` needs only directory write
+(measured: a 0600 registry in a world-writable non-sticky directory, accepted then atomically replaced).
+
+**Trigger:** any authority whose meaning is stored outside the grant — routing is the first; a future
+`check:<id>` or `context:<id>` would be next. Also: an operator reporting a child that started somewhere they
+did not authorise.
+
+## R-138 · Four findings from the PR #10 review pass, deliberately NOT fixed — M×M, OPEN
+
+Added 2026-08-21. Recorded rather than fixed, because each is pre-existing and outside ADR-0035's change.
+Listed so the next session does not rediscover them as new.
+
+1. **The herdr pane path has no `mergeChildEnv` equivalent.** The process executor deletes all eight
+   `GRANT_ENV_KEYS` before applying `plan.env`; a pane inherits the herdr **daemon's** environment and only
+   *adds* `--env`. `ENV_GRANT`/`DEPTH`/`MAX_DEPTH`/`APPROVED` are written unconditionally so they cannot
+   leak, but `FANOUT`, `GATED`, `LEDGER` and `PARENT_ID` are conditional — and `PI_GRANTS_FANOUT` *relaxes* a
+   bound. A daemon started from a governed shell could leak it into every pane. Reviewer could not
+   demonstrate it (their daemon had no `PI_GRANTS_*` set), so this is a code-read, not a measurement.
+2. **`/grants init`'s `adoptGrant` does not intersect with `session.inherited`.** A human running the command
+   inside a governed child widens that child's own grant past what its parent granted. Not model-reachable —
+   it is a command, not a tool — and `plan.grant` never contains a `workspace:` id, so routing cannot be
+   gained this way.
+3. **`isGated` is exact-match, so a namespace wildcard in `PI_GRANTS_GATED` is weaker than an enumerated id.**
+   `workspace:prod` gates both routing there and handing the id to a child; `workspace:*` gates only routing.
+   Widening the gate therefore loses a control. Inherited from `agent:*`, which behaves identically. SPEC now
+   states the asymmetry rather than the unqualified claim it had.
+4. **One dialog confers two authorities.** In the ordinary chained-routing shape the authorising id and the
+   requested id are spelled identically, so a single approval covers both and the ledger cannot tell them
+   apart. Contained in practice — a routing gate is always bound, so an inherited approval cannot satisfy a
+   descendant's gate — but the record is less precise than the mechanism.
+
+**Trigger:** any of these appearing in a *measured* form, or a fifth namespace inheriting the same shape.
+Item 3 is the one to fix first if `isGated` is ever touched for another reason.
+
+---
+
+## R-139 · The registry id grammar is a breaking change, and was briefly the wrong grammar — M×M, FIXED
+
+Added and fixed 2026-08-22, reviewing PR #10's own fixes.
+
+ADR-0035 made a registry id the tail of a capability id, which makes the operator's registry an input to the
+grant grammar. 0.18.0/0.18.1 validated ids for nothing but non-emptiness, so ids in the wild can be any
+string, and constraining them is necessarily breaking. Two things went wrong before it was right.
+
+**First, the constraint was missing**, and two shapes were live: an id of `*` minted `WORKSPACE_WILDCARD`, so
+an operator registering one worktree as `*` and granting `workspace:*` held routing over every id in the
+registry including ones added later; and an id containing a space became **two** capabilities, because
+`ceilingForDefinition` splits `allowed-tools` on `[\s,]+` — `allowed-tools: read, workspace:prod bash`
+measured as `['tool:bash','tool:read','workspace:prod']`, i.e. routing over production plus a shell, neither
+typed by anyone. 0.18.1's comma, one namespace over. A test in the fixing commit **asserted the space case was
+safe**, which is worse than not testing it.
+
+**Then the constraint was the wrong one.** It reused `isSafeCapability` — the grammar for a TOOL NAME — which
+refused `feature/x`, `claude/issue-42`, `café`, `@scope`, `_tmp`. A git worktree is routinely named after its
+branch, so a slash is the ordinary case, and a slash splits nothing: not the comma-separated grant, not
+`allowed-tools`. Refusing it bought no safety and broke a working setup, while the justification written
+beside it said refusing an id "costs nothing" — true of a hostile id, false of `feature/x`, and renaming one
+means editing every grant and every `.pi/grants.env` that names it.
+
+**Now:** `isSafeWorkspaceId` — `[A-Za-z0-9][A-Za-z0-9._/-]*`. **The regex is the specification; the prose
+below is a summary and was wrong twice.** It refuses whitespace (which `allowed-tools` splits on),
+comma/CR/LF/NUL (which split a grant), `*` (it collided with the wildcard), shell metacharacters (they reach
+a generated file the operator is told to paste from), non-ASCII, **and also `@ + % = ^ ! ? ~ { } [ ]` and a
+leading `_`, `-` or `.`** — none of which breaks a channel, so `@scope` and `_tmp` are refused for tidiness
+rather than for safety. An earlier version of this entry listed those two as casualties of the *old* grammar
+that the new one rescued; it does not rescue them. That last is a deliberate trade for a display-spoofing surface in a reviewed file, recorded as
+breaking rather than asserted to cost nothing. Documented in the CHANGELOG's breaking section, which described
+only the comma rule while the code required far more.
+
+**Not fixed:** one malformed entry refuses the whole registry, and both session-start readers fail soft, so a
+single legacy id makes every workspace invisible with no warning — rule 8's own named defect. The refusal is
+loud only at the point of use.
+
+**Trigger:** an operator reporting that a registered workspace stopped being listed after upgrading; or any
+future capability namespace whose ids come from a file rather than from a grant.
+
+---
+
+## R-140 · Two session-start readers can block a session forever — H×M, OPEN
+
+Added 2026-08-22 by the fifth review pass, which ran R-136's own stated trigger — *"grep for `readFile`
+reached from `loadProjectDefinitions`"* — and got two hits R-136 does not cover. **Both pre-date ADR-0035 and
+are outside this PR's scope; they are recorded so the trigger's next reader does not have to rediscover them.**
+
+1. **`src/definitions.ts:227`** — `readFile(<skillroot>/<name>/SKILL.md)`, no file-type check, no bound,
+   reached from `loadProjectDefinitions`'s *first* line. Measured with a FIFO at that path: never returns, and
+   a `process.exit` watchdog could not fire because the blocked `open(2)` pins a libuv thread.
+2. **`src/grant-store.ts:91`** — `readFileSync` of the stored grant, called in the extension **factory**,
+   before any hook runs. Synchronous, so it blocks the whole event loop, it runs earlier than `session_start`,
+   and its path comes from `PI_CODING_AGENT_DIR` — the same shape of operator-supplied path as the registry.
+
+Against a real `pi`, each produced **zero bytes on stdout** and timed out, which is R-136's exact signature.
+
+**Twelve sibling readers do a bare `readFile` with no guard** (`approval-store`, `lease-record`, `file-lock`,
+`grant-store`, `ledger-report`, `definitions`, `skill-packages`, `workspace-lease`, `check-runner`). The
+registry reader is now the only hardened one, so this is a class rather than two defects — which is the
+argument for fixing it as its own change with one shared guarded reader, not one site at a time.
+
+**Trigger:** already fired twice. The rule to adopt: any `readFile` on an operator-supplied path that is
+awaited during extension construction or `session_start` needs a file-type check and a bound, and R-136's
+trigger should be run *as part of* any commit that touches session start.
+
+---
+
+## R-141 · A routed child writes into the root it may only hold a read lease on — M×M, OPEN
+
+Added 2026-08-22. **Pre-existing composition; a fix was attempted in this PR and reverted as out of scope.**
+
+Three facts compose: a routed child's cwd IS the leased worktree root (`extensions/execute-child.ts`);
+`PI_GRANTS_LEDGER` is inherited verbatim and `pi-daddy init` scaffolds a **relative** `.pi/grants.jsonl`; and
+a `read` lease takes no kernel lock at all. Measured: two delegating children classified `read` both created
+`.pi/` inside one worktree, `git status` showed `?? .pi/`, and a grandchild took a WRITE lease on a root
+already held.
+
+**The same shape is live for `PI_GRANTS_WORKSPACE_LEASE_DIR`, and there it breaks exclusion outright.**
+`defaultWorkspaceLeaseDir()` returns the env value verbatim and is called in the *delegating* process, so with
+a relative value a parent at its own cwd and a routed child at the leased root compute **different lease
+namespaces**. Measured: both acquired a write lease on the same canonical root — "mutual exclusion did not
+happen" — and the child left its lease files untracked in the worktree.
+
+A separate finding in the same area: **`governedWorkspaceAccess` only ever upgrades read→write**, so
+`("write", [])` returns `"write"`. `access` is a model-facing parameter, so a child holding no write tool can
+make its grandchild take the exclusive kernel lock on a root — a denial of service against every legitimate
+writer, with a ledger line recording `access: "write"` for a child that cannot write.
+
+And a ledger-integrity defect made reachable by the same area: `extensions/workspace-runtime.ts` keeps a
+**private copy** of `leaseReleaseLedgerOutcome` that omits the `not-held` arm, so a read lease's release is
+recorded `released` — asserting a handover that never happened. `src/workspace-lease.ts` claims "ONE
+definition, exported, because two call sites had their own copies", which is false.
+
+**Why not fixed here.** Making a child-inherited path absolute is a change to the ledger and lease plumbing,
+not to ADR-0035, and the attempted fix landed mid-review where it immediately produced a false claim about
+`tool:delegate`. `tool:delegate` is therefore NOT in `KNOWN_READ_ONLY_TOOLS`, so routing read-only while
+delegating still takes a writer lease — unchanged from 0.18.1.
+
+**Trigger:** any env-supplied path a child inherits and resolves relative to its own cwd. Grep for
+`process.env[` reached from a function called in the delegating process.
+
+---
+
+## R-142 · The mutation audit is not a control until CI runs it — M×M, OPEN
+
+Added 2026-08-22. `scripts/mutation-audit.mjs` pins twenty `(patch → the test it must break)` pairs, and it
+already caught four bad entries in its own catalogue plus a test of mine that passed for the wrong reason. But
+**there is no CI configuration anywhere in this repository**, so it is a manually-invoked npm script — and its
+own docstring quotes R-34 against exactly that: *"a check an operator has to know to run is not a control, it
+is a feature."*
+
+Five review passes each found guards deletable with the whole suite green. The instances were fixed five times;
+what did not change is that the only thing forcing rule 7 was somebody choosing to look. A pinned catalogue is
+strictly better than a habit — it names what must break, it fails loudly, and it survives the session that
+wrote it — but it is still opt-in.
+
+**The minimum that closes this:** a workflow running `typecheck`, `test` and `test:mutation` on every PR, plus
+the server-side half `docs/WORKING-RULES.md` already recommends — requiring a PR on `main` with zero required
+approvals, which costs a single maintainer nothing. Rule 10's enforcement paragraph makes the same point about
+`hooks/pre-commit`: it is wired per clone, so *"if that command prints nothing the hook is inert."* The same
+sentence is now true of this script.
+
+**Deliberately not added in this PR.** It is repository infrastructure rather than ADR-0035, and this branch
+was just narrowed for precisely that reason — every layer of scope added here landed in code the previous
+layer's reviewers had not seen. Adding CI in the commit that argues against scope creep would be the fifth
+instance of the thing.
+
+**Also open, from the same review:** the harness excludes three guards from its catalogue by design, each with
+its reason stated (winning the `fstat`/read window and the `stat`-by-name swap are not deterministic
+in-process; Node closes a `FileHandle` on GC). Those three are measured by hand and forced by nothing. That is
+the honest form, not a solved problem — a deterministic instrument for "a size measured beforehand cannot be
+trusted" would retire the first of them, and a `/proc` file (which reports `st_size` 0 and still yields
+content) is the suggested route.
+
+**Trigger:** the next review pass finding a guard deletable with the suite green. If that happens while this
+entry is still OPEN, the answer is CI and not a sixth pass.
+
+## R-143 · The mutation audit reported every guard missing, in the environment it is run in — M×H, FIXED
+
+Added and fixed 2026-08-22, reviewing PR #10 before it merged. **Never published** — the auditor is unreleased
+tooling that arrived on this branch.
+
+`npm run test:mutation` printed **`0/20 guards forced a named failure`** at `0a62a42`, and once per entry:
+*"a guard nothing forces is not a guard — add the check, or remove the guard."* All twenty guards were intact.
+The same sweep, same tree, same commit, re-run with `FORCE_COLOR=0` printed **`20/20`**.
+
+The cause is one line. `node --test`'s spec reporter colours its output when `FORCE_COLOR` is set, this
+project is developed in sessions that export `FORCE_COLOR=3`, and the failure matcher was anchored `^\s*✖` —
+an escape sequence is not whitespace, so it matched nothing, in every entry, always.
+
+**Why this is worse than a check that flakes.** The auditor's whole purpose is to stop a session trusting a
+guard nothing forces. Blind, it accuses twenty guards at once — so the honest response to its output is a
+sweep of twenty "fixes" to code that was already correct, which is the loop rule 7's catalogue exists to end.
+It fails loudly, as rule 8 wants, and says something false at volume. **"I saw no failure" and "I saw nothing"
+are different sentences, and only one of them is a verdict on a guard.**
+
+**Fixed**, with the parsing extracted to `scripts/mutation-parse.ts` so it can itself be tested:
+
+- ANSI is stripped before matching, and `test/mutation-audit.test.ts` forces it — reverting the strip fails
+  three of its four tests (verified by reverting it).
+- The spawned suite gets `FORCE_COLOR=0` / `NO_COLOR=1`, so the input is pinned as well as the parser.
+- A positive control. `reporterWasReadable` distinguishes an unreadable transcript from a clean one, and the
+  harness now reports *"the auditor could not read `<file>`'s output — this is NO verdict on the guard"*.
+  Verified by pointing an entry at a test file that does not exist.
+
+**Its relation to R-142, which stays open.** That entry says the audit is not a control until CI runs it. This
+one is the sharper half: it was not a control **in the environment where it was actually being run** — and CI
+inheriting a coloured reporter would have gone red on twenty healthy guards, which is how a control gets
+switched off rather than fixed. R-142's trigger says the answer to another unforced guard is CI rather than a
+sixth pass; the amendment is that CI must also pin the reporter's environment, or it measures its own terminal.
+
+**Independently found by the sixth pass's fourth reviewer**, which is the useful part of the corroboration:
+that reviewer also named the trap, that the tempting repair under CI pressure is to loosen the matcher back to
+`stdout.includes(expect)` — the exact defect `41cbc39` had removed one commit earlier. Stripping ANSI keeps the
+strict form. Re-measured after the fix, in this environment and with colour forced on: **20/20**.
+
+**A second defect in the same harness, from the same reviewer, fixed here.** The dirty-tree refusal inspected
+only the files the catalogue *patches*, while the `contract:` entry deliberately makes `npm test` regenerate
+the tracked ledger fixtures — so an uncommitted fixture edit was destroyed silently, and was benign only
+because regeneration is byte-identical to what is committed. The check now covers everything a run can write,
+verified by dirtying a fixture and watching it refuse.
+
+**A third defect in the instrument, 2026-08-22, found by using it on the R-146 guards.** A run that gets
+KILLED was scored as "no verdict unless the entry records a hang" — even when the guard's own named failure had
+already printed. Measured: reverting the retain-path `unref` failed `✖ a retained lease releases its process` at
+10.0s and *then* wedged the runner, because a sibling test retains a lease in the runner's own process and could
+no longer exit. The auditor reported that as *"a guard nothing forces"*, which is the exact inverse of what
+happened, and the tempting response is to delete a guard that works. **A kill does not erase a verdict that
+already printed**: a named failure now counts whenever it appears, and `hang: true` remains required only where
+non-termination is the whole signature and nothing prints. The pattern across all three of this harness's
+defects is one thing — *it kept mistaking "I could not read the answer" for "the answer is no."*
+
+**A fourth defect in the instrument, 2026-08-23 — and this time the control caught it, which is the point.**
+CI's first real run of this catalogue (PR #10 is where it lives; on `main` the step is a no-op) reported
+**`0/27` on the `engines` floor, node 22.19.0**, while node 24 reported 27/27 on the same commit. Every entry
+said *"the auditor could not read `<file>`'s output — this is NO verdict on the guard."* Cause: `node --test`
+defaulted to the **TAP** reporter before Node 23 and to `spec` from 23 on, and this parser reads `spec`. TAP
+prints `ok 1 - name`, with no `✔`/`✖` anywhere.
+
+**The positive control is the whole reason this was a five-minute diagnosis rather than a sweep of 27
+"fixes".** The three earlier defects in this harness all read *"I could not read the answer"* as *"the answer
+is no"*; the guard added after the third one made the difference visible the first time a new environment hit
+it. The reporter is now pinned with `--test-reporter=spec`, for the same reason `FORCE_COLOR` is pinned:
+depending on a runtime's default output format is depending on ambient state.
+
+**And it is an argument for the matrix.** The floor was a published `engines` claim nothing had ever exercised;
+the catalogue had never run under it. One leg of one CI run found that.
+
+**What this does not establish.** That the twenty guards are the right twenty — R-142's exclusion list and
+reviewer D's complement audit are the question of coverage, and this entry is only about the instrument being
+readable. And the `FORCE_COLOR=0` pin in the spawned environment is redundancy, not the defence: nothing forces
+it, which is said here rather than implied.
+
+**Trigger:** any `test:mutation` run reporting more than two entries unforced at once — the prior is a broken
+instrument, not twenty deleted guards. And any new parse of a child process's stdout in this repository that
+does not strip ANSI first.
+
+## R-144 · The narrowing commit deleted the registry ownership guard and three documents kept selling it — H×H, FIXED (documents), and it corrects R-137's bound
+
+Added and fixed 2026-08-22, found independently by **three** of the sixth pass's four reviewers. Never
+published — 0.19.0 is unreleased.
+
+`ebad92a` added a uid/world-writable guard on `PI_GRANTS_WORKSPACE_REGISTRY`. `e1937cf` — *"narrow PR #10 to
+ADR-0035"* — removed the code and sent the question to a future ADR. It edited none of the three places that
+announce the guard: `docs/SPEC.md`'s registry paragraph (the document `CLAUDE.md` calls authoritative),
+`CHANGELOG.md`'s **BREAKING** section (what an upgrading operator reads first), and **R-137's own paragraph
+headed "What DOES exist now"**. Measured: a `0666` registry in a `0777` non-sticky directory loads with no
+refusal.
+
+**The register entry is the worst of the three, because the false sentence is doing work.** R-137 is OPEN, and
+that paragraph is the only thing bounding its blast radius — *"That refuses a registry another **user** can
+rewrite in place… It cannot touch this entry's attack at all — a governed child runs as the same uid as its
+parent."* With no check at all, R-137's attack does **not** require `tool:write` inside a governed child:
+**any** local process that can write that file, or its directory, repoints `workspace:staging` at another
+worktree, and every descendant holding that id routes there with a real exclusive write lease. The bound was
+inherited from a guard that no longer exists, so the entry understates itself.
+
+**This is CLAUDE.md's headline lesson reappearing in the register entry that records it** — *a claim written
+beside a fix is not the fix* — and the sixth pass's version is narrower and more useful: **a commit that
+REMOVES a guard has to grep for the guard's claims, exactly as a commit that adds one has to add its test.**
+Narrowing scope is not a documentation-free operation. Nothing caught it because there was never a test: the
+guard's own tests went out with the guard, so the suite stayed green at 629/629 while three documents lied.
+
+**Fixed** in the documents, not in the code — the code is the ADR-0036 question R-137 already holds. SPEC and
+the CHANGELOG now say ownership and mode are unchecked and why a mode check cannot reach the attack; R-137
+carries a dated correction of its bound.
+
+**Trigger:** any commit that deletes a check — `grep` the check's own vocabulary across `docs/` and the
+package before it lands. And any risk entry whose blast radius is bounded by a *different* entry's mechanism.
+
+---
+
+## R-145 · A gated routing attempt takes the destination's exclusive writer lease before the human is asked — M×H, OPEN
+
+Added 2026-08-22 by the sixth pass. **New behaviour created by ADR-0035**, and not a defect in any single
+line: two correct decisions compose into it.
+
+`extensions/run-delegation.ts` previews the plan, and enters `prepareDelegationWorkspace` when
+`plan.ok || shouldSeekApproval(...)`. `shouldSeekApproval` is true whenever `gatedBlocked` is non-empty and
+`denied` empty — precisely the state ADR-0035's new routing gate produces. So the lease is acquired, and only
+then is the dialog opened. `src/approval-prompt.ts` documents the default as no timeout: *"waiting forever
+denies nothing."*
+
+Measured against real worktrees and a real kernel `flock`, replaying the production ordering: caller holds
+`workspace:prod` and `tool:write`, operator sets `PI_GRANTS_GATED=workspace:prod`, the model calls
+`delegate(..., workspace: {workspace_id: "prod", access: "read"})`.
+
+```
+preview           GATED_UNAPPROVED, gatedBlocked ["workspace:prod"], denied []
+lease_acquired    true, access "write", root .../prod
+rival writer      REFUSED  WORKSPACE_WRITE_CONFLICT — "already has an active pi-daddy-governed writer"
+final             GATED_UNAPPROVED, child_ever_started false
+```
+
+So an **unapproved** routing attempt excludes every other governed writer on `prod` for the whole dialog,
+emits a `workspace_lease` `acquired`/`write` record for a child that never runs, then releases. Repeatable
+once per tool call, and reachable by the model rather than by the operator.
+
+**Why the ordering is not simply wrong.** It is ADR-0034's, and deliberate: the workspace is resolved and
+leased *before* any human is asked so that the approval binds to the exact tree the human sees (R-110). What
+changed is the subject — ADR-0035 made the routing itself the gated thing, so "resolve then ask" became
+"seize the destination, then ask whether you may go there". Reversing it needs a decision about what a bound
+approval means, which is an ADR and not a patch, and the gate is the one control an operator has for exactly
+the workspace they care most about.
+
+**What it is not:** no capability is conferred, no child starts, and the lease is released. The harm is
+availability plus a lease record whose child never existed.
+
+**Trigger:** an operator reporting `WORKSPACE_WRITE_CONFLICT` on a workspace nothing is running in; or a
+`workspace_lease acquired` with no subsequent `capability_decision` that started a child.
+
+---
+
+## R-147 · A registry the reader refuses produces no message anywhere — M×H, OPEN
+
+Added 2026-08-22 by the sixth pass. Working rule 8 says prefer failing closed **and** prefer being loud about
+it; this fails closed silently.
+
+`registeredWorkspaceIds` catches everything and returns `[]`; `buildCatalog` does the same. Exactly one
+extension surfaces a registry refusal, and only once a delegation already names a workspace. So one
+malformed id — a space in a name, which R-139's new grammar refuses, and one bad entry refuses the whole file
+by design — removes every workspace from `/grants`, from the catalog and from `init`'s `ROUTABLE WORKSPACES`
+block, with nothing printed.
+
+```
+registry: {"prod": …, "pr od": …}   ← one id with a space
+catalog workspace entries : []
+registeredWorkspaceIds()  : []
+```
+
+The operator's symptom is *"no workspaces registered"*, which is also what a correct empty registry looks
+like. **The counter-example in the same codebase is what makes this a rule-8 violation rather than a
+judgement call:** a malformed `PI_GRANTS_DEPTH` gets a notify naming the variable. R-139 made the grammar
+strict in the same release, so the population of operators who hit this is exactly the ones upgrading.
+
+**Also open, from the same reviewers, and grouped here because both are "two surfaces disagree":**
+
+- `/grants` prints the ids the **registry** lists, not the ids this session may **route to**, so a session
+  holding none is told it can route to all of them.
+- A `tool:*` or `workspace:*` root can mint, record and propagate `workspace:<id>` for an id no registry
+  contains (the catalog exempts the namespace deliberately, since the registry is the authority at point of
+  use). Not an escalation today — `resolveWorkspace` refuses — but it is a grant that becomes real the moment
+  the operator registers that id, and the ledger asserts routing authority meanwhile.
+
+**Trigger:** an operator reporting a registered workspace missing from `/grants`; or any `catch` around a
+governance refusal that returns a default instead of reporting.
+
+---
+
+## R-148 · The herdr executor gives a pane child neither the registry nor the lease directory — MEASURED 2026-08-22, OPEN
+
+Added 2026-08-22. R-138 item 1 recorded this as *"a code-read, not a measurement"* and R-137's first defeat
+asserted the lease-directory half without one. **Both halves are now measured**, which is the entry's whole
+purpose.
+
+`runHerdrPane` passes only `plan.env` to `tab create --env`; the process executor passes
+`mergeChildEnv(process.env, plan.env)`. `plan.env` carries the grant, depth, fan-out, ledger and parent id —
+not `PI_GRANTS_WORKSPACE_REGISTRY` and not `PI_GRANTS_WORKSPACE_LEASE_DIR`.
+
+```
+herdr `tab create` argv --env: GRANT, DEPTH, MAX_DEPTH, APPROVED   (no registry, no lease dir)
+process executor child:        registry = /etc/pi/parent-registry.json, leases = /run/parent-leases
+same leaseDir     → second writer REFUSED  WORKSPACE_WRITE_CONFLICT
+different leaseDir → second writer ACQUIRED on the SAME root   ← two "exclusive" governed writers
+```
+
+Two consequences, and the second is the one ADR-0035 cares about. A pane child's *authority*
+(`workspace:staging`) attenuates correctly on `plan.env`; the *meaning* of that id comes from whatever
+registry the herdr daemon's environment has — nothing, in which case the capability is silently inert, or a
+different file, in which case the id resolves to a root this operator never registered. And two governed
+writers can hold "exclusive" leases on one canonical root when the lease directories diverge, which is the
+one property the kernel `flock` design exists to provide.
+
+ADR-0035's Context rests on *"`ENV_WORKSPACE_REGISTRY` … inherits into every governed child"*. That is true
+of one executor of two, so the chosen Option 1 — *the child receives the full registry and is refused at the
+capability check* — has no meaning on the herdr path.
+
+**Still not measured:** the consequence inside a live pane. `herdr` is installed but no daemon was started,
+so the argv and the lease-directory behaviour are measured and the pane child's resolution is inferred.
+
+**Trigger:** any governance state that reaches a child through `process.env` rather than `plan.env` — the two
+executors diverge there by construction, and this is the second time (R-137 defeat 1 was the first).
+
+## R-149 · The registry read deadline is forced by nothing, and its second timeout refusal cannot be reached — M×M, OPEN
+
+Added 2026-08-22 by the sixth pass. Both halves are in `src/workspace.ts`, the reader written to answer
+R-79/R-136.
+
+The docstring makes `REGISTRY_READ_TIMEOUT_MS` the answer to *"session start awaits this read"* and says the
+in-loop check *"makes the bound as real as it can be in-process"*. **Deleting the whole deadline block leaves
+the suite green** (629 tests, 0 failures, measured in an isolated copy). It is not in the mutation catalogue
+either, and the catalogue's exclusion list — which exists to name the reader's unforced guards — does not
+mention it, so it reads as covered.
+
+The second half is worse in a quieter way: the module still classifies `AbortError`/`TimeoutError` into a
+timeout refusal, and **no `AbortSignal` remains anywhere in it** — the signal approach was replaced by
+`open(O_NONBLOCK)` plus `fstat` on the descriptor (R-136's fourth pass). So the file carries two timeout
+refusals, one untested and one unreachable, in the guard whose whole purpose is that a session start cannot
+block.
+
+**Trigger:** any `catch` classifying an error type whose producer has been removed — grep for the producer, not
+for the handler.
+
+---
+
+## R-150 · What the catalogue does not cover, including a guard wired on the quieter of two routes — M×M, OPEN
+
+Added 2026-08-22 by the sixth pass, whose fourth reviewer was asked for the **complement** of
+`npm run test:mutation` rather than for its contents. That framing is the finding: twenty pinned pairs answer
+"do these guards hold", and nothing answered "which guards are missing from the list".
+
+**The one with a behavioural consequence.** Two sites wire the registry into `buildCatalog` — session start,
+and the once-per-session rebuild in `before_provider_request`. The integration test names the first; **the
+second is forced by nothing, unit or integration.** Measured: revert only the rebuild site and the named
+integration test still passes. If it regresses, `session.catalog` loses every workspace entry from the first
+model turn onward, so `/grants`'s workspace count and `routable …` line vanish mid-session. Display only — but
+it is **R-28's shape, two routes for one rule with the guard on the quieter one**, in a diff that fixes exactly
+that shape in `propagation.ts` (R-135). It is also structurally invisible to the catalogue, which runs one
+`test/` file per entry and therefore cannot pin an integration-only guard.
+
+**Seven guards this diff adds that nothing forces**, each verified by a single hand-revert in an isolated copy:
+the read deadline and the unreachable `timedOut` branch (R-149), the catalog rebuild above, `minLength: 1` on
+the routing parameter (redundant with `checkRoutingAuthority`, which *is* forced), the `ENV_APPROVED` clamp,
+the post-read grow check (its RSS test was removed for being unreliable, correctly), and `O_NONBLOCK`, which is
+forced **only by non-termination** — reverting it wedges the suite past 120s despite the FIFO test's own
+5-second timeout, because a pending `open(2)` keeps the process alive. Loud, but only to someone who notices
+the suite stopped rather than failed, which is the R-119 lesson about a hang reading as untested.
+
+**Two more properties of the new tests, disclosed rather than filed as defects:** two liveness assertions are
+wall-clock bounds (`< 1s`, `< 5s`) and are the only thing separating "refused" from "blocked", so a loaded
+runner turns a guarantee into a flake; and the fd-count check can pass with its `finally { close() }` deleted
+because Node closes a `FileHandle` on GC, which the docstring already says.
+
+**What this pass found genuinely forced is the larger half, and it is on record**: the whole `workspace:`
+namespace across all nine sites, both wildcard clauses, `inheritableGrant` on both routes, all three routing
+guards, the gate and its dedupe, the id grammar including `feature/x`, and every `init` path. And the answer to
+"was a test weakened to make this branch green" is **no** — the canonical refusal enum was extended and then
+made *generated*, with the waiver documented and its factual basis verified: no released tag ever carried the
+v2 contract.
+
+**Trigger:** a guard whose only forcing test lives in `test-integration/` — the catalogue cannot see it. And
+any second call site of a rule the catalogue pins on the first.
+
+---
+
 ## Register log
 
 | Date | ID | Change | By |
@@ -2507,7 +3228,16 @@ still a no-op after PR #10 merges.
 | 2026-08-20 | R-99…R-118 | **Six independent reviewers over the unmerged 0.18.0 candidate, and the capability invariant held on every path any of them could construct** — no fail-open in authority resolution. What they found instead: the writer lease reporting handovers the kernel never performed (R-99, R-100, measured in `docs/probes/g35-flock-fd-inheritance`, which settled a disagreement between two reviewers who had reached opposite conclusions); a bound approval spendable outside the workspace it named (R-110); correlation as a model-writable text channel into the append-only ledger (R-111); a refused delegation banking a 30-day approval (R-113, the same shape as R-96 a third time); and a ledger with no vocabulary for lost, retained or uncontended leases (R-103…R-105). **The headline finding was not a defect but an absence**: eight guards holding up ADR-0034's advertised properties could each be deleted with 558/558 still green, in a project whose own rule 7 says a test that cannot fail is worse than none. R-101 and R-118 are accepted with their reasons stated | six-reviewer pass over the 0.18.0 candidate |
 | 2026-08-20 | R-119…R-129 | **Six reviewers over the FIX commits, and the fixes claimed properties the code did not have.** The invariant held a third time; the runtime half did not. Three critical: a terminal append still `strict: true` under four documents saying otherwise (R-119); the anti-silence mechanism satisfied nowhere (R-120); `unbankApprovals` both too narrow and too broad (R-121). R-122 shows the marquee R-106 fix was itself undefended — deleting all four guards left 580/580 green — and over-corrected. **R-127 records a regression claim corrected twice and still not satisfied**, with the test deleted rather than weakened to pass; R-128 the process error of editing a tree five reviewers were mutating; R-129 that the audit everything rests on has no artifact. Also fixed: a failing lease test hung the runner past 900s, which is how a suite that CAUGHT a defect reads as untested | six-reviewer pass over the fix commits |
 | 2026-08-20 | R-130 | Added and fixed — the two findings the mutation auditor left open at the new HEAD: the `{release:true}` clean-release handshake was unpinned (deleting it left 586/586 green, so a deliberate handover would have been treated as a crash), and a test of mine overstated what the wiring does with `context_id`. Also records that the auditor corrected its OWN recommendation — pinning `truncated` would have introduced a bug — and that `a882595`'s `docs:` label was wrong for a commit touching five production files | mutation re-verification at the fixed HEAD |
+| 2026-08-20 | R-131, ADR-0035 | Added — **workspace routing does not attenuate, and it shipped in 0.18.0.** A child routed to `staging` can route its grandchild to `prod`, and unlike ADR-0012's accepted `bash` escape it leaves a complete, correct-looking ledger record asserting an authorisation nobody granted. R-26's shape in a namespace added five ADRs later. ADR-0035 proposes `workspace:<id>` as a capability so it attenuates through the existing `resolve()` path, and is deliberately left **Proposed** pending a transitivity probe — the evidence R-26 had and this does not | ADR-0034's unresolved list |
+| 2026-08-20 | R-131, ADR-0035 | **Measured, then fixed.** `docs/probes/g36-workspace-attenuation` confirmed the escalation against real worktrees and a real lease — grandchild planned with no refusal, took a write lease on `prod`, would have started there — with the control showing grant and depth attenuating through the same child environment. ADR-0035 Accepted and implemented: routing is a capability, `WORKSPACE_NOT_AUTHORIZED` is recorded in `denied`, and `workspace:*` is held but never inherited. All four parts mutation-verified; the probe now measures the refusal too | ADR-0035 |
 | 2026-08-20 | R-132 | Added and **fixed** — a capability id containing a comma was admitted by a wildcard's prefix rule and split by the child into several capabilities, minting `tool:bash` from a root that never held it with `denied: []` and a clean-looking ledger line. **Present in published 0.18.0**, verified against `origin/main`; predates ADR-0035, which widened the surface with a second injectable namespace. Two guards, both mutation-verified. The channel was predicted verbatim by `grant-env.ts`'s own comment and guarded everywhere except propagation | found reviewing PR #10 |
+| 2026-08-21 | R-133, R-134, R-135, ADR-0035 amended | **Two review passes over PR #10 before it merged: the guard was right and the namespace was taught to three of nine sites.** R-133 is the pattern — the severe symptom being that `unknownCapabilities` never learned `workspace:`, so with a catalog present (always, in production) no child could be granted one and routing *terminated* below the root rather than attenuating, making the ADR's headline "two authorities, not one" unreachable. Also inert: the gate ADR-0035 claimed three times, and the `init` scaffolding it offered as the migration path for a breaking change. R-135 fell out of the mutation battery and is **older and worse**: R-26's own rule was enforced only in `childEnv`, so `delegate.ts` — the path that spawns since ADR-0016 — handed `tool:*` to children for eleven releases, with the rule's test asserting on the other route. R-134 is a session-start warning that told operators to delete a control that had worked since **0.12.0** — six releases — which ADR-0024's Costs section had explicitly relied on, and which an integration test *required* to exist, so the stale claim was defended by the suite. Eleven mutations, eleven named failures; `test/workspace-capability.test.ts` is organised by site so the checklist is executable | second and third review passes over PR #10 |
+| 2026-08-21 | R-136, R-137, R-138 | **A third review pass, six reviewers, over the fixes for the second.** Two shipping blockers, both introduced by the fix commit: a blocking registry path hung `session_start` (R-136, R-79's class again, and `AbortSignal` did not rescue it — `stat` before `open` did), and `/grants init`'s dialog granted routing live off a package declaration while the file it generates said "Not granted for you". R-137 closes the gap ADR-0035 asserted away, with **two** mechanisms because ownership and mode cannot distinguish a child from its parent at the same uid — the content pin is what actually closes it. **Ten single edits from the fix commit were revertible with the suite green**, including two of the six site fixes deletable *together*, and its own "eleven mutations, eleven named failures" was a count of what was checked rather than of what was covered. R-138 records four pre-existing findings left unfixed on purpose | third review pass over PR #10 |
+| 2026-08-22 | R-136, R-137 reopened, R-139 | **A fourth pass, six reviewers over the third pass's fixes — and R-136 was marked FIXED while a function added by the fixing commit still hung session start on a FIFO.** Three reviewers found it independently; a real `pi` produced zero notifies and timed out. R-136's own trigger ("grep for `readFile` reached from `loadProjectDefinitions`") found it, and nobody ran the trigger. A second hang existed too: `stat`-by-name then `readFile`-by-name is a TOCTOU any same-uid process can win. One reader holding one handle (`open(O_NONBLOCK)` + `fstat` the descriptor) closes both. **R-137's pin is reverted** — defeated four ways, including a measured escalation on the herdr executor, which no existing mechanism crosses. **Fourteen single reverts left every suite green, eight of them edits those commits added**, including the whole "names the file" fix and the pin's own wiring; `npm test` was also silently overwriting tracked contract fixtures. R-139 records the id-grammar break | fourth review pass over PR #10 |
+| 2026-08-22 | R-139…R-142, PR #10 narrowed | **A fifth pass, six reviewers over the fourth pass's fixes, and the response was structural rather than another round of patches.** Two blockers: the 1 MiB ceiling bounded the file and not the read (`handle.readFile` re-`fstat`s internally, so holding one handle closed the NAME race and left the SIZE race — 192 MiB read after a 29-byte measurement, race won in 848ms), and the id grammar had a FIFTH site, `isSafeCapability`, which refused the `feature/x` shape the release advertises and dropped the whole definition. **PR #10 was then narrowed to ADR-0035**: registry ownership/mode → R-137, the ledger-path and `tool:delegate` work → R-141, two pre-existing session-start hangs → R-140. And `npm run test:mutation` makes rule 7 mechanical — twenty pinned patch/test pairs, which caught four bad entries of its own, a test of mine that passed for the wrong reason, and a predicate bug in itself that had made its first "20/20" meaningless. R-142 records that it is not a control until CI runs it | fifth review pass over PR #10 |
+| 2026-08-22 | R-143 | Added and fixed — `npm run test:mutation` reported **0/20 guards forced** at `0a62a42` with every guard intact, because this environment exports `FORCE_COLOR=3` and the failure matcher was anchored past the escape sequence; colour off, the same sweep printed 20/20. A control that cannot read its instrument accuses twenty guards at once, which is the loop rule 7's catalogue exists to end. Parser extracted and tested, colour pinned in the spawned suite, and an unreadable transcript now says so instead of scoring the guard | sixth review pass over PR #10 |
+| 2026-08-22 | R-144…R-148 | **A sixth pass, four reviewers over the fifth pass's fixes, and the capability invariant held a fourth time** — three-level transitivity, both halves of two-authorities, every wildcard channel. Everything found is the claims layer and the runtime half. R-144 is the one to read: the commit that NARROWED this PR deleted the registry ownership guard and left three documents selling it, one of them R-137's own bound, so an OPEN risk understated itself — a commit that removes a guard must grep for the guard's claims. R-145 (a gated routing attempt seizes the destination's writer lease before the human is asked) and R-146 (a retained lease stops its own process exiting, re-derived here: exit=124) are runtime and left OPEN with candidates named. R-147 is rule 8: a refused registry prints nothing anywhere. R-148 measures what R-138 item 1 recorded as unmeasured — two 'exclusive' governed writers on one root when the lease dirs diverge | sixth review pass over PR #10 |
+| 2026-08-22 | R-149, R-150 | **The sixth pass's fourth reviewer was asked for the COMPLEMENT of the mutation catalogue rather than its contents, and that framing is the finding.** Twenty pinned pairs answer "do these hold"; nothing answered "which are missing". Seven guards this diff adds are forced by nothing — including the catalog rebuild wired on the quieter of two routes (R-28's shape, in a diff that fixes R-28's shape elsewhere) and `O_NONBLOCK`, forced only by wedging the suite. R-149 is the sharpest: the registry read deadline is deletable with the suite green, and the module still classifies an `AbortError` no code can produce. **Nothing was weakened to make the branch green** — the canonical refusal enum was extended and then made generated, waiver documented, and no released tag ever carried the v2 contract | sixth review pass over PR #10 |
 | 2026-08-22 | R-146 | Added and **FIXED from `main`** — a retained writer lease stopped its own process from exiting, measured `exit=124` against `exit=0`, in any host that lets the event loop drain (pi's print mode, a library consumer such as an ADR-0034 external controller; interactive and rpc call `process.exit()`, so there the sweep still ran). **Present in published 0.18.0 and 0.18.1.** R-102 accepted stranding the worktree; nobody had recorded that it stranded the process, and two comments promised the strand lasted "until process exit". Fixed by dropping the parent's references on the retain path only — the lock still outlives the call, and the successor can still acquire, which the regression asserts as a second property | sixth review pass over PR #10, fixed next |
 | 2026-08-22 | R-146 corrected, R-151 | **The independent review of the R-146 fix found the fix's own safety argument half-false, and a claim repeated here unchecked.** The helper's `herdr tab close` had no wall-clock timeout, so a herdr that accepts and never answers held the lock forever with no marker — and the fix had removed the only symptom (a hung `pi`), turning R-102's rejected outcome into a silent one. Bounded now, forced by a test with a `herdr` that sleeps. The scope claim was also wrong: `process.exit()` runs exit handlers, so only hosts that let the loop drain (pi's print mode, library consumers) were wedged — `src/cli.ts` was cited as evidence and has one subcommand and no leases. One unref line was unforced and is gone. R-151 records what the fix newly exposes: the reaper and the helper now close the same tab | independent review of PR #14 |
 | 2026-08-22 | R-146 (second review) | **The review of the fix found four more, two behavioural.** Retention was not terminal — a later `release()` ran the clean handshake, overwrote `retained:herdr-close-failed` with `completed` and told the helper to exit `clean`, so the pane was abandoned and the ledger claimed a handover; `release()` now answers `retained`, which required making that a real member of `LeaseReleaseOutcome`. `herdrCloseTimeoutMs: 0` silently restored the unbounded hang, because Node reads `timeout: 0` as no timeout (measured 3004ms for a 3s sleep) — both bounds now refused loudly by name. Plus a non-hermetic test and a fake `herdr` that orphaned a `sleep` per run. **And the new refusal test hung the runner instead of failing** — R-119's shape in the commit that cites R-119 — because an unexpected success left an untracked lease holding a live `flock`: a test that proves a refusal must clean up the success it did not expect | second review of PR #14 |

@@ -35,25 +35,36 @@ permissible, able to refuse or allow but never to narrow. **This package is now 
 is an argument rather than a veto. Definitions are **Agent Skills (`SKILL.md`)** files whose `allowed-tools`
 becomes the grant; the pi-subagents ceiling port is deleted; the interceptor survives only as a tripwire.
 
-**Current release state, verified 2026-08-21:** PR #11 is merged and `main` is
-`1948b9406c13c9730f2fc103e68023d6e58c5e85`. **Source is ahead of everything published:** the package reads
-`0.18.1`, but tag `v0.18.1` and npm `latest` both point at `8feaacbdf6003c783225e375b61874a599963f47`, the
-commit before the canonical ledger v2 contract. `packages/pi-daddy/contracts/ledger/v2/` and the `contracts`
-entries in `files`/`exports` are therefore on `main` and **not in npm `0.18.1`** — same version number, two
-different payloads, which is exactly the confusion to keep in mind before citing "0.18.1" as if it were one
-thing. The latest GitHub Release is still `v0.17.1`. Thirty-four ADRs are decided (0034 amended after
-review). **`main` itself** — not a follow-up branch; `feat/ledger-v2-contract-artifacts` is merged — carries
-596 unit + 44 integration tests, all passing, plus a 10-test opt-in tier behind `PI_GRANTS_IT_MODEL=1` that
-is not run without explicit authorization.
+**Current release state, verified 2026-08-22.** npm `latest` and tag `v0.18.1` both point at
+`8feaacbdf6003c783225e375b61874a599963f47`, and the latest GitHub Release is still `v0.17.1`. **`main` is
+ahead of everything published:** it has since taken PR #11 (the canonical ledger v2 contract) and PR #13, so
+`packages/pi-daddy/contracts/ledger/v2/` plus the `contracts` entries in `files`/`exports` are on `main` and
+**absent from the published `0.18.1` tarball** — one version number, two payloads, which is the confusion to
+avoid before citing "0.18.1" as if it were one thing. Shipping them is a version-bump-and-release decision
+nobody has authorized.
 
-**Workspace routing still does not attenuate on `main`, and it is the standing exception to any readiness
-claim.** ADR-0035 and its implementation live on **PR #10 (`adr/0035-workspace-attenuation`), an open draft
-at `92ccbb8` that must not merge** — its own latest comment records 601/602 unit tests with the canonical
-refusal-enum contract test failing, and its propagation, wildcard-attenuation, gating, `init` and G36
-production-path evidence work is unfinished. Until it or an equivalent fix lands, recursive critical work can
-route a descendant to a registered workspace its parent was not granted. **No full READY verdict is
-available**: a matrix over the released baseline must carry this as an explicit exception and may be no
-stronger than READY WITH EXPLICIT EXCEPTIONS.
+**PR #10 — ADR-0035, 0.19.0, workspace routing as a capability — is OPEN and is where the current work is.**
+Thirty-five ADRs are decided (0034 amended three times, 0035 amended three times after review). **Until it or
+an equivalent fix lands, workspace routing does not attenuate on `main`**: recursive critical work can route a
+descendant to a registered workspace its parent was not granted, so any readiness claim over the released
+baseline carries that as an explicit exception and is no stronger than READY WITH EXPLICIT EXCEPTIONS.
+
+**Read `docs/SESSION-LOG.md`'s top entry before touching PR #10 — FIVE review passes have run over it.**
+Each reviewed the previous one's FIXES and found blockers in them — the fourth found R-136 marked FIXED
+while a function the fixing commit added still hung session start. So the rule below is
+sharper than it first looked: adding a namespace is a nine-site change **and the sites you touch need the
+same adversarial read as the ones you missed**. Both earlier passes also stated a mutation count that
+measured what had been checked rather than what was covered.
+
+**Read `docs/SESSION-LOG.md`'s top entry before touching PR #10.** Two review passes and a mutation battery
+found that ADR-0035 taught the new `workspace:` namespace to three of the **nine** sites that already knew
+about `agent:`, and that the three properties the ADR advertised most loudly — the gate, the `init`
+scaffolding, and "attenuation comes for free" — were each written beside a fix that did not implement them.
+The generalisable rule is now in the ADR's amendment and in R-133: **a capability namespace is a nine-site
+change**, and `test/workspace-capability.test.ts` is organised by site so the checklist is executable rather
+than remembered. R-135, found by the mutation battery rather than by either reviewer, is the older and worse
+one: R-26's wildcard rule had been enforced only on the interceptor path, so `tool:*` reached delegated
+children in every published version.
 
 **This clone is shared with other sessions.** One of them checked out `pr10` under an in-progress task on
 2026-08-21 and two measurements were briefly attributed to the wrong tree. **Print `git rev-parse HEAD` in
@@ -87,7 +98,7 @@ can run `env -u PI_GRANTS_GRANT pi …` and get an ungoverned descendant (measur
 docs/SPEC.md              — WHAT THE PRODUCT IS, current state, no history. Read this second.
 docs/SESSION-LOG.md       — START HERE when resuming: state, verified facts, next actions. Newest on top.
 docs/03-risks.md          — live risk register. R-25 onward are current; R-01..R-24 serve the retired thesis
-docs/06-decisions/        — thirty-four ADRs. Reversals are kept and marked: 0004→superseded, 0005 park→
+docs/06-decisions/        — thirty-five ADRs. Reversals are kept and marked: 0004→superseded, 0005 park→
                             superseded, 0006 (magnitude claim falsified), 0007 THE REFRAME, 0008
                             attenuation + cardinality, 0009 pi-fabric (parked), 0010 approvals, 0011
                             universal capabilities, 0012 bash, 0013 pi-subagents (superseded by 0016),
@@ -105,6 +116,8 @@ docs/06-decisions/        — thirty-four ADRs. Reversals are kept and marked: 0
                             spawnable (handoff items B1/B2/B4); 0029-0033 cover safe init defaults,
                             stored grants, executor probing, live observability and sequential chains;
                             0034 adds generic runtime-enforcement primitives for external controllers
+                            (amended three times after review), 0035 workspace routing is a capability — it was
+                            the one dimension that did NOT attenuate until 0.19.0 (R-131, probe g36)
 docs/probes/              — measurement evidence, all against real software. Each has a "what this does
                             not establish" section: baseline/, pi-fabric-eval/, approval-ux/,
                             adr-0011-universal/, g1-argv/, g5-bash-escape/, g13-subagents-coupling/,
@@ -112,7 +125,10 @@ docs/probes/              — measurement evidence, all against real software. E
                             b2-init-principal-pi-skills/ (the whole init loop against the real package),
                             g34-runtime-enforcement/ (kernel writer leases, crash recovery, literal argv),
                             g35-flock-fd-inheritance/ (`flock`'s command INHERITS the lock fd — the probe
-                            that settled two reviewers who had measured it and disagreed)
+                            that settled two reviewers who had measured it and disagreed),
+                            g36-workspace-attenuation/ (routing does NOT attenuate — a child routed to
+                            staging took a write lease on prod, while grant and depth narrowed in the
+                            same child env; R-131, ADR-0035's blocking input)
 hooks/pre-commit          — working rule 10's guard: refuses a commit on `main`. Inert until you run
                             `git config core.hooksPath hooks` — per clone, not carried by the repository
 docs/00-blueprint.md      — the architecture handoff, verbatim (immutable source input)
@@ -120,7 +136,7 @@ docs/archive/             — SUPERSEDED, kept as evidence, never edited to matc
                             registers (discovery, assumptions, landscape, metrics), ROADMAP, gate reports,
                             both code reviews, the old specs, the completed implementation plan, and the
                             dead upstream proposal. See its README for why each stopped being current.
-packages/pi-daddy  — THE PRODUCT (0.18.1): SKILL.md definitions, resolver, v2 ledger,
+packages/pi-daddy  — THE PRODUCT (0.19.0, unreleased — PR #10): SKILL.md definitions, resolver, v2 ledger,
                             delegate/delegate_all/delegate_chain, catalog, bound human approval, two
                             executors (process | herdr pane), governed-writer leases, named checks, and
                             `pi-daddy init` — scaffolding that does not choose a ceiling (ADR-0028)
@@ -148,10 +164,13 @@ refuses until a gate passes that no longer means anything. They are in git histo
 
 ```bash
 cd packages/pi-daddy
-npm test                   # 596 unit tests — fast, pure, no pi, no network (the branch guard spawns git)
+npm test                   # 637 unit tests — fast, no pi, no network (the branch guard spawns git)
 npm run typecheck          # src + extensions + tests + integration tests
-npm run test:integration   # 44 tests vs a REAL pi process AND a real herdr server — ~55s, no model tokens
+npm run test:integration   # 45 tests vs a REAL pi process AND a real herdr server — ~55s, no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and USE it
+npm run test:mutation      # rule 7 as a control: 20 pinned (patch -> the test it must break) pairs.
+                           # Minutes, edits files in place, refuses a dirty tree. Run it before
+                           # pushing anything that adds or changes a guard (R-142: no CI runs it yet)
 PI_GRANTS_IT_MODEL=1 npm run test:integration   # + an end-to-end tier with a real model (costs money)
 PI_GRANTS_KEEP_TMP=1 npm test                   # keep fixture directories for inspection after a failure
 ```

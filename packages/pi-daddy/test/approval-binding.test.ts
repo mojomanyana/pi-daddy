@@ -14,7 +14,10 @@ const def: SkillDefinition = {
 };
 
 const base = {
-  ownGrant: ["agent:debugger", "tool:read", "tool:bash"],
+  // `workspace:w1` is required since ADR-0035 — routing is an authority the caller must hold.
+  // Both workspaces are authorised so the mismatch cases below isolate the BINDING scope rather
+  // than tripping ADR-0035's routing-authority check first, which fires earlier by design.
+  ownGrant: ["agent:debugger", "tool:read", "tool:bash", "workspace:w1", "workspace:w2"],
   depth: 0,
   maxDepth: 2,
   gated: ["tool:bash"],
@@ -149,7 +152,7 @@ test("binding effective capabilities exactly match the eventual grant when agent
   const self: SkillDefinition = { ...def, allowedTools: "Read agent:debugger" };
   const ctx = {
     ...base,
-    ownGrant: ["agent:debugger", "tool:read"],
+    ownGrant: ["agent:debugger", "tool:read", "workspace:w1"],
     gated: ["agent:debugger"],
     definitions: new Map([["debugger", self]]),
   };
@@ -222,4 +225,54 @@ test("an internally contradictory persisted binding is not a binding at all", as
   assert.equal(isApprovalBinding({ ...bound.approvalBinding, requested: ["tool:read", "tool:bash", "tool:write"] }), false);
   assert.equal(isApprovalBinding({ ...bound.approvalBinding, effective_sha256: "b".repeat(64) }), false);
   assert.equal(isApprovalBinding({ ...bound.approvalBinding, workspace_id: 7 }), false);
+});
+
+/**
+ * ADR-0035's refusal, at the planner where it is decided.
+ *
+ * The escalation this closes was measured before the fix existed
+ * (`docs/probes/g36-workspace-attenuation`): a child routed to `staging` planned a grandchild for `prod`
+ * with no refusal at all, took a write lease, and would have started there.
+ *
+ * The production change that breaks this: removing the `mayRouteToWorkspace` guard from `planDelegation`.
+ */
+test("routing to a workspace the session does not hold is refused and recorded as an escalation", () => {
+  const ungranted = planDelegation(
+    { task: "probe one failure", agent: "debugger", boundWorkspaceId: "prod" },
+    base,
+  );
+  assert.equal(ungranted.ok, false);
+  assert.equal(ungranted.refusal?.code, "WORKSPACE_NOT_AUTHORIZED");
+  // In `denied`, so `isEscalationAttempt` and every audit query see it — the DEFINITION_NOT_AUTHORIZED shape.
+  assert.deepEqual(ungranted.result.denied, ["workspace:prod"]);
+  // The message names the missing capability and what the session may route to, so the fix is one edit.
+  assert.match(ungranted.reason ?? "", /does not hold workspace:prod/);
+  assert.match(ungranted.reason ?? "", /may route to: workspace:w1, workspace:w2/);
+
+  // A session holding it routes normally.
+  const granted = planDelegation(
+    { task: "probe one failure", agent: "debugger", boundWorkspaceId: "w1" },
+    base,
+  );
+  // It still hits the gate for `tool:bash`, which is the point: routing authority is a SEPARATE question
+  // from capability approval, and passing one does not pass the other.
+  assert.notEqual(granted.refusal?.code, "WORKSPACE_NOT_AUTHORIZED", granted.reason);
+  assert.equal(granted.refusal?.code, "GATED_UNAPPROVED");
+
+  // And a session holding NO workspace capability is told so explicitly rather than left guessing.
+  const none = planDelegation(
+    { task: "probe one failure", agent: "debugger", boundWorkspaceId: "prod" },
+    { ...base, ownGrant: ["agent:debugger", "tool:read", "tool:bash"] },
+  );
+  assert.match(none.reason ?? "", /may route to no workspace at all/);
+});
+
+test("an ungoverned session can still route anywhere — governance is opt-in", () => {
+  // A session holding `tool:*` has opted out. Refusing it here would break the one rule this package must
+  // never break by accident, which is exactly how R-28's shape got into `resolve()` at 0.11.2.
+  const ungoverned = planDelegation(
+    { task: "probe one failure", agent: "debugger", boundWorkspaceId: "anything" },
+    { ...base, ownGrant: ["tool:*", "agent:debugger", "tool:read", "tool:bash"] },
+  );
+  assert.notEqual(ungoverned.refusal?.code, "WORKSPACE_NOT_AUTHORIZED");
 });

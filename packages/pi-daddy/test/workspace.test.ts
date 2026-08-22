@@ -385,6 +385,30 @@ test("a registered root that is not a Git worktree is refused", async () => {
   );
 });
 
+/**
+ * Invalid JSON *text*, which the six structural cases below never covered.
+ *
+ * A mutation audit deleted the `JSON.parse` try/catch with the whole suite green: every existing case is valid
+ * JSON with the wrong shape. Without the guard a truncated registry throws a raw `SyntaxError` instead of a
+ * `GovernanceRefusal` carrying `registry_path`, so it escapes the structured-refusal contract an external
+ * controller reads (ADR-0034).
+ *
+ * Breaks by: replacing the guarded parse with a bare `JSON.parse(raw)`.
+ */
+test("a registry that is not valid JSON is refused as a governance refusal, not a SyntaxError", async () => {
+  const dir = await tempDir("workspace-badjson-");
+  for (const [name, body] of [["truncated", "{"], ["empty", ""], ["garbage", "not json at all"]] as const) {
+    const path = join(dir, `${name}.json`);
+    await writeFile(path, body, "utf8");
+    await assert.rejects(loadWorkspaceRegistry(path), (e: Error & { code?: string; details?: Record<string, string> }) => {
+      assert.equal(e.code, "WORKSPACE_NOT_REGISTERED", name);
+      assert.match(e.message, /not valid JSON/, name);
+      assert.equal(e.details?.registry_path, path, "an external controller needs the path in the details");
+      return true;
+    }, `${name} must be a structured refusal`);
+  }
+});
+
 test("a malformed workspace registry grants nothing, loudly", async () => {
   const root = await gitWorkspace();
   const dir = await tempDir("workspace-bad-registry-");
@@ -622,7 +646,10 @@ test("a herdr that hangs on close does not strand the lock forever", async () =>
   const root = await gitWorkspace();
   const leaseDir = await tempDir("workspace-leases-");
   // A herdr that accepts the close and never answers — the case a retry count cannot bound.
-  const fakeBin = await stubHerdr("exec sleep 5");
+  // 30s, not 5: the successor loop below waits ~5s, so a 5s stub let the un-bounded case pass by finishing
+  // just inside the window — my own orphan fix had quietly taken this guard's teeth out (rule 7). With the
+  // bound in place `execFile` SIGKILLs it at 800ms, and `exec` means the signal reaches the sleep itself.
+  const fakeBin = await stubHerdr("exec sleep 30");
   const moduleUrl = pathToFileURL(join(process.cwd(), "src", "workspace.ts")).href;
   const code = `
     import { validateRegisteredWorkspace, acquireWorkspaceLease } from ${JSON.stringify(moduleUrl)};
