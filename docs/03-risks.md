@@ -3254,6 +3254,38 @@ steps sharing one definition raise one dialog; a corrupt ledger is reported at s
 mechanical version: if CI cannot run a suite, its last-run date belongs in the session log beside the state it
 verified.
 
+## R-156 · The most-read four lines in the repository disagreed with the paragraphs under them — M×H, FIXED
+
+Added and fixed 2026-08-23, found by re-reading `docs/SESSION-LOG.md` at session close rather than by any
+check.
+
+After 0.19.0 was released and the model tier had run, the `## NEXT SESSION` **STATE** block — the first four
+lines a resuming session reads — still said *"everything is merged; nothing is released"*, named a commit three
+merges back, and said the paid tier *"was not run and needs separate authorization"*. Every one of those was
+false, and the paragraphs **immediately below it** said so correctly: each change had been appended as a new
+paragraph without the summary above being touched.
+
+**This is the project's signature defect in its worst possible location.** R-59 was four documents describing a
+fixed defect as live; R-72 was five risk headlines saying OPEN over bodies that said FIXED; R-144 was three
+documents selling a deleted guard. All the same shape — a summary outliving what it summarises — and the
+mechanical guard this repository built for it (`test/risk-register-status.test.ts`) checks **risk headlines
+against risk bodies** and nothing else. The session log's own summary has no such check, and it is the document
+`CLAUDE.md` sends every new session to first.
+
+**Why no existing control caught it.** CI runs the suites; the suites check the register's headlines, the line
+ceiling, the branch guard and the refusal enumeration. Nothing compares an orienting document's summary with
+its own body, because "agrees with the prose below it" is not mechanically expressible. R-34's rule — *a check
+an operator has to know to run is not a control* — has a limit case here: a check nobody can write is not a
+control either, and the honest response is to say where the gap is rather than imply coverage.
+
+**Fixed** by correcting the block and adding a one-line instruction inside it — *if you change what is true
+here, change these lines in the same commit* — plus a parenthetical recording that it was wrong for about an
+hour, so the next reader knows the failure mode is real rather than hypothetical.
+
+**Trigger:** any commit that changes release state, test counts or what is open, and does not touch the STATE
+block. The cheap mechanical half, if anyone wants it: fail the suite when `docs/SESSION-LOG.md`'s STATE block
+names a commit that is not `HEAD`'s ancestor, or a version that is not the package's.
+
 ---
 
 ## Register log
@@ -3344,3 +3376,4 @@ verified.
 | 2026-08-23 | R-142, R-129 | **Reconciled, not reopened.** R-142 asked for CI and is closed by R-153: the workflow runs `test:mutation` on every PR and ADR-0035's merge brought the catalogue to `main`, so that step stopped being a no-op. Its own trigger had fired twice more before CI existed — two further passes, seven more guards deletable with the suite green between them. R-129 (the 17-mutation audit had no artifact) predates the catalogue and is superseded by it | ADR-0035 merged; the record squared |
 | 2026-08-23 | R-154 | Added — **the first verification of the published ARTIFACT rather than the tree.** `pi-daddy@0.19.0` installed from the registry into a scratch project: narrowing, escalation refusal, the new `WORKSPACE_NOT_AUTHORIZED` routing refusal and its allowed counterpart, the two-authorities rule, R-135's held-but-not-inherited wildcard, the ledger v2 contract through its export path, and the `bin` symlink (R-73's defect) all confirmed. One defect found: seven published `.d.ts` files use `NodeJS.*` while `@types/node` is only a devDependency, so a TypeScript consumer with `skipLibCheck: false` and no Node types gets seven errors. One line in `peerDependencies` fixes it; it needs a release decision | post-release verification of 0.19.0 |
 | 2026-08-23 | R-155 | Added and fixed — **the opt-in model tier ran for the first time ever** (55 tests: 54 pass), and its single failure was a stale TEST, not the product: it asserted every ledger LINE had a distinct `childId`, true when a step wrote one line and false since ADR-0034 gave each child lifecycle events too — 9 lines, 3 ids, the property intact. **Rule 7's mirror, which this repository had only half written down:** a test that can no longer PASS is as dead as one that cannot fail, and an opt-in tier CI cannot run is where such a test hides indefinitely | first run of the model tier |
+| 2026-08-23 | R-156 | Added and fixed — **the session log's STATE block, the first four lines any session reads, said "nothing is released" and "the paid tier was not run" an hour after both became false**, naming a commit three merges back, while the paragraphs directly beneath it were correct. R-59, R-72 and R-144's shape in the one document `CLAUDE.md` sends every new session to first. No control caught it because the mechanical guard here checks risk headlines against risk bodies, and nothing compares an orienting summary with its own prose — a gap now stated, with the cheap version of the check named | re-reading the record at close |
