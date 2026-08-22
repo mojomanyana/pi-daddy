@@ -21,10 +21,14 @@ separate authorization.
 validated CWD and a ledger line naming `prod` — every other dimension attenuated and the working directory did
 not. That shipped in 0.18.0 and is fixed on `main`, unreleased.
 
-**The release decision is the one thing waiting on a human.** Source is `0.19.0`; npm `latest` and tag `v0.18.1`
-both point at `8feaacb`, and the newest GitHub Release is still `v0.17.1`. `## Unreleased` in the package
-CHANGELOG holds the R-146/R-152 hang fixes, which are defects in *published* 0.18.0/0.18.1 and can ship as
-0.18.2 without the breaking routing change below them. Nothing here bumps a version, moves a tag, or publishes.
+**0.19.0 is RELEASED (2026-08-23) — the first publish since 0.18.1, and it is breaking.** Every grant that
+routes a child to a registered workspace must add `workspace:<id>`; a delegation naming a workspace the session
+does not hold is refused `WORKSPACE_NOT_AUTHORIZED`. **A 0.18.2 was staged and deliberately abandoned**, and the
+reasoning is worth keeping: it would have fixed the retained-lease hang while leaving **R-131 — routing does not
+attenuate — live in published 0.18.0 and 0.18.1**, because the fix for R-131 *is* the breaking change. One
+release fixes all three; two lines would have meant supporting a version with a known escalation in it. The
+CHANGELOG's 0.19.0 section records that reversal rather than quietly dropping the paragraph that argued the
+other way.
 
 **Eight review passes ran over ADR-0035 and the invariant held in the last five** — three-level transitivity on
 the production path, both halves of two-authorities, every wildcard channel, the grant store, all three
@@ -53,9 +57,10 @@ unforced until a reviewer made me test it), the matrix existed, and CI ran the c
    govern real work for a few weeks and read `/grants ledger`'s `N prompt · N persisted` line. That ADR rests on
    an asserted fatigue argument until someone does. The machinery has existed since 0.13.0; the *usage* is what
    is missing.
-2. **The release decision** — 0.18.2 for the hang fixes, and whether 0.19.0's breaking routing change ships
-   with them or after them. See the release paragraph above; this is a version-bump-and-publish authorization,
-   not a code task.
+2. **Watch for upgrade friction on the breaking change.** 0.19.0 requires `workspace:<id>` in any grant that
+   routes; four fixtures in this repository began refusing until granted, which is the one-line edit an operator
+   faces. `pi-daddy init` scaffolds the registry but deliberately does not choose a ceiling (ADR-0028), so the
+   operator writes the capability by hand. If that turns out to be the wrong trade, it is an ADR, not a patch.
 3. **R-137 is the sharpest open risk.** Routing attenuates by *id*, not by *destination*: a child holding
    `workspace:staging` and `tool:write` can repoint that entry at another worktree and route its grandchild
    there, measured in `docs/probes/g37-registry-tamper`. The content pin that would close it was reverted after
