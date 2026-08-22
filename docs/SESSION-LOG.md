@@ -7,188 +7,85 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ## NEXT SESSION — read this, then pick one
 
-**2026-08-22 — R-146 is FIXED on `main` and UNRELEASED (PR #14).** A retained writer lease detained its own
-process, in published 0.18.0 and 0.18.1; a hung `herdr tab close` could then hold the lock forever, which the
-first draft of the fix made silent by removing the symptom. Both bounded now, retention is terminal, and the
-counts below are stale: **637 unit + 45 integration** on THIS branch, measured at `4a04819`. (This paragraph
-arrived from `main`, where "this branch" meant PR #14 and the number was 598 — a stale count inside the sentence
-that warns about stale counts, which is why the number is now qualified by the commit it was measured at.) `## Unreleased` in the package CHANGELOG now carries two
-entries and no version bump — shipping is a release decision. R-151 is open, from the review of that fix.
+**Before your first edit: `git branch --show-current`. If it says `main`, branch.** Working rule 10 — and since
+2026-08-22 the *server* enforces it: `main` requires a pull request (zero approvals) with both CI legs green,
+and `enforce_admins` is on, so a direct push is refused rather than merely discouraged.
 
-**Before your first edit: `git branch --show-current`. If it says `main`, branch.** Working rule 10, and
-`hooks/pre-commit` enforces it once `git config core.hooksPath hooks` is set in your clone. This line is at
-the top because the rule was broken by drift, and this file is what a session actually reads first.
+**STATE, 2026-08-23. Everything is merged; nothing is released.** `main` is `209ef70`. **Thirty-six ADRs.**
+No open pull requests. Measured on `main`, on both matrix legs in CI: **641 unit · 45 integration · typecheck ·
+installed-package smoke · 27/27 catalogued guards**. The paid `PI_GRANTS_IT_MODEL=1` tier was not run and needs
+separate authorization.
 
-**2026-08-22 (sixth pass) — PR #10 is OPEN, still must not merge, and the reason is now the PR DESCRIPTION.**
-Four reviewers, R-143…R-150. The invariant held a fourth time. Read **R-143 first if you are about to run
-`npm run test:mutation`**: it reported `0/20` with every guard intact, because this environment exports
-`FORCE_COLOR=3` — fixed, and 20/20 now, but the lesson is that a control which cannot read its instrument
-accuses everything. **R-144 is the finding to carry:** the commit that narrowed this PR deleted the registry
-ownership guard and left three documents selling it, one of them R-137's own blast-radius bound, so an OPEN
-risk understated itself. *A commit that removes a guard must grep for the guard's claims.* Still open and
-runtime: R-145…R-150, of which **R-146 is a hang** (a retained lease stops its own process exiting). Before
-merge: the PR body claims a registry-integrity gap is closed by a mechanism reverted two passes ago.
-**637 unit + 45 integration**, measured at `4a04819`; **24/24** catalogued guards.
+**What the product now does that it could not before:** workspace routing is a capability, so it attenuates
+(ADR-0035). Before that, a child routed to `staging` could route its grandchild to `prod` with a real lease, a
+validated CWD and a ledger line naming `prod` — every other dimension attenuated and the working directory did
+not. That shipped in 0.18.0 and is fixed on `main`, unreleased.
 
-**2026-08-22 — PR #10 (ADR-0035, 0.19.0) is OPEN and this is the work.** FIVE independent review passes have
-now run over it, each finding defects in the previous one's fixes, and they merge inside PR #10 rather than
-being narrated by a second PR. (**`fix/adr-0035-review` and `review/0035` are DONE** — the first is the same
-commit as the PR head and the second is an ancestor of it, so there is nothing on either to merge. This
-paragraph said the fixes were still to be pushed; that push had already happened, and the sixth pass was asked
-the question the stale sentence provokes.)
-**637 unit + 45 integration · 24/24 catalogued guards**, measured at `4a04819`. The full account is the top dated entry below; what a resuming session needs:
+**The release decision is the one thing waiting on a human.** Source is `0.19.0`; npm `latest` and tag `v0.18.1`
+both point at `8feaacb`, and the newest GitHub Release is still `v0.17.1`. `## Unreleased` in the package
+CHANGELOG holds the R-146/R-152 hang fixes, which are defects in *published* 0.18.0/0.18.1 and can ship as
+0.18.2 without the breaking routing change below them. Nothing here bumps a version, moves a tag, or publishes.
 
-1. **The generalisable rule, twice refined.** Adding a capability namespace is a nine-site change (R-133) —
-   **and the sites you touch need the same adversarial read as the ones you missed** (R-136, R-137), because
-   the fixes for the second pass contained two shipping blockers of their own. `test/workspace-capability.test.ts`
-   is the executable checklist, labelled by site NAME.
-2. **A count is a claim.** Both earlier passes stated a mutation count that measured what had been checked
-   rather than what was covered, and in both cases edits were revertible with the suite green. Prefer "every
-   fix has a named test, verified by reverting it" over a number, and re-run the battery from a script file —
-   shell escaping silently produced a passing check against an unmodified file twice.
-3. **R-135 is still the one to read if you only read one**, and it is the entry a user needs: `tool:*` reached
-   delegated children in every published version.
-4. **Still open, deliberately:** R-138 (four pre-existing findings) and **R-110** — `correlation.workspace_id`
-   with no routing spec still produces a correct-looking record naming a workspace nobody authorised. It takes
-   no lease and sets no CWD, so it is not the escalation, but it is half of the argument ADR-0035 used to
-   reject Option 4 and it has now survived three reviews. **Do not let this merge unrecorded a fourth time.**
-5. Option 2 from ADR-0035 (strip the registry, re-supply a narrowed one per child) remains available as
-   defence-in-depth and remains not taken. A child can still *enumerate* ids it may not use **and can still
-   change what one means** — R-137 is OPEN, measured by `docs/probes/g37-registry-tamper`. (This line said
-   the opposite until 2026-08-22, in the same commit that reverted the pin: a summary contradicting its own
-   body, which is the defect the round below had just recorded.)
+**Eight review passes ran over ADR-0035 and the invariant held in the last five** — three-level transitivity on
+the production path, both halves of two-authorities, every wildcard channel, the grant store, all three
+delegation tools. **Every finding since the second pass was the claims layer or the runtime half.** If you read
+only one, read **R-144**: the commit that *narrowed* that PR deleted a guard and left three documents selling
+it, one of them R-137's own blast-radius bound, so an OPEN risk understated itself. *A commit that removes a
+guard must grep for the guard's claims, exactly as one that adds a guard must add its test.*
 
-**Release state, CORRECTED 2026-08-21 — the 2026-08-20 paragraph below is stale and kept on purpose
-(rule 2).** PR #11 merged at `1948b9406c13c9730f2fc103e68023d6e58c5e85`, and that is what repository `main`
-now points at. **The published artifacts did not move with it:** peeled tag `v0.18.1` and the npm
-`pi-daddy@0.18.1` `gitHead` both still resolve to `8feaacbdf6003c783225e375b61874a599963f47`, and the latest
-GitHub Release is still `v0.17.1`. The package source reads `0.18.1` **with the canonical-contract additions
-unreleased** — `packages/pi-daddy/contracts/ledger/v2/` plus the `contracts` entries in `files` and `exports`
-are on `main` and absent from the published 0.18.1 tarball, so *the version number no longer distinguishes
-them*. Shipping them is a version-bump-and-release decision nobody has authorized yet. Re-verified against
-`main` this session: **596 unit + 44 integration tests, all passing**, typecheck clean; the 10-test model
-tier was not run and remains separately authorized. And the work the paragraph below calls a "focused
-follow-up branch" (`feat/ledger-v2-contract-artifacts`) **is merged** — there is no pending branch for it.
+### The checks are mechanical now, and that changed the failure mode
 
-**The standing exception: workspace routing does not attenuate on `main`.** ADR-0035 and its implementation
-are on **PR #10 (`adr/0035-workspace-attenuation`), still a draft at
-`92ccbb818a430168d707d1d69f44e5fdfa46e8d3`, and it must not merge.** Its own latest comment records
-**601/602 unit tests**, the single failure being the canonical refusal-enum contract test: production adds
-`WORKSPACE_NOT_AUTHORIZED` while the closed v2 schema deliberately does not carry it. Still outstanding on
-that branch — propagation, wildcard attenuation, gating, `init`, and the G36 production-path evidence. Until
-it or an equivalent attenuation fix lands, recursive critical work can route a descendant to a registered
-workspace its parent was not granted. **A final full READY verdict is therefore unavailable**: a matrix over
-the released baseline must carry this as an explicit exception and may be no stronger than **READY WITH
-EXPLICIT EXCEPTIONS**.
+`.github/workflows/ci.yml` runs typecheck, the unit suite, a tree-cleanliness assertion, **the mutation
+catalogue** and the installed-package smoke on every PR, across the `engines` floor (22.19.0) and the
+development ceiling (24.x), with `FORCE_COLOR` pinned. Eight passes had each found guards deletable with the
+whole suite green; that was never a discipline problem, it was R-34 — *a check an operator has to know to run is
+not a control, it is a feature.*
 
-**A measurement hazard found the hard way this session, and the reason rule 5 needs a companion: this clone
-is shared, and another session checked out `pr10` underneath an in-progress task.** Two verification runs
-were attributed to `main` before `git rev-parse HEAD` showed `92ccbb8` — which is also where the 601/602
-figure comes from, and it is *not* `main`'s. Everything above was then re-derived in a dedicated `git
-worktree`, which a concurrent checkout cannot move. **Print `git rev-parse HEAD` in the same command as any
-measurement you intend to write down**, because a number is not evidence unless you can say which tree it
-came from.
+**It earned itself on its first real run** by splitting the matrix: 27/27 on 24.x, **0/27 on the floor**, every
+entry reporting *"the auditor could not read the output — this is NO verdict on the guard."* `node --test`
+defaulted to TAP before Node 23 and this parser reads `spec`. Pinned. Three things had to be true for that to
+cost five minutes instead of a sweep of 27 false "fixes": the positive control existed (R-143, and it was
+unforced until a reviewer made me test it), the matrix existed, and CI ran the catalogue at all.
 
-*(The paragraph that follows was accurate on 2026-08-20 and is left exactly as written — it records what was
-believed on its date. Superseded by the correction above.)*
+### NEXT SESSION — ranked, and none of it is blocking
 
-**Release state, re-verified 2026-08-20:** PR #12 is merged. Repository `main`, peeled tag `v0.18.1`, and
-the npm `pi-daddy@0.18.1` `gitHead` all point at `8feaacbdf6003c783225e375b61874a599963f47`;
-the latest GitHub Release remains `v0.17.1`. The focused `feat/ledger-v2-contract-artifacts` branch merged
-that main at `a26e2f2` and now has **596 unit + 44 integration tests**. The **10**-test opt-in model tier
-remains separately authorized and was not run.
+1. **The measurement ADR-0020 asks for.** Still the highest-value item and still only the operator can run it:
+   govern real work for a few weeks and read `/grants ledger`'s `N prompt · N persisted` line. That ADR rests on
+   an asserted fatigue argument until someone does. The machinery has existed since 0.13.0; the *usage* is what
+   is missing.
+2. **The release decision** — 0.18.2 for the hang fixes, and whether 0.19.0's breaking routing change ships
+   with them or after them. See the release paragraph above; this is a version-bump-and-publish authorization,
+   not a code task.
+3. **R-137 is the sharpest open risk.** Routing attenuates by *id*, not by *destination*: a child holding
+   `workspace:staging` and `tool:write` can repoint that entry at another worktree and route its grandchild
+   there, measured in `docs/probes/g37-registry-tamper`. The content pin that would close it was reverted after
+   being defeated four ways, and **nothing checks who may write the registry** (R-144). ADR-0036 territory, and
+   ADR-0035 explicitly declined Option 2 (strip the registry, re-supply a narrowed one) which is still
+   available as defence-in-depth.
+4. **R-145 needs a decision, not a patch.** A *gated* routing attempt takes the destination's exclusive writer
+   lease **before** the human is asked, and holds it for an unbounded dialog — model-reachable, and it emits an
+   `acquired`/`write` record for a child that never runs. Reversing the ordering means deciding what a bound
+   approval binds to; ADR-0034 chose "resolve then ask" deliberately, for R-110.
+5. **Cheap and open:** R-147 (a refused registry prints nothing anywhere, while a malformed `PI_GRANTS_DEPTH`
+   gets a notify — rule 8), R-149 (the registry read deadline is forced by nothing, and the module classifies
+   an `AbortError` no remaining code can produce), R-150 (seven guards nothing forces, one of them wired on the
+   quieter of two routes), R-151 and R-148 (both herdr-executor territory), R-141, R-140.
+6. **R-142 is closed by CI (R-153) and R-129 predates the catalogue** — reconciled 2026-08-23; do not reopen
+   either without new evidence.
 
-**A six-reviewer pass on 2026-08-20 rewrote the risk on this branch — read R-99…R-118 and the ADR-0034
-amendment before touching it.** The capability invariant held everywhere; the runtime half did not. And
-**four regressions the register claimed were absent**, so re-derive any claimed regression here rather than
-trusting the entry.
+### Habits this project keeps re-earning
 
-**2026-08-16/17 added the pi-daddy half of the `principal-pi-skills` integration** (handoff B1/B2/B4,
-ADR-0028 and ADR-0029), then **red-teamed it with five independent agents who found nine defects** — R-78
-through R-82, including an RCE in the generated grant file. Read that entry before adding anything that
-*generates* a file rather than reading one.
-
-ADR-0028: `npx pi-daddy init` scaffolds definitions and a grant **without choosing a ceiling**, and session
-start names what is spawnable and what is withheld. **What is left of that handoff is section A, and it is
-not ours** — `principal-pi-skills` declaring `allowed-tools` on its seven skills (A1) and installing into
-`skills/` as well as `agents/` (A2). Until A1 lands, `init` correctly reports `0 declaring allowed-tools`
-and the operator writes seven ceilings by hand. **Do not resolve A1 from here**: the handoff's proposed
-table is unresolved and self-contradicting, and the ceiling belongs to whoever wrote the skill.
-
-**Before the next package release, the ledger-contract follow-up needs review, a PR, and an explicit version
-decision.** Publishing a stable schema/fixture path is new public API; this branch does not change the package
-version, publish, move a tag, create a GitHub Release, or run the model tier. The older known-open list below
-remains unchanged: item 1 needs weeks of real usage, and items 6 and 7 are closed by decision.
-
-**The four unreviewed changes were reviewed by the operator on 2026-08-14 and three produced a finding**
-(R-60's guard, R-61's fourth state, R-63's twentyfold bias). **What made that review work is worth copying**:
-each hypothesis was checked by execution or by grep *first*, so the operator was handed a concrete finding
-with a worked example instead of "please look at this" — and two of the four were then cleared in minutes
-rather than costing a pass. Write the hypotheses down; verify them before asking.
-
-```bash
-cd packages/pi-daddy && npm test && npm run typecheck && npm run test:integration && npm run test:smoke
-PI_GRANTS_IT_MODEL=1 npm run test:integration   # the 10 model-driven ones — costs money
-```
-
-**2026-08-13/14 took this from 0.9.0 to 0.12.1: nine ADRs (0017–0025) and R-38 through R-59.** The shape of
-those two days matters more than the list:
-
-- **Six changes shipped on one pair of eyes** — all verified, all tested, all documented — and the first
-  red-team pass then found a defect that made two of them *inert* (`Available: none` told every model there
-  were no definitions to spawn) plus a test suite rewriting the developer's real approvals file.
-- **Four ADRs were written to fix that**, and the second pass found a defect that made one of them false on
-  exactly the case it was written for (a fresh approval crossed to the child **unpinned**, hidden by
-  lexicographic sort order).
-- **Tests and documentation caught neither**, because both were written by the same reasoning that
-  introduced them. Two independent agents, given the specific hypotheses to attack, caught both in minutes.
-
-**So: get the review before shipping the next three things, not after.** That is the single most useful
-sentence in this file.
-
-**Three habits that earned their place**, all of which produced a finding this session:
-1. **Verify a reported finding by execution before acting on it.** Twice the real defect was *worse* than
-   reported (R-41's keyspace, R-42's scope), and once the claim was **stale by four days** and had been
-   repeated by two reviewers and the assistant from a line in `CLAUDE.md` (R-59).
-2. **Ask "where else does this shape appear?"** Both times a fix contained a smaller copy of the bug it
-   fixed — R-38's preview, and ADR-0022's republish path — that question found it, not the tests.
-3. **When a guard fails, obey it.** `test/file-size.test.ts` refused `delegate.ts` at 413 lines; the cap was
-   not raised and the file was split along a seam three other modules already implied.
-
-### Known-open — the code items are DONE. What is left needs a human, not a session.
-
-| # | Item | Notes |
-| :--- | :--- | :--- |
-| 1 | **The measurement ADR-0020 asks for** — **the machinery now exists, the usage does not.** `/grants ledger` prints `N prompt · N persisted · …` and *"N of M attributed yes(es) came from the persisted store"*. | **Still the highest-value item and still only the operator can run it.** What changed: the missing piece is *use*, not tooling. ADR-0020 has a dated note; that ADR rests on an asserted fatigue argument until someone governs real work for a few weeks and reads the line. |
-| ~~2~~ | ~~**R-49** — an unlocked read-modify-write can resurrect a revoked approval~~ **CLOSED 2026-08-14 (0.13.0).** | The park said *"do not harden a layer whose fate item 1 decides"* — and the fix turned out to be **reuse, not hardening**: the ledger's lock moved to `src/file-lock.ts` and both writers share it, leaving nothing extra to delete if Option 3 is ever taken. **R-61 fell out of it**: a failed revoke printed *"no persisted approval named X"* while the approval stayed in effect. |
-| ~~3~~ | ~~**Background delegation** wants an ADR that cannot be written~~ **DECIDED 2026-08-14 — ADR-0026.** The blocking question is answered: a background delegation whose gates are unresolved when its tool call returns is **refused**, recorded as `gatedBlocked` with no source. A late approval starts nothing. | **Not implemented, deliberately** — what was missing was a decision, not code, and no workload yet needs it. Consequence worth knowing: background mode is only useful for **ungated** capability sets, and the remedy is operator pre-approval. |
-| ~~4~~ | ~~**Pane cleanup is not leak-proof**~~ **FIXED IN PART 2026-08-14 (R-62).** Open panes are closed on `exit`. | **Not** on SIGKILL, nor a SIGTERM nothing else is listening for — Node runs no `exit` handlers there. The obvious completion is **refused with a reason**: a signal listener here suppresses Node's default termination and would turn pi's "interrupt this turn" into "exit pi", on every session rather than the opt-in ones. |
-| ~~5~~ | ~~**The test suites leave a `mkdtemp` directory per test**~~ **CLOSED 2026-08-14** — `test/tmp.ts` hands out fixture directories and `after(cleanupTempDirs)` removes them; `PI_GRANTS_KEEP_TMP=1` keeps them for inspection. | A scan test fails if a suite calls `mkdtemp` directly or forgets the hook — the helper had to be *required*, not merely available. |
-| 6 | **`subagents:rpc:spawn` bypasses the tripwire.** Unfixable from here. | ADR-0013 Finding 6. Nothing to do; do not re-derive it. |
-| 7 | **`bash` escapes governance.** Out of scope by decision. | ADR-0012. Nothing to do; do not re-derive it. |
-| — | ~~R-34, R-35…R-62~~ **ALL CLOSED or recorded with a decision.** | Do not reopen without new evidence. |
-
-### If you want a fourth thing to pull
-
-The thread that produced most of this session: **grep for call sites rather than trusting a reading**, then
-**write a test that watches the real thing**. R-37, R-38, R-39, R-53 and R-54 were all found that way, and
-every one of them was a control that read as live and was not.
-
-### Things that look like work and are not
-
-- **`docs/archive/`** — superseded by design, kept as evidence, **never edited to match today**. Its README
-  says why each file stopped being current. Do not start there.
-- **"DTCM" in archived registers and ADRs** — deliberate. Those mentions *are* the retired thesis. See
-  `CLAUDE.md` and `.claude/rules/phase-gates.md` §4.
-- **The phase gates** — retired. `/kickoff`, `/gate`, `/validate` and `/spec` were removed 2026-08-11.
-- **The upstream pi-subagents proposal** — **dead** by ADR-0016 and archived. Do not file it.
-
-### If you change what the product claims, write an ADR
-
-That convention is why every reversal here was survivable, and there have been five. Then update
-`docs/SPEC.md` in the same change — a spec that lags the code is worse than no spec.
-
----
+- **Verify a reported finding by execution before acting on it** — including when you agree with it. Twice in
+  two days a reviewer's sentence was carried one level on unchecked, and both times re-deriving *narrowed* the
+  claim (R-146's scope, R-144's blast radius).
+- **A `void` return is a promise that nothing can be reported, and the caller will invent something** (R-152).
+- **Ask what a fix's own return value promises**, not just whether the fix is correct. Two passes over the
+  R-146 fix asked the second question and missed four defects.
+- **A measurement taken while something else mutates the tree is not a measurement.** Twice: integration run
+  beside a mutation sweep, and two sweeps overlapping. Also: a suite run with no `node_modules` reads as a
+  merge that lost tests.
+- **When a guard fails, obey it.** The 400-line ceiling fired three times on `workspace-lease.ts` in two days
+  and got a seam each time (`src/lease-helper.ts`); the cap has never been raised.
 
 ## 2026-08-22 (CI) — the checks stop being opt-in
 

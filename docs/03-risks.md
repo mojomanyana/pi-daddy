@@ -2836,7 +2836,7 @@ delegating still takes a writer lease — unchanged from 0.18.1.
 
 ---
 
-## R-142 · The mutation audit is not a control until CI runs it — M×M, OPEN
+## R-142 · The mutation audit is not a control until CI runs it — M×M, FIXED (by CI, R-153)
 
 Added 2026-08-22. `scripts/mutation-audit.mjs` pins twenty `(patch → the test it must break)` pairs, and it
 already caught four bad entries in its own catalogue plus a test of mine that passed for the wrong reason. But
@@ -2854,6 +2854,13 @@ the server-side half `docs/WORKING-RULES.md` already recommends — requiring a 
 approvals, which costs a single maintainer nothing. Rule 10's enforcement paragraph makes the same point about
 `hooks/pre-commit`: it is wired per clone, so *"if that command prints nothing the hook is inert."* The same
 sentence is now true of this script.
+
+**CLOSED 2026-08-23 by R-153.** `.github/workflows/ci.yml` runs `test:mutation` on every pull request, and
+ADR-0035's merge brought the catalogue to `main`, so the `--if-present` guard in that step is no longer a
+no-op — the trigger this entry wrote for itself. **Its own prediction was right twice over:** the trigger said
+*"the next review pass finding a guard deletable with the suite green — if that happens, the answer is CI and
+not a sixth pass"*, and two more passes ran before CI existed, finding seven more such guards between them.
+The paragraph below is left as written (rule 2).
 
 **Deliberately not added in this PR.** It is repository infrastructure rather than ADR-0035, and this branch
 was just narrowed for precisely that reason — every layer of scope added here landed in code the previous
@@ -3243,3 +3250,4 @@ any second call site of a rule the catalogue pins on the first.
 | 2026-08-22 | R-146 (second review) | **The review of the fix found four more, two behavioural.** Retention was not terminal — a later `release()` ran the clean handshake, overwrote `retained:herdr-close-failed` with `completed` and told the helper to exit `clean`, so the pane was abandoned and the ledger claimed a handover; `release()` now answers `retained`, which required making that a real member of `LeaseReleaseOutcome`. `herdrCloseTimeoutMs: 0` silently restored the unbounded hang, because Node reads `timeout: 0` as no timeout (measured 3004ms for a 3s sleep) — both bounds now refused loudly by name. Plus a non-hermetic test and a fake `herdr` that orphaned a `sleep` per run. **And the new refusal test hung the runner instead of failing** — R-119's shape in the commit that cites R-119 — because an unexpected success left an untracked lease holding a live `flock`: a test that proves a refusal must clean up the success it did not expect | second review of PR #14 |
 | 2026-08-22 | R-152 | Added and fixed — **`markRetained` returned `void` and its only caller hardcoded `"retained"`**, so the ledger asserted a live pane for a helper that had already died, for a lease already cleanly released (the mirror of R-146, introduced by fixing it), and for a retention whose record never landed. Now answers in the release vocabulary and the caller ledgers what it says; four guards, each forced by reverting it alone. The bounds were wrong at the top end too — `MAX_SAFE_INTEGER` truncates to 1ms and SIGKILLs every close — and refused on the governance channel, inviting a controller to retry a permanent caller bug; a bad argument now throws `RangeError`, and the check moved above the read-lease early return where it had validated nothing. **Both earlier passes asked whether the fix was correct and not what its return value promised** | independent reviews of the merged PR #14 |
 | 2026-08-22 | R-153 | Added and **fixed in part** — CI exists. Eight review passes found guards deletable with the suite green because the only thing forcing rule 7 was somebody choosing to look (R-34's shape, for years). `.github/workflows/ci.yml` runs typecheck, the unit suite, a tree-cleanliness assertion, the mutation catalogue (`--if-present` until PR #10 brings it to `main`) and the installed-package smoke on every PR, across the `engines` floor and the development ceiling — with `FORCE_COLOR=0` pinned at the workflow level, which is R-143: the catalogue reported `0/20` with every guard intact in a colouring environment, and CI would have inherited that. **It reports and does not block** — no branch protection, so a red run stops nothing; integration and the model tier are deliberately not covered and the workflow says why | R-142's trigger, fired three times |
+| 2026-08-23 | R-142, R-129 | **Reconciled, not reopened.** R-142 asked for CI and is closed by R-153: the workflow runs `test:mutation` on every PR and ADR-0035's merge brought the catalogue to `main`, so that step stopped being a no-op. Its own trigger had fired twice more before CI existed — two further passes, seven more guards deletable with the suite green between them. R-129 (the 17-mutation audit had no artifact) predates the catalogue and is superseded by it | ADR-0035 merged; the record squared |
