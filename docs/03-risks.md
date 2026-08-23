@@ -3282,9 +3282,21 @@ control either, and the honest response is to say where the gap is rather than i
 here, change these lines in the same commit* — plus a parenthetical recording that it was wrong for about an
 hour, so the next reader knows the failure mode is real rather than hypothetical.
 
+**The trigger fired on this entry, inside the commit that recorded it — and that is the useful part.** The fix
+asserted *"`main` is `e447b6c`"*; merging it advanced `main` to `50656c9`, so the corrected block was stale on
+arrival. Not carelessness: **a summary that must be updated BY commits cannot cite a mutable `HEAD` pointer at
+all.** Any SHA it names is wrong one merge later, which makes the honest form a tag — immutable — or nothing.
+The block now says the release is the fixed point (`git rev-list -n1 v0.19.0`, with npm, the tag, the GitHub
+Release and `main` all resolving to it) and names no `main` SHA.
+
+**That also kills the mechanical check this entry originally proposed.** "Fail when the STATE block names a
+commit that is not an ancestor of `HEAD`" would have passed here — `e447b6c` *is* an ancestor — while the claim
+"`main` is `e447b6c`" was false. The check would have measured the wrong property, which is worth more than the
+check: **the defect was the SHA being there, not the SHA being wrong.** What remains checkable is narrower and
+still worth having: fail when the block names a *version* that is not the package's.
+
 **Trigger:** any commit that changes release state, test counts or what is open, and does not touch the STATE
-block. The cheap mechanical half, if anyone wants it: fail the suite when `docs/SESSION-LOG.md`'s STATE block
-names a commit that is not `HEAD`'s ancestor, or a version that is not the package's.
+block. And any summary in this repository that cites a `main` SHA.
 
 ---
 
@@ -3377,3 +3389,4 @@ names a commit that is not `HEAD`'s ancestor, or a version that is not the packa
 | 2026-08-23 | R-154 | Added — **the first verification of the published ARTIFACT rather than the tree.** `pi-daddy@0.19.0` installed from the registry into a scratch project: narrowing, escalation refusal, the new `WORKSPACE_NOT_AUTHORIZED` routing refusal and its allowed counterpart, the two-authorities rule, R-135's held-but-not-inherited wildcard, the ledger v2 contract through its export path, and the `bin` symlink (R-73's defect) all confirmed. One defect found: seven published `.d.ts` files use `NodeJS.*` while `@types/node` is only a devDependency, so a TypeScript consumer with `skipLibCheck: false` and no Node types gets seven errors. One line in `peerDependencies` fixes it; it needs a release decision | post-release verification of 0.19.0 |
 | 2026-08-23 | R-155 | Added and fixed — **the opt-in model tier ran for the first time ever** (55 tests: 54 pass), and its single failure was a stale TEST, not the product: it asserted every ledger LINE had a distinct `childId`, true when a step wrote one line and false since ADR-0034 gave each child lifecycle events too — 9 lines, 3 ids, the property intact. **Rule 7's mirror, which this repository had only half written down:** a test that can no longer PASS is as dead as one that cannot fail, and an opt-in tier CI cannot run is where such a test hides indefinitely | first run of the model tier |
 | 2026-08-23 | R-156 | Added and fixed — **the session log's STATE block, the first four lines any session reads, said "nothing is released" and "the paid tier was not run" an hour after both became false**, naming a commit three merges back, while the paragraphs directly beneath it were correct. R-59, R-72 and R-144's shape in the one document `CLAUDE.md` sends every new session to first. No control caught it because the mechanical guard here checks risk headlines against risk bodies, and nothing compares an orienting summary with its own prose — a gap now stated, with the cheap version of the check named | re-reading the record at close |
+| 2026-08-23 | R-156 | **The trigger fired on the entry, in the commit that recorded it.** The fix said "`main` is `e447b6c`" and merging it moved `main` past that sha. A summary updated BY commits cannot cite a mutable `HEAD` pointer — any SHA is wrong one merge later — so the block now names the release (tag, immutable) and no `main` SHA. This also falsified the check the entry proposed: "the named commit must be an ancestor of HEAD" would have PASSED while the claim was false, because the defect was the SHA being there at all | R-156 demonstrating itself |
