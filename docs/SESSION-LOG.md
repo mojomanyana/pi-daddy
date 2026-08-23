@@ -11,10 +11,17 @@ decisions; this file holds state and next actions. Newest entry on top.
 2026-08-22 the *server* enforces it: `main` requires a pull request (zero approvals) with both CI legs green,
 and `enforce_admins` is on, so a direct push is refused rather than merely discouraged.
 
-**STATE, 2026-08-23. Everything is merged; nothing is released.** `main` is `209ef70`. **Thirty-six ADRs.**
-No open pull requests. Measured on `main`, on both matrix legs in CI: **641 unit · 45 integration · typecheck ·
-installed-package smoke · 27/27 catalogued guards**. The paid `PI_GRANTS_IT_MODEL=1` tier was not run and needs
-separate authorization.
+**STATE, 2026-08-23. `0.19.0` is RELEASED and verified; everything is merged.** `main` is `e447b6c`.
+**Thirty-six ADRs.** No open pull requests. Measured on `main`, on both matrix legs in CI: **641 unit · 45
+integration · typecheck · installed-package smoke · 27/27 catalogued guards** — and, once, the opt-in
+`PI_GRANTS_IT_MODEL=1` tier: **55 tests, 54 passed**, its one failure a stale test rather than a defect
+(R-155). npm `latest`, tag `v0.19.0`, the GitHub Release and `main` all point at the same commit.
+
+*(These four lines were stale for about an hour after the release — they still said "nothing is released", the
+tier "was not run", and named a commit three merges back, while the paragraphs directly below them said
+otherwise. **That is this project's signature defect in its most-read location**, found by re-reading the
+document at close rather than by a check, because nothing mechanical watches a summary for agreement with its
+own body. If you change what is true here, change these lines in the same commit.)*
 
 **What the product now does that it could not before:** workspace routing is a capability, so it attenuates
 (ADR-0035). Before that, a child routed to `staging` could route its grandchild to `prod` with a real lease, a
