@@ -2,7 +2,7 @@ import type { Delegation } from "../src/delegate.ts";
 import { appendLedgerEvent, buildChildLifecycleEvent } from "../src/ledger.ts";
 import { mergeChildEnv } from "../src/propagation.ts";
 import type { Capability } from "../src/resolve.ts";
-import { ENV_CHILD_TIMEOUT, runChild, timeoutFromEnv } from "../src/run-child.ts";
+import { DEFAULT_KILL_GRACE_MS, ENV_CHILD_TIMEOUT, runChild, timeoutFromEnv } from "../src/run-child.ts";
 import { resolveWorkspace } from "../src/herdr-cli.ts";
 import { HerdrWriterCloseError, runHerdrPane } from "../src/run-herdr.ts";
 import { GovernanceRefusal, refusal, type StructuredRefusal } from "../src/refusals.ts";
@@ -45,12 +45,20 @@ export function isCriticalAssuranceBlock(
   return outcome.text.trimStart().startsWith("BLOCKED_CRITICAL_ASSURANCE");
 }
 
+export async function appendAfterRuntimeRecord<T>(
+  runtimeRecord: Promise<void> | undefined,
+  appendTerminal: () => Promise<T>,
+): Promise<T> {
+  if (runtimeRecord) await runtimeRecord;
+  return appendTerminal();
+}
+
 export interface ChildProgressUpdate {
   chunk?: string;
   snapshot?: string[];
   paneId?: string;
   agentName?: string;
-  state?: "running" | "completed" | "failed";
+  state?: "starting" | "running" | "completed" | "failed";
 }
 
 /**
@@ -68,30 +76,46 @@ export async function executePlannedChild(input: {
   plan: Delegation;
   agent?: string;
   childId: string;
+  executionId: string;
+  parentExecutionId: string | null;
   cwd: string;
   preparedWorkspace?: PreparedWorkspace;
   signal?: AbortSignal;
   onProgress?: (update: ChildProgressUpdate) => void;
 }): Promise<DelegationOutcome> {
-  const { session, plan, childId, preparedWorkspace, signal, onProgress } = input;
-  if (session.ledgerPath) {
+  const { session, plan, childId, executionId, parentExecutionId, preparedWorkspace, signal, onProgress } = input;
+  const ledgerPath = session.ledgerPath;
+  const configuredTimeoutMs = timeoutFromEnv(process.env[ENV_CHILD_TIMEOUT]);
+  const startedAt = new Date();
+  const deadlineAt = new Date(startedAt.getTime() + configuredTimeoutMs).toISOString();
+  if (ledgerPath) {
     try {
       await appendLedgerEvent(
-        { path: session.ledgerPath, strict: true },
+        { path: ledgerPath, strict: true },
         buildChildLifecycleEvent({
+          executionId,
+          parentExecutionId,
           childId,
           state: "starting",
           executor: session.executor.kind,
+          deadlineAt,
           correlation: plan.correlation,
-          now: new Date(),
+          now: startedAt,
         }),
       );
     } catch (error) {
-      await releaseDelegationWorkspace({ prepared: preparedWorkspace, childId, reason: "ledger-failed" });
+      await releaseDelegationWorkspace({
+        prepared: preparedWorkspace, childId, executionId, parentExecutionId, reason: "ledger-failed",
+      });
       throw error;
     }
   }
 
+  // The recorded deadline and executor timer are one fact. Waiting for the strict starting append consumes
+  // the budget; handing the child a fresh full timeout would leave it live after the dashboard truthfully
+  // marked that deadline incomplete.
+  const remainingTimeoutMs = Math.max(1, Date.parse(deadlineAt) - Date.now());
+  const terminationGraceMs = Math.min(DEFAULT_KILL_GRACE_MS, Math.max(1, Math.floor(remainingTimeoutMs / 10)));
   const cwd = preparedWorkspace?.workspace.root ?? input.cwd;
   const leaseAbort = new AbortController();
   const writerLease = preparedWorkspace?.lease.access === "write" ? preparedWorkspace.lease : undefined;
@@ -107,6 +131,26 @@ export async function executePlannedChild(input: {
   let retainWriterLease = false;
   let terminalAttempted = false;
   const teardownFailures: string[] = [];
+  let runtimeRecord: Promise<void> | undefined;
+  const recordRunning = (executor: "process" | "herdr", pane?: { id: string; agentName: string }): void => {
+    if (!ledgerPath) return;
+    try {
+      runtimeRecord = appendLedgerEvent(
+        {
+          path: ledgerPath,
+          strict: false,
+          onFailure: (cause) => teardownFailures.push(`child runtime identity record failed: ${String(cause)}`),
+        },
+        buildChildLifecycleEvent({
+          executionId, parentExecutionId, childId, state: "running", executor, deadlineAt,
+          ...(pane ? { herdrPaneId: pane.id, herdrAgentName: pane.agentName } : {}),
+          correlation: plan.correlation, now: new Date(),
+        }),
+      );
+    } catch (error) {
+      teardownFailures.push(`child runtime identity record failed: ${String(error)}`);
+    }
+  };
   try {
     const output = session.executor.kind === "herdr"
       ? await runHerdrPane({
@@ -117,10 +161,16 @@ export async function executePlannedChild(input: {
           name: `${input.agent ?? "delegate"}-${childId}`,
           workspace: resolveWorkspace(process.env),
           signal: executionSignal,
-          timeoutMs: timeoutFromEnv(process.env[ENV_CHILD_TIMEOUT]),
+          timeoutMs: remainingTimeoutMs,
           keepPane: writerLease ? false : process.env[ENV_HERDR_KEEP_PANE] === "1",
           closeOnSettle: Boolean(writerLease),
-          onPane: onProgress ? (paneId, agentName) => onProgress({ paneId, agentName, state: "running" }) : undefined,
+          onPane: (paneId, agentName) => onProgress?.({ paneId, agentName, state: "starting" }),
+          onRunning: (paneId, agentName) => {
+            // Record first: runHerdrPane isolates this display callback, so a renderer exception after the
+            // observation cannot suppress the authoritative running event.
+            recordRunning("herdr", { id: paneId, agentName });
+            onProgress?.({ paneId, agentName, state: "running" });
+          },
           onTab: preparedWorkspace ? (tabId) => preparedWorkspace.lease.attachHerdrTab(tabId) : undefined,
           onSnapshot: onProgress ? (snapshot) => onProgress({ snapshot }) : undefined,
         })
@@ -130,18 +180,28 @@ export async function executePlannedChild(input: {
           env: mergeChildEnv(process.env, plan.env),
           cwd,
           signal: executionSignal,
-          timeoutMs: timeoutFromEnv(process.env[ENV_CHILD_TIMEOUT]),
+          // SIGTERM gets only grace that fits INSIDE the recorded deadline. The independent hard timer
+          // prevents a delayed soft-timeout callback from starting a fresh grace period beyond that bound.
+          timeoutMs: Math.max(1, remainingTimeoutMs - terminationGraceMs),
+          hardDeadlineAt: Date.parse(deadlineAt),
           onOutput: onProgress ? (chunk) => onProgress({ chunk }) : undefined,
-          onSpawn: preparedWorkspace ? (pid) => preparedWorkspace.lease.attachProcess(pid) : undefined,
+          onSpawn: (pid) => {
+            // Lease attachment is a security hook and may fail the spawn. The shared reporters isolate
+            // display exceptions before they reach this callback; runChild deliberately kills on any error
+            // here, so presentation must never be added directly without that reporter boundary.
+            preparedWorkspace?.lease.attachProcess(pid);
+            recordRunning("process");
+            onProgress?.({ state: "running" });
+          },
         });
 
     const childFailed = Boolean(output.spawnError || output.aborted || output.timedOut || output.code !== 0);
     releaseReason = output.timedOut ? "timeout" : output.aborted ? "cancelled" : childFailed ? "failed" : "completed";
-    if (session.ledgerPath) {
+    if (ledgerPath) {
       terminalAttempted = true;
-      await appendLedgerEvent(
+      await appendAfterRuntimeRecord(runtimeRecord, () => appendLedgerEvent(
         {
-          path: session.ledgerPath,
+          path: ledgerPath,
           // NOT strict, and this line is the whole point of R-99. The child has already run: failing
           // closed here prevents nothing and used to discard a completed child's entire output while
           // blaming "ledger" — under `delegate_all` it discarded every sibling's work too. The docstring
@@ -151,6 +211,8 @@ export async function executePlannedChild(input: {
           onFailure: (cause) => teardownFailures.push(`child lifecycle record failed: ${String(cause)}`),
         },
         buildChildLifecycleEvent({
+          executionId,
+          parentExecutionId,
           childId,
           state: childFailed ? "failed" : "completed",
           executor: session.executor.kind,
@@ -163,7 +225,7 @@ export async function executePlannedChild(input: {
           correlation: plan.correlation,
           now: new Date(),
         }),
-      );
+      ));
     }
 
     const leaseWasLost = writerLease ? leaseLost : false;
@@ -218,24 +280,24 @@ export async function executePlannedChild(input: {
     return withTeardownNotes(succeeded);
   } catch (error) {
     retainWriterLease = Boolean(writerLease && error instanceof HerdrWriterCloseError);
-    if (session.ledgerPath && !terminalAttempted) {
+    if (ledgerPath && !terminalAttempted) {
       // Best-effort: this records the failure, so it must not REPLACE the failure. A strict append that
       // throws here would discard the original error — including HerdrWriterCloseError, whose whole
       // meaning is "a lease is deliberately retained" (R-108).
-      await appendLedgerEvent(
+      await appendAfterRuntimeRecord(runtimeRecord, () => appendLedgerEvent(
         {
-          path: session.ledgerPath,
+          path: ledgerPath,
           strict: false,
           onFailure: (cause) => teardownFailures.push(`child lifecycle record failed: ${String(cause)}`),
         },
         buildChildLifecycleEvent({
-          childId, state: "failed", executor: session.executor.kind,
+          executionId, parentExecutionId, childId, state: "failed", executor: session.executor.kind,
           reason: error instanceof GovernanceRefusal
             ? error.code
             : error instanceof Error ? error.name : "unknown executor error",
           correlation: plan.correlation, now: new Date(),
         }),
-      );
+      ));
     }
     await teardown();
     // Attached, not dropped. `withTeardownNotes` was applied on both return paths and neither throw path,
@@ -278,7 +340,9 @@ function errorWithTeardownNotes(error: unknown, notes: readonly string[]): unkno
       await releaseDelegationWorkspace({
         prepared: preparedWorkspace,
         childId,
-        ledgerPath: session.ledgerPath,
+        executionId,
+        parentExecutionId,
+        ledgerPath,
         reason: releaseReason,
         retain: retainWriterLease,
       });

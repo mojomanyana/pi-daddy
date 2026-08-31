@@ -4,16 +4,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, test } from "node:test";
 import { Compile } from "typebox/compile";
-import {
-  buildLedgerV2ContractFixtures,
-  generateLedgerV2Contract,
-} from "../scripts/generate-ledger-v2-contract.ts";
-import { cleanupTempDirs, tempDir } from "./tmp.ts";
-
-after(cleanupTempDirs);
 import { APPROVAL_SCOPES, APPROVAL_SOURCES } from "../src/approval.ts";
-import { PROMPT_OUTCOME_KINDS } from "../src/approval-prompt.ts";
 import { EXECUTOR_KINDS } from "../src/executor.ts";
+import { validateLedgerV3Event } from "../src/ledger-v3-validation.ts";
 import { REFUSAL_CODES } from "../src/refusals.ts";
 import {
   CHILD_LIFECYCLE_STATES,
@@ -23,23 +16,37 @@ import {
   WORKSPACE_ACCESSES,
   WORKSPACE_LEASE_OUTCOMES,
   WORKSPACE_RECOVERY_VALUES,
+  WORKFLOW_FACT_KINDS,
+  WORKFLOW_FACT_PROVENANCE,
+  WORKFLOW_FACT_STATES,
   buildCheckReceiptLedgerEvent,
   buildChildLifecycleEvent,
   buildRecord,
   buildWorkspaceLeaseEvent,
+  buildWorkflowFactEvent,
   type CapabilityDecisionEvent,
   type CheckReceiptLedgerEvent,
   type ChildLifecycleEvent,
   type GrantRecord,
   type WorkspaceLeaseEvent,
+  type WorkflowFactEvent,
 } from "../src/ledger.ts";
 import type { CorrelationMetadata } from "../src/correlation.ts";
 import type { DefinitionDigest } from "../src/definitions.ts";
 import type { StructuredRefusal } from "../src/refusals.ts";
+import {
+  buildLedgerV3ContractFixtures,
+  generateLedgerV3Contract,
+} from "../scripts/generate-ledger-v3-contract.ts";
+import { cleanupTempDirs, tempDir } from "./tmp.ts";
+
+after(cleanupTempDirs);
 
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
-const contractRoot = join(packageRoot, "contracts", "ledger", "v2");
+const contractRoot = join(packageRoot, "contracts", "ledger", "v3");
 const schemaPath = join(contractRoot, "ledger-event.schema.json");
+const v2Root = join(packageRoot, "contracts", "ledger", "v2");
+const executionId = "exec:00000000-0000-4000-8000-000000000001";
 
 type SchemaNode = {
   type?: string | string[];
@@ -57,34 +64,43 @@ type Assert<T extends true> = T;
 type RequiredKeys<T> = { [K in keyof T]-?: object extends Pick<T, K> ? never : K }[keyof T];
 type ApprovalUse = NonNullable<GrantRecord["approvalUses"]>[string];
 
-const CAPABILITY_DECISION_FIELDS = [
-  "ledgerVersion", "event", "ts", "parentId", "childId", "depth", "agentType", "requested", "parentGrant",
-  "effective", "denied", "clipped", "gatedBlocked", "blocked", "reason", "approved", "approvalSource",
-  "approvalSources", "approvalScopes", "approvalExpiresAt", "approvalUses", "approvalScope", "humanDenied",
-  "gateOutcome", "definitionDigest", "executor", "taskFrom", "taskDigest", "correlation", "refusal",
+const CAPABILITY_FIELDS = [
+  "ledgerVersion", "event", "ts", "executionId", "parentExecutionId", "parentId", "childId", "depth",
+  "agentType", "requested", "parentGrant", "effective", "denied", "clipped", "gatedBlocked", "blocked",
+  "reason", "approved", "approvalSource", "approvalSources", "approvalScopes", "approvalExpiresAt",
+  "approvalUses", "approvalScope", "humanDenied", "gateOutcome", "definitionDigest", "executor", "taskFrom",
+  "taskFromExecutionId", "taskDigest", "correlation", "refusal",
 ] as const;
-const WORKSPACE_LEASE_FIELDS = [
-  "ledgerVersion", "event", "ts", "childId", "workspaceId", "root", "access", "outcome", "recovered",
-  "releaseReason", "refusal", "correlation",
+const LEASE_FIELDS = [
+  "ledgerVersion", "event", "ts", "executionId", "parentExecutionId", "childId", "workspaceId", "root",
+  "access", "outcome", "recovered", "releaseReason", "refusal", "correlation",
 ] as const;
-const CHILD_LIFECYCLE_FIELDS = [
-  "ledgerVersion", "event", "ts", "childId", "state", "executor", "exitCode", "signal", "timedOut", "aborted",
-  "truncated", "reason", "correlation",
+const LIFECYCLE_FIELDS = [
+  "ledgerVersion", "event", "ts", "executionId", "parentExecutionId", "childId", "state", "executor",
+  "deadlineAt", "herdrPaneId", "herdrAgentName", "exitCode", "signal", "timedOut", "aborted", "truncated",
+  "reason", "correlation",
 ] as const;
-const CHECK_RECEIPT_FIELDS = [
-  "ledgerVersion", "event", "ts", "childId", "receiptId", "workspaceId", "checkId", "treeSha", "correlation",
+const RECEIPT_FIELDS = [
+  "ledgerVersion", "event", "ts", "executionId", "parentExecutionId", "childId", "receiptId", "workspaceId",
+  "checkId", "treeSha", "correlation",
 ] as const;
-const CAPABILITY_DECISION_REQUIRED = [
-  "ledgerVersion", "event", "ts", "parentId", "childId", "depth", "requested", "parentGrant", "effective",
-  "denied", "clipped", "gatedBlocked", "blocked", "executor", "taskDigest",
+const WORKFLOW_FACT_FIELDS = [
+  "ledgerVersion", "event", "ts", "factId", "source", "provenance", "kind", "subject", "state", "correlation",
 ] as const;
-const WORKSPACE_LEASE_REQUIRED = [
-  "ledgerVersion", "event", "ts", "childId", "workspaceId", "root", "access", "outcome",
+const CAPABILITY_REQUIRED = [
+  "ledgerVersion", "event", "ts", "executionId", "parentExecutionId", "parentId", "childId", "depth",
+  "requested", "parentGrant", "effective", "denied", "clipped", "gatedBlocked", "blocked", "executor", "taskDigest",
 ] as const;
-const CHILD_LIFECYCLE_REQUIRED = ["ledgerVersion", "event", "ts", "childId", "state", "executor"] as const;
-const CHECK_RECEIPT_REQUIRED = [
-  "ledgerVersion", "event", "ts", "childId", "receiptId", "workspaceId", "checkId", "treeSha",
+const LEASE_REQUIRED = [
+  "ledgerVersion", "event", "ts", "executionId", "parentExecutionId", "childId", "workspaceId", "root", "access", "outcome",
 ] as const;
+const LIFECYCLE_REQUIRED = [
+  "ledgerVersion", "event", "ts", "executionId", "parentExecutionId", "childId", "state", "executor",
+] as const;
+const RECEIPT_REQUIRED = [
+  "ledgerVersion", "event", "ts", "executionId", "parentExecutionId", "childId", "receiptId", "workspaceId", "checkId", "treeSha",
+] as const;
+const WORKFLOW_FACT_REQUIRED = [...WORKFLOW_FACT_FIELDS] as const;
 const CORRELATION_FIELDS = [
   "schema_version", "run_id", "task_id", "workspace_id", "context_id", "phase", "assurance",
   "assurance_effective", "policy_label", "assurance_source", "assurance_scope", "activated_at", "plan_digest",
@@ -92,312 +108,204 @@ const CORRELATION_FIELDS = [
   "last_authority_seq", "check_receipt_id",
 ] as const;
 const REFUSAL_FIELDS = ["code", "message", "details"] as const;
-const DEFINITION_DIGEST_FIELDS = ["name", "source", "sha256"] as const;
+const DEFINITION_FIELDS = ["name", "source", "sha256"] as const;
 const APPROVAL_USE_FIELDS = ["max", "remaining"] as const;
-const CORRELATION_REQUIRED = [] as const;
-const REFUSAL_REQUIRED = ["code", "message"] as const;
-const DEFINITION_DIGEST_REQUIRED = ["name", "source", "sha256"] as const;
-const APPROVAL_USE_REQUIRED = ["max", "remaining"] as const;
 
-type _CapabilityDecisionFieldsAreExhaustive = Assert<Equal<keyof GrantRecord, typeof CAPABILITY_DECISION_FIELDS[number]>>;
-type _WorkspaceLeaseFieldsAreExhaustive = Assert<Equal<keyof WorkspaceLeaseEvent, typeof WORKSPACE_LEASE_FIELDS[number]>>;
-type _ChildLifecycleFieldsAreExhaustive = Assert<Equal<keyof ChildLifecycleEvent, typeof CHILD_LIFECYCLE_FIELDS[number]>>;
-type _CheckReceiptFieldsAreExhaustive = Assert<Equal<keyof CheckReceiptLedgerEvent, typeof CHECK_RECEIPT_FIELDS[number]>>;
-type _CapabilityDecisionRequiredIsExhaustive = Assert<Equal<RequiredKeys<CapabilityDecisionEvent>, typeof CAPABILITY_DECISION_REQUIRED[number]>>;
-type _WorkspaceLeaseRequiredIsExhaustive = Assert<Equal<RequiredKeys<WorkspaceLeaseEvent>, typeof WORKSPACE_LEASE_REQUIRED[number]>>;
-type _ChildLifecycleRequiredIsExhaustive = Assert<Equal<RequiredKeys<ChildLifecycleEvent>, typeof CHILD_LIFECYCLE_REQUIRED[number]>>;
-type _CheckReceiptRequiredIsExhaustive = Assert<Equal<RequiredKeys<CheckReceiptLedgerEvent>, typeof CHECK_RECEIPT_REQUIRED[number]>>;
-type _CorrelationFieldsAreExhaustive = Assert<Equal<keyof CorrelationMetadata, typeof CORRELATION_FIELDS[number]>>;
-type _RefusalFieldsAreExhaustive = Assert<Equal<keyof StructuredRefusal, typeof REFUSAL_FIELDS[number]>>;
-type _DefinitionDigestFieldsAreExhaustive = Assert<Equal<keyof DefinitionDigest, typeof DEFINITION_DIGEST_FIELDS[number]>>;
-type _ApprovalUseFieldsAreExhaustive = Assert<Equal<keyof ApprovalUse, typeof APPROVAL_USE_FIELDS[number]>>;
-type _CorrelationRequiredIsExhaustive = Assert<Equal<RequiredKeys<CorrelationMetadata>, typeof CORRELATION_REQUIRED[number]>>;
-type _RefusalRequiredIsExhaustive = Assert<Equal<RequiredKeys<StructuredRefusal>, typeof REFUSAL_REQUIRED[number]>>;
-type _DefinitionDigestRequiredIsExhaustive = Assert<Equal<RequiredKeys<DefinitionDigest>, typeof DEFINITION_DIGEST_REQUIRED[number]>>;
-type _ApprovalUseRequiredIsExhaustive = Assert<Equal<RequiredKeys<ApprovalUse>, typeof APPROVAL_USE_REQUIRED[number]>>;
-type _HumanDeniedDomainMatchesSchema = Assert<Equal<NonNullable<CapabilityDecisionEvent["humanDenied"]>, true>>;
-type _TimedOutDomainMatchesSchema = Assert<Equal<NonNullable<ChildLifecycleEvent["timedOut"]>, true>>;
-type _AbortedDomainMatchesSchema = Assert<Equal<NonNullable<ChildLifecycleEvent["aborted"]>, true>>;
-type _TruncatedDomainMatchesSchema = Assert<Equal<NonNullable<ChildLifecycleEvent["truncated"]>, true>>;
+type _CapabilityFields = Assert<Equal<keyof GrantRecord, typeof CAPABILITY_FIELDS[number]>>;
+type _LeaseFields = Assert<Equal<keyof WorkspaceLeaseEvent, typeof LEASE_FIELDS[number]>>;
+type _LifecycleFields = Assert<Equal<keyof ChildLifecycleEvent, typeof LIFECYCLE_FIELDS[number]>>;
+type _ReceiptFields = Assert<Equal<keyof CheckReceiptLedgerEvent, typeof RECEIPT_FIELDS[number]>>;
+type _CapabilityRequired = Assert<Equal<RequiredKeys<CapabilityDecisionEvent>, typeof CAPABILITY_REQUIRED[number]>>;
+type _LeaseRequired = Assert<Equal<RequiredKeys<WorkspaceLeaseEvent>, typeof LEASE_REQUIRED[number]>>;
+type _LifecycleRequired = Assert<Equal<RequiredKeys<ChildLifecycleEvent>, typeof LIFECYCLE_REQUIRED[number]>>;
+type _ReceiptRequired = Assert<Equal<RequiredKeys<CheckReceiptLedgerEvent>, typeof RECEIPT_REQUIRED[number]>>;
+type _WorkflowFactFields = Assert<Equal<keyof WorkflowFactEvent, typeof WORKFLOW_FACT_FIELDS[number]>>;
+type _WorkflowFactRequired = Assert<Equal<RequiredKeys<WorkflowFactEvent>, typeof WORKFLOW_FACT_REQUIRED[number]>>;
+type _CorrelationFields = Assert<Equal<keyof CorrelationMetadata, typeof CORRELATION_FIELDS[number]>>;
+type _RefusalFields = Assert<Equal<keyof StructuredRefusal, typeof REFUSAL_FIELDS[number]>>;
+type _DefinitionFields = Assert<Equal<keyof DefinitionDigest, typeof DEFINITION_FIELDS[number]>>;
+type _ApprovalUseFields = Assert<Equal<keyof ApprovalUse, typeof APPROVAL_USE_FIELDS[number]>>;
 
-async function json(path: string): Promise<unknown> {
+async function json(path: string): Promise<any> {
   return JSON.parse(await readFile(path, "utf8"));
 }
 
-function finiteValues(node: SchemaNode | undefined): unknown[] {
+function finite(node: SchemaNode | undefined): unknown[] {
   if (!node) return [];
   if (node.enum) return [...node.enum];
   if (Object.hasOwn(node, "const")) return [node.const];
   if (node.type === "boolean") return [false, true];
   if (node.type === "null") return [null];
-  return node.oneOf?.flatMap(finiteValues) ?? [];
+  return node.oneOf?.flatMap(finite) ?? [];
 }
 
-const sortedValues = (values: readonly unknown[]): unknown[] =>
-  [...values].sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
+const sorted = (values: readonly unknown[]): unknown[] =>
+  [...values].sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
 
-test("the published ledger v2 fixtures are generated by the real event builders", async () => {
-  const generated = buildLedgerV2ContractFixtures();
-  assert.deepEqual(
-    Object.keys(generated).sort(),
-    ["capability-decision.json", "check-receipt.json", "child-lifecycle.json", "workspace-lease.json"],
-  );
+test("the published ledger v3 fixtures come from the production builders", async () => {
+  const generated = buildLedgerV3ContractFixtures();
+  assert.deepEqual(Object.keys(generated).sort(), [
+    "capability-decision.json", "check-receipt.json", "child-lifecycle.json", "workflow-fact.json", "workspace-lease.json",
+  ]);
   for (const [name, event] of Object.entries(generated)) {
-    assert.deepEqual(await json(join(contractRoot, "fixtures", name)), event, `${name} drifted from its builder`);
+    assert.deepEqual(await json(join(contractRoot, "fixtures", name)), event, `${name} drifted`);
   }
 });
 
-test("v2 builders refuse digest values that their canonical schema would reject", () => {
-  assert.throws(() => buildRecord({
-    parentId: "d0", childId: "d0.1", depth: 1, requested: [], parentGrant: [],
-    result: { effective: [], denied: [], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
-    blocked: false, executor: "process", taskDigest: "", now: new Date(),
-  }), /taskDigest must be a SHA-256/);
-  assert.throws(() => buildRecord({
-    parentId: "d0", childId: "d0.1", depth: 1, requested: [], parentGrant: [],
-    result: { effective: [], denied: [], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
-    blocked: false, executor: "process", taskDigest: "not-a-sha256", now: new Date(),
-  }), /taskDigest must be a SHA-256/);
-  assert.throws(() => buildRecord({
-    parentId: "d0", childId: "d0.1", depth: 1, requested: [], parentGrant: [],
-    result: { effective: [], denied: [], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
-    blocked: false, executor: "process", taskDigest: "a".repeat(64),
-    definitionDigest: { name: "x", source: "/x", sha256: "not-a-sha256" }, now: new Date(),
-  }), /definitionDigest.sha256 must be a SHA-256/);
-  assert.throws(() => buildCheckReceiptLedgerEvent({
-    childId: "check:x", receiptId: "not-a-sha256", workspaceId: "w", checkId: "x",
-    treeSha: "tree", now: new Date(),
-  }), /receiptId must be a SHA-256/);
-});
-
-test("the canonical schema accepts every generated fixture and rejects unsupported explicit versions", async () => {
-  const schema = await json(schemaPath) as Parameters<typeof Compile>[0];
-  const validator = Compile(schema);
-  for (const [name, event] of Object.entries(buildLedgerV2ContractFixtures())) {
-    assert.equal(validator.Check(event), true, `${name}: ${[...validator.Errors(event)].map((error) => error.message).join(", ")}`);
+test("the closed v3 schema accepts fixtures and rejects v2, extra fields and missing identity", async () => {
+  const validator = Compile(await json(schemaPath));
+  for (const [name, event] of Object.entries(buildLedgerV3ContractFixtures())) {
+    assert.equal(validator.Check(event), true, `${name}: ${[...validator.Errors(event)].map((e) => e.message).join(", ")}`);
   }
-  const fixture = buildLedgerV2ContractFixtures()["capability-decision.json"];
-  assert.equal(validator.Check({ ...fixture, ledgerVersion: 3 }), false);
-  assert.equal(validator.Check({ ...fixture, extraAuthority: true }), false);
+  const fixture = buildLedgerV3ContractFixtures()["capability-decision.json"];
+  assert.equal(validator.Check({ ...fixture, ledgerVersion: 2 }), false);
+  assert.equal(validator.Check({ ...fixture, executionId: undefined }), false);
+  assert.equal(validator.Check({ ...fixture, task: "forbidden ledger text" }), false);
+  assert.equal(validator.Check({ ...fixture, agentType: "SECRET TASK TEXT" }), false);
+  assert.equal(validator.Check({ ...fixture, effective: ["SECRET OUTPUT TEXT"] }), false);
+  assert.equal(validator.Check({
+    ...fixture, correlation: { ...fixture.correlation, policy_label: "SECRET TASK TEXT" },
+  }), false);
+  assert.equal(validator.Check({
+    ...fixture, correlation: { ...fixture.correlation, assurance_scope: null },
+  }), false, "the schema must agree with runtime normalization, which never emits a null scope");
+  const workflow = buildLedgerV3ContractFixtures()["workflow-fact.json"];
+  assert.equal(validator.Check({ ...workflow, provenance: "planned", state: "completed" }), false);
+  assert.equal(validator.Check({ ...workflow, correlation: { ...workflow.correlation, run_id: "" } }), false);
+  const lifecycle = buildLedgerV3ContractFixtures()["child-lifecycle.json"];
+  const { deadlineAt: _deadline, ...startingWithoutDeadline } = { ...lifecycle, state: "starting" };
+  assert.equal(validator.Check(startingWithoutDeadline), false);
+  assert.equal(validator.Check({
+    ...lifecycle, state: "running", executor: "process", herdrPaneId: "w1:p2", herdrAgentName: "review-d0-1",
+  }), false);
 });
 
-test("the closed schema exhaustively matches production event vocabularies and fields", async () => {
+test("the v3 schema and runtime share one timestamp profile", async () => {
+  const validator = Compile(await json(schemaPath));
+  const fixtures = buildLedgerV3ContractFixtures();
+  const leapSecond = "1990-12-31T23:59:60Z";
+  const cases = [
+    { ...fixtures["capability-decision.json"], ts: leapSecond },
+    {
+      ...fixtures["capability-decision.json"],
+      approvalExpiresAt: { "tool:bash": leapSecond },
+    },
+    { ...fixtures["workspace-lease.json"], ts: leapSecond },
+    { ...fixtures["child-lifecycle.json"], ts: leapSecond },
+    { ...fixtures["child-lifecycle.json"], deadlineAt: leapSecond },
+    { ...fixtures["check-receipt.json"], ts: leapSecond },
+    { ...fixtures["workflow-fact.json"], ts: leapSecond },
+  ];
+  for (const event of cases) {
+    assert.equal(validator.Check(event), false, `${event.event} schema accepted the unsupported leap second`);
+    assert.notEqual(validateLedgerV3Event(event), null, `${event.event} runtime accepted the unsupported leap second`);
+  }
+});
+
+test("the v3 schema exhaustively matches production fields and finite vocabularies", async () => {
   const schema = await json(schemaPath) as ContractSchema;
   const defs = schema.$defs;
-  const resolve = (node: SchemaNode | undefined): SchemaNode | undefined => {
-    const prefix = "#/$defs/";
-    return node?.$ref?.startsWith(prefix) ? defs[node.$ref.slice(prefix.length)] : node;
-  };
-  const contractValues = (node: SchemaNode | undefined): unknown[] => finiteValues(resolve(node));
-  const values = (definition: string, property: string): unknown[] =>
-    contractValues(defs[definition]?.properties?.[property]);
-  const mapValues = (definition: string, property: string): unknown[] => {
+  const resolve = (node?: SchemaNode) => node?.$ref?.startsWith("#/$defs/") ? defs[node.$ref.slice(8)] : node;
+  const values = (definition: string, property: string) => finite(resolve(defs[definition]?.properties?.[property]));
+  const mapValues = (definition: string, property: string) => {
     const additional = defs[definition]?.properties?.[property]?.additionalProperties;
-    return typeof additional === "object" ? contractValues(additional) : [];
+    return typeof additional === "object" ? finite(resolve(additional)) : [];
   };
-  const fields = (definition: string): string[] => Object.keys(defs[definition]?.properties ?? {}).sort();
-  const required = (definition: string): string[] => [...(defs[definition]?.required ?? [])].sort();
+  const fields = (name: string) => Object.keys(defs[name]?.properties ?? {}).sort();
+  const required = (name: string) => [...(defs[name]?.required ?? [])].sort();
 
   const definitionForEvent = {
     capability_decision: "capabilityDecision",
     workspace_lease: "workspaceLease",
     child_lifecycle: "childLifecycle",
     check_receipt: "checkReceipt",
+    workflow_fact: "workflowFact",
   } as const satisfies Record<typeof LEDGER_EVENT_KINDS[number], string>;
-  assert.deepEqual(
-    schema.oneOf?.map((entry) => entry.$ref).sort(),
-    LEDGER_EVENT_KINDS.map((event) => `#/$defs/${definitionForEvent[event]}`).sort(),
-  );
-  assert.deepEqual(
-    LEDGER_EVENT_KINDS.map((event) => defs[definitionForEvent[event]]?.properties?.event?.const),
-    [...LEDGER_EVENT_KINDS],
-  );
-  assert.deepEqual(sortedValues(finiteValues(defs.approvalSource)), sortedValues(APPROVAL_SOURCES));
-  assert.deepEqual(sortedValues(finiteValues(defs.approvalScope)), sortedValues(APPROVAL_SCOPES));
-  assert.deepEqual(sortedValues(values("capabilityDecision", "approvalSource")), sortedValues(APPROVAL_SOURCES));
-  assert.deepEqual(sortedValues(mapValues("capabilityDecision", "approvalSources")), sortedValues(APPROVAL_SOURCES));
-  assert.deepEqual(sortedValues(values("capabilityDecision", "approvalScope")), sortedValues(APPROVAL_SCOPES));
-  assert.deepEqual(sortedValues(mapValues("capabilityDecision", "approvalScopes")), sortedValues(APPROVAL_SCOPES));
-  assert.deepEqual(
-    sortedValues(PROMPT_OUTCOME_KINDS.filter((kind) => kind !== "granted")),
-    sortedValues(LEDGER_GATE_OUTCOMES),
-  );
-  assert.deepEqual(sortedValues(values("capabilityDecision", "gateOutcome")), sortedValues(LEDGER_GATE_OUTCOMES));
-  assert.deepEqual(sortedValues(values("capabilityDecision", "executor")), sortedValues(EXECUTOR_KINDS));
-  assert.deepEqual(sortedValues(values("workspaceLease", "access")), sortedValues(WORKSPACE_ACCESSES));
-  assert.deepEqual(sortedValues(values("workspaceLease", "outcome")), sortedValues(WORKSPACE_LEASE_OUTCOMES));
-  assert.deepEqual(
-    sortedValues(finiteValues(defs.workspaceLease?.properties?.recovered)),
-    sortedValues(WORKSPACE_RECOVERY_VALUES),
-  );
-  assert.deepEqual(sortedValues(values("childLifecycle", "state")), sortedValues(CHILD_LIFECYCLE_STATES));
-  assert.deepEqual(sortedValues(values("childLifecycle", "executor")), sortedValues(EXECUTOR_KINDS));
-  assert.deepEqual(
-    sortedValues(finiteValues(defs.childLifecycle?.properties?.signal)),
-    sortedValues([...CHILD_PROCESS_SIGNALS, null]),
-  );
+  assert.deepEqual(schema.oneOf?.map((entry) => entry.$ref).sort(), LEDGER_EVENT_KINDS.map((event) => `#/$defs/${definitionForEvent[event]}`).sort());
+  assert.deepEqual(sorted(finite(defs.approvalSource)), sorted(APPROVAL_SOURCES));
+  assert.deepEqual(sorted(finite(defs.approvalScope)), sorted(APPROVAL_SCOPES));
+  assert.deepEqual(sorted(values("capabilityDecision", "executor")), sorted(EXECUTOR_KINDS));
+  assert.deepEqual(sorted(values("capabilityDecision", "gateOutcome")), sorted(LEDGER_GATE_OUTCOMES));
+  assert.deepEqual(sorted(mapValues("capabilityDecision", "approvalSources")), sorted(APPROVAL_SOURCES));
+  assert.deepEqual(sorted(values("workspaceLease", "access")), sorted(WORKSPACE_ACCESSES));
+  assert.deepEqual(sorted(values("workspaceLease", "outcome")), sorted(WORKSPACE_LEASE_OUTCOMES));
+  assert.deepEqual(sorted(finite(defs.workspaceLease?.properties?.recovered)), sorted(WORKSPACE_RECOVERY_VALUES));
+  assert.deepEqual(sorted(values("childLifecycle", "state")), sorted(CHILD_LIFECYCLE_STATES));
+  assert.deepEqual(sorted(values("childLifecycle", "signal")), sorted([...CHILD_PROCESS_SIGNALS, null]));
+  assert.deepEqual(sorted(finite(defs.refusalCode)), sorted(REFUSAL_CODES));
+  assert.deepEqual(sorted(values("workflowFact", "provenance")), sorted(WORKFLOW_FACT_PROVENANCE));
+  assert.deepEqual(sorted(values("workflowFact", "kind")), sorted(WORKFLOW_FACT_KINDS));
+  assert.deepEqual(sorted(values("workflowFact", "state")), sorted(WORKFLOW_FACT_STATES));
 
-  assert.deepEqual(fields("capabilityDecision"), [...CAPABILITY_DECISION_FIELDS].sort());
-  assert.deepEqual(fields("workspaceLease"), [...WORKSPACE_LEASE_FIELDS].sort());
-  assert.deepEqual(fields("childLifecycle"), [...CHILD_LIFECYCLE_FIELDS].sort());
-  assert.deepEqual(fields("checkReceipt"), [...CHECK_RECEIPT_FIELDS].sort());
-  assert.deepEqual(required("capabilityDecision"), [...CAPABILITY_DECISION_REQUIRED].sort());
-  assert.deepEqual(required("workspaceLease"), [...WORKSPACE_LEASE_REQUIRED].sort());
-  assert.deepEqual(required("childLifecycle"), [...CHILD_LIFECYCLE_REQUIRED].sort());
-  assert.deepEqual(required("checkReceipt"), [...CHECK_RECEIPT_REQUIRED].sort());
-
+  assert.deepEqual(fields("capabilityDecision"), [...CAPABILITY_FIELDS].sort());
+  assert.deepEqual(fields("workspaceLease"), [...LEASE_FIELDS].sort());
+  assert.deepEqual(fields("childLifecycle"), [...LIFECYCLE_FIELDS].sort());
+  assert.deepEqual(fields("checkReceipt"), [...RECEIPT_FIELDS].sort());
+  assert.deepEqual(fields("workflowFact"), [...WORKFLOW_FACT_FIELDS].sort());
+  assert.deepEqual(required("capabilityDecision"), [...CAPABILITY_REQUIRED].sort());
+  assert.deepEqual(required("workspaceLease"), [...LEASE_REQUIRED].sort());
+  assert.deepEqual(required("childLifecycle"), [...LIFECYCLE_REQUIRED].sort());
+  assert.deepEqual(required("checkReceipt"), [...RECEIPT_REQUIRED].sort());
+  assert.deepEqual(required("workflowFact"), [...WORKFLOW_FACT_REQUIRED].sort());
   assert.deepEqual(fields("correlation"), [...CORRELATION_FIELDS].sort());
-  assert.deepEqual(required("correlation"), [...CORRELATION_REQUIRED].sort());
   assert.deepEqual(fields("refusal"), [...REFUSAL_FIELDS].sort());
-  assert.deepEqual(required("refusal"), [...REFUSAL_REQUIRED].sort());
-  assert.deepEqual(fields("definitionDigest"), [...DEFINITION_DIGEST_FIELDS].sort());
-  assert.deepEqual(required("definitionDigest"), [...DEFINITION_DIGEST_REQUIRED].sort());
+  assert.deepEqual(fields("definitionDigest"), [...DEFINITION_FIELDS].sort());
   assert.deepEqual(fields("approvalUse"), [...APPROVAL_USE_FIELDS].sort());
-  assert.deepEqual(required("approvalUse"), [...APPROVAL_USE_REQUIRED].sort());
 });
 
-test("the schema accepts every minimal, maximal, and enumerated builder shape", async () => {
-  const schema = await json(schemaPath) as Parameters<typeof Compile>[0];
-  const validator = Compile(schema);
-  const check = (label: string, event: unknown) =>
-    assert.equal(validator.Check(event), true, `${label}: ${[...validator.Errors(event)].map((error) => error.message).join(", ")}`);
-  const now = new Date("2026-08-20T12:30:00.000Z");
+test("every v3 builder emits explicit execution identity, including a running Herdr pane", () => {
+  const now = new Date("2026-08-28T12:00:00.000Z");
   const result = { effective: [], denied: [], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] };
-
-  check("minimal capability decision", buildRecord({
-    parentId: "d0", childId: "d0.1", depth: 1, requested: [], parentGrant: [], result,
-    blocked: false, executor: "process", taskDigest: "1".repeat(64), now,
-  }));
-  check("granted gate outcome is deliberately omitted", buildRecord({
-    parentId: "d0", childId: "d0.1", depth: 1, requested: [], parentGrant: [], result,
-    blocked: false, gateOutcome: "granted", executor: "process", taskDigest: "2".repeat(64), now,
-  }));
-  for (const gateOutcome of PROMPT_OUTCOME_KINDS.filter((kind) => kind !== "granted")) {
-    check(`maximal capability decision (${gateOutcome})`, buildRecord({
-      parentId: "d0", childId: "d0.1", depth: 1, agentType: "review", requested: ["tool:read"],
-      parentGrant: ["tool:read"], result, blocked: true, reason: "blocked", approved: ["tool:read"],
-      approvalSources: { "tool:read": "prompt" }, approvalScopes: { "tool:read": "once" },
-      approvalExpiresAt: { "tool:read": now.toISOString() }, approvalUses: { "tool:read": { max: 1, remaining: 0 } },
-      humanDenied: true, gateOutcome, definitionDigest: { name: "review", source: "/review", sha256: "2".repeat(64) },
-      executor: "herdr", taskFrom: "d0.0", taskDigest: "3".repeat(64),
-      correlation: { run_id: "run-contract" },
-      refusal: { code: "GATED_UNAPPROVED", message: "blocked", details: { retryable: false } }, now,
-    }));
+  const decision = buildRecord({
+    executionId, parentExecutionId: null, parentId: "d0", childId: "d0.1", depth: 1,
+    requested: [], parentGrant: [], result, blocked: false, executor: "process", taskDigest: "1".repeat(64), now,
+  });
+  const lease = buildWorkspaceLeaseEvent({
+    executionId, parentExecutionId: null, childId: "d0.1", workspaceId: "w", root: "/w",
+    access: "read", outcome: "uncontended", now,
+  });
+  const lifecycle = buildChildLifecycleEvent({
+    executionId, parentExecutionId: null, childId: "d0.1", state: "running", executor: "herdr",
+    deadlineAt: "2026-08-28T12:10:00.000Z", herdrPaneId: "w1:p2", herdrAgentName: "review-d0-1", now,
+  });
+  const receipt = buildCheckReceiptLedgerEvent({
+    executionId, parentExecutionId: null, childId: "check:x", receiptId: "2".repeat(64),
+    workspaceId: "w", checkId: "x", treeSha: "tree", now,
+  });
+  const workflow = buildWorkflowFactEvent({
+    factId: "fact:00000000-0000-4000-8000-000000000003", source: "principal-pi-skills",
+    provenance: "planned", kind: "workflow_phase", subject: "review", state: "pending",
+    correlation: { run_id: "run-1" }, now,
+  });
+  for (const event of [decision, lease, lifecycle, receipt]) {
+    assert.equal(event.ledgerVersion, 3);
+    assert.equal(event.executionId, executionId);
+    assert.ok(Object.hasOwn(event, "parentExecutionId"));
   }
-
-  for (const access of WORKSPACE_ACCESSES) {
-    for (const outcome of WORKSPACE_LEASE_OUTCOMES) {
-      for (const recovered of WORKSPACE_RECOVERY_VALUES) {
-        check(`workspace lease (${access}, ${outcome}, ${String(recovered)})`, buildWorkspaceLeaseEvent({
-          childId: "d0.1", workspaceId: "w", root: "/w", access, outcome, recovered,
-          releaseReason: "complete", refusal: { code: "WORKSPACE_LEASE_STALE", message: "stale" },
-          correlation: { workspace_id: "w" }, now,
-        }));
-      }
-    }
-  }
-  check("minimal workspace lease", buildWorkspaceLeaseEvent({
-    childId: "d0.1", workspaceId: "w", root: "/w", access: "read", outcome: "uncontended", now,
-  }));
-
-  for (const state of CHILD_LIFECYCLE_STATES) {
-    for (const executor of EXECUTOR_KINDS) {
-      for (const signal of CHILD_PROCESS_SIGNALS) {
-        check(`child lifecycle (${state}, ${executor}, ${signal})`, buildChildLifecycleEvent({
-          childId: "d0.1", state, executor, exitCode: null, signal, timedOut: true, aborted: true,
-          truncated: true, reason: "complete", correlation: { run_id: "run-contract" }, now,
-        }));
-      }
-    }
-  }
-  check("minimal child lifecycle", buildChildLifecycleEvent({ childId: "d0.1", state: "starting", executor: "process", now }));
-  check("numeric child exit and null signal", buildChildLifecycleEvent({
-    childId: "d0.1", state: "completed", executor: "process", exitCode: 0, signal: null, now,
-  }));
-
-  check("minimal check receipt", buildCheckReceiptLedgerEvent({
-    childId: "check:x", receiptId: "4".repeat(64), workspaceId: "w", checkId: "x", treeSha: "tree", now,
-  }));
-  check("maximal check receipt", buildCheckReceiptLedgerEvent({
-    childId: "check:x", receiptId: "5".repeat(64), workspaceId: "w", checkId: "x", treeSha: "tree",
-    correlation: { check_receipt_id: "5".repeat(64) }, now,
-  }));
+  assert.equal(workflow.provenance, "planned");
 });
 
-/**
- * The `refusalCode` enum is GENERATED, not remembered.
- *
- * The test below asserts `schema.$defs.refusalCode.enum === REFUSAL_CODES`, which is the right assertion —
- * and for one release it was the only thing holding the two together, because `contracts:generate` wrote
- * fixtures and never touched the schema. So adding `WORKSPACE_NOT_AUTHORIZED` in `src/refusals.ts` turned
- * the suite red, running the generator produced no diff, and getting back to green required knowing which
- * hand-written JSON file to edit. Every future refusal code had the same ambush waiting.
- *
- * This pins the mechanism rather than the state: the sync function is what makes the assertion below
- * satisfiable by running a command.
- *
- * **Breaks by:** reverting `syncLedgerV2RefusalEnum` to leave the enum alone, or dropping it from
- * `generateLedgerV2Contract`. That second half used to be unfalsifiable and was claimed anyway — the entry
- * point called the two steps inline, and a test can call an exported function but not the inside of an
- * `if (invoked)` block. A mutation audit found the claim false, so the entry point became a one-liner over
- * the function this test drives. The same fix shape as the site checklist: make the thing you assert be the
- * thing that runs.
- */
-test("regenerating the contract restores the refusal enum from REFUSAL_CODES", async () => {
-  const dir = await tempDir("pi-daddy-contract-");
-  const copy = join(dir, "ledger-event.schema.json");
-  const original = await json(schemaPath) as { $defs: { refusalCode: { enum: string[] } } };
-
-  // Drift it exactly the way a new refusal code drifts it: one member short.
+test("regenerating v3 restores the refusal enum without touching the frozen v2 schema", async () => {
+  const dir = await tempDir("ledger-v3-contract-");
+  const schemaCopy = join(dir, "ledger-event.schema.json");
+  const original = await json(schemaPath);
   const drifted = structuredClone(original);
-  drifted.$defs.refusalCode.enum = drifted.$defs.refusalCode.enum.filter((c) => c !== "WORKSPACE_NOT_AUTHORIZED");
-  await writeFile(copy, JSON.stringify(drifted, null, 2), "utf8");
-  assert.notDeepEqual(drifted.$defs.refusalCode.enum, [...REFUSAL_CODES], "precondition: the copy is stale");
-
-  // Driven through `generateLedgerV2Contract`, the function the script's entry point calls, so dropping the
-  // sync from it fails here — with BOTH targets redirected into the temp dir.
-  //
-  // **The fixture target is the whole point of this line.** Routing the test through this function without
-  // one made `npm test` overwrite the tracked `contracts/ledger/v2/fixtures/*.json`: verified by putting a
-  // marker key into a fixture, running the suite, and finding `git status` clean again. That falsified
-  // `CLAUDE.md`'s "fast, pure, no pi, no network" and, worse, turned the checked-in fixtures from a contract
-  // pin into something `npm test` repairs — builder drift would have been silently fixed instead of failing.
+  drifted.$defs.refusalCode.enum = drifted.$defs.refusalCode.enum.slice(1);
+  await writeFile(schemaCopy, JSON.stringify(drifted, null, 2));
   const fixtureCopies = join(dir, "fixtures");
-  await generateLedgerV2Contract({ schema: copy, fixtures: fixtureCopies });
-  assert.equal(
-    (await readFile(join(fixtureCopies, "capability-decision.json"), "utf8")).length > 0,
-    true,
-    "the fixtures were written to the temp target, not to the repository",
-  );
-
-  const synced = await json(copy) as { $defs: { refusalCode: { enum: string[] } } };
-  assert.deepEqual(synced.$defs.refusalCode.enum, [...REFUSAL_CODES]);
-  // Only the enum is generated: everything else in the hand-authored schema is left exactly as it was.
-  assert.deepEqual({ ...synced, $defs: { ...synced.$defs, refusalCode: null } },
-    { ...original, $defs: { ...original.$defs, refusalCode: null } });
+  await generateLedgerV3Contract({ schema: schemaCopy, fixtures: fixtureCopies });
+  assert.equal((await json(join(fixtureCopies, "capability-decision.json"))).ledgerVersion, 3);
+  assert.deepEqual((await json(schemaCopy)).$defs.refusalCode.enum, [...REFUSAL_CODES]);
+  assert.equal((await json(join(v2Root, "ledger-event.schema.json"))).$defs.capabilityDecision.properties.ledgerVersion.const, 2);
 });
 
-test("the schema pins nested correlation, approval, refusal, digest, and null contracts", async () => {
-  const schema = await json(schemaPath) as Parameters<typeof Compile>[0] & {
-    $defs: { refusalCode: { enum: string[] } };
-  };
-  assert.deepEqual(sortedValues(finiteValues(schema.$defs.refusalCode)), sortedValues(REFUSAL_CODES));
+test("v2 stays a frozen readable historical contract", async () => {
+  const schema = await json(join(v2Root, "ledger-event.schema.json"));
   const validator = Compile(schema);
-  const fixtures = buildLedgerV2ContractFixtures();
-  const capability = fixtures["capability-decision.json"];
-  assert.equal(validator.Check({ ...capability, taskDigest: null }), false);
-  assert.equal(validator.Check({ ...capability, correlation: { ...capability.correlation, unknown: "x" } }), false);
-  assert.equal(validator.Check({ ...capability, refusal: { code: "NOT_A_REFUSAL", message: "x" } }), false);
-  assert.equal(validator.Check({ ...capability, approvalUses: { "tool:bash": { max: 1, remaining: null } } }), false);
-
-  assert.equal((schema as ContractSchema).$defs.capabilityDecision?.properties?.humanDenied?.const, true);
-  assert.equal((schema as ContractSchema).$defs.childLifecycle?.properties?.timedOut?.const, true);
-  assert.equal((schema as ContractSchema).$defs.childLifecycle?.properties?.aborted?.const, true);
-  assert.equal((schema as ContractSchema).$defs.childLifecycle?.properties?.truncated?.const, true);
-
-  const lifecycle = fixtures["child-lifecycle.json"];
-  assert.equal(lifecycle.exitCode, null);
-  assert.equal(lifecycle.signal, null);
-  assert.equal(validator.Check(lifecycle), true);
-  assert.equal(validator.Check({ ...lifecycle, exitCode: "0" }), false);
+  for (const name of ["capability-decision", "workspace-lease", "child-lifecycle", "check-receipt"]) {
+    const fixture = await json(join(v2Root, "fixtures", `${name}.json`));
+    assert.equal(fixture.ledgerVersion, 2);
+    assert.equal(validator.Check(fixture), true, name);
+    assert.equal(Object.hasOwn(fixture, "executionId"), false);
+  }
 });

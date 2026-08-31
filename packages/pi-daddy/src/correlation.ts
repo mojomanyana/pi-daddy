@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { DefinitionDigest } from "./definitions.ts";
 import type { Capability } from "./resolve.ts";
 import { GovernanceRefusal, refusal } from "./refusals.ts";
+import { isLedgerCorrelationIdentifier } from "./ledger-identifiers.ts";
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
@@ -69,6 +70,13 @@ const CORRELATION_FIELDS = new Set<keyof CorrelationMetadata>([
 
 const CORRELATION_NUMERIC = new Set<keyof CorrelationMetadata>([
   "event_seq", "last_change_seq", "last_authority_seq",
+]);
+
+// These fields are rendered as labels/identities. Treating arbitrary prose as an "id" let a model copy
+// task or output text into the ledger and dashboard through correlation while staying schema-valid.
+const CORRELATION_IDENTIFIERS = new Set<keyof CorrelationMetadata>([
+  "schema_version", "run_id", "task_id", "workspace_id", "context_id", "phase", "assurance",
+  "assurance_effective", "policy_label", "assurance_source",
 ]);
 
 function correlationRefusal(message: string, details?: Record<string, string | number>): GovernanceRefusal {
@@ -146,6 +154,9 @@ export function normaliseCorrelation(input: CorrelationMetadata | undefined): Co
         `${key} exceeds ${MAX_CORRELATION_FIELD_CHARS} characters`,
         { field: key, limit: MAX_CORRELATION_FIELD_CHARS, actual: value.length },
       );
+    }
+    if (CORRELATION_IDENTIFIERS.has(key as keyof CorrelationMetadata) && !isLedgerCorrelationIdentifier(value)) {
+      throw correlationRefusal(`${key} must be an ASCII identifier, not free-form text`, { field: key });
     }
     output[key] = value;
   }

@@ -91,8 +91,10 @@ export interface DelegationContext {
   fanoutBudget?: number;
   /** This session's ledger id, so a child's `parentId` names its real parent (F8). */
   spawnId?: string;
-  /** Ledger id assigned to THIS child, distinguishing it from its siblings (F8). */
+  /** Ledger id assigned to THIS child, distinguishing logical siblings (F8). */
   childSpawnId?: string;
+  /** Unique identity assigned to THIS execution occurrence; never derive joins from childSpawnId. */
+  childExecutionId?: string;
 }
 
 export interface Delegation {
@@ -119,8 +121,10 @@ export interface Delegation {
    * read the tool parameters would record an empty request for every definition spawn.
    */
   requested: Capability[];
-  /** Ledger id for this child, if the caller assigned one (F8). */
+  /** Ledger id for this child's readable logical position, if the caller assigned one (F8). */
   childId?: string;
+  /** Unique identity for this occurrence, if the caller assigned one. */
+  executionId?: string;
   /**
    * Which operator-authored instructions this spawn used (ADR-0018).
    *

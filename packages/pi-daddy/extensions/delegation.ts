@@ -12,15 +12,9 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { maySpawnDefinition } from "../src/delegate.ts";
-import { MAX_CHILDREN_PER_CALL, childSpawnId, splitBudget } from "../src/fanout.ts";
+import { MAX_CHILDREN_PER_CALL, splitBudget } from "../src/fanout.ts";
 import {
-  PAINT_INTERVAL_MS,
-  appendTail,
-  emptyTail,
-  renderProgress,
-  replaceTail,
-  throttle,
-  type ChildProgress,
+  PAINT_INTERVAL_MS, appendTail, emptyTail, renderProgress, replaceTail, throttle, type ChildProgress,
 } from "../src/progress.ts";
 import { registerChainTool } from "./delegate-chain.ts";
 import { GovernanceRefusal, refusal } from "../src/refusals.ts";
@@ -33,6 +27,7 @@ import {
 } from "./fanout-outcome.ts";
 import { isCriticalAssuranceBlock, type DelegationOutcome } from "./execute-child.ts";
 import { type GrantsSession } from "./session.ts";
+import { newDelegationOccurrence } from "./execution-occurrence.ts";
 
 /**
  * Wire a set of children to pi's partial-result channel — ADR-0032.
@@ -61,9 +56,14 @@ function progressReporter(
   }));
 
   const paint = throttle(() => {
-    onUpdate?.({
-      content: [{ type: "text", text: renderProgress(children, session.executor.kind, Date.now()) }],
-    });
+    try {
+      onUpdate?.({
+        content: [{ type: "text", text: renderProgress(children, session.executor.kind, Date.now()) }],
+      });
+    } catch {
+      // Display only. In particular, this callback can run inside runChild's security-sensitive onSpawn;
+      // letting it escape makes runChild kill an otherwise healthy governed child.
+    }
   }, PAINT_INTERVAL_MS);
 
   return {
@@ -256,7 +256,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
           correlation: params.correlation,
           workspace: params.workspace,
         },
-        { parentId: session.ownSpawnId, childId: childSpawnId(session.ownSpawnId, 0) },
+        newDelegationOccurrence(session, 0),
         // A single blocking delegation spends nothing from the subtree budget: cardinality is already
         // bounded to one by the call being blocking, which is the accident fan-out removes. Passing the
         // budget through unchanged means a child can still fan out with what this session was given.
@@ -338,7 +338,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
           try {
             return await runOneDelegation(
               session, child,
-              { parentId: session.ownSpawnId, childId: childSpawnId(session.ownSpawnId, index) },
+              newDelegationOccurrence(session, index),
               split.perChild, ctx, signal, { onProgress: progress.sink(index) },
             );
           } catch (error) {

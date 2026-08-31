@@ -498,6 +498,22 @@ test("ADR-0032: the pane id reaches the caller as soon as it exists, so a human 
   assert.deepEqual(ids, ["w1:p9"]);
 });
 
+test("a Herdr child is running only after agent start and prompt both succeed", async () => {
+  const events: string[] = [];
+  const fake = fakeHerdr();
+  await runHerdrPane({
+    ...request(), exec: fake.exec, pollIntervalMs: 1,
+    onPane: () => events.push("pane-created"),
+    onRunning: () => events.push("running"),
+  });
+  assert.deepEqual(events, ["pane-created", "running"]);
+
+  const failed: string[] = [];
+  const promptFailure = fakeHerdr({ failAt: "agent prompt" });
+  await runHerdrPane({ ...request(), exec: promptFailure.exec, onRunning: () => failed.push("running") });
+  assert.deepEqual(failed, [], "a pane with no accepted prompt never ran the governed task");
+});
+
 test("ADR-0032: a renderer that throws does not break the run", async () => {
   // A display is not a governance control: an onSnapshot that throws must not be able to kill a governed child or
   // turn its answer into a failure.

@@ -2800,7 +2800,7 @@ trigger should be run *as part of* any commit that touches session start.
 
 ---
 
-## R-141 · A routed child writes into the root it may only hold a read lease on — M×M, OPEN
+## R-141 · Relative child-inherited paths can split workspace state — M×M, PARTIAL (ledger repaired; lease namespace OPEN)
 
 Added 2026-08-22. **Pre-existing composition; a fix was attempted in this PR and reverted as out of scope.**
 
@@ -2830,6 +2830,14 @@ definition, exported, because two call sites had their own copies", which is fal
 not to ADR-0035, and the attempted fix landed mid-review where it immediately produced a false claim about
 `tool:delegate`. `tool:delegate` is therefore NOT in `KNOWN_READ_ONLY_TOOLS`, so routing read-only while
 delegating still takes a writer lease — unchanged from 0.18.1.
+
+**2026-08-28 dashboard review amendment.** The ledger half is repaired: session start resolves
+`PI_GRANTS_LEDGER` once against pi's actual root cwd and every descendant inherits that absolute path. This was
+not optional hardening for ADR-0036 — without it, a routed grandchild disappeared from the dashboard's only
+execution database under the documented `.pi/grants.jsonl` default. A wiring regression forces the published
+environment to be absolute before routing can change cwd. The relative `PI_GRANTS_WORKSPACE_LEASE_DIR`,
+write-access overstatement, and private release-outcome mapping above remain open; this entry is therefore only
+partly closed.
 
 **Trigger:** any env-supplied path a child inherits and resolves relative to its own cwd. Grep for
 `process.env[` reached from a function called in the delegating process.
@@ -3298,6 +3306,352 @@ still worth having: fail when the block names a *version* that is not the packag
 **Trigger:** any commit that changes release state, test counts or what is open, and does not touch the STATE
 block. And any summary in this repository that cites a `main` SHA.
 
+## R-157 · A readable child position was reused as an execution identity — H×H, FIXED
+
+Added and fixed 2026-08-28 for ADR-0036. `childId` such as `d0.1` is deterministic and readable, but every
+plain `delegate` call uses that same position and pi may execute sibling tool calls concurrently. Joining a
+capability decision, workspace lease and terminal lifecycle by `childId` can therefore combine two real
+children into one convincing false node.
+
+Ledger v3 separates the axes: random `executionId`, explicit `parentExecutionId`, and retained logical
+`childId`/`parentId`. The unique ID propagates through both executors and all delegation forms. A production
+wiring regression invokes two concurrent plain delegates, proves both records say `d0.1`, and requires two
+execution IDs. v2 remains readable but its lifecycle is deliberately unjoined/historical.
+
+**Trigger:** any lifecycle/lease projection keyed by `childId`, or two v3 capability decisions sharing an
+`executionId`.
+
+## R-158 · Server reachability could target or install into the wrong Herdr session — H×M, FIXED
+
+Added and fixed 2026-08-28. ADR-0031's `herdr tab list` probe answers where children may run; it does not prove
+that the current pi is hosted by the answering server. Reusing it for `/grants dashboard` would let a normal
+terminal pi split whichever Herdr pane happened to be focused. Automatically linking the plugin on that
+signal would also violate the product's explicit-install boundary.
+
+The dashboard requires all Herdr pane environment IDs, asks `pane.current` for that exact pane, and requires
+this pi PID in `pane.process-info`. Opening targets that pane with `--no-focus`. Linking occurs only after the
+literal **Install and open** selection; `/grants dashboard` itself prints the manual command and changes
+nothing when the plugin is absent. Not-now/never choices persist.
+
+**Trigger:** any dashboard host path that calls only a reachability command, any open without an explicit
+`--target-pane`, or any plugin link not immediately downstream of the recorded human choice.
+
+## R-159 · A workflow label could be upgraded into evidence — H×M, FIXED
+
+Added and fixed 2026-08-28. Existing `correlation.phase` and `policy_label` are model/caller-supplied metadata.
+Rendering a correlated `phase: review` as a completed workflow transition would turn a label into assurance;
+rendering discovery/read of a SKILL.md as execution is the same defect.
+
+Ledger v3 has a separate identifier-only `workflow_fact` event with `planned`, `observed`, or
+`controller_validated` provenance and provenance-constrained states. Enforced children remain capability and
+lifecycle events. The renderer uses P/O/V/E/D markers, and a regression asserts a controller-validated
+transition never receives E. No principal prompt prose is parsed.
+
+**Trigger:** a projection that derives completion from correlation, discovery, a read, or a planned graph; or
+one UI marker shared by controller validation and pi-daddy enforcement.
+
+## R-160 · Whole-file dashboard polling eventually becomes its own outage — M×M, OPEN
+
+Added 2026-08-28. The MVP rereads and reprojects the complete JSONL every 250 ms. That is the deliberately
+boring choice for the assumed bound (10,000 lines / 10 MiB) and avoids an inode-rotation/resume state machine
+before a workload needs one. It is linear CPU and allocation forever, so a months-long shared ledger can make
+the observability pane the noisiest process in the workspace.
+
+**Mitigation now:** the renderer is a separate process and never affects enforcement; all interpretation is a
+pure replay function, so replacing only the reader is possible. **Revisit at:** a normal ledger above 50 MiB
+or projection above 100 ms p95. The replacement tracks inode + byte offset, reconstructs once, and falls back
+to full replay on truncation/rotation; it does not create another database.
+
+**Trigger:** either threshold, sustained dashboard CPU above one core, or refresh latency visibly above one
+second.
+
+## R-161 · One chain step wrote several decisions for one execution — H×H, FIXED
+
+Added and fixed 2026-08-28 by the first completed ADR-0036 review. The chain asks once per gated capability,
+but v3 identity is per **execution step**. If one capability was approved and a second declined on the same
+step, the refusal path appended one `capability_decision` for each answer with the same `executionId`; the
+projection correctly classified the second as corruption. The same defect reached an earlier step needing two
+approvals when a later step declined.
+
+Gate outcomes are now consolidated by step before append: one occurrence, one decision, with both the prior
+yes provenance and the terminal no. The regression reproduced two dialogs on one step and requires one
+refused node with no corrupt lines. Mutation drops one half of the merge and must fail that test.
+
+**Trigger:** any path that appends a capability decision inside a loop over capabilities rather than over
+execution occurrences.
+
+## R-162 · Damaged v3 input crossed both dashboard privacy and availability boundaries — H×H, FIXED
+
+Added and fixed 2026-08-28. Three independent symptoms had one cause: readers implemented fragments of the
+closed schema. `JSON.parse`'s error text quoted raw malformed input and the renderer printed it, so a foreign
+line containing `SECRET_TASK` crossed the explicit no-raw-content boundary. A schema-invalid
+`correlation.phase: 42` passed the dashboard reader and crashed `clean(...).replace`. And `verifyLedger`
+accepted `"ledgerVersion":"3"` with no execution identity or deadline as integrity `OK`, while the dashboard
+rejected it.
+
+One content-free runtime v3 validator now serves both canonical integrity reporting and dashboard projection.
+It checks exact numeric version/discriminator, top-level closure, required identity, RFC-3339 timestamps,
+nested correlation/refusal/approval shapes, enum vocabularies and Herdr identity pairing. Parse diagnostics
+name only the failure class and line. Regressions force all three inputs, and the mutation catalogue separately
+removes strict dispatch and nested correlation validation.
+
+**Second-review correction and repair, 2026-08-28.** The first repair made the dashboard parser content-free
+but the paragraph above overclaimed `verifyLedger`: its public `corrupt[].text` still retained the first 120
+raw bytes and `/grants ledger` printed them. A line beginning `SECRET_TASK=rotate-production-token` was
+reproduced verbatim. The canonical report now carries only `{line, reason}`, and the real slash-command
+integration test requires the secret to be absent. The first fix's claim was not the fix; this dated correction
+is why the entry remains rather than being rewritten.
+
+**Trigger:** a v3 line accepted by one first-party reader and rejected by another; a validation diagnostic that
+contains any byte copied from the line; or a renderer call on data not proven to match its runtime type.
+
+## R-163 · The workflow-fact producer trusted TypeScript to enforce a wire enum — H×M, FIXED
+
+Added and fixed 2026-08-28. `buildWorkflowFactEvent` checked fact/source/subject identity and provenance-state
+compatibility but returned `kind` unchanged. A JavaScript caller could append `kind: "SECRET task text"` even
+though the public contract and privacy claim define a closed three-member vocabulary. A later reader rejecting
+the line does not undo a secrets sink in an append-only file.
+
+The builder now runtime-checks provenance, kind and state against their exported finite vocabularies before it
+constructs an event. The existing identifier/privacy test drives it as an untyped caller, and mutation removes
+the kind check.
+
+**Trigger:** a public ledger builder with a union-typed field but no runtime membership check.
+
+## R-164 · A display callback could kill the process it was observing — H×M, FIXED
+
+Added and fixed 2026-08-28. The new process `running` observation reused `runChild.onSpawn`, whose exceptions
+are intentionally security-sensitive: an attachment failure kills the child. The callback invoked
+`onProgress` in the same frame. If pi's partial-result sink threw, `runChild` classified it as a spawn failure
+and sent SIGKILL — observability changing execution, despite every display contract saying the opposite.
+
+Progress rendering is caught at both shared reporters, and `execute-child` isolates it from lease attachment
+and the authoritative runtime append. A real shim child now completes after its first display update throws;
+the final frame is still attempted. Mutation restores the uncaught callback and must kill that test child.
+
+**Trigger:** presentation code called inside a callback whose caller treats exceptions as execution or security
+failures.
+
+## R-165 · Disabled state outranked plugin provenance — H×M, FIXED
+
+Added and fixed 2026-08-28. Plugin inspection returned `disabled` before checking `plugin_root` or protocol. A
+disabled same-id plugin from another package therefore made `/grants dashboard` instruct the operator to run
+`herdr plugin enable pi-daddy.dashboard` on software this package promises never to invoke. A second retry
+would refuse it, but the global enable side effect had already happened.
+
+Root and protocol compatibility now precede enabled state. The compound disabled+foreign-root case is a
+regression of its own; the older tests covered each half separately and could not force their ordering.
+
+**Trigger:** any setup instruction emitted before artifact provenance/version is established.
+
+## R-166 · Dismissing consent became a durable preference — M×M, FIXED
+
+Added and fixed 2026-08-28. pi's selection API returns `undefined` for escape, timeout or UI teardown. The
+handshake mapped every answer except **Install and open** and **Never ask** to **Not now**, wrote it to disk,
+and suppressed all future prompts. No software was installed, so installation consent held, but the product
+stored a choice the operator did not make.
+
+Only the three literal menu values now have effects. An unrecognised/undefined answer installs nothing,
+stores nothing, and can be offered again; explicit Not now and Never ask retain their specified persistence.
+The regression dismisses twice and requires two prompts.
+
+**Trigger:** a durable consent/preference branch whose default arm includes cancellation or `undefined`.
+
+## R-167 · Pane reuse trusted a handle after it stopped naming the caller's host — H×H, FIXED
+
+Added and fixed 2026-08-28 by the second critical ADR-0036 review. The reuse key named the original
+workspace/tab/ledger, but `locateStoredPane` deliberately followed a stable terminal ID after a move and the
+caller accepted the moved pane's new workspace/tab. A dashboard moved from `w1:t1` to `w2:t9` returned
+`kind: reused, visibleBesideCaller: false`. The new-open path made the same mistake in one step: a complete
+pane identity from the wrong host was persisted. Nested pane-store entries were not validated either, so
+`panes[key]: null` opened a duplicate instead of exercising the documented corrupt-state refusal.
+
+Reuse now requires the returned workspace and tab to equal the verified caller host. A wrong-host open is
+closed before it is rejected and never persisted. The v1 store validates every key and every required nested
+field before any pane command. Three regressions force moved reuse, wrong-host open cleanup, and malformed
+nested state separately.
+
+**Third-review correction and repair, 2026-08-28.** Exact host checks did not make reuse duplicate-safe: the
+state key also included invocation `cwd`, although the identity promised here and in SPEC is
+workspace/tab/ledger. Calling from two directories with the same host and ledger opened two panes. `cwd` is
+now only the initial pane process directory, not pane identity; the regression changes only `cwd` and requires
+one open plus reuse. A mutation adds it back to the key.
+
+**Whole-change review correction and repair, 2026-08-28.** Shape validation still did not validate the
+meaning of an entry under its hash key. Changing only `stored.ledgerPath` left a valid-looking record and the
+live pane was reused for a ledger other than the one requested. Before any Herdr pane lookup, all three stored
+key dimensions — workspace, tab and resolved ledger path — must now equal the request; a mismatch is corrupt
+state and refuses rather than reusing or opening. The regression edits only that nested path and requires the
+existing pane count to stay one.
+
+**Trigger:** any stored/opened pane accepted because its identity is complete rather than because it matches
+the host in the reuse key; or any navigation-state parse that validates only the outer object.
+
+## R-168 · Schema-shaped prose and terminal controls crossed an identifier-only display — H×H, FIXED
+
+Added and fixed 2026-08-28 by the second critical review. Ledger v3 called agent names, capabilities and
+correlation labels identifiers while the schema/runtime accepted arbitrary strings; the renderer then copied
+them. A schema-valid event rendered `SECRET TASK TEXT` from `agentType`/`policy_label` and `SECRET OUTPUT
+TEXT` as an effective capability. `clean()` removed C0/DEL only, leaving C1 CSI/OSC/ST and Unicode bidi/format
+controls able to alter a terminal.
+
+The unreleased v3 contract now has explicit display-identifier and capability-identifier grammars, runtime
+validation uses the same rules, correlation rejects free-form prose in fields classified as labels/IDs, and
+public builders assert that their JSON wire form passes the closed reader. Named-check IDs are classified
+before an executable or lease starts, so a non-ledger call cannot postpone the same refusal until after work.
+Frozen v2 is not rewritten; its projection redacts values that are not identifiers. Rendering also strips every Unicode `Cc`/`Cf` code point
+as defence in depth. This is classification, not anonymization: a legitimate identifier can still be
+sensitive, exactly as task digests can.
+
+**Trigger:** a rendered field whose producer/schema describes it only as `string`; any model-facing metadata
+field displayed without an identifier grammar; or sanitization that names ANSI ESC but not C1/bidi controls.
+
+## R-169 · The recorded lifecycle deadline and event order could disagree with the live child — H×H, FIXED
+
+Added and fixed 2026-08-28 by the second critical review. `deadlineAt` began before the strict starting append,
+but after waiting on that ledger lock the executor received a fresh full timeout. The dashboard could therefore
+mark a still-running child incomplete. Separately, a Herdr exception after `onRunning` entered the catch path
+without awaiting the best-effort running append, allowing `starting → failed → running`; the projection then
+correctly called the late running line corruption.
+
+Ledger waiting now consumes the same absolute timeout budget recorded in `deadlineAt`. Both process and Herdr
+executors receive only the remainder. Every terminal append goes through one ordering helper that awaits the
+pending running append first, on success and exception paths. A real delayed-ledger/process test forces the
+shared deadline; a deterministic promise-order test forces running before terminal.
+
+**Fifth-review correction and repair, 2026-08-28.** “The same absolute timeout budget” was still false at two
+boundaries. Projection used the latest lifecycle event's `deadlineAt`, so a later `running` line could extend a
+12:05 starting bound to 13:00 and remain green at 12:10. The process executor sent SIGTERM at the bound and
+then began a fresh five-second SIGKILL grace; a child that ignored SIGTERM remained live **5.015 seconds past**
+the recorded deadline. Projection now treats a changed occurrence deadline as content-free corruption. The
+executor reserves soft-termination grace inside the remaining budget and also schedules an independent hard
+SIGKILL at the recorded bound. Separate regressions and mutations force both facts.
+
+**Sixth-review correction and repair, 2026-08-28.** The new hard timer could fire after the governed PID had
+already exited `0` but before `close`, when a detached descendant retained its output pipes. It set
+`timedOut: true` during the existing 100 ms drainage fallback and laundered success into `CHILD_TIMED_OUT`.
+The timer now checks the governed child's `exitCode`/`signalCode` before changing state: the deadline bounds a
+live governed process, not inherited-pipe drainage after it is gone. A deterministic near-deadline regression
+and mutation force the race.
+
+**Seventh-review correction and repair, 2026-08-28.** The soft timeout had no equivalent completion check, so
+it reproduced `code: 0, timedOut: true` during the same 100 ms drainage window. The hard check also depended on
+callback order: when the controller event loop was blocked across the deadline, its timer ran before libuv
+delivered an exit the OS had observed 463 ms earlier, leaving both status properties temporarily null. Both
+deadline callbacks now defer one event-loop turn for pending child exit delivery and share the completion
+check before changing state or signaling. Separate deterministic regressions and mutations force the soft path
+and delayed-delivery ordering; a live-child control remains SIGKILLed.
+
+**Eighth-review control correction, 2026-08-28.** Production was sound, but the delayed-delivery test reached
+only the hard callback. The soft test covered prompt exit delivery, so the two tests proved the shared pieces by
+composition while no mutation proved the soft callback still used the shared controller. A dedicated blocked-
+event-loop soft regression and callback-bypass mutation now force that exact path; no product behavior changed.
+
+**Ninth-review test correction, 2026-08-28.** The new test busy-spun for 800 ms and assumed the child had been
+scheduled and exited inside its first 500 ms; under contention, a real timeout could become a false red while
+the spin stole a CPU core from parallel files. Soft and hard delayed-delivery tests now share a `READY`
+write-callback handshake and block only after the child reaches its exit point, using `Atomics.wait` rather
+than a spin. The exact soft mutation still fails the synchronized test.
+
+**Tenth-review test correction, 2026-08-28.** The supposedly synchronized helper still created its deadline two
+seconds before `READY`; startup beyond that window reduced `Atomics.wait` to zero and never crossed the timer.
+The real child then wrote a ready marker before the tested clocks started. That attempted repair made `onSpawn`
+establish the hard epoch; the next review rejected the resulting production mutability.
+
+**Eleventh-review correction, 2026-08-28.** Reading `hardDeadlineAt` after `onSpawn` let the hook delete an
+initial 100 ms bound and allow a 536 ms child to exit normally. `runChild` again snapshots the deadline before
+spawn. The hard proof now releases a ready child while `onSpawn` remains blocked; a detached observer records
+only Linux `Z` state or disappearance, proving OS exit before the controller returns to schedule the overdue
+hard callback. The soft proof still begins its timer after readiness. Both route mutations remain red.
+
+**Twelfth-review corrections, 2026-08-28.** The restored snapshot itself was not forced, and the observer treated
+all `/proc` errors as disappearance while polling without its own bound. A new real-child regression deletes
+the request deadline in `onSpawn`; a two-site mutation re-reads after the hook and makes that test fail. The
+observer now records `exited` only for Linux zombie state or `ENOENT`, reports every other error, expires after
+nine seconds, and fails explicitly off Linux. The controller accepts only exact `exited`, so error, unsupported
+platform and observer timeout cannot false-pass or leak an eternal poller.
+
+**Thirteenth-review corrections, 2026-08-28.** The hard proof's deadline was already due before spawn, so its
+expected success incorrectly blessed an exit known to occur after the bound. It now requires readiness and
+a future hard epoch, releases the ready child, and blocks its `EXITING` output callback across that epoch. The
+observer's atomically published exit timestamp must predate the epoch before the already-due timer is exposed
+to pending exit delivery. Status publication uses same-directory temporary-write plus atomic rename, so marker
+existence cannot race incomplete content.
+
+**Fourteenth-review corrections, 2026-08-28.** The proof still spent a five-second window from before spawn,
+matched `EXITING` in one arbitrary stream chunk, and could retain its temporary marker after publication
+failure. A package-internal test control now establishes the proof epoch immediately after readiness while
+public `runChild` retains its pre-spawn snapshot; all deadline callback/control/settlement code remains shared.
+The output matcher buffered a bounded suffix across chunks, and publication attempted temporary cleanup. The
+next review found the control exported, the search ordered after truncation, and all three new paths unforced.
+
+**Fifteenth-review corrections, 2026-08-28.** Test control now uses an AsyncLocalStorage context from a module
+absent from package `exports`; public `runChild` alone remains supported. A mutation bypasses that context and
+fails the named hard proof. Marker detection searches combined input before retaining six overlap characters;
+a split-write regression and latest-chunk mutation force it. Temporary publication is removed: newline-
+terminated status is polled until its full terminal grammar appears, so partial bytes cannot establish exit and
+no write/rename/unlink cleanup path remains.
+
+**Sixteenth-review proof additions, 2026-08-28.** Complete-status polling was exercised only by one synchronous
+write, and async-context isolation only by one controlled invocation. An injected read/clock/wait harness now
+forces partial completion, timeout, observer error, transient/permanent read errors and expiry; a terminal-
+grammar mutation makes the partial-status test fail. Same-process tests run controlled/uncontrolled children
+concurrently, nest and restore controls, reject a scope, and verify no post-settlement leakage.
+
+**Seventeenth-review corrections, 2026-08-28.** An inert injected clock/wait could loop forever, the unexported
+control module still shipped, and the nominal concurrent branches selected control sequentially. Polling now
+has an independent attempt ceiling with a frozen-clock test. AsyncLocalStorage ownership moved under `test/`;
+production retains only a private `NODE_TEST_CONTEXT=child-v8` lookup. Build cleans `dist/` before compilation
+and installed smoke refuses the old module filename, so neither source nor stale compiled control enters the
+tarball. A two-party barrier overlaps controlled/uncontrolled scopes before either child starts; nested/
+rejected/post-settlement checks remain.
+
+**Trigger:** two timers describing one execution but starting at different boundaries; or a terminal event
+append that does not share the running-append sequencing primitive.
+
+## R-170 · Public builders and the closed v3 schema accepted different wires — H×M, FIXED
+
+Added and fixed 2026-08-28 by the second critical review. `buildChildLifecycleEvent` called `Date.parse`, so
+`deadlineAt: "1"` produced an event the exact runtime validator rejected as non-RFC-3339. In the other
+direction JSON Schema accepted `correlation.assurance_scope: null`, while normalization drops null and runtime
+therefore rejected it. One version number described two sets of valid lines before release.
+
+Lifecycle construction now uses the exact shared timestamp validator. The schema excludes a top-level null
+scope while retaining non-null JSON values (nested null remains ordinary JSON), matching the writer.
+`assertLedgerV3Wire` runs every public v3 execution-event builder through the same closed runtime boundary, so
+a typed JavaScript escape cannot append bytes the first-party reader calls corrupt.
+
+**Third-review correction and repair, 2026-08-28.** “Every public builder” above was false: the workflow-fact
+builder was in another module and never called the assertion. A Date-shaped JavaScript value returning `"1"`
+from `toISOString()` therefore produced a public v3 event the reader rejected. The workflow builder now
+asserts its completed JSON wire too; its regression forces both a non-RFC string and a non-string timestamp,
+and mutation removes only that final assertion.
+
+**Fifth-review correction and repair, 2026-08-28.** The closed JSON Schema still accepted RFC-3339 leap-second
+strings such as `23:59:60Z`, while runtime rejected seconds above 59 and every projection duration uses
+JavaScript date arithmetic, which cannot represent that value. One version still described two acceptance
+sets. The canonical schema now centralizes a timestamp profile narrowed to seconds `00`–`59`, matching runtime;
+a seven-site parity regression and mutation force the shared boundary.
+
+**Trigger:** a builder using a looser parser than its consumer; or one fixture/schema/runtime probe accepting a
+line another rejects.
+
+## R-171 · Malformed explicit v2 events were downgraded to historical dashboard rows — H×M, FIXED
+
+Added and fixed 2026-08-28 by the distributed whole-change review. Dashboard projection sent every
+`ledgerVersion: 2` object directly to the historical adapter. A capability event missing `childId` therefore
+became a plausible grey row with a fabricated fallback ID, and a lifecycle event missing the same required
+field incremented `orphanEvents`; neither was reported as corruption. A versioned line is not a legacy line,
+and “unjoinable by design” does not mean “unchecked.”
+
+The dashboard now compiles and checks the exact frozen, published v2 JSON Schema before either historical
+projection or the deliberately unjoined lifecycle count. This does not alter the artifact or invent joins; it
+only refuses lines the artifact has never accepted. One regression covers a malformed decision, lifecycle and
+missing discriminator, and a mutation removes the schema gate.
+
+**Trigger:** an explicit versioned event reaching a fallback/legacy projection before its version's contract
+accepts it.
+
 ---
 
 ## Register log
@@ -3390,3 +3744,21 @@ block. And any summary in this repository that cites a `main` SHA.
 | 2026-08-23 | R-155 | Added and fixed — **the opt-in model tier ran for the first time ever** (55 tests: 54 pass), and its single failure was a stale TEST, not the product: it asserted every ledger LINE had a distinct `childId`, true when a step wrote one line and false since ADR-0034 gave each child lifecycle events too — 9 lines, 3 ids, the property intact. **Rule 7's mirror, which this repository had only half written down:** a test that can no longer PASS is as dead as one that cannot fail, and an opt-in tier CI cannot run is where such a test hides indefinitely | first run of the model tier |
 | 2026-08-23 | R-156 | Added and fixed — **the session log's STATE block, the first four lines any session reads, said "nothing is released" and "the paid tier was not run" an hour after both became false**, naming a commit three merges back, while the paragraphs directly beneath it were correct. R-59, R-72 and R-144's shape in the one document `CLAUDE.md` sends every new session to first. No control caught it because the mechanical guard here checks risk headlines against risk bodies, and nothing compares an orienting summary with its own prose — a gap now stated, with the cheap version of the check named | re-reading the record at close |
 | 2026-08-23 | R-156 | **The trigger fired on the entry, in the commit that recorded it.** The fix said "`main` is `e447b6c`" and merging it moved `main` past that sha. A summary updated BY commits cannot cite a mutable `HEAD` pointer — any SHA is wrong one merge later — so the block now names the release (tag, immutable) and no `main` SHA. This also falsified the check the entry proposed: "the named commit must be an ancestor of HEAD" would have PASSED while the claim was false, because the defect was the SHA being there at all | R-156 demonstrating itself |
+| 2026-08-28 | R-157…R-160, ADR-0036 | Added for the live Herdr dashboard: reused logical ids, false Herdr-host detection/silent installation, workflow provenance inflation, and whole-file polling growth. The first three are closed structurally and mutation-catalogued; R-160 is open with measured flip thresholds | dashboard design and implementation |
+| 2026-08-28 | R-141, R-161…R-166 | Completed whole-change review found eight fixes: relative ledgers split routed trees; a chain step self-corrupted v3 identity; parse diagnostics leaked raw input; partial validators disagreed and crashed; workflow kind trusted TypeScript; display could kill a child; disabled state outranked plugin provenance; dismissal became a durable choice. Every behavior was reproduced red and fixed separately; R-141's lease-namespace/access/reporting remainder stays open | critical review of ADR-0036 candidate |
+| 2026-08-28 | R-169 test ownership isolated | Sixteenth-repair quality review found frozen-clock hang, shipped control artifacts and non-overlapping concurrency; attempt ceiling, test-owned storage and a two-party barrier repair all three | critical review of ADR-0036 sixteenth protocol proof |
+| 2026-08-28 | R-169 internal protocol forced | Fifteenth-repair review found complete-status and async-context error/isolation paths unproved; deterministic status cases, one mutation and concurrent/nested/rejected/post-settlement context tests now force them | critical review of ADR-0036 fifteenth internal-control repair |
+| 2026-08-28 | R-169 test boundary made internal | Fourteenth-repair quality review found the control publicly exported, truncation before marker search, and unforced cleanup branches; unexported async context, two new mutations and complete-status polling replace them | critical review of ADR-0036 fourteenth test-control repair |
+| 2026-08-28 | R-169 proof scheduling isolated | Thirteenth-repair quality review found a pre-spawn five-second window, chunk assumption and temporary leak; its first repair added a control export, bounded chunk buffer and finally cleanup, all corrected by the next review | critical review of ADR-0036 thirteenth ordering repair |
+| 2026-08-28 | R-169 proof ordering corrected | Twelfth-repair review found the observer proved an exit only after an already-due deadline and status publication racy; exit now precedes a future epoch and marker publication is atomic | critical review of ADR-0036 twelfth proof hardening |
+| 2026-08-28 | R-169 snapshot and observer forced | Eleventh-repair review found no mutation forcing the snapshot plus fail-open/unbounded observer errors; a direct request-mutation guard and bounded exact-status observer now close all three | critical review of ADR-0036 eleventh immutability repair |
+| 2026-08-28 | R-169 hard-bound immutability restored | Tenth-repair quality review reproduced `onSpawn` deleting a snapshotted bound; production snapshots again, while a detached OS-state observer makes the hard proof deterministic | critical review of ADR-0036 tenth clock repair |
+| 2026-08-28 | R-169 proof clock corrected | Ninth-test specification review found the deadline still began two seconds before `READY`; file readiness then preceded clock establishment and release, but the next review rejected hard-deadline mutation | critical review of ADR-0036 ninth test repair |
+| 2026-08-28 | R-169 proof made deterministic | Eighth-proof quality review found the fixed 500 ms/busy-spin test could fail under scheduler contention; both delayed-delivery routes now use a child-ready handshake and `Atomics.wait`, while the same mutation remains red | critical review of ADR-0036 eighth proof |
+| 2026-08-28 | R-169 proof corrected | Seventh-repair specification review found delayed exit delivery forced only through the hard callback; a soft-specific blocked-loop regression and mutation now force the other route without changing production | critical review of ADR-0036 seventh repairs |
+| 2026-08-28 | R-169 corrected a fourth time | Sixth-repair review found the same false timeout in the soft timer and defeated the hard guard by delaying the controller event loop across a child exit; both deadline paths now wait one turn for pending OS-exit delivery | critical review of ADR-0036 sixth repair |
+| 2026-08-28 | R-169 corrected a third time | Fifth-repair quality review reproduced `code: 0, timedOut: true`: the new hard timer fired after successful `exit` while inherited pipes delayed `close`, rewriting success as `CHILD_TIMED_OUT` | critical review of ADR-0036 fifth repairs |
+| 2026-08-28 | R-169, R-170 corrected again | Critical retry found one lifecycle still had two mutable deadline boundaries, a SIGTERM-ignoring child remained live 5.015s past the recorded hard bound, and canonical schema accepted leap-second timestamps runtime/date arithmetic rejected. All three were reproduced on the exact candidate tree before repair | critical approval retry for ADR-0036 |
+| 2026-08-28 | R-162 corrected, R-167…R-170 | Critical re-review found the first repair's content-free claim false in `/grants ledger`, two exact-host checks absent, nested pane state only shallowly checked, schema-valid prose/C1/bidi controls renderable, lifecycle deadline/order disagreement, and two public-contract divergences. All reproduced separately; the correction stays beside R-162 rather than rewriting its first claim | second critical review of ADR-0036 candidate |
+| 2026-08-28 | R-167 and R-170 corrected | The attempted third whole-change review timed out, but a bounded independent critical adjudication reproduced two blockers: invocation `cwd` was secretly a fourth pane-key dimension and created duplicate dashboards for one workspace/tab/ledger; the workflow-fact builder was the one public v3 builder omitted from the claimed final wire assertion. Both are repaired red-first and mutation-pinned, but the bounded verdict is not whole-change approval | third critical review attempt of ADR-0036 candidate |
+| 2026-08-28 | R-167 corrected again, R-171 | A distributed review covered all 71 changed paths and a fresh snapshot adjudicated its five hypotheses. Two survived: semantically mismatched pane state reused a live process for another ledger, and malformed explicit v2 was downgraded to plausible history/orphan counts. Three were rejected: protocol-scoping persisted consent was not specified, a hostile internal progress callback was isolated by every production caller, and 460 is a documented conservative check-ID ceiling. Accepted repairs are red-first and mutation-pinned; they remain a new approval target | critical whole-change review of ADR-0036 candidate |

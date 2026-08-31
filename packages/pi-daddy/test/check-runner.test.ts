@@ -267,6 +267,7 @@ test("a malformed check definition is refused rather than normalised", async () 
     "argv-holds-a-non-string": { executable: process.execPath, argv: ["-e", 7] },
     "zero-timeout": { executable: process.execPath, argv: ["-e", "1"], timeout_ms: 0 },
     "negative-output-bound": { executable: process.execPath, argv: ["-e", "1"], max_output_bytes: -1 },
+    "SECRET TASK TEXT": { executable: process.execPath, argv: ["-e", "process.exit(0)"] },
   };
   for (const [checkId, definition] of Object.entries(cases)) {
     await assert.rejects(

@@ -5,7 +5,7 @@ to be decided. This file is authoritative for present behavior; ADRs record why 
 date. If code and this file disagree, report and repair the stale current-state claim rather than re-deriving
 present behavior from historical ADRs.
 
-Last synced against the code: **2026-08-20**, `pi-daddy` 0.18.1, pi 0.84.2, herdr 0.7.5.
+Last synced against the code: **2026-08-28**, unreleased after `pi-daddy` 0.19.0, pi 0.84.2; the dashboard plugin requires Herdr 0.8.0.
 
 **herdr's own contracts are now checked by `test-integration/herdr.it.ts`** against a live server, in an isolated
 workspace it creates and closes. That suite exists because three shipping defects hid behind the unit fake — the
@@ -382,39 +382,62 @@ and reported such a definition as blocked.
 
 ## The ledger
 
-Append-only JSONL at `PI_GRANTS_LEDGER`. Ledger format v2 is an event union: `capability_decision`,
-`workspace_lease`, `child_lifecycle`, and `check_receipt`. Every governed capability decision is recorded —
-**including refusals**, which are the interesting ones. The current reader also accepts legacy grant lines
-with no version/event discriminator.
+Append-only JSONL at `PI_GRANTS_LEDGER`. Ledger format v3 is an event union: `capability_decision`,
+`workspace_lease`, `child_lifecycle`, `check_receipt`, and `workflow_fact`. Every governed capability
+decision is recorded — **including refusals**, which are the interesting ones. The reader also accepts the
+frozen v2 union and legacy grant lines with no version/event discriminator.
 
-**This source candidate packages a canonical machine contract**, rather than reconstructing it from prose;
-it is not present in the already-published npm 0.18.1 and needs the next authorized package release.
-`pi-daddy/contracts/ledger/v2/ledger-event.schema.json` is a closed JSON Schema draft 2020-12 union, and
-`pi-daddy/contracts/ledger/v2/fixtures/*.json` are deterministic records generated through the production
-builders. Repository copies live under `packages/pi-daddy/contracts/ledger/v2/`; the generator is
-`scripts/generate-ledger-v2-contract.ts`. The schema covers nested correlation, trusted task/definition
-digests, approval source/scope/expiry/use facts, structured refusals, and lifecycle nulls.
+The canonical machine contracts ship with the package. v3 is at
+`pi-daddy/contracts/ledger/v3/ledger-event.schema.json`, with deterministic fixtures generated through the
+production builders by `scripts/generate-ledger-v3-contract.ts`. The published v2 path remains unchanged and
+frozen. Both are closed JSON Schema draft 2020-12 unions; adding/removing a field, event or enum member,
+changing requiredness, or changing meaning requires a new ledger version and versioned artifact path.
 
 Compatibility dispatch is exact. A line with neither `ledgerVersion` nor `event` is a legacy 0.17
-`GrantRecord` and remains readable, but is outside the v2 schema. A line explicitly naming
-`ledgerVersion: 2` must carry one of the four event discriminators and satisfy its complete field set.
-Any unsupported explicit version, missing discriminator, or unknown discriminator fails closed; a consumer
-must never reinterpret it as legacy. pi-daddy's `verifyLedger` enforces that version/discriminator boundary
-and required join fields, while full nested validation is the schema consumer's job. Because the schema is
-closed, adding/removing a field, event or enum member, changing requiredness, or changing meaning requires a
-new ledger version and versioned artifact path.
+`GrantRecord`. Explicit v2 or v3 must carry a discriminator valid for that version. Any unsupported explicit
+version, missing discriminator, unknown discriminator, or missing required identity fails closed and is never
+reinterpreted as legacy. One content-free runtime v3 validator is shared by `verifyLedger` and the dashboard;
+it enforces the closed top level, required identity, timestamps, finite vocabularies and nested correlation,
+approval/refusal/runtime shapes. V3 timestamps use one schema/runtime profile with seconds `00`–`59`;
+leap-second strings are excluded because the JavaScript date arithmetic used for deadlines and durations cannot
+represent them. Before adapting a v2 line as historical/unjoinable, the dashboard validates
+it against the exact frozen v2 schema; malformed explicit v2 is corruption, not legacy history. The packaged
+JSON Schema remains the canonical machine contract.
 
-Ids are hierarchical and derived: a child of `d0` is `d0.1`, its own second child `d0.1.2`. Ancestry reads
-from the id alone with no join, and it is reproducible, so two runs of the same fan-out produce a diffable
-ledger. `denied` non-empty is the one designated escalation signal.
+**A logical position is not an execution occurrence.** `childId` remains hierarchical and readable — a child
+of `d0` is `d0.1` — but repeated and concurrent calls may reuse that position. Every v3 occurrence therefore
+carries a random `executionId` and explicit `parentExecutionId: string | null`; lifecycle and lease events
+join only on `executionId`. A child's unique ID propagates through its governed environment so descendants
+name their actual parent occurrence. v2 has no safe occurrence join and is rendered historical rather than
+matched by `childId`. `denied` non-empty remains the designated escalation signal.
+
+A starting lifecycle event carries `deadlineAt`; without a terminal event it becomes `incomplete` after that
+bound instead of remaining running forever. Later non-terminal events must carry the same deadline; a changed
+value is corruption and cannot extend the live projection. The strict starting-ledger append consumes this same
+absolute budget and each executor receives only the remainder. Process SIGTERM grace is reserved inside that
+remainder and an independent SIGKILL timer enforces the recorded hard bound, so the grace cannot leave a child
+live past it. Both deadline callbacks allow pending child-process exit delivery one event-loop turn before they
+change state or signal. Once the governed PID has exited, retained descendant output pipes may delay drainage
+but neither timer can rewrite that completed process as timed out. A running append is awaited before either terminal append, including an executor
+exception, so the wire cannot say `failed` and then append `running`. A Herdr `running` observation may include
+`herdrPaneId` and `herdrAgentName` for navigation. Those identify a terminal and never make it a security
+boundary.
+
+`workflow_fact` carries identifier-only facts with explicit provenance: `planned`, `observed`, or
+`controller_validated`. Its states are constrained by provenance. A pi-daddy-enforced child is not a workflow
+fact and cannot be minted through that builder. Correlation on either event class remains caller-declared.
 
 **Setting `PI_GRANTS_LEDGER` makes the ledger load-bearing:** a write failure fails the delegation closed,
 because a child running with granted capabilities and no audit line is the thing the ledger exists to
-prevent. Concurrent appends are serialised by a lock file with a short timeout — failing closed beats
-hanging — and a lock abandoned by a killed process is broken after 10s.
+prevent. At session start a relative value is resolved once against pi's actual root cwd and the absolute path
+is inherited verbatim; routed descendants therefore remain in this one ledger when their cwd changes.
+Concurrent appends are serialised by a lock file with a short timeout — failing closed beats hanging — and a
+lock abandoned by a killed process is broken after 10s.
 
 `/grants ledger` reads it back and reports record count, escalation attempts, and unparseable lines with
-line numbers. A corrupt line is **reported, never repaired**: it is the only artifact an investigation has.
+line numbers and content-free reasons. No first-party report retains or prints bytes from a corrupt line: it
+may contain exactly the task/output text the file forbids. A corrupt line is **reported, never repaired**: it
+is the only artifact an investigation has.
 
 **Integrity is checked at every session start**, not only when asked — a check an operator has to know to run
 is a feature, not a control. Two things raise an `error` there, and only those two: unparseable lines, naming
@@ -434,7 +457,10 @@ first would have been a prompt and the rest are satisfied from the in-memory ses
 before per-capability sources existed are reported as *not counted*.
 
 **Privacy is a property of this file, and the boundary is exact.** Capability ids, counts and identifiers
-only — *never prompts, task text, tool arguments or results.* A spawn that names a definition records a
+only — *never prompts, task text, tool arguments or results.* Ledger v3 gives display IDs and capability IDs
+explicit ASCII grammars in its schema and exact runtime validator; public builders validate their JSON wire
+form before returning. Frozen v2 is still readable, but dashboard values outside those identifier grammars are
+redacted rather than reclassified as labels. A spawn that names a definition records a
 trusted `definitionDigest` of `{name, source, sha256}` over the body and a trusted `taskDigest` over the
 exact task. Task hashes can be guessed and compared, so treat them as sensitive identifiers, not redaction.
 Caller-supplied digest-looking values remain under `correlation` and are never used as proof of identity or
@@ -453,6 +479,10 @@ Every spawn may carry optional, non-authoritative metadata for joining an extern
 assurance source/scope/activation time, plan/definition/task digests, base/head/tree SHAs, event sequence,
 `last_change_seq`, `last_authority_seq`, and a check receipt ID. The structured scope and source values are
 copied as bounded JSON; pi-daddy does not own or interpret their vocabulary.
+
+The label/identity fields that the dashboard can display are ASCII identifiers, not free-form prose; invalid
+values are refused before they reach the ledger. `assurance_scope` remains bounded structured JSON, but a
+top-level null is omitted by normalization and rejected by the v3 schema so writer and reader agree.
 
 The separation is structural: external values are under `correlation`; `definitionDigest`, `taskDigest` and
 approval-binding capability digests are computed internally. Capability resolution reads only requested,
@@ -674,7 +704,9 @@ mid-sentence has not been assessed by anybody's gate.
 ## Named check runner
 
 `pi-daddy/check-runner` is a library seam for reviewers/verifiers that should not receive raw `bash` solely
-to run known checks. A caller selects a named ID from operator-owned configuration. Each definition has an
+to run known checks. A caller selects a named ID from operator-owned configuration. The ID must satisfy the
+v3 ASCII display-identifier grammar (and fit when prefixed/suffixed into its check execution ID); it is refused
+before an executable or lease starts rather than becoming free-form receipt/ledger text. Each definition has an
 **absolute executable plus argv array**, fixed/allowlisted environment, inherited-name allowlist, workspace
 access, timeout and output cap. No shell string or interpolation is accepted.
 
@@ -770,6 +802,66 @@ that snapshot as a stream is what produced a measured 89,000× amplification and
 **The block is a display and never the result.** The tool's answer is still what the child returned. On the herdr
 path, output older than the tail may be in *neither* — a pane that scrolled or exceeded the output cap returns only
 its tail, and the result says so when it is truncated.
+
+## The Herdr dashboard
+
+The primary observability surface is a globally linked **Herdr plugin shipped inside this package**. Its
+terminal pane is a persistent right split beside pi. The plugin reads `PI_GRANTS_LEDGER`; it never writes the
+ledger, grants a capability, approves a gate, spawns a child, or repairs corruption.
+
+`/grants dashboard` performs these checks in order:
+
+1. This exact pi process must be the foreground process of the pane named by its complete Herdr environment.
+   A reachable Herdr server elsewhere does not count.
+2. `PI_GRANTS_LEDGER` must be configured.
+3. The installed `pi-daddy.dashboard` plugin must come from this package's bundled root, be protocol-major
+   compatible, and be enabled — in that order, so a foreign disabled plugin is never suggested for enable.
+4. A pane recorded for this Herdr workspace/tab/ledger is reused only while its stable terminal identity is
+   still in that exact workspace and tab; otherwise Herdr opens the plugin entrypoint as a right split targeted
+   at the calling pi pane with `--no-focus`. The returned open identity is checked too; a wrong-host pane is
+   closed and rejected before it can be persisted. Invocation `cwd` sets the first pane process directory but
+   is not a fourth identity dimension: another call for the same workspace/tab/ledger reuses that pane.
+
+Pane handles live under `$PI_CODING_AGENT_DIR/pi-daddy/dashboard-panes.json`, protected by the package's
+cross-process file lock. This is navigation state, not an execution database. The complete v1 shape, including
+every nested pane entry, is checked, and the stored workspace/tab/ledger must equal the dimensions of the hash
+key before any pane lookup. A corrupt, mismatched or unreadable handle file refuses rather than risking a
+duplicate or displaying another ledger. Herdr remains the owner of the pane and its persistence.
+
+Installation is an explicit handshake. A Herdr-hosted TUI with no matching plugin asks once:
+
+> Herdr detected. Install and open the pi-daddy dashboard?
+
+The choices are **Install and open**, **Not now**, and **Never ask**. Only the first runs
+`herdr plugin link` against the plugin directory inside the installed pi-daddy package. The other literal
+choices are stored under `$PI_CODING_AGENT_DIR/pi-daddy/dashboard-preference.json` and suppress later startup
+prompts. Dismissal, timeout or UI teardown returns no choice and stores nothing. `/grants dashboard` never
+installs an absent plugin: it reports the exact manual link command. A plugin pane
+opened before an active core/ledger prints exact `pi install`, ledger export and pi startup commands and changes
+no pi configuration.
+
+Plugin/core dashboard protocol is 1, represented by plugin version major 1. A mismatch renders an
+incompatibility diagnostic and no guessed tree. The plugin requires Herdr 0.8.0.
+
+The projection is pure and has no pi/Herdr UI dependency. It reconstructs from the complete ledger, keeps
+active nodes and their ancestry, collapses old completed subtrees, displays duration, definition, state,
+phase label and live Herdr pane identity, and uses yellow/green/red/grey for active/completed/failed-or-refused/
+incomplete-or-historical. Expanded terminal mode can show effective grant, workspace, executor and
+correlation. Raw corrupt lines are deliberately not rendered because a foreign line may contain the task or
+output fields this ledger forbids; line number and validation reason are sufficient and the file is untouched.
+Schema-shaped prose cannot stand in for an identifier, and terminal sanitation removes Unicode control and
+format characters (`Cc`/`Cf`), including C1 CSI/OSC/ST and bidi controls.
+
+Workflow provenance is visible and non-interchangeable: **P** planned, **O** observed inline activity,
+**V** controller-validated transition, **E** pi-daddy-enforced child, and **D** caller-declared correlation
+labels. Principal runs get their explicit `policy_label`, `run_id`, `phase` and effective assurance through
+the existing correlation fields. No prompt prose is parsed and no planned phase becomes complete without a
+controller-validated fact. principal-pi-skills does not yet ship a generated workflow-graph declaration, so
+this MVP renders its recorded labels/facts rather than inventing pending graph nodes.
+
+The intentionally boring reader reconstructs the whole file every 250 ms. The flip condition is a normal
+ledger above 50 MiB or projection above 100 ms p95; then the reader may track inode/offset incrementally while
+the event and pure-projection contracts stay unchanged.
 
 ## Pane lifetime
 
@@ -885,7 +977,8 @@ loudly.
 | `PI_GRANTS_APPROVED` | unset | `capability@subject#sha256` entries, inherited, clamped, and verified against the definition the child loaded (ADR-0022). |
 | `PI_GRANTS_APPROVAL_TIMEOUT` | `120` | Seconds a dialog waits. `0` or unreadable ⇒ **no timeout**: waiting forever denies nothing. |
 | `PI_GRANTS_FANOUT` | `8` | Subtree budget. |
-| `PI_GRANTS_PARENT_ID` | `d0` | Ledger identity; set by the parent. |
+| `PI_GRANTS_PARENT_ID` | `d0` | Readable logical tree position; set by the parent and allowed to repeat across calls. |
+| `PI_GRANTS_EXECUTION_ID` | unset at a root | Unique governed occurrence; set by the parent. v3 lifecycle/lease joins use this. |
 | `PI_GRANTS_LEDGER` | unset ⇒ not recording | Setting it makes it load-bearing. |
 | `PI_GRANTS_WORKSPACE_REGISTRY` | unset | Operator-owned `{version:1, workspaces:{id:{path}}}` file. Required only when a spawn names a workspace. |
 | `PI_GRANTS_WORKSPACE_LEASE_DIR` | `$PI_CODING_AGENT_DIR/pi-daddy/workspace-leases` | Kernel-lock files and ownership metadata for governed writers. |
@@ -902,11 +995,11 @@ bound a typo can switch off is not a bound.
 
 ```bash
 cd packages/pi-daddy
-npm test                   # 637 unit tests — pure, no pi, no network
+npm test                   # 719 unit tests — pure, no pi, no network
 npm run typecheck          # src + extensions + test + test-integration
 npm run test:integration   # 45 tests against a REAL pi process/herdr server, no model tokens
-npm run test:smoke         # pack, install into a scratch project, import and USE every subpath —
-                           # and run the installed `pi-daddy init` bin, which is how R-73 was found
+npm run test:smoke         # pack/install; exercise exports, both bins, v2/v3 contracts, the bundled
+                           # Herdr plugin/dashboard, and `pi-daddy init`
 
 PI_GRANTS_IT_MODEL=1 npm run test:integration   # + 10 with a real model (costs money)
 ```
@@ -925,6 +1018,14 @@ Stated because a gap nobody wrote down is the one that surprises somebody.
 - **`subagents:rpc:spawn` bypasses the tripwire.** Unfixable from here.
 - **Pane cleanup is not leak-proof.** Cleanup runs in a `finally`, which covers thrown errors but not the
   process being killed. There is no reaper.
+- **The dashboard reader is whole-file polling.** It is intentionally simple for the assumed 10 MiB MVP
+  ledger and flips to incremental inode/offset replay at 50 MiB or 100 ms p95 projection time.
+- **v2 cannot be reconstructed into unique occurrences.** Its capability decisions are shown as historical
+  rows and its lifecycle events are disclosed as unjoined; matching them by `childId` would fabricate facts.
+- **principal-pi-skills has no generated workflow-graph declaration yet.** Correlated run/phase/assurance
+  labels and explicit provenance facts render; pending graph nodes are not inferred from its prompts.
+- **A controller-validated workflow fact is not pi-daddy enforcement.** The event records what the named
+  controller declared and the UI marks it `V`; only capability/lifecycle events receive the `E` marker.
 - **A definition's *instructions* are still ungoverned.** ADR-0017 closed the authorisation half of R-35
   (`agent:<name>` is required to spawn one) and ADR-0018 the audit half as far as it goes (the record
   identifies which body ran). What no capability model reaches: the operator authorises a **file**, and what

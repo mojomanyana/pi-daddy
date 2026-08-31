@@ -186,10 +186,11 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     const cwd = await projectOnce();
     const dir = await tempDir("grants-it-ledger-");
     const ledger = join(dir, "ledger.jsonl");
+    const secret = "SECRET_TASK=rotate-production-token";
     await writeFile(
       ledger,
       // One valid record, then a torn one. Corruption must be REPORTED, because a line that silently
-      // fails to parse is indistinguishable from a spawn that never happened.
+      // fails to parse is indistinguishable from a spawn that never happened. Its bytes stay private.
       `${JSON.stringify({
         ts: new Date().toISOString(),
         parentId: "d0",
@@ -202,7 +203,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
         clipped: [],
         gatedBlocked: [],
         blocked: false,
-      })}\n{"parentId":"d0","childId":"d0.2","dep\n`,
+      })}\n${secret} {"parentId":"d0","childId":"d0.2","dep\n`,
       "utf8",
     );
 
@@ -216,6 +217,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     assert.match(text, /records\s+1/, "the valid record is counted");
     assert.match(text, /UNPARSEABLE LINE/, "and the torn one is reported rather than ignored");
     assert.match(text, /line 2:/, "with a line number, so it is actionable");
+    assert.doesNotMatch(text, new RegExp(secret), "corruption diagnostics must not reproduce ledger bytes");
     assert.ok(
       !/approvals\s+\d/.test(text),
       "a ledger with no approvals must not print an approvals tally — a report that speaks about " +
@@ -433,7 +435,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     const text = r.notifies.map((n) => n.message).join("\n");
 
     assert.match(text, /unknown subcommand "ledgr" — did nothing/, "it must say it did nothing");
-    assert.match(text, /Known: init, ledger, approvals, revoke/, "and what it does know");
+    assert.match(text, /Known: init, dashboard, ledger, approvals, revoke/, "and what it does know");
     assert.ok(!/holding    /.test(text), "and must NOT print the status screen, which is what made it look fine");
   });
 

@@ -71,7 +71,9 @@ test("a ledger failure after lease acquisition releases the writer lock", async 
   try {
     await assert.rejects(
       () => prepareDelegationWorkspace({
-        spec: { workspace_id: "w1", access: "write" }, childId: "d0.1", ledgerPath: ledgerDirectory,
+        spec: { workspace_id: "w1", access: "write" }, childId: "d0.1",
+        executionId: "exec:00000000-0000-4000-8000-000000000001", parentExecutionId: null,
+        ledgerPath: ledgerDirectory,
       }),
       /grant ledger write failed/,
     );
@@ -113,6 +115,8 @@ test("a retained lease whose helper already died is ledgered `lost`, not `retain
   const outcome = await releaseDelegationWorkspace({
     prepared: { workspace, lease, correlation: {} },
     childId: "d0.1",
+    executionId: "exec:00000000-0000-4000-8000-000000000001",
+    parentExecutionId: null,
     ledgerPath,
     reason: "herdr-close-failed",
     retain: true,

@@ -46,6 +46,8 @@ export const ENV_FANOUT = "PI_GRANTS_FANOUT";
  * Without it every level restarts at `d0` and the ledger cannot be joined into a tree across processes.
  */
 export const ENV_PARENT_ID = "PI_GRANTS_PARENT_ID";
+/** Unique identity of this governed execution occurrence; unlike ENV_PARENT_ID it is never reused. */
+export const ENV_EXECUTION_ID = "PI_GRANTS_EXECUTION_ID";
 export const ENV_DEPTH = "PI_GRANTS_DEPTH";
 export const ENV_MAX_DEPTH = "PI_GRANTS_MAX_DEPTH";
 export const ENV_GATED = "PI_GRANTS_GATED";
@@ -68,6 +70,7 @@ export const GRANT_ENV_KEYS = [
   ENV_APPROVED,
   ENV_FANOUT,
   ENV_PARENT_ID,
+  ENV_EXECUTION_ID,
 ] as const;
 
 export const parseList = (raw: string | undefined): Capability[] =>

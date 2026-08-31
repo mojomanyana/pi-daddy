@@ -9,7 +9,7 @@
  * Packs a tarball, installs it into a scratch project, and imports it the way a consumer would.
  */
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -34,6 +34,9 @@ try {
   const packed = run("npm", ["pack", "--pack-destination", work], pkgDir).trim().split("\n").pop();
   writeFileSync(join(work, "package.json"), JSON.stringify({ name: "smoke", private: true, type: "module" }));
   run("npm", ["i", "--no-audit", "--no-fund", join(work, packed)], work);
+  if (existsSync(join(work, "node_modules/pi-daddy/dist/run-child-test-control.js"))) {
+    throw new Error("test-only run-child control leaked into the installed package");
+  }
 
   writeFileSync(
     join(work, "probe.mjs"),
@@ -54,6 +57,14 @@ try {
       `import { refusal, GovernanceRefusal } from "pi-daddy/refusals";`,
       `import { defaultWorkspaceLeaseDir } from "pi-daddy/workspace";`,
       `import { buildCheckEnvironment } from "pi-daddy/check-runner";`,
+      `import { parseDashboardLedger } from "pi-daddy/dashboard-projection";`,
+      `import { renderDashboard } from "pi-daddy/dashboard-render";`,
+      `import ledgerV3Schema from "pi-daddy/contracts/ledger/v3/ledger-event.schema.json" with { type: "json" };`,
+      `import v3CapabilityFixture from "pi-daddy/contracts/ledger/v3/fixtures/capability-decision.json" with { type: "json" };`,
+      `import v3LeaseFixture from "pi-daddy/contracts/ledger/v3/fixtures/workspace-lease.json" with { type: "json" };`,
+      `import v3LifecycleFixture from "pi-daddy/contracts/ledger/v3/fixtures/child-lifecycle.json" with { type: "json" };`,
+      `import v3ReceiptFixture from "pi-daddy/contracts/ledger/v3/fixtures/check-receipt.json" with { type: "json" };`,
+      `import v3WorkflowFixture from "pi-daddy/contracts/ledger/v3/fixtures/workflow-fact.json" with { type: "json" };`,
       `import ledgerV2Schema from "pi-daddy/contracts/ledger/v2/ledger-event.schema.json" with { type: "json" };`,
       `import capabilityFixture from "pi-daddy/contracts/ledger/v2/fixtures/capability-decision.json" with { type: "json" };`,
       `import leaseFixture from "pi-daddy/contracts/ledger/v2/fixtures/workspace-lease.json" with { type: "json" };`,
@@ -81,6 +92,10 @@ try {
       `if (new GovernanceRefusal(refusal("GATED_UNAPPROVED", "no")).code !== "GATED_UNAPPROVED") throw new Error("refusal export broken");`,
       `if (!defaultWorkspaceLeaseDir({PI_CODING_AGENT_DIR: process.cwd()}).includes("workspace-leases")) throw new Error("workspace export broken");`,
       `if (buildCheckEnvironment({executable:process.execPath,argv:[],env:{SAFE:"yes",SECRET_TOKEN:"no"}}).SECRET_TOKEN) throw new Error("check env leaked");`,
+      `if (ledgerV3Schema.$id !== "https://github.com/mojomanyana/pi-daddy/contracts/ledger/v3/ledger-event.schema.json") throw new Error("ledger v3 schema export broken");`,
+      `if ([v3CapabilityFixture, v3LeaseFixture, v3LifecycleFixture, v3ReceiptFixture, v3WorkflowFixture].map((event) => event.event).join() !== "capability_decision,workspace_lease,child_lifecycle,check_receipt,workflow_fact") throw new Error("ledger v3 fixture exports broken");`,
+      `const dashboard = parseDashboardLedger(JSON.stringify(v3CapabilityFixture) + "\\n", { now: new Date("2026-08-20T12:00:02Z") });`,
+      `if (!renderDashboard(dashboard, { color: false }).includes("build")) throw new Error("dashboard exports broken");`,
       `if (ledgerV2Schema.$id !== "https://github.com/mojomanyana/pi-daddy/contracts/ledger/v2/ledger-event.schema.json") throw new Error("ledger v2 schema export broken");`,
       `if ([capabilityFixture, leaseFixture, lifecycleFixture, receiptFixture].map((event) => event.event).join() !== "capability_decision,workspace_lease,child_lifecycle,check_receipt") throw new Error("ledger v2 fixture exports broken");`,
       `console.log("SMOKE_OK");`,
@@ -113,7 +128,23 @@ try {
   const copied = readFileSync(join(work, ".pi", "skills", "review", "SKILL.md"), "utf8");
   if (copied !== skillSource) throw new Error(`init did not copy the declaration verbatim:\n${copied}`);
 
-  console.log("smoke: installed package imports and runs, and `pi-daddy init` scaffolds — OK");
+  const dashboardOut = run(
+    join(work, "node_modules", ".bin", "pi-daddy-dashboard"),
+    ["--once", "--no-color"],
+    work,
+  );
+  if (!dashboardOut.includes("pi-daddy is missing or its ledger is inactive")) {
+    throw new Error(`installed dashboard bin did not run:\n${dashboardOut}`);
+  }
+  const pluginManifest = readFileSync(
+    join(work, "node_modules", "pi-daddy", "herdr-plugin", "herdr-plugin.toml"),
+    "utf8",
+  );
+  if (!pluginManifest.includes('id = "pi-daddy.dashboard"') || !pluginManifest.includes("dist/dashboard-cli.js")) {
+    throw new Error("installed package dropped or changed the bundled Herdr plugin");
+  }
+
+  console.log("smoke: installed package imports, dashboard, plugin, and `pi-daddy init` — OK");
 } catch (error) {
   console.error("smoke FAILED:\n", error.stdout ?? "", error.stderr ?? error.message ?? error);
   process.exitCode = 1;

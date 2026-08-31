@@ -10,6 +10,8 @@ export async function recordChainRefusal(input: {
   session: GrantsSession;
   plan: Delegation;
   stepIndex: number;
+  executionId: string;
+  parentExecutionId: string | null;
   agent?: string;
   reason: string;
   refusal?: StructuredRefusal;
@@ -19,6 +21,8 @@ export async function recordChainRefusal(input: {
   await appendRecord(
     { path: input.session.ledgerPath, strict: true },
     buildRecord({
+      executionId: input.executionId,
+      parentExecutionId: input.parentExecutionId,
       parentId: input.session.ownSpawnId,
       childId: childSpawnId(input.session.ownSpawnId, input.stepIndex),
       depth: input.plan.childDepth,

@@ -31,6 +31,7 @@ import {
   gatedFromEnv,
   ENV_APPROVED,
   ENV_DEPTH,
+  ENV_EXECUTION_ID,
   ENV_FANOUT,
   ENV_GATED,
   ENV_GRANT,
@@ -95,7 +96,8 @@ export interface GrantsSession {
   /** Bound variables that could not be read as non-negative integers — spawning is disabled, loudly. */
   readonly malformedBounds: string[];
   readonly gated: Capability[];
-  readonly ledgerPath?: string;
+  /** Resolved against the actual pi cwd at session start, then inherited verbatim by every descendant. */
+  ledgerPath?: string;
   /**
    * Which executor runs this session's children — ADR-0031.
    *
@@ -108,8 +110,10 @@ export interface GrantsSession {
    * before the probe, which is the same hazard as capturing `ownGrant` before the tool surface is observed.
    */
   executor: ExecutorChoice;
-  /** This session's ledger identity; children descend from it (F8). */
+  /** This session's readable logical ledger identity; children descend from it (F8). */
   readonly ownSpawnId: string;
+  /** Unique identity when this session is itself a governed child; roots have no governed parent. */
+  readonly ownExecutionId?: string;
   /** Descendants this subtree may still create — the cardinality bound ADR-0008 never had. */
   readonly fanoutBudget: number;
   /** Whether `delegate` / `delegate_all` are registered at all (S-5). Decided on the INHERITED grant. */
@@ -284,6 +288,7 @@ export function createGrantsSession(extensionPath: string | undefined): GrantsSe
     // `ownSpawnId` comes from the parent (F8), so ids form one tree across process boundaries instead of
     // every level restarting at `d0` and the ledger becoming unjoinable.
     ownSpawnId: process.env[ENV_PARENT_ID]?.trim() || `d${depth}`,
+    ownExecutionId: process.env[ENV_EXECUTION_ID]?.trim() || undefined,
     // The cardinality bound ADR-0008 never had: it attenuates downward like depth, so a subtree can never
     // create more descendants than its root was given — with no shared state, no lock and no counter file.
     fanoutBudget: budgetFromEnv(process.env[ENV_FANOUT]),

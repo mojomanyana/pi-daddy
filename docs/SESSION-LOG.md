@@ -11,13 +11,27 @@ decisions; this file holds state and next actions. Newest entry on top.
 2026-08-22 the *server* enforces it: `main` requires a pull request (zero approvals) with both CI legs green,
 and `enforce_admins` is on, so a direct push is refused rather than merely discouraged.
 
-**STATE, 2026-08-23. `0.19.0` is RELEASED and verified; everything is merged.** The release is the fixed
-point, not a commit id: **npm `latest`, tag `v0.19.0`, the GitHub Release and `main` all resolve to the same
-commit**, so `git rev-list -n1 v0.19.0` is the thing to trust and this block deliberately no longer names a
-`main` SHA. **Thirty-six ADRs.** No open pull requests. Measured on `main`, on both matrix legs in CI: **641 unit · 45
-integration · typecheck · installed-package smoke · 27/27 catalogued guards** — and, once, the opt-in
-`PI_GRANTS_IT_MODEL=1` tier: **55 tests, 54 passed**, its one failure a stale test rather than a defect
-(R-155). npm `latest`, tag `v0.19.0`, the GitHub Release and `main` all point at the same commit.
+**STATE, 2026-08-31. `0.19.0` remains the released and registry-verified fixed point; the approved live Herdr
+dashboard candidate is versioned `0.20.0` on `feat/observability-dashboard` pending PR and release.** npm `latest`, tag `v0.19.0`, the
+GitHub Release and the released baseline resolve to one commit, so `git rev-list -n1 v0.19.0` is the thing to
+trust and this block deliberately names no mutable `main` SHA. **Thirty-six ADRs.** ADR-0036 records the new
+candidate; two complete critical review rounds returned **CHANGES-REQUESTED** (eight findings, then ten more).
+The attempted third whole-change review timed out, but a bounded independent critical adjudication returned
+**CHANGES-REQUESTED** on two further blockers. A distributed critical review then covered all 71 changed paths
+and returned two more accepted findings. Its critical approval retry reproduced three more deadline/contract
+blockers, and the fifth-repair quality review found one exit/deadline race, and its repair review found the soft-timer twin plus delayed exit
+delivery, then the next review found the soft delayed-delivery route lacked its own mechanical proof; all
+twenty-nine had red-first repairs, then the proof review found its fixed-time busy-spin could false-fail under
+scheduler contention, then the next review found its deadline still began before readiness; all thirty-one now
+had repairs, then the next review found its test seam weakened hard-deadline immutability; all thirty-two now
+had repairs; its review found the snapshot unforced and the observer fail-open/unbounded. All thirty-five now
+had repairs; its review found the hard proof's exit occurred after its deadline and status publication racy.
+Thirty-seven had repairs; its review found a pre-spawn proof window, chunk assumption and temporary leak. All
+Forty-three had repairs; its review found complete-status error paths and async-context isolation unproved. All
+Forty-five had repairs; its review found a frozen-clock hang, shipped control artifacts and non-overlapping
+concurrency. All forty-eight have repairs. Critical run `48da2009…` approved exact candidate tree `889fd02…` on both specification and quality. Nothing has been committed, opened as a PR or released. The last released evidence remains **641 unit · 45 integration · typecheck · installed-package smoke · 27/27
+catalogued guards**, plus the opt-in model tier at **55 tests, 54 passed** before R-155's stale assertion was
+corrected and rerun.
 
 *(These lines were stale for about an hour after the release — they said "nothing is released", the tier "was
 not run", and named a commit three merges back, while the paragraphs directly below them said otherwise. **That
@@ -86,31 +100,36 @@ defaulted to TAP before Node 23 and this parser reads `spec`. Pinned. Three thin
 cost five minutes instead of a sweep of 27 false "fixes": the positive control existed (R-143, and it was
 unforced until a reviewer made me test it), the matrix existed, and CI ran the catalogue at all.
 
-### NEXT SESSION — ranked, and none of it is blocking
+### NEXT SESSION — ranked
 
-1. **The measurement ADR-0020 asks for.** Still the highest-value item and still only the operator can run it:
+1. **Ship the approved ADR-0036 candidate as `0.20.0` in one PR.** Critical run `48da2009…` approved exact
+   candidate tree `889fd02…`; the bounded quality retry found no blockers after the first quality attempt timed
+   out. Keep the PR to ADR-0036 and release records only; publish, verify the registry artifact, then update this
+   state block to the immutable release tag.
+2. **The measurement ADR-0020 asks for.** Still the highest-value item and still only the operator can run it:
    govern real work for a few weeks and read `/grants ledger`'s `N prompt · N persisted` line. That ADR rests on
    an asserted fatigue argument until someone does. The machinery has existed since 0.13.0; the *usage* is what
    is missing.
-2. **Watch for upgrade friction on the breaking change.** 0.19.0 requires `workspace:<id>` in any grant that
+3. **Watch for upgrade friction on the breaking change.** 0.19.0 requires `workspace:<id>` in any grant that
    routes; four fixtures in this repository began refusing until granted, which is the one-line edit an operator
    faces. `pi-daddy init` scaffolds the registry but deliberately does not choose a ceiling (ADR-0028), so the
    operator writes the capability by hand. If that turns out to be the wrong trade, it is an ADR, not a patch.
-3. **R-137 is the sharpest open risk.** Routing attenuates by *id*, not by *destination*: a child holding
+4. **R-137 is the sharpest open risk.** Routing attenuates by *id*, not by *destination*: a child holding
    `workspace:staging` and `tool:write` can repoint that entry at another worktree and route its grandchild
    there, measured in `docs/probes/g37-registry-tamper`. The content pin that would close it was reverted after
    being defeated four ways, and **nothing checks who may write the registry** (R-144). ADR-0036 territory, and
    ADR-0035 explicitly declined Option 2 (strip the registry, re-supply a narrowed one) which is still
    available as defence-in-depth.
-4. **R-145 needs a decision, not a patch.** A *gated* routing attempt takes the destination's exclusive writer
+5. **R-145 needs a decision, not a patch.** A *gated* routing attempt takes the destination's exclusive writer
    lease **before** the human is asked, and holds it for an unbounded dialog — model-reachable, and it emits an
    `acquired`/`write` record for a child that never runs. Reversing the ordering means deciding what a bound
    approval binds to; ADR-0034 chose "resolve then ask" deliberately, for R-110.
-5. **Cheap and open:** R-147 (a refused registry prints nothing anywhere, while a malformed `PI_GRANTS_DEPTH`
+6. **Cheap and open:** R-147 (a refused registry prints nothing anywhere, while a malformed `PI_GRANTS_DEPTH`
    gets a notify — rule 8), R-149 (the registry read deadline is forced by nothing, and the module classifies
    an `AbortError` no remaining code can produce), R-150 (seven guards nothing forces, one of them wired on the
-   quieter of two routes), R-151 and R-148 (both herdr-executor territory), R-141, R-140.
-6. **R-142 is closed by CI (R-153) and R-129 predates the catalogue** — reconciled 2026-08-23; do not reopen
+   quieter of two routes), R-151 and R-148 (both herdr-executor territory), R-141's remaining relative lease
+   namespace/access/reporting halves, and R-140.
+7. **R-142 is closed by CI (R-153) and R-129 predates the catalogue** — reconciled 2026-08-23; do not reopen
    either without new evidence.
 
 ### Habits this project keeps re-earning
@@ -126,6 +145,361 @@ unforced until a reviewer made me test it), the matrix existed, and CI ran the c
   merge that lost tests.
 - **When a guard fails, obey it.** The 400-line ceiling fired three times on `workspace-lease.ts` in two days
   and got a seam each time (`src/lease-helper.ts`); the cap has never been raised.
+
+## 2026-08-28 — ADR-0036 live governance dashboard candidate
+
+**Branch `feat/observability-dashboard`, from released baseline `c364a67`; unreleased. Two critical review
+rounds returned CHANGES-REQUESTED; the latest repairs await a third review.** The product brief required the smallest truthful Herdr sidebar, and the implementation keeps the
+three layers separate: v3 ledger events → pure projection → ANSI terminal renderer.
+
+**Identity changed because it had to.** Two concurrent plain delegates both legitimately occupy `d0.1`; a
+production wiring regression now observes exactly that and requires distinct random `executionId` values plus
+explicit `parentExecutionId`. The ID propagates on both executors and all three tools. v2 stays frozen and
+readable but is never lifecycle-joined by reusable `childId`.
+
+**Herdr is a host, not an inference.** `/grants dashboard` requires the complete pane environment, resolves
+that exact pane, and checks this pi PID in `pane.process-info`; a server answering elsewhere is rejected. The
+bundled `pi-daddy.dashboard` plugin opens a right split against the caller with `--no-focus`, and a locked
+pane-handle file makes repeat calls reuse. The startup handshake asks the exact three choices from the brief;
+only **Install and open** links software. No live plugin was linked while developing this — product code that
+forbids silent installation should not violate that boundary in its own test procedure.
+
+**Provenance is an event type, not typography.** `workflow_fact` accepts identifier-only planned, observed or
+controller-validated facts with state/provenance compatibility; enforced children remain capability/lifecycle
+events. The projection marks P/O/V/E/D and correlation stays caller-declared. principal-pi-skills currently has
+run state and generated prompt contracts but no generated workflow-graph declaration, so this candidate renders
+explicit run/phase/assurance/policy labels and facts rather than parsing its prompts.
+
+**Known honest limits:** whole-file replay every 250 ms, with the flip at 50 MiB or 100 ms p95 (R-160); v2 is
+grey/historical; plugin-core protocol is major 1 and Herdr minimum is 0.8.0; the dashboard does not render named
+checks as child nodes. It never receives task text/output fields, and raw corrupt lines are withheld from the
+renderer because a foreign line may contain exactly those forbidden values.
+
+**Pre-review evidence:** every new behavior was driven red first. The first candidate ran **692/692 unit**,
+**45/45 integration against real pi and Herdr 0.8.0**, typecheck, installed-package smoke (exports, both bins,
+v2/v3 contracts, bundled plugin, dashboard and init), `git diff --check`, line ceiling, and **59/59 mutation
+catalogue entries** from a clean disposable committed snapshot (`54ae1f6…`; an attributable HEAD was printed
+inside every recorded run). A live read-only Herdr check bound the current pi PID to `w6:pJ` and reported the plugin
+absent; no plugin was linked during development.
+
+Three first runs earned the controls rather than weakening them: unit was **673/672** because three touched
+modules crossed the 400-line ceiling and produced real seams (`execution-occurrence`, `delegation-ledger`,
+`chain-plan`); integration was **44/45** because R-74's expected known-command list had not learned `dashboard`;
+installed smoke found the new dashboard bin repeating R-73's npm-symlink no-op. The first mutation pass was
+57/58 because one claimed parent-id guard was redundant; it was removed rather than force-tested. The second
+was 58/60 because one remaining test asserted the right behavior under the wrong failure-name matcher. The
+third is the 59/59 result above.
+
+Five broad review attempts timed out before returning verdicts, but their partial adversarial traces identified
+concrete issues that were reproduced and fixed: pane creation labelled running before agent start and prompt,
+optional deadlines permitting permanent running, ANSI truncation leaving colour open, same-PID process info
+from another pane, dead-pane reuse, and a newly opened pane left untracked when state persistence failed.
+
+**Completed critical whole-change review and repair:** three focused independent reviewers plus a disposable
+whole-change pass returned eight accepted findings. R-141: the documented relative ledger split a routed tree.
+R-161: two capability answers on one chain step emitted duplicate decisions for one execution ID. R-162: raw
+JSON parse diagnostics leaked ledger bytes, nested malformed correlation crashed rendering, and `verifyLedger`
+called a string lookalike v3 line `OK`. R-163: the public workflow producer accepted arbitrary `kind` text.
+R-164: a progress callback could SIGKILL the process it observed. R-165: disabled state outranked plugin root
+provenance. R-166: dismissal persisted an invented Not now. Each was watched red before its repair; the progress
+boundary has separate direct/fan-out and chain guards.
+
+**Post-repair evidence:** **700/700 unit**, typecheck, **45/45 integration against real pi and Herdr 0.8.0**,
+installed-package smoke, generated-contract cleanliness, line ceiling, `git diff --check`, and **69/69 mutation
+entries** from disposable committed snapshot `735d465…` / candidate tree `2b9d1d8…`. The first repair mutation
+pass was 66/68: it proved the string-version check had a second guard and that display isolation was redundant
+at two layers. The catalogue was corrected to remove both version guards together; the redundant executor
+catch was removed, direct and chain reporters each gained their own regression, and the next run forced 69/69.
+**There is still no independent approval of the repairs**, so the candidate is not merge-ready.
+
+**Critical re-review and second repair:** run `c823aca8…` verified candidate tree `9044382…`. The broad
+specification/quality sweeps timed out after tracing (so the finding list is not claimed exhaustive), while
+four fresh focused snapshots independently reproduced ten blockers. R-162 was not actually closed:
+`verifyLedger.corrupt[].text` retained 120 raw bytes and `/grants ledger` printed `SECRET_TASK`. R-167 groups
+three exact-host failures — moved panes reused elsewhere, wrong-host open results persisted, and malformed
+nested pane state opening duplicates. R-168: schema/runtime-valid prose in agent/capability/correlation fields
+rendered task/output text, while C1 and bidi controls survived. R-169: ledger wait did not consume the
+recorded timeout and a catch-path terminal append could overtake running. R-170: `Date.parse("1")` passed a
+public builder and schema accepted a null assurance scope runtime rejects.
+
+Each was driven red separately. Canonical corruption reports are content-free; reuse/open/store validate exact
+host identity and complete nested state; v3 schema/runtime/builders share identifier grammars and frozen-v2
+projection redacts outside them; terminal sanitation removes `Cc`/`Cf`; executors receive only the recorded
+deadline remainder and terminal appends await running; public builders assert their closed wire, with one
+RFC-3339 validator and a non-null top-level scope contract.
+
+**Second-repair evidence:** **709/709 unit**, typecheck, **45/45 integration against real pi and Herdr 0.8.0**,
+installed-package smoke, generated-contract cleanliness, line ceiling, and **82/82 mutation entries** from
+disposable committed snapshot `346bb94…` / candidate tree `fe27bb8…`. The first expanded mutation run was
+76/81: the new builder assertion made two old constructor guards redundant, pane cleanup moved into a shared
+helper, and identifier redaction made the old CJK width test incapable of exercising width. Those entries/tests
+were re-targeted rather than weakened. The next was 80/81 because a renamed deadline test left one stale
+failure-name matcher; after correcting it, 81/81 forced. Self-review then found named-check prose was refused
+only after work when no ledger was configured; moving that classification before execution added the 82nd
+entry, and the attributable run forced 82/82. Final handoff reran `git diff --check` and computed the
+attributable candidate tree after this log edit. **There is still no independent approval of the second
+repairs**, so the candidate is not merge-ready.
+
+**Third critical attempt and repair:** run `69a7be45…` verified candidate tree `730c9e6…`. Broad whole-change
+and focused slice agents timed out before a complete verdict, so their traces are not approval or an exhaustive
+finding list. A fresh bounded critical adjudicator (`86bb8691…`) independently reproduced two blockers.
+`REV3-QUAL-A-001`: `buildWorkflowFactEvent` was the public v3 builder omitted from the claimed final wire
+assertion, and a Date-shaped JavaScript value produced `ts: "1"`, which the reader rejects. `REV3-QUAL-B-001`:
+the pane key secretly included invocation `cwd`, so identical workspace/tab/ledger calls from two directories
+opened two dashboards. The adjudicator rejected its third hypothesis: Node 26 does not let a final newline pass
+the identifier regexes.
+
+Both accepted findings were driven red in the writer tree. The workflow builder now asserts its completed JSON
+wire like every execution-event builder; the regression forces string and non-string invalid timestamps. Pane
+identity is exactly workspace/tab/ledger; `cwd` remains the first process directory and a second directory now
+reuses the same pane. Each repair has its own mutation.
+
+**Third-repair evidence:** **710/710 unit**, typecheck, **45/45 integration against real pi and Herdr 0.8.0**,
+installed-package smoke, generated-contract cleanliness, line ceiling, and **84/84 mutation entries** from
+disposable committed snapshot `30df049…` / candidate tree `d173a31…`. The first expanded mutation run was
+83/84: the pane regression failed correctly, but the catalogue searched for custom assertion text while its
+parser intentionally reads the failing **test name**. Pointing the entry at that name made the second run force
+84/84; no guard or test was weakened. A complete independent whole-change approval is still absent, so the
+candidate is not merge-ready.
+
+**Distributed whole-change review and fourth repair:** run `f3ede78b…` verified candidate tree `61bcd58…`.
+Three independent slices covered every one of the 71 changed paths and every changed test; a fourth fresh
+snapshot adjudicated their five hypotheses. Two survived. `REV3A-QUAL-001`: a validly shaped state entry whose
+`ledgerPath` no longer matched its hash key still reused a live dashboard for another ledger. `REV3C-SPEC-001`:
+explicit v2 bypassed its frozen schema, so missing required identity became a plausible historical row or
+`orphanEvents` count rather than corruption. The adjudicator rejected protocol-scoping persisted preferences
+(not specified), a hostile direct progress callback (every production caller already isolates it), and the
+460-character named-check ceiling (documented and safely conservative).
+
+Both accepted findings were driven red. Pane reuse now compares stored workspace/tab/resolved-ledger against
+the request before any pane lookup and refuses a mismatch. Dashboard projection compiles the exact published
+v2 schema before adapting a valid v2 event as historical/unjoinable; the v2 artifact and no-join rule are
+unchanged. Separate regressions force each boundary, and each has a pinned mutation.
+
+**Fourth-repair evidence:** **712/712 unit**, typecheck, **45/45 integration against real pi and Herdr 0.8.0**,
+installed-package smoke, generated-contract cleanliness, line ceiling, and **86/86 mutation entries** from
+disposable committed snapshot `cea337f…` / candidate tree `5e94783…`. `git diff --check` is clean. The review
+verdict remains CHANGES-REQUESTED until these two repairs receive independent approval; no PR/version/release
+work is authorised.
+
+**Critical approval retry and fifth repair:** run `f8df3aae…` verified candidate tree `9ef5dca…`. Broad agents
+timed out without a complete approval, but a fresh bounded adjudicator independently reproduced all three
+high-signal traces and returned CHANGES-REQUESTED. `REV4-ADJ-001`: canonical JSON Schema accepted leap-second
+timestamps runtime/date arithmetic reject. `REV4-ADJ-002`: a later `running.deadlineAt` replaced the starting
+bound and rendered an expired child live. `REV4-ADJ-003`: SIGTERM grace began at the recorded deadline, and a
+measured ignoring process remained live **5.015 seconds past it**.
+
+Each finding was driven red separately. V3 now centralizes a schema timestamp profile matching runtime's
+seconds `00`–`59` boundary across all seven timestamp sites. Projection treats a changed occurrence deadline
+as content-free corruption and remains anchored to the first bound. Process execution reserves SIGTERM grace
+inside the remaining budget and has an independent hard SIGKILL timer at the recorded deadline. Three
+regressions and mutations force those boundaries.
+
+**Fifth-repair evidence:** **715/715 unit**, typecheck, **45/45 integration against real pi and Herdr 0.8.0**,
+installed-package smoke, generated-contract cleanliness, line ceiling, and **89/89 mutation entries** from
+disposable committed snapshot `9bbdc20…` / candidate tree `687bf03…`. The first expanded mutation run forced
+88/89: the new timestamp mutation omitted the literal colon present in its JSON pattern and therefore refused
+as stale rather than pretending to test it. After correcting that patch, self-review found the hard timer was
+still relative to the `spawn` return rather than the recorded epoch; it now receives the absolute deadline.
+Unit, typecheck, integration, smoke and all 89 mutations were rerun after that correction. A fresh critical
+review is still required; no PR/version/release work is authorised.
+
+**Fifth-repair review and sixth repair:** run `b6430624…` verified candidate tree `e9ae7f1…`. Its independent
+specification slice approved all three repaired contracts with 107 targeted tests. Its quality slice returned
+CHANGES-REQUESTED on `REV5-QUAL-001`: a successful governed PID could exit while a detached descendant retained
+its pipes; before the 100 ms settlement fallback, the new hard timer set `timedOut: true`, producing the
+reproduced impossible pair `code: 0, timedOut: true` and laundering success into `CHILD_TIMED_OUT`.
+
+The regression was driven red with successful exit deliberately 50 ms before the deadline and retained pipes
+past it. The hard callback now checks the governed child's `exitCode`/`signalCode` before changing state or
+sending SIGKILL. The deadline still kills a live PID, but drainage after a completed PID cannot rewrite its
+outcome. A 90th mutation removes only this guard.
+
+**Sixth-repair evidence:** **716/716 unit**, typecheck, **45/45 integration against real pi and Herdr 0.8.0**,
+installed-package smoke, generated-contract cleanliness, line ceiling, and **90/90 mutation entries** from
+disposable committed snapshot `01eb72b…` / candidate tree `9aed467…`. The targeted process/lifecycle run was
+23/23. This repair remains unapproved; no PR/version/release work is authorised.
+
+**Sixth-repair review and seventh repair:** run `8a7f0193…` verified candidate tree `07b447f…` and returned
+CHANGES-REQUESTED through two independent slices. `REV6-SPEC-001`/`REV6-QUAL-001` reproduced the same
+`code: 0, timedOut: true` through the unconditional soft timeout. `REV6-QUAL-002` blocked the controller event
+loop across the deadline; the timer phase then ran before libuv delivered a child exit the OS had observed 463
+ms earlier, defeating the hard guard's temporarily-null `exitCode`/`signalCode`. A live-child control still
+died by SIGKILL.
+
+Both reproductions were driven red. Soft and hard callbacks now share one controller: defer one event-loop turn
+for pending child-process exit delivery, then refuse to change state or signal a completed PID. Separate tests
+force a successful exit 50 ms before the soft timeout and a blocked-controller hard-deadline ordering. The
+existing retained-pipe test remains, and a 91st mutation removes the hard callback's shared controller.
+
+**Seventh-repair evidence:** **718/718 unit**, typecheck, **45/45 integration against real pi and Herdr 0.8.0**,
+installed-package smoke, generated-contract cleanliness, line ceiling, and **91/91 mutation entries** from
+disposable committed snapshot `a943216…` / candidate tree `521f533…`. The first expanded mutation run forced
+90/91: replacing `setImmediate` with a microtask did not deterministically defeat the test and therefore proved
+nothing about the guard. The entry now removes the hard callback's controller entirely, reproducing the exact
+red path; no product test or guard was weakened. These repairs remain unapproved.
+
+**Seventh-repair review and eighth proof repair:** run `5580ed6c…` verified candidate tree `5609304…`.
+Independent quality review approved production behavior with 718/718 unit and manually defeated both existing
+guards. Specification review returned CHANGES-REQUESTED on `REV7-SPEC-001`: delayed exit delivery was forced
+through the hard callback, while the soft test covered only promptly delivered exit plus retained pipes. The
+shared helper was proven by composition, but no mutation proved the soft callback still called it.
+
+Production is unchanged. A new regression blocks the controller across the soft timeout while the OS child
+exits, and a 92nd mutation bypasses only that callback's shared controller. The regression passed on the real
+implementation and failed on the exact mutation before it entered the catalogue.
+
+**Eighth-proof evidence:** **719/719 unit**, typecheck, **45/45 integration against real pi and Herdr 0.8.0**,
+installed-package smoke, generated-contract cleanliness, line ceiling, and **92/92 mutation entries** from
+disposable committed snapshot `5b01bf1…` / candidate tree `78894ad…`. This proof repair remains unapproved;
+no PR/version/release work is authorised.
+
+**Eighth-proof review and ninth test repair:** run `88e06a8c…` verified candidate tree `1e4e1a3…`.
+Specification review approved and independently reproduced the soft-only mutation. Quality review confirmed the
+mutation but returned CHANGES-REQUESTED on `REV8-QUAL-001`: the new test busy-spun for 800 ms and assumed its
+child was scheduled and exited within 500 ms, so scheduler contention could turn a correct timeout into a false
+failure while the spin competed with parallel tests.
+
+Production remains unchanged. Soft and hard delayed-delivery tests now share a child-ready handshake: the child
+flushes `READY` immediately before exit, and the controller then sleeps across the deadline with `Atomics.wait`
+instead of consuming a CPU core. Both synchronized tests pass, and the soft-only mutation fails the repaired
+proof.
+
+**Ninth-test evidence:** **719/719 unit**, typecheck, **45/45 integration against real pi and Herdr 0.8.0**,
+installed-package smoke, generated-contract cleanliness, line ceiling, and **92/92 mutation entries** from
+disposable committed snapshot `01d613d…` / candidate tree `dc55a35…`. This test repair remains unapproved;
+no PR/version/release work is authorised.
+
+**Ninth-test review and tenth clock repair:** run `21ad2742…` verified candidate tree `a428627…`. Quality
+review approved after repeated route/mutation runs. Specification review returned CHANGES-REQUESTED on
+`REV9-SPEC-001`: the helper still set `deadline = started + 2s` before `READY`, so startup beyond that window
+made the sleep zero and restored the arbitrary scheduler assumption under another number.
+
+The real child now writes a ready file before either tested clock begins. `onSpawn` waits with short
+`Atomics.wait` sleeps, establishes the soft timeout or absolute hard epoch, and releases the child; `EXITING`
+output then blocks the controller across that bound. `runChild` reads the optional hard epoch after `onSpawn`,
+which is identical for immutable production requests and permits the synchronized test to establish its epoch.
+Both routes pass and both exact mutations remain red.
+
+**Tenth-clock evidence:** **719/719 unit**, typecheck, **45/45 integration against real pi and Herdr 0.8.0**,
+installed-package smoke, generated-contract cleanliness, line ceiling, and **92/92 mutation entries** from
+disposable committed snapshot `52e9459…` / candidate tree `f5c0a69…`. This repair remains unapproved; no
+PR/version/release work is authorised.
+
+**Tenth-clock review and eleventh immutability repair:** run `d63b1847…` verified candidate tree `ada4e11…`.
+Specification review approved the ready-before-clock proof. Quality review returned CHANGES-REQUESTED on
+`REV10-QUAL-001`: moving the hard-deadline read after `onSpawn` let that hook delete an initial 100 ms bound;
+the reviewer reproduced a child exiting normally after 536 ms. The test had weakened the production property
+it purported to prove.
+
+`runChild` again snapshots `hardDeadlineAt` before spawn. The soft proof still establishes its timer only after
+real child readiness. The hard proof no longer mutates input: a detached observer records Linux `Z` state or
+process disappearance while `onSpawn` blocks, proving the released child has exited at the OS before the
+controller schedules the already-overdue hard callback. Both route tests pass.
+
+**Eleventh-immutability evidence:** **719/719 unit**, typecheck, **45/45 integration against real pi and Herdr
+0.8.0**, installed-package smoke, generated-contract cleanliness, line ceiling, and **92/92 mutation entries**
+from disposable committed snapshot `76601ca…` / candidate tree `99c4f54…`. This repair remains unapproved; no
+PR/version/release work is authorised.
+
+**Eleventh-immutability review and twelfth proof hardening:** run `cd147b42…` verified candidate tree
+`32216e0…`. Specification returned CHANGES-REQUESTED on `REV11-SPEC-001`: the hard observer never mutated the
+request, so moving the read after `onSpawn` remained green. Quality returned CHANGES-REQUESTED on
+`REV11-QUAL-001/002`: every `/proc` error falsely meant disappearance, and the detached observer had no
+independent lifetime bound.
+
+A dedicated live-child test now deletes `hardDeadlineAt` in `onSpawn`; production still SIGKILLs at the original
+snapshot, and a two-site mutation re-reading after the hook fails that exact test. The Linux observer records
+`exited` only for zombie state or `ENOENT`, records other errors and a nine-second timeout distinctly, and the
+controller accepts only exact `exited`; unsupported platforms fail explicitly. Focused tests pass. Full
+evidence follows.
+
+**Twelfth-proof evidence:** **720/720 unit**, typecheck, **45/45 integration against real pi and Herdr 0.8.0**,
+installed-package smoke, generated-contract cleanliness, line ceiling, and **93/93 mutation entries** from
+disposable committed snapshot `027f54d…` / candidate tree `d607c5f…`. This repair remains unapproved; no
+PR/version/release work is authorised.
+
+**Twelfth-proof review and thirteenth ordering repair:** run `4c9327d1…` verified candidate tree `0a67906…`.
+Specification returned CHANGES-REQUESTED on `REV12-SPEC-001`: the hard deadline was due before spawn, so
+expecting a later OS exit to remain successful contradicted the lifecycle bound. Quality returned
+CHANGES-REQUESTED on `REV12-QUAL-001`: marker existence could race `writeFileSync` content completion.
+
+The hard proof now establishes a future epoch, requires real-child readiness and observer-confirmed OS exit
+releases the ready child before it, and blocks `EXITING` delivery across the epoch. The atomically published OS-
+exit timestamp must predate that epoch before the overdue timer and pending libuv exit delivery may race.
+Focused tests pass and the exact hard callback mutation is red.
+
+**Thirteenth-ordering evidence:** **720/720 unit**, typecheck, **45/45 integration against real pi and Herdr
+0.8.0**, installed-package smoke, generated-contract cleanliness, line ceiling, and **93/93 mutation entries**
+from disposable committed snapshot `a21d856…` / candidate tree `eb20e18…`. This repair remains unapproved; no
+PR/version/release work is authorised.
+
+**Thirteenth-ordering review and fourteenth test-control repair:** run `62dbff71…` verified candidate tree
+`63fcff2…`. Specification approved and independently reproduced both exact mutations. Quality returned
+CHANGES-REQUESTED on `REV13-QUAL-001…003`: `EXITING` assumed one stream chunk, a five-second pre-spawn window
+still admitted scheduler contention and cost 5.3 seconds, and failed atomic publication could retain `.tmp`.
+
+A package-internal test control now establishes the proof hard epoch immediately after `onSpawn` observes
+readiness; public `runChild` still snapshots the caller's pre-spawn deadline, and all callback/control/settlement
+code remains shared. The signal matcher buffers a bounded suffix across chunks. Observer publication unlinks
+the temporary in `finally`, tolerating only successful-rename `ENOENT`. Focused routes pass in under one second
+each.
+
+**Fourteenth-control evidence:** **720/720 unit**, typecheck, **45/45 integration against real pi and Herdr
+0.8.0**, installed-package smoke, generated-contract cleanliness, line ceiling, and **93/93 mutation entries**
+from disposable committed snapshot `c1cacb4…` / candidate tree `6470ff2…`. This repair remains unapproved; no
+PR/version/release work is authorised.
+
+**Fourteenth-control review and fifteenth internal repair:** run `76339133…` verified candidate tree
+`9dae5c6…`. Specification approved. Quality returned CHANGES-REQUESTED on `REV14-QUAL-001…003`: the supported
+`./run-child` export exposed the test seam, truncation happened before marker search, and the new seam/matcher/
+cleanup paths had no targeted proof.
+
+The control moved to an AsyncLocalStorage module absent from package `exports`; public `runChild` consults it,
+and tests scope one invocation. Combined input is searched before retaining six overlap characters. Temporary
+publication is gone: newline-terminated status is polled until a complete terminal grammar appears. Two new
+mutations bypass internal control and cross-chunk state respectively; focused tests pass.
+
+**Fifteenth-internal evidence:** **720/720 unit**, typecheck, **45/45 integration against real pi and Herdr
+0.8.0**, installed-package smoke, generated-contract cleanliness, line ceiling, and **95/95 mutation entries**
+from disposable committed snapshot `617bb6f…` / candidate tree `9be1c37…`. This repair remains unapproved; no
+PR/version/release work is authorised.
+
+**Fifteenth-internal review and sixteenth protocol proof:** run `92198705…` verified candidate tree
+`f578838…`. Both reviewers returned CHANGES-REQUESTED: complete-status polling normally saw one synchronous
+write and had no mutation; async context had no concurrent, nested, rejected or post-settlement proof.
+
+The status poller now accepts injected read/clock/wait functions. Tests deterministically force partial then
+complete status, timeout/error terminals, transient/permanent reads and expiry; a grammar mutation makes the
+partial test fail. New same-process tests run controlled/uncontrolled children concurrently, nest and restore
+contexts, reject a scope, and verify no later-run leakage. Focused tests pass.
+
+**Sixteenth-protocol evidence:** **726/726 unit**, typecheck, **45/45 integration against real pi and Herdr
+0.8.0**, installed-package smoke, generated-contract cleanliness, line ceiling, and **96/96 mutation entries**
+from disposable committed snapshot `3b8c5bf…` / candidate tree `d012c10…`. This repair remains unapproved; no
+PR/version/release work is authorised.
+
+**Sixteenth-protocol review and seventeenth test-ownership repair:** run `15e51c34…` verified candidate tree
+`199bb90…`. Specification approved. Quality returned CHANGES-REQUESTED on three points: frozen injected time
+could hang status polling, the unexported control module still shipped in source/dist, and concurrent branches
+selected control sequentially before either promise suspended.
+
+Polling now has an independent attempt ceiling and frozen-clock regression. AsyncLocalStorage moved under
+`test/`; production keeps only a private Node-test-context lookup. Build cleans stale `dist/`, and installed
+smoke refuses the former artifact, leaving no control module in the package. Controlled/uncontrolled branches
+rendezvous on a two-party barrier before either child starts; nested,
+rejected and post-settlement checks remain. Focused tests pass.
+
+**Seventeenth-ownership evidence:** **727/727 unit**, typecheck, **45/45 integration against real pi and Herdr
+0.8.0**, installed-package smoke (including stale-artifact refusal), generated-contract cleanliness, line
+ceiling, and **96/96 mutation entries** from disposable committed snapshot `ed5f558…` / candidate tree
+`03f9631…`. This repair remained unapproved at measurement time.
+
+**Final critical approval, 2026-08-31:** run `48da2009…` verified exact candidate tree `889fd02…`.
+Specification approved. The first quality attempt timed out after successful build/pack/smoke and while running
+the full mutation catalogue; a bounded retry approved with **31/31 focused tests** and no findings. Combined
+with writer evidence (**727 unit · 45 integration · typecheck · installed smoke · 96/96 mutations**), ADR-0036
+is approved. Version `0.20.0` and one cohesive PR were selected; release execution is authorised.
 
 ## 2026-08-22 (CI) — the checks stop being opt-in
 

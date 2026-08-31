@@ -25,7 +25,10 @@ import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
 after(cleanupTempDirs);
 
-const KEYS = [ENV_GRANT, ENV_DEPTH, ENV_MAX_DEPTH, ENV_GATED, ENV_APPROVED, ENV_LEDGER, ENV_FANOUT, ENV_PARENT_ID, ENV_HERDR];
+const KEYS = [
+  ENV_GRANT, ENV_DEPTH, ENV_MAX_DEPTH, ENV_GATED, ENV_APPROVED, ENV_LEDGER, ENV_FANOUT, ENV_PARENT_ID, ENV_HERDR,
+  "HERDR_ENV", "HERDR_PANE_ID", "HERDR_TAB_ID", "HERDR_WORKSPACE_ID",
+];
 const saved = new Map<string, string | undefined>();
 
 afterEach(() => {
@@ -115,6 +118,18 @@ test("a demanded-but-unreachable herdr is disclosed as a refusal, not as a worki
   } finally {
     process.env.PATH = realPath;
   }
+});
+
+test("/grants dashboard is registered and diagnoses an outside-Herdr session", async () => {
+  const { commands, ctx, notices } = await harness({
+    [ENV_GRANT]: "tool:read,tool:delegate",
+    [ENV_HERDR]: "0",
+    [ENV_LEDGER]: ".pi/grants.jsonl",
+  });
+  notices.length = 0;
+  await commands.get("grants")!.handler("dashboard", ctx);
+  assert.match(notices.join("\n"), /dashboard unavailable.*not hosted inside Herdr/i);
+  assert.doesNotMatch(notices.join("\n"), /grants: ACTIVE/, "dashboard must not fall through to the status screen");
 });
 
 test("/grants prints the executor beside the grant", async () => {

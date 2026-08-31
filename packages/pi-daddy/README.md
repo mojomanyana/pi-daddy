@@ -220,6 +220,39 @@ no `--env` (the grant rides on the pane, which the agent's shell inherits), `age
 shell so a multi-line argument must be staged to a file, and `agent wait --until idle` matches the state the
 agent was *already* in, so settling requires a state counter to advance.
 
+### Persistent Herdr dashboard
+
+When this pi process is itself hosted inside Herdr 0.8+, `/grants dashboard` opens a managed right split:
+
+```text
+PI-DADDY
+◆ principal-feature · critical · declared
+● plan       running   0:42 · pane w7:p13
+└─ ⛔ deploy refused   0:00
+
+depth 2 · 1 active
+```
+
+The plugin ships inside pi-daddy and is linked globally only after an explicit **Install and open** choice.
+Literal **Not now** and **Never ask** choices are persisted; dismissing or losing the dialog stores nothing.
+`/grants dashboard` never installs silently and prints the exact manual command when the plugin is absent. It
+checks the bundled plugin root and protocol before suggesting that a disabled plugin be enabled. Panes and
+ledgers stay workspace/tab-specific: reuse rechecks the pane's current workspace/tab, a wrong-host open is
+closed and rejected, and malformed nested pane state refuses rather than risking a duplicate. A stored entry's
+workspace/tab/ledger must also agree with its hash key before reuse. Invocation `cwd` sets the first pane
+process directory but is not pane identity, so the same workspace/tab/ledger still reuses one pane across caller directories. Opening uses a right split targeted at this pi pane with `--no-focus`.
+
+The view is a read-only ledger projection. Yellow is authorised/starting/running, green completed, red failed
+or refused, and grey incomplete/historical. Old completed subtrees collapse; active ancestry stays visible.
+It never displays task text, prompts, tool arguments, child output, or raw corrupt lines. Displayed ledger
+values must satisfy the v3 identifier grammars (unsafe frozen-v2 values are redacted), and Unicode C1/bidi or
+other control/format characters are removed before terminal output.
+
+Provenance markers are explicit: **P** planned phase, **O** observed inline activity, **V**
+controller-validated transition, **E** pi-daddy-enforced child, **D** caller-declared correlation. A principal
+run can label itself through `run_id`, `phase`, effective assurance and `policy_label`; pi-daddy does not parse
+principal workflow prose or invent pending/completed phases.
+
 ## Approving a gated capability
 
 `gated` capabilities are ones a session holds but may not pass on without a human saying so.
@@ -355,9 +388,11 @@ All fields are optional; existing callers behave unchanged.
   (`docs/probes/g37-registry-tamper`, tracked as R-137).
 - Refusals retain current prose and add stable codes such as `CAPABILITY_ESCALATION`,
   `GATED_UNAPPROVED`, `APPROVAL_SCOPE_MISMATCH`, and `WORKSPACE_WRITE_CONFLICT`.
-- Ledger v2 adds joinable capability, lease, lifecycle and check-receipt events while reading legacy lines.
+- Ledger v3 adds unique execution/parent identity, joinable capability/lease/lifecycle/check events, and
+  provenance-labelled workflow facts while retaining frozen v2 and legacy readers.
 - `pi-daddy/check-runner` selects an operator-named absolute executable+argv definition, never a shell
-  command string. It strips sensitive inherited environment, enforces timeout/output caps, executes a
+  command string. Check IDs use the v3 ASCII identifier alphabet and are refused before execution if they do
+  not fit their generated receipt identity. It strips sensitive inherited environment, enforces timeout/output caps, executes a
   private copy of the exact executable bytes it hashed, and pre/post-verifies Git head/candidate-tree
   identity under an exclusive coordination lease. The executable remains arbitrary code; no filesystem or
   network sandbox is claimed.
@@ -365,22 +400,21 @@ All fields are optional; existing callers behave unchanged.
 Public subpaths: `pi-daddy/correlation`, `pi-daddy/refusals`, `pi-daddy/workspace`,
 `pi-daddy/check-runner`.
 
-### Canonical ledger v2 contract
+### Canonical ledger v3 contract
 
 Machine consumers should import or resolve
-`pi-daddy/contracts/ledger/v2/ledger-event.schema.json`, not infer a format from examples in prose. This
-unreleased source candidate packages generated fixtures at
-`pi-daddy/contracts/ledger/v2/fixtures/{capability-decision,workspace-lease,child-lifecycle,check-receipt}.json`.
-They are built through the same event builders as production and pin nested correlation, trusted digests,
-approval and refusal facts, and lifecycle nullability.
+`pi-daddy/contracts/ledger/v3/ledger-event.schema.json`, not infer a format from prose. Generated fixtures for
+all five events are adjacent. v3 adds globally unique `executionId`, explicit `parentExecutionId`, bounded
+start deadlines, optional Herdr pane identity, and provenance-labelled workflow facts. `childId` remains the
+readable logical tree position and is never an occurrence join.
 
-Dispatch on version before event: no `ledgerVersion`/`event` is a legacy 0.17 grant record; explicit version
-2 must validate as one of the four events; every other explicit version fails closed and must never be read
-as legacy. `verifyLedger` enforces that dispatch boundary and required join fields; full nested validation
-uses the schema. The v2 schema is closed, so a field/event/enum/requiredness or semantic change requires a new
-ledger version and versioned artifact path. The already-published npm 0.18.1 does not contain these files;
-they require the next authorized package release. See `contracts/ledger/v2/README.md` for the field inventory
-and compatibility rules.
+Dispatch on version before event: no version/discriminator is a legacy 0.17 grant record; explicit v2 uses the
+frozen published v2 contract; explicit v3 uses the new closed contract; every other explicit version fails
+closed and is never read as legacy. `verifyLedger` and the dashboard share exact runtime v3 validation, so a
+lookalike string version, missing join identity or malformed nested correlation cannot be `OK` in one and
+corrupt in the other. Explicit v2 is checked against its exact frozen schema before the dashboard labels it
+historical; malformed v2 never becomes a grey row or orphan count. A field/event/enum/requiredness or semantic change requires another ledger version. See
+`contracts/ledger/v3/README.md`; the v2 path remains available unchanged.
 
 ## Running it
 
@@ -390,6 +424,8 @@ PI_GRANTS_GRANT="agent:review,tool:read,tool:grep,tool:find,tool:ls,tool:delegat
 PI_GRANTS_LEDGER=.pi/grants.jsonl \
 PI_GRANTS_MAX_DEPTH=2 \
 pi
+# The relative ledger is resolved once at session start and inherited as one absolute path,
+# so routed descendants changing cwd still append to this tree.
 ```
 
 **Plain `pi`, no `-e`, when you installed this from npm** — the package declares `pi.extensions` and pi
@@ -413,12 +449,15 @@ approval says so:
                         as NONE, never as everything.
 ```
 
-`/grants ledger` reads the ledger back and reports its integrity — record count, escalation attempts, any
-unparseable lines with line numbers, and **which instructions actually ran**: records grouped by definition
+`/grants dashboard` verifies that this exact pi PID is hosted in its declared Herdr pane, verifies the ledger
+and plugin, then opens or reuses a right split without changing focus. `/grants ledger` reads the audit file
+back and reports its integrity — record count, escalation attempts, any unparseable lines with line numbers
+and content-free reasons (never copied ledger bytes), and **which instructions actually ran**: records grouped by definition
 digest, each compared against the file on disk (`current` / `CHANGED since`), which is what makes ADR-0018's
 `definitionDigest` answerable rather than decorative. It exists because nothing in this package had ever read a ledger
 back, so a torn line was indistinguishable from a spawn that never happened. A corrupt line is **evidence**
-and is left alone rather than repaired. Nothing runs this check automatically.
+and is left alone rather than repaired. Session start checks integrity automatically; `/grants ledger` gives
+the full report.
 
 ## Worked example: governing `principal-pi-skills`
 
@@ -551,7 +590,8 @@ everything below it.
 | `PI_GRANTS_WORKSPACE_LEASE_DIR` | under `$PI_CODING_AGENT_DIR/pi-daddy/` | Kernel writer locks and ownership metadata. |
 | `PI_GRANTS_CHILD_TIMEOUT` | `600` (seconds) | Wall-clock limit for a child. Inherited by descendants — an operator preference, deliberately *not* attenuating state. |
 | `PI_GRANTS_FANOUT` | `8` | Per-call width and downward subtree budget; not a session-total counter. Malformed or `0` falls back to the default. |
-| `PI_GRANTS_PARENT_ID` | `d0` | This session's ledger id; set by the parent. Makes sibling records joinable into a tree. |
+| `PI_GRANTS_PARENT_ID` | `d0` | Readable logical tree position; set by the parent and allowed to repeat across calls. |
+| `PI_GRANTS_EXECUTION_ID` | unset at a root | Unique governed execution occurrence; set by the parent. Lifecycle/lease joins use this, never `PI_GRANTS_PARENT_ID`. |
 | `PI_GRANTS_HERDR` | unset ⇒ **probe** | Three-state. Unset probes for a reachable herdr and uses panes if one answers; `1` demands panes and refuses every delegation if herdr is unreachable; `0` demands captured subprocesses. Never detected from `herdr` merely being on `PATH`. |
 | `PI_GRANTS_HERDR_WORKSPACE` | the parent's `HERDR_WORKSPACE_ID` | herdr workspace for spawned panes. Defaults to the workspace this session is in, so a child is a tab away rather than a workspace away. |
 | `PI_GRANTS_HERDR_KEEP_PANE` | unset | `1` keeps each child's pane for inspection, and no sweep closes it. Off by default: a fan-out would flood the workspace. |
@@ -572,21 +612,32 @@ is broken after 10s.
 
 ## The ledger
 
-Append-only JSONL. Version 2 records capability decisions plus workspace-lease, child-lifecycle and
-check-receipt events. Every per-child capability decision is present, **including refusals**; call-level
-schema/cardinality rejections that create no child ID are not capability events. The reader still accepts
-legacy grant-only lines.
+Append-only JSONL. Version 3 records capability decisions, workspace leases, child lifecycle, check receipts
+and workflow facts. Every per-child capability decision is present, **including refusals**. The reader still
+accepts frozen v2 and legacy grant-only lines.
 
-Ids are hierarchical and derived: a child of `d0` is `d0.1`, its own second child `d0.1.2`. Ancestry reads
-from the id alone with no join, and it is reproducible, so two runs of the same fan-out produce a diffable
-ledger. `denied` non-empty is the one designated escalation signal — **an agent asking for what it does not
-hold is an escalation attempt, and it is invisible without a record.**
+`childId` is hierarchical and readable (`d0.1`, `d0.1.2`) but repeated/parallel calls may reuse it. v3 adds a
+random `executionId` and explicit `parentExecutionId`; those are the only lifecycle/lease occurrence join.
+A v2 lifecycle is therefore shown historical/unjoined rather than guessed. A v3 starting deadline and the
+executor timer share one absolute budget — waiting for the strict starting append consumes it, a later running
+event cannot replace it, and process SIGTERM grace stays inside it under an independent hard-kill timer. That
+timer bounds the governed PID while live. Soft and hard deadline callbacks first allow one event-loop turn for
+pending child exit delivery; retained descendant pipes cannot rewrite a PID that already exited successfully as
+timed out. A pending running append always lands before a terminal event. `denied` non-empty remains the designated escalation signal — **an agent asking for what it does not hold is an escalation attempt, and it
+is invisible without a record.**
+
+Workflow facts are identifier-only and mark `planned`, `observed`, or `controller_validated`; they can never
+claim pi-daddy enforcement. Capability/lifecycle records are the enforced class. Correlation remains a
+caller-declared label; fields eligible for display must use the v3 ASCII identifier grammar rather than prose.
 
 **Privacy is a property of this file, and the boundary is exact: capability ids, counts and identifiers only
 — never prompts, task text, tool arguments or results.** Trusted `definitionDigest` and `taskDigest` values
 identify the exact operator body and task. A predictable task can be guessed from SHA-256, so its digest is
 sensitive/linkable metadata, not anonymization. Caller-supplied digest-looking values remain under
-`correlation` and never authorize.
+`correlation` and never authorize. Public v3 builders validate their serialized wire form against the same
+closed runtime contract the readers use; `deadlineAt` therefore cannot be a `Date.parse` lookalike. Schema and
+runtime share the seconds `00`–`59` timestamp profile because JavaScript deadline arithmetic cannot represent
+leap seconds, and a normalized-away top-level null assurance scope is not schema-valid.
 
 ## Propagation is race-free by construction
 
@@ -664,7 +715,7 @@ The resolver, ledger, spawn planner and the whole approval model are pure functi
 without pi:
 
 ```ts
-import { resolve, assertNarrowing, planSpawn, buildRecord, appendRecord } from "pi-daddy";
+import { resolve, assertNarrowing, planSpawn, buildRecord, appendRecord, digestTask, newExecutionId } from "pi-daddy";
 
 const result = resolve({
   requested:   ["tool:read", "tool:grep"],
@@ -678,12 +729,15 @@ const plan = planSpawn({ effective: result.effective, prompt: task });
 // -> ["--print","--no-session","--no-extensions","--no-skills","--no-context-files",
 //     "--no-prompt-templates","--tools","grep,read"," summarise src/"]
 
-await appendRecord({ path: ".pi/grants.jsonl" }, buildRecord({ /* … */ result, blocked: false, now: new Date() }));
+await appendRecord({ path: ".pi/grants.jsonl" }, buildRecord({
+  /* capability fields … */ result, blocked: false, executor: "process",
+  executionId: newExecutionId(), parentExecutionId: null, taskDigest: digestTask(task), now: new Date(),
+}));
 ```
 
 Subpaths are exported individually (`pi-daddy/resolve`, `/ledger`, `/spawn`, `/delegate`, `/catalog`,
 `/propagation`, `/definitions`, `/fanout`, `/pi-tools`, `/approval`, `/approval-store`, `/approval-prompt`,
-`/run-child`, `/run-herdr`).
+`/run-child`, `/run-herdr`, `/dashboard-projection`, `/dashboard-render`).
 
 ## Design decisions worth knowing
 
@@ -713,7 +767,9 @@ npx pi-daddy init           # as a command: scaffold .pi/skills/ and .pi/grants.
                             # skill packages — see the worked example above
 ```
 
-The package is all three. pi loads `extensions/grants.ts` through its own transpiling loader, which reads
+The package is also the source of the optional Herdr plugin: the extension offers to link the trusted
+`herdr-plugin/` directory explicitly, and `pi-daddy-dashboard` is the terminal renderer binary. pi loads
+`extensions/grants.ts` through its own transpiling loader, which reads
 TypeScript from `node_modules` quite happily; **Node does not** — it refuses to strip types under
 `node_modules` — so the library entry points are compiled to `dist/`. Until 0.6.0 `exports` pointed at
 `./src/*.ts`, and every consumer import failed with `ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING` while
@@ -723,11 +779,11 @@ every in-repo test passed. `npm run test:smoke` packs a tarball, installs it int
 ## Testing
 
 ```bash
-npm test                   # 633 unit tests. Fast, pure, no pi, no network.
+npm test                   # 719 unit tests. Fast, pure, no pi, no network.
 npm run typecheck          # src + extensions + tests + integration tests
 npm run test:integration   # 45 tests against a REAL pi process. ~55s, no model tokens.
-npm run test:smoke         # pack, install into a scratch project, import and use it — and run the
-                           # installed `pi-daddy init` bin, which is how R-73 was found
+npm run test:smoke         # pack/install; exercise library exports, both bins, the v2/v3 contracts,
+                           # bundled Herdr plugin, dashboard, and `pi-daddy init`
 PI_GRANTS_IT_MODEL=1 npm run test:integration   # + 10 end-to-end tests with a real model. Costs money.
 ```
 
@@ -752,6 +808,13 @@ digest fail *open* fails exactly one test; deleting the body comparison fails th
 its own author the day after it was added: rather than raise the cap, `delegation.ts` was split.
 
 ## Status
+
+**0.20.0 — live Herdr dashboard and ledger v3.** Adds the explicit installation handshake,
+`/grants dashboard`, duplicate-safe right split, pure live projection, unique execution/parent identity,
+workflow provenance facts and principal correlation labels. Enforcement is unchanged.
+
+**0.19.0 — workspace routing is a capability.** Routing now attenuates through `workspace:<id>`; see the
+changelog for the breaking migration.
 
 **0.18.1 — security fix for malformed capability IDs.** Capability IDs containing comma, CR, LF, NUL or
 surrounding whitespace are refused before resolution and again before grant serialization, preventing a
@@ -781,6 +844,12 @@ Known gaps, stated because a gap nobody wrote down is the one that surprises som
 - **A running delegation is visible.** One status block per call — per child: its definition, its herdr agent, its
   pane id, its state, elapsed time, and the last three lines it printed. Bounded in height and width, so a fan-out
   cannot flood your screen. It is a **display, never the result**.
+- **The dashboard whole-file polls.** The MVP is sized for 10 MiB; 50 MiB or 100 ms p95 projection is the
+  switch point for incremental replay.
+- **v2 is historical in the dashboard.** It has no unique occurrence ID, so lifecycle is reported unjoined
+  rather than matched by reusable `childId`.
+- **principal-pi-skills does not yet publish a generated graph declaration.** Explicit correlation and
+  provenance facts render; prompt prose is never parsed into a graph.
 - **A definition's *instructions* are governed only by identity.** `agent:<name>` says which file may be
   spawned and the digest says which version ran, but nothing reads a body and judges what it says — the
   operator authorises a file, and its contents are their responsibility.

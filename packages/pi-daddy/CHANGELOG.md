@@ -12,6 +12,71 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## 0.20.0 — live governance dashboard and ledger v3 (2026-08-31)
+
+- Ship a Herdr 0.8+ plugin inside the trusted pi-daddy package. A Herdr-hosted pi asks once before linking it;
+  **Install and open** is the only choice that installs anything. **Not now** and **Never ask** are persisted.
+- Add `/grants dashboard`: verify this exact pi PID is in its declared Herdr pane, require a configured ledger,
+  diagnose missing/disabled/incompatible plugin state, then open or reuse a right split with `--no-focus`.
+- Add a pure `ledger -> projection -> terminal renderer` path. Active ancestry stays visible, old completed
+  subtrees collapse, durations and Herdr pane identity render live, and corrupt lines are reported without
+  showing raw content or modifying the file.
+- **BREAKING — production events now use the closed ledger v3 contract.** Every governed occurrence has a
+  globally unique `executionId` and explicit `parentExecutionId`; readable `childId` remains and may repeat.
+  Lifecycle/lease joins by `childId` are invalid. Frozen v2 and legacy lines remain readable but v2 lifecycle
+  is shown historical/unjoined rather than guessed.
+- Lifecycle adds `running`, `deadlineAt`, and optional `herdrPaneId`/`herdrAgentName`, so an abandoned start
+  becomes incomplete and a live Herdr child can be focused by identity.
+- Add identifier-only workflow facts with explicit `planned`, `observed`, or `controller_validated`
+  provenance. Enforced children remain a separate event class. Principal runs receive labels through existing
+  correlation fields; no workflow prompt prose is parsed.
+- Add packaged v3 schema and generated fixtures while preserving the v2 artifact paths unchanged.
+- **First-review hardening:** keep routed descendants on one absolute ledger; consolidate mixed chain gates
+  into one decision per execution; share strict runtime v3 validation across both readers; runtime-check
+  workflow vocabularies; isolate display callbacks from child execution; verify plugin provenance before
+  enabled state; and persist only literal installation choices.
+- **Second-review hardening:** remove raw corrupt bytes from the canonical `/grants ledger` report; recheck
+  workspace/tab on reuse and returned open identity; validate every nested pane-state entry; reject prose in
+  v3 display/capability fields and strip all Unicode control/format characters; share one absolute child
+  deadline and running-before-terminal append order; and make public builders assert the exact closed wire.
+- **Third-review hardening:** pane reuse keys exactly on workspace/tab/ledger rather than invocation `cwd`, and
+  the workflow-fact builder joins every other public v3 builder at the final closed-wire assertion.
+- **Whole-change-review hardening:** reject stored pane entries whose workspace/tab/ledger disagrees with their
+  key, and validate explicit v2 against the frozen schema before presenting it as historical/unjoinable.
+- **Critical-retry hardening:** align all seven v3 schema timestamp sites with runtime's seconds `00`–`59`
+  profile; reject a running lifecycle event that changes its occurrence deadline; reserve SIGTERM grace inside
+  the remaining process budget and enforce the recorded hard deadline with an independent SIGKILL timer.
+- **Deadline race repairs:** soft and hard deadline callbacks allow pending child exit delivery one event-loop
+  turn before acting, then refuse to rewrite a completed PID as timed out merely because descendant pipes delay
+  `close`. A genuinely live PID remains subject to SIGTERM and absolute-deadline SIGKILL. Soft and hard routes
+  each have their own child-synchronized regression and mutation. The soft timer begins after a real ready
+  marker; the hard route uses a detached Linux process-state observer to establish OS exit before overdue timer
+  delivery. Tests use `Atomics.wait` rather than scheduler assumptions or busy-spinning, while a direct
+  request-mutation guard forces production to snapshot the hard deadline before spawn. The Linux observer is
+  independently bounded and accepts only zombie state or `ENOENT` as exit. The hard proof requires that exit
+  before a future recorded epoch, then delays controller delivery across it; observer status is published by
+  newline-terminated complete-status polling. An unexported AsyncLocalStorage test clock establishes the proof
+  epoch only after readiness without weakening public `runChild` snapshot semantics; synchronization searches
+  across arbitrary output chunk boundaries before retaining a bounded overlap suffix. Dedicated mutations
+  force internal-control consultation, cross-chunk matching and complete terminal-status grammar. Deterministic
+  status tests cover partial/complete writes, timeout, observer error, transient/permanent reads and expiry;
+  same-process control tests use a two-party barrier for real controlled/uncontrolled overlap and also cover
+  nesting, rejection and post-settlement cleanup. Polling has an independent attempt ceiling; AsyncLocalStorage
+  ownership lives only under `test/`; build cleans stale `dist/` first and installed smoke refuses the former
+  artifact, leaving no control module in the published package.
+- **BREAKING — `LedgerReport.corrupt[]` now exposes `{line, reason}` rather than `{line, text}`.** Raw corrupt
+  bytes can contain task/output material and are no longer retained by the public integrity result. Consumers
+  that need forensic bytes must read the ledger itself at the reported line; pi-daddy never repairs it.
+- **BREAKING — correlation fields rendered as labels/IDs now require the ASCII identifier grammar
+  `[A-Za-z0-9@*][A-Za-z0-9@*._:/-]{0,127}`.** Replace spaces with `-` or `_` before delegating. This prevents a
+  model-facing `policy_label`/phase/run ID from becoming a free-text task/output channel into the append-only
+  ledger and terminal. Other bounded correlation strings remain unchanged. A top-level
+  `assurance_scope: null` is normalized away and is not a valid v3 wire value; omit it instead.
+- **BREAKING — named check IDs must use the same ASCII identifier alphabet and be at most 460 characters.**
+  Rename prose/whitespace keys before calling `runNamedCheck`; invalid IDs now refuse before the executable
+  or lease starts rather than failing only when a v3 receipt is appended.
+
+
 ## 0.19.0 — workspace routing is a capability (2026-08-23)
 
 **The four hang fixes below were staged for a 0.18.2 and are released here instead — a decision reversed

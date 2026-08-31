@@ -17,7 +17,10 @@ import { join } from "node:path";
 import { after, afterEach, test } from "node:test";
 import grantsExtension from "../extensions/grants.ts";
 import { MAX_CHILDREN_PER_CALL } from "../src/fanout.ts";
-import { ENV_APPROVED, ENV_DEPTH, ENV_FANOUT, ENV_GATED, ENV_GRANT, ENV_LEDGER, ENV_MAX_DEPTH, ENV_PARENT_ID } from "../src/propagation.ts";
+import {
+  ENV_APPROVED, ENV_DEPTH, ENV_EXECUTION_ID, ENV_FANOUT, ENV_GATED, ENV_GRANT, ENV_LEDGER, ENV_MAX_DEPTH,
+  ENV_PARENT_ID,
+} from "../src/propagation.ts";
 import { ENV_HERDR } from "../src/executor.ts";
 import { verifyLedger } from "../src/ledger.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
@@ -33,7 +36,7 @@ after(cleanupTempDirs);
 
 const KEYS = [
   ENV_GRANT, ENV_DEPTH, ENV_MAX_DEPTH, ENV_GATED, ENV_APPROVED, ENV_LEDGER, ENV_FANOUT, ENV_PARENT_ID,
-  ENV_HERDR, ENV_WORKSPACE_REGISTRY, ENV_WORKSPACE_LEASE_DIR,
+  ENV_EXECUTION_ID, ENV_HERDR, ENV_WORKSPACE_REGISTRY, ENV_WORKSPACE_LEASE_DIR,
 ];
 const saved = new Map<string, string | undefined>();
 
@@ -109,6 +112,16 @@ test("delegate_all is registered when the session may delegate", async () => {
   assert.ok(tools.has("delegate"), "and the single form stays");
 });
 
+test("a relative ledger becomes one absolute child-inherited path before routing can change cwd", async () => {
+  const dir = await tempDir("grants-ledger-root-");
+  await harness({ [ENV_GRANT]: "tool:read,tool:delegate", [ENV_LEDGER]: ".pi/grants.jsonl" }, dir);
+  assert.equal(
+    process.env[ENV_LEDGER],
+    join(dir, ".pi", "grants.jsonl"),
+    "every descendant must inherit the root ledger, not resolve the same relative text in another workspace",
+  );
+});
+
 test("delegate_all is NOT registered when tool:delegate is withheld", async () => {
   // The S-5 property, extended to the new tool: "withhold tool:delegate and the child is a leaf" must stay
   // true, or fan-out becomes a way around it.
@@ -147,6 +160,58 @@ test("every child is reported, and an all-failed fan-out throws rather than retu
       return true;
     },
   );
+});
+
+test("a progress renderer failure cannot kill a process child", async () => {
+  const bin = await tempDir("grants-progress-failure-shim-");
+  await writeFile(join(bin, "pi"), "#!/usr/bin/env node\nconsole.log('child completed')\n");
+  await chmod(join(bin, "pi"), 0o755);
+  const oldPath = process.env.PATH;
+  process.env.PATH = `${bin}:${oldPath}`;
+  try {
+    const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate" });
+    let updates = 0;
+    const result = await tools.get("delegate")!.execute(
+      "display-failure",
+      { task: "finish despite display failure", tools: ["read"] },
+      undefined,
+      (() => {
+        updates += 1;
+        throw new Error("display callback failed");
+      }) as never,
+      ctx,
+    ) as { content: Array<{ text: string }> };
+    assert.match(result.content[0]?.text ?? "", /child completed/);
+    assert.ok(updates >= 2, "the final frame should still be attempted after a failed interim frame");
+  } finally {
+    process.env.PATH = oldPath;
+  }
+});
+
+test("a chain progress renderer failure cannot kill its process step", async () => {
+  const bin = await tempDir("grants-chain-progress-failure-shim-");
+  await writeFile(join(bin, "pi"), "#!/usr/bin/env node\nconsole.log('chain child completed')\n");
+  await chmod(join(bin, "pi"), 0o755);
+  const oldPath = process.env.PATH;
+  process.env.PATH = `${bin}:${oldPath}`;
+  try {
+    const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate", [ENV_FANOUT]: "12" });
+    let updates = 0;
+    const result = await tools.get("delegate_chain")!.execute(
+      "chain-display-failure",
+      { steps: [{ task: "finish despite display failure", tools: ["read"] }] },
+      undefined,
+      (() => {
+        updates += 1;
+        throw new Error("chain display callback failed");
+      }) as never,
+      ctx,
+    ) as { content: Array<{ text: string }> };
+    assert.match(result.content[0]?.text ?? "", /chain child completed/);
+    assert.ok(updates >= 2, "the chain final frame should still be attempted");
+  } finally {
+    process.env.PATH = oldPath;
+  }
 });
 
 test("mixed all-failed fan-out does not assign one child's refusal code to the aggregate", async () => {
@@ -197,6 +262,23 @@ test("F8: concurrent siblings get distinct, hierarchical ledger ids", async () =
   for (const line of lines) assert.equal(line.parentId, "d0", "and every one names its real parent");
 });
 
+test("two concurrent delegate calls reuse the logical position but never the execution occurrence", async () => {
+  const dir = await tempDir("grants-occurrence-");
+  const ledger = join(dir, "ledger.jsonl");
+  const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate", [ENV_LEDGER]: ledger });
+  const delegate = tools.get("delegate")!;
+
+  await Promise.all([
+    delegate.execute("a", { task: "first", tools: ["write"] }, undefined, undefined, ctx).catch(() => undefined),
+    delegate.execute("b", { task: "second", tools: ["write"] }, undefined, undefined, ctx).catch(() => undefined),
+  ]);
+
+  const records = (await readFile(ledger, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+  assert.deepEqual(records.map((record) => record.childId), ["d0.1", "d0.1"]);
+  assert.equal(new Set(records.map((record) => record.executionId)).size, 2);
+  assert.ok(records.every((record) => record.parentExecutionId === null));
+});
+
 test("ADR-0018: the digest reaches the LEDGER FILE, not just the plan", async () => {
   // The class of defect this catches is the one that keeps recurring here: a correct value on the plan that
   // the call site never passes to `buildRecord` (R-28, B-I3). Only a real ledger line can show it.
@@ -245,12 +327,14 @@ test("a child's ledger id descends from an inherited parent id, not from depth",
     [ENV_LEDGER]: ledger,
     [ENV_DEPTH]: "1",
     [ENV_PARENT_ID]: "d0.2",
+    [ENV_EXECUTION_ID]: "exec:00000000-0000-4000-8000-000000000009",
   });
 
   await tools.get("delegate_all")!.execute("t", { children: refusedChildren(2) }, undefined, undefined, ctx).catch(() => undefined);
 
   const lines = (await readFile(ledger, "utf8")).trim().split("\n").filter(Boolean).map((l) => JSON.parse(l));
   assert.deepEqual(lines.map((l) => l.childId).sort(), ["d0.2.1", "d0.2.2"]);
+  assert.ok(lines.every((line) => line.parentExecutionId === "exec:00000000-0000-4000-8000-000000000009"));
 });
 
 test("R-39: the model is told which definitions it may spawn", async () => {

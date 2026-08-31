@@ -32,27 +32,33 @@ import type { CorrelationMetadata } from "./correlation.ts";
 import type { StructuredRefusal } from "./refusals.ts";
 // Type-only, so the cycle with ./ledger-events.ts is erased at runtime.
 import type { RuntimeLedgerEvent } from "./ledger-events.ts";
+import { assertExecutionId } from "./execution-id.ts";
+import { assertLedgerV3Wire } from "./ledger-v3-validation.ts";
 
-export const LEDGER_VERSION = 2 as const;
+export const LEDGER_VERSION = 3 as const;
 export const LEDGER_EVENT_KINDS = [
-  "capability_decision", "workspace_lease", "child_lifecycle", "check_receipt",
+  "capability_decision", "workspace_lease", "child_lifecycle", "check_receipt", "workflow_fact",
 ] as const;
 export type LedgerEventKind = typeof LEDGER_EVENT_KINDS[number];
 export const LEDGER_GATE_OUTCOMES = ["declined", "dismissed", "no-ui", "error"] as const;
 export type LedgerGateOutcome = typeof LEDGER_GATE_OUTCOMES[number];
 
 export interface LedgerEventBase {
-  /** Optional only on the legacy-compatible `GrantRecord` public type; every v2 event builder writes it. */
+  /** Optional only on the legacy-compatible `GrantRecord` public type; every v3 event builder writes it. */
   ledgerVersion?: typeof LEDGER_VERSION;
   event?: LedgerEventKind;
   ts: string;
+  /** Unique execution occurrence. Optional only for legacy, unversioned GrantRecord values. */
+  executionId?: string;
+  /** Explicit execution parent; null means the delegating session is not itself a governed child. */
+  parentExecutionId?: string | null;
   childId?: string;
   correlation?: CorrelationMetadata;
 }
 
 export interface GrantRecord extends LedgerEventBase {
   /**
-   * Present only when a trusted `taskDigest` was supplied — that is what makes a line v2. `buildRecord`
+   * Present only when a trusted `taskDigest` was supplied — that is what makes a line v3. `buildRecord`
    * does NOT always emit it, and the comment here used to say it did while the emission site 200 lines
    * down said the opposite. Two comments asserting contradictory facts about one field is R-28's shape.
    */
@@ -165,6 +171,8 @@ export interface GrantRecord extends LedgerEventBase {
    * `definitionDigest` names its instructions, and neither says where the TASK came from.
    */
   taskFrom?: string;
+  /** Unique occurrence whose output composed this task; taskFrom remains the readable logical position. */
+  taskFromExecutionId?: string;
   /** Trusted SHA-256 of the exact task; task text remains forbidden (ADR-0034). */
   taskDigest?: string;
   /** Stable machine-readable refusal accompanying `reason`. */
@@ -189,6 +197,10 @@ export interface LedgerOptions {
 }
 
 export function buildRecord(args: {
+  /** Required whenever taskDigest makes this an explicit v3 event. */
+  executionId?: string;
+  /** Required (including explicit null) whenever taskDigest makes this an explicit v3 event. */
+  parentExecutionId?: string | null;
   parentId: string;
   childId: string;
   depth: number;
@@ -208,15 +220,21 @@ export function buildRecord(args: {
   definitionDigest?: DefinitionDigest;
   /** Where the child ran (ADR-0031). Required: the probe's answer survives nowhere else. */
   executor: ExecutorKind;
-  /** The child whose output composed this task (ADR-0033). Absent for anything but a chain step. */
+  /** The logical child whose output composed this task (ADR-0033). */
   taskFrom?: string;
+  /** The unique occurrence whose output composed this task. */
+  taskFromExecutionId?: string;
   taskDigest?: string;
   correlation?: CorrelationMetadata;
   refusal?: StructuredRefusal;
   now: Date;
 }): GrantRecord {
-  if (args.taskDigest !== undefined && !/^[a-f0-9]{64}$/i.test(args.taskDigest)) {
-    throw new TypeError("taskDigest must be a SHA-256 hex digest");
+  if (args.taskDigest !== undefined) {
+    if (!/^[a-f0-9]{64}$/i.test(args.taskDigest)) throw new TypeError("taskDigest must be a SHA-256 hex digest");
+    assertExecutionId(args.executionId);
+    if (args.parentExecutionId !== null) assertExecutionId(args.parentExecutionId, "parentExecutionId");
+    if (args.parentExecutionId === args.executionId) throw new TypeError("an execution cannot be its own parent");
+    if (args.taskFromExecutionId !== undefined) assertExecutionId(args.taskFromExecutionId, "taskFromExecutionId");
   }
   if (args.definitionDigest && !/^[a-f0-9]{64}$/i.test(args.definitionDigest.sha256)) {
     throw new TypeError("definitionDigest.sha256 must be a SHA-256 hex digest");
@@ -227,10 +245,17 @@ export function buildRecord(args: {
   const distinct = [...new Set(Object.values(sources))];
   const scopes = args.approvalScopes ?? {};
   const distinctScopes = [...new Set(Object.values(scopes))];
-  return {
-    // A trusted task digest is what distinguishes a v2 capability event from the legacy construction API.
+  const record: GrantRecord = {
+    // A trusted task digest is what distinguishes a v3 capability event from the legacy construction API.
     // Production delegation always supplies it; old TypeScript callers remain able to append legacy lines.
-    ...(args.taskDigest !== undefined ? { ledgerVersion: LEDGER_VERSION, event: "capability_decision" as const } : {}),
+    ...(args.taskDigest !== undefined
+      ? {
+          ledgerVersion: LEDGER_VERSION,
+          event: "capability_decision" as const,
+          executionId: args.executionId,
+          parentExecutionId: args.parentExecutionId,
+        }
+      : {}),
     ts: args.now.toISOString(),
     parentId: args.parentId,
     childId: args.childId,
@@ -238,6 +263,7 @@ export function buildRecord(args: {
     agentType: args.agentType,
     executor: args.executor,
     ...(args.taskFrom ? { taskFrom: args.taskFrom } : {}),
+    ...(args.taskFromExecutionId ? { taskFromExecutionId: args.taskFromExecutionId } : {}),
     ...(args.taskDigest !== undefined ? { taskDigest: args.taskDigest } : {}),
     ...(args.correlation ? { correlation: structuredClone(args.correlation) } : {}),
     ...(args.refusal ? { refusal: structuredClone(args.refusal) } : {}),
@@ -265,6 +291,8 @@ export function buildRecord(args: {
     ...(args.gateOutcome && args.gateOutcome !== "granted" ? { gateOutcome: args.gateOutcome } : {}),
     ...(args.definitionDigest ? { definitionDigest: args.definitionDigest } : {}),
   };
+  if (args.taskDigest !== undefined) assertLedgerV3Wire(record);
+  return record;
 }
 
 // R-49: the lock moved to `src/file-lock.ts` so the approvals store could use the SAME one rather than
@@ -334,3 +362,14 @@ export {
   type WorkspaceLeaseOutcome,
   type WorkspaceRecovery,
 } from "./ledger-events.ts";
+
+export {
+  WORKFLOW_FACT_KINDS,
+  WORKFLOW_FACT_PROVENANCE,
+  WORKFLOW_FACT_STATES,
+  buildWorkflowFactEvent,
+  type WorkflowFactEvent,
+  type WorkflowFactKind,
+  type WorkflowFactProvenance,
+  type WorkflowFactState,
+} from "./workflow-facts.ts";

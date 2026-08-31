@@ -19,6 +19,8 @@ import {
   leaseAcquisitionOutcome,
   leaseReleaseLedgerOutcome,
 } from "./workspace.ts";
+import { newExecutionId } from "./execution-id.ts";
+import { isLedgerDisplayIdentifier } from "./ledger-identifiers.ts";
 
 export interface CheckDefinition {
   /** Absolute operator-owned executable. PATH lookup is deliberately not part of the contract. */
@@ -85,6 +87,12 @@ export function buildCheckEnvironment(
 }
 
 function validateDefinition(checkId: string, value: CheckDefinition | undefined): CheckDefinition {
+  // `check:<id>:<uuid>` is also the v3 childId, whose closed display-identifier bound is 512 characters.
+  if (!isLedgerDisplayIdentifier(checkId) || checkId.length > 460) {
+    throw new GovernanceRefusal(refusal(
+      "CHECK_CONFIGURATION_INVALID", `check ${JSON.stringify(checkId)} must be an ASCII identifier`, { check_id: checkId },
+    ));
+  }
   if (!value) {
     throw new GovernanceRefusal(refusal(
       "CHECK_NOT_CONFIGURED", `check ${JSON.stringify(checkId)} is not present in operator-owned configuration`, { check_id: checkId },
@@ -147,6 +155,8 @@ export async function runNamedCheck(input: {
   // governed writer. `access` still records what the configured executable is intended to do.
   const leaseAccess: WorkspaceAccess = "write";
   const ownerId = `check:${input.checkId}:${randomUUID()}`;
+  const executionId = newExecutionId();
+  const parentExecutionId = null;
   const correlation = normaliseCorrelation(input.correlation);
   let lease: Awaited<ReturnType<typeof acquireWorkspaceLease>> | undefined;
   let stagedDir: string | undefined;
@@ -163,6 +173,7 @@ export async function runNamedCheck(input: {
       if (input.ledgerPath) await appendLedgerEvent(
         { path: input.ledgerPath, strict: true },
         buildWorkspaceLeaseEvent({
+          executionId, parentExecutionId,
           childId: ownerId, workspaceId: input.workspace.workspaceId, root: input.workspace.root, access: leaseAccess,
           outcome: "refused",
           correlation, now: new Date(),
@@ -178,6 +189,7 @@ export async function runNamedCheck(input: {
         await appendLedgerEvent(
           { path: input.ledgerPath, strict: true },
           buildWorkspaceLeaseEvent({
+            executionId, parentExecutionId,
             childId: ownerId, workspaceId: input.workspace.workspaceId, root: input.workspace.root, access: leaseAccess,
             outcome: leaseAcquisitionOutcome(leaseAccess, lease.recovered), recovered: lease.recovered,
             correlation, now: new Date(),
@@ -256,6 +268,7 @@ export async function runNamedCheck(input: {
     if (input.ledgerPath) await appendLedgerEvent(
       { path: input.ledgerPath, strict: true },
       buildWorkspaceLeaseEvent({
+        executionId, parentExecutionId,
         childId: ownerId, workspaceId: input.workspace.workspaceId, root: input.workspace.root, access: leaseAccess,
         outcome: leaseReleaseLedgerOutcome(releaseOutcome, releaseReason), releaseReason, correlation, now: new Date(),
       }),
@@ -274,6 +287,7 @@ export async function runNamedCheck(input: {
       await appendLedgerEvent(
         { path: input.ledgerPath, strict: true },
         buildCheckReceiptLedgerEvent({
+          executionId, parentExecutionId,
           childId: ownerId, receiptId: receipt.receipt_id, workspaceId: input.workspace.workspaceId,
           checkId: input.checkId, treeSha: receipt.tree_sha, correlation, now: ended,
         }),
@@ -304,6 +318,7 @@ export async function runNamedCheck(input: {
           onFailure: (cause) => { notes.push(`check refusal record failed: ${String(cause)}`); },
         },
         buildWorkspaceLeaseEvent({
+          executionId, parentExecutionId,
           childId: ownerId, workspaceId: input.workspace.workspaceId, root: input.workspace.root, access: leaseAccess,
           outcome: "refused",
           refusal: error instanceof GovernanceRefusal
@@ -327,6 +342,7 @@ export async function runNamedCheck(input: {
           onFailure: (cause) => { notes.push(`check lease release record failed: ${String(cause)}`); },
         },
         buildWorkspaceLeaseEvent({
+          executionId, parentExecutionId,
           childId: ownerId, workspaceId: input.workspace.workspaceId, root: input.workspace.root, access: leaseAccess,
           outcome: outcome === "lost"
             ? "lost"
