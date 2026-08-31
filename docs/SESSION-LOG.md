@@ -11,27 +11,15 @@ decisions; this file holds state and next actions. Newest entry on top.
 2026-08-22 the *server* enforces it: `main` requires a pull request (zero approvals) with both CI legs green,
 and `enforce_admins` is on, so a direct push is refused rather than merely discouraged.
 
-**STATE, 2026-08-31. `0.19.0` remains the released and registry-verified fixed point; the approved live Herdr
-dashboard candidate is versioned `0.20.0` on `feat/observability-dashboard` pending PR and release.** npm `latest`, tag `v0.19.0`, the
-GitHub Release and the released baseline resolve to one commit, so `git rev-list -n1 v0.19.0` is the thing to
-trust and this block deliberately names no mutable `main` SHA. **Thirty-six ADRs.** ADR-0036 records the new
-candidate; two complete critical review rounds returned **CHANGES-REQUESTED** (eight findings, then ten more).
-The attempted third whole-change review timed out, but a bounded independent critical adjudication returned
-**CHANGES-REQUESTED** on two further blockers. A distributed critical review then covered all 71 changed paths
-and returned two more accepted findings. Its critical approval retry reproduced three more deadline/contract
-blockers, and the fifth-repair quality review found one exit/deadline race, and its repair review found the soft-timer twin plus delayed exit
-delivery, then the next review found the soft delayed-delivery route lacked its own mechanical proof; all
-twenty-nine had red-first repairs, then the proof review found its fixed-time busy-spin could false-fail under
-scheduler contention, then the next review found its deadline still began before readiness; all thirty-one now
-had repairs, then the next review found its test seam weakened hard-deadline immutability; all thirty-two now
-had repairs; its review found the snapshot unforced and the observer fail-open/unbounded. All thirty-five now
-had repairs; its review found the hard proof's exit occurred after its deadline and status publication racy.
-Thirty-seven had repairs; its review found a pre-spawn proof window, chunk assumption and temporary leak. All
-Forty-three had repairs; its review found complete-status error paths and async-context isolation unproved. All
-Forty-five had repairs; its review found a frozen-clock hang, shipped control artifacts and non-overlapping
-concurrency. All forty-eight have repairs. Critical run `48da2009…` approved exact candidate tree `889fd02…` on both specification and quality. Nothing has been committed, opened as a PR or released. The last released evidence remains **641 unit · 45 integration · typecheck · installed-package smoke · 27/27
-catalogued guards**, plus the opt-in model tier at **55 tests, 54 passed** before R-155's stale assertion was
-corrected and rerun.
+**STATE, 2026-08-31. `0.20.0` is released and registry-verified.** npm `latest`, tag `v0.20.0`, the GitHub
+Release and the released baseline resolve to one commit, so `git rev-list -n1 v0.20.0` is the immutable source
+point and this block deliberately names no mutable `main` SHA. **Thirty-six ADRs.** ADR-0036's live Herdr
+dashboard, ledger v3 occurrence identity and provenance-labelled workflow facts shipped through PR #23 after
+critical run `48da2009…` approved specification and quality. All forty-eight accepted findings have repairs.
+Release evidence: **727 unit · 45 integration against real pi and Herdr 0.8.0 · typecheck · installed-package
+smoke · 96/96 mutation guards**. Registry verification installed `pi-daddy@0.20.0` into a fresh scratch project,
+imported `pi-daddy/run-child`, found the Herdr plugin, and confirmed no test-control artifact; registry shasum
+`3e82a9c92640b83c5579777ac74b8c3af259272e` matches the published release tarball.
 
 *(These lines were stale for about an hour after the release — they said "nothing is released", the tier "was
 not run", and named a commit three merges back, while the paragraphs directly below them said otherwise. **That
@@ -102,34 +90,31 @@ unforced until a reviewer made me test it), the matrix existed, and CI ran the c
 
 ### NEXT SESSION — ranked
 
-1. **Ship the approved ADR-0036 candidate as `0.20.0` in one PR.** Critical run `48da2009…` approved exact
-   candidate tree `889fd02…`; the bounded quality retry found no blockers after the first quality attempt timed
-   out. Keep the PR to ADR-0036 and release records only; publish, verify the registry artifact, then update this
-   state block to the immutable release tag.
-2. **The measurement ADR-0020 asks for.** Still the highest-value item and still only the operator can run it:
+1. **The measurement ADR-0020 asks for.** Still the highest-value item and still only the operator can run it:
    govern real work for a few weeks and read `/grants ledger`'s `N prompt · N persisted` line. That ADR rests on
    an asserted fatigue argument until someone does. The machinery has existed since 0.13.0; the *usage* is what
    is missing.
-3. **Watch for upgrade friction on the breaking change.** 0.19.0 requires `workspace:<id>` in any grant that
-   routes; four fixtures in this repository began refusing until granted, which is the one-line edit an operator
-   faces. `pi-daddy init` scaffolds the registry but deliberately does not choose a ceiling (ADR-0028), so the
+2. **Watch for upgrade friction on the breaking changes.** 0.20.0 moves production ledgers to v3 occurrence
+   identity, removes raw corrupt text from `LedgerReport`, and narrows rendered/check identifiers; 0.19.0's
+   `workspace:<id>` requirement still applies. Four routing fixtures in this repository began refusing until
+   granted, which is the one-line edit an operator faces. `pi-daddy init` scaffolds the registry but deliberately does not choose a ceiling (ADR-0028), so the
    operator writes the capability by hand. If that turns out to be the wrong trade, it is an ADR, not a patch.
-4. **R-137 is the sharpest open risk.** Routing attenuates by *id*, not by *destination*: a child holding
+3. **R-137 is the sharpest open risk.** Routing attenuates by *id*, not by *destination*: a child holding
    `workspace:staging` and `tool:write` can repoint that entry at another worktree and route its grandchild
    there, measured in `docs/probes/g37-registry-tamper`. The content pin that would close it was reverted after
    being defeated four ways, and **nothing checks who may write the registry** (R-144). ADR-0036 territory, and
    ADR-0035 explicitly declined Option 2 (strip the registry, re-supply a narrowed one) which is still
    available as defence-in-depth.
-5. **R-145 needs a decision, not a patch.** A *gated* routing attempt takes the destination's exclusive writer
+4. **R-145 needs a decision, not a patch.** A *gated* routing attempt takes the destination's exclusive writer
    lease **before** the human is asked, and holds it for an unbounded dialog — model-reachable, and it emits an
    `acquired`/`write` record for a child that never runs. Reversing the ordering means deciding what a bound
    approval binds to; ADR-0034 chose "resolve then ask" deliberately, for R-110.
-6. **Cheap and open:** R-147 (a refused registry prints nothing anywhere, while a malformed `PI_GRANTS_DEPTH`
+5. **Cheap and open:** R-147 (a refused registry prints nothing anywhere, while a malformed `PI_GRANTS_DEPTH`
    gets a notify — rule 8), R-149 (the registry read deadline is forced by nothing, and the module classifies
    an `AbortError` no remaining code can produce), R-150 (seven guards nothing forces, one of them wired on the
    quieter of two routes), R-151 and R-148 (both herdr-executor territory), R-141's remaining relative lease
    namespace/access/reporting halves, and R-140.
-7. **R-142 is closed by CI (R-153) and R-129 predates the catalogue** — reconciled 2026-08-23; do not reopen
+6. **R-142 is closed by CI (R-153) and R-129 predates the catalogue** — reconciled 2026-08-23; do not reopen
    either without new evidence.
 
 ### Habits this project keeps re-earning
@@ -500,6 +485,13 @@ Specification approved. The first quality attempt timed out after successful bui
 the full mutation catalogue; a bounded retry approved with **31/31 focused tests** and no findings. Combined
 with writer evidence (**727 unit · 45 integration · typecheck · installed smoke · 96/96 mutations**), ADR-0036
 is approved. Version `0.20.0` and one cohesive PR were selected; release execution is authorised.
+
+**0.20.0 released and registry-verified, 2026-08-31.** PR #23 merged as `34e977e`; tag `v0.20.0` and the
+non-draft GitHub Release point there. npm published shasum `3e82a9c92640b83c5579777ac74b8c3af259272e`,
+matching the reviewed release tarball, and `latest` resolves to 0.20.0. A fresh registry install imported
+`pi-daddy/run-child`, contained the Herdr plugin, and contained no test-control artifact. Local publication was
+initially refused by npm's 2FA policy; after the operator configured a granular token with appropriate publish
+authority, the exact already-built tarball appeared in the registry. No plugin was linked during release.
 
 ## 2026-08-22 (CI) — the checks stop being opt-in
 
