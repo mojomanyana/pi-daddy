@@ -42,28 +42,31 @@ the published `0.18.1` tarball, one version number meaning two payloads — plus
 (R-146, R-152) that were briefly staged as a 0.18.2 and released here instead: a patch would have left
 **R-131's routing escalation live** on the 0.18.x line, and the fix for R-131 is the breaking change itself.
 
-**PR #10 — ADR-0035, 0.19.0, workspace routing as a capability — is OPEN and is where the current work is.**
-Thirty-five ADRs are decided (0034 amended three times, 0035 amended three times after review). **Until it or
-an equivalent fix lands, workspace routing does not attenuate on `main`**: recursive critical work can route a
-descendant to a registered workspace its parent was not granted, so any readiness claim over the released
-baseline carries that as an explicit exception and is no stronger than READY WITH EXPLICIT EXCEPTIONS.
+**Current work: ADR-0036, the live Herdr governance dashboard, is an unreleased candidate on
+`feat/observability-dashboard`.** Thirty-six ADRs are decided. It adds ledger v3 occurrence identity, an
+explicit plugin-install handshake, `/grants dashboard`, a pure live projection and provenance-labelled
+workflow facts. The first critical review requested eight changes; the required re-review found ten more,
+including that one first-repair claim was still false. A third whole-change attempt timed out, but its bounded
+critical adjudicator reproduced two further blockers. A distributed review then covered all 71 changed paths
+and found two more; its approval retry found three further deadline/contract divergences, then the fifth-repair
+quality review found one exit/deadline race; its repair review found the soft-timer twin and defeated the hard
+guard by delaying exit delivery; the next review found the soft delayed-delivery path lacked its own mechanical
+proof; that proof's review found its fixed-time busy-spin could false-fail under scheduler contention. All
+thirty had red-first repairs; the next review found the test clock still started before readiness. All thirty-one
+had repairs; the next review found the test had weakened hard-deadline immutability. All thirty-two now have
+repairs; its review found the snapshot unforced and the observer fail-open/unbounded. All thirty-five now have
+repairs; its review found the hard proof's exit occurred after its deadline and status publication racy. All
+thirty-seven had repairs; its review found a pre-spawn proof window, chunk assumption and temporary leak. All
+forty had repairs; its review found the test control publicly exported, truncation before marker search and the
+new paths unforced. All forty-three had repairs; its review found status error paths and async-context isolation
+unproved. Forty-five had repairs; its review found a frozen-clock hang, shipped control artifacts and non-
+overlapping concurrency. All forty-eight have repairs; critical run `48da2009…` approved exact candidate tree
+`889fd02…`. Version `0.20.0` is selected; it has not yet been opened as a PR or released. Read the top entry in `docs/SESSION-LOG.md` before touching it.
 
-**Read `docs/SESSION-LOG.md`'s top entry before touching PR #10 — FIVE review passes have run over it.**
-Each reviewed the previous one's FIXES and found blockers in them — the fourth found R-136 marked FIXED
-while a function the fixing commit added still hung session start. So the rule below is
-sharper than it first looked: adding a namespace is a nine-site change **and the sites you touch need the
-same adversarial read as the ones you missed**. Both earlier passes also stated a mutation count that
-measured what had been checked rather than what was covered.
-
-**Read `docs/SESSION-LOG.md`'s top entry before touching PR #10.** Two review passes and a mutation battery
-found that ADR-0035 taught the new `workspace:` namespace to three of the **nine** sites that already knew
-about `agent:`, and that the three properties the ADR advertised most loudly — the gate, the `init`
-scaffolding, and "attenuation comes for free" — were each written beside a fix that did not implement them.
-The generalisable rule is now in the ADR's amendment and in R-133: **a capability namespace is a nine-site
-change**, and `test/workspace-capability.test.ts` is organised by site so the checklist is executable rather
-than remembered. R-135, found by the mutation battery rather than by either reviewer, is the older and worse
-one: R-26's wildcard rule had been enforced only on the interceptor path, so `tool:*` reached delegated
-children in every published version.
+**PR #10 / ADR-0035 is merged and released in 0.19.0.** Its review lesson remains operational: adding a
+capability namespace is a nine-site change, the sites touched need the same adversarial read as the ones
+missed, and every fix round is a new change requiring review. `test/workspace-capability.test.ts` keeps that
+checklist executable; R-133/R-135 preserve why it exists.
 
 **This clone is shared with other sessions.** One of them checked out `pr10` under an in-progress task on
 2026-08-21 and two measurements were briefly attributed to the wrong tree. **Print `git rev-parse HEAD` in
@@ -97,7 +100,7 @@ can run `env -u PI_GRANTS_GRANT pi …` and get an ungoverned descendant (measur
 docs/SPEC.md              — WHAT THE PRODUCT IS, current state, no history. Read this second.
 docs/SESSION-LOG.md       — START HERE when resuming: state, verified facts, next actions. Newest on top.
 docs/03-risks.md          — live risk register. R-25 onward are current; R-01..R-24 serve the retired thesis
-docs/06-decisions/        — thirty-five ADRs. Reversals are kept and marked: 0004→superseded, 0005 park→
+docs/06-decisions/        — thirty-six ADRs. Reversals are kept and marked: 0004→superseded, 0005 park→
                             superseded, 0006 (magnitude claim falsified), 0007 THE REFRAME, 0008
                             attenuation + cardinality, 0009 pi-fabric (parked), 0010 approvals, 0011
                             universal capabilities, 0012 bash, 0013 pi-subagents (superseded by 0016),
@@ -135,9 +138,10 @@ docs/archive/             — SUPERSEDED, kept as evidence, never edited to matc
                             registers (discovery, assumptions, landscape, metrics), ROADMAP, gate reports,
                             both code reviews, the old specs, the completed implementation plan, and the
                             dead upstream proposal. See its README for why each stopped being current.
-packages/pi-daddy  — THE PRODUCT (0.19.0, unreleased — PR #10): SKILL.md definitions, resolver, v2 ledger,
-                            delegate/delegate_all/delegate_chain, catalog, bound human approval, two
-                            executors (process | herdr pane), governed-writer leases, named checks, and
+packages/pi-daddy  — THE PRODUCT (0.19.0 released; approved 0.20.0 dashboard candidate): Agent Skill
+                            definitions, resolver, v3 ledger (frozen v2 reader), delegate/delegate_all/
+                            delegate_chain, catalog, bound human approval, process/herdr executors,
+                            governed-writer leases, named checks, explicit Herdr dashboard plugin, and
                             `pi-daddy init` — scaffolding that does not choose a ceiling (ADR-0028)
                           (pi-token-audit was DELETED by ADR-0025 — one package to keep documents true
                             about is the point. The G10 falsification stays in docs/probes/, which is
@@ -163,11 +167,11 @@ refuses until a gate passes that no longer means anything. They are in git histo
 
 ```bash
 cd packages/pi-daddy
-npm test                   # 637 unit tests — fast, no pi, no network (the branch guard spawns git)
+npm test                   # 719 unit tests — fast, no pi, no network (the branch guard spawns git)
 npm run typecheck          # src + extensions + tests + integration tests
 npm run test:integration   # 45 tests vs a REAL pi process AND a real herdr server — ~55s, no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and USE it
-npm run test:mutation      # rule 7 as a control: 20 pinned (patch -> the test it must break) pairs.
+npm run test:mutation      # rule 7 as a control: 92 pinned (patch -> the test it must break) pairs.
                            # Minutes, edits files in place, refuses a dirty tree. Run it before
                            # pushing anything that adds or changes a guard (R-142: no CI runs it yet)
 PI_GRANTS_IT_MODEL=1 npm run test:integration   # + an end-to-end tier with a real model (costs money)

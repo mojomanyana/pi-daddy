@@ -22,6 +22,8 @@
  */
 
 import { fileURLToPath } from "node:url";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { WILDCARD } from "../src/pi-tools.ts";
 import { buildCatalog } from "../src/catalog.ts";
@@ -38,6 +40,11 @@ import { planWithApprovals } from "./run-delegation.ts";
 import { createGrantsSession, loadProjectDefinitions, resolveExecutor, type GrantsSession } from "./session.ts";
 import { reportSessionStart } from "./session-report.ts";
 import { SPAWN_TOOLS, tripwireReason } from "./tripwire.ts";
+import {
+  defaultDashboardPaths,
+  offerDashboardHandshake,
+  openDashboardCommand,
+} from "../src/dashboard-handshake.ts";
 
 export default function (pi: ExtensionAPI) {
   // The path pi loads as the extension, so a child granted `tool:delegate` can be started with `-e <this>`.
@@ -51,6 +58,10 @@ export default function (pi: ExtensionAPI) {
   })();
 
   const session = createGrantsSession(extensionPath);
+  const dashboardPluginRoot = fileURLToPath(new URL("../herdr-plugin/", import.meta.url));
+  const dashboardPaths = defaultDashboardPaths(
+    process.env.PI_CODING_AGENT_DIR?.trim() || join(homedir(), ".pi", "agent"),
+  );
 
   // Filled in by `registerDelegationTools` at the bottom of this function. A holder rather than a reordering,
   // because the hooks below have to be registered before the tools and both need to call it — the tool
@@ -59,6 +70,10 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_start", async (_event, ctx) => {
     session.cwd = ctx.cwd;
+    // A routed child changes cwd. Publishing a relative ledger string unchanged therefore fragments one
+    // execution tree across workspaces. Resolve it once at the root's actual pi cwd; descendants inherit
+    // this absolute identity verbatim, and resolve(abs) remains abs at every deeper session start.
+    if (session.ledgerPath) session.ledgerPath = resolve(ctx.cwd, session.ledgerPath);
     // The one case the stored-grant lookup can get wrong (ADR-0030). The factory reads the store keyed by
     // `process.cwd()` because it runs before any hook and therefore before `ctx` exists — and S-5 forces
     // that ordering, since whether `delegate` is registered is decided there. Almost always the two agree.
@@ -149,6 +164,27 @@ export default function (pi: ExtensionAPI) {
             `ledger integrity was not verified and any ignored-approvals notices were not shown. Run /grants and ` +
             `/grants ledger for all of it. Governance itself is unaffected: it is enforced by --tools when a ` +
             `child is spawned.`,
+          "warning",
+        );
+      }
+      // Explicit installation handshake. It only runs in a Herdr-hosted TUI, asks once, and the only branch
+      // that links software is the literal human choice "Install and open".
+      try {
+        await offerDashboardHandshake({
+          mode: ctx.mode,
+          env: process.env,
+          pid: process.pid,
+          cwd: ctx.cwd,
+          ledgerPath: session.ledgerPath,
+          pluginRoot: dashboardPluginRoot,
+          preferencePath: dashboardPaths.preferencePath,
+          paneStatePath: dashboardPaths.paneStatePath,
+          ui: ctx.ui,
+        });
+      } catch (error) {
+        ctx.ui.notify(
+          `grants: dashboard installation handshake could not run (${error instanceof Error ? error.message : String(error)}). ` +
+            `Nothing was installed; /grants dashboard will report manual setup.`,
           "warning",
         );
       }
@@ -316,6 +352,14 @@ export default function (pi: ExtensionAPI) {
               await loadProjectDefinitions(session, ctx.cwd);
               delegation.refreshSpawnable();
             }),
+          openDashboard: () => openDashboardCommand({
+            env: process.env,
+            pid: process.pid,
+            cwd: ctx.cwd,
+            ledgerPath: session.ledgerPath,
+            pluginRoot: dashboardPluginRoot,
+            paneStatePath: dashboardPaths.paneStatePath,
+          }),
           previewDelegation: (name: string) =>
             planWithApprovals(session, { task: "(preview)", agent: name }, {}, null),
         },

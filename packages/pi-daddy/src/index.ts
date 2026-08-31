@@ -15,6 +15,10 @@ export {
   buildChildLifecycleEvent,
   buildRecord,
   buildWorkspaceLeaseEvent,
+  buildWorkflowFactEvent,
+  WORKFLOW_FACT_KINDS,
+  WORKFLOW_FACT_PROVENANCE,
+  WORKFLOW_FACT_STATES,
   isEscalationAttempt,
   LEDGER_VERSION,
   type CheckReceiptLedgerEvent,
@@ -24,6 +28,10 @@ export {
   type RuntimeLedgerEvent,
   type WorkspaceLeaseEvent,
   type WorkspaceLeaseOutcome,
+  type WorkflowFactEvent,
+  type WorkflowFactKind,
+  type WorkflowFactProvenance,
+  type WorkflowFactState,
 } from "./ledger.ts";
 
 export { planSpawn, type SpawnPlan, type SpawnPlanInput } from "./spawn.ts";
@@ -96,6 +104,23 @@ export {
   type CheckReceipt,
   type CheckRegistry,
 } from "./check-runner.ts";
+
+export {
+  isExecutionId,
+  newExecutionId,
+  type ExecutionId,
+} from "./execution-id.ts";
+
+export {
+  parseDashboardLedger,
+  type DashboardNode,
+  type DashboardProjection,
+  type DashboardState,
+  type DashboardWorkflow,
+  type DashboardWorkflowFact,
+} from "./dashboard-projection.ts";
+
+export { renderDashboard, type DashboardRenderOptions } from "./dashboard-render.ts";
 
 export {
   createApprovalGate,

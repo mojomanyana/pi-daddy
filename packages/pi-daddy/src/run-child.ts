@@ -13,6 +13,15 @@ import { spawn } from "node:child_process";
 import { StringDecoder } from "node:string_decoder";
 import { parseBound } from "./propagation.ts";
 
+interface RunChildTestControl { hardDeadlineAtAfterSpawn(): number }
+const TEST_CONTROL = Symbol.for("pi-daddy.internal.run-child-test-control");
+
+function currentRunChildTestControl(): RunChildTestControl | undefined {
+  if (process.env.NODE_TEST_CONTEXT !== "child-v8") return undefined;
+  const storage = (globalThis as Record<symbol, { getStore(): RunChildTestControl | undefined }>)[TEST_CONTROL];
+  return storage?.getStore();
+}
+
 /**
  * The longest prefix of `text` that fits in `budget` BYTES, never splitting a character.
  *
@@ -64,9 +73,11 @@ export interface ChildRunRequest {
   signal?: AbortSignal;
   /** Hard cap on captured output. Beyond it the child is killed and the result flagged. */
   maxOutputBytes?: number;
-  /** Wall-clock cap. On expiry: SIGTERM, then SIGKILL after `killGraceMs`. */
+  /** Soft wall-clock cap. On expiry: SIGTERM, then SIGKILL after `killGraceMs`. */
   timeoutMs?: number;
   killGraceMs?: number;
+  /** Absolute epoch-millisecond hard cap: SIGKILL fires here even when the SIGTERM grace has not elapsed. */
+  hardDeadlineAt?: number;
   /**
    * Called with each chunk as it arrives, for the parent's progress display (ADR-0032).
    *
@@ -106,9 +117,11 @@ export const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
 export const DEFAULT_KILL_GRACE_MS = 5000;
 
 export function runChild(request: ChildRunRequest): Promise<ChildRunResult> {
+  const testControl = currentRunChildTestControl();
   const maxOutputBytes = request.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES;
   const timeoutMs = request.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const killGraceMs = request.killGraceMs ?? DEFAULT_KILL_GRACE_MS;
+  const hardDeadlineAt = request.hardDeadlineAt;
 
   // A-R3: checked BEFORE spawning. `AbortSignal` does not replay, so a listener attached after an
   // `await` cannot observe an abort that already happened — and the child would then run to completion
@@ -158,6 +171,16 @@ export function runChild(request: ChildRunRequest): Promise<ChildRunResult> {
     const stop = () => {
       child.kill("SIGTERM");
       timers.push(setTimeout(() => child.kill("SIGKILL"), killGraceMs));
+    };
+
+    // A timer phase may run before libuv delivers an exit that the OS already observed, especially after the
+    // controller event loop was blocked across the deadline. Give pending child-process events one turn to
+    // publish exitCode/signalCode before deciding that a governed PID is still live.
+    const controlIfRunning = (control: () => void) => {
+      setImmediate(() => {
+        if (done || child.exitCode !== null || child.signalCode !== null) return;
+        control();
+      });
     };
 
     /** How much of `text` the progress display has already been shown. */
@@ -225,11 +248,20 @@ export function runChild(request: ChildRunRequest): Promise<ChildRunResult> {
     child.stderr?.on("data", capture);
 
     timers.push(
-      setTimeout(() => {
+      setTimeout(() => controlIfRunning(() => {
         timedOut = true;
         stop();
-      }, timeoutMs),
+      }), timeoutMs),
     );
+    const activeHardDeadlineAt = testControl?.hardDeadlineAtAfterSpawn() ?? hardDeadlineAt;
+    if (activeHardDeadlineAt !== undefined) {
+      // Independent of the soft timer and measured from the recorded epoch, not from `spawn`: neither a
+      // delayed soft callback nor spawn/setup time may start a fresh grace period beyond the lifecycle bound.
+      timers.push(setTimeout(() => controlIfRunning(() => {
+        timedOut = true;
+        child.kill("SIGKILL");
+      }), Math.max(0, activeHardDeadlineAt - Date.now())));
+    }
 
     const onAbort = () => {
       aborted = true;

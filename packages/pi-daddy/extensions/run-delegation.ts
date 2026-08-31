@@ -13,7 +13,6 @@
 
 import { DELEGATE_SUBJECT, shouldSeekApproval } from "../src/approval.ts";
 import { planDelegation } from "../src/delegate.ts";
-import { appendRecord, buildRecord } from "../src/ledger.ts";
 import {
   obtainApprovals,
   republishable,
@@ -27,6 +26,8 @@ import type { GrantsSession } from "./session.ts";
 import type { CorrelationMetadata } from "../src/correlation.ts";
 import { GovernanceRefusal, refusal as structuredRefusal } from "../src/refusals.ts";
 import { executePlannedChild, type DelegationOutcome } from "./execute-child.ts";
+import { recordDelegationDecision, type ApprovalLedgerFacts } from "./delegation-ledger.ts";
+import type { ExecutionOccurrenceIds } from "./execution-occurrence.ts";
 import {
   governedWorkspaceAccess,
   prepareDelegationWorkspace,
@@ -178,7 +179,7 @@ export async function planWithApprovals(
 export async function runOneDelegation(
   session: GrantsSession,
   spec: ChildSpec,
-  ids: { parentId: string; childId: string },
+  ids: ExecutionOccurrenceIds,
   budget: number | undefined,
   ctx: DelegationToolContext,
   signal: AbortSignal | undefined,
@@ -207,7 +208,7 @@ export async function runOneDelegation(
       paneId?: string;
       /** The name herdr actually knows this child by — minted in `runHerdrPane`, so it cannot be derived. */
       agentName?: string;
-      state?: "running" | "completed" | "failed";
+      state?: "starting" | "running" | "completed" | "failed";
     }) => void;
     /** Approvals already obtained by the caller — see `planWithApprovals`. `delegate_chain` uses it. */
     preApproved?: InheritableApproval[];
@@ -218,6 +219,8 @@ export async function runOneDelegation(
      * the question the chain's framed-rather-than-enforced handoff makes worth asking.
      */
     taskFrom?: string;
+    /** Unique occurrence whose output composed this task; separate from the logical taskFrom position. */
+    taskFromExecutionId?: string;
     /**
      * What the caller's own gate decided, for the LEDGER — not for the plan.
      *
@@ -228,10 +231,10 @@ export async function runOneDelegation(
      * where nothing was ever gated — `/grants ledger` counted it in neither `bySource` nor `unattributed`, so it did
      * not even show up as a gap, and ADR-0010's compensating control was blind to every chain step.
      */
-    approvalFacts?: Pick<ApprovalOutcome, "approved" | "sources" | "scopes" | "expiresAt" | "uses" | "humanDenied">;
+    approvalFacts?: ApprovalLedgerFacts;
   } = {},
 ): Promise<DelegationOutcome> {
-  const { onProgress, preApproved, taskFrom, approvalFacts } = options;
+  const { onProgress, preApproved, taskFrom, taskFromExecutionId, approvalFacts } = options;
   // pi resolves a BARE model id to an unauthenticated provider and the child dies at startup — the id
   // alone is not enough, it must be qualified with its provider (`Model<Api>` carries both).
   const defaultModel = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
@@ -249,7 +252,12 @@ export async function runOneDelegation(
     boundWorkspaceId: spec.workspace?.workspace_id,
     boundContextId: spec.correlation?.context_id,
   };
-  const extra = { fanoutBudget: budget, spawnId: ids.parentId, childSpawnId: ids.childId };
+  const extra = {
+    fanoutBudget: budget,
+    spawnId: ids.parentId,
+    childSpawnId: ids.childId,
+    childExecutionId: ids.executionId,
+  };
 
   // ADR-0031: herdr was DEMANDED (`PI_GRANTS_HERDR=1`) and is not answering. Refused rather than relocated —
   // the operator chose that over falling back, so the ledger can never name a child that ran somewhere nobody
@@ -269,7 +277,6 @@ export async function runOneDelegation(
   let preparedWorkspace: PreparedWorkspace | undefined;
   let approvalOutcome: ApprovalOutcome | undefined;
   let plan: ReturnType<typeof planDelegation>;
-  let ledgerDenied = false;
 
   if (spec.workspace && !executorRefusal) {
     // Check non-liftable refusals before taking a lease, and take the lease before asking a human. This
@@ -283,6 +290,8 @@ export async function runOneDelegation(
           spec: { ...spec.workspace, access: governedWorkspaceAccess(spec.workspace.access, plan.requested) },
           correlation: spec.correlation,
           childId: ids.childId,
+          executionId: ids.executionId,
+          parentExecutionId: ids.parentExecutionId,
           signal,
           ledgerPath: session.ledgerPath,
         });
@@ -308,55 +317,19 @@ export async function runOneDelegation(
     plan = { ...plan, ok: false, reason: message, refusal: structuredRefusal("EXECUTOR_UNAVAILABLE", message) };
   }
 
-  // G6 / B-I3: no `&& plan.result` guard — `planDelegation` always carries one now.
-  if (session.ledgerPath) {
-    await appendRecord(
-      { path: session.ledgerPath, strict: true },
-      buildRecord({
-        // F8: real ids, not depth labels. Four concurrent siblings used to produce four lines identical
-        // except `ts`, so the ledger could not be joined to a result, a process, or the child's own
-        // lines one level down.
-        parentId: ids.parentId,
-        childId: ids.childId,
-        depth: plan.childDepth,
-        agentType: spec.agent ?? "delegate",
-        // ADR-0031: where this child actually ran. Read off the live session, which the probe has settled
-        // by now, so the record and the executor cannot disagree.
-        executor: session.executor.kind,
-        taskFrom,
-        requested: plan.requested,
-        parentGrant: session.ownGrant,
-        result: plan.result,
-        blocked: !plan.ok,
-        reason: plan.reason,
-        // `approvalOutcome` when this call's own gate ran; `approvalFacts` when a caller gated upfront on our behalf
-        // (a chain). Without the second, an approved chain step recorded nothing about the human who authorised it.
-        approved: approvalOutcome?.approved ?? approvalFacts?.approved,
-        approvalSources: approvalOutcome?.sources ?? approvalFacts?.sources,
-        approvalScopes: approvalOutcome?.recordedScopes ?? approvalFacts?.scopes,
-        approvalExpiresAt: approvalOutcome?.expiresAt ?? approvalFacts?.expiresAt,
-        approvalUses: approvalOutcome?.uses ?? approvalFacts?.uses,
-        humanDenied: approvalOutcome?.humanDenied ?? approvalFacts?.humanDenied,
-        gateOutcome: approvalOutcome?.gateOutcome,
-        // ADR-0018: taken from the PLAN, never re-derived here. The B-I3 lesson — a call site that
-        // recomputed the digest could record one the planner never used.
-        definitionDigest: plan.definitionDigest,
-        taskDigest: plan.taskDigest,
-        correlation: plan.correlation,
-        refusal: plan.refusal,
-        now: new Date(),
-      }),
-    ).catch((error) => {
-      // G6 / A-R4 + B-I2: fail closed. This path PROVISIONS, so an unrecorded delegation would be a
-      // child running with granted capabilities and no audit line.
-      plan = {
-        ...plan,
-        ok: false,
-        reason: `grants: ledger write failed, denying — ${String(error)}`,
-        refusal: structuredRefusal("LEDGER_WRITE_FAILED", `grants: ledger write failed, denying — ${String(error)}`),
-      };
-      ledgerDenied = true;
+  // The capability decision provisions the child, so this append remains load-bearing and fails closed.
+  try {
+    await recordDelegationDecision({
+      session, plan, ids, agent: spec.agent, taskFrom, taskFromExecutionId,
+      approval: approvalOutcome, approvalFacts,
     });
+  } catch (error) {
+    plan = {
+      ...plan,
+      ok: false,
+      reason: `grants: ledger write failed, denying — ${String(error)}`,
+      refusal: structuredRefusal("LEDGER_WRITE_FAILED", `grants: ledger write failed, denying — ${String(error)}`),
+    };
   }
 
   if (!plan.ok) {
@@ -368,7 +341,12 @@ export async function runOneDelegation(
     // unwritable an unguarded call replaced the governance refusal, and its code, with a ledger error.
     try {
       await releaseDelegationWorkspace({
-        prepared: preparedWorkspace, childId: ids.childId, ledgerPath: session.ledgerPath, reason: "refused",
+        prepared: preparedWorkspace,
+        childId: ids.childId,
+        executionId: ids.executionId,
+        parentExecutionId: ids.parentExecutionId,
+        ledgerPath: session.ledgerPath,
+        reason: "refused",
       });
     } catch (error) {
       plan = { ...plan, reason: `${plan.reason ?? "refused"}; workspace release record failed: ${String(error)}` };
@@ -389,6 +367,8 @@ export async function runOneDelegation(
     plan,
     agent: spec.agent,
     childId: ids.childId,
+    executionId: ids.executionId,
+    parentExecutionId: ids.parentExecutionId,
     cwd: ctx.cwd,
     preparedWorkspace,
     signal,

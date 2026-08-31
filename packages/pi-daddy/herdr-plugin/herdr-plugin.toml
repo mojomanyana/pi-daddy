@@ -1,0 +1,18 @@
+id = "pi-daddy.dashboard"
+name = "pi-daddy dashboard"
+version = "1.0.0"
+min_herdr_version = "0.8.0"
+description = "Read-only live projection of a pi-daddy governance ledger"
+platforms = ["linux", "macos", "windows"]
+
+[[panes]]
+id = "dashboard"
+title = "PI-DADDY"
+description = "Live governed execution and refusal tree"
+placement = "split"
+command = [
+  "node",
+  "--input-type=module",
+  "-e",
+  "import('node:url').then(({ pathToFileURL }) => import(pathToFileURL(process.env.HERDR_PLUGIN_ROOT + '/../dist/dashboard-cli.js').href)).then(m => m.runDashboard()).catch(e => { console.error(e); process.exitCode = 1; })"
+]

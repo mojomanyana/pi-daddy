@@ -1,0 +1,930 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/mojomanyana/pi-daddy/contracts/ledger/v3/ledger-event.schema.json",
+  "title": "pi-daddy ledgerVersion 3 event",
+  "description": "One JSON object per JSONL line. Version 3 adds unique execution identity and explicit parent execution identity; legacy and v2 lines are intentionally outside this schema.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/capabilityDecision"
+    },
+    {
+      "$ref": "#/$defs/workspaceLease"
+    },
+    {
+      "$ref": "#/$defs/childLifecycle"
+    },
+    {
+      "$ref": "#/$defs/checkReceipt"
+    },
+    {
+      "$ref": "#/$defs/workflowFact"
+    }
+  ],
+  "$defs": {
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": ":[0-5][0-9](?:\\.[0-9]+)?(?:[Zz]|[+-][0-9]{2}:[0-9]{2})$"
+    },
+    "correlation": {
+      "type": "object",
+      "description": "Opaque, non-authoritative controller metadata. String and aggregate byte limits are additionally enforced by the runtime and cannot be represented exactly in JSON Schema.",
+      "properties": {
+        "schema_version": {
+          "$ref": "#/$defs/ledgerCorrelationIdentifier"
+        },
+        "run_id": {
+          "$ref": "#/$defs/ledgerCorrelationIdentifier"
+        },
+        "task_id": {
+          "$ref": "#/$defs/ledgerCorrelationIdentifier"
+        },
+        "workspace_id": {
+          "$ref": "#/$defs/ledgerCorrelationIdentifier"
+        },
+        "context_id": {
+          "$ref": "#/$defs/ledgerCorrelationIdentifier"
+        },
+        "phase": {
+          "$ref": "#/$defs/ledgerCorrelationIdentifier"
+        },
+        "assurance": {
+          "$ref": "#/$defs/ledgerCorrelationIdentifier"
+        },
+        "assurance_effective": {
+          "$ref": "#/$defs/ledgerCorrelationIdentifier"
+        },
+        "policy_label": {
+          "$ref": "#/$defs/ledgerCorrelationIdentifier"
+        },
+        "assurance_source": {
+          "$ref": "#/$defs/ledgerCorrelationIdentifier"
+        },
+        "assurance_scope": {
+          "oneOf": [
+            {
+              "type": "object"
+            },
+            {
+              "type": "array"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            }
+          ]
+        },
+        "activated_at": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "plan_digest": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "definition_digest": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "task_digest": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "base_sha": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "head_sha": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "tree_sha": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "event_seq": {
+          "type": "number"
+        },
+        "last_change_seq": {
+          "type": "number"
+        },
+        "last_authority_seq": {
+          "type": "number"
+        },
+        "check_receipt_id": {
+          "type": "string",
+          "maxLength": 512
+        }
+      },
+      "additionalProperties": false
+    },
+    "ledgerDisplayIdentifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9@*][A-Za-z0-9@*._:/-]{0,511}$"
+    },
+    "ledgerCorrelationIdentifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9@*][A-Za-z0-9@*._:/-]{0,127}$"
+    },
+    "ledgerCapabilityIdentifier": {
+      "type": "string",
+      "pattern": "^(tool|skill|agent|workspace|ext):[A-Za-z0-9@*][A-Za-z0-9@*._/-]{0,255}$"
+    },
+    "refusalCode": {
+      "type": "string",
+      "enum": [
+        "CAPABILITY_ESCALATION",
+        "GRANT_ID_MALFORMED",
+        "DEFINITION_NOT_AUTHORIZED",
+        "UNDECLARED_TOOLS",
+        "UNKNOWN_TOOL",
+        "GATED_UNAPPROVED",
+        "APPROVAL_EXPIRED",
+        "APPROVAL_SCOPE_MISMATCH",
+        "APPROVAL_FLOW_FAILED",
+        "DEPTH_EXCEEDED",
+        "FANOUT_EXCEEDED",
+        "EXECUTOR_UNAVAILABLE",
+        "CHILD_TIMED_OUT",
+        "CHILD_CANCELLED",
+        "CHILD_EXIT_NONZERO",
+        "TASK_MISSING",
+        "UNKNOWN_DEFINITION",
+        "CEILING_PATTERNS_UNRESOLVED",
+        "NARROWING_VIOLATED",
+        "DEFINITION_UNREADABLE",
+        "CORRELATION_TOO_LARGE",
+        "CORRELATION_INVALID",
+        "LEDGER_WRITE_FAILED",
+        "FANOUT_FAILED",
+        "WORKSPACE_NOT_REGISTERED",
+        "WORKSPACE_NOT_AUTHORIZED",
+        "WORKSPACE_WRITE_CONFLICT",
+        "WORKSPACE_LEASE_STALE",
+        "CHECK_NOT_CONFIGURED",
+        "CHECK_CONFIGURATION_INVALID",
+        "CHECK_IDENTITY_UNAVAILABLE",
+        "CHECK_IDENTITY_MISMATCH"
+      ]
+    },
+    "refusal": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/refusalCode"
+        },
+        "message": {
+          "type": "string"
+        },
+        "details": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean",
+              "null"
+            ]
+          }
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "additionalProperties": false
+    },
+    "approvalSource": {
+      "type": "string",
+      "enum": [
+        "prompt",
+        "session",
+        "persisted",
+        "inherited"
+      ]
+    },
+    "approvalScope": {
+      "type": "string",
+      "enum": [
+        "once",
+        "session",
+        "always"
+      ]
+    },
+    "approvalUse": {
+      "type": "object",
+      "properties": {
+        "max": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "remaining": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "max",
+        "remaining"
+      ],
+      "additionalProperties": false
+    },
+    "definitionDigest": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{64}$"
+        }
+      },
+      "required": [
+        "name",
+        "source",
+        "sha256"
+      ],
+      "additionalProperties": false
+    },
+    "capabilityDecision": {
+      "type": "object",
+      "properties": {
+        "ledgerVersion": {
+          "const": 3
+        },
+        "event": {
+          "const": "capability_decision"
+        },
+        "ts": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "parentId": {
+          "$ref": "#/$defs/ledgerDisplayIdentifier"
+        },
+        "childId": {
+          "$ref": "#/$defs/ledgerDisplayIdentifier"
+        },
+        "depth": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "agentType": {
+          "$ref": "#/$defs/ledgerDisplayIdentifier"
+        },
+        "requested": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ledgerCapabilityIdentifier"
+          }
+        },
+        "parentGrant": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ledgerCapabilityIdentifier"
+          }
+        },
+        "effective": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ledgerCapabilityIdentifier"
+          }
+        },
+        "denied": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ledgerCapabilityIdentifier"
+          }
+        },
+        "clipped": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ledgerCapabilityIdentifier"
+          }
+        },
+        "gatedBlocked": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ledgerCapabilityIdentifier"
+          }
+        },
+        "blocked": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "approved": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ledgerCapabilityIdentifier"
+          }
+        },
+        "approvalSource": {
+          "$ref": "#/$defs/approvalSource"
+        },
+        "approvalSources": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/ledgerCapabilityIdentifier"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/approvalSource"
+          }
+        },
+        "approvalScopes": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/ledgerCapabilityIdentifier"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/approvalScope"
+          }
+        },
+        "approvalExpiresAt": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/ledgerCapabilityIdentifier"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/timestamp"
+          }
+        },
+        "approvalUses": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/ledgerCapabilityIdentifier"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/approvalUse"
+          }
+        },
+        "approvalScope": {
+          "$ref": "#/$defs/approvalScope"
+        },
+        "humanDenied": {
+          "const": true
+        },
+        "gateOutcome": {
+          "type": "string",
+          "enum": [
+            "declined",
+            "dismissed",
+            "no-ui",
+            "error"
+          ]
+        },
+        "definitionDigest": {
+          "$ref": "#/$defs/definitionDigest"
+        },
+        "executor": {
+          "type": "string",
+          "enum": [
+            "process",
+            "herdr"
+          ]
+        },
+        "taskFrom": {
+          "$ref": "#/$defs/ledgerDisplayIdentifier"
+        },
+        "taskDigest": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{64}$"
+        },
+        "correlation": {
+          "$ref": "#/$defs/correlation"
+        },
+        "refusal": {
+          "$ref": "#/$defs/refusal"
+        },
+        "executionId": {
+          "$ref": "#/$defs/executionId"
+        },
+        "parentExecutionId": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/executionId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "taskFromExecutionId": {
+          "$ref": "#/$defs/executionId"
+        }
+      },
+      "required": [
+        "ledgerVersion",
+        "event",
+        "ts",
+        "executionId",
+        "parentExecutionId",
+        "parentId",
+        "childId",
+        "depth",
+        "requested",
+        "parentGrant",
+        "effective",
+        "denied",
+        "clipped",
+        "gatedBlocked",
+        "blocked",
+        "executor",
+        "taskDigest"
+      ],
+      "additionalProperties": false
+    },
+    "workspaceLease": {
+      "type": "object",
+      "properties": {
+        "ledgerVersion": {
+          "const": 3
+        },
+        "event": {
+          "const": "workspace_lease"
+        },
+        "ts": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "childId": {
+          "$ref": "#/$defs/ledgerDisplayIdentifier"
+        },
+        "workspaceId": {
+          "$ref": "#/$defs/ledgerDisplayIdentifier"
+        },
+        "root": {
+          "type": "string",
+          "minLength": 1
+        },
+        "access": {
+          "type": "string",
+          "enum": [
+            "read",
+            "write"
+          ]
+        },
+        "outcome": {
+          "type": "string",
+          "enum": [
+            "acquired",
+            "uncontended",
+            "refused",
+            "released",
+            "released-unrecorded",
+            "lost",
+            "retained",
+            "timeout",
+            "recovered"
+          ]
+        },
+        "recovered": {
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "const": "unknown"
+            }
+          ]
+        },
+        "releaseReason": {
+          "type": "string"
+        },
+        "refusal": {
+          "$ref": "#/$defs/refusal"
+        },
+        "correlation": {
+          "$ref": "#/$defs/correlation"
+        },
+        "executionId": {
+          "$ref": "#/$defs/executionId"
+        },
+        "parentExecutionId": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/executionId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "ledgerVersion",
+        "event",
+        "ts",
+        "executionId",
+        "parentExecutionId",
+        "childId",
+        "workspaceId",
+        "root",
+        "access",
+        "outcome"
+      ],
+      "additionalProperties": false
+    },
+    "childLifecycle": {
+      "type": "object",
+      "properties": {
+        "ledgerVersion": {
+          "const": 3
+        },
+        "event": {
+          "const": "child_lifecycle"
+        },
+        "ts": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "childId": {
+          "$ref": "#/$defs/ledgerDisplayIdentifier"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "starting",
+            "running",
+            "completed",
+            "failed"
+          ]
+        },
+        "executor": {
+          "type": "string",
+          "enum": [
+            "process",
+            "herdr"
+          ]
+        },
+        "exitCode": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "signal": {
+          "oneOf": [
+            {
+              "type": "string",
+              "enum": [
+                "SIGABRT",
+                "SIGALRM",
+                "SIGBUS",
+                "SIGCHLD",
+                "SIGCONT",
+                "SIGFPE",
+                "SIGHUP",
+                "SIGILL",
+                "SIGINT",
+                "SIGIO",
+                "SIGIOT",
+                "SIGKILL",
+                "SIGPIPE",
+                "SIGPOLL",
+                "SIGPROF",
+                "SIGPWR",
+                "SIGQUIT",
+                "SIGSEGV",
+                "SIGSTKFLT",
+                "SIGSTOP",
+                "SIGSYS",
+                "SIGTERM",
+                "SIGTRAP",
+                "SIGTSTP",
+                "SIGTTIN",
+                "SIGTTOU",
+                "SIGUNUSED",
+                "SIGURG",
+                "SIGUSR1",
+                "SIGUSR2",
+                "SIGVTALRM",
+                "SIGWINCH",
+                "SIGXCPU",
+                "SIGXFSZ",
+                "SIGBREAK",
+                "SIGLOST",
+                "SIGINFO"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "timedOut": {
+          "const": true
+        },
+        "aborted": {
+          "const": true
+        },
+        "truncated": {
+          "const": true
+        },
+        "reason": {
+          "type": "string"
+        },
+        "correlation": {
+          "$ref": "#/$defs/correlation"
+        },
+        "executionId": {
+          "$ref": "#/$defs/executionId"
+        },
+        "parentExecutionId": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/executionId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "deadlineAt": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "herdrPaneId": {
+          "$ref": "#/$defs/ledgerDisplayIdentifier"
+        },
+        "herdrAgentName": {
+          "$ref": "#/$defs/ledgerDisplayIdentifier"
+        }
+      },
+      "required": [
+        "ledgerVersion",
+        "event",
+        "ts",
+        "executionId",
+        "parentExecutionId",
+        "childId",
+        "state",
+        "executor"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "enum": [
+                  "starting",
+                  "running"
+                ]
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          "then": {
+            "required": [
+              "deadlineAt"
+            ]
+          }
+        },
+        {
+          "if": {
+            "anyOf": [
+              {
+                "required": [
+                  "herdrPaneId"
+                ]
+              },
+              {
+                "required": [
+                  "herdrAgentName"
+                ]
+              }
+            ]
+          },
+          "then": {
+            "required": [
+              "herdrPaneId",
+              "herdrAgentName"
+            ],
+            "properties": {
+              "executor": {
+                "const": "herdr"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "checkReceipt": {
+      "type": "object",
+      "properties": {
+        "ledgerVersion": {
+          "const": 3
+        },
+        "event": {
+          "const": "check_receipt"
+        },
+        "ts": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "childId": {
+          "$ref": "#/$defs/ledgerDisplayIdentifier"
+        },
+        "receiptId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{64}$"
+        },
+        "workspaceId": {
+          "$ref": "#/$defs/ledgerDisplayIdentifier"
+        },
+        "checkId": {
+          "$ref": "#/$defs/ledgerDisplayIdentifier"
+        },
+        "treeSha": {
+          "type": "string",
+          "minLength": 1
+        },
+        "correlation": {
+          "$ref": "#/$defs/correlation"
+        },
+        "executionId": {
+          "$ref": "#/$defs/executionId"
+        },
+        "parentExecutionId": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/executionId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "ledgerVersion",
+        "event",
+        "ts",
+        "executionId",
+        "parentExecutionId",
+        "childId",
+        "receiptId",
+        "workspaceId",
+        "checkId",
+        "treeSha"
+      ],
+      "additionalProperties": false
+    },
+    "executionId": {
+      "type": "string",
+      "pattern": "^exec:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+    },
+    "workflowFact": {
+      "type": "object",
+      "properties": {
+        "ledgerVersion": {
+          "const": 3
+        },
+        "event": {
+          "const": "workflow_fact"
+        },
+        "ts": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "factId": {
+          "type": "string",
+          "pattern": "^fact:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+        },
+        "source": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"
+        },
+        "provenance": {
+          "enum": [
+            "planned",
+            "observed",
+            "controller_validated"
+          ]
+        },
+        "kind": {
+          "enum": [
+            "workflow_phase",
+            "inline_skill",
+            "transition"
+          ]
+        },
+        "subject": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"
+        },
+        "state": {
+          "enum": [
+            "pending",
+            "observed",
+            "started",
+            "completed",
+            "blocked"
+          ]
+        },
+        "correlation": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/correlation"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "run_id": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "run_id"
+              ]
+            }
+          ]
+        }
+      },
+      "required": [
+        "ledgerVersion",
+        "event",
+        "ts",
+        "factId",
+        "source",
+        "provenance",
+        "kind",
+        "subject",
+        "state",
+        "correlation"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "provenance": {
+                "const": "planned"
+              }
+            },
+            "required": [
+              "provenance"
+            ]
+          },
+          "then": {
+            "properties": {
+              "state": {
+                "const": "pending"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "provenance": {
+                "const": "observed"
+              }
+            },
+            "required": [
+              "provenance"
+            ]
+          },
+          "then": {
+            "properties": {
+              "state": {
+                "const": "observed"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "provenance": {
+                "const": "controller_validated"
+              }
+            },
+            "required": [
+              "provenance"
+            ]
+          },
+          "then": {
+            "properties": {
+              "state": {
+                "enum": [
+                  "started",
+                  "completed",
+                  "blocked"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

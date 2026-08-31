@@ -19,126 +19,41 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import type { InheritableApproval } from "../src/approval.ts";
-import { DELEGATE_SUBJECT, shouldSeekApproval } from "../src/approval.ts";
-import { chainStepSpec, PLACEHOLDER, type ChainStep } from "../src/chain.ts";
-import { planDelegation } from "../src/delegate.ts";
+import { DELEGATE_SUBJECT } from "../src/approval.ts";
+import { chainStepSpec, PLACEHOLDER } from "../src/chain.ts";
 import { MAX_CHAIN_STEPS, childSpawnId, splitBudget } from "../src/fanout.ts";
 import { PAINT_INTERVAL_MS, appendTail, emptyTail, renderProgress, replaceTail, throttle, type ChildProgress } from "../src/progress.ts";
-import type { Capability } from "../src/resolve.ts";
 import { recordChainRefusal } from "./chain-ledger.ts";
-import { obtainApprovals, snapshotOf } from "./approvals.ts";
+import { obtainApprovals, snapshotOf, type ApprovalOutcome } from "./approvals.ts";
 import { runOneDelegation } from "./run-delegation.ts";
 import { isCriticalAssuranceBlock } from "./execute-child.ts";
 import type { GrantsSession } from "./session.ts";
 import { GovernanceRefusal, refusal, type StructuredRefusal } from "../src/refusals.ts";
 import { chainApprovalFacts, newChainApprovalAudit, rememberChainApproval } from "./chain-approval-facts.ts";
+import { newExecutionId } from "../src/execution-id.ts";
+import { planChain, type GateRequest } from "./chain-plan.ts";
 
-/** One step of a chain, as the model describes it. */
-type StepSpec = ChainStep;
-
-/**
- * One dialog's worth of gate: a single capability, for a single subject, described by the step that needs it.
- *
- * **One request per `capability@subject`, not per subject.** Grouping by subject alone merged every `tools:`-only
- * step under the constant `<delegate>` and froze the *first* step's task into the dialog — so an operator approved
- * `tool:write` while reading a task that only listed files. The dialog is the one place a human learns what they are
- * authorising, so it names the step that actually needs the capability.
- */
-interface GateRequest {
-  subject: string;
-  /** `"definition"` offers `always`; `"delegate"` must not (ADR-0019). Derived from the subject, never assumed. */
-  path: "definition" | "delegate";
-  capability: Capability;
-  /** The task of the step that needs this capability. */
-  task: string;
-  stepIndex: number;
-  plan: ReturnType<typeof planDelegation>;
-}
-
-/** Either every gate the chain will hit, or the first step that can never run and why. */
-interface ChainPlan {
-  requests: GateRequest[];
-  /** Exact approval keys each step would spend, including duplicate subjects across steps. */
-  uses: Map<number, Set<string>>;
-  /** Set when a step is refused for a reason no approval can fix. The chain must refuse before asking anyone. */
-  doomed?: { step: number; reason: string; plan: ReturnType<typeof planDelegation>; agent?: string; refusal?: StructuredRefusal };
-}
-
-/**
- * Plan every step and collect the gates — or find a step that can never run.
- *
- * **`plan.ok` is honoured here, and ignoring it was a privilege path.** The first version read only
- * `gatedBlocked`, so a step refused for an unheld `agent:` id, an unknown definition, an empty task or a universal
- * capability still raised its gate and the answer was still banked. Measured: `delegate({tools:["bash","agent:x"]})`
- * asks nobody and refuses, while the same step inside a chain raised a dialog, took *Allow for this session*, refused
- * anyway — and left `tool:bash` pre-approved for every later delegation in the session. On the `agent:` path it
- * banked a **30-day** entry, including for a step whose task was whitespace, whose dialog therefore read `task:`
- * followed by nothing.
- *
- * `shouldSeekApproval` is the rule every other gate in this package already applies, and its own docstring names
- * this hazard: *"both banked against a spawn that never happened, and both reachable by a model that appends one
- * unheld capability to an otherwise ordinary request."* The chain reimplemented the decision beside it instead of
- * routing through it. So a doomed step now refuses the whole chain **before any dialog**, which is the same
- * principle the executor check follows.
- *
- * Planned with no UI: `planWithApprovals` would open a dialog per step during the very phase whose purpose is to ask
- * upfront. A step's task is unknown for everything after the first, which is fine — an approval key never contains
- * the task (ADR-0021), so the set of gates is fully determined without it.
- */
-async function planChain(session: GrantsSession, steps: StepSpec[], perStepBudget: number): Promise<ChainPlan> {
-  const requests: GateRequest[] = [];
-  const uses = new Map<number, Set<string>>();
-  const seen = new Set<string>();
-  const context = await session.delegationContext();
-
-  for (const [index, step] of steps.entries()) {
-    // The real task, not a placeholder: the planner's own empty-task guard must run here rather than at spawn time,
-    // or a step with a whitespace task raises a dialog and is refused afterwards. The handoff is absent at planning
-    // time and cannot change which capabilities are gated.
-    const plan = planDelegation(
-      {
-        task: step.task,
-        agent: step.agent,
-        tools: step.tools,
-        model: step.model,
-        correlation: step.workspace
-          ? { ...(step.correlation ?? {}), workspace_id: step.workspace.workspace_id }
-          : step.correlation,
-        // Routing spec, not the model's correlation claim — see R-110 in `src/correlation.ts`.
-        boundWorkspaceId: step.workspace?.workspace_id,
-        boundContextId: step.correlation?.context_id,
-      },
-      { ...context, spawnId: session.ownSpawnId, childSpawnId: childSpawnId(session.ownSpawnId, index) },
-    );
-
-    // A gate is the ONLY refusal an approval can lift. Anything else is doomed, and asking about it banks authority
-    // for a spawn that will never happen.
-    if (!plan.ok && !shouldSeekApproval(plan.result)) {
-      return {
-        requests: [], uses, doomed: {
-          step: index + 1, reason: plan.reason ?? "this step cannot run", plan, agent: step.agent,
-          ...(plan.refusal ? { refusal: plan.refusal } : {}),
-        },
-      };
-    }
-
-    // A correlated approval is bound to the exact task. Step N's final task does not exist until step N-1
-    // finishes, so asking upfront would bind the template and then spend it on different instructions.
-    // Legacy chains keep their upfront dialogs; correlated steps gate when their composed task exists.
-    if (plan.approvalBinding) continue;
-
-    const subject = step.agent ?? DELEGATE_SUBJECT;
-    uses.set(index, new Set(plan.result.gatedBlocked.map((capability) => `${capability}@${subject}`)));
-    for (const capability of plan.result.gatedBlocked) {
-      const key = `${capability}@${subject}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      requests.push({
-        subject, path: step.agent ? "definition" : "delegate", capability, task: step.task, stepIndex: index, plan,
-      });
-    }
-  }
-  return { requests, uses };
+/** One chain step is one execution occurrence, however many capability dialogs contributed to its answer. */
+function mergeGateOutcomes(outcomes: readonly ApprovalOutcome[]): ApprovalOutcome {
+  const merged = {
+    approved: [...new Set(outcomes.flatMap((outcome) => outcome.approved))],
+    sources: Object.assign({}, ...outcomes.map((outcome) => outcome.sources)),
+    scopes: Object.assign({}, ...outcomes.map((outcome) => outcome.scopes)),
+    recordedScopes: Object.assign({}, ...outcomes.map((outcome) => outcome.recordedScopes)),
+    bindings: Object.assign({}, ...outcomes.map((outcome) => outcome.bindings)),
+    expiresAt: Object.assign({}, ...outcomes.map((outcome) => outcome.expiresAt)),
+    uses: Object.assign({}, ...outcomes.map((outcome) => outcome.uses)),
+    humanDenied: outcomes.some((outcome) => outcome.humanDenied),
+  } satisfies ApprovalOutcome;
+  const last = outcomes.findLast((outcome) => outcome.gateOutcome !== undefined);
+  const banked = outcomes.flatMap((outcome) => outcome.banked ?? []);
+  return {
+    ...merged,
+    ...(last?.gateOutcome ? { gateOutcome: last.gateOutcome } : {}),
+    ...(last?.refusalCode ? { refusalCode: last.refusalCode } : {}),
+    ...(last?.reason ? { reason: last.reason } : {}),
+    ...(banked.length > 0 ? { banked } : {}),
+  };
 }
 
 export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): void {
@@ -209,12 +124,15 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
 
       // Plan every step first. A step that can never run refuses the chain HERE, before anyone is asked — see
       // `planChain`.
-      const chainPlan = await planChain(session, steps, split.perChild);
+      const executionIds = steps.map(() => newExecutionId());
+      const parentExecutionId = session.ownExecutionId ?? null;
+      const chainPlan = await planChain(session, steps, executionIds);
       if (chainPlan.doomed) {
         const message = `chain refused at step ${chainPlan.doomed.step}: ${chainPlan.doomed.reason} No step ran, and nobody was ` +
           `asked to approve anything — a step that cannot run must not bank authority for a spawn that will never happen.`;
         await recordChainRefusal({
           session, plan: chainPlan.doomed.plan, stepIndex: chainPlan.doomed.step - 1,
+          executionId: executionIds[chainPlan.doomed.step - 1], parentExecutionId,
           agent: chainPlan.doomed.agent, reason: message, refusal: chainPlan.doomed.refusal,
         });
         if (chainPlan.doomed.refusal) throw new GovernanceRefusal({ ...chainPlan.doomed.refusal, message });
@@ -255,16 +173,29 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
         const message = `chain refused: ${request.capability} was not approved for ${request.subject}, so no step ran. A chain ` +
           `is gated as a unit — running only its approved steps would return a partial result that reads like a complete one.`;
         const structured = outcome.refusalCode ? refusal(outcome.refusalCode, message) : undefined;
+        const decisions = new Map<number, { request: GateRequest; outcomes: ApprovalOutcome[]; refusal?: typeof structured }>();
         for (const approved of approvedDecisions) {
+          const decision = decisions.get(approved.request.stepIndex) ?? {
+            request: approved.request,
+            outcomes: [],
+          };
+          decision.outcomes.push(approved.outcome);
+          decisions.set(approved.request.stepIndex, decision);
+        }
+        const deniedDecision = decisions.get(request.stepIndex) ?? { request, outcomes: [] };
+        deniedDecision.request = request;
+        deniedDecision.outcomes.push(outcome);
+        deniedDecision.refusal = structured;
+        decisions.set(request.stepIndex, deniedDecision);
+
+        for (const [stepIndex, decision] of [...decisions].sort(([left], [right]) => left - right)) {
           await recordChainRefusal({
-            session, plan: approved.request.plan, stepIndex: approved.request.stepIndex,
-            agent: steps[approved.request.stepIndex]?.agent, reason: message, approval: approved.outcome,
+            session, plan: decision.request.plan, stepIndex,
+            executionId: executionIds[stepIndex], parentExecutionId,
+            agent: steps[stepIndex]?.agent, reason: message, refusal: decision.refusal,
+            approval: mergeGateOutcomes(decision.outcomes),
           });
         }
-        await recordChainRefusal({
-          session, plan: request.plan, stepIndex: request.stepIndex, agent: steps[request.stepIndex]?.agent,
-          reason: message, refusal: structured, approval: outcome,
-        });
         if (structured) throw new GovernanceRefusal(structured);
         throw new Error(message);
       }
@@ -276,9 +207,13 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
         tail: emptyTail,
       }));
       const paint = throttle(() => {
-        (onUpdate as ((partial: { content: Array<{ type: "text"; text: string }> }) => void) | undefined)?.({
-          content: [{ type: "text", text: renderProgress(children, session.executor.kind, Date.now()) }],
-        });
+        try {
+          (onUpdate as ((partial: { content: Array<{ type: "text"; text: string }> }) => void) | undefined)?.({
+            content: [{ type: "text", text: renderProgress(children, session.executor.kind, Date.now()) }],
+          });
+        } catch {
+          // Display only: a broken partial-result sink must not become a child cancellation mechanism.
+        }
       }, PAINT_INTERVAL_MS);
 
       const outcomes: Array<{
@@ -310,7 +245,12 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
         const outcome = await runOneDelegation(
           session,
           chainStepSpec(step, previous),
-          { parentId: session.ownSpawnId, childId },
+          {
+            parentId: session.ownSpawnId,
+            childId,
+            executionId: executionIds[index],
+            parentExecutionId,
+          },
           split.perChild,
           ctx,
           signal,
@@ -331,6 +271,7 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
             },
             // Provenance: which child's output composed THIS step's task (ADR-0033). Absent for step 1.
             taskFrom: index === 0 ? undefined : childSpawnId(session.ownSpawnId, index - 1),
+            taskFromExecutionId: index === 0 ? undefined : executionIds[index - 1],
           },
         );
 

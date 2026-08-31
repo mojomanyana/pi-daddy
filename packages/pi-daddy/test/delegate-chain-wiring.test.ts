@@ -16,6 +16,7 @@ import { after, afterEach, test } from "node:test";
 import { ENV_HERDR } from "../src/executor.ts";
 import { MAX_CHAIN_STEPS } from "../src/fanout.ts";
 import { ENV_FANOUT, ENV_GATED, ENV_GRANT, ENV_LEDGER } from "../src/propagation.ts";
+import { parseDashboardLedger } from "../src/dashboard-projection.ts";
 import { definition, harness, restoreEnv } from "./chain-harness.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
@@ -351,4 +352,35 @@ test("ADR-0033: a gate-refused chain WRITES a ledger line naming the refused sub
   assert.ok(banked, "an earlier approval that remains active must not disappear when a later gate declines");
   assert.equal(banked.approvalSources["tool:bash"], "prompt");
   assert.equal(banked.refusal, undefined, "a banked yes must not retain the stale pre-approval refusal");
+});
+
+test("ledger v3: mixed gate outcomes on ONE chain step remain one execution decision", async () => {
+  const dir = await tempDir("grants-chain-mixed-gate-");
+  const ledger = join(dir, "ledger.jsonl");
+  const { tools, ctx } = await harness(
+    {
+      [ENV_GRANT]: "tool:read,tool:write,tool:delegate",
+      [ENV_GATED]: "tool:read,tool:write",
+      [ENV_LEDGER]: ledger,
+      [ENV_FANOUT]: "12",
+    },
+    dir,
+    "allow-then-decline",
+  );
+
+  await tools
+    .get("delegate_chain")!
+    .execute("c", { steps: [{ task: "needs two gates", tools: ["read", "write"] }] }, undefined, undefined, ctx)
+    .catch(() => undefined);
+
+  const text = await readFile(ledger, "utf8");
+  const decisions = text.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
+  assert.equal(decisions.length, 1, "one execution occurrence must have one capability decision");
+  assert.deepEqual(decisions[0].approved, ["tool:read"]);
+  assert.equal(decisions[0].humanDenied, true);
+  assert.equal(decisions[0].gateOutcome, "declined");
+  const projection = parseDashboardLedger(text);
+  assert.equal(projection.corrupt.length, 0, "the package must not emit a ledger its own dashboard rejects");
+  assert.equal(projection.nodes.length, 1);
+  assert.equal(projection.nodes[0].state, "refused");
 });

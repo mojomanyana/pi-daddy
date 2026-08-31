@@ -1,5 +1,5 @@
 /**
- * The v2 runtime-event half of the ledger: workspace leases, child lifecycle and check receipts, with
+ * The v3 runtime-event half of the ledger: workspace leases, child lifecycle and check receipts, with
  * their builders. Split out of `./ledger.ts` only to stay under the 400-line module ceiling this
  * project enforces mechanically; `./ledger.ts` re-exports everything here, so "the ledger module"
  * remains one import.
@@ -8,6 +8,9 @@ import { LEDGER_VERSION, type LedgerEventBase, type GrantRecord } from "./ledger
 import type { ExecutorKind } from "./executor.ts";
 import type { CorrelationMetadata } from "./correlation.ts";
 import type { StructuredRefusal } from "./refusals.ts";
+import { assertExecutionId } from "./execution-id.ts";
+import type { WorkflowFactEvent } from "./workflow-facts.ts";
+import { assertLedgerV3Wire } from "./ledger-v3-validation.ts";
 
 export const WORKSPACE_ACCESSES = ["read", "write"] as const;
 export type WorkspaceAccess = typeof WORKSPACE_ACCESSES[number];
@@ -15,10 +18,10 @@ export type WorkspaceAccess = typeof WORKSPACE_ACCESSES[number];
 export const WORKSPACE_RECOVERY_VALUES = [false, true, "unknown"] as const;
 export type WorkspaceRecovery = typeof WORKSPACE_RECOVERY_VALUES[number];
 
-export const CHILD_LIFECYCLE_STATES = ["starting", "completed", "failed"] as const;
+export const CHILD_LIFECYCLE_STATES = ["starting", "running", "completed", "failed"] as const;
 export type ChildLifecycleState = typeof CHILD_LIFECYCLE_STATES[number];
 
-/** The complete Node signal vocabulary accepted by a v2 child-lifecycle event. */
+/** The complete Node signal vocabulary accepted by a v3 child-lifecycle event. */
 export const CHILD_PROCESS_SIGNALS = [
   "SIGABRT", "SIGALRM", "SIGBUS", "SIGCHLD", "SIGCONT", "SIGFPE", "SIGHUP", "SIGILL", "SIGINT", "SIGIO",
   "SIGIOT", "SIGKILL", "SIGPIPE", "SIGPOLL", "SIGPROF", "SIGPWR", "SIGQUIT", "SIGSEGV", "SIGSTKFLT",
@@ -47,6 +50,8 @@ export type WorkspaceLeaseOutcome = typeof WORKSPACE_LEASE_OUTCOMES[number];
 export interface WorkspaceLeaseEvent extends LedgerEventBase {
   ledgerVersion: typeof LEDGER_VERSION;
   event: "workspace_lease";
+  executionId: string;
+  parentExecutionId: string | null;
   childId: string;
   workspaceId: string;
   root: string;
@@ -61,9 +66,16 @@ export interface WorkspaceLeaseEvent extends LedgerEventBase {
 export interface ChildLifecycleEvent extends LedgerEventBase {
   ledgerVersion: typeof LEDGER_VERSION;
   event: "child_lifecycle";
+  executionId: string;
+  parentExecutionId: string | null;
   childId: string;
   state: ChildLifecycleState;
   executor: ExecutorKind;
+  /** Bound after which a non-terminal start is known to be incomplete. */
+  deadlineAt?: string;
+  /** Herdr runtime identity is observational and never an enforcement boundary. */
+  herdrPaneId?: string;
+  herdrAgentName?: string;
   exitCode?: number | null;
   signal?: ChildProcessSignal | null;
   timedOut?: true;
@@ -75,6 +87,8 @@ export interface ChildLifecycleEvent extends LedgerEventBase {
 export interface CheckReceiptLedgerEvent extends LedgerEventBase {
   ledgerVersion: typeof LEDGER_VERSION;
   event: "check_receipt";
+  executionId: string;
+  parentExecutionId: string | null;
   childId: string;
   receiptId: string;
   workspaceId: string;
@@ -85,6 +99,8 @@ export interface CheckReceiptLedgerEvent extends LedgerEventBase {
 export type CapabilityDecisionEvent = GrantRecord & {
   ledgerVersion: typeof LEDGER_VERSION;
   event: "capability_decision";
+  executionId: string;
+  parentExecutionId: string | null;
   taskDigest: string;
 };
 
@@ -92,9 +108,12 @@ export type RuntimeLedgerEvent =
   | CapabilityDecisionEvent
   | WorkspaceLeaseEvent
   | ChildLifecycleEvent
-  | CheckReceiptLedgerEvent;
+  | CheckReceiptLedgerEvent
+  | WorkflowFactEvent;
 
 export function buildWorkspaceLeaseEvent(args: {
+  executionId: string;
+  parentExecutionId: string | null;
   childId: string;
   workspaceId: string;
   root: string;
@@ -106,10 +125,13 @@ export function buildWorkspaceLeaseEvent(args: {
   correlation?: CorrelationMetadata;
   now: Date;
 }): WorkspaceLeaseEvent {
-  return {
+  assertEventIdentity(args);
+  return assertLedgerV3Wire({
     ledgerVersion: LEDGER_VERSION,
     event: "workspace_lease",
     ts: args.now.toISOString(),
+    executionId: args.executionId,
+    parentExecutionId: args.parentExecutionId,
     childId: args.childId,
     workspaceId: args.workspaceId,
     root: args.root,
@@ -123,10 +145,12 @@ export function buildWorkspaceLeaseEvent(args: {
     ...(args.releaseReason ? { releaseReason: args.releaseReason } : {}),
     ...(args.refusal ? { refusal: structuredClone(args.refusal) } : {}),
     ...(args.correlation ? { correlation: structuredClone(args.correlation) } : {}),
-  };
+  });
 }
 
 export function buildCheckReceiptLedgerEvent(args: {
+  executionId: string;
+  parentExecutionId: string | null;
   childId: string;
   receiptId: string;
   workspaceId: string;
@@ -135,26 +159,34 @@ export function buildCheckReceiptLedgerEvent(args: {
   correlation?: CorrelationMetadata;
   now: Date;
 }): CheckReceiptLedgerEvent {
+  assertEventIdentity(args);
   if (!/^[a-f0-9]{64}$/i.test(args.receiptId)) {
     throw new TypeError("receiptId must be a SHA-256 hex digest");
   }
-  return {
+  return assertLedgerV3Wire({
     ledgerVersion: LEDGER_VERSION,
     event: "check_receipt",
     ts: args.now.toISOString(),
+    executionId: args.executionId,
+    parentExecutionId: args.parentExecutionId,
     childId: args.childId,
     receiptId: args.receiptId,
     workspaceId: args.workspaceId,
     checkId: args.checkId,
     treeSha: args.treeSha,
     ...(args.correlation ? { correlation: structuredClone(args.correlation) } : {}),
-  };
+  });
 }
 
 export function buildChildLifecycleEvent(args: {
+  executionId: string;
+  parentExecutionId: string | null;
   childId: string;
   state: ChildLifecycleState;
   executor: ExecutorKind;
+  deadlineAt?: string;
+  herdrPaneId?: string;
+  herdrAgentName?: string;
   exitCode?: number | null;
   signal?: ChildProcessSignal | null;
   timedOut?: boolean;
@@ -164,13 +196,19 @@ export function buildChildLifecycleEvent(args: {
   correlation?: CorrelationMetadata;
   now: Date;
 }): ChildLifecycleEvent {
-  return {
+  assertEventIdentity(args);
+  return assertLedgerV3Wire({
     ledgerVersion: LEDGER_VERSION,
     event: "child_lifecycle",
     ts: args.now.toISOString(),
+    executionId: args.executionId,
+    parentExecutionId: args.parentExecutionId,
     childId: args.childId,
     state: args.state,
     executor: args.executor,
+    ...(args.deadlineAt ? { deadlineAt: args.deadlineAt } : {}),
+    ...(args.herdrPaneId ? { herdrPaneId: args.herdrPaneId } : {}),
+    ...(args.herdrAgentName ? { herdrAgentName: args.herdrAgentName } : {}),
     ...(args.exitCode !== undefined ? { exitCode: args.exitCode } : {}),
     ...(args.signal !== undefined ? { signal: args.signal } : {}),
     ...(args.timedOut ? { timedOut: true } : {}),
@@ -178,5 +216,11 @@ export function buildChildLifecycleEvent(args: {
     ...(args.truncated ? { truncated: true } : {}),
     ...(args.reason ? { reason: args.reason } : {}),
     ...(args.correlation ? { correlation: structuredClone(args.correlation) } : {}),
-  };
+  });
+}
+
+function assertEventIdentity(args: { executionId: string; parentExecutionId: string | null }): void {
+  assertExecutionId(args.executionId);
+  if (args.parentExecutionId !== null) assertExecutionId(args.parentExecutionId, "parentExecutionId");
+  if (args.parentExecutionId === args.executionId) throw new TypeError("an execution cannot be its own parent");
 }

@@ -19,8 +19,8 @@ import {
 // charged to every caller for a line count they did not cause.
 export { DELEGATE_CAPABILITY, agentCapability, maySpawnDefinition, normaliseCapability } from "./capabilities.ts";
 import {
-  ENV_APPROVED, ENV_DEPTH, ENV_FANOUT, ENV_GATED, ENV_GRANT, ENV_LEDGER, ENV_MAX_DEPTH, ENV_PARENT_ID,
-  inheritableGrant,
+  ENV_APPROVED, ENV_DEPTH, ENV_EXECUTION_ID, ENV_FANOUT, ENV_GATED, ENV_GRANT, ENV_LEDGER, ENV_MAX_DEPTH,
+  ENV_PARENT_ID, inheritableGrant,
 } from "./propagation.ts";
 import { inheritApprovals, type InheritableApproval } from "./approval.ts";
 import { suggestForUnknown, unknownCapabilities, type Catalog } from "./catalog.ts";
@@ -309,6 +309,7 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
   // process boundaries with no shared state.
   if (ctx.fanoutBudget !== undefined) env[ENV_FANOUT] = String(ctx.fanoutBudget);
   if (ctx.childSpawnId) env[ENV_PARENT_ID] = ctx.childSpawnId;
+  if (ctx.childExecutionId) env[ENV_EXECUTION_ID] = ctx.childExecutionId;
   if (ctx.gated.length > 0) env[ENV_GATED] = ctx.gated.join(",");
   // Approvals ride down with the grant, but only ever for what this child actually received — so
   // `approved ⊆ grant` holds at every level (ADR-0010). Written even when empty, so this object states
@@ -330,6 +331,7 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
     childDepth,
     requested,
     childId: ctx.childSpawnId,
+    executionId: ctx.childExecutionId,
     taskDigest,
     ...(correlation ? { correlation } : {}),
     ...(approvalBinding ? { approvalBinding } : {}),

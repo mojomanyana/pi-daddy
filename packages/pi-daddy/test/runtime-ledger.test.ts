@@ -16,8 +16,9 @@ after(cleanupTempDirs);
 
 const result = { effective: ["tool:read"], denied: [], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] };
 
-test("ledger v2 capability decisions carry correlation, trusted digests, and structured refusal separately", () => {
+test("ledger v3 capability decisions carry correlation, trusted digests, identity and refusal separately", () => {
   const record = buildRecord({
+    executionId: "exec:00000000-0000-4000-8000-000000000001", parentExecutionId: null,
     parentId: "d0", childId: "d0.1", depth: 1, requested: ["tool:read"], parentGrant: ["tool:read"],
     result, blocked: true, reason: "workspace busy", executor: "process", now: new Date("2026-08-19T20:00:00Z"),
     taskDigest: "a".repeat(64),
@@ -28,7 +29,7 @@ test("ledger v2 capability decisions carry correlation, trusted digests, and str
     approvalExpiresAt: { "tool:read": "2026-09-18T20:00:00.000Z" },
     approvalUses: { "tool:read": { max: 1, remaining: 0 } },
   });
-  assert.equal(record.ledgerVersion, 2);
+  assert.equal(record.ledgerVersion, 3);
   assert.equal(record.event, "capability_decision");
   assert.equal(record.taskDigest, "a".repeat(64));
   assert.equal(record.correlation?.task_digest, "b".repeat(64));
@@ -39,14 +40,18 @@ test("ledger v2 capability decisions carry correlation, trusted digests, and str
 
 test("lease and lifecycle events append without being counted as capability records", async () => {
   const path = join(await tempDir("runtime-ledger-"), "ledger.jsonl");
-  const base = { childId: "d0.1", workspaceId: "w1", root: "/work/tree", access: "write" as const, now: new Date() };
+  const identity = {
+    executionId: "exec:00000000-0000-4000-8000-000000000001",
+    parentExecutionId: null,
+  };
+  const base = { ...identity, childId: "d0.1", workspaceId: "w1", root: "/work/tree", access: "write" as const, now: new Date() };
   await appendLedgerEvent({ path }, buildWorkspaceLeaseEvent({ ...base, outcome: "acquired", recovered: false }));
   await appendRecord({ path }, buildRecord({
-    parentId: "d0", childId: "d0.1", depth: 1, requested: ["tool:read"], parentGrant: ["tool:read"],
+    ...identity, parentId: "d0", childId: "d0.1", depth: 1, requested: ["tool:read"], parentGrant: ["tool:read"],
     result, blocked: false, executor: "process", taskDigest: "a".repeat(64), now: new Date(),
   }));
   await appendLedgerEvent({ path }, buildChildLifecycleEvent({
-    childId: "d0.1", state: "completed", executor: "process", exitCode: 0, signal: null,
+    ...identity, childId: "d0.1", state: "completed", executor: "process", exitCode: 0, signal: null,
     timedOut: false, aborted: false, truncated: false, now: new Date(),
   }));
   await appendLedgerEvent({ path }, buildWorkspaceLeaseEvent({ ...base, outcome: "released", releaseReason: "completed" }));
@@ -59,11 +64,11 @@ test("lease and lifecycle events append without being counted as capability reco
     acquired: 1, uncontended: 0, refused: 0, released: 1, releasedUnrecorded: 0,
     lost: 0, retained: 0, timeout: 0, recovered: 0,
   });
-  assert.deepEqual(report.lifecycle, { starting: 0, completed: 1, failed: 0 });
+  assert.deepEqual(report.lifecycle, { starting: 0, running: 0, completed: 1, failed: 0 });
   assert.equal((await readFile(path, "utf8")).trim().split("\n").length, 4);
 });
 
-test("invalid v2 lines and unsupported explicit versions are corrupt rather than legacy", async () => {
+test("invalid versioned lines and unsupported explicit versions are corrupt rather than legacy", async () => {
   const path = join(await tempDir("runtime-ledger-invalid-v2-"), "ledger.jsonl");
   const { writeFile } = await import("node:fs/promises");
   await writeFile(path, [
@@ -71,12 +76,12 @@ test("invalid v2 lines and unsupported explicit versions are corrupt rather than
     { ledgerVersion: 2, event: "capability_decision", ts: new Date().toISOString(), parentId: "d0", childId: "d0.1", executor: "process", denied: [] },
     { ledgerVersion: 2, event: "check_receipt", ts: new Date().toISOString(), childId: "c1", receiptId: "r", workspaceId: "w", checkId: "x" },
     { ledgerVersion: 2, denied: [] },
-    { ledgerVersion: 3, event: "capability_decision", ts: new Date().toISOString(), parentId: "d0", childId: "d0.1", executor: "process", taskDigest: "a".repeat(64), requested: [], parentGrant: [], effective: [], denied: [], clipped: [], gatedBlocked: [], depth: 1, blocked: false },
+    { ledgerVersion: 4, event: "capability_decision", ts: new Date().toISOString(), parentId: "d0", childId: "d0.1", executor: "process", taskDigest: "a".repeat(64), requested: [], parentGrant: [], effective: [], denied: [], clipped: [], gatedBlocked: [], depth: 1, blocked: false },
   ].map((event) => JSON.stringify(event)).join("\n") + "\n");
   const report = await verifyLedger(path);
   assert.equal(report.ok, false);
   assert.equal(report.corrupt.length, 5);
-  assert.deepEqual(report.lifecycle, { starting: 0, completed: 0, failed: 0 });
+  assert.deepEqual(report.lifecycle, { starting: 0, running: 0, completed: 0, failed: 0 });
 });
 
 test("legacy grant records remain readable beside v2 events", async () => {

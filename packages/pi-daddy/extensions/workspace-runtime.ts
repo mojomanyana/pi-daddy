@@ -69,6 +69,8 @@ export async function prepareDelegationWorkspace(input: {
   spec: DelegationWorkspaceSpec;
   correlation?: CorrelationMetadata;
   childId: string;
+  executionId: string;
+  parentExecutionId: string | null;
   signal?: AbortSignal;
   ledgerPath?: string;
 }): Promise<PreparedWorkspace> {
@@ -102,6 +104,8 @@ export async function prepareDelegationWorkspace(input: {
       await appendLedgerEvent(
         { path: input.ledgerPath, strict: true },
         buildWorkspaceLeaseEvent({
+          executionId: input.executionId,
+          parentExecutionId: input.parentExecutionId,
           childId: input.childId,
           workspaceId: workspace.workspaceId,
           root: workspace.root,
@@ -125,6 +129,8 @@ export async function prepareDelegationWorkspace(input: {
       await appendLedgerEvent(
         { path: input.ledgerPath, strict: true },
         buildWorkspaceLeaseEvent({
+          executionId: input.executionId,
+          parentExecutionId: input.parentExecutionId,
           childId: input.childId,
           workspaceId: workspace.workspaceId,
           root: workspace.root,
@@ -151,6 +157,8 @@ export async function prepareDelegationWorkspace(input: {
 export async function releaseDelegationWorkspace(input: {
   prepared: PreparedWorkspace | undefined;
   childId: string;
+  executionId: string;
+  parentExecutionId: string | null;
   ledgerPath?: string;
   reason: string;
   /** Deliberately keep the lease: a herdr writer tab would not close, so the pane may still be live. */
@@ -170,6 +178,8 @@ export async function releaseDelegationWorkspace(input: {
     await appendLedgerEvent(
       { path: input.ledgerPath, strict: true },
       buildWorkspaceLeaseEvent({
+        executionId: input.executionId,
+        parentExecutionId: input.parentExecutionId,
         childId: input.childId,
         workspaceId: input.prepared.workspace.workspaceId,
         root: input.prepared.workspace.root,

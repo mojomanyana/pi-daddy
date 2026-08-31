@@ -60,6 +60,8 @@ export interface GrantsCommandContext {
    * from the caller, visibly.
    */
   runInit: () => Promise<void>;
+  /** Open or reuse the read-only Herdr dashboard; injected so this diagnostic never becomes enforcement. */
+  openDashboard: () => Promise<{ kind: "opened" | "reused"; paneId: string; visibleBesideCaller: boolean }>;
 }
 
 /**
@@ -69,12 +71,12 @@ export interface GrantsCommandContext {
 const PREVIEW_LIMIT = 12;
 
 /** The verbs `/grants` answers to. Anything else is refused rather than silently treated as no verb. */
-const KNOWN_SUBCOMMANDS: readonly string[] = ["init", "ledger", "approvals", "revoke"];
+const KNOWN_SUBCOMMANDS: readonly string[] = ["init", "dashboard", "ledger", "approvals", "revoke"];
 
 export const grantsCommand = {
   description:
     "Show this session's capability grant, delegation depth, and known agent-type ceilings; " +
-    "/grants approvals | /grants ledger | /grants revoke <key>|--all",
+    "/grants dashboard | /grants approvals | /grants ledger | /grants revoke <key>|--all",
 handler: async (args: string, ctx: any) => {
     // Everything this command may see, named in one place. Previously these were whatever happened to be in
     // the enclosing closure — which is how a diagnostic came to disagree with the enforcer (R-28).
@@ -87,6 +89,20 @@ handler: async (args: string, ctx: any) => {
 
     if (sub === "init") {
       await ctx.grants.runInit();
+      return;
+    }
+
+    if (sub === "dashboard") {
+      try {
+        const opened = await ctx.grants.openDashboard();
+        ctx.ui.notify(
+          `grants: dashboard ${opened.kind} in Herdr pane ${opened.paneId} without changing focus` +
+            (opened.visibleBesideCaller ? "." : " (the existing pane is in another tab)."),
+          "info",
+        );
+      } catch (error) {
+        ctx.ui.notify(`grants: dashboard unavailable — ${error instanceof Error ? error.message : String(error)}`, "error");
+      }
       return;
     }
 
@@ -109,7 +125,7 @@ handler: async (args: string, ctx: any) => {
         `  escalation ${report.escalationAttempts} attempt(s) — grants refused for exceeding what the session held`,
         `  integrity  ${report.ok ? "OK" : `${report.corrupt.length} UNPARSEABLE LINE(S)`}`,
       ];
-      for (const bad of report.corrupt.slice(0, 5)) lines.push(`    line ${bad.line}: ${bad.text}`);
+      for (const bad of report.corrupt.slice(0, 5)) lines.push(`    line ${bad.line}: ${bad.reason}`);
       // ADR-0031, and R-51's lesson applied on the day the field was added rather than a release later: a field
       // the writer sets and no diagnostic reads is one that needs `jq`, and `docs/SPEC.md` claims the executor is
       // announced "per child in the ledger". `unknown` is shown only when present, because on a fresh ledger it
@@ -121,6 +137,9 @@ handler: async (args: string, ctx: any) => {
             ? ` · ${report.executors.unknown} not recorded (written before 0.16.0, which added the field)`
             : ""),
       );
+      if (report.workflowFacts > 0) {
+        lines.push(`  workflow   ${report.workflowFacts} provenance-labelled fact(s) — not counted as enforced children`);
+      }
       // R-51. ADR-0018 advertises that the ledger answers "did these four children run the same
       // instructions?" and "has this definition changed since?" — and nothing read `definitionDigest`, so
       // both needed hand-written jq and the second was not reproducible with `sha256sum` (the digest covers

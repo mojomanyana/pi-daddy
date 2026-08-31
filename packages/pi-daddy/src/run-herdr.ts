@@ -98,6 +98,8 @@ export interface HerdrRunRequest {
    * name a human can switch to **while the child is alive**, which is the whole point of the pane surviving.
    */
   onPane?: (paneId: string, agentName: string) => void;
+  /** Called only after agent start and prompt both succeed; pane creation alone is still `starting`. */
+  onRunning?: (paneId: string, agentName: string) => void;
   /** Security hook for attaching a writer lease to the tab. Unlike display callbacks, errors fail the run. */
   onTab?: (tabId: string) => void;
   /** Close even a settled pane before releasing a writer lease; no post-lease prompt may remain live. */
@@ -300,6 +302,13 @@ export async function runHerdrPane(request: HerdrRunRequest): Promise<ChildRunRe
 
     const prompted = parseReply(await exec(["agent", "prompt", agentName, request.prompt]));
     if (prompted.error) return { ...empty, spawnError: `herdr agent prompt failed: ${prompted.error}` };
+    if (request.onRunning) {
+      try {
+        request.onRunning(paneId, agentName);
+      } catch {
+        /* display/observation only */
+      }
+    }
 
     const settled = await waitForSettled(exec, { ...request, name: agentName }, before, deadline, maxOutputBytes);
     if (settled.aborted || settled.timedOut) {

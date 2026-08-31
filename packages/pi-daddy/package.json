@@ -1,6 +1,6 @@
 {
   "name": "pi-daddy",
-  "version": "0.19.0",
+  "version": "0.20.0",
   "description": "Capability governance for pi sub-agents: spawn Agent Skills (SKILL.md) definitions whose allowed-tools becomes a grant that can only narrow going down a delegation tree, enforced by pi's own --tools allowlist, with an append-only ledger.",
   "keywords": [
     "pi-package",
@@ -129,27 +129,39 @@
       "types": "./dist/check-runner.d.ts",
       "default": "./dist/check-runner.js"
     },
+    "./dashboard-projection": {
+      "types": "./dist/dashboard-projection.d.ts",
+      "default": "./dist/dashboard-projection.js"
+    },
+    "./dashboard-render": {
+      "types": "./dist/dashboard-render.d.ts",
+      "default": "./dist/dashboard-render.js"
+    },
+    "./contracts/ledger/v3/ledger-event.schema.json": "./contracts/ledger/v3/ledger-event.schema.json",
+    "./contracts/ledger/v3/fixtures/*.json": "./contracts/ledger/v3/fixtures/*.json",
     "./contracts/ledger/v2/ledger-event.schema.json": "./contracts/ledger/v2/ledger-event.schema.json",
     "./contracts/ledger/v2/fixtures/*.json": "./contracts/ledger/v2/fixtures/*.json"
   },
   "bin": {
-    "pi-daddy": "./dist/cli.js"
+    "pi-daddy": "./dist/cli.js",
+    "pi-daddy-dashboard": "./dist/dashboard-cli.js"
   },
   "files": [
     "dist",
     "extensions",
     "src",
     "contracts",
+    "herdr-plugin",
     "README.md",
     "CHANGELOG.md",
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.check.json",
     "test": "node --test test/*.test.ts",
     "test:integration": "node --test test-integration/*.it.ts",
-    "contracts:generate": "node scripts/generate-ledger-v2-contract.ts",
+    "contracts:generate": "node scripts/generate-ledger-v3-contract.ts",
     "prepack": "npm run build",
     "test:smoke": "node scripts/smoke-installed.mjs",
     "test:mutation": "node scripts/mutation-audit.mjs"
