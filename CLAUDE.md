@@ -35,15 +35,13 @@ permissible, able to refuse or allow but never to narrow. **This package is now 
 is an argument rather than a veto. Definitions are **Agent Skills (`SKILL.md`)** files whose `allowed-tools`
 becomes the grant; the pi-subagents ceiling port is deleted; the interceptor survives only as a tripwire.
 
-**Current release state: 0.19.0, published 2026-08-23, and it is BREAKING.** Routing a child to a registered
-workspace now requires `workspace:<id>` in the caller's grant (ADR-0035); every grant that routes must add it.
-That release also carries the canonical ledger v2 contract — which had been sitting on `main` and absent from
-the published `0.18.1` tarball, one version number meaning two payloads — plus the retained-lease hang fixes
-(R-146, R-152) that were briefly staged as a 0.18.2 and released here instead: a patch would have left
-**R-131's routing escalation live** on the 0.18.x line, and the fix for R-131 is the breaking change itself.
+**Current release state: 0.20.0, published and registry-verified 2026-08-31, and it is BREAKING.** ADR-0036 adds
+the optional live Herdr dashboard, ledger v3 occurrence identity and privacy-safe provenance facts. Production
+ledger joins must use `executionId`; `LedgerReport.corrupt[]` no longer returns raw bytes; rendered correlation
+and named-check identifiers use bounded ASCII grammars. The previous 0.19.0 routing rule remains: routing to a
+registered workspace requires `workspace:<id>` in the caller's grant (ADR-0035).
 
-**Current work: ADR-0036, the live Herdr governance dashboard, is an unreleased candidate on
-`feat/observability-dashboard`.** Thirty-six ADRs are decided. It adds ledger v3 occurrence identity, an
+**ADR-0036, the live Herdr governance dashboard, is released in 0.20.0.** Thirty-six ADRs are decided. It adds ledger v3 occurrence identity, an
 explicit plugin-install handshake, `/grants dashboard`, a pure live projection and provenance-labelled
 workflow facts. The first critical review requested eight changes; the required re-review found ten more,
 including that one first-repair claim was still false. A third whole-change attempt timed out, but its bounded
@@ -61,7 +59,7 @@ forty had repairs; its review found the test control publicly exported, truncati
 new paths unforced. All forty-three had repairs; its review found status error paths and async-context isolation
 unproved. Forty-five had repairs; its review found a frozen-clock hang, shipped control artifacts and non-
 overlapping concurrency. All forty-eight have repairs; critical run `48da2009…` approved exact candidate tree
-`889fd02…`. Version `0.20.0` is selected; it has not yet been opened as a PR or released. Read the top entry in `docs/SESSION-LOG.md` before touching it.
+`889fd02…`. PR #23 merged it; npm `latest`, tag `v0.20.0` and the GitHub Release are verified. Read the top entry in `docs/SESSION-LOG.md` before touching it.
 
 **PR #10 / ADR-0035 is merged and released in 0.19.0.** Its review lesson remains operational: adding a
 capability namespace is a nine-site change, the sites touched need the same adversarial read as the ones
@@ -138,7 +136,7 @@ docs/archive/             — SUPERSEDED, kept as evidence, never edited to matc
                             registers (discovery, assumptions, landscape, metrics), ROADMAP, gate reports,
                             both code reviews, the old specs, the completed implementation plan, and the
                             dead upstream proposal. See its README for why each stopped being current.
-packages/pi-daddy  — THE PRODUCT (0.19.0 released; approved 0.20.0 dashboard candidate): Agent Skill
+packages/pi-daddy  — THE PRODUCT (0.20.0 released): Agent Skill
                             definitions, resolver, v3 ledger (frozen v2 reader), delegate/delegate_all/
                             delegate_chain, catalog, bound human approval, process/herdr executors,
                             governed-writer leases, named checks, explicit Herdr dashboard plugin, and
