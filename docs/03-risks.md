@@ -3734,6 +3734,21 @@ must be loud and must not silently become an ungoverned wildcard session.
 **Trigger:** any store read failure other than ENOENT producing `grants: inactive`, or any test claiming parser
 rejection proves session-level fail-closed behavior.
 
+## R-176 · Installed smoke accepted the old commented ledger line — L×H, FIXED
+
+Added and fixed 2026-09-01 by final ADR-0037 quality review. The smoke checked
+`grantEnv.includes('export PI_GRANTS_LEDGER=…')`; the released old form `#export PI_GRANTS_LEDGER=…` contains
+that substring, so reverting the feature still produced green installed-artifact evidence. Unit and mutation
+coverage protected the source, but the check advertised as proving the packed install could not fail for the
+old package behavior.
+
+The smoke now compares a complete line. In a disposable installed-package probe, changing only the generated
+line back to `#export` exits non-zero with `init did not enable its project ledger`; the unmodified package
+smoke passes.
+
+**Trigger:** an installed-artifact assertion using substring matching where a comment, prefix or larger token
+can contain the expected active configuration.
+
 ---
 
 ## Register log
@@ -3847,3 +3862,4 @@ rejection proves session-level fail-closed behavior.
 | 2026-09-01 | R-172 | Added and fixed — released 0.20.0 passed both workspace and pane targets to a split plugin open, a combination Herdr rejects. Real Herdr 0.8.2 reproduced the refusal; removing only the workspace selector opened beside the caller. The fake now enforces the real placement contract and mutation restores the defect | live dashboard setup |
 | 2026-09-01 | R-173, R-174, ADR-0037 | One explicit `/grants init` now binds the stored grant and project ledger. V2 consent, child/store isolation and environment precedence close the second-channel risk; project writability and untracked-file costs are accepted and loud | project setup decision |
 | 2026-09-01 | R-173 corrected, R-175 | Reviews reproduced a self-published ledger mistaken for an environment override; provenance capture plus moved-cwd regression repairs it. They also found the pre-existing malformed-store null-to-wildcard path, corrected an overclaiming parser test, and found the v1 lookalike-field guard unforced; the expanded mutation catalogue then rejected its own empty-provenance entry until init was included in the test. Tri-state session handling remains open | ADR-0037 critical reviews |
+| 2026-09-01 | R-176 | Final quality review found installed smoke's substring check passed the old commented ledger line. Exact-line matching now fails a disposable `#export` package and passes the candidate | ADR-0037 final quality review |

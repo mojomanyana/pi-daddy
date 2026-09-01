@@ -27,6 +27,8 @@ the record of how the package got here and are worth keeping; they are not worth
   operator value. A second review made v1 lookalike `projectLedger` fields an explicit inert case after its
   mutation survived the first tests. Review also exposed pre-existing malformed-store fail-open behavior
   (R-175); it remains open and is not presented as fixed by this release.
+- **Final-quality repair:** installed smoke now matches the active ledger export as a complete line; the old
+  commented `#export` contained the previous substring and falsely passed.
 
 ## 0.20.1 — open the dashboard with Herdr's split-pane contract (2026-09-01)
 

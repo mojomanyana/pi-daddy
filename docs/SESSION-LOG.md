@@ -53,8 +53,12 @@ was narrowed so it no longer claims otherwise. Final critical specification re-r
 the focused tests; an explicit v1-with-`projectLedger:true` case and exact mutation now force the version
 boundary. Two further entries targeted empty-value provenance and the separate v1-to-ledger session mapping;
 the first catalogue run scored **109/110** because startup-only coverage did not prove empty survived a later
-init. A same-session empty-then-init assertion now forces it; the rerun is **110/110**. Final independent
-quality approval remains before PR or release.
+init. A same-session empty-then-init assertion now forces it; the rerun is **110/110**. Final critical quality
+review of tree `54bff67…` returned CHANGES-REQUESTED on **REV-QUAL-001 / R-176**: installed smoke used
+substring matching, so the old `#export PI_GRANTS_LEDGER` line passed as active. It now requires an exact line;
+a disposable package with only that line reverted fails with `init did not enable its project ledger`, and the
+candidate smoke passes. Critical repair review approved exact tree `b1281df…` with no findings. ADR-0037 is
+ready for its pull request; no release has occurred.
 
 **0.20.1 dashboard repair released and registry-verified, 2026-09-01.** R-172: released 0.20.0 sent both
 `--workspace` and `--target-pane` for a split plugin pane, while Herdr's API permits only the pane target for
