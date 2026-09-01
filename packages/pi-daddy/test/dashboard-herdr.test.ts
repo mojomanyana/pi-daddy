@@ -98,7 +98,7 @@ test("plugin discovery distinguishes absent, disabled, compatible and incompatib
   assert.match(disabledWrongPackage.diagnostic, /different package/i);
 });
 
-test("opening targets the calling pi pane, splits right, keeps focus, and reuses the persisted pane", async () => {
+test("opening targets the calling pi pane, splits right, keeps focus, omits incompatible workspace, and reuses the persisted pane", async () => {
   const dir = await tempDir("dashboard-herdr-");
   const statePath = join(dir, "pi-daddy", "dashboard-panes.json");
   const ledgerPath = join(dir, "ledger.jsonl");
@@ -111,6 +111,19 @@ test("opening targets the calling pi pane, splits right, keeps focus, and reuses
     }
     if (args[0] === "plugin" && args[1] === "pane" && args[2] === "open") {
       opened += 1;
+      if (args.includes("--workspace")) {
+        return {
+          code: 1,
+          stdout: JSON.stringify({
+            id: "test",
+            error: {
+              code: "invalid_params",
+              message: "split and zoomed plugin panes target an existing pane; use target_pane_id",
+            },
+          }),
+          stderr: "",
+        };
+      }
       return reply({
         plugin_pane: {
           pane: { pane_id: "w1:p2", terminal_id: "term-dashboard", tab_id: "w1:t1", workspace_id: "w1" },
@@ -143,10 +156,11 @@ test("opening targets the calling pi pane, splits right, keeps focus, and reuses
 
   const open = calls.find((args) => args[0] === "plugin" && args[1] === "pane" && args[2] === "open");
   assert.ok(open);
-  assert.deepEqual(open.slice(0, 13), [
+  assert.deepEqual(open.slice(0, 11), [
     "plugin", "pane", "open", "--plugin", DASHBOARD_PLUGIN_ID, "--entrypoint", "dashboard",
-    "--placement", "split", "--workspace", "w1", "--target-pane", "w1:p1",
+    "--placement", "split", "--target-pane", "w1:p1",
   ]);
+  assert.equal(open.includes("--workspace"), false, "Herdr rejects workspace_id for a split placement");
   assert.ok(open.includes("--direction") && open.includes("right"));
   assert.ok(open.includes("--no-focus"));
   assert.equal(open.includes("--focus"), false);

@@ -12,6 +12,12 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## 0.20.1 — open the dashboard with Herdr's split-pane contract (2026-09-01)
+
+- Fix `/grants dashboard` on Herdr 0.8+: a split plugin pane targets the verified caller pane and must not
+  also carry the mutually exclusive workspace selector. Released 0.20.0 sent both, so Herdr refused every
+  first open with `invalid_params`. Host verification and the returned workspace/tab check are unchanged.
+
 ## 0.20.0 — live governance dashboard and ledger v3 (2026-08-31)
 
 - Ship a Herdr 0.8+ plugin inside the trusted pi-daddy package. A Herdr-hosted pi asks once before linking it;
