@@ -35,11 +35,12 @@ permissible, able to refuse or allow but never to narrow. **This package is now 
 is an argument rather than a veto. Definitions are **Agent Skills (`SKILL.md`)** files whose `allowed-tools`
 becomes the grant; the pi-subagents ceiling port is deleted; the interceptor survives only as a tripwire.
 
-**Current release state: 0.20.0, published and registry-verified 2026-08-31, and it is BREAKING.** ADR-0036 adds
-the optional live Herdr dashboard, ledger v3 occurrence identity and privacy-safe provenance facts. Production
-ledger joins must use `executionId`; `LedgerReport.corrupt[]` no longer returns raw bytes; rendered correlation
-and named-check identifiers use bounded ASCII grammars. The previous 0.19.0 routing rule remains: routing to a
-registered workspace requires `workspace:<id>` in the caller's grant (ADR-0035).
+**Current release state: 0.20.1, published and registry-verified 2026-09-01.** This patch makes the optional
+Herdr dashboard open: 0.20.0 sent mutually exclusive workspace and pane selectors for a split, so Herdr refused
+every first open (R-172). The breaking 0.20.0 contracts remain: production ledger joins use `executionId`;
+`LedgerReport.corrupt[]` no longer returns raw bytes; rendered correlation and named-check identifiers use
+bounded ASCII grammars. The 0.19.0 routing rule also remains: routing to a registered workspace requires
+`workspace:<id>` in the caller's grant (ADR-0035).
 
 **ADR-0036, the live Herdr governance dashboard, is released in 0.20.0.** Thirty-six ADRs are decided. It adds ledger v3 occurrence identity, an
 explicit plugin-install handshake, `/grants dashboard`, a pure live projection and provenance-labelled
@@ -59,7 +60,9 @@ forty had repairs; its review found the test control publicly exported, truncati
 new paths unforced. All forty-three had repairs; its review found status error paths and async-context isolation
 unproved. Forty-five had repairs; its review found a frozen-clock hang, shipped control artifacts and non-
 overlapping concurrency. All forty-eight have repairs; critical run `48da2009…` approved exact candidate tree
-`889fd02…`. PR #23 merged it; npm `latest`, tag `v0.20.0` and the GitHub Release are verified. Read the top entry in `docs/SESSION-LOG.md` before touching it.
+`889fd02…`. PR #23 merged it in 0.20.0; R-172's split-target repair shipped through PR #25 in 0.20.1. npm
+`latest`, tag `v0.20.1` and the GitHub Release are verified. Read the top entry in `docs/SESSION-LOG.md` before
+touching it.
 
 **PR #10 / ADR-0035 is merged and released in 0.19.0.** Its review lesson remains operational: adding a
 capability namespace is a nine-site change, the sites touched need the same adversarial read as the ones
