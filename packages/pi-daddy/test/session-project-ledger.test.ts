@@ -48,6 +48,13 @@ test("adopting init's project ledger is live now, while an explicit environment 
     overridden.adoptGrant(["tool:read"], ledger);
     assert.equal(overridden.ledgerPath, explicit, "init cannot replace an explicit current-session choice");
     assert.equal(process.env.PI_GRANTS_LEDGER, explicit);
+
+    for (const key of GRANT_ENV_KEYS) delete process.env[key];
+    process.env.PI_GRANTS_LEDGER = "";
+    const disabled = createGrantsSession(undefined);
+    disabled.adoptGrant(["tool:read"], ledger);
+    assert.equal(disabled.ledgerPath, "", "an explicit empty value remains a one-run opt-out through init");
+    assert.equal(process.env.PI_GRANTS_LEDGER, "");
   } finally {
     process.chdir(originalCwd);
     for (const key of keys) {

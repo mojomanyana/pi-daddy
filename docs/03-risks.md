@@ -3695,6 +3695,11 @@ so no test proved v1's grammar could not smuggle it. A v1 file carrying `project
 no-ledger, and the exact lookalike mutation must fail. Production was already version-derived; its claimed
 regression was not.
 
+**Catalogue correction, 2026-09-01.** The new `undefined`→`Boolean` provenance mutation initially stayed green:
+the integration test proved empty disabled startup, not that a subsequent init preserved that explicit empty
+choice. A same-session empty-then-init assertion now forces the guard. The catalogue rejected its own unproved
+entry instead of turning “110/110” into a claim.
+
 **Trigger:** any child with `PI_GRANTS_GRANT` reading project-store ledger state; any v1 store activating a
 ledger after upgrade; or a stored default outranking a present `PI_GRANTS_LEDGER`.
 
@@ -3841,4 +3846,4 @@ rejection proves session-level fail-closed behavior.
 | 2026-08-28 | R-167 corrected again, R-171 | A distributed review covered all 71 changed paths and a fresh snapshot adjudicated its five hypotheses. Two survived: semantically mismatched pane state reused a live process for another ledger, and malformed explicit v2 was downgraded to plausible history/orphan counts. Three were rejected: protocol-scoping persisted consent was not specified, a hostile internal progress callback was isolated by every production caller, and 460 is a documented conservative check-ID ceiling. Accepted repairs are red-first and mutation-pinned; they remain a new approval target | critical whole-change review of ADR-0036 candidate |
 | 2026-09-01 | R-172 | Added and fixed — released 0.20.0 passed both workspace and pane targets to a split plugin open, a combination Herdr rejects. Real Herdr 0.8.2 reproduced the refusal; removing only the workspace selector opened beside the caller. The fake now enforces the real placement contract and mutation restores the defect | live dashboard setup |
 | 2026-09-01 | R-173, R-174, ADR-0037 | One explicit `/grants init` now binds the stored grant and project ledger. V2 consent, child/store isolation and environment precedence close the second-channel risk; project writability and untracked-file costs are accepted and loud | project setup decision |
-| 2026-09-01 | R-173 corrected, R-175 | Reviews reproduced a self-published ledger mistaken for an environment override; provenance capture plus moved-cwd regression repairs it. They also found the pre-existing malformed-store null-to-wildcard path, corrected an overclaiming parser test, and found the v1 lookalike-field guard unforced; tri-state session handling remains open | ADR-0037 critical reviews |
+| 2026-09-01 | R-173 corrected, R-175 | Reviews reproduced a self-published ledger mistaken for an environment override; provenance capture plus moved-cwd regression repairs it. They also found the pre-existing malformed-store null-to-wildcard path, corrected an overclaiming parser test, and found the v1 lookalike-field guard unforced; the expanded mutation catalogue then rejected its own empty-provenance entry until init was included in the test. Tri-state session handling remains open | ADR-0037 critical reviews |

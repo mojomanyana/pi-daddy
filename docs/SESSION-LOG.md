@@ -51,8 +51,10 @@ R-175 — malformed stores silently ungovern the root — as pre-existing, open,
 was narrowed so it no longer claims otherwise. Final critical specification re-review approved exact tree
 `86aebf7…`. Its parallel quality attempt timed out, but first showed a v1 lookalike-field mutation surviving
 the focused tests; an explicit v1-with-`projectLedger:true` case and exact mutation now force the version
-boundary. Two further entries force empty-value provenance and the separate v1-to-ledger session mapping. The
-**110-entry** mutation catalogue and final independent quality approval remain before PR or release.
+boundary. Two further entries targeted empty-value provenance and the separate v1-to-ledger session mapping;
+the first catalogue run scored **109/110** because startup-only coverage did not prove empty survived a later
+init. A same-session empty-then-init assertion now forces it; the rerun is **110/110**. Final independent
+quality approval remains before PR or release.
 
 **0.20.1 dashboard repair released and registry-verified, 2026-09-01.** R-172: released 0.20.0 sent both
 `--workspace` and `--target-pane` for a split plugin pane, while Herdr's API permits only the pane target for
