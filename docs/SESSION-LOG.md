@@ -11,15 +11,17 @@ decisions; this file holds state and next actions. Newest entry on top.
 2026-08-22 the *server* enforces it: `main` requires a pull request (zero approvals) with both CI legs green,
 and `enforce_admins` is on, so a direct push is refused rather than merely discouraged.
 
-**STATE, 2026-08-31. `0.20.0` is released and registry-verified.** npm `latest`, tag `v0.20.0`, the GitHub
-Release and the released baseline resolve to one commit, so `git rev-list -n1 v0.20.0` is the immutable source
-point and this block deliberately names no mutable `main` SHA. **Thirty-six ADRs.** ADR-0036's live Herdr
-dashboard, ledger v3 occurrence identity and provenance-labelled workflow facts shipped through PR #23 after
-critical run `48da2009…` approved specification and quality. All forty-eight accepted findings have repairs.
-Release evidence: **727 unit · 45 integration against real pi and Herdr 0.8.0 · typecheck · installed-package
-smoke · 96/96 mutation guards**. Registry verification installed `pi-daddy@0.20.0` into a fresh scratch project,
-imported `pi-daddy/run-child`, found the Herdr plugin, and confirmed no test-control artifact; registry shasum
-`3e82a9c92640b83c5579777ac74b8c3af259272e` matches the published release tarball.
+**STATE, 2026-09-01. `0.20.1` is released and registry-verified.** npm `latest`, tag `v0.20.1`, the GitHub
+Release and the released baseline resolve to one commit, so `git rev-list -n1 v0.20.1` is the immutable source
+point and this block deliberately names no mutable `main` SHA. **Thirty-six ADRs.** This patch repairs R-172:
+0.20.0's dashboard sent mutually exclusive workspace and pane selectors for a split, so Herdr refused every
+first open. The breaking 0.20.0 ledger/routing contracts are unchanged. Release evidence: **727 unit · 45
+integration against real pi and Herdr 0.8.2 · typecheck · installed-package smoke · 97/97 mutation guards ·
+independent specification/quality approval**. Two clean packs were byte-equal. Registry verification installed
+`pi-daddy@0.20.1` into a fresh project, imported it, found the plugin, found no test-control artifact, and opened
+then closed a real right split beside the caller. Registry shasum
+`8e8b6d7be99d0d9f17e0b3024a9f3996401d926b` matches the published tarball; its SHA-256 is
+`f05e4ace823cc80d77b2f26c0d78ace18c553e3f9c4db654005454b5ff1e31bb`.
 
 *(These lines were stale for about an hour after the release — they said "nothing is released", the tier "was
 not run", and named a commit three merges back, while the paragraphs directly below them said otherwise. **That
@@ -30,17 +32,14 @@ trigger, firing on R-156, inside the commit that recorded it. A summary that mus
 cite a mutable `HEAD` pointer; it can cite a tag, which does not move. If you change what is true here, change
 these lines in the same commit.)*
 
-**0.20.1 dashboard repair candidate, 2026-09-01; unreleased.** R-172: released 0.20.0 sent both
+**0.20.1 dashboard repair released and registry-verified, 2026-09-01.** R-172: released 0.20.0 sent both
 `--workspace` and `--target-pane` for a split plugin pane, while Herdr's API permits only the pane target for
 that placement, so every first dashboard open was refused with `invalid_params`. The old unit fake accepted
 and explicitly pinned the impossible combination. The regression now reproduces Herdr's rejection, the open
-omits only the workspace selector, and a mutation restores it. The patched production function opened a real
-right split beside the verified caller on Herdr 0.8.2; the probe pane was closed afterward. Host verification
-and the returned workspace/tab postcondition are unchanged. Candidate evidence: **727 unit · 45 integration
-against real pi and Herdr 0.8.2 · typecheck · installed-package smoke**, plus the real open/close above. The
-**97/97 mutation guards forced their named failures**. An independent combined review then approved
-specification and quality with no findings after its own 13/13 targeted dashboard run. The candidate is ready
-for its pull request; npm `latest` is still 0.20.0.
+omits only the workspace selector, and a mutation restores it. Host verification and the returned
+workspace/tab postcondition are unchanged. PR #25 merged as `eb6ef4a`; tag `v0.20.1` and the non-draft GitHub
+Release point there. npm `latest` resolves to 0.20.1, and a fresh registry install exercised the production
+open against Herdr 0.8.2 rather than only inspecting package bytes.
 
 **What the product now does that it could not before:** workspace routing is a capability, so it attenuates
 (ADR-0035). Before that, a child routed to `staging` could route its grandchild to `prod` with a real lease, a
