@@ -3652,6 +3652,24 @@ missing discriminator, and a mutation removes the schema gate.
 **Trigger:** an explicit versioned event reaching a fallback/legacy projection before its version's contract
 accepts it.
 
+## R-172 · Dashboard split passed mutually exclusive workspace and pane targets — M×H, FIXED
+
+Added and fixed 2026-09-01 after reproducing the released 0.20.0 path against Herdr 0.8.2. pi-daddy opened
+its `split` plugin pane with both `--workspace` and `--target-pane`. Herdr's API defines those selectors by
+placement: a split targets an existing pane, while a tab targets a workspace. It therefore rejected every
+dashboard open with `invalid_params`. The error said to use `target_pane_id`, which obscured that the target
+was present and the forbidden parameter was `workspace_id`.
+
+The unit fake returned success for this impossible argument combination, and its assertion explicitly pinned
+both flags. The open now sends only the verified caller pane. That pane already determines workspace and tab,
+and the existing post-open check still closes and rejects any returned pane outside the caller's exact host.
+The regression fake reproduces Herdr's rejection when `--workspace` is present, and a mutation restores the
+bad flag. The patched production function opened a real right split beside the caller on Herdr 0.8.2 and the
+probe closed it afterward.
+
+**Trigger:** any `split`/`zoomed` plugin open carrying `workspace_id` or `--workspace`; or a Herdr command fake
+that accepts placement/target combinations the real API rejects.
+
 ---
 
 ## Register log
@@ -3762,3 +3780,4 @@ accepts it.
 | 2026-08-28 | R-162 corrected, R-167…R-170 | Critical re-review found the first repair's content-free claim false in `/grants ledger`, two exact-host checks absent, nested pane state only shallowly checked, schema-valid prose/C1/bidi controls renderable, lifecycle deadline/order disagreement, and two public-contract divergences. All reproduced separately; the correction stays beside R-162 rather than rewriting its first claim | second critical review of ADR-0036 candidate |
 | 2026-08-28 | R-167 and R-170 corrected | The attempted third whole-change review timed out, but a bounded independent critical adjudication reproduced two blockers: invocation `cwd` was secretly a fourth pane-key dimension and created duplicate dashboards for one workspace/tab/ledger; the workflow-fact builder was the one public v3 builder omitted from the claimed final wire assertion. Both are repaired red-first and mutation-pinned, but the bounded verdict is not whole-change approval | third critical review attempt of ADR-0036 candidate |
 | 2026-08-28 | R-167 corrected again, R-171 | A distributed review covered all 71 changed paths and a fresh snapshot adjudicated its five hypotheses. Two survived: semantically mismatched pane state reused a live process for another ledger, and malformed explicit v2 was downgraded to plausible history/orphan counts. Three were rejected: protocol-scoping persisted consent was not specified, a hostile internal progress callback was isolated by every production caller, and 460 is a documented conservative check-ID ceiling. Accepted repairs are red-first and mutation-pinned; they remain a new approval target | critical whole-change review of ADR-0036 candidate |
+| 2026-09-01 | R-172 | Added and fixed — released 0.20.0 passed both workspace and pane targets to a split plugin open, a combination Herdr rejects. Real Herdr 0.8.2 reproduced the refusal; removing only the workspace selector opened beside the caller. The fake now enforces the real placement contract and mutation restores the defect | live dashboard setup |

@@ -30,6 +30,18 @@ trigger, firing on R-156, inside the commit that recorded it. A summary that mus
 cite a mutable `HEAD` pointer; it can cite a tag, which does not move. If you change what is true here, change
 these lines in the same commit.)*
 
+**0.20.1 dashboard repair candidate, 2026-09-01; unreleased.** R-172: released 0.20.0 sent both
+`--workspace` and `--target-pane` for a split plugin pane, while Herdr's API permits only the pane target for
+that placement, so every first dashboard open was refused with `invalid_params`. The old unit fake accepted
+and explicitly pinned the impossible combination. The regression now reproduces Herdr's rejection, the open
+omits only the workspace selector, and a mutation restores it. The patched production function opened a real
+right split beside the verified caller on Herdr 0.8.2; the probe pane was closed afterward. Host verification
+and the returned workspace/tab postcondition are unchanged. Candidate evidence: **727 unit · 45 integration
+against real pi and Herdr 0.8.2 · typecheck · installed-package smoke**, plus the real open/close above. The
+**97/97 mutation guards forced their named failures**. An independent combined review then approved
+specification and quality with no findings after its own 13/13 targeted dashboard run. The candidate is ready
+for its pull request; npm `latest` is still 0.20.0.
+
 **What the product now does that it could not before:** workspace routing is a capability, so it attenuates
 (ADR-0035). Before that, a child routed to `staging` could route its grandchild to `prod` with a real lease, a
 validated CWD and a ledger line naming `prod` — every other dimension attenuated and the working directory did

@@ -302,7 +302,7 @@ export async function openOrReuseDashboard(input: DashboardOpenInput): Promise<D
     const args = [
       "plugin", "pane", "open", "--plugin", DASHBOARD_PLUGIN_ID,
       "--entrypoint", DASHBOARD_PLUGIN_ENTRYPOINT, "--placement", "split",
-      "--workspace", input.host.workspaceId, "--target-pane", input.host.paneId,
+      "--target-pane", input.host.paneId,
       "--direction", "right", "--cwd", cwd,
       ...(ledgerPath ? ["--env", `${ENV_DASHBOARD_LEDGER}=${ledgerPath}`] : []),
       "--env", `${ENV_DASHBOARD_PROTOCOL}=${DASHBOARD_PROTOCOL_VERSION}`,
