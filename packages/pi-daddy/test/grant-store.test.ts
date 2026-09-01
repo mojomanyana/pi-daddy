@@ -93,9 +93,9 @@ test("R-27: a grant naming another directory is refused, not honoured", async ()
   assert.equal(loadGrantSync(cwd), null, "a foreign grant grants nothing");
 });
 
-test("every malformed shape grants NOTHING, never something", async () => {
-  // Fails closed on each doubt. A store that yields a partial grant on damaged input is worse than one
-  // that yields none: it would be a ceiling nobody chose.
+test("the parser rejects every malformed store shape", async () => {
+  // The parser returns null on each doubt and never constructs a partial ceiling. Session-level absent versus
+  // invalid handling is a separate, currently open problem (R-175); do not overclaim that boundary here.
   const cwd = "/p";
   for (const [label, text] of [
     ["not json", "{ this is not json"],

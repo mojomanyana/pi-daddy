@@ -42,8 +42,14 @@ R-174 records the accepted load-bearing/untracked-file cost. Red evidence was th
 the generated env line commented, init persisting v1/adopting no path, and a real pi with v2 state reporting
 inactive/no ledger. Candidate evidence: **730 unit · 47 integration against real pi and Herdr 0.8.2 · typecheck
 · installed-package smoke**. The integration path invokes a real `/grants init`, inspects its v2 store, then
-starts plain pi twice for status and ledger reporting. The 106-entry mutation catalogue and independent review
-remain before PR or release.
+starts plain pi twice for status and ledger reporting. The first critical specification review approved exact
+tree `be59b0a…`. Its parallel quality attempt timed out but reproduced a real repair blocker first: after
+session start published project A's default into `process.env`, init for project B treated that self-published
+value as an explicit override and kept writing A's ledger. Provenance is now captured before publication, with
+red-first moved-cwd proof and an exact mutation. The bounded quality adjudication cleared that repair and filed
+R-175 — malformed stores silently ungovern the root — as pre-existing, open, and non-blocking; the parser test
+was narrowed so it no longer claims otherwise. The **107-entry** mutation catalogue and final independent
+quality approval remain before PR or release.
 
 **0.20.1 dashboard repair released and registry-verified, 2026-09-01.** R-172: released 0.20.0 sent both
 `--workspace` and `--target-pane` for a split plugin pane, while Herdr's API permits only the pane target for

@@ -31,6 +31,16 @@ test("adopting init's project ledger is live now, while an explicit environment 
     assert.equal(session.ledgerPath, ledger);
     assert.equal(process.env.PI_GRANTS_LEDGER, ledger, "the next child inherits the same absolute ledger");
 
+    const movedCwd = await tempDir("grants-session-moved-");
+    const movedLedger = projectLedgerPath(movedCwd);
+    session.adoptGrant(["tool:read"], movedLedger);
+    assert.equal(
+      session.ledgerPath,
+      movedLedger,
+      "a default this session published itself is not an explicit env override when init chooses the new cwd",
+    );
+    assert.equal(process.env.PI_GRANTS_LEDGER, movedLedger);
+
     for (const key of GRANT_ENV_KEYS) delete process.env[key];
     const explicit = `${cwd}/operator.jsonl`;
     process.env.PI_GRANTS_LEDGER = explicit;

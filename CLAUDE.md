@@ -177,7 +177,7 @@ npm test                   # 730 unit tests — fast, no pi, no network (the bra
 npm run typecheck          # src + extensions + tests + integration tests
 npm run test:integration   # 47 tests vs a REAL pi process AND a real herdr server — no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and USE it
-npm run test:mutation      # rule 7 as a control: 106 pinned (patch -> named failing test) pairs.
+npm run test:mutation      # rule 7 as a control: 107 pinned (patch -> named failing test) pairs.
                            # Minutes, edits files in place, refuses a dirty tree. CI runs it on every PR;
                            # run it locally before pushing anything that adds or changes a guard.
 PI_GRANTS_IT_MODEL=1 npm run test:integration   # + an end-to-end tier with a real model (costs money)

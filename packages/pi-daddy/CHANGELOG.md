@@ -22,6 +22,10 @@ the record of how the package got here and are worth keeping; they are not worth
 - Existing version-1 grant stores retain their no-ledger behavior until the operator explicitly reruns
   `/grants init`; an upgrade never converts prior governance consent into recording consent.
 - Newly generated `.pi/grants.env` files export the project ledger. Existing reviewed files remain untouched.
+- **First-review repair:** remember whether the ledger came from the environment before publishing a stored
+  default, so a later init after a cwd change can replace pi-daddy's own old path without overriding a real
+  operator value. The review also exposed pre-existing malformed-store fail-open behavior (R-175); it remains
+  open and is not presented as fixed by this release.
 
 ## 0.20.1 — open the dashboard with Herdr's split-pane contract (2026-09-01)
 

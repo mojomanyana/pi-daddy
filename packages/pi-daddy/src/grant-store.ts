@@ -80,9 +80,9 @@ export function grantStorePath(cwd: string): string {
  * Split out from the readers so the **one** validation lives in one place: both the sync and async paths
  * must agree, and two parsers is how they come to disagree.
  *
- * Fails closed on every doubt — a malformed file grants nothing rather than something. The `cwd` check is
- * R-27's: a file copied to another machine or another checkout describes a directory that is not this one,
- * and honouring it would let a grant travel somewhere nobody authorised it for.
+ * Rejects every doubt at this parser boundary — it never constructs a partial ceiling. The session currently
+ * treats absent and invalid stores alike (R-175), so do not call that wider behavior fail-closed. The `cwd`
+ * check is R-27's: a copied file describes a directory nobody authorised it for.
  */
 export function parseStoredGrant(text: string, cwd: string): StoredGrant | null {
   try {

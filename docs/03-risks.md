@@ -3683,6 +3683,12 @@ The store now has an explicit version-2 `projectLedger: true` marker. Version 1 
 empty one-run opt-out. Unit and real-pi integration tests force all three precedence edges; mutations restore
 each forbidden interpretation separately.
 
+**First-review correction, 2026-09-01.** The initial adoption check read `process.env.PI_GRANTS_LEDGER` live.
+But session start had already published the store-derived default there, so a later `/grants init` after a cwd
+change mistook pi-daddy's own old value for an operator override and stored project B while continuing to write
+project A's ledger. Environment provenance is now captured before any publication. A same-session moved-cwd
+regression and exact old-predicate mutation force the distinction.
+
 **Trigger:** any child with `PI_GRANTS_GRANT` reading project-store ledger state; any v1 store activating a
 ledger after upgrade; or a stored default outranking a present `PI_GRANTS_LEDGER`.
 
@@ -3699,6 +3705,23 @@ Existing v1 stores do not acquire the precondition until init is rerun.
 
 **Revisit trigger:** repeated reports of repository clutter, read-only-project refusals, or demand for a
 first-class persistent ledger-only disable command.
+
+## R-175 · A malformed stored grant silently makes the root ungoverned — H×M, OPEN
+
+Added 2026-09-01 by ADR-0037's first quality review, and confirmed against the pre-change baseline. The store
+reader returns the same `null` for ENOENT, malformed JSON, wrong cwd, unsupported version and unreadable file.
+`createGrantsSession` must interpret ENOENT as ordinary opt-out, so it interprets every other case that way too:
+the root receives `tool:*`, delegation remains available, and no warning identifies the rejected ceiling. The
+unit test said malformed input “grants NOTHING”; that was true only of the parser return and false of the
+session the product runs.
+
+This predates ADR-0037 — baseline rejected version 2 through the same null-to-wildcard route — and ADR-0037's
+atomic writer does not create malformed bytes, so it is not folded into the init-ledger change. The required
+repair is a tri-state loader (`absent | valid | invalid`): only ENOENT means opt-out; invalid/unreadable state
+must be loud and must not silently become an ungoverned wildcard session.
+
+**Trigger:** any store read failure other than ENOENT producing `grants: inactive`, or any test claiming parser
+rejection proves session-level fail-closed behavior.
 
 ---
 
@@ -3812,3 +3835,4 @@ first-class persistent ledger-only disable command.
 | 2026-08-28 | R-167 corrected again, R-171 | A distributed review covered all 71 changed paths and a fresh snapshot adjudicated its five hypotheses. Two survived: semantically mismatched pane state reused a live process for another ledger, and malformed explicit v2 was downgraded to plausible history/orphan counts. Three were rejected: protocol-scoping persisted consent was not specified, a hostile internal progress callback was isolated by every production caller, and 460 is a documented conservative check-ID ceiling. Accepted repairs are red-first and mutation-pinned; they remain a new approval target | critical whole-change review of ADR-0036 candidate |
 | 2026-09-01 | R-172 | Added and fixed — released 0.20.0 passed both workspace and pane targets to a split plugin open, a combination Herdr rejects. Real Herdr 0.8.2 reproduced the refusal; removing only the workspace selector opened beside the caller. The fake now enforces the real placement contract and mutation restores the defect | live dashboard setup |
 | 2026-09-01 | R-173, R-174, ADR-0037 | One explicit `/grants init` now binds the stored grant and project ledger. V2 consent, child/store isolation and environment precedence close the second-channel risk; project writability and untracked-file costs are accepted and loud | project setup decision |
+| 2026-09-01 | R-173 corrected, R-175 | First review reproduced a self-published ledger mistaken for an environment override; provenance capture plus moved-cwd regression repairs it. The same review found the pre-existing malformed-store null-to-wildcard path and corrected an overclaiming parser test; tri-state session handling remains open | ADR-0037 critical review |

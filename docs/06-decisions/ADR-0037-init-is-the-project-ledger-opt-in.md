@@ -52,7 +52,10 @@ environment-configured ledger is propagated today.
 
 Environment configuration still wins. Presence of `PI_GRANTS_GRANT` bypasses the project store entirely,
 including its ledger choice, so a child cannot activate state from its cwd. When the store is eligible,
-presence of `PI_GRANTS_LEDGER` overrides the default path; an explicitly empty value disables it for that run.
+presence of `PI_GRANTS_LEDGER` **at session construction** overrides the default path; an explicitly empty
+value disables it for that run. Provenance is captured before pi-daddy republishes its own derived value into
+`process.env`, so a later `/grants init` for a changed cwd does not mistake pi-daddy's old default for an
+operator override.
 
 Version-1 grant stores remain governed without a ledger. Existing projects must rerun `/grants init` once to
 make the new recording choice; upgrade alone never supplies consent. A newly generated `.pi/grants.env` makes
@@ -75,6 +78,9 @@ the ledger consistently.
   grant with no default ledger is not a new init mode in this change; use explicit environment configuration,
   or remove the store and choose again.
 - No model-callable tool can activate this. `/grants init` remains a human-invoked slash command.
+- Existing malformed-store semantics are not repaired here: absent and invalid both read as no store, which
+  makes the root ungoverned. R-175 records the required tri-state follow-up; parser rejection alone is not
+  described as session-level fail-closed behavior.
 
 ## Revisit trigger
 

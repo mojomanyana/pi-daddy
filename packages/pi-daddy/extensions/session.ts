@@ -264,6 +264,9 @@ export function createGrantsSession(extensionPath: string | undefined): GrantsSe
   const governed = grantRaw !== undefined || stored !== null;
   const inherited: Capability[] = grantRaw !== undefined ? parseList(grantRaw) : (stored?.grant ?? [WILDCARD]);
   const ledgerRaw = process.env[ENV_LEDGER];
+  // Capture provenance before publishChildEnv writes this session's derived default into process.env. A later
+  // `/grants init` for ctx.cwd must not mistake our own publication for an operator override.
+  const ledgerFromEnvironment = ledgerRaw !== undefined;
   const storedLedger = stored?.projectLedger ? projectLedgerPath(storeCwd) : undefined;
   // G7 / A-S4 + B-I4: strict, three-way parsing that fails CLOSED. A malformed bound used to yield
   // `NaN`, and every comparison against `NaN` is false, so depth limiting switched itself off.
@@ -357,7 +360,7 @@ export function createGrantsSession(extensionPath: string | undefined): GrantsSe
       session.ownGrant = grant;
       // An environment ledger remains the explicit answer. Otherwise init's v2 choice becomes live now,
       // before publishChildEnv gives the same absolute path to descendants.
-      if (process.env[ENV_LEDGER] === undefined && projectLedger !== undefined) {
+      if (!ledgerFromEnvironment && projectLedger !== undefined) {
         session.ledgerPath = projectLedger;
       }
       session.publishChildEnv();
