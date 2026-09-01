@@ -1,16 +1,26 @@
 /**
- * The grant store — a second SOURCE for the root session's grant, never a second channel to children.
+ * The project store — a root source for the grant and explicit ledger consent, never a second child channel.
  *
- * **The production change that breaks these tests** (rule 7): letting the store outrank `PI_GRANTS_GRANT`,
- * honouring a file that names a different directory, or accepting a malformed one as anything but nothing.
- * Each is a way for a ceiling to be decided by something other than the operator who set it.
+ * **The production change that breaks these tests** (rule 7): letting the store outrank the environment,
+ * honouring a file that names another directory, inferring ledger consent from v1, or accepting malformed
+ * input as anything but nothing. Each decides configuration on behalf of someone other than the operator.
  */
 
 import assert from "node:assert/strict";
-import { mkdir, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { after, test } from "node:test";
-import { clearGrant, grantStorePath, loadGrant, loadGrantSync, parseGrantFile, saveGrant } from "../src/grant-store.ts";
+import {
+  clearGrant,
+  grantStorePath,
+  loadGrant,
+  loadGrantSync,
+  loadStoredGrant,
+  loadStoredGrantSync,
+  parseGrantFile,
+  projectLedgerPath,
+  saveGrant,
+} from "../src/grant-store.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 import { expandSubsumed, type Capability } from "../src/resolve.ts";
 
@@ -29,6 +39,26 @@ test("round trip: a saved grant loads back, sync and async alike", async () => {
   // disagree. They share one, so this asserts they agree.
   assert.deepEqual(await loadGrant(cwd), ["agent:review", "tool:read"]);
   assert.deepEqual(loadGrantSync(cwd), ["agent:review", "tool:read"]);
+});
+
+test("a new init opts this project into its ledger, while a legacy grant does not", async () => {
+  const legacyCwd = await temp();
+  assert.equal(await saveGrant(legacyCwd, ["tool:read"]), "saved");
+  assert.deepEqual(loadStoredGrantSync(legacyCwd), {
+    grant: ["tool:read"],
+    projectLedger: false,
+  }, "an existing v1 choice is not reinterpreted as ledger consent after upgrade");
+
+  const cwd = await tempDir("grants-project-");
+  assert.equal(await saveGrant(cwd, ["tool:read"], { projectLedger: true }), "saved");
+  const expected = { grant: ["tool:read"], projectLedger: true };
+  assert.deepEqual(loadStoredGrantSync(cwd), expected);
+  assert.deepEqual(await loadStoredGrant(cwd), expected, "sync factory and async diagnostics share one parser");
+  assert.equal(projectLedgerPath(cwd), join(cwd, ".pi", "grants.jsonl"));
+
+  const raw = JSON.parse(await readFile(grantStorePath(cwd), "utf8")) as Record<string, unknown>;
+  assert.equal(raw.version, 2, "ledger consent is explicit in a versioned store, never inferred from existence");
+  assert.equal(raw.projectLedger, true);
 });
 
 test("it lives OUTSIDE the project — the whole point", async () => {
@@ -69,7 +99,8 @@ test("every malformed shape grants NOTHING, never something", async () => {
   const cwd = "/p";
   for (const [label, text] of [
     ["not json", "{ this is not json"],
-    ["wrong version", JSON.stringify({ version: 2, cwd: "/p", grant: ["tool:read"] })],
+    ["wrong version", JSON.stringify({ version: 3, cwd: "/p", grant: ["tool:read"] })],
+    ["v2 missing ledger consent", JSON.stringify({ version: 2, cwd: "/p", grant: ["tool:read"] })],
     ["missing grant", JSON.stringify({ version: 1, cwd: "/p" })],
     ["grant not an array", JSON.stringify({ version: 1, cwd: "/p", grant: "tool:read" })],
     ["a non-string entry", JSON.stringify({ version: 1, cwd: "/p", grant: ["tool:read", 7] })],

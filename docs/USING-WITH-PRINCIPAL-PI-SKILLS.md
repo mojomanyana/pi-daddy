@@ -141,6 +141,10 @@ export PI_GRANTS_LEDGER="$PWD/.pi/grants.jsonl"     # optional but recommended
 pi
 ```
 
+This is the explicit-environment route. If you instead run `/grants init` inside pi, that one project choice
+stores the grant and enables `$PWD/.pi/grants.jsonl` for the current and future plain `pi` sessions; no exports
+are needed (ADR-0037). A pre-0.21 stored grant needs one rerun to add ledger consent.
+
 **Plain `pi` — no `-e`.** The package declares `pi.extensions`, and pi auto-loads it for an installed
 package; verified by execution. You only need `-e ./extensions/grants.ts` when running from a **clone** of
 this repository, where there is no `node_modules/pi-daddy` for pi to find.

@@ -13,7 +13,8 @@ and `enforce_admins` is on, so a direct push is refused rather than merely disco
 
 **STATE, 2026-09-01. `0.20.1` is released and registry-verified.** npm `latest`, tag `v0.20.1`, the GitHub
 Release and the released baseline resolve to one commit, so `git rev-list -n1 v0.20.1` is the immutable source
-point and this block deliberately names no mutable `main` SHA. **Thirty-six ADRs.** This patch repairs R-172:
+point and this block deliberately names no mutable `main` SHA. **Thirty-seven ADRs in the repository; 0.20.1
+contains the first thirty-six.** This patch repairs R-172:
 0.20.0's dashboard sent mutually exclusive workspace and pane selectors for a split, so Herdr refused every
 first open. The breaking 0.20.0 ledger/routing contracts are unchanged. Release evidence: **727 unit · 45
 integration against real pi and Herdr 0.8.2 · typecheck · installed-package smoke · 97/97 mutation guards ·
@@ -31,6 +32,18 @@ went stale on merge**: it asserted `main` is `<sha>`, and merging it moved `main
 trigger, firing on R-156, inside the commit that recorded it. A summary that must be updated BY commits cannot
 cite a mutable `HEAD` pointer; it can cite a tag, which does not move. If you change what is true here, change
 these lines in the same commit.)*
+
+**0.21.0 init-ledger candidate, 2026-09-01; unreleased.** The operator chose ADR-0037's explicit-project
+option: package installation still does nothing, but one `/grants init` atomically stores and adopts both the
+capability grant and `.pi/grants.jsonl`, so later plain `pi` sessions retain the ledger and dashboard without
+an export. R-173 keeps children on the environment-only channel: `PI_GRANTS_GRANT` bypasses the cwd store,
+`PI_GRANTS_LEDGER` still overrides it, and legacy v1 stores remain no-ledger until init is deliberately rerun.
+R-174 records the accepted load-bearing/untracked-file cost. Red evidence was the new store export missing,
+the generated env line commented, init persisting v1/adopting no path, and a real pi with v2 state reporting
+inactive/no ledger. Candidate evidence: **730 unit · 47 integration against real pi and Herdr 0.8.2 · typecheck
+· installed-package smoke**. The integration path invokes a real `/grants init`, inspects its v2 store, then
+starts plain pi twice for status and ledger reporting. The 106-entry mutation catalogue and independent review
+remain before PR or release.
 
 **0.20.1 dashboard repair released and registry-verified, 2026-09-01.** R-172: released 0.20.0 sent both
 `--workspace` and `--target-pane` for a split plugin pane, while Herdr's API permits only the pane target for

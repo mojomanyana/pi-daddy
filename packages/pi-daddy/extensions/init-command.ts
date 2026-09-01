@@ -10,12 +10,12 @@
 import { discoverSkillPackages } from "../src/skill-packages.ts";
 import { applyInit, planInit } from "../src/init.ts";
 import { registeredWorkspaceIds } from "../src/workspace.ts";
-import { saveGrant, grantStorePath } from "../src/grant-store.ts";
+import { grantStorePath, projectLedgerPath, saveGrant } from "../src/grant-store.ts";
 import { expandSubsumed, SUBSUMPTION, type Capability } from "../src/resolve.ts";
 import type { GrantsSession } from "./session.ts";
 
 /**
- * `/grants init` — scaffold, ask about what is withheld, store it outside the workspace, apply it now.
+ * `/grants init` — scaffold, ask about what is withheld, store grant + ledger consent, apply both now.
  *
  * **The dialog covers the withheld capabilities and nothing else** (ADR-0030). Asking about all of them
  * would be a dozen questions for a first run, and this project has a name for what that produces: R-25,
@@ -118,7 +118,8 @@ export async function runInit(
   }
 
   const finalGrant = [...grant].sort();
-  const saved = await saveGrant(ctx.cwd, finalGrant);
+  const ledger = projectLedgerPath(ctx.cwd);
+  const saved = await saveGrant(ctx.cwd, finalGrant, { projectLedger: true });
   if (saved !== "saved") {
     lines.push(
       `  NOT STORED — ${saved === "busy" ? "another session holds the grant store" : "the store could not be written"}. ` +
@@ -130,12 +131,15 @@ export async function runInit(
 
   // Live, without a restart — the whole point of the store. Only after a successful write, so what runs and
   // what is recorded cannot disagree.
-  session.adoptGrant(finalGrant);
+  session.adoptGrant(finalGrant, ledger);
   // Order matters: the grant first, then the reload, because `refreshSpawnable` filters the definitions it
   // advertises through `maySpawnDefinition` against the grant the session now holds.
   await refresh();
 
-  lines.push(`  stored at ${grantStorePath(ctx.cwd)} — outside this project, so no child can rewrite it`);
+  lines.push(
+    `  stored at ${grantStorePath(ctx.cwd)} — outside this project, so no child can rewrite it`,
+    `  ledger ${ledger} — default for future pi sessions; PI_GRANTS_LEDGER still overrides it`,
+  );
   if (granted.length > 0) lines.push(`  GRANTED: ${granted.join(", ")}`);
   if (alreadyConferred.length > 0) {
     lines.push(`  ALREADY CONFERRED, not asked about: ${alreadyConferred.join(", ")}`);

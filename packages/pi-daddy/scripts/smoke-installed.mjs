@@ -121,6 +121,9 @@ try {
   if (!grantEnv.includes('PI_GRANTS_GRANT="agent:review,tool:delegate,tool:grep,tool:read"')) {
     throw new Error(`init wrote the wrong grant:\n${grantEnv}`);
   }
+  if (!grantEnv.includes('export PI_GRANTS_LEDGER=".pi/grants.jsonl"')) {
+    throw new Error(`init did not enable its project ledger:\n${grantEnv}`);
+  }
   // VERBATIM means byte-for-byte, so compare the whole file. The first version asserted that
   // `allowed-tools: Read, Grep` was PRESENT, which survives a mutation that injects the six-line commented
   // placeholder into a declared skill — an assertion whose message named a production change it could not

@@ -42,7 +42,11 @@ every first open (R-172). The breaking 0.20.0 contracts remain: production ledge
 bounded ASCII grammars. The 0.19.0 routing rule also remains: routing to a registered workspace requires
 `workspace:<id>` in the caller's grant (ADR-0035).
 
-**ADR-0036, the live Herdr governance dashboard, is released in 0.20.0.** Thirty-six ADRs are decided. It adds ledger v3 occurrence identity, an
+**Unreleased 0.21.0 candidate:** ADR-0037 makes one explicit `/grants init` the project opt-in for both the
+stored grant and `.pi/grants.jsonl`; package installation alone still initializes nothing. Version-1 stores
+are not silently migrated, and environment configuration still wins.
+
+**ADR-0036, the live Herdr governance dashboard, is released in 0.20.0.** Thirty-seven ADRs are decided. It adds ledger v3 occurrence identity, an
 explicit plugin-install handshake, `/grants dashboard`, a pure live projection and provenance-labelled
 workflow facts. The first critical review requested eight changes; the required re-review found ten more,
 including that one first-repair claim was still false. A third whole-change attempt timed out, but its bounded
@@ -101,7 +105,7 @@ can run `env -u PI_GRANTS_GRANT pi …` and get an ungoverned descendant (measur
 docs/SPEC.md              — WHAT THE PRODUCT IS, current state, no history. Read this second.
 docs/SESSION-LOG.md       — START HERE when resuming: state, verified facts, next actions. Newest on top.
 docs/03-risks.md          — live risk register. R-25 onward are current; R-01..R-24 serve the retired thesis
-docs/06-decisions/        — thirty-six ADRs. Reversals are kept and marked: 0004→superseded, 0005 park→
+docs/06-decisions/        — thirty-seven ADRs. Reversals are kept and marked: 0004→superseded, 0005 park→
                             superseded, 0006 (magnitude claim falsified), 0007 THE REFRAME, 0008
                             attenuation + cardinality, 0009 pi-fabric (parked), 0010 approvals, 0011
                             universal capabilities, 0012 bash, 0013 pi-subagents (superseded by 0016),
@@ -120,7 +124,8 @@ docs/06-decisions/        — thirty-six ADRs. Reversals are kept and marked: 00
                             stored grants, executor probing, live observability and sequential chains;
                             0034 adds generic runtime-enforcement primitives for external controllers
                             (amended three times after review), 0035 workspace routing is a capability — it was
-                            the one dimension that did NOT attenuate until 0.19.0 (R-131, probe g36)
+                            the one dimension that did NOT attenuate until 0.19.0 (R-131, probe g36), 0036
+                            the dashboard is a ledger projection, 0037 one project init enables its ledger
 docs/probes/              — measurement evidence, all against real software. Each has a "what this does
                             not establish" section: baseline/, pi-fabric-eval/, approval-ux/,
                             adr-0011-universal/, g1-argv/, g5-bash-escape/, g13-subagents-coupling/,
@@ -139,7 +144,7 @@ docs/archive/             — SUPERSEDED, kept as evidence, never edited to matc
                             registers (discovery, assumptions, landscape, metrics), ROADMAP, gate reports,
                             both code reviews, the old specs, the completed implementation plan, and the
                             dead upstream proposal. See its README for why each stopped being current.
-packages/pi-daddy  — THE PRODUCT (0.20.0 released): Agent Skill
+packages/pi-daddy  — THE PRODUCT (0.21.0 candidate; 0.20.1 released): Agent Skill
                             definitions, resolver, v3 ledger (frozen v2 reader), delegate/delegate_all/
                             delegate_chain, catalog, bound human approval, process/herdr executors,
                             governed-writer leases, named checks, explicit Herdr dashboard plugin, and
@@ -168,13 +173,13 @@ refuses until a gate passes that no longer means anything. They are in git histo
 
 ```bash
 cd packages/pi-daddy
-npm test                   # 719 unit tests — fast, no pi, no network (the branch guard spawns git)
+npm test                   # 730 unit tests — fast, no pi, no network (the branch guard spawns git)
 npm run typecheck          # src + extensions + tests + integration tests
-npm run test:integration   # 45 tests vs a REAL pi process AND a real herdr server — ~55s, no model tokens
+npm run test:integration   # 47 tests vs a REAL pi process AND a real herdr server — no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and USE it
-npm run test:mutation      # rule 7 as a control: 92 pinned (patch -> the test it must break) pairs.
-                           # Minutes, edits files in place, refuses a dirty tree. Run it before
-                           # pushing anything that adds or changes a guard (R-142: no CI runs it yet)
+npm run test:mutation      # rule 7 as a control: 106 pinned (patch -> named failing test) pairs.
+                           # Minutes, edits files in place, refuses a dirty tree. CI runs it on every PR;
+                           # run it locally before pushing anything that adds or changes a guard.
 PI_GRANTS_IT_MODEL=1 npm run test:integration   # + an end-to-end tier with a real model (costs money)
 PI_GRANTS_KEEP_TMP=1 npm test                   # keep fixture directories for inspection after a failure
 ```

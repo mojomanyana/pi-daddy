@@ -3,8 +3,9 @@
 Setup, then a feature built end to end with seven sub-agents, sequential where it must be and parallel
 where it pays.
 
-Verified against `pi-daddy@0.14.0`, `principal-pi-skills@2.4.0`, pi 0.84.1 on 2026-08-17. Every number
-below is read from the source, not remembered.
+The end-to-end workflow was verified against `pi-daddy@0.14.0`, `principal-pi-skills@2.4.0`, pi 0.84.1 on
+2026-08-17. ADR-0037's init-ledger setup delta was re-verified against the 0.21.0 candidate and real pi/Herdr
+on 2026-09-01. Every number below is read from source or execution, not remembered.
 
 ---
 
@@ -48,6 +49,10 @@ Answering **No** is a real answer: those definitions stay unspawnable and `/gran
 The result is stored **outside your project** (`$PI_CODING_AGENT_DIR/grants/…`) and applied to the session
 you are already in — **no restart, no `source`** (ADR-0030). Outside, because a grant is a *ceiling*, and a
 ceiling a child holding `tool:write` could rewrite is not a ceiling.
+
+The same explicit init enables `.pi/grants.jsonl` now and on future plain `pi` starts (ADR-0037). Every spawn
+and refusal is therefore recorded, and `/grants dashboard` is ready without exporting a second variable.
+Existing pre-0.21 stored grants keep their no-ledger behavior until you rerun `/grants init` once.
 
 ### 3. Confirm before trusting it
 
@@ -188,9 +193,9 @@ decide → architect → plan → build → (review ‖ debug) → git-ops
 | Output cap | 1 MiB | per child; beyond it the child is killed and the result flagged truncated |
 | Gated | `tool:bash` | a human is asked before any child receives it |
 
-With `PI_GRANTS_LEDGER` set, every spawn **and every refusal** is recorded, and a spawn that cannot be
-recorded is refused. Read it back with `/grants ledger` — record count, escalation attempts, integrity, and
-which instructions ran.
+After ADR-0037's `/grants init` (or with `PI_GRANTS_LEDGER` set explicitly), every spawn **and every refusal**
+is recorded, and a spawn that cannot be recorded is refused. Read it back with `/grants ledger` — record
+count, escalation attempts, integrity, and which instructions ran.
 
 ---
 

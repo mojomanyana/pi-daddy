@@ -14,7 +14,7 @@
 
 import assert from "node:assert/strict";
 import { after, describe, test } from "node:test";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { digestDefinition, parseSkillDefinition } from "../src/definitions.ts";
 import { cleanupTempDirs, fixture, piAvailable, runCommand, tempDir, verdictFor } from "./harness.ts";
@@ -476,6 +476,89 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     assert.match(text, /grants: ACTIVE/, "a stored grant makes the session governed");
     assert.match(text, /agent:docs-writer/, "and it is the STORED grant that is held");
     assert.match(verdictFor(r, "docs-writer") ?? "", /^allow/, "and the planner uses it for real");
+    assert.match(text, /not recording — set PI_GRANTS_LEDGER/, "a legacy v1 store is not retroactive ledger consent");
+  });
+
+  test("ADR-0037: one real /grants init enables the project ledger now and on later plain pi starts", async () => {
+    const cwd = await fixture();
+    const agentDir = await tempDir("grants-it-ledger-store-");
+    process.env.PI_CODING_AGENT_DIR = agentDir;
+    const pkg = join(cwd, "node_modules", "read-pkg");
+    await mkdir(join(pkg, "review"), { recursive: true });
+    await writeFile(join(pkg, "package.json"), JSON.stringify({
+      name: "read-pkg",
+      version: "1.0.0",
+      pi: { skills: ["./review"] },
+    }), "utf8");
+    await writeFile(join(pkg, "review", "SKILL.md"), `---\nname: review\ndescription: Reads only.\nallowed-tools: Read\n---\nReview.\n`, "utf8");
+
+    const { grantStorePath, projectLedgerPath } = await import("../src/grant-store.ts");
+    const first = await runCommand({ cwd, command: "/grants init", env: { PI_CODING_AGENT_DIR: agentDir } });
+    const firstText = first.notifies.map((n) => n.message).join("\n");
+    assert.match(firstText, /live now/);
+    assert.ok(firstText.includes(`ledger ${projectLedgerPath(cwd)}`), firstText);
+    const stored = JSON.parse(await readFile(grantStorePath(cwd), "utf8")) as Record<string, unknown>;
+    assert.deepEqual(
+      { version: stored.version, projectLedger: stored.projectLedger },
+      { version: 2, projectLedger: true },
+      "the slash-command wiring persists the two decisions atomically",
+    );
+
+    const r = await runCommand({ cwd, command: "/grants", env: { PI_CODING_AGENT_DIR: agentDir } });
+    const text = r.notifies.map((n) => n.message).join("\n");
+    assert.match(text, /grants: ACTIVE/);
+    assert.ok(text.includes(`ledger     ${projectLedgerPath(cwd)}`), text);
+    assert.match(verdictFor(r, "review") ?? "", /^allow/, "init's copied definition is usable after restart");
+
+    const ledger = await runCommand({ cwd, command: "/grants ledger", env: { PI_CODING_AGENT_DIR: agentDir } });
+    assert.match(
+      ledger.notifies.map((n) => n.message).join("\n"),
+      /does not exist yet \(nothing has been delegated\)/,
+      "an empty default is ready, not an error",
+    );
+  });
+
+  test("ADR-0037: explicit environment configuration still bypasses the stored ledger choice", async () => {
+    const cwd = await fixture({ "docs-writer": DOCS_WRITER });
+    const agentDir = await tempDir("grants-it-ledger-precedence-");
+    const { grantStorePath } = await import("../src/grant-store.ts");
+    process.env.PI_CODING_AGENT_DIR = agentDir;
+    await mkdir(dirname(grantStorePath(cwd)), { recursive: true });
+    await writeFile(
+      grantStorePath(cwd),
+      JSON.stringify({ version: 2, cwd, grant: ["tool:*"], projectLedger: true, writtenAt: "x" }),
+      "utf8",
+    );
+
+    const bypassed = await runCommand({
+      cwd,
+      command: "/grants",
+      env: { PI_CODING_AGENT_DIR: agentDir, PI_GRANTS_GRANT: "tool:read" },
+    });
+    const bypassedText = bypassed.notifies.map((n) => n.message).join("\n");
+    assert.match(bypassedText, /holding    tool:read/);
+    assert.match(bypassedText, /not recording — set PI_GRANTS_LEDGER/, "a child grant cannot activate a cwd store");
+
+    const explicitLedger = join(cwd, "operator-ledger.jsonl");
+    const overridden = await runCommand({
+      cwd,
+      command: "/grants",
+      env: { PI_CODING_AGENT_DIR: agentDir, PI_GRANTS_LEDGER: explicitLedger },
+    });
+    const overriddenText = overridden.notifies.map((n) => n.message).join("\n");
+    assert.ok(overriddenText.includes(`ledger     ${explicitLedger}`), overriddenText);
+    assert.ok(!overriddenText.includes(join(cwd, ".pi", "grants.jsonl")), "the explicit path wins");
+
+    const disabled = await runCommand({
+      cwd,
+      command: "/grants",
+      env: { PI_CODING_AGENT_DIR: agentDir, PI_GRANTS_LEDGER: "" },
+    });
+    assert.match(
+      disabled.notifies.map((n) => n.message).join("\n"),
+      /not recording — set PI_GRANTS_LEDGER/,
+      "presence with an empty value is an explicit one-run opt-out, not absence",
+    );
   });
 
   test("ADR-0030: PI_GRANTS_GRANT always beats the store", async () => {

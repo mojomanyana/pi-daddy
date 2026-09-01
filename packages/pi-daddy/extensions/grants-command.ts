@@ -52,8 +52,8 @@ export interface GrantsCommandContext {
    */
   previewDelegation: (name: string) => Promise<GatedPlan>;
   /**
-   * Run `/grants init`: scaffold definitions, ask about the withheld capabilities only, store the answer
-   * outside the workspace, and apply it to this session (ADR-0030).
+   * Run `/grants init`: scaffold definitions, ask about withheld capabilities, atomically store grant plus
+   * project-ledger consent outside the workspace, and apply both now (ADR-0030, ADR-0037).
    *
    * Injected rather than imported so this module stays what it is — a read-only diagnostic that cannot
    * become a governance path by accident. The one command here that *writes* takes its ability to do so
@@ -345,7 +345,7 @@ handler: async (args: string, ctx: any) => {
       // two facts about what a spawn will be sit together.
       `  executor   ${executor.disclosure}`,
       `  depth      ${depth} of max ${maxDepth}${maxDepth <= 0 ? " (spawning disabled)" : ""}`,
-      `  ledger     ${ledgerPath ?? "(not recording — set PI_GRANTS_LEDGER)"}`,
+      `  ledger     ${ledgerPath || "(not recording — set PI_GRANTS_LEDGER)"}`,
       `  approvals  ${sessionApprovals.size} this session, ${valid.size} persisted` +
         `${inheritedApprovals.size > 0 ? `, ${inheritedApprovals.size} inherited` : ""}` +
         ` — /grants approvals`,

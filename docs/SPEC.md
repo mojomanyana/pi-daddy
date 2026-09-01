@@ -5,7 +5,7 @@ to be decided. This file is authoritative for present behavior; ADRs record why 
 date. If code and this file disagree, report and repair the stale current-state claim rather than re-deriving
 present behavior from historical ADRs.
 
-Last synced against the code: **2026-08-28**, unreleased after `pi-daddy` 0.19.0, pi 0.84.2; the dashboard plugin requires Herdr 0.8.0.
+Last synced against the code: **2026-09-01**, unreleased after `pi-daddy` 0.20.1, pi 0.84.2; the dashboard plugin requires Herdr 0.8.0.
 
 **herdr's own contracts are now checked by `test-integration/herdr.it.ts`** against a live server, in an isolated
 workspace it creates and closes. That suite exists because three shipping defects hid behind the unit fake — the
@@ -19,8 +19,8 @@ fake is a *claim* about herdr, and nothing checked the claim.
 spawn is recorded whenever a ledger is configured.**
 
 Both qualifiers are load-bearing and were added after a reviewer kept the unqualified sentence: `bash`
-subsumes governance entirely (below), and `PI_GRANTS_LEDGER` is opt-in, so "always recorded" was contradicted
-by this document's own Configuration section.
+subsumes governance entirely (below), and recording remains opt-in — explicitly through `PI_GRANTS_LEDGER` or
+as part of a version-2 `/grants init` choice — so "always recorded" would contradict Configuration.
 
 The grant shrinks monotonically down a delegation tree. Enforcement is **pi's own `--tools` allowlist** in a
 separate OS process — not a policy engine, not an LLM, and nothing this package runs inside the child.
@@ -142,9 +142,10 @@ never as invented top-level frontmatter, so the file stays valid for every other
 **Two sources, and the environment always wins** (ADR-0030).
 
 `PI_GRANTS_GRANT` is the propagation channel to children and the way CI configures a run. When it is absent,
-a session reads the grant stored for **this directory** at `$PI_CODING_AGENT_DIR/grants/<slug>-<hash>.json`
-— written by `/grants init`, which asks about the withheld capabilities only and applies the answer to the
-running session without a restart.
+a root session reads the project choice stored at `$PI_CODING_AGENT_DIR/grants/<slug>-<hash>.json` — written
+by `/grants init`, which asks about withheld capabilities only and applies the answer without a restart.
+Version 1 stores only a grant. Version 2 also carries explicit `projectLedger: true` consent and defaults the
+root to the absolute `<cwd>/.pi/grants.jsonl`; old stores are never reinterpreted after upgrade.
 
 **The store is outside the workspace, and that is the design.** A grant is a ceiling; a ceiling a governed
 child can rewrite is not one. `<cwd>/.pi/grants.env` is writable by any child holding `tool:write`, which is
@@ -152,18 +153,22 @@ ADR-0014's self-defeating case exactly — the reason persisted approvals were m
 `.pi/grants.env` is still written and still worth committing: it is the **reviewable record** of the
 decision, not what the enforcer reads.
 
-A stored grant is **never inherited**. Children are governed by the environment their parent writes, so
-propagation stays single-channel. Deleting the stored file un-governs the directory; `/grants` prints its
-path.
+A stored grant or ledger choice is **never consulted by a child**. Presence of `PI_GRANTS_GRANT` bypasses the
+whole cwd store; children use only the environment their parent writes, so propagation stays single-channel.
+For an eligible root store, `PI_GRANTS_LEDGER` still wins, including an explicitly empty one-run opt-out.
+Deleting the stored file un-governs the directory; `/grants` prints its path.
 
-**Governance is still opt-in.** There are now two ways to opt in — set the variable, or run `/grants init`
-here — and both are deliberate human acts. Nothing governs a directory that did nothing.
+**Governance and default recording are still opt-in.** Setting environment variables is one route. The other
+is one deliberate `/grants init` per project, which stores both choices for future plain `pi` starts. Merely
+installing pi-daddy initializes nothing and writes no project ledger.
 
 ## Getting definitions onto disk: `pi-daddy init`
 
 `npx pi-daddy init` reads `<cwd>/node_modules` for packages declaring skills in their own `package.json`
 (`"pi": {"skills": ["./review", …]}` — pi's convention, and how `principal-pi-skills` ships), copies each
-declared `SKILL.md` into `<cwd>/.pi/skills/<name>/`, and writes `<cwd>/.pi/grants.env`.
+declared `SKILL.md` into `<cwd>/.pi/skills/<name>/`, and writes `<cwd>/.pi/grants.env`. A newly generated
+environment file exports `.pi/grants.jsonl`; setting or sourcing it therefore makes the same load-bearing
+choice. An existing `.pi/grants.env` remains untouched, including a custom or formerly commented ledger line.
 
 **It chooses no ceiling** (ADR-0028). That is the whole boundary, and each rule below is one half of it:
 
@@ -382,7 +387,8 @@ and reported such a definition as blocked.
 
 ## The ledger
 
-Append-only JSONL at `PI_GRANTS_LEDGER`. Ledger format v3 is an event union: `capability_decision`,
+Append-only JSONL at the effective ledger path: explicit `PI_GRANTS_LEDGER`, or `<cwd>/.pi/grants.jsonl`
+for a root with ADR-0037's version-2 init choice. Ledger format v3 is an event union: `capability_decision`,
 `workspace_lease`, `child_lifecycle`, `check_receipt`, and `workflow_fact`. Every governed capability
 decision is recorded — **including refusals**, which are the interesting ones. The reader also accepts the
 frozen v2 union and legacy grant lines with no version/event discriminator.
@@ -971,7 +977,7 @@ loudly.
 
 | Variable | Default | Notes |
 |---|---|---|
-| `PI_GRANTS_GRANT` | unset ⇒ **ungoverned unless this directory has a stored grant** | Presence switches governance on and **always outranks the store** (ADR-0030) — it is how a child is governed and how CI is configured. An ungoverned session publishes no governance variables at all, so "inactive" cannot quietly govern descendants. |
+| `PI_GRANTS_GRANT` | unset ⇒ **ungoverned unless this directory has a stored init choice** | Presence switches governance on and bypasses the whole cwd store, including its ledger default (ADR-0030/0037) — it is how a child is governed and how CI is configured. |
 | `PI_GRANTS_MAX_DEPTH` / `PI_GRANTS_DEPTH` | `2` / `0` | Depth is set by the parent, not by hand. |
 | `PI_GRANTS_GATED` | `tool:bash` when governed | `""` gates nothing. Closed under subsumption. |
 | `PI_GRANTS_APPROVED` | unset | `capability@subject#sha256` entries, inherited, clamped, and verified against the definition the child loaded (ADR-0022). |
@@ -979,14 +985,14 @@ loudly.
 | `PI_GRANTS_FANOUT` | `8` | Subtree budget. |
 | `PI_GRANTS_PARENT_ID` | `d0` | Readable logical tree position; set by the parent and allowed to repeat across calls. |
 | `PI_GRANTS_EXECUTION_ID` | unset at a root | Unique governed occurrence; set by the parent. v3 lifecycle/lease joins use this. |
-| `PI_GRANTS_LEDGER` | unset ⇒ not recording | Setting it makes it load-bearing. |
+| `PI_GRANTS_LEDGER` | unset ⇒ a v2 `/grants init` store uses `<cwd>/.pi/grants.jsonl`; otherwise not recording | Presence overrides the stored default; `""` disables it for that run. Any effective path is load-bearing. |
 | `PI_GRANTS_WORKSPACE_REGISTRY` | unset | Operator-owned `{version:1, workspaces:{id:{path}}}` file. Required only when a spawn names a workspace. |
 | `PI_GRANTS_WORKSPACE_LEASE_DIR` | `$PI_CODING_AGENT_DIR/pi-daddy/workspace-leases` | Kernel-lock files and ownership metadata for governed writers. |
 | `PI_GRANTS_CHILD_TIMEOUT` | `600` | Seconds. Inherited. |
 | `PI_GRANTS_HERDR` | unset (= probe) | `1` demands herdr panes and refuses if unreachable; `0` demands subprocesses; unset probes. |
 | `PI_GRANTS_HERDR_WORKSPACE` | the parent's `HERDR_WORKSPACE_ID` | Which herdr workspace a child's pane goes in. |
 | `PI_GRANTS_HERDR_KEEP_PANE` | unset | Keep panes past `agent_settled`, for inspection. No sweep closes them. |
-| `PI_CODING_AGENT_DIR` | `~/.pi/agent` | pi's own variable, listed because it decides where persisted approvals live — one file per project under `grants-approvals/`. |
+| `PI_CODING_AGENT_DIR` | `~/.pi/agent` | pi's own variable; it owns stored project grant/ledger choices and per-project persisted approvals. |
 
 **Malformed configuration disables spawning rather than falling back**, and says which variable it was — a
 bound a typo can switch off is not a bound.
@@ -995,9 +1001,9 @@ bound a typo can switch off is not a bound.
 
 ```bash
 cd packages/pi-daddy
-npm test                   # 719 unit tests — pure, no pi, no network
+npm test                   # 730 unit tests — pure, no pi, no network
 npm run typecheck          # src + extensions + test + test-integration
-npm run test:integration   # 45 tests against a REAL pi process/herdr server, no model tokens
+npm run test:integration   # 47 tests against a REAL pi process/herdr server, no model tokens
 npm run test:smoke         # pack/install; exercise exports, both bins, v2/v3 contracts, the bundled
                            # Herdr plugin/dashboard, and `pi-daddy init`
 

@@ -3670,6 +3670,36 @@ probe closed it afterward.
 **Trigger:** any `split`/`zoomed` plugin open carrying `workspace_id` or `--workspace`; or a Herdr command fake
 that accepts placement/target combinations the real API rejects.
 
+## R-173 · A convenient ledger default could turn cwd into a second child configuration channel — H×M, FIXED
+
+Added and fixed 2026-09-01 for ADR-0037. A root project store is safe only because children receive their
+configuration from the parent environment. Reading the new ledger choice whenever a store exists would let a
+routed child with an inherited `PI_GRANTS_GRANT` activate the destination project's ledger, splitting one
+execution across audit files and making cwd a second propagation channel. Inferring consent from every existing
+version-1 grant would separately turn a package upgrade into persistent recording nobody selected.
+
+The store now has an explicit version-2 `projectLedger: true` marker. Version 1 remains no-ledger. Presence of
+`PI_GRANTS_GRANT` bypasses the whole store, while eligible roots still let `PI_GRANTS_LEDGER` win, including an
+empty one-run opt-out. Unit and real-pi integration tests force all three precedence edges; mutations restore
+each forbidden interpretation separately.
+
+**Trigger:** any child with `PI_GRANTS_GRANT` reading project-store ledger state; any v1 store activating a
+ledger after upgrade; or a stored default outranking a present `PI_GRANTS_LEDGER`.
+
+## R-174 · The default project ledger can make repository writability a delegation precondition — M×M, ACCEPTED
+
+Added 2026-09-01 for ADR-0037. After explicit `/grants init`, the default is `<cwd>/.pi/grants.jsonl` and is
+load-bearing. A project made read-only after init, a `.pi` permission change, or a ledger path replaced by a
+directory therefore refuses delegation that previously ran without recording. The file may also appear
+untracked; pi-daddy does not edit `.gitignore` or choose retention.
+
+This is the selected failure direction, not a silent fallback: `/grants` prints the effective path, the append
+error refuses the spawn, and `PI_GRANTS_LEDGER` can select another path or `""` can disable it for one run.
+Existing v1 stores do not acquire the precondition until init is rerun.
+
+**Revisit trigger:** repeated reports of repository clutter, read-only-project refusals, or demand for a
+first-class persistent ledger-only disable command.
+
 ---
 
 ## Register log
@@ -3781,3 +3811,4 @@ that accepts placement/target combinations the real API rejects.
 | 2026-08-28 | R-167 and R-170 corrected | The attempted third whole-change review timed out, but a bounded independent critical adjudication reproduced two blockers: invocation `cwd` was secretly a fourth pane-key dimension and created duplicate dashboards for one workspace/tab/ledger; the workflow-fact builder was the one public v3 builder omitted from the claimed final wire assertion. Both are repaired red-first and mutation-pinned, but the bounded verdict is not whole-change approval | third critical review attempt of ADR-0036 candidate |
 | 2026-08-28 | R-167 corrected again, R-171 | A distributed review covered all 71 changed paths and a fresh snapshot adjudicated its five hypotheses. Two survived: semantically mismatched pane state reused a live process for another ledger, and malformed explicit v2 was downgraded to plausible history/orphan counts. Three were rejected: protocol-scoping persisted consent was not specified, a hostile internal progress callback was isolated by every production caller, and 460 is a documented conservative check-ID ceiling. Accepted repairs are red-first and mutation-pinned; they remain a new approval target | critical whole-change review of ADR-0036 candidate |
 | 2026-09-01 | R-172 | Added and fixed — released 0.20.0 passed both workspace and pane targets to a split plugin open, a combination Herdr rejects. Real Herdr 0.8.2 reproduced the refusal; removing only the workspace selector opened beside the caller. The fake now enforces the real placement contract and mutation restores the defect | live dashboard setup |
+| 2026-09-01 | R-173, R-174, ADR-0037 | One explicit `/grants init` now binds the stored grant and project ledger. V2 consent, child/store isolation and environment precedence close the second-channel risk; project writability and untracked-file costs are accepted and loud | project setup decision |
