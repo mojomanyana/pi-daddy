@@ -48,6 +48,18 @@ test("a new init opts this project into its ledger, while a legacy grant does no
     grant: ["tool:read"],
     projectLedger: false,
   }, "an existing v1 choice is not reinterpreted as ledger consent after upgrade");
+  await writeFile(grantStorePath(legacyCwd), JSON.stringify({
+    version: 1,
+    cwd: legacyCwd,
+    grant: ["tool:read"],
+    projectLedger: true,
+    writtenAt: "x",
+  }), "utf8");
+  assert.equal(
+    loadStoredGrantSync(legacyCwd)?.projectLedger,
+    false,
+    "even a lookalike field cannot smuggle ledger consent into the v1 grammar",
+  );
 
   const cwd = await tempDir("grants-project-");
   assert.equal(await saveGrant(cwd, ["tool:read"], { projectLedger: true }), "saved");

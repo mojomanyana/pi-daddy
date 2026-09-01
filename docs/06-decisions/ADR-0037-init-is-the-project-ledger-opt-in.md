@@ -44,10 +44,10 @@ installation alone still does nothing.
 
 ## Decision
 
-`/grants init` stores a version-2 project configuration containing the decided grant and an explicit
-`projectLedger: true` marker in the existing outside-workspace grant store. It atomically adopts both in the
-running session. On later root sessions, when `PI_GRANTS_GRANT` is absent, that v2 marker resolves to the
-absolute path `<project>/.pi/grants.jsonl`; the root publishes that absolute path to descendants exactly as an
+`/grants init` atomically stores one version-2 project configuration containing the decided grant and an
+explicit `projectLedger: true` marker in the existing outside-workspace grant store. After that write succeeds,
+it synchronously adopts both in the running session. On later roots, when `PI_GRANTS_GRANT` is absent, the v2
+marker resolves to `<project>/.pi/grants.jsonl`; the root publishes that absolute path to descendants as an
 environment-configured ledger is propagated today.
 
 Environment configuration still wins. Presence of `PI_GRANTS_GRANT` bypasses the project store entirely,

@@ -34,8 +34,8 @@ cite a mutable `HEAD` pointer; it can cite a tag, which does not move. If you ch
 these lines in the same commit.)*
 
 **0.21.0 init-ledger candidate, 2026-09-01; unreleased.** The operator chose ADR-0037's explicit-project
-option: package installation still does nothing, but one `/grants init` atomically stores and adopts both the
-capability grant and `.pi/grants.jsonl`, so later plain `pi` sessions retain the ledger and dashboard without
+option: package installation still does nothing, but one `/grants init` atomically persists a single choice
+containing the grant and `.pi/grants.jsonl`, then adopts both, so later plain `pi` sessions retain them without
 an export. R-173 keeps children on the environment-only channel: `PI_GRANTS_GRANT` bypasses the cwd store,
 `PI_GRANTS_LEDGER` still overrides it, and legacy v1 stores remain no-ledger until init is deliberately rerun.
 R-174 records the accepted load-bearing/untracked-file cost. Red evidence was the new store export missing,
@@ -48,8 +48,11 @@ session start published project A's default into `process.env`, init for project
 value as an explicit override and kept writing A's ledger. Provenance is now captured before publication, with
 red-first moved-cwd proof and an exact mutation. The bounded quality adjudication cleared that repair and filed
 R-175 — malformed stores silently ungovern the root — as pre-existing, open, and non-blocking; the parser test
-was narrowed so it no longer claims otherwise. The **107-entry** mutation catalogue and final independent
-quality approval remain before PR or release.
+was narrowed so it no longer claims otherwise. Final critical specification re-review approved exact tree
+`86aebf7…`. Its parallel quality attempt timed out, but first showed a v1 lookalike-field mutation surviving
+the focused tests; an explicit v1-with-`projectLedger:true` case and exact mutation now force the version
+boundary. Two further entries force empty-value provenance and the separate v1-to-ledger session mapping. The
+**110-entry** mutation catalogue and final independent quality approval remain before PR or release.
 
 **0.20.1 dashboard repair released and registry-verified, 2026-09-01.** R-172: released 0.20.0 sent both
 `--workspace` and `--target-pane` for a split plugin pane, while Herdr's API permits only the pane target for
