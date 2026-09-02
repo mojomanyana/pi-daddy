@@ -11,26 +11,18 @@ decisions; this file holds state and next actions. Newest entry on top.
 2026-08-22 the *server* enforces it: `main` requires a pull request (zero approvals) with both CI legs green,
 and `enforce_admins` is on, so a direct push is refused rather than merely discouraged.
 
-**STATE, 2026-09-02. `0.21.0` is released and registry-verified.** npm `latest`, tag `v0.21.0`, the GitHub
-Release and the released baseline resolve to one commit, so `git rev-list -n1 v0.21.0` is the immutable source
-point and this block deliberately names no mutable `main` SHA. **Thirty-eight ADRs.** ADR-0037 makes one
-explicit `/grants init` persist and adopt the project grant plus `.pi/grants.jsonl`; installation remains inert,
-legacy stores are not migrated, and environment configuration wins. Release evidence: **730 unit · 47
-integration against real pi and Herdr 0.8.2 · typecheck · installed-package smoke · 110/110 mutation guards ·
-independent critical specification/quality approval**. Two clean packs were byte-equal. Registry verification
-installed `pi-daddy@0.21.0` into a fresh project, imported it, found the plugin, found no test-control artifact,
-required the generated ledger export as an exact active line, round-tripped the v2 store, and ran a real pi
-session that reported the stored project ledger. Registry shasum
-`f93f84a7607c739504547ace6d6ac81198be7a50` matches the published tarball; its SHA-256 is
-`97224524906a2a338f389f44721bd2112e5bf5755f23d360ca4dc782346ddb6a`.
-
-**UNRELEASED 0.21.1 candidate, 2026-09-02.** ADR-0038 raises the default per-child timeout from 600 to
-1200 seconds while preserving explicit `PI_GRANTS_CHILD_TIMEOUT` values and inheritance. The focused default
-assertion failed red at 600000 vs 1200000 before the one-line constant change. Candidate evidence: **731 unit ·
-47 integration against real pi and Herdr 0.8.2 · typecheck · installed-package smoke**. The mutation catalogue
-was not rerun locally at the operator's request; protected-branch CI runs the existing catalogue automatically.
-Working rule 10 and GitHub protection prohibit the requested direct push, so this release must merge through a
-pull request.
+**STATE, 2026-09-02. `0.21.1` is released and registry-verified.** npm `latest`, tag `v0.21.1`, the GitHub
+Release and the released baseline resolve to one commit, so `git rev-list -n1 v0.21.1` is the immutable source
+point and this block deliberately names no mutable `main` SHA. **Thirty-eight ADRs.** ADR-0038 raises the
+default per-child timeout from 600 to 1200 seconds while preserving explicit `PI_GRANTS_CHILD_TIMEOUT` values
+and inheritance; ADR-0037's stored project grant/ledger behavior is unchanged. Release evidence: **731 unit ·
+47 integration against real pi and Herdr 0.8.2 · typecheck · installed-package smoke · 110/110 existing
+mutation guards · independent whole-change review**. The focused default assertion failed red at 600000 vs
+1200000 before the one-line constant change. PR #29 merged as `6603d80`; protected-branch CI passed on Node
+22.19.0 and 24.x. Registry verification installed `pi-daddy@0.21.1` into a fresh project and imported the
+shipped `run-child` entry point, which reported `DEFAULT_TIMEOUT_MS === 1200000`. Registry shasum
+`a38ed46d92c63831bfc54e51a33155f173a0551a` matches the published tarball; its SHA-256 is
+`cd071799e62334e3aae9e0d7e7353f04d624c05f78f193ad822d4f1dc1e8ee6e`.
 
 *(These lines were stale for about an hour after the release — they said "nothing is released", the tier "was
 not run", and named a commit three merges back, while the paragraphs directly below them said otherwise. **That
