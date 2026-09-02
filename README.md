@@ -5,10 +5,10 @@ deliberate subset of what it holds and withholds the rest. Sub-agents may delega
 subset of what they themselves hold — enforced by **pi's own `--tools` allowlist**, with an append-only
 ledger of every grant and refusal whenever a ledger is configured.
 
-**Release state (verified 2026-09-02):** npm `latest`, tag `v0.21.0` and the non-draft GitHub Release identify
-the same released source. It passed 730 unit tests, 47 non-model integration tests against real pi/Herdr,
-typecheck, installed-package smoke and 110/110 mutation guards. A fresh registry install exercised the v2
-project store and default ledger through a real pi process.
+**Release state (verified 2026-09-02):** npm `latest`, tag `v0.21.1` and the non-draft GitHub Release identify
+the same released source. It passed 731 unit tests, 47 non-model integration tests against real pi/Herdr,
+typecheck, installed-package smoke and 110/110 mutation guards. A fresh registry install confirmed the shipped
+default child timeout is 20 minutes (1,200,000 ms).
 
 One explicit `/grants init` now persists both the project grant and `.pi/grants.jsonl`; merely installing the
 package initializes nothing, and legacy stores are not silently migrated. **Known open issue R-175:** malformed

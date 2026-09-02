@@ -35,14 +35,15 @@ permissible, able to refuse or allow but never to narrow. **This package is now 
 is an argument rather than a veto. Definitions are **Agent Skills (`SKILL.md`)** files whose `allowed-tools`
 becomes the grant; the pi-subagents ceiling port is deleted; the interceptor survives only as a tripwire.
 
-**Current release state: 0.21.0, published and registry-verified 2026-09-02.** ADR-0037 makes one explicit
-`/grants init` the project opt-in for both the stored grant and `.pi/grants.jsonl`; package installation alone
-still initializes nothing. Version-1 stores are not silently migrated, and environment configuration wins for
-children, CI, custom paths and the empty one-run opt-out. R-175 remains open: malformed and absent project
-stores are still indistinguishable at session construction. The breaking 0.20.0 ledger contracts and 0.19.0
-`workspace:<id>` routing requirement are unchanged.
+**Current release state: 0.21.1, published and registry-verified 2026-09-02.** ADR-0038 raises the default
+child timeout from ten to twenty minutes; explicit `PI_GRANTS_CHILD_TIMEOUT` values remain unchanged. ADR-0037
+makes one explicit `/grants init` the project opt-in for both the stored grant and `.pi/grants.jsonl`; package
+installation alone still initializes nothing. Version-1 stores are not silently migrated, and environment
+configuration wins for children, CI, custom paths and the empty one-run opt-out. R-175 remains open: malformed
+and absent project stores are still indistinguishable at session construction. The breaking 0.20.0 ledger
+contracts and 0.19.0 `workspace:<id>` routing requirement are unchanged.
 
-**ADR-0038 is the unreleased 0.21.1 change:** the default child timeout rises from ten to twenty minutes.
+**ADR-0038 is released in 0.21.1:** the default child timeout is twenty minutes.
 
 **ADR-0036, the live Herdr governance dashboard, is released in 0.20.0.** Thirty-eight ADRs are decided. It adds ledger v3 occurrence identity, an
 explicit plugin-install handshake, `/grants dashboard`, a pure live projection and provenance-labelled
@@ -63,7 +64,7 @@ new paths unforced. All forty-three had repairs; its review found status error p
 unproved. Forty-five had repairs; its review found a frozen-clock hang, shipped control artifacts and non-
 overlapping concurrency. All forty-eight have repairs; critical run `48da2009…` approved exact candidate tree
 `889fd02…`. PR #23 merged it in 0.20.0; R-172's split-target repair shipped through PR #25 in 0.20.1. npm
-`latest`, tag `v0.20.1` and the GitHub Release are verified. Read the top entry in `docs/SESSION-LOG.md` before
+`latest`, tag `v0.21.1` and the GitHub Release are verified. Read the top entry in `docs/SESSION-LOG.md` before
 touching it.
 
 **PR #10 / ADR-0035 is merged and released in 0.19.0.** Its review lesson remains operational: adding a
@@ -143,7 +144,7 @@ docs/archive/             — SUPERSEDED, kept as evidence, never edited to matc
                             registers (discovery, assumptions, landscape, metrics), ROADMAP, gate reports,
                             both code reviews, the old specs, the completed implementation plan, and the
                             dead upstream proposal. See its README for why each stopped being current.
-packages/pi-daddy  — THE PRODUCT (0.21.0 released): Agent Skill
+packages/pi-daddy  — THE PRODUCT (0.21.1 released): Agent Skill
                             definitions, resolver, v3 ledger (frozen v2 reader), delegate/delegate_all/
                             delegate_chain, catalog, bound human approval, process/herdr executors,
                             governed-writer leases, named checks, explicit Herdr dashboard plugin, and
