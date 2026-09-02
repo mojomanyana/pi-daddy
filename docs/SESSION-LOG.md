@@ -11,18 +11,18 @@ decisions; this file holds state and next actions. Newest entry on top.
 2026-08-22 the *server* enforces it: `main` requires a pull request (zero approvals) with both CI legs green,
 and `enforce_admins` is on, so a direct push is refused rather than merely discouraged.
 
-**STATE, 2026-09-01. `0.20.1` is released and registry-verified.** npm `latest`, tag `v0.20.1`, the GitHub
-Release and the released baseline resolve to one commit, so `git rev-list -n1 v0.20.1` is the immutable source
-point and this block deliberately names no mutable `main` SHA. **Thirty-seven ADRs in the repository; 0.20.1
-contains the first thirty-six.** This patch repairs R-172:
-0.20.0's dashboard sent mutually exclusive workspace and pane selectors for a split, so Herdr refused every
-first open. The breaking 0.20.0 ledger/routing contracts are unchanged. Release evidence: **727 unit · 45
-integration against real pi and Herdr 0.8.2 · typecheck · installed-package smoke · 97/97 mutation guards ·
-independent specification/quality approval**. Two clean packs were byte-equal. Registry verification installed
-`pi-daddy@0.20.1` into a fresh project, imported it, found the plugin, found no test-control artifact, and opened
-then closed a real right split beside the caller. Registry shasum
-`8e8b6d7be99d0d9f17e0b3024a9f3996401d926b` matches the published tarball; its SHA-256 is
-`f05e4ace823cc80d77b2f26c0d78ace18c553e3f9c4db654005454b5ff1e31bb`.
+**STATE, 2026-09-02. `0.21.0` is released and registry-verified.** npm `latest`, tag `v0.21.0`, the GitHub
+Release and the released baseline resolve to one commit, so `git rev-list -n1 v0.21.0` is the immutable source
+point and this block deliberately names no mutable `main` SHA. **Thirty-seven ADRs.** ADR-0037 makes one
+explicit `/grants init` persist and adopt the project grant plus `.pi/grants.jsonl`; installation remains inert,
+legacy stores are not migrated, and environment configuration wins. Release evidence: **730 unit · 47
+integration against real pi and Herdr 0.8.2 · typecheck · installed-package smoke · 110/110 mutation guards ·
+independent critical specification/quality approval**. Two clean packs were byte-equal. Registry verification
+installed `pi-daddy@0.21.0` into a fresh project, imported it, found the plugin, found no test-control artifact,
+required the generated ledger export as an exact active line, round-tripped the v2 store, and ran a real pi
+session that reported the stored project ledger. Registry shasum
+`f93f84a7607c739504547ace6d6ac81198be7a50` matches the published tarball; its SHA-256 is
+`97224524906a2a338f389f44721bd2112e5bf5755f23d360ca4dc782346ddb6a`.
 
 *(These lines were stale for about an hour after the release — they said "nothing is released", the tier "was
 not run", and named a commit three merges back, while the paragraphs directly below them said otherwise. **That
@@ -33,7 +33,7 @@ trigger, firing on R-156, inside the commit that recorded it. A summary that mus
 cite a mutable `HEAD` pointer; it can cite a tag, which does not move. If you change what is true here, change
 these lines in the same commit.)*
 
-**0.21.0 init-ledger candidate, 2026-09-01; unreleased.** The operator chose ADR-0037's explicit-project
+**0.21.0 init-ledger release, 2026-09-02; registry-verified.** The operator chose ADR-0037's explicit-project
 option: package installation still does nothing, but one `/grants init` atomically persists a single choice
 containing the grant and `.pi/grants.jsonl`, then adopts both, so later plain `pi` sessions retain them without
 an export. R-173 keeps children on the environment-only channel: `PI_GRANTS_GRANT` bypasses the cwd store,
@@ -57,8 +57,9 @@ init. A same-session empty-then-init assertion now forces it; the rerun is **110
 review of tree `54bff67…` returned CHANGES-REQUESTED on **REV-QUAL-001 / R-176**: installed smoke used
 substring matching, so the old `#export PI_GRANTS_LEDGER` line passed as active. It now requires an exact line;
 a disposable package with only that line reverted fails with `init did not enable its project ledger`, and the
-candidate smoke passes. Critical repair review approved exact tree `b1281df…` with no findings. ADR-0037 is
-ready for its pull request; no release has occurred.
+candidate smoke passes. Critical repair review approved exact tree `b1281df…` with no findings. PR #27 merged
+as `8bbfc9f`; tag `v0.21.0` and the non-draft GitHub Release point there, npm `latest` resolves to 0.21.0, and
+the fresh registry install exercised the stored project ledger through a real pi process.
 
 **0.20.1 dashboard repair released and registry-verified, 2026-09-01.** R-172: released 0.20.0 sent both
 `--workspace` and `--target-pane` for a split plugin pane, while Herdr's API permits only the pane target for

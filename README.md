@@ -3,22 +3,17 @@
 **Capability governance for pi's multi-level agent system.** An orchestrator grants each sub-agent a
 deliberate subset of what it holds and withholds the rest. Sub-agents may delegate further, but only ever a
 subset of what they themselves hold — enforced by **pi's own `--tools` allowlist**, with an append-only
-ledger of every grant and refusal.
+ledger of every grant and refusal whenever a ledger is configured.
 
-**Release state (verified 2026-08-21):** PR #11 is merged and repository `main` is
-`1948b9406c13c9730f2fc103e68023d6e58c5e85`, carrying 596 unit + 44 non-model integration tests, all passing.
-**What is published is older than `main`.** The package source reads `0.18.1`, but tag `v0.18.1` and npm's
-`latest` both point at `8feaacbdf6003c783225e375b61874a599963f47` — the commit *before* the canonical ledger
-v2 contract landed. So `packages/pi-daddy/contracts/`, and the `contracts` entries in `files` and `exports`
-that ship it, are on `main` and **absent from the published npm `0.18.1`**: installing the package today does
-not get you the schema, and the version number no longer tells the two apart. Closing that needs the next
-authorized version bump and release. The latest GitHub Release is still `v0.17.1`. The real-model tier is
-separately authorized and is not run without it.
+**Release state (verified 2026-09-02):** npm `latest`, tag `v0.21.0` and the non-draft GitHub Release identify
+the same released source. It passed 730 unit tests, 47 non-model integration tests against real pi/Herdr,
+typecheck, installed-package smoke and 110/110 mutation guards. A fresh registry install exercised the v2
+project store and default ledger through a real pi process.
 
-**One standing exception to any readiness claim:** workspace routing does not attenuate on `main`. ADR-0035
-and its implementation are on PR #10, an open draft that must not merge, so a descendant doing recursive
-critical work can still be routed to a registered workspace its parent was never granted. See
-`docs/SESSION-LOG.md` for what remains on that branch.
+One explicit `/grants init` now persists both the project grant and `.pi/grants.jsonl`; merely installing the
+package initializes nothing, and legacy stores are not silently migrated. **Known open issue R-175:** malformed
+and absent project stores are still indistinguishable at session construction, so malformed state can make a
+root session ungoverned. `docs/SESSION-LOG.md` and `docs/SPEC.md` are the current detailed record.
 
 **Want to run it?** [`docs/RUNNING-IT.md`](docs/RUNNING-IT.md) — setup in six steps, then a feature built
 end to end with seven governed sub-agents, sequential where output feeds input and parallel where it does not.
