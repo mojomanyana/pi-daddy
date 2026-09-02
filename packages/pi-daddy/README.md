@@ -6,7 +6,8 @@ tree, so a sub-agent can never hold more of the **tool surface** than its parent
 configured.
 
 Both qualifiers are load-bearing and are not buried: a child granted `bash` can escape governance entirely
-(ADR-0012, measured), and the ledger is opt-in. See *What this governs, and what it does not*.
+(ADR-0012, measured), and recording is opt-in — explicitly by environment or by running `/grants init` once
+for this project. See *What this governs, and what it does not*.
 
 > **0.13.0 was the first published release.** Earlier versions were developed in-repo and never shipped, so
 > the breaking changes in the changelog describe how this package arrived at its current behaviour rather
@@ -475,9 +476,12 @@ pi                      # then, inside pi:
 
 **`pi install`, not `npm install`** — it registers the package with pi, which is what makes the extension
 auto-load; presence in `node_modules` alone does nothing. `/grants init` asks only about the capabilities
-that can change your machine and applies the answer to the running session, no restart (ADR-0030).
-`npx pi-daddy init` does the same scaffolding from a shell, and both search pi's install root as well as
-the project's.
+that can change your machine and applies the answer to the running session, no restart (ADR-0030). That one
+project opt-in now also enables `.pi/grants.jsonl` immediately and for every later plain `pi` start
+(ADR-0037), so `/grants ledger` and `/grants dashboard` need no shell export. Merely installing the package
+does not initialize unrelated directories. `npx pi-daddy init` does the same scaffolding from a shell, and
+both search pi's install root as well as the project's. A pre-0.21 stored grant is not retroactive recording
+consent; run `/grants init` once after upgrading to enable its default ledger.
 
 ```
 found principal-pi-skills@2.3.1 — 7 skill(s), 0 declaring allowed-tools
@@ -579,13 +583,13 @@ everything below it.
 
 | Variable | Default | Notes |
 | :--- | :--- | :--- |
-| `PI_GRANTS_GRANT` | unset → ungoverned | Presence is what switches governance on. |
+| `PI_GRANTS_GRANT` | unset → use this directory's stored init choice, or ungoverned when none exists | Presence switches governance on and bypasses the whole cwd store; this is how children and CI stay environment-only. |
 | `PI_GRANTS_MAX_DEPTH` | `2` | Child-depth bound. `0` disables spawning. |
 | `PI_GRANTS_DEPTH` | `0` | This session's own depth; set by the parent, not by hand. |
 | `PI_GRANTS_GATED` | **`tool:bash`** in a governed session | Capabilities needing human approval. Set to `""` to gate nothing. Gating is closed under subsumption, so this also covers `write`/`edit`/`read`/`grep`/`find`/`ls` (ADR-0012). |
 | `PI_GRANTS_APPROVED` | unset | Inherited `capability@subject#sha256` entries; set by the parent, clamped to the child's own grant, and honoured only against the definition body the child itself loaded (ADR-0022). |
 | `PI_GRANTS_APPROVAL_TIMEOUT` | `120` (seconds) | How long a dialog waits. `0` or an unreadable value means **no timeout**: waiting forever denies nothing, so it is the safe reading of a value we do not understand. |
-| `PI_GRANTS_LEDGER` | unset → not recording | **Setting this makes the ledger load-bearing** — see below. |
+| `PI_GRANTS_LEDGER` | unset → a v2 `/grants init` choice uses `<cwd>/.pi/grants.jsonl`; otherwise not recording | Presence overrides the project default; `""` disables it for one run. Any effective path is load-bearing. |
 | `PI_GRANTS_WORKSPACE_REGISTRY` | unset | Operator-owned `{version:1, workspaces:{id:{path}}}` file, required only for workspace-routed spawns. |
 | `PI_GRANTS_WORKSPACE_LEASE_DIR` | under `$PI_CODING_AGENT_DIR/pi-daddy/` | Kernel writer locks and ownership metadata. |
 | `PI_GRANTS_CHILD_TIMEOUT` | `600` (seconds) | Wall-clock limit for a child. Inherited by descendants — an operator preference, deliberately *not* attenuating state. |
@@ -595,7 +599,7 @@ everything below it.
 | `PI_GRANTS_HERDR` | unset ⇒ **probe** | Three-state. Unset probes for a reachable herdr and uses panes if one answers; `1` demands panes and refuses every delegation if herdr is unreachable; `0` demands captured subprocesses. Never detected from `herdr` merely being on `PATH`. |
 | `PI_GRANTS_HERDR_WORKSPACE` | the parent's `HERDR_WORKSPACE_ID` | herdr workspace for spawned panes. Defaults to the workspace this session is in, so a child is a tab away rather than a workspace away. |
 | `PI_GRANTS_HERDR_KEEP_PANE` | unset | `1` keeps each child's pane for inspection, and no sweep closes it. Off by default: a fan-out would flood the workspace. |
-| `PI_CODING_AGENT_DIR` | `~/.pi/agent` | pi's own variable, not ours — but it decides where persisted approvals live, so it is listed here. |
+| `PI_CODING_AGENT_DIR` | `~/.pi/agent` | pi's own variable, not ours — but it decides where stored project grants/ledger consent and persisted approvals live. |
 
 **A malformed value disables spawning; it never falls back to a default.** An unreadable
 `PI_GRANTS_MAX_DEPTH` or `PI_GRANTS_DEPTH` yields `maxDepth: 0` and a startup warning naming the
@@ -603,12 +607,13 @@ variable. Before 0.5.0 these were read with `parseInt`, which accepts numeric pr
 and otherwise gives `NaN` — and since every comparison against `NaN` is false, a typo did not tighten the
 depth limit, it **removed** it.
 
-**Configuring a ledger makes it a precondition, not a log.** If `PI_GRANTS_LEDGER` is set and the write
-fails, the delegation is **refused**. Asking for an audit trail is an explicit act, and `ledger.ts` has
-always documented that an unrecorded grant should fail closed; until 0.5.0 both call sites silently
-swallowed the error. Sessions with no ledger configured are unaffected. Concurrent appends are serialised by
-a lock file with a short timeout — failing closed beats hanging — and a lock abandoned by a killed process
-is broken after 10s.
+**Configuring a ledger makes it a precondition, not a log.** This applies equally to an explicit
+`PI_GRANTS_LEDGER` and to the project default accepted through `/grants init`: if the write fails, delegation
+is **refused**. Asking for an audit trail is an explicit act, and `ledger.ts` has always documented that an
+unrecorded grant should fail closed; until 0.5.0 both call sites silently swallowed the error. Legacy v1 grant
+stores and sessions with no ledger configured are unaffected. Concurrent appends are serialised by a lock file
+with a short timeout — failing closed beats hanging — and a lock abandoned by a killed process is broken after
+10s.
 
 ## The ledger
 

@@ -12,6 +12,24 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## 0.21.0 — one project init enables its ledger (2026-09-01)
+
+- `/grants init` now atomically persists one project choice containing both the capability grant and default
+  `.pi/grants.jsonl`, then adopts both after that write succeeds. Future plain `pi` starts load both, so
+  `/grants ledger` and `/grants dashboard` need no repeated shell export.
+- Merely installing pi-daddy still initializes nothing. `PI_GRANTS_GRANT` bypasses the project store for
+  children/CI, and `PI_GRANTS_LEDGER` overrides the stored default, including `""` for a one-run opt-out.
+- Existing version-1 grant stores retain their no-ledger behavior until the operator explicitly reruns
+  `/grants init`; an upgrade never converts prior governance consent into recording consent.
+- Newly generated `.pi/grants.env` files export the project ledger. Existing reviewed files remain untouched.
+- **First-review repair:** remember whether the ledger came from the environment before publishing a stored
+  default, so a later init after a cwd change can replace pi-daddy's own old path without overriding a real
+  operator value. A second review made v1 lookalike `projectLedger` fields an explicit inert case after its
+  mutation survived the first tests. Review also exposed pre-existing malformed-store fail-open behavior
+  (R-175); it remains open and is not presented as fixed by this release.
+- **Final-quality repair:** installed smoke now matches the active ledger export as a complete line; the old
+  commented `#export` contained the previous substring and falsely passed.
+
 ## 0.20.1 — open the dashboard with Herdr's split-pane contract (2026-09-01)
 
 - Fix `/grants dashboard` on Herdr 0.8+: a split plugin pane targets the verified caller pane and must not

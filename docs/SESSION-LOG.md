@@ -13,7 +13,8 @@ and `enforce_admins` is on, so a direct push is refused rather than merely disco
 
 **STATE, 2026-09-01. `0.20.1` is released and registry-verified.** npm `latest`, tag `v0.20.1`, the GitHub
 Release and the released baseline resolve to one commit, so `git rev-list -n1 v0.20.1` is the immutable source
-point and this block deliberately names no mutable `main` SHA. **Thirty-six ADRs.** This patch repairs R-172:
+point and this block deliberately names no mutable `main` SHA. **Thirty-seven ADRs in the repository; 0.20.1
+contains the first thirty-six.** This patch repairs R-172:
 0.20.0's dashboard sent mutually exclusive workspace and pane selectors for a split, so Herdr refused every
 first open. The breaking 0.20.0 ledger/routing contracts are unchanged. Release evidence: **727 unit · 45
 integration against real pi and Herdr 0.8.2 · typecheck · installed-package smoke · 97/97 mutation guards ·
@@ -31,6 +32,33 @@ went stale on merge**: it asserted `main` is `<sha>`, and merging it moved `main
 trigger, firing on R-156, inside the commit that recorded it. A summary that must be updated BY commits cannot
 cite a mutable `HEAD` pointer; it can cite a tag, which does not move. If you change what is true here, change
 these lines in the same commit.)*
+
+**0.21.0 init-ledger candidate, 2026-09-01; unreleased.** The operator chose ADR-0037's explicit-project
+option: package installation still does nothing, but one `/grants init` atomically persists a single choice
+containing the grant and `.pi/grants.jsonl`, then adopts both, so later plain `pi` sessions retain them without
+an export. R-173 keeps children on the environment-only channel: `PI_GRANTS_GRANT` bypasses the cwd store,
+`PI_GRANTS_LEDGER` still overrides it, and legacy v1 stores remain no-ledger until init is deliberately rerun.
+R-174 records the accepted load-bearing/untracked-file cost. Red evidence was the new store export missing,
+the generated env line commented, init persisting v1/adopting no path, and a real pi with v2 state reporting
+inactive/no ledger. Candidate evidence: **730 unit · 47 integration against real pi and Herdr 0.8.2 · typecheck
+· installed-package smoke**. The integration path invokes a real `/grants init`, inspects its v2 store, then
+starts plain pi twice for status and ledger reporting. The first critical specification review approved exact
+tree `be59b0a…`. Its parallel quality attempt timed out but reproduced a real repair blocker first: after
+session start published project A's default into `process.env`, init for project B treated that self-published
+value as an explicit override and kept writing A's ledger. Provenance is now captured before publication, with
+red-first moved-cwd proof and an exact mutation. The bounded quality adjudication cleared that repair and filed
+R-175 — malformed stores silently ungovern the root — as pre-existing, open, and non-blocking; the parser test
+was narrowed so it no longer claims otherwise. Final critical specification re-review approved exact tree
+`86aebf7…`. Its parallel quality attempt timed out, but first showed a v1 lookalike-field mutation surviving
+the focused tests; an explicit v1-with-`projectLedger:true` case and exact mutation now force the version
+boundary. Two further entries targeted empty-value provenance and the separate v1-to-ledger session mapping;
+the first catalogue run scored **109/110** because startup-only coverage did not prove empty survived a later
+init. A same-session empty-then-init assertion now forces it; the rerun is **110/110**. Final critical quality
+review of tree `54bff67…` returned CHANGES-REQUESTED on **REV-QUAL-001 / R-176**: installed smoke used
+substring matching, so the old `#export PI_GRANTS_LEDGER` line passed as active. It now requires an exact line;
+a disposable package with only that line reverted fails with `init did not enable its project ledger`, and the
+candidate smoke passes. Critical repair review approved exact tree `b1281df…` with no findings. ADR-0037 is
+ready for its pull request; no release has occurred.
 
 **0.20.1 dashboard repair released and registry-verified, 2026-09-01.** R-172: released 0.20.0 sent both
 `--workspace` and `--target-pane` for a split plugin pane, while Herdr's API permits only the pane target for

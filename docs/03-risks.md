@@ -3670,6 +3670,85 @@ probe closed it afterward.
 **Trigger:** any `split`/`zoomed` plugin open carrying `workspace_id` or `--workspace`; or a Herdr command fake
 that accepts placement/target combinations the real API rejects.
 
+## R-173 · A convenient ledger default could turn cwd into a second child configuration channel — H×M, FIXED
+
+Added and fixed 2026-09-01 for ADR-0037. A root project store is safe only because children receive their
+configuration from the parent environment. Reading the new ledger choice whenever a store exists would let a
+routed child with an inherited `PI_GRANTS_GRANT` activate the destination project's ledger, splitting one
+execution across audit files and making cwd a second propagation channel. Inferring consent from every existing
+version-1 grant would separately turn a package upgrade into persistent recording nobody selected.
+
+The store now has an explicit version-2 `projectLedger: true` marker. Version 1 remains no-ledger. Presence of
+`PI_GRANTS_GRANT` bypasses the whole store, while eligible roots still let `PI_GRANTS_LEDGER` win, including an
+empty one-run opt-out. Unit and real-pi integration tests force all three precedence edges; mutations restore
+each forbidden interpretation separately.
+
+**First-review correction, 2026-09-01.** The initial adoption check read `process.env.PI_GRANTS_LEDGER` live.
+But session start had already published the store-derived default there, so a later `/grants init` after a cwd
+change mistook pi-daddy's own old value for an operator override and stored project B while continuing to write
+project A's ledger. Environment provenance is now captured before any publication. A same-session moved-cwd
+regression and exact old-predicate mutation force the distinction.
+
+**Final-quality test correction, 2026-09-01.** Replacing the version-derived consent result with
+`parsed.projectLedger === true` left the focused tests green: ordinary v1 fixtures lacked the lookalike field,
+so no test proved v1's grammar could not smuggle it. A v1 file carrying `projectLedger: true` now remains
+no-ledger, and the exact lookalike mutation must fail. Production was already version-derived; its claimed
+regression was not.
+
+**Catalogue correction, 2026-09-01.** The new `undefined`→`Boolean` provenance mutation initially stayed green:
+the integration test proved empty disabled startup, not that a subsequent init preserved that explicit empty
+choice. A same-session empty-then-init assertion now forces the guard. The catalogue rejected its own unproved
+entry instead of turning “110/110” into a claim.
+
+**Trigger:** any child with `PI_GRANTS_GRANT` reading project-store ledger state; any v1 store activating a
+ledger after upgrade; or a stored default outranking a present `PI_GRANTS_LEDGER`.
+
+## R-174 · The default project ledger can make repository writability a delegation precondition — M×M, ACCEPTED
+
+Added 2026-09-01 for ADR-0037. After explicit `/grants init`, the default is `<cwd>/.pi/grants.jsonl` and is
+load-bearing. A project made read-only after init, a `.pi` permission change, or a ledger path replaced by a
+directory therefore refuses delegation that previously ran without recording. The file may also appear
+untracked; pi-daddy does not edit `.gitignore` or choose retention.
+
+This is the selected failure direction, not a silent fallback: `/grants` prints the effective path, the append
+error refuses the spawn, and `PI_GRANTS_LEDGER` can select another path or `""` can disable it for one run.
+Existing v1 stores do not acquire the precondition until init is rerun.
+
+**Revisit trigger:** repeated reports of repository clutter, read-only-project refusals, or demand for a
+first-class persistent ledger-only disable command.
+
+## R-175 · A malformed stored grant silently makes the root ungoverned — H×M, OPEN
+
+Added 2026-09-01 by ADR-0037's first quality review, and confirmed against the pre-change baseline. The store
+reader returns the same `null` for ENOENT, malformed JSON, wrong cwd, unsupported version and unreadable file.
+`createGrantsSession` must interpret ENOENT as ordinary opt-out, so it interprets every other case that way too:
+the root receives `tool:*`, delegation remains available, and no warning identifies the rejected ceiling. The
+unit test said malformed input “grants NOTHING”; that was true only of the parser return and false of the
+session the product runs.
+
+This predates ADR-0037 — baseline rejected version 2 through the same null-to-wildcard route — and ADR-0037's
+atomic writer does not create malformed bytes, so it is not folded into the init-ledger change. The required
+repair is a tri-state loader (`absent | valid | invalid`): only ENOENT means opt-out; invalid/unreadable state
+must be loud and must not silently become an ungoverned wildcard session.
+
+**Trigger:** any store read failure other than ENOENT producing `grants: inactive`, or any test claiming parser
+rejection proves session-level fail-closed behavior.
+
+## R-176 · Installed smoke accepted the old commented ledger line — L×H, FIXED
+
+Added and fixed 2026-09-01 by final ADR-0037 quality review. The smoke checked
+`grantEnv.includes('export PI_GRANTS_LEDGER=…')`; the released old form `#export PI_GRANTS_LEDGER=…` contains
+that substring, so reverting the feature still produced green installed-artifact evidence. Unit and mutation
+coverage protected the source, but the check advertised as proving the packed install could not fail for the
+old package behavior.
+
+The smoke now compares a complete line. In a disposable installed-package probe, changing only the generated
+line back to `#export` exits non-zero with `init did not enable its project ledger`; the unmodified package
+smoke passes.
+
+**Trigger:** an installed-artifact assertion using substring matching where a comment, prefix or larger token
+can contain the expected active configuration.
+
 ---
 
 ## Register log
@@ -3781,3 +3860,6 @@ that accepts placement/target combinations the real API rejects.
 | 2026-08-28 | R-167 and R-170 corrected | The attempted third whole-change review timed out, but a bounded independent critical adjudication reproduced two blockers: invocation `cwd` was secretly a fourth pane-key dimension and created duplicate dashboards for one workspace/tab/ledger; the workflow-fact builder was the one public v3 builder omitted from the claimed final wire assertion. Both are repaired red-first and mutation-pinned, but the bounded verdict is not whole-change approval | third critical review attempt of ADR-0036 candidate |
 | 2026-08-28 | R-167 corrected again, R-171 | A distributed review covered all 71 changed paths and a fresh snapshot adjudicated its five hypotheses. Two survived: semantically mismatched pane state reused a live process for another ledger, and malformed explicit v2 was downgraded to plausible history/orphan counts. Three were rejected: protocol-scoping persisted consent was not specified, a hostile internal progress callback was isolated by every production caller, and 460 is a documented conservative check-ID ceiling. Accepted repairs are red-first and mutation-pinned; they remain a new approval target | critical whole-change review of ADR-0036 candidate |
 | 2026-09-01 | R-172 | Added and fixed — released 0.20.0 passed both workspace and pane targets to a split plugin open, a combination Herdr rejects. Real Herdr 0.8.2 reproduced the refusal; removing only the workspace selector opened beside the caller. The fake now enforces the real placement contract and mutation restores the defect | live dashboard setup |
+| 2026-09-01 | R-173, R-174, ADR-0037 | One explicit `/grants init` now binds the stored grant and project ledger. V2 consent, child/store isolation and environment precedence close the second-channel risk; project writability and untracked-file costs are accepted and loud | project setup decision |
+| 2026-09-01 | R-173 corrected, R-175 | Reviews reproduced a self-published ledger mistaken for an environment override; provenance capture plus moved-cwd regression repairs it. They also found the pre-existing malformed-store null-to-wildcard path, corrected an overclaiming parser test, and found the v1 lookalike-field guard unforced; the expanded mutation catalogue then rejected its own empty-provenance entry until init was included in the test. Tri-state session handling remains open | ADR-0037 critical reviews |
+| 2026-09-01 | R-176 | Final quality review found installed smoke's substring check passed the old commented ledger line. Exact-line matching now fails a disposable `#export` package and passes the candidate | ADR-0037 final quality review |

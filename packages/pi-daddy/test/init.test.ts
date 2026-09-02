@@ -168,6 +168,8 @@ test("the grant authorises only what can actually be spawned, and always tool:de
   assert.match(plan.grantEnvContent, /plan: declares no `allowed-tools`/);
   assert.match(plan.grantEnvContent, /git-ops: declares Bash\(git:\*\)/);
   assert.match(plan.grantEnvContent, /export PI_GRANTS_GRANT="agent:review,tool:delegate,tool:grep,tool:read"/);
+  assert.match(plan.grantEnvContent, /^export PI_GRANTS_LEDGER="\.pi\/grants\.jsonl"$/m);
+  assert.doesNotMatch(plan.grantEnvContent, /^#export PI_GRANTS_LEDGER=/m, "explicit init enables its project ledger");
 });
 
 test("a declared capability pi has no tool for is flagged, because the spawn will be refused", async () => {
@@ -448,6 +450,33 @@ test("`/grants init`'s dialog cannot confer a routing capability, whatever the o
 
   // And the operator is told where routing lives instead of being silently denied it.
   assert.match(notices.join("\n"), /ROUTABLE WORKSPACES|workspace:prod/);
+});
+
+test("`/grants init` stores and adopts the project ledger as one decision", async () => {
+  const cwd = await project();
+  await skillPackage(cwd, "read-pkg", "1.0.0", { review: DECLARED });
+  const notices: string[] = [];
+  let adoptedLedger: string | undefined;
+  const session = {
+    gated: ["tool:bash"],
+    adoptGrant: (_grant: readonly Capability[], ledger?: string) => { adoptedLedger = ledger; },
+  };
+  await runInit(
+    session as never,
+    { cwd, ui: { select: async () => "No", notify: (message: string) => { notices.push(message); } } } as never,
+    async () => {},
+  );
+
+  const stored = JSON.parse(await readFile(grantStorePath(cwd), "utf8")) as {
+    version: number;
+    projectLedger?: boolean;
+  };
+  assert.deepEqual(
+    { version: stored.version, projectLedger: stored.projectLedger, adoptedLedger },
+    { version: 2, projectLedger: true, adoptedLedger: join(cwd, ".pi", "grants.jsonl") },
+    "the atomic store and the running session describe the same opt-in",
+  );
+  assert.match(notices.join("\n"), /ledger .*\.pi\/grants\.jsonl.*future pi sessions/i);
 });
 
 /**

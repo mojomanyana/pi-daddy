@@ -44,7 +44,7 @@ import type { Capability } from "../src/resolve.ts";
 import { loadDefinitions } from "../src/definitions.ts";
 import { buildCatalog } from "../src/catalog.ts";
 import { ENV_WORKSPACE_REGISTRY } from "../src/workspace.ts";
-import { loadGrantSync, grantStorePath } from "../src/grant-store.ts";
+import { grantStorePath, loadStoredGrantSync, projectLedgerPath } from "../src/grant-store.ts";
 import { republishable } from "./approvals.ts";
 
 /**
@@ -184,7 +184,7 @@ export interface GrantsSession {
    */
   readonly storeCwd: string;
   /**
-   * Adopt a grant decided DURING the session — `/grants init` answering a human — without a restart.
+   * Adopt the project choice made DURING the session — grant plus optional default ledger — without restart.
    *
    * Narrow by design: it sets the session's own grant and republishes, so the very next spawn is bounded by
    * it. It does **not** reach children that already exist; those are separate processes whose environment
@@ -194,7 +194,7 @@ export interface GrantsSession {
    * Only a human can reach this. Slash commands are user-invoked; no tool exposes it, so a model cannot
    * widen its own session's ceiling by calling something.
    */
-  adoptGrant(grant: Capability[]): void;
+  adoptGrant(grant: Capability[], projectLedger?: string): void;
 }
 
 /**
@@ -258,9 +258,16 @@ export function createGrantsSession(extensionPath: string | undefined): GrantsSe
   // against each other and says so if they differ, which is the only case this can get wrong.
   const grantRaw = process.env[ENV_GRANT];
   const storeCwd = process.cwd();
-  const stored = grantRaw === undefined ? loadGrantSync(storeCwd) : null;
+  // One root-only store read supplies both decisions made by `/grants init`. A child always has ENV_GRANT,
+  // so it cannot activate a ledger merely because its routed cwd happens to have a v2 store (ADR-0037).
+  const stored = grantRaw === undefined ? loadStoredGrantSync(storeCwd) : null;
   const governed = grantRaw !== undefined || stored !== null;
-  const inherited: Capability[] = grantRaw !== undefined ? parseList(grantRaw) : (stored ?? [WILDCARD]);
+  const inherited: Capability[] = grantRaw !== undefined ? parseList(grantRaw) : (stored?.grant ?? [WILDCARD]);
+  const ledgerRaw = process.env[ENV_LEDGER];
+  // Capture provenance before publishChildEnv writes this session's derived default into process.env. A later
+  // `/grants init` for ctx.cwd must not mistake our own publication for an operator override.
+  const ledgerFromEnvironment = ledgerRaw !== undefined;
+  const storedLedger = stored?.projectLedger ? projectLedgerPath(storeCwd) : undefined;
   // G7 / A-S4 + B-I4: strict, three-way parsing that fails CLOSED. A malformed bound used to yield
   // `NaN`, and every comparison against `NaN` is false, so depth limiting switched itself off.
   const bounds = depthConfig(process.env[ENV_DEPTH], process.env[ENV_MAX_DEPTH]);
@@ -280,7 +287,9 @@ export function createGrantsSession(extensionPath: string | undefined): GrantsSe
     // ungoverned-descendant escape hatch, and doing that silently is what changes here.
     // `PI_GRANTS_GATED=""` turns the default off; absent and empty are deliberately distinguishable.
     gated: governed ? gatedFromEnv(process.env[ENV_GATED]) : parseList(process.env[ENV_GATED]),
-    ledgerPath: process.env[ENV_LEDGER],
+    // Presence wins, including an explicitly empty value for a one-run opt-out. The store is eligible only
+    // when ENV_GRANT was absent above, preserving the environment as the child's single authority channel.
+    ledgerPath: ledgerRaw !== undefined ? ledgerRaw : storedLedger,
     // The un-probed reading. `resolveExecutor` replaces it at session start; until then a `1` already reads as
     // a refusal, which is the safe direction — a delegation that somehow ran before the probe would refuse
     // rather than quietly use the wrong executor.
@@ -342,13 +351,18 @@ export function createGrantsSession(extensionPath: string | undefined): GrantsSe
 
     storeCwd,
 
-    adoptGrant: (grant: Capability[]) => {
+    adoptGrant: (grant: Capability[], projectLedger?: string) => {
       // Governed too, not just bounded. A session that starts with no grant and then runs `/grants init` is
       // governed from that moment: every spawn is bounded by what was just stored. Leaving this false made
       // `/grants` print "inactive" while holding thirteen capabilities — a status line contradicting the
       // enforcer, which is the defect R-28 is named for.
       session.governed = true;
       session.ownGrant = grant;
+      // An environment ledger remains the explicit answer. Otherwise init's v2 choice becomes live now,
+      // before publishChildEnv gives the same absolute path to descendants.
+      if (!ledgerFromEnvironment && projectLedger !== undefined) {
+        session.ledgerPath = projectLedger;
+      }
       session.publishChildEnv();
     },
 
