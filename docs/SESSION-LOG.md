@@ -13,7 +13,7 @@ and `enforce_admins` is on, so a direct push is refused rather than merely disco
 
 **STATE, 2026-09-02. `0.21.0` is released and registry-verified.** npm `latest`, tag `v0.21.0`, the GitHub
 Release and the released baseline resolve to one commit, so `git rev-list -n1 v0.21.0` is the immutable source
-point and this block deliberately names no mutable `main` SHA. **Thirty-seven ADRs.** ADR-0037 makes one
+point and this block deliberately names no mutable `main` SHA. **Thirty-eight ADRs.** ADR-0037 makes one
 explicit `/grants init` persist and adopt the project grant plus `.pi/grants.jsonl`; installation remains inert,
 legacy stores are not migrated, and environment configuration wins. Release evidence: **730 unit · 47
 integration against real pi and Herdr 0.8.2 · typecheck · installed-package smoke · 110/110 mutation guards ·
@@ -23,6 +23,14 @@ required the generated ledger export as an exact active line, round-tripped the 
 session that reported the stored project ledger. Registry shasum
 `f93f84a7607c739504547ace6d6ac81198be7a50` matches the published tarball; its SHA-256 is
 `97224524906a2a338f389f44721bd2112e5bf5755f23d360ca4dc782346ddb6a`.
+
+**UNRELEASED 0.21.1 candidate, 2026-09-02.** ADR-0038 raises the default per-child timeout from 600 to
+1200 seconds while preserving explicit `PI_GRANTS_CHILD_TIMEOUT` values and inheritance. The focused default
+assertion failed red at 600000 vs 1200000 before the one-line constant change. Candidate evidence: **731 unit ·
+47 integration against real pi and Herdr 0.8.2 · typecheck · installed-package smoke**. The mutation catalogue
+was not rerun locally at the operator's request; protected-branch CI runs the existing catalogue automatically.
+Working rule 10 and GitHub protection prohibit the requested direct push, so this release must merge through a
+pull request.
 
 *(These lines were stale for about an hour after the release — they said "nothing is released", the tier "was
 not run", and named a commit three merges back, while the paragraphs directly below them said otherwise. **That

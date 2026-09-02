@@ -16,11 +16,15 @@ import { once } from "node:events";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { pathToFileURL } from "node:url";
-import { runChild, takeBytes } from "../src/run-child.ts";
+import { runChild, takeBytes, timeoutFromEnv } from "../src/run-child.ts";
 import { withRunChildTestControl } from "./run-child-test-control.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
 after(cleanupTempDirs);
+
+test("an unset child timeout defaults to twenty minutes", () => {
+  assert.equal(timeoutFromEnv(undefined), 20 * 60 * 1000);
+});
 
 const node = (script: string, over = {}) => ({
   command: process.execPath,

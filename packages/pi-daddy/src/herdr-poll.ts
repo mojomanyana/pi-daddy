@@ -67,7 +67,7 @@ export async function waitForSettled(
 ): Promise<{ status?: string; timedOut?: boolean; aborted?: boolean; spawnError?: string }> {
   const interval = request.pollIntervalMs ?? POLL_INTERVAL_MS;
   // ADR-0032. The pane is read on every poll so the parent can show what the child is doing, rather than the
-  // one word `delegate` for up to ten minutes.
+  // one word `delegate` for up to twenty minutes by default.
   //
   // No cross-poll state is kept, deliberately: the previous design remembered what it had reported so it could
   // send a diff, and that is what broke — see `tailLines`. A snapshot needs no memory.

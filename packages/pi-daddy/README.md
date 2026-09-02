@@ -162,7 +162,7 @@ delegate_all({ children: [ {…}, {…}, {…} ] })                  // several 
   refusal this package made was recorded by pi as a **successful** tool call. Found by the integration suite
   on its first run.
 - **A child cannot outlive or overwhelm you.** Output is capped (1 MiB), there is a wall-clock timeout
-  (`PI_GRANTS_CHILD_TIMEOUT`, default 600s) with `SIGTERM` → `SIGKILL` escalation so a child cannot ignore
+  (`PI_GRANTS_CHILD_TIMEOUT`, default 1200s) with `SIGTERM` → `SIGKILL` escalation so a child cannot ignore
   its way past it, an abort is honoured even if it arrived before the spawn, and a child that exits
   non-zero, times out or is cancelled comes back as a **tool error naming which** — not as an answer.
 - **Fan-out is synchronous and bounded.** At most 8 children per call, and the subtree budget bounds the
@@ -592,7 +592,7 @@ everything below it.
 | `PI_GRANTS_LEDGER` | unset → a v2 `/grants init` choice uses `<cwd>/.pi/grants.jsonl`; otherwise not recording | Presence overrides the project default; `""` disables it for one run. Any effective path is load-bearing. |
 | `PI_GRANTS_WORKSPACE_REGISTRY` | unset | Operator-owned `{version:1, workspaces:{id:{path}}}` file, required only for workspace-routed spawns. |
 | `PI_GRANTS_WORKSPACE_LEASE_DIR` | under `$PI_CODING_AGENT_DIR/pi-daddy/` | Kernel writer locks and ownership metadata. |
-| `PI_GRANTS_CHILD_TIMEOUT` | `600` (seconds) | Wall-clock limit for a child. Inherited by descendants — an operator preference, deliberately *not* attenuating state. |
+| `PI_GRANTS_CHILD_TIMEOUT` | `1200` (seconds) | Wall-clock limit for a child. Inherited by descendants — an operator preference, deliberately *not* attenuating state. |
 | `PI_GRANTS_FANOUT` | `8` | Per-call width and downward subtree budget; not a session-total counter. Malformed or `0` falls back to the default. |
 | `PI_GRANTS_PARENT_ID` | `d0` | Readable logical tree position; set by the parent and allowed to repeat across calls. |
 | `PI_GRANTS_EXECUTION_ID` | unset at a root | Unique governed execution occurrence; set by the parent. Lifecycle/lease joins use this, never `PI_GRANTS_PARENT_ID`. |

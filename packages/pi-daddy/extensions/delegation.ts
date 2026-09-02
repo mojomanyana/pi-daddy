@@ -244,7 +244,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
     parameters: delegateParams,
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
       // ADR-0032: one child, same block. `_onUpdate` was discarded here, so a delegation showed the bare word
-      // `delegate` for up to DEFAULT_TIMEOUT_MS — ten minutes of nothing.
+      // `delegate` for up to DEFAULT_TIMEOUT_MS — twenty minutes by default.
       const progress = progressReporter(session, [params.agent ?? "delegate"], onUpdate as never);
       const outcome = await runOneDelegation(
         session,
