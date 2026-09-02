@@ -5,7 +5,7 @@ to be decided. This file is authoritative for present behavior; ADRs record why 
 date. If code and this file disagree, report and repair the stale current-state claim rather than re-deriving
 present behavior from historical ADRs.
 
-Last synced against the code: **2026-09-01**, unreleased after `pi-daddy` 0.20.1, pi 0.84.2; the dashboard plugin requires Herdr 0.8.0.
+Last synced against the code: **2026-09-02**, released as `pi-daddy` 0.21.0, pi 0.84.2; the dashboard plugin requires Herdr 0.8.0.
 
 **herdr's own contracts are now checked by `test-integration/herdr.it.ts`** against a live server, in an isolated
 workspace it creates and closes. That suite exists because three shipping defects hid behind the unit fake — the

@@ -35,16 +35,12 @@ permissible, able to refuse or allow but never to narrow. **This package is now 
 is an argument rather than a veto. Definitions are **Agent Skills (`SKILL.md`)** files whose `allowed-tools`
 becomes the grant; the pi-subagents ceiling port is deleted; the interceptor survives only as a tripwire.
 
-**Current release state: 0.20.1, published and registry-verified 2026-09-01.** This patch makes the optional
-Herdr dashboard open: 0.20.0 sent mutually exclusive workspace and pane selectors for a split, so Herdr refused
-every first open (R-172). The breaking 0.20.0 contracts remain: production ledger joins use `executionId`;
-`LedgerReport.corrupt[]` no longer returns raw bytes; rendered correlation and named-check identifiers use
-bounded ASCII grammars. The 0.19.0 routing rule also remains: routing to a registered workspace requires
-`workspace:<id>` in the caller's grant (ADR-0035).
-
-**Unreleased 0.21.0 candidate:** ADR-0037 makes one explicit `/grants init` the project opt-in for both the
-stored grant and `.pi/grants.jsonl`; package installation alone still initializes nothing. Version-1 stores
-are not silently migrated, and environment configuration still wins.
+**Current release state: 0.21.0, published and registry-verified 2026-09-02.** ADR-0037 makes one explicit
+`/grants init` the project opt-in for both the stored grant and `.pi/grants.jsonl`; package installation alone
+still initializes nothing. Version-1 stores are not silently migrated, and environment configuration wins for
+children, CI, custom paths and the empty one-run opt-out. R-175 remains open: malformed and absent project
+stores are still indistinguishable at session construction. The breaking 0.20.0 ledger contracts and 0.19.0
+`workspace:<id>` routing requirement are unchanged.
 
 **ADR-0036, the live Herdr governance dashboard, is released in 0.20.0.** Thirty-seven ADRs are decided. It adds ledger v3 occurrence identity, an
 explicit plugin-install handshake, `/grants dashboard`, a pure live projection and provenance-labelled
@@ -144,7 +140,7 @@ docs/archive/             — SUPERSEDED, kept as evidence, never edited to matc
                             registers (discovery, assumptions, landscape, metrics), ROADMAP, gate reports,
                             both code reviews, the old specs, the completed implementation plan, and the
                             dead upstream proposal. See its README for why each stopped being current.
-packages/pi-daddy  — THE PRODUCT (0.21.0 candidate; 0.20.1 released): Agent Skill
+packages/pi-daddy  — THE PRODUCT (0.21.0 released): Agent Skill
                             definitions, resolver, v3 ledger (frozen v2 reader), delegate/delegate_all/
                             delegate_chain, catalog, bound human approval, process/herdr executors,
                             governed-writer leases, named checks, explicit Herdr dashboard plugin, and

@@ -3303,6 +3303,12 @@ commit that is not an ancestor of `HEAD`" would have passed here — `e447b6c` *
 check: **the defect was the SHA being there, not the SHA being wrong.** What remains checkable is narrower and
 still worth having: fail when the block names a *version* that is not the package's.
 
+**Trigger fired again, 2026-09-02.** The root `README.md` still described 0.18.1, PR #10 as an open draft,
+workspace attenuation as absent, GitHub Release 0.17.1 and a mutable `main` SHA after 0.21.0 was published.
+Release-record PRs had repeatedly updated `CLAUDE.md` and this session log while leaving the repository's public
+front door untouched. The 0.21.0 release record replaces that block with immutable release identity, current
+evidence and R-175; it names no mutable branch SHA.
+
 **Trigger:** any commit that changes release state, test counts or what is open, and does not touch the STATE
 block. And any summary in this repository that cites a `main` SHA.
 
@@ -3863,3 +3869,4 @@ can contain the expected active configuration.
 | 2026-09-01 | R-173, R-174, ADR-0037 | One explicit `/grants init` now binds the stored grant and project ledger. V2 consent, child/store isolation and environment precedence close the second-channel risk; project writability and untracked-file costs are accepted and loud | project setup decision |
 | 2026-09-01 | R-173 corrected, R-175 | Reviews reproduced a self-published ledger mistaken for an environment override; provenance capture plus moved-cwd regression repairs it. They also found the pre-existing malformed-store null-to-wildcard path, corrected an overclaiming parser test, and found the v1 lookalike-field guard unforced; the expanded mutation catalogue then rejected its own empty-provenance entry until init was included in the test. Tri-state session handling remains open | ADR-0037 critical reviews |
 | 2026-09-01 | R-176 | Final quality review found installed smoke's substring check passed the old commented ledger line. Exact-line matching now fails a disposable `#export` package and passes the candidate | ADR-0037 final quality review |
+| 2026-09-02 | R-156 | Trigger fired again: root README still advertised 0.18.1 and an open PR #10 through the 0.21.0 release, including the mutable-main-SHA form R-156 had already rejected. Release record now updates every operational summary | 0.21.0 release close |
