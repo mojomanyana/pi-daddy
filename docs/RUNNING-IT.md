@@ -189,7 +189,7 @@ decide → architect → plan → build → (review ‖ debug) → git-ops
 | Depth | `2` | a child may delegate one level further, then it is a leaf |
 | Children per call | `8` | maximum in one `delegate_all` |
 | Fan-out budget | `8` | per call, and the share each child inherits — **not a session total** |
-| Child timeout | `600s` | per child; SIGTERM then SIGKILL |
+| Child timeout | `1200s` | per child; SIGTERM then SIGKILL |
 | Output cap | 1 MiB | per child; beyond it the child is killed and the result flagged truncated |
 | Gated | `tool:bash` | a human is asked before any child receives it |
 

@@ -12,6 +12,11 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## 0.21.1 — twenty-minute default child timeout (2026-09-02)
+
+- Raise the default per-child wall-clock limit from 600 to 1200 seconds. Explicit
+  `PI_GRANTS_CHILD_TIMEOUT` values remain unchanged and inherited by descendants.
+
 ## 0.21.0 — one project init enables its ledger (2026-09-01)
 
 - `/grants init` now atomically persists one project choice containing both the capability grant and default

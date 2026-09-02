@@ -5,7 +5,7 @@ to be decided. This file is authoritative for present behavior; ADRs record why 
 date. If code and this file disagree, report and repair the stale current-state claim rather than re-deriving
 present behavior from historical ADRs.
 
-Last synced against the code: **2026-09-02**, released as `pi-daddy` 0.21.0, pi 0.84.2; the dashboard plugin requires Herdr 0.8.0.
+Last synced against the code: **2026-09-02**, unreleased `pi-daddy` 0.21.1 after 0.21.0, pi 0.84.2; the dashboard plugin requires Herdr 0.8.0.
 
 **herdr's own contracts are now checked by `test-integration/herdr.it.ts`** against a live server, in an isolated
 workspace it creates and closes. That suite exists because three shipping defects hid behind the unit fake — the
@@ -277,7 +277,7 @@ leaf.
 | Depth | `PI_GRANTS_MAX_DEPTH` | `2` | `0` disables spawning. Malformed ⇒ `0` plus a startup warning. |
 | **Cardinality** | `PI_GRANTS_FANOUT` | `8` | **Per-call width, and the budget each child inherits.** Spawning spends from it before the remainder is divided among children, so a *subtree* can never exceed what its root held. **Not a session total** — the value is read once and never decremented, so a session may issue successive `delegate_all` calls at the full width. Bound the *tree* with `PI_GRANTS_MAX_DEPTH`; nothing bounds how many turns a session takes. Malformed or `0` ⇒ the default. |
 | Blast radius | — | `8` | Maximum children in a single call. |
-| Wall clock | `PI_GRANTS_CHILD_TIMEOUT` | `600`s | Per child. SIGTERM then SIGKILL. |
+| Wall clock | `PI_GRANTS_CHILD_TIMEOUT` | `1200`s | Per child. SIGTERM then SIGKILL. |
 | Output | — | 1 MiB | Per child; beyond it the child is killed and the result flagged truncated. |
 
 Depth and budget **attenuate downward** through the environment; the timeout is an operator preference and
@@ -778,8 +778,8 @@ is staged to a temp file because `agent start` types argv into a shell and rejec
 ## Watching a delegation run
 
 A delegation used to be a black box: both tools discarded pi's `onUpdate`, so the parent's screen showed the
-bare word `delegate` from the call until the result — up to ten minutes, and the same one word for all eight
-children of a `delegate_all`. ADR-0032 changed that.
+bare word `delegate` from the call until the result — up to twenty minutes by default, and the same one word
+for all eight children of a `delegate_all`. ADR-0032 changed that.
 
 **One status block per call**, redrawn in place, with a three-line tail per child:
 
@@ -988,7 +988,7 @@ loudly.
 | `PI_GRANTS_LEDGER` | unset ⇒ a v2 `/grants init` store uses `<cwd>/.pi/grants.jsonl`; otherwise not recording | Presence overrides the stored default; `""` disables it for that run. Any effective path is load-bearing. |
 | `PI_GRANTS_WORKSPACE_REGISTRY` | unset | Operator-owned `{version:1, workspaces:{id:{path}}}` file. Required only when a spawn names a workspace. |
 | `PI_GRANTS_WORKSPACE_LEASE_DIR` | `$PI_CODING_AGENT_DIR/pi-daddy/workspace-leases` | Kernel-lock files and ownership metadata for governed writers. |
-| `PI_GRANTS_CHILD_TIMEOUT` | `600` | Seconds. Inherited. |
+| `PI_GRANTS_CHILD_TIMEOUT` | `1200` | Seconds. Inherited. |
 | `PI_GRANTS_HERDR` | unset (= probe) | `1` demands herdr panes and refuses if unreachable; `0` demands subprocesses; unset probes. |
 | `PI_GRANTS_HERDR_WORKSPACE` | the parent's `HERDR_WORKSPACE_ID` | Which herdr workspace a child's pane goes in. |
 | `PI_GRANTS_HERDR_KEEP_PANE` | unset | Keep panes past `agent_settled`, for inspection. No sweep closes them. |

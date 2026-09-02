@@ -42,7 +42,9 @@ children, CI, custom paths and the empty one-run opt-out. R-175 remains open: ma
 stores are still indistinguishable at session construction. The breaking 0.20.0 ledger contracts and 0.19.0
 `workspace:<id>` routing requirement are unchanged.
 
-**ADR-0036, the live Herdr governance dashboard, is released in 0.20.0.** Thirty-seven ADRs are decided. It adds ledger v3 occurrence identity, an
+**ADR-0038 is the unreleased 0.21.1 change:** the default child timeout rises from ten to twenty minutes.
+
+**ADR-0036, the live Herdr governance dashboard, is released in 0.20.0.** Thirty-eight ADRs are decided. It adds ledger v3 occurrence identity, an
 explicit plugin-install handshake, `/grants dashboard`, a pure live projection and provenance-labelled
 workflow facts. The first critical review requested eight changes; the required re-review found ten more,
 including that one first-repair claim was still false. A third whole-change attempt timed out, but its bounded
@@ -101,7 +103,7 @@ can run `env -u PI_GRANTS_GRANT pi …` and get an ungoverned descendant (measur
 docs/SPEC.md              — WHAT THE PRODUCT IS, current state, no history. Read this second.
 docs/SESSION-LOG.md       — START HERE when resuming: state, verified facts, next actions. Newest on top.
 docs/03-risks.md          — live risk register. R-25 onward are current; R-01..R-24 serve the retired thesis
-docs/06-decisions/        — thirty-seven ADRs. Reversals are kept and marked: 0004→superseded, 0005 park→
+docs/06-decisions/        — thirty-eight ADRs. Reversals are kept and marked: 0004→superseded, 0005 park→
                             superseded, 0006 (magnitude claim falsified), 0007 THE REFRAME, 0008
                             attenuation + cardinality, 0009 pi-fabric (parked), 0010 approvals, 0011
                             universal capabilities, 0012 bash, 0013 pi-subagents (superseded by 0016),
@@ -121,7 +123,8 @@ docs/06-decisions/        — thirty-seven ADRs. Reversals are kept and marked: 
                             0034 adds generic runtime-enforcement primitives for external controllers
                             (amended three times after review), 0035 workspace routing is a capability — it was
                             the one dimension that did NOT attenuate until 0.19.0 (R-131, probe g36), 0036
-                            the dashboard is a ledger projection, 0037 one project init enables its ledger
+                            the dashboard is a ledger projection, 0037 one project init enables its ledger,
+                            0038 the default child timeout is twenty minutes
 docs/probes/              — measurement evidence, all against real software. Each has a "what this does
                             not establish" section: baseline/, pi-fabric-eval/, approval-ux/,
                             adr-0011-universal/, g1-argv/, g5-bash-escape/, g13-subagents-coupling/,
