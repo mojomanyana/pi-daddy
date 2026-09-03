@@ -2649,7 +2649,7 @@ defence-in-depth for a regular file on a slow mount.
 
 ---
 
-## R-137 · Routing attenuates by ID, not by DESTINATION — H×M, OPEN
+## R-137 · Routing attenuates by ID, not by DESTINATION — H×M, OPEN (ADR-0042 decided; implementation deferred)
 
 Added 2026-08-21. **Attempted, defeated four ways, and reverted 2026-08-22.** The attack is measured; the
 mechanism that was meant to close it is not in the product.
@@ -2702,6 +2702,11 @@ since it inspects the file and never its parent directory, and `rename(2)` needs
 **Trigger:** any authority whose meaning is stored outside the grant — routing is the first; a future
 `check:<id>` or `context:<id>` would be next. Also: an operator reporting a child that started somewhere they
 did not authorise.
+
+**Decision 2026-09-03.** ADR-0042 chooses a root-resolved, grant-attenuated inherited destination map over
+status quo and a per-child registry. No code changed: the previous attempt was defeated on Herdr propagation,
+empty/malformed state, startup ordering and a second unsafe reader. Implementation waits for a positive reversal
+of probe g37 and mutations covering those exact paths, so this risk remains OPEN.
 
 ## R-138 · Four findings from the PR #10 review pass, deliberately NOT fixed — M×M, OPEN
 
@@ -3039,6 +3044,13 @@ availability plus a lease record whose child never existed.
 **Trigger:** an operator reporting `WORKSPACE_WRITE_CONFLICT` on a workspace nothing is running in; or a
 `workspace_lease acquired` with no subsequent `capability_decision` that started a child.
 
+**Decision 2026-09-03.** ADR-0041 chooses resolve/bind, approve, acquire, then revalidate. The sentence above
+that says the default dialog has no timeout is historical and stale: the current default is 120 seconds, while
+zero or malformed configuration can still make it unbounded. No code changed in this wave because destination
+binding changes the version-1 approval meaning and needs a race probe. A small ledger-only patch was rejected:
+normal refusal teardown already attempts a matching release and reports append failure; a truthful `never-ran`
+event needs a versioned wire decision.
+
 ---
 
 ## R-147 · A registry the reader refuses produces no message anywhere — M×H, OPEN
@@ -3111,6 +3123,11 @@ so the argv and the lease-directory behaviour are measured and the pane child's 
 **Trigger:** any governance state that reaches a child through `process.env` rather than `plan.env` — the two
 executors diverge there by construction, and this is the second time (R-137 defeat 1 was the first).
 
+**Decision 2026-09-03.** ADR-0040 chooses co-locating the coordination lock under the validated worktree's
+`gitCommonDir`, rather than pretending a lease-directory hash or convention makes two directories contend.
+The defect remains OPEN: implementation waits for a positive host/container and linked-worktree probe, because
+the existing evidence proves split-brain but not that Git metadata is shared and writable in supported layouts.
+
 ## R-149 · The registry read deadline is forced by nothing, and its second timeout refusal cannot be reached — M×M, OPEN
 
 Added 2026-08-22 by the sixth pass. Both halves are in `src/workspace.ts`, the reader written to answer
@@ -3171,7 +3188,7 @@ v2 contract.
 **Trigger:** a guard whose only forcing test lives in `test-integration/` — the catalogue cannot see it. And
 any second call site of a rule the catalogue pins on the first.
 
-## R-154 · The published type surface references types the package does not declare — L×M, OPEN
+## R-154 · The published type surface references types the package does not declare — L×M, FIXED 2026-09-03
 
 Added 2026-08-23, found by installing `pi-daddy@0.19.0` **from the registry** into a scratch project rather
 than by the packing smoke test — which passes, because it installs a tarball into a project that already has
@@ -3199,6 +3216,10 @@ nonetheless a published surface referring to types it does not ask for.
 **The fix is one line** — `"@types/node": ">=22"` in `peerDependencies`, optional via
 `peerDependenciesMeta`, matching how `typebox` is already declared. **Deliberately not shipped as 0.19.1
 today:** it needs the operator's release decision, and a version cannot be republished.
+
+**Resolution 2026-09-03.** ADR-0043 accepts the package-contract decision and declares `@types/node >=22` as
+a non-optional peer, matching the engine floor. Optional peer metadata was rejected because it would preserve
+the strict consumer failure this entry records. The installed-package smoke remains the release check.
 
 **Also verified in the same pass, and worth recording because it is the first check of the ARTIFACT rather
 than the tree:** the registry install works; the invariant narrows and refuses escalation; **routing is
@@ -3723,7 +3744,7 @@ Existing v1 stores do not acquire the precondition until init is rerun.
 **Revisit trigger:** repeated reports of repository clutter, read-only-project refusals, or demand for a
 first-class persistent ledger-only disable command.
 
-## R-175 · A malformed stored grant silently makes the root ungoverned — H×M, OPEN
+## R-175 · A malformed or newer stored grant silently makes the root ungoverned — H×M, FIXED 2026-09-03
 
 Added 2026-09-01 by ADR-0037's first quality review, and confirmed against the pre-change baseline. The store
 reader returns the same `null` for ENOENT, malformed JSON, wrong cwd, unsupported version and unreadable file.
@@ -3739,6 +3760,14 @@ must be loud and must not silently become an ungoverned wildcard session.
 
 **Trigger:** any store read failure other than ENOENT producing `grants: inactive`, or any test claiming parser
 rejection proves session-level fail-closed behavior.
+
+**Resolution 2026-09-03.** The original entry omitted the upgrade-skew case: a version-2 store written by
+0.21.x was an unsupported version to older pi-daddy and followed this same null-to-wildcard path. Current code
+cannot repair an already-installed old binary, but it now classifies any future unsupported version separately
+and fails closed. The loader returns absent, valid, or refusal with one of `malformed`, `unsupported-version`,
+`unreadable`, `wrong-cwd`; only ENOENT is absent. Refusal creates a governed empty-grant session, is loud, and
+writes `GRANT_STORE_INVALID` to the conventional project ledger. Unit tests force all states and a real-pi test
+forces the unsupported-version session path and ledger line.
 
 ## R-176 · Installed smoke accepted the old commented ledger line — L×H, FIXED
 

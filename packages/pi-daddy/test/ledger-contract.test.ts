@@ -169,6 +169,15 @@ test("the closed v3 schema accepts fixtures and rejects v2, extra fields and mis
   assert.equal(validator.Check({
     ...fixture, correlation: { ...fixture.correlation, assurance_scope: null },
   }), false, "the schema must agree with runtime normalization, which never emits a null scope");
+  assert.equal(validator.Check({
+    ...fixture, correlation: { ...fixture.correlation, schema_version: "1.1" },
+  }), false, "unknown upstream schema versions fail at the version field");
+  assert.equal(validator.Check({
+    ...fixture, correlation: { ...fixture.correlation, assurance_scope: { type: "selectors", selectors: [] } },
+  }), false, "selector scope is non-empty");
+  assert.equal(validator.Check({
+    ...fixture, correlation: { ...fixture.correlation, assurance_scope: { type: "entire-run", selectors: ["src/**"] } },
+  }), false, "entire-run carries no selectors");
   const workflow = buildLedgerV3ContractFixtures()["workflow-fact.json"];
   assert.equal(validator.Check({ ...workflow, provenance: "planned", state: "completed" }), false);
   assert.equal(validator.Check({ ...workflow, correlation: { ...workflow.correlation, run_id: "" } }), false);

@@ -75,7 +75,7 @@ somebody.
 | **`docs/SPEC.md`** | **What the product is, precisely. No history. Start here.** |
 | `docs/SESSION-LOG.md` | Current state and what's next, newest first. |
 | `docs/03-risks.md` | Live risk register. R-25 onward are current. |
-| `docs/06-decisions/` | Twenty-five ADRs. Reversals kept and marked — **0016** is the current architecture; **0008** the invariant; **0012** why `bash` is out of scope; **0017**–**0019** authorise a definition, record which instructions ran, and pin an approval to both; **0020**–**0023** are the first red-team pass. |
+| `docs/06-decisions/` | Forty-three ADRs. Reversals are kept and marked; **0016** is the current architecture, **0008** the invariant, **0012** why `bash` is out of scope, and **0039**–**0043** the Wave 1 audit decisions. |
 | `docs/probes/` | Measurement evidence against real software. Each states what it does **not** establish. |
 | `docs/archive/` | Superseded, kept as evidence, never edited to match today. Don't start here. |
 | `packages/pi-daddy/` | The product. |
@@ -84,9 +84,9 @@ somebody.
 
 ```bash
 cd packages/pi-daddy
-npm test                   # 596 unit tests — pure, no pi, no network
+npm test                   # 739 unit tests — pure, no pi, no network
 npm run typecheck          # src + extensions + test + test-integration
-npm run test:integration   # 44 tests against a REAL pi process, no model tokens
+npm run test:integration   # 48 tests against a REAL pi process/Herdr server, no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and USE every subpath
 PI_GRANTS_IT_MODEL=1 npm run test:integration   # + 10 end-to-end with a real model (costs money)
 ```
@@ -97,7 +97,7 @@ Decisions live in ADRs (`/adr`), option-space exploration in `/brainstorm`, and 
 `docs/probes/`. Three advisory subagents — `product-strategist`, `architecture-critic`, `research-scout` —
 never edit files.
 
-Two conventions have earned their keep, and `.claude/rules/phase-gates.md` explains why:
+Two conventions have earned their keep, and `docs/WORKING-RULES.md` explains why:
 
 - **An answer that exists only in chat does not exist.** Every reversal here was survivable because the
   reasoning was written down beside the decision.

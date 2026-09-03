@@ -6,9 +6,10 @@ import {
   digestCapabilities,
   digestTask,
   normaliseCorrelation,
+  type CorrelationMetadata,
 } from "../src/correlation.ts";
 
-const upstream = {
+const upstream: CorrelationMetadata = {
   schema_version: "1.0",
   run_id: "run-1",
   task_id: "task-2",
@@ -37,13 +38,40 @@ test("upstream assurance values are preserved as opaque correlation metadata", (
   assert.notEqual(got?.assurance_scope, upstream.assurance_scope);
 });
 
+test("correlation schema version and assurance scope are the exact optional v1 contract", () => {
+  assert.deepEqual(normaliseCorrelation({}), {});
+  assert.deepEqual(
+    normaliseCorrelation({ schema_version: "1.0", assurance_scope: { type: "entire-run", selectors: [] } }),
+    { schema_version: "1.0", assurance_scope: { type: "entire-run", selectors: [] } },
+  );
+  assert.deepEqual(
+    normaliseCorrelation({ assurance_scope: { type: "selectors", selectors: ["src/auth/**"] } }),
+    { assurance_scope: { type: "selectors", selectors: ["src/auth/**"] } },
+  );
+
+  for (const [label, value, message] of [
+    ["unknown version", { schema_version: "1.1" }, /unsupported schema_version 1\.1; supported version is 1\.0/],
+    ["primitive scope", { assurance_scope: "all" }, /assurance_scope must be/],
+    ["extra scope field", { assurance_scope: { type: "entire-run", selectors: [], extra: true } }, /assurance_scope must contain only type and selectors/],
+    ["entire run with selectors", { assurance_scope: { type: "entire-run", selectors: ["src/**"] } }, /entire-run.*empty selectors/],
+    ["selectors without selectors", { assurance_scope: { type: "selectors", selectors: [] } }, /selectors scope requires at least one selector/],
+    ["empty selector", { assurance_scope: { type: "selectors", selectors: [""] } }, /selectors must be non-empty strings/],
+  ] as const) {
+    assert.throws(
+      () => normaliseCorrelation(value as never),
+      (error: Error & { code?: string }) => error.code === "CORRELATION_INVALID" && message.test(error.message),
+      label,
+    );
+  }
+});
+
 test("trusted task and capability digests are computed, never copied from correlation", () => {
   assert.equal(digestTask("exact task"), "dbeee95e71e7a2f50648e6630e61a58dac3272fdb29838d37f58b0f564f7f15e");
   assert.equal(digestCapabilities(["tool:write", "tool:read", "tool:read"]), digestCapabilities(["tool:read", "tool:write"]));
   assert.notEqual(digestTask("exact task"), upstream.task_digest);
 });
 
-test("approval binding changes for task, capability, workspace, context, parent, or definition", () => {
+test("approval binding changes for task, capability, workspace, context, parent, definition, or supplied tree state", () => {
   const base = buildApprovalBinding({
     task: "debug this probe",
     requested: ["tool:read", "tool:bash"],
@@ -52,6 +80,8 @@ test("approval binding changes for task, capability, workspace, context, parent,
     parentId: "d0",
     workspaceId: upstream.workspace_id,
     contextId: upstream.context_id,
+    treeSha: upstream.tree_sha,
+    lastChangeSeq: upstream.last_change_seq,
   });
   const digest = approvalBindingDigest(base);
   const variants = [
@@ -60,7 +90,9 @@ test("approval binding changes for task, capability, workspace, context, parent,
     buildApprovalBinding({ task: "debug this probe", requested: base.requested, effective: base.effective, definitionSha256: "e".repeat(64), parentId: base.parent_id, workspaceId: upstream.workspace_id, contextId: upstream.context_id }),
     buildApprovalBinding({ task: "debug this probe", requested: base.requested, effective: base.effective, definitionSha256: base.definition_sha256, parentId: "d9", workspaceId: upstream.workspace_id, contextId: upstream.context_id }),
     buildApprovalBinding({ task: "debug this probe", requested: base.requested, effective: base.effective, definitionSha256: base.definition_sha256, parentId: base.parent_id, workspaceId: "workspace-b", contextId: upstream.context_id }),
-    buildApprovalBinding({ task: "debug this probe", requested: base.requested, effective: base.effective, definitionSha256: base.definition_sha256, parentId: base.parent_id, workspaceId: upstream.workspace_id, contextId: "review-spec-2" }),
+    buildApprovalBinding({ task: "debug this probe", requested: base.requested, effective: base.effective, definitionSha256: base.definition_sha256, parentId: base.parent_id, workspaceId: upstream.workspace_id, contextId: "review-spec-2", treeSha: base.tree_sha, lastChangeSeq: base.last_change_seq }),
+    buildApprovalBinding({ task: "debug this probe", requested: base.requested, effective: base.effective, definitionSha256: base.definition_sha256, parentId: base.parent_id, workspaceId: upstream.workspace_id, contextId: upstream.context_id, treeSha: "f".repeat(40), lastChangeSeq: base.last_change_seq }),
+    buildApprovalBinding({ task: "debug this probe", requested: base.requested, effective: base.effective, definitionSha256: base.definition_sha256, parentId: base.parent_id, workspaceId: upstream.workspace_id, contextId: upstream.context_id, treeSha: base.tree_sha, lastChangeSeq: 13 }),
   ];
   for (const variant of variants) assert.notEqual(approvalBindingDigest(variant), digest);
 });
@@ -86,7 +118,7 @@ test("correlation is a whitelist of the pinned contract, not a free-form blob", 
   const { normaliseCorrelation } = await import("../src/correlation.ts");
 
   // Every declared field still survives untouched — the contract requires passing them through unchanged.
-  const declared = {
+  const declared: CorrelationMetadata = {
     schema_version: "1.0", run_id: "run-1", task_id: "task-2", workspace_id: "writer-2",
     context_id: "review-spec-2", phase: "review-specification", assurance_effective: "critical",
     assurance_source: "natural-language", assurance_scope: { type: "selectors", selectors: ["src/auth/**"] },

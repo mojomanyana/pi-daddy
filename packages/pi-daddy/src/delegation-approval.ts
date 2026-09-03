@@ -26,8 +26,8 @@ export function resolveDelegationApproval(input: {
   spawned?: SkillDefinition;
   definitionDigest?: DefinitionDigest;
   /**
-   * Present iff this call is task-bound. Its VALUES never enter the binding — only its presence selects
-   * the exact-bound regime over the legacy subject-scoped one.
+   * Present iff this call is task-bound. Most values remain labels; optional tree_sha/last_change_seq enter
+   * the binding only to narrow a supplied approval to the upstream tree state that was reviewed.
    */
   correlation?: CorrelationMetadata;
   /** Trusted: an id that was resolved against the operator registry and leased. Never a caller claim. */
@@ -89,6 +89,8 @@ export function resolveDelegationApproval(input: {
         parentId: input.parentId,
         workspaceId: input.boundWorkspaceId,
         contextId: input.boundContextId,
+        treeSha: input.correlation?.tree_sha,
+        lastChangeSeq: input.correlation?.last_change_seq,
       })
     : undefined;
 

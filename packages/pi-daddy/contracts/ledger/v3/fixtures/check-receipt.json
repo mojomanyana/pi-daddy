@@ -21,11 +21,10 @@
     "policy_label": "policy-contract",
     "assurance_source": "policy",
     "assurance_scope": {
-      "kind": "changed-files",
-      "paths": [
+      "type": "selectors",
+      "selectors": [
         "src/**"
-      ],
-      "include_untracked": true
+      ]
     },
     "activated_at": "2026-08-20T12:00:00.000Z",
     "plan_digest": "1111111111111111111111111111111111111111111111111111111111111111",

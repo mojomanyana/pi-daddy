@@ -23,6 +23,7 @@ import { DELEGATE_SUBJECT } from "../src/approval.ts";
 import { chainStepSpec, PLACEHOLDER } from "../src/chain.ts";
 import { MAX_CHAIN_STEPS, childSpawnId, splitBudget } from "../src/fanout.ts";
 import { PAINT_INTERVAL_MS, appendTail, emptyTail, renderProgress, replaceTail, throttle, type ChildProgress } from "../src/progress.ts";
+import { correlationShape } from "./correlation-shape.ts";
 import { recordChainRefusal } from "./chain-ledger.ts";
 import { obtainApprovals, snapshotOf, type ApprovalOutcome } from "./approvals.ts";
 import { runOneDelegation } from "./run-delegation.ts";
@@ -32,6 +33,7 @@ import { GovernanceRefusal, refusal, type StructuredRefusal } from "../src/refus
 import { chainApprovalFacts, newChainApprovalAudit, rememberChainApproval } from "./chain-approval-facts.ts";
 import { newExecutionId } from "../src/execution-id.ts";
 import { planChain, type GateRequest } from "./chain-plan.ts";
+import { preflightModel } from "../src/model-preflight.ts";
 
 /** One chain step is one execution occurrence, however many capability dialogs contributed to its answer. */
 function mergeGateOutcomes(outcomes: readonly ApprovalOutcome[]): ApprovalOutcome {
@@ -69,19 +71,7 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
     agent: Type.Optional(Type.String({ description: "Definition to spawn for this step." })),
     tools: Type.Optional(Type.Array(Type.String(), { description: "Capabilities, when no 'agent' fits." })),
     model: Type.Optional(Type.String({ description: "Model as provider/id. Defaults to this session's." })),
-    correlation: Type.Optional(Type.Object({
-      schema_version: Type.Optional(Type.String()), run_id: Type.Optional(Type.String()),
-      task_id: Type.Optional(Type.String()), workspace_id: Type.Optional(Type.String()),
-      context_id: Type.Optional(Type.String()), phase: Type.Optional(Type.String()),
-      assurance: Type.Optional(Type.String()), assurance_effective: Type.Optional(Type.String()),
-      policy_label: Type.Optional(Type.String()), assurance_source: Type.Optional(Type.String()),
-      assurance_scope: Type.Optional(Type.Any()), activated_at: Type.Optional(Type.String()),
-      plan_digest: Type.Optional(Type.String()), definition_digest: Type.Optional(Type.String()),
-      task_digest: Type.Optional(Type.String()), base_sha: Type.Optional(Type.String()),
-      head_sha: Type.Optional(Type.String()), tree_sha: Type.Optional(Type.String()),
-      event_seq: Type.Optional(Type.Number()), last_change_seq: Type.Optional(Type.Number()),
-      last_authority_seq: Type.Optional(Type.Number()), check_receipt_id: Type.Optional(Type.String()),
-    })),
+    correlation: Type.Optional(correlationShape()),
     workspace: Type.Optional(Type.Object({
       workspace_id: Type.String(),
       access: Type.Union([Type.Literal("read"), Type.Literal("write")]),
@@ -126,7 +116,12 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
       // `planChain`.
       const executionIds = steps.map(() => newExecutionId());
       const parentExecutionId = session.ownExecutionId ?? null;
-      const chainPlan = await planChain(session, steps, executionIds);
+      const chainPlan = await planChain(
+        session,
+        steps,
+        executionIds,
+        (model) => preflightModel(model, ctx.modelRegistry, session.modelResolutionCache, session.allowUnresolvedModels),
+      );
       if (chainPlan.doomed) {
         const message = `chain refused at step ${chainPlan.doomed.step}: ${chainPlan.doomed.reason} No step ran, and nobody was ` +
           `asked to approve anything — a step that cannot run must not bank authority for a spawn that will never happen.`;

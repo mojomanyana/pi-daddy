@@ -24,7 +24,10 @@ const base = {
   definitions: new Map([["debugger", def]]),
   spawnId: "d0",
 };
-const correlation = { schema_version: "1.0", run_id: "run-1", task_id: "task-1", workspace_id: "w1", context_id: "ctx-1" };
+const correlation = {
+  schema_version: "1.0", run_id: "run-1", task_id: "task-1", workspace_id: "w1", context_id: "ctx-1",
+  tree_sha: "a".repeat(40), last_change_seq: 7,
+};
 
 test("a correlated plan computes trusted task and approval bindings", () => {
   const plan = planDelegation({
@@ -38,28 +41,27 @@ test("a correlated plan computes trusted task and approval bindings", () => {
   assert.equal(plan.approvalBinding?.workspace_id, "w1");
   assert.equal(plan.approvalBinding?.context_id, "ctx-1");
   assert.equal(plan.approvalBinding?.parent_id, "d0");
+  assert.equal(plan.approvalBinding?.tree_sha, correlation.tree_sha);
+  assert.equal(plan.approvalBinding?.last_change_seq, correlation.last_change_seq);
   assert.equal(plan.approvalBinding?.definition_sha256, plan.definitionDigest?.sha256);
 });
 
-/**
- * `planDelegation` ignores correlation when building the binding — it uses only the trusted parameters.
- *
- * Scoped to the PLANNER deliberately, because the name this test used to carry ("correlation alone cannot
- * put a workspace or context into the binding") overstated what the product does. It is true of the
- * workspace: `run-delegation.ts` and `delegate-chain.ts` both take `boundWorkspaceId` from the routing
- * spec, which is registry-resolved and leased. It is NOT true of the context: both extensions pass
- * `boundContextId: spec.correlation?.context_id`, i.e. the model's own claim, by design — `context_id` can
- * only ever narrow a binding and a mismatch fails closed, which is why it is allowed to be caller-declared.
- *
- * So this pins the planner's indifference to correlation, and says out loud what the extension layer does
- * instead. Nothing here pins the trusted-source property at the extension layer, which is where R-110
- * actually happened — recorded rather than implied.
+/** Workspace authority remains trusted routing state. The two optional tree fields are deliberately different:
+ * they are caller-supplied scope that can only narrow an approval, so the exact values enter the binding.
  */
-test("the planner builds a binding from its trusted parameters, never from correlation", () => {
+test("the planner binds supplied tree state but never turns correlation into workspace authority", () => {
   const claimed = planDelegation({ task: "probe one failure", agent: "debugger", correlation }, base);
   assert.equal(claimed.approvalBinding?.workspace_id, undefined, "no trusted workspace was supplied");
-  assert.equal(claimed.approvalBinding?.context_id, undefined, "no context was supplied either");
+  assert.equal(claimed.approvalBinding?.context_id, undefined, "no bound context was supplied either");
+  assert.equal(claimed.approvalBinding?.tree_sha, correlation.tree_sha);
+  assert.equal(claimed.approvalBinding?.last_change_seq, correlation.last_change_seq);
   assert.equal(claimed.correlation?.workspace_id, "w1", "the join metadata is still preserved verbatim");
+
+  const emptySupplied = planDelegation(
+    { task: "probe one failure", agent: "debugger", correlation: { ...correlation, tree_sha: "" } },
+    base,
+  );
+  assert.equal(emptySupplied.approvalBinding?.tree_sha, "", "even an empty caller-supplied value is bound, not omitted");
 });
 
 /** A correlated request whose binding scope comes from trusted routing, not from `correlation`. */
@@ -90,6 +92,8 @@ test("a bound approval permits only the exact definition/task/grant/workspace/co
     ["workspace", { ...BOUND_REQUEST, boundWorkspaceId: "w2" }, {}],
     ["context", { ...BOUND_REQUEST, boundContextId: "ctx-2" }, {}],
     ["parent", BOUND_REQUEST, { spawnId: "d9" }],
+    ["tree", { ...BOUND_REQUEST, correlation: { ...correlation, tree_sha: "b".repeat(40) } }, {}],
+    ["change sequence", { ...BOUND_REQUEST, correlation: { ...correlation, last_change_seq: 8 } }, {}],
     // The scope must follow the ROUTING SPEC, not the model's correlation claim. Dropping the trusted
     // ids while still claiming them in correlation is exactly how a bound approval was spent outside the
     // workspace it named (R-110): no registry lookup, no lease, the parent's own cwd, digests unchanged.
@@ -165,10 +169,21 @@ test("binding effective capabilities exactly match the eventual grant when agent
   assert.deepEqual(blocked.approvalBinding?.effective, allowed.effective);
 });
 
-test("bound approval identity is deterministic", () => {
+test("bound approval identity is deterministic and absent tree fields preserve the v1 digest", () => {
   const a = planDelegation({ task: "probe one failure", agent: "debugger", correlation }, base).approvalBinding!;
   const b = planDelegation({ task: "probe one failure", agent: "debugger", correlation: { ...correlation } }, base).approvalBinding!;
   assert.equal(approvalBindingDigest(a), approvalBindingDigest(b));
+
+  const { tree_sha: _tree, last_change_seq: _sequence, ...legacyCorrelation } = correlation;
+  const legacy = planDelegation(
+    { task: "probe one failure", agent: "debugger", correlation: legacyCorrelation },
+    base,
+  ).approvalBinding!;
+  assert.equal(
+    approvalBindingDigest(legacy),
+    "cf67073d0b5a425a5f61f7f5ba2ab3463902c0d027c2d960142bb91695fb0c7a",
+    "adding optional ADR-0039 fields must not invalidate a pre-existing bound approval when both are absent",
+  );
 });
 
 /**

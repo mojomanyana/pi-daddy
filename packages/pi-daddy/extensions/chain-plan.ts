@@ -36,6 +36,7 @@ export async function planChain(
   session: GrantsSession,
   steps: ChainStep[],
   executionIds: readonly string[],
+  preflightModel?: (model: string | undefined) => StructuredRefusal | undefined,
 ): Promise<ChainPlan> {
   const requests: GateRequest[] = [];
   const uses = new Map<number, Set<string>>();
@@ -62,6 +63,21 @@ export async function planChain(
         childExecutionId: executionIds[index],
       },
     );
+
+    const modelRefusal = preflightModel?.(step.model);
+    if (modelRefusal) {
+      return {
+        requests: [],
+        uses,
+        doomed: {
+          step: index + 1,
+          reason: modelRefusal.message,
+          plan: { ...plan, ok: false, reason: modelRefusal.message, refusal: modelRefusal },
+          agent: step.agent,
+          refusal: modelRefusal,
+        },
+      };
+    }
 
     if (!plan.ok && !shouldSeekApproval(plan.result)) {
       return {

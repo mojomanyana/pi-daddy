@@ -334,7 +334,8 @@ test("a pane whose dashboard process exited is replaced rather than falsely reus
   assert.equal(openCount, 2);
 });
 
-test("a pane is closed if persisting its reuse identity fails", async () => {
+test("a pane is closed if persisting its reuse identity fails", async (t) => {
+  if (process.getuid?.() === 0) return t.skip("root ignores file permissions");
   const dir = await tempDir("dashboard-save-failure-");
   const stateDir = join(dir, "state");
   const statePath = join(stateDir, "panes.json");

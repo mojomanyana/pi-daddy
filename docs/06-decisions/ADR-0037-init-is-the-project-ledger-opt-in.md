@@ -82,6 +82,22 @@ the ledger consistently.
   makes the root ungoverned. R-175 records the required tri-state follow-up; parser rejection alone is not
   described as session-level fail-closed behavior.
 
+## Amendment — 2026-09-03: a present but invalid store is a safety stop
+
+The final consequence above was true for 0.21.0–0.21.1 and is now superseded by this amendment. Store loading
+is tri-state: `ENOENT` alone means absent; a valid supported store supplies the project choice; malformed,
+unsupported-version, unreadable and wrong-cwd state refuse the root with an empty grant. `PI_GRANTS_GRANT`
+still bypasses the store completely, preserving the child/environment precedence decision.
+
+A refusal is loud at session start and recorded with `GRANT_STORE_INVALID` and a finite reason. Because the
+invalid store cannot be trusted for its grant or `projectLedger` field, its presence authorises only this
+refusal record at the conventional `<cwd>/.pi/grants.jsonl`; it never authorises a child or a normal audit
+stream. If that append fails, the operator is told and the session remains refused. This limited exception is
+what makes “ledgered refusal” possible without trusting malformed consent or silently reverting to wildcard.
+
+The event remains a v3 `capability_decision` safety stop with synthetic `agentType: grant-store`; no new event
+kind is added. The refusal-code enum changes, so strict consumers must re-pin the generated v3 contract.
+
 ## Revisit trigger
 
 Revisit if a project-local ledger causes repeated repository clutter or unwritable-path refusals, if operators

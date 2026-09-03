@@ -12,12 +12,26 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## Unreleased — Wave 1 audit follow-ups
+
+- Stored project grants now load as absent, valid, or a loud fail-closed refusal. Malformed, unsupported,
+  unreadable and wrong-directory stores never restore the ungoverned wildcard; `GRANT_STORE_INVALID` records
+  the safety stop.
+- Explicit delegation models are resolved against pi's session catalogue before any lease, approval or child
+  process. Unknown models refuse as `MODEL_UNRESOLVED`; custom resolution requires the operator escape hatch
+  `PI_GRANTS_ALLOW_UNRESOLVED_MODELS=1`.
+- Correlation schema version is exactly optional `1.0`, and `assurance_scope` is the closed entire-run/selectors
+  union instead of arbitrary JSON.
+- Supplied `tree_sha` and `last_change_seq` now narrow exact approval reuse. `@types/node >=22` is declared as
+  a peer because the public declarations use `NodeJS.*`.
+- CI runs the model-free, Herdr-free real-pi integration tier.
+
 ## 0.21.1 — twenty-minute default child timeout (2026-09-02)
 
 - Raise the default per-child wall-clock limit from 600 to 1200 seconds. Explicit
   `PI_GRANTS_CHILD_TIMEOUT` values remain unchanged and inherited by descendants.
 
-## 0.21.0 — one project init enables its ledger (2026-09-01)
+## 0.21.0 — one project init enables its ledger (2026-09-02)
 
 - `/grants init` now atomically persists one project choice containing both the capability grant and default
   `.pi/grants.jsonl`, then adopts both after that write succeeds. Future plain `pi` starts load both, so

@@ -479,6 +479,25 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     assert.match(text, /not recording — set PI_GRANTS_LEDGER/, "a legacy v1 store is not retroactive ledger consent");
   });
 
+  test("an unsupported project store loudly refuses and records the fail-closed session", async () => {
+    const cwd = await fixture();
+    const agentDir = await tempDir("grants-it-invalid-store-");
+    const { grantStorePath, projectLedgerPath } = await import("../src/grant-store.ts");
+    process.env.PI_CODING_AGENT_DIR = agentDir;
+    const path = grantStorePath(cwd);
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, JSON.stringify({ version: 99, cwd, grant: ["tool:read"] }), "utf8");
+
+    const r = await runCommand({ cwd, command: "/grants", env: { PI_CODING_AGENT_DIR: agentDir } });
+    const text = r.notifies.map((notify) => notify.message).join("\n");
+    assert.match(text, /stored grant.*unsupported-version.*refused/i);
+    assert.match(text, /grants: ACTIVE/);
+    assert.match(text, /holding\s+\(nothing\)/, "the invalid store never becomes the ungoverned wildcard");
+    const lines = (await readFile(projectLedgerPath(cwd), "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+    assert.equal(lines.at(-1)?.refusal?.code, "GRANT_STORE_INVALID");
+    assert.equal(lines.at(-1)?.refusal?.details?.reason, "unsupported-version");
+  });
+
   test("ADR-0037: one real /grants init enables the project ledger now and on later plain pi starts", async () => {
     const cwd = await fixture();
     const agentDir = await tempDir("grants-it-ledger-store-");
