@@ -5,7 +5,7 @@ to be decided. This file is authoritative for present behavior; ADRs record why 
 date. If code and this file disagree, report and repair the stale current-state claim rather than re-deriving
 present behavior from historical ADRs.
 
-Last synced against the code: **2026-09-02**, released as `pi-daddy` 0.21.1, pi 0.84.2; the dashboard plugin requires Herdr 0.8.0.
+Last synced against the code: **2026-09-03**, unreleased after `pi-daddy` 0.21.1, pi 0.84.2; the dashboard plugin requires Herdr 0.8.0.
 
 **herdr's own contracts are now checked by `test-integration/herdr.it.ts`** against a live server, in an isolated
 workspace it creates and closes. That suite exists because three shipping defects hid behind the unit fake — the
@@ -145,7 +145,10 @@ never as invented top-level frontmatter, so the file stays valid for every other
 a root session reads the project choice stored at `$PI_CODING_AGENT_DIR/grants/<slug>-<hash>.json` — written
 by `/grants init`, which asks about withheld capabilities only and applies the answer without a restart.
 Version 1 stores only a grant. Version 2 also carries explicit `projectLedger: true` consent and defaults the
-root to the absolute `<cwd>/.pi/grants.jsonl`; old stores are never reinterpreted after upgrade.
+root to the absolute `<cwd>/.pi/grants.jsonl`; old stores are never reinterpreted after upgrade. Loading is
+tri-state: only `ENOENT` is absent; malformed, unsupported-version, unreadable and wrong-cwd state creates a
+loud governed session with an empty grant and records `GRANT_STORE_INVALID`. Invalid state never becomes the
+ungoverned wildcard. Its presence authorises only that refusal line at the conventional project ledger path.
 
 **The store is outside the workspace, and that is the design.** A grant is a ceiling; a ceiling a governed
 child can rewrite is not one. `<cwd>/.pi/grants.env` is writable by any child holding `tool:write`, which is
@@ -328,7 +331,9 @@ model-chosen, and a key the model controls is not a key.
 A persisted approval is pinned to **both** the definition's `allowed-tools` *and* its body digest, so it is
 void the moment either changes: adding a tool voids it (`type-changed`), and so does rewriting the
 instructions while leaving the tools alone (`instructions-changed`). An entry carrying no body pin is
-treated as changed rather than assumed unchanged.
+treated as changed rather than assumed unchanged. For a correlated caller that supplies `tree_sha` or
+`last_change_seq`, those values also enter the exact binding and a mismatch refuses reuse. They narrow only;
+pi-daddy does not claim it measured or attested caller-supplied tree state.
 
 **Approvals are stored one file per governed directory** (ADR-0020), under
 `$PI_CODING_AGENT_DIR/grants-approvals/`. A single shared file could not express two projects holding an
@@ -483,8 +488,10 @@ it.
 Every spawn may carry optional, non-authoritative metadata for joining an external controller's records:
 `run_id`, `task_id`, `workspace_id`, `context_id`, `phase`, opaque assurance/effective-policy label,
 assurance source/scope/activation time, plan/definition/task digests, base/head/tree SHAs, event sequence,
-`last_change_seq`, `last_authority_seq`, and a check receipt ID. The structured scope and source values are
-copied as bounded JSON; pi-daddy does not own or interpret their vocabulary.
+`last_change_seq`, `last_authority_seq`, and a check receipt ID. The source labels remain caller-declared. If present, `schema_version` must be exactly `1.0`, and
+`assurance_scope` is the closed shape `{type:"entire-run",selectors:[]}` or
+`{type:"selectors",selectors:[non-empty strings...]}` within 4 KiB. pi-daddy validates this wire shape but
+does not interpret selector meaning.
 
 The label/identity fields that the dashboard can display are ASCII identifiers, not free-form prose; invalid
 values are refused before they reach the ledger. `assurance_scope` remains bounded structured JSON, but a
@@ -674,12 +681,8 @@ every append-only ledger event, so an unbounded free-form object was a channel f
 into a file that carries no prompts, arguments or results (R-111). If upstream adds a field, the refusal
 names it — an actionable break beats a silent secrets sink.
 
-**What this does not close.** `assurance_scope` is exempt from the per-field character bound and is copied
-verbatim with no validation inside it, so up to 4 KB of caller-authored structure still reaches every event,
-and the tool schemas still declare it `Type.Any()`. Adding the ~21 bounded string fields, the channel is
-narrowed from 32 KB to roughly 14 KB rather than closed. `schema_version` is also accepted as any string and
-never compared to `"1.0"`, so an upstream 1.1 breaks on a field name rather than on the version — the
-actionable message was available and is not used.
+Unknown correlation versions fail at `schema_version` with the supported version named. All three tool
+schemas expose the same closed optional contract, and runtime normalization remains the ledger backstop.
 
 ## Stable refusals
 
@@ -718,7 +721,9 @@ access, timeout and output cap. No shell string or interpolation is accepted.
 
 A receipt records schema/receipt/check IDs, canonical configured executable and digest of the privately
 staged bytes actually executed, exact argv and digest, validated CWD and digest, start/end, exit code and signal, timeout/abort/truncation flags,
-output digest, workspace/access, computed head/tree, and correlation. Head and candidate tree are measured
+output digest, workspace/access, computed head/tree, and correlation. The receipt is returned to the caller
+but is not persisted by pi-daddy. Any evidence or handoff design must persist that returned receipt beside its
+artifact and join on `receipt_id` and `tree_sha`; the ledger event alone is not an evidence store. Head and candidate tree are measured
 under the lease with a temporary Git index before execution and verified again afterwards; a supplied
 head/tree may match but cannot override them. A workspace whose **non-ignored** content changed yields no
 receipt; see the `tree_sha` limits above for what the comparison cannot see.
@@ -989,21 +994,24 @@ loudly.
 | `PI_GRANTS_WORKSPACE_REGISTRY` | unset | Operator-owned `{version:1, workspaces:{id:{path}}}` file. Required only when a spawn names a workspace. |
 | `PI_GRANTS_WORKSPACE_LEASE_DIR` | `$PI_CODING_AGENT_DIR/pi-daddy/workspace-leases` | Kernel-lock files and ownership metadata for governed writers. |
 | `PI_GRANTS_CHILD_TIMEOUT` | `1200` | Seconds. Inherited. |
+| `PI_GRANTS_ALLOW_UNRESOLVED_MODELS` | unset | Exact `1` bypasses model-catalogue preflight for operator-defined/custom resolution. |
 | `PI_GRANTS_HERDR` | unset (= probe) | `1` demands herdr panes and refuses if unreachable; `0` demands subprocesses; unset probes. |
 | `PI_GRANTS_HERDR_WORKSPACE` | the parent's `HERDR_WORKSPACE_ID` | Which herdr workspace a child's pane goes in. |
 | `PI_GRANTS_HERDR_KEEP_PANE` | unset | Keep panes past `agent_settled`, for inspection. No sweep closes them. |
 | `PI_CODING_AGENT_DIR` | `~/.pi/agent` | pi's own variable; it owns stored project grant/ledger choices and per-project persisted approvals. |
 
 **Malformed configuration disables spawning rather than falling back**, and says which variable it was — a
-bound a typo can switch off is not a bound.
+bound a typo can switch off is not a bound. An explicit child model is looked up once per session through pi's
+`modelRegistry.find(provider,id)` cache before any workspace lease, approval or process start. A miss is a
+ledgered `MODEL_UNRESOLVED` routing refusal, not a governance denial.
 
 ## Verifying it
 
 ```bash
 cd packages/pi-daddy
-npm test                   # 730 unit tests — pure, no pi, no network
+npm test                   # 739 unit tests — pure, no pi, no network
 npm run typecheck          # src + extensions + test + test-integration
-npm run test:integration   # 47 tests against a REAL pi process/herdr server, no model tokens
+npm run test:integration   # 48 tests against a REAL pi process/herdr server, no model tokens
 npm run test:smoke         # pack/install; exercise exports, both bins, v2/v3 contracts, the bundled
                            # Herdr plugin/dashboard, and `pi-daddy init`
 

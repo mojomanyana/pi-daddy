@@ -11,6 +11,8 @@ export const REFUSAL_CODES = [
   "DEPTH_EXCEEDED",
   "FANOUT_EXCEEDED",
   "EXECUTOR_UNAVAILABLE",
+  "MODEL_UNRESOLVED",
+  "GRANT_STORE_INVALID",
   // Execution-phase outcomes. Without these, an external controller could distinguish a policy refusal
   // from an internal error but not a lost writer lease from a user pressing stop (R-103).
   "CHILD_TIMED_OUT",

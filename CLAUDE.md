@@ -104,7 +104,7 @@ can run `env -u PI_GRANTS_GRANT pi …` and get an ungoverned descendant (measur
 docs/SPEC.md              — WHAT THE PRODUCT IS, current state, no history. Read this second.
 docs/SESSION-LOG.md       — START HERE when resuming: state, verified facts, next actions. Newest on top.
 docs/03-risks.md          — live risk register. R-25 onward are current; R-01..R-24 serve the retired thesis
-docs/06-decisions/        — thirty-eight ADRs. Reversals are kept and marked: 0004→superseded, 0005 park→
+docs/06-decisions/        — forty-three ADRs. Reversals are kept and marked: 0004→superseded, 0005 park→
                             superseded, 0006 (magnitude claim falsified), 0007 THE REFRAME, 0008
                             attenuation + cardinality, 0009 pi-fabric (parked), 0010 approvals, 0011
                             universal capabilities, 0012 bash, 0013 pi-subagents (superseded by 0016),
@@ -173,11 +173,11 @@ refuses until a gate passes that no longer means anything. They are in git histo
 
 ```bash
 cd packages/pi-daddy
-npm test                   # 730 unit tests — fast, no pi, no network (the branch guard spawns git)
+npm test                   # 739 unit tests — fast, no pi, no network (the branch guard spawns git)
 npm run typecheck          # src + extensions + tests + integration tests
-npm run test:integration   # 47 tests vs a REAL pi process AND a real herdr server — no model tokens
+npm run test:integration   # 48 tests vs a REAL pi process AND a real herdr server — no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and USE it
-npm run test:mutation      # rule 7 as a control: 110 pinned (patch -> named failing test) pairs.
+npm run test:mutation      # rule 7 as a control: 124 pinned (patch -> named failing test) pairs.
                            # Minutes, edits files in place, refuses a dirty tree. CI runs it on every PR;
                            # run it locally before pushing anything that adds or changes a guard.
 PI_GRANTS_IT_MODEL=1 npm run test:integration   # + an end-to-end tier with a real model (costs money)

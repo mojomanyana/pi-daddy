@@ -52,6 +52,12 @@ export interface StoredGrant {
   projectLedger: boolean;
 }
 
+export type GrantStoreRefusalReason = "malformed" | "unsupported-version" | "unreadable" | "wrong-cwd";
+export type StoredGrantState =
+  | { state: "absent" }
+  | { state: "valid"; stored: StoredGrant }
+  | { state: "refuse"; reason: GrantStoreRefusalReason };
+
 export interface SaveGrantOptions {
   projectLedger?: boolean;
 }
@@ -84,26 +90,36 @@ export function grantStorePath(cwd: string): string {
  * treats absent and invalid stores alike (R-175), so do not call that wider behavior fail-closed. The `cwd`
  * check is R-27's: a copied file describes a directory nobody authorised it for.
  */
-export function parseStoredGrant(text: string, cwd: string): StoredGrant | null {
+export function parseStoredGrantState(text: string, cwd: string): StoredGrantState {
+  let parsed: { version?: unknown; cwd?: unknown; grant?: unknown; projectLedger?: unknown };
   try {
-    const parsed = JSON.parse(text) as {
-      version?: unknown;
-      cwd?: unknown;
-      grant?: unknown;
-      projectLedger?: unknown;
-    };
-    if (parsed.version !== 1 && parsed.version !== 2) return null;
-    if (parsed.cwd !== cwd) return null;
-    if (!Array.isArray(parsed.grant)) return null;
-    if (!parsed.grant.every((c) => typeof c === "string" && c.length > 0)) return null;
-    if (parsed.version === 2 && parsed.projectLedger !== true) return null;
-    return {
-      grant: parsed.grant as Capability[],
-      projectLedger: parsed.version === 2,
-    };
+    parsed = JSON.parse(text) as typeof parsed;
   } catch {
-    return null;
+    return { state: "refuse", reason: "malformed" };
   }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return { state: "refuse", reason: "malformed" };
+  }
+  if (parsed.version !== 1 && parsed.version !== 2) {
+    return { state: "refuse", reason: "unsupported-version" };
+  }
+  if (parsed.cwd !== cwd) return { state: "refuse", reason: "wrong-cwd" };
+  if (!Array.isArray(parsed.grant)) return { state: "refuse", reason: "malformed" };
+  if (!parsed.grant.every((c) => typeof c === "string" && c.length > 0)) {
+    return { state: "refuse", reason: "malformed" };
+  }
+  if (parsed.version === 2 && parsed.projectLedger !== true) {
+    return { state: "refuse", reason: "malformed" };
+  }
+  return {
+    state: "valid",
+    stored: { grant: parsed.grant as Capability[], projectLedger: parsed.version === 2 },
+  };
+}
+
+export function parseStoredGrant(text: string, cwd: string): StoredGrant | null {
+  const result = parseStoredGrantState(text, cwd);
+  return result.state === "valid" ? result.stored : null;
 }
 
 /** Compatibility view for callers that need only the capability ceiling. */
@@ -120,12 +136,19 @@ export function parseGrantFile(text: string, cwd: string): Capability[] | null {
  * decision it exists to inform, so the store would silently fail to grant delegation — the exact class of
  * defect R-38 and R-39 were.
  */
-export function loadStoredGrantSync(cwd: string): StoredGrant | null {
+export function loadStoredGrantStateSync(cwd: string): StoredGrantState {
   try {
-    return parseStoredGrant(readFileSync(grantStorePath(cwd), "utf8"), cwd);
-  } catch {
-    return null;
+    return parseStoredGrantState(readFileSync(grantStorePath(cwd), "utf8"), cwd);
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "ENOENT"
+      ? { state: "absent" }
+      : { state: "refuse", reason: "unreadable" };
   }
+}
+
+export function loadStoredGrantSync(cwd: string): StoredGrant | null {
+  const result = loadStoredGrantStateSync(cwd);
+  return result.state === "valid" ? result.stored : null;
 }
 
 export function loadGrantSync(cwd: string): Capability[] | null {
@@ -133,12 +156,19 @@ export function loadGrantSync(cwd: string): Capability[] | null {
 }
 
 /** Async twin, for callers that already have one. Same parser, so they cannot disagree. */
-export async function loadStoredGrant(cwd: string): Promise<StoredGrant | null> {
+export async function loadStoredGrantState(cwd: string): Promise<StoredGrantState> {
   try {
-    return parseStoredGrant(await readFile(grantStorePath(cwd), "utf8"), cwd);
-  } catch {
-    return null;
+    return parseStoredGrantState(await readFile(grantStorePath(cwd), "utf8"), cwd);
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "ENOENT"
+      ? { state: "absent" }
+      : { state: "refuse", reason: "unreadable" };
   }
+}
+
+export async function loadStoredGrant(cwd: string): Promise<StoredGrant | null> {
+  const result = await loadStoredGrantState(cwd);
+  return result.state === "valid" ? result.stored : null;
 }
 
 export async function loadGrant(cwd: string): Promise<Capability[] | null> {

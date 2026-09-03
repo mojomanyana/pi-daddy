@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
 import { after, test } from "node:test";
 import { createGrantsSession } from "../extensions/session.ts";
-import { projectLedgerPath } from "../src/grant-store.ts";
+import { grantStorePath, projectLedgerPath } from "../src/grant-store.ts";
 import { GRANT_ENV_KEYS } from "../src/propagation.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
@@ -13,6 +15,35 @@ after(cleanupTempDirs);
  * Breaks by: dropping the project-ledger argument in `runInit`, ignoring it in `adoptGrant`, or letting the
  * stored default replace an explicit PI_GRANTS_LEDGER value.
  */
+test("an invalid project store creates a refused governed session instead of a wildcard session", async () => {
+  const cwd = await tempDir("grants-invalid-session-");
+  const agentDir = await tempDir("grants-invalid-agent-");
+  const originalCwd = process.cwd();
+  const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
+  const originalGrant = process.env.PI_GRANTS_GRANT;
+  const originalLedger = process.env.PI_GRANTS_LEDGER;
+  try {
+    process.chdir(cwd);
+    process.env.PI_CODING_AGENT_DIR = agentDir;
+    delete process.env.PI_GRANTS_GRANT;
+    delete process.env.PI_GRANTS_LEDGER;
+    const path = grantStorePath(cwd);
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, JSON.stringify({ version: 99, cwd, grant: ["tool:read"] }));
+    const session = createGrantsSession(undefined);
+    assert.equal(session.governed, true);
+    assert.deepEqual(session.inherited, []);
+    assert.equal(session.mayDelegate, false);
+    assert.equal(session.grantStoreRefusal?.reason, "unsupported-version");
+    assert.equal(session.ledgerPath, projectLedgerPath(cwd), "the refusal itself has a durable project trail");
+  } finally {
+    process.chdir(originalCwd);
+    originalAgentDir === undefined ? delete process.env.PI_CODING_AGENT_DIR : process.env.PI_CODING_AGENT_DIR = originalAgentDir;
+    originalGrant === undefined ? delete process.env.PI_GRANTS_GRANT : process.env.PI_GRANTS_GRANT = originalGrant;
+    originalLedger === undefined ? delete process.env.PI_GRANTS_LEDGER : process.env.PI_GRANTS_LEDGER = originalLedger;
+  }
+});
+
 test("adopting init's project ledger is live now, while an explicit environment value still wins", async () => {
   const cwd = await tempDir("grants-session-ledger-");
   const agentDir = await tempDir("grants-session-agent-");

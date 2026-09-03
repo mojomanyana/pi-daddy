@@ -161,6 +161,7 @@
     "typecheck": "tsc -p tsconfig.check.json",
     "test": "node --test test/*.test.ts",
     "test:integration": "node --test test-integration/*.it.ts",
+    "test:integration:ci": "node --test test-integration/approval.it.ts test-integration/governance.it.ts",
     "contracts:generate": "node scripts/generate-ledger-v3-contract.ts",
     "prepack": "npm run build",
     "test:smoke": "node scripts/smoke-installed.mjs",
@@ -175,6 +176,7 @@
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": ">=0.83.0",
+    "@types/node": ">=22",
     "typebox": ">=1.0.0"
   },
   "devDependencies": {

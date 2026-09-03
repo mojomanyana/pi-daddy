@@ -79,8 +79,9 @@ describe("delegate_chain, with steps that really run", { skip }, () => {
     // started exercising the doomed-step path (covered separately, in the pure tier). Caught only by running the
     // opt-in tier, which is the argument for running it before merging rather than after.
     //
-    // A bogus provider is a genuine run-time failure: nothing validates the model at plan time, and pi resolves an
-    // unknown provider then dies at startup — the measured fact `runOneDelegation` records about bare model ids.
+    // The fake session catalogue deliberately recognises `known/model`, so the upfront preflight passes; the real
+    // child pi does not know that provider and exits non-zero. That keeps this a genuine execution-phase failure
+    // after step 1 while the pure tier separately pins unresolved-model refusal before any dialog.
     const ledger = join(await tempDir("grants-chain-"), "ledger.jsonl");
     const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate", [ENV_LEDGER]: ledger, [ENV_FANOUT]: "12" });
   
@@ -91,7 +92,7 @@ describe("delegate_chain, with steps that really run", { skip }, () => {
         {
           steps: [
             { task: "first", tools: ["read"] },
-            { task: "second {previous}", tools: ["read"], model: "no-such-provider/no-such-model" },
+            { task: "second {previous}", tools: ["read"], model: "known/model" },
             { task: "third {previous}", tools: ["read"] },
           ],
         },
@@ -107,8 +108,9 @@ describe("delegate_chain, with steps that really run", { skip }, () => {
     assert.doesNotMatch(text, /step 3/, "the third step must never have run");
     assert.match(text, /stopped at step 2/, "and the abort must be stated, not inferred");
   
-    const ids = (await readFile(ledger, "utf8")).trim().split("\n").map((l) => JSON.parse(l).childId);
-    assert.ok(!ids.some((id: string) => id?.endsWith(".3")), "step 3 must not appear in the ledger at all");
+    const lines = (await readFile(ledger, "utf8")).trim().split("\n").map((l) => JSON.parse(l));
+    assert.equal(lines.find((line) => line.childId?.endsWith(".2"))?.refusal?.code, "CHILD_EXIT_NONZERO");
+    assert.ok(!lines.some((line) => line.childId?.endsWith(".3")), "step 3 must not appear in the ledger at all");
   });
 
   test("ADR-0033: each step gets its own hierarchical ledger id", async () => {

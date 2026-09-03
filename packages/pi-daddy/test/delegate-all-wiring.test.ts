@@ -68,7 +68,12 @@ async function harness(env: Record<string, string>, existingDir?: string) {
 
   const tools = new Map<string, ToolSpec>();
   const hooks = new Map<string, (e: unknown, c: unknown) => unknown>();
-  const ctx = { cwd: dir, ui: { notify: () => {}, select: async () => undefined }, signal: undefined };
+  const ctx = {
+    cwd: dir,
+    ui: { notify: () => {}, select: async () => undefined },
+    signal: undefined,
+    modelRegistry: { find: (provider: string, id: string) => provider === "known" && id === "model" ? { provider, id } : undefined },
+  };
 
   grantsExtension({
     on: (name: string, handler: (e: unknown, c: unknown) => unknown) => void hooks.set(name, handler),
@@ -110,6 +115,21 @@ test("delegate_all is registered when the session may delegate", async () => {
   const { tools } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate" });
   assert.ok(tools.has("delegate_all"), "fan-out must be reachable");
   assert.ok(tools.has("delegate"), "and the single form stays");
+});
+
+test("all three tool schemas expose only correlation contract 1.0 and its closed scope", async () => {
+  const { tools } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate" });
+  for (const name of ["delegate", "delegate_all", "delegate_chain"]) {
+    const parameters = tools.get(name)?.parameters as any;
+    const item = name === "delegate" ? parameters : parameters.properties[name === "delegate_all" ? "children" : "steps"].items;
+    const correlation = item.properties.correlation;
+    assert.equal(correlation.properties.schema_version.const, "1.0", `${name} pins the upstream version`);
+    assert.equal(correlation.additionalProperties, false, `${name} rejects undeclared correlation fields in its tool schema`);
+    const variants = correlation.properties.assurance_scope.anyOf ?? correlation.properties.assurance_scope.oneOf;
+    assert.equal(variants.length, 2, `${name} exposes exactly the two scope variants`);
+    assert.deepEqual(variants.map((variant: any) => variant.properties.type.const).sort(), ["entire-run", "selectors"]);
+    assert.ok(variants.every((variant: any) => variant.additionalProperties === false), `${name} closes each scope variant`);
+  }
 });
 
 test("a relative ledger becomes one absolute child-inherited path before routing can change cwd", async () => {
@@ -546,6 +566,30 @@ async function registeredWorkspaceFixture() {
   await writeFile(registry, JSON.stringify({ version: 1, workspaces: { w1: { path: dir } } }));
   return { dir, registry, leaseDir };
 }
+
+test("an unresolved model is ledgered and starts no child process", async () => {
+  const bin = await tempDir("grants-model-preflight-");
+  const marker = join(bin, "started");
+  await writeFile(join(bin, "pi"), `#!/usr/bin/env node\nrequire('node:fs').writeFileSync(${JSON.stringify(marker)}, 'started')\n`);
+  await chmod(join(bin, "pi"), 0o755);
+  const ledger = join(bin, "ledger.jsonl");
+  const oldPath = process.env.PATH;
+  process.env.PATH = `${bin}:${oldPath}`;
+  try {
+    const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate", [ENV_LEDGER]: ledger });
+    await assert.rejects(
+      () => tools.get("delegate")!.execute(
+        "bad-model", { task: "read", tools: ["read"], model: "missing/model" }, undefined, undefined, ctx,
+      ),
+      (error: Error & { code?: string }) => error.code === "MODEL_UNRESOLVED" && /missing\/model/.test(error.message),
+    );
+    await assert.rejects(() => readFile(marker), /ENOENT/, "preflight must happen before spawn");
+    const decisions = (await readFile(ledger, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+    assert.equal(decisions.at(-1)?.refusal?.code, "MODEL_UNRESOLVED");
+  } finally {
+    process.env.PATH = oldPath;
+  }
+});
 
 test("BLOCKED_CRITICAL_ASSURANCE from a child remains a failed delegation and the token is unchanged", async () => {
   const bin = await tempDir("grants-pi-blocked-shim-");
