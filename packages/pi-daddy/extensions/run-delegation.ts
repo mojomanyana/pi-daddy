@@ -24,6 +24,7 @@ import {
 import type { InheritableApproval } from "../src/approval.ts";
 import type { GrantsSession } from "./session.ts";
 import type { CorrelationMetadata } from "../src/correlation.ts";
+import { preflightModel, type ModelCatalogue } from "../src/model-preflight.ts";
 import { GovernanceRefusal, refusal as structuredRefusal } from "../src/refusals.ts";
 import { executePlannedChild, type DelegationOutcome } from "./execute-child.ts";
 import { recordDelegationDecision, type ApprovalLedgerFacts } from "./delegation-ledger.ts";
@@ -57,6 +58,7 @@ interface ChildSpec {
 interface DelegationToolContext extends ApprovalUIContext {
   cwd: string;
   model?: { provider: string; id: string };
+  modelRegistry: ModelCatalogue;
 }
 
 /** A planned delegation, plus whatever approvals contributed to it. */
@@ -274,11 +276,17 @@ export async function runOneDelegation(
   // requested and refused, and stored approvals still count toward it — nothing is *hidden*, only nobody is
   // *asked*. It is the same argument `/grants` uses for its preview.
   const executorRefusal = session.executor.refusal;
+  const modelRefusal = preflightModel(
+    request.model,
+    ctx.modelRegistry,
+    session.modelResolutionCache,
+    session.allowUnresolvedModels,
+  );
   let preparedWorkspace: PreparedWorkspace | undefined;
   let approvalOutcome: ApprovalOutcome | undefined;
   let plan: ReturnType<typeof planDelegation>;
 
-  if (spec.workspace && !executorRefusal) {
+  if (spec.workspace && !executorRefusal && !modelRefusal) {
     // Check non-liftable refusals before taking a lease, and take the lease before asking a human. This
     // preserves both anti-race rules: a doomed spawn cannot bank approval, and a conflicting writer starts
     // no child process.
@@ -307,7 +315,14 @@ export async function runOneDelegation(
       }
     }
   } else {
-    const gated = await planWithApprovals(session, request, extra, executorRefusal ? null : ctx, signal, preApproved);
+    const gated = await planWithApprovals(
+      session,
+      request,
+      extra,
+      executorRefusal || modelRefusal ? null : ctx,
+      signal,
+      preApproved,
+    );
     plan = gated.plan;
     approvalOutcome = gated.approval;
   }
@@ -315,6 +330,10 @@ export async function runOneDelegation(
   if (executorRefusal) {
     const message = `grants: ${executorRefusal}`;
     plan = { ...plan, ok: false, reason: message, refusal: structuredRefusal("EXECUTOR_UNAVAILABLE", message) };
+  } else if (modelRefusal) {
+    // This is a routing preflight, not a grant decision: preserve the resolved capability facts and replace
+    // only the outcome. It is still recorded by the common refusal path, and no lease, dialog or child starts.
+    plan = { ...plan, ok: false, reason: modelRefusal.message, refusal: modelRefusal };
   }
 
   // The capability decision provisions the child, so this append remains load-bearing and fails closed.

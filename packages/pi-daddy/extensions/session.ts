@@ -44,8 +44,10 @@ import type { Capability } from "../src/resolve.ts";
 import { loadDefinitions } from "../src/definitions.ts";
 import { buildCatalog } from "../src/catalog.ts";
 import { ENV_WORKSPACE_REGISTRY } from "../src/workspace.ts";
-import { grantStorePath, loadStoredGrantSync, projectLedgerPath } from "../src/grant-store.ts";
+import type { GrantStoreRefusalReason } from "../src/grant-store.ts";
 import { republishable } from "./approvals.ts";
+import { storedGrantSessionState } from "./stored-grant-session.ts";
+import { ENV_ALLOW_UNRESOLVED_MODELS } from "../src/model-preflight.ts";
 
 /**
  * Run governed children in herdr panes instead of captured child processes.
@@ -118,6 +120,10 @@ export interface GrantsSession {
   readonly fanoutBudget: number;
   /** Whether `delegate` / `delegate_all` are registered at all (S-5). Decided on the INHERITED grant. */
   readonly mayDelegate: boolean;
+  /** Operator escape hatch for custom model resolution. Exact `1`, read once for the session. */
+  readonly allowUnresolvedModels: boolean;
+  /** Results from pi's synchronous model catalogue, shared by every delegation in this session. */
+  readonly modelResolutionCache: Map<string, boolean>;
   /** Path to this extension, so a child granted `tool:delegate` can delegate in turn. */
   readonly extensionPath?: string;
 
@@ -183,6 +189,8 @@ export interface GrantsSession {
    * `createGrantsSession` for why the factory cannot use `ctx.cwd`.
    */
   readonly storeCwd: string;
+  /** Invalid stored state fails closed and is reported/ledgered during session_start. */
+  readonly grantStoreRefusal?: { reason: GrantStoreRefusalReason; path: string };
   /**
    * Adopt the project choice made DURING the session — grant plus optional default ledger — without restart.
    *
@@ -260,14 +268,13 @@ export function createGrantsSession(extensionPath: string | undefined): GrantsSe
   const storeCwd = process.cwd();
   // One root-only store read supplies both decisions made by `/grants init`. A child always has ENV_GRANT,
   // so it cannot activate a ledger merely because its routed cwd happens to have a v2 store (ADR-0037).
-  const stored = grantRaw === undefined ? loadStoredGrantSync(storeCwd) : null;
-  const governed = grantRaw !== undefined || stored !== null;
-  const inherited: Capability[] = grantRaw !== undefined ? parseList(grantRaw) : (stored?.grant ?? [WILDCARD]);
+  const storedState = storedGrantSessionState(grantRaw, storeCwd);
+  const { governed, inherited, refusal: grantStoreRefusal } = storedState;
   const ledgerRaw = process.env[ENV_LEDGER];
   // Capture provenance before publishChildEnv writes this session's derived default into process.env. A later
   // `/grants init` for ctx.cwd must not mistake our own publication for an operator override.
   const ledgerFromEnvironment = ledgerRaw !== undefined;
-  const storedLedger = stored?.projectLedger ? projectLedgerPath(storeCwd) : undefined;
+  const storedLedger = storedState.defaultLedger;
   // G7 / A-S4 + B-I4: strict, three-way parsing that fails CLOSED. A malformed bound used to yield
   // `NaN`, and every comparison against `NaN` is false, so depth limiting switched itself off.
   const bounds = depthConfig(process.env[ENV_DEPTH], process.env[ENV_MAX_DEPTH]);
@@ -310,6 +317,8 @@ export function createGrantsSession(extensionPath: string | undefined): GrantsSe
      * before any tools are observed. An ungoverned session registers it as before.
      */
     mayDelegate: !governed || inherited.includes(DELEGATE_CAPABILITY) || inherited.includes(WILDCARD),
+    allowUnresolvedModels: process.env[ENV_ALLOW_UNRESOLVED_MODELS] === "1",
+    modelResolutionCache: new Map<string, boolean>(),
     extensionPath,
 
     sessionApprovals: new Set<string>(),
@@ -350,6 +359,7 @@ export function createGrantsSession(extensionPath: string | undefined): GrantsSe
     }),
 
     storeCwd,
+    ...(grantStoreRefusal ? { grantStoreRefusal } : {}),
 
     adoptGrant: (grant: Capability[], projectLedger?: string) => {
       // Governed too, not just bounded. A session that starts with no grant and then runs `/grants init` is

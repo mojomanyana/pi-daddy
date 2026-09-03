@@ -17,6 +17,8 @@ import {
   loadGrantSync,
   loadStoredGrant,
   loadStoredGrantSync,
+  loadStoredGrantState,
+  loadStoredGrantStateSync,
   parseGrantFile,
   projectLedgerPath,
   saveGrant,
@@ -103,6 +105,30 @@ test("R-27: a grant naming another directory is refused, not honoured", async ()
     "utf8",
   );
   assert.equal(loadGrantSync(cwd), null, "a foreign grant grants nothing");
+});
+
+test("the loader distinguishes absent, malformed, unsupported, unreadable and wrong-cwd stores", async (t) => {
+  const cwd = await temp();
+  const path = grantStorePath(cwd);
+  await mkdir(dirname(path), { recursive: true });
+
+  assert.deepEqual(loadStoredGrantStateSync(cwd), { state: "absent" });
+  await writeFile(path, "{ not json", "utf8");
+  assert.deepEqual(loadStoredGrantStateSync(cwd), { state: "refuse", reason: "malformed" });
+  await writeFile(path, JSON.stringify({ version: 99, cwd, grant: ["tool:read"] }), "utf8");
+  assert.deepEqual(await loadStoredGrantState(cwd), { state: "refuse", reason: "unsupported-version" });
+  await writeFile(path, JSON.stringify({ version: 2, cwd: "/elsewhere", grant: ["tool:read"], projectLedger: true }), "utf8");
+  assert.deepEqual(loadStoredGrantStateSync(cwd), { state: "refuse", reason: "wrong-cwd" });
+
+  if (process.getuid?.() === 0) return t.skip("root ignores file permissions");
+  await writeFile(path, JSON.stringify({ version: 2, cwd, grant: ["tool:read"], projectLedger: true }), "utf8");
+  const { chmod } = await import("node:fs/promises");
+  await chmod(path, 0o000);
+  try {
+    assert.deepEqual(await loadStoredGrantState(cwd), { state: "refuse", reason: "unreadable" });
+  } finally {
+    await chmod(path, 0o600);
+  }
 });
 
 test("the parser rejects every malformed store shape", async () => {

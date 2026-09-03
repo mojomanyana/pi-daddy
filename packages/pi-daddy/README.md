@@ -141,7 +141,7 @@ A delegator that legitimately holds `fabric_exec` and knowingly wants a child to
 that child. `assertNarrowing`'s `allowUniversal` flag exists but is deliberately not plumbed through; the
 first real need for that override is the evidence it should be added.
 
-## The two tools
+## The three tools
 
 ```
 delegate({ task: "summarise src/", agent: "docs-writer" })     // preferred: an operator-authored definition
@@ -156,7 +156,7 @@ delegate_all({ children: [ {…}, {…}, {…} ] })                  // several 
 - **Spawning is itself a capability.** Grant `delegate` and the child can sub-delegate; withhold it and the
   child is a leaf — the extension is only passed to children that hold it, so the machinery isn't even
   present. `PI_GRANTS_MAX_DEPTH` remains a backstop.
-- **A refusal is a tool *error*, not an answer.** Both tools throw, because `AgentToolResult` has **no
+- **A refusal is a tool *error*, not an answer.** All three tools throw, because `AgentToolResult` has **no
   `isError` field** — pi sets it only when `execute` throws, and a normal return is hardcoded
   `isError: false`. Until 0.5.0 the tool returned `isError: true`, which was silently discarded, so every
   refusal this package made was recorded by pi as a **successful** tool call. Found by the integration suite
@@ -593,6 +593,7 @@ everything below it.
 | `PI_GRANTS_WORKSPACE_REGISTRY` | unset | Operator-owned `{version:1, workspaces:{id:{path}}}` file, required only for workspace-routed spawns. |
 | `PI_GRANTS_WORKSPACE_LEASE_DIR` | under `$PI_CODING_AGENT_DIR/pi-daddy/` | Kernel writer locks and ownership metadata. |
 | `PI_GRANTS_CHILD_TIMEOUT` | `1200` (seconds) | Wall-clock limit for a child. Inherited by descendants — an operator preference, deliberately *not* attenuating state. |
+| `PI_GRANTS_ALLOW_UNRESOLVED_MODELS` | unset | Exact `1` lets pi attempt custom model resolution; otherwise an explicit provider/id missing from pi's session catalogue refuses before lease, approval or spawn. |
 | `PI_GRANTS_FANOUT` | `8` | Per-call width and downward subtree budget; not a session-total counter. Malformed or `0` falls back to the default. |
 | `PI_GRANTS_PARENT_ID` | `d0` | Readable logical tree position; set by the parent and allowed to repeat across calls. |
 | `PI_GRANTS_EXECUTION_ID` | unset at a root | Unique governed execution occurrence; set by the parent. Lifecycle/lease joins use this, never `PI_GRANTS_PARENT_ID`. |
@@ -601,7 +602,9 @@ everything below it.
 | `PI_GRANTS_HERDR_KEEP_PANE` | unset | `1` keeps each child's pane for inspection, and no sweep closes it. Off by default: a fan-out would flood the workspace. |
 | `PI_CODING_AGENT_DIR` | `~/.pi/agent` | pi's own variable, not ours — but it decides where stored project grants/ledger consent and persisted approvals live. |
 
-**A malformed value disables spawning; it never falls back to a default.** An unreadable
+**A malformed value disables spawning; it never falls back to a default.** Stored grants are likewise
+tri-state: only a missing file is opt-out; malformed, unsupported-version, unreadable or wrong-cwd state is a
+loud empty-grant session with a `GRANT_STORE_INVALID` ledger line. An unreadable
 `PI_GRANTS_MAX_DEPTH` or `PI_GRANTS_DEPTH` yields `maxDepth: 0` and a startup warning naming the
 variable. Before 0.5.0 these were read with `parseInt`, which accepts numeric prefixes (`"2abc"` → `2`)
 and otherwise gives `NaN` — and since every comparison against `NaN` is false, a typo did not tighten the
@@ -632,8 +635,10 @@ timed out. A pending running append always lands before a terminal event. `denie
 is invisible without a record.**
 
 Workflow facts are identifier-only and mark `planned`, `observed`, or `controller_validated`; they can never
-claim pi-daddy enforcement. Capability/lifecycle records are the enforced class. Correlation remains a
-caller-declared label; fields eligible for display must use the v3 ASCII identifier grammar rather than prose.
+claim pi-daddy enforcement. Capability/lifecycle records are the enforced class. Correlation remains
+caller-declared: optional `schema_version` is exactly `1.0`, and `assurance_scope` is either entire-run with an
+empty selector list or selectors with one or more non-empty strings. Fields eligible for display use the v3
+ASCII identifier grammar rather than prose.
 
 **Privacy is a property of this file, and the boundary is exact: capability ids, counts and identifiers only
 — never prompts, task text, tool arguments or results.** Trusted `definitionDigest` and `taskDigest` values
@@ -784,9 +789,9 @@ every in-repo test passed. `npm run test:smoke` packs a tarball, installs it int
 ## Testing
 
 ```bash
-npm test                   # 719 unit tests. Fast, pure, no pi, no network.
+npm test                   # 739 unit tests. Fast, pure, no pi, no network.
 npm run typecheck          # src + extensions + tests + integration tests
-npm run test:integration   # 45 tests against a REAL pi process. ~55s, no model tokens.
+npm run test:integration   # 48 tests against a REAL pi process/Herdr server, no model tokens.
 npm run test:smoke         # pack/install; exercise library exports, both bins, the v2/v3 contracts,
                            # bundled Herdr plugin, dashboard, and `pi-daddy init`
 PI_GRANTS_IT_MODEL=1 npm run test:integration   # + 10 end-to-end tests with a real model. Costs money.

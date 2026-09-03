@@ -59,9 +59,13 @@ const workspace: string | undefined = reachable
   : undefined;
 
 after(async () => {
-  // Closing the workspace closes every tab in it, so no per-tab bookkeeping is needed — and if this fails, the
-  // stray workspace is labelled `pi-daddy-it` and removable with one command.
-  if (workspace) await defaultExec(["workspace", "close", workspace]).catch(() => undefined);
+  // Closing the workspace closes every tab in it, so no per-tab bookkeeping is needed. Cleanup is part of the
+  // shared-daemon isolation contract: a failed close must fail this suite rather than leak retained agent names
+  // that poison another repository's run.
+  if (workspace) {
+    const closed = parseReply(await defaultExec(["workspace", "close", workspace]));
+    assert.equal(closed.error, undefined, `workspace cleanup failed: ${closed.error}`);
+  }
 });
 
 /** A pane in this suite's own workspace. */
@@ -122,9 +126,12 @@ describe("herdr assumptions, against a real server", () => {
 
   test("two spawns from ONE base name both start", { skip: skipIf() }, async () => {
     // Blocker 2, pinned. herdr frees a name only when its tab closes, and both tabs are still open here — which
-    // is exactly the state ADR-0032 created and the second `delegate` of every turn used to die in.
-    const first = uniqueAgentName("review-d0.1");
-    const second = uniqueAgentName("review-d0.1");
+    // is exactly the state ADR-0032 created and the second `delegate` of every turn used to die in. The real
+    // daemon is shared with unrelated repositories, so namespace this test's base by its live process rather
+    // than colliding with another suite's retained `review-d0.1` pane.
+    const base = `it${process.pid}-review-d0.1`;
+    const first = uniqueAgentName(base);
+    const second = uniqueAgentName(base);
     assert.notEqual(first, second);
 
     const a = await startAgent(first, await pane());

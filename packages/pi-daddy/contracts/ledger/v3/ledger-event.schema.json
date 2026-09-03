@@ -28,10 +28,10 @@
     },
     "correlation": {
       "type": "object",
-      "description": "Opaque, non-authoritative controller metadata. String and aggregate byte limits are additionally enforced by the runtime and cannot be represented exactly in JSON Schema.",
+      "description": "Non-authoritative controller metadata under the pinned 1.0 contract. String and aggregate byte limits are additionally enforced by the runtime and cannot be represented exactly in JSON Schema.",
       "properties": {
         "schema_version": {
-          "$ref": "#/$defs/ledgerCorrelationIdentifier"
+          "const": "1.0"
         },
         "run_id": {
           "$ref": "#/$defs/ledgerCorrelationIdentifier"
@@ -63,19 +63,42 @@
         "assurance_scope": {
           "oneOf": [
             {
-              "type": "object"
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "entire-run"
+                },
+                "selectors": {
+                  "type": "array",
+                  "maxItems": 0
+                }
+              },
+              "required": [
+                "type",
+                "selectors"
+              ],
+              "additionalProperties": false
             },
             {
-              "type": "array"
-            },
-            {
-              "type": "string"
-            },
-            {
-              "type": "number"
-            },
-            {
-              "type": "boolean"
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "selectors"
+                },
+                "selectors": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              },
+              "required": [
+                "type",
+                "selectors"
+              ],
+              "additionalProperties": false
             }
           ]
         },
@@ -150,6 +173,8 @@
         "DEPTH_EXCEEDED",
         "FANOUT_EXCEEDED",
         "EXECUTOR_UNAVAILABLE",
+        "MODEL_UNRESOLVED",
+        "GRANT_STORE_INVALID",
         "CHILD_TIMED_OUT",
         "CHILD_CANCELLED",
         "CHILD_EXIT_NONZERO",

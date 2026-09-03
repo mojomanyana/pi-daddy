@@ -7,12 +7,18 @@ import { isLedgerCorrelationIdentifier } from "./ledger-identifiers.ts";
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
 
+export interface AssuranceScope {
+  type: "entire-run" | "selectors";
+  selectors: string[];
+}
+
 /**
  * Non-authoritative workflow metadata copied onto runtime and ledger events.
  *
- * pi-daddy deliberately does not interpret assurance labels, sources, scope selectors, timestamps or
- * sequence floors. In particular, a digest-looking value here never substitutes for a digest computed by
- * the planner. The snake_case names are the wire vocabulary used by external controllers.
+ * pi-daddy interprets only the pinned correlation wire contract: schema version 1.0 and the closed
+ * assurance-scope shape. Labels, selector meanings, timestamps and sequence floors remain non-authoritative.
+ * In particular, a digest-looking value here never substitutes for a digest computed by the planner. The
+ * snake_case names are the wire vocabulary used by external controllers.
  */
 export interface CorrelationMetadata {
   schema_version?: string;
@@ -25,7 +31,7 @@ export interface CorrelationMetadata {
   assurance_effective?: string;
   policy_label?: string;
   assurance_source?: string;
-  assurance_scope?: JsonValue;
+  assurance_scope?: AssuranceScope;
   activated_at?: string;
   plan_digest?: string;
   definition_digest?: string;
@@ -93,6 +99,29 @@ function correlationTooLarge(message: string, details?: Record<string, string | 
   return new GovernanceRefusal(refusal("CORRELATION_TOO_LARGE", `correlation metadata: ${message}`, details));
 }
 
+function normaliseAssuranceScope(value: unknown): AssuranceScope {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw correlationRefusal("assurance_scope must be an object with type and selectors");
+  }
+  const scope = value as Record<string, unknown>;
+  const keys = Object.keys(scope).sort();
+  if (keys.length !== 2 || keys[0] !== "selectors" || keys[1] !== "type") {
+    throw correlationRefusal("assurance_scope must contain only type and selectors");
+  }
+  if (!Array.isArray(scope.selectors) || !scope.selectors.every((selector) => typeof selector === "string" && selector.length > 0)) {
+    throw correlationRefusal("assurance_scope selectors must be non-empty strings");
+  }
+  if (scope.type === "entire-run") {
+    if (scope.selectors.length !== 0) throw correlationRefusal("entire-run assurance_scope requires empty selectors");
+    return { type: "entire-run", selectors: [] };
+  }
+  if (scope.type === "selectors") {
+    if (scope.selectors.length === 0) throw correlationRefusal("selectors scope requires at least one selector");
+    return { type: "selectors", selectors: [...scope.selectors] };
+  }
+  throw correlationRefusal("assurance_scope type must be entire-run or selectors");
+}
+
 /**
  * Snapshot bounded JSON metadata so a caller cannot mutate a record after planning, and so nothing
  * unbounded or undeclared can reach the ledger through it.
@@ -138,7 +167,7 @@ export function normaliseCorrelation(input: CorrelationMetadata | undefined): Co
           { limit: MAX_CORRELATION_SCOPE_BYTES, actual: size },
         );
       }
-      output[key] = value;
+      output[key] = normaliseAssuranceScope(value);
       continue;
     }
     if (CORRELATION_NUMERIC.has(key as keyof CorrelationMetadata)) {
@@ -149,6 +178,12 @@ export function normaliseCorrelation(input: CorrelationMetadata | undefined): Co
       continue;
     }
     if (typeof value !== "string") throw correlationRefusal(`${key} must be a string`, { field: key });
+    if (key === "schema_version" && value !== "1.0") {
+      throw correlationRefusal(`unsupported schema_version ${value}; supported version is 1.0`, {
+        field: key,
+        supported: "1.0",
+      });
+    }
     if (value.length > MAX_CORRELATION_FIELD_CHARS) {
       throw correlationTooLarge(
         `${key} exceeds ${MAX_CORRELATION_FIELD_CHARS} characters`,
@@ -183,6 +218,8 @@ export interface ApprovalBinding {
   definition_sha256?: string;
   workspace_id?: string;
   context_id?: string;
+  tree_sha?: string;
+  last_change_seq?: number;
   parent_id: string;
 }
 
@@ -210,6 +247,10 @@ export function buildApprovalBinding(input: {
   workspaceId?: string;
   /** Caller-declared label. Narrows only; never a claim that anything was enforced. */
   contextId?: string;
+  /** Optional upstream tree identity. When supplied, later approval use must match it exactly. */
+  treeSha?: string;
+  /** Optional upstream change floor. When supplied, later approval use must match it exactly. */
+  lastChangeSeq?: number;
 }): ApprovalBinding {
   const requested = [...new Set(input.requested)].sort();
   const effective = [...new Set(input.effective)].sort();
@@ -223,6 +264,8 @@ export function buildApprovalBinding(input: {
     ...(input.definitionSha256 ? { definition_sha256: input.definitionSha256 } : {}),
     ...(input.workspaceId ? { workspace_id: input.workspaceId } : {}),
     ...(input.contextId ? { context_id: input.contextId } : {}),
+    ...(input.treeSha !== undefined ? { tree_sha: input.treeSha } : {}),
+    ...(input.lastChangeSeq !== undefined ? { last_change_seq: input.lastChangeSeq } : {}),
     parent_id: input.parentId,
   };
 }
@@ -238,6 +281,10 @@ export function approvalBindingDigest(binding: ApprovalBinding): string {
     definition_sha256: binding.definition_sha256 ?? null,
     workspace_id: binding.workspace_id ?? null,
     context_id: binding.context_id ?? null,
+    // Keep the exact pre-ADR-0039 serialization when both additions are absent: persisted approvals store
+    // this digest, so unconditional null placeholders would invalidate every existing bound approval.
+    ...(binding.tree_sha !== undefined ? { tree_sha: binding.tree_sha } : {}),
+    ...(binding.last_change_seq !== undefined ? { last_change_seq: binding.last_change_seq } : {}),
     parent_id: binding.parent_id,
   };
   return createHash("sha256").update(JSON.stringify(ordered), "utf8").digest("hex");
@@ -253,10 +300,12 @@ export function isApprovalBinding(value: unknown): value is ApprovalBinding {
     Array.isArray(binding.requested) && binding.requested.every((item) => typeof item === "string") &&
     Array.isArray(binding.effective) && binding.effective.every((item) => typeof item === "string") &&
     typeof binding.parent_id === "string" &&
-    ["definition_sha256", "workspace_id", "context_id"].every((key) => {
+    ["definition_sha256", "workspace_id", "context_id", "tree_sha"].every((key) => {
       const value = (binding as Record<string, unknown>)[key];
       return value === undefined || typeof value === "string";
     }) &&
+    (binding.last_change_seq === undefined ||
+      (typeof binding.last_change_seq === "number" && Number.isFinite(binding.last_change_seq))) &&
     // Self-consistency. This guard's only trust boundary is a binding parsed off DISK
     // (`approval-store.ts`), so an internally contradictory record — digests that do not match the
     // capability arrays sitting beside them — must be unrepresentable rather than merely unlikely.

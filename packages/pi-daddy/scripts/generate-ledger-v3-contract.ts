@@ -28,7 +28,7 @@ const correlation: CorrelationMetadata = {
   assurance_effective: "critical",
   policy_label: "policy-contract",
   assurance_source: "policy",
-  assurance_scope: { kind: "changed-files", paths: ["src/**"], include_untracked: true },
+  assurance_scope: { type: "selectors", selectors: ["src/**"] },
   activated_at: "2026-08-20T12:00:00.000Z",
   plan_digest: "1".repeat(64),
   definition_digest: "2".repeat(64),

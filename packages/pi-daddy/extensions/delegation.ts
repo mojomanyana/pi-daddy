@@ -28,6 +28,7 @@ import {
 import { isCriticalAssuranceBlock, type DelegationOutcome } from "./execute-child.ts";
 import { type GrantsSession } from "./session.ts";
 import { newDelegationOccurrence } from "./execution-occurrence.ts";
+import { correlationShape as buildCorrelationShape } from "./correlation-shape.ts";
 
 /**
  * Wire a set of children to pi's partial-result channel — ADR-0032.
@@ -158,30 +159,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
     `Name of a definition to spawn — its allowed-tools become the grant and its instructions ` +
     `become the sub-agent's system prompt. Available: ${names.join(", ") || "none"}.`;
 
-  const correlationShape = Type.Object({
-    schema_version: Type.Optional(Type.String()),
-    run_id: Type.Optional(Type.String()),
-    task_id: Type.Optional(Type.String()),
-    workspace_id: Type.Optional(Type.String()),
-    context_id: Type.Optional(Type.String()),
-    phase: Type.Optional(Type.String()),
-    assurance: Type.Optional(Type.String()),
-    assurance_effective: Type.Optional(Type.String()),
-    policy_label: Type.Optional(Type.String()),
-    assurance_source: Type.Optional(Type.String()),
-    assurance_scope: Type.Optional(Type.Any()),
-    activated_at: Type.Optional(Type.String()),
-    plan_digest: Type.Optional(Type.String()),
-    definition_digest: Type.Optional(Type.String()),
-    task_digest: Type.Optional(Type.String()),
-    base_sha: Type.Optional(Type.String()),
-    head_sha: Type.Optional(Type.String()),
-    tree_sha: Type.Optional(Type.String()),
-    event_seq: Type.Optional(Type.Number()),
-    last_change_seq: Type.Optional(Type.Number()),
-    last_authority_seq: Type.Optional(Type.Number()),
-    check_receipt_id: Type.Optional(Type.String()),
-  });
+  const correlationShape = buildCorrelationShape();
   const workspaceShape = Type.Object({
     // `minLength: 1` because an empty id is not a "no workspace" signal — it is a malformed one, and the
     // planner now says so. Refused at the schema as well as in the planner: a model-facing parameter that

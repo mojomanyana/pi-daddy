@@ -40,6 +40,7 @@ import { planWithApprovals } from "./run-delegation.ts";
 import { createGrantsSession, loadProjectDefinitions, resolveExecutor, type GrantsSession } from "./session.ts";
 import { reportSessionStart } from "./session-report.ts";
 import { SPAWN_TOOLS, tripwireReason } from "./tripwire.ts";
+import { reportGrantStoreRefusal } from "./grant-store-refusal.ts";
 import {
   defaultDashboardPaths,
   offerDashboardHandshake,
@@ -93,6 +94,11 @@ export default function (pi: ExtensionAPI) {
       );
     }
     try {
+      try {
+        await reportGrantStoreRefusal(session, ctx.ui);
+      } catch (error) {
+        ctx.ui.notify(`grants: stored-grant refusal reporting failed (${String(error)}); the session remains refused.`, "error");
+      }
       // Guarded together, and guarded at all because of R-60 rather than because either one throws today:
       // both loaders swallow their own filesystem errors, so this catch is currently unreachable. The point
       // is that "currently" is not a property anyone can rely on — `verifyLedger` was also harmless until

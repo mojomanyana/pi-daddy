@@ -84,6 +84,7 @@ export async function harness(env: Record<string, string>, existingDir?: string,
   const offered: string[][] = [];
   const ctx = {
     cwd: dir,
+    modelRegistry: { find: (provider: string, id: string) => provider === "known" && id === "model" ? { provider, id } : undefined },
     hasUI: true,
     ui: {
       notify: () => {},

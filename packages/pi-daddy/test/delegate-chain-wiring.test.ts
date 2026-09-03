@@ -99,6 +99,28 @@ test("ADR-0033: a chain longer than the budget is refused BEFORE any dialog", as
   assert.equal(selects.length, 0, "no human may be asked about a chain that cannot run");
 });
 
+test("an unresolved chain model is ledgered before any approval dialog", async () => {
+  const dir = await tempDir("grants-chain-model-");
+  await definition(dir, "digger", "Read, Bash");
+  const ledger = join(dir, "ledger.jsonl");
+  const { tools, ctx, selects } = await harness(
+    { [ENV_GRANT]: "agent:digger,tool:read,tool:bash,tool:delegate", [ENV_GATED]: "tool:bash", [ENV_LEDGER]: ledger },
+    dir,
+    "allow-session",
+  );
+
+  await assert.rejects(
+    () => tools.get("delegate_chain")!.execute(
+      "c", { steps: [{ task: "dig", agent: "digger", model: "missing/model" }] }, undefined, undefined, ctx,
+    ),
+    (error: Error & { code?: string }) => error.code === "MODEL_UNRESOLVED",
+  );
+  assert.equal(selects.length, 0, "an unresolved step must not open or bank an approval");
+  const events = (await readFile(ledger, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+  assert.equal(events.at(-1)?.refusal?.code, "MODEL_UNRESOLVED");
+  assert.equal(events.at(-1)?.blocked, true);
+});
+
 test("ADR-0033: the step cap is the schema's own maxItems, so the model never proposes an illegal chain", async () => {
   const { tools } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate" });
   const schema = tools.get("delegate_chain")!.parameters as { properties?: { steps?: { maxItems?: number } } };

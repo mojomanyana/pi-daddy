@@ -857,7 +857,8 @@ test("an impossible close bound throws, on read leases as well as write", async 
  * **The production change that breaks this test** (rule 7): settling unconditionally rather than only when the
  * record was written.
  */
-test("a retention whose record could not be written leaves the lease releasable", async () => {
+test("a retention whose record could not be written leaves the lease releasable", async (t) => {
+  if (process.getuid?.() === 0) return t.skip("root ignores file permissions");
   const root = await gitWorkspace();
   const leaseDir = await tempDir("workspace-leases-");
   const workspace = await validateRegisteredWorkspace({ workspaceId: "w1", registeredRoot: root });

@@ -5,6 +5,20 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ---
 
+## 2026-09-03 — Wave 1 audit follow-ups implemented on `wave1/audit-followups`
+
+Baseline `c119dd7` was remeasured before implementation: 731 unit, 47 real-pi/Herdr integration,
+typecheck and installed-package smoke all passed. The candidate adds fail-closed tri-state project-store
+loading with `GRANT_STORE_INVALID`, closed correlation v1/scope validation, pi-catalogue model preflight with
+`MODEL_UNRESOLVED`, the 36-test model-free real-pi CI tier, optional tree/change approval narrowing,
+root-safe tests and the `@types/node >=22` peer contract. Current derived counts are 739 unit, 48 default
+integration, 124 mutation guards and 43 ADRs. ADR-0039 and ADR-0043 are implemented; ADR-0040/0041/0042
+decide the lease split-brain, R-145 ordering and R-137 destination-pin direction without claiming those open
+runtime fixes shipped. The receipt persistence gap is explicit in SPEC. Full evidence, freshness
+classifications and downstream strict-v3 re-pin notes are in
+`docs/handoff/2026-09-A2-pi-daddy-followups.md`. No publish, tag or push was performed; preserve untracked
+`.pi/`.
+
 ## NEXT SESSION — read this, then pick one
 
 **Before your first edit: `git branch --show-current`. If it says `main`, branch.** Working rule 10 — and since
