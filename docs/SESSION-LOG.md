@@ -17,8 +17,8 @@ v3 consumers must re-pin the regenerated schema/fixtures.
 Fresh candidate evidence: 741 unit tests, typecheck, 36 model-free/Herdr-free real-pi CI integration tests,
 48 default real-pi/Herdr integration tests, installed-package smoke, `git diff --check`, and 126/126 mutation
 guards pass. The first full integration run found a shared-daemon test-isolation defect rather than a product
-failure: a deterministic `review-d0-1-1` test agent collided with a live agent in another workspace. The test now
-names that probe by its process like the adjacent two-spawn case; the full 48-test rerun passed. The mutation run
+failure: a deterministic `review-d0-1-1` test agent collided with a live agent in another workspace. Every test
+agent is now namespaced by the suite's fresh Herdr workspace; the full 48-test rerun passed. The mutation run
 was retried after an interrupted first attempt left its current mutation in `src/workspace-lease.ts`; only that
 catalogue mutation was restored before the clean 126/126 rerun. Its one leftover `test/workspace.test.ts` process
 was terminated and a second process check was empty. The pre-existing untracked `.pi/` remains untouched.
