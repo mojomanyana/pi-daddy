@@ -184,3 +184,17 @@ hypothetical user.
 - A user states a threat model including a deliberately adversarial sub-agent → Option 3 becomes live.
 - pi gaining a first-class sandbox or a restricted-shell tool → Option 3's cost collapses.
 - Any evidence of the escape being used in practice, rather than in a probe.
+
+## Measured trigger, 2026-09-04
+
+The third trigger fired in retained principal-qualification evidence. `wave-a-v6-s02-luna-subject-r1` started
+in an empty working directory, searched the surrounding qualification tree and used its granted `edit` tool
+on an absolute path in a frozen product checkout. The JSONL, dirty diff, file mtime inside the invocation
+window and next-wave clean-check refusal are independently re-verifiable through
+`docs/probes/g38-cwd-is-not-containment`; R-177 states the exact scope.
+
+This confirms the decision's tool-surface/non-containment boundary but does not by itself select Option 3.
+The occurrence used granted `bash` to search and granted `edit` to write; it did not launch an ungoverned
+pi descendant or defeat `--tools`. No governance promise failed. A later decision should revisit whether the
+observed propensity changes the accepted cost of OS containment; this evidence-only change does not silently
+reverse ADR-0012.

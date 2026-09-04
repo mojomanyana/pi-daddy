@@ -84,7 +84,7 @@ somebody.
 
 ```bash
 cd packages/pi-daddy
-npm test                   # 739 unit tests — pure, no pi, no network
+npm test                   # 741 unit tests — pure, no pi, no network
 npm run typecheck          # src + extensions + test + test-integration
 npm run test:integration   # 48 tests against a REAL pi process/Herdr server, no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and USE every subpath

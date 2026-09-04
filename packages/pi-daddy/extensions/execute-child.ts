@@ -1,5 +1,6 @@
 import type { Delegation } from "../src/delegate.ts";
 import { appendLedgerEvent, buildChildLifecycleEvent } from "../src/ledger.ts";
+import { hasFinalizerError } from "../src/finalization.ts";
 import { mergeChildEnv } from "../src/propagation.ts";
 import type { Capability } from "../src/resolve.ts";
 import { DEFAULT_KILL_GRACE_MS, ENV_CHILD_TIMEOUT, runChild, timeoutFromEnv } from "../src/run-child.ts";
@@ -51,6 +52,12 @@ export async function appendAfterRuntimeRecord<T>(
 ): Promise<T> {
   if (runtimeRecord) await runtimeRecord;
   return appendTerminal();
+}
+
+/** A failed writer-tab close may be secondary to the executor error that triggered cleanup. */
+export function isHerdrWriterCloseFailure(error: unknown): boolean {
+  return error instanceof HerdrWriterCloseError ||
+    hasFinalizerError(error, (value) => value instanceof HerdrWriterCloseError);
 }
 
 export interface ChildProgressUpdate {
@@ -279,7 +286,7 @@ export async function executePlannedChild(input: {
     await teardown();
     return withTeardownNotes(succeeded);
   } catch (error) {
-    retainWriterLease = Boolean(writerLease && error instanceof HerdrWriterCloseError);
+    retainWriterLease = Boolean(writerLease && isHerdrWriterCloseFailure(error));
     if (ledgerPath && !terminalAttempted) {
       // Best-effort: this records the failure, so it must not REPLACE the failure. A strict append that
       // throws here would discard the original error — including HerdrWriterCloseError, whose whole

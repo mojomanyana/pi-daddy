@@ -22,6 +22,7 @@
  */
 
 import { rm } from "node:fs/promises";
+import { runWithFinalizers } from "./finalization.ts";
 import type { ChildRunResult } from "./run-child.ts";
 import { DEFAULT_MAX_OUTPUT_BYTES, DEFAULT_TIMEOUT_MS } from "./run-child.ts";
 import { MAX_OPEN_PANES, markPaneSettled, trackPane, trimOpenPanes, untrackPane } from "./pane-reaper.ts";
@@ -293,7 +294,7 @@ export async function runHerdrPane(request: HerdrRunRequest): Promise<ChildRunRe
   // early `return` from a failed start or prompt — leaves it false, so `cleanup` closes the tab.
   let settledCleanly = false;
 
-  try {
+  return runWithFinalizers(async () => {
     const started = await startAgent(exec, agentName, paneId, effectiveArgs, deadline);
     if (started.error) return { ...empty, spawnError: `herdr agent start failed: ${started.error}` };
 
@@ -352,9 +353,10 @@ export async function runHerdrPane(request: HerdrRunRequest): Promise<ChildRunRe
       timedOut: false,
       aborted: false,
     };
-  } finally {
-    await cleanup(settledCleanly);
-  }
+  }, [{
+    label: "herdr pane finalizer failed",
+    run: () => cleanup(settledCleanly),
+  }]);
 }
 
 /**

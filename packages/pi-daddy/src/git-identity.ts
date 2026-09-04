@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { runWithFinalizers } from "./finalization.ts";
 import { GovernanceRefusal, refusal } from "./refusals.ts";
 import type { ValidatedWorkspace } from "./workspace.ts";
 
@@ -33,20 +34,23 @@ export async function computeGitCandidateIdentity(workspace: ValidatedWorkspace)
   const git = async (args: string[]) => (await execFileAsync("git", ["-C", workspace.root, ...args], {
     env, encoding: "utf8", maxBuffer: 16 * 1024 * 1024,
   })).stdout.trim();
-  try {
-    const headSha = await git(["rev-parse", "HEAD"]);
-    await git(["read-tree", "HEAD"]);
-    await git(["add", "-A"]);
-    const treeSha = await git(["write-tree"]);
-    if (!/^[a-f0-9]{40,64}$/i.test(headSha) || !/^[a-f0-9]{40,64}$/i.test(treeSha)) throw new Error("Git returned an invalid object id");
-    return { headSha, treeSha };
-  } catch (error) {
-    throw new GovernanceRefusal(refusal(
-      "CHECK_IDENTITY_UNAVAILABLE",
-      `could not compute exact Git head/candidate-tree identity for workspace ${workspace.workspaceId} (${String(error)})`,
-      { workspace_id: workspace.workspaceId },
-    ));
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
+  return runWithFinalizers(async () => {
+    try {
+      const headSha = await git(["rev-parse", "HEAD"]);
+      await git(["read-tree", "HEAD"]);
+      await git(["add", "-A"]);
+      const treeSha = await git(["write-tree"]);
+      if (!/^[a-f0-9]{40,64}$/i.test(headSha) || !/^[a-f0-9]{40,64}$/i.test(treeSha)) throw new Error("Git returned an invalid object id");
+      return { headSha, treeSha };
+    } catch (error) {
+      throw new GovernanceRefusal(refusal(
+        "CHECK_IDENTITY_UNAVAILABLE",
+        `could not compute exact Git head/candidate-tree identity for workspace ${workspace.workspaceId} (${String(error)})`,
+        { workspace_id: workspace.workspaceId },
+      ));
+    }
+  }, [{
+    label: "temporary Git index cleanup failed",
+    run: () => rm(dir, { recursive: true, force: true }),
+  }]);
 }

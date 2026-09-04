@@ -173,7 +173,7 @@ refuses until a gate passes that no longer means anything. They are in git histo
 
 ```bash
 cd packages/pi-daddy
-npm test                   # 739 unit tests — fast, no pi, no network (the branch guard spawns git)
+npm test                   # 741 unit tests — fast, no pi, no network (the branch guard spawns git)
 npm run typecheck          # src + extensions + tests + integration tests
 npm run test:integration   # 48 tests vs a REAL pi process AND a real herdr server — no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and USE it

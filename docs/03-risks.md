@@ -3784,6 +3784,48 @@ smoke passes.
 **Trigger:** an installed-artifact assertion using substring matching where a comment, prefix or larger token
 can contain the expected active configuration.
 
+## R-177 · An empty working directory was mistaken for containment — H×H, MEASURED / ACCEPTED BOUNDARY
+
+Added 2026-09-04 from retained Wave A v6 principal-qualification evidence. Subject
+`wave-a-v6-s02-luna-subject-r1` started in the empty
+`measurement/wave-a-v6/packet/work/wave-a-v6-s02-luna-subject-r1`, searched outside it, found
+`sources/principal-pi-skills/build/tests/fixtures/C1/notes.ts`, and changed `// teh balance` to
+`// the balance` through an absolute-path `edit` call. The JSONL records the search, before-content, exact
+edit and successful diff (`805f9d2b…`). The contaminated file remains the checkout's sole tracked change,
+with mtime `2026-09-03T00:14:16.077715026Z`: inside the terminal receipt's
+`00:14:01.203Z`–`00:14:22.107Z` run window and within milliseconds of the JSONL tool result. Wave A v7's
+first prepare then refused `qualification product checkout must be clean` (`WAVE_A_V7_FINAL.json`,
+`60e92abd…`). Full paths, hashes and read-only re-verification are in
+`docs/probes/g38-cwd-is-not-containment`.
+
+**What it proves:** an unsandboxed child can write outside its initial working directory, and one model did so
+without being told where the target lived. **What it does not prove:** no pi-daddy governance rule failed.
+The child used tools it held; the product has never claimed path confinement. SPEC's `WRITER_ROOT` paragraph
+now links this occurrence beside the existing `bash` escape boundary (`docs/probes/g5-bash-escape`).
+
+**Accepted boundary:** CWD and `WRITER_ROOT` remain intent/routing inputs, not a filesystem sandbox. Actual
+containment requires an OS sandbox or constrained broker. **Trigger:** any claim that an empty CWD, validated
+workspace or governed-writer lease confines the child's filesystem reach.
+
+## R-178 · A finalizer could replace the failure it was trying to report — H×H, FIXED
+
+Added and fixed 2026-09-04 after the same consumer incident exposed the pattern. The retained v6 diagnosis
+proves that `finalReport()` threw a missing-`manifest-v5.canonical.json` ENOENT while handling an earlier
+exception and replaced that primary exception in stderr. It explicitly says the primary was not persisted and
+cannot be reconstructed; the dirty-checkout refusal is proven by v7, not by retained v6 bytes. That distinction
+is kept rather than upgrading a plausible sequence into evidence.
+
+The pi-daddy audit found the same masking shape in four production sites: Herdr pane cleanup, named-check
+staging/lease finalization, temporary Git-index cleanup, and `init`'s new-file handle close. A shared
+`runWithFinalizers` now runs every finalizer, preserves the primary error object (including refusal code and
+`instanceof` classification), and attaches finalizer failures to its message. If the operation succeeded, a
+finalizer failure still fails loudly. The Herdr regression forces a primary executor rejection and a writer-tab
+close failure together; replacing the preservation branch with the finalizer error fails that named test, and
+the mutation catalogue pins the guard.
+
+**Trigger:** a bare throwing `finally`, cleanup or final-report call on a path already handling an exception;
+any catch/finalizer that cannot report both primary and cleanup failures.
+
 ---
 
 ## Register log
@@ -3899,3 +3941,5 @@ can contain the expected active configuration.
 | 2026-09-01 | R-173 corrected, R-175 | Reviews reproduced a self-published ledger mistaken for an environment override; provenance capture plus moved-cwd regression repairs it. They also found the pre-existing malformed-store null-to-wildcard path, corrected an overclaiming parser test, and found the v1 lookalike-field guard unforced; the expanded mutation catalogue then rejected its own empty-provenance entry until init was included in the test. Tri-state session handling remains open | ADR-0037 critical reviews |
 | 2026-09-01 | R-176 | Final quality review found installed smoke's substring check passed the old commented ledger line. Exact-line matching now fails a disposable `#export` package and passes the candidate | ADR-0037 final quality review |
 | 2026-09-02 | R-156 | Trigger fired again: root README still advertised 0.18.1 and an open PR #10 through the 0.21.0 release, including the mutable-main-SHA form R-156 had already rejected. Release record now updates every operational summary | 0.21.0 release close |
+| 2026-09-04 | R-177 | Added MEASURED — retained Wave A v6 JSONL shows a child leave an empty CWD and edit a pinned checkout; mtime and invocation window agree, and v7 refused the dirty checkout. This confirms SPEC's existing non-containment boundary rather than a governance-rule failure | principal qualification evidence |
+| 2026-09-04 | R-178 | Added and fixed — a consumer final report replaced an unpersisted primary exception; the same shape existed in four pi-daddy finalizers. Shared preservation keeps primary identity/code and attaches cleanup failures; a named regression plus mutation forces it | containment-finding follow-up |

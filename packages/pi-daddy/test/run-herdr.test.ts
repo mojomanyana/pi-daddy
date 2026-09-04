@@ -570,6 +570,29 @@ test("a writer pane close failure is loud so its lease can remain held", async (
   );
 });
 
+test("a finalizer failure cannot mask the primary Herdr failure", async () => {
+  const primary = new Error("primary herdr failure");
+  const fake = fakeHerdr();
+  const exec: HerdrExec = async (args) => {
+    const verb = args.slice(0, 2).join(" ");
+    if (verb === "agent start") throw primary;
+    if (verb === "tab close") {
+      return { code: 1, stdout: JSON.stringify({ id: "x", error: { code: "close_failed" } }), stderr: "" };
+    }
+    return fake.exec(args);
+  };
+
+  await assert.rejects(
+    () => runHerdrPane({ ...request(), exec, pollIntervalMs: 1, closeOnSettle: true }),
+    (error: Error) => {
+      assert.equal(error, primary, "the primary error object and its classification must survive");
+      assert.match(error.message, /^primary herdr failure/);
+      assert.match(error.message, /finalizer failed: HerdrWriterCloseError/);
+      return true;
+    },
+  );
+});
+
 test("ADR-0032: a settled pane is marked reclaimable and closed by the sweep, WITHOUT `agent stop`", async () => {
   // **Rewritten: `herdr agent stop` does not exist.** Measured against herdr 0.7.5 — the `agent` subcommands are
   // `list get read send-keys prompt rename focus wait attach start explain`, and `agent stop` prints the usage
