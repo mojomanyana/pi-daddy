@@ -39,9 +39,9 @@ becomes the grant; the pi-subagents ceiling port is deleted; the interceptor sur
 child timeout from ten to twenty minutes; explicit `PI_GRANTS_CHILD_TIMEOUT` values remain unchanged. ADR-0037
 makes one explicit `/grants init` the project opt-in for both the stored grant and `.pi/grants.jsonl`; package
 installation alone still initializes nothing. Version-1 stores are not silently migrated, and environment
-configuration wins for children, CI, custom paths and the empty one-run opt-out. R-175 remains open: malformed
-and absent project stores are still indistinguishable at session construction. The breaking 0.20.0 ledger
-contracts and 0.19.0 `workspace:<id>` routing requirement are unchanged.
+configuration wins for children, CI, custom paths and the empty one-run opt-out. Released 0.21.1 still has
+R-175; the 0.22.0 candidate fails malformed project stores closed with `GRANT_STORE_INVALID`. The breaking
+0.20.0 ledger contracts and 0.19.0 `workspace:<id>` routing requirement are unchanged.
 
 **ADR-0038 is released in 0.21.1:** the default child timeout is twenty minutes.
 
@@ -144,7 +144,7 @@ docs/archive/             — SUPERSEDED, kept as evidence, never edited to matc
                             registers (discovery, assumptions, landscape, metrics), ROADMAP, gate reports,
                             both code reviews, the old specs, the completed implementation plan, and the
                             dead upstream proposal. See its README for why each stopped being current.
-packages/pi-daddy  — THE PRODUCT (0.21.1 released): Agent Skill
+packages/pi-daddy  — THE PRODUCT (0.22.0 release candidate; 0.21.1 released): Agent Skill
                             definitions, resolver, v3 ledger (frozen v2 reader), delegate/delegate_all/
                             delegate_chain, catalog, bound human approval, process/herdr executors,
                             governed-writer leases, named checks, explicit Herdr dashboard plugin, and

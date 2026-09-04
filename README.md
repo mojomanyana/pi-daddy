@@ -11,9 +11,9 @@ typecheck, installed-package smoke and 110/110 mutation guards. A fresh registry
 default child timeout is 20 minutes (1,200,000 ms).
 
 One explicit `/grants init` now persists both the project grant and `.pi/grants.jsonl`; merely installing the
-package initializes nothing, and legacy stores are not silently migrated. **Known open issue R-175:** malformed
-and absent project stores are still indistinguishable at session construction, so malformed state can make a
-root session ungoverned. `docs/SESSION-LOG.md` and `docs/SPEC.md` are the current detailed record.
+package initializes nothing, and legacy stores are not silently migrated. Released 0.21.1 still has R-175:
+malformed project state can make a root session ungoverned. The 0.22.0 candidate fails closed with a loud
+`GRANT_STORE_INVALID` refusal. `docs/SESSION-LOG.md` and `docs/SPEC.md` are the current detailed record.
 
 **Want to run it?** [`docs/RUNNING-IT.md`](docs/RUNNING-IT.md) — setup in six steps, then a feature built
 end to end with seven governed sub-agents, sequential where output feeds input and parallel where it does not.
