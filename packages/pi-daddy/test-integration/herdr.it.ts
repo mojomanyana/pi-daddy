@@ -119,7 +119,7 @@ describe("herdr assumptions, against a real server", () => {
   test("an agent name built from a real ledger child id is ACCEPTED", { skip: skipIf() }, async () => {
     // Blocker 3, pinned end to end. `review-d0.1` — the real shape — was rejected as `invalid_agent_name`
     // because of the dots. This asserts the sanitised name herdr actually takes.
-    const name = uniqueAgentName("review-d0.1");
+    const name = uniqueAgentName(`it${process.pid}-review-d0.1`);
     const started = await startAgent(name, await pane());
     assert.ok(started.ok, `herdr refused ${name}: ${started.error}`);
   });
