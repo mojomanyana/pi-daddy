@@ -5,7 +5,7 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ---
 
-## 2026-09-04 — 0.22.0 release candidate on `release/0.22.0`
+## 2026-09-04 — 0.22.0 released and registry-verified
 
 The merged work after 0.21.1 is release-worthy: fail-closed project-store loading, model-catalogue preflight,
 closed correlation inputs, optional approval narrowing, the Node-types peer contract, primary-error preservation
@@ -23,7 +23,12 @@ was retried after an interrupted first attempt left its current mutation in `src
 catalogue mutation was restored before the clean 126/126 rerun. Its one leftover `test/workspace.test.ts` process
 was terminated and a second process check was empty. The pre-existing untracked `.pi/` remains untouched.
 
-No npm publish, tag, GitHub Release or push had occurred when this candidate entry was written.
+PR #33 merged as `458ccc2`; protected-branch CI passed on Node 22.19.0 and 24.x. Annotated tag `v0.22.0`, npm
+`latest` and the non-draft GitHub Release all resolve to 0.22.0. A fresh registry project installed the exact
+version, imported `run-child` (`DEFAULT_TIMEOUT_MS === 1200000`), found both npm bin symlinks and executed
+`pi-daddy --help`. Registry shasum `af0864fbaaae42e587aa70668e29d665e9a32222` matches the downloaded tarball;
+its SHA-256 is `0417b0efb79019bd94ee3517c047a00f1fa3f2932b7207dbde953944d73460de`. The tag resolves to
+`458ccc2c54584da4faae012e469ba7efdcd5e77c`.
 
 ## 2026-09-04 — Measured CWD escape and finalizer-error repair on `b1-containment-finding`
 
@@ -66,22 +71,20 @@ classifications and downstream strict-v3 re-pin notes are in
 2026-08-22 the *server* enforces it: `main` requires a pull request (zero approvals) with both CI legs green,
 and `enforce_admins` is on, so a direct push is refused rather than merely discouraged.
 
-**STATE, 2026-09-02. `0.21.1` is released and registry-verified.** npm `latest`, tag `v0.21.1`, the GitHub
-Release and the released baseline resolve to one commit, so `git rev-list -n1 v0.21.1` is the immutable source
-point and this block deliberately names no mutable `main` SHA. **Thirty-eight ADRs.** ADR-0038 raises the
-default per-child timeout from 600 to 1200 seconds while preserving explicit `PI_GRANTS_CHILD_TIMEOUT` values
-and inheritance; ADR-0037's stored project grant/ledger behavior is unchanged. Release evidence: **731 unit ·
-47 integration against real pi and Herdr 0.8.2 · typecheck · installed-package smoke · 110/110 existing
-mutation guards · independent whole-change review**. The focused default assertion failed red at 600000 vs
-1200000 before the one-line constant change. PR #29 merged as `6603d80`; protected-branch CI passed on Node
-22.19.0 and 24.x. Registry verification installed `pi-daddy@0.21.1` into a fresh project and imported the
-shipped `run-child` entry point, which reported `DEFAULT_TIMEOUT_MS === 1200000`. Registry shasum
-`a38ed46d92c63831bfc54e51a33155f173a0551a` matches the published tarball; its SHA-256 is
-`cd071799e62334e3aae9e0d7e7353f04d624c05f78f193ad822d4f1dc1e8ee6e`.
+**STATE, 2026-09-04. `0.22.0` is released and registry-verified.** npm `latest`, tag `v0.22.0`, the GitHub
+Release and the released baseline resolve to one commit, so `git rev-list -n1 v0.22.0` is the immutable source
+point and this block deliberately names no mutable `main` SHA. **Forty-three ADRs.** The top entry records the
+breaking contracts, evidence, PR, registry artifact hashes and fresh-install verification.
 
-**CURRENT CANDIDATE, 2026-09-04: 0.22.0 is prepared but not published.** The top entry records its breaking
-contract changes, full evidence and release branch. Until its PR merges and registry/tag verification succeeds,
-0.21.1 remains the latest released version.
+**0.21.1 timeout release, 2026-09-02; registry-verified.** ADR-0038 raises the default per-child timeout from
+600 to 1200 seconds while preserving explicit `PI_GRANTS_CHILD_TIMEOUT` values and inheritance; ADR-0037's
+stored project grant/ledger behavior is unchanged. Release evidence: **731 unit · 47 integration against real
+pi and Herdr 0.8.2 · typecheck · installed-package smoke · 110/110 existing mutation guards · independent
+whole-change review**. The focused default assertion failed red at 600000 vs 1200000 before the one-line
+constant change. PR #29 merged as `6603d80`; protected-branch CI passed on Node 22.19.0 and 24.x. Registry
+verification installed `pi-daddy@0.21.1` into a fresh project and imported the shipped `run-child` entry point,
+which reported `DEFAULT_TIMEOUT_MS === 1200000`. Registry shasum `a38ed46d92c63831bfc54e51a33155f173a0551a`
+matches the published tarball; its SHA-256 is `cd071799e62334e3aae9e0d7e7353f04d624c05f78f193ad822d4f1dc1e8ee6e`.
 
 *(These lines were stale for about an hour after the release — they said "nothing is released", the tier "was
 not run", and named a commit three merges back, while the paragraphs directly below them said otherwise. **That
