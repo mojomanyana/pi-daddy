@@ -5,6 +5,26 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ---
 
+## 2026-09-04 — 0.22.0 release candidate on `release/0.22.0`
+
+The merged work after 0.21.1 is release-worthy: fail-closed project-store loading, model-catalogue preflight,
+closed correlation inputs, optional approval narrowing, the Node-types peer contract, primary-error preservation
+across four cleanup paths, and the model-free real-pi CI tier. Because correlation input and the strict ledger-v3
+refusal enum narrow/change published contracts, the candidate is 0.22.0 rather than a patch. The changelog names
+the migration: correlation schema version is exactly `"1.0"`, assurance scope uses the closed union, and strict
+v3 consumers must re-pin the regenerated schema/fixtures.
+
+Fresh candidate evidence: 741 unit tests, typecheck, 36 model-free/Herdr-free real-pi CI integration tests,
+48 default real-pi/Herdr integration tests, installed-package smoke, `git diff --check`, and 126/126 mutation
+guards pass. The first full integration run found a shared-daemon test-isolation defect rather than a product
+failure: a deterministic `review-d0-1-1` test agent collided with a live agent in another workspace. The test now
+names that probe by its process like the adjacent two-spawn case; the full 48-test rerun passed. The mutation run
+was retried after an interrupted first attempt left its current mutation in `src/workspace-lease.ts`; only that
+catalogue mutation was restored before the clean 126/126 rerun. Its one leftover `test/workspace.test.ts` process
+was terminated and a second process check was empty. The pre-existing untracked `.pi/` remains untouched.
+
+No npm publish, tag, GitHub Release or push had occurred when this candidate entry was written.
+
 ## 2026-09-04 — Measured CWD escape and finalizer-error repair on `b1-containment-finding`
 
 Retained Wave A v6 qualification evidence confirms R-177: `wave-a-v6-s02-luna-subject-r1` started in an
@@ -59,6 +79,10 @@ shipped `run-child` entry point, which reported `DEFAULT_TIMEOUT_MS === 1200000`
 `a38ed46d92c63831bfc54e51a33155f173a0551a` matches the published tarball; its SHA-256 is
 `cd071799e62334e3aae9e0d7e7353f04d624c05f78f193ad822d4f1dc1e8ee6e`.
 
+**CURRENT CANDIDATE, 2026-09-04: 0.22.0 is prepared but not published.** The top entry records its breaking
+contract changes, full evidence and release branch. Until its PR merges and registry/tag verification succeeds,
+0.21.1 remains the latest released version.
+
 *(These lines were stale for about an hour after the release — they said "nothing is released", the tier "was
 not run", and named a commit three merges back, while the paragraphs directly below them said otherwise. **That
 is this project's signature defect in its most-read location**, found by re-reading the document at close rather
@@ -108,7 +132,7 @@ open against Herdr 0.8.2 rather than only inspecting package bytes.
 **What the product now does that it could not before:** workspace routing is a capability, so it attenuates
 (ADR-0035). Before that, a child routed to `staging` could route its grandchild to `prod` with a real lease, a
 validated CWD and a ledger line naming `prod` — every other dimension attenuated and the working directory did
-not. That shipped in 0.18.0 and is fixed on `main`, unreleased.
+not. That shipped in 0.18.0 and was fixed in released 0.19.0.
 
 **0.19.0 is RELEASED and VERIFIED FROM THE REGISTRY (2026-08-23).** Installed from npm into a scratch project
 — not the packing smoke test, which installs a tarball into a project that already has the workspace's types —

@@ -14,12 +14,12 @@ the record of how the package got here and are worth keeping; they are not worth
 
 ## 0.22.0 — fail-closed audit follow-ups (2026-09-04)
 
-- Stored project grants now load as absent, valid, or a loud fail-closed refusal. Malformed, unsupported,
-  unreadable and wrong-directory stores never restore the ungoverned wildcard; `GRANT_STORE_INVALID` records
-  the safety stop.
-- Explicit delegation models are resolved against pi's session catalogue before any lease, approval or child
-  process. Unknown models refuse as `MODEL_UNRESOLVED`; custom resolution requires the operator escape hatch
-  `PI_GRANTS_ALLOW_UNRESOLVED_MODELS=1`.
+- **BREAKING — invalid project stores now fail closed.** Malformed, unsupported, unreadable and wrong-directory
+  stores never restore the ungoverned wildcard; `GRANT_STORE_INVALID` records the safety stop. Repair the store
+  or deliberately rerun `/grants init` rather than relying on invalid state being treated as absent.
+- **BREAKING — explicit delegation models are resolved before any side effect.** Models absent from pi's session
+  catalogue refuse as `MODEL_UNRESOLVED`. Register custom models with pi, or deliberately set the operator
+  escape hatch `PI_GRANTS_ALLOW_UNRESOLVED_MODELS=1`.
 - **BREAKING — correlation inputs are narrower.** `schema_version`, when present, must be exactly `"1.0"`, and
   `assurance_scope` must use the closed entire-run/selectors union instead of arbitrary JSON. Strict ledger-v3
   consumers must re-pin to the regenerated schema and fixtures, which also add `GRANT_STORE_INVALID` and

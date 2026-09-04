@@ -68,6 +68,11 @@ after(async () => {
   }
 });
 
+/** Globally unique for this suite's fresh workspace, even when another repository retains the same base. */
+function suiteAgentName(base: string): string {
+  return uniqueAgentName(`it-${workspace}-${base}`);
+}
+
 /** A pane in this suite's own workspace. */
 async function pane(): Promise<string> {
   const reply = parseReply(await defaultExec(["tab", "create", "--label", "it", "--workspace", workspace!, "--cwd", process.cwd()]));
@@ -119,7 +124,7 @@ describe("herdr assumptions, against a real server", () => {
   test("an agent name built from a real ledger child id is ACCEPTED", { skip: skipIf() }, async () => {
     // Blocker 3, pinned end to end. `review-d0.1` — the real shape — was rejected as `invalid_agent_name`
     // because of the dots. This asserts the sanitised name herdr actually takes.
-    const name = uniqueAgentName(`it${process.pid}-review-d0.1`);
+    const name = suiteAgentName("review-d0.1");
     const started = await startAgent(name, await pane());
     assert.ok(started.ok, `herdr refused ${name}: ${started.error}`);
   });
@@ -127,11 +132,10 @@ describe("herdr assumptions, against a real server", () => {
   test("two spawns from ONE base name both start", { skip: skipIf() }, async () => {
     // Blocker 2, pinned. herdr frees a name only when its tab closes, and both tabs are still open here — which
     // is exactly the state ADR-0032 created and the second `delegate` of every turn used to die in. The real
-    // daemon is shared with unrelated repositories, so namespace this test's base by its live process rather
-    // than colliding with another suite's retained `review-d0.1` pane.
-    const base = `it${process.pid}-review-d0.1`;
-    const first = uniqueAgentName(base);
-    const second = uniqueAgentName(base);
+    // daemon is shared with unrelated repositories, so namespace every test agent by this suite's fresh
+    // workspace rather than colliding with another suite's retained `review-d0.1` pane.
+    const first = suiteAgentName("review-d0.1");
+    const second = suiteAgentName("review-d0.1");
     assert.notEqual(first, second);
 
     const a = await startAgent(first, await pane());
@@ -143,7 +147,7 @@ describe("herdr assumptions, against a real server", () => {
   test("reusing a live name IS refused, which is why uniqueness is required", { skip: skipIf() }, async () => {
     // The other half: proves the uniqueness is load-bearing rather than defensive. If herdr ever stops binding
     // names to tabs this fails, and `uniqueAgentName` can be simplified.
-    const name = uniqueAgentName("collide-d0.1");
+    const name = suiteAgentName("collide-d0.1");
     assert.ok((await startAgent(name, await pane())).ok);
 
     const again = parseReply(await defaultExec(["agent", "start", name, "--kind", "pi", "--pane", await pane(), "--", ...INERT_PI_ARGV]));
@@ -195,7 +199,7 @@ describe("herdr assumptions, against a real server", () => {
     // "unparseable herdr reply", i.e. a child's real answer as a failure to read it. `readPane` tries JSON first
     // and falls back to raw for exactly this reason, and that order only makes sense if this holds.
     const paneId = await pane();
-    const name = uniqueAgentName("read-d0.1");
+    const name = suiteAgentName("read-d0.1");
     assert.ok((await startAgent(name, paneId)).ok, "an agent must exist for `agent read` to accept the target");
 
     let seen = "";
@@ -249,7 +253,7 @@ describe("herdr assumptions, against a real server", () => {
     // that did not settle, so it is asserted rather than assumed.
     const created = parseReply(await defaultExec(["tab", "create", "--label", "kill", "--workspace", workspace!, "--cwd", process.cwd()]));
     const root = (created.result?.root_pane ?? {}) as { pane_id?: string; tab_id?: string };
-    const name = uniqueAgentName("kill-d0.1");
+    const name = suiteAgentName("kill-d0.1");
     assert.ok((await startAgent(name, root.pane_id!)).ok);
     assert.ok(!parseReply(await defaultExec(["agent", "get", name])).error, "the agent should exist first");
 
