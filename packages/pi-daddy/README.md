@@ -789,7 +789,7 @@ every in-repo test passed. `npm run test:smoke` packs a tarball, installs it int
 ## Testing
 
 ```bash
-npm test                   # 739 unit tests. Fast, pure, no pi, no network.
+npm test                   # 741 unit tests. Fast, pure, no pi, no network.
 npm run typecheck          # src + extensions + tests + integration tests
 npm run test:integration   # 48 tests against a REAL pi process/Herdr server, no model tokens.
 npm run test:smoke         # pack/install; exercise library exports, both bins, the v2/v3 contracts,

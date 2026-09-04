@@ -3,6 +3,7 @@ import { chmod, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs
 import { tmpdir } from "node:os";
 import { basename, isAbsolute, join } from "node:path";
 import { normaliseCorrelation, type CorrelationMetadata } from "./correlation.ts";
+import { runWithFinalizers } from "./finalization.ts";
 import {
   appendLedgerEvent,
   buildCheckReceiptLedgerEvent,
@@ -163,27 +164,28 @@ export async function runNamedCheck(input: {
   /** Failures of best-effort RECORDS, reported alongside whatever actually happened — never instead of it. */
   const notes: string[] = [];
   let releaseReason = "failed";
-  try {
+  return runWithFinalizers(async () => {
     try {
-      lease = await acquireWorkspaceLease({
-        workspace: input.workspace, access: leaseAccess, leaseDir: input.leaseDir ?? defaultWorkspaceLeaseDir(),
-        ownerId, signal: input.signal,
-      });
-    } catch (error) {
-      if (input.ledgerPath) await appendLedgerEvent(
-        { path: input.ledgerPath, strict: true },
-        buildWorkspaceLeaseEvent({
-          executionId, parentExecutionId,
-          childId: ownerId, workspaceId: input.workspace.workspaceId, root: input.workspace.root, access: leaseAccess,
-          outcome: "refused",
-          correlation, now: new Date(),
-          ...(error instanceof GovernanceRefusal
-            ? { refusal: { code: error.code, message: error.message, ...(error.details ? { details: error.details } : {}) } }
-            : {}),
-        }),
-      );
-      throw error;
-    }
+      try {
+        lease = await acquireWorkspaceLease({
+          workspace: input.workspace, access: leaseAccess, leaseDir: input.leaseDir ?? defaultWorkspaceLeaseDir(),
+          ownerId, signal: input.signal,
+        });
+      } catch (error) {
+        if (input.ledgerPath) await appendLedgerEvent(
+          { path: input.ledgerPath, strict: true },
+          buildWorkspaceLeaseEvent({
+            executionId, parentExecutionId,
+            childId: ownerId, workspaceId: input.workspace.workspaceId, root: input.workspace.root, access: leaseAccess,
+            outcome: "refused",
+            correlation, now: new Date(),
+            ...(error instanceof GovernanceRefusal
+              ? { refusal: { code: error.code, message: error.message, ...(error.details ? { details: error.details } : {}) } }
+              : {}),
+          }),
+        );
+        throw error;
+      }
     if (input.ledgerPath) {
       try {
         await appendLedgerEvent(
@@ -329,29 +331,39 @@ export async function runNamedCheck(input: {
       );
     }
     throw error;
-  } finally {
-    if (stagedDir) await rm(stagedDir, { recursive: true, force: true });
-    if (lease) {
-      // `release()` cannot throw (R-99), and the record of it is best-effort for the same reason as
-      // above: a `finally` that throws destroys whatever the caller was already returning or raising.
-      const outcome = await lease.release(releaseReason);
-      if (input.ledgerPath) await appendLedgerEvent(
-        {
-          path: input.ledgerPath,
-          strict: false,
-          onFailure: (cause) => { notes.push(`check lease release record failed: ${String(cause)}`); },
-        },
-        buildWorkspaceLeaseEvent({
-          executionId, parentExecutionId,
-          childId: ownerId, workspaceId: input.workspace.workspaceId, root: input.workspace.root, access: leaseAccess,
-          outcome: outcome === "lost"
-            ? "lost"
-            : outcome === "released-unrecorded"
-              ? "released-unrecorded"
-              : releaseReason === "timeout" ? "timeout" : "released",
-          releaseReason, correlation, now: new Date(),
-        }),
-      );
     }
-  }
+  }, [
+    {
+      label: "staged check cleanup failed",
+      run: async () => {
+        if (stagedDir) await rm(stagedDir, { recursive: true, force: true });
+      },
+    },
+    {
+      label: "workspace lease finalizer failed",
+      run: async () => {
+        if (!lease) return;
+        // `release()` cannot throw (R-99), and the record of it is best-effort for the same reason as
+        // above: a finalizer must not destroy whatever the caller was already returning or raising.
+        const outcome = await lease.release(releaseReason);
+        if (input.ledgerPath) await appendLedgerEvent(
+          {
+            path: input.ledgerPath,
+            strict: false,
+            onFailure: (cause) => { notes.push(`check lease release record failed: ${String(cause)}`); },
+          },
+          buildWorkspaceLeaseEvent({
+            executionId, parentExecutionId,
+            childId: ownerId, workspaceId: input.workspace.workspaceId, root: input.workspace.root, access: leaseAccess,
+            outcome: outcome === "lost"
+              ? "lost"
+              : outcome === "released-unrecorded"
+                ? "released-unrecorded"
+                : releaseReason === "timeout" ? "timeout" : "released",
+            releaseReason, correlation, now: new Date(),
+          }),
+        );
+      },
+    },
+  ]);
 }

@@ -38,7 +38,9 @@ Escalation is impossible by construction. The root holds the catalog; every leve
 
 **Does not govern: an agent holding an execution primitive.** A child granted `bash` can run
 `env -u PI_GRANTS_GRANT pi …` and get a wholly ungoverned descendant — no grant, no depth increment, no
-ledger line. Measured (`docs/probes/g5-bash-escape`). Containing that is the OS's job and is out of scope.
+ledger line. Measured (`docs/probes/g5-bash-escape`). A separate retained qualification run observed a child
+start in an empty directory, search outside it and use `edit` on an absolute path in a pinned product checkout
+(`docs/probes/g38-cwd-is-not-containment`). Containing either behavior is the OS's job and is out of scope.
 
 So `bash` is **gated by default in a governed session** — a human is asked before any child receives it —
 and gating is closed under subsumption: gating `write` also gates `bash`, because `bash` can write. Neither
@@ -534,7 +536,9 @@ child's initial CWD. A correlation workspace ID that disagrees **with a routing 
 
 **This is validation against accidental misrouting, not path confinement.** `WRITER_ROOT` is an intended
 workspace. `read`, `write`, `edit` and especially `bash` are not path-scoped; a child can leave the root,
-address absolute paths or spawn another process. Strong confinement needs an OS sandbox or constrained
+address absolute paths or spawn another process. This is observed, not only inferred: a qualification child
+launched in an empty working directory searched the surrounding tree and edited an absolute path in a frozen
+checkout (`docs/probes/g38-cwd-is-not-containment`). Strong confinement needs an OS sandbox or constrained
 broker.
 
 Read-only children take no exclusive lease and may coexist with each other or with a writer. A write-capable
@@ -1009,7 +1013,7 @@ ledgered `MODEL_UNRESOLVED` routing refusal, not a governance denial.
 
 ```bash
 cd packages/pi-daddy
-npm test                   # 739 unit tests — pure, no pi, no network
+npm test                   # 741 unit tests — pure, no pi, no network
 npm run typecheck          # src + extensions + test + test-integration
 npm run test:integration   # 48 tests against a REAL pi process/herdr server, no model tokens
 npm run test:smoke         # pack/install; exercise exports, both bins, v2/v3 contracts, the bundled
@@ -1027,7 +1031,7 @@ landing on disk, a *different* process honouring it with no prompt, and a body e
 Stated because a gap nobody wrote down is the one that surprises somebody.
 
 - **`bash` escapes governance.** Out of scope by decision (ADR-0012). Workspace CWD validation and writer leases do not change that.
-- **Workspace leases coordinate only cooperating pi-daddy children.** They do not exclude unrelated processes or confine paths. The measured implementation currently requires util-linux `flock`; unsupported platforms refuse write leases.
+- **Workspace leases coordinate only cooperating pi-daddy children.** They do not exclude unrelated processes or confine paths. A retained qualification run observed a child leave its empty initial CWD and edit another checkout (`docs/probes/g38-cwd-is-not-containment`). The measured implementation currently requires util-linux `flock`; unsupported platforms refuse write leases.
 - **Named checks are arbitrary code without shell interpolation, not sandboxed code.** Tests can write, use the network, invoke a shell or leave descendants unless an OS sandbox separately contains them.
 - **`subagents:rpc:spawn` bypasses the tripwire.** Unfixable from here.
 - **Pane cleanup is not leak-proof.** Cleanup runs in a `finally`, which covers thrown errors but not the

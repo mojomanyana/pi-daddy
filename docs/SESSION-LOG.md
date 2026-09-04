@@ -5,6 +5,27 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ---
 
+## 2026-09-04 — Measured CWD escape and finalizer-error repair on `b1-containment-finding`
+
+Retained Wave A v6 qualification evidence confirms R-177: `wave-a-v6-s02-luna-subject-r1` started in an
+empty directory, searched outside it and changed `// teh balance` to `// the balance` at
+`sources/principal-pi-skills/build/tests/fixtures/C1/notes.ts`. The JSONL edit, preserved dirty diff, file
+mtime inside the terminal-receipt window and Wave A v7 clean-check refusal agree. Probe g38 points to the
+read-only evidence and hashes without copying it. SPEC's existing `WRITER_ROOT` and execution-primitive
+non-containment statements now link the observed instance; ADR-0012 records that its revisit trigger fired
+without silently selecting an OS sandbox.
+
+R-178 found pi-daddy had the consumer's masking shape in Herdr, named-check, Git-index and init finalizers.
+`runWithFinalizers` now preserves the primary error object/code while attaching every cleanup failure; Herdr
+writer-lease retention still recognizes a close failure attached to a different primary. The new regression
+failed red with `HerdrWriterCloseError` replacing `primary herdr failure`, then passed green; its exact mutation
+is catalogue entry 125; a second mutation forces attached writer-close recognition. Current evidence: 741 unit tests, typecheck, 48 model-free integration tests and 126/126 mutation guards pass.
+Installed smoke initially failed from `/tmp` ENOSPC caused by 29 stale `pi-daddy-check-exec-*` directories;
+removing only those package-owned temp directories freed 4,266,459,136 bytes and the immediate smoke rerun
+passed. The mutation run left one `test/workspace.test.ts` process; the required post-run check found and
+terminated it, then confirmed none remained. No model/judge call, evidence mutation, publish, tag or push was
+performed.
+
 ## 2026-09-03 — Wave 1 audit follow-ups implemented on `wave1/audit-followups`
 
 Baseline `c119dd7` was remeasured before implementation: 731 unit, 47 real-pi/Herdr integration,

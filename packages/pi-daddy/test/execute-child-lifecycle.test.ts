@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import { chmod, readFile, rm, writeFile } from "node:fs/promises";
 import { delimiter, join } from "node:path";
 import { after, test } from "node:test";
-import { appendAfterRuntimeRecord, executePlannedChild } from "../extensions/execute-child.ts";
+import { appendAfterRuntimeRecord, executePlannedChild, isHerdrWriterCloseFailure } from "../extensions/execute-child.ts";
 import type { GrantsSession } from "../extensions/session.ts";
 import type { Delegation } from "../src/delegate.ts";
+import { runWithFinalizers } from "../src/finalization.ts";
+import { HerdrWriterCloseError } from "../src/run-herdr.ts";
 import { ENV_CHILD_TIMEOUT } from "../src/run-child.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
@@ -24,6 +26,19 @@ function plan(): Delegation {
     taskDigest: "a".repeat(64),
   };
 }
+
+test("an attached Herdr close failure still retains the writer lease", async () => {
+  let caught: unknown;
+  try {
+    await runWithFinalizers(
+      async () => { throw new Error("primary executor failure"); },
+      [{ label: "finalizer failed", run: () => { throw new HerdrWriterCloseError("w1:t9"); } }],
+    );
+  } catch (error) {
+    caught = error;
+  }
+  assert.equal(isHerdrWriterCloseFailure(caught), true);
+});
 
 test("a terminal lifecycle append waits for the running append it follows", async () => {
   const order: string[] = [];

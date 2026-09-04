@@ -26,6 +26,7 @@ import { mkdir, open, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { agentCapability, workspaceCapability } from "./capabilities.ts";
 import { ceilingForDefinition } from "./definitions.ts";
+import { runWithFinalizers } from "./finalization.ts";
 import { ALWAYS_LIVE, assertGrantIsWritable, isLiveByDefault, renderGrantEnv, type GrantEnvSkill } from "./grant-env.ts";
 import { PI_BUILTIN_TOOLS } from "./pi-tools.ts";
 import type { Capability } from "./resolve.ts";
@@ -332,11 +333,10 @@ async function createUnlessPresent(path: string, content: string, outcome: InitO
   try {
     await mkdir(join(path, ".."), { recursive: true });
     const handle = await open(path, "wx");
-    try {
-      await handle.writeFile(content, "utf8");
-    } finally {
-      await handle.close();
-    }
+    await runWithFinalizers(
+      () => handle.writeFile(content, "utf8"),
+      [{ label: "new-file handle cleanup failed", run: () => handle.close() }],
+    );
     outcome.written.push(path);
   } catch (error) {
     if ((error as { code?: string }).code === "EEXIST") outcome.kept.push(path);
