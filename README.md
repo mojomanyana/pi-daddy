@@ -5,15 +5,15 @@ deliberate subset of what it holds and withholds the rest. Sub-agents may delega
 subset of what they themselves hold — enforced by **pi's own `--tools` allowlist**, with an append-only
 ledger of every grant and refusal whenever a ledger is configured.
 
-**Release state (verified 2026-09-02):** npm `latest`, tag `v0.21.1` and the non-draft GitHub Release identify
-the same released source. It passed 731 unit tests, 47 non-model integration tests against real pi/Herdr,
-typecheck, installed-package smoke and 110/110 mutation guards. A fresh registry install confirmed the shipped
-default child timeout is 20 minutes (1,200,000 ms).
+**Release state (verified 2026-09-04):** npm `latest`, tag `v0.22.0` and the non-draft GitHub Release identify
+the same released source. It passed 741 unit tests, 48 non-model integration tests against real pi/Herdr,
+typecheck, installed-package smoke and 126/126 mutation guards. A fresh registry install exercised both shipped
+bins and imported the `run-child` entry point.
 
 One explicit `/grants init` now persists both the project grant and `.pi/grants.jsonl`; merely installing the
-package initializes nothing, and legacy stores are not silently migrated. Released 0.21.1 still has R-175:
-malformed project state can make a root session ungoverned. The 0.22.0 candidate fails closed with a loud
-`GRANT_STORE_INVALID` refusal. `docs/SESSION-LOG.md` and `docs/SPEC.md` are the current detailed record.
+package initializes nothing, and legacy stores are not silently migrated. Malformed project state now fails
+closed with a loud `GRANT_STORE_INVALID` refusal. `docs/SESSION-LOG.md` and `docs/SPEC.md` are the current
+detailed record.
 
 **Want to run it?** [`docs/RUNNING-IT.md`](docs/RUNNING-IT.md) — setup in six steps, then a feature built
 end to end with seven governed sub-agents, sequential where output feeds input and parallel where it does not.

@@ -35,13 +35,12 @@ permissible, able to refuse or allow but never to narrow. **This package is now 
 is an argument rather than a veto. Definitions are **Agent Skills (`SKILL.md`)** files whose `allowed-tools`
 becomes the grant; the pi-subagents ceiling port is deleted; the interceptor survives only as a tripwire.
 
-**Current release state: 0.21.1, published and registry-verified 2026-09-02.** ADR-0038 raises the default
-child timeout from ten to twenty minutes; explicit `PI_GRANTS_CHILD_TIMEOUT` values remain unchanged. ADR-0037
-makes one explicit `/grants init` the project opt-in for both the stored grant and `.pi/grants.jsonl`; package
-installation alone still initializes nothing. Version-1 stores are not silently migrated, and environment
-configuration wins for children, CI, custom paths and the empty one-run opt-out. Released 0.21.1 still has
-R-175; the 0.22.0 candidate fails malformed project stores closed with `GRANT_STORE_INVALID`. The breaking
-0.20.0 ledger contracts and 0.19.0 `workspace:<id>` routing requirement are unchanged.
+**Current release state: 0.22.0, published and registry-verified 2026-09-04.** Invalid project stores fail
+closed with `GRANT_STORE_INVALID`; explicit child models are resolved before side effects; correlation accepts
+only schema version `1.0` and the closed assurance-scope union; supplied tree/change state can narrow approval
+reuse; public declarations carry their Node-types peer contract; and cleanup failures no longer replace a
+primary operation error. ADR-0038's twenty-minute child timeout and ADR-0037's explicit project opt-in remain
+unchanged. The breaking 0.20.0 ledger contracts and 0.19.0 `workspace:<id>` routing requirement still apply.
 
 **ADR-0038 is released in 0.21.1:** the default child timeout is twenty minutes.
 
@@ -64,7 +63,7 @@ new paths unforced. All forty-three had repairs; its review found status error p
 unproved. Forty-five had repairs; its review found a frozen-clock hang, shipped control artifacts and non-
 overlapping concurrency. All forty-eight have repairs; critical run `48da2009…` approved exact candidate tree
 `889fd02…`. PR #23 merged it in 0.20.0; R-172's split-target repair shipped through PR #25 in 0.20.1. npm
-`latest`, tag `v0.21.1` and the GitHub Release are verified. Read the top entry in `docs/SESSION-LOG.md` before
+`latest`, tag `v0.22.0` and the GitHub Release are verified. Read the top entry in `docs/SESSION-LOG.md` before
 touching it.
 
 **PR #10 / ADR-0035 is merged and released in 0.19.0.** Its review lesson remains operational: adding a
@@ -144,7 +143,7 @@ docs/archive/             — SUPERSEDED, kept as evidence, never edited to matc
                             registers (discovery, assumptions, landscape, metrics), ROADMAP, gate reports,
                             both code reviews, the old specs, the completed implementation plan, and the
                             dead upstream proposal. See its README for why each stopped being current.
-packages/pi-daddy  — THE PRODUCT (0.22.0 release candidate; 0.21.1 released): Agent Skill
+packages/pi-daddy  — THE PRODUCT (0.22.0 released): Agent Skill
                             definitions, resolver, v3 ledger (frozen v2 reader), delegate/delegate_all/
                             delegate_chain, catalog, bound human approval, process/herdr executors,
                             governed-writer leases, named checks, explicit Herdr dashboard plugin, and
