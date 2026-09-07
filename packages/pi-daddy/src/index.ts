@@ -35,6 +35,11 @@ export {
 } from "./ledger.ts";
 
 export { planSpawn, type SpawnPlan, type SpawnPlanInput } from "./spawn.ts";
+export { beginExecutionRetention, ENV_EXECUTION_ARCHIVE, RETENTION_VERSION, retentionConfigurationDigest, verifyRetainedBytes,
+  type ExecutionRetentionManifest, type RetainedContent, type RetentionIdentity, type RetentionStatus,
+  type ExecutionRetention, buildExecutionRetentionManifest, parseExecutionRetentionManifest, RETENTION_SCHEMA,
+  ENV_NATIVE_SESSION_ROOT, readNativeSession, parseNativeSessionBytes,
+  type NativeSessionObservation, type NativeSessionManager } from "./execution-retention.ts";
 
 export {
   APPROVAL_TTL_DAYS,

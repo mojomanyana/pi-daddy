@@ -1,5 +1,5 @@
 /**
- * One cross-process file lock, used by both files this package writes.
+ * One cross-process file lock, shared by producer ledgers and the approvals store.
  *
  * **Extracted rather than copied (R-49).** The ledger has had this lock since fan-out made a second writer
  * possible; the approvals store had an unlocked read-modify-write, so session 1 could load, session 2 could
@@ -36,8 +36,25 @@ export class LockTimeoutError extends Error {
   }
 }
 
+export interface FileLockOptions { readonly staleRecovery?: "age" | "disabled" }
+function lockPolicy(options: FileLockOptions | undefined): "age" | "disabled" {
+  if (options === undefined) return "age";
+  const invalid = (): never => { throw new TypeError("invalid file lock options"); };
+  if (options === null || typeof options !== "object" || Array.isArray(options) ||
+      ![Object.prototype, null].includes(Object.getPrototypeOf(options))) return invalid();
+  const keys = Reflect.ownKeys(options);
+  if (keys.some(key => key !== "staleRecovery")) return invalid();
+  if (!keys.length) return "age";
+  const field = Object.getOwnPropertyDescriptor(options, "staleRecovery")!;
+  if (!Object.hasOwn(field, "value") || !field.enumerable || !["age", "disabled"].includes(field.value)) return invalid();
+  return field.value;
+}
+
 /**
  * Run `work` while holding an exclusive lock beside `path`.
+ * Explicit disabled recovery never reclaims by age/liveness. V4 selects it internally; an orphan
+ * requires separately authorized quiescent recovery, not a timer or automatic operator action.
+ * The age-based behavior described below remains the default for legacy callers.
  *
  * **Why a lock at all.** `O_APPEND` is atomic for one write to a regular file on a POSIX filesystem, and the
  * guarantee does **not** hold on drvfs (`/mnt/c` under WSL2) or NFS — which is exactly where this project
@@ -59,7 +76,8 @@ export class LockTimeoutError extends Error {
  * The timeout is short *on purpose*: work refused because a file was busy is recoverable and loud, while
  * work that hangs waiting for a lock is neither.
  */
-export async function withFileLock<T>(path: string, label: string, work: () => Promise<T>): Promise<T> {
+export async function withFileLock<T>(path: string, label: string, work: () => Promise<T>, options?: FileLockOptions): Promise<T> {
+  const staleRecovery = lockPolicy(options); // Detached once, before I/O or any wait.
   const lockPath = `${path}.lock`;
   const deadline = Date.now() + LOCK_TIMEOUT_MS;
 
@@ -98,7 +116,7 @@ export async function withFileLock<T>(path: string, label: string, work: () => P
 
       // Someone else holds it. Break it only if it is old enough to be abandoned — and only the exact file
       // we judged, so a lock created in the gap survives.
-      try {
+      if (staleRecovery === "age") try {
         const held = await stat(lockPath);
         if (Date.now() - held.mtimeMs > STALE_LOCK_MS) {
           const abandoned = await readFile(lockPath, "utf8").catch(() => undefined);
@@ -113,15 +131,32 @@ export async function withFileLock<T>(path: string, label: string, work: () => P
       continue;
     }
 
+    let bodyFailed = false;
     try {
       return await work();
-    } finally {
-      await handle.close().catch(() => undefined);
-      // Only if it is still OURS. A lock broken out from under us belongs to somebody else now, and
-      // deleting it is what turned one lost race into a cascade.
-      await removeIfOurs(lockPath, token);
+    } catch (error) { bodyFailed = true; throw error; }
+    finally {
+      if (staleRecovery === "disabled") {
+        try { await releaseDisabledLock(handle, lockPath, token); }
+        catch (error) { if (!bodyFailed) throw error; } // Preserve even a falsy primary rejection.
+      } else {
+        await handle.close().catch(() => undefined);
+        // Legacy age policy remains best effort; never remove a demonstrably different token.
+        await removeIfOurs(lockPath, token);
+      }
     }
   }
+}
+
+/** Disabled ownership cannot silently manufacture an indefinite orphan after a successful body.
+ * Try token-checked removal even if close failed; report the first failure after both attempts.
+ * Appended bytes are not rolled back, and a primary body error takes precedence at the caller. */
+async function releaseDisabledLock(handle: Awaited<ReturnType<typeof open>>, lockPath: string, token: string): Promise<void> {
+  let failure: { error: unknown } | null = null;
+  try { await handle.close(); } catch (error) { failure = { error }; }
+  try { await removeIfOurs(lockPath, token, true); }
+  catch (error) { failure ??= { error }; }
+  if (failure) throw failure.error;
 }
 
 /**
@@ -131,12 +166,13 @@ export async function withFileLock<T>(path: string, label: string, work: () => P
  * "the whole of `work()`" to "between a read and an unlink", and it removes the *systematic* break entirely:
  * a process can no longer delete a lock it demonstrably never owned.
  */
-async function removeIfOurs(lockPath: string, token: string): Promise<void> {
+async function removeIfOurs(lockPath: string, token: string, strict = false): Promise<void> {
   try {
     const held = await readFile(lockPath, "utf8");
     if (held.trim() !== token) return;
     await rm(lockPath, { force: true });
-  } catch {
-    /* already gone, or unreadable — either way this process is not the one that should force it */
+  } catch (error) {
+    if (strict) throw error; // No ownership inference or force-delete after a failed read.
+    /* Legacy: already gone, or unreadable — this process must not force removal. */
   }
 }

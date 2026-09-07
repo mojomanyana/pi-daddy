@@ -201,6 +201,8 @@ export async function runOneDelegation(
    * mistake unspellable.
    */
   options: {
+    /** Actual public execute argument, never read from model-authored correlation or output. */
+    toolCallId?: string;
     /** Progress for the parent's status block (ADR-0032). Display only. */
     onProgress?: (update: {
       /** Appended (process executor: a genuine byte stream). */
@@ -388,6 +390,7 @@ export async function runOneDelegation(
     childId: ids.childId,
     executionId: ids.executionId,
     parentExecutionId: ids.parentExecutionId,
+    toolCallId: options.toolCallId,
     cwd: ctx.cwd,
     preparedWorkspace,
     signal,

@@ -266,6 +266,7 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
     skillPaths: ctx.skillPaths,
     contextFiles: ctx.contextFiles,
     systemPrompt,
+    sessionFile: ctx.sessionFile,
     print: ctx.interactive ? false : undefined,
   });
 

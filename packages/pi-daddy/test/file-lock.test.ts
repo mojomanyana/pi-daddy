@@ -18,10 +18,10 @@
 
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile, utimes } from "node:fs/promises";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { withFileLock } from "../src/file-lock.ts";
+import { withFileLock, LockTimeoutError, STALE_LOCK_MS } from "../src/file-lock.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
 after(cleanupTempDirs);
@@ -80,4 +80,40 @@ test("R-67: a failed write leaves no orphan lock behind", async () => {
 
   await assert.rejects(() => withFileLock(path, "test", async () => "unreachable"));
   assert.ok(existsSync(`${path}.lock`), "the pre-existing directory is not ours and must be left alone");
+});
+
+test("legacy file locks retain age-based recovery by default", async () => {
+  for (const options of [undefined, { staleRecovery: "age" as const }]) {
+    const path = join(await tempDir("legacy-lock-age-"), "target");
+    await writeFile(path + ".lock", "fixture orphan\n");
+    const old = new Date(Date.now() - STALE_LOCK_MS - 1000); await utimes(path + ".lock", old, old);
+    assert.equal(await withFileLock(path, "test", async () => "entered", options), "entered");
+    assert.equal(existsSync(path + ".lock"), false);
+  }
+});
+
+test("disabled stale recovery never replaces an aged lock", async () => {
+  const path = join(await tempDir("work-lock-aged-"), "target");
+  await writeFile(path + ".lock", "fixture orphan\n");
+  const old = new Date(Date.now() - STALE_LOCK_MS - 1000); await utimes(path + ".lock", old, old);
+  const options: { staleRecovery: "age" | "disabled" } = { staleRecovery: "disabled" };
+  let entered = false;
+  const pending = withFileLock(path, "test", async () => { entered = true; }, options);
+  options.staleRecovery = "age";
+  await assert.rejects(pending, LockTimeoutError);
+  assert.equal(entered, false); assert.equal(await readFile(path + ".lock", "utf8"), "fixture orphan\n");
+});
+
+test("disabled stale recovery releases only its own lock after work", async () => {
+  const path = join(await tempDir("work-lock-owned-"), "target");
+  await withFileLock(path, "test", async () => assert.equal(existsSync(path + ".lock"), true), { staleRecovery: "disabled" });
+  assert.equal(existsSync(path + ".lock"), false);
+  await withFileLock(path, "test", async () => { await writeFile(path + ".lock", "replacement\n"); }, { staleRecovery: "disabled" });
+  assert.equal(await readFile(path + ".lock", "utf8"), "replacement\n");
+  let getter = false;
+  for (const bad of [null, { staleRecovery: undefined }, { staleRecovery: "pid" }, { unknown: true },
+    Object.defineProperty({}, "staleRecovery", { enumerable: true, get() { getter = true; return "age"; } })]) {
+    await assert.rejects(withFileLock(join(path, "absent"), "test", async () => {}, bad as never), TypeError);
+  }
+  assert.equal(getter, false);
 });

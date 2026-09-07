@@ -1,0 +1,26 @@
+{
+  "ledgerVersion": 4,
+  "event": "work_revision",
+  "eventId": "revision",
+  "ts": "2026-09-06T12:00:00.000Z",
+  "payload": {
+    "revision": {
+      "kind": "scope",
+      "id": "scope",
+      "scopeId": "scope",
+      "revision": 1,
+      "predecessor": null,
+      "contentDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "parent": null,
+      "dependencies": [],
+      "ownerId": "owner",
+      "permittedEffects": [
+        "read",
+        "write"
+      ],
+      "policy": null,
+      "digest": "191d991431d5dcbd940304f916579e57540e0d555e263f6d22a0e8aa4e416233"
+    }
+  },
+  "digest": "166a77a5c489dd37a350c6f0faa1058ea8ca4e764f35d8d21a19a083c6291c0a"
+}

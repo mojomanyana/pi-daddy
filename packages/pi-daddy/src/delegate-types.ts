@@ -82,6 +82,8 @@ export interface DelegationContext {
    * non-interactive plan, because a governed child should not sit waiting for a human by accident.
    */
   interactive?: boolean;
+  /** Explicit host-owned pi persistence target; never model-facing and never enabled by archive observation. */
+  sessionFile?: string;
   /**
    * Total descendants this session may still create (`src/fanout.ts`). Split among children by the caller.
    *

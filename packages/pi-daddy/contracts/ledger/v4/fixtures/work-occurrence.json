@@ -1,0 +1,44 @@
+{
+  "ledgerVersion": 4,
+  "event": "work_occurrence",
+  "eventId": "occurrence",
+  "ts": "2026-09-06T12:00:00.000Z",
+  "payload": {
+    "scope": {
+      "kind": "scope",
+      "id": "scope",
+      "revision": 1,
+      "digest": "191d991431d5dcbd940304f916579e57540e0d555e263f6d22a0e8aa4e416233"
+    },
+    "obligation": {
+      "kind": "obligation",
+      "id": "obligation",
+      "revision": 1,
+      "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "executionId": "exec:00000000-0000-4000-8000-000000000001",
+    "parentExecutionId": null,
+    "childId": null,
+    "variantId": null,
+    "artifact": {
+      "kind": "artifact",
+      "id": "artifact",
+      "revision": 1,
+      "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "provenance": "observed",
+    "state": "completed",
+    "labels": {
+      "sessionId": null,
+      "branchLeafId": null,
+      "toolCallId": null,
+      "taskId": null,
+      "workspaceId": null,
+      "definitionDigest": null,
+      "configurationDigest": null,
+      "modelId": null,
+      "effortId": null
+    }
+  },
+  "digest": "36935a3a42473122ebfb359371131311270253b0959101e047f8f5d75dbf639d"
+}

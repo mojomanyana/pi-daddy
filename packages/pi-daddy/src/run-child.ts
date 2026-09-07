@@ -92,6 +92,8 @@ export interface ChildRunRequest {
    * governed child mid-task.
    */
   onOutput?: (chunk: string) => void;
+  /** Optional raw observation; isolated from control, never awaited, separate from display text. */
+  onObservation?: (stream: "stdout" | "stderr", bytes: Uint8Array) => void;
   /** Security hook called immediately after spawn, before output handling (for lease attachment). */
   onSpawn?: (pid: number) => void;
 }
@@ -244,8 +246,12 @@ export function runChild(request: ChildRunRequest): Promise<ChildRunResult> {
       flush();
     };
 
-    child.stdout?.on("data", capture);
-    child.stderr?.on("data", capture);
+    const observe = (stream: "stdout" | "stderr", chunk: Buffer) => {
+      capture(chunk);
+      try { request.onObservation?.(stream, chunk); } catch { /* observation only */ }
+    };
+    child.stdout?.on("data", (chunk: Buffer) => observe("stdout", chunk));
+    child.stderr?.on("data", (chunk: Buffer) => observe("stderr", chunk));
 
     timers.push(
       setTimeout(() => controlIfRunning(() => {

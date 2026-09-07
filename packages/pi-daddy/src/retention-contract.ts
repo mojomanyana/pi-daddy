@@ -1,0 +1,84 @@
+import { Compile } from "typebox/compile";
+import { parseWorkJson } from "./work-ledger-json.ts";
+import type { ExecutionRetentionManifest } from "./execution-retention.ts";
+
+const string = (maxLength = 512) => ({ type: "string", minLength: 1, maxLength, pattern: "^[^\\u0000-\\u001f\\u007f]+$" });
+const nullable = (schema: object) => ({ anyOf: [schema, { type: "null" }] });
+const literal = (value: unknown) => ({ const: value });
+const closed = (properties: Record<string, object>) => ({ type: "object", properties, required: Object.keys(properties), additionalProperties: false });
+const hash = { type: "string", pattern: "^[a-f0-9]{64}$" };
+const integer = { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER };
+const uuid = { type: "string", pattern: "^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$" };
+export const RETENTION_CONTENT_KINDS = ["stdout", "stderr", "paneSnapshot", "checkReceipt", "result", "session"] as const;
+export const RETENTION_SCHEMA = freeze({
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  $id: "https://pi-daddy.local/contracts/execution-retention/v2/manifest.schema.json",
+  ...closed({
+    version: literal("2.0"), archiveId: uuid,
+    identity: closed({ executionId: string(), parentExecutionId: nullable(string()), childId: string(), toolCallId: nullable(string()),
+      executor: { enum: ["process", "herdr", "check"] }, taskDigest: nullable(hash), definitionDigest: nullable(hash),
+      configurationDigest: hash, workspaceId: nullable(string()) }),
+    native: closed({ pid: nullable({ type: "integer", minimum: 1, maximum: Number.MAX_SAFE_INTEGER }), paneId: nullable(string(4096)),
+      agentName: nullable(string(4096)), tabId: nullable(string(4096)), sessionId: nullable(uuid), sessionPath: nullable(string(4096)), branchLeafId: nullable(string(128)) }),
+    nativeSession: closed({ source: { enum: [null, "herdr-id", "herdr-path", "pi-session-file", "pi-session-manager"] },
+      status: { enum: ["missing", "verified", "invalid", "changed", "truncated", "unsupported"] },
+      sessionId: nullable(uuid), sessionPath: nullable(string(4096)), parentSessionPath: nullable(string(4096)),
+      branchLeafId: nullable(string(128)), branchState: { enum: ["unknown", "observed"] }, lastPersistedEntryId: nullable(string(128)),
+      sha256: nullable(hash), reason: nullable(string()) }),
+    state: { enum: ["running", "terminal"] },
+    outcome: nullable(closed({ code: nullable({ type: "integer", minimum: -2147483648, maximum: 2147483647 }), signal: nullable(string(64)),
+      timedOut: { type: "boolean" }, aborted: { type: "boolean" }, truncated: { type: "boolean" }, failed: { type: "boolean" } })),
+    content: closed(Object.fromEntries(RETENTION_CONTENT_KINDS.map(kind => [kind, { oneOf: [
+      closed({ status: literal("missing"), path: literal(null), sha256: literal(null), bytes: literal(null) }),
+      closed({ status: literal("retained"), path: { type: "string", pattern: `^${kind}-[a-f0-9]{64}\\.bin$` }, sha256: hash,
+        bytes: { ...integer, maximum: 1024 * 1024 } }),
+    ] }]))),
+    coverage: closed({ complete: literal(false), losses: { type: "array", items: string(), maxItems: 64, uniqueItems: true } }),
+    acceptance: literal("not-assessed"),
+  }),
+  allOf: [
+    { if: { properties: { state: literal("running") } }, then: { properties: { outcome: literal(null) } },
+      else: { properties: { outcome: { type: "object" } } } },
+    { if: { properties: { nativeSession: { properties: { branchState: literal("unknown") } } } },
+      then: { properties: { nativeSession: { properties: { branchLeafId: literal(null) } }, native: { properties: { branchLeafId: literal(null) } } } } },
+  ],
+});
+const validator = Compile(RETENTION_SCHEMA);
+function freeze<T>(value: T): T { if (value && typeof value === "object") { for (const child of Object.values(value)) freeze(child); Object.freeze(value); } return value; }
+
+/** Closed, detached versioned wire builder; never authenticates the supplied observation. */
+export function buildExecutionRetentionManifest(value: unknown): ExecutionRetentionManifest {
+  // Reject non-JSON objects/accessors instead of invoking serialization hooks while collecting evidence.
+  let nodes = 0;
+  const inspect = (x: unknown, depth: number): void => {
+    if (++nodes > 4096 || depth > 16) throw new TypeError("retention manifest exceeds bounds");
+    if (x === null || typeof x === "string" || typeof x === "boolean" || (typeof x === "number" && Number.isSafeInteger(x))) return;
+    if (!x || typeof x !== "object" || (!Array.isArray(x) && Object.getPrototypeOf(x) !== Object.prototype && Object.getPrototypeOf(x) !== null)) throw new TypeError("retention manifest must be JSON data");
+    if (Array.isArray(x) && (Object.getPrototypeOf(x) !== Array.prototype || x.length > 256 || Reflect.ownKeys(x).length !== x.length + 1 ||
+      Array.from({ length: x.length }, (_, i) => String(i)).some(key => !Object.hasOwn(x, key)))) throw new TypeError("retention arrays must be dense plain JSON arrays");
+    for (const key of Reflect.ownKeys(x)) {
+      if (Array.isArray(x) && key === "length") continue;
+      const d = Object.getOwnPropertyDescriptor(x, key)!;
+      if (typeof key !== "string" || !d.enumerable || !("value" in d)) throw new TypeError("retention manifest must be plain JSON data");
+      inspect(d.value, depth + 1);
+    }
+  };
+  inspect(value, 0);
+  if (!validator.Check(value)) throw new TypeError("invalid execution-retention 2.0 manifest");
+  const m = JSON.parse(JSON.stringify(value)) as ExecutionRetentionManifest;
+  if (m.native.sessionId !== m.nativeSession.sessionId || m.native.sessionPath !== m.nativeSession.sessionPath || m.native.branchLeafId !== m.nativeSession.branchLeafId) {
+    throw new TypeError("native session projection mismatch");
+  }
+  for (const kind of RETENTION_CONTENT_KINDS) { const ref = m.content[kind];
+    if (ref.status === "retained" && ref.path !== `${kind}-${ref.sha256}.bin`) throw new TypeError("retention content identity mismatch"); }
+  if (m.nativeSession.branchState === "observed" && (m.nativeSession.source !== "pi-session-manager" || m.nativeSession.status !== "verified")) throw new TypeError("unverified active native branch");
+  if (m.nativeSession.status === "verified" && (!m.nativeSession.sessionId || !m.nativeSession.sha256 || m.content.session.sha256 !== m.nativeSession.sha256)) throw new TypeError("verified native session requires retained bytes");
+  return freeze(m);
+}
+export function parseExecutionRetentionManifest(text: string): ExecutionRetentionManifest {
+  if (Buffer.byteLength(text) > 64 * 1024) throw new TypeError("retention manifest exceeds bounds");
+  // Manifest numbers are integers; use the existing exact-token parser before lossy Number conversion.
+  let value: unknown;
+  try { value = parseWorkJson(text); } catch { throw new TypeError("invalid retention JSON"); }
+  return buildExecutionRetentionManifest(value);
+}

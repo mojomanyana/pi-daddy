@@ -1,0 +1,428 @@
+[
+  {
+    "ledgerVersion": 4,
+    "event": "work_revision",
+    "eventId": "layout:1",
+    "ts": "2026-09-06T12:00:00.000Z",
+    "payload": {
+      "revision": {
+        "kind": "scope",
+        "id": "layout",
+        "scopeId": "layout",
+        "revision": 1,
+        "predecessor": null,
+        "contentDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "parent": null,
+        "dependencies": [],
+        "ownerId": "layout-owner",
+        "permittedEffects": [],
+        "policy": null,
+        "digest": "e0353bbb1a140ecd3ef7630f574849f3d75ee48c4aa420654be0473106779d05"
+      }
+    },
+    "digest": "41f4c27c8cecf6a14d3eb35c0a1b4ee60d04a09c54b7e96864c63d1066e696fe"
+  },
+  {
+    "ledgerVersion": 4,
+    "event": "work_revision",
+    "eventId": "layout-policy:1",
+    "ts": "2026-09-06T12:00:00.000Z",
+    "payload": {
+      "revision": {
+        "kind": "policy",
+        "id": "layout-policy",
+        "scopeId": "layout",
+        "revision": 1,
+        "predecessor": null,
+        "contentDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "parent": null,
+        "dependencies": [],
+        "ownerId": "layout-owner",
+        "permittedEffects": [],
+        "policy": null,
+        "digest": "5a781f9bdffa92982d18616514a30f69df9bb8ddc0b0394131112912844432e7"
+      }
+    },
+    "digest": "c26cb913634ccd2eec48dca116a94cf0c9d4dd7bc593806935a498a56693f710"
+  },
+  {
+    "ledgerVersion": 4,
+    "event": "work_revision",
+    "eventId": "layout-image:1",
+    "ts": "2026-09-06T12:00:00.000Z",
+    "payload": {
+      "revision": {
+        "kind": "artifact",
+        "id": "layout-image",
+        "scopeId": "layout",
+        "revision": 1,
+        "predecessor": null,
+        "contentDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "parent": null,
+        "dependencies": [],
+        "ownerId": "layout-owner",
+        "permittedEffects": [],
+        "policy": null,
+        "digest": "7ec4a3b8f9e0507b201d355e7414a8fce333acea98e0a79fde82adcab326ffc1"
+      }
+    },
+    "digest": "b934c7606e63a3df94ea77b790727df81bc5a9ffb6fc167cc6d35d0721d013cc"
+  },
+  {
+    "ledgerVersion": 4,
+    "event": "work_revision",
+    "eventId": "layout-goal:1",
+    "ts": "2026-09-06T12:00:00.000Z",
+    "payload": {
+      "revision": {
+        "kind": "goal",
+        "id": "layout-goal",
+        "scopeId": "layout",
+        "revision": 1,
+        "predecessor": null,
+        "contentDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "parent": {
+          "kind": "scope",
+          "id": "layout",
+          "revision": 1,
+          "digest": "e0353bbb1a140ecd3ef7630f574849f3d75ee48c4aa420654be0473106779d05"
+        },
+        "dependencies": [],
+        "ownerId": "layout-owner",
+        "permittedEffects": [],
+        "policy": null,
+        "digest": "2aecab127911dfe6be35b8c32acdcc7c0157eaad825e5153cfbbabaadb1cae73"
+      }
+    },
+    "digest": "61bb6d684072d4ac904a2a024069d6776d85ab85f623cace45504028b9c5c0ad"
+  },
+  {
+    "ledgerVersion": 4,
+    "event": "work_revision",
+    "eventId": "layout-options:1",
+    "ts": "2026-09-06T12:00:00.000Z",
+    "payload": {
+      "revision": {
+        "kind": "node",
+        "id": "layout-options",
+        "scopeId": "layout",
+        "revision": 1,
+        "predecessor": null,
+        "contentDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "parent": {
+          "kind": "goal",
+          "id": "layout-goal",
+          "revision": 1,
+          "digest": "2aecab127911dfe6be35b8c32acdcc7c0157eaad825e5153cfbbabaadb1cae73"
+        },
+        "dependencies": [],
+        "ownerId": "layout-owner",
+        "permittedEffects": [],
+        "policy": null,
+        "digest": "c8457803ae5cdc7d22ec6450bcbfa41d40cc433cb205c3aa12ecf83011bf9b07"
+      }
+    },
+    "digest": "d34a5bd44331fc0be59e8690c8469785f63959d333e7283caa411a8e19beb3b0"
+  },
+  {
+    "ledgerVersion": 4,
+    "event": "work_revision",
+    "eventId": "layout-choice:1",
+    "ts": "2026-09-06T12:00:00.000Z",
+    "payload": {
+      "revision": {
+        "kind": "obligation",
+        "id": "layout-choice",
+        "scopeId": "layout",
+        "revision": 1,
+        "predecessor": null,
+        "contentDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "parent": {
+          "kind": "node",
+          "id": "layout-options",
+          "revision": 1,
+          "digest": "c8457803ae5cdc7d22ec6450bcbfa41d40cc433cb205c3aa12ecf83011bf9b07"
+        },
+        "dependencies": [],
+        "ownerId": "layout-owner",
+        "permittedEffects": [],
+        "policy": {
+          "kind": "policy",
+          "id": "layout-policy",
+          "revision": 1,
+          "digest": "5a781f9bdffa92982d18616514a30f69df9bb8ddc0b0394131112912844432e7"
+        },
+        "digest": "17a8c86f2ba52016cb467dd204ae0caf9a6070e5075ff16a7726c3b4c85781b5"
+      }
+    },
+    "digest": "7a5d499586ae44455887d8aef2f33bace0cc28f834465c92e0f1c262533198bf"
+  },
+  {
+    "ledgerVersion": 4,
+    "event": "work_snapshot",
+    "eventId": "layout:snapshot",
+    "ts": "2026-09-06T12:00:00.000Z",
+    "payload": {
+      "snapshot": {
+        "snapshotId": "layout-selected",
+        "scope": {
+          "kind": "scope",
+          "id": "layout",
+          "revision": 1,
+          "digest": "e0353bbb1a140ecd3ef7630f574849f3d75ee48c4aa420654be0473106779d05"
+        },
+        "revisions": [
+          {
+            "kind": "obligation",
+            "id": "layout-choice",
+            "revision": 1,
+            "digest": "17a8c86f2ba52016cb467dd204ae0caf9a6070e5075ff16a7726c3b4c85781b5"
+          },
+          {
+            "kind": "goal",
+            "id": "layout-goal",
+            "revision": 1,
+            "digest": "2aecab127911dfe6be35b8c32acdcc7c0157eaad825e5153cfbbabaadb1cae73"
+          },
+          {
+            "kind": "policy",
+            "id": "layout-policy",
+            "revision": 1,
+            "digest": "5a781f9bdffa92982d18616514a30f69df9bb8ddc0b0394131112912844432e7"
+          },
+          {
+            "kind": "artifact",
+            "id": "layout-image",
+            "revision": 1,
+            "digest": "7ec4a3b8f9e0507b201d355e7414a8fce333acea98e0a79fde82adcab326ffc1"
+          },
+          {
+            "kind": "node",
+            "id": "layout-options",
+            "revision": 1,
+            "digest": "c8457803ae5cdc7d22ec6450bcbfa41d40cc433cb205c3aa12ecf83011bf9b07"
+          }
+        ],
+        "bindings": [
+          {
+            "intent": {
+              "kind": "node",
+              "id": "layout-options",
+              "revision": 1,
+              "digest": "c8457803ae5cdc7d22ec6450bcbfa41d40cc433cb205c3aa12ecf83011bf9b07"
+            },
+            "obligation": {
+              "kind": "obligation",
+              "id": "layout-choice",
+              "revision": 1,
+              "digest": "17a8c86f2ba52016cb467dd204ae0caf9a6070e5075ff16a7726c3b4c85781b5"
+            },
+            "artifact": {
+              "kind": "artifact",
+              "id": "layout-image",
+              "revision": 1,
+              "digest": "7ec4a3b8f9e0507b201d355e7414a8fce333acea98e0a79fde82adcab326ffc1"
+            },
+            "policy": {
+              "kind": "policy",
+              "id": "layout-policy",
+              "revision": 1,
+              "digest": "5a781f9bdffa92982d18616514a30f69df9bb8ddc0b0394131112912844432e7"
+            }
+          }
+        ],
+        "digest": "218a585afd5d6b146ab50c1c4e301b8ee6237944065f1305dc29b7c3b0947363"
+      }
+    },
+    "digest": "2cc537e7c5c7c7870b088e562f394a61ca3eda690c4d95a1a3a785497b28473a"
+  },
+  {
+    "ledgerVersion": 4,
+    "event": "work_occurrence",
+    "eventId": "layout:observation:a",
+    "ts": "2026-09-06T12:00:00.000Z",
+    "payload": {
+      "scope": {
+        "kind": "scope",
+        "id": "layout",
+        "revision": 1,
+        "digest": "e0353bbb1a140ecd3ef7630f574849f3d75ee48c4aa420654be0473106779d05"
+      },
+      "obligation": {
+        "kind": "obligation",
+        "id": "layout-choice",
+        "revision": 1,
+        "digest": "17a8c86f2ba52016cb467dd204ae0caf9a6070e5075ff16a7726c3b4c85781b5"
+      },
+      "executionId": "exec:00000000-0000-4000-8000-000000000021",
+      "parentExecutionId": null,
+      "childId": "layout-designer",
+      "variantId": "layout:a",
+      "artifact": {
+        "kind": "artifact",
+        "id": "layout-image",
+        "revision": 1,
+        "digest": "7ec4a3b8f9e0507b201d355e7414a8fce333acea98e0a79fde82adcab326ffc1"
+      },
+      "provenance": "observed",
+      "state": "completed",
+      "labels": {
+        "sessionId": "layout-session:a",
+        "branchLeafId": "layout-leaf:a",
+        "toolCallId": null,
+        "taskId": null,
+        "workspaceId": null,
+        "definitionDigest": null,
+        "configurationDigest": null,
+        "modelId": null,
+        "effortId": null
+      }
+    },
+    "digest": "84e0ed1e928e2685f88b798b6b467c9478dd1d5c3de86329cc64ebd4cfc0c5f9"
+  },
+  {
+    "ledgerVersion": 4,
+    "event": "work_occurrence",
+    "eventId": "layout:observation:b",
+    "ts": "2026-09-06T12:00:00.000Z",
+    "payload": {
+      "scope": {
+        "kind": "scope",
+        "id": "layout",
+        "revision": 1,
+        "digest": "e0353bbb1a140ecd3ef7630f574849f3d75ee48c4aa420654be0473106779d05"
+      },
+      "obligation": {
+        "kind": "obligation",
+        "id": "layout-choice",
+        "revision": 1,
+        "digest": "17a8c86f2ba52016cb467dd204ae0caf9a6070e5075ff16a7726c3b4c85781b5"
+      },
+      "executionId": "exec:00000000-0000-4000-8000-000000000021",
+      "parentExecutionId": null,
+      "childId": "layout-designer",
+      "variantId": "layout:b",
+      "artifact": {
+        "kind": "artifact",
+        "id": "layout-image",
+        "revision": 1,
+        "digest": "7ec4a3b8f9e0507b201d355e7414a8fce333acea98e0a79fde82adcab326ffc1"
+      },
+      "provenance": "observed",
+      "state": "completed",
+      "labels": {
+        "sessionId": "layout-session:a",
+        "branchLeafId": "layout-leaf:a",
+        "toolCallId": null,
+        "taskId": null,
+        "workspaceId": null,
+        "definitionDigest": null,
+        "configurationDigest": null,
+        "modelId": null,
+        "effortId": null
+      }
+    },
+    "digest": "45fff1b5923a7744c471d5990e2a0bd8e3bf41769e1cc467338286b82c4f4d62"
+  },
+  {
+    "ledgerVersion": 4,
+    "event": "work_occurrence",
+    "eventId": "layout:observation:c",
+    "ts": "2026-09-06T12:00:00.000Z",
+    "payload": {
+      "scope": {
+        "kind": "scope",
+        "id": "layout",
+        "revision": 1,
+        "digest": "e0353bbb1a140ecd3ef7630f574849f3d75ee48c4aa420654be0473106779d05"
+      },
+      "obligation": {
+        "kind": "obligation",
+        "id": "layout-choice",
+        "revision": 1,
+        "digest": "17a8c86f2ba52016cb467dd204ae0caf9a6070e5075ff16a7726c3b4c85781b5"
+      },
+      "executionId": "exec:00000000-0000-4000-8000-000000000022",
+      "parentExecutionId": null,
+      "childId": "layout-designer",
+      "variantId": "layout:c",
+      "artifact": {
+        "kind": "artifact",
+        "id": "layout-image",
+        "revision": 1,
+        "digest": "7ec4a3b8f9e0507b201d355e7414a8fce333acea98e0a79fde82adcab326ffc1"
+      },
+      "provenance": "observed",
+      "state": "completed",
+      "labels": {
+        "sessionId": "layout-session:b",
+        "branchLeafId": "layout-leaf:b",
+        "toolCallId": null,
+        "taskId": null,
+        "workspaceId": null,
+        "definitionDigest": null,
+        "configurationDigest": null,
+        "modelId": null,
+        "effortId": null
+      }
+    },
+    "digest": "ebfcdce1f118f8326013097a4a9755b8345b0950a3c4e6a54ca9c4cfbf9ec66f"
+  },
+  {
+    "ledgerVersion": 4,
+    "event": "work_acceptance",
+    "eventId": "layout:claim",
+    "ts": "2026-09-06T12:00:00.000Z",
+    "payload": {
+      "authorityId": "layout-controller",
+      "binding": {
+        "intent": {
+          "kind": "node",
+          "id": "layout-options",
+          "revision": 1,
+          "digest": "c8457803ae5cdc7d22ec6450bcbfa41d40cc433cb205c3aa12ecf83011bf9b07"
+        },
+        "obligation": {
+          "kind": "obligation",
+          "id": "layout-choice",
+          "revision": 1,
+          "digest": "17a8c86f2ba52016cb467dd204ae0caf9a6070e5075ff16a7726c3b4c85781b5"
+        },
+        "artifact": {
+          "kind": "artifact",
+          "id": "layout-image",
+          "revision": 1,
+          "digest": "7ec4a3b8f9e0507b201d355e7414a8fce333acea98e0a79fde82adcab326ffc1"
+        },
+        "policy": {
+          "kind": "policy",
+          "id": "layout-policy",
+          "revision": 1,
+          "digest": "5a781f9bdffa92982d18616514a30f69df9bb8ddc0b0394131112912844432e7"
+        },
+        "scope": {
+          "kind": "scope",
+          "id": "layout",
+          "revision": 1,
+          "digest": "e0353bbb1a140ecd3ef7630f574849f3d75ee48c4aa420654be0473106779d05"
+        },
+        "snapshot": {
+          "id": "layout-selected",
+          "digest": "218a585afd5d6b146ab50c1c4e301b8ee6237944065f1305dc29b7c3b0947363"
+        },
+        "artifactDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "evidence": [
+          {
+            "id": "layout-proof",
+            "digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            "event": {
+              "eventId": "layout:observation:a",
+              "digest": "84e0ed1e928e2685f88b798b6b467c9478dd1d5c3de86329cc64ebd4cfc0c5f9"
+            }
+          }
+        ]
+      }
+    },
+    "digest": "6d86b4e86b03350f60dea35cbcb9eba718177820a9a178f1b67d64546ad9e455"
+  }
+]

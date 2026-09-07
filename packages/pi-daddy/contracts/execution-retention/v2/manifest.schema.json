@@ -1,0 +1,858 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pi-daddy.local/contracts/execution-retention/v2/manifest.schema.json",
+  "type": "object",
+  "properties": {
+    "version": {
+      "const": "2.0"
+    },
+    "archiveId": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$"
+    },
+    "identity": {
+      "type": "object",
+      "properties": {
+        "executionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+        },
+        "parentExecutionId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "childId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+        },
+        "toolCallId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "executor": {
+          "enum": [
+            "process",
+            "herdr",
+            "check"
+          ]
+        },
+        "taskDigest": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "definitionDigest": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "configurationDigest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "workspaceId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "executionId",
+        "parentExecutionId",
+        "childId",
+        "toolCallId",
+        "executor",
+        "taskDigest",
+        "definitionDigest",
+        "configurationDigest",
+        "workspaceId"
+      ],
+      "additionalProperties": false
+    },
+    "native": {
+      "type": "object",
+      "properties": {
+        "pid": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "paneId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "agentName": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tabId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sessionId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sessionPath": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "branchLeafId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "pid",
+        "paneId",
+        "agentName",
+        "tabId",
+        "sessionId",
+        "sessionPath",
+        "branchLeafId"
+      ],
+      "additionalProperties": false
+    },
+    "nativeSession": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "enum": [
+            null,
+            "herdr-id",
+            "herdr-path",
+            "pi-session-file",
+            "pi-session-manager"
+          ]
+        },
+        "status": {
+          "enum": [
+            "missing",
+            "verified",
+            "invalid",
+            "changed",
+            "truncated",
+            "unsupported"
+          ]
+        },
+        "sessionId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sessionPath": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "parentSessionPath": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "branchLeafId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "branchState": {
+          "enum": [
+            "unknown",
+            "observed"
+          ]
+        },
+        "lastPersistedEntryId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "source",
+        "status",
+        "sessionId",
+        "sessionPath",
+        "parentSessionPath",
+        "branchLeafId",
+        "branchState",
+        "lastPersistedEntryId",
+        "sha256",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "state": {
+      "enum": [
+        "running",
+        "terminal"
+      ]
+    },
+    "outcome": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "code": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": -2147483648,
+                  "maximum": 2147483647
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "signal": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "timedOut": {
+              "type": "boolean"
+            },
+            "aborted": {
+              "type": "boolean"
+            },
+            "truncated": {
+              "type": "boolean"
+            },
+            "failed": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "code",
+            "signal",
+            "timedOut",
+            "aborted",
+            "truncated",
+            "failed"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "content": {
+      "type": "object",
+      "properties": {
+        "stdout": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "const": "missing"
+                },
+                "path": {
+                  "const": null
+                },
+                "sha256": {
+                  "const": null
+                },
+                "bytes": {
+                  "const": null
+                }
+              },
+              "required": [
+                "status",
+                "path",
+                "sha256",
+                "bytes"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "const": "retained"
+                },
+                "path": {
+                  "type": "string",
+                  "pattern": "^stdout-[a-f0-9]{64}\\.bin$"
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "bytes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1048576
+                }
+              },
+              "required": [
+                "status",
+                "path",
+                "sha256",
+                "bytes"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "stderr": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "const": "missing"
+                },
+                "path": {
+                  "const": null
+                },
+                "sha256": {
+                  "const": null
+                },
+                "bytes": {
+                  "const": null
+                }
+              },
+              "required": [
+                "status",
+                "path",
+                "sha256",
+                "bytes"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "const": "retained"
+                },
+                "path": {
+                  "type": "string",
+                  "pattern": "^stderr-[a-f0-9]{64}\\.bin$"
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "bytes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1048576
+                }
+              },
+              "required": [
+                "status",
+                "path",
+                "sha256",
+                "bytes"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "paneSnapshot": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "const": "missing"
+                },
+                "path": {
+                  "const": null
+                },
+                "sha256": {
+                  "const": null
+                },
+                "bytes": {
+                  "const": null
+                }
+              },
+              "required": [
+                "status",
+                "path",
+                "sha256",
+                "bytes"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "const": "retained"
+                },
+                "path": {
+                  "type": "string",
+                  "pattern": "^paneSnapshot-[a-f0-9]{64}\\.bin$"
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "bytes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1048576
+                }
+              },
+              "required": [
+                "status",
+                "path",
+                "sha256",
+                "bytes"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "checkReceipt": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "const": "missing"
+                },
+                "path": {
+                  "const": null
+                },
+                "sha256": {
+                  "const": null
+                },
+                "bytes": {
+                  "const": null
+                }
+              },
+              "required": [
+                "status",
+                "path",
+                "sha256",
+                "bytes"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "const": "retained"
+                },
+                "path": {
+                  "type": "string",
+                  "pattern": "^checkReceipt-[a-f0-9]{64}\\.bin$"
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "bytes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1048576
+                }
+              },
+              "required": [
+                "status",
+                "path",
+                "sha256",
+                "bytes"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "result": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "const": "missing"
+                },
+                "path": {
+                  "const": null
+                },
+                "sha256": {
+                  "const": null
+                },
+                "bytes": {
+                  "const": null
+                }
+              },
+              "required": [
+                "status",
+                "path",
+                "sha256",
+                "bytes"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "const": "retained"
+                },
+                "path": {
+                  "type": "string",
+                  "pattern": "^result-[a-f0-9]{64}\\.bin$"
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "bytes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1048576
+                }
+              },
+              "required": [
+                "status",
+                "path",
+                "sha256",
+                "bytes"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "session": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "const": "missing"
+                },
+                "path": {
+                  "const": null
+                },
+                "sha256": {
+                  "const": null
+                },
+                "bytes": {
+                  "const": null
+                }
+              },
+              "required": [
+                "status",
+                "path",
+                "sha256",
+                "bytes"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "const": "retained"
+                },
+                "path": {
+                  "type": "string",
+                  "pattern": "^session-[a-f0-9]{64}\\.bin$"
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "bytes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1048576
+                }
+              },
+              "required": [
+                "status",
+                "path",
+                "sha256",
+                "bytes"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": [
+        "stdout",
+        "stderr",
+        "paneSnapshot",
+        "checkReceipt",
+        "result",
+        "session"
+      ],
+      "additionalProperties": false
+    },
+    "coverage": {
+      "type": "object",
+      "properties": {
+        "complete": {
+          "const": false
+        },
+        "losses": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "maxItems": 64,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "complete",
+        "losses"
+      ],
+      "additionalProperties": false
+    },
+    "acceptance": {
+      "const": "not-assessed"
+    }
+  },
+  "required": [
+    "version",
+    "archiveId",
+    "identity",
+    "native",
+    "nativeSession",
+    "state",
+    "outcome",
+    "content",
+    "coverage",
+    "acceptance"
+  ],
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "running"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "outcome": {
+            "const": null
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "outcome": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "nativeSession": {
+            "properties": {
+              "branchState": {
+                "const": "unknown"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "nativeSession": {
+            "properties": {
+              "branchLeafId": {
+                "const": null
+              }
+            }
+          },
+          "native": {
+            "properties": {
+              "branchLeafId": {
+                "const": null
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

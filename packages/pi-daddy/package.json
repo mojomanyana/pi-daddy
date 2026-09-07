@@ -37,6 +37,14 @@
       "types": "./dist/ledger.d.ts",
       "default": "./dist/ledger.js"
     },
+    "./work-ledger": {
+      "types": "./dist/work-ledger.d.ts",
+      "default": "./dist/work-ledger.js"
+    },
+    "./execution-retention": {
+      "types": "./dist/execution-retention.d.ts",
+      "default": "./dist/execution-retention.js"
+    },
     "./spawn": {
       "types": "./dist/spawn.d.ts",
       "default": "./dist/spawn.js"
@@ -137,6 +145,10 @@
       "types": "./dist/dashboard-render.d.ts",
       "default": "./dist/dashboard-render.js"
     },
+    "./contracts/execution-retention/v2/manifest.schema.json": "./contracts/execution-retention/v2/manifest.schema.json",
+    "./contracts/execution-retention/v2/fixtures/*": "./contracts/execution-retention/v2/fixtures/*",
+    "./contracts/ledger/v4/ledger-event.schema.json": "./contracts/ledger/v4/ledger-event.schema.json",
+    "./contracts/ledger/v4/fixtures/*.json": "./contracts/ledger/v4/fixtures/*.json",
     "./contracts/ledger/v3/ledger-event.schema.json": "./contracts/ledger/v3/ledger-event.schema.json",
     "./contracts/ledger/v3/fixtures/*.json": "./contracts/ledger/v3/fixtures/*.json",
     "./contracts/ledger/v2/ledger-event.schema.json": "./contracts/ledger/v2/ledger-event.schema.json",
@@ -163,9 +175,9 @@
     "test:integration": "node --test test-integration/*.it.ts",
     "test:integration:ci": "node --test test-integration/approval.it.ts test-integration/governance.it.ts",
     "contracts:generate": "node scripts/generate-ledger-v3-contract.ts",
+    "contracts:generate:v4": "node scripts/generate-ledger-v4-contract.ts contracts/ledger/v4",
     "prepack": "npm run build",
-    "test:smoke": "node scripts/smoke-installed.mjs",
-    "test:mutation": "node scripts/mutation-audit.mjs"
+    "test:smoke": "node scripts/smoke-installed.mjs"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

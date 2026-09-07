@@ -5,7 +5,23 @@ to be decided. This file is authoritative for present behavior; ADRs record why 
 date. If code and this file disagree, report and repair the stale current-state claim rather than re-deriving
 present behavior from historical ADRs.
 
-Last synced against the code: **2026-09-04**, released as `pi-daddy` 0.22.0, pi 0.84.2; the dashboard plugin requires Herdr 0.8.0.
+Released baseline last synced against the code: **2026-09-04**, `pi-daddy` 0.22.0, pi 0.84.2; the dashboard plugin requires Herdr 0.8.0.
+The **2026-09-06 work-v4 source candidate** is described separately below. It is not a release, activation,
+production authentication result or completed task/qualification gate.
+
+The **local 2026-09-08 execution-retention 2.0 source candidate** retains bounded raw output, assembled
+results, complete available check receipts and validated private native session bytes at existing governed
+launch seams. Public call IDs and execution parentage remain exact and separate from logical names.
+`PI_GRANTS_EXECUTION_ARCHIVE` opts in; native file reads additionally require an owner-private
+`PI_GRANTS_NATIVE_SESSION_ROOT`. Herdr's native id/path references are consumed without extra RPCs.
+A live pi SessionManager can supply a checked active leaf; file tails cannot. Default ephemeral process
+children and file/Herdr-only active branches remain explicitly missing/unknown. No auth harvesting,
+monitoring extension, injected worker message or model call is added. Queued observation I/O is not awaited
+by worker control and does not change mandatory receipt failures. Retention never establishes acceptance
+or complete evidence. The [strict v2 producer contract for P03](../packages/pi-daddy/contracts/execution-retention/v2/README.md)
+defines supported routes, schema/builders, reproducible fixtures, privacy bounds and exact unsupported
+routes. Historical v1 semantics and receipts are preserved. Independent overall review and formal final
+acceptance remain pending; no per-task review pass or live qualification is asserted.
 
 **herdr's own contracts are now checked by `test-integration/herdr.it.ts`** against a live server, in an isolated
 workspace it creates and closes. That suite exists because three shipping defects hid behind the unit fake — the
@@ -485,6 +501,110 @@ if the file is gone or altered, the digest proves the loss rather than recoverin
 digests say nothing about whether the child behaved as intended. It identifies text; it does not evaluate
 it.
 
+## Opt-in work-v4 evidence (candidate)
+
+The source candidate adds `pi-daddy/work-ledger` and versioned
+[work-v4 contract artifacts](../packages/pi-daddy/contracts/ledger/v4/README.md), under
+[ADR-0044](06-decisions/ADR-0044-opt-in-work-v4-evidence.md). Default `LEDGER_VERSION = 3`, its five-event
+union, correlation 1.0, governance refusals, `PI_GRANTS_LEDGER` behavior and historical v2/v3 bytes are
+unchanged. There is no first-party production authority caller, v4 CLI/dashboard activation or migration.
+Old integrity/dashboard readers reject v4 rather than counting it as grant or lifecycle evidence.
+
+Four real builders emit closed `work_revision`, `work_snapshot`, `work_occurrence` and `work_acceptance`
+events. Revision kinds are scope/goal/node/obligation/artifact/policy; owners/effects and occurrence labels
+are declarations, not capabilities. All content is identifier/digest-only, with explicit nulls and no
+metadata/receipt bag. Digests can be sensitive/linkable and do not retain bytes or authenticate a claimant.
+
+`parseWorkLedgerText` is the strict text boundary: syntax and decoded duplicate members are checked before
+materialization, numeric tokens before lossy conversion, then closed domains and supplied digests. SHA-256
+covers RFC 8785 canonical JSON under the safe-integer profile; each own digest excludes only itself and
+includes nested digests. Raw archival byte identity remains separate. Builders sort detached set copies
+and reject duplicates; readers reject unsorted sets rather than repairing evidence. The hand-authored
+schema enforces shape/domains, not duplicate text members, canonical ordering/digests, graph validity or
+acceptance. Bounds are 64 KiB per nonblank record, 16 MiB/10,000 records per input text, depth 16 and 256
+entries per input array. Aggregate output collections may exceed 256.
+
+`projectWorkLedger(text, context?)` always ingests strict text. Context has an exact selected snapshot/event
+identity and a separate authority snapshot, both null by default. There is no latest-head or time election.
+Complete conflict grouping precedes facts, including all alternatives reachable through quarantined
+revision/occurrence redeliveries. Exact inventory, bindings, ancestors, predecessors and selected dependency
+closure must resolve. Incomplete input or invalid/unresolved structure suppresses progress; missing selected
+artifact bodies preserve obligations in an otherwise valid denominator while withholding their acceptance.
+
+Positive state is `accepted-under-supplied-authority`, not an authenticated verdict. The supplying host is
+the trusted computing base: an exact receipt must match the claim ID/digest, authority ID and entire
+selected snapshot/scope/intent/obligation/artifact revision/artifact-byte/policy/evidence binding. The claim's
+artifact byte digest must equal the selected artifact revision's `contentDigest`; required availability is
+supplied separately, and relevant contradictions fail closed. New snapshots require fresh receipts. Unsupported sibling claims
+remain unresolved without revoking independent complete support; trusted current contradictions override
+that support. Coverage and supersession remain separate diagnostics.
+
+No wire label, successful check, capability approval, completion, callback, ambient environment or
+event-nominated path constructs this context. The fixed test controller demonstrates
+**fixture trust-boundary simulation; for selected snapshot; under fixture authority** only. It takes no incoming claims. Schema
+conformance alone cannot supply a receipt or make work accepted.
+
+One global execution ID yields one attempt with explicit selected associations, even when it has multiple
+obligation/variant bindings. Logical child IDs are not launch counts. Declared labels do not replace
+observations; unknown/conflicting joins stay diagnostic. Runtime problems affect acceptance only through
+required evidence, not unrelated telemetry. Progress counts selected obligations, never claims, receipts,
+attempts, variants or completions. It is null without a valid selected scope; an empty valid scope is `0/0`,
+not a success percentage. The bounded layout demonstration now exercises two execution IDs with the same
+logical designer ID, three variants and one obligation through real builders, strict JSONL, dedicated
+append and explicit inspection. It remains unresolved without authority and exactly `1/1` only under the
+independently declared fixture controller. This is **fixture trust-boundary simulation; for selected snapshot;
+under fixture authority**, not a runtime dispatch, production authenticator or qualification result.
+
+The attempt tests separately exercise shared obligations, nonselected-association identity conflicts,
+missing/cyclic explicit parents, unknown branches, complementary and contradictory observed labels, and
+completed/failed contradictions. A shared execution is counted once, never inferred from logical names;
+each obligation still needs its own exact trusted support. Scope successors transitively rebase goal,
+node and obligation references with real predecessors; a new snapshot with unchanged revisions also
+requires fresh receipts. Prior returned results remain immutable, not rewritten by later selection.
+No runtime/result shape or authority source was added for these scenarios.
+
+`appendWorkLedgerEvent({path, grantLedgerPath}, event)` is explicit and always strict. Paths are absolute,
+nonempty and NUL-free; the protection field is required, and null means the host declared none. Detached
+options/candidate validation precedes I/O. Both work leaves and all existing/prospective ancestors are
+compared with both protected grant leaves using filesystem UTF-8 spelling, canonical paths and available
+inodes before mutation. A supplied grant filename reserves that namespace even if it is a directory.
+
+V4 selects non-expiring ownership on the shared append/lock mechanism: no age/liveness reclaim, the existing
+two-second waiter timeout, and own-token cleanup. An orphan may block future appends indefinitely; recovery
+requires separately authorized quiescent operator action, not an automatic API. Legacy age recovery,
+serialization-before-try and strict/non-strict callback behavior remain unchanged. The same regular-file
+descriptor reads bounded existing bytes, validates strict content/terminal LF and resulting capacity,
+rechecks identity and appends canonical JSON plus LF under the lock. Existing bytes are never rewritten.
+Late I/O failure may leave partial bytes or follow own-parent/lock activity; no transactional rollback is
+claimed. In this candidate, disabled-mode lock close/read/removal failures after a successful append body
+surface as `WORK_LEDGER_WRITE_FAILED`. Token-checked removal is attempted even after close failure; a failed
+ownership read never authorizes deletion, and a replacement token is left alone. A primary body/validation
+error still takes precedence over secondary cleanup failures. The complete appended line may already be
+present: rejection does not mean no write, and does not promise safe blind retry. A retry may add another
+physical delivery or fail against a retained non-expiring lock. No automatic recovery is added. Legacy age
+cleanup remains best effort. Protection is cooperative misrouting defense, not general host/filesystem containment.
+
+`inspectWorkLedger({version:4,path}, context?)` reads bounded regular-file bytes without mutation or repair.
+Its frozen, detached result distinguishes missing/error/read; read proves file reading, not valid content
+or acceptance. Input/context/content diagnostics use fixed codes and typed references without raw text,
+paths or native messages. Builders/append throw validation errors; parser/projector/inspector return the
+specified diagnostics. Work input/write/inspection errors are separate from historical governance refusal
+enums; exact shapes, codes, precedence and limits are in the contract README and source declarations.
+
+The separate v4 generator has pure fixture construction and requires an explicit output directory for all
+writes; imports write nothing. Its four `work-*.json` fixtures remain standalone individual events.
+`layout-options.json` is instead an array of eleven production-builder events forming a complete generic
+graph. The array is not an event: schema-check each element and explicitly serialize the elements to JSONL.
+Positive controller receipts/availability stay in test fixture code, not the published array. Tests reproduce
+both forms byte-for-byte in fresh targets, check unchanged collateral and resolve the actual JSON artifact
+export. These checks are not fresh compiled-work-ledger, installed-smoke or independent semantic-review
+evidence. Mutation-testing machinery and active invocations were removed by explicit user direction on
+2026-09-07; that requirement is removed, not passed. Ordinary behavioral regressions and runtime guards
+remain. Fresh compiled verification, full-suite/integration/installed-smoke handling and final overall
+review remain separate evidence. Frozen earlier plans/packets and receipts are historical; native acceptance
+stays pending where their old gates cannot represent this workflow change.
+Stopping use of the candidate preserves rollback without deleting its evidence or changing v3 defaults.
+
 ## Correlation metadata
 
 Every spawn may carry optional, non-authoritative metadata for joining an external controller's records:
@@ -690,13 +810,14 @@ schemas expose the same closed optional contract, and runtime normalization rema
 
 ## Stable refusals
 
-**Every** refusal has `{code, message, details?}`. Human diagnostics remain the same; direct API errors
+**Governance refusals** have `{code, message, details?}`. Work-v4's separate input/write/inspection
+errors are described in its candidate contract above. Human diagnostics remain the same; direct API errors
 expose `error.code`, and ledger decisions carry the same object. `src/refusals.ts` holds the complete union
 and `test/refusals.test.ts` is length-checked against it, so a code cannot be added or dropped without the
 enumeration failing — it previously listed eleven of eighteen members, which made the seven `CHECK_*` codes
 the ones most likely to be deleted while the guard stayed green.
 
-"Every" is now accurate and was not: five planner paths returned a reason with no code — empty task, unknown
+The governance enumeration closes five planner paths that previously returned a reason with no code — empty task, unknown
 definition name, a pattern ceiling `--tools` cannot express, an unresolvable skill path, and the
 `assertNarrowing` violation. That last one is ADR-0011's invariant, the hardest rule this package enforces,
 and a controller distinguishing "refused by policy" from "internal error" by the presence of a code would
