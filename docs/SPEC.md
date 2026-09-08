@@ -9,6 +9,16 @@ Released baseline last synced against the code: **2026-09-04**, `pi-daddy` 0.22.
 The **2026-09-06 work-v4 source candidate** is described separately below. It is not a release, activation,
 production authentication result or completed task/qualification gate.
 
+The **local 2026-09-08 P04 candidate** adds a read-only daily mode to the existing dashboard/plugin.
+It consumes exact pinned P03 execution archive snapshots and independently projects P01 work intent under
+explicit host authority. Unstarted obligations, exact attempts, scope revision, acceptance, runtime,
+coverage/check evidence and source references remain separate. CLI selection alone cannot supply approval;
+archive exit0 never counts as accepted. Reconnect resnapshots retain gaps and freshness stays unknown.
+The [P04 read-model contract for P07/P08](../packages/pi-daddy/contracts/daily-view/v1/README.md) publishes
+types and deterministic fixtures. Live passive transport/freshness qualification remains BLOCKED without
+a deployed P03 input. No model/worker/native-gate calls or P05 steering are added. Local only; independent
+overall review and formal acceptance remain pending.
+
 The **local 2026-09-08 P06 candidate** adds one opt-in fixed-code `linux-bwrap-digest-v1` runtime profile,
 not a general pi/bash sandbox. Actual bounded namespace/effect probes precede admission; immutable byte
 inputs and stdout-only results exclude writable/shared workspace destinations. A separately bound durable

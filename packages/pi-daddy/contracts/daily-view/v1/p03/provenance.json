@@ -1,0 +1,21 @@
+{
+  "repository": "skill-harness",
+  "commit": "a311df8c991108ada7b6f4b901332232a78e9a44",
+  "entries": [
+    {
+      "sourcePath": "contracts/execution-archive/v1/README.md",
+      "targetPath": "README.md",
+      "sha256": "eae42c01ed7ac0749ba0a7d6187a2d29203f6c72e6db759b7184048628bfb0df"
+    },
+    {
+      "sourcePath": "contracts/execution-archive/v1/projection.schema.json",
+      "targetPath": "projection.schema.json",
+      "sha256": "860701885c2c6a1fc1bde39989f015b6354c8a5d392108d8e4f8afdb931b08c8"
+    },
+    {
+      "sourcePath": "contracts/execution-archive/v1/fixtures/retained-executions.json",
+      "targetPath": "fixtures/retained-executions.json",
+      "sha256": "ef06d522a6430e9b3981eb133c8a3a56de774faeda239c3e5f3570c469a50641"
+    }
+  ]
+}

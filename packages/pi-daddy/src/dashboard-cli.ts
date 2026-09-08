@@ -5,6 +5,20 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseDashboardLedger } from "./dashboard-projection.ts";
 import { renderDashboard } from "./dashboard-render.ts";
+import { createDailyViewReader, isDailyViewReader, readDailyView, type DailyViewOptions } from "./daily-view.ts";
+import { renderDailyView } from "./daily-view-render.ts";
+import { projectWorkLedger, type WorkProjectionContext } from "./work-ledger.ts";
+import { parseRetentionJson } from "./retention-json.ts";
+
+export const ENV_DAILY_ARCHIVE = "PI_DADDY_ARCHIVE_PROJECTION";
+export const ENV_DAILY_WORK = "PI_DADDY_WORK_LEDGER";
+export const ENV_DAILY_SELECTION = "PI_DADDY_WORK_SNAPSHOT";
+function dailySelection(text: string | undefined): WorkProjectionContext["selectedSnapshot"] {
+  if (!text) return null;
+  const selection = parseRetentionJson(text) as WorkProjectionContext["selectedSnapshot"];
+  if (projectWorkLedger("", { selectedSnapshot: selection, authority: null }).errors.some(e => e.code === "WORK_CONTEXT_INVALID")) throw new TypeError("invalid P01 snapshot selection");
+  return selection;
+}
 
 export const DASHBOARD_PROTOCOL_VERSION = 1 as const;
 export const ENV_DASHBOARD_LEDGER = "PI_DADDY_LEDGER";
@@ -20,6 +34,9 @@ export interface DashboardFrameOptions {
   width?: number;
   details?: boolean;
   now?: Date;
+  dailyView?: DailyViewOptions;
+  dailyReader?: ReturnType<typeof createDailyViewReader>;
+  dailyJson?: boolean;
 }
 
 function shellQuote(value: string): string {
@@ -57,6 +74,15 @@ export async function dashboardFrame(options: DashboardFrameOptions): Promise<st
   if (options.protocol !== undefined && options.protocol !== DASHBOARD_PROTOCOL_VERSION) {
     return incompatibleFrame(options.protocol);
   }
+  if (options.dailyView) {
+    try {
+      if (options.dailyReader !== undefined && !isDailyViewReader(options.dailyReader)) throw new TypeError("untrusted daily reader callback");
+      const view = await (options.dailyReader ?? readDailyView)(options.dailyView);
+      return options.dailyJson ? JSON.stringify(view) : renderDailyView(view, options.width);
+    } catch {
+      return "PI-DADDY — DAILY VIEW UNAVAILABLE\nInvalid or unavailable read-only input. No previous acceptance or continuity was substituted.";
+    }
+  }
   if (!options.ledgerPath) return setupFrame(options.cwd);
 
   const ledgerPath = resolve(options.cwd, options.ledgerPath);
@@ -90,22 +116,34 @@ interface CliOptions {
   details: boolean;
   color: boolean;
   ledgerPath?: string;
+  archivePath?: string;
+  workPath?: string;
+  selection?: string;
+  dailyJson: boolean;
 }
 
 function parseArgs(argv: string[]): CliOptions {
   let once = false;
   let details = false;
   let color = process.stdout.isTTY;
-  let ledgerPath: string | undefined;
+  let ledgerPath: string | undefined, archivePath: string | undefined, workPath: string | undefined, selection: string | undefined;
+  let dailyJson = false;
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === "--once") once = true;
     else if (arg === "--details") details = true;
     else if (arg === "--no-color") color = false;
     else if (arg === "--ledger") ledgerPath = argv[++index];
+    else if (arg === "--daily-json") dailyJson = true;
+    else if (["--archive-projection", "--work-ledger", "--work-snapshot"].includes(arg)) {
+      const value = argv[++index]; if (!value || value.startsWith("--")) throw new Error("missing daily view argument");
+      if (arg === "--archive-projection") archivePath = value;
+      else if (arg === "--work-ledger") workPath = value;
+      else selection = value;
+    }
     else throw new Error(`unknown dashboard argument ${JSON.stringify(arg)}`);
   }
-  return { once, details, color, ledgerPath };
+  return { once, details, color, ledgerPath, archivePath, workPath, selection, dailyJson };
 }
 
 export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.ProcessEnv = process.env): Promise<void> {
@@ -117,6 +155,15 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
   const key = env[ENV_DASHBOARD_KEY]?.trim();
   process.title = `pi-daddy-dashboard${key ? `:${key.slice(0, 12)}` : ""}`;
 
+  const archivePath = cli.archivePath ?? env[ENV_DAILY_ARCHIVE];
+  const workPath = cli.workPath ?? env[ENV_DAILY_WORK];
+  const selectedSnapshot = dailySelection(cli.selection ?? env[ENV_DAILY_SELECTION]);
+  const dailyView = archivePath || workPath || selectedSnapshot || cli.dailyJson ? {
+    archiveProjectionPath: archivePath ? resolve(cwd, archivePath) : undefined,
+    workLedgerPath: workPath ? resolve(cwd, workPath) : undefined,
+    workContext: { selectedSnapshot, authority: null },
+  } : undefined;
+  const dailyReader = createDailyViewReader();
   let previous = "";
   const draw = async (clear: boolean): Promise<void> => {
     const frame = await dashboardFrame({
@@ -126,6 +173,7 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
       color: cli.color,
       width: process.stdout.columns || 80,
       details: cli.details,
+      dailyView, dailyReader, dailyJson: cli.dailyJson,
     });
     if (frame === previous && !clear) return;
     previous = frame;

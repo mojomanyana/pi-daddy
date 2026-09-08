@@ -41,6 +41,10 @@
       "types": "./dist/work-ledger.d.ts",
       "default": "./dist/work-ledger.js"
     },
+    "./daily-view": {
+      "types": "./dist/daily-view.d.ts",
+      "default": "./dist/daily-view.js"
+    },
     "./resource-budget": {
       "types": "./dist/resource-budget.d.ts",
       "default": "./dist/resource-budget.js"
@@ -153,6 +157,8 @@
       "types": "./dist/dashboard-render.d.ts",
       "default": "./dist/dashboard-render.js"
     },
+    "./contracts/daily-view/v1/fixtures/*": "./contracts/daily-view/v1/fixtures/*",
+    "./contracts/daily-view/v1/p03/projection.schema.json": "./contracts/daily-view/v1/p03/projection.schema.json",
     "./contracts/execution-retention/v2/manifest.schema.json": "./contracts/execution-retention/v2/manifest.schema.json",
     "./contracts/execution-retention/v2/fixtures/*": "./contracts/execution-retention/v2/fixtures/*",
     "./contracts/ledger/v4/ledger-event.schema.json": "./contracts/ledger/v4/ledger-event.schema.json",

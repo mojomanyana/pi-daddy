@@ -34,6 +34,10 @@ export {
   type WorkflowFactState,
 } from "./ledger.ts";
 
+export { readDailyView, createDailyViewReader, DAILY_VIEW_VERSION, type DailyView, type DailyViewOptions,
+  type DailyAttempt, type DailyObligation } from "./daily-view.ts";
+export { renderDailyView } from "./daily-view-render.ts";
+export { parseArchiveProjection, ARCHIVE_PROJECTION_VERSION } from "./daily-view-input.ts";
 export { createResourceBudget, openResourceBudget, resourceBindingDigest, ResourceAdmissionError,
   type BudgetBinding, type ResourceLimits, type AttemptDemand, type ResourcePermit, type BudgetSnapshot } from "./resource-budget.ts";
 export { prepareDigestProfile, runDigestProfile, DIGEST_PROFILE, EffectProfileUnavailableError,
