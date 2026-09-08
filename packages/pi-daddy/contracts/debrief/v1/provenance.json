@@ -1,0 +1,89 @@
+{
+  "repository": "skill-harness",
+  "records": [
+    {
+      "commit": "4460af93c55aa3a52df262782cd339ad374113b8",
+      "source": "contracts/work-capture/v2/README.md",
+      "target": "work-capture/README.md",
+      "sha256": "9e33d02ad97c5333f8c6c1cf8c639690b3feb6283596f137860b0e00769f5d2c"
+    },
+    {
+      "commit": "4460af93c55aa3a52df262782cd339ad374113b8",
+      "source": "contracts/work-capture/v2/fixtures/batch.json",
+      "target": "work-capture/fixtures/batch.json",
+      "sha256": "23ba49a4312f27046b91b8b49d777f7d6992ecae964858917b9f143d5a4d70da"
+    },
+    {
+      "commit": "4460af93c55aa3a52df262782cd339ad374113b8",
+      "source": "contracts/work-capture/v2/fixtures/cases.json",
+      "target": "work-capture/fixtures/cases.json",
+      "sha256": "b8efcf0ca89fc34f82cf526b95fd61be010bd23bec4697bc6d54bba7b4cfda14"
+    },
+    {
+      "commit": "4460af93c55aa3a52df262782cd339ad374113b8",
+      "source": "contracts/work-capture/v2/fixtures/review.json",
+      "target": "work-capture/fixtures/review.json",
+      "sha256": "c87d4b91f82df1ee197d25c7a22dcf250791680157b4e0685b3528030e4a2402"
+    },
+    {
+      "commit": "4460af93c55aa3a52df262782cd339ad374113b8",
+      "source": "contracts/work-capture/v2/review-request.schema.json",
+      "target": "work-capture/review-request.schema.json",
+      "sha256": "1f0f8d156b56c5b1ed212e3f7ad470ac9b52568160ffa28fde07a9e53915ea11"
+    },
+    {
+      "commit": "4460af93c55aa3a52df262782cd339ad374113b8",
+      "source": "contracts/work-capture/v2/work-case.schema.json",
+      "target": "work-capture/work-case.schema.json",
+      "sha256": "b3b39d5ccec8a0ffb45dfdff317a2a27802ec337ad4aab9df6f08122dc3f6274"
+    },
+    {
+      "commit": "0475e1f5684e01992850c48aa14841751711701a",
+      "source": "contracts/intervention/v1/README.md",
+      "target": "intervention/README.md",
+      "sha256": "71cd78c8748516d7f7229f69905f0e34e51dead3e73fae13a39e984ed8db917f"
+    },
+    {
+      "commit": "0475e1f5684e01992850c48aa14841751711701a",
+      "source": "contracts/intervention/v1/fixtures/artifact-3ee11136beb864f518252e5024dae9197421fbf97b6e981d3243c782b5c44bd0.txt",
+      "target": "intervention/fixtures/artifact-3ee11136beb864f518252e5024dae9197421fbf97b6e981d3243c782b5c44bd0.txt",
+      "sha256": "3ee11136beb864f518252e5024dae9197421fbf97b6e981d3243c782b5c44bd0"
+    },
+    {
+      "commit": "0475e1f5684e01992850c48aa14841751711701a",
+      "source": "contracts/intervention/v1/fixtures/artifact-58905d872dd3c54a9705f67b05fa82edbad7af6476ae8993faf1a7b9fadfb905.txt",
+      "target": "intervention/fixtures/artifact-58905d872dd3c54a9705f67b05fa82edbad7af6476ae8993faf1a7b9fadfb905.txt",
+      "sha256": "58905d872dd3c54a9705f67b05fa82edbad7af6476ae8993faf1a7b9fadfb905"
+    },
+    {
+      "commit": "0475e1f5684e01992850c48aa14841751711701a",
+      "source": "contracts/intervention/v1/fixtures/assessment.json",
+      "target": "intervention/fixtures/assessment.json",
+      "sha256": "4099505170048292ccf3213893b9d8ca87cf4933c9ae199907c1d5fc5540dd78"
+    },
+    {
+      "commit": "0475e1f5684e01992850c48aa14841751711701a",
+      "source": "contracts/intervention/v1/fixtures/blind-view.json",
+      "target": "intervention/fixtures/blind-view.json",
+      "sha256": "eed28f68aab303a2b73a380a7de6804c58a64262e1f1ad76fcb29238445e9c83"
+    },
+    {
+      "commit": "0475e1f5684e01992850c48aa14841751711701a",
+      "source": "contracts/intervention/v1/fixtures/choice.json",
+      "target": "intervention/fixtures/choice.json",
+      "sha256": "f6d4cbe275ae3673a5d2ba04db8475409d2843ecb2dace6438d76dc64dfcc1df"
+    },
+    {
+      "commit": "0475e1f5684e01992850c48aa14841751711701a",
+      "source": "contracts/intervention/v1/fixtures/manifest.json",
+      "target": "intervention/fixtures/manifest.json",
+      "sha256": "26076b33bfc9a5d4976ace87f3569956a32419c1702f63ddab0963c3242f2e53"
+    },
+    {
+      "commit": "0475e1f5684e01992850c48aa14841751711701a",
+      "source": "contracts/intervention/v1/fixtures/reveal.json",
+      "target": "intervention/fixtures/reveal.json",
+      "sha256": "bdc44d7b528beeb3134b358c2af0aadd5089d650df66c8e1b22f016a9f3e471a"
+    }
+  ]
+}

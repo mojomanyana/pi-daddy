@@ -1,0 +1,39 @@
+{
+  "manifestId": "a84186a1c1f272c80fe14387aeb3c8dd7242f6eacb6b76b0ef29a7343b254ffb",
+  "choice": {
+    "kind": "tie",
+    "labels": [
+      "variant-4798fd88dc0c9767",
+      "variant-5588a335bb82b8d5"
+    ]
+  },
+  "arms": [
+    {
+      "label": "variant-4798fd88dc0c9767",
+      "armId": "a",
+      "configuration": {
+        "configuration": "35653d898fe8f4687defd9c18d0f6daaf43f2ae7d762e2c8aa3df7f1e68a3534",
+        "effort": "fixture",
+        "model": "fixture:a",
+        "prompt": "35653d898fe8f4687defd9c18d0f6daaf43f2ae7d762e2c8aa3df7f1e68a3534",
+        "skill": "35653d898fe8f4687defd9c18d0f6daaf43f2ae7d762e2c8aa3df7f1e68a3534"
+      },
+      "cost": 1,
+      "costUnit": "wall_ms"
+    },
+    {
+      "label": "variant-5588a335bb82b8d5",
+      "armId": "b",
+      "configuration": {
+        "configuration": "35653d898fe8f4687defd9c18d0f6daaf43f2ae7d762e2c8aa3df7f1e68a3534",
+        "effort": "fixture",
+        "model": "fixture:b",
+        "prompt": "35653d898fe8f4687defd9c18d0f6daaf43f2ae7d762e2c8aa3df7f1e68a3534",
+        "skill": "35653d898fe8f4687defd9c18d0f6daaf43f2ae7d762e2c8aa3df7f1e68a3534"
+      },
+      "cost": 2,
+      "costUnit": "wall_ms"
+    }
+  ],
+  "routingDefault": null
+}

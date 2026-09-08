@@ -9,6 +9,16 @@ Released baseline last synced against the code: **2026-09-04**, `pi-daddy` 0.22.
 The **2026-09-06 work-v4 source candidate** is described separately below. It is not a release, activation,
 production authentication result or completed task/qualification gate.
 
+The **local P08 debrief candidate** extends the existing dashboard/plugin with a bounded manual weekly
+queue, explicit harness-owned labels and quality-before-reveal blind views. Exact harness4460af9/0475e1f
+contracts/fixtures are pinned. Five total attention slots include the blind question, persist across reopen
+through a host checkpoint, and are never refilled by answers/skip. Label authority/history stays with the
+real harness writer; no dashboard decision store or worker messages are added. Missing writer/identity /
+persistence disables actions; automatic closing-pause/exposure-policy/live qualification remains deferred,
+not inferred from agent_end or idle flags. The [P10/P12/P13 integration contract](../packages/pi-daddy/contracts/debrief/v1/README.md)
+distinguishes the real programmatic/fixture path from pending deployment and public-seed blinding limits.
+New source local only; overall acceptance pending. P05 cancellation/live-route limitations remain unchanged.
+
 The **local P05 intent-application continuation** now supplies actual bounded P01 scope successor,
 priority and recorded-alternative adapters, rather than treating omitted code as permanent external gaps.
 An explicit v3 resource binding pins owned work bytes; existing controller receipts retain exact selections

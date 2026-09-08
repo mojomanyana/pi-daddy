@@ -1,0 +1,190 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/mojomanyana/skill-harness/contracts/work-capture/v2/work-case.schema.json",
+  "type": "object",
+  "properties": {
+    "capture_schema": {
+      "const": 2
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "detector": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+        },
+        "population": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "population"
+      ],
+      "additionalProperties": false
+    },
+    "target": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "work"
+        },
+        "snapshotDigest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "obligationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+        },
+        "obligationDigest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "kind",
+        "snapshotDigest",
+        "obligationId",
+        "obligationDigest"
+      ],
+      "additionalProperties": false
+    },
+    "classification": {
+      "enum": [
+        "candidate_defect",
+        "candidate_exemplar",
+        "coverage_issue"
+      ]
+    },
+    "reason": {
+      "enum": [
+        "repeat_without_progress",
+        "economical_exemplar",
+        "coverage_gap"
+      ]
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$"
+      },
+      "minItems": 1,
+      "maxItems": 256,
+      "uniqueItems": true
+    },
+    "metrics": {
+      "type": "object",
+      "properties": {
+        "equivalentAttempts": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 9007199254740991
+        },
+        "measuredCost": {
+          "type": "number",
+          "minimum": 0
+        },
+        "costLimit": {
+          "type": "number",
+          "minimum": 0
+        },
+        "costUnit": {
+          "enum": [
+            "wall_ms",
+            "tool_calls",
+            "usd"
+          ]
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "status": {
+      "const": "unresolved"
+    },
+    "visibility": {
+      "const": "silent"
+    },
+    "causalAttribution": {
+      "const": "not-established"
+    }
+  },
+  "required": [
+    "capture_schema",
+    "id",
+    "detector",
+    "target",
+    "classification",
+    "reason",
+    "evidence",
+    "metrics",
+    "status",
+    "visibility",
+    "causalAttribution"
+  ],
+  "additionalProperties": false,
+  "oneOf": [
+    {
+      "properties": {
+        "reason": {
+          "const": "repeat_without_progress"
+        },
+        "classification": {
+          "const": "candidate_defect"
+        },
+        "metrics": {
+          "required": [
+            "equivalentAttempts"
+          ]
+        }
+      }
+    },
+    {
+      "properties": {
+        "reason": {
+          "const": "economical_exemplar"
+        },
+        "classification": {
+          "const": "candidate_exemplar"
+        },
+        "metrics": {
+          "required": [
+            "measuredCost",
+            "costLimit",
+            "costUnit"
+          ]
+        }
+      }
+    },
+    {
+      "properties": {
+        "reason": {
+          "const": "coverage_gap"
+        },
+        "classification": {
+          "const": "coverage_issue"
+        }
+      }
+    }
+  ]
+}

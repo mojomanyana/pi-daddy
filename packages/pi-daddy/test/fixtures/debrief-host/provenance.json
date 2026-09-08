@@ -1,0 +1,38 @@
+[
+  {
+    "commit": "4460af93c55aa3a52df262782cd339ad374113b8",
+    "source": "packages/core/src/work-capture.ts",
+    "target": "work-capture.ts.txt",
+    "sha256": "a258861619e92d5b41336ee83d41c42fec33212643c22b7d6ace8e55561b98ea"
+  },
+  {
+    "commit": "4460af93c55aa3a52df262782cd339ad374113b8",
+    "source": "packages/adapters/src/work-case-review.ts",
+    "target": "work-case-review.ts.txt",
+    "sha256": "c1d25507170426145aa12dc16db67b3e7504b3208ae1c6a2933f318d7dc0c235"
+  },
+  {
+    "commit": "4460af93c55aa3a52df262782cd339ad374113b8",
+    "source": "packages/adapters/src/work-case-archive.ts",
+    "target": "work-case-archive.ts.txt",
+    "sha256": "6998556f29c068ae8d5f383b76e913f429235aa90bb6f50e34a20785d870d4a6"
+  },
+  {
+    "commit": "4460af93c55aa3a52df262782cd339ad374113b8",
+    "source": "packages/adapters/src/work-candidates.ts",
+    "target": "work-candidates.ts.txt",
+    "sha256": "5ba902a173189542049527ffad800d1607b5a6c4dc557551a6d702bbe92a0d8d"
+  },
+  {
+    "commit": "4460af93c55aa3a52df262782cd339ad374113b8",
+    "source": "packages/adapters/src/evidence-archive.ts",
+    "target": "evidence-archive.ts.txt",
+    "sha256": "f41fd69daa4326cefad673fbf4eee2e0c44aa12de595d8a9c4deec209fe38807"
+  },
+  {
+    "commit": "0475e1f5684e01992850c48aa14841751711701a",
+    "source": "packages/core/src/intervention.ts",
+    "target": "intervention.ts.txt",
+    "sha256": "7cf8f28f3629b471b4b43d35c8aaa63dd30c89ab1dd12e3dd923ac34abd4b617"
+  }
+]

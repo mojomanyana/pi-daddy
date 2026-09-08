@@ -1,0 +1,17 @@
+{
+  "version": "work-candidate-batch-v1",
+  "observationId": "3be5c1b87d00d4457a9ec843379815d15a7d953b2c30b11d2325a0b6705adb82",
+  "candidateIds": [
+    "8c558dfc1db9526c1635515d259f1b6328915e08fee9724b06771c4e739a003c",
+    "48910d9ba3af6ab7fd022e6ee38b14f5a4a02d3fca6fe4aa12dc3ada1ef1f181",
+    "9dde8e074796e03ef02458e2bd158520e5a4fd7242f1fa88da2e86a6af20bddc",
+    "30e6b213a7ad8c236f597484f644ec867874bfa0de56d5c2fd430f7a9178e1a4",
+    "fedbb6f6549c42d213e36603d5246ae030ebc4c28a6f76491632f429cf656f94",
+    "d0303fd5789b494edafcd3c5a215a7191f1547f9d33802d7101bf911cda21ca3",
+    "54856ce8abf12a39cf6e09f92c3b744bae4647bb6dd817a47611c230c69a9635"
+  ],
+  "issues": [],
+  "expected": [],
+  "visibility": "silent",
+  "promotion": "not-authorized"
+}

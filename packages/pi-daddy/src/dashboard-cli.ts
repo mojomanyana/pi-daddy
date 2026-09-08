@@ -9,6 +9,12 @@ import { createDailyViewReader, isDailyViewReader, readDailyView, type DailyView
 import { renderDailyView } from "./daily-view-render.ts";
 import { projectWorkLedger, type WorkProjectionContext } from "./work-ledger.ts";
 import { parseRetentionJson } from "./retention-json.ts";
+import { createInterface } from "node:readline";
+import { isDebriefPresenter, type DebriefPresenter } from "./debrief.ts";
+import { renderDebrief, debriefAction } from "./debrief-render.ts";
+import { createFixtureDebrief } from "./debrief-fixture.ts";
+export const ENV_DEBRIEF_FIXTURE = "PI_DADDY_DEBRIEF_FIXTURE";
+export { debriefAction as dashboardDebriefAction } from "./debrief-render.ts";
 
 export const ENV_DAILY_ARCHIVE = "PI_DADDY_ARCHIVE_PROJECTION";
 export const ENV_DAILY_WORK = "PI_DADDY_WORK_LEDGER";
@@ -37,6 +43,8 @@ export interface DashboardFrameOptions {
   dailyView?: DailyViewOptions;
   dailyReader?: ReturnType<typeof createDailyViewReader>;
   dailyJson?: boolean;
+  debrief?: DebriefPresenter;
+  debriefJson?: boolean;
 }
 
 function shellQuote(value: string): string {
@@ -73,6 +81,10 @@ function incompatibleFrame(protocol: number): string {
 export async function dashboardFrame(options: DashboardFrameOptions): Promise<string> {
   if (options.protocol !== undefined && options.protocol !== DASHBOARD_PROTOCOL_VERSION) {
     return incompatibleFrame(options.protocol);
+  }
+  if (options.debrief || options.debriefJson) {
+    if (!isDebriefPresenter(options.debrief)) return "PI-DADDY — DEBRIEF UNAVAILABLE: genuine presenter/host missing";
+    const view = options.debrief.view(); return options.debriefJson ? JSON.stringify(view) : renderDebrief(view, options.width);
   }
   if (options.dailyView) {
     try {
@@ -120,6 +132,8 @@ interface CliOptions {
   workPath?: string;
   selection?: string;
   dailyJson: boolean;
+  debriefFixture: boolean;
+  debriefJson: boolean;
 }
 
 function parseArgs(argv: string[]): CliOptions {
@@ -127,7 +141,7 @@ function parseArgs(argv: string[]): CliOptions {
   let details = false;
   let color = process.stdout.isTTY;
   let ledgerPath: string | undefined, archivePath: string | undefined, workPath: string | undefined, selection: string | undefined;
-  let dailyJson = false;
+  let dailyJson = false, debriefFixture = false, debriefJson = false;
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === "--once") once = true;
@@ -135,6 +149,8 @@ function parseArgs(argv: string[]): CliOptions {
     else if (arg === "--no-color") color = false;
     else if (arg === "--ledger") ledgerPath = argv[++index];
     else if (arg === "--daily-json") dailyJson = true;
+    else if (arg === "--debrief-fixture") debriefFixture = true;
+    else if (arg === "--debrief-json") debriefJson = true;
     else if (["--archive-projection", "--work-ledger", "--work-snapshot"].includes(arg)) {
       const value = argv[++index]; if (!value || value.startsWith("--")) throw new Error("missing daily view argument");
       if (arg === "--archive-projection") archivePath = value;
@@ -143,10 +159,10 @@ function parseArgs(argv: string[]): CliOptions {
     }
     else throw new Error(`unknown dashboard argument ${JSON.stringify(arg)}`);
   }
-  return { once, details, color, ledgerPath, archivePath, workPath, selection, dailyJson };
+  return { once, details, color, ledgerPath, archivePath, workPath, selection, dailyJson, debriefFixture, debriefJson };
 }
 
-export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.ProcessEnv = process.env): Promise<void> {
+export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.ProcessEnv = process.env, host: { debrief?: DebriefPresenter } = {}): Promise<void> {
   const cli = parseArgs(argv);
   const cwd = process.cwd();
   const ledgerPath = cli.ledgerPath ?? (env[ENV_DASHBOARD_LEDGER]?.trim() || undefined);
@@ -163,6 +179,11 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
     workLedgerPath: workPath ? resolve(cwd, workPath) : undefined,
     workContext: { selectedSnapshot, authority: null },
   } : undefined;
+  const debrief = host.debrief ?? (cli.debriefFixture || env[ENV_DEBRIEF_FIXTURE] === "1" ? await createFixtureDebrief() : undefined);
+  if (debrief) {
+    if (!isDebriefPresenter(debrief)) throw new Error("invalid debrief presenter");
+    if (!host.debrief) await debrief.open({ mode: "manual", userPresent: true }); // Explicit CLI fixture only; never override a host deferral.
+  }
   const dailyReader = createDailyViewReader();
   let previous = "";
   const draw = async (clear: boolean): Promise<void> => {
@@ -173,7 +194,7 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
       color: cli.color,
       width: process.stdout.columns || 80,
       details: cli.details,
-      dailyView, dailyReader, dailyJson: cli.dailyJson,
+      dailyView, dailyReader, dailyJson: cli.dailyJson, debrief, debriefJson: cli.debriefJson,
     });
     if (frame === previous && !clear) return;
     previous = frame;
@@ -191,11 +212,19 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
     drawing = true;
     void draw(true).finally(() => { drawing = false; });
   };
+  const input = debrief ? createInterface({ input: process.stdin, terminal: false }) : null;
+  let acting = false;
+  input?.on("line", line => {
+    if (acting) return;
+    acting = true;
+    void debriefAction(debrief!, line).catch(() => { process.stderr.write("Debrief action refused or acknowledgement unknown; inspect/reconcile explicitly.\n"); })
+      .finally(() => { acting = false; redraw(); });
+  });
   const timer = setInterval(redraw, DASHBOARD_REFRESH_MS);
   process.on("SIGWINCH", redraw);
   await new Promise<void>((settle) => {
     const stop = () => {
-      clearInterval(timer);
+      clearInterval(timer); input?.close();
       process.off("SIGWINCH", redraw);
       settle();
     };

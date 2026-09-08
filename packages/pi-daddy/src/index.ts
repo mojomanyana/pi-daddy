@@ -34,6 +34,9 @@ export {
   type WorkflowFactState,
 } from "./ledger.ts";
 
+export { createDebriefPresenter, type DebriefPresenter, type DebriefHost, type DebriefFrame, type DebriefCheckpoint, type DebriefPersistence } from "./debrief.ts";
+export { renderDebrief, debriefAction as dashboardDebriefAction } from "./debrief-render.ts";
+export { type ReviewPort, type ReviewRequest, type BlindPort, type BlindChoice } from "./debrief-contract.ts";
 export { readDailyView, createDailyViewReader, DAILY_VIEW_VERSION, type DailyView, type DailyViewOptions,
   type DailyAttempt, type DailyObligation } from "./daily-view.ts";
 export { renderDailyView } from "./daily-view-render.ts";

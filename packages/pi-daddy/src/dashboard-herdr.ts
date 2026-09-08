@@ -6,7 +6,7 @@ import {
   ENV_DASHBOARD_KEY,
   ENV_DASHBOARD_LEDGER,
   ENV_DASHBOARD_PROTOCOL,
-  DASHBOARD_PROTOCOL_VERSION, ENV_DAILY_ARCHIVE, ENV_DAILY_WORK, ENV_DAILY_SELECTION,
+  DASHBOARD_PROTOCOL_VERSION, ENV_DAILY_ARCHIVE, ENV_DAILY_WORK, ENV_DAILY_SELECTION, ENV_DEBRIEF_FIXTURE,
 } from "./dashboard-cli.ts";
 import { parseReply, type HerdrExec } from "./herdr-cli.ts";
 import { withFileLock } from "./file-lock.ts";
@@ -264,7 +264,7 @@ export async function openOrReuseDashboard(input: DashboardOpenInput): Promise<D
   const ledgerPath = input.ledgerPath.trim() ? resolve(input.cwd, input.ledgerPath) : "";
   const cwd = resolve(input.cwd);
   // Only explicit operator read inputs, never an authority file or ambient environment snapshot.
-  const dailyEnv = [ENV_DAILY_ARCHIVE, ENV_DAILY_WORK, ENV_DAILY_SELECTION]
+  const dailyEnv = [ENV_DAILY_ARCHIVE, ENV_DAILY_WORK, ENV_DAILY_SELECTION, ENV_DEBRIEF_FIXTURE]
     .flatMap(name => process.env[name] ? ["--env", `${name}=${process.env[name]}`] : []);
   const key = createHash("sha256")
     .update(`${input.host.workspaceId}\0${input.host.tabId}\0${ledgerPath}${dailyEnv.length ? JSON.stringify([cwd, ...dailyEnv]) : ""}`, "utf8")
