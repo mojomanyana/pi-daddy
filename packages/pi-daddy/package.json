@@ -45,6 +45,10 @@
       "types": "./dist/daily-view.d.ts",
       "default": "./dist/daily-view.js"
     },
+    "./dispatch-control": {
+      "types": "./dist/dispatch-control.d.ts",
+      "default": "./dist/dispatch-control.js"
+    },
     "./resource-budget": {
       "types": "./dist/resource-budget.d.ts",
       "default": "./dist/resource-budget.js"
@@ -157,6 +161,7 @@
       "types": "./dist/dashboard-render.d.ts",
       "default": "./dist/dashboard-render.js"
     },
+    "./contracts/dispatch-control/v1/request.schema.json": "./contracts/dispatch-control/v1/request.schema.json",
     "./contracts/daily-view/v1/fixtures/*": "./contracts/daily-view/v1/fixtures/*",
     "./contracts/daily-view/v1/p03/projection.schema.json": "./contracts/daily-view/v1/p03/projection.schema.json",
     "./contracts/execution-retention/v2/manifest.schema.json": "./contracts/execution-retention/v2/manifest.schema.json",

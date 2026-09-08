@@ -9,6 +9,15 @@ Released baseline last synced against the code: **2026-09-04**, `pi-daddy` 0.22.
 The **2026-09-06 work-v4 source candidate** is described separately below. It is not a release, activation,
 production authentication result or completed task/qualification gate.
 
+The **local 2026-09-08 P05 candidate** implements independently authorized pause/resume of future
+reservations in an explicitly created v2 resource budget. Exact request identity, expected dispatch
+revision, persisted decision/application/outcome and reconciliation share the existing reservation lock
+and journal. Busy requests block new admission but apply only at zero-reservation boundaries; status reads
+never write or control workers. Work-v4 remains the sole intent source. Cancellation, scope revision,
+reprioritization, alternative selection and general live steering remain unsupported by this bounded
+protocol. The [P15 control contract/matrix](../packages/pi-daddy/contracts/dispatch-control/v1/README.md)
+preserves unknown acknowledgement and P02/P04/P06 limitations. Local only; overall acceptance pending.
+
 The **local 2026-09-08 P04 candidate** adds a read-only daily mode to the existing dashboard/plugin.
 It consumes exact pinned P03 execution archive snapshots and independently projects P01 work intent under
 explicit host authority. Unstarted obligations, exact attempts, scope revision, acceptance, runtime,

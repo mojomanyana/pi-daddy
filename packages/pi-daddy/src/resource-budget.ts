@@ -5,12 +5,16 @@ import { createHash, randomUUID } from "node:crypto";
 import { withFileLock } from "./file-lock.ts";
 import { parseWorkJson } from "./work-ledger-json.ts";
 import { runWithFinalizers } from "./finalization.ts";
+import { dispatchAuthority, dispatchRequest, dispatchRequestDigest, dispatchDecision, replayDispatch, freezeDispatch,
+  type DispatchAuthority, type DispatchRequest, type DispatchState } from "./dispatch-control.ts";
 
 export interface ResourceLimits { maxAttempts: number; maxInputBytes: number; maxConcurrent: number }
-export interface BudgetBinding {
-  version: "1.0"; directory: string; device: string; inode: string;
+export interface BudgetBinding<V extends "1.0" | "2.0" = "1.0"> {
+  version: V; directory: string; device: string; inode: string;
   journalDevice: string; journalInode: string; authorityDigest: string; limits: ResourceLimits;
 }
+export type DispatchBudgetBinding = BudgetBinding<"2.0">;
+export type GovernedBudgetBinding = BudgetBinding<"1.0" | "2.0">;
 export interface AttemptDemand {
   attemptId: string; orderId: string; experimentId: string;
   kind: "primary" | "retry" | "shadow" | "descendant";
@@ -20,7 +24,7 @@ interface Reservation extends AttemptDemand { owner: string; state: "reserved" |
 export interface BudgetSnapshot { attempts: number; inputBytes: number; active: number; reservations: readonly Readonly<Reservation>[] }
 export interface ResourcePermit { readonly attemptId: string; settle(outcome: "completed" | "failed" | "cancelled"): Promise<void> }
 export class ResourceAdmissionError extends Error {
-  readonly code: "INVALID" | "AUTHORITY_CHANGED" | "DUPLICATE" | "EXHAUSTED" | "OWNERSHIP_LOST";
+  readonly code: "INVALID" | "AUTHORITY_CHANGED" | "DUPLICATE" | "EXHAUSTED" | "OWNERSHIP_LOST" | "DISPATCH_BLOCKED";
   constructor(code: ResourceAdmissionError["code"], message: string) {
     super(message); this.name = "ResourceAdmissionError"; this.code = code;
   }
@@ -40,11 +44,11 @@ function limits(x: ResourceLimits): ResourceLimits {
     !integer(x.maxConcurrent, 32) || x.maxConcurrent < 1 || x.maxConcurrent > x.maxAttempts) fail("INVALID", "unsupported resource limits");
   return Object.freeze({ maxAttempts: x.maxAttempts, maxInputBytes: x.maxInputBytes, maxConcurrent: x.maxConcurrent });
 }
-function binding(x: BudgetBinding): Readonly<BudgetBinding> {
+function binding<T extends GovernedBudgetBinding>(x: T): Readonly<T> {
   shape(x, ["version", "directory", "device", "inode", "journalDevice", "journalInode", "authorityDigest", "limits"]);
-  if (x.version !== "1.0" || typeof x.directory !== "string" || !isAbsolute(x.directory) || resolve(x.directory) !== x.directory ||
+  if (!["1.0", "2.0"].includes(x.version) || typeof x.directory !== "string" || !isAbsolute(x.directory) || resolve(x.directory) !== x.directory ||
     x.directory.length > 1024 || x.directory.split("/").includes(".pi") || ![x.device, x.inode, x.journalDevice, x.journalInode].every(v => typeof v === "string" && /^\d+$/.test(v)) || !digest(x.authorityDigest)) fail("INVALID", "invalid independent budget binding");
-  return Object.freeze({ version: "1.0", directory: x.directory, device: x.device, inode: x.inode, journalDevice: x.journalDevice, journalInode: x.journalInode, authorityDigest: x.authorityDigest, limits: limits(x.limits) });
+  return Object.freeze({ version: x.version, directory: x.directory, device: x.device, inode: x.inode, journalDevice: x.journalDevice, journalInode: x.journalInode, authorityDigest: x.authorityDigest, limits: limits(x.limits) }) as Readonly<T>;
 }
 function demand(x: AttemptDemand): AttemptDemand {
   shape(x, ["attemptId", "orderId", "experimentId", "kind", "parentAttemptId", "inputBytes", "inputDigest"]);
@@ -61,7 +65,13 @@ async function privateDirectory(path: string) {
 }
 
 /** Explicit one-time creation, never implicit reset/recovery. Keep this binding outside the mutable journal. */
-export async function createResourceBudget(input: { directory: string; authorityDigest: string; limits: ResourceLimits }): Promise<Readonly<BudgetBinding>> {
+type BudgetCreation = { directory: string; authorityDigest: string; limits: ResourceLimits };
+export function createResourceBudget(input: BudgetCreation): Promise<Readonly<BudgetBinding>> { return createBudget(input, "1.0"); }
+/** Explicit opt-in v2 journal; old readers refuse rather than ignore control events. */
+export function createDispatchBudget(input: BudgetCreation): Promise<Readonly<DispatchBudgetBinding>> { return createBudget(input, "2.0"); }
+function createBudget(input: BudgetCreation, version: "1.0"): Promise<Readonly<BudgetBinding>>;
+function createBudget(input: BudgetCreation, version: "2.0"): Promise<Readonly<DispatchBudgetBinding>>;
+async function createBudget(input: BudgetCreation, version: GovernedBudgetBinding["version"]): Promise<Readonly<GovernedBudgetBinding>> {
   shape(input, ["directory", "authorityDigest", "limits"]);
   const policy = limits(input.limits), directoryPath = input.directory, authorityDigest = input.authorityDigest;
   if (typeof directoryPath !== "string" || !isAbsolute(directoryPath) || resolve(directoryPath) !== directoryPath ||
@@ -72,7 +82,7 @@ export async function createResourceBudget(input: { directory: string; authority
   const file = await open(join(directoryPath, "budget.jsonl"), "wx", 0o600);
   const b = await runWithFinalizers(async () => {
     const journal = await file.stat({ bigint: true });
-    const result = binding({ version: "1.0", directory: directoryPath, device: String(st.dev), inode: String(st.ino),
+    const result = binding({ version, directory: directoryPath, device: String(st.dev), inode: String(st.ino),
       journalDevice: String(journal.dev), journalInode: String(journal.ino), authorityDigest, limits: policy });
     await file.writeFile(JSON.stringify(result) + "\n"); await file.sync(); return result;
   }, [{ label: "budget creation close failed", run: () => file.close() }]);
@@ -82,18 +92,18 @@ export async function createResourceBudget(input: { directory: string; authority
 }
 
 /** Host-side arithmetic for this exact independently retained binding. Not a money/CPU/memory cap. */
-export function openResourceBudget(input: BudgetBinding) {
+export function openResourceBudget<T extends GovernedBudgetBinding>(input: T) {
   const b = binding(input), path = join(b.directory, "budget.jsonl"), owner = randomUUID();
   let pinnedFile: string | undefined;
-  async function transaction<T>(work: (records: Reservation[], append: (event: unknown) => Promise<void>) => Promise<T>): Promise<T> {
+  async function transaction<T>(work: (records: Reservation[], append: (event: unknown) => Promise<void>, control: DispatchState) => Promise<T>, readOnly = false): Promise<T> {
     const checkRoot = async () => {
       const st = await privateDirectory(b.directory);
       if (String(st.dev) !== b.device || String(st.ino) !== b.inode) fail("AUTHORITY_CHANGED", "budget root identity changed");
     };
     await checkRoot();
-    return withFileLock(path, "resource budget", async () => {
+    const execute = async () => {
       await checkRoot();
-      const file = await open(path, constants.O_RDWR | constants.O_APPEND | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+      const file = await open(path, (readOnly ? constants.O_RDONLY : constants.O_RDWR | constants.O_APPEND) | constants.O_NOFOLLOW | constants.O_NONBLOCK);
       return runWithFinalizers(async () => {
         const st = await file.stat({ bigint: true }), key = `${st.dev}:${st.ino}`;
         if (!st.isFile() || st.nlink !== 1n || st.uid !== BigInt(process.getuid!()) || (st.mode & 0o077n) !== 0n || st.size > 2n * 1024n * 1024n) fail("INVALID", "unsafe or oversized budget journal");
@@ -105,11 +115,15 @@ export function openResourceBudget(input: BudgetBinding) {
         const text = new TextDecoder("utf-8", { fatal: true }).decode(buffer);
         if (!text.endsWith("\n")) fail("INVALID", "incomplete budget journal; no automatic recovery");
         const lines = text.slice(0, -1).split("\n");
-        if (lines.length > 2049 || JSON.stringify(binding(parseWorkJson(lines[0]) as unknown as BudgetBinding)) !== JSON.stringify(b)) fail("AUTHORITY_CHANGED", "budget header does not match independent authority");
-        const records: Reservation[] = [];
+        if (lines.length > (b.version === "2.0" ? 2305 : 2049) || JSON.stringify(binding(parseWorkJson(lines[0]) as unknown as GovernedBudgetBinding)) !== JSON.stringify(b)) fail("AUTHORITY_CHANGED", "budget header does not match independent authority");
+        const records: Reservation[] = [], control: DispatchState = { revision: 0, paused: false, records: [] };
         for (const line of lines.slice(1)) {
           const event = parseWorkJson(line) as Record<string, unknown>;
-          if (event.type === "reserve") {
+          if (event.type === "control-request" || event.type === "control-apply") {
+            if (b.version !== "2.0") fail("INVALID", "controls require explicit v2 binding");
+            replayDispatch(control, event, resourceBindingDigest(b), records.filter(r => r.state === "reserved").length);
+          } else if (event.type === "reserve") {
+            if (control.paused || control.records.some(r => r.application === "pending")) fail("INVALID", "reservation crossed dispatch barrier");
             shape(event, ["type", "owner", "demand"]);
             const d = demand(event.demand as AttemptDemand);
             if (!id(event.owner) || records.some(r => r.attemptId === d.attemptId) || (d.parentAttemptId !== null && !records.some(r => r.attemptId === d.parentAttemptId))) fail("INVALID", "invalid reservation sequence");
@@ -130,22 +144,60 @@ export function openResourceBudget(input: BudgetBinding) {
         };
         await unchanged();
         return await work(records, async event => {
+          if (readOnly) fail("INVALID", "inspection cannot write");
           const line = JSON.stringify(event) + "\n";
-          if (buffer.length + Buffer.byteLength(line) > 2 * 1024 * 1024) fail("EXHAUSTED", "journal capacity reached");
+          if (expectedSize + BigInt(Buffer.byteLength(line)) > 2n * 1024n * 1024n) fail("EXHAUSTED", "journal capacity reached");
           await unchanged(); await file.writeFile(line); expectedSize += BigInt(Buffer.byteLength(line)); await file.sync(); await unchanged();
-        });
+        }, control);
       }, [{ label: "budget journal close failed", run: () => file.close() }]);
-    }, { staleRecovery: "disabled" });
+    };
+    return readOnly ? execute() : withFileLock(path, "resource budget", execute, { staleRecovery: "disabled" });
   }
   return Object.freeze({
     binding: b,
+    controls(input: DispatchAuthority | null) {
+      if (b.version !== "2.0") fail("INVALID", "controls require explicit v2 budget creation");
+      const authority = dispatchAuthority(input), scope = resourceBindingDigest(b);
+      const authorized = (digest: string) => authority?.authorityDigest === b.authorityDigest && authority.requestDigests.includes(digest);
+      const apply = async (requestId: string, records: Reservation[], append: (event: unknown) => Promise<void>, control: DispatchState) => {
+        const pending = control.records.find(r => r.request.requestId === requestId && r.application === "pending");
+        if (!pending || !authorized(pending.digest) || records.some(r => r.state === "reserved")) return;
+        const event = { type: "control-apply", requestId: pending.request.requestId };
+        await append(event); replayDispatch(control, event, scope, 0);
+      };
+      return Object.freeze({
+        inspect: () => transaction(async (_records, _append, control) => freezeDispatch(control, scope), true),
+        async reconcile(requestId: string) {
+          if (typeof requestId !== "string" || !/^[a-zA-Z0-9:_-]{1,128}$/.test(requestId)) fail("INVALID", "exact request ID required for reconciliation");
+          return transaction(async (records, append, control) => { await apply(requestId, records, append, control); return freezeDispatch(control, scope); });
+        },
+        async request(input: DispatchRequest) {
+          const request = dispatchRequest(input), digest = dispatchRequestDigest(request);
+          if (request.bindingDigest !== scope) fail("AUTHORITY_CHANGED", "request is for another binding");
+          return transaction(async (records, append, control) => {
+            const previous = control.records.find(r => r.request.requestId === request.requestId);
+            if (previous) {
+              if (previous.digest !== digest) fail("DUPLICATE", "request ID cannot name another decision");
+              // Redelivery is readback only, never a second effect or implicit reconciliation.
+              return freezeDispatch(control, scope);
+            }
+            if (control.records.length >= 128) fail("EXHAUSTED", "control request capacity reached");
+            const event = { type: "control-request", request, decision: dispatchDecision(control, request, Boolean(authorized(digest))) };
+            await append(event); replayDispatch(control, event, scope, records.filter(r => r.state === "reserved").length);
+            if (event.decision === "approved") await apply(request.requestId, records, append, control);
+            return freezeDispatch(control, scope);
+          });
+        },
+      });
+    },
     async inspect(): Promise<Readonly<BudgetSnapshot>> {
       return transaction(async records => Object.freeze({ attempts: records.length, inputBytes: records.reduce((n, r) => n + r.inputBytes, 0),
-        active: records.filter(r => r.state === "reserved").length, reservations: Object.freeze(records.map(r => Object.freeze({ ...r }))) }));
+        active: records.filter(r => r.state === "reserved").length, reservations: Object.freeze(records.map(r => Object.freeze({ ...r }))) }), true);
     },
     async reserve(input: AttemptDemand): Promise<Readonly<ResourcePermit>> {
       const d = demand(input);
-      await transaction(async (records, append) => {
+      await transaction(async (records, append, control) => {
+        if (control.paused || control.records.some(r => r.application === "pending")) fail("DISPATCH_BLOCKED", "dispatch paused or awaiting verified boundary");
         if (records.some(r => r.attemptId === d.attemptId)) fail("DUPLICATE", "attempt identity already charged; never launch a redelivery");
         if (d.parentAttemptId !== null && !records.some(r => r.attemptId === d.parentAttemptId)) fail("INVALID", "parent attempt is not in this budget");
         if (records.length >= b.limits.maxAttempts || records.reduce((n, r) => n + r.inputBytes, 0) + d.inputBytes > b.limits.maxInputBytes ||
@@ -165,4 +217,4 @@ export function openResourceBudget(input: BudgetBinding) {
   });
 }
 
-export function resourceBindingDigest(b: BudgetBinding): string { return hash(JSON.stringify(binding(b))); }
+export function resourceBindingDigest(b: GovernedBudgetBinding): string { return hash(JSON.stringify(binding(b))); }

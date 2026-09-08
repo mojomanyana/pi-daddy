@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { runChild, type ChildRunResult } from "./run-child.ts";
 import { runWithFinalizers } from "./finalization.ts";
 import { beginExecutionRetention, retentionConfigurationDigest } from "./execution-retention.ts";
-import { openResourceBudget, resourceBindingDigest, type AttemptDemand, type BudgetBinding } from "./resource-budget.ts";
+import { openResourceBudget, resourceBindingDigest, type AttemptDemand, type GovernedBudgetBinding } from "./resource-budget.ts";
 import { DIGEST_PROFILE, DIGEST_WORKER, digestNamespaceArgs, digestRuntime, type DigestRuntime } from "./effect-profile-runtime.ts";
 export { DIGEST_PROFILE } from "./effect-profile-runtime.ts";
 
@@ -23,7 +23,7 @@ const child = (runtime: DigestRuntime, code: string, args: string[], fixture?: s
 });
 
 /** Actual bounded native probes, not an executable-presence flag. Trusted fixture code only. */
-export async function prepareDigestProfile(binding: BudgetBinding): Promise<Readonly<DigestProfile>> {
+export async function prepareDigestProfile(binding: GovernedBudgetBinding): Promise<Readonly<DigestProfile>> {
   const budget = openResourceBudget(binding);
   await budget.inspect(); // Required admission state failures remain failures, not an unavailable fallback.
   const runtime = await digestRuntime();
