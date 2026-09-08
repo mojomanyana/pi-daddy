@@ -15,7 +15,7 @@ export { experimentBindingDigest, type ExperimentBinding } from "./experiment-st
 export interface ExperimentView {
   version: "experiment-view-v1"; experimentId: string; mode: ExperimentCharter["mode"]; variants: readonly VariantRecord[];
   budget: Readonly<BudgetSnapshot> | null; cancellations: readonly { request: ExperimentCancellation; outcome: "requested-or-unknown" | "observed-cancelled" | "finished-without-cancel" }[];
-  diagnostics: readonly string[]; acceptance: "not-assessed"; configuration: { model: null; effort: null; skills: null }; freshness: "snapshot-unknown";
+  control: "not-assessed" | "failed" | "unknown"; diagnostics: readonly string[]; acceptance: "not-assessed"; configuration: { model: null; effort: null; skills: null }; freshness: "snapshot-unknown";
 }
 function approved(a: ExperimentAuthority | null, b: ExperimentBudgetBinding, c: ExperimentCharter) {
   if (!a || a.authorityDigest !== b.authorityDigest || !a.charterDigests.includes(experimentCharterDigest(c))) throw new Error("independent exact experiment authority unavailable");
@@ -41,6 +41,7 @@ export function openExperiment(input: ExperimentBinding, hostAuthority: Experime
   const store = experimentStore(input), b = store.binding, c = b.charter, a = experimentAuthority(hostAuthority), owner = randomUUID(), digest = experimentBindingDigest(b);
   const budget = openResourceBudget(b.budget), handles = new Map<string, AbortController>();
   let live: ExperimentRun | null = null, starting = false, wake: (() => void) | null = null, epoch = 0;
+  let fault = false, failureAcknowledged: boolean | null = null;
   const notify = () => { epoch++; wake?.(); wake = null; };
   const artifact = (id: string) => join(b.directory, "variant-" + byteHash(id), "result.json");
   const load = async () => {
@@ -50,9 +51,12 @@ export function openExperiment(input: ExperimentBinding, hostAuthority: Experime
   };
   const append = (event: unknown) => store.transaction(async (events, write) => { replayExperiment(c, [...events, cloneExperiment(event) as Record<string, unknown>]); await write(event); });
   const unknown = (): ExperimentView => ({ version: "experiment-view-v1", experimentId: c.experimentId, mode: c.mode,
-    variants: c.variants.map(v => ({ variantId: v.variantId, kind: v.kind, operation: v.operation, executionId: v.executionId, state: "unknown", artifactDigest: null, spawned: false })), budget: null, cancellations: [], diagnostics: ["controller-or-storage-unknown"], acceptance: "not-assessed", configuration: { model: null, effort: null, skills: null }, freshness: "snapshot-unknown" });
+    variants: c.variants.map(v => ({ variantId: v.variantId, kind: v.kind, operation: v.operation, executionId: v.executionId, state: "unknown", artifactDigest: null, spawned: false })), budget: null, cancellations: [], control: "unknown", diagnostics: ["controller-or-storage-unknown", ...(fault ? ["controller-failure-observed"] : [])], acceptance: "not-assessed", configuration: { model: null, effort: null, skills: null }, freshness: "snapshot-unknown" });
   const inspect = async (control = false): Promise<ExperimentView> => {
     const state = await load(), diagnostics: string[] = [], accounting = await (control ? budget.controlSnapshot() : budget.inspect());
+    if (state.controllerFailed) diagnostics.push("controller-failure-record-observed");
+    if (fault) diagnostics.push("controller-failure-observed");
+    if (failureAcknowledged === false) diagnostics.push("controller-failure-recording-unacknowledged");
     for (const v of state.variants) {
       if (v.artifactDigest) {
         try { await ownedDirectory(join(b.directory, "variant-" + byteHash(v.executionId))); if (byteHash(await readExperimentFile(artifact(v.executionId), 16384)) !== v.artifactDigest) throw new Error("artifact mismatch"); }
@@ -62,7 +66,7 @@ export function openExperiment(input: ExperimentBinding, hostAuthority: Experime
     return freezeWork({ version: "experiment-view-v1", experimentId: c.experimentId, mode: c.mode, variants: state.variants, budget: accounting,
       cancellations: state.cancellations.map(request => { const v = state.variants.find(v => v.executionId === request.executionId)!; return { request,
         outcome: v.state === "cancelled" ? "observed-cancelled" : v.artifactDigest ? "finished-without-cancel" : "requested-or-unknown" }; }),
-      diagnostics, acceptance: "not-assessed", configuration: { model: null, effort: null, skills: null }, freshness: "snapshot-unknown" }) as ExperimentView;
+      control: state.controllerFailed || fault ? "failed" : "not-assessed", diagnostics, acceptance: "not-assessed", configuration: { model: null, effort: null, skills: null }, freshness: "snapshot-unknown" }) as ExperimentView;
   };
   const computeOrder = async (control = false) => {
     if (!c.order) throw new Error("not an order controller");
@@ -73,7 +77,7 @@ export function openExperiment(input: ExperimentBinding, hostAuthority: Experime
       } catch { /* frozen view: use a detached unknown row below */ digests.set(v.executionId,"unavailable"); }
     }
     const variants=view.variants.map(v=>digests.get(v.executionId)==="unavailable"?{...v,state:"unknown" as const}:v);
-    return { view, nodes:evaluateOrder(c.order,variants,digests,state.decisions), superseded:state.superseded };
+    return { view, nodes:evaluateOrder(c.order,variants,digests,state.decisions).map(n => view.control === "not-assessed" ? n : {...n, action:"stakeholder" as const}), superseded:state.superseded };
   };
   const orderView = () => computeOrder(false);
   return Object.freeze({ binding: b, inspect: () => inspect(false), reconcile: () => inspect(false), orderView,
@@ -136,17 +140,17 @@ export function openExperiment(input: ExperimentBinding, hostAuthority: Experime
         for (const request of (await load()).cancellations) handles.get(request.executionId)?.abort("operator-cancellation");
         const abort = (reason = "controller-failure") => { handles.forEach(h => h.abort(reason)); notify(); };
         const timer = setTimeout(() => abort("deadline"), Math.max(1, state.claim!.deadlineAt - Date.now()));
-        let fault = false;
         const settled = c.variants.map(() => {
           let resolve!: (success: boolean) => void;
           return { promise: new Promise<boolean>(done => { resolve = done; }), done: (success: boolean) => resolve(success) };
         });
         const one = async (i: number) => {
-          const v = c.variants[i]; let success = false;
+          const v = c.variants[i]; let success = false, launched = false, primaryResult: VariantRecord | null = null;
           try {
             if (!c.order && v.kind === "retry" && await settled[c.variants.findIndex(p => p.executionId === v.parentExecutionId)].promise) handles.get(v.executionId)!.abort("retry-not-needed");
             await append({ type: "dispatch", executionId: v.executionId });
             used.add(i);
+            launched = true;
             const running = reserved[i].run(handles.get(v.executionId)!.signal);
             // Consume both promises even on bookkeeping failure. No untracked rejection or worker.
             const observed = reserved[i].started.then(async value => { if (value === "spawned") await append({ type: "spawn", executionId: v.executionId }); });
@@ -155,12 +159,20 @@ export function openExperiment(input: ExperimentBinding, hostAuthority: Experime
             const data = Buffer.from(JSON.stringify(result.value) + "\n"), out = result.value.output;
             const cancelled = out.aborted && (Boolean(out.signal) || await reserved[i].started === "settled-without-spawn");
             await ownedDirectory(join(b.directory, "variant-" + byteHash(v.executionId))); await writeExperimentFile(artifact(v.executionId), data);
-            await append({ type: "result", executionId: v.executionId, artifactDigest: byteHash(data), state: out.timedOut || cancelled && handles.get(v.executionId)?.signal.reason === "deadline" ? "timed-out" : cancelled ? "cancelled" : result.value.digest ? "completed" : "failed" });
+            const state = out.timedOut || cancelled && handles.get(v.executionId)?.signal.reason === "deadline" ? "timed-out" : cancelled ? "cancelled" : result.value.digest ? "completed" : "failed";
+            // Original worker/artifact outcome, NOT a successful controller acknowledgement.
+            primaryResult = {variantId:v.variantId,kind:v.kind,operation:v.operation,executionId:v.executionId,state,artifactDigest:byteHash(data),spawned:await reserved[i].started === "spawned"};
+            await append({ type: "result", executionId: v.executionId, artifactDigest: byteHash(data), state });
             success = Boolean(result.value.digest);
-          } catch { fault = true; abort(); }
+          } catch {
+            fault = true; abort();
+            // Failed dispatch acknowledgement still consumes the ORIGINAL unused permit without
+            // spawning and resolves started, including when the control journal stays locked.
+            if (!launched) { used.add(i); await reserved[i].run(AbortSignal.abort()).catch(() => {}); }
+          }
           finally {
             settled[i].done(success); handles.delete(v.executionId);
-            if (i === 0) { const view = await inspect().catch(unknown); primary.resolve(view.variants[0]); }
+            if (i === 0) primary.resolve(primaryResult ? freezeWork(primaryResult) : unknown().variants[0]);
           }
         };
         let resolveBoundary!: (view: ExperimentView) => void;
@@ -197,12 +209,16 @@ export function openExperiment(input: ExperimentBinding, hostAuthority: Experime
               else { used.add(i); await reserved[i].run(AbortSignal.abort()).catch(() => { fault = true; }); }
             }
             handles.clear();
-            if (fault) await append({ type: "controller-unknown" }).catch(() => {});
+            if (fault) {
+              try { await append({ type: "controller-unknown" }); failureAcknowledged = true; }
+              catch { failureAcknowledged = false; } // No fabricated durable acknowledgement.
+            }
           }
           const view = await inspect().catch(unknown); primary.resolve(view.variants[0]); resolveBoundary(view); return view;
         })();
         live = Object.freeze({ primary: primary.promise, completion, boundary: c.order ? boundary : completion, started: Object.freeze(reserved.map(r => r.started)) }); return live;
       } catch (error) {
+        fault = true;
         for (const run of reserved) await run.run(AbortSignal.abort()).catch(() => {});
         const state = await load().catch(() => null); if (state?.claim?.owner === owner) await append({ type: "controller-unknown" }).catch(() => {});
         throw error;

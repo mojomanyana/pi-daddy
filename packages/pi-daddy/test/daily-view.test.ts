@@ -8,12 +8,13 @@ import { promisify } from "node:util";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 after(cleanupTempDirs);
 import { dailyFixture, dailyAuthority } from "./daily-view-fixture.ts";
-import { fixtureText, fixtureEventRef, revisionRevalidationFixture } from "./work-ledger-fixtures.ts";
+import { fixtureText, fixtureEventRef, revisionRevalidationFixture, walkingFixture, fixtureAuthority } from "./work-ledger-fixtures.ts";
 import { createDailyViewReader, readDailyView } from "../src/daily-view.ts";
 import { renderDailyView } from "../src/daily-view-render.ts";
 import { parseArchiveProjection } from "../src/daily-view-input.ts";
 import { dashboardFrame, ENV_DAILY_ARCHIVE, ENV_DAILY_WORK, ENV_DAILY_SELECTION } from "../src/dashboard-cli.ts";
 import { openOrReuseDashboard } from "../src/dashboard-herdr.ts";
+import { projectWorkLedger } from "../src/work-ledger.ts";
 const hash = (bytes: Uint8Array | string) => createHash("sha256").update(bytes).digest("hex");
 const contract = new URL("../contracts/daily-view/v1/", import.meta.url);
 async function fixture() {
@@ -22,6 +23,15 @@ async function fixture() {
   await writeFile(archiveProjectionPath, await readFile(new URL("p03/fixtures/retained-executions.json", contract)));
   return { dir, workLedgerPath, archiveProjectionPath, workContext: dailyAuthority() };
 }
+
+test("distinct real P01 authority snapshot identity supports only exact current claim receipts", async () => {
+  const dir=await tempDir("daily-distinct-authority-"),workLedgerPath=join(dir,"work.jsonl"),text=fixtureText(walkingFixture().events),workContext=fixtureAuthority();await writeFile(workLedgerPath,text);
+  assert.notEqual(workContext.authority!.snapshot.id,workContext.selectedSnapshot!.snapshot.id);
+  const work=projectWorkLedger(text,workContext),view=await readDailyView({workLedgerPath,workContext});assert.deepEqual(work.progress,{accepted:1,total:1});assert.deepEqual(view.progress,work.progress);assert.equal(view.authority,"supplied-host-context");
+  const stale=structuredClone(workContext);stale.authority!.decisions[0].binding.snapshot.digest="c".repeat(64);
+  const rejected=await readDailyView({workLedgerPath,workContext:stale});assert.equal(rejected.authority,"stale-for-selection");assert.equal(rejected.progress,null);assert.ok(rejected.obligations.every(o=>o.acceptance==="unresolved"));assert.equal(projectWorkLedger(text,stale).progress!.accepted,0);
+  const missing=await readDailyView({workLedgerPath,workContext:{...workContext,authority:null}});assert.equal(missing.progress,null);assert.equal(missing.authority,"unavailable");assert.deepEqual(await readFile(workLedgerPath,"utf8"),text);
+});
 
 test("P03 exact contract and P01 independent fixture authority yield two accepted of three, not three exits", async () => {
   const options = await fixture(), view = await readDailyView(options);

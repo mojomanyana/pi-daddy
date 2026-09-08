@@ -51,6 +51,11 @@ choices read back; conflicts, stale evidence and missing authority refuse. Decis
 bindingDigest, nodeId, evidenceDigest, authorityId and choice. Evidence identity includes policy, node,
 winning execution and artifact. No implicit decision changes or acceptance inheritance.
 
+Controller `control:failed|unknown` and diagnostics propagate through inspect/boundary/completion,
+including when later reads find complete worker results. These outcomes disable dispatch and require
+stakeholder action; retained objective artifacts are not erased. `not-assessed` does not certify the absence
+of a lost unrecorded controller failure. A primary worker result is not controller completion authority.
+
 Status returns nodes/obligation refs, objective state, next structural action, policy pin, accounting and
 explicit dispatchAuthorized. An eligible graph action is not permission when dispatchAuthorized:false.
 No provider is called; modelTransport is not-used-fixed-profile. Public inspect/reconcile are read-only and
@@ -82,6 +87,11 @@ rather than an unhandled background execution promise or fabricated success.
 Unused reservations settle without launching at final bounded termination; attempts/bytes remain charged.
 No generic P01 work-acceptance event is synthesized: the view keeps acceptance:not-assessed. Satisfied means
 this explicitly authorized objective/decision policy, not full task, skill, evaluation or factory acceptance.
+
+Rollback restores the exact previous activation stack, including repeated candidate digests. A restored
+nonbaseline policy retains its adoption ID, current authority/facts and expiry revalidation for new orders;
+only the original baseline has null activation. Previously recorded bug-shaped order pins with null adoption
+for a restored nonbaseline candidate now refuse replay. No silent migration or acceptance transfer.
 
 ## Applied adoption, subsequent-order pins and rollback
 

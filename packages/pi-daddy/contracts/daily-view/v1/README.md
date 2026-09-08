@@ -4,6 +4,11 @@ Implemented candidate, local only. Independent overall review and formal accepta
 This is an actual read-only path through the existing `pi-daddy-dashboard` CLI/Herdr plugin, not a control
 API or an accepted-work counter derived from archive exits. P05 targeted control remains unavailable here.
 
+The authority snapshot has its OWN identity namespace, distinct from the selected work snapshot.
+Current/stale applicability derives from actual P01 claim/selection/matched-receipt validation, not equality
+of those IDs/digests. Missing authority and superseded/mismatched receipts cannot carry acceptance forward.
+The real walking P01 fixture with distinct identities is covered; P01 validation itself is unchanged.
+
 ## Pinned P03 input, independent P01 authority
 
 `p03/` vendors exact immutable Git blobs from skill-harness

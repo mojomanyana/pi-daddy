@@ -215,7 +215,7 @@
   "scripts": {
     "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.check.json",
-    "test": "node --test test/*.test.ts",
+    "test": "node --test --test-concurrency=2 --test-timeout=45000 test/*.test.ts",
     "test:integration": "node --test test-integration/*.it.ts",
     "test:integration:ci": "node --test test-integration/approval.it.ts test-integration/governance.it.ts",
     "contracts:generate": "node scripts/generate-ledger-v3-contract.ts",

@@ -6,7 +6,7 @@ export function replayExperiment(c: ExperimentCharter, events: Record<string, un
   let claim: { owner: string; deadlineAt: number } | null = null, admitted = false;
   const variants: VariantRecord[] = c.variants.map(v => ({ variantId: v.variantId, kind: v.kind, operation: v.operation, executionId: v.executionId, state: "unstarted", artifactDigest: null, spawned: false }));
   const cancellations: ExperimentCancellation[] = [], decisions: FactoryDecision[] = [];
-  let superseded = false;
+  let superseded = false, controllerFailed = false;
   for (const e of events) {
     if (e.type === "order-decision") {
       closed(e,["type","request"]);const d=factoryDecision(e.request as FactoryDecision);
@@ -24,7 +24,7 @@ export function replayExperiment(c: ExperimentCharter, events: Record<string, un
       if (!variants.some(v => v.executionId === request.executionId) || cancellations.some(r => r.requestId === request.requestId) || cancellations.length >= 64) throw new Error("invalid cancellation sequence");
       cancellations.push(request);
     } else if (e.type === "controller-unknown") {
-      closed(e, ["type"]); if (!claim) throw new Error("missing claim");
+      closed(e, ["type"]); if (!claim) throw new Error("missing claim"); controllerFailed = true;
       variants.filter(v => v.artifactDigest === null).forEach(v => v.state = "unknown");
     } else {
       const v = variants.find(v => v.executionId === e.executionId);
@@ -40,5 +40,5 @@ export function replayExperiment(c: ExperimentCharter, events: Record<string, un
       } else throw new Error("unknown experiment event");
     }
   }
-  return { claim, admitted, variants, cancellations, decisions, superseded };
+  return { claim, admitted, variants, cancellations, decisions, superseded, controllerFailed };
 }

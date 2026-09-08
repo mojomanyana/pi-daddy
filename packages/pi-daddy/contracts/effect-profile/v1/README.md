@@ -6,6 +6,13 @@ is unchanged. The one supported new operation is `linux-bwrap-digest-v1`: hash a
 with a fixed trusted worker and return its digest/length on stdout. It is useful for independently checking
 small evidence payloads, not executing an arbitrary factory order. Full P06 remains only partially covered.
 
+The unchanged executable guard checks Linux, resolved Node then exact bwrap/prlimit paths, regular-file
+type, no group/other write bits, and size<=256MiB. Refusals keep the original error message and add exact
+path/details plus RUNTIME_NOT_REGULAR / RUNTIME_WRITABLE / RUNTIME_TOO_LARGE. Independent read-only CI
+telemetry observes all prerequisites; conforms:false is not namespace success and does not skip tests.
+No installation, shared chmod, runner provisioning or host policy weakening is performed. Actual remote
+24.20 predicate remains unknown in the old logs; Node22's missing bwrap remains a provisioning blocker.
+
 ## Public API
 
 `pi-daddy/resource-budget`: `createResourceBudget`, `openResourceBudget`, `resourceBindingDigest` and types.

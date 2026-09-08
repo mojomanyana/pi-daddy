@@ -30,6 +30,7 @@ env:
 jobs:
   checks:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -52,7 +53,15 @@ jobs:
         working-directory: packages/pi-daddy
         run: npm run typecheck
 
+      # Diagnostic observations only: false conformance does not skip/filter the required suite.
+      # Native prerequisite provisioning is still required; this step installs/configures nothing.
+      - name: runtime prerequisite telemetry
+        timeout-minutes: 1
+        working-directory: packages/pi-daddy
+        run: node scripts/runtime-preflight.ts
+
       - name: unit tests
+        timeout-minutes: 5
         working-directory: packages/pi-daddy
         run: npm test
 

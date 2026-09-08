@@ -10,17 +10,18 @@ export function registryInitial(value:RegistryInitial){const v=cloneExperiment(v
 export function replayRegistry(b:FactoryRegistryBinding,events:Record<string,unknown>[]){
   const initial=registryInitial(b.initial);let revision=0,candidate=initial.baseline,activation:ActivationRequest|null=null;
   const changes=new Map<string,string>(),orders=new Map<string,PinnedOrder>(),migrations=new Map<string,{digest:string;sourceOrderId:string;targetOrderId:string;application:string}>();
-  const candidates=new Map([[fixedPolicyDigest(candidate),candidate]]);
+  const candidates=new Map([[fixedPolicyDigest(candidate),candidate]]), lineage:(ActivationRequest|null)[]=[];
   for(const e of events){
     if(e.type==="activate"){
       closed(e,["type","request"]);const r=cloneExperiment(e.request) as ActivationRequest;closed(r,["version","requestId","expectedRevision","expectedCandidateDigest","candidate","binding","receipt"]);
       const {id,version,...input}=r.binding;
       if(r.version!=="factory-activation-v1"||typeof r.requestId!=="string"||!/^[a-zA-Z0-9:_-]{1,128}$/.test(r.requestId)||version!=="adoption-binding-v1"||buildAdoptionBinding(input).id!==id||r.expectedRevision!==revision||r.expectedCandidateDigest!==fixedPolicyDigest(candidate)||r.binding.scopeDigest!==initial.scopeDigest||r.binding.rollbackCandidateDigest!==fixedPolicyDigest(candidate)||r.binding.candidateDigest!==fixedPolicyDigest(r.candidate)||r.binding.assessmentPolicyDigest!==r.candidate.acceptancePolicyDigest||changes.has(r.requestId))throw new Error("invalid activation sequence");
-      changes.set(r.requestId,activationRequestDigest(r));candidate=fixedPolicy(r.candidate);candidates.set(fixedPolicyDigest(candidate),candidate);activation=r;revision++;
+      changes.set(r.requestId,activationRequestDigest(r));lineage.push(activation);candidate=fixedPolicy(r.candidate);candidates.set(fixedPolicyDigest(candidate),candidate);activation=r;revision++;
     }else if(e.type==="rollback"){
       closed(e,["type","request","fromRevision"]);const r=e.request as RollbackRequest;
       if(!activation||e.fromRevision!==revision||changes.has(r.id)||buildRollbackRequest(activation.receipt,r.reason,[...r.evidence],r.expiresAt).id!==r.id||r.restoreCandidateDigest!==activation.binding.rollbackCandidateDigest)throw new Error("invalid rollback sequence");
-      const restored=candidates.get(r.restoreCandidateDigest);if(!restored)throw new Error("rollback bytes not registered");changes.set(r.id,experimentHash(r));candidate=restored;activation=null;revision++;
+      const restored=candidates.get(r.restoreCandidateDigest);if(!restored)throw new Error("rollback bytes not registered");changes.set(r.id,experimentHash(r));candidate=restored;if(!lineage.length)throw new Error("missing rollback lineage");activation=lineage.pop()!;
+      if((activation?.binding.candidateDigest??fixedPolicyDigest(initial.baseline))!==r.restoreCandidateDigest)throw new Error("rollback lineage mismatch");revision++;
     }else if(e.type==="order-pin"){
       closed(e,["type","charter","candidate","compiledDigest","adoptionId"]);const charter=factoryCharter(e.charter as FactoryOrderCharter),policy=fixedPolicy(e.candidate as FixedPolicy);
       if(orders.size>=32||orders.has(charter.orderId)||charter.scopeDigest!==initial.scopeDigest||charter.pin.revision!==revision||charter.pin.candidateDigest!==fixedPolicyDigest(candidate)||fixedPolicyDigest(policy)!==fixedPolicyDigest(candidate)||e.adoptionId!==(activation?.receipt.id??null)||typeof e.compiledDigest!=="string"||!/^[a-f0-9]{64}$/.test(e.compiledDigest))throw new Error("invalid order pin sequence");

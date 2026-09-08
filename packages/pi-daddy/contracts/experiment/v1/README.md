@@ -88,6 +88,21 @@ records unknown when possible. Whole-experiment deadline aborts the actual origi
 queued attempts; per-worker native deadlines still apply. Required I/O/settlement failures are not success.
 No caller callback or boolean supplies a cancellation outcome.
 
+## Controller failure versus worker outcome (QUAL001 repair)
+
+`ExperimentView.control` is `not-assessed | failed | unknown`; it never certifies clean controller
+completion from worker states. Existing controller-unknown events now replay as explicit failure even
+when complete result records already exist. Process-local mandatory failures remain visible if recording
+fails; `controller-failure-recording-unacknowledged` is not a successful durability acknowledgement.
+Fresh readers observe retained failure records; absent a record they cannot reconstruct lost process
+state, so control remains not-assessed. Unavailable reads return unknown on settlement paths.
+
+Primary is the ORIGINAL worker/artifact outcome after successful artifact persistence, not a whole-controller
+read or bookkeeping success. It does not wait for a shadow or racing public inspection. Completion and
+boundary carry explicit control failure/unknown; factory wrappers preserve it. Failed pre-dispatch writes
+still consume original unused permits without spawning and settle started waiters. No refunds/relaunch.
+All artifact bytes and charges remain separate from required control append/sync/close/lock-release failure.
+
 ## Exact owned cancellation
 
 `ExperimentCancellation {version:'experiment-cancel-v1',requestId,bindingDigest,executionId}` binds one

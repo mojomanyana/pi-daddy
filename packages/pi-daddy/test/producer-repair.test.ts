@@ -7,13 +7,15 @@ import { createResourceBudget, openResourceBudget } from "../src/resource-budget
 import { join } from "node:path";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 after(cleanupTempDirs);
+import { ownedRuntimeFixture } from "./owned-runtime-fixture.ts";
 
 test("missing namespace prerequisites remain a failure but cannot leak the fixture listener", async () => {
   const dir = await tempDir("namespace-lifecycle-");
+  const runtime = await ownedRuntimeFixture(dir);
   let result: any;
   const env = { ...process.env }; delete env.NODE_TEST_CONTEXT;
   try {
-    await promisify(execFile)(process.execPath, ["--import", new URL("./effect-profile-missing-runtime.mjs", import.meta.url).pathname,
+    await promisify(execFile)(runtime, ["--import", new URL("./effect-profile-missing-runtime.mjs", import.meta.url).pathname,
       "--test", "--test-name-pattern=^actual namespace denies", new URL("./effect-profile.test.ts", import.meta.url).pathname], { env, timeout: 8000 });
     assert.fail("a missing runtime must not pass its namespace test");
   } catch (error) { result = error; }

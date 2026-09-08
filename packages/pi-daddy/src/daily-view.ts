@@ -73,9 +73,11 @@ export function createDailyViewReader() {
     if (gap) issues.push("observation-gap; resnapshot is not continuity");
     if (archiveStatus !== "read") issues.push(`archive-${archiveStatus}`);
     if (workStatus !== "read") issues.push(`work-${workStatus}`);
-    const authority: DailyView["authority"] = !context.authority ? "unavailable" :
-      context.authority.snapshot.id !== context.selectedSnapshot?.snapshot.id || context.authority.snapshot.digest !== context.selectedSnapshot?.snapshot.digest
-        ? "stale-for-selection" : "supplied-host-context";
+    // Authority snapshot and selected work snapshot inhabit different identity namespaces.
+    // Applicability comes from P01's exact claim/selection/receipt validation, never ID equality.
+    const stale = !work.claims.some(c => c.matchedReceiptIds.length) && work.claims.some(c =>
+      c.applicability === "superseded" || c.problems.some(p => p.code === "RECEIPT_MISMATCH"));
+    const authority: DailyView["authority"] = !context.authority ? "unavailable" : stale ? "stale-for-selection" : "supplied-host-context";
     if (authority !== "supplied-host-context") issues.push(`host-authority-${authority}`);
     const events = workText && work.scopeState === "valid" ? parseWorkLedgerText(workText).events : [];
     const selected = events.find(e => e.event === "work_snapshot" && e.eventId === context.selectedSnapshot?.event.eventId && e.digest === context.selectedSnapshot.event.digest);
