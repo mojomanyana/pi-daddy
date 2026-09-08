@@ -38,9 +38,12 @@ export { readDailyView, createDailyViewReader, DAILY_VIEW_VERSION, type DailyVie
   type DailyAttempt, type DailyObligation } from "./daily-view.ts";
 export { renderDailyView } from "./daily-view-render.ts";
 export { parseArchiveProjection, ARCHIVE_PROJECTION_VERSION } from "./daily-view-input.ts";
+export { bindWorkIntent } from "./intent-application.ts";
+export { intentRequestDigest, parseIntentRequest, type IntentRequest, type IntentSelection, type IntentPriority,
+  type IntentAdmission, type IntentSnapshot, type IntentReceipt, type WorkIntentBinding } from "./intent-control.ts";
 export { dispatchRequestDigest, parseDispatchRequest, type DispatchRequest, type DispatchAuthority, type DispatchRecord, type DispatchSnapshot } from "./dispatch-control.ts";
-export { createResourceBudget, createDispatchBudget, openResourceBudget, resourceBindingDigest, ResourceAdmissionError,
-  type BudgetBinding, type DispatchBudgetBinding, type GovernedBudgetBinding, type ResourceLimits, type AttemptDemand, type ResourcePermit, type BudgetSnapshot } from "./resource-budget.ts";
+export { createResourceBudget, createDispatchBudget, createIntentBudget, openResourceBudget, resourceBindingDigest, ResourceAdmissionError,
+  type BudgetBinding, type DispatchBudgetBinding, type IntentBudgetBinding, type GovernedBudgetBinding, type ResourceLimits, type AttemptDemand, type ResourcePermit, type BudgetSnapshot } from "./resource-budget.ts";
 export { prepareDigestProfile, runDigestProfile, DIGEST_PROFILE, EffectProfileUnavailableError,
   type DigestProfile, type DigestAttempt } from "./effect-profile.ts";
 export { planSpawn, type SpawnPlan, type SpawnPlanInput } from "./spawn.ts";

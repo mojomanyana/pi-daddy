@@ -5,6 +5,7 @@ import { runChild, type ChildRunResult } from "./run-child.ts";
 import { runWithFinalizers } from "./finalization.ts";
 import { beginExecutionRetention, retentionConfigurationDigest } from "./execution-retention.ts";
 import { openResourceBudget, resourceBindingDigest, type AttemptDemand, type GovernedBudgetBinding } from "./resource-budget.ts";
+import { intentKey, type IntentAdmission } from "./intent-control.ts";
 import { DIGEST_PROFILE, DIGEST_WORKER, digestNamespaceArgs, digestRuntime, type DigestRuntime } from "./effect-profile-runtime.ts";
 export { DIGEST_PROFILE } from "./effect-profile-runtime.ts";
 
@@ -44,7 +45,7 @@ export async function prepareDigestProfile(binding: GovernedBudgetBinding): Prom
   return result;
 }
 
-export interface DigestAttempt { attempt: Omit<AttemptDemand, "inputBytes" | "inputDigest">; bytes: Uint8Array }
+export interface DigestAttempt { attempt: Omit<AttemptDemand, "inputBytes" | "inputDigest">; bytes: Uint8Array; intent?: IntentAdmission }
 /** A fixed, useful non-shell operation: hash at most 16 KiB. No writable destinations or provider calls.
  * The opaque profile is bound to one budget. A claimed profile name/receipt cannot authorize a launch. */
 export async function runDigestProfile(profile: DigestProfile, request: DigestAttempt, signal?: AbortSignal): Promise<Readonly<{
@@ -52,17 +53,19 @@ export async function runDigestProfile(profile: DigestProfile, request: DigestAt
 }>> {
   const prepared = profiles.get(profile);
   if (!prepared || profile.profile !== DIGEST_PROFILE) throw new EffectProfileUnavailableError("unsupported or unprobed effect profile; no launch");
-  if (!request || typeof request !== "object" || Reflect.ownKeys(request).length !== 2 ||
-    !["attempt", "bytes"].every(k => { const d = Object.getOwnPropertyDescriptor(request, k); return d && d.enumerable && Object.hasOwn(d, "value"); }) ||
+  const requestKeys = ["attempt", "bytes", ...(request && Object.hasOwn(request, "intent") ? ["intent"] : [])];
+  if (!request || typeof request !== "object" || Reflect.ownKeys(request).length !== requestKeys.length ||
+    !requestKeys.every(k => { const d = Object.getOwnPropertyDescriptor(request, k); return d && d.enumerable && Object.hasOwn(d, "value"); }) ||
     !(request.bytes instanceof Uint8Array) || request.bytes.byteLength > 16384) throw new TypeError("bounded byte-only request required; no destination, code, money or workspace override");
   const bytes = Buffer.from(request.bytes), inputDigest = hash(bytes);
+  const selectedIntent: IntentAdmission | undefined = Object.hasOwn(request, "intent") ? JSON.parse(intentKey(request.intent)) : undefined;
   const descriptors = Object.getOwnPropertyDescriptors(request.attempt);
   const keys = ["attemptId", "orderId", "experimentId", "kind", "parentAttemptId"];
   if (Reflect.ownKeys(request.attempt).length !== keys.length || keys.some(k => !descriptors[k]?.enumerable || !Object.hasOwn(descriptors[k], "value"))) throw new TypeError("closed attempt identity required");
   const attempt = Object.fromEntries(keys.map(k => [k, descriptors[k].value])) as DigestAttempt["attempt"];
   if (signal?.aborted) throw new EffectProfileUnavailableError("cancelled before reservation/launch");
   if (retentionConfigurationDigest(await digestRuntime()) !== profile.runtimeDigest) throw new EffectProfileUnavailableError("runtime changed since the native profile probe");
-  const permit = await prepared.budget.reserve({ ...attempt, inputBytes: bytes.length, inputDigest });
+  const permit = await prepared.budget.reserve({ ...attempt, inputBytes: bytes.length, inputDigest }, selectedIntent);
   // From this point every outcome costs the full reservation. No posthoc result refunds resources.
   const retention = beginExecutionRetention({ executionId: attempt.attemptId, parentExecutionId: attempt.parentAttemptId,
     childId: "digest", toolCallId: null, executor: "process", taskDigest: inputDigest, definitionDigest: hash(DIGEST_WORKER),

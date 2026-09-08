@@ -48,21 +48,21 @@ export function dispatchAuthority(input: DispatchAuthority | null): Readonly<Dis
   if (!hex(input.authorityDigest) || !Array.isArray(copy) || copy.length > 128 || !copy.every(hex) || new Set(copy).size !== copy.length) throw new TypeError("invalid independent dispatch authority");
   return Object.freeze({ authorityDigest: input.authorityDigest, requestDigests: Object.freeze([...copy] as string[]) });
 }
-export function dispatchDecision(state: DispatchState, request: DispatchRequest, authorized: boolean): DispatchRecord["decision"] {
+export function dispatchDecision(state: DispatchState, request: DispatchRequest, authorized: boolean, otherPending = false): DispatchRecord["decision"] {
   if (!authorized) return "authority-unavailable";
   if (!["pause-dispatch", "resume-dispatch"].includes(request.action)) return "unsupported";
   if (request.expectedRevision !== state.revision) return "stale";
-  if (state.records.some(r => r.application === "pending")) return "busy";
+  if (otherPending || state.records.some(r => r.application === "pending")) return "busy";
   return "approved";
 }
 /** Replay operational controls only; no work-intent or acceptance projection is maintained here. */
-export function replayDispatch(state: DispatchState, event: Record<string, unknown>, bindingDigest: string, active: number): void {
+export function replayDispatch(state: DispatchState, event: Record<string, unknown>, bindingDigest: string, active: number, otherPending = false): void {
   if (event.type === "control-request") {
     controlShape(event, ["type", "request", "decision"]);
     const request = dispatchRequest(event.request as DispatchRequest), decision = event.decision as DispatchRecord["decision"];
     if (state.records.length >= 128 || request.bindingDigest !== bindingDigest || state.records.some(r => r.request.requestId === request.requestId) ||
       !["approved", "authority-unavailable", "unsupported", "stale", "busy"].includes(decision) ||
-      dispatchDecision(state, request, decision !== "authority-unavailable") !== decision) throw new Error("invalid dispatch decision sequence");
+      dispatchDecision(state, request, decision !== "authority-unavailable", otherPending) !== decision) throw new Error("invalid dispatch decision sequence");
     state.records.push({ request, digest: dispatchRequestDigest(request), decision,
       application: decision === "approved" ? "pending" : "not-applied", outcome: decision === "approved" ? "boundary-pending" : "refused" });
     if (decision === "approved") state.revision++;

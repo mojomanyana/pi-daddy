@@ -115,7 +115,14 @@ export function projectWorkLedger(text: string, context: WorkFrozen<WorkProjecti
 }
 
 /** Always opt-in, strict, and detached before the first filesystem await. No environment defaults. */
-export async function appendWorkLedgerEvent(options: { path: string; grantLedgerPath: string | null }, event: WorkFrozen<WorkLedgerEvent>): Promise<void> {
+export function appendWorkLedgerEvent(options: { path: string; grantLedgerPath: string | null }, event: WorkFrozen<WorkLedgerEvent>): Promise<void> {
+  return appendWorkEvent(options, event, false);
+}
+/** Explicit controller application seam: exact ID/digest redelivery does not append a second event. */
+export function appendWorkLedgerEventOnce(options: { path: string; grantLedgerPath: string | null }, event: WorkFrozen<WorkLedgerEvent>): Promise<void> {
+  return appendWorkEvent(options, event, true);
+}
+async function appendWorkEvent(options: { path: string; grantLedgerPath: string | null }, event: WorkFrozen<WorkLedgerEvent>, once: boolean): Promise<void> {
   const fields = ownWorkFields(options);
   if (Object.keys(fields).length !== 2 || !Object.hasOwn(fields, "path") || !Object.hasOwn(fields, "grantLedgerPath") || typeof fields.path.value !== "string" ||
       (fields.grantLedgerPath.value !== null && typeof fields.grantLedgerPath.value !== "string")) throw new WorkInputError("WORK_SCHEMA_INVALID");
@@ -125,7 +132,7 @@ export async function appendWorkLedgerEvent(options: { path: string; grantLedger
   if (Buffer.byteLength(canonical, "utf8") > WORK_EVENT_BYTES) throw new WorkInputError("WORK_LIMIT_EXCEEDED");
   try {
     const destination = await workDestination(path, grant);
-    await appendLedgerLine({ path: destination.path }, canonical + "\n", destination);
+    await appendLedgerLine({ path: destination.path }, canonical + "\n", destination, once ? { eventId: candidate.eventId, digest: candidate.digest } : undefined);
   } catch (error) {
     if (error instanceof LockTimeoutError || workFsError(error)) throw new WorkLedgerWriteError("WORK_LEDGER_WRITE_FAILED");
     throw error;

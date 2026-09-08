@@ -3,24 +3,29 @@ import { lstat, mkdir, open, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { withFileLock } from "./file-lock.ts";
-import { parseWorkJson } from "./work-ledger-json.ts";
+import { parseWorkJson, freezeWork } from "./work-ledger-json.ts";
 import { runWithFinalizers } from "./finalization.ts";
+import { workIntentBinding, readIntentWork, resolveIntent, validateIntentApplication, applyIntentApplication } from "./intent-application.ts";
+import { intentKey, intentRequest, intentRequestDigest, intentReceipt, matchesIntentReceipt, intentDecision, replayIntent, intentSnapshot,
+  type WorkIntentBinding, type IntentState, type IntentRequest, type IntentAdmission } from "./intent-control.ts";
+import { intentAdmission, nextIntent } from "./intent-scheduling.ts";
 import { dispatchAuthority, dispatchRequest, dispatchRequestDigest, dispatchDecision, replayDispatch, freezeDispatch,
   type DispatchAuthority, type DispatchRequest, type DispatchState } from "./dispatch-control.ts";
 
 export interface ResourceLimits { maxAttempts: number; maxInputBytes: number; maxConcurrent: number }
-export interface BudgetBinding<V extends "1.0" | "2.0" = "1.0"> {
+export interface BudgetBinding<V extends "1.0" | "2.0" | "3.0" = "1.0"> {
   version: V; directory: string; device: string; inode: string;
-  journalDevice: string; journalInode: string; authorityDigest: string; limits: ResourceLimits;
+  journalDevice: string; journalInode: string; authorityDigest: string; limits: ResourceLimits; intent?: V extends "3.0" ? WorkIntentBinding : never;
 }
 export type DispatchBudgetBinding = BudgetBinding<"2.0">;
-export type GovernedBudgetBinding = BudgetBinding<"1.0" | "2.0">;
+export type GovernedBudgetBinding = BudgetBinding<"1.0" | "2.0" | "3.0">;
+export type IntentBudgetBinding = BudgetBinding<"3.0"> & { intent: WorkIntentBinding };
 export interface AttemptDemand {
   attemptId: string; orderId: string; experimentId: string;
   kind: "primary" | "retry" | "shadow" | "descendant";
   parentAttemptId: string | null; inputBytes: number; inputDigest: string;
 }
-interface Reservation extends AttemptDemand { owner: string; state: "reserved" | "settled"; outcome: string | null }
+interface Reservation extends AttemptDemand { intent?: IntentAdmission; owner: string; state: "reserved" | "settled"; outcome: string | null }
 export interface BudgetSnapshot { attempts: number; inputBytes: number; active: number; reservations: readonly Readonly<Reservation>[] }
 export interface ResourcePermit { readonly attemptId: string; settle(outcome: "completed" | "failed" | "cancelled"): Promise<void> }
 export class ResourceAdmissionError extends Error {
@@ -45,10 +50,10 @@ function limits(x: ResourceLimits): ResourceLimits {
   return Object.freeze({ maxAttempts: x.maxAttempts, maxInputBytes: x.maxInputBytes, maxConcurrent: x.maxConcurrent });
 }
 function binding<T extends GovernedBudgetBinding>(x: T): Readonly<T> {
-  shape(x, ["version", "directory", "device", "inode", "journalDevice", "journalInode", "authorityDigest", "limits"]);
-  if (!["1.0", "2.0"].includes(x.version) || typeof x.directory !== "string" || !isAbsolute(x.directory) || resolve(x.directory) !== x.directory ||
+  shape(x, ["version", "directory", "device", "inode", "journalDevice", "journalInode", "authorityDigest", "limits", ...(Object.getOwnPropertyDescriptor(x ?? {}, "version")?.value === "3.0" ? ["intent"] : [])]);
+  if (!["1.0", "2.0", "3.0"].includes(x.version) || typeof x.directory !== "string" || !isAbsolute(x.directory) || resolve(x.directory) !== x.directory ||
     x.directory.length > 1024 || x.directory.split("/").includes(".pi") || ![x.device, x.inode, x.journalDevice, x.journalInode].every(v => typeof v === "string" && /^\d+$/.test(v)) || !digest(x.authorityDigest)) fail("INVALID", "invalid independent budget binding");
-  return Object.freeze({ version: x.version, directory: x.directory, device: x.device, inode: x.inode, journalDevice: x.journalDevice, journalInode: x.journalInode, authorityDigest: x.authorityDigest, limits: limits(x.limits) }) as Readonly<T>;
+  return Object.freeze({ version: x.version, directory: x.directory, device: x.device, inode: x.inode, journalDevice: x.journalDevice, journalInode: x.journalInode, authorityDigest: x.authorityDigest, limits: limits(x.limits), ...(x.version === "3.0" ? { intent: freezeWork(workIntentBinding(x.intent!)) } : {}) }) as Readonly<T>;
 }
 function demand(x: AttemptDemand): AttemptDemand {
   shape(x, ["attemptId", "orderId", "experimentId", "kind", "parentAttemptId", "inputBytes", "inputDigest"]);
@@ -69,13 +74,19 @@ type BudgetCreation = { directory: string; authorityDigest: string; limits: Reso
 export function createResourceBudget(input: BudgetCreation): Promise<Readonly<BudgetBinding>> { return createBudget(input, "1.0"); }
 /** Explicit opt-in v2 journal; old readers refuse rather than ignore control events. */
 export function createDispatchBudget(input: BudgetCreation): Promise<Readonly<DispatchBudgetBinding>> { return createBudget(input, "2.0"); }
+export async function createIntentBudget(input: BudgetCreation, intent: Parameters<typeof readIntentWork>[0]): Promise<Readonly<IntentBudgetBinding>> {
+  return createBudget(input, "3.0", JSON.parse(intentKey(intent)));
+}
 function createBudget(input: BudgetCreation, version: "1.0"): Promise<Readonly<BudgetBinding>>;
 function createBudget(input: BudgetCreation, version: "2.0"): Promise<Readonly<DispatchBudgetBinding>>;
-async function createBudget(input: BudgetCreation, version: GovernedBudgetBinding["version"]): Promise<Readonly<GovernedBudgetBinding>> {
+function createBudget(input: BudgetCreation, version: "3.0", intent: WorkIntentBinding): Promise<Readonly<IntentBudgetBinding>>;
+async function createBudget(input: BudgetCreation, version: GovernedBudgetBinding["version"], intent?: WorkIntentBinding): Promise<Readonly<GovernedBudgetBinding>> {
+  const initialIntent = version === "3.0" ? workIntentBinding(intent!) : undefined;
   shape(input, ["directory", "authorityDigest", "limits"]);
   const policy = limits(input.limits), directoryPath = input.directory, authorityDigest = input.authorityDigest;
   if (typeof directoryPath !== "string" || !isAbsolute(directoryPath) || resolve(directoryPath) !== directoryPath ||
     directoryPath.split("/").includes(".pi") || !digest(authorityDigest)) fail("INVALID", "invalid budget creation");
+  if (initialIntent) resolveIntent(await readIntentWork(initialIntent), initialIntent.selection, initialIntent.priorities);
   await privateDirectory(dirname(directoryPath));
   await mkdir(directoryPath, { mode: 0o700 }); // EEXIST refuses even if its journal was deleted.
   const st = await privateDirectory(directoryPath);
@@ -83,7 +94,7 @@ async function createBudget(input: BudgetCreation, version: GovernedBudgetBindin
   const b = await runWithFinalizers(async () => {
     const journal = await file.stat({ bigint: true });
     const result = binding({ version, directory: directoryPath, device: String(st.dev), inode: String(st.ino),
-      journalDevice: String(journal.dev), journalInode: String(journal.ino), authorityDigest, limits: policy });
+      journalDevice: String(journal.dev), journalInode: String(journal.ino), authorityDigest, limits: policy, ...(initialIntent ? { intent: initialIntent } : {}) });
     await file.writeFile(JSON.stringify(result) + "\n"); await file.sync(); return result;
   }, [{ label: "budget creation close failed", run: () => file.close() }]);
   const directory = await open(b.directory, constants.O_RDONLY | constants.O_DIRECTORY);
@@ -95,7 +106,7 @@ async function createBudget(input: BudgetCreation, version: GovernedBudgetBindin
 export function openResourceBudget<T extends GovernedBudgetBinding>(input: T) {
   const b = binding(input), path = join(b.directory, "budget.jsonl"), owner = randomUUID();
   let pinnedFile: string | undefined;
-  async function transaction<T>(work: (records: Reservation[], append: (event: unknown) => Promise<void>, control: DispatchState) => Promise<T>, readOnly = false): Promise<T> {
+  async function transaction<T>(work: (records: Reservation[], append: (event: unknown) => Promise<void>, control: DispatchState, intent: IntentState | null) => Promise<T>, readOnly = false): Promise<T> {
     const checkRoot = async () => {
       const st = await privateDirectory(b.directory);
       if (String(st.dev) !== b.device || String(st.ino) !== b.inode) fail("AUTHORITY_CHANGED", "budget root identity changed");
@@ -115,19 +126,25 @@ export function openResourceBudget<T extends GovernedBudgetBinding>(input: T) {
         const text = new TextDecoder("utf-8", { fatal: true }).decode(buffer);
         if (!text.endsWith("\n")) fail("INVALID", "incomplete budget journal; no automatic recovery");
         const lines = text.slice(0, -1).split("\n");
-        if (lines.length > (b.version === "2.0" ? 2305 : 2049) || JSON.stringify(binding(parseWorkJson(lines[0]) as unknown as GovernedBudgetBinding)) !== JSON.stringify(b)) fail("AUTHORITY_CHANGED", "budget header does not match independent authority");
+        if (lines.length > (b.version === "3.0" ? 2369 : b.version === "2.0" ? 2305 : 2049) || JSON.stringify(binding(parseWorkJson(lines[0]) as unknown as GovernedBudgetBinding)) !== JSON.stringify(b)) fail("AUTHORITY_CHANGED", "budget header does not match independent authority");
         const records: Reservation[] = [], control: DispatchState = { revision: 0, paused: false, records: [] };
+        const intent: IntentState | null = b.intent ? { revision: 0, selection: b.intent.selection, priorities: b.intent.priorities, records: [] } : null;
         for (const line of lines.slice(1)) {
           const event = parseWorkJson(line) as Record<string, unknown>;
-          if (event.type === "control-request" || event.type === "control-apply") {
-            if (b.version !== "2.0") fail("INVALID", "controls require explicit v2 binding");
-            replayDispatch(control, event, resourceBindingDigest(b), records.filter(r => r.state === "reserved").length);
+          if (event.type === "intent-request" || event.type === "intent-apply") {
+            if (!intent) fail("INVALID", "intent controls require explicit v3 binding");
+            replayIntent(intent, event, records.filter(r => r.state === "reserved").length, control.records.some(r => r.application === "pending"));
+          } else if (event.type === "control-request" || event.type === "control-apply") {
+            if (b.version === "1.0") fail("INVALID", "controls require explicit v2/v3 binding");
+            replayDispatch(control, event, resourceBindingDigest(b), records.filter(r => r.state === "reserved").length, Boolean(intent?.records.some(r => r.application === "pending-or-unknown")));
           } else if (event.type === "reserve") {
-            if (control.paused || control.records.some(r => r.application === "pending")) fail("INVALID", "reservation crossed dispatch barrier");
-            shape(event, ["type", "owner", "demand"]);
+            if (control.paused || control.records.some(r => r.application === "pending") || intent?.records.some(r => r.application === "pending-or-unknown")) fail("INVALID", "reservation crossed dispatch barrier");
+            shape(event, ["type", "owner", "demand", ...(intent ? ["intent"] : [])]);
             const d = demand(event.demand as AttemptDemand);
             if (!id(event.owner) || records.some(r => r.attemptId === d.attemptId) || (d.parentAttemptId !== null && !records.some(r => r.attemptId === d.parentAttemptId))) fail("INVALID", "invalid reservation sequence");
-            records.push({ ...d, owner: event.owner, state: "reserved", outcome: null });
+            if (intent && (d.kind !== "primary" || d.parentAttemptId !== null)) fail("INVALID", "v3 schedules primary dispatch only");
+            const assigned = intent ? intentAdmission(intent, records, event.intent as IntentAdmission) : undefined;
+            records.push({ ...d, ...(assigned ? { intent: assigned } : {}), owner: event.owner, state: "reserved", outcome: null });
           } else {
             shape(event, ["type", "owner", "attemptId", "outcome"]);
             const r = records.find(r => r.attemptId === event.attemptId);
@@ -148,15 +165,60 @@ export function openResourceBudget<T extends GovernedBudgetBinding>(input: T) {
           const line = JSON.stringify(event) + "\n";
           if (expectedSize + BigInt(Buffer.byteLength(line)) > 2n * 1024n * 1024n) fail("EXHAUSTED", "journal capacity reached");
           await unchanged(); await file.writeFile(line); expectedSize += BigInt(Buffer.byteLength(line)); await file.sync(); await unchanged();
-        }, control);
+        }, control, intent);
       }, [{ label: "budget journal close failed", run: () => file.close() }]);
     };
     return readOnly ? execute() : withFileLock(path, "resource budget", execute, { staleRecovery: "disabled" });
   }
   return Object.freeze({
     binding: b,
+    intentControls(input: DispatchAuthority | null) {
+      if (!b.intent) fail("INVALID", "intent controls require explicit v3 budget creation");
+      const work = b.intent, authority = dispatchAuthority(input), scope = resourceBindingDigest(b);
+      const authorized = (digest: string) => authority?.authorityDigest === b.authorityDigest && authority.requestDigests.includes(digest);
+      const apply = async (request: ReturnType<typeof intentRequest>, records: Reservation[], append: (event: unknown) => Promise<void>, control: DispatchState, state: IntentState) => {
+        const pending = state.records.find(r => r.requestId === request.requestId);
+        if (!pending || pending.digest !== intentRequestDigest(request)) fail("DUPLICATE", "exact original intent request required");
+        if (!matchesIntentReceipt(pending, request)) fail("INVALID", "intent receipt projection does not match original request");
+        if (pending.application !== "pending-or-unknown" || !authorized(pending.digest) || records.some(r => r.state === "reserved") || control.records.some(r => r.application === "pending")) return;
+        await applyIntentApplication(work, state, request);
+        const event = { type: "intent-apply", requestId: request.requestId };
+        await append(event); replayIntent(state, event, 0, false);
+      };
+      return Object.freeze({
+        inspect: () => transaction(async (records, _append, control, state) => {
+          resolveIntent(await readIntentWork(work), state!.selection, state!.priorities);
+          const blocked = control.paused || control.records.some(r => r.application === "pending") || state!.records.some(r => r.application === "pending-or-unknown");
+          return freezeWork({ ...intentSnapshot(state!, scope), dispatchPaused: control.paused, nextObligation: blocked ? null : nextIntent(state!, records) });
+        }, true),
+        async request(input: IntentRequest) {
+          const request = intentRequest(input), digest = intentRequestDigest(request);
+          if (request.bindingDigest !== scope) fail("AUTHORITY_CHANGED", "intent request is for another binding");
+          return transaction(async (records, append, control, state) => {
+            const prior = state!.records.find(r => r.requestId === request.requestId);
+            if (prior) {
+              if (prior.digest !== digest) fail("DUPLICATE", "immutable intent request identity");
+              if (!matchesIntentReceipt(prior, request)) fail("INVALID", "intent receipt projection does not match original request");
+              return intentSnapshot(state!, scope);
+            }
+            if (state!.records.length >= 32) fail("EXHAUSTED", "intent request capacity reached");
+            const decision = intentDecision(state!, request, Boolean(authorized(digest)), control.records.some(r => r.application === "pending"));
+            if (decision === "approved") await validateIntentApplication(work, state!, request);
+            const event = { type: "intent-request", receipt: intentReceipt(request, decision) };
+            await append(event); replayIntent(state!, event, records.filter(r => r.state === "reserved").length, control.records.some(r => r.application === "pending"));
+            if (decision === "approved") await apply(request, records, append, control, state!);
+            return intentSnapshot(state!, scope);
+          });
+        },
+        async reconcile(input: IntentRequest) {
+          const request = intentRequest(input);
+          if (request.bindingDigest !== scope) fail("AUTHORITY_CHANGED", "intent request is for another binding");
+          return transaction(async (records, append, control, state) => { await apply(request, records, append, control, state!); return intentSnapshot(state!, scope); });
+        },
+      });
+    },
     controls(input: DispatchAuthority | null) {
-      if (b.version !== "2.0") fail("INVALID", "controls require explicit v2 budget creation");
+      if (b.version === "1.0") fail("INVALID", "controls require explicit v2/v3 budget creation");
       const authority = dispatchAuthority(input), scope = resourceBindingDigest(b);
       const authorized = (digest: string) => authority?.authorityDigest === b.authorityDigest && authority.requestDigests.includes(digest);
       const apply = async (requestId: string, records: Reservation[], append: (event: unknown) => Promise<void>, control: DispatchState) => {
@@ -174,7 +236,7 @@ export function openResourceBudget<T extends GovernedBudgetBinding>(input: T) {
         async request(input: DispatchRequest) {
           const request = dispatchRequest(input), digest = dispatchRequestDigest(request);
           if (request.bindingDigest !== scope) fail("AUTHORITY_CHANGED", "request is for another binding");
-          return transaction(async (records, append, control) => {
+          return transaction(async (records, append, control, intent) => {
             const previous = control.records.find(r => r.request.requestId === request.requestId);
             if (previous) {
               if (previous.digest !== digest) fail("DUPLICATE", "request ID cannot name another decision");
@@ -182,8 +244,8 @@ export function openResourceBudget<T extends GovernedBudgetBinding>(input: T) {
               return freezeDispatch(control, scope);
             }
             if (control.records.length >= 128) fail("EXHAUSTED", "control request capacity reached");
-            const event = { type: "control-request", request, decision: dispatchDecision(control, request, Boolean(authorized(digest))) };
-            await append(event); replayDispatch(control, event, scope, records.filter(r => r.state === "reserved").length);
+            const event = { type: "control-request", request, decision: dispatchDecision(control, request, Boolean(authorized(digest)), Boolean(intent?.records.some(r => r.application === "pending-or-unknown"))) };
+            await append(event); replayDispatch(control, event, scope, records.filter(r => r.state === "reserved").length, Boolean(intent?.records.some(r => r.application === "pending-or-unknown")));
             if (event.decision === "approved") await apply(request.requestId, records, append, control);
             return freezeDispatch(control, scope);
           });
@@ -192,17 +254,23 @@ export function openResourceBudget<T extends GovernedBudgetBinding>(input: T) {
     },
     async inspect(): Promise<Readonly<BudgetSnapshot>> {
       return transaction(async records => Object.freeze({ attempts: records.length, inputBytes: records.reduce((n, r) => n + r.inputBytes, 0),
-        active: records.filter(r => r.state === "reserved").length, reservations: Object.freeze(records.map(r => Object.freeze({ ...r }))) }), true);
+        active: records.filter(r => r.state === "reserved").length, reservations: Object.freeze(records.map(r => freezeWork({ ...r }))) }), true);
     },
-    async reserve(input: AttemptDemand): Promise<Readonly<ResourcePermit>> {
-      const d = demand(input);
-      await transaction(async (records, append, control) => {
-        if (control.paused || control.records.some(r => r.application === "pending")) fail("DISPATCH_BLOCKED", "dispatch paused or awaiting verified boundary");
+    async reserve(input: AttemptDemand, selection?: IntentAdmission): Promise<Readonly<ResourcePermit>> {
+      const d = demand(input), selected: IntentAdmission | null = selection === undefined ? null : JSON.parse(intentKey(selection));
+      if (Boolean(b.intent) !== Boolean(selected)) fail("INVALID", "v3 reservations require an exact scheduled intent; older bindings do not accept it");
+      await transaction(async (records, append, control, intent) => {
+        if (control.paused || control.records.some(r => r.application === "pending") || intent?.records.some(r => r.application === "pending-or-unknown")) fail("DISPATCH_BLOCKED", "dispatch paused or awaiting verified boundary");
         if (records.some(r => r.attemptId === d.attemptId)) fail("DUPLICATE", "attempt identity already charged; never launch a redelivery");
         if (d.parentAttemptId !== null && !records.some(r => r.attemptId === d.parentAttemptId)) fail("INVALID", "parent attempt is not in this budget");
         if (records.length >= b.limits.maxAttempts || records.reduce((n, r) => n + r.inputBytes, 0) + d.inputBytes > b.limits.maxInputBytes ||
           records.filter(r => r.state === "reserved").length >= b.limits.maxConcurrent) fail("EXHAUSTED", "aggregate allowance exhausted");
-        await append({ type: "reserve", owner, demand: d });
+        if (intent) {
+          if (d.kind !== "primary" || d.parentAttemptId !== null) fail("INVALID", "v3 schedules primary dispatch only");
+          resolveIntent(await readIntentWork(b.intent!), intent.selection, intent.priorities);
+          const assigned = intentAdmission(intent, records, selected!);
+          await append({ type: "reserve", owner, demand: d, intent: assigned });
+        } else await append({ type: "reserve", owner, demand: d });
       });
       return Object.freeze({ attemptId: d.attemptId, async settle(outcome: "completed" | "failed" | "cancelled") {
         if (!["completed", "failed", "cancelled"].includes(outcome)) fail("INVALID", "invalid outcome");

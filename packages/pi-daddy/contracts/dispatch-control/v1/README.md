@@ -1,5 +1,9 @@
 # P05 bounded dispatch control v1 — contract for P15
 
+Later local continuation: [actual P01 intent application](../../intent-control/v1/README.md) supplies
+scope/priority/alternative adapters under a separate v3 resource binding and intent protocol. The matrix
+below remains the contract for **this v1 dispatch-only protocol**, not a permanent claim of external blockers.
+
 Implemented local candidate; overall review and formal acceptance pending. This is **not general live
 worker steering**. No new dashboard authority database, model judgment, worker prompt, terminal typing,
 Herdr control call or background reconciler is introduced. P04 status remains read-only and unchanged.

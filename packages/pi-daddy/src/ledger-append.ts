@@ -27,7 +27,7 @@ export async function closeWorkHandle(handle: FileHandle, failed: boolean): Prom
 
 /** Shared existing-producer persistence. Serialization and each caller's exception policy remain
  * outside this function. The private destination facts select v4 protection, never ambient defaults. */
-export async function appendLedgerLine(options: { readonly path: string }, line: string, destination?: WorkDestination): Promise<void> {
+export async function appendLedgerLine(options: { readonly path: string }, line: string, destination?: WorkDestination, once?: { eventId: string; digest: string }): Promise<void> {
   await mkdir(dirname(options.path), { recursive: true });
   if (!destination) {
     // Retain even legacy path-property evaluation timing across waits; only v4 owns detached inputs.
@@ -53,6 +53,11 @@ export async function appendLedgerLine(options: { readonly path: string }, line:
       const ingestion = parseWorkLedgerText(bytes.toString("utf8"));
       if (!ingestion.complete) throw new WorkInputError(ingestion.errors[0].code);
       if (bytes.length && bytes[bytes.length - 1] !== 10) throw new WorkInputError("WORK_JSON_INVALID");
+      if (once) {
+        const sameId = ingestion.events.filter(e => e.eventId === once.eventId);
+        if (sameId.some(e => e.digest !== once.digest)) throw new WorkInputError("WORK_DIGEST_MISMATCH");
+        if (sameId.length) { await handle.sync(); return; } // Reconcile an earlier complete but unacknowledged append.
+      }
       if (bytes.length + Buffer.byteLength(line, "utf8") > WORK_TEXT_BYTES || ingestion.events.length + 1 > WORK_RECORDS) {
         throw new WorkInputError("WORK_LIMIT_EXCEEDED");
       }
@@ -60,6 +65,7 @@ export async function appendLedgerLine(options: { readonly path: string }, line:
       // Same descriptor, same non-expiring lock, O_APPEND. A failed write may leave partial bytes;
       // preserve them and fail closed. Never truncate, repair or reserialize existing deliveries.
       await handle.writeFile(line, "utf8");
+      if (once) await handle.sync(); // New application seam requires durable append before controller receipt.
     } catch (error) { failed = true; throw error; }
     finally { await closeWorkHandle(handle, failed); }
   }, { staleRecovery: "disabled" });

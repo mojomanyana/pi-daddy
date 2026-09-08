@@ -9,6 +9,17 @@ Released baseline last synced against the code: **2026-09-04**, `pi-daddy` 0.22.
 The **2026-09-06 work-v4 source candidate** is described separately below. It is not a release, activation,
 production authentication result or completed task/qualification gate.
 
+The **local P05 intent-application continuation** now supplies actual bounded P01 scope successor,
+priority and recorded-alternative adapters, rather than treating omitted code as permanent external gaps.
+An explicit v3 resource binding pins owned work bytes; existing controller receipts retain exact selections
+and operational ranks without duplicating intent contents. Independently authorized complete changes apply
+at reservation quiescence, using strict P01 builders/ingestion and exact-ID append/reconciliation. Actual
+fixed-profile reservations enforce explicit primary scheduling. Permissions cannot expand; unknown receipts,
+torn data and crash locks never become successful application or automatic recovery. See the
+[intent adapter contract/matrix](../packages/pi-daddy/contracts/intent-control/v1/README.md). Owned cancellation
+bridging remains implementation work; general live steering remains unqualified. New source local only;
+overall acceptance pending. The earlier dispatch-only protocol below retains its own narrower matrix.
+
 The **local 2026-09-08 P05 candidate** implements independently authorized pause/resume of future
 reservations in an explicitly created v2 resource budget. Exact request identity, expected dispatch
 revision, persisted decision/application/outcome and reconciliation share the existing reservation lock
