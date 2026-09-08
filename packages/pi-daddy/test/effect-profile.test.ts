@@ -13,6 +13,7 @@ import { createResourceBudget, openResourceBudget } from "../src/resource-budget
 import { prepareDigestProfile, runDigestProfile, type DigestProfile } from "../src/effect-profile.ts";
 import { digestNamespaceArgs, digestRuntime } from "../src/effect-profile-runtime.ts";
 import { runChild } from "../src/run-child.ts";
+import { nativeResultDiagnostic, NATIVE_DIAGNOSTIC_TEXT_BYTES } from "./native-result-diagnostic.ts";
 const hash = (text: string) => createHash("sha256").update(text).digest("hex");
 async function fixture() {
   const root = await tempDir("effect-profile-"); await chmod(root, 0o700);
@@ -117,9 +118,9 @@ test("cancelling the actual namespace stops the owned worker, not just its outpu
   };
   let ready: Promise<void> | undefined;
   const result = await runChild({ command: "/usr/bin/bwrap", args: digestNamespaceArgs(runtime, `console.log('ready');setInterval(()=>{},1000);`, []),
-    env: {}, cwd: "/", timeoutMs: 3000, killGraceMs: 50, signal: controller.signal, onSpawn: value => { pid = value; },
+    env: {}, cwd: "/", timeoutMs: 3000, killGraceMs: 50, maxOutputBytes: NATIVE_DIAGNOSTIC_TEXT_BYTES, signal: controller.signal, onSpawn: value => { pid = value; },
     onOutput: text => { if (text.includes("ready") && !ready) ready = collect(pid).then(() => controller.abort()); } });
-  await ready; assert.equal(result.aborted, true); assert.ok(owned.size >= 2, "actual owned namespace worker was observed before cancellation");
+  await ready; assert.equal(result.aborted, true, nativeResultDiagnostic(result)); assert.ok(owned.size >= 2, "actual owned namespace worker was observed before cancellation");
   const live = async (id: number) => { try { return !/^State:\s+Z/m.test(await readFile(`/proc/${id}/status`, "utf8")); } catch { return false; } };
   for (let i = 0; i < 100 && (await Promise.all([...owned].map(live))).some(Boolean); i++) await new Promise(r => setTimeout(r, 10));
   assert.deepEqual(await Promise.all([...owned].map(live)), [...owned].map(() => false));

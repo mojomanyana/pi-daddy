@@ -73,6 +73,11 @@ jobs:
         working-directory: packages/pi-daddy
         run: node scripts/private-runtime.ts
 
+      - name: namespace prerequisite diagnostics
+        timeout-minutes: 1
+        working-directory: packages/pi-daddy
+        run: node scripts/namespace-diagnostics.ts
+
       - name: unit tests
         timeout-minutes: 5
         working-directory: packages/pi-daddy
