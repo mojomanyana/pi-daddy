@@ -29,7 +29,9 @@ env:
 
 jobs:
   checks:
-    runs-on: ubuntu-latest
+    # Public-preview runner: proposed compatibility measurement, not qualification or acceptance.
+    # Does not establish Ubuntu24 support or explain earlier namespace permission failures.
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     strategy:
       fail-fast: false
