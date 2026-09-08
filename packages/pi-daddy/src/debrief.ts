@@ -1,7 +1,7 @@
 import { reviewPage, reviewRequest, matchingHistory, validatedHistory, blindView, blindChoice, byteDigest, dataDigest, dataKey, detached, freeze,
-  type ReviewPort, type ReviewItem, type ReviewRequest, type BlindPort, type BlindView, type BlindChoice } from "./debrief-contract.ts";
+  sha, closed, type SignalSelection, type ReviewPort, type ReviewItem, type ReviewRequest, type BlindPort, type BlindView, type BlindChoice } from "./debrief-contract.ts";
 export interface DebriefCheckpoint {
-  version: "debrief-checkpoint-v1"; scope: string; offset: number; operatorIdentity: string | null; caseIds: string[]; blindDigest: string | null;
+  version: "debrief-checkpoint-v1" | "debrief-checkpoint-v2"; bindingDigest?: string; scope: string; offset: number; operatorIdentity: string | null; caseIds: string[]; blindDigest: string | null;
   requests: ReviewRequest[]; choice: BlindChoice | null; revealRequested: boolean;
 }
 /** Host-owned attention/transport checkpoint, NOT a dashboard decision ledger. CAS must be durable/atomic. */
@@ -13,6 +13,8 @@ export interface DebriefPersistence {
 export interface DebriefHost {
   scope: string; offset?: number; operatorIdentity?: string; reviewer: ReviewPort; blind?: BlindPort; persistence?: DebriefPersistence;
   fixture?: boolean;
+  signals?: SignalSelection;
+  blindBinding?: { comparisonId: string; author: string };
 }
 export interface DebriefFrame {
   version: "debrief-view-v1"; mode: "manual"; state: string; persistence: "host-checkpoint" | "session-only";
@@ -20,16 +22,17 @@ export interface DebriefFrame {
     summary: string; disposition: string; resolution: "unresolved" | "label-recorded"; actionEnabled: boolean } |
     { kind: "blind"; slot: number; variants: { label: string; text: string[] }[]; choice: BlindChoice | null; choiceConfirmed: boolean;
       actionEnabled: boolean; revealed: unknown | null })[];
+  observation?: { batchId: string; id: string; issues: string[] };
   fixture: boolean; acceptance: "not-assessed"; automatic: "unqualified"; freshness: "snapshot-unknown";
 }
 const presenters = new WeakSet<object>();
 export const isDebriefPresenter = (p: unknown): p is DebriefPresenter => typeof p === "object" && p !== null && presenters.has(p);
 export type DebriefPresenter = ReturnType<typeof createDebriefPresenter>;
-const reasons: Record<string, string> = { repeat_without_progress: "Repeated attempts without recorded progress", economical_exemplar: "Candidate economical exemplar", coverage_gap: "Missing evidence coverage" };
-function checkpoint(value: unknown, scope: string, offset: number, operatorIdentity: string | null): DebriefCheckpoint | null {
+const reasons: Record<string, string> = { repeat_without_progress: "Repeated attempts without recorded progress", economical_exemplar: "Candidate economical exemplar", coverage_gap: "Missing evidence coverage", overdue_checkpoint: "Declared checkpoint overdue", reopened_acceptance: "Previously accepted binding reopened", intent_conflict: "Declared objective intent conflict" };
+function checkpoint(value: unknown, scope: string, offset: number, operatorIdentity: string | null, bindingDigest: string | null): DebriefCheckpoint | null {
   if (value === null) return null;
   const c = detached(value) as DebriefCheckpoint;
-  if (!c || Object.keys(c).sort().join() !== "blindDigest,caseIds,choice,offset,operatorIdentity,requests,revealRequested,scope,version" || c.version !== "debrief-checkpoint-v1" || c.scope !== scope || c.offset !== offset || c.operatorIdentity !== operatorIdentity || !Array.isArray(c.caseIds) ||
+  if (!c || Object.keys(c).sort().join() !== (bindingDigest ? "bindingDigest," : "") + "blindDigest,caseIds,choice,offset,operatorIdentity,requests,revealRequested,scope,version" || c.version !== (bindingDigest ? "debrief-checkpoint-v2" : "debrief-checkpoint-v1") || (bindingDigest !== null && c.bindingDigest !== bindingDigest) || c.scope !== scope || c.offset !== offset || c.operatorIdentity !== operatorIdentity || !Array.isArray(c.caseIds) ||
     new Set(c.caseIds).size !== c.caseIds.length || c.caseIds.length + (c.blindDigest ? 1 : 0) > 5 || c.caseIds.some(id => !/^[a-f0-9]{64}$/.test(id)) ||
     !(c.blindDigest === null || /^[a-f0-9]{64}$/.test(c.blindDigest)) || !Array.isArray(c.requests) || c.requests.length > c.caseIds.length || typeof c.revealRequested !== "boolean" ||
     new Set(c.requests.map(r => r.caseManifestId)).size !== c.requests.length || c.requests.some(r => !c.caseIds.includes(reviewRequest(r).caseManifestId)) ||
@@ -42,14 +45,19 @@ export function createDebriefPresenter(host: DebriefHost) {
   const scope = host.scope, fixture = host.fixture === true, offset = host.offset ?? 0, operatorIdentity = host.operatorIdentity ?? null;
   if (operatorIdentity !== null && (typeof operatorIdentity !== "string" || !operatorIdentity || operatorIdentity.length > 512 || /[\u0000-\u001f\u007f]/.test(operatorIdentity))) throw new Error("invalid independent operator identity");
   if (!Number.isSafeInteger(offset) || offset < 0 || offset > 4096) throw new Error("invalid independently selected queue offset");
+  const signals = host.signals ? freeze(detached(host.signals)) : undefined, blindBinding = host.blindBinding ? freeze(detached(host.blindBinding)) : undefined;
+  if (signals) { closed(signals, ["batchId", "observationId"]); if (!sha(signals.batchId) || !sha(signals.observationId)) throw new Error("exact signal selection required"); }
+  if (blindBinding) { closed(blindBinding, ["comparisonId", "author"]); if (!sha(blindBinding.comparisonId) || blindBinding.author !== operatorIdentity || !host.blind?.quality) throw new Error("independent durable blind binding/quality reader required"); }
+  const bindingDigest = signals || blindBinding ? dataDigest({ signals: signals ?? null, blind: blindBinding ?? null }) : null;
   const reviewer: ReviewPort = Object.freeze({ list: host.reviewer.list.bind(host.reviewer), history: host.reviewer.history.bind(host.reviewer),
     ...(host.reviewer.decide ? { decide: host.reviewer.decide.bind(host.reviewer) } : {}) });
   const blind: BlindPort | undefined = host.blind ? Object.freeze({ view: host.blind.view.bind(host.blind), readArtifact: host.blind.readArtifact.bind(host.blind),
-    choose: host.blind.choose.bind(host.blind), reveal: host.blind.reveal.bind(host.blind) }) : undefined;
+    choose: host.blind.choose.bind(host.blind), reveal: host.blind.reveal.bind(host.blind), ...(host.blind.quality ? { quality: host.blind.quality.bind(host.blind) } : {}) }) : undefined;
   const persistence: DebriefPersistence | undefined = host.persistence ? Object.freeze({ durability: host.persistence.durability,
     load: host.persistence.load.bind(host.persistence), compareAndSwap: host.persistence.compareAndSwap.bind(host.persistence) }) : undefined;
   let saved: DebriefCheckpoint | null = null, items: ReviewItem[] = [], publicBlind: BlindView | null = null;
   let checkpointKnown = !persistence;
+  let issues: string[] = [];
   let total = 0, state = "closed", busy = false, poisoned = false, choiceConfirmed = false, revealed: unknown | null = null;
   let variants: { label: string; text: string[] }[] = [];
   const outcomes = new Map<string, { disposition: string; prior: string | null; resolution: "unresolved" | "label-recorded" }>();
@@ -57,7 +65,7 @@ export function createDebriefPresenter(host: DebriefHost) {
   const persist = async (next: DebriefCheckpoint) => {
     if (persistence) {
       await persistence.compareAndSwap(saved ? dataDigest(saved) : null, detached(next));
-      const observed = checkpoint(await persistence.load(), scope, offset, operatorIdentity);
+      const observed = checkpoint(await persistence.load(), scope, offset, operatorIdentity, bindingDigest);
       if (!observed || dataDigest(observed) !== dataDigest(next)) throw new Error("checkpoint acknowledgement has no exact readback");
     }
     saved = freeze(detached(next));
@@ -80,14 +88,14 @@ export function createDebriefPresenter(host: DebriefHost) {
         if (input.mode !== "manual" || !input.userPresent || input.boundary === "busy") { state = "deferred: automatic/absent/busy boundary unqualified"; return api.view(); }
         try {
           if (persistence) {
-            const loaded = checkpoint(await persistence.load(), scope, offset, operatorIdentity);
+            const loaded = checkpoint(await persistence.load(), scope, offset, operatorIdentity, bindingDigest);
             if (saved && (!loaded || dataKey(saved.caseIds) !== dataKey(loaded.caseIds) || saved.blindDigest !== loaded.blindDigest ||
               saved.choice && dataKey(saved.choice) !== dataKey(loaded.choice) || saved.requests.some(r => !loaded.requests.some(n => dataKey(n) === dataKey(r))) || saved.revealRequested && !loaded.revealRequested)) throw new Error("checkpoint rollback/change; no new allowance");
             saved = loaded; checkpointKnown = true;
           }
           publicBlind = blind ? blindView(await blind.view()) : null;
-          const page = reviewPage(await reviewer.list(offset, publicBlind ? 4 : 5), publicBlind ? 4 : 5, offset); total = page.total;
-          if (!saved) await persist({ version: "debrief-checkpoint-v1", scope, offset, operatorIdentity, caseIds: page.items.map(i => i.caseManifestId), blindDigest: publicBlind ? dataDigest(publicBlind) : null, requests: [], choice: null, revealRequested: false });
+          const page = reviewPage(await reviewer.list(offset, publicBlind ? 4 : 5), publicBlind ? 4 : 5, offset, signals); total = page.total; issues = page.issues ?? [];
+          if (!saved) await persist({ version: bindingDigest ? "debrief-checkpoint-v2" : "debrief-checkpoint-v1", ...(bindingDigest ? { bindingDigest } : {}), scope, offset, operatorIdentity, caseIds: page.items.map(i => i.caseManifestId), blindDigest: publicBlind ? dataDigest(publicBlind) : null, requests: [], choice: null, revealRequested: false });
           if (saved!.blindDigest !== (publicBlind ? dataDigest(publicBlind) : null) || saved!.caseIds.some(id => !page.items.some(i => i.caseManifestId === id))) throw new Error("changed batch/blind identity; no fresh allowance");
           items = saved!.caseIds.map(id => page.items.find(i => i.caseManifestId === id)!);
           if (saved!.choice && publicBlind) blindChoice(saved!.choice, publicBlind);
@@ -109,6 +117,16 @@ export function createDebriefPresenter(host: DebriefHost) {
             }
             variants.push({ label: c.label, text });
           }
+          if (blindBinding) {
+            choiceConfirmed = false; revealed = null;
+            const value = await blind!.quality!();
+            if (value !== null) {
+              const quality = blindChoice(value as BlindChoice, publicBlind!);
+              if (saved!.choice && dataKey(saved!.choice) !== dataKey(quality)) throw new Error("durable quality changed");
+              if (!saved!.choice) await persist({ ...saved!, choice: quality });
+              choiceConfirmed = true;
+            }
+          }
           state = "open"; return api.view();
         } catch { state = "unavailable: host data/persistence unknown"; poisoned = true; return api.view(); }
       });
@@ -123,6 +141,7 @@ export function createDebriefPresenter(host: DebriefHost) {
         actionEnabled: Boolean(blind && (fixture || operatorIdentity) && persistence && (persistence.durability === "host-owned" || fixture) && !poisoned), revealed });
       return freeze(detached({ version: "debrief-view-v1", mode: "manual", state, persistence: persistence?.durability === "host-owned" ? "host-checkpoint" : "session-only", total,
         unexposed: Math.max(0, total - items.length), budgetSpent: saved ? saved.caseIds.length + (saved.blindDigest ? 1 : 0) : poisoned || !checkpointKnown ? null : 0,
+        ...(signals ? { observation: { batchId: signals.batchId, id: signals.observationId, issues } } : {}),
         remainingBudget: !checkpointKnown || poisoned && !saved ? null : 5 - (saved ? saved.caseIds.length + (saved.blindDigest ? 1 : 0) : 0), cards, fixture, acceptance: "not-assessed", automatic: "unqualified", freshness: "snapshot-unknown" }));
     },
     async label(input: ReviewRequest) {
@@ -155,6 +174,7 @@ export function createDebriefPresenter(host: DebriefHost) {
         catch { poisoned = true; throw new Error("quality persistence unknown; no reveal"); }
         const chosen = blindChoice(await blind.choose(choice) as BlindChoice, publicBlind);
         if (dataKey(chosen) !== dataKey(choice)) throw new Error("quality acknowledgement mismatch");
+        if (blindBinding && dataKey(blindChoice(await blind.quality!() as BlindChoice, publicBlind)) !== dataKey(choice)) throw new Error("durable quality readback mismatch");
         choiceConfirmed = true; return api.view();
       });
     },
@@ -163,6 +183,7 @@ export function createDebriefPresenter(host: DebriefHost) {
         if (state !== "open" || !blind || !saved?.choice || !choiceConfirmed || !persistence || !fixture && !operatorIdentity) throw new Error("confirmed quality choice required before reveal");
         try { if (!saved.revealRequested) await persist({ ...saved, revealRequested: true }); }
         catch { poisoned = true; throw new Error("reveal persistence unknown; no exposure"); }
+        if (blindBinding && dataKey(blindChoice(await blind.quality!() as BlindChoice, publicBlind!)) !== dataKey(saved.choice)) throw new Error("durable quality unavailable/changed");
         const result = detached(await blind.reveal()) as Record<string, any>;
         if (!result || Object.keys(result).sort().join() !== "arms,choice,manifestId,routingDefault" || result.routingDefault !== null || !Array.isArray(result.arms) || result.arms.length !== publicBlind!.cards.length || new Set(result.arms.map(a => a.label)).size !== result.arms.length || dataKey(blindChoice(result.choice, publicBlind!)) !== dataKey(saved.choice)) throw new Error("invalid reveal acknowledgement");
         revealed = { arms: result.arms.map(a => {

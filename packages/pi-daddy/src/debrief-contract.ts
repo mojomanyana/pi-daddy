@@ -16,6 +16,7 @@ export interface ReviewPort {
 export interface BlindChoice { kind: "one" | "tie" | "none" | "insufficient"; labels: string[] }
 export interface BlindView { version: "blind-intervention-view-v1"; cards: { label: string; artifactDigests: string[] }[]; limitations: string[] }
 export interface BlindPort {
+  quality?(): unknown | Promise<unknown>;
   view(): unknown | Promise<unknown>;
   readArtifact(label: string, digest: string): Uint8Array | Promise<Uint8Array>;
   choose(choice: BlindChoice): unknown | Promise<unknown>;
@@ -55,17 +56,36 @@ export function closed(v: unknown, names: string[]): asserts v is Record<string,
 export function reviewRequest(input: ReviewRequest): ReviewRequest {
   const r = detached(input); if (!requestCheck.Check(r)) throw new Error("invalid label request"); return freeze(r);
 }
-export function reviewPage(value: unknown, limit: number, offset = 0) {
-  const page = detached(value) as { total: number; offset: number; items: ReviewItem[] };
-  closed(page, ["total", "offset", "items"]);
+export interface SignalSelection { batchId: string; observationId: string }
+function signalCase(c: Record<string, any>): boolean {
+  if (c.capture_schema === 2) return c.reason === "coverage_gap" && c.classification === "coverage_issue" && caseCheck.Check(c) && c.id === dataDigest({ detector: c.detector, target: c.target, reason: c.reason });
+  if (c.capture_schema !== 3 || c.classification !== "candidate_defect" || !["overdue_checkpoint", "reopened_acceptance", "intent_conflict"].includes(c.reason)) return false;
+  // Signal facts may contribute256 references plus the two base scope/obligation references.
+  if (!Array.isArray(c.evidence) || !c.evidence.length || c.evidence.length > 258 || !c.evidence.every(sha)) return false;
+  const common = { ...c, capture_schema: 2, reason: "coverage_gap", classification: "coverage_issue", metrics: {}, evidence: c.evidence.slice(0, 256) };
+  if (!caseCheck.Check(common) || c.detector.id !== c.reason || !c.detector.version.startsWith("work-signals-v1:") || !c.metrics || typeof c.metrics !== "object") return false;
+  const keys = c.reason === "overdue_checkpoint" ? ["deadlineMs", "observedAt"] : c.reason === "intent_conflict" ? ["failedChecks"] : [];
+  closed(c.metrics, keys);
+  if (keys.some(k => !Number.isSafeInteger(c.metrics[k]) || c.metrics[k] < 0)) return false;
+  const m = c.metrics as Record<string, number>;
+  if (c.reason === "overdue_checkpoint" && m.observedAt <= m.deadlineMs || c.reason === "intent_conflict" && m.failedChecks < 1) return false;
+  const detector = { id: c.detector.id, version: c.detector.version, population: c.detector.population };
+  const target = { kind: c.target.kind, snapshotDigest: c.target.snapshotDigest, obligationId: c.target.obligationId, obligationDigest: c.target.obligationDigest };
+  const metrics = Object.fromEntries(keys.map(k => [k, c.metrics[k]])), evidence = [...new Set(c.evidence)].sort();
+  return dataKey(evidence) === dataKey(c.evidence) && c.id === createHash("sha256").update(JSON.stringify({ capture_schema: 3, detector, target, reason: c.reason, metrics, evidence })).digest("hex");
+}
+export function reviewPage(value: unknown, limit: number, offset = 0, signals?: SignalSelection) {
+  const page = detached(value) as { total: number; offset: number; items: ReviewItem[]; observationId?: string; issues?: string[] };
+  closed(page, signals ? ["total", "offset", "items", "observationId", "issues"] : ["total", "offset", "items"]);
+  if (signals && (page.observationId !== signals.observationId || page.total > 1024 || !Array.isArray(page.issues) || page.issues.length > 1 || page.issues.some(i => i !== "scope-unresolved"))) throw new Error("unbound work signal observation");
   if (!Number.isSafeInteger(page.total) || page.total < 0 || page.total > 4096 || page.offset !== offset || !Array.isArray(page.items) || page.items.length > limit || page.items.length > Math.max(0, page.total - offset)) throw new Error("invalid bounded case page");
   for (const item of page.items) {
     closed(item, ["caseManifestId", "candidate", "priorDecisionId", "disposition"]);
     const c = item.candidate as Record<string, any>;
-    if (!sha(item.caseManifestId) || !caseCheck.Check(c) || !(item.priorDecisionId === null || sha(item.priorDecisionId)) ||
+    if (!sha(item.caseManifestId) || !(signals ? signalCase(c) : caseCheck.Check(c)) || !(item.priorDecisionId === null || sha(item.priorDecisionId)) ||
       !["unresolved", "confirmed_defect", "expected_behavior", "exemplar", "uncertain", "skip"].includes(item.disposition) ||
-      c.id !== dataDigest({ detector: c.detector, target: c.target, reason: c.reason }) ||
-      c.classification !== ({ repeat_without_progress: "candidate_defect", economical_exemplar: "candidate_exemplar", coverage_gap: "coverage_issue" } as Record<string, string>)[c.reason] ||
+      (!signals && c.id !== dataDigest({ detector: c.detector, target: c.target, reason: c.reason })) ||
+      (!signals && c.classification !== ({ repeat_without_progress: "candidate_defect", economical_exemplar: "candidate_exemplar", coverage_gap: "coverage_issue" } as Record<string, string>)[c.reason]) ||
       (c.reason === "repeat_without_progress" && (c.metrics.equivalentAttempts === undefined || c.metrics.equivalentAttempts < 2)) ||
       (c.reason === "economical_exemplar" && (c.metrics.measuredCost === undefined || c.metrics.costLimit === undefined || c.metrics.costUnit === undefined || c.metrics.measuredCost > c.metrics.costLimit))) throw new Error("invalid case identity/state");
   }

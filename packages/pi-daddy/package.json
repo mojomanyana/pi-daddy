@@ -49,6 +49,11 @@
       "types": "./dist/experiment.d.ts",
       "default": "./dist/experiment.js"
     },
+    "./debrief-host": {
+      "types": "./dist/debrief-host.d.ts",
+      "default": "./dist/debrief-host.js"
+    },
+    "./contracts/debrief/v2/*": "./contracts/debrief/v2/*",
     "./debrief": {
       "types": "./dist/debrief.d.ts",
       "default": "./dist/debrief.js"

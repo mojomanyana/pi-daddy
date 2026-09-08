@@ -5,6 +5,8 @@ export function renderDebrief(view: DebriefFrame, width = 100): string {
   const lines = ["PI-DADDY — MANUAL DEBRIEF / WEEKLY QUEUE", `State: ${view.state}; automatic presentation UNQUALIFIED`,
     `Attention: ${view.budgetSpent ?? "UNKNOWN"}/5 allocated slots; ${view.unexposed} incidents not exposed; persistence: ${view.persistence}`,
     view.fixture ? "FROZEN SYNTHETIC FIXTURE — public seed/artifacts, NOT a real blind study" : "Host identity, pause policy and durability are not authenticated by this view."];
+  if (view.observation) lines.push(`Selected signal batch: ${view.total} cases; observation ${view.observation.id}`,
+    `Observation issues: ${view.observation.issues.join(", ") || "none recorded"}; counts are selected-batch only.`);
   if (view.remainingBudget === null) lines.push("Attention persistence UNKNOWN — no new exposure allowance is inferred.");
   if (view.remainingBudget === 0) lines.push("New questions DEFERRED — budget exhausted. Reopen retains the same slots; answers/skip do not refill them.");
   for (const card of view.cards) {

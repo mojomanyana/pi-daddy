@@ -9,6 +9,15 @@ Released baseline last synced against the code: **2026-09-04**, `pi-daddy` 0.22.
 The **2026-09-06 work-v4 source candidate** is described separately below. It is not a release, activation,
 production authentication result or completed task/qualification gate.
 
+The additive **P08 retained-host bridge** explicitly consumes work-signals-v1/case-v3 selected batches
+and the durable blind writer ports tested at harness638494af0a0058edf9a9b1b02e57af894ab46ed6. Zero-card
+observation issues remain visible. Reconnect reads original quality without revealing; one blind question
+still consumes one of five total slots. Versioned attention checkpoints bind original signal and comparison
+identities; canonical decisions remain harness-owned. V2/manual behavior stays opt-in compatible.
+See [ADR-0054](06-decisions/ADR-0054-explicit-signals-and-durable-blind-debrief.md) and the
+[bridge contract](../packages/pi-daddy/contracts/debrief/v2/README.md). Host ports are not authentication,
+live pause/model qualification or acceptance. These amendments are local pending exact publication clearance.
+
 Cancellation control readback uses the existing experiment/resource locks; public experiment inspect and
 reconcile remain read-only, unlocked and fallible on concurrent changes. Required failures still reject
 and can follow an actual effect. Test listeners are exception-safe across missing prerequisites, ordinary

@@ -1,0 +1,62 @@
+[
+  {
+    "source": "packages/core/src/work-capture.ts",
+    "target": "work-capture.ts.txt",
+    "commit": "638494af0a0058edf9a9b1b02e57af894ab46ed6",
+    "sha256": "a258861619e92d5b41336ee83d41c42fec33212643c22b7d6ace8e55561b98ea"
+  },
+  {
+    "source": "packages/core/src/work-signals.ts",
+    "target": "work-signals.ts.txt",
+    "commit": "638494af0a0058edf9a9b1b02e57af894ab46ed6",
+    "sha256": "5e14a6069bcecfd358b5e3d034a78ee896c6f7f646c8208d8233cb9dd751dca4"
+  },
+  {
+    "source": "packages/core/src/intervention.ts",
+    "target": "intervention.ts.txt",
+    "commit": "638494af0a0058edf9a9b1b02e57af894ab46ed6",
+    "sha256": "05377d1045942334016e7154bb092cf2fdeb4d95c86c2c4170b321f11d9d0312"
+  },
+  {
+    "source": "packages/adapters/src/evidence-archive.ts",
+    "target": "evidence-archive.ts.txt",
+    "commit": "638494af0a0058edf9a9b1b02e57af894ab46ed6",
+    "sha256": "f41fd69daa4326cefad673fbf4eee2e0c44aa12de595d8a9c4deec209fe38807"
+  },
+  {
+    "source": "packages/adapters/src/work-case-archive.ts",
+    "target": "work-case-archive.ts.txt",
+    "commit": "638494af0a0058edf9a9b1b02e57af894ab46ed6",
+    "sha256": "6998556f29c068ae8d5f383b76e913f429235aa90bb6f50e34a20785d870d4a6"
+  },
+  {
+    "source": "packages/adapters/src/work-case-review.ts",
+    "target": "work-case-review.ts.txt",
+    "commit": "638494af0a0058edf9a9b1b02e57af894ab46ed6",
+    "sha256": "d7b374c80f182b20367a3968d9815fffae8ca70a452a5c6f246e7678158c7a7a"
+  },
+  {
+    "source": "packages/adapters/src/work-signal-cases.ts",
+    "target": "work-signal-cases.ts.txt",
+    "commit": "638494af0a0058edf9a9b1b02e57af894ab46ed6",
+    "sha256": "947dc22f35e8f40510e8a37c5630fd38afe2400c112993f322e2bce8af4f467f"
+  },
+  {
+    "source": "packages/adapters/src/work-signal-observation.ts",
+    "target": "work-signal-observation.ts.txt",
+    "commit": "638494af0a0058edf9a9b1b02e57af894ab46ed6",
+    "sha256": "b97b727f2c90634f977abbba837411d01b96eb24c85430ea129c97956b48efac"
+  },
+  {
+    "source": "packages/adapters/src/blind-intervention.ts",
+    "target": "blind-intervention.ts.txt",
+    "commit": "638494af0a0058edf9a9b1b02e57af894ab46ed6",
+    "sha256": "9b73d85927cc3386b9ab2fae7e647793929e360e5fda892e4db2ab692ab756e4"
+  },
+  {
+    "source": "packages/adapters/src/work-candidates.ts",
+    "target": "work-candidates.ts.txt",
+    "commit": "638494af0a0058edf9a9b1b02e57af894ab46ed6",
+    "sha256": "2b0bd7188b9da6951f050e9889ed3fdf5adafbd4b5cc5a81ec417a14fac20117"
+  }
+]
