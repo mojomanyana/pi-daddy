@@ -9,6 +9,17 @@ Released baseline last synced against the code: **2026-09-04**, `pi-daddy` 0.22.
 The **2026-09-06 work-v4 source candidate** is described separately below. It is not a release, activation,
 production authentication result or completed task/qualification gate.
 
+The **local P15 fixed-profile order slice** compiles a bounded, independently authorized multi-node charter
+into the existing P11 controller using explicit fixed-experiment-v2 scheduling. Exact P01 obligations/source,
+frozen objective policies, pre-reserved recovery, designated product decisions and dependency eligibility
+are deterministic. Independent nodes continue while affected branches pause; status needs no model transport.
+Control snapshots synchronize on existing locks; ordinary views do not. A bounded operational registry uses
+exact pinned22606c2 adoption predicates plus fresh trusted-host approvals/facts to apply actual next-order
+candidate changes and explicit rollback. Existing orders remain pinned. Only unstarted orders can migrate
+through a durable supersession/successor/renewal receipt; active/history-bearing migration refuses.
+[P15 contract](../packages/pi-daddy/contracts/factory-order/v1/README.md). Objective satisfaction is not generic
+P01 acceptance, calibrated eligibility, model work or full factory qualification. New source LOCAL ONLY.
+
 The **local partial P11 fixed-profile experiment controller** uses a new explicit v4 resource journal for
 atomic whole-experiment/retry/shadow admission, existing capped fan-out in waves, immutable common/variant
 artifacts and independently approved charters. Its primary promise does not wait for shadow or judge;

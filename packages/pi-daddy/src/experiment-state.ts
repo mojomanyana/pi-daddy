@@ -1,14 +1,21 @@
 import { closed, experimentCancellation, type ExperimentCancellation, type ExperimentCharter, type ExperimentVariant } from "./experiment-contract.ts";
+import { factoryDecision, type FactoryDecision } from "./order-schedule.ts";
 export type VariantState = "unstarted" | "queued" | "dispatching" | "running" | "completed" | "failed" | "cancelled" | "timed-out" | "unknown";
 export interface VariantRecord extends Pick<ExperimentVariant, "variantId" | "kind" | "operation"> { executionId: string; state: VariantState; artifactDigest: string | null; spawned: boolean }
 export function replayExperiment(c: ExperimentCharter, events: Record<string, unknown>[]) {
   let claim: { owner: string; deadlineAt: number } | null = null, admitted = false;
   const variants: VariantRecord[] = c.variants.map(v => ({ variantId: v.variantId, kind: v.kind, operation: v.operation, executionId: v.executionId, state: "unstarted", artifactDigest: null, spawned: false }));
-  const cancellations: ExperimentCancellation[] = [];
+  const cancellations: ExperimentCancellation[] = [], decisions: FactoryDecision[] = [];
+  let superseded = false;
   for (const e of events) {
-    if (e.type === "claim") {
+    if (e.type === "order-decision") {
+      closed(e,["type","request"]);const d=factoryDecision(e.request as FactoryDecision);
+      if(!c.order || !c.order.nodes.some(n=>n.nodeId===d.nodeId&&n.decision?.authorityId===d.authorityId)||decisions.some(r=>r.nodeId===d.nodeId||r.requestId===d.requestId))throw new Error("invalid order decision sequence");decisions.push(d);
+    } else if(e.type === "order-migrated") {
+      closed(e,["type","requestId","successorDigest"]);if(!c.order||claim||superseded||typeof e.requestId!=="string"||typeof e.successorDigest!=="string"||!/^[a-f0-9]{64}$/.test(e.successorDigest))throw new Error("migration requires unstarted order");superseded=true;
+    } else if (e.type === "claim") {
       closed(e, ["type", "owner", "deadlineAt"]);
-      if (claim || typeof e.owner !== "string" || !/^[a-f0-9-]{36}$/.test(e.owner) || !Number.isSafeInteger(e.deadlineAt)) throw new Error("invalid experiment claim");
+      if (superseded || claim || typeof e.owner !== "string" || !/^[a-f0-9-]{36}$/.test(e.owner) || !Number.isSafeInteger(e.deadlineAt)) throw new Error("invalid experiment claim");
       claim = { owner: e.owner, deadlineAt: e.deadlineAt as number }; variants.forEach(v => v.state = "queued");
     } else if (e.type === "admitted") {
       closed(e, ["type"]); if (!claim || admitted) throw new Error("invalid experiment admission"); admitted = true;
@@ -33,5 +40,5 @@ export function replayExperiment(c: ExperimentCharter, events: Record<string, un
       } else throw new Error("unknown experiment event");
     }
   }
-  return { claim, admitted, variants, cancellations };
+  return { claim, admitted, variants, cancellations, decisions, superseded };
 }

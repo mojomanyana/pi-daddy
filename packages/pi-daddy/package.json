@@ -41,6 +41,10 @@
       "types": "./dist/work-ledger.d.ts",
       "default": "./dist/work-ledger.js"
     },
+    "./factory-order": {
+      "types": "./dist/factory-order.d.ts",
+      "default": "./dist/factory-order.js"
+    },
     "./experiment": {
       "types": "./dist/experiment.d.ts",
       "default": "./dist/experiment.js"
@@ -173,6 +177,7 @@
       "types": "./dist/dashboard-render.d.ts",
       "default": "./dist/dashboard-render.js"
     },
+    "./contracts/factory-order/v1/*": "./contracts/factory-order/v1/*",
     "./contracts/experiment/v1/*": "./contracts/experiment/v1/*",
     "./contracts/debrief/v1/*": "./contracts/debrief/v1/*",
     "./contracts/intent-control/v1/request.schema.json": "./contracts/intent-control/v1/request.schema.json",

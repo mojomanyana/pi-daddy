@@ -45,6 +45,9 @@ export { bindWorkIntent } from "./intent-application.ts";
 export { intentRequestDigest, parseIntentRequest, type IntentRequest, type IntentSelection, type IntentPriority,
   type IntentAdmission, type IntentSnapshot, type IntentReceipt, type WorkIntentBinding } from "./intent-control.ts";
 export { dispatchRequestDigest, parseDispatchRequest, type DispatchRequest, type DispatchAuthority, type DispatchRecord, type DispatchSnapshot } from "./dispatch-control.ts";
+export { createFactoryRegistry, openFactoryRegistry, createFactoryOrder, openFactoryOrder, migrateFactoryOrder,
+  factoryOrderDigest, parseFactoryOrder, fixedPolicyDigest, factoryDecisionDigest, activationRequestDigest, factoryMigrationDigest,
+  type FactoryRegistryBinding, type FactoryOrderCharter, type FactoryAuthority, type FactoryOrderView, type FixedPolicy, type ActivationRequest, type FactoryMigration } from "./factory-order.ts";
 export { createExperiment, openExperiment, experimentCharterDigest, experimentBindingDigest, experimentCancellationDigest, parseExperimentCharter,
   type ExperimentBinding, type ExperimentCharter, type ExperimentAuthority, type ExperimentCancellation, type ExperimentRun, type ExperimentView } from "./experiment.ts";
 export { createResourceBudget, createDispatchBudget, createIntentBudget, createExperimentBudget, openResourceBudget, resourceBindingDigest, ResourceAdmissionError,

@@ -290,6 +290,10 @@ export function openResourceBudget<T extends GovernedBudgetBinding>(input: T) {
         },
       });
     },
+    /** Explicit control-path synchronization; unlike inspect, this takes the existing journal lock. */
+    async controlSnapshot(): Promise<Readonly<BudgetSnapshot>> {
+      return transaction(async records => Object.freeze({ attempts: records.length, inputBytes: records.reduce((n,r)=>n+r.inputBytes,0), active: records.filter(r=>r.state==="reserved").length, reservations:Object.freeze(records.map(r=>freezeWork({...r}))) }));
+    },
     async inspect(): Promise<Readonly<BudgetSnapshot>> {
       return transaction(async records => Object.freeze({ attempts: records.length, inputBytes: records.reduce((n, r) => n + r.inputBytes, 0),
         active: records.filter(r => r.state === "reserved").length, reservations: Object.freeze(records.map(r => freezeWork({ ...r }))) }), true);

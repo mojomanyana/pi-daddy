@@ -1,0 +1,8 @@
+{
+  "repository": "https://github.com/mojomanyana/skill-harness",
+  "commit": "22606c21adb118b9ae395fe93a197609a63e05e3",
+  "source": "packages/core/src/adoption.ts",
+  "target": "src/vendor/adoption.ts",
+  "sha256": "dd3adae2c8283620ffc12d52baa570ba802ca96e208b0209520295a6979e9d02",
+  "meaning": "exact pure conditional predicates, not authentication or activation"
+}

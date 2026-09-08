@@ -14,6 +14,23 @@ async function fixture(limits = { maxAttempts: 4, maxInputBytes: 12, maxConcurre
   return createResourceBudget({ directory: join(root, "authority"), authorityDigest: hash("independent-policy"), limits });
 }
 
+test("control snapshots preserve all frozen accounting fields and wait on the actual lock; inspect does not lock", async () => {
+  const binding = await fixture(), budget = openResourceBudget(binding);
+  assert.deepEqual(await budget.controlSnapshot(), await budget.inspect());
+  const first = await budget.reserve(request("snapshot-first")), second = await budget.reserve(request("snapshot-second"));
+  await first.settle("failed");
+  const a = await budget.controlSnapshot(), b = await budget.inspect();
+  assert.deepEqual(a, b); assert.equal(a.attempts, 2); assert.equal(a.inputBytes, 6); assert.equal(a.active, 1);
+  assert.equal(a.reservations[0].outcome, "failed"); assert.equal(a.reservations[1].outcome, null);
+  assert.notEqual(a.reservations, b.reservations); assert.ok(Object.isFrozen(a)); assert.ok(Object.isFrozen(a.reservations)); assert.ok(Object.isFrozen(a.reservations[0]));
+  await second.settle("cancelled");
+  const path = join(binding.directory, "budget.jsonl"), before = await readFile(path);
+  await writeFile(path + ".lock", "owned-test-held-lock\n", { flag: "wx", mode: 0o600 });
+  assert.equal((await budget.inspect()).active, 0);
+  await assert.rejects(budget.controlSnapshot(), /locked/);
+  assert.deepEqual(await readFile(path), before); assert.equal(await readFile(path + ".lock", "utf8"), "owned-test-held-lock\n");
+});
+
 test("creation detaches authority and destination before its first asynchronous boundary", async () => {
   const root = await tempDir("resource-create-"); await chmod(root, 0o700);
   const directory = join(root, "original"), authorityDigest = hash("original");
