@@ -74,8 +74,8 @@ export function replayDispatch(state: DispatchState, event: Record<string, unkno
     record.application = "applied"; record.outcome = state.paused ? "paused" : "enabled";
   }
 }
-export function freezeDispatch(state: DispatchState, bindingDigest: string): Readonly<DispatchSnapshot> {
+export function freezeDispatch(state: DispatchState, bindingDigest: string, otherPending = false): Readonly<DispatchSnapshot> {
   return Object.freeze({ version: "dispatch-control-snapshot-v1", bindingDigest, freshness: "snapshot-unknown", revision: state.revision, paused: state.paused,
-    admission: state.records.some(r => r.application === "pending") ? "blocked-pending" : state.paused ? "paused" : "enabled",
+    admission: otherPending || state.records.some(r => r.application === "pending") ? "blocked-pending" : state.paused ? "paused" : "enabled",
     acceptance: "not-assessed", records: Object.freeze(state.records.map(r => Object.freeze({ ...r }))) });
 }

@@ -228,10 +228,10 @@ export function openResourceBudget<T extends GovernedBudgetBinding>(input: T) {
         await append(event); replayDispatch(control, event, scope, 0);
       };
       return Object.freeze({
-        inspect: () => transaction(async (_records, _append, control) => freezeDispatch(control, scope), true),
+        inspect: () => transaction(async (_records, _append, control, intent) => freezeDispatch(control, scope, Boolean(intent?.records.some(r => r.application === "pending-or-unknown"))), true),
         async reconcile(requestId: string) {
           if (typeof requestId !== "string" || !/^[a-zA-Z0-9:_-]{1,128}$/.test(requestId)) fail("INVALID", "exact request ID required for reconciliation");
-          return transaction(async (records, append, control) => { await apply(requestId, records, append, control); return freezeDispatch(control, scope); });
+          return transaction(async (records, append, control, intent) => { await apply(requestId, records, append, control); return freezeDispatch(control, scope, Boolean(intent?.records.some(r => r.application === "pending-or-unknown"))); });
         },
         async request(input: DispatchRequest) {
           const request = dispatchRequest(input), digest = dispatchRequestDigest(request);
@@ -241,13 +241,13 @@ export function openResourceBudget<T extends GovernedBudgetBinding>(input: T) {
             if (previous) {
               if (previous.digest !== digest) fail("DUPLICATE", "request ID cannot name another decision");
               // Redelivery is readback only, never a second effect or implicit reconciliation.
-              return freezeDispatch(control, scope);
+              return freezeDispatch(control, scope, Boolean(intent?.records.some(r => r.application === "pending-or-unknown")));
             }
             if (control.records.length >= 128) fail("EXHAUSTED", "control request capacity reached");
             const event = { type: "control-request", request, decision: dispatchDecision(control, request, Boolean(authorized(digest)), Boolean(intent?.records.some(r => r.application === "pending-or-unknown"))) };
             await append(event); replayDispatch(control, event, scope, records.filter(r => r.state === "reserved").length, Boolean(intent?.records.some(r => r.application === "pending-or-unknown")));
             if (event.decision === "approved") await apply(request.requestId, records, append, control);
-            return freezeDispatch(control, scope);
+            return freezeDispatch(control, scope, Boolean(intent?.records.some(r => r.application === "pending-or-unknown")));
           });
         },
       });

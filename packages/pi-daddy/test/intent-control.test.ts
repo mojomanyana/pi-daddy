@@ -52,6 +52,7 @@ test("busy barrier waits for original live reservation; exact duplicate never ap
   const f = await fixture(); await f.controls.request(f.requests.revise);
   const state = await f.controls.inspect(), permit = await f.budget.reserve(demand("busy"), { selection: state.selection, revision: state.revision, obligation: state.nextObligation! });
   assert.equal((await f.controls.request(f.requests.priority)).records[1].application, "pending-or-unknown");
+  assert.equal((await f.budget.controls(null).inspect()).admission, "blocked-pending", "dispatch readback must include the v3 intent barrier");
   await assert.rejects(f.budget.reserve(demand("blocked"), { selection: state.selection, revision: state.revision, obligation: state.nextObligation! }), { code: "DISPATCH_BLOCKED" });
   assert.equal((await f.controls.reconcile(f.requests.priority)).records[1].application, "pending-or-unknown");
   await permit.settle("completed");
