@@ -1,11 +1,12 @@
-import { test } from "node:test";
+import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import { chmod, writeFile, readFile, open, readdir, rename } from "node:fs/promises";
 import { join } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { Compile } from "typebox/compile";
-import { tempDir } from "./tmp.ts";
+import { cleanupTempDirs, tempDir } from "./tmp.ts";
+after(cleanupTempDirs);
 import { bindWorkIntent } from "../src/intent-application.ts";
 import { createIntentBudget, openResourceBudget } from "../src/resource-budget.ts";
 import { intentRequestDigest, parseIntentRequest, type IntentRequest } from "../src/intent-control.ts";

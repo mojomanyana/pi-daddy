@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { after, test } from "node:test";
 import { chmod, readFile, writeFile, appendFile, open, rename } from "node:fs/promises";
 import { join } from "node:path";
-import { tempDir } from "./tmp.ts";
+import { cleanupTempDirs, tempDir } from "./tmp.ts";
+after(cleanupTempDirs);
 import { createExperimentBudget, openResourceBudget } from "../src/resource-budget.ts";
 import { experimentCancellationDigest } from "../src/experiment-contract.ts";
 import { prepareDigestProfile } from "../src/effect-profile.ts";

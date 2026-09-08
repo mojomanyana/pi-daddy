@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { after, test } from "node:test";
 import { chmod, mkdir, readFile, writeFile, rename, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { tempDir } from "./tmp.ts";
+import { cleanupTempDirs, tempDir } from "./tmp.ts";
+after(cleanupTempDirs);
 import { readNativeSession, parseNativeSessionBytes, ENV_NATIVE_SESSION_ROOT, herdrSessionReference } from "../src/native-session.ts";
 import { beginExecutionRetention, drainExecutionRetention, parseExecutionRetentionManifest } from "../src/execution-retention.ts";
 import { runHerdrPane } from "../src/run-herdr.ts";
@@ -115,7 +116,7 @@ test("native observation detaches queued references and explicitly records coale
 test("the governed process seam retains actual private SessionManager bytes from an explicit host target", async () => {
   const f = await native(), archive = await tempDir("process-native-archive-");
   const bin = join(f.root, "bin"); await mkdir(bin);
-  const module = pathToFileURL(join(process.cwd(), "node_modules/@earendil-works/pi-coding-agent/dist/core/session-manager.js")).href;
+  const module = new URL("core/session-manager.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href;
   await writeFile(join(bin, "pi"), `#!${process.execPath}\n(async()=>{const {SessionManager}=await import(${JSON.stringify(module)});const args=process.argv.slice(2);const file=args[args.indexOf('--session')+1];const sm=SessionManager.open(file);sm.appendMessage(${JSON.stringify(assistant())});process.stdout.write('fixture finished');})().catch(()=>process.exit(91));\n`);
   await chmod(join(bin, "pi"), 0o700);
   const values = { PATH: bin, PI_GRANTS_EXECUTION_ARCHIVE: archive, PI_GRANTS_NATIVE_SESSION_ROOT: f.root };

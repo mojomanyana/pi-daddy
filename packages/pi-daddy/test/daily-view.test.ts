@@ -1,11 +1,12 @@
-import { test } from "node:test";
+import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile, writeFile, unlink, utimes, readdir } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { tempDir } from "./tmp.ts";
+import { cleanupTempDirs, tempDir } from "./tmp.ts";
+after(cleanupTempDirs);
 import { dailyFixture, dailyAuthority } from "./daily-view-fixture.ts";
 import { fixtureText, fixtureEventRef, revisionRevalidationFixture } from "./work-ledger-fixtures.ts";
 import { createDailyViewReader, readDailyView } from "../src/daily-view.ts";

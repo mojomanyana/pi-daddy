@@ -109,7 +109,7 @@ test("receipt captures exit, signal, timeout, output digest, and exact candidate
 test("receipt executable digest names the staged bytes that actually ran", async () => {
   const ws = await workspace();
   const bin = await tempDir("check-executable-");
-  const executable = join(bin, "owned-check");
+  const executable = join(bin, "owned-check.cjs");
   const original = `#!${process.execPath}\nrequire('fs').writeFileSync(${JSON.stringify(executable)},'replaced');process.stdout.write('ORIGINAL')\n`;
   await writeFile(executable, original);
   await chmod(executable, 0o755);

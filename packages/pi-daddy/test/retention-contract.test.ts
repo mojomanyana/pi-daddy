@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { after, test } from "node:test";
 import { mkdir, readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -8,7 +8,8 @@ import { Compile } from "typebox/compile";
 import { buildRetentionContractFiles, writeRetentionContract, checkRetentionContract } from "../scripts/generate-retention-contract.ts";
 import { buildExecutionRetentionManifest, parseExecutionRetentionManifest, RETENTION_SCHEMA } from "../src/retention-contract.ts";
 import { verifyRetainedBytes } from "../src/execution-retention.ts";
-import { tempDir } from "./tmp.ts";
+import { cleanupTempDirs, tempDir } from "./tmp.ts";
+after(cleanupTempDirs);
 const fixtures = buildRetentionContractFiles();
 const example = () => JSON.parse(fixtures["fixtures/native-live-branch.json"]);
 

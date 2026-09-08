@@ -9,6 +9,12 @@ Released baseline last synced against the code: **2026-09-04**, `pi-daddy` 0.22.
 The **2026-09-06 work-v4 source candidate** is described separately below. It is not a release, activation,
 production authentication result or completed task/qualification gate.
 
+Cancellation control readback uses the existing experiment/resource locks; public experiment inspect and
+reconcile remain read-only, unlocked and fallible on concurrent changes. Required failures still reject
+and can follow an actual effect. Test listeners are exception-safe across missing prerequisites, ordinary
+fixture teardown respects explicit retention, and native/CommonJS fixtures no longer depend on repository
+CWD/module scope. See [ADR-0053](06-decisions/ADR-0053-owned-control-readback-and-test-lifetimes.md).
+
 The **local P15 fixed-profile order slice** compiles a bounded, independently authorized multi-node charter
 into the existing P11 controller using explicit fixed-experiment-v2 scheduling. Exact P01 obligations/source,
 frozen objective policies, pre-reserved recovery, designated product decisions and dependency eligibility

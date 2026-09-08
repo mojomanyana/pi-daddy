@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { after, test } from "node:test";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { appendFile, chmod, open, readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { tempDir } from "./tmp.ts";
+import { cleanupTempDirs, tempDir } from "./tmp.ts";
+after(cleanupTempDirs);
 import { createExperimentBudget, openResourceBudget, resourceBindingDigest } from "../src/resource-budget.ts";
 import { DIGEST_PROFILE, prepareDigestProfile } from "../src/effect-profile.ts";
 import { createExperiment, openExperiment, experimentBindingDigest, experimentCharterDigest, experimentCancellationDigest, type ExperimentCharter, type ExperimentCancellation } from "../src/experiment.ts";

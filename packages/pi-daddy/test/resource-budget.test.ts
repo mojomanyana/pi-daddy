@@ -1,11 +1,12 @@
-import { test } from "node:test";
+import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { appendFile, chmod, mkdir, readFile, rename, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { tempDir } from "./tmp.ts";
+import { cleanupTempDirs, tempDir } from "./tmp.ts";
+after(cleanupTempDirs);
 import { createResourceBudget, openResourceBudget, type AttemptDemand } from "../src/resource-budget.ts";
 const hash = (s: string) => createHash("sha256").update(s).digest("hex");
 const request = (attemptId: string, more: Partial<AttemptDemand> = {}): AttemptDemand => ({ attemptId, orderId: "order-a", experimentId: "experiment-a", kind: "primary", parentAttemptId: null, inputBytes: 3, inputDigest: hash("abc"), ...more });

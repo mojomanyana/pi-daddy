@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { after, test } from "node:test";
 import { mkdir, readFile, readdir, writeFile, chmod, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { beginExecutionRetention, ENV_EXECUTION_ARCHIVE, verifyRetainedBytes, type ExecutionRetentionManifest } from "../src/execution-retention.ts";
 import { executePlannedChild } from "../extensions/execute-child.ts";
 import { planDelegation } from "../src/delegate.ts";
-import { tempDir } from "./tmp.ts";
+import { cleanupTempDirs, tempDir } from "./tmp.ts";
+after(cleanupTempDirs);
 import grantsExtension from "../extensions/grants.ts";
 import { newExecutionId } from "../src/execution-id.ts";
 import { runChild } from "../src/run-child.ts";

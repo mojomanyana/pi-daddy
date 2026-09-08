@@ -107,7 +107,9 @@ export function openExperiment(input: ExperimentBinding, hostAuthority: Experime
         replayExperiment(c, [...events, { type: "cancel", request }]); await write({ type: "cancel", request }); return true;
       });
       if (fresh) handles.get(request.executionId)?.abort("operator-cancellation"); // Only an original live handle; no PID/idle/pane lookup.
-      return inspect();
+      // Cancellation is a control operation: serialize its readback with controller appends
+      // and original budget settlement. Public inspect/reconcile remain unlocked, fallible reads.
+      return store.transaction(async () => inspect(true));
     },
     async start(profile: DigestProfile): Promise<ExperimentRun> {
       approved(a, b.budget, c);

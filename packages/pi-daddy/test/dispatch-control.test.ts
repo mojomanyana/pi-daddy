@@ -1,10 +1,11 @@
-import { test } from "node:test";
+import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import { chmod, readFile, writeFile, readdir, rename, open } from "node:fs/promises";
 import { join } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { tempDir } from "./tmp.ts";
+import { cleanupTempDirs, tempDir } from "./tmp.ts";
+after(cleanupTempDirs);
 import { createDispatchBudget, createResourceBudget, openResourceBudget, resourceBindingDigest, type GovernedBudgetBinding } from "../src/resource-budget.ts";
 import { Compile } from "typebox/compile";
 import type { TSchema } from "typebox";

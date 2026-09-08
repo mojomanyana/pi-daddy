@@ -1,4 +1,4 @@
-import { test, mock } from "node:test";
+import { after, test, mock } from "node:test";
 import childProcess from "node:child_process";
 import { syncBuiltinESMExports } from "node:module";
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
@@ -7,7 +7,8 @@ import { createHash } from "node:crypto";
 import { chmod, mkdir, readFile, writeFile, watch } from "node:fs/promises";
 import { join } from "node:path";
 import { createServer } from "node:net";
-import { tempDir } from "./tmp.ts";
+import { cleanupTempDirs, tempDir } from "./tmp.ts";
+after(cleanupTempDirs);
 import { createResourceBudget, openResourceBudget } from "../src/resource-budget.ts";
 import { prepareDigestProfile, runDigestProfile, type DigestProfile } from "../src/effect-profile.ts";
 import { digestNamespaceArgs, digestRuntime } from "../src/effect-profile-runtime.ts";
@@ -87,13 +88,14 @@ test("cancellation after durable reservation is charged, settled, and cannot be 
   await assert.rejects(runDigestProfile(profile, { attempt: attempt("cancelled"), bytes: Buffer.from("abc") }), { code: "DUPLICATE" });
 });
 
-test("actual namespace denies owned outside read/write, read-only mutation, host network and process creation", async () => {
+test("actual namespace denies owned outside read/write, read-only mutation, host network and process creation", async t => {
   const { root } = await fixture(), input = join(root, "input"); await mkdir(input);
   await writeFile(join(root, "outside"), "outside"); await writeFile(join(input, "allowed"), "allowed");
   let connections = 0; const server = createServer(socket => { connections++; socket.destroy(); });
-  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  t.after(async () => { if (server.listening) await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); });
+  await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
   const port = (server.address() as { port: number }).port, runtime = await digestRuntime();
-  try {
+  {
     const code = `const fs=require('node:fs');let denied=[];for(const [k,fn]of Object.entries({outsideRead:()=>fs.readFileSync(${JSON.stringify(join(root, "outside"))}),outsideWrite:()=>fs.writeFileSync(${JSON.stringify(join(root, "denied"))},'x'),readOnlyWrite:()=>fs.writeFileSync('/input/denied','x')})){try{fn()}catch(e){denied.push(k+':'+e.code)}}const socket=require('node:net').connect(${port},'127.0.0.1');socket.on('connect',()=>process.exit(91));socket.on('error',()=>{console.log(JSON.stringify({allowed:fs.readFileSync('/input/allowed','utf8'),denied}));});socket.setTimeout(1000,()=>process.exit(92));`;
     const output = await runChild({ command: "/usr/bin/bwrap", args: digestNamespaceArgs(runtime, code, [], input), cwd: root, env: {}, timeoutMs: 3000, killGraceMs: 50 });
     assert.equal(output.code, 0, output.text);
@@ -103,7 +105,7 @@ test("actual namespace denies owned outside read/write, read-only mutation, host
     const child = await runChild({ command: "/usr/bin/bwrap", args: digestNamespaceArgs(runtime,
       `try{require('node:child_process').spawnSync('/runtime/node',['-e','process.exit(90)']);process.exit(91)}catch(e){console.log(e.code)}`, []), cwd: root, env: {}, timeoutMs: 3000 });
     assert.equal(child.code, 0, child.text); assert.equal(child.text.trim(), "ERR_ACCESS_DENIED");
-  } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
+  }
 });
 
 test("cancelling the actual namespace stops the owned worker, not just its output collector", async () => {
