@@ -1,0 +1,1070 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Bounded P01 successor selection v2, not authority",
+  "$comment": "Decoded structural contract. Runtime additionally enforces 48 KiB, duplicate/exact numeric parsing, digests, canonical builder output, unique event/obligation identities, complete selected P01 closure, independent authority and non-expansion. Embedded work_* definitions are exact ledger-v4 $defs with only local reference prefixes changed, checked by ordinary tests.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "requestId",
+    "bindingDigest",
+    "expectedRevision",
+    "expectedSelection",
+    "action",
+    "events",
+    "selection",
+    "priorities"
+  ],
+  "properties": {
+    "version": {
+      "const": "intent-request-v2"
+    },
+    "requestId": {
+      "$ref": "#/$defs/id"
+    },
+    "bindingDigest": {
+      "$ref": "#/$defs/work_digest"
+    },
+    "expectedRevision": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 32
+    },
+    "expectedSelection": {
+      "$ref": "#/$defs/selection"
+    },
+    "action": {
+      "const": "revise-selection"
+    },
+    "events": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "allOf": [
+          {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/work_workRevisionEvent"
+              },
+              {
+                "$ref": "#/$defs/work_workSnapshotEvent"
+              }
+            ]
+          },
+          {
+            "properties": {
+              "eventId": {
+                "$ref": "#/$defs/id"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "selection": {
+      "$ref": "#/$defs/selection"
+    },
+    "priorities": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "obligation",
+          "rank"
+        ],
+        "properties": {
+          "rank": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 127
+          },
+          "obligation": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "id",
+              "revision",
+              "digest"
+            ],
+            "properties": {
+              "kind": {
+                "const": "obligation"
+              },
+              "id": {
+                "$ref": "#/$defs/id"
+              },
+              "revision": {
+                "$ref": "#/$defs/work_revisionNumber"
+              },
+              "digest": {
+                "$ref": "#/$defs/work_digest"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9:_-]{1,128}$"
+    },
+    "selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "snapshot",
+        "event"
+      ],
+      "properties": {
+        "snapshot": {
+          "$ref": "#/$defs/work_identity"
+        },
+        "event": {
+          "$ref": "#/$defs/work_eventRef"
+        }
+      }
+    },
+    "work_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+\\-]{0,127}$"
+    },
+    "work_digest": {
+      "type": "string",
+      "minLength": 64,
+      "maxLength": 64,
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "work_revisionNumber": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "work_timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "minLength": 24,
+      "maxLength": 24,
+      "pattern": "^(?!0000)[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\\.[0-9]{3}Z$",
+      "$comment": "The runtime always verifies the calendar date, independently of a schema validator's format support."
+    },
+    "work_executionId": {
+      "type": "string",
+      "minLength": 41,
+      "maxLength": 41,
+      "pattern": "^[eE][xX][eE][cC]:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+    },
+    "work_revisionKind": {
+      "enum": [
+        "scope",
+        "goal",
+        "node",
+        "obligation",
+        "artifact",
+        "policy"
+      ]
+    },
+    "work_occurrenceProvenance": {
+      "enum": [
+        "declared",
+        "observed"
+      ]
+    },
+    "work_occurrenceState": {
+      "enum": [
+        "unknown",
+        "starting",
+        "running",
+        "completed",
+        "failed"
+      ]
+    },
+    "work_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "digest"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/work_id"
+        },
+        "digest": {
+          "$ref": "#/$defs/work_digest"
+        }
+      }
+    },
+    "work_eventRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "eventId",
+        "digest"
+      ],
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/work_id"
+        },
+        "digest": {
+          "$ref": "#/$defs/work_digest"
+        }
+      }
+    },
+    "work_revisionRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "id",
+        "revision",
+        "digest"
+      ],
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/work_revisionKind"
+        },
+        "id": {
+          "$ref": "#/$defs/work_id"
+        },
+        "revision": {
+          "$ref": "#/$defs/work_revisionNumber"
+        },
+        "digest": {
+          "$ref": "#/$defs/work_digest"
+        }
+      }
+    },
+    "work_scopeRef": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/work_revisionRef"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "scope"
+            }
+          }
+        }
+      ]
+    },
+    "work_intentRef": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/work_revisionRef"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "enum": [
+                "goal",
+                "node"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "work_goalParentRef": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/work_revisionRef"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "enum": [
+                "scope",
+                "goal"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "work_obligationRef": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/work_revisionRef"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "obligation"
+            }
+          }
+        }
+      ]
+    },
+    "work_artifactRef": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/work_revisionRef"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "artifact"
+            }
+          }
+        }
+      ]
+    },
+    "work_policyRef": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/work_revisionRef"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "policy"
+            }
+          }
+        }
+      ]
+    },
+    "work_inventoryRef": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/work_revisionRef"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "enum": [
+                "goal",
+                "node",
+                "obligation",
+                "artifact",
+                "policy"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "work_workRevision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "id",
+        "revision",
+        "scopeId",
+        "predecessor",
+        "contentDigest",
+        "parent",
+        "dependencies",
+        "ownerId",
+        "permittedEffects",
+        "policy",
+        "digest"
+      ],
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/work_revisionKind"
+        },
+        "id": {
+          "$ref": "#/$defs/work_id"
+        },
+        "revision": {
+          "$ref": "#/$defs/work_revisionNumber"
+        },
+        "scopeId": {
+          "$ref": "#/$defs/work_id"
+        },
+        "predecessor": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/work_revisionRef"
+            }
+          ]
+        },
+        "contentDigest": {
+          "$ref": "#/$defs/work_digest"
+        },
+        "parent": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/work_revisionRef"
+            }
+          ]
+        },
+        "dependencies": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/work_obligationRef"
+          }
+        },
+        "ownerId": {
+          "$ref": "#/$defs/work_id"
+        },
+        "permittedEffects": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/work_id"
+          }
+        },
+        "policy": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/work_policyRef"
+            }
+          ]
+        },
+        "digest": {
+          "$ref": "#/$defs/work_digest"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "type": "object",
+            "properties": {
+              "revision": {
+                "const": 1
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "predecessor": {
+                "type": "null"
+              }
+            }
+          },
+          "else": {
+            "type": "object",
+            "properties": {
+              "predecessor": {
+                "$ref": "#/$defs/work_revisionRef"
+              }
+            }
+          }
+        },
+        {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "const": "scope"
+                },
+                "parent": {
+                  "type": "null"
+                },
+                "dependencies": {
+                  "type": "array",
+                  "maxItems": 0
+                },
+                "policy": {
+                  "type": "null"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "const": "goal"
+                },
+                "parent": {
+                  "$ref": "#/$defs/work_goalParentRef"
+                },
+                "dependencies": {
+                  "type": "array",
+                  "maxItems": 0
+                },
+                "policy": {
+                  "type": "null"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "const": "node"
+                },
+                "parent": {
+                  "$ref": "#/$defs/work_intentRef"
+                },
+                "dependencies": {
+                  "type": "array",
+                  "maxItems": 0
+                },
+                "policy": {
+                  "type": "null"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "const": "obligation"
+                },
+                "parent": {
+                  "$ref": "#/$defs/work_intentRef"
+                },
+                "policy": {
+                  "$ref": "#/$defs/work_policyRef"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "artifact",
+                    "policy"
+                  ]
+                },
+                "parent": {
+                  "type": "null"
+                },
+                "dependencies": {
+                  "type": "array",
+                  "maxItems": 0
+                },
+                "permittedEffects": {
+                  "type": "array",
+                  "maxItems": 0
+                },
+                "policy": {
+                  "type": "null"
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "$comment": "Runtime also requires scopeId=id for scope, same kind/id and exact predecessor revision+1, canonical list ordering, and own digest equality. Graph scope/history checks require the complete event snapshot."
+    },
+    "work_obligationBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "intent",
+        "obligation",
+        "artifact",
+        "policy"
+      ],
+      "properties": {
+        "intent": {
+          "$ref": "#/$defs/work_intentRef"
+        },
+        "obligation": {
+          "$ref": "#/$defs/work_obligationRef"
+        },
+        "artifact": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/work_artifactRef"
+            }
+          ]
+        },
+        "policy": {
+          "$ref": "#/$defs/work_policyRef"
+        }
+      }
+    },
+    "work_workSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "snapshotId",
+        "scope",
+        "revisions",
+        "bindings",
+        "digest"
+      ],
+      "properties": {
+        "snapshotId": {
+          "$ref": "#/$defs/work_id"
+        },
+        "scope": {
+          "$ref": "#/$defs/work_scopeRef"
+        },
+        "revisions": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/work_inventoryRef"
+          }
+        },
+        "bindings": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/work_obligationBinding"
+          }
+        },
+        "digest": {
+          "$ref": "#/$defs/work_digest"
+        }
+      },
+      "$comment": "Runtime orders bindings by obligation ref, rejects duplicate obligation keys, and checks digests. Projection validates unique selected entities, exact bindings, same-scope ancestors, predecessors and dependencies."
+    },
+    "work_occurrenceLabels": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sessionId",
+        "branchLeafId",
+        "toolCallId",
+        "taskId",
+        "workspaceId",
+        "definitionDigest",
+        "configurationDigest",
+        "modelId",
+        "effortId"
+      ],
+      "properties": {
+        "sessionId": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/work_id"
+            }
+          ]
+        },
+        "branchLeafId": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/work_id"
+            }
+          ]
+        },
+        "toolCallId": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/work_id"
+            }
+          ]
+        },
+        "taskId": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/work_id"
+            }
+          ]
+        },
+        "workspaceId": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/work_id"
+            }
+          ]
+        },
+        "definitionDigest": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/work_digest"
+            }
+          ]
+        },
+        "configurationDigest": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/work_digest"
+            }
+          ]
+        },
+        "modelId": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/work_id"
+            }
+          ]
+        },
+        "effortId": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/work_id"
+            }
+          ]
+        }
+      }
+    },
+    "work_occurrencePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope",
+        "obligation",
+        "executionId",
+        "parentExecutionId",
+        "childId",
+        "variantId",
+        "artifact",
+        "provenance",
+        "state",
+        "labels"
+      ],
+      "properties": {
+        "scope": {
+          "$ref": "#/$defs/work_scopeRef"
+        },
+        "obligation": {
+          "$ref": "#/$defs/work_obligationRef"
+        },
+        "executionId": {
+          "$ref": "#/$defs/work_executionId"
+        },
+        "parentExecutionId": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/work_executionId"
+            }
+          ]
+        },
+        "childId": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/work_id"
+            }
+          ]
+        },
+        "variantId": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/work_id"
+            }
+          ]
+        },
+        "artifact": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/work_artifactRef"
+            }
+          ]
+        },
+        "provenance": {
+          "$ref": "#/$defs/work_occurrenceProvenance"
+        },
+        "state": {
+          "$ref": "#/$defs/work_occurrenceState"
+        },
+        "labels": {
+          "$ref": "#/$defs/work_occurrenceLabels"
+        }
+      },
+      "$comment": "Runtime rejects self-parent execution identity. Provenance is wire evidence, never acceptance authority."
+    },
+    "work_evidenceRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "digest",
+        "event"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/work_id"
+        },
+        "digest": {
+          "$ref": "#/$defs/work_digest"
+        },
+        "event": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/work_eventRef"
+            }
+          ]
+        }
+      }
+    },
+    "work_acceptanceBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "snapshot",
+        "scope",
+        "intent",
+        "obligation",
+        "artifact",
+        "artifactDigest",
+        "policy",
+        "evidence"
+      ],
+      "properties": {
+        "snapshot": {
+          "$ref": "#/$defs/work_identity"
+        },
+        "scope": {
+          "$ref": "#/$defs/work_scopeRef"
+        },
+        "intent": {
+          "$ref": "#/$defs/work_intentRef"
+        },
+        "obligation": {
+          "$ref": "#/$defs/work_obligationRef"
+        },
+        "artifact": {
+          "$ref": "#/$defs/work_artifactRef"
+        },
+        "artifactDigest": {
+          "$ref": "#/$defs/work_digest"
+        },
+        "policy": {
+          "$ref": "#/$defs/work_policyRef"
+        },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/work_evidenceRef"
+          }
+        }
+      }
+    },
+    "work_acceptancePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authorityId",
+        "binding"
+      ],
+      "properties": {
+        "authorityId": {
+          "$ref": "#/$defs/work_id"
+        },
+        "binding": {
+          "$ref": "#/$defs/work_acceptanceBinding"
+        }
+      }
+    },
+    "work_revisionPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "revision"
+      ],
+      "properties": {
+        "revision": {
+          "$ref": "#/$defs/work_workRevision"
+        }
+      }
+    },
+    "work_snapshotPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "snapshot"
+      ],
+      "properties": {
+        "snapshot": {
+          "$ref": "#/$defs/work_workSnapshot"
+        }
+      }
+    },
+    "work_workRevisionEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ledgerVersion",
+        "event",
+        "eventId",
+        "ts",
+        "payload",
+        "digest"
+      ],
+      "properties": {
+        "ledgerVersion": {
+          "const": 4
+        },
+        "event": {
+          "const": "work_revision"
+        },
+        "eventId": {
+          "$ref": "#/$defs/work_id"
+        },
+        "ts": {
+          "$ref": "#/$defs/work_timestamp"
+        },
+        "payload": {
+          "$ref": "#/$defs/work_revisionPayload"
+        },
+        "digest": {
+          "$ref": "#/$defs/work_digest"
+        }
+      }
+    },
+    "work_workSnapshotEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ledgerVersion",
+        "event",
+        "eventId",
+        "ts",
+        "payload",
+        "digest"
+      ],
+      "properties": {
+        "ledgerVersion": {
+          "const": 4
+        },
+        "event": {
+          "const": "work_snapshot"
+        },
+        "eventId": {
+          "$ref": "#/$defs/work_id"
+        },
+        "ts": {
+          "$ref": "#/$defs/work_timestamp"
+        },
+        "payload": {
+          "$ref": "#/$defs/work_snapshotPayload"
+        },
+        "digest": {
+          "$ref": "#/$defs/work_digest"
+        }
+      }
+    },
+    "work_workOccurrenceEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ledgerVersion",
+        "event",
+        "eventId",
+        "ts",
+        "payload",
+        "digest"
+      ],
+      "properties": {
+        "ledgerVersion": {
+          "const": 4
+        },
+        "event": {
+          "const": "work_occurrence"
+        },
+        "eventId": {
+          "$ref": "#/$defs/work_id"
+        },
+        "ts": {
+          "$ref": "#/$defs/work_timestamp"
+        },
+        "payload": {
+          "$ref": "#/$defs/work_occurrencePayload"
+        },
+        "digest": {
+          "$ref": "#/$defs/work_digest"
+        }
+      }
+    },
+    "work_workAcceptanceEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ledgerVersion",
+        "event",
+        "eventId",
+        "ts",
+        "payload",
+        "digest"
+      ],
+      "properties": {
+        "ledgerVersion": {
+          "const": 4
+        },
+        "event": {
+          "const": "work_acceptance"
+        },
+        "eventId": {
+          "$ref": "#/$defs/work_id"
+        },
+        "ts": {
+          "$ref": "#/$defs/work_timestamp"
+        },
+        "payload": {
+          "$ref": "#/$defs/work_acceptancePayload"
+        },
+        "digest": {
+          "$ref": "#/$defs/work_digest"
+        }
+      }
+    }
+  }
+}

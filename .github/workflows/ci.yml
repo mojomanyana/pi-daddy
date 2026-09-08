@@ -60,6 +60,12 @@ jobs:
         working-directory: packages/pi-daddy
         run: node scripts/runtime-preflight.ts
 
+      # Preserve shared setup-node cache bytes/mode. The original telemetry above stays visible.
+      - name: stage verified job-owned Node runtime
+        timeout-minutes: 1
+        working-directory: packages/pi-daddy
+        run: node scripts/private-runtime.ts
+
       - name: unit tests
         timeout-minutes: 5
         working-directory: packages/pi-daddy

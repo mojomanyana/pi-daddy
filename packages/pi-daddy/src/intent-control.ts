@@ -10,8 +10,8 @@ export interface WorkIntentBinding {
   selection: IntentSelection; priorities: IntentPriority[];
 }
 export interface IntentRequest {
-  version: "intent-request-v1"; requestId: string; bindingDigest: string; expectedRevision: number;
-  expectedSelection: IntentSelection; action: "revise-scope" | "reprioritize" | "select-alternative";
+  version: "intent-request-v1" | "intent-request-v2"; requestId: string; bindingDigest: string; expectedRevision: number;
+  expectedSelection: IntentSelection; action: "revise-scope" | "reprioritize" | "select-alternative" | "revise-selection";
   events: (WorkRevisionEvent | WorkSnapshotEvent)[]; selection: IntentSelection; priorities: IntentPriority[];
 }
 export interface IntentReceipt {
@@ -50,11 +50,11 @@ export function intentSelection(value: unknown): IntentSelection {
 export function intentRequest(input: IntentRequest): WorkFrozen<IntentRequest> {
   const r = copyWorkJson(input) as unknown as IntentRequest;
   controlShape(r, ["version", "requestId", "bindingDigest", "expectedRevision", "expectedSelection", "action", "events", "selection", "priorities"]);
-  if (r.version !== "intent-request-v1" || !id(r.requestId) || !hex(r.bindingDigest) || !Number.isSafeInteger(r.expectedRevision) || r.expectedRevision < 0 || r.expectedRevision > 32 ||
-    !["revise-scope", "reprioritize", "select-alternative"].includes(r.action) || !Array.isArray(r.events) || r.events.length > 16 || Buffer.byteLength(intentKey(r)) > 48 * 1024) throw new TypeError("invalid bounded intent request");
+  if ((r.action === "revise-selection" ? r.version !== "intent-request-v2" : r.version !== "intent-request-v1") || !id(r.requestId) || !hex(r.bindingDigest) || !Number.isSafeInteger(r.expectedRevision) || r.expectedRevision < 0 || r.expectedRevision > 32 ||
+    !["revise-scope", "reprioritize", "select-alternative", "revise-selection"].includes(r.action) || !Array.isArray(r.events) || r.events.length > 16 || Buffer.byteLength(intentKey(r)) > 48 * 1024) throw new TypeError("invalid bounded intent request");
   const parsed = parseWorkLedgerText(r.events.map(e => intentKey(e)).join("\n"));
   if (!parsed.complete || parsed.events.some(e => !id(e.eventId) || !["work_revision", "work_snapshot"].includes(e.event)) || new Set(parsed.events.map(e => e.eventId)).size !== parsed.events.length ||
-    (r.action !== "revise-scope" && r.events.length)) throw new TypeError("only strict revision/snapshot proposals may be appended");
+    (!["revise-scope", "revise-selection"].includes(r.action) && r.events.length)) throw new TypeError("only strict revision/snapshot proposals may be appended");
   return freezeWork({ ...r, expectedSelection: intentSelection(r.expectedSelection), selection: intentSelection(r.selection), priorities: intentPriorities(r.priorities) });
 }
 export const parseIntentRequest = (text: string) => intentRequest(parseWorkJson(text) as unknown as IntentRequest);
@@ -86,7 +86,7 @@ export function replayIntent(state: IntentState, event: Record<string, unknown>,
     const r = event.receipt as IntentReceipt;
     controlShape(r, ["requestId", "digest", "expectedRevision", "expectedSelection", "action", "selection", "priorities", "events", "decision", "application", "outcome", "resultSelection"]);
     intentSelection(r.expectedSelection); intentSelection(r.selection); intentPriorities(r.priorities);
-    if (!id(r.requestId) || !hex(r.digest) || !Number.isSafeInteger(r.expectedRevision) || r.expectedRevision < 0 || !["revise-scope", "reprioritize", "select-alternative"].includes(r.action) ||
+    if (!id(r.requestId) || !hex(r.digest) || !Number.isSafeInteger(r.expectedRevision) || r.expectedRevision < 0 || !["revise-scope", "reprioritize", "select-alternative", "revise-selection"].includes(r.action) ||
       !Array.isArray(r.events) || r.events.length > 16 || state.records.length >= 32 || state.records.some(p => p.requestId === r.requestId) ||
       intentDecision(state, r, r.decision !== "authority-unavailable", dispatchBusy) !== r.decision || r.application !== (r.decision === "approved" ? "pending-or-unknown" : "not-applied") ||
       r.outcome !== (r.decision === "approved" ? "pending-or-unknown" : "refused") || r.resultSelection !== null) throw new Error("invalid intent decision sequence");

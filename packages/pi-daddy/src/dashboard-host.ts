@@ -1,3 +1,4 @@
+import { isOrdinaryChildren, type OrdinaryChildren, type OrdinaryCancellation } from "./ordinary-children.ts";
 import { loadedDashboardHarnessDigest } from "./dashboard-harness.ts";
 import { join, isAbsolute } from "node:path";
 import { dataDigest, detached, freeze, sha, reviewPage } from "./debrief-contract.ts";
@@ -15,12 +16,13 @@ export * from "./dashboard-host-contract.ts";
 const hosts=new WeakSet<object>();
 export const isDashboardHost=(value:unknown):value is DashboardHost=>typeof value==="object"&&value!==null&&hosts.has(value);
 export type DashboardHost=ReturnType<typeof openDashboardHost>;
-export interface DashboardHostOptions { harness:DashboardHarness; config:DashboardHostConfig; budget:GovernedBudgetBinding; experiment?:ReturnType<typeof openExperiment>; authority:()=>DashboardHostAuthority|null;
+export interface DashboardHostOptions { ordinary?:OrdinaryChildren; harness:DashboardHarness; config:DashboardHostConfig; budget:GovernedBudgetBinding; experiment?:ReturnType<typeof openExperiment>; authority:()=>DashboardHostAuthority|null;
   /** Independently sourced current declaration. Never inferred from idle, a PID, title or request fields. */
   presence?:()=>{present:boolean;closing:boolean;evidenceDigest:string;expiresAt:number}|null;
 }
 function configuration(input:DashboardHostConfig){
-  const c=detached(input);controlShape(c,["version","trustDirectory","trustPolicyId","archiveRoot","scope","author","policyPath","policySha256","sources","selection","cases","blind","budgetDigest","experimentDigest","harnessArtifactDigest"]);
+  const c=detached(input);controlShape(c,["version","trustDirectory","trustPolicyId","archiveRoot","scope","author","policyPath","policySha256","sources","selection","cases","blind","budgetDigest","experimentDigest","harnessArtifactDigest",...(Object.hasOwn(c,"ordinaryDigest")?["ordinaryDigest"]:[])]);
+  if(Object.hasOwn(c,"ordinaryDigest")&&!sha(c.ordinaryDigest))throw Error("invalid ordinary binding digest");
   if(c.version!=="producer-dashboard-host-v1"||![c.trustDirectory,c.archiveRoot,c.policyPath].every(p=>typeof p==="string"&&isAbsolute(p))||![c.trustPolicyId,c.policySha256,c.budgetDigest,c.harnessArtifactDigest].every(sha)||!(c.experimentDigest===null||sha(c.experimentDigest))||typeof c.scope!=="string"||!c.scope||c.scope.length>128||typeof c.author!=="string"||!c.author||c.author.length>256||!Array.isArray(c.sources)||c.sources.length<1||c.sources.length>32||new Set(c.sources.map(s=>s.id)).size!==c.sources.length||c.sources.filter(s=>s.kind==="work").length>1||c.sources.some(s=>!/^[a-zA-Z0-9:_-]{1,128}$/.test(s.id)||!["work","retention","facts"].includes(s.kind)))throw Error("invalid explicit dashboard host binding");
   return freeze(c);
 }
@@ -38,7 +40,8 @@ export function createDashboardHost(options:DashboardHostOptions){
 export function openDashboardHost(options:DashboardHostOptions){
   const c=configuration(options.config),h=options.harness,hostDigest=dashboardHostDigest(c),selectionDigest=dashboardSelectionDigest(c.selection);
   if(loadedDashboardHarnessDigest(h)!==c.harnessArtifactDigest)throw Error("verified loaded harness artifact required");
-  const budget=openResourceBudget(options.budget),experiment=options.experiment;
+  const budget=openResourceBudget(options.budget),experiment=options.experiment,ordinary=options.ordinary;
+  if(ordinary&&(!isOrdinaryChildren(ordinary)||ordinary.bindingDigest!==c.ordinaryDigest))throw Error("original ordinary controller binding required");
   if(resourceBindingDigest(budget.binding)!==c.budgetDigest||experiment&&(!isExperimentController(experiment)||experimentBindingDigest(experiment.binding)!==c.experimentDigest))throw Error("original controller binding required");
   const trust=h.openTrustLifecycle(c.trustDirectory),journal=h.learningJournal(join(c.trustDirectory,"producer-host"));
   const initial=journal.read()[0].value;
@@ -59,9 +62,9 @@ export function openDashboardHost(options:DashboardHostOptions){
     journal.append(rows.at(-1)!.id,{type:"checkpoint",checkpoint:next});
   }};
   const boundary=async()=>{const dispatch=await budget.controls(null).inspect(),accounting=await budget.inspect();return {dispatch,active:accounting.active};};
-  const paused=async(revision:number)=>{const b=await boundary();if(experiment){const view=await experiment.inspect();if(view.budget?.active!==0||view.control!=="not-assessed")throw Error("original experiment not quiescent");}if(!b.dispatch.paused||b.dispatch.admission!=="paused"||b.dispatch.revision!==revision||b.active!==0)throw Error("safe paused selection unavailable");};
+  const paused=async(revision:number)=>{const b=await boundary();if(ordinary&&!ordinary.quiescent())throw Error("original ordinary children not quiescent");if(experiment){const view=await experiment.inspect();if(view.budget?.active!==0||view.control!=="not-assessed")throw Error("original experiment not quiescent");}if(!b.dispatch.paused||b.dispatch.admission!=="paused"||b.dispatch.revision!==revision||b.active!==0)throw Error("safe paused selection unavailable");};
   const currentSelection=async()=>budget.binding.intent?(await budget.intentControls(null).inspect()).selection:c.selection;
-  const nativeRead=async()=>({dispatch:await budget.controls(null).inspect(),intent:budget.binding.intent?await budget.intentControls(null).inspect():null,experiment:experiment?await experiment.inspect():null});
+  const nativeRead=async()=>({dispatch:await budget.controls(null).inspect(),intent:budget.binding.intent?await budget.intentControls(null).inspect():null,experiment:experiment?await experiment.inspect():null,ordinary:ordinary?ordinary.inspect():null});
   const api={hostDigest,selectionDigest,
     async frame(){
       const rows=history(),tip=rows.at(-1)!.id,a=authority();let source:unknown=null,error:string|null=null;
@@ -126,6 +129,9 @@ export function openDashboardHost(options:DashboardHostOptions){
               result=request.operation==="dispatch"?await port.request(native):await port.reconcile(native.requestId);
             }else if(request.operation==="intent"||request.operation==="intent-reconcile"){
               const native=detached(intentRequest(request.payload as IntentRequest)) as IntentRequest,port=budget.intentControls(a!.dispatch);result=request.operation==="intent"?await port.request(native):await port.reconcile(native);
+            }else if(request.operation==="ordinary-cancel"){
+              if(!ordinary||!isOrdinaryChildren(ordinary))throw Error("original ordinary child handles unavailable; no recovery");
+              result=ordinary.cancel(request.payload as OrdinaryCancellation,a!.ordinary??null);
             }else if(request.operation==="cancel"){
               const p=detached(request.payload) as {dispatch:DispatchRequest;cancellation:ExperimentCancellation};controlShape(p,["dispatch","cancellation"]);const legacy=dispatchRequest(p.dispatch);
               const current=await budget.controls(null).inspect();

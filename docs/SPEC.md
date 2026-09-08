@@ -9,6 +9,19 @@ Released baseline last synced against the code: **2026-09-04**, `pi-daddy` 0.22.
 The **2026-09-06 work-v4 source candidate** is described separately below. It is not a release, activation,
 production authentication result or completed task/qualification gate.
 
+The **local safe-boundary followup** adds opt-in cancellation capture from actual original grants
+extension/session handles and routes exact approved ordinary cancellation through the existing dashboard
+journal/CLI. Caller, fanout sibling and worker-result lifetimes remain original; failed observations and
+host acknowledgements stay separate from success. Late opt-in cannot certify an empty registry's coverage.
+Versioned `intent-request-v2` applies direct non-scope successors through existing P01/CAS/quiescence and
+append-once APIs without widening entity, owner, topology, policy or effects. See
+[ADR-0057](06-decisions/ADR-0057-original-ordinary-control-and-ci-driver-boundaries.md),
+[ordinary control](../packages/pi-daddy/contracts/ordinary-control/v1/README.md) and
+[intent v2](../packages/pi-daddy/contracts/intent-control/v2/README.md). CI stages only a new byte-verified
+private runtime, preserving shared cache/production guards; the205-case path file gets a bounded120s
+aggregate allowance with existing case deadlines. Remote bwrap provisioning and exact remote remeasurement
+remain unauthorized/unestablished. No new publication or overall acceptance follows these local changes.
+
 The **local connected dashboard host** now connects explicit ordinary native-retention targets,
 actual harness policy/checkpoint/fact-source/semantic observation and the existing daily read path.
 It uses the pinned real trust/learning journal and case/blind writers for durable five-total attention,

@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import { syncBuiltinESMExports } from "node:module";
 import { join } from "node:path";
 import { tempDir, cleanupTempDirs } from "./tmp.ts";
+import { unitTestBatches } from "../scripts/unit-tests.ts";
 import { digestRuntime, inspectDigestPrerequisites } from "../src/effect-profile-runtime.ts";
 after(cleanupTempDirs);
 test("independent CI telemetry reports all prerequisites after an early lookup failure without claiming qualification",async()=>{
@@ -11,9 +12,12 @@ test("independent CI telemetry reports all prerequisites after an early lookup f
   fs.lstat=(async function(p:any,...args:any[]){seen.push(String(p));if(String(p)===node)throw Object.assign(new Error("owned missing node"),{code:"ENOENT"});return Reflect.apply(original,fs,[p,...args]);}) as typeof fs.lstat;syncBuiltinESMExports();
   try{const report=await inspectDigestPrerequisites();assert.equal(report.conforms,false);assert.equal(report.qualification,"not-assessed");assert.deepEqual(seen,[node,"/usr/bin/bwrap","/usr/bin/prlimit"]);assert.equal(report.observations.length,3);assert.equal(report.observations[0].error?.code,"ENOENT");}finally{fs.lstat=original;syncBuiltinESMExports();}
 });
-test("CI deadlines retain the complete ordinary glob and both declared runtime legs",async()=>{
+test("CI deadlines retain complete ordinary discovery and both declared runtime legs",async()=>{
   const pkg=JSON.parse(await fs.readFile(new URL("../package.json",import.meta.url),"utf8")),workflow=await fs.readFile(new URL("../../../.github/workflows/ci.yml",import.meta.url),"utf8");
-  assert.equal(pkg.scripts.test,"node --test --test-concurrency=2 --test-timeout=45000 test/*.test.ts");assert.match(workflow,/timeout-minutes: 10/);assert.match(workflow,/- name: unit tests\n        timeout-minutes: 5/);assert.match(workflow,/node: \["22\.19\.0", "24\.x"\]/);assert.match(workflow,/run: node scripts\/runtime-preflight\.ts/);
+  assert.equal(pkg.scripts.test,"node scripts/unit-tests.ts");
+  const files=(await fs.readdir(new URL("./",import.meta.url))).filter(f=>f.endsWith(".test.ts")).map(f=>"test/"+f).sort(),batches=unitTestBatches(files);
+  assert.deepEqual(batches.flatMap(b=>b.files).sort(),files);assert.equal(new Set(batches.flatMap(b=>b.files)).size,files.length);
+  assert.ok(batches.every(b=>b.timeout===(b.files.includes("test/work-ledger-path.test.ts")?120000:45000)));assert.match(workflow,/timeout-minutes: 10/);assert.match(workflow,/- name: unit tests\n        timeout-minutes: 5/);assert.match(workflow,/node: \["22\.19\.0", "24\.x"\]/);assert.match(workflow,/run: node scripts\/runtime-preflight\.ts/);
 });
 for(const kind of ["type","mode","size"] as const)test(`runtime ${kind} rejection preserves the guard and exposes the exact real-stat predicate`,async()=>{
   const root=await tempDir("runtime-predicate-"),path=join(root,"fixture"),node=await fs.realpath(process.execPath);

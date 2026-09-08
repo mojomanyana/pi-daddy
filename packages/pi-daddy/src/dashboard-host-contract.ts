@@ -3,6 +3,7 @@ import { controlShape } from "./dispatch-control.ts";
 import type { DebriefHarness, DurableBlindBinding, CaseSelection } from "./debrief-host.ts";
 import type { WorkProjectionContext, WorkFrozen } from "./work-ledger.ts";
 import type { DispatchAuthority } from "./dispatch-control.ts";
+import type { OrdinaryAuthority } from "./ordinary-children.ts";
 import type { ExperimentAuthority } from "./experiment-contract.ts";
 export const DASHBOARD_HARNESS_PIN = "1c02194d4a3709d14890a5fbbad91ff5f0151f65";
 export interface HostEvent { id: string; prior: string | null; value: Record<string, unknown> }
@@ -24,16 +25,18 @@ export interface DashboardHostConfig {
   policyPath: string; policySha256: string; sources: { id: string; kind: "work" | "retention" | "facts" }[];
   selection: WorkProjectionContext["selectedSnapshot"]; cases: CaseSelection | null; blind: DurableBlindBinding | null;
   budgetDigest: string; experimentDigest: string | null; harnessArtifactDigest: string;
+  ordinaryDigest?: string;
 }
-export interface DashboardHostRequest { version: "1.0"; requestId: string; hostDigest: string; expectedTip: string; selectionDigest: string; operation: "observe" | "present" | "presented" | "defer" | "debrief" | "dispatch" | "intent" | "cancel" | "dispatch-reconcile" | "intent-reconcile"; payload: unknown }
+export interface DashboardHostRequest { version: "1.0"; requestId: string; hostDigest: string; expectedTip: string; selectionDigest: string; operation: "observe" | "present" | "presented" | "defer" | "debrief" | "dispatch" | "intent" | "cancel" | "dispatch-reconcile" | "intent-reconcile" | "ordinary-cancel"; payload: unknown }
 export interface DashboardHostAuthority {
   hostDigests: readonly string[]; requestDigests: readonly string[];
   workContext: WorkFrozen<WorkProjectionContext>; dispatch: DispatchAuthority | null; experiment: ExperimentAuthority | null;
+  ordinary?: OrdinaryAuthority | null;
 }
 export const dashboardHostDigest = (c: DashboardHostConfig): string => dataDigest(c);
 export const dashboardSelectionDigest = (selection: DashboardHostConfig["selection"]): string => dataDigest(selection);
 export function dashboardHostRequest(input: DashboardHostRequest) {
   const r=detached(input);controlShape(r,["version","requestId","hostDigest","expectedTip","selectionDigest","operation","payload"]);
-  if(r.version!=="1.0"||!/^[a-zA-Z0-9:_-]{1,128}$/.test(r.requestId)||![r.hostDigest,r.expectedTip,r.selectionDigest].every(sha)||!["observe","present","presented","defer","debrief","dispatch","intent","cancel","dispatch-reconcile","intent-reconcile"].includes(r.operation)||Buffer.byteLength(JSON.stringify(r))>60000)throw Error("bounded exact dashboard request required");return freeze(r);
+  if(r.version!=="1.0"||!/^[a-zA-Z0-9:_-]{1,128}$/.test(r.requestId)||![r.hostDigest,r.expectedTip,r.selectionDigest].every(sha)||!["observe","present","presented","defer","debrief","dispatch","intent","cancel","dispatch-reconcile","intent-reconcile","ordinary-cancel"].includes(r.operation)||Buffer.byteLength(JSON.stringify(r))>60000)throw Error("bounded exact dashboard request required");return freeze(r);
 }
 export const dashboardHostRequestDigest = (r: DashboardHostRequest): string => dataDigest(dashboardHostRequest(r));

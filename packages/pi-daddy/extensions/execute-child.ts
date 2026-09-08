@@ -1,3 +1,4 @@
+import { withOrdinaryChild } from "./ordinary-runtime.ts";
 import type { Delegation } from "../src/delegate.ts";
 import { beginExecutionRetention, retentionConfigurationDigest, type RetentionStatus } from "../src/execution-retention.ts";
 import { appendLedgerEvent, buildChildLifecycleEvent } from "../src/ledger.ts";
@@ -25,6 +26,7 @@ export interface DelegationOutcome {
   truncated?: boolean;
   spawnFailed?: boolean;
   retention?: RetentionStatus;
+  control?: "failed";
 }
 
 /**
@@ -80,7 +82,10 @@ export interface ChildProgressUpdate {
  * has already run, so failing closed there prevents nothing and used to discard completed work while
  * blaming "ledger" (R-99). The failure is reported alongside the outcome instead of replacing it.
  */
-export async function executePlannedChild(input: {
+export function executePlannedChild(input: Parameters<typeof executeChildBody>[0]): Promise<DelegationOutcome> {
+  return withOrdinaryChild(input, signal => executeChildBody({ ...input, signal }));
+}
+async function executeChildBody(input: {
   session: GrantsSession;
   plan: Delegation;
   agent?: string;
@@ -363,7 +368,7 @@ function errorWithTeardownNotes(error: unknown, notes: readonly string[]): unkno
   function withTeardownNotes(outcome: DelegationOutcome): DelegationOutcome {
     const observed = { ...outcome, retention: retention.status() };
     if (teardownFailures.length === 0) return observed;
-    return { ...observed, reason: [outcome.reason, ...teardownFailures].filter(Boolean).join("; ") };
+    return { ...observed, control: "failed", reason: [outcome.reason, ...teardownFailures].filter(Boolean).join("; ") };
   }
 
   async function teardown(): Promise<void> {

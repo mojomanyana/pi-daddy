@@ -4,6 +4,22 @@ This is the existing dashboard's explicit operational host, not another schedule
 store. It launches no models. Source through f276698 is public draft PR35; this subsequent integration is
 LOCAL ONLY. Original overall CHANGES-REQUESTED remains. No live/authenticated factory acceptance follows.
 
+## Additive original ordinary control and revision application
+
+Optional `ordinaryDigest` pins the original port retrieved using `ordinaryChildrenFor(originalExtensionAPI)`
+BEFORE dispatch. Pass it as `options.ordinary` and independently approve native requests via `authority.ordinary`.
+`ordinary-cancel` carries the exact closed v1 request through this SAME host journal/CLI handler. It requests
+original abort, never reconstructs a PID/pane or replaces a caller promise. Failed final acknowledgement
+remains failure despite cancellation/complete bytes. Late opt-in coverage gaps and failed/unknown ordinary
+control withhold presentation quiescence. Absent original ports cannot cancel; old configs are unchanged.
+See `contracts/ordinary-control/v1/README.md` for limits. The legacy P11 bridge remains separately supported.
+
+Existing `intent`/`intent-reconcile` also carry opt-in `intent-request-v2` / `revise-selection` through the
+actual P01 controller: direct non-scope successors, not topology/owner/policy/effect expansion. No acceptance
+transfer or duplicate effect. See `contracts/intent-control/v2/README.md`. These narrow formerly absent A
+paths; unretained/crashed handles, wider revision domains and atomic authenticated live TUI steering remain
+unqualified. No new trust/case/blind/control store or worker observation hook is introduced.
+
 ## Loaded artifacts and independent authority
 
 `pi-daddy/dashboard-harness` exports `loadDashboardHarness(artifactRoot, manifest, privateParent)`.

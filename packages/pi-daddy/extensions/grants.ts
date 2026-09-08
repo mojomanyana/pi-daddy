@@ -47,6 +47,7 @@ import {
   openDashboardCommand,
 } from "../src/dashboard-handshake.ts";
 
+import { associateOrdinaryHost } from "../src/ordinary-children.ts";
 export default function (pi: ExtensionAPI) {
   // The path pi loads as the extension, so a child granted `tool:delegate` can be started with `-e <this>`.
   // Only this file can say so about itself, which is why the session takes it rather than deriving it.
@@ -59,6 +60,7 @@ export default function (pi: ExtensionAPI) {
   })();
 
   const session = createGrantsSession(extensionPath);
+  associateOrdinaryHost(pi,session);
   const dashboardPluginRoot = fileURLToPath(new URL("../herdr-plugin/", import.meta.url));
   const dashboardPaths = defaultDashboardPaths(
     process.env.PI_CODING_AGENT_DIR?.trim() || join(homedir(), ".pi", "agent"),

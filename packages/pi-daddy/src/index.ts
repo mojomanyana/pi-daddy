@@ -35,6 +35,7 @@ export {
 } from "./ledger.ts";
 
 export { createDebriefPresenter, type DebriefPresenter, type DebriefHost, type DebriefFrame, type DebriefCheckpoint, type DebriefPersistence } from "./debrief.ts";
+export { ordinaryChildrenFor, ordinaryCancellation, ordinaryCancellationDigest, isOrdinaryChildren, type OrdinaryChildren, type OrdinaryCancellation, type OrdinaryAuthority, type OrdinaryTarget } from "./ordinary-children.ts";
 export { loadDashboardHarness, loadedDashboardHarnessDigest, type DashboardHarnessArtifact } from "./dashboard-harness.ts";
 export { createDashboardHost, openDashboardHost, dashboardHostDigest, dashboardHostRequestDigest, dashboardSelectionDigest, type DashboardHost, type DashboardHostConfig, type DashboardHostRequest, type DashboardHostAuthority, type DashboardHarness, type DashboardHostOptions } from "./dashboard-host.ts";
 export { serveDashboardHost, connectDashboardHost, ENV_DASHBOARD_HOST_SOCKET, type DashboardConnection } from "./dashboard-host-transport.ts";

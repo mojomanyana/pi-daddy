@@ -65,8 +65,9 @@ export async function validateIntentApplication(binding: WorkFrozen<WorkIntentBi
     if (r.ownerId !== prior.ownerId || r.scopeId !== prior.scopeId || r.permittedEffects.some(e => !prior.permittedEffects.includes(e)) || intentKey(r.policy) !== intentKey(prior.policy) ||
       entity(r.parent) !== entity(prior.parent) || intentKey(r.dependencies.map(entity).sort()) !== intentKey(prior.dependencies.map(entity).sort()) ||
       r.kind === "policy" && r.digest !== prior.digest) throw new Error("owner, policy, topology or permission expansion refused");
-    if (request.action === "revise-scope" && r.digest !== prior.digest && (r.revision !== prior.revision + 1 || intentKey(r.predecessor) !== intentKey(ref(prior)))) throw new Error("exact successor required");
+    if (["revise-scope", "revise-selection"].includes(request.action) && r.digest !== prior.digest && (r.revision !== prior.revision + 1 || intentKey(r.predecessor) !== intentKey(ref(prior)))) throw new Error("exact successor required");
   }
+  if (request.action === "revise-selection" && !after.some(r => r.digest !== old.find(p => entity(p) === entity(r))!.digest)) throw new Error("at least one exact successor revision required");
   if (request.action === "revise-scope" && (next.scope!.revision !== current.scope!.revision + 1 || intentKey(next.scope!.predecessor) !== intentKey(ref(current.scope!)))) throw new Error("scope revision is not dispatch revision");
   for (const e of request.events) {
     // Rebuild through the actual P01 builders, not an alternate event/hash encoder.
