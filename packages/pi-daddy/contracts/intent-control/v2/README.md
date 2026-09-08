@@ -27,5 +27,8 @@ are transferred; new evidence/authority is independently required for new claims
 Ordinary tests exercise actual goal/obligation successor application without a scope revision, the genuine
 dashboard path, schema compatibility, owner/effect expansion refusals despite approval, denied/stale CAS,
 original-permit busy barrier and actual work sync failure/reconnect/reconciliation. Other structural kinds
-share the validator but are not a deployed task/model/policy qualification. Source is local-only pending
-new exact publication inspection; original overall CHANGES-REQUESTED is unchanged.
+share the validator but are not a deployed task/model/policy qualification. Source through6212b9d is public draft PR35; later ordinary-boundary amendments remain
+local-only. Original overall CHANGES-REQUESTED is unchanged. An attached ordinary host now queues busy
+direction in its existing journal and holds original new-child admission until explicit reconciliation
+and successful native/final-host acknowledgement. This does not add generic entity/topology/policy
+operations or turn their unspecified broader wording into new implementation scope.

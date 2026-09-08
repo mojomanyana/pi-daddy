@@ -40,6 +40,14 @@ manual `dashboardHostAction`/socket. The existing host claim/result journal bind
 and blocks failed-ack replay. No new persistent cancellation/decision database. Reconnect without the
 original port can inspect other retained state but cannot cancel; process restart never restores handles.
 
+For approved intent changes, the existing host additionally takes an original admission hold (at most32,
+revision-changing). Busy direction waits in the existing host journal; original children continue. New
+ordinary execution refuses at its original admission seam. The hold spans native asynchronous application
+and any native resource pending state, and releases only after explicit successful native/host readback.
+Unknown/failed host acknowledgement never releases it. This is not an expiry/unlock/recovery API; do not
+run an older host writer against a new pending ordinary operation. Guide reconciliation does not mandate
+generic entity/topology/opaque-policy editing; those unsupported extensions need concrete scope/semantics.
+
 A failed final host sync can coexist with actual abort, charged effects and a later readable result. The
 host stays failed/unknown and duplicate request is readback only. Caller cancellation still works and a
 completed fanout sibling remains in the original result. Manual presentation refuses known nonquiescence,

@@ -1,4 +1,4 @@
-import { isOrdinaryChildren, type OrdinaryChildren, type OrdinaryCancellation } from "./ordinary-children.ts";
+import { isOrdinaryChildren, holdOrdinaryDispatch, type OrdinaryChildren, type OrdinaryCancellation } from "./ordinary-children.ts";
 import { loadedDashboardHarnessDigest } from "./dashboard-harness.ts";
 import { join, isAbsolute } from "node:path";
 import { dataDigest, detached, freeze, sha, reviewPage } from "./debrief-contract.ts";
@@ -7,7 +7,7 @@ import type { DebriefCheckpoint, DebriefPresenter, DebriefPersistence } from "./
 import { debriefAction } from "./debrief-render.ts";
 import { openResourceBudget, resourceBindingDigest, type GovernedBudgetBinding } from "./resource-budget.ts";
 import { dispatchRequest, dispatchRequestDigest, controlShape, type DispatchRequest } from "./dispatch-control.ts";
-import { intentRequest, type IntentRequest } from "./intent-control.ts";
+import { intentRequest, intentRequestDigest, type IntentRequest } from "./intent-control.ts";
 import { experimentBindingDigest, isExperimentController, type ExperimentCancellation, type openExperiment } from "./experiment.ts";
 import { dashboardObservations } from "./dashboard-observation.ts";
 import { dashboardHostDigest, dashboardHostRequest, dashboardHostRequestDigest, dashboardSelectionDigest,
@@ -76,7 +76,7 @@ export function openDashboardHost(options:DashboardHostOptions){
       let controls:unknown=null;try{controls=await nativeRead();}catch(e){error=String(e);}
       const attention=trust.inspect(Date.now());
       return freeze(detached({version:"producer-dashboard-frame-v1",hostDigest,selectionDigest:dashboardSelectionDigest(selection),selectionState,tip,source,controls,debrief,attention,error,
-        requests:rows.filter(e=>["claim","result","presentation","defer"].includes(String(e.value.type))).map(e=>e.value),
+        requests:rows.filter(e=>["claim","result","presentation","defer","ordinary-intent-pending"].includes(String(e.value.type))).map(e=>e.value),
         control:rows.some(e=>e.value.type==="host-failure")?"failed":rows.some(e=>e.value.type==="claim"&&!rows.some(r=>r.value.type==="result"&&r.value.requestId===e.value.requestId))?"unknown":"not-assessed",
         acknowledgement:poisoned?"unknown":"readback-only",identity:"independently-declared-host; not human/module authentication",activeBranch:null,acceptance:"not-assessed",freshness:"snapshot-unknown",workerInteractions:0}));
     },
@@ -94,7 +94,7 @@ export function openDashboardHost(options:DashboardHostOptions){
         const a=authority(),approved=Boolean(a?.requestDigests.includes(digest));
         attempted=true;journal.append(request.expectedTip,{type:"claim",requestId:request.requestId,digest,request,decision:approved?"approved":"denied"});
         if(!approved){append({type:"result",requestId:request.requestId,state:"denied"});return {state:"denied"};}
-        let result:unknown;
+        let result:unknown,releaseOrdinary:(()=>void)|undefined;
         try{
           if(request.operation==="observe"){
             const captured=observation.observe(request.payload,a!,selection);append({type:"observation",observation:captured});result=captured;
@@ -128,7 +128,27 @@ export function openDashboardHost(options:DashboardHostOptions){
               if(request.operation==="dispatch-reconcile"&&(await port.inspect()).records.find(r=>r.request.requestId===native.requestId)?.digest!==dispatchRequestDigest(native))throw Error("exact original dispatch reconciliation required");
               result=request.operation==="dispatch"?await port.request(native):await port.reconcile(native.requestId);
             }else if(request.operation==="intent"||request.operation==="intent-reconcile"){
-              const native=detached(intentRequest(request.payload as IntentRequest)) as IntentRequest,port=budget.intentControls(a!.dispatch);result=request.operation==="intent"?await port.request(native):await port.reconcile(native);
+              const native=detached(intentRequest(request.payload as IntentRequest)) as IntentRequest,port=budget.intentControls(a!.dispatch),digest=intentRequestDigest(native);
+              if(c.ordinaryDigest&&!ordinary)throw Error("original ordinary boundary unavailable; no recovery");
+              if(!ordinary)result=request.operation==="intent"?await port.request(native):await port.reconcile(native);
+              else {
+              const pending=history().filter(e=>e.value.type==="ordinary-intent-pending"&&e.value.nativeRequestId===native.requestId);
+              if(pending.some(e=>e.value.digest!==digest))throw Error("immutable pending ordinary intent ID");
+              if(pending.some(e=>!history().some(row=>{const original=row.value.request as DashboardHostRequest|undefined;return row.value.type==="claim"&&row.value.requestId===e.value.hostRequestId&&row.value.decision==="approved"&&original&&["intent","intent-reconcile"].includes(original.operation)&&intentRequestDigest(original.payload as IntentRequest)===digest;})))throw Error("unbound ordinary pending transport");
+              const exists=(await port.inspect()).records.some(r=>r.requestId===native.requestId);
+              if(request.operation==="intent-reconcile"&&!exists&&!pending.length)throw Error("original pending intent required for reconciliation");
+              if(ordinary&&(a!.dispatch?.authorityDigest!==budget.binding.authorityDigest||!a!.dispatch.requestDigests.includes(digest)))throw Error("independent native intent authority required before ordinary hold");
+              const held=ordinary?holdOrdinaryDispatch(ordinary,dataDigest({hostDigest,digest})):undefined;
+              if(held&&!held.ready()){
+                if(!pending.length)append({type:"ordinary-intent-pending",nativeRequestId:native.requestId,digest,hostRequestId:request.requestId});
+                result={state:"pending-ordinary-boundary",nativeRequestId:native.requestId,application:"not-acknowledged"};
+              }else{
+                result=(request.operation==="intent"||pending.length>0&&!exists)?await port.request(native):await port.reconcile(native);
+                const outcome=(result as {records:{requestId:string;application:string}[]}).records.find(r=>r.requestId===native.requestId);
+                if(held&&!outcome)throw Error("native intent application acknowledgement unavailable");
+                if(held&&["applied","not-applied"].includes(outcome!.application))releaseOrdinary=held.release;
+              }
+              }
             }else if(request.operation==="ordinary-cancel"){
               if(!ordinary||!isOrdinaryChildren(ordinary))throw Error("original ordinary child handles unavailable; no recovery");
               result=ordinary.cancel(request.payload as OrdinaryCancellation,a!.ordinary??null);
@@ -141,7 +161,7 @@ export function openDashboardHost(options:DashboardHostOptions){
             }else throw Error("unsupported dashboard operation");
           }
         }catch(error){presenter?.close();presentationRevision=null;append({type:"result",requestId:request.requestId,state:"failed-or-unknown",reason:String(error)});throw error;}
-        append({type:"result",requestId:request.requestId,state:"acknowledged",resultDigest:dataDigest(result??null)});return {state:"acknowledged",result};
+        append({type:"result",requestId:request.requestId,state:"acknowledged",resultDigest:dataDigest(result??null)});releaseOrdinary?.();return {state:"acknowledged",result};
       }catch(error){poisoned=true;if(attempted){try{if(history().some(e=>e.value.type==="claim"&&e.value.requestId===request.requestId))append({type:"host-failure",requestId:request.requestId,reason:String(error)});}catch{/* Failure recording also unacknowledged; no claim of no effects. */}}throw error;}finally{busy=false;}
     }
   };hosts.add(api);return Object.freeze(api);

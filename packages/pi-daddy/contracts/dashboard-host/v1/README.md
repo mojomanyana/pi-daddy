@@ -1,8 +1,8 @@
 # Connected producer dashboard host v1 (local candidate)
 
 This is the existing dashboard's explicit operational host, not another scheduler or learning-decision
-store. It launches no models. Source through f276698 is public draft PR35; this subsequent integration is
-LOCAL ONLY. Original overall CHANGES-REQUESTED remains. No live/authenticated factory acceptance follows.
+store. It launches no models. Source through6212b9d is public draft PR35; subsequent ordinary-boundary
+amendments are LOCAL ONLY. Original overall CHANGES-REQUESTED remains. No live/authenticated factory acceptance follows.
 
 ## Additive original ordinary control and revision application
 
@@ -19,6 +19,19 @@ actual P01 controller: direct non-scope successors, not topology/owner/policy/ef
 transfer or duplicate effect. See `contracts/intent-control/v2/README.md`. These narrow formerly absent A
 paths; unretained/crashed handles, wider revision domains and atomic authenticated live TUI steering remain
 unqualified. No new trust/case/blind/control store or worker observation hook is introduced.
+
+### Original ordinary intent boundary
+
+When ordinaryDigest is bound, intent application also requires the ORIGINAL ordinary port and separate
+native approval. Busy direction is retained as `ordinary-intent-pending` in this existing journal without
+P01 application. The original controller's bounded admission hold prevents new ordinary execution while
+preserving running callers. Pending transport is historical request data, not application authority.
+Only explicit `intent-reconcile`, after original ordinary and native resource quiescence, can apply it.
+A hold spans awaited native append/sync and releases only after an explicit native applied/not-applied
+receipt AND successful final host acknowledgement. Failed/unknown acknowledgement retains the hold even
+with complete effect bytes; refresh, duplicate and reopen do not release it or replay an effect. Missing
+original capability or late/unretained coverage is not reconstructed. No additional control database.
+Older host writers lack this guard and must not be used to resume new pending ordinary operations.
 
 ## Loaded artifacts and independent authority
 

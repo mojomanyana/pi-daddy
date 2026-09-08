@@ -9,7 +9,15 @@ Released baseline last synced against the code: **2026-09-04**, `pi-daddy` 0.22.
 The **2026-09-06 work-v4 source candidate** is described separately below. It is not a release, activation,
 production authentication result or completed task/qualification gate.
 
-The **local safe-boundary followup** adds opt-in cancellation capture from actual original grants
+The **local P05 ordinary-boundary repair** now queues intent direction while an attached original
+ordinary child is busy and holds new ordinary admission across asynchronous native application. Only
+explicit reconciliation at both original ordinary/resource boundaries plus a successful final host
+acknowledgement releases that hold. Failed/unknown acknowledgements retain it despite applied bytes.
+Original caller lifetimes and read-only refresh remain unchanged. Guide reconciliation does not invent
+a generic entity/topology/opaque-policy editor from broader wording; see
+[ADR-0058](06-decisions/ADR-0058-reconcile-guide-and-hold-original-intent-boundary.md).
+
+The **safe-boundary followup** adds opt-in cancellation capture from actual original grants
 extension/session handles and routes exact approved ordinary cancellation through the existing dashboard
 journal/CLI. Caller, fanout sibling and worker-result lifetimes remain original; failed observations and
 host acknowledgements stay separate from success. Late opt-in cannot certify an empty registry's coverage.
@@ -42,7 +50,7 @@ CI adds exact prerequisite telemetry and bounds without provisioning, skips or r
 See [ADR-0055](06-decisions/ADR-0055-overall-quality-repairs.md). The original whole-change review remains
 CHANGES-REQUESTED on both axes. OAR-SPEC-001..007 remain OPEN implementable integration gaps, not waived or
 externalized by this batch. Remote native prerequisites/matrix/downstream and overall acceptance remain
-unqualified. Source throughf276698 is published in draft PR35; subsequent connected-host amendments are LOCAL ONLY.
+unqualified. Source through6212b9d is published in draft PR35; subsequent ordinary-boundary amendments are LOCAL ONLY.
 
 The additive **P08 retained-host bridge** explicitly consumes work-signals-v1/case-v3 selected batches
 and the durable blind writer ports tested at harness638494af0a0058edf9a9b1b02e57af894ab46ed6. Zero-card
