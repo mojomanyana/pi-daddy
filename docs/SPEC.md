@@ -9,6 +9,17 @@ Released baseline last synced against the code: **2026-09-04**, `pi-daddy` 0.22.
 The **2026-09-06 work-v4 source candidate** is described separately below. It is not a release, activation,
 production authentication result or completed task/qualification gate.
 
+The **local 2026-09-08 P06 candidate** adds one opt-in fixed-code `linux-bwrap-digest-v1` runtime profile,
+not a general pi/bash sandbox. Actual bounded namespace/effect probes precede admission; immutable byte
+inputs and stdout-only results exclude writable/shared workspace destinations. A separately bound durable
+journal reserves attempts, input bytes and active invocation slots across orders/experiments. Cancellation
+never refunds cumulative charges; duplicates, lost ownership, unsupported profiles and substituted stores
+fail closed. Aggregate CPU/memory/PID and provider-money caps remain unsupported, as do arbitrary model or
+shell workloads. Existing delegation/check semantics are unchanged. See the
+[profile/accounting contract](../packages/pi-daddy/contracts/effect-profile/v1/README.md) for exact native
+observations, trust boundaries, restart behavior and limits. This is partial P06 coverage, local only;
+independent overall review and formal acceptance remain pending.
+
 The **local 2026-09-08 execution-retention 2.0 source candidate** retains bounded raw output, assembled
 results, complete available check receipts and validated private native session bytes at existing governed
 launch seams. Public call IDs and execution parentage remain exact and separate from logical names.

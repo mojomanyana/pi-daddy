@@ -41,6 +41,14 @@
       "types": "./dist/work-ledger.d.ts",
       "default": "./dist/work-ledger.js"
     },
+    "./resource-budget": {
+      "types": "./dist/resource-budget.d.ts",
+      "default": "./dist/resource-budget.js"
+    },
+    "./effect-profile": {
+      "types": "./dist/effect-profile.d.ts",
+      "default": "./dist/effect-profile.js"
+    },
     "./execution-retention": {
       "types": "./dist/execution-retention.d.ts",
       "default": "./dist/execution-retention.js"

@@ -34,6 +34,10 @@ export {
   type WorkflowFactState,
 } from "./ledger.ts";
 
+export { createResourceBudget, openResourceBudget, resourceBindingDigest, ResourceAdmissionError,
+  type BudgetBinding, type ResourceLimits, type AttemptDemand, type ResourcePermit, type BudgetSnapshot } from "./resource-budget.ts";
+export { prepareDigestProfile, runDigestProfile, DIGEST_PROFILE, EffectProfileUnavailableError,
+  type DigestProfile, type DigestAttempt } from "./effect-profile.ts";
 export { planSpawn, type SpawnPlan, type SpawnPlanInput } from "./spawn.ts";
 export { beginExecutionRetention, ENV_EXECUTION_ARCHIVE, RETENTION_VERSION, retentionConfigurationDigest, verifyRetainedBytes,
   type ExecutionRetentionManifest, type RetainedContent, type RetentionIdentity, type RetentionStatus,
