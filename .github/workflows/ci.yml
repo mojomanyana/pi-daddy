@@ -53,6 +53,13 @@ jobs:
         working-directory: packages/pi-daddy
         run: npm run typecheck
 
+      # Ephemeral runner only; package presence is not namespace qualification.
+      - name: install distro bubblewrap
+        timeout-minutes: 2
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends bubblewrap
+
       # Diagnostic observations only: false conformance does not skip/filter the required suite.
       # Native prerequisite provisioning is still required; this step installs/configures nothing.
       - name: runtime prerequisite telemetry
