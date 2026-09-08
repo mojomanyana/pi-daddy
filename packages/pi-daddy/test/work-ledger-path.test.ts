@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync, existsSync } from "node:fs";
-import { mkdir, readFile, writeFile, symlink, link, readdir, stat, utimes } from "node:fs/promises";
+import { mkdir, readFile, writeFile, symlink, link, readdir, stat, lstat, readlink, utimes } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { spawn, execFileSync } from "node:child_process";
 import { after, test, type TestContext } from "node:test";
@@ -1267,6 +1267,32 @@ test("work-v4 rejects grant destination aliases before writing", async () => {
   assert.equal(parseWorkLedgerText(await readFile(disjoint, "utf8")).complete, true);
 });
 
+// Physical fixture inventory: recursive readdir follows the intentional self-symlink on this runtime.
+// Its variable ELOOP traversal depth is not a write oracle. Preserve inode/mode/bytes/link target instead.
+async function encodingPhysicalSnapshot(root: string) {
+  const rows: unknown[] = [];
+  async function visit(path: string, relative: string, depth: number): Promise<void> {
+    assert.ok(depth <= 16 && rows.length < 128, "bounded owned fixture inventory");
+    const st = await lstat(path, { bigint: true });
+    const info = { path: relative, dev: String(st.dev), ino: String(st.ino), mode: String(st.mode), links: String(st.nlink) };
+    if (st.isSymbolicLink()) rows.push({ ...info, target: await readlink(path) });
+    else if (st.isDirectory()) {
+      rows.push(info);
+      for (const name of (await readdir(path)).sort()) await visit(join(path, name), relative ? relative + "/" + name : name, depth + 1);
+    } else { assert.ok(st.isFile() && st.size <= 65536n); rows.push({ ...info, sha256: createHash("sha256").update(await readFile(path)).digest("hex") }); }
+  }
+  await visit(root, "", 0); return rows;
+}
+
+test("encoding physical inventory stops at self-links and detects real byte changes", async () => {
+  const dir = await tempDir("work-encoding-inventory-"); await symlink(dir, join(dir, "portal"));
+  const before = await encodingPhysicalSnapshot(dir); assert.equal(before.length, 2);
+  assert.deepEqual(await encodingPhysicalSnapshot(dir), before);
+  await writeFile(join(dir, "sentinel"), "one"); const changed = await encodingPhysicalSnapshot(dir);
+  assert.notDeepEqual(changed, before); await writeFile(join(dir, "sentinel"), "two");
+  assert.notDeepEqual(await encodingPhysicalSnapshot(dir), changed);
+});
+
 test("work-v4 filesystem encoding aliases precede every mutating call", { timeout: 30000 }, async t => {
   for (const lone of ["\ud800", "\udc00"]) for (const inverse of [false, true]) {
     for (const topology of ["absent", "existing", "canonical"]) {
@@ -1285,13 +1311,13 @@ test("work-v4 filesystem encoding aliases precede every mutating call", { timeou
             if (ancestor) { await mkdir(dirname(path), { recursive: true }); await writeFile(path, "preserve-work"); }
             else await writeFile(reserved, "preserve-protected");
           }
-          const before = await readdir(dir, { recursive: true });
+          const before = await encodingPhysicalSnapshot(dir);
           const result = await appendChild(childTest, path, "observe-encoding", "append", grant, dir).result;
           // Echo equality proves argv did not replace the surrogate before the public API saw it.
           assert.equal(result.observation.path, path); assert.equal(result.observation.protection, grant);
           assert.deepEqual(result, { ok: false, hit: false, name: "WorkLedgerWriteError", code: "WORK_DESTINATION_ALIAS",
             observation: { path, protection: grant, mutations: [] } });
-          assert.deepEqual(await readdir(dir, { recursive: true }), before);
+          assert.deepEqual(await encodingPhysicalSnapshot(dir), before);
           if (topology === "existing") assert.equal(await readFile(ancestor ? path : reserved, "utf8"), ancestor ? "preserve-work" : "preserve-protected");
         });
       }

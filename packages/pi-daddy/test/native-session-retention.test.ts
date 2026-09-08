@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { tempDir } from "./tmp.ts";
 import { readNativeSession, parseNativeSessionBytes, ENV_NATIVE_SESSION_ROOT, herdrSessionReference } from "../src/native-session.ts";
-import { beginExecutionRetention, parseExecutionRetentionManifest } from "../src/execution-retention.ts";
+import { beginExecutionRetention, drainExecutionRetention, parseExecutionRetentionManifest } from "../src/execution-retention.ts";
 import { runHerdrPane } from "../src/run-herdr.ts";
 import { executePlannedChild } from "../extensions/execute-child.ts";
 import { planDelegation } from "../src/delegate.ts";
@@ -126,13 +126,36 @@ test("the governed process seam retains actual private SessionManager bytes from
     const result = await executePlannedChild({ session: { executor: { kind: "process" } } as never, plan,
       childId: "reused", executionId: "exec:fixture-process", parentExecutionId: "exec:parent", toolCallId: "call:process", cwd: f.root });
     assert.equal(result.ok, true); assert.equal(result.exitCode, 0); assert.equal(result.text, "fixture finished");
-    const path = result.retention!.manifestPath!; let m;
-    for (let i = 0; i < 200; i++) { try { m = parseExecutionRetentionManifest(await readFile(path, "utf8")); } catch {}
-      if (m?.state === "terminal" && m.nativeSession.status === "verified") break; await new Promise(r => setTimeout(r, 10)); }
+    await assert.rejects(drainExecutionRetention({ ...result.retention! }), /original live/);
+    const drained = await drainExecutionRetention(result.retention!);
+    assert.equal(drained.status, "retained");
+    const path = drained.manifestPath!, m = parseExecutionRetentionManifest(await readFile(path, "utf8"));
     assert.equal(m?.native.sessionId, f.manager.getSessionId()); assert.equal(m?.identity.toolCallId, "call:process");
     assert.equal(m?.native.branchLeafId, null);
     assert.deepEqual(await readFile(join(path, "..", m!.content.session.path!)), await readFile(f.path));
   } finally { for (const[k,v]of Object.entries(prior)) v === undefined ? delete process.env[k] : process.env[k] = v; }
+});
+
+test("deterministic capture then append: terminal/verified is not the final-byte oracle", async () => {
+  const f = await native(), archive = await tempDir("ordered-native-archive-");
+  const prior = process.env[ENV_NATIVE_SESSION_ROOT]; process.env[ENV_NATIVE_SESSION_ROOT] = f.root;
+  try {
+    const before = await readFile(f.path), old = beginExecutionRetention(identity, archive);
+    old.observeSession({ source: "pi-session-file", value: f.path }); await old.flush();
+    f.manager.appendMessage(assistant()); const after = await readFile(f.path);
+    assert.ok(after.length > before.length);
+    old.finish(outcome); const status = await old.flush();
+    const m = parseExecutionRetentionManifest(await readFile(status.manifestPath!, "utf8"));
+    assert.equal(m.state, "terminal"); assert.equal(m.nativeSession.status, "verified");
+    assert.equal(m.coverage.complete, false); assert.equal(m.nativeSession.branchLeafId, null);
+    const retained = await readFile(join(status.manifestPath!, "..", m.content.session.path!));
+    assert.deepEqual(retained, before); assert.notDeepEqual(retained, after);
+    const final = beginExecutionRetention({ ...identity, executionId: "exec:ordered-final" }, archive);
+    final.observeSession({ source: "pi-session-file", value: f.path }); final.finish(outcome);
+    const settled = await drainExecutionRetention(final.status());
+    const latest = parseExecutionRetentionManifest(await readFile(settled.manifestPath!, "utf8"));
+    assert.deepEqual(await readFile(join(settled.manifestPath!, "..", latest.content.session.path!)), after);
+  } finally { prior === undefined ? delete process.env[ENV_NATIVE_SESSION_ROOT] : process.env[ENV_NATIVE_SESSION_ROOT] = prior; }
 });
 
 test("existing Herdr native replies bind session bytes to the exact pane and execution", async () => {

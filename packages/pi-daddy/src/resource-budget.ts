@@ -13,12 +13,13 @@ import { dispatchAuthority, dispatchRequest, dispatchRequestDigest, dispatchDeci
   type DispatchAuthority, type DispatchRequest, type DispatchState } from "./dispatch-control.ts";
 
 export interface ResourceLimits { maxAttempts: number; maxInputBytes: number; maxConcurrent: number }
-export interface BudgetBinding<V extends "1.0" | "2.0" | "3.0" = "1.0"> {
+export interface BudgetBinding<V extends "1.0" | "2.0" | "3.0" | "4.0" = "1.0"> {
   version: V; directory: string; device: string; inode: string;
   journalDevice: string; journalInode: string; authorityDigest: string; limits: ResourceLimits; intent?: V extends "3.0" ? WorkIntentBinding : never;
 }
 export type DispatchBudgetBinding = BudgetBinding<"2.0">;
-export type GovernedBudgetBinding = BudgetBinding<"1.0" | "2.0" | "3.0">;
+export type ExperimentBudgetBinding = BudgetBinding<"4.0">;
+export type GovernedBudgetBinding = BudgetBinding<"1.0" | "2.0" | "3.0" | "4.0">;
 export type IntentBudgetBinding = BudgetBinding<"3.0"> & { intent: WorkIntentBinding };
 export interface AttemptDemand {
   attemptId: string; orderId: string; experimentId: string;
@@ -51,7 +52,7 @@ function limits(x: ResourceLimits): ResourceLimits {
 }
 function binding<T extends GovernedBudgetBinding>(x: T): Readonly<T> {
   shape(x, ["version", "directory", "device", "inode", "journalDevice", "journalInode", "authorityDigest", "limits", ...(Object.getOwnPropertyDescriptor(x ?? {}, "version")?.value === "3.0" ? ["intent"] : [])]);
-  if (!["1.0", "2.0", "3.0"].includes(x.version) || typeof x.directory !== "string" || !isAbsolute(x.directory) || resolve(x.directory) !== x.directory ||
+  if (!["1.0", "2.0", "3.0", "4.0"].includes(x.version) || typeof x.directory !== "string" || !isAbsolute(x.directory) || resolve(x.directory) !== x.directory ||
     x.directory.length > 1024 || x.directory.split("/").includes(".pi") || ![x.device, x.inode, x.journalDevice, x.journalInode].every(v => typeof v === "string" && /^\d+$/.test(v)) || !digest(x.authorityDigest)) fail("INVALID", "invalid independent budget binding");
   return Object.freeze({ version: x.version, directory: x.directory, device: x.device, inode: x.inode, journalDevice: x.journalDevice, journalInode: x.journalInode, authorityDigest: x.authorityDigest, limits: limits(x.limits), ...(x.version === "3.0" ? { intent: freezeWork(workIntentBinding(x.intent!)) } : {}) }) as Readonly<T>;
 }
@@ -77,6 +78,9 @@ export function createDispatchBudget(input: BudgetCreation): Promise<Readonly<Di
 export async function createIntentBudget(input: BudgetCreation, intent: Parameters<typeof readIntentWork>[0]): Promise<Readonly<IntentBudgetBinding>> {
   return createBudget(input, "3.0", JSON.parse(intentKey(intent)));
 }
+/** Explicit batch semantics. All queued slots remain conservatively active until original settlement. */
+export function createExperimentBudget(input: BudgetCreation): Promise<Readonly<ExperimentBudgetBinding>> { return createBudget(input, "4.0"); }
+function createBudget(input: BudgetCreation, version: "4.0"): Promise<Readonly<ExperimentBudgetBinding>>;
 function createBudget(input: BudgetCreation, version: "1.0"): Promise<Readonly<BudgetBinding>>;
 function createBudget(input: BudgetCreation, version: "2.0"): Promise<Readonly<DispatchBudgetBinding>>;
 function createBudget(input: BudgetCreation, version: "3.0", intent: WorkIntentBinding): Promise<Readonly<IntentBudgetBinding>>;
@@ -126,7 +130,7 @@ export function openResourceBudget<T extends GovernedBudgetBinding>(input: T) {
         const text = new TextDecoder("utf-8", { fatal: true }).decode(buffer);
         if (!text.endsWith("\n")) fail("INVALID", "incomplete budget journal; no automatic recovery");
         const lines = text.slice(0, -1).split("\n");
-        if (lines.length > (b.version === "3.0" ? 2369 : b.version === "2.0" ? 2305 : 2049) || JSON.stringify(binding(parseWorkJson(lines[0]) as unknown as GovernedBudgetBinding)) !== JSON.stringify(b)) fail("AUTHORITY_CHANGED", "budget header does not match independent authority");
+        if (lines.length > (b.version === "3.0" ? 2369 : b.version !== "1.0" ? 2305 : 2049) || JSON.stringify(binding(parseWorkJson(lines[0]) as unknown as GovernedBudgetBinding)) !== JSON.stringify(b)) fail("AUTHORITY_CHANGED", "budget header does not match independent authority");
         const records: Reservation[] = [], control: DispatchState = { revision: 0, paused: false, records: [] };
         const intent: IntentState | null = b.intent ? { revision: 0, selection: b.intent.selection, priorities: b.intent.priorities, records: [] } : null;
         for (const line of lines.slice(1)) {
@@ -137,6 +141,15 @@ export function openResourceBudget<T extends GovernedBudgetBinding>(input: T) {
           } else if (event.type === "control-request" || event.type === "control-apply") {
             if (b.version === "1.0") fail("INVALID", "controls require explicit v2/v3 binding");
             replayDispatch(control, event, resourceBindingDigest(b), records.filter(r => r.state === "reserved").length, Boolean(intent?.records.some(r => r.application === "pending-or-unknown")));
+          } else if (event.type === "reserve-batch") {
+            if (b.version !== "4.0") fail("INVALID", "batch requires explicit v4 budget");
+            shape(event, ["type", "owner", "demands"]);
+            if (!id(event.owner) || !Array.isArray(event.demands) || !event.demands.length || event.demands.length > 32 || control.paused || control.records.some(r => r.application === "pending")) fail("INVALID", "invalid batch");
+            for (const value of event.demands) {
+              const d = demand(value as AttemptDemand);
+              if (records.some(r => r.attemptId === d.attemptId) || d.parentAttemptId !== null && !records.some(r => r.attemptId === d.parentAttemptId)) fail("INVALID", "invalid batch sequence");
+              records.push({ ...d, owner: event.owner, state: "reserved", outcome: null });
+            }
           } else if (event.type === "reserve") {
             if (control.paused || control.records.some(r => r.application === "pending") || intent?.records.some(r => r.application === "pending-or-unknown")) fail("INVALID", "reservation crossed dispatch barrier");
             shape(event, ["type", "owner", "demand", ...(intent ? ["intent"] : [])]);
@@ -170,8 +183,33 @@ export function openResourceBudget<T extends GovernedBudgetBinding>(input: T) {
     };
     return readOnly ? execute() : withFileLock(path, "resource budget", execute, { staleRecovery: "disabled" });
   }
+  const permit = (attemptId: string): Readonly<ResourcePermit> => Object.freeze({ attemptId, async settle(outcome: "completed" | "failed" | "cancelled") {
+    if (!["completed", "failed", "cancelled"].includes(outcome)) fail("INVALID", "invalid outcome");
+    await transaction(async (records, append) => {
+      const r = records.find(r => r.attemptId === attemptId);
+      if (!r || r.owner !== owner) fail("OWNERSHIP_LOST", "only original live host may settle");
+      if (r.state === "settled") { if (r.outcome !== outcome) fail("INVALID", "contradictory settlement"); return; }
+      await append({ type: "settle", owner, attemptId, outcome });
+    });
+  } });
   return Object.freeze({
     binding: b,
+    async reserveBatch(inputs: readonly AttemptDemand[]): Promise<readonly Readonly<ResourcePermit>[]> {
+      if (b.version !== "4.0" || !Array.isArray(inputs) || !inputs.length || inputs.length > 32 || Reflect.ownKeys(inputs).length !== inputs.length + 1 || Array.from({ length: inputs.length }, (_, i) => Object.getOwnPropertyDescriptor(inputs, String(i))).some(d => !d?.enumerable || !Object.hasOwn(d, "value"))) fail("INVALID", "explicit v4 dense bounded batch required");
+      const demands = Array.from(inputs, demand);
+      await transaction(async (records, append, control) => {
+        if (control.paused || control.records.some(r => r.application === "pending")) fail("DISPATCH_BLOCKED", "dispatch barrier");
+        const ids = new Set(records.map(r => r.attemptId));
+        for (const d of demands) {
+          if (ids.has(d.attemptId)) fail("DUPLICATE", "batch identity already charged");
+          if (d.parentAttemptId !== null && !ids.has(d.parentAttemptId)) fail("INVALID", "batch parent missing");
+          ids.add(d.attemptId);
+        }
+        if (records.length + demands.length > b.limits.maxAttempts || records.reduce((n,r) => n+r.inputBytes,0) + demands.reduce((n,d) => n+d.inputBytes,0) > b.limits.maxInputBytes || records.filter(r => r.state === "reserved").length + demands.length > b.limits.maxConcurrent) fail("EXHAUSTED", "whole experiment exceeds aggregate allowance");
+        await append({ type: "reserve-batch", owner, demands });
+      });
+      return Object.freeze(demands.map(d => permit(d.attemptId)));
+    },
     intentControls(input: DispatchAuthority | null) {
       if (!b.intent) fail("INVALID", "intent controls require explicit v3 budget creation");
       const work = b.intent, authority = dispatchAuthority(input), scope = resourceBindingDigest(b);
@@ -272,15 +310,7 @@ export function openResourceBudget<T extends GovernedBudgetBinding>(input: T) {
           await append({ type: "reserve", owner, demand: d, intent: assigned });
         } else await append({ type: "reserve", owner, demand: d });
       });
-      return Object.freeze({ attemptId: d.attemptId, async settle(outcome: "completed" | "failed" | "cancelled") {
-        if (!["completed", "failed", "cancelled"].includes(outcome)) fail("INVALID", "invalid outcome");
-        await transaction(async (records, append) => {
-          const r = records.find(r => r.attemptId === d.attemptId);
-          if (!r || r.owner !== owner) fail("OWNERSHIP_LOST", "only the reserving live host may settle this attempt");
-          if (r.state === "settled") { if (r.outcome !== outcome) fail("INVALID", "contradictory late settlement"); return; }
-          await append({ type: "settle", owner, attemptId: d.attemptId, outcome });
-        });
-      } });
+      return permit(d.attemptId);
     },
   });
 }

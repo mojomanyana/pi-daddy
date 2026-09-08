@@ -46,6 +46,13 @@ export interface ExecutionRetentionManifest {
   acceptance: "not-assessed";
 }
 export interface RetentionStatus { manifestPath: string | null; status: "disabled" | "pending" | "retained" | "lost" }
+const drains = new WeakMap<RetentionStatus, () => Promise<RetentionStatus>>();
+/** Original live status only; drains admitted observations, not producer completeness or fsync. */
+export function drainExecutionRetention(status: RetentionStatus): Promise<RetentionStatus> {
+  const drain = drains.get(status);
+  if (!drain) return Promise.reject(new TypeError("original live retention status required"));
+  return drain();
+}
 const missing = (): RetainedContent => ({ status: "missing", path: null, sha256: null, bytes: null });
 
 /** Hash only an explicitly selected configuration. Callers must not pass environment/auth objects. */
@@ -157,6 +164,10 @@ export function beginExecutionRetention(identity: RetentionIdentity, directory =
       }
     }).catch(() => { loss("native-session-observation-failed"); }).finally(() => { nativeTask = undefined; schedule(); });
   };
+  const drain = async (): Promise<RetentionStatus> => {
+    while (nativeTask || running) { if (nativeTask) await nativeTask; if (running) await running; }
+    return { manifestPath, status };
+  };
   schedule();
   return {
     /** Read-only native API reference; never derive IDs from the locator or a displayed name. */
@@ -168,7 +179,7 @@ export function beginExecutionRetention(identity: RetentionIdentity, directory =
         else { loss("native-session-not-persisted"); schedule(); }
       } catch { loss("native-session-manager-unavailable"); schedule(); }
     },
-    status: (): RetentionStatus => ({ manifestPath, status }),
+    status: (): RetentionStatus => { const value = { manifestPath, status }; drains.set(value, drain); return value; },
     native(value: Partial<Pick<ExecutionRetentionManifest["native"], "pid" | "paneId" | "agentName" | "tabId">>) {
       if (finished) return;
       for (const key of ["pid", "paneId", "agentName", "tabId"] as const) {
@@ -206,7 +217,7 @@ export function beginExecutionRetention(identity: RetentionIdentity, directory =
     },
     /** Observation-only diagnostic; never establishes successful execution or accepted work. */
     coverage: () => ({ complete: false as const, losses: [...manifest.coverage.losses] }),
-    async flush() { while (nativeTask || running) { if (nativeTask) await nativeTask; if (running) await running; } return { manifestPath, status }; },
+    flush: drain,
   };
 }
 export type ExecutionRetention = ReturnType<typeof beginExecutionRetention>;

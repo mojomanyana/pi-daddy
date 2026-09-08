@@ -9,6 +9,18 @@ Released baseline last synced against the code: **2026-09-04**, `pi-daddy` 0.22.
 The **2026-09-06 work-v4 source candidate** is described separately below. It is not a release, activation,
 production authentication result or completed task/qualification gate.
 
+The **local partial P11 fixed-profile experiment controller** uses a new explicit v4 resource journal for
+atomic whole-experiment/retry/shadow admission, existing capped fan-out in waves, immutable common/variant
+artifacts and independently approved charters. Its primary promise does not wait for shadow or judge;
+original live handles own cancellation/deadline and full completion. Restart reads bound state without
+relaunch/refund; missing old outcomes remain unknown. Actual bounded digest/hold workers are supported,
+not general model/effort/skill variants, live pi/Herdr steering, evaluation or adoption. Optional P01 source
+bindings pin actual common work bytes/selection, not acceptance. [P15 contract](../packages/pi-daddy/contracts/experiment/v1/README.md).
+The earlier P02 native865-vs1316 failure remains preserved: deterministic capture/append ordering demonstrates
+that terminal/verified is not a final-byte barrier. The governed-process test now drains original live
+observations explicitly; native verified-format/partial coverage and no-fsync/full-session guarantees remain.
+New source LOCAL ONLY; full P11 and overall acceptance remain pending.
+
 The **local P08 debrief candidate** extends the existing dashboard/plugin with a bounded manual weekly
 queue, explicit harness-owned labels and quality-before-reveal blind views. Exact harness4460af9/0475e1f
 contracts/fixtures are pinned. Five total attention slots include the blind question, persist across reopen

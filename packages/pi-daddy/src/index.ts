@@ -45,12 +45,14 @@ export { bindWorkIntent } from "./intent-application.ts";
 export { intentRequestDigest, parseIntentRequest, type IntentRequest, type IntentSelection, type IntentPriority,
   type IntentAdmission, type IntentSnapshot, type IntentReceipt, type WorkIntentBinding } from "./intent-control.ts";
 export { dispatchRequestDigest, parseDispatchRequest, type DispatchRequest, type DispatchAuthority, type DispatchRecord, type DispatchSnapshot } from "./dispatch-control.ts";
-export { createResourceBudget, createDispatchBudget, createIntentBudget, openResourceBudget, resourceBindingDigest, ResourceAdmissionError,
-  type BudgetBinding, type DispatchBudgetBinding, type IntentBudgetBinding, type GovernedBudgetBinding, type ResourceLimits, type AttemptDemand, type ResourcePermit, type BudgetSnapshot } from "./resource-budget.ts";
+export { createExperiment, openExperiment, experimentCharterDigest, experimentBindingDigest, experimentCancellationDigest, parseExperimentCharter,
+  type ExperimentBinding, type ExperimentCharter, type ExperimentAuthority, type ExperimentCancellation, type ExperimentRun, type ExperimentView } from "./experiment.ts";
+export { createResourceBudget, createDispatchBudget, createIntentBudget, createExperimentBudget, openResourceBudget, resourceBindingDigest, ResourceAdmissionError,
+  type BudgetBinding, type DispatchBudgetBinding, type IntentBudgetBinding, type ExperimentBudgetBinding, type GovernedBudgetBinding, type ResourceLimits, type AttemptDemand, type ResourcePermit, type BudgetSnapshot } from "./resource-budget.ts";
 export { prepareDigestProfile, runDigestProfile, DIGEST_PROFILE, EffectProfileUnavailableError,
   type DigestProfile, type DigestAttempt } from "./effect-profile.ts";
 export { planSpawn, type SpawnPlan, type SpawnPlanInput } from "./spawn.ts";
-export { beginExecutionRetention, ENV_EXECUTION_ARCHIVE, RETENTION_VERSION, retentionConfigurationDigest, verifyRetainedBytes,
+export { beginExecutionRetention, drainExecutionRetention, ENV_EXECUTION_ARCHIVE, RETENTION_VERSION, retentionConfigurationDigest, verifyRetainedBytes,
   type ExecutionRetentionManifest, type RetainedContent, type RetentionIdentity, type RetentionStatus,
   type ExecutionRetention, buildExecutionRetentionManifest, parseExecutionRetentionManifest, RETENTION_SCHEMA,
   ENV_NATIVE_SESSION_ROOT, readNativeSession, parseNativeSessionBytes,

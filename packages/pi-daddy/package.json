@@ -41,6 +41,10 @@
       "types": "./dist/work-ledger.d.ts",
       "default": "./dist/work-ledger.js"
     },
+    "./experiment": {
+      "types": "./dist/experiment.d.ts",
+      "default": "./dist/experiment.js"
+    },
     "./debrief": {
       "types": "./dist/debrief.d.ts",
       "default": "./dist/debrief.js"
@@ -169,6 +173,7 @@
       "types": "./dist/dashboard-render.d.ts",
       "default": "./dist/dashboard-render.js"
     },
+    "./contracts/experiment/v1/*": "./contracts/experiment/v1/*",
     "./contracts/debrief/v1/*": "./contracts/debrief/v1/*",
     "./contracts/intent-control/v1/request.schema.json": "./contracts/intent-control/v1/request.schema.json",
     "./contracts/dispatch-control/v1/request.schema.json": "./contracts/dispatch-control/v1/request.schema.json",
