@@ -1,0 +1,224 @@
+[
+  {
+    "commit": "1c02194d4a3709d14890a5fbbad91ff5f0151f65",
+    "path": "packages/adapters/src/learning-journal.ts",
+    "target": "packages/adapters/src/learning-journal.ts.txt",
+    "sha256": "af3bf511eda633938de135f4bcb1193ad0f248186f921e69b140f17312d3e70b"
+  },
+  {
+    "commit": "1c02194d4a3709d14890a5fbbad91ff5f0151f65",
+    "path": "packages/adapters/src/trust-lifecycle.ts",
+    "target": "packages/adapters/src/trust-lifecycle.ts.txt",
+    "sha256": "3ae47a167fc5645175e24cc46ec49979d85150962e19df9c94a2bf852fdaf646"
+  },
+  {
+    "commit": "1c02194d4a3709d14890a5fbbad91ff5f0151f65",
+    "path": "packages/adapters/src/evidence-archive.ts",
+    "target": "packages/adapters/src/evidence-archive.ts.txt",
+    "sha256": "f41fd69daa4326cefad673fbf4eee2e0c44aa12de595d8a9c4deec209fe38807"
+  },
+  {
+    "commit": "1c02194d4a3709d14890a5fbbad91ff5f0151f65",
+    "path": "packages/adapters/src/learning-case.ts",
+    "target": "packages/adapters/src/learning-case.ts.txt",
+    "sha256": "8d7017c6640ac990311d766a2f16dd25d9c06609bbde29c6739aadd3439b389a"
+  },
+  {
+    "commit": "1c02194d4a3709d14890a5fbbad91ff5f0151f65",
+    "path": "packages/adapters/src/work-case-review.ts",
+    "target": "packages/adapters/src/work-case-review.ts.txt",
+    "sha256": "d7b374c80f182b20367a3968d9815fffae8ca70a452a5c6f246e7678158c7a7a"
+  },
+  {
+    "commit": "1c02194d4a3709d14890a5fbbad91ff5f0151f65",
+    "path": "packages/adapters/src/work-case-archive.ts",
+    "target": "packages/adapters/src/work-case-archive.ts.txt",
+    "sha256": "6998556f29c068ae8d5f383b76e913f429235aa90bb6f50e34a20785d870d4a6"
+  },
+  {
+    "commit": "1c02194d4a3709d14890a5fbbad91ff5f0151f65",
+    "path": "packages/adapters/src/work-candidates.ts",
+    "target": "packages/adapters/src/work-candidates.ts.txt",
+    "sha256": "2b0bd7188b9da6951f050e9889ed3fdf5adafbd4b5cc5a81ec417a14fac20117"
+  },
+  {
+    "commit": "1c02194d4a3709d14890a5fbbad91ff5f0151f65",
+    "path": "packages/adapters/src/generated/retention-v2-work-types.ts",
+    "target": "packages/adapters/src/generated/retention-v2-work-types.ts.txt",
+    "sha256": "cec6b4eab2a52dffb09b95f83a5b58c274c8be67eeb6fdf3ecd1d5911affa442"
+  },
+  {
+    "commit": "1c02194d4a3709d14890a5fbbad91ff5f0151f65",
+    "path": "packages/adapters/src/work-signal-cases.ts",
+    "target": "packages/adapters/src/work-signal-cases.ts.txt",
+    "sha256": "947dc22f35e8f40510e8a37c5630fd38afe2400c112993f322e2bce8af4f467f"
+  },
+  {
+    "commit": "1c02194d4a3709d14890a5fbbad91ff5f0151f65",
+    "path": "packages/adapters/src/work-signal-observation.ts",
+    "target": "packages/adapters/src/work-signal-observation.ts.txt",
+    "sha256": "b97b727f2c90634f977abbba837411d01b96eb24c85430ea129c97956b48efac"
+  },
+  {
+    "commit": "1c02194d4a3709d14890a5fbbad91ff5f0151f65",
+    "path": "packages/adapters/src/archive-policy.ts",
+    "target": "packages/adapters/src/archive-policy.ts.txt",
+    "sha256": "ba25fc3f6d2d99cd995698ebd3b26e2d7537bdba47b1b265d262d7565c6ea504"
+  },
+  {
+    "commit": "1c02194d4a3709d14890a5fbbad91ff5f0151f65",
+    "path": "packages/adapters/src/archive-checkpoint.ts",
+    "target": "packages/adapters/src/archive-checkpoint.ts.txt",
+    "sha256": "a45c089f38739b6ceab47aa0cbd912a13906c061c5d25576f35af11133244a78"
+  },
+  {
+    "commit": "1c02194d4a3709d14890a5fbbad91ff5f0151f65",
+    "path": "packages/adapters/src/archive-retention-policy.ts",
+    "target": "packages/adapters/src/archive-retention-policy.ts.txt",
+    "sha256": "9fb3114abcccb569d939dca2d805234a8fa7c2b3ecbab47262354dc275b62f44"
+  },
+  {
+    "commit": "1c02194d4a3709d14890a5fbbad91ff5f0151f65",
+    "path": "packages/adapters/src/generated/retention-v2-contract.ts",
+    "target": "packages/adapters/src/generated/retention-v2-contract.ts.txt",
+    "sha256": "934ad5a2efc8dd15b40cf74840707dec8db9424c40d3185c12187305d7eee64a"
+  },
+  {
+    "commit": "1c02194d4a3709d14890a5fbbad91ff5f0151f65",
+    "path": "packages/adapters/src/generated/retention-v2-json.ts",
+    "target": "packages/adapters/src/generated/retention-v2-json.ts.txt",
+    "sha256": "ed5937b0881609a29184339ace17eecc5a97d61121b65019d13345182d6c05eb"
+  },
+  {
+    "commit": "1c02194d4a3709d14890a5fbbad91ff5f0151f65",
+    "path": "packages/adapters/src/generated/retention-v2-types.ts",
+    "target": "packages/adapters/src/generated/retention-v2-types.ts.txt",
+    "sha256": "e4e2ea2c04cfd9887e7c899f925f4dc5cbecba8423fa641707a8c6b44de43356"
+  },
+  {
+    "commit": "1c02194d4a3709d14890a5fbbad91ff5f0151f65",
+    "path": "packages/adapters/src/generated/retention-v2-native.ts",
+    "target": "packages/adapters/src/generated/retention-v2-native.ts.txt",
+    "sha256": "8aba863a6be36c0355adacfa339c892e829bf7c3367f4d9d373655de3bae44de"
+  },
+  {
+    "commit": "1c02194d4a3709d14890a5fbbad91ff5f0151f65",
+    "path": "packages/adapters/src/generated/retention-v2-native-json.ts",
+    "target": "packages/adapters/src/generated/retention-v2-native-json.ts.txt",
+    "sha256": "6b5a2e49415d290241ce3e2f039b98a8e8c23e7e1358a2d6ce65cb5aed5029b7"
+  },
+  {
+    "commit": "1c02194d4a3709d14890a5fbbad91ff5f0151f65",
+    "path": "packages/adapters/src/execution-retention-archive.ts",
+    "target": "packages/adapters/src/execution-retention-archive.ts.txt",
+    "sha256": "725428a66b1a45f43be6675c175c538b0f86f133415435b615e7358b347b9847"
+  },
+  {
+    "commit": "1c02194d4a3709d14890a5fbbad91ff5f0151f65",
+    "path": "packages/adapters/src/generated/retention-v2-pin.ts",
+    "target": "packages/adapters/src/generated/retention-v2-pin.ts.txt",
+    "sha256": "052197c4740bad9d5de3a0f721ffc553b07eb39b06fb1802beb93d91b698e388"
+  },
+  {
+    "commit": "1c02194d4a3709d14890a5fbbad91ff5f0151f65",
+    "path": "packages/adapters/src/execution-projection-schema.ts",
+    "target": "packages/adapters/src/execution-projection-schema.ts.txt",
+    "sha256": "e4c04a9be1e94b66604ba27610ea676c76fcbb87851e80f9f30d5ec811b42c77"
+  },
+  {
+    "commit": "1c02194d4a3709d14890a5fbbad91ff5f0151f65",
+    "path": "packages/adapters/src/archive-observer.ts",
+    "target": "packages/adapters/src/archive-observer.ts.txt",
+    "sha256": "38b3ac80811a1964f2895121eab59fda7966a9232a5ce6b64d88e19e812f5ecc"
+  },
+  {
+    "commit": "1c02194d4a3709d14890a5fbbad91ff5f0151f65",
+    "path": "packages/adapters/src/archived-work.ts",
+    "target": "packages/adapters/src/archived-work.ts.txt",
+    "sha256": "edac07f4a311bfbe6f3702b1f771cfab7a4e4b5be0fedc490e54c754de77d06a"
+  },
+  {
+    "commit": "1c02194d4a3709d14890a5fbbad91ff5f0151f65",
+    "path": "packages/adapters/src/generated/work-v4/reader.ts",
+    "target": "packages/adapters/src/generated/work-v4/reader.ts.txt",
+    "sha256": "0e7009465b6acf27f0286b2aa92af36b8c748ac4a238a1c08f7d301ecf72f1c8"
+  },
+  {
+    "commit": "1c02194d4a3709d14890a5fbbad91ff5f0151f65",
+    "path": "packages/adapters/src/generated/work-v4/json.ts",
+    "target": "packages/adapters/src/generated/work-v4/json.ts.txt",
+    "sha256": "b100de834869fe1213ca211d7e278f0b0b610d982fd8efe5799e9aea379bd16a"
+  },
+  {
+    "commit": "1c02194d4a3709d14890a5fbbad91ff5f0151f65",
+    "path": "packages/adapters/src/generated/work-v4/types.ts",
+    "target": "packages/adapters/src/generated/work-v4/types.ts.txt",
+    "sha256": "b8339314b7d31e89054316d2bd950b9725cf39381ca852daf67347e1c00e56cb"
+  },
+  {
+    "commit": "1c02194d4a3709d14890a5fbbad91ff5f0151f65",
+    "path": "packages/adapters/src/generated/work-v4/validation.ts",
+    "target": "packages/adapters/src/generated/work-v4/validation.ts.txt",
+    "sha256": "3c91f8c7f44989ca09c05329a96438a3942250b67d3d982e68bcaed608ccf73b"
+  },
+  {
+    "commit": "1c02194d4a3709d14890a5fbbad91ff5f0151f65",
+    "path": "packages/adapters/src/generated/work-v4/execution-id.ts",
+    "target": "packages/adapters/src/generated/work-v4/execution-id.ts.txt",
+    "sha256": "2a7c3dd7c7fc308e1c2985dcb97129b83ee1c15bdf120d4acc19a5e479a083ef"
+  },
+  {
+    "commit": "1c02194d4a3709d14890a5fbbad91ff5f0151f65",
+    "path": "packages/adapters/src/generated/work-v4/projection.ts",
+    "target": "packages/adapters/src/generated/work-v4/projection.ts.txt",
+    "sha256": "06e9e23a0c54dfded65a2c4077fb4b42f8223095a3a15a1c357b0b546f6b6503"
+  },
+  {
+    "commit": "1c02194d4a3709d14890a5fbbad91ff5f0151f65",
+    "path": "packages/adapters/src/generated/work-v4/snapshot.ts",
+    "target": "packages/adapters/src/generated/work-v4/snapshot.ts.txt",
+    "sha256": "78bf70cd9ea9d0ed9a0c8ddc16a8aca11221eb8d502f0ebb309db77c818298fe"
+  },
+  {
+    "commit": "1c02194d4a3709d14890a5fbbad91ff5f0151f65",
+    "path": "packages/adapters/src/generated/work-v4/occurrences.ts",
+    "target": "packages/adapters/src/generated/work-v4/occurrences.ts.txt",
+    "sha256": "66302e3dece3dfd935254a67ca45a2e3c14fb5c408c239378df44de7883ec615"
+  },
+  {
+    "commit": "1c02194d4a3709d14890a5fbbad91ff5f0151f65",
+    "path": "packages/adapters/src/generated/work-v4/pin.ts",
+    "target": "packages/adapters/src/generated/work-v4/pin.ts.txt",
+    "sha256": "ea7928102b3a7d2e46b8c8b5c418004b8660fa3935c2eb96c20c7e62a3b4393a"
+  },
+  {
+    "commit": "1c02194d4a3709d14890a5fbbad91ff5f0151f65",
+    "path": "packages/adapters/src/blind-intervention.ts",
+    "target": "packages/adapters/src/blind-intervention.ts.txt",
+    "sha256": "9b73d85927cc3386b9ab2fae7e647793929e360e5fda892e4db2ab692ab756e4"
+  },
+  {
+    "commit": "1c02194d4a3709d14890a5fbbad91ff5f0151f65",
+    "path": "packages/core/src/work-capture.ts",
+    "target": "packages/core/src/work-capture.ts.txt",
+    "sha256": "a258861619e92d5b41336ee83d41c42fec33212643c22b7d6ace8e55561b98ea"
+  },
+  {
+    "commit": "1c02194d4a3709d14890a5fbbad91ff5f0151f65",
+    "path": "packages/core/src/work-signals.ts",
+    "target": "packages/core/src/work-signals.ts.txt",
+    "sha256": "5e14a6069bcecfd358b5e3d034a78ee896c6f7f646c8208d8233cb9dd751dca4"
+  },
+  {
+    "commit": "1c02194d4a3709d14890a5fbbad91ff5f0151f65",
+    "path": "packages/core/src/intervention.ts",
+    "target": "packages/core/src/intervention.ts.txt",
+    "sha256": "05377d1045942334016e7154bb092cf2fdeb4d95c86c2c4170b321f11d9d0312"
+  },
+  {
+    "commit": "1c02194d4a3709d14890a5fbbad91ff5f0151f65",
+    "path": "packages/core/src/factory-calibration.ts",
+    "target": "packages/core/src/factory-calibration.ts.txt",
+    "sha256": "f04c82cb133ae383b9f7cf524df70f7fc8e9d78830d4c25888fb9d10cc603405"
+  }
+]

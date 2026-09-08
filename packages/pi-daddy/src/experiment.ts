@@ -36,6 +36,8 @@ export async function createExperiment(input: { directory: string; budget: Exper
   return createExperimentStore(directory, budget, c, bytes);
 }
 export interface ExperimentRun { readonly primary: Promise<VariantRecord>; readonly completion: Promise<ExperimentView>; readonly boundary: Promise<ExperimentView>; readonly started: readonly Promise<"spawned" | "settled-without-spawn">[] }
+const controllers = new WeakSet<object>();
+export const isExperimentController = (value: unknown): value is ReturnType<typeof openExperiment> => typeof value === "object" && value !== null && controllers.has(value);
 /** A separate owned controller, not delegate_all and not a model-facing launch/callback loader. */
 export function openExperiment(input: ExperimentBinding, hostAuthority: ExperimentAuthority | null) {
   const store = experimentStore(input), b = store.binding, c = b.charter, a = experimentAuthority(hostAuthority), owner = randomUUID(), digest = experimentBindingDigest(b);
@@ -80,7 +82,7 @@ export function openExperiment(input: ExperimentBinding, hostAuthority: Experime
     return { view, nodes:evaluateOrder(c.order,variants,digests,state.decisions).map(n => view.control === "not-assessed" ? n : {...n, action:"stakeholder" as const}), superseded:state.superseded };
   };
   const orderView = () => computeOrder(false);
-  return Object.freeze({ binding: b, inspect: () => inspect(false), reconcile: () => inspect(false), orderView,
+  const api = Object.freeze({ binding: b, inspect: () => inspect(false), reconcile: () => inspect(false), orderView,
     async decideOrder(input: FactoryDecision, authority: { id: string; digests: readonly string[] } | null) {
       const request=factoryDecision(input); approved(a,b.budget,c);
       if(!authority||authority.id!==request.authorityId||!authority.digests.includes(factoryDecisionDigest(request))||request.bindingDigest!==digest)throw new Error("independent decision authority required");
@@ -225,4 +227,5 @@ export function openExperiment(input: ExperimentBinding, hostAuthority: Experime
       } finally { starting = false; }
     },
   });
+  controllers.add(api); return api;
 }

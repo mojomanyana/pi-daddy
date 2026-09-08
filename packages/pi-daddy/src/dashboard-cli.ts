@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+import { connectDashboardHost, isDashboardConnection, ENV_DASHBOARD_HOST_SOCKET, type DashboardConnection } from "./dashboard-host-transport.ts";
+import { dashboardHostRequest, type DashboardHostRequest } from "./dashboard-host.ts";
+export { ENV_DASHBOARD_HOST_SOCKET } from "./dashboard-host-transport.ts";
 import { realpathSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -45,6 +48,11 @@ export interface DashboardFrameOptions {
   dailyJson?: boolean;
   debrief?: DebriefPresenter;
   debriefJson?: boolean;
+  connected?: DashboardConnection;
+}
+export async function dashboardHostAction(host:DashboardConnection,line:string){
+  if(!isDashboardConnection(host)||Buffer.byteLength(line)>60000)throw Error("genuine bounded dashboard connection required");
+  return host.action(dashboardHostRequest(parseRetentionJson(line,60000) as DashboardHostRequest));
 }
 
 function shellQuote(value: string): string {
@@ -81,6 +89,16 @@ function incompatibleFrame(protocol: number): string {
 export async function dashboardFrame(options: DashboardFrameOptions): Promise<string> {
   if (options.protocol !== undefined && options.protocol !== DASHBOARD_PROTOCOL_VERSION) {
     return incompatibleFrame(options.protocol);
+  }
+  if(options.connected){
+    if(!isDashboardConnection(options.connected))throw Error("original dashboard connection required");
+    let view:Awaited<ReturnType<DashboardConnection["frame"]>>;
+    try{view=await options.connected.frame();}catch{return "PI-DADDY — CONNECTED HOST UNAVAILABLE\nNo prior acceptance, presentation or continuity substituted. No action retried.";}
+    if(options.dailyJson||options.debriefJson)return JSON.stringify(view);
+    const source=view.source as {daily?:Parameters<typeof renderDailyView>[0]}|null;
+    return ["PI-DADDY — CONNECTED HOST (snapshot; identity/acceptance not authenticated)",source?.daily?renderDailyView(source.daily,options.width):"Source unavailable; no previous acceptance substituted.",
+      view.debrief?renderDebrief(view.debrief as Parameters<typeof renderDebrief>[0],options.width):"Debrief deferred/closed. No implicit presentation or steering.",
+      `Attention reserved ${view.attention.attentionUsed}/5 (not proof of delivery). Tip ${view.tip}.`,"Explicit exact approved JSON requests only; refresh never acts."].join("\n\n");
   }
   if (options.debrief || options.debriefJson) {
     if (!isDebriefPresenter(options.debrief)) return "PI-DADDY — DEBRIEF UNAVAILABLE: genuine presenter/host missing";
@@ -134,6 +152,7 @@ interface CliOptions {
   dailyJson: boolean;
   debriefFixture: boolean;
   debriefJson: boolean;
+  hostSocket?: string;
 }
 
 function parseArgs(argv: string[]): CliOptions {
@@ -141,7 +160,7 @@ function parseArgs(argv: string[]): CliOptions {
   let details = false;
   let color = process.stdout.isTTY;
   let ledgerPath: string | undefined, archivePath: string | undefined, workPath: string | undefined, selection: string | undefined;
-  let dailyJson = false, debriefFixture = false, debriefJson = false;
+  let dailyJson = false, debriefFixture = false, debriefJson = false;let hostSocket:string|undefined;
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === "--once") once = true;
@@ -151,6 +170,7 @@ function parseArgs(argv: string[]): CliOptions {
     else if (arg === "--daily-json") dailyJson = true;
     else if (arg === "--debrief-fixture") debriefFixture = true;
     else if (arg === "--debrief-json") debriefJson = true;
+    else if(arg === "--host-socket"){hostSocket=argv[++index];if(!hostSocket||hostSocket.startsWith("--"))throw Error("explicit host socket required");}
     else if (["--archive-projection", "--work-ledger", "--work-snapshot"].includes(arg)) {
       const value = argv[++index]; if (!value || value.startsWith("--")) throw new Error("missing daily view argument");
       if (arg === "--archive-projection") archivePath = value;
@@ -159,10 +179,10 @@ function parseArgs(argv: string[]): CliOptions {
     }
     else throw new Error(`unknown dashboard argument ${JSON.stringify(arg)}`);
   }
-  return { once, details, color, ledgerPath, archivePath, workPath, selection, dailyJson, debriefFixture, debriefJson };
+  return { once, details, color, ledgerPath, archivePath, workPath, selection, dailyJson, debriefFixture, debriefJson, hostSocket };
 }
 
-export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.ProcessEnv = process.env, host: { debrief?: DebriefPresenter } = {}): Promise<void> {
+export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.ProcessEnv = process.env, host: { debrief?: DebriefPresenter; connected?:DashboardConnection } = {}): Promise<void> {
   const cli = parseArgs(argv);
   const cwd = process.cwd();
   const ledgerPath = cli.ledgerPath ?? (env[ENV_DASHBOARD_LEDGER]?.trim() || undefined);
@@ -179,6 +199,8 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
     workLedgerPath: workPath ? resolve(cwd, workPath) : undefined,
     workContext: { selectedSnapshot, authority: null },
   } : undefined;
+  const socket=cli.hostSocket??env[ENV_DASHBOARD_HOST_SOCKET];const connected=host.connected??(socket?connectDashboardHost(socket):undefined);
+  if(connected&&(host.debrief||cli.debriefFixture||env[ENV_DEBRIEF_FIXTURE]==="1"))throw Error("connected host and separate debrief are exclusive");
   const debrief = host.debrief ?? (cli.debriefFixture || env[ENV_DEBRIEF_FIXTURE] === "1" ? await createFixtureDebrief() : undefined);
   if (debrief) {
     if (!isDebriefPresenter(debrief)) throw new Error("invalid debrief presenter");
@@ -194,7 +216,7 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
       color: cli.color,
       width: process.stdout.columns || 80,
       details: cli.details,
-      dailyView, dailyReader, dailyJson: cli.dailyJson, debrief, debriefJson: cli.debriefJson,
+      dailyView, dailyReader, dailyJson: cli.dailyJson, debrief, debriefJson: cli.debriefJson, connected,
     });
     if (frame === previous && !clear) return;
     previous = frame;
@@ -212,12 +234,12 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
     drawing = true;
     void draw(true).finally(() => { drawing = false; });
   };
-  const input = debrief ? createInterface({ input: process.stdin, terminal: false }) : null;
+  const input = debrief || connected ? createInterface({ input: process.stdin, terminal: false }) : null;
   let acting = false;
   input?.on("line", line => {
     if (acting) return;
     acting = true;
-    void debriefAction(debrief!, line).catch(() => { process.stderr.write("Debrief action refused or acknowledgement unknown; inspect/reconcile explicitly.\n"); })
+    void (connected?dashboardHostAction(connected,line):debriefAction(debrief!, line)).catch(() => { process.stderr.write("Debrief action refused or acknowledgement unknown; inspect/reconcile explicitly.\n"); })
       .finally(() => { acting = false; redraw(); });
   });
   const timer = setInterval(redraw, DASHBOARD_REFRESH_MS);

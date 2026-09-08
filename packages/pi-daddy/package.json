@@ -49,6 +49,18 @@
       "types": "./dist/experiment.d.ts",
       "default": "./dist/experiment.js"
     },
+    "./dashboard-harness": {
+      "types": "./dist/dashboard-harness.d.ts",
+      "default": "./dist/dashboard-harness.js"
+    },
+    "./dashboard-host": {
+      "types": "./dist/dashboard-host.d.ts",
+      "default": "./dist/dashboard-host.js"
+    },
+    "./dashboard-host-transport": {
+      "types": "./dist/dashboard-host-transport.d.ts",
+      "default": "./dist/dashboard-host-transport.js"
+    },
     "./debrief-host": {
       "types": "./dist/debrief-host.d.ts",
       "default": "./dist/debrief-host.js"

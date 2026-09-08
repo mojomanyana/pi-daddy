@@ -32,18 +32,18 @@ export function renderDebrief(view: DebriefFrame, width = 100): string {
   return lines.slice(0, 80).map(line => { const text = safe(line); return text.length > w ? text.slice(0, w - 1) + "…" : text; }).join("\n");
 }
 /** The actual existing dashboard action seam; no terminal/worker transport or authority metadata. */
-export async function debriefAction(presenter: DebriefPresenter, command: string): Promise<void> {
+export async function debriefAction(presenter: DebriefPresenter, command: string): Promise<unknown> {
   if (!isDebriefPresenter(presenter) || typeof command !== "string" || command.length > 4096) throw new Error("invalid debrief action");
   const [action, ...args] = command.trim().split(/\s+/), view = presenter.view();
-  if (action === "close" && !args.length) { presenter.close(); return; }
-  if (action === "open" && !args.length) { await presenter.open({ mode: "manual", userPresent: true }); return; }
-  if (action === "reveal" && !args.length) { await presenter.reveal(); return; }
-  if (action === "choose") { await presenter.choose({ kind: args[0] as "one", labels: args.slice(1) }); return; }
+  if (action === "close" && !args.length) { return presenter.close(); }
+  if (action === "open" && !args.length) { return presenter.open({ mode: "manual", userPresent: true }); }
+  if (action === "reveal" && !args.length) { return presenter.reveal(); }
+  if (action === "choose") { return presenter.choose({ kind: args[0] as "one", labels: args.slice(1) }); }
   const slot = Number(args[0]), card = view.cards.find(c => c.slot === slot);
   if (card?.kind !== "case") throw new Error("exact exposed case slot required");
-  if (action === "reconcile" && args.length === 1) { await presenter.reconcile(card.caseManifestId); return; }
+  if (action === "reconcile" && args.length === 1) { return presenter.reconcile(card.caseManifestId); }
   if (action === "label" && args.length >= 2) {
-    await presenter.label({ caseManifestId: card.caseManifestId, priorDecisionId: card.priorDecisionId, disposition: args[1] as "skip", note: args.slice(2).join(" ") }); return;
+    return presenter.label({ caseManifestId: card.caseManifestId, priorDecisionId: card.priorDecisionId, disposition: args[1] as "skip", note: args.slice(2).join(" ") });
   }
   throw new Error("unsupported debrief action");
 }

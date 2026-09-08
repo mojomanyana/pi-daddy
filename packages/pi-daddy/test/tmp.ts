@@ -22,9 +22,9 @@ export const KEEP_ENV = "PI_GRANTS_KEEP_TMP";
 
 const created: string[] = [];
 
-/** `mkdtemp` under the OS temp dir, remembered so `cleanupTempDirs` can remove it. */
-export async function tempDir(prefix: string): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), prefix));
+/** Fresh tracked directory. An explicit base supports bounded Unix socket paths; KEEP_ENV still applies. */
+export async function tempDir(prefix: string, base = tmpdir()): Promise<string> {
+  const dir = await mkdtemp(join(base, prefix));
   created.push(dir);
   return dir;
 }

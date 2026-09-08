@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { projectWorkLedger, parseWorkLedgerText, type WorkProjectionContext, type WorkFrozen, type RevisionRef } from "./work-ledger.ts";
 import { canonicalWorkJson, copyWorkJson } from "./work-ledger-json.ts";
 import { readDailySnapshot, parseArchiveProjection, freezeDaily, type ArchiveExecution } from "./daily-view-input.ts";
@@ -5,6 +6,9 @@ import { readDailySnapshot, parseArchiveProjection, freezeDaily, type ArchiveExe
 export const DAILY_VIEW_VERSION = "pi-daddy-daily-view-v1" as const;
 export interface DailyViewOptions {
   archiveProjectionPath?: string; workLedgerPath?: string;
+  /** Explicit retained adapter bytes; never authority. Mutually exclusive with the corresponding path. */
+  archiveBytes?: Uint8Array; workBytes?: Uint8Array;
+  sourceManifestBytes?: Readonly<Record<string, Uint8Array>>;
   /** Genuine independently selected host authority only. Never populated from P03 or a context file. */
   workContext?: WorkFrozen<WorkProjectionContext>;
   /** Policy-authorized exact paths keyed by expected raw-manifest SHA256. No producer paths followed. */
@@ -51,7 +55,16 @@ export function createDailyViewReader() {
     const context = contextCopy(options.workContext);
     const files = Object.fromEntries(Object.entries(options.sourceManifestFiles ?? {}));
     if (Object.keys(files).length > 128 || Object.entries(files).some(([key, value]) => !/^[a-f0-9]{64}$/.test(key) || typeof value !== "string")) throw new TypeError("bounded explicit source file map required");
-    const [archiveRead, workRead] = await Promise.all([readDailySnapshot(archivePath), readDailySnapshot(workPath, 16 * 1024 * 1024)]);
+    const snapshot = (bytes: Uint8Array | undefined, path: string | undefined, limit: number) => {
+      if (bytes === undefined) return readDailySnapshot(path, limit);
+      if (path !== undefined || !(bytes instanceof Uint8Array) || bytes.length > limit) throw new TypeError("bounded exclusive retained snapshot required");
+      const copy=Buffer.from(bytes); return { status: "read" as const, bytes: copy, sha256: createHash("sha256").update(copy).digest("hex") };
+    };
+    const entries=Object.entries(options.sourceManifestBytes??{});if(entries.length>128)throw Error("source byte map bound");
+    const manifestBytes=Object.fromEntries(entries.map(([key,bytes])=>{
+      if(!/^[a-f0-9]{64}$/.test(key)||!(bytes instanceof Uint8Array)||bytes.length>65536)throw Error("bounded source bytes required");return [key,Buffer.from(bytes)];
+    }));
+    const [archiveRead, workRead] = await Promise.all([snapshot(options.archiveBytes,archivePath, 2*1024*1024), snapshot(options.workBytes,workPath, 16 * 1024 * 1024)]);
     let archiveStatus: string = archiveRead.status, workStatus: string = workRead.status;
     let archive: ArchiveExecution[] = [], work = projectWorkLedger("", context), workText = "";
     const issues: string[] = [];
@@ -65,7 +78,7 @@ export function createDailyViewReader() {
       if (work.errors.length) { workStatus = "error"; issues.push("work-projection-errors"); }
     }
     const selection = JSON.stringify(context.selectedSnapshot), scopeChanged = seen && selection !== lastSelection;
-    const unavailable = archiveStatus !== "read" || (Boolean(workPath) && workStatus !== "read");
+    const unavailable = archiveStatus !== "read" || ((Boolean(workPath) || options.workBytes !== undefined) && workStatus !== "read");
     if (unavailable) gap = true;
     const continuity = seen ? gap && !unavailable ? "reconnected-gap" : "resnapshot" : "initial-snapshot";
     seen = true; lastSelection = selection;
@@ -85,6 +98,7 @@ export function createDailyViewReader() {
     const available = new Map<string, DailyAttempt["sourceAvailability"][number]["state"]>();
     const requested = sorted(archive.flatMap(e => e.sourceReferences));
     for (const sha256 of requested) {
+      if (manifestBytes[sha256]) { available.set(sha256,createHash("sha256").update(manifestBytes[sha256]).digest("hex")===sha256?"available":"mismatch"); continue; }
       if (!files[sha256]) { available.set(sha256, "missing"); continue; }
       const source = await readDailySnapshot(files[sha256], 64 * 1024);
       available.set(sha256, source.status === "read" ? source.sha256 === sha256 ? "available" : "mismatch" : source.status === "error" ? "error" : "missing");

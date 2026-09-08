@@ -4,6 +4,16 @@ This version replaces the **wire semantics**, not the authority model, of the Se
 The old v1 document and all prior receipts remain historical. Ledger v2/v3 and work-v4 are unchanged.
 Formal acceptance and independent overall review remain pending; fixture validity is not live qualification.
 
+## Ordinary host integration (additive local candidate)
+
+`PI_GRANTS_RETAIN_NATIVE_SESSIONS=1` plus an existing private canonical `PI_GRANTS_NATIVE_SESSION_ROOT`
+now allocates an exclusive per-execution target through shared public delegate/all/chain planning. The
+same plan/audit/executor receives `--session`; model tool parameters never select a target. Invalid roots
+or reused occurrences refuse; unset preserves default ephemeral behavior. This does not alter wire2.0,
+claim producer quiescence/active TUI branch or turn observations into acceptance. The new connected host
+can ingest these exact authorized manifests/blobs through real harness policy/checkpoint adapters into
+actual daily status; see `contracts/dashboard-host/v1/README.md`. No observer session-entry writes.
+
 ## Public contract and reproducibility
 
 - API: `pi-daddy/execution-retention` (also the package root).

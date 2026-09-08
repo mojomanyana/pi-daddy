@@ -9,7 +9,19 @@ Released baseline last synced against the code: **2026-09-04**, `pi-daddy` 0.22.
 The **2026-09-06 work-v4 source candidate** is described separately below. It is not a release, activation,
 production authentication result or completed task/qualification gate.
 
-The **local overall-quality repair candidate** preserves required controller failures independently of
+The **local connected dashboard host** now connects explicit ordinary native-retention targets,
+actual harness policy/checkpoint/fact-source/semantic observation and the existing daily read path.
+It uses the pinned real trust/learning journal and case/blind writers for durable five-total attention,
+manual paused presentation preparation/acknowledgement and reconnect without automatic reveal. Explicit
+whole-request/CAS dashboard routes reach actual P01 intent/resource controls and original P11 cancellation
+handles; a private bounded socket connects the existing CLI/plugin without reconstituting ownership.
+See [ADR-0056](06-decisions/ADR-0056-connected-observation-and-dashboard-host.md) and the
+[host contract](../packages/pi-daddy/contracts/dashboard-host/v1/README.md). SPEC001/002 repository gaps
+are narrowed, not claimed fully closed: physical retention/redaction/export handling, wider revisions and
+generalized ordinary/live steering remain separately named. Structural declarations and byte-checked
+loaded artifacts do not authenticate humans/modules or qualify an atomic deployed closing pause.
+
+The **overall-quality repairs** preserves required controller failures independently of
 worker artifacts, restores exact rollback adoption lineage/revalidation, and uses actual P01 receipt
 applicability across distinct snapshot identities. Views expose controller failed/unknown/not-assessed;
 none certifies clean control merely from completed workers. Lifecycle fixtures require real live readiness;
@@ -17,7 +29,7 @@ CI adds exact prerequisite telemetry and bounds without provisioning, skips or r
 See [ADR-0055](06-decisions/ADR-0055-overall-quality-repairs.md). The original whole-change review remains
 CHANGES-REQUESTED on both axes. OAR-SPEC-001..007 remain OPEN implementable integration gaps, not waived or
 externalized by this batch. Remote native prerequisites/matrix/downstream and overall acceptance remain
-unqualified. Source through7b33669 is published in draft PR35; these quality amendments are LOCAL ONLY.
+unqualified. Source throughf276698 is published in draft PR35; subsequent connected-host amendments are LOCAL ONLY.
 
 The additive **P08 retained-host bridge** explicitly consumes work-signals-v1/case-v3 selected batches
 and the durable blind writer ports tested at harness638494af0a0058edf9a9b1b02e57af894ab46ed6. Zero-card

@@ -11,6 +11,7 @@
  * tool surface is observed.
  */
 
+import { nativeDelegationContext } from "./delegation-native.ts";
 import { DELEGATE_SUBJECT, shouldSeekApproval } from "../src/approval.ts";
 import { planDelegation } from "../src/delegate.ts";
 import {
@@ -256,12 +257,6 @@ export async function runOneDelegation(
     boundWorkspaceId: spec.workspace?.workspace_id,
     boundContextId: spec.correlation?.context_id,
   };
-  const extra = {
-    fanoutBudget: budget,
-    spawnId: ids.parentId,
-    childSpawnId: ids.childId,
-    childExecutionId: ids.executionId,
-  };
 
   // ADR-0031: herdr was DEMANDED (`PI_GRANTS_HERDR=1`) and is not answering. Refused rather than relocated —
   // the operator chose that over falling back, so the ledger can never name a child that ran somewhere nobody
@@ -277,13 +272,15 @@ export async function runOneDelegation(
   // `ctx: null` rather than skipping the plan entirely: the ledger still gets a full, honest record of what was
   // requested and refused, and stored approvals still count toward it — nothing is *hidden*, only nobody is
   // *asked*. It is the same argument `/grants` uses for its preview.
-  const executorRefusal = session.executor.refusal;
+  let executorRefusal = session.executor.refusal;
   const modelRefusal = preflightModel(
     request.model,
     ctx.modelRegistry,
     session.modelResolutionCache,
     session.allowUnresolvedModels,
   );
+  const {extra,refusal:nativeRefusal}=await nativeDelegationContext(session,ids,budget,Boolean(executorRefusal||modelRefusal));
+  executorRefusal ||= nativeRefusal;
   let preparedWorkspace: PreparedWorkspace | undefined;
   let approvalOutcome: ApprovalOutcome | undefined;
   let plan: ReturnType<typeof planDelegation>;

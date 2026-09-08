@@ -47,6 +47,7 @@ import { ENV_WORKSPACE_REGISTRY } from "../src/workspace.ts";
 import type { GrantStoreRefusalReason } from "../src/grant-store.ts";
 import { republishable } from "./approvals.ts";
 import { storedGrantSessionState } from "./stored-grant-session.ts";
+import { nativeSessionRootFromEnv, type NativeSessionHost } from "../src/native-session-target.ts";
 import { ENV_ALLOW_UNRESOLVED_MODELS } from "../src/model-preflight.ts";
 
 /**
@@ -79,7 +80,7 @@ export { ENV_HERDR_WORKSPACE } from "../src/herdr-cli.ts";
 /** Keep each child's pane after it finishes, for inspection. Off by default: fan-out would flood it. */
 export const ENV_HERDR_KEEP_PANE = "PI_GRANTS_HERDR_KEEP_PANE";
 
-export interface GrantsSession {
+export interface GrantsSession extends NativeSessionHost {
   /**
    * False when neither `PI_GRANTS_GRANT` nor a stored grant applies: the session holds the wildcard and
    * nothing is governed.
@@ -318,6 +319,7 @@ export function createGrantsSession(extensionPath: string | undefined): GrantsSe
      */
     mayDelegate: !governed || inherited.includes(DELEGATE_CAPABILITY) || inherited.includes(WILDCARD),
     allowUnresolvedModels: process.env[ENV_ALLOW_UNRESOLVED_MODELS] === "1",
+    nativeSessionRoot: nativeSessionRootFromEnv(process.env),
     modelResolutionCache: new Map<string, boolean>(),
     extensionPath,
 
