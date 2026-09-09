@@ -57,6 +57,8 @@ export { createExperiment, openExperiment, experimentCharterDigest, experimentBi
   type ExperimentBinding, type ExperimentCharter, type ExperimentAuthority, type ExperimentCancellation, type ExperimentRun, type ExperimentView } from "./experiment.ts";
 export { createResourceBudget, createDispatchBudget, createIntentBudget, createExperimentBudget, openResourceBudget, resourceBindingDigest, ResourceAdmissionError,
   type BudgetBinding, type DispatchBudgetBinding, type IntentBudgetBinding, type ExperimentBudgetBinding, type GovernedBudgetBinding, type ResourceLimits, type AttemptDemand, type ResourcePermit, type BudgetSnapshot } from "./resource-budget.ts";
+export { createProducerIpcHost, startProducerIpc, producerIpcBinding, producerIpcBindingDigest, producerIpcDemand, PRODUCER_IPC_LIMITS,
+  type ProducerIpcBinding, type ProducerIpcReferences, type ProducerIpcContext, type ProducerIpcHost, type ProducerIpcSnapshot, type ProducerIpcRun } from "./producer-ipc.ts";
 export { prepareDigestProfile, runDigestProfile, DIGEST_PROFILE, EffectProfileUnavailableError,
   type DigestProfile, type DigestAttempt } from "./effect-profile.ts";
 export { planSpawn, type SpawnPlan, type SpawnPlanInput } from "./spawn.ts";

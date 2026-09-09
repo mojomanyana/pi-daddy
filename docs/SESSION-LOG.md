@@ -5,6 +5,28 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ---
 
+## 2026-09-09 — LOCAL original-reservation IPC bridge
+
+ADR-0059 adds a separate opt-in producer emitter, actual bounded stdout/EOF/exit evidence, original
+host-port/permit branding and source cancellation. The existing v4 reservation holds through child and
+host acknowledgement; timeout is an observation rather than resource release. Required sync/close failure
+remains failed/unknown even if journal bytes and child/host effects completed. Whole parent binding bytes
+and digest are charged; only `{id,sequence:1}` reaches child/host frame. No profile, model/effort/skills,
+ordinary Pi runtime injection, acceptance or public ref is changed.
+
+The original source at979d652 and all old CI/review/seq226/P17D evidence remain preserved. After a WebSocket
+transport interruption, the same owner resumed once under explicit root authority, keeping five partial
+files; no model-route/auth reset or fallback was used. Retirement metadata records one earlier UI/runtime
+coding retry attempt before stop; this is not zero coding retries. No evaluated-effect retry was performed.
+Local tests use inert host ports and actual owned child IPC, including explicitly injected signal/EOF/accounting faults.
+`tmp/producer-ipc/` retains baseline/red/intermediate/final/compiled evidence and the finished source/evidence
+receipt. Read that exact receipt for counts and HEAD/tree; this entry does not stand in for its verification.
+
+Next: coordinator independently pins the finished source and wires the documented `exchange(frames,
+{binding,signal})` to its original host. `run.result` is not settlement; require `run.completion` plus both
+completed effect and acknowledged settlement. This owner remains available only for immediate integration
+support; no producer publication, live qualification, new reviewer loop, cleanup or self-retirement.
+
 ## 2026-09-04 — 0.22.0 released and registry-verified
 
 The merged work after 0.21.1 is release-worthy: fail-closed project-store loading, model-catalogue preflight,

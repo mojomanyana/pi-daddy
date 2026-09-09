@@ -86,6 +86,10 @@
       "types": "./dist/resource-budget.d.ts",
       "default": "./dist/resource-budget.js"
     },
+    "./producer-ipc": {
+      "types": "./dist/producer-ipc.d.ts",
+      "default": "./dist/producer-ipc.js"
+    },
     "./effect-profile": {
       "types": "./dist/effect-profile.d.ts",
       "default": "./dist/effect-profile.js"
@@ -196,6 +200,7 @@
     },
     "./contracts/factory-order/v1/*": "./contracts/factory-order/v1/*",
     "./contracts/experiment/v1/*": "./contracts/experiment/v1/*",
+    "./contracts/producer-ipc/v1/*": "./contracts/producer-ipc/v1/*",
     "./contracts/debrief/v1/*": "./contracts/debrief/v1/*",
     "./contracts/intent-control/v2/request.schema.json": "./contracts/intent-control/v2/request.schema.json",
     "./contracts/intent-control/v1/request.schema.json": "./contracts/intent-control/v1/request.schema.json",

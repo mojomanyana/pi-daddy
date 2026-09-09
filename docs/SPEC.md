@@ -9,6 +9,18 @@ Released baseline last synced against the code: **2026-09-04**, `pi-daddy` 0.22.
 The **2026-09-06 work-v4 source candidate** is described separately below. It is not a release, activation,
 production authentication result or completed task/qualification gate.
 
+The **local opt-in producer IPC bridge** binds an already reserved original v4 permit to one frozen
+parent budget/order/experiment/execution/host-charter/invocation binding. A separate fixed model-free
+namespace child emits only canonical `{id,sequence:1}` plus LF. Exact bounded bytes, original stdout EOF
+and original child completion precede a one-use Node Readable replay to the original trusted host port;
+correlation and composed original cancellation stay outside the frame. The existing reservation spans
+child and host lifetimes. Observer timeout is not settlement; late acknowledgement cannot upgrade a
+failed effect, and required accounting failure stays visible even with complete settlement bytes.
+References are evidence only. The fixed digest/hold profile, null model/effort/skills, ordinary Pi runtime
+restrictions, original review and seq226 are unchanged. No live SDK/model qualification or publication is
+implied. See [ADR-0059](06-decisions/ADR-0059-original-reservation-ipc-bridge.md) and the
+[precise callable contract](../packages/pi-daddy/contracts/producer-ipc/v1/README.md).
+
 The **local P05 ordinary-boundary repair** now queues intent direction while an attached original
 ordinary child is busy and holds new ordinary admission across asynchronous native application. Only
 explicit reconciliation at both original ordinary/resource boundaries plus a successful final host

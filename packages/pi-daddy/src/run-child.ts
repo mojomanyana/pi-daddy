@@ -94,6 +94,8 @@ export interface ChildRunRequest {
   onOutput?: (chunk: string) => void;
   /** Optional raw observation; isolated from control, never awaited, separate from display text. */
   onObservation?: (stream: "stdout" | "stderr", bytes: Uint8Array) => void;
+  /** Passive EOF observation. Never a replacement child/settlement handle. Exceptions are isolated. */
+  onStreamEnd?: (stream: "stdout" | "stderr") => void;
   /** Security hook called immediately after spawn, before output handling (for lease attachment). */
   onSpawn?: (pid: number) => void;
 }
@@ -252,6 +254,9 @@ export function runChild(request: ChildRunRequest): Promise<ChildRunResult> {
     };
     child.stdout?.on("data", (chunk: Buffer) => observe("stdout", chunk));
     child.stderr?.on("data", (chunk: Buffer) => observe("stderr", chunk));
+    for (const stream of ["stdout", "stderr"] as const) child[stream]?.on("end", () => {
+      try { request.onStreamEnd?.(stream); } catch { /* passive observation only */ }
+    });
 
     timers.push(
       setTimeout(() => controlIfRunning(() => {

@@ -29,6 +29,16 @@ export interface AttemptDemand {
 interface Reservation extends AttemptDemand { intent?: IntentAdmission; owner: string; state: "reserved" | "settled"; outcome: string | null }
 export interface BudgetSnapshot { attempts: number; inputBytes: number; active: number; reservations: readonly Readonly<Reservation>[] }
 export interface ResourcePermit { readonly attemptId: string; settle(outcome: "completed" | "failed" | "cancelled"): Promise<void> }
+interface PermitControl { owner:object; bindingDigest:string; version:string; demand:AttemptDemand; claimed:boolean; settling:number; settled:boolean; verify():Promise<void>; finish:ResourcePermit["settle"] }
+const originalPermits = new WeakMap<ResourcePermit,PermitControl>();
+/** Exclusive original-permit handoff for the separate opt-in IPC route. No mint/recovery API. */
+export function claimResourcePermit(owner:object, permit:ResourcePermit, bindingDigest:string, expected:AttemptDemand) {
+  const d=demand(expected), c=originalPermits.get(permit);
+  if(!c || c.owner!==owner || c.version!=="4.0" || c.bindingDigest!==bindingDigest || JSON.stringify(c.demand)!==JSON.stringify(d) || c.claimed || c.settling || c.settled) fail("OWNERSHIP_LOST","original unclaimed experiment permit required");
+  c.claimed=true;
+  // Admission failure is consumed by the original recipient, which must still settle the charged attempt.
+  return Object.freeze({admission:c.verify(),settle:c.finish});
+}
 export class ResourceAdmissionError extends Error {
   readonly code: "INVALID" | "AUTHORITY_CHANGED" | "DUPLICATE" | "EXHAUSTED" | "OWNERSHIP_LOST" | "DISPATCH_BLOCKED";
   constructor(code: ResourceAdmissionError["code"], message: string) {
@@ -183,16 +193,32 @@ export function openResourceBudget<T extends GovernedBudgetBinding>(input: T) {
     };
     return readOnly ? execute() : withFileLock(path, "resource budget", execute, { staleRecovery: "disabled" });
   }
-  const permit = (attemptId: string): Readonly<ResourcePermit> => Object.freeze({ attemptId, async settle(outcome: "completed" | "failed" | "cancelled") {
-    if (!["completed", "failed", "cancelled"].includes(outcome)) fail("INVALID", "invalid outcome");
-    await transaction(async (records, append) => {
-      const r = records.find(r => r.attemptId === attemptId);
-      if (!r || r.owner !== owner) fail("OWNERSHIP_LOST", "only original live host may settle");
-      if (r.state === "settled") { if (r.outcome !== outcome) fail("INVALID", "contradictory settlement"); return; }
-      await append({ type: "settle", owner, attemptId, outcome });
-    });
-  } });
-  return Object.freeze({
+  const permit = (d:AttemptDemand): Readonly<ResourcePermit> => {
+    const attemptId=d.attemptId;
+    const c:PermitControl={owner:api,bindingDigest:resourceBindingDigest(b),version:b.version,demand:d,claimed:false,settling:0,settled:false,
+      verify:()=>transaction(async(records,_append,control,intent)=>{
+        const r=records.find(r=>r.attemptId===attemptId);
+        if(!r || r.owner!==owner || r.state!=="reserved" || Object.keys(d).some(k=>r[k as keyof AttemptDemand]!==d[k as keyof AttemptDemand])) fail("OWNERSHIP_LOST","original reservation is not held");
+        if(control.paused || control.records.some(r=>r.application==="pending") || intent?.records.some(r=>r.application==="pending-or-unknown")) fail("DISPATCH_BLOCKED","dispatch barrier");
+      }),
+      async finish(outcome) {
+        if(!["completed","failed","cancelled"].includes(outcome)) fail("INVALID","invalid outcome");
+        c.settling++;
+        try {
+          await transaction(async(records,append)=>{
+            const r=records.find(r=>r.attemptId===attemptId);
+            if(!r || r.owner!==owner) fail("OWNERSHIP_LOST","only original live host may settle");
+            if(r.state==="settled"){if(r.outcome!==outcome)fail("INVALID","contradictory settlement");return;}
+            await append({type:"settle",owner,attemptId,outcome});
+          }); c.settled=true;
+        } finally {c.settling--;}
+      }};
+    const result=Object.freeze({attemptId,async settle(outcome:Parameters<ResourcePermit["settle"]>[0]) {
+      if(c.claimed) fail("OWNERSHIP_LOST","original permit handed to IPC lifetime");
+      return c.finish(outcome);
+    }}); originalPermits.set(result,c); return result;
+  };
+  const api = Object.freeze({
     binding: b,
     async reserveBatch(inputs: readonly AttemptDemand[]): Promise<readonly Readonly<ResourcePermit>[]> {
       if (b.version !== "4.0" || !Array.isArray(inputs) || !inputs.length || inputs.length > 32 || Reflect.ownKeys(inputs).length !== inputs.length + 1 || Array.from({ length: inputs.length }, (_, i) => Object.getOwnPropertyDescriptor(inputs, String(i))).some(d => !d?.enumerable || !Object.hasOwn(d, "value"))) fail("INVALID", "explicit v4 dense bounded batch required");
@@ -208,7 +234,7 @@ export function openResourceBudget<T extends GovernedBudgetBinding>(input: T) {
         if (records.length + demands.length > b.limits.maxAttempts || records.reduce((n,r) => n+r.inputBytes,0) + demands.reduce((n,d) => n+d.inputBytes,0) > b.limits.maxInputBytes || records.filter(r => r.state === "reserved").length + demands.length > b.limits.maxConcurrent) fail("EXHAUSTED", "whole experiment exceeds aggregate allowance");
         await append({ type: "reserve-batch", owner, demands });
       });
-      return Object.freeze(demands.map(d => permit(d.attemptId)));
+      return Object.freeze(demands.map(d => permit(d)));
     },
     intentControls(input: DispatchAuthority | null) {
       if (!b.intent) fail("INVALID", "intent controls require explicit v3 budget creation");
@@ -314,9 +340,10 @@ export function openResourceBudget<T extends GovernedBudgetBinding>(input: T) {
           await append({ type: "reserve", owner, demand: d, intent: assigned });
         } else await append({ type: "reserve", owner, demand: d });
       });
-      return permit(d.attemptId);
+      return permit(d);
     },
   });
+  return api;
 }
 
 export function resourceBindingDigest(b: GovernedBudgetBinding): string { return hash(JSON.stringify(binding(b))); }
