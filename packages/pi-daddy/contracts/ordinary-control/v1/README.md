@@ -10,7 +10,11 @@ The actual shared execute-child wrapper retains an original AbortController per 
 it with caller and lease signals. It never replaces the caller promise, primary result or existing process/
 Herdr timer/close path. No model tool schema exposes this port. No peer process or PID/pane is recovered.
 `inspect()` is process-local read-only status, NOT persisted authority or a clean durability acknowledgement.
-`quiescent()` additionally refuses unknown control, failed observation acknowledgement or unretained history.
+`quiescent()` additionally refuses unknown ownership, required control failure or unretained history. A
+best-effort terminal lifecycle/lease observation failure remains visible as `control:failed` beside the
+worker outcome, but does not turn a known-settled child into a permanent execution boundary. A boundary
+already known to be unavailable refuses an intent hold before installing it; it never blocks unrelated
+ordinary admission while claiming reconciliation could make progress.
 
 Cancellation shape:
 

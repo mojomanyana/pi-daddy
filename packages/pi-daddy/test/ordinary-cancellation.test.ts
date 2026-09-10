@@ -36,11 +36,11 @@ test("ordinary fanout cancellation preserves the completed sibling's result",asy
  const result=await done;assert.equal(result.value.details.children,2);assert.equal(result.value.details.failed,1);assert.match(result.value.content[0].text,/owned output/);
  }finally{await child.close();}
 });
-test("ordinary worker success does not certify a failed terminal observation acknowledgement",async()=>{
+test("ordinary worker success reports failed terminal observation without poisoning its settled boundary",async()=>{
  const root=await tempDir("ordinary-terminal-"),ledger=join(root,"ledger.jsonl"),old=process.env.PI_GRANTS_LEDGER;process.env.PI_GRANTS_LEDGER=ledger;
  const original=promises.appendFile;let child:Awaited<ReturnType<typeof ordinaryHostFixture>>|undefined,hit=false;
  try{child=await ordinaryHostFixture(root);promises.appendFile=(async(...args:Parameters<typeof promises.appendFile>)=>{await original(...args);if(String(args[0])===ledger&&String(args[1]).includes('"state":"completed"')){hit=true;throw Error("lost terminal observation acknowledgement");}}) as typeof promises.appendFile;syncBuiltinESMExports();
- const result=await child.run("fast");assert.ifError(result.error);assert.equal(result.value.details.exitCode,0);assert.equal(result.value.content[0].text,"owned output");assert.ok(hit);const row=(child.port.inspect() as any).children[0];assert.equal(row.state,"settled");assert.equal(row.control,"failed");assert.equal(child.port.quiescent(),false);assert.match(await readFile(ledger,"utf8"),/"state":"completed"/);
+ const result=await child.run("fast");assert.ifError(result.error);assert.equal(result.value.details.exitCode,0);assert.equal(result.value.content[0].text,"owned output");assert.ok(hit);const row=(child.port.inspect() as any).children[0];assert.equal(row.state,"settled");assert.equal(row.control,"failed");assert.equal(row.boundary,"not-assessed");assert.equal(child.port.quiescent(),true);assert.match(await readFile(ledger,"utf8"),/"state":"completed"/);
  }finally{promises.appendFile=original;syncBuiltinESMExports();await child?.close();old===undefined?delete process.env.PI_GRANTS_LEDGER:process.env.PI_GRANTS_LEDGER=old;}
 });
 test("late ordinary opt-in cannot certify an empty registry as complete original quiescence",async()=>{

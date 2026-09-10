@@ -5,7 +5,8 @@ import { controlShape } from "./dispatch-control.ts";
 export interface OrdinaryTarget { executionId:string; parentExecutionId:string|null; toolCallId:string|null }
 export interface OrdinaryCancellation { version:"ordinary-cancel-v1"; requestId:string; bindingDigest:string; expectedRevision:number; target:OrdinaryTarget }
 export interface OrdinaryAuthority { bindingDigest:string; requestDigests:readonly string[] }
-interface Row { target:OrdinaryTarget; state:"active"|"settled"|"unknown"; abortRequested:boolean; control:"not-assessed"|"failed"|"unknown"; outcome:unknown }
+type ControlState="not-assessed"|"failed"|"unknown";
+interface Row { target:OrdinaryTarget; state:"active"|"settled"|"unknown"; abortRequested:boolean; control:ControlState; boundary:ControlState; outcome:unknown }
 interface State { holds:Set<string>; enabled:boolean; coverageGap:boolean; bindingDigest:string; revision:number; rows:Map<string,Row>; handles:Map<string,AbortController>; requests:Map<string,{digest:string;result:unknown}> }
 const sessions=new WeakMap<object,OrdinaryChildren>(),ports=new WeakMap<object,State>();
 const id=(v:unknown)=>typeof v==="string"&&/^[a-zA-Z0-9:_-]{1,128}$/.test(v);
@@ -19,7 +20,7 @@ function initializeOrdinaryChildren(session:object):void {
   if(sessions.has(session))throw Error("original session already registered");
   const s:State={holds:new Set(),enabled:false,coverageGap:false,bindingDigest:dataDigest({occurrence:randomUUID()}),revision:0,rows:new Map(),handles:new Map(),requests:new Map()};
   const port:OrdinaryChildren=Object.freeze({bindingDigest:s.bindingDigest,
-    quiescent:()=>!s.coverageGap&&[...s.rows.values()].every(r=>r.state==="settled"&&r.control==="not-assessed"),
+    quiescent:()=>!s.coverageGap&&[...s.rows.values()].every(r=>r.state==="settled"&&r.boundary==="not-assessed"),
     inspect:()=>freeze(detached({bindingDigest:s.bindingDigest,revision:s.revision,children:[...s.rows.values()],admission:s.holds.size?"held-by-original-owner":"open",coverage:s.coverageGap?"unretained-before-opt-in":"original-registered-lifetimes-only",freshness:"snapshot-unknown",recovery:"unavailable",acceptance:"not-assessed"})),
     cancel(input:OrdinaryCancellation,authority:OrdinaryAuthority|null){
       const r=ordinaryCancellation(input),digest=ordinaryCancellationDigest(input),old=s.requests.get(r.requestId);
@@ -43,6 +44,7 @@ export function retainSessionChild(session:object,input:OrdinaryTarget,caller?:A
 /** Internal host control seam, not a model tool or recovered capability. Reads never call it. */
 export function holdOrdinaryDispatch(port:OrdinaryChildren,key:string){
  const s=ports.get(port);if(!s||!sha(key))throw Error("original ordinary boundary required");
+ if(s.coverageGap||[...s.rows.values()].some(r=>r.state!=="active"&&r.boundary!=="not-assessed"))throw Error("ordinary boundary unavailable; no recovery");
  if(!s.holds.has(key)){if(s.holds.size>=32)throw Error("ordinary boundary capacity exhausted");s.holds.add(key);s.revision++;}
  return Object.freeze({ready:()=>port.quiescent(),release:()=>{if(s.holds.delete(key))s.revision++;}});
 }
@@ -51,7 +53,7 @@ export function retainOrdinaryChild(port:OrdinaryChildren,input:OrdinaryTarget,c
   const s=ports.get(port);if(!s)throw Error("original ordinary controller required");const t=target(input);
   if(s.holds.size)throw Error("ordinary dispatch held at original control boundary");
   if(s.rows.has(t.executionId)||s.rows.size>=1024)throw Error("ordinary occurrence reused or capacity exhausted");
-  const abort=new AbortController(),row:Row={target:t,state:"active",abortRequested:false,control:"not-assessed",outcome:null};s.rows.set(t.executionId,row);s.handles.set(t.executionId,abort);s.revision++;
+  const abort=new AbortController(),row:Row={target:t,state:"active",abortRequested:false,control:"not-assessed",boundary:"not-assessed",outcome:null};s.rows.set(t.executionId,row);s.handles.set(t.executionId,abort);s.revision++;
   let done=false;return {signal:caller?AbortSignal.any([caller,abort.signal]):abort.signal,
-    settle(outcome:unknown,control:Row["control"]){if(done)throw Error("original child already settled");done=true;row.outcome=detached(outcome);row.control=control;row.state=control==="unknown"?"unknown":"settled";s.handles.delete(t.executionId);s.revision++;}};
+    settle(outcome:unknown,control:ControlState,boundary:ControlState=control){if(done)throw Error("original child already settled");done=true;row.outcome=detached(outcome);row.control=control;row.boundary=boundary;row.state=boundary==="unknown"?"unknown":"settled";s.handles.delete(t.executionId);s.revision++;}};
 }

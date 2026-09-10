@@ -162,7 +162,7 @@ export function openDashboardHost(options:DashboardHostOptions){
           }
         }catch(error){presenter?.close();presentationRevision=null;append({type:"result",requestId:request.requestId,state:"failed-or-unknown",reason:String(error)});throw error;}
         append({type:"result",requestId:request.requestId,state:"acknowledged",resultDigest:dataDigest(result??null)});releaseOrdinary?.();return {state:"acknowledged",result};
-      }catch(error){poisoned=true;if(attempted){try{if(history().some(e=>e.value.type==="claim"&&e.value.requestId===request.requestId))append({type:"host-failure",requestId:request.requestId,reason:String(error)});}catch{/* Failure recording also unacknowledged; no claim of no effects. */}}throw error;}finally{busy=false;}
+      }catch(error){if(attempted){poisoned=true;try{if(history().some(e=>e.value.type==="claim"&&e.value.requestId===request.requestId))append({type:"host-failure",requestId:request.requestId,reason:String(error)});}catch{/* Failure recording also unacknowledged; no claim of no effects. */}}throw error;}finally{busy=false;}
     }
   };hosts.add(api);return Object.freeze(api);
 }

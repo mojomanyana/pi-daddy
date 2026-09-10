@@ -4,7 +4,7 @@ import { syncBuiltinESMExports } from "node:module";
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { chmod, mkdir, readFile, writeFile, watch } from "node:fs/promises";
+import { chmod, mkdir, readFile, readdir, writeFile, watch } from "node:fs/promises";
 import { join } from "node:path";
 import { createServer } from "node:net";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
@@ -22,6 +22,13 @@ async function fixture() {
   return { root, binding };
 }
 const attempt = (attemptId: string) => ({ attemptId, orderId: "order", experimentId: "experiment", kind: "primary" as const, parentAttemptId: null });
+
+test("profile probes remove only their fresh owned directory after success and probe failure", async () => {
+  const { binding } = await fixture(),preserved="profile-probe-preserved";await mkdir(join(binding.directory,preserved));await prepareDigestProfile(binding);assert.deepEqual((await readdir(binding.directory)).filter(name=>name.startsWith("profile-probe-")),[preserved]);
+  const original=childProcess.spawn,spy=mock.method(childProcess,"spawn",(command:any,args:any,options:any)=>command==="/usr/bin/bwrap"?original("/usr/bin/false",[],options):original(command,args,options));syncBuiltinESMExports();
+  try{await assert.rejects(prepareDigestProfile(binding),/fixed native profile failed/);}finally{spy.mock.restore();syncBuiltinESMExports();}
+  assert.deepEqual((await readdir(binding.directory)).filter(name=>name.startsWith("profile-probe-")),[preserved]);
+});
 
 test("real probed digest profile uses the existing launcher, exact byte input and durable admission", async () => {
   const { binding } = await fixture(), profile = await prepareDigestProfile(binding);

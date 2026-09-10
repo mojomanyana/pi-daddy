@@ -72,3 +72,15 @@ minus the cancelled file wrapper account for41 fewer reports. FULL Node24 logs, 
 log excerpt, explicitly report1116/1083pass/33fail/0cancelled/0skip;33 failures name regular mode777 Node24.20.
 Both telemetry legs independently lack bwrap. Downstream checks skipped. No CI retry/cancel or provisioning.
 The already published6212 private-runtime/aggregate-file remedies are not retroactive passes for f6.
+
+## 2026-09-11 amendment — distinguish settled observation notes from unavailable ownership
+
+Review finding 3984194288 reproduced a permanent hold: the executor reports non-strict terminal lifecycle
+and lease-record failures beside an otherwise known-settled child, but the ordinary port treated that note
+as unavailable execution ownership. Intent then installed a hold that no reconciliation could satisfy.
+The decision is narrowed, not weakened: best-effort post-execution observation failure remains visibly
+`control:failed` but its execution boundary is settled. Required control failure, unknown ownership and
+late/unretained coverage still cannot certify quiescence. Those already unavailable states now refuse before
+a hold is installed, preserving fail-closed intent application without blocking every unrelated future
+ordinary admission. Busy/live rows still take and retain the intentional pending hold, and failed/unknown
+host acknowledgement after an attempted effect still retains it.

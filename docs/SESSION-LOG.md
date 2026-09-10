@@ -5,6 +5,22 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ---
 
+## 2026-09-11 — PR35 review repairs prepared
+
+Three actionable PR35 findings are repaired on its existing branch. Best-effort post-execution lifecycle/
+lease observation failure remains visible without making a known-settled ordinary child permanently
+nonquiescent; required failure, unknown ownership and late coverage still refuse, and an unavailable boundary
+installs no global hold. Stale CAS and immutable-ID refusals before a host claim/effect no longer poison the
+in-memory host, while attempted/uncertain effects retain the existing fail-closed poison. Each digest-profile
+preparation removes only its newly created probe fixture after all awaited probe children settle, on success
+and failure; old store entries are untouched and cleanup failure remains loud without masking a primary.
+
+Red-first regressions cover all three findings and the best-effort versus required/unknown boundary. Current
+model-free evidence is 1196 unit tests, 36 real-pi CI integration tests, typecheck and installed-package smoke,
+all passing. The baseline untracked `.pi/` remains untouched. This is release preparation only: no version,
+tag, merge, GitHub Release or npm publication has been performed. PR CI and coordinated release ownership
+remain with the root campaign coordinator.
+
 ## 2026-09-09 — LOCAL original-reservation IPC bridge
 
 ADR-0059 adds a separate opt-in producer emitter, actual bounded stdout/EOF/exit evidence, original

@@ -58,7 +58,9 @@ The launcher uses existing `/usr/bin/bwrap`, `/usr/bin/prlimit` and the current 
 It drops capabilities **inside the child**, clears its environment, creates new namespaces and exposes
 only read-only system runtime directories plus the fixed Node binary. No host capability configuration,
 installation, privilege escalation or service/cgroup configuration changes are performed. The preparation
-probe alone mounts a disposable owned read-only fixture; the production worker mounts no user workspace.
+probe alone mounts a fresh owned read-only fixture. That exact fixture is removed only after every awaited
+probe child has settled, on success and failure; removal failure is loud and does not replace an earlier
+probe failure. Old or caller-selected directories are never cleanup targets. The production worker mounts no user workspace.
 The production Node worker has permission mode enabled; Node permission mode by itself is not claimed
 as a hostile-JavaScript sandbox. Only fixed package code executes, so ungoverned descendants are not an
 admitted operation. Internal Node/helper threads/processes are not separate billable attempts.

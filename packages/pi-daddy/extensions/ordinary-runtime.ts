@@ -9,6 +9,6 @@ export async function withOrdinaryChild(input:{session:GrantsSession;executionId
  let retained:ReturnType<typeof retainSessionChild>;
  try{retained=retainSessionChild(input.session,{executionId:input.executionId,parentExecutionId:input.parentExecutionId,toolCallId:input.toolCallId??null},input.signal);}
  catch(error){return runWithFinalizers(async()=>{throw error;},[{label:"ordinary admission workspace release",run:async()=>{await releaseDelegationWorkspace({prepared:input.preparedWorkspace,childId:input.childId,executionId:input.executionId,parentExecutionId:input.parentExecutionId,ledgerPath:input.session.ledgerPath,reason:"refused"});}}]);}
- try{const outcome=await operation(retained?.signal??input.signal);retained?.settle({ok:outcome.ok,exitCode:outcome.exitCode,aborted:outcome.aborted??false,outputDigest:dataDigest(outcome.text)},outcome.control??"not-assessed");return outcome;}
+ try{const outcome=await operation(retained?.signal??input.signal);retained?.settle({ok:outcome.ok,exitCode:outcome.exitCode,aborted:outcome.aborted??false,outputDigest:dataDigest(outcome.text)},outcome.control??"not-assessed",outcome.control==="failed"?"not-assessed":outcome.control??"not-assessed");return outcome;}
  catch(error){retained?.settle({failure:"original executor threw; inspect original caller"},"unknown");throw error;}
 }

@@ -144,8 +144,10 @@ approved whole requests. Obtain tip/selectionDigest by reading `frame()`; readin
   recover lost handles. This bridges the older protocol for the supported P11 controller, not arbitrary
   live pi/Herdr or every ordinary child cancellation route.
 
-Host journal CAS admits one exact request. Duplicate IDs read retained results without effects. A required
-append/sync/close/release failure remains failed/unknown even if bytes/effects exist. Best-effort host-failure
+Host journal CAS admits one exact request. Duplicate IDs read retained results without effects. A stale CAS
+or immutable-ID mismatch rejected before any claim/effect leaves that in-memory host usable; it does not invent
+unknown acknowledgement. Once a claim/effect may have happened, a required append/sync/close/release failure
+remains failed/unknown even if bytes/effects exist. Best-effort host-failure
 markers preserve that separately; their own persistence can fail. `reconcile()` is read-only, not a retry.
 An unresolved claim/failure does not permit new dispatch, takeover, refund or unreceipted effect replay.
 Original worker outcomes/accounting remain independent of host/control success.

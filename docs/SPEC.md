@@ -25,6 +25,9 @@ The **local P05 ordinary-boundary repair** now queues intent direction while an 
 ordinary child is busy and holds new ordinary admission across asynchronous native application. Only
 explicit reconciliation at both original ordinary/resource boundaries plus a successful final host
 acknowledgement releases that hold. Failed/unknown acknowledgements retain it despite applied bytes.
+A best-effort terminal observation note does not convert a known-settled child into an unrecoverable
+execution boundary; genuinely failed/unknown ownership still refuses quiescence, and an already unavailable
+boundary refuses before installing a global ordinary hold.
 Original caller lifetimes and read-only refresh remain unchanged. Guide reconciliation does not invent
 a generic entity/topology/opaque-policy editor from broader wording; see
 [ADR-0058](06-decisions/ADR-0058-reconcile-guide-and-hold-original-intent-boundary.md).
@@ -143,8 +146,9 @@ a deployed P03 input. No model/worker/native-gate calls or P05 steering are adde
 overall review and formal acceptance remain pending.
 
 The **local 2026-09-08 P06 candidate** adds one opt-in fixed-code `linux-bwrap-digest-v1` runtime profile,
-not a general pi/bash sandbox. Actual bounded namespace/effect probes precede admission; immutable byte
-inputs and stdout-only results exclude writable/shared workspace destinations. A separately bound durable
+not a general pi/bash sandbox. Actual bounded namespace/effect probes precede admission; each fresh owned
+probe fixture is removed after all probe children settle, including failure paths, without targeting old
+store entries. Immutable byte inputs and stdout-only results exclude writable/shared workspace destinations. A separately bound durable
 journal reserves attempts, input bytes and active invocation slots across orders/experiments. Cancellation
 never refunds cumulative charges; duplicates, lost ownership, unsupported profiles and substituted stores
 fail closed. Aggregate CPU/memory/PID and provider-money caps remain unsupported, as do arbitrary model or

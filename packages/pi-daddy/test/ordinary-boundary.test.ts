@@ -11,7 +11,15 @@ import { tempDir,cleanupTempDirs } from "./tmp.ts";
 import { intentRequestDigest,type IntentRequest } from "../src/intent-control.ts";
 import { openResourceBudget } from "../src/resource-budget.ts";
 import { openDashboardHost } from "../src/dashboard-host.ts";
+import { associateOrdinaryHost, holdOrdinaryDispatch, ordinaryChildrenFor, retainOrdinaryChild } from "../src/ordinary-children.ts";
 after(cleanupTempDirs);
+const occurrence=(executionId:string)=>({executionId:`exec:${executionId}`,parentExecutionId:null,toolCallId:null});
+test("best-effort observation failure permits quiescence while required failure and unknown ownership refuse without a hold",()=>{
+ const bestSession={},bestHost={};associateOrdinaryHost(bestHost,bestSession);const best=ordinaryChildrenFor(bestSession),observed=retainOrdinaryChild(best,occurrence("00000000-0000-4000-8000-000000000001"))!;
+ observed.settle({ok:true},"failed","not-assessed");assert.equal(best.quiescent(),true);const ready=holdOrdinaryDispatch(best,"a".repeat(64));assert.equal(ready.ready(),true);ready.release();
+ for(const [suffix,control] of [["2","failed"],["3","unknown"]] as const){const session={},host={};associateOrdinaryHost(host,session);const port=ordinaryChildrenFor(session),child=retainOrdinaryChild(port,occurrence(`00000000-0000-4000-8000-00000000000${suffix}`))!;child.settle({ok:false},control);
+  assert.equal(port.quiescent(),false);assert.throws(()=>holdOrdinaryDispatch(port,"b".repeat(64)),/unavailable; no recovery/);assert.equal((port.inspect() as any).admission,"open");assert.ok(retainOrdinaryChild(port,occurrence(`00000000-0000-4000-8000-00000000001${suffix}`)),"an unavailable boundary must not install a global hold");}
+});
 test("P05 intent direction waits for actual attached ordinary child and explicit original-boundary reconciliation",async()=>{
  const child=await ordinaryHostFixture(await tempDir("ordinary-direction-"));try{
   const w=await hostWorld(false,"signals",child.port),p=selectionProposal(),done=child.run("held");await child.ready("held");const before=await readFile(w.workPath,"utf8");

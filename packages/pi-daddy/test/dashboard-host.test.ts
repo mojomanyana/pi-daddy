@@ -60,6 +60,12 @@ test("concurrent exact host CAS admits one request; missing authority records de
  const settled=await Promise.allSettled([w.host.action(r),w.reopen().action(second)]);assert.equal(settled.filter(r=>r.status==="fulfilled").length,1);
  const next=w.reopen(),request=await w.request("defer",{reason:"denied"});w.authority!.requestDigests=[];assert.equal((await next.action(request)).state,"denied");
 });
+test("pre-effect stale CAS and immutable-ID refusals leave the original dashboard host usable",async()=>{
+ const w=await hostWorld(false),stale=await w.request("defer",{reason:"stale"},"stale"),first=await w.request("defer",{reason:"first"},"first");await w.host.action(first);
+ await assert.rejects(w.host.action(stale),/stale dashboard selection\/CAS/);assert.equal((await w.host.frame()).acknowledgement,"readback-only");await w.host.action(await w.request("defer",{reason:"after-stale"},"after-stale"));
+ const original=await w.request("defer",{reason:"original"},"immutable");await w.host.action(original);const changed={...original,payload:{reason:"changed"}};w.authority!.requestDigests=[...w.authority!.requestDigests,dashboardHostRequestDigest(changed)];
+ await assert.rejects(w.host.action(changed),/immutable dashboard request ID/);assert.equal((await w.host.frame()).acknowledgement,"readback-only");await w.host.action(await w.request("defer",{reason:"after-immutable"},"after-immutable"));
+});
 test("required final host sync failure remains failure after complete bytes and reconnect",async()=>{
  const w=await hostWorld(false),path=join(w.config.trustDirectory,"producer-host/events.jsonl"),original=fs.fsyncSync;let fired=false;
  fs.fsyncSync=((fd:number)=>{if(!fired&&fs.readlinkSync('/proc/self/fd/'+fd)===path&&fs.readFileSync(path,'utf8').trimEnd().split('\n').at(-1)!.includes('"result"')){fired=true;throw Error("fixture final host sync");}return original(fd);}) as typeof fs.fsyncSync;syncBuiltinESMExports();

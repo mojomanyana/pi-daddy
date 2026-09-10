@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, readlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readlink, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { runChild, type ChildRunResult } from "./run-child.ts";
 import { runWithFinalizers } from "./finalization.ts";
@@ -30,20 +30,22 @@ export async function prepareDigestProfile(binding: GovernedBudgetBinding): Prom
   await budget.inspect(); // Required admission state failures remain failures, not an unavailable fallback.
   const runtime = await digestRuntime();
   const root = await mkdtemp(join(budget.binding.directory, "profile-probe-")), input = join(root, "input");
-  await mkdir(input, { mode: 0o700 }); await writeFile(join(input, "allowed"), "owned-readable", { mode: 0o600 });
-  await writeFile(join(root, "outside"), "owned-outside", { mode: 0o600 });
-  const net = await readlink("/proc/self/ns/net");
-  const code = `const fs=require('node:fs');let failures=0;for(const fn of [()=>fs.readFileSync(${JSON.stringify(join(root, "outside"))}),()=>fs.writeFileSync('/input/denied','bad')]){try{fn()}catch(e){if(['ENOENT','EROFS'].includes(e.code))failures++}}if(failures!==2||fs.readFileSync('/input/allowed','utf8')!=='owned-readable'||fs.readlinkSync('/proc/self/ns/net')===${JSON.stringify(net)})process.exit(91);console.log('boundary-ok');`;
-  const boundary = await child(runtime, code, [], input); requireClean(boundary);
-  if (boundary.text.trim() !== "boundary-ok") throw new EffectProfileUnavailableError("native boundary probe did not establish its expected observations");
-  const permission = await child(runtime, `try{require('node:child_process').spawnSync('/runtime/node',['-e','process.exit(92)']);process.exit(93)}catch(e){if(e.code!=='ERR_ACCESS_DENIED')process.exit(94);console.log('descendant-denied')}`, []);
-  requireClean(permission);
-  if (permission.text.trim() !== "descendant-denied") throw new EffectProfileUnavailableError("descendant tripwire unavailable");
-  const sample = await child(runtime, DIGEST_WORKER, [Buffer.from("fixture").toString("base64")]); requireClean(sample);
-  if (sample.text !== JSON.stringify({ bytes: 7, sha256: hash("fixture") }) + "\n") throw new EffectProfileUnavailableError("fixed worker probe mismatch");
-  const result = Object.freeze({ profile: DIGEST_PROFILE, bindingDigest: resourceBindingDigest(budget.binding), runtimeDigest: retentionConfigurationDigest(runtime) });
-  profiles.set(result, { runtime, budget });
-  return result;
+  return runWithFinalizers(async () => {
+    await mkdir(input, { mode: 0o700 }); await writeFile(join(input, "allowed"), "owned-readable", { mode: 0o600 });
+    await writeFile(join(root, "outside"), "owned-outside", { mode: 0o600 });
+    const net = await readlink("/proc/self/ns/net");
+    const code = `const fs=require('node:fs');let failures=0;for(const fn of [()=>fs.readFileSync(${JSON.stringify(join(root, "outside"))}),()=>fs.writeFileSync('/input/denied','bad')]){try{fn()}catch(e){if(['ENOENT','EROFS'].includes(e.code))failures++}}if(failures!==2||fs.readFileSync('/input/allowed','utf8')!=='owned-readable'||fs.readlinkSync('/proc/self/ns/net')===${JSON.stringify(net)})process.exit(91);console.log('boundary-ok');`;
+    const boundary = await child(runtime, code, [], input); requireClean(boundary);
+    if (boundary.text.trim() !== "boundary-ok") throw new EffectProfileUnavailableError("native boundary probe did not establish its expected observations");
+    const permission = await child(runtime, `try{require('node:child_process').spawnSync('/runtime/node',['-e','process.exit(92)']);process.exit(93)}catch(e){if(e.code!=='ERR_ACCESS_DENIED')process.exit(94);console.log('descendant-denied')}`, []);
+    requireClean(permission);
+    if (permission.text.trim() !== "descendant-denied") throw new EffectProfileUnavailableError("descendant tripwire unavailable");
+    const sample = await child(runtime, DIGEST_WORKER, [Buffer.from("fixture").toString("base64")]); requireClean(sample);
+    if (sample.text !== JSON.stringify({ bytes: 7, sha256: hash("fixture") }) + "\n") throw new EffectProfileUnavailableError("fixed worker probe mismatch");
+    const result = Object.freeze({ profile: DIGEST_PROFILE, bindingDigest: resourceBindingDigest(budget.binding), runtimeDigest: retentionConfigurationDigest(runtime) });
+    profiles.set(result, { runtime, budget });
+    return result;
+  }, [{ label: "profile probe cleanup failed", run: () => rm(root, { recursive: true, force: true }) }]);
 }
 
 export interface DigestAttempt { attempt: Omit<AttemptDemand, "inputBytes" | "inputDigest">; bytes: Uint8Array; intent?: IntentAdmission }

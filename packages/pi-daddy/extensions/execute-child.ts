@@ -26,6 +26,7 @@ export interface DelegationOutcome {
   truncated?: boolean;
   spawnFailed?: boolean;
   retention?: RetentionStatus;
+  /** A loud best-effort post-execution observation failure; execution ownership is still settled. */
   control?: "failed";
 }
 
