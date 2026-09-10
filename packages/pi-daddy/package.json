@@ -37,6 +37,67 @@
       "types": "./dist/ledger.d.ts",
       "default": "./dist/ledger.js"
     },
+    "./work-ledger": {
+      "types": "./dist/work-ledger.d.ts",
+      "default": "./dist/work-ledger.js"
+    },
+    "./factory-order": {
+      "types": "./dist/factory-order.d.ts",
+      "default": "./dist/factory-order.js"
+    },
+    "./experiment": {
+      "types": "./dist/experiment.d.ts",
+      "default": "./dist/experiment.js"
+    },
+    "./dashboard-harness": {
+      "types": "./dist/dashboard-harness.d.ts",
+      "default": "./dist/dashboard-harness.js"
+    },
+    "./dashboard-host": {
+      "types": "./dist/dashboard-host.d.ts",
+      "default": "./dist/dashboard-host.js"
+    },
+    "./dashboard-host-transport": {
+      "types": "./dist/dashboard-host-transport.d.ts",
+      "default": "./dist/dashboard-host-transport.js"
+    },
+    "./debrief-host": {
+      "types": "./dist/debrief-host.d.ts",
+      "default": "./dist/debrief-host.js"
+    },
+    "./contracts/debrief/v2/*": "./contracts/debrief/v2/*",
+    "./debrief": {
+      "types": "./dist/debrief.d.ts",
+      "default": "./dist/debrief.js"
+    },
+    "./daily-view": {
+      "types": "./dist/daily-view.d.ts",
+      "default": "./dist/daily-view.js"
+    },
+    "./intent-control": {
+      "types": "./dist/intent-control.d.ts",
+      "default": "./dist/intent-control.js"
+    },
+    "./dispatch-control": {
+      "types": "./dist/dispatch-control.d.ts",
+      "default": "./dist/dispatch-control.js"
+    },
+    "./resource-budget": {
+      "types": "./dist/resource-budget.d.ts",
+      "default": "./dist/resource-budget.js"
+    },
+    "./producer-ipc": {
+      "types": "./dist/producer-ipc.d.ts",
+      "default": "./dist/producer-ipc.js"
+    },
+    "./effect-profile": {
+      "types": "./dist/effect-profile.d.ts",
+      "default": "./dist/effect-profile.js"
+    },
+    "./execution-retention": {
+      "types": "./dist/execution-retention.d.ts",
+      "default": "./dist/execution-retention.js"
+    },
     "./spawn": {
       "types": "./dist/spawn.d.ts",
       "default": "./dist/spawn.js"
@@ -137,6 +198,19 @@
       "types": "./dist/dashboard-render.d.ts",
       "default": "./dist/dashboard-render.js"
     },
+    "./contracts/factory-order/v1/*": "./contracts/factory-order/v1/*",
+    "./contracts/experiment/v1/*": "./contracts/experiment/v1/*",
+    "./contracts/producer-ipc/v1/*": "./contracts/producer-ipc/v1/*",
+    "./contracts/debrief/v1/*": "./contracts/debrief/v1/*",
+    "./contracts/intent-control/v2/request.schema.json": "./contracts/intent-control/v2/request.schema.json",
+    "./contracts/intent-control/v1/request.schema.json": "./contracts/intent-control/v1/request.schema.json",
+    "./contracts/dispatch-control/v1/request.schema.json": "./contracts/dispatch-control/v1/request.schema.json",
+    "./contracts/daily-view/v1/fixtures/*": "./contracts/daily-view/v1/fixtures/*",
+    "./contracts/daily-view/v1/p03/projection.schema.json": "./contracts/daily-view/v1/p03/projection.schema.json",
+    "./contracts/execution-retention/v2/manifest.schema.json": "./contracts/execution-retention/v2/manifest.schema.json",
+    "./contracts/execution-retention/v2/fixtures/*": "./contracts/execution-retention/v2/fixtures/*",
+    "./contracts/ledger/v4/ledger-event.schema.json": "./contracts/ledger/v4/ledger-event.schema.json",
+    "./contracts/ledger/v4/fixtures/*.json": "./contracts/ledger/v4/fixtures/*.json",
     "./contracts/ledger/v3/ledger-event.schema.json": "./contracts/ledger/v3/ledger-event.schema.json",
     "./contracts/ledger/v3/fixtures/*.json": "./contracts/ledger/v3/fixtures/*.json",
     "./contracts/ledger/v2/ledger-event.schema.json": "./contracts/ledger/v2/ledger-event.schema.json",
@@ -159,13 +233,13 @@
   "scripts": {
     "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.check.json",
-    "test": "node --test test/*.test.ts",
+    "test": "node scripts/unit-tests.ts",
     "test:integration": "node --test test-integration/*.it.ts",
     "test:integration:ci": "node --test test-integration/approval.it.ts test-integration/governance.it.ts",
     "contracts:generate": "node scripts/generate-ledger-v3-contract.ts",
+    "contracts:generate:v4": "node scripts/generate-ledger-v4-contract.ts contracts/ledger/v4",
     "prepack": "npm run build",
-    "test:smoke": "node scripts/smoke-installed.mjs",
-    "test:mutation": "node scripts/mutation-audit.mjs"
+    "test:smoke": "node scripts/smoke-installed.mjs"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

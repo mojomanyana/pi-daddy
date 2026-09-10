@@ -1,4 +1,6 @@
+import { withOrdinaryChild } from "./ordinary-runtime.ts";
 import type { Delegation } from "../src/delegate.ts";
+import { beginExecutionRetention, retentionConfigurationDigest, type RetentionStatus } from "../src/execution-retention.ts";
 import { appendLedgerEvent, buildChildLifecycleEvent } from "../src/ledger.ts";
 import { hasFinalizerError } from "../src/finalization.ts";
 import { mergeChildEnv } from "../src/propagation.ts";
@@ -23,6 +25,9 @@ export interface DelegationOutcome {
   aborted?: boolean;
   truncated?: boolean;
   spawnFailed?: boolean;
+  retention?: RetentionStatus;
+  /** A loud best-effort post-execution observation failure; execution ownership is still settled. */
+  control?: "failed";
 }
 
 /**
@@ -78,13 +83,17 @@ export interface ChildProgressUpdate {
  * has already run, so failing closed there prevents nothing and used to discard completed work while
  * blaming "ledger" (R-99). The failure is reported alongside the outcome instead of replacing it.
  */
-export async function executePlannedChild(input: {
+export function executePlannedChild(input: Parameters<typeof executeChildBody>[0]): Promise<DelegationOutcome> {
+  return withOrdinaryChild(input, signal => executeChildBody({ ...input, signal }));
+}
+async function executeChildBody(input: {
   session: GrantsSession;
   plan: Delegation;
   agent?: string;
   childId: string;
   executionId: string;
   parentExecutionId: string | null;
+  toolCallId?: string;
   cwd: string;
   preparedWorkspace?: PreparedWorkspace;
   signal?: AbortSignal;
@@ -134,6 +143,13 @@ export async function executePlannedChild(input: {
   const executionSignal = signal
     ? AbortSignal.any([signal, leaseAbort.signal])
     : writerLease ? leaseAbort.signal : undefined;
+  const retention = beginExecutionRetention({ executionId, parentExecutionId, childId,
+    toolCallId: input.toolCallId ?? null, executor: session.executor.kind, taskDigest: plan.taskDigest,
+    definitionDigest: plan.definitionDigest?.sha256 ?? null,
+    configurationDigest: retentionConfigurationDigest({ args: plan.args, effective: plan.effective, timeoutMs: configuredTimeoutMs }),
+    workspaceId: preparedWorkspace?.workspace.workspaceId ?? null });
+  const sessionFlag = plan.args.indexOf("--session");
+  if (sessionFlag >= 0) retention.observeSession({ source: "pi-session-file", value: plan.args[sessionFlag + 1] });
   let releaseReason = "failed";
   let retainWriterLease = false;
   let terminalAttempted = false;
@@ -171,7 +187,12 @@ export async function executePlannedChild(input: {
           timeoutMs: remainingTimeoutMs,
           keepPane: writerLease ? false : process.env[ENV_HERDR_KEEP_PANE] === "1",
           closeOnSettle: Boolean(writerLease),
-          onPane: (paneId, agentName) => onProgress?.({ paneId, agentName, state: "starting" }),
+          onPane: (paneId, agentName) => {
+            retention.native({ paneId, agentName });
+            onProgress?.({ paneId, agentName, state: "starting" });
+          },
+          onObservation: (bytes) => retention.capture("paneSnapshot", bytes, true),
+          onSessionReference: (reference) => retention.observeSession(reference),
           onRunning: (paneId, agentName) => {
             // Record first: runHerdrPane isolates this display callback, so a renderer exception after the
             // observation cannot suppress the authoritative running event.
@@ -179,6 +200,7 @@ export async function executePlannedChild(input: {
             onProgress?.({ paneId, agentName, state: "running" });
           },
           onTab: preparedWorkspace ? (tabId) => preparedWorkspace.lease.attachHerdrTab(tabId) : undefined,
+          onNativeTab: (tabId) => retention.native({ tabId }),
           onSnapshot: onProgress ? (snapshot) => onProgress({ snapshot }) : undefined,
         })
       : await runChild({
@@ -192,17 +214,23 @@ export async function executePlannedChild(input: {
           timeoutMs: Math.max(1, remainingTimeoutMs - terminationGraceMs),
           hardDeadlineAt: Date.parse(deadlineAt),
           onOutput: onProgress ? (chunk) => onProgress({ chunk }) : undefined,
+          onObservation: (stream, bytes) => retention.capture(stream, bytes),
           onSpawn: (pid) => {
             // Lease attachment is a security hook and may fail the spawn. The shared reporters isolate
             // display exceptions before they reach this callback; runChild deliberately kills on any error
             // here, so presentation must never be added directly without that reporter boundary.
             preparedWorkspace?.lease.attachProcess(pid);
+            retention.native({ pid });
             recordRunning("process");
             onProgress?.({ state: "running" });
           },
         });
 
+    if (sessionFlag >= 0) retention.observeSession({ source: "pi-session-file", value: plan.args[sessionFlag + 1] });
+    retention.capture("result", Buffer.from(output.text), true);
     const childFailed = Boolean(output.spawnError || output.aborted || output.timedOut || output.code !== 0);
+    retention.finish({ code: output.code, signal: output.signal ?? null, timedOut: output.timedOut,
+      aborted: output.aborted, truncated: output.truncated, failed: childFailed });
     releaseReason = output.timedOut ? "timeout" : output.aborted ? "cancelled" : childFailed ? "failed" : "completed";
     if (ledgerPath) {
       terminalAttempted = true;
@@ -286,6 +314,7 @@ export async function executePlannedChild(input: {
     await teardown();
     return withTeardownNotes(succeeded);
   } catch (error) {
+    retention.finish({ code: null, signal: null, timedOut: false, aborted: Boolean(signal?.aborted), truncated: false, failed: true });
     retainWriterLease = Boolean(writerLease && isHerdrWriterCloseFailure(error));
     if (ledgerPath && !terminalAttempted) {
       // Best-effort: this records the failure, so it must not REPLACE the failure. A strict append that
@@ -338,8 +367,9 @@ function errorWithTeardownNotes(error: unknown, notes: readonly string[]): unkno
 }
 
   function withTeardownNotes(outcome: DelegationOutcome): DelegationOutcome {
-    if (teardownFailures.length === 0) return outcome;
-    return { ...outcome, reason: [outcome.reason, ...teardownFailures].filter(Boolean).join("; ") };
+    const observed = { ...outcome, retention: retention.status() };
+    if (teardownFailures.length === 0) return observed;
+    return { ...observed, control: "failed", reason: [outcome.reason, ...teardownFailures].filter(Boolean).join("; ") };
   }
 
   async function teardown(): Promise<void> {

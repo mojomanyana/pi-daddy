@@ -43,6 +43,12 @@ rule.
 
 ## Evidence discipline — learned the hard way, repeatedly
 
+**2026-09-07 user-directed scope change:** mutation-testing machinery and active invocations are removed.
+Ordinary behavioral/unit/integration/regression tests and runtime guards remain. Earlier audit results
+and dated decisions are historical evidence; they do not prescribe running or restoring the removed
+catalogue. Removing that requirement is not a successful test result. Rule 7 still requires meaningful
+assertions and identifying the behavior that would break them, not an automated source-mutation audit.
+
 5. **Measure before asserting, and say which you did.** Nearly every significant finding here came from
    running something against real pi, and several contradicted careful reasoning: children are in-process,
    `getAllTools()` is reachable but the agent registry is not, `isError` on a returned tool result is
@@ -103,7 +109,7 @@ rule.
     commit on `main` and names the recovery; it is wired **per clone** by `git config core.hooksPath hooks`,
     so if that command prints nothing the hook is inert. `test/branch-guard.test.ts` proves the script
     refuses — not that your clone installed it. **`.github/workflows/ci.yml` runs typecheck, the unit suite,
-    a tree-cleanliness check, the mutation catalogue and the installed-package smoke on every pull request**,
+    a tree-cleanliness check and the installed-package smoke on every pull request**,
     which is the half that stops a guard rotting unnoticed. **And since 2026-08-22 it blocks:** `main` on GitHub
     requires a pull request (zero approvals) with both CI legs green, force-pushes and deletions are refused,
     and `enforce_admins` is **on** — without that last flag the rule would bind everyone except the only

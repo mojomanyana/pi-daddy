@@ -241,7 +241,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
         session.fanoutBudget,
         ctx,
         signal,
-        { onProgress: progress.sink(0) },
+        { onProgress: progress.sink(0), toolCallId: _toolCallId },
       );
       progress.settle([outcome]);
 
@@ -259,7 +259,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
 
       return {
         content: [{ type: "text", text: outcome.text || "(no output)" }],
-        details: { granted: outcome.granted, depth: outcome.depth, exitCode: outcome.exitCode },
+        details: { granted: outcome.granted, depth: outcome.depth, exitCode: outcome.exitCode, retention: outcome.retention },
       };
     },
   });
@@ -317,7 +317,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
             return await runOneDelegation(
               session, child,
               newDelegationOccurrence(session, index),
-              split.perChild, ctx, signal, { onProgress: progress.sink(index) },
+              split.perChild, ctx, signal, { onProgress: progress.sink(index), toolCallId: _toolCallId },
             );
           } catch (error) {
             infrastructureErrors.push(error);
@@ -353,6 +353,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
           budgetPerChild: split.perChild,
           granted: outcomes.map((o) => o.granted),
           refusals: outcomes.map((o) => o.refusal ?? null),
+          retention: outcomes.map((o) => o.retention ?? null),
         },
       };
     },

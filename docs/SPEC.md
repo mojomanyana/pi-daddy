@@ -5,7 +5,171 @@ to be decided. This file is authoritative for present behavior; ADRs record why 
 date. If code and this file disagree, report and repair the stale current-state claim rather than re-deriving
 present behavior from historical ADRs.
 
-Last synced against the code: **2026-09-04**, released as `pi-daddy` 0.22.0, pi 0.84.2; the dashboard plugin requires Herdr 0.8.0.
+Released baseline last synced against the code: **2026-09-04**, `pi-daddy` 0.22.0, pi 0.84.2; the dashboard plugin requires Herdr 0.8.0.
+The **2026-09-06 work-v4 source candidate** is described separately below. It is not a release, activation,
+production authentication result or completed task/qualification gate.
+
+The **local opt-in producer IPC bridge** binds an already reserved original v4 permit to one frozen
+parent budget/order/experiment/execution/host-charter/invocation binding. A separate fixed model-free
+namespace child emits only canonical `{id,sequence:1}` plus LF. Exact bounded bytes, original stdout EOF
+and original child completion precede a one-use Node Readable replay to the original trusted host port;
+correlation and composed original cancellation stay outside the frame. The existing reservation spans
+child and host lifetimes. Observer timeout is not settlement; late acknowledgement cannot upgrade a
+failed effect, and required accounting failure stays visible even with complete settlement bytes.
+References are evidence only. The fixed digest/hold profile, null model/effort/skills, ordinary Pi runtime
+restrictions, original review and seq226 are unchanged. No live SDK/model qualification or publication is
+implied. See [ADR-0059](06-decisions/ADR-0059-original-reservation-ipc-bridge.md) and the
+[precise callable contract](../packages/pi-daddy/contracts/producer-ipc/v1/README.md).
+
+The **local P05 ordinary-boundary repair** now queues intent direction while an attached original
+ordinary child is busy and holds new ordinary admission across asynchronous native application. Only
+explicit reconciliation at both original ordinary/resource boundaries plus a successful final host
+acknowledgement releases that hold. Failed/unknown acknowledgements retain it despite applied bytes.
+A best-effort terminal observation note does not convert a known-settled child into an unrecoverable
+execution boundary; genuinely failed/unknown ownership still refuses quiescence, and an already unavailable
+boundary refuses before installing a global ordinary hold.
+Original caller lifetimes and read-only refresh remain unchanged. Guide reconciliation does not invent
+a generic entity/topology/opaque-policy editor from broader wording; see
+[ADR-0058](06-decisions/ADR-0058-reconcile-guide-and-hold-original-intent-boundary.md).
+
+The **safe-boundary followup** adds opt-in cancellation capture from actual original grants
+extension/session handles and routes exact approved ordinary cancellation through the existing dashboard
+journal/CLI. Caller, fanout sibling and worker-result lifetimes remain original; failed observations and
+host acknowledgements stay separate from success. Late opt-in cannot certify an empty registry's coverage.
+Versioned `intent-request-v2` applies direct non-scope successors through existing P01/CAS/quiescence and
+append-once APIs without widening entity, owner, topology, policy or effects. See
+[ADR-0057](06-decisions/ADR-0057-original-ordinary-control-and-ci-driver-boundaries.md),
+[ordinary control](../packages/pi-daddy/contracts/ordinary-control/v1/README.md) and
+[intent v2](../packages/pi-daddy/contracts/intent-control/v2/README.md). CI stages only a new byte-verified
+private runtime, preserving shared cache/production guards; the205-case path file gets a bounded120s
+aggregate allowance with existing case deadlines. Remote bwrap provisioning and exact remote remeasurement
+remain unauthorized/unestablished. No new publication or overall acceptance follows these local changes.
+
+The **local connected dashboard host** now connects explicit ordinary native-retention targets,
+actual harness policy/checkpoint/fact-source/semantic observation and the existing daily read path.
+It uses the pinned real trust/learning journal and case/blind writers for durable five-total attention,
+manual paused presentation preparation/acknowledgement and reconnect without automatic reveal. Explicit
+whole-request/CAS dashboard routes reach actual P01 intent/resource controls and original P11 cancellation
+handles; a private bounded socket connects the existing CLI/plugin without reconstituting ownership.
+See [ADR-0056](06-decisions/ADR-0056-connected-observation-and-dashboard-host.md) and the
+[host contract](../packages/pi-daddy/contracts/dashboard-host/v1/README.md). SPEC001/002 repository gaps
+are narrowed, not claimed fully closed: physical retention/redaction/export handling, wider revisions and
+generalized ordinary/live steering remain separately named. Structural declarations and byte-checked
+loaded artifacts do not authenticate humans/modules or qualify an atomic deployed closing pause.
+
+The **overall-quality repairs** preserves required controller failures independently of
+worker artifacts, restores exact rollback adoption lineage/revalidation, and uses actual P01 receipt
+applicability across distinct snapshot identities. Views expose controller failed/unknown/not-assessed;
+none certifies clean control merely from completed workers. Lifecycle fixtures require real live readiness;
+CI adds exact prerequisite telemetry and bounds without provisioning, skips or relaxed guards.
+See [ADR-0055](06-decisions/ADR-0055-overall-quality-repairs.md). The original whole-change review remains
+CHANGES-REQUESTED on both axes. OAR-SPEC-001..007 remain OPEN implementable integration gaps, not waived or
+externalized by this batch. Remote native prerequisites/matrix/downstream and overall acceptance remain
+unqualified. Source through6212b9d is published in draft PR35; subsequent ordinary-boundary amendments are LOCAL ONLY.
+
+The additive **P08 retained-host bridge** explicitly consumes work-signals-v1/case-v3 selected batches
+and the durable blind writer ports tested at harness638494af0a0058edf9a9b1b02e57af894ab46ed6. Zero-card
+observation issues remain visible. Reconnect reads original quality without revealing; one blind question
+still consumes one of five total slots. Versioned attention checkpoints bind original signal and comparison
+identities; canonical decisions remain harness-owned. V2/manual behavior stays opt-in compatible.
+See [ADR-0054](06-decisions/ADR-0054-explicit-signals-and-durable-blind-debrief.md) and the
+[bridge contract](../packages/pi-daddy/contracts/debrief/v2/README.md). Host ports are not authentication,
+live pause/model qualification or acceptance. These amendments are local pending exact publication clearance.
+
+Cancellation control readback uses the existing experiment/resource locks; public experiment inspect and
+reconcile remain read-only, unlocked and fallible on concurrent changes. Required failures still reject
+and can follow an actual effect. Test listeners are exception-safe across missing prerequisites, ordinary
+fixture teardown respects explicit retention, and native/CommonJS fixtures no longer depend on repository
+CWD/module scope. See [ADR-0053](06-decisions/ADR-0053-owned-control-readback-and-test-lifetimes.md).
+
+The **local P15 fixed-profile order slice** compiles a bounded, independently authorized multi-node charter
+into the existing P11 controller using explicit fixed-experiment-v2 scheduling. Exact P01 obligations/source,
+frozen objective policies, pre-reserved recovery, designated product decisions and dependency eligibility
+are deterministic. Independent nodes continue while affected branches pause; status needs no model transport.
+Control snapshots synchronize on existing locks; ordinary views do not. A bounded operational registry uses
+exact pinned22606c2 adoption predicates plus fresh trusted-host approvals/facts to apply actual next-order
+candidate changes and explicit rollback. Existing orders remain pinned. Only unstarted orders can migrate
+through a durable supersession/successor/renewal receipt; active/history-bearing migration refuses.
+[P15 contract](../packages/pi-daddy/contracts/factory-order/v1/README.md). Objective satisfaction is not generic
+P01 acceptance, calibrated eligibility, model work or full factory qualification. New source LOCAL ONLY.
+
+The **local partial P11 fixed-profile experiment controller** uses a new explicit v4 resource journal for
+atomic whole-experiment/retry/shadow admission, existing capped fan-out in waves, immutable common/variant
+artifacts and independently approved charters. Its primary promise does not wait for shadow or judge;
+original live handles own cancellation/deadline and full completion. Restart reads bound state without
+relaunch/refund; missing old outcomes remain unknown. Actual bounded digest/hold workers are supported,
+not general model/effort/skill variants, live pi/Herdr steering, evaluation or adoption. Optional P01 source
+bindings pin actual common work bytes/selection, not acceptance. [P15 contract](../packages/pi-daddy/contracts/experiment/v1/README.md).
+The earlier P02 native865-vs1316 failure remains preserved: deterministic capture/append ordering demonstrates
+that terminal/verified is not a final-byte barrier. The governed-process test now drains original live
+observations explicitly; native verified-format/partial coverage and no-fsync/full-session guarantees remain.
+New source LOCAL ONLY; full P11 and overall acceptance remain pending.
+
+The **local P08 debrief candidate** extends the existing dashboard/plugin with a bounded manual weekly
+queue, explicit harness-owned labels and quality-before-reveal blind views. Exact harness4460af9/0475e1f
+contracts/fixtures are pinned. Five total attention slots include the blind question, persist across reopen
+through a host checkpoint, and are never refilled by answers/skip. Label authority/history stays with the
+real harness writer; no dashboard decision store or worker messages are added. Missing writer/identity /
+persistence disables actions; automatic closing-pause/exposure-policy/live qualification remains deferred,
+not inferred from agent_end or idle flags. The [P10/P12/P13 integration contract](../packages/pi-daddy/contracts/debrief/v1/README.md)
+distinguishes the real programmatic/fixture path from pending deployment and public-seed blinding limits.
+New source local only; overall acceptance pending. P05 cancellation/live-route limitations remain unchanged.
+
+The **local P05 intent-application continuation** now supplies actual bounded P01 scope successor,
+priority and recorded-alternative adapters, rather than treating omitted code as permanent external gaps.
+An explicit v3 resource binding pins owned work bytes; existing controller receipts retain exact selections
+and operational ranks without duplicating intent contents. Independently authorized complete changes apply
+at reservation quiescence, using strict P01 builders/ingestion and exact-ID append/reconciliation. Actual
+fixed-profile reservations enforce explicit primary scheduling. Permissions cannot expand; unknown receipts,
+torn data and crash locks never become successful application or automatic recovery. See the
+[intent adapter contract/matrix](../packages/pi-daddy/contracts/intent-control/v1/README.md). Owned cancellation
+bridging remains implementation work; general live steering remains unqualified. New source local only;
+overall acceptance pending. The earlier dispatch-only protocol below retains its own narrower matrix.
+
+The **local 2026-09-08 P05 candidate** implements independently authorized pause/resume of future
+reservations in an explicitly created v2 resource budget. Exact request identity, expected dispatch
+revision, persisted decision/application/outcome and reconciliation share the existing reservation lock
+and journal. Busy requests block new admission but apply only at zero-reservation boundaries; status reads
+never write or control workers. Work-v4 remains the sole intent source. Cancellation, scope revision,
+reprioritization, alternative selection and general live steering remain unsupported by this bounded
+protocol. The [P15 control contract/matrix](../packages/pi-daddy/contracts/dispatch-control/v1/README.md)
+preserves unknown acknowledgement and P02/P04/P06 limitations. Local only; overall acceptance pending.
+
+The **local 2026-09-08 P04 candidate** adds a read-only daily mode to the existing dashboard/plugin.
+It consumes exact pinned P03 execution archive snapshots and independently projects P01 work intent under
+explicit host authority. Unstarted obligations, exact attempts, scope revision, acceptance, runtime,
+coverage/check evidence and source references remain separate. CLI selection alone cannot supply approval;
+archive exit0 never counts as accepted. Reconnect resnapshots retain gaps and freshness stays unknown.
+The [P04 read-model contract for P07/P08](../packages/pi-daddy/contracts/daily-view/v1/README.md) publishes
+types and deterministic fixtures. Live passive transport/freshness qualification remains BLOCKED without
+a deployed P03 input. No model/worker/native-gate calls or P05 steering are added. Local only; independent
+overall review and formal acceptance remain pending.
+
+The **local 2026-09-08 P06 candidate** adds one opt-in fixed-code `linux-bwrap-digest-v1` runtime profile,
+not a general pi/bash sandbox. Actual bounded namespace/effect probes precede admission; each fresh owned
+probe fixture is removed after all probe children settle, including failure paths, without targeting old
+store entries. Immutable byte inputs and stdout-only results exclude writable/shared workspace destinations. A separately bound durable
+journal reserves attempts, input bytes and active invocation slots across orders/experiments. Cancellation
+never refunds cumulative charges; duplicates, lost ownership, unsupported profiles and substituted stores
+fail closed. Aggregate CPU/memory/PID and provider-money caps remain unsupported, as do arbitrary model or
+shell workloads. Existing delegation/check semantics are unchanged. See the
+[profile/accounting contract](../packages/pi-daddy/contracts/effect-profile/v1/README.md) for exact native
+observations, trust boundaries, restart behavior and limits. This is partial P06 coverage, local only;
+independent overall review and formal acceptance remain pending.
+
+The **local 2026-09-08 execution-retention 2.0 source candidate** retains bounded raw output, assembled
+results, complete available check receipts and validated private native session bytes at existing governed
+launch seams. Public call IDs and execution parentage remain exact and separate from logical names.
+`PI_GRANTS_EXECUTION_ARCHIVE` opts in; native file reads additionally require an owner-private
+`PI_GRANTS_NATIVE_SESSION_ROOT`. Herdr's native id/path references are consumed without extra RPCs.
+A live pi SessionManager can supply a checked active leaf; file tails cannot. Default ephemeral process
+children and file/Herdr-only active branches remain explicitly missing/unknown. No auth harvesting,
+monitoring extension, injected worker message or model call is added. Queued observation I/O is not awaited
+by worker control and does not change mandatory receipt failures. Retention never establishes acceptance
+or complete evidence. The [strict v2 producer contract for P03](../packages/pi-daddy/contracts/execution-retention/v2/README.md)
+defines supported routes, schema/builders, reproducible fixtures, privacy bounds and exact unsupported
+routes. Historical v1 semantics and receipts are preserved. Independent overall review and formal final
+acceptance remain pending; no per-task review pass or live qualification is asserted.
 
 **herdr's own contracts are now checked by `test-integration/herdr.it.ts`** against a live server, in an isolated
 workspace it creates and closes. That suite exists because three shipping defects hid behind the unit fake — the
@@ -485,6 +649,110 @@ if the file is gone or altered, the digest proves the loss rather than recoverin
 digests say nothing about whether the child behaved as intended. It identifies text; it does not evaluate
 it.
 
+## Opt-in work-v4 evidence (candidate)
+
+The source candidate adds `pi-daddy/work-ledger` and versioned
+[work-v4 contract artifacts](../packages/pi-daddy/contracts/ledger/v4/README.md), under
+[ADR-0044](06-decisions/ADR-0044-opt-in-work-v4-evidence.md). Default `LEDGER_VERSION = 3`, its five-event
+union, correlation 1.0, governance refusals, `PI_GRANTS_LEDGER` behavior and historical v2/v3 bytes are
+unchanged. There is no first-party production authority caller, v4 CLI/dashboard activation or migration.
+Old integrity/dashboard readers reject v4 rather than counting it as grant or lifecycle evidence.
+
+Four real builders emit closed `work_revision`, `work_snapshot`, `work_occurrence` and `work_acceptance`
+events. Revision kinds are scope/goal/node/obligation/artifact/policy; owners/effects and occurrence labels
+are declarations, not capabilities. All content is identifier/digest-only, with explicit nulls and no
+metadata/receipt bag. Digests can be sensitive/linkable and do not retain bytes or authenticate a claimant.
+
+`parseWorkLedgerText` is the strict text boundary: syntax and decoded duplicate members are checked before
+materialization, numeric tokens before lossy conversion, then closed domains and supplied digests. SHA-256
+covers RFC 8785 canonical JSON under the safe-integer profile; each own digest excludes only itself and
+includes nested digests. Raw archival byte identity remains separate. Builders sort detached set copies
+and reject duplicates; readers reject unsorted sets rather than repairing evidence. The hand-authored
+schema enforces shape/domains, not duplicate text members, canonical ordering/digests, graph validity or
+acceptance. Bounds are 64 KiB per nonblank record, 16 MiB/10,000 records per input text, depth 16 and 256
+entries per input array. Aggregate output collections may exceed 256.
+
+`projectWorkLedger(text, context?)` always ingests strict text. Context has an exact selected snapshot/event
+identity and a separate authority snapshot, both null by default. There is no latest-head or time election.
+Complete conflict grouping precedes facts, including all alternatives reachable through quarantined
+revision/occurrence redeliveries. Exact inventory, bindings, ancestors, predecessors and selected dependency
+closure must resolve. Incomplete input or invalid/unresolved structure suppresses progress; missing selected
+artifact bodies preserve obligations in an otherwise valid denominator while withholding their acceptance.
+
+Positive state is `accepted-under-supplied-authority`, not an authenticated verdict. The supplying host is
+the trusted computing base: an exact receipt must match the claim ID/digest, authority ID and entire
+selected snapshot/scope/intent/obligation/artifact revision/artifact-byte/policy/evidence binding. The claim's
+artifact byte digest must equal the selected artifact revision's `contentDigest`; required availability is
+supplied separately, and relevant contradictions fail closed. New snapshots require fresh receipts. Unsupported sibling claims
+remain unresolved without revoking independent complete support; trusted current contradictions override
+that support. Coverage and supersession remain separate diagnostics.
+
+No wire label, successful check, capability approval, completion, callback, ambient environment or
+event-nominated path constructs this context. The fixed test controller demonstrates
+**fixture trust-boundary simulation; for selected snapshot; under fixture authority** only. It takes no incoming claims. Schema
+conformance alone cannot supply a receipt or make work accepted.
+
+One global execution ID yields one attempt with explicit selected associations, even when it has multiple
+obligation/variant bindings. Logical child IDs are not launch counts. Declared labels do not replace
+observations; unknown/conflicting joins stay diagnostic. Runtime problems affect acceptance only through
+required evidence, not unrelated telemetry. Progress counts selected obligations, never claims, receipts,
+attempts, variants or completions. It is null without a valid selected scope; an empty valid scope is `0/0`,
+not a success percentage. The bounded layout demonstration now exercises two execution IDs with the same
+logical designer ID, three variants and one obligation through real builders, strict JSONL, dedicated
+append and explicit inspection. It remains unresolved without authority and exactly `1/1` only under the
+independently declared fixture controller. This is **fixture trust-boundary simulation; for selected snapshot;
+under fixture authority**, not a runtime dispatch, production authenticator or qualification result.
+
+The attempt tests separately exercise shared obligations, nonselected-association identity conflicts,
+missing/cyclic explicit parents, unknown branches, complementary and contradictory observed labels, and
+completed/failed contradictions. A shared execution is counted once, never inferred from logical names;
+each obligation still needs its own exact trusted support. Scope successors transitively rebase goal,
+node and obligation references with real predecessors; a new snapshot with unchanged revisions also
+requires fresh receipts. Prior returned results remain immutable, not rewritten by later selection.
+No runtime/result shape or authority source was added for these scenarios.
+
+`appendWorkLedgerEvent({path, grantLedgerPath}, event)` is explicit and always strict. Paths are absolute,
+nonempty and NUL-free; the protection field is required, and null means the host declared none. Detached
+options/candidate validation precedes I/O. Both work leaves and all existing/prospective ancestors are
+compared with both protected grant leaves using filesystem UTF-8 spelling, canonical paths and available
+inodes before mutation. A supplied grant filename reserves that namespace even if it is a directory.
+
+V4 selects non-expiring ownership on the shared append/lock mechanism: no age/liveness reclaim, the existing
+two-second waiter timeout, and own-token cleanup. An orphan may block future appends indefinitely; recovery
+requires separately authorized quiescent operator action, not an automatic API. Legacy age recovery,
+serialization-before-try and strict/non-strict callback behavior remain unchanged. The same regular-file
+descriptor reads bounded existing bytes, validates strict content/terminal LF and resulting capacity,
+rechecks identity and appends canonical JSON plus LF under the lock. Existing bytes are never rewritten.
+Late I/O failure may leave partial bytes or follow own-parent/lock activity; no transactional rollback is
+claimed. In this candidate, disabled-mode lock close/read/removal failures after a successful append body
+surface as `WORK_LEDGER_WRITE_FAILED`. Token-checked removal is attempted even after close failure; a failed
+ownership read never authorizes deletion, and a replacement token is left alone. A primary body/validation
+error still takes precedence over secondary cleanup failures. The complete appended line may already be
+present: rejection does not mean no write, and does not promise safe blind retry. A retry may add another
+physical delivery or fail against a retained non-expiring lock. No automatic recovery is added. Legacy age
+cleanup remains best effort. Protection is cooperative misrouting defense, not general host/filesystem containment.
+
+`inspectWorkLedger({version:4,path}, context?)` reads bounded regular-file bytes without mutation or repair.
+Its frozen, detached result distinguishes missing/error/read; read proves file reading, not valid content
+or acceptance. Input/context/content diagnostics use fixed codes and typed references without raw text,
+paths or native messages. Builders/append throw validation errors; parser/projector/inspector return the
+specified diagnostics. Work input/write/inspection errors are separate from historical governance refusal
+enums; exact shapes, codes, precedence and limits are in the contract README and source declarations.
+
+The separate v4 generator has pure fixture construction and requires an explicit output directory for all
+writes; imports write nothing. Its four `work-*.json` fixtures remain standalone individual events.
+`layout-options.json` is instead an array of eleven production-builder events forming a complete generic
+graph. The array is not an event: schema-check each element and explicitly serialize the elements to JSONL.
+Positive controller receipts/availability stay in test fixture code, not the published array. Tests reproduce
+both forms byte-for-byte in fresh targets, check unchanged collateral and resolve the actual JSON artifact
+export. These checks are not fresh compiled-work-ledger, installed-smoke or independent semantic-review
+evidence. Mutation-testing machinery and active invocations were removed by explicit user direction on
+2026-09-07; that requirement is removed, not passed. Ordinary behavioral regressions and runtime guards
+remain. Fresh compiled verification, full-suite/integration/installed-smoke handling and final overall
+review remain separate evidence. Frozen earlier plans/packets and receipts are historical; native acceptance
+stays pending where their old gates cannot represent this workflow change.
+Stopping use of the candidate preserves rollback without deleting its evidence or changing v3 defaults.
+
 ## Correlation metadata
 
 Every spawn may carry optional, non-authoritative metadata for joining an external controller's records:
@@ -690,13 +958,14 @@ schemas expose the same closed optional contract, and runtime normalization rema
 
 ## Stable refusals
 
-**Every** refusal has `{code, message, details?}`. Human diagnostics remain the same; direct API errors
+**Governance refusals** have `{code, message, details?}`. Work-v4's separate input/write/inspection
+errors are described in its candidate contract above. Human diagnostics remain the same; direct API errors
 expose `error.code`, and ledger decisions carry the same object. `src/refusals.ts` holds the complete union
 and `test/refusals.test.ts` is length-checked against it, so a code cannot be added or dropped without the
 enumeration failing — it previously listed eleven of eighteen members, which made the seven `CHECK_*` codes
 the ones most likely to be deleted while the guard stayed green.
 
-"Every" is now accurate and was not: five planner paths returned a reason with no code — empty task, unknown
+The governance enumeration closes five planner paths that previously returned a reason with no code — empty task, unknown
 definition name, a pattern ceiling `--tools` cannot express, an unresolvable skill path, and the
 `assertNarrowing` violation. That last one is ADR-0011's invariant, the hardest rule this package enforces,
 and a controller distinguishing "refused by policy" from "internal error" by the presence of a code would

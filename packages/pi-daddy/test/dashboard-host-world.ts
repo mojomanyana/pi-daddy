@@ -1,0 +1,42 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { connectedHarness } from "./dashboard-host-fixture.ts";
+import { signalInputs, blindInputs, hash } from "./debrief-durable-fixture.ts";
+import { tempDir, cleanupTempDirs } from "./tmp.ts";
+import { after } from "node:test";
+after(cleanupTempDirs);
+import { intentWorld, hostDigest } from "./intent-control-fixture.ts";
+import { bindWorkIntent } from "../src/intent-application.ts";
+import { createIntentBudget, openResourceBudget, resourceBindingDigest } from "../src/resource-budget.ts";
+import { createDashboardHost, openDashboardHost, dashboardHostDigest, dashboardHostRequestDigest, type DashboardHostRequest, type DashboardHostConfig, type DashboardHostAuthority } from "../src/dashboard-host.ts";
+import { dispatchRequestDigest, type DispatchRequest } from "../src/dispatch-control.ts";
+import { ordinaryHostRetention } from "./dashboard-retention-fixture.ts";
+import { hostExperiment } from "./dashboard-experiment-fixture.ts";
+import { experimentBindingDigest } from "../src/experiment.ts";
+import type { OrdinaryChildren } from "../src/ordinary-children.ts";
+export async function hostWorld(blind=true,kind:"signals"|"zero"|"v2"|"experiment"|"retention"="signals",ordinary?:OrdinaryChildren){
+  const root=await tempDir("dashboard-host-"),{api,archiveRoot,modules,pins,artifactDigest}=await connectedHarness(root),w=intentWorld(),workPath=join(root,"work.jsonl");await writeFile(workPath,w.text,{mode:0o600});
+  const work=await bindWorkIntent({path:workPath,grantLedgerPath:null,selection:w.selection(w.base),priorities:w.priorities(w.obligations)});
+  const budget=await createIntentBudget({directory:join(root,"budget"),authorityDigest:hostDigest,limits:{maxAttempts:10,maxInputBytes:1000,maxConcurrent:2}},work);
+  const inputs=signalInputs(kind!=="zero"),observation=api.retainWorkSignalObservation(archiveRoot,inputs.snapshot,inputs.facts),batch=api.captureWorkSignalCases(archiveRoot,observation.manifestId);let cases:DashboardHostConfig["cases"]={version:"work-signals-v1",batchId:batch.batchId,observationId:observation.manifestId};
+  if(kind==="v2") {const candidate=api.buildWorkCapture({detector:{id:"repeat",version:"1",population:"old"},target:{kind:"work",snapshotDigest:hash("old"),obligationId:"old",obligationDigest:hash("old-o")},classification:"candidate_defect",reason:"repeat_without_progress",metrics:{equivalentAttempts:2},evidence:[hash("old-e")]});
+    const id=api.retainWorkCandidate(archiveRoot,candidate),legacy=api.retainArchiveSource(archiveRoot,{sourceId:"old-batch",parser:{id:"work-candidate-batch",version:"1"},retention:"exact",bytes:Buffer.from(JSON.stringify({version:"work-candidate-batch-v1",candidateIds:[id],visibility:"silent",promotion:"not-authorized"}))});cases={version:"work-case-v2",batchId:legacy.manifestId};}
+  const item=(kind==="v2"?api.createWorkCaseReviewer(archiveRoot,cases.batchId,"operator"):api.createWorkSignalReviewer(archiveRoot,batch.batchId,"operator")).list(0,1).items[0],component={kind:"detector",...(item?.candidate.detector??{id:"empty-fixture",version:"1",population:"empty"})};
+  const evidence=api.retainArchiveSource(archiveRoot,{sourceId:"reference",parser:{id:"reference",version:"1"},retention:"exact",bytes:Buffer.from("independent synthetic fixture outcome")});
+  const trustInput={archiveRoot,component,seed:hash("seed"),maxUnflagged:0,cohort:[{incidentId:"prior",manifestId:evidence.manifestId,flagged:true,split:"calibration"}],exposure:{id:"predeclared",component,kind:"positive",split:"calibration",minimumResolved:1,minimumLowerBound:0,attentionRemaining:5,expiresAt:Date.now()+600000}};
+  const trustDirectory=join(root,"trust"),trust=api.createTrustLifecycle(trustDirectory,trustInput,[api.trustPolicyDigest(trustInput)]);
+  trust.predict({id:"prediction",incidentId:"prior",component,kind:"positive",split:"calibration"});const outcome={kind:"prediction",targetId:"prediction",value:true,evidenceManifestId:evidence.manifestId,referenceId:"reference"};trust.outcome(outcome,[api.trustOutcomeDigest(outcome)]);
+  const facts={scopeDigest:w.base.payload.snapshot.digest,version:"fixture-v1",population:"selected-fixture",expectedWaits:[],checkpoints:w.obligations.map(o=>({obligationDigest:o.payload.revision.digest,deadlineMs:1,observedAt:2,status:"pending",evidence:hash("checkpoint")})),violations:[],priorAccepted:[]};await writeFile(join(root,"facts.jsonl"),JSON.stringify(facts)+"\n",{mode:0o600});
+  const retention=kind==="retention"?await ordinaryHostRetention(root):null;
+  const policy={version:"archive-policy-v2",id:"daily",revision:"1",sourceRoot:root,archiveRoot,maxBytes:1048576,retention:"exact",expiresAt:new Date(Date.now()+600000).toISOString(),sources:[{id:"work",path:"work.jsonl",parser:{id:"pi-daddy-work-ledger",version:"4"},contentPolicy:"manifest-only"},{id:"facts",path:"facts.jsonl",parser:{id:"pi-daddy-work-signal-facts",version:"1"},contentPolicy:"manifest-only"},...(retention?[{id:"retention",path:retention.relativePath,parser:{id:"pi-daddy-execution-retention",version:"2.0"},contentPolicy:"referenced-blobs"}]:[])]};
+  const policyPath=join(root,"policy.json");await writeFile(policyPath,JSON.stringify(policy),{mode:0o600});
+  const b=blind?await blindInputs(api):null,comparisonId=b?api.retainBlindIntervention(archiveRoot,b.manifest,b.evidence,b.qualification,"operator"):null;
+  const experiment=kind==="experiment"?await hostExperiment(root):null;
+  const config:DashboardHostConfig={version:"producer-dashboard-host-v1",trustDirectory,trustPolicyId:api.trustPolicyDigest(trustInput),archiveRoot,scope:"pause:daily",author:"operator",policyPath,policySha256:hash(JSON.stringify(policy)),sources:[{id:"work",kind:"work"},{id:"facts",kind:"facts"},...(retention?[{id:"retention",kind:"retention" as const}]:[])],selection:w.selection(w.base),cases,blind:comparisonId?{comparisonId,author:"operator"}:null,budgetDigest:resourceBindingDigest(budget),experimentDigest:experiment?experimentBindingDigest(experiment.controller.binding):null,harnessArtifactDigest:artifactDigest,...(ordinary?{ordinaryDigest:ordinary.bindingDigest}:{})};
+  let authority:DashboardHostAuthority|null={hostDigests:[dashboardHostDigest(config)],requestDigests:[],workContext:{selectedSnapshot:config.selection,authority:null},dispatch:{authorityDigest:hostDigest,requestDigests:[]},experiment:experiment?.authority??null};
+  const presence={present:true,closing:true,evidenceDigest:hash("presence"),expiresAt:Date.now()+600000};
+  const options={ordinary,harness:api,config,budget,experiment:experiment?.controller,authority:()=>authority,presence:()=>presence},host=createDashboardHost(options);
+  const request=async(operation:DashboardHostRequest["operation"],payload:unknown,id=operation+":"+Math.random().toString(16).slice(2))=>{const view=await host.frame();const r:DashboardHostRequest={version:"1.0",requestId:id,hostDigest:host.hostDigest,selectionDigest:view.selectionDigest,expectedTip:view.tip,operation,payload};authority!.requestDigests=[...authority!.requestDigests,dashboardHostRequestDigest(r)];return r;};
+  const pause=async()=>{const port=openResourceBudget(budget),state=await port.controls(null).inspect();const p:DispatchRequest={version:"1.0",requestId:"pause:"+state.revision,bindingDigest:config.budgetDigest,expectedRevision:state.revision,action:"pause-dispatch",targetExecutionId:null};authority!.dispatch!.requestDigests=[...authority!.dispatch!.requestDigests,dispatchRequestDigest(p)];await host.action(await request("dispatch",p));return state.revision+1;};
+  return {root,api,archiveRoot,modules,pins,retention,w,workPath,config,budget,trust,options,host,request,pause,presence,experiment,get authority(){return authority;},set authority(a){authority=a;},reopen:()=>openDashboardHost(options)};
+}

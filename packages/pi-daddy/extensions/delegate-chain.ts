@@ -251,6 +251,7 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
           signal,
           {
             preApproved: availableForStep,
+            toolCallId: _toolCallId,
             // Only approvals actually offered to this step are attributed or consumed here.
             approvalFacts: chainApprovalFacts(approvalAudit, availableForStep, step.agent ?? DELEGATE_SUBJECT),
             onProgress: (update) => {

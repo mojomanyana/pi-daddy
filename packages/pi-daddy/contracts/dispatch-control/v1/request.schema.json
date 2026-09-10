@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "P05 bounded dispatch request v1 (not authority)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "requestId", "bindingDigest", "expectedRevision", "action", "targetExecutionId"],
+  "properties": {
+    "version": { "const": "1.0" },
+    "requestId": { "type": "string", "pattern": "^[a-zA-Z0-9:_-]{1,128}$" },
+    "bindingDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "expectedRevision": { "type": "integer", "minimum": 0, "maximum": 128 },
+    "action": { "enum": ["pause-dispatch", "resume-dispatch", "cancel-execution", "revise-scope", "reprioritize", "select-alternative"] },
+    "targetExecutionId": { "anyOf": [{ "type": "null" }, { "type": "string", "pattern": "^[a-zA-Z0-9:_-]{1,128}$" }] }
+  },
+  "anyOf": [
+    { "properties": { "action": { "const": "cancel-execution" }, "targetExecutionId": { "type": "string" } } },
+    { "properties": { "action": { "enum": ["pause-dispatch", "resume-dispatch", "revise-scope", "reprioritize", "select-alternative"] }, "targetExecutionId": { "type": "null" } } }
+  ]
+}

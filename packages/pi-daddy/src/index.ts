@@ -34,7 +34,39 @@ export {
   type WorkflowFactState,
 } from "./ledger.ts";
 
+export { createDebriefPresenter, type DebriefPresenter, type DebriefHost, type DebriefFrame, type DebriefCheckpoint, type DebriefPersistence } from "./debrief.ts";
+export { ordinaryChildrenFor, ordinaryCancellation, ordinaryCancellationDigest, isOrdinaryChildren, type OrdinaryChildren, type OrdinaryCancellation, type OrdinaryAuthority, type OrdinaryTarget } from "./ordinary-children.ts";
+export { loadDashboardHarness, loadedDashboardHarnessDigest, type DashboardHarnessArtifact } from "./dashboard-harness.ts";
+export { createDashboardHost, openDashboardHost, dashboardHostDigest, dashboardHostRequestDigest, dashboardSelectionDigest, type DashboardHost, type DashboardHostConfig, type DashboardHostRequest, type DashboardHostAuthority, type DashboardHarness, type DashboardHostOptions } from "./dashboard-host.ts";
+export { serveDashboardHost, connectDashboardHost, ENV_DASHBOARD_HOST_SOCKET, type DashboardConnection } from "./dashboard-host-transport.ts";
+export { createRetainedDebrief, retainDebriefBlind, openDebriefBlindPreview, type DebriefHarness, type CaseSelection, type DurableBlindBinding } from "./debrief-host.ts";
+export { renderDebrief, debriefAction as dashboardDebriefAction } from "./debrief-render.ts";
+export { type ReviewPort, type ReviewRequest, type BlindPort, type BlindChoice } from "./debrief-contract.ts";
+export { readDailyView, createDailyViewReader, DAILY_VIEW_VERSION, type DailyView, type DailyViewOptions,
+  type DailyAttempt, type DailyObligation } from "./daily-view.ts";
+export { renderDailyView } from "./daily-view-render.ts";
+export { parseArchiveProjection, ARCHIVE_PROJECTION_VERSION } from "./daily-view-input.ts";
+export { bindWorkIntent } from "./intent-application.ts";
+export { intentRequestDigest, parseIntentRequest, type IntentRequest, type IntentSelection, type IntentPriority,
+  type IntentAdmission, type IntentSnapshot, type IntentReceipt, type WorkIntentBinding } from "./intent-control.ts";
+export { dispatchRequestDigest, parseDispatchRequest, type DispatchRequest, type DispatchAuthority, type DispatchRecord, type DispatchSnapshot } from "./dispatch-control.ts";
+export { createFactoryRegistry, openFactoryRegistry, createFactoryOrder, openFactoryOrder, migrateFactoryOrder,
+  factoryOrderDigest, parseFactoryOrder, fixedPolicyDigest, factoryDecisionDigest, activationRequestDigest, factoryMigrationDigest,
+  type FactoryRegistryBinding, type FactoryOrderCharter, type FactoryAuthority, type FactoryOrderView, type FixedPolicy, type ActivationRequest, type FactoryMigration } from "./factory-order.ts";
+export { createExperiment, openExperiment, experimentCharterDigest, experimentBindingDigest, experimentCancellationDigest, parseExperimentCharter,
+  type ExperimentBinding, type ExperimentCharter, type ExperimentAuthority, type ExperimentCancellation, type ExperimentRun, type ExperimentView } from "./experiment.ts";
+export { createResourceBudget, createDispatchBudget, createIntentBudget, createExperimentBudget, openResourceBudget, resourceBindingDigest, ResourceAdmissionError,
+  type BudgetBinding, type DispatchBudgetBinding, type IntentBudgetBinding, type ExperimentBudgetBinding, type GovernedBudgetBinding, type ResourceLimits, type AttemptDemand, type ResourcePermit, type BudgetSnapshot } from "./resource-budget.ts";
+export { createProducerIpcHost, startProducerIpc, producerIpcBinding, producerIpcBindingDigest, producerIpcDemand, PRODUCER_IPC_LIMITS,
+  type ProducerIpcBinding, type ProducerIpcReferences, type ProducerIpcContext, type ProducerIpcHost, type ProducerIpcSnapshot, type ProducerIpcRun } from "./producer-ipc.ts";
+export { prepareDigestProfile, runDigestProfile, DIGEST_PROFILE, EffectProfileUnavailableError,
+  type DigestProfile, type DigestAttempt } from "./effect-profile.ts";
 export { planSpawn, type SpawnPlan, type SpawnPlanInput } from "./spawn.ts";
+export { beginExecutionRetention, drainExecutionRetention, ENV_EXECUTION_ARCHIVE, RETENTION_VERSION, retentionConfigurationDigest, verifyRetainedBytes,
+  type ExecutionRetentionManifest, type RetainedContent, type RetentionIdentity, type RetentionStatus,
+  type ExecutionRetention, buildExecutionRetentionManifest, parseExecutionRetentionManifest, RETENTION_SCHEMA,
+  ENV_NATIVE_SESSION_ROOT, readNativeSession, parseNativeSessionBytes,
+  type NativeSessionObservation, type NativeSessionManager } from "./execution-retention.ts";
 
 export {
   APPROVAL_TTL_DAYS,

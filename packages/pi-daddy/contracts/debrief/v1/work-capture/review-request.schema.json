@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "caseManifestId": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "priorDecisionId": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "disposition": {
+      "enum": [
+        "confirmed_defect",
+        "expected_behavior",
+        "exemplar",
+        "uncertain",
+        "skip"
+      ]
+    },
+    "note": {
+      "type": "string",
+      "maxLength": 4000
+    }
+  },
+  "required": [
+    "caseManifestId",
+    "priorDecisionId",
+    "disposition",
+    "note"
+  ],
+  "additionalProperties": false
+}

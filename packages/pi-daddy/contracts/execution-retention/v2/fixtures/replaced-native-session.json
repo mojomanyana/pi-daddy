@@ -1,0 +1,92 @@
+{
+  "version": "2.0",
+  "archiveId": "00000000-0000-4000-8000-000000000006",
+  "identity": {
+    "executionId": "exec:00000000-0000-4000-8000-000000000006",
+    "parentExecutionId": "exec:00000000-0000-4000-8000-000000000099",
+    "childId": "layout-worker",
+    "toolCallId": "call:layout:6",
+    "executor": "herdr",
+    "taskDigest": "043fd4cb12f188c5bd67ae5274e2afe936cf22d8cf6b133504992023117e6cc5",
+    "definitionDigest": null,
+    "configurationDigest": "dd4f902362cd72e3601b2440aa9cf3a8bcc913eeace499d284b6a067e032e22a",
+    "workspaceId": "layout"
+  },
+  "native": {
+    "pid": null,
+    "paneId": "w1:p6",
+    "agentName": "layout-worker",
+    "tabId": "w1:t6",
+    "sessionId": null,
+    "sessionPath": "/fixture/private/child.jsonl",
+    "branchLeafId": null
+  },
+  "nativeSession": {
+    "source": "herdr-path",
+    "status": "changed",
+    "sessionId": null,
+    "sessionPath": "/fixture/private/child.jsonl",
+    "parentSessionPath": null,
+    "branchLeafId": null,
+    "branchState": "unknown",
+    "lastPersistedEntryId": null,
+    "sha256": null,
+    "reason": "native-session-file-replaced"
+  },
+  "state": "terminal",
+  "outcome": {
+    "code": 0,
+    "signal": null,
+    "timedOut": false,
+    "aborted": false,
+    "truncated": false,
+    "failed": false
+  },
+  "content": {
+    "stdout": {
+      "status": "missing",
+      "path": null,
+      "sha256": null,
+      "bytes": null
+    },
+    "stderr": {
+      "status": "missing",
+      "path": null,
+      "sha256": null,
+      "bytes": null
+    },
+    "paneSnapshot": {
+      "status": "missing",
+      "path": null,
+      "sha256": null,
+      "bytes": null
+    },
+    "result": {
+      "status": "missing",
+      "path": null,
+      "sha256": null,
+      "bytes": null
+    },
+    "checkReceipt": {
+      "status": "missing",
+      "path": null,
+      "sha256": null,
+      "bytes": null
+    },
+    "session": {
+      "status": "missing",
+      "path": null,
+      "sha256": null,
+      "bytes": null
+    }
+  },
+  "coverage": {
+    "complete": false,
+    "losses": [
+      "native-session-unavailable",
+      "active-branch-unknown",
+      "native-session-file-replaced"
+    ]
+  },
+  "acceptance": "not-assessed"
+}

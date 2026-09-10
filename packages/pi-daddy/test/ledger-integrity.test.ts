@@ -14,12 +14,12 @@
 import assert from "node:assert/strict";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { after, test } from "node:test";
 import { makeCatalog } from "../src/catalog.ts";
 import type { SkillDefinition } from "../src/definitions.ts";
 import { planDelegation } from "../src/delegate.ts";
-import { appendRecord, buildRecord, isEscalationAttempt, verifyLedger } from "../src/ledger.ts";
+import { appendLedgerEvent, appendRecord, buildRecord, isEscalationAttempt, verifyLedger } from "../src/ledger.ts";
 import { MAX_CHAIN_STEPS, MAX_CHILDREN_PER_CALL } from "../src/fanout.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
@@ -519,4 +519,37 @@ test("ADR-0033: MAX_CHAIN_STEPS is DERIVED from MAX_CHILDREN_PER_CALL, not merel
     /^export const MAX_CHAIN_STEPS(: *number)? *= *MAX_CHILDREN_PER_CALL;$/,
     `it must be defined AS the other constant; a literal drifts silently. Found: ${line.trim()}`,
   );
+});
+
+test("shared append preserves legacy serialization and failure callback boundaries", async () => {
+  const dir = await tempDir("legacy-append-boundary-");
+  for (const append of [appendLedgerEvent, appendRecord]) for (const strict of [undefined, true, false]) {
+    const path = join(dir, `absent-${append.name}-${strict}`, "ledger");
+    const cyclic: Record<string, unknown> = {}; cyclic.self = cyclic;
+    let calls = 0;
+    const options = { path, ...(strict === undefined ? {} : { strict }), onFailure() { calls++; } };
+    for (const malformed of [cyclic, { value: 1n }]) {
+      await assert.rejects(append(options, malformed as never), error => error instanceof TypeError && !error.message.includes("failing closed"));
+      assert.equal(calls, 0); assert.equal(existsSync(join(path, "..")), false); assert.equal(existsSync(path + ".lock"), false);
+    }
+    const sentinel = new Error("fixture serialization sentinel");
+    await assert.rejects(append(options, { toJSON() { throw sentinel; } } as never), error => error === sentinel);
+    assert.equal(calls, 0); assert.equal(existsSync(join(path, "..")), false);
+    const blocker = join(dir, `blocker-${append.name}-${strict}`); await writeFile(blocker, "preserve");
+    const failures: unknown[] = [];
+    const bad = { ...options, path: join(blocker, "ledger"), onFailure(error: unknown) { failures.push(error); } };
+    if (strict === false) {
+      await append(bad, {} as never); assert.equal(failures.length, 1);
+      assert.equal((failures[0] as NodeJS.ErrnoException).code, "EEXIST");
+      assert.equal((failures[0] as NodeJS.ErrnoException).syscall, "mkdir");
+      assert.ok(!(failures[0] as Error).message.includes("grant ledger write failed"));
+      const callbackSentinel = new Error("fixture callback sentinel"); let callbackCalls = 0;
+      await assert.rejects(append({ ...bad, onFailure() { callbackCalls++; throw callbackSentinel; } }, {} as never), error => error === callbackSentinel);
+      assert.equal(callbackCalls, 1);
+    } else {
+      await assert.rejects(append(bad, {} as never), /^Error: grant ledger write failed \(failing closed\):/);
+      assert.deepEqual(failures, []);
+    }
+    assert.equal(await readFile(blocker, "utf8"), "preserve");
+  }
 });

@@ -6,7 +6,7 @@ import {
   ENV_DASHBOARD_KEY,
   ENV_DASHBOARD_LEDGER,
   ENV_DASHBOARD_PROTOCOL,
-  DASHBOARD_PROTOCOL_VERSION,
+  DASHBOARD_PROTOCOL_VERSION, ENV_DAILY_ARCHIVE, ENV_DAILY_WORK, ENV_DAILY_SELECTION, ENV_DEBRIEF_FIXTURE, ENV_DASHBOARD_HOST_SOCKET,
 } from "./dashboard-cli.ts";
 import { parseReply, type HerdrExec } from "./herdr-cli.ts";
 import { withFileLock } from "./file-lock.ts";
@@ -263,8 +263,12 @@ export async function openOrReuseDashboard(input: DashboardOpenInput): Promise<D
   const exec = input.exec ?? dashboardHerdrExec;
   const ledgerPath = input.ledgerPath.trim() ? resolve(input.cwd, input.ledgerPath) : "";
   const cwd = resolve(input.cwd);
+  // Explicit operator inputs/owned host endpoint only, never an authority file or ambient snapshot.
+  // The endpoint keeps original controller handles in its owning process; it is not TUI attachment.
+  const dailyEnv = [ENV_DAILY_ARCHIVE, ENV_DAILY_WORK, ENV_DAILY_SELECTION, ENV_DEBRIEF_FIXTURE, ENV_DASHBOARD_HOST_SOCKET]
+    .flatMap(name => process.env[name] ? ["--env", `${name}=${process.env[name]}`] : []);
   const key = createHash("sha256")
-    .update(`${input.host.workspaceId}\0${input.host.tabId}\0${ledgerPath}`, "utf8")
+    .update(`${input.host.workspaceId}\0${input.host.tabId}\0${ledgerPath}${dailyEnv.length ? JSON.stringify([cwd, ...dailyEnv]) : ""}`, "utf8")
     .digest("hex");
   await mkdir(dirname(input.statePath), { recursive: true });
 
@@ -307,6 +311,7 @@ export async function openOrReuseDashboard(input: DashboardOpenInput): Promise<D
       ...(ledgerPath ? ["--env", `${ENV_DASHBOARD_LEDGER}=${ledgerPath}`] : []),
       "--env", `${ENV_DASHBOARD_PROTOCOL}=${DASHBOARD_PROTOCOL_VERSION}`,
       "--env", `${ENV_DASHBOARD_KEY}=${key}`,
+      ...dailyEnv,
       "--no-focus",
     ];
     const opened = parseReply(await exec(args));

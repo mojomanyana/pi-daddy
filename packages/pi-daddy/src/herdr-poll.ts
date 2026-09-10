@@ -12,6 +12,7 @@
  */
 
 import { parseReply, type HerdrExec } from "./herdr-cli.ts";
+import { herdrSessionReference } from "./native-session.ts";
 
 /**
  * What `waitForSettled` needs from a run request.
@@ -22,6 +23,8 @@ import { parseReply, type HerdrExec } from "./herdr-cli.ts";
 export interface PollTarget {
   /** herdr agent name. */
   name: string;
+  nativePaneId?: string;
+  onSessionReference?: (reference: NonNullable<ReturnType<typeof herdrSessionReference>>) => void;
   signal?: AbortSignal;
   /**
    * The pane's last few lines, re-reported on every poll — a SNAPSHOT, not a stream (ADR-0032).
@@ -31,6 +34,8 @@ export interface PollTarget {
    * `tailLines`.
    */
   onSnapshot?: (lines: string[]) => void;
+  /** Reuses already-requested pane bytes; never adds an observation-only RPC. */
+  onObservation?: (bytes: Uint8Array) => void;
   /** How many lines the display wants. Bounds the per-poll cost regardless of how big the pane is. */
   snapshotLines?: number;
   /** Poll cadence override. Exists so tests do not wait `POLL_INTERVAL_MS` per state transition. */
@@ -39,6 +44,17 @@ export interface PollTarget {
 
 /** Statuses herdr reports for a settled agent. `blocked` counts: it is waiting for a human, not working. */
 const TERMINAL = new Set(["idle", "done", "blocked"]);
+
+/** The pre-prompt sequence from the native start reply; absent is unknown, never zero. */
+export function observeHerdrSession(agent: unknown, pane: string | undefined, sink: PollTarget["onSessionReference"]): void {
+  if (!pane || !sink) return;
+  try { const reference = herdrSessionReference(agent, pane); if (reference) sink(reference); } catch { /* optional observation */ }
+}
+
+export function seqOf(result: Record<string, unknown> | undefined): number {
+  const agent = (result?.agent ?? {}) as { state_change_seq?: number };
+  return typeof agent.state_change_seq === "number" ? agent.state_change_seq : -1;
+}
 
 /** How often to poll `agent get` while waiting for the child to settle. */
 export const POLL_INTERVAL_MS = 750;
@@ -81,6 +97,7 @@ export async function waitForSettled(
     if (reply.error) return { spawnError: `herdr agent get failed: ${reply.error}` };
 
     const agent = (reply.result?.agent ?? reply.result ?? {}) as { agent_status?: string; state_change_seq?: number };
+    observeHerdrSession(agent, request.nativePaneId, request.onSessionReference);
     const status = agent.agent_status;
     const seq = typeof agent.state_change_seq === "number" ? agent.state_change_seq : -1;
 
@@ -89,6 +106,7 @@ export async function waitForSettled(
       // output shown. `readFailed` is passed so a failed read renders as such instead of silently freezing the
       // block on the previous frame — and, crucially, is never mistaken for the child's output.
       const read = await readPane(exec, request.name, maxOutputBytes);
+      if (!read.readFailed) { try { request.onObservation?.(Buffer.from(read.text)); } catch { /* observation only */ } }
       try {
         request.onSnapshot(read.readFailed ? ["[pane could not be read]"] : tailLines(read.text, keep));
       } catch {

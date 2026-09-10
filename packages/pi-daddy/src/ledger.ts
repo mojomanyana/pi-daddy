@@ -19,9 +19,8 @@
  * "what was this child told to do?" is out of the ledger by decision, not by omission.
  */
 
-import { appendFile, mkdir, readFile } from "node:fs/promises";
-import { withFileLock } from "./file-lock.ts";
-import { dirname } from "node:path";
+import { readFile } from "node:fs/promises";
+import { appendLedgerLine } from "./ledger-append.ts";
 import type { Capability, ResolveResult } from "./resolve.ts";
 import type { ExecutorKind } from "./executor.ts";
 import type { DefinitionDigest } from "./definitions.ts";
@@ -314,15 +313,10 @@ export { verifyLedger, type LedgerReport } from "./ledger-report.ts";
  * — because a child running with granted capabilities and no audit line is what the ledger exists to
  * prevent. That is the opposite of what the approvals store does with the same lock, and deliberately so.
  */
-const withLedgerLock = <T>(path: string, write: () => Promise<T>): Promise<T> =>
-  withFileLock(path, "grant ledger", write);
-
 export async function appendLedgerEvent(options: LedgerOptions, event: RuntimeLedgerEvent | GrantRecord): Promise<void> {
   const line = `${JSON.stringify(event)}\n`;
   try {
-    await mkdir(dirname(options.path), { recursive: true });
-    // O_APPEND alone is not enough once several processes write to one ledger — see `withLedgerLock`.
-    await withLedgerLock(options.path, () => appendFile(options.path, line, { encoding: "utf8", flag: "a" }));
+    await appendLedgerLine(options, line);
   } catch (error) {
     if (options.strict ?? true) {
       throw new Error(`grant ledger write failed (failing closed): ${String(error)}`);

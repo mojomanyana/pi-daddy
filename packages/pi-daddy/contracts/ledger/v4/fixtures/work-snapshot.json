@@ -1,0 +1,73 @@
+{
+  "ledgerVersion": 4,
+  "event": "work_snapshot",
+  "eventId": "snapshot",
+  "ts": "2026-09-06T12:00:00.000Z",
+  "payload": {
+    "snapshot": {
+      "snapshotId": "snapshot",
+      "scope": {
+        "kind": "scope",
+        "id": "scope",
+        "revision": 1,
+        "digest": "191d991431d5dcbd940304f916579e57540e0d555e263f6d22a0e8aa4e416233"
+      },
+      "revisions": [
+        {
+          "kind": "artifact",
+          "id": "artifact",
+          "revision": 1,
+          "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "kind": "goal",
+          "id": "goal",
+          "revision": 1,
+          "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "kind": "obligation",
+          "id": "obligation",
+          "revision": 1,
+          "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "kind": "policy",
+          "id": "policy",
+          "revision": 1,
+          "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "bindings": [
+        {
+          "intent": {
+            "kind": "goal",
+            "id": "goal",
+            "revision": 1,
+            "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "obligation": {
+            "kind": "obligation",
+            "id": "obligation",
+            "revision": 1,
+            "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "artifact": {
+            "kind": "artifact",
+            "id": "artifact",
+            "revision": 1,
+            "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "policy": {
+            "kind": "policy",
+            "id": "policy",
+            "revision": 1,
+            "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        }
+      ],
+      "digest": "6fe1623dda96511e95e862b1f2714f9f909e2bf2b585dbd10af1ff52f3f7b5f8"
+    }
+  },
+  "digest": "28dcb24ddd9d81bee400fd94dc07850794faabdf62419178f3dd64269ab013d8"
+}

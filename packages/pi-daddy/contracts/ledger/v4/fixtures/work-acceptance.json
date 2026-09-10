@@ -1,0 +1,57 @@
+{
+  "ledgerVersion": 4,
+  "event": "work_acceptance",
+  "eventId": "acceptance",
+  "ts": "2026-09-06T12:00:00.000Z",
+  "payload": {
+    "authorityId": "authority",
+    "binding": {
+      "intent": {
+        "kind": "goal",
+        "id": "goal",
+        "revision": 1,
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "obligation": {
+        "kind": "obligation",
+        "id": "obligation",
+        "revision": 1,
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "artifact": {
+        "kind": "artifact",
+        "id": "artifact",
+        "revision": 1,
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "policy": {
+        "kind": "policy",
+        "id": "policy",
+        "revision": 1,
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "scope": {
+        "kind": "scope",
+        "id": "scope",
+        "revision": 1,
+        "digest": "191d991431d5dcbd940304f916579e57540e0d555e263f6d22a0e8aa4e416233"
+      },
+      "snapshot": {
+        "id": "snapshot",
+        "digest": "6fe1623dda96511e95e862b1f2714f9f909e2bf2b585dbd10af1ff52f3f7b5f8"
+      },
+      "artifactDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "evidence": [
+        {
+          "id": "evidence",
+          "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "event": {
+            "eventId": "occurrence",
+            "digest": "36935a3a42473122ebfb359371131311270253b0959101e047f8f5d75dbf639d"
+          }
+        }
+      ]
+    }
+  },
+  "digest": "219fc728cd50368d7679f3d0db9bdb217c1fac06db6bde07373750a3671a0877"
+}

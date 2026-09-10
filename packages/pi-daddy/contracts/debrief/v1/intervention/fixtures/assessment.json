@@ -1,0 +1,29 @@
+{
+  "manifestId": "a84186a1c1f272c80fe14387aeb3c8dd7242f6eacb6b76b0ef29a7343b254ffb",
+  "complete": true,
+  "arms": [
+    {
+      "armId": "a",
+      "state": "MEASURED",
+      "eligible": true,
+      "artifactDigests": [
+        "58905d872dd3c54a9705f67b05fa82edbad7af6476ae8993faf1a7b9fadfb905"
+      ],
+      "cost": 1,
+      "costUnit": "wall_ms"
+    },
+    {
+      "armId": "b",
+      "state": "MEASURED",
+      "eligible": true,
+      "artifactDigests": [
+        "3ee11136beb864f518252e5024dae9197421fbf97b6e981d3243c782b5c44bd0"
+      ],
+      "cost": 2,
+      "costUnit": "wall_ms"
+    }
+  ],
+  "cheapestEligible": "a",
+  "routingDefault": null,
+  "adoptionAuthorized": false
+}

@@ -1,0 +1,184 @@
+[
+  {
+    "capture_schema": 2,
+    "id": "cde56f1d95d336f923660c39fe28e229ab35a617bc10f95e721a09f844308696",
+    "detector": {
+      "id": "repeat_without_progress",
+      "version": "fixture-v1",
+      "population": "layout"
+    },
+    "target": {
+      "kind": "work",
+      "snapshotDigest": "2faa2f05b5b02895c1a132e371ed41ad589984a6fdabd1656e586689a19b8210",
+      "obligationId": "layout-1",
+      "obligationDigest": "a0fa4ebacf0486844bd388e4bc98a7af5c226485d412f46d1cd395c97f72287b"
+    },
+    "classification": "candidate_defect",
+    "reason": "repeat_without_progress",
+    "evidence": [
+      "e9cc4cf0642071e7f12c0fd62d4a94073b871c9694ee8c9b01cfd0d8c9ea9955"
+    ],
+    "metrics": {
+      "equivalentAttempts": 2
+    },
+    "status": "unresolved",
+    "visibility": "silent",
+    "causalAttribution": "not-established"
+  },
+  {
+    "capture_schema": 2,
+    "id": "9b2d86801bac09cf91b1ae79b66c4b5b06a3d1de8c540c0b82a1a9d63d05c2ae",
+    "detector": {
+      "id": "repeat_without_progress",
+      "version": "fixture-v1",
+      "population": "layout"
+    },
+    "target": {
+      "kind": "work",
+      "snapshotDigest": "2faa2f05b5b02895c1a132e371ed41ad589984a6fdabd1656e586689a19b8210",
+      "obligationId": "layout-2",
+      "obligationDigest": "70ffb2685bcd373e1cd46f1d07eb2156dce32a268db682babcb6579dbe206ae1"
+    },
+    "classification": "candidate_defect",
+    "reason": "repeat_without_progress",
+    "evidence": [
+      "e9cc4cf0642071e7f12c0fd62d4a94073b871c9694ee8c9b01cfd0d8c9ea9955"
+    ],
+    "metrics": {
+      "equivalentAttempts": 2
+    },
+    "status": "unresolved",
+    "visibility": "silent",
+    "causalAttribution": "not-established"
+  },
+  {
+    "capture_schema": 2,
+    "id": "a3a3840658bbfdb5fb6c29defa67f1694f762ce85f52c51df45b95822b8a40ac",
+    "detector": {
+      "id": "repeat_without_progress",
+      "version": "fixture-v1",
+      "population": "layout"
+    },
+    "target": {
+      "kind": "work",
+      "snapshotDigest": "2faa2f05b5b02895c1a132e371ed41ad589984a6fdabd1656e586689a19b8210",
+      "obligationId": "layout-3",
+      "obligationDigest": "91f6922af64a051483273f1ec7a9d26fff0181dd1ec308534ea2bacdbe7e7115"
+    },
+    "classification": "candidate_defect",
+    "reason": "repeat_without_progress",
+    "evidence": [
+      "e9cc4cf0642071e7f12c0fd62d4a94073b871c9694ee8c9b01cfd0d8c9ea9955"
+    ],
+    "metrics": {
+      "equivalentAttempts": 2
+    },
+    "status": "unresolved",
+    "visibility": "silent",
+    "causalAttribution": "not-established"
+  },
+  {
+    "capture_schema": 2,
+    "id": "b00ea15f36b19989370646e5147fd8c07fa6516166a9644406037e1a883ae2d8",
+    "detector": {
+      "id": "repeat_without_progress",
+      "version": "fixture-v1",
+      "population": "layout"
+    },
+    "target": {
+      "kind": "work",
+      "snapshotDigest": "2faa2f05b5b02895c1a132e371ed41ad589984a6fdabd1656e586689a19b8210",
+      "obligationId": "layout-4",
+      "obligationDigest": "57cf84e6c472010a3192fbbce4d6fb52d4f2ffb8f5469e8efebb729111ce085e"
+    },
+    "classification": "candidate_defect",
+    "reason": "repeat_without_progress",
+    "evidence": [
+      "e9cc4cf0642071e7f12c0fd62d4a94073b871c9694ee8c9b01cfd0d8c9ea9955"
+    ],
+    "metrics": {
+      "equivalentAttempts": 2
+    },
+    "status": "unresolved",
+    "visibility": "silent",
+    "causalAttribution": "not-established"
+  },
+  {
+    "capture_schema": 2,
+    "id": "d8501f65e20295b7fe243f04cf5948eec6324a6df752cb698fceb773d3cd0035",
+    "detector": {
+      "id": "repeat_without_progress",
+      "version": "fixture-v1",
+      "population": "layout"
+    },
+    "target": {
+      "kind": "work",
+      "snapshotDigest": "2faa2f05b5b02895c1a132e371ed41ad589984a6fdabd1656e586689a19b8210",
+      "obligationId": "layout-5",
+      "obligationDigest": "d6b30c9d90759d7e8b8c79610e8069111e1543ca754a04ef19f28f4a7e758691"
+    },
+    "classification": "candidate_defect",
+    "reason": "repeat_without_progress",
+    "evidence": [
+      "e9cc4cf0642071e7f12c0fd62d4a94073b871c9694ee8c9b01cfd0d8c9ea9955"
+    ],
+    "metrics": {
+      "equivalentAttempts": 2
+    },
+    "status": "unresolved",
+    "visibility": "silent",
+    "causalAttribution": "not-established"
+  },
+  {
+    "capture_schema": 2,
+    "id": "0d77c3aa02fcac76eda5b0e2b325c21e39cbf34aca02df3d4cce670c141bc16a",
+    "detector": {
+      "id": "repeat_without_progress",
+      "version": "fixture-v1",
+      "population": "layout"
+    },
+    "target": {
+      "kind": "work",
+      "snapshotDigest": "2faa2f05b5b02895c1a132e371ed41ad589984a6fdabd1656e586689a19b8210",
+      "obligationId": "layout-6",
+      "obligationDigest": "632be15828291b7ccaf216990c45dd72cf6700dc748cf2fb7fc4d243b0f799c8"
+    },
+    "classification": "candidate_defect",
+    "reason": "repeat_without_progress",
+    "evidence": [
+      "e9cc4cf0642071e7f12c0fd62d4a94073b871c9694ee8c9b01cfd0d8c9ea9955"
+    ],
+    "metrics": {
+      "equivalentAttempts": 2
+    },
+    "status": "unresolved",
+    "visibility": "silent",
+    "causalAttribution": "not-established"
+  },
+  {
+    "capture_schema": 2,
+    "id": "279ff762763d04bf18b0d91155e3bf2964b579d39a53d0569dc4ea51292c381b",
+    "detector": {
+      "id": "repeat_without_progress",
+      "version": "fixture-v1",
+      "population": "layout"
+    },
+    "target": {
+      "kind": "work",
+      "snapshotDigest": "2faa2f05b5b02895c1a132e371ed41ad589984a6fdabd1656e586689a19b8210",
+      "obligationId": "layout-7",
+      "obligationDigest": "858647bddfcb4f8d3c6eb9a10ac76e13eea7181875ddd670d06b9967986782ce"
+    },
+    "classification": "candidate_defect",
+    "reason": "repeat_without_progress",
+    "evidence": [
+      "e9cc4cf0642071e7f12c0fd62d4a94073b871c9694ee8c9b01cfd0d8c9ea9955"
+    ],
+    "metrics": {
+      "equivalentAttempts": 2
+    },
+    "status": "unresolved",
+    "visibility": "silent",
+    "causalAttribution": "not-established"
+  }
+]

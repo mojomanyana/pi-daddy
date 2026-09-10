@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { beginExecutionRetention, retentionConfigurationDigest, type RetentionStatus } from "./execution-retention.ts";
 import { chmod, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, isAbsolute, join } from "node:path";
@@ -128,11 +129,15 @@ export async function runNamedCheck(input: {
   signal?: AbortSignal;
   leaseDir?: string;
   ledgerPath?: string;
+  /** Explicit host archive boundary; defaults to PI_GRANTS_EXECUTION_ARCHIVE, never correlation. */
+  retentionDirectory?: string;
+  toolCallId?: string;
 }): Promise<{
   output: string;
   exitCode: number | null;
   signal: NodeJS.Signals | null;
   receipt: CheckReceipt;
+  retention: RetentionStatus;
 }> {
   if (input.registry?.version !== 1 || !input.registry.checks || typeof input.registry.checks !== "object") {
     throw new GovernanceRefusal(refusal("CHECK_CONFIGURATION_INVALID", "check registry must contain {version:1, checks:{...}}"));
@@ -159,11 +164,17 @@ export async function runNamedCheck(input: {
   const executionId = newExecutionId();
   const parentExecutionId = null;
   const correlation = normaliseCorrelation(input.correlation);
+  const retention = beginExecutionRetention({ executionId, parentExecutionId, childId: ownerId,
+    toolCallId: input.toolCallId ?? null, executor: "check", taskDigest: null, definitionDigest: null,
+    configurationDigest: retentionConfigurationDigest({ executable, argv: definition.argv, access,
+      timeoutMs: definition.timeout_ms ?? null, maxOutputBytes: definition.max_output_bytes ?? null }),
+    workspaceId: input.workspace.workspaceId }, input.retentionDirectory);
   let lease: Awaited<ReturnType<typeof acquireWorkspaceLease>> | undefined;
   let stagedDir: string | undefined;
   /** Failures of best-effort RECORDS, reported alongside whatever actually happened — never instead of it. */
   const notes: string[] = [];
   let releaseReason = "failed";
+  let observedOutcome = { code: null as number | null, signal: null as string | null, timedOut: false, aborted: false, truncated: false };
   return runWithFinalizers(async () => {
     try {
       try {
@@ -228,8 +239,11 @@ export async function runNamedCheck(input: {
       command: "setpriv", args: ["--pdeathsig", "KILL", "--", stagedExecutable, ...definition.argv],
       env: buildCheckEnvironment(definition, input.inheritedEnv), cwd: input.workspace.root,
       signal: checkSignal, timeoutMs: definition.timeout_ms, maxOutputBytes: definition.max_output_bytes,
-      onSpawn: (pid) => lease!.attachProcess(pid),
+      onSpawn: (pid) => { lease!.attachProcess(pid); retention.native({ pid }); },
+      onObservation: (stream, bytes) => retention.capture(stream, bytes),
     });
+    observedOutcome = { code: result.code, signal: result.signal ?? null, timedOut: result.timedOut, aborted: result.aborted, truncated: result.truncated };
+    retention.capture("result", Buffer.from(result.text), true);
     const ended = new Date();
     releaseReason = input.signal?.aborted ? "cancelled" : result.timedOut ? "timeout" : result.aborted ? "failed" : "completed";
     // Every throw below re-stamps this. Without that, a check refused for CHECK_IDENTITY_MISMATCH still
@@ -285,6 +299,7 @@ export async function runNamedCheck(input: {
       head_sha: before.headSha, tree_sha: before.treeSha, ...(correlation ? { correlation } : {}),
     };
     const receipt: CheckReceipt = { receipt_id: receiptId(body), ...body };
+    retention.capture("checkReceipt", Buffer.from(JSON.stringify(receipt) + "\n"), true);
     if (input.ledgerPath) {
       await appendLedgerEvent(
         { path: input.ledgerPath, strict: true },
@@ -295,8 +310,11 @@ export async function runNamedCheck(input: {
         }),
       );
     }
-    return { output: result.text, exitCode: result.code, signal: result.signal ?? null, receipt };
+    retention.finish({ code: result.code, signal: result.signal ?? null, timedOut: result.timedOut,
+      aborted: result.aborted, truncated: result.truncated, failed: result.code !== 0 });
+    return { output: result.text, exitCode: result.code, signal: result.signal ?? null, receipt, retention: retention.status() };
   } catch (error) {
+    retention.finish({ ...observedOutcome, aborted: observedOutcome.aborted || Boolean(input.signal?.aborted), failed: true });
     // The run did not complete, so the release must not be recorded as if it had. Without this the
     // `finally` wrote `released / completed` as the LAST lease event for a refused check, so the trail
     // still read like a clean run and `verifyLedger` still counted a clean release — the R-114 fix put a

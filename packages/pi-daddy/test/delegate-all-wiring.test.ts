@@ -5,13 +5,13 @@
  * argument list** that 226 pure tests could not see. So this loads the real extension against a fake `pi`
  * and invokes the registered tool, which is the only way to test that the pieces are connected.
  *
- * **Nothing is spawned.** Every child here requests a capability the session does not hold, so each one is
- * refused before any process starts — which is also what makes the test fast and deterministic. The
- * governance, identity and reporting paths are exactly the ones under test.
+ * Refusal cases stop before spawn; runtime cases install private Node scripts named `pi` on PATH.
+ * Those inert children exercise governance, identity and reporting without a live pi agent or model.
  */
 
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { writeFileSync } from "node:fs";
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { after, afterEach, test } from "node:test";
@@ -456,32 +456,61 @@ test("ADR-0031: PI_GRANTS_HERDR=0 spawns nothing through herdr and does not refu
 });
 
 test("ADR-0032: delegate_all paints DURING the run, one block covering every child", async () => {
-  // **Rewritten because the first version could not fail.** A reviewer built a reporter per child instead of per
-  // call — the exact change the test's own comment named — and it stayed green, for two reasons: it inspected only
-  // the LAST frame (and the call-level `settle()` always runs last, so the final frame is combined either way),
-  // and its `refusedChildren` fixture meant no child ever spawned, so **no sink ever fired and `frames.length`
-  // was 1**. The during-run painting that ADR-0032 is entirely about was untested.
-  //
-  // This drives children that really run: `PI_GRANTS_HERDR=0` with a `node` that prints and exits, so `runChild`
-  // streams for real. Then EVERY frame must carry every child, not merely the last one.
-  const frames: string[] = [];
-  const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate", [ENV_HERDR]: "0" });
-  const onUpdate = (partial: { content: Array<{ text: string }> }) => void frames.push(partial.content[0].text);
+  // A final combined frame alone proves nothing about streaming. Both inert children print distinct
+  // markers, then wait for the SAME combined running frame to release them. A painter per child or
+  // final-only updates cannot release either child; the bounded fixture deadline fails the execution.
+  const bin = await tempDir("grants-fanout-progress-shim-");
+  const release = join(bin, "release");
+  await writeFile(join(bin, "pi"), `#!/usr/bin/env node
+const { existsSync } = require('node:fs');
+const task = process.argv.at(-1).trim();
+if (!['one', 'two'].includes(task)) throw new Error('unexpected fixture task');
+process.stdout.write('child-' + task + '-ready\\n');
+const deadline = setTimeout(() => process.exit(1), 10000);
+const poll = setInterval(() => {
+  if (!existsSync(${JSON.stringify(release)})) return;
+  clearInterval(poll);
+  clearTimeout(deadline);
+  process.stdout.write('child-' + task + '-done\\n');
+}, 10);
+`);
+  await chmod(join(bin, "pi"), 0o755);
+  const oldPath = process.env.PATH;
+  process.env.PATH = `${bin}:${oldPath ?? ""}`;
+  try {
+    const frames: string[] = [];
+    let combinedWhileRunning: string | undefined;
+    const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate", [ENV_HERDR]: "0" });
+    const onUpdate = (partial: { content: Array<{ text: string }> }) => {
+      const frame = partial.content[0].text;
+      frames.push(frame);
+      if (!combinedWhileRunning && frame.includes("child-one-ready") && frame.includes("child-two-ready") &&
+          (frame.match(/^delegate\s+running\b/gm) ?? []).length === 2) {
+        // Assertions belong below: production deliberately isolates renderer callback exceptions.
+        writeFileSync(release, "both children observed running with output\n");
+        combinedWhileRunning = frame;
+      }
+    };
 
-  await tools
-    .get("delegate_all")!
-    .execute(
+    const result = await tools.get("delegate_all")!.execute(
       "t",
       { children: [{ task: "one", tools: ["read"] }, { task: "two", tools: ["read"] }] },
       undefined,
       onUpdate as never,
       ctx,
-    )
-    .catch(() => undefined);
+    ) as { content: Array<{ text: string }>; details: { children: number; failed: number } };
 
-  assert.ok(frames.length >= 1, "a fan-out must paint");
-  for (const [index, frame] of frames.entries()) {
-    assert.match(frame, /2 children/, `frame ${index} lost a child: ${JSON.stringify(frame.slice(0, 120))}`);
+    assert.ok(combinedWhileRunning, "both children's output must share an update before either settles");
+    assert.equal(result.details.children, 2);
+    assert.equal(result.details.failed, 0, "both inert children must exit successfully, not partial success");
+    assert.match(result.content[0].text, /child-one-done/);
+    assert.match(result.content[0].text, /child-two-done/);
+    for (const [index, frame] of frames.entries()) {
+      assert.match(frame, /2 children/, `frame ${index} lost a child: ${JSON.stringify(frame.slice(0, 120))}`);
+    }
+  } finally {
+    if (oldPath === undefined) delete process.env.PATH;
+    else process.env.PATH = oldPath;
   }
 });
 

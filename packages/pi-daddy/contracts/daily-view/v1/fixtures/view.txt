@@ -1,0 +1,75 @@
+PI-DADDY — READ-ONLY DAILY VIEW
+3 scoped obligation(s); 2/3 accepted under supplied P01 authority; 6 distinct attempt(s). Runtime exits do not establ...
+Scope: daily-scope revision 1 digest a183590cd4dd4c8b5762782b50bd495bc58e29cc36a9364d67da50c58f725b7c
+Acceptance authority: supplied-host-context; coverage: PARTIAL; freshness: SNAPSHOT / UNKNOWN
+Models: NOT CONSULTED; connectivity UNKNOWN. Continuity: initial-snapshot
+Inputs: work read; archive read
+
+INTENDED OBLIGATIONS
+obligation-1@1 | ACCEPTED-UNDER-SUPPLIED-AUTHORITY | ATTEMPTS-ATTACHED
+intent intent-1@1; policy daily-policy@1
+artifact available; evidence available; P01 matched receipts: fixed-receipt-1
+obstacle: none under supplied snapshot authority
+attempt exec:00000000-0000-4000-8000-000000000001 (logical reused-worker) | P01 runtime completed | P03 terminal
+claim source daily:claim:1:e4e48e94de0546cdb980012b2f846dbfc659de2c0e38cc363874d096dde288d1
+obligation-2@1 | ACCEPTED-UNDER-SUPPLIED-AUTHORITY | ATTEMPTS-ATTACHED
+intent intent-2@1; policy daily-policy@1
+artifact available; evidence available; P01 matched receipts: fixed-receipt-2
+obstacle: none under supplied snapshot authority
+attempt exec:00000000-0000-4000-8000-000000000002 (logical reused-worker) | P01 runtime completed | P03 terminal
+claim source daily:claim:2:8ced78eedd001ad5460d5ddd9dedd93f92d8614c1b797dd7235db5dadd89685b
+obligation-3@1 | UNACCEPTED | ATTEMPTS-ATTACHED
+intent intent-3@1; policy daily-policy@1
+artifact unknown; evidence unknown; P01 matched receipts: none
+obstacle: P01:NO_CLAIM
+attempt exec:00000000-0000-4000-8000-000000000003 (logical reused-worker) | P01 runtime completed | P03 terminal
+
+EXECUTION SNAPSHOTS — NOT ACCEPTANCE
+exec:00000000-0000-4000-8000-000000000001 | logical reused-worker | P01 completed | P03 terminal
+producer-reported exit 0; failed control/runtime false; aborted false
+parents exec:00000000-0000-4000-8000-000000000099; calls call:layout:1
+reported retained sessions none; ACTIVE BRANCH UNKNOWN
+check receipt detail/bytes not supplied by P03 v1; never inferred from exit status
+obstacle/coverage: P01-P03-parent-disagreement, P03:active-branch-unknown, P03:content-missing:checkReceipt, P03:cont...
+source aa913c6061b2e51e13a729facd19a0ca53c466cc603ba84d6da09842ff9d74f5 | missing
+exec:00000000-0000-4000-8000-000000000002 | logical reused-worker | P01 completed | P03 terminal
+producer-reported exit 0; failed control/runtime false; aborted false
+parents exec:00000000-0000-4000-8000-000000000099; calls call:layout:2
+reported retained sessions none; ACTIVE BRANCH UNKNOWN
+check receipt detail/bytes not supplied by P03 v1; never inferred from exit status
+obstacle/coverage: P01-P03-parent-disagreement, P03:active-branch-unknown, P03:content-missing:checkReceipt, P03:cont...
+source ce7f59468b935af873c7dbb063cac3431dc0d12ec5b969d9984dc12547d61192 | missing
+exec:00000000-0000-4000-8000-000000000003 | logical reused-worker | P01 completed | P03 terminal
+producer-reported exit 0; failed control/runtime false; aborted false
+parents exec:00000000-0000-4000-8000-000000000099; calls call:layout:3
+reported retained sessions 11111111-1111-4111-8111-111111111111; ACTIVE BRANCH UNKNOWN
+check receipt detail/bytes not supplied by P03 v1; never inferred from exit status
+obstacle/coverage: P01-P03-parent-disagreement, P03:active-branch-unknown, P03:content-missing:checkReceipt, P03:cont...
+source a9b1899c783b41796342741fd38fdf5c77c7833047d4cb3d8f7829d1f62290bd | missing
+exec:00000000-0000-4000-8000-000000000004 | logical unknown | P01 unknown | P03 terminal
+producer-reported exit 0; failed control/runtime false; aborted false
+parents exec:00000000-0000-4000-8000-000000000099; calls call:layout:4
+reported retained sessions 11111111-1111-4111-8111-111111111111; ACTIVE BRANCH UNKNOWN
+check receipt detail/bytes not supplied by P03 v1; never inferred from exit status
+obstacle/coverage: P03:active-branch-not-independently-verified, P03:content-missing:checkReceipt, P03:content-missin...
+source d0171dd7cf8e8853511eb5f5e85659de6c3348c82414bd6b77db93c4e243850f | missing
+exec:00000000-0000-4000-8000-000000000005 | logical unknown | P01 unknown | P03 terminal
+producer-reported exit unknown; failed control/runtime true; aborted true
+parents exec:00000000-0000-4000-8000-000000000099; calls call:layout:5
+reported retained sessions 11111111-1111-4111-8111-111111111111; ACTIVE BRANCH UNKNOWN
+check receipt detail/bytes not supplied by P03 v1; never inferred from exit status
+obstacle/coverage: P03:content-missing:checkReceipt, P03:content-missing:paneSnapshot, P03:content-missing:stderr, P0...
+source a6b253ade21351387e9df56fd2d686e022a356d72d46268a2feba346a6d616aa | missing
+exec:00000000-0000-4000-8000-000000000006 | logical unknown | P01 unknown | P03 terminal
+producer-reported exit 0; failed control/runtime false; aborted false
+parents exec:00000000-0000-4000-8000-000000000099; calls call:layout:6
+reported retained sessions none; ACTIVE BRANCH UNKNOWN
+check receipt detail/bytes not supplied by P03 v1; never inferred from exit status
+obstacle/coverage: P03:active-branch-unknown, P03:content-missing:checkReceipt, P03:content-missing:paneSnapshot, P03...
+source 4a3b22a4351f333b47a7b63ac7acf87757558ba16a2f80911f7055f205d2f795 | missing
+
+Coverage gaps: P01:NO_CLAIM
+Work source SHA256: 6e45ad5ab8ba57a8939ab0c23881e9278749801f025cfd966f1d5a7372b0fb86
+Archive projection SHA256: ef06d522a6430e9b3981eb133c8a3a56de774faeda239c3e5f3570c469a50641
+P06: fixed digest profile only; arbitrary shell/model effects and aggregate CPU/memory/PID/money caps unsupported.
+No steering, dispatch, acceptance, session edit or recovery action is performed by this view.

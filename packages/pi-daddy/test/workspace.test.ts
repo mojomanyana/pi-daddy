@@ -17,6 +17,7 @@ import {
 import { GovernanceRefusal } from "../src/refusals.ts";
 import { leasePaths } from "../src/lease-record.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
+import { liveFixtureReady } from "./lifecycle-ready.ts";
 
 /**
  * Reap lease holders even when a test FAILS.
@@ -249,10 +250,9 @@ test("an unreadable predecessor record yields `unknown` recovery, never a clean 
 /**
  * Pins the GROUP kill in teardown.
  *
- * NOT deterministic, despite an earlier version of this line saying so: the group kill enumerates members
- * at call time, so a stand-in child forked in the same instant as the deadline can survive. Observed
- * failing once under heavy concurrent load, passing 7/7 otherwise. It fails SAFE — a false failure, never
- * a false pass.
+ * Historical fork/deadline races and missing PATH sleep made earlier measurements insufficient: the
+ * overall review proved a false green when sleep exited127. Require a real Node child's readiness and
+ * live observation BEFORE awaiting acquisition timeout. Its bounded10s lifetime exceeds the kill oracle.
  *
  * `flock` is not passed `--close`, so the helper it execs inherits the lock file descriptor and holds
  * the lock in its own right — measured in `docs/probes/g35-flock-fd-inheritance`. On the readiness
@@ -271,22 +271,24 @@ test("teardown kills the whole holder group, not just the wrapper", async () => 
   const scriptDir = await tempDir("workspace-stub-flock-");
   const pidFile = join(scriptDir, "lingering.pid");
   const stub = join(scriptDir, "stub-flock.sh");
-  await writeFile(stub, "#!/bin/sh\nsh -c 'echo $$ > \"$PI_TEST_LINGERING_PID\"; exec sleep 30' &\nwait\n", { mode: 0o755 });
+  const wrapper=join(scriptDir,"wrapper.cjs"),stderrPath=join(scriptDir,"stderr.txt");
+  const sleeper='setTimeout(()=>process.exit(0),10000);process.send({ready:true,pid:process.pid});';
+  await writeFile(wrapper,`const {spawn}=require('node:child_process');const child=spawn(${JSON.stringify(process.execPath)},['-e',${JSON.stringify(sleeper)}],{stdio:['ignore','ignore','inherit','ipc']});child.on('error',e=>{console.error(e);process.exit(91)});child.on('message',m=>{if(m.ready&&m.pid===child.pid)require('node:fs').writeFileSync(${JSON.stringify(pidFile)},JSON.stringify({ready:true,pid:child.pid}),{flag:'wx'});});child.on('close',()=>process.exit(92));`);
+  await writeFile(stub, `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(wrapper)} 2>>${JSON.stringify(stderrPath)}\n`, {mode:0o755});
 
   const workspace = await validateRegisteredWorkspace({ workspaceId: "w1", registeredRoot: root });
-  process.env.PI_TEST_LINGERING_PID = pidFile;
+  const acquisition = acquireWorkspaceLease({workspace, access:"write", leaseDir, ownerId:"never-ready", flockCommand:stub, acquisitionTimeoutMs:2000});
+  void acquisition.catch(()=>{});
   try {
+    await liveFixtureReady(pidFile,()=>readFile(stderrPath,"utf8").catch(()=>"no stderr file"));
     await assert.rejects(
-      () => acquireWorkspaceLease({
-        workspace, access: "write", leaseDir, ownerId: "never-ready",
-        flockCommand: stub, acquisitionTimeoutMs: 400,
-      }),
+      acquisition,
       (error: unknown) => {
         assert.equal((error as GovernanceRefusal).code, "WORKSPACE_LEASE_STALE");
         return true;
       },
     );
-    const lingering = Number((await readFile(pidFile, "utf8")).trim());
+    const lingering = JSON.parse(await readFile(pidFile, "utf8")).pid;
     assert.ok(Number.isInteger(lingering) && lingering > 0, "the stand-in must have recorded its child");
     let alive = true;
     for (let i = 0; i < 40 && alive; i += 1) {
@@ -295,7 +297,7 @@ test("teardown kills the whole holder group, not just the wrapper", async () => 
     }
     assert.equal(alive, false, "a timed-out acquisition must not leave a descendant holding the lock");
   } finally {
-    delete process.env.PI_TEST_LINGERING_PID;
+    await acquisition.catch(()=>{});
   }
 });
 
@@ -646,17 +648,18 @@ test("a herdr that hangs on close does not strand the lock forever", async () =>
   const root = await gitWorkspace();
   const leaseDir = await tempDir("workspace-leases-");
   // A herdr that accepts the close and never answers — the case a retry count cannot bound.
-  // 30s, not 5: the successor loop below waits ~5s, so a 5s stub let the un-bounded case pass by finishing
-  // just inside the window — my own orphan fix had quietly taken this guard's teeth out (rule 7). With the
-  // bound in place `execFile` SIGKILLs it at 800ms, and `exec` means the signal reaches the sleep itself.
-  const fakeBin = await stubHerdr("exec sleep 30");
+  // A10s Node sleeper outlives the ~5s successor window; no bare PATH sleep can silently exit127.
+  // Its actual ready acknowledgement and held-lock observation must precede the1500ms close timeout.
+  const fakeBin = await tempDir("fake-herdr-hung-"),readyFile=join(fakeBin,"ready.json"),stderrPath=join(fakeBin,"stderr.txt"),sleeper=join(fakeBin,"sleeper.cjs");
+  await writeFile(sleeper,`setTimeout(()=>process.exit(0),10000);require('node:fs').writeFileSync(${JSON.stringify(readyFile)},JSON.stringify({ready:true,pid:process.pid}),{flag:'wx'});`);
+  await writeFile(join(fakeBin,"herdr"),`#!/bin/sh\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(sleeper)} 2>>${JSON.stringify(stderrPath)}\n`,{mode:0o755});
   const moduleUrl = pathToFileURL(join(process.cwd(), "src", "workspace.ts")).href;
   const code = `
     import { validateRegisteredWorkspace, acquireWorkspaceLease } from ${JSON.stringify(moduleUrl)};
     const workspace = await validateRegisteredWorkspace({workspaceId:"w1", registeredRoot:${JSON.stringify(root)}});
     const lease = await acquireWorkspaceLease({
       workspace, access:"write", leaseDir:${JSON.stringify(leaseDir)}, ownerId:"retainer",
-      herdrCloseAttempts:1, herdrCloseTimeoutMs:800,
+      herdrCloseAttempts:1, herdrCloseTimeoutMs:1500,
     });
     lease.attachHerdrTab("tab-that-hangs");
     await lease.markRetained("herdr-close-failed");
@@ -666,22 +669,27 @@ test("a herdr that hangs on close does not strand the lock forever", async () =>
     stdio: ["ignore", "pipe", "pipe"],
     env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH ?? ""}` },
   });
+  const holderClosed=once(holder,"close");void holderClosed.catch(()=>{});let holderStderr="";
+  holder.stderr.on("data",chunk=>{holderStderr+=String(chunk);});
   try {
     // Bounded, like its sibling above. Unbounded, the mutation that reverts the retain-path `unref` made THIS
     // test wedge the runner forever instead of failing — R-119's shape, in the file whose other test exists to
     // stop it. `node:test` has no default per-test timeout, so the deadline has to be here.
     let deadline: NodeJS.Timeout | undefined;
     const exited = await Promise.race([
-      once(holder, "close").then(() => "exited" as const),
+      holderClosed.then(() => "exited" as const),
       new Promise<"hung">((resolve) => { deadline = setTimeout(() => resolve("hung"), 20_000); }),
     ]).finally(() => clearTimeout(deadline));
-    assert.equal(exited, "exited", "the holder never exited, so the retained lock cannot have been released");
-    assert.equal(holder.exitCode, 0);
+    assert.equal(exited, "exited", "the holder never exited: "+holderStderr);
+    assert.equal(holder.exitCode, 0, holderStderr);
   } finally {
-    holder.kill("SIGKILL");
+    holder.kill("SIGKILL");let timer:NodeJS.Timeout|undefined;
+    try{await Promise.race([holderClosed,new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new Error("original holder did not settle: "+holderStderr)),1000);})]);}finally{clearTimeout(timer);}
   }
 
+  const sleeperPid=await liveFixtureReady(readyFile,()=>readFile(stderrPath,"utf8").catch(()=>"no stderr file"));
   const workspace = await validateRegisteredWorkspace({ workspaceId: "w1", registeredRoot: root });
+  await assert.rejects(trackedLease({workspace,access:"write",leaseDir,ownerId:"must-still-be-held"}),e=>(e as GovernanceRefusal).code==="WORKSPACE_WRITE_CONFLICT");
   let successor;
   for (let i = 0; i < 200 && !successor; i += 1) {
     try { successor = await trackedLease({ workspace, access: "write", leaseDir, ownerId: "successor" }); }
@@ -696,6 +704,7 @@ test("a herdr that hangs on close does not strand the lock forever", async () =>
       "reports an active governed writer for a workspace nothing is running in (R-146, R-102)",
   );
   await successor.release("test-complete");
+  assert.throws(()=>process.kill(sleeperPid,0),{code:"ESRCH"},"the actual hung close process must be settled");
 });
 
 /**

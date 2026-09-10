@@ -1,0 +1,91 @@
+{
+  "version": "2.0",
+  "archiveId": "00000000-0000-4000-8000-000000000005",
+  "identity": {
+    "executionId": "exec:00000000-0000-4000-8000-000000000005",
+    "parentExecutionId": "exec:00000000-0000-4000-8000-000000000099",
+    "childId": "layout-worker",
+    "toolCallId": "call:layout:5",
+    "executor": "herdr",
+    "taskDigest": "043fd4cb12f188c5bd67ae5274e2afe936cf22d8cf6b133504992023117e6cc5",
+    "definitionDigest": null,
+    "configurationDigest": "dd4f902362cd72e3601b2440aa9cf3a8bcc913eeace499d284b6a067e032e22a",
+    "workspaceId": "layout"
+  },
+  "native": {
+    "pid": null,
+    "paneId": "w1:p5",
+    "agentName": "layout-worker",
+    "tabId": "w1:t5",
+    "sessionId": "11111111-1111-4111-8111-111111111111",
+    "sessionPath": "/fixture/private/child.jsonl",
+    "branchLeafId": null
+  },
+  "nativeSession": {
+    "source": "herdr-path",
+    "status": "truncated",
+    "sessionId": "11111111-1111-4111-8111-111111111111",
+    "sessionPath": "/fixture/private/child.jsonl",
+    "parentSessionPath": "/fixture/private/parent.jsonl",
+    "branchLeafId": null,
+    "branchState": "unknown",
+    "lastPersistedEntryId": null,
+    "sha256": "2ec1f134bc739984434f7fca689e1c3d1c39fce2dcadae709e9b6faedfcc4ac7",
+    "reason": "native-session-incomplete-bytes"
+  },
+  "state": "terminal",
+  "outcome": {
+    "code": null,
+    "signal": "SIGTERM",
+    "timedOut": false,
+    "aborted": true,
+    "truncated": true,
+    "failed": true
+  },
+  "content": {
+    "stdout": {
+      "status": "missing",
+      "path": null,
+      "sha256": null,
+      "bytes": null
+    },
+    "stderr": {
+      "status": "missing",
+      "path": null,
+      "sha256": null,
+      "bytes": null
+    },
+    "paneSnapshot": {
+      "status": "missing",
+      "path": null,
+      "sha256": null,
+      "bytes": null
+    },
+    "result": {
+      "status": "retained",
+      "path": "result-82c620cdfeb8ca6b858cf653d7f5e2eedca5315d6244216d60e8b36f03223d6a.bin",
+      "sha256": "82c620cdfeb8ca6b858cf653d7f5e2eedca5315d6244216d60e8b36f03223d6a",
+      "bytes": 9
+    },
+    "checkReceipt": {
+      "status": "missing",
+      "path": null,
+      "sha256": null,
+      "bytes": null
+    },
+    "session": {
+      "status": "retained",
+      "path": "session-2ec1f134bc739984434f7fca689e1c3d1c39fce2dcadae709e9b6faedfcc4ac7.bin",
+      "sha256": "2ec1f134bc739984434f7fca689e1c3d1c39fce2dcadae709e9b6faedfcc4ac7",
+      "bytes": 772
+    }
+  },
+  "coverage": {
+    "complete": false,
+    "losses": [
+      "not-acceptance-evidence",
+      "native-session-incomplete-bytes"
+    ]
+  },
+  "acceptance": "not-assessed"
+}

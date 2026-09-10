@@ -23,17 +23,16 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # **R-143, and this is the line that makes the mutation catalogue trustworthy here.** `node --test` colours
-  # its reporter whenever `FORCE_COLOR` is set, and the catalogue parses that reporter to learn which test
-  # failed. In a colouring environment it reported `0/20 guards forced` with all twenty guards intact — a
-  # control that accuses everything, which is worse than one that is absent. The parser strips ANSI now, but
-  # CI pins the input too: two independent defences, the standard the catalogue holds its own entries to.
+  # Keep ordinary test reports deterministic and readable without terminal colour.
   FORCE_COLOR: "0"
   NO_COLOR: "1"
 
 jobs:
   checks:
-    runs-on: ubuntu-latest
+    # Public-preview runner: proposed compatibility measurement, not qualification or acceptance.
+    # Does not establish Ubuntu24 support or explain earlier namespace permission failures.
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -56,7 +55,33 @@ jobs:
         working-directory: packages/pi-daddy
         run: npm run typecheck
 
+      # Ephemeral runner only; package presence is not namespace qualification.
+      - name: install distro bubblewrap
+        timeout-minutes: 2
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends bubblewrap
+
+      # Diagnostic observations only: false conformance does not skip/filter the required suite.
+      # Native prerequisite provisioning is still required; this step installs/configures nothing.
+      - name: runtime prerequisite telemetry
+        timeout-minutes: 1
+        working-directory: packages/pi-daddy
+        run: node scripts/runtime-preflight.ts
+
+      # Preserve shared setup-node cache bytes/mode. The original telemetry above stays visible.
+      - name: stage verified job-owned Node runtime
+        timeout-minutes: 1
+        working-directory: packages/pi-daddy
+        run: node scripts/private-runtime.ts
+
+      - name: namespace prerequisite diagnostics
+        timeout-minutes: 1
+        working-directory: packages/pi-daddy
+        run: node scripts/namespace-diagnostics.ts
+
       - name: unit tests
+        timeout-minutes: 5
         working-directory: packages/pi-daddy
         run: npm test
 
@@ -66,19 +91,12 @@ jobs:
         working-directory: packages/pi-daddy
         run: npm run test:integration:ci
 
-      # `npm test` silently overwrote tracked ledger-contract fixtures once, and the catalogue has an entry
-      # about it. A suite that edits the repository can make itself pass, so this asserts it did not.
+      # A suite once silently overwrote tracked ledger-contract fixtures. A suite that edits the
+      # repository can make itself pass, so this asserts it did not.
       - name: the suite left the tree clean
         run: |
           git diff --exit-code
           test -z "$(git status --porcelain)" || { git status --porcelain; exit 1; }
-
-      # One entry can cost the full 180s harness timeout by design (its named test fails, then the runner
-      # wedges, which the entry documents), so the budget is generous.
-      - name: mutation catalogue (rule 7, as a control)
-        working-directory: packages/pi-daddy
-        timeout-minutes: 25
-        run: npm run test:mutation
 
       - name: installed-package smoke
         working-directory: packages/pi-daddy

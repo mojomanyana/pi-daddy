@@ -27,7 +27,7 @@ import type { ChildRunResult } from "./run-child.ts";
 import { DEFAULT_MAX_OUTPUT_BYTES, DEFAULT_TIMEOUT_MS } from "./run-child.ts";
 import { MAX_OPEN_PANES, markPaneSettled, trackPane, trimOpenPanes, untrackPane } from "./pane-reaper.ts";
 import { defaultExec, parseReply, type HerdrExec } from "./herdr-cli.ts";
-import { readPane, waitForSettled } from "./herdr-poll.ts";
+import { readPane, waitForSettled, seqOf, observeHerdrSession, type PollTarget } from "./herdr-poll.ts";
 import { stageSystemPrompt } from "./herdr-stage.ts";
 import { uniqueAgentName } from "./herdr-name.ts";
 
@@ -90,6 +90,8 @@ export interface HerdrRunRequest {
    * Exceptions are swallowed; a renderer must not be able to break a governed run.
    */
   onSnapshot?: (lines: string[]) => void;
+  /** Available pane snapshots only, not a structured session transcript. Never awaited. */
+  onObservation?: (bytes: Uint8Array) => void;
   /** How many pane lines to report per poll. Defaults to `DEFAULT_SNAPSHOT_LINES`. */
   snapshotLines?: number;
   /**
@@ -103,6 +105,9 @@ export interface HerdrRunRequest {
   onRunning?: (paneId: string, agentName: string) => void;
   /** Security hook for attaching a writer lease to the tab. Unlike display callbacks, errors fail the run. */
   onTab?: (tabId: string) => void;
+  /** Optional observation, unlike the required lease hook above. */
+  onNativeTab?: (tabId: string) => void;
+  onSessionReference?: PollTarget["onSessionReference"];
   /** Close even a settled pane before releasing a writer lease; no post-lease prompt may remain live. */
   closeOnSettle?: boolean;
   /** Poll cadence override. Exists so tests do not wait `POLL_INTERVAL_MS` per state transition. */
@@ -179,6 +184,7 @@ export async function runHerdrPane(request: HerdrRunRequest): Promise<ChildRunRe
   const rootPane = (created.result?.root_pane ?? {}) as { pane_id?: string; tab_id?: string };
   const paneId = rootPane.pane_id;
   const tabId = rootPane.tab_id;
+  if (tabId) { try { request.onNativeTab?.(tabId); } catch { /* observation only */ } }
   // **Tracked BEFORE the pane-id check, not after.** A tab can exist from the moment this reply is parsed,
   // so registering later leaves a window — one herdr round-trip wide — in which a killed process orphans a
   // tab nothing would reap. The normal path had no such window and the error path did, which is backwards:
@@ -300,6 +306,7 @@ export async function runHerdrPane(request: HerdrRunRequest): Promise<ChildRunRe
 
     // The state counter BEFORE prompting is what makes the wait correct — see the R-33 note below.
     const before = seqOf(started.result);
+    observeHerdrSession(started.result?.agent, paneId, request.onSessionReference);
 
     const prompted = parseReply(await exec(["agent", "prompt", agentName, request.prompt]));
     if (prompted.error) return { ...empty, spawnError: `herdr agent prompt failed: ${prompted.error}` };
@@ -311,11 +318,12 @@ export async function runHerdrPane(request: HerdrRunRequest): Promise<ChildRunRe
       }
     }
 
-    const settled = await waitForSettled(exec, { ...request, name: agentName }, before, deadline, maxOutputBytes);
+    const settled = await waitForSettled(exec, { ...request, name: agentName, nativePaneId: paneId }, before, deadline, maxOutputBytes);
     if (settled.aborted || settled.timedOut) {
       // Still read: a timed-out child usually produced something, and a partial answer labelled partial is
       // more useful than none. R-03's rule — a missing result must never look like an empty one.
       const partial = await readPane(exec, agentName, maxOutputBytes);
+      if (!partial.readFailed) { try { request.onObservation?.(Buffer.from(partial.text)); } catch { /* observation only */ } }
       return { ...empty, ...settled, text: partial.readFailed ? "" : partial.text, truncated: partial.truncated };
     }
     if (settled.spawnError) return { ...empty, spawnError: settled.spawnError };
@@ -333,6 +341,7 @@ export async function runHerdrPane(request: HerdrRunRequest): Promise<ChildRunRe
           `The work may have been done — check pane ${paneId} if it is still open.`,
       };
     }
+    try { request.onObservation?.(Buffer.from(out.text)); } catch { /* observation only */ }
     settledCleanly = true;
     // The trim may now reclaim this pane if the cap is exceeded. Until this point it must not: closing the tab
     // kills the child, and the child was still working.
@@ -386,9 +395,4 @@ async function startAgent(
     if (!busy || Date.now() >= deadline) return reply;
     await new Promise((r) => setTimeout(r, PANE_READY_POLL_MS));
   }
-}
-
-function seqOf(result: Record<string, unknown> | undefined): number {
-  const agent = (result?.agent ?? {}) as { state_change_seq?: number };
-  return typeof agent.state_change_seq === "number" ? agent.state_change_seq : -1;
 }

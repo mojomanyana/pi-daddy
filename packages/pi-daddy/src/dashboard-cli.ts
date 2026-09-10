@@ -1,10 +1,33 @@
 #!/usr/bin/env node
+import { connectDashboardHost, isDashboardConnection, ENV_DASHBOARD_HOST_SOCKET, type DashboardConnection } from "./dashboard-host-transport.ts";
+import { dashboardHostRequest, type DashboardHostRequest } from "./dashboard-host.ts";
+export { ENV_DASHBOARD_HOST_SOCKET } from "./dashboard-host-transport.ts";
 import { realpathSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseDashboardLedger } from "./dashboard-projection.ts";
 import { renderDashboard } from "./dashboard-render.ts";
+import { createDailyViewReader, isDailyViewReader, readDailyView, type DailyViewOptions } from "./daily-view.ts";
+import { renderDailyView } from "./daily-view-render.ts";
+import { projectWorkLedger, type WorkProjectionContext } from "./work-ledger.ts";
+import { parseRetentionJson } from "./retention-json.ts";
+import { createInterface } from "node:readline";
+import { isDebriefPresenter, type DebriefPresenter } from "./debrief.ts";
+import { renderDebrief, debriefAction } from "./debrief-render.ts";
+import { createFixtureDebrief } from "./debrief-fixture.ts";
+export const ENV_DEBRIEF_FIXTURE = "PI_DADDY_DEBRIEF_FIXTURE";
+export { debriefAction as dashboardDebriefAction } from "./debrief-render.ts";
+
+export const ENV_DAILY_ARCHIVE = "PI_DADDY_ARCHIVE_PROJECTION";
+export const ENV_DAILY_WORK = "PI_DADDY_WORK_LEDGER";
+export const ENV_DAILY_SELECTION = "PI_DADDY_WORK_SNAPSHOT";
+function dailySelection(text: string | undefined): WorkProjectionContext["selectedSnapshot"] {
+  if (!text) return null;
+  const selection = parseRetentionJson(text) as WorkProjectionContext["selectedSnapshot"];
+  if (projectWorkLedger("", { selectedSnapshot: selection, authority: null }).errors.some(e => e.code === "WORK_CONTEXT_INVALID")) throw new TypeError("invalid P01 snapshot selection");
+  return selection;
+}
 
 export const DASHBOARD_PROTOCOL_VERSION = 1 as const;
 export const ENV_DASHBOARD_LEDGER = "PI_DADDY_LEDGER";
@@ -20,6 +43,16 @@ export interface DashboardFrameOptions {
   width?: number;
   details?: boolean;
   now?: Date;
+  dailyView?: DailyViewOptions;
+  dailyReader?: ReturnType<typeof createDailyViewReader>;
+  dailyJson?: boolean;
+  debrief?: DebriefPresenter;
+  debriefJson?: boolean;
+  connected?: DashboardConnection;
+}
+export async function dashboardHostAction(host:DashboardConnection,line:string){
+  if(!isDashboardConnection(host)||Buffer.byteLength(line)>60000)throw Error("genuine bounded dashboard connection required");
+  return host.action(dashboardHostRequest(parseRetentionJson(line,60000) as DashboardHostRequest));
 }
 
 function shellQuote(value: string): string {
@@ -57,6 +90,29 @@ export async function dashboardFrame(options: DashboardFrameOptions): Promise<st
   if (options.protocol !== undefined && options.protocol !== DASHBOARD_PROTOCOL_VERSION) {
     return incompatibleFrame(options.protocol);
   }
+  if(options.connected){
+    if(!isDashboardConnection(options.connected))throw Error("original dashboard connection required");
+    let view:Awaited<ReturnType<DashboardConnection["frame"]>>;
+    try{view=await options.connected.frame();}catch{return "PI-DADDY — CONNECTED HOST UNAVAILABLE\nNo prior acceptance, presentation or continuity substituted. No action retried.";}
+    if(options.dailyJson||options.debriefJson)return JSON.stringify(view);
+    const source=view.source as {daily?:Parameters<typeof renderDailyView>[0]}|null;
+    return ["PI-DADDY — CONNECTED HOST (snapshot; identity/acceptance not authenticated)",source?.daily?renderDailyView(source.daily,options.width):"Source unavailable; no previous acceptance substituted.",
+      view.debrief?renderDebrief(view.debrief as Parameters<typeof renderDebrief>[0],options.width):"Debrief deferred/closed. No implicit presentation or steering.",
+      `Attention reserved ${view.attention.attentionUsed}/5 (not proof of delivery). Tip ${view.tip}.`,"Explicit exact approved JSON requests only; refresh never acts."].join("\n\n");
+  }
+  if (options.debrief || options.debriefJson) {
+    if (!isDebriefPresenter(options.debrief)) return "PI-DADDY — DEBRIEF UNAVAILABLE: genuine presenter/host missing";
+    const view = options.debrief.view(); return options.debriefJson ? JSON.stringify(view) : renderDebrief(view, options.width);
+  }
+  if (options.dailyView) {
+    try {
+      if (options.dailyReader !== undefined && !isDailyViewReader(options.dailyReader)) throw new TypeError("untrusted daily reader callback");
+      const view = await (options.dailyReader ?? readDailyView)(options.dailyView);
+      return options.dailyJson ? JSON.stringify(view) : renderDailyView(view, options.width);
+    } catch {
+      return "PI-DADDY — DAILY VIEW UNAVAILABLE\nInvalid or unavailable read-only input. No previous acceptance or continuity was substituted.";
+    }
+  }
   if (!options.ledgerPath) return setupFrame(options.cwd);
 
   const ledgerPath = resolve(options.cwd, options.ledgerPath);
@@ -90,25 +146,43 @@ interface CliOptions {
   details: boolean;
   color: boolean;
   ledgerPath?: string;
+  archivePath?: string;
+  workPath?: string;
+  selection?: string;
+  dailyJson: boolean;
+  debriefFixture: boolean;
+  debriefJson: boolean;
+  hostSocket?: string;
 }
 
 function parseArgs(argv: string[]): CliOptions {
   let once = false;
   let details = false;
   let color = process.stdout.isTTY;
-  let ledgerPath: string | undefined;
+  let ledgerPath: string | undefined, archivePath: string | undefined, workPath: string | undefined, selection: string | undefined;
+  let dailyJson = false, debriefFixture = false, debriefJson = false;let hostSocket:string|undefined;
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === "--once") once = true;
     else if (arg === "--details") details = true;
     else if (arg === "--no-color") color = false;
     else if (arg === "--ledger") ledgerPath = argv[++index];
+    else if (arg === "--daily-json") dailyJson = true;
+    else if (arg === "--debrief-fixture") debriefFixture = true;
+    else if (arg === "--debrief-json") debriefJson = true;
+    else if(arg === "--host-socket"){hostSocket=argv[++index];if(!hostSocket||hostSocket.startsWith("--"))throw Error("explicit host socket required");}
+    else if (["--archive-projection", "--work-ledger", "--work-snapshot"].includes(arg)) {
+      const value = argv[++index]; if (!value || value.startsWith("--")) throw new Error("missing daily view argument");
+      if (arg === "--archive-projection") archivePath = value;
+      else if (arg === "--work-ledger") workPath = value;
+      else selection = value;
+    }
     else throw new Error(`unknown dashboard argument ${JSON.stringify(arg)}`);
   }
-  return { once, details, color, ledgerPath };
+  return { once, details, color, ledgerPath, archivePath, workPath, selection, dailyJson, debriefFixture, debriefJson, hostSocket };
 }
 
-export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.ProcessEnv = process.env): Promise<void> {
+export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.ProcessEnv = process.env, host: { debrief?: DebriefPresenter; connected?:DashboardConnection } = {}): Promise<void> {
   const cli = parseArgs(argv);
   const cwd = process.cwd();
   const ledgerPath = cli.ledgerPath ?? (env[ENV_DASHBOARD_LEDGER]?.trim() || undefined);
@@ -117,6 +191,22 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
   const key = env[ENV_DASHBOARD_KEY]?.trim();
   process.title = `pi-daddy-dashboard${key ? `:${key.slice(0, 12)}` : ""}`;
 
+  const archivePath = cli.archivePath ?? env[ENV_DAILY_ARCHIVE];
+  const workPath = cli.workPath ?? env[ENV_DAILY_WORK];
+  const selectedSnapshot = dailySelection(cli.selection ?? env[ENV_DAILY_SELECTION]);
+  const dailyView = archivePath || workPath || selectedSnapshot || cli.dailyJson ? {
+    archiveProjectionPath: archivePath ? resolve(cwd, archivePath) : undefined,
+    workLedgerPath: workPath ? resolve(cwd, workPath) : undefined,
+    workContext: { selectedSnapshot, authority: null },
+  } : undefined;
+  const socket=cli.hostSocket??env[ENV_DASHBOARD_HOST_SOCKET];const connected=host.connected??(socket?connectDashboardHost(socket):undefined);
+  if(connected&&(host.debrief||cli.debriefFixture||env[ENV_DEBRIEF_FIXTURE]==="1"))throw Error("connected host and separate debrief are exclusive");
+  const debrief = host.debrief ?? (cli.debriefFixture || env[ENV_DEBRIEF_FIXTURE] === "1" ? await createFixtureDebrief() : undefined);
+  if (debrief) {
+    if (!isDebriefPresenter(debrief)) throw new Error("invalid debrief presenter");
+    if (!host.debrief) await debrief.open({ mode: "manual", userPresent: true }); // Explicit CLI fixture only; never override a host deferral.
+  }
+  const dailyReader = createDailyViewReader();
   let previous = "";
   const draw = async (clear: boolean): Promise<void> => {
     const frame = await dashboardFrame({
@@ -126,6 +216,7 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
       color: cli.color,
       width: process.stdout.columns || 80,
       details: cli.details,
+      dailyView, dailyReader, dailyJson: cli.dailyJson, debrief, debriefJson: cli.debriefJson, connected,
     });
     if (frame === previous && !clear) return;
     previous = frame;
@@ -143,11 +234,19 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
     drawing = true;
     void draw(true).finally(() => { drawing = false; });
   };
+  const input = debrief || connected ? createInterface({ input: process.stdin, terminal: false }) : null;
+  let acting = false;
+  input?.on("line", line => {
+    if (acting) return;
+    acting = true;
+    void (connected?dashboardHostAction(connected,line):debriefAction(debrief!, line)).catch(() => { process.stderr.write("Debrief action refused or acknowledgement unknown; inspect/reconcile explicitly.\n"); })
+      .finally(() => { acting = false; redraw(); });
+  });
   const timer = setInterval(redraw, DASHBOARD_REFRESH_MS);
   process.on("SIGWINCH", redraw);
   await new Promise<void>((settle) => {
     const stop = () => {
-      clearInterval(timer);
+      clearInterval(timer); input?.close();
       process.off("SIGWINCH", redraw);
       settle();
     };
