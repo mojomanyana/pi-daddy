@@ -1,8 +1,9 @@
 # pi-daddy work-v4 contract — candidate
 
-**Opt-in source candidate, not a release or production acceptance integration.** The package version
-remains 0.22.0. This directory declares the proposed versioned package artifacts; their presence does
-not establish compiled exports, installed-package behavior, task acceptance or qualification.
+**Opt-in source candidate, not production acceptance integration.** At release preparation on 2026-09-11,
+the package version was staged as 0.23.0; consult npm and GitHub Releases for current publication status.
+This directory declares the versioned package artifacts; their presence does not establish compiled exports,
+installed-package behavior, task acceptance or qualification.
 See [SPEC](../../../../../docs/SPEC.md#opt-in-work-v4-evidence-candidate) and
 [ADR-0044](../../../../../docs/06-decisions/ADR-0044-opt-in-work-v4-evidence.md).
 

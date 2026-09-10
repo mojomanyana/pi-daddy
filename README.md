@@ -5,10 +5,11 @@ deliberate subset of what it holds and withholds the rest. Sub-agents may delega
 subset of what they themselves hold — enforced by **pi's own `--tools` allowlist**, with an append-only
 ledger of every grant and refusal whenever a ledger is configured.
 
-**Release state (verified 2026-09-04):** npm `latest`, tag `v0.22.0` and the non-draft GitHub Release identify
-the same released source. It passed 741 unit tests, 48 non-model integration tests against real pi/Herdr,
-typecheck, installed-package smoke and 126/126 mutation guards. A fresh registry install exercised both shipped
-bins and imported the `run-child` entry point.
+**Release-preparation evidence (2026-09-11):** source on `main` was staged as the `0.23.0` candidate, adding
+opt-in factory control, retained evidence and dashboard-host APIs while keeping governance ledger v3 as the
+default. At that measurement the published baseline was `0.22.0`. For current publication status, consult
+[npm](https://www.npmjs.com/package/pi-daddy) and [GitHub Releases](https://github.com/mojomanyana/pi-daddy/releases).
+`pi-daddy` is the only public package; the workspace root is private.
 
 One explicit `/grants init` now persists both the project grant and `.pi/grants.jsonl`; merely installing the
 package initializes nothing, and legacy stores are not silently migrated. Malformed project state now fails

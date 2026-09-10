@@ -12,6 +12,36 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## 0.23.0 — bounded factory control and retained evidence (2026-09-11)
+
+- Add an opt-in work-ledger v4 contract, strict builders/readers, deterministic fixtures and explicit
+  authority-scoped projection. Ledger v3 remains the default governance format; existing v2/v3 paths and
+  behavior are unchanged.
+- Add opt-in execution retention for exact available process, Herdr and native-session evidence without
+  converting runtime completion into acceptance or claiming unavailable bytes.
+- Add one fixed `linux-bwrap-digest-v1` effect profile with durable aggregate attempt/input/concurrency
+  accounting. It executes package-owned digest/hold code only; arbitrary shell/model profiles, shared
+  writable destinations and aggregate CPU/memory/money enforcement remain unsupported.
+- Add versioned resource dispatch and work-intent controls, bounded experiments and factory orders. Exact
+  authority, CAS, quiescence, reservation and acknowledgement boundaries fail closed; unknown ownership is
+  never replayed, refunded or inferred as success.
+- Add read-only daily projections, retained blind debrief/checkpoint adapters and an explicit dashboard host
+  transport over a private bounded socket. Presentation, steering and cancellation require independently
+  supplied exact authority; refresh remains read-only and does not authenticate a human or module.
+- Retain original ordinary-child cancellation handles and intent admission holds without replacing caller
+  lifetimes. Best-effort terminal observation failure stays visible but no longer permanently poisons a
+  known-settled boundary; required failure, unknown ownership and late coverage still refuse quiescence.
+- Reject benign stale dashboard CAS and immutable-ID mismatches without poisoning the host before any
+  claim/effect. Attempted or uncertain effects retain the existing failed/unknown stop.
+- Remove each newly owned native-profile probe fixture after all probe children settle, on success and
+  failure, without sweeping historical or caller-selected directories.
+- CI now provisions bubblewrap on its ephemeral Ubuntu 26.04 preview runners, records bounded runtime
+  diagnostics and stages a verified job-owned Node runtime. These observations do not establish a general
+  sandbox or a new supported-host guarantee.
+- Add public subpath exports and versioned artifacts for the new work-ledger, resource, experiment,
+  factory-order, effect-profile, retention, debrief and dashboard-host APIs. The workspace root remains
+  private; `pi-daddy` is the only published package. No dependency ranges changed.
+
 ## 0.22.0 — fail-closed audit follow-ups (2026-09-04)
 
 - **BREAKING — invalid project stores now fail closed.** Malformed, unsupported, unreadable and wrong-directory
