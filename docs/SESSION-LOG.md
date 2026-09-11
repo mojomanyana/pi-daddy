@@ -5,6 +5,10 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ---
 
+## 2026-09-12 — 0.25.0 release line prepared from merged full-completion work
+
+Feature PR #41 merged as `5cea7c03f926c50607bc8a16f320040b80dfb8f0`, preserving reviewed head `8b8fc7dab6a8d20bf7b595a147a067726e1f4947` as its second parent. The 0.25.0 release line adds practical daily steering/rebind, explicit closing review, measured sessions and bounded dependent orders; `docs/PUBLISHING.md` defines canonical pack, installed-host, dependency-order publication and integrity checks. Historical C08 SDK runs, no-model retained replay and the packaged route remain separately named. Human trust labels, quality decisions, configured adoption and later outcomes remain unresolved.
+
 ## 2026-09-11 — variant usage availability is explicit
 
 Pi's extension API exposes assistant usage in `message_end` and supports nested `Usage` on tool results, but pi-daddy's separate `--print --no-session` child result carries neither event nor authoritative provider/billing counters. ADR-0069 keeps the existing transport and hard fan-out/output-byte/wall-time bounds while making `/grants variants` say **provider usage unavailable**. A red-first settled primary/shadow report assertion now passes. No child count, text size, client duration or planned ceiling is relabelled as measured tokens, calls, server time or cost.

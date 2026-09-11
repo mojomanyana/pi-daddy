@@ -12,6 +12,16 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## 0.25.0 — practical daily steering and measured orders (2026-09-12)
+
+- Add protocol-safe dashboard relink, exact active-attempt cancellation and durable measured-session spawn acknowledgement. Unknown/protocol-incompatible plugins still fail closed.
+- Add labelled daily priority, recorded scope-successor and same-scope alternative actions through existing intent authority/CAS. Scope changes atomically rebind persisted and current-session declared work before ordinary dispatch resumes; active ordinary work suppresses steering actions.
+- Add explicit two-minute closing presence and safe case-card preparation. Missing trust qualification spends zero of the durable five-card ceiling; preparation is not delivery until visibly acknowledged.
+- Add a separate opt-in measured Sol/Terra SDK route with in-memory/no-tool bounds, observed identity, Pi Usage, clean-stop checks and explicit unknown state for launched nonsettling attempts. Pi catalog cost is not subscription billing and ordinary print-child Usage remains unavailable.
+- Add package-exported bounded measured DAG orders with exact and deterministic free-form output qualification, complete sealed predecessor bytes/hash, original-owner unknown accounting, exact acknowledgement before declared recovery and inode-pinned append journals.
+- Export the production daily host through the package root and `pi-daddy/daily-dashboard-host`; retain the exact skill-harness 0.15.0 bridge pin and learning-lifecycle navigation.
+- Prior real NWS Sol/Terra outputs remain direct SDK comparison evidence. Offline contract validation is a no-model replay, not a new packaged measured-order occurrence. Human trust calibration, quality choice, configured adoption and later outcomes remain separate.
+
 ## 0.24.0 — declared daily work and concurrent variants (2026-09-11)
 
 - Add `pi-daddy work add --id <id> --outcome <text>`: retain a digest-only selected obligation, reject changed redelivery and unsupported destinations, and join ordinary governed attempts without storing outcome prose. Runtime completion remains distinct from acceptance.
