@@ -10,6 +10,7 @@ import { createExperimentBudget, openResourceBudget, resourceBindingDigest } fro
 import { DIGEST_PROFILE, prepareDigestProfile } from "../src/effect-profile.ts";
 import { createExperiment, openExperiment, experimentBindingDigest, experimentCharterDigest, experimentCancellationDigest, type ExperimentCharter, type ExperimentCancellation } from "../src/experiment.ts";
 import { byteHash } from "../src/experiment-contract.ts";
+import { readExperimentFile } from "../src/experiment-store.ts";
 import { MAX_CHILDREN_PER_CALL } from "../src/fanout.ts";
 import { bindWorkIntent } from "../src/intent-application.ts";
 import { intentWorld } from "./intent-control-fixture.ts";
@@ -26,6 +27,34 @@ async function fixture(n = 2, hold = false, deadlineMs = 15000) {
   return { root, bytes, budget, charter, authority, binding };
 }
 const resultPath = (f: Awaited<ReturnType<typeof fixture>>, i: number) => join(f.binding.directory, "variant-" + byteHash(`execution:${i}`), "result.json");
+
+test("append-only journal reads retain the exact prefix snapshot while strict artifact reads still reject growth", async () => {
+  const root = await tempDir("experiment-read-race-");
+  const originalOpen = fsPromises.open;
+  const exercise = async (name: string, appendOnly: boolean) => {
+    const path = join(root, name); await writeFile(path, "before\n"); await chmod(path, 0o600); let injected = false;
+    fsPromises.open = (async (...args: Parameters<typeof fsPromises.open>) => {
+      const handle = await originalOpen(...args);
+      if (String(args[0]) === path) {
+        const read = handle.read.bind(handle);
+        handle.read = (async (...readArgs: Parameters<typeof handle.read>) => {
+          const result = await read(...readArgs);
+          if (!injected) { injected = true; await appendFile(path, "after\n"); }
+          return result;
+        }) as typeof handle.read;
+      }
+      return handle;
+    }) as typeof fsPromises.open;
+    syncBuiltinESMExports();
+    try {
+      if (appendOnly) assert.equal((await readExperimentFile(path, 1024, { appendOnly: true })).toString(), "before\n");
+      else await assert.rejects(readExperimentFile(path, 1024), /experiment source changed/);
+    } finally { fsPromises.open = originalOpen; syncBuiltinESMExports(); }
+    assert.equal(injected, true);
+  };
+  await exercise("journal", true);
+  await exercise("artifact", false);
+});
 
 
 import fsPromises from "node:fs/promises";

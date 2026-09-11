@@ -5,6 +5,10 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ---
 
+## 2026-09-11 — Node24 append/read finalization race repaired on PR37
+
+Fresh PR37 CI run 34576542484 exposed `factory cancellation uses the original running controller handle` failing on Node24 with `experiment source changed`. The experiment journal reader took a bounded prefix snapshot while a legitimate controller append grew the same inode, then treated growth as replacement. The narrow repair gives only the append-only journal path a prefix-stability mode: same inode/link, no shrink, and a second positioned read must match every captured byte. Strict result/common artifact reads retain the original size+mtime rejection. A deterministic injected-append regression failed before the repair and now passes; the exact CI cell plus that regression passed 20/20 focused repetitions on Node24. No source-change check was removed or generalized.
+
 ## 2026-09-11 — post-merge dashboard action keys replace ordinary JSON entry
 
 The stacked `factory-01a071db/post-merge-c03` branch implements ADR-0061. An original host can publish human labels/keys for exact requests already bound to current host, selection, tip and independent authority. The connected dashboard lists those keys and routes typed commands through the existing private transport and native validators; refresh still has no effect, and malformed/unknown/stale actions refuse. Raw JSON remains compatibility-only. Red-first host tests pass 21/21 across host boundaries, socket transport and ordinary cancellation; typecheck and the source line gate pass. Concrete busy-child steering remains unobserved, so C03 is in progress rather than complete.

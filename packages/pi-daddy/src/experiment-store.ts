@@ -13,7 +13,8 @@ export async function ownedDirectory(path: string) {
   if (!s.isDirectory() || s.isSymbolicLink() || s.uid !== BigInt(process.getuid!()) || (s.mode & 0o077n) !== 0n || await realpath(path) !== path) throw new Error("canonical private experiment directory required");
   return s;
 }
-export async function readExperimentFile(path: string, max: number): Promise<Buffer> {
+export async function readExperimentFile(path: string, max: number, options: { appendOnly?: true } = {}): Promise<Buffer> {
+  if (Object.keys(options).some(key => key !== "appendOnly") || options.appendOnly !== undefined && options.appendOnly !== true) throw new TypeError("invalid experiment read mode");
   const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   return runWithFinalizers(async () => {
     const s = await file.stat({ bigint: true });
@@ -21,7 +22,14 @@ export async function readExperimentFile(path: string, max: number): Promise<Buf
     const data = Buffer.alloc(Number(s.size)); let offset = 0;
     while (offset < data.length) { const n = (await file.read(data, offset, data.length - offset, offset)).bytesRead; if (!n) throw new Error("short experiment read"); offset += n; }
     const end = await file.stat({ bigint: true }), current = await lstat(path, { bigint: true });
-    if (end.size !== s.size || end.mtimeNs !== s.mtimeNs || current.dev !== s.dev || current.ino !== s.ino || current.nlink !== 1n) throw new Error("experiment source changed");
+    const identityChanged = current.dev !== s.dev || current.ino !== s.ino || current.nlink !== 1n;
+    if (!options.appendOnly && (end.size !== s.size || end.mtimeNs !== s.mtimeNs || identityChanged)) throw new Error("experiment source changed");
+    if (options.appendOnly) {
+      if (end.size < s.size || identityChanged) throw new Error("experiment source changed");
+      const verify = Buffer.alloc(data.length); let checked = 0;
+      while (checked < verify.length) { const n = (await file.read(verify, checked, verify.length - checked, checked)).bytesRead; if (!n) throw new Error("short experiment read"); checked += n; }
+      if (!verify.equals(data)) throw new Error("experiment source changed");
+    }
     return data;
   }, [{ label: "experiment read close failed", run: () => file.close() }]);
 }
@@ -59,7 +67,7 @@ export function experimentStore(value: ExperimentBinding) {
     if (String(root.dev) !== b.device || String(root.ino) !== b.inode || String(file.dev) !== b.journalDevice || String(file.ino) !== b.journalInode) throw new Error("experiment identity replaced");
   };
   const read = async () => {
-    await check(); const bytes = await readExperimentFile(path, 256 * 1024); await check();
+    await check(); const bytes = await readExperimentFile(path, 256 * 1024, { appendOnly: true }); await check();
     const text = new TextDecoder("utf8", { fatal: true }).decode(bytes); if (!text.endsWith("\n")) throw new Error("torn experiment journal");
     const lines = text.slice(0, -1).split("\n"); if (lines.length > 260 || experimentHash(parseWorkJson(lines[0])) !== experimentHash(b)) throw new Error("experiment header/bound mismatch");
     let previous = experimentHash(b); const events: Record<string, unknown>[] = [];
