@@ -107,6 +107,32 @@ async function skillPackage(
   return dir;
 }
 
+test("work add is a supported declaration command and never prints retained outcome text", async () => {
+  const cwd = await project();
+  const lines: string[] = [];
+  const original = console.log;
+  console.log = (...args: unknown[]) => { lines.push(args.join(" ")); };
+  try {
+    assert.deepEqual(parseArgs(["node", "pi-daddy", "work", "add", "--id", "daily-1", "--outcome", "Keep the dashboard useful", "--dir", cwd]), {
+      command: "work-add", force: false, errors: [], id: "daily-1", outcome: "Keep the dashboard useful", dir: cwd,
+    });
+    assert.equal(await main(["node", "pi-daddy", "work", "add", "--id", "daily-1", "--outcome", "Keep the dashboard useful", "--dir", cwd]), 0);
+  } finally { console.log = original; }
+  assert.ok(lines.some(line => line.includes("declared daily-1")));
+  assert.ok(lines.some(line => line.includes("/grants dashboard")));
+  assert.ok(lines.every(line => !line.includes("Keep the dashboard useful")));
+  assert.match(await readFile(join(cwd, ".pi", "work.jsonl"), "utf8"), /work:daily-1:obligation/);
+});
+
+test("work add refuses incomplete and unknown arguments without writing", () => {
+  assert.deepEqual(parseArgs(["node", "pi-daddy", "work", "add", "--id", "x"]), {
+    command: "work-add", force: false, errors: ["--outcome needs text"], id: "x",
+  });
+  assert.deepEqual(parseArgs(["node", "pi-daddy", "work", "add", "--id", "x", "--outcome", "y", "--accept"]), {
+    command: "work-add", force: false, errors: ["unknown option --accept"], id: "x", outcome: "y",
+  });
+});
+
 test("a declared ceiling is copied VERBATIM — the author's declaration is the ceiling", async () => {
   const cwd = await project();
   await skillPackage(cwd, "pkg-a", "1.0.0", { review: DECLARED });

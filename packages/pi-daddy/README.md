@@ -775,6 +775,8 @@ pi install npm:pi-daddy     # as a pi extension
 npm i pi-daddy              # as a library (the resolver, ledger and spawn planner are pure)
 npx pi-daddy init           # as a command: scaffold .pi/skills/ and .pi/grants.env from installed
                             # skill packages — see the worked example above
+npx pi-daddy work add --id daily-1 --outcome "Ship the declared slice"
+                            # select one digest-only obligation; /reload then /grants dashboard
 ```
 
 The package is also the source of the optional Herdr plugin: the extension offers to link the trusted

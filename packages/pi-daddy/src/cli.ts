@@ -21,12 +21,15 @@ import { UnsafeGrantError } from "./grant-env.ts";
 import { applyInit, countDeclaring, planInit, type InitPlan } from "./init.ts";
 import { registeredWorkspaceIds } from "./workspace.ts";
 import { discoverSkillPackages, skillPackageRoots, type RefusedSkill, type SkillPackage } from "./skill-packages.ts";
+import { declareWork } from "./work-command.ts";
 
 const USAGE = `pi-daddy — capability governance for pi sub-agents
 
 Usage:
   pi-daddy init [--force] [--dir <path>]   scaffold .pi/skills/ and .pi/grants.env from installed
                                            packages that declare skills (package.json "pi": {"skills": …})
+  pi-daddy work add --id <id> --outcome <text> [--dir <path>]
+                                           declare one current obligation for ordinary delegation
   pi-daddy --help | --version
 
 init copies each declared SKILL.md into .pi/skills/ and writes a grant naming exactly what those files
@@ -38,9 +41,11 @@ placeholder and stays unspawnable until you fill it in. Capabilities that can ch
             It never rewrites .pi/grants.env — delete that file if you want it regenerated.`;
 
 export interface ParsedArgs {
-  command: "init" | "help" | "version";
+  command: "init" | "work-add" | "help" | "version";
   dir?: string;
   force: boolean;
+  id?: string;
+  outcome?: string;
   /** Non-empty means refuse: argv said something this program does not understand. */
   errors: string[];
 }
@@ -58,16 +63,28 @@ export function parseArgs(argv: string[]): ParsedArgs {
   if (args.includes("--help") || args.includes("-h")) return { command: "help", force: false, errors: [] };
   if (args.includes("--version") || args.includes("-v")) return { command: "version", force: false, errors: [] };
 
-  const [command, ...rest] = args;
-  if (command !== "init") return { command: "help", force: false, errors: [`unknown command "${command}"`] };
+  const [command, ...tail] = args;
+  if (command !== "init" && command !== "work") return { command: "help", force: false, errors: [`unknown command "${command}"`] };
+  const work = command === "work";
+  const rest = work && tail[0] === "add" ? tail.slice(1) : tail;
+  if (work && tail[0] !== "add") return { command: "work-add", force: false, errors: ["work needs subcommand add"] };
 
   const errors: string[] = [];
   let dir: string | undefined;
   let force = false;
+  let id: string | undefined, outcome: string | undefined;
   for (let i = 0; i < rest.length; i += 1) {
     const arg = rest[i];
-    if (arg === "--force") {
+    if (arg === "--force" && !work) {
       force = true;
+    } else if (arg === "--id" && work) {
+      const value = rest[i + 1];
+      if (value === undefined || value.startsWith("-")) errors.push("--id needs a value");
+      else { id = value; i += 1; }
+    } else if (arg === "--outcome" && work) {
+      const value = rest[i + 1];
+      if (value === undefined || value.startsWith("-")) errors.push("--outcome needs text");
+      else { outcome = value; i += 1; }
     } else if (arg === "--dir") {
       const value = rest[i + 1];
       // A flag is not a path. Without this, `--dir --force` consumed the flag as the directory AND left
@@ -87,6 +104,11 @@ export function parseArgs(argv: string[]): ParsedArgs {
     }
   }
 
+  if (work) {
+    if (!id && !errors.some(error => error.startsWith("--id"))) errors.push("--id needs a value");
+    if (!outcome && !errors.some(error => error.startsWith("--outcome"))) errors.push("--outcome needs text");
+    return { command: "work-add", force: false, errors, ...(id ? { id } : {}), ...(outcome ? { outcome } : {}), ...(dir ? { dir } : {}) };
+  }
   return { command: "init", dir, force, errors };
 }
 
@@ -258,6 +280,21 @@ export async function main(argv: string[]): Promise<number> {
   }
   if (parsed.command === "help") {
     console.log(USAGE);
+    return 0;
+  }
+  if (parsed.command === "work-add") {
+    const declared = await declareWork({
+      cwd: resolvePath(parsed.dir ?? process.cwd()),
+      id: parsed.id!,
+      outcome: parsed.outcome!,
+    });
+    console.log(
+      `pi-daddy work: declared ${declared.id}\n` +
+      `  ledger    ${declared.ledgerPath}\n` +
+      `  selection ${declared.statePath}\n\n` +
+      `Ordinary governed delegations from this project will record attempts after the Pi extension loads it.\n` +
+      `Run /reload in an existing Pi session, then /grants dashboard. Runtime success is not acceptance.`,
+    );
     return 0;
   }
 

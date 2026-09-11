@@ -48,6 +48,8 @@ import {
 } from "../src/dashboard-handshake.ts";
 
 import { associateOrdinaryHost } from "../src/ordinary-children.ts";
+import { loadDeclaredWork } from "../src/work-command.ts";
+import { replacePublishedDailyWork, type PublishedDailyWork } from "./daily-work-session.ts";
 export default function (pi: ExtensionAPI) {
   // The path pi loads as the extension, so a child granted `tool:delegate` can be started with `-e <this>`.
   // Only this file can say so about itself, which is why the session takes it rather than deriving it.
@@ -70,6 +72,7 @@ export default function (pi: ExtensionAPI) {
   // because the hooks below have to be registered before the tools and both need to call it — the tool
   // schemas describe which definitions are spawnable, and nothing knows that until a hook has run (R-39).
   const delegation = { refreshSpawnable: () => {} };
+  const publishedDailyWork: PublishedDailyWork = {};
 
   pi.on("session_start", async (_event, ctx) => {
     session.cwd = ctx.cwd;
@@ -77,6 +80,19 @@ export default function (pi: ExtensionAPI) {
     // execution tree across workspaces. Resolve it once at the root's actual pi cwd; descendants inherit
     // this absolute identity verbatim, and resolve(abs) remains abs at every deeper session start.
     if (session.ledgerPath) session.ledgerPath = resolve(ctx.cwd, session.ledgerPath);
+    try {
+      try {
+        replacePublishedDailyWork(process.env, publishedDailyWork, undefined);
+        session.declaredWork = (await loadDeclaredWork(join(ctx.cwd, ".pi", "work-current.json"))) ?? undefined;
+        replacePublishedDailyWork(process.env, publishedDailyWork, session.declaredWork);
+      } catch (error) {
+        session.declaredWork = undefined;
+        ctx.ui.notify(
+          `grants: declared work is invalid (${error instanceof Error ? error.message : String(error)}); ` +
+            `delegations remain unbound and no previous selection was substituted.`,
+          "error",
+        );
+      }
     // The one case the stored-grant lookup can get wrong (ADR-0030). The factory reads the store keyed by
     // `process.cwd()` because it runs before any hook and therefore before `ctx` exists — and S-5 forces
     // that ordering, since whether `delegate` is registered is decided there. Almost always the two agree.
@@ -95,7 +111,6 @@ export default function (pi: ExtensionAPI) {
         "warning",
       );
     }
-    try {
       try {
         await reportGrantStoreRefusal(session, ctx.ui);
       } catch (error) {
