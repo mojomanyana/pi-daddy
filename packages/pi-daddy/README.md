@@ -165,12 +165,12 @@ delegate_all({ children: [ {…}, {…}, {…} ] })                  // several 
   (`PI_GRANTS_CHILD_TIMEOUT`, default 1200s) with `SIGTERM` → `SIGKILL` escalation so a child cannot ignore
   its way past it, an abort is honoured even if it arrived before the spawn, and a child that exits
   non-zero, times out or is cancelled comes back as a **tool error naming which** — not as an answer.
-- **Fan-out is synchronous and bounded.** At most 8 children per call, and the subtree budget bounds the
-  total across the whole tree. Every child goes through the same plan-gate-audit path as a single
-  `delegate`; `delegate_all` adds only cardinality and sibling identity. **There is deliberately no
-  background mode** (ADR-0015): fan-out carried most of the value and background carries nearly all of the
-  lifecycle holes, and because the turn still owns its children the parent cannot exit before them, the
-  tool-call signal is still live, and there are no ids to dangle across a compaction.
+- **Fan-out stays bounded and waits for all by default.** At most 8 children per call, and the subtree budget
+  bounds the whole tree. Every child uses the same plan-gate-audit path. The opt-in
+  `completion:"primary", primary:N` form returns when that one-based child settles while the original
+  session retains bounded role/outcome accounting for its shadows; `/grants variants` displays it. Shadow
+  failure or later cancellation cannot replace/delay the primary result. This is not detached job recovery:
+  process exit ends ownership, and there is no retry, acceptance, winner selection or result-text store.
 - **One child can be refused while its siblings succeed**, and every outcome is reported. A fan-out that
   hid its refusals would let an orchestrator summarise four reviews when only three happened.
 

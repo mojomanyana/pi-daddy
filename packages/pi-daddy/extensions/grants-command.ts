@@ -17,9 +17,10 @@ import type { ExecutorChoice } from "../src/executor.ts";
 import type { Catalog } from "../src/catalog.ts";
 import type { SkillDefinition } from "../src/definitions.ts";
 import type { GatedPlan } from "./run-delegation.ts";
+import type { VariantRunAccounting } from "./session.ts";
+import { handleConnectedCommand } from "./grants-connected-command.ts";
 import { loadApprovals, revokeAll, revokeApproval, type SubjectLookup } from "../src/approval-store.ts";
 import { verifyLedger } from "../src/ledger.ts";
-import { handleConnectedCommand } from "./grants-connected-command.ts";
 
 export interface GrantsCommandContext {
   cwd: string;
@@ -65,6 +66,7 @@ export interface GrantsCommandContext {
   openDashboard: () => Promise<{ kind: "opened" | "reused"; paneId: string; visibleBesideCaller: boolean }>;
   /** Explicit same-process production host lifecycle; owns no model call and never cancels a child on stop. */
   runHost: (target: string) => Promise<string>;
+  variantRuns: Map<string, VariantRunAccounting>;
 }
 
 /**
@@ -74,18 +76,18 @@ export interface GrantsCommandContext {
 const PREVIEW_LIMIT = 12;
 
 /** The verbs `/grants` answers to. Anything else is refused rather than silently treated as no verb. */
-const KNOWN_SUBCOMMANDS: readonly string[] = ["init", "host", "dashboard", "ledger", "approvals", "revoke"];
+const KNOWN_SUBCOMMANDS: readonly string[] = ["init", "host", "variants", "dashboard", "ledger", "approvals", "revoke"];
 
 export const grantsCommand = {
   description:
     "Show this session's capability grant, delegation depth, and known agent-type ceilings; " +
-    "/grants host <fresh-id>|stop | /grants dashboard | /grants approvals | /grants ledger | /grants revoke <key>|--all",
+    "/grants host <fresh-id>|stop | /grants variants | /grants dashboard | /grants approvals | /grants ledger | /grants revoke <key>|--all",
 handler: async (args: string, ctx: any) => {
     // Everything this command may see, named in one place. Previously these were whatever happened to be in
     // the enclosing closure — which is how a diagnostic came to disagree with the enforcer (R-28).
     const {
       cwd, governed, ownGrant, executor, observed, depth, maxDepth, ledgerPath,
-      catalog, definitions, sessionApprovals, inheritedApprovals, snapshotOf, previewDelegation,
+      catalog, definitions, sessionApprovals, inheritedApprovals, snapshotOf, previewDelegation, variantRuns,
     } = ctx.grants as GrantsCommandContext;
 
     const [sub, target] = args.trim().split(/\s+/).filter(Boolean);
@@ -96,6 +98,12 @@ handler: async (args: string, ctx: any) => {
     }
 
     if(await handleConnectedCommand(sub,target,{runHost:ctx.grants.runHost,openDashboard:ctx.grants.openDashboard,ui:ctx.ui}))return;
+
+    if (sub === "variants") {
+      const lines=[`grants: ${variantRuns.size} retained primary/shadow run(s)`];
+      for(const run of variantRuns.values())lines.push(`  ${run.runId} ${run.state} — primary ${run.primaryExecutionId}; ${run.shadowExecutionIds.length} shadow(s)`+(!run.outcomes?"":` — ${run.outcomes.map(x=>`${x.role}:${x.ok?"completed":"failed"}`).join(", ")}`));
+      ctx.ui.notify(lines.join("\n"),"info");return;
+    }
 
     if (sub === "ledger") {
       // The detector, made reachable. `verifyLedger` exists because nothing in this package had ever read

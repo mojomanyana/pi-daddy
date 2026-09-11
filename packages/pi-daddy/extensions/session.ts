@@ -21,8 +21,7 @@ import { makeCatalog, skillPathsFromCatalog, type Catalog } from "../src/catalog
 import type { SkillDefinition } from "../src/definitions.ts";
 import { DELEGATE_CAPABILITY, type DelegationContext } from "../src/delegate.ts";
 import { budgetFromEnv } from "../src/fanout.ts";
-import { chooseExecutor, needsProbe, ENV_HERDR, type ExecutorChoice } from "../src/executor.ts";
-import { probeHerdr } from "../src/herdr-cli.ts";
+import { chooseExecutor, ENV_HERDR, type ExecutorChoice } from "../src/executor.ts";
 import { WILDCARD } from "../src/pi-tools.ts";
 import {
   childEnv,
@@ -80,6 +79,7 @@ export { ENV_HERDR_WORKSPACE } from "../src/herdr-cli.ts";
 /** Keep each child's pane after it finishes, for inspection. Off by default: fan-out would flood it. */
 export const ENV_HERDR_KEEP_PANE = "PI_GRANTS_HERDR_KEEP_PANE";
 
+export interface VariantRunAccounting {runId:string;primaryExecutionId:string;shadowExecutionIds:string[];state:"running"|"settled";outcomes:null|{executionId:string;role:"primary"|"shadow";ok:boolean;reason:string|null}[]}
 export interface GrantsSession extends NativeSessionHost {
   /**
    * False when neither `PI_GRANTS_GRANT` nor a stored grant applies: the session holds the wildcard and
@@ -128,6 +128,8 @@ export interface GrantsSession extends NativeSessionHost {
   /** Path to this extension, so a child granted `tool:delegate` can delegate in turn. */
   readonly extensionPath?: string;
   declaredWork?: DeclaredWorkState; // Explicit operator selection; absence leaves execution visibly unbound.
+  /** Primary-return fan-outs retained by this original session; bounded and human-readable via /grants variants. */
+  readonly variantRuns: Map<string, VariantRunAccounting>;
 
   /** Approval keys approved for this session. In memory only — this dies with the process. */
   readonly sessionApprovals: Set<string>;
@@ -236,22 +238,6 @@ export async function loadProjectDefinitions(session: GrantsSession, cwd: string
   session.catalog = await session.catalogReady;
 }
 
-/**
- * Probe for herdr and settle this session's executor — ADR-0031.
- *
- * **Once, at session start, and never per spawn.** A fan-out whose children ran under two executors would put
- * two different things under one call in the ledger, and the two plans differ (`--print` is withheld on the
- * herdr path). A herdr server that dies mid-session therefore surfaces as a failed `tab create`, reported as
- * the spawn error it is, rather than as a silent relocation of the remaining children.
- *
- * `probeHerdr` never throws, so this cannot either — which matters because it runs *before* the line that
- * discloses what it decided (R-60: a throw here would cancel that line and every control after it).
- */
-export async function resolveExecutor(session: GrantsSession): Promise<void> {
-  const raw = process.env[ENV_HERDR];
-  session.executor = chooseExecutor(raw, needsProbe(raw) ? await probeHerdr() : null);
-}
-
 export function createGrantsSession(extensionPath: string | undefined): GrantsSession {
   // Governance is opt-in: with PI_GRANTS_GRANT unset AND no stored grant for this directory, the session
   // holds the wildcard and nothing is blocked. This extension must never silently tighten a normal
@@ -323,6 +309,7 @@ export function createGrantsSession(extensionPath: string | undefined): GrantsSe
     nativeSessionRoot: nativeSessionRootFromEnv(process.env),
     modelResolutionCache: new Map<string, boolean>(),
     extensionPath,
+    variantRuns: new Map(),
 
     sessionApprovals: new Set<string>(),
     sessionApprovalBindings: new Map<string, ApprovalBinding>(),

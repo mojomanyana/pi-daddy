@@ -44,6 +44,7 @@ interface ChildSpec {
   agent?: string;
   tools?: string[];
   model?: string;
+  thinking?: string;
   correlation?: CorrelationMetadata;
   workspace?: DelegationWorkspaceSpec;
 }
@@ -248,6 +249,7 @@ export async function runOneDelegation(
     agent: spec.agent,
     tools: spec.tools,
     model: spec.model ?? defaultModel,
+    thinking: spec.thinking,
     correlation: spec.workspace
       ? { ...(spec.correlation ?? {}), workspace_id: spec.workspace.workspace_id }
       : spec.correlation,

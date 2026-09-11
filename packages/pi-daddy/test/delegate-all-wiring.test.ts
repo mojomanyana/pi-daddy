@@ -12,7 +12,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { writeFileSync } from "node:fs";
-import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { after, afterEach, test } from "node:test";
 import grantsExtension from "../extensions/grants.ts";
@@ -49,7 +49,7 @@ interface ToolSpec {
   name: string;
   /** Captured so a test can read what the MODEL is told, which is where R-39 lived. */
   parameters?: unknown;
-  execute: (id: string, params: Record<string, unknown>, signal: undefined, onUpdate: undefined, ctx: unknown) => Promise<unknown>;
+  execute: (id: string, params: Record<string, unknown>, signal: AbortSignal | undefined, onUpdate: undefined, ctx: unknown) => Promise<unknown>;
 }
 
 async function harness(env: Record<string, string>, existingDir?: string) {
@@ -66,7 +66,7 @@ async function harness(env: Record<string, string>, existingDir?: string) {
   // entirely; a test that wants the other paths overrides it and says why.
   Object.assign(process.env, { [ENV_HERDR]: "0", ...env });
 
-  const tools = new Map<string, ToolSpec>();
+  const tools = new Map<string, ToolSpec>(),commands=new Map<string,any>();
   const hooks = new Map<string, (e: unknown, c: unknown) => unknown>();
   const ctx = {
     cwd: dir,
@@ -78,12 +78,12 @@ async function harness(env: Record<string, string>, existingDir?: string) {
   grantsExtension({
     on: (name: string, handler: (e: unknown, c: unknown) => unknown) => void hooks.set(name, handler),
     registerTool: (spec: ToolSpec) => void tools.set(spec.name, spec),
-    registerCommand: () => {},
+    registerCommand: (name:string,spec:any) => void commands.set(name,spec),
     getAllTools: () => ["read", "grep", "write", "delegate"].map((name) => ({ name })),
   } as never);
 
   await hooks.get("session_start")!({}, ctx);
-  return { dir, tools, ctx };
+  return { dir, tools, commands, ctx };
 }
 
 /**
@@ -93,6 +93,15 @@ async function harness(env: Record<string, string>, existingDir?: string) {
  * `delegate_all` nests it inside each `children` item. Getting this wrong is how a test passes for the
  * wrong tool — it happened while writing these, and the assertion caught it.
  */
+test("delegate and delegate_all expose explicit bounded thinking levels", async () => {
+  const { tools } = await harness({ [ENV_GRANT]: "tool:delegate" });
+  const single = tools.get("delegate")!.parameters as any;
+  const child = (tools.get("delegate_all")!.parameters as any).properties.children.items;
+  assert.deepEqual(single.properties.thinking.anyOf.map((value: any) => value.const), ["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
+  assert.deepEqual(child.properties.thinking, single.properties.thinking);
+  const fanout=tools.get("delegate_all")!.parameters as any;assert.equal(fanout.properties.completion.const,"primary");assert.equal(fanout.properties.primary.minimum,1);
+});
+
 function agentDescriptionOf(spec: ToolSpec): string {
   const schema = spec.parameters as {
     properties?: {
@@ -156,6 +165,11 @@ test("more children than the per-call limit is refused before anything runs", as
     () => tools.get("delegate_all")!.execute("t", { children: refusedChildren(MAX_CHILDREN_PER_CALL + 1) }, undefined, undefined, ctx),
     /per-call limit/,
   );
+});
+
+test("primary completion requires one in-range primary before any child starts",async()=>{
+ const {tools,ctx}=await harness({[ENV_GRANT]:"tool:read,tool:delegate"}),all=tools.get("delegate_all")!;
+ for(const args of [{completion:"primary",children:refusedChildren(2)},{primary:1,children:refusedChildren(2)},{completion:"primary",primary:3,children:refusedChildren(2)}])await assert.rejects(()=>all.execute("invalid-primary",args,undefined,undefined,ctx),/one in-range 1-based primary/);
 });
 
 test("a fan-out wider than the remaining budget is refused, naming the remedy", async () => {
@@ -512,6 +526,19 @@ const poll = setInterval(() => {
     if (oldPath === undefined) delete process.env.PATH;
     else process.env.PATH = oldPath;
   }
+});
+
+test("primary completion returns before two shadows while their failure and cancellation remain accounted",async()=>{
+ const bin=await tempDir("grants-primary-shadow-shim-"),ledger=join(bin,"ledger.jsonl"),readyFail=join(bin,"fail.ready"),readyOk=join(bin,"ok.ready"),readyCancel=join(bin,"cancel.ready"),release=join(bin,"release");await writeFile(join(bin,"pi"),`#!/usr/bin/env node
+const fs=require('node:fs'),task=process.argv.at(-1).trim(),wait=(test,done)=>{const timer=setInterval(()=>{if(test()){clearInterval(timer);done();}},5)};
+if(task==='primary')wait(()=>fs.existsSync(${JSON.stringify(readyFail)})&&fs.existsSync(${JSON.stringify(readyOk)}),()=>{process.stdout.write('PRIMARY')});
+else if(task==='primary-cancel')wait(()=>fs.existsSync(${JSON.stringify(readyCancel)}),()=>{process.stdout.write('PRIMARY-CANCEL')});
+else {fs.writeFileSync(task==='shadow-fail'?${JSON.stringify(readyFail)}:task==='shadow-ok'?${JSON.stringify(readyOk)}:${JSON.stringify(readyCancel)},'ready');wait(()=>fs.existsSync(${JSON.stringify(release)}),()=>{process.stdout.write(task);process.exit(task==='shadow-fail'?1:0)});}`);await chmod(join(bin,"pi"),0o755);const oldPath=process.env.PATH;process.env.PATH=`${bin}:${oldPath}`;
+ try{const {tools,commands,ctx}=await harness({[ENV_GRANT]:"tool:read,tool:delegate",[ENV_LEDGER]:ledger}),all=tools.get("delegate_all")!;const terminal=async(count:number)=>{const deadline=Date.now()+3000;let rows:any[]=[];while(Date.now()<deadline){rows=(await readFile(ledger,"utf8")).trim().split("\n").map(line=>JSON.parse(line)).filter(x=>x.event==="child_lifecycle"&&["completed","failed"].includes(x.state));if(rows.length===count)return rows;await new Promise(r=>setTimeout(r,20));}return rows;};
+  const result=await all.execute("primary-run",{completion:"primary",primary:1,children:[{task:"primary",tools:["read"]},{task:"shadow-fail",tools:["read"]},{task:"shadow-ok",tools:["read"]}]},undefined,undefined,ctx) as any;
+  assert.match(result.content[0].text,/PRIMARY/);assert.equal(result.details.primary,1);assert.equal(result.details.shadows,2);assert.equal((await terminal(1)).length,1,"both ready shadows must still be unsettled when the primary returns");await writeFile(release,"release");const settled=await terminal(3);assert.deepEqual(settled.map(x=>x.state).sort(),["completed","completed","failed"]);const notices:string[]=[];(ctx.ui as any).notify=(message:string)=>notices.push(message);await commands.get("grants").handler("variants",ctx);assert.match(notices.at(-1)??"",/settled[\s\S]*primary:completed[\s\S]*shadow:failed[\s\S]*shadow:completed/);
+  await rm(release);const controller=new AbortController(),cancelled=await all.execute("primary-cancel",{completion:"primary",primary:1,children:[{task:"primary-cancel",tools:["read"]},{task:"shadow-cancel",tools:["read"]}]},controller.signal,undefined,ctx) as any;assert.match(cancelled.content[0].text,/PRIMARY-CANCEL/);controller.abort();assert.equal((await terminal(5)).length,5,"the original ledger must retain final accounting after shadow cancellation");
+ }finally{process.env.PATH=oldPath;}
 });
 
 test("ADR-0032: delegate paints too — it is the one-child case of the same block", async () => {

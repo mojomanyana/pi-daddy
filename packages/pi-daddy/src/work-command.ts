@@ -152,12 +152,13 @@ export type DeclaredOccurrenceIdentity = Pick<WorkOccurrencePayload["labels"], "
   executionId: string;
   parentExecutionId: string | null;
   childId: string | null;
+  variantId: string | null;
   now: Date;
 };
 
 export async function appendDeclaredWorkOccurrence(state: WorkFrozen<DeclaredWorkState>, identity: DeclaredOccurrenceIdentity,
   occurrenceState: WorkOccurrencePayload["state"]): Promise<void> {
-  const { executionId, parentExecutionId, childId, now, ...rawLabels } = identity;
+  const { executionId, parentExecutionId, childId, variantId, now, ...rawLabels } = identity;
   const label = (name: string, value: string | null): string | null => value === null ? null : ID.test(value) ? value : `${name}:${sha256(value)}`;
   const labels = {
     toolCallId: label("toolcall", rawLabels.toolCallId), taskId: label("task", rawLabels.taskId),
@@ -169,7 +170,7 @@ export async function appendDeclaredWorkOccurrence(state: WorkFrozen<DeclaredWor
     now,
     payload: {
       scope: state.scope, obligation: state.obligation, executionId,
-      parentExecutionId, childId, variantId: null, artifact: null,
+      parentExecutionId, childId, variantId: label("variant", variantId), artifact: null,
       provenance: "observed", state: occurrenceState,
       labels: { sessionId: null, branchLeafId: null, ...labels },
     },

@@ -37,7 +37,8 @@ import { registerDelegationTools } from "./delegation.ts";
 import { grantsCommand } from "./grants-command.ts";
 import { runInit } from "./init-command.ts";
 import { planWithApprovals } from "./run-delegation.ts";
-import { createGrantsSession, loadProjectDefinitions, resolveExecutor, type GrantsSession } from "./session.ts";
+import { createGrantsSession, loadProjectDefinitions, type GrantsSession } from "./session.ts";
+import { resolveExecutor } from "./executor-session.ts";
 import { reportSessionStart } from "./session-report.ts";
 import { SPAWN_TOOLS, tripwireReason } from "./tripwire.ts";
 import { reportGrantStoreRefusal } from "./grant-store-refusal.ts";
@@ -369,6 +370,7 @@ export default function (pi: ExtensionAPI) {
           definitions: session.definitions,
           sessionApprovals: session.sessionApprovals,
           inheritedApprovals: session.inheritedApprovals,
+          variantRuns: session.variantRuns,
           snapshotOf: (subject: string) => snapshotOf(session, subject),
           // The REAL delegation path, minus the one thing a diagnostic must never do. `ctx: null` is what
           // says so: stored approvals count exactly as they would for a spawn, and no human is asked

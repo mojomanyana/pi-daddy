@@ -20,8 +20,9 @@ export function dashboardObservations(h: DashboardHarness, c: DashboardHostConfi
       if(source.kind==="work"||source.kind==="facts"){
         const checkpoint=h.readArchiveCheckpoint(root,captured.checkpointId).checkpoint;sourceManifestId=checkpoint.sourceManifestId;bytes(sourceManifestId);
         if(source.kind==="facts") {if(input.facts!==null)throw Error("facts sources are declarations, not replacement authority");return {sourceId:source.id,kind:source.kind,checkpointId:captured.checkpointId,sourceManifestId,metadata:captured,cases:null,linkageManifestId:null};}
-        const factSource=latest().find(r=>r.kind==="facts"&&r.sourceManifestId===input.facts);if(!factSource)throw Error("exact observed fact source required, not caller replacement facts");
-        const facts=parseRetentionJson(new TextDecoder("utf-8",{fatal:true}).decode(bytes(factSource.sourceManifestId!)),256*1024);captured.factSourceManifestId=factSource.sourceManifestId;captured.factBasis="explicit-host-declarations-not-authenticated-truth";
+        const factSource=input.facts===null?null:latest().find(r=>r.kind==="facts"&&r.sourceManifestId===input.facts);if(input.facts!==null&&!factSource)throw Error("exact observed fact source required, not caller replacement facts");
+        const facts=factSource?parseRetentionJson(new TextDecoder("utf-8",{fatal:true}).decode(bytes(factSource.sourceManifestId!)),256*1024):null;
+        captured.factSourceManifestId=factSource?.sourceManifestId??null;captured.factBasis=factSource?"explicit-host-declarations-not-authenticated-truth":"derived-retained-work-only";
         if(dataDigest(authority.workContext.selectedSnapshot)!==dataDigest(selection))throw Error("independent source selection changed");
         try { const signals=h.captureArchivedWorkSignals(root,sourceManifestId,authority.workContext,facts);
           cases={version:"work-signals-v1",batchId:signals.caseBatchId,observationId:signals.observationId};linkageManifestId=signals.linkageManifestId;

@@ -55,6 +55,11 @@ test("actual scoped source job captures checkpoints, nominates signals and proje
  const journal=join(w.config.trustDirectory,"producer-host/events.jsonl"),before=await readFile(journal);await w.host.frame();assert.deepEqual(await readFile(journal),before);await w.host.action(r);assert.deepEqual(await readFile(journal),before);
  await appendFile(w.workPath,'{"partial":');const incomplete:any=await w.host.action(await w.request("observe",{sourceId:"work",previousCheckpointId:result.result.checkpointId,facts}));assert.equal(incomplete.result.cases,null);assert.ok(incomplete.result.metadata.semanticFailure);assert.equal((await w.host.frame() as any).source.daily.sources.work,"error");
 });
+test("retained work derives a silent coverage case without a separate facts source",async()=>{
+ const w=await hostWorld(false);const result:any=await w.host.action(await w.request("observe",{sourceId:"work",previousCheckpointId:null,facts:null}));
+ assert.ok(result.result.cases);assert.equal(result.result.metadata.factBasis,"derived-retained-work-only");assert.equal((await w.host.frame() as any).attention.attentionUsed,0);
+});
+
 test("dashboard routes real revision, priority and recorded alternative with native CAS and no grant expansion",async()=>{
  const w=await hostWorld(false),requests=fixedIntentRequests(w.budget);w.authority!.dispatch!.requestDigests=Object.values(requests).map(intentRequestDigest);
  await w.host.action(await w.request("intent",requests.revise));w.authority!.workContext={selectedSnapshot:w.w.selection(w.w.next),authority:null};

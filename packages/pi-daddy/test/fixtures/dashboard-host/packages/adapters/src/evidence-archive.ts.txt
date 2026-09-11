@@ -131,7 +131,8 @@ export function retainArchiveSource(root: string, input: ArchiveSourceInput): { 
   return { manifestId, reference };
 }
 
-export function readArchiveSource(root: string, manifestId: string): ArchiveRead {
+export function readArchiveSource(root: string, manifestId: string, maxBytes = LIMIT): ArchiveRead {
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 0 || maxBytes > LIMIT) return { status: "error", reason: "invalid read bound" };
   if (!HASH.test(manifestId)) return { status: "error", reason: "invalid manifest identity" };
   try {
     let manifest: Buffer;
@@ -145,10 +146,11 @@ export function readArchiveSource(root: string, manifestId: string): ArchiveRead
     const text = manifest.toString("utf8"); const reference: unknown = JSON.parse(text);
     if (!validReference(reference) || JSON.stringify(reference) !== text) fail("invalid manifest");
     if (reference.retention === "reference-only") return { status: "missing", reason: "not-retained" };
+    if (reference.bytes > maxBytes) return { status: "error", reason: "read bound exceeded" };
     let bytes: Buffer;
     try {
       directory(join(root, "objects"), false);
-      bytes = readVerified(join(root, "objects", reference.sha256), reference.sha256);
+      bytes = readVerified(join(root, "objects", reference.sha256), reference.sha256, maxBytes);
     } catch (error) {
       if (absent(error)) return { status: "missing", reason: "content" };
       throw error;

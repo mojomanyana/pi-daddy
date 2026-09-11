@@ -32,7 +32,7 @@ export function captureArchivedWorkCandidates(root: string, manifestId: string, 
 }
 
 /** Derive binding/coverage/acceptance fields from the real pinned P01 projection, not caller replacements. */
-export function captureArchivedWorkSignals(root: string, manifestId: string, context: WorkFrozen<WorkProjectionContext>, facts: WorkSignalFacts) {
+export function captureArchivedWorkSignals(root: string, manifestId: string, context: WorkFrozen<WorkProjectionContext>, suppliedFacts: WorkSignalFacts | null) {
   const read = readArchivedWork(root, manifestId, context);
   if (read.state !== "available" || read.projection.errors.length || read.projection.scopeState !== "valid" || !read.projection.selectedSnapshot || !read.projection.runtime) throw new Error("work source/selection incomplete; cannot capture signals");
   const work = read.projection, snapshotDigest = read.projection.selectedSnapshot.digest;
@@ -43,6 +43,11 @@ export function captureArchivedWorkSignals(root: string, manifestId: string, con
       coverage: [o.artifactCoverage.state, o.evidenceCoverage.state].includes("conflicted") ? "conflicted"
         : [o.artifactCoverage.state, o.evidenceCoverage.state].includes("unavailable") ? "unavailable"
         : o.artifactCoverage.state === "available" && o.evidenceCoverage.state === "available" && o.problems.every(p => p.code === "TRUSTED_REJECTION") ? "available" : "unknown" })) };
+  // Null means derive only facts the retained projection itself establishes. Empty arrays are explicit:
+  // runtime failure is not an objective violation, and absence cannot invent a deadline, expected wait,
+  // prior acceptance or authority. Coverage candidates still follow from the projected obligation.
+  const facts: WorkSignalFacts = suppliedFacts ?? { scopeDigest: snapshotDigest, version: "observed-work-v1", population: "retained-work",
+    expectedWaits: [], checkpoints: [], violations: [], priorAccepted: [] };
   // All four digests here are REVISION identities, not artifact content digests.
   // Duplicate obligation bindings cannot be collapsed by this input profile; its validator refuses them.
   const observation = retainWorkSignalObservation(root, snapshot, facts);

@@ -1,8 +1,27 @@
 import { constants, openSync, closeSync, readSync, writeSync, fstatSync, lstatSync, fsyncSync, mkdirSync, unlinkSync } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
+import { types } from 'node:util';
 import { isAbsolute, join, dirname, parse, resolve } from 'node:path';
 import { interventionCanonicalJson } from '@skill-harness/core';
-export const learningJson = (value: unknown): string => interventionCanonicalJson(value);
+export function learningJson(value:unknown):string {
+ const limit=2*1024*1024,cache=new WeakMap<object,{bytes:number;height:number}>(),visiting=new WeakSet<object>();
+ const size=(v:unknown,depth:number):{bytes:number;height:number}=>{
+  if(depth>16)throw Error('learning JSON depth bound');
+  if(v===null||typeof v==='boolean'||typeof v==='string'||typeof v==='number'&&Number.isFinite(v)){
+   if(typeof v==='string'&&Buffer.byteLength(v)>limit)throw Error('learning JSON byte bound');const bytes=Buffer.byteLength(JSON.stringify(v));if(bytes>limit)throw Error('learning JSON byte bound');return {bytes,height:0};
+  }
+  if(!v||typeof v!=='object')throw Error('plain learning JSON required');if(types.isProxy(v))throw Error('learning proxy refused');
+  const old=cache.get(v);if(old){if(depth+old.height>16)throw Error('learning JSON depth bound');return old;}
+  if(visiting.has(v))throw Error('cyclic learning JSON refused');visiting.add(v);
+  const array=Array.isArray(v),prototype=Object.getPrototypeOf(v),descriptors=Object.getOwnPropertyDescriptors(v);
+  if(array?prototype!==Array.prototype:prototype!==Object.prototype&&prototype!==null)throw Error('plain learning JSON required');
+  const keys=Reflect.ownKeys(descriptors);if(array&&(v.length>4096||keys.length!==v.length+1))throw Error('dense bounded learning array required');
+  const fields=array?Array.from({length:v.length},(_,i)=>String(i)):keys;let bytes=2,height=0;
+  for(let i=0;i<fields.length;i++){const key=fields[i];if(typeof key!=='string')throw Error('plain learning property required');const d=descriptors[key];if(!d||!('value' in d)||!d.enumerable)throw Error('plain learning property required');const child=size(d.value,depth+1);bytes+=child.bytes+(i?1:0)+(array?0:Buffer.byteLength(JSON.stringify(key))+1);height=Math.max(height,child.height+1);if(bytes>limit)throw Error('learning JSON byte bound');}
+  visiting.delete(v);const result={bytes,height};cache.set(v,result);return result;
+ };
+ size(value,0);return interventionCanonicalJson(value);
+}
 export const learningHash = (value: unknown): string => createHash('sha256').update(learningJson(value)).digest('hex');
 export const learningCopy = <T>(value:T):T => JSON.parse(learningJson(value));
 export interface LearningEvent { id:string; prior:string|null; value:Record<string,unknown> }
@@ -50,13 +69,13 @@ export function learningJournal(path:string,initial?:Record<string,unknown>){
  }};
 }
 /** One authoritative store per weekly key/policy in this archive; a renamed directory cannot refill it. */
-export function registerLearningStore(root:string,kind:'weekly'|'trust',key:string,target:string,binding:string){
- if(!/^[a-f0-9]{64}$/.test(key)||!isAbsolute(target)||!['weekly','trust'].includes(kind))throw Error('invalid learning registration');directory(root);directory(dirname(target));
+export function registerLearningStore(root:string,kind:'weekly'|'trust'|'intervention'|'access',key:string,target:string,binding:string){
+ if(!/^[a-f0-9]{64}$/.test(key)||!isAbsolute(target)||!['weekly','trust','intervention','access'].includes(kind))throw Error('invalid learning registration');directory(root);directory(dirname(target));
  const parent=join(root,'learning-stores');try{mkdirSync(parent,{mode:0o700});sync(root);}catch(e){if((e as NodeJS.ErrnoException).code!=='EEXIST')throw e;}directory(parent);
  const path=join(parent,`${kind}-${key}`),initial={type:'learning-registration-v1',target:resolve(target),binding};
  try{learningJournal(path,initial);}catch(e){if((e as NodeJS.ErrnoException).code!=='EEXIST')throw e;const records=learningJournal(path).read();if(records.length!==1||learningHash(records[0].value)!==learningHash(initial))throw Error('learning key already bound to another store or input');}
 }
-export function verifyLearningStore(root:string,kind:'weekly'|'trust',key:string,target:string,binding:string){
+export function verifyLearningStore(root:string,kind:'weekly'|'trust'|'intervention'|'access',key:string,target:string,binding:string){
  if(!/^[a-f0-9]{64}$/.test(key)||!isAbsolute(target))throw Error('invalid learning registration');
  const records=learningJournal(join(root,'learning-stores',`${kind}-${key}`)).read();
  if(records.length!==1||learningHash(records[0].value)!==learningHash({type:'learning-registration-v1',target:resolve(target),binding}))throw Error('learning store registration mismatch');

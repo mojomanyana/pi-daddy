@@ -5,6 +5,18 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ---
 
+## 2026-09-11 — retained work produces a silent coverage case without notes
+
+ADR-0063 pins harness `127b349310dd8f28e5d6b12148a063fce66a77dd` and lets a work source job request `facts:null`. The harness derives only exact scope/obligation/coverage with every semantic declaration array empty. A red-first connected-host test archives real work, creates a coverage candidate, and leaves attention at zero without a facts file or `/note`. No runtime failure became an objective violation; deadlines, expected waits, reopen history and authority remain absent.
+
+## 2026-09-11 — bounded concurrent Sol/Terra attempts reach the dashboard
+
+The stacked C04 slice retains `correlation.context_id` as work-v4 variant identity. Fresh occurrence `factory-01a071db-c04-sol-terra-20260911-01` consumed exactly one parent dispatch/integration pair and one response from each of two concurrent tool-free children (four total, no judge/retry/fallback). Sol and Terra starts were 26ms apart and overlapped for more than five seconds; outputs and execution IDs stayed separate, and the existing coworking dashboard showed two attached attempts. The actual tool schema/arguments carried no thinking field, so effort is honestly `null`; thinking-level variants and primary/shadow independence remain open.
+
+The source now exposes a closed thinking-level field on `delegate` and each `delegate_all` child and carries it through the existing planner to child argv. Schema/argv tests and typecheck pass. A distinct fresh occurrence then loaded this schema and retained actual Sol-low/Terra-high arguments and effort labels while both children overlapped; requested model/effort selection is validated. Provider-internal reasoning behavior and primary/shadow independence remain open.
+
+Next: await propagated CI, then test primary/shadow independence without reusing this consumed occurrence.
+
 ## 2026-09-11 — C07 read-only chain found and closed a declaration mismatch
 
 A fresh bounded Sol→Terra review chain found that unreleased `DeclareWorkInput` exposed custom ledger/state paths while reload required fixed sibling paths. The coordinator confirmed it mechanically. The API now accepts only `cwd`, `id` and `outcome`; unknown destination fields refuse before writes. A red-first regression covers both former custom paths. The chain's `FIX` was advisory, not human acceptance.
