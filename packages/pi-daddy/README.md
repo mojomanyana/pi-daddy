@@ -168,8 +168,9 @@ delegate_all({ children: [ {…}, {…}, {…} ] })                  // several 
 - **Fan-out stays bounded and waits for all by default.** At most 8 children per call, and the subtree budget
   bounds the whole tree. Every child uses the same plan-gate-audit path. The opt-in
   `completion:"primary", primary:N` form returns when that one-based child settles while the original
-  session retains bounded role/outcome accounting for its shadows; `/grants variants` displays it. Shadow
-  failure or later cancellation cannot replace/delay the primary result. This is not detached job recovery:
+  session retains bounded role/outcome accounting for its shadows; `/grants variants` displays it and explicitly
+  labels child provider usage unavailable because the print transport retains no Pi `Usage` event. Fan-out,
+  output bytes and wall time remain controller-bounded. Shadow failure or later cancellation cannot replace/delay the primary result. This is not detached job recovery:
   process exit ends ownership, and there is no retry, acceptance, winner selection or result-text store.
 - **One child can be refused while its siblings succeed**, and every outcome is reported. A fan-out that
   hid its refusals would let an orchestrator summarise four reviews when only three happened.
@@ -236,9 +237,16 @@ depth 2 · 1 active
 
 The plugin ships inside pi-daddy and is linked globally only after an explicit **Install and open** choice.
 Literal **Not now** and **Never ask** choices are persisted; dismissing or losing the dialog stores nothing.
+If the same plugin ID points at another package root after an isolated install or upgrade, startup offers an
+explicit **Relink and open** repair. **Not now** or dismissal leaves both the existing link and prompt preference
+unchanged; protocol mismatches are not replaced by guesswork.
 A connected host can publish exact pre-authorized actions as short commands such as `pause-new-dispatch` or `defer-weekly`; the dashboard lists their human labels and accepts the key followed by Enter. The host resolves the key to its current CAS-bound request, so a person does not type JSON or tokens. Unknown/stale keys refuse before effects; raw JSON remains compatibility-only.
 
-With pi-daddy 0.24.0 and skill-harness 0.14.0 loaded, declare work, reload, then run `/grants host <fresh-id>`. This creates one process-owned daily host, captures the current work/facts sources, publishes its private socket to `/grants dashboard`, and lists `pause-new-dispatch` or `resume-dispatch` plus `refresh-current-work`. Refresh is a deliberate action that atomically mirrors the current declared ledger and advances the existing source checkpoint; periodic dashboard redraw remains read-only. Pausing blocks only new governed ordinary children; a child already running keeps its original caller/result. `/grants host stop` closes the host and never cancels a child. Restart uses a fresh id; no PID, JSON/CAS envelope or prior controller is recovered.
+With pi-daddy 0.24.0 and skill-harness 0.14.0 loaded, declare work, reload, then run `/grants host <fresh-id>`. Library hosts can use the explicit `pi-daddy/daily-dashboard-host` export. This creates one process-owned daily host, captures the current work/facts sources, publishes its private socket to `/grants dashboard`, and lists `pause-new-dispatch` or `resume-dispatch` plus `refresh-current-work`. Compatible recorded P01 snapshots and selected obligations also become labelled scope-successor, alternative, and put-first actions; choosing one still passes exact intent authority and host/selection/tip CAS, then atomically rebinds both persisted and current-session declared work before new ordinary dispatch is released. Refresh is a deliberate action that atomically mirrors the current declared ledger and advances the existing source checkpoint; periodic dashboard redraw remains read-only. Pausing blocks only new governed ordinary children; a child already running keeps its original caller/result. An active retained child also gets an exact `cancel-exec-…` action (up to the ordinary eight-child width); choosing it requests abort through the original handle without cancelling siblings or implying acceptance/rejection. `/grants host closing` declares two minutes of explicit closing presence; only a paused, reservation-free, ordinary-quiescent host offers case-card preparation, and absent trust qualification defers without spending the five-card budget. `/grants host stop` closes the host and never cancels a child. Restart uses a fresh id; no PID, user-entered JSON/CAS envelope or prior controller is recovered.
+
+The separate `pi-daddy/measured-order` export composes no-tool measured Sol/Terra sessions into a bounded dependent order. Every retry and deterministic output contract is predeclared; bounded JSON projection contracts admit free-form prose without pre-knowing the whole artifact hash, and dependent prompts consume the actual retained predecessor output with its observed seal. A reopened controller treats another owner's unfinished claim as unknown and cannot replay it; an independently authorized exact acknowledgement can consume that schedule position, but never refunds or settles the original resource reservation. See ADR-0072.
+
+The final candidate requirement/code/evidence index and exact unresolved human actions are in [`docs/FINAL-READINESS-INDEX.md`](../../docs/FINAL-READINESS-INDEX.md).
 
 `/grants dashboard` never installs silently and prints the exact manual command when the plugin is absent. It
 checks the bundled plugin root and protocol before suggesting that a disabled plugin be enabled. Panes and

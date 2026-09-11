@@ -59,6 +59,8 @@ test("real bounded stalled shadow does not delay primary; exact owned cancellati
   const request: ExperimentCancellation = { version: "experiment-cancel-v1", requestId: "cancel:shadow", bindingDigest: experimentBindingDigest(f.binding), executionId: "execution:1" };
   const authority = { ...f.authority, cancellationDigests: [experimentCancellationDigest(request)] }, c = openExperiment(f.binding, authority);
   const run = await c.start(profile); assert.deepEqual(await Promise.all(run.started), ["spawned", "spawned"]);
+  const readyEvents = (await readFile(join(f.binding.directory, "experiment.jsonl"), "utf8")).trim().split("\n").slice(1).map(line => JSON.parse(line).event);
+  assert.deepEqual(readyEvents.filter(event => event.type === "spawn").map(event => event.executionId).sort(), ["execution:0", "execution:1"]);
   const primary = await run.primary; assert.equal(primary.state, "completed");
   assert.equal((await c.inspect()).variants[1].state, "running");
   const primaryBytes = await readFile(resultPath(f, 0));

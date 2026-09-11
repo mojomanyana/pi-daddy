@@ -653,7 +653,7 @@ it.
 
 ## Opt-in work-v4 evidence (candidate)
 
-**0.24.0 C04 slice (ADR-0062/0065):** ordinary attempt joins retain caller-declared correlation `context_id` as non-authoritative variant identity. Requested model/effort are recorded only from actual child argv. A bounded live `delegate_all` run observed overlapping Sol/Terra children and separate results; the then-loaded tool schema did not carry thinking, so effort stayed unknown. The continuation source now exposes a closed `off|minimal|low|medium|high|xhigh|max` thinking field on single and concurrent delegation and carries it to child argv; targeted tests pass. A fresh bounded source-loaded occurrence retained actual Sol-low/Terra-high arguments and effort labels across overlapping children; requested selection/recording is live-validated. Provider-internal reasoning remains open. ADR-0065 adds opt-in `completion:"primary", primary:N` to existing `delegate_all`: old calls still wait for all, while the selected primary may return before independently settling shadows. The original session retains bounded final role/outcome accounting exposed by `/grants variants`; no shadow outcome selects, retries or accepts work.
+**0.24.0 C04 slice (ADR-0062/0065):** ordinary attempt joins retain caller-declared correlation `context_id` as non-authoritative variant identity. Requested model/effort are recorded only from actual child argv. A bounded live `delegate_all` run observed overlapping Sol/Terra children and separate results; the then-loaded tool schema did not carry thinking, so effort stayed unknown. The continuation source now exposes a closed `off|minimal|low|medium|high|xhigh|max` thinking field on single and concurrent delegation and carries it to child argv; targeted tests pass. A fresh bounded source-loaded occurrence retained actual Sol-low/Terra-high arguments and effort labels across overlapping children; requested selection/recording is live-validated. Provider-internal reasoning remains open. ADR-0065 adds opt-in `completion:"primary", primary:N` to existing `delegate_all`: old calls still wait for all, while the selected primary may return before independently settling shadows. The original session retains bounded final role/outcome accounting exposed by `/grants variants`; no shadow outcome selects, retries or accepts work. Pi exposes assistant usage inside an extension-hosted session, but the separate `--print --no-session` child result does not carry that event. The variants report therefore labels provider usage unavailable while naming the still-enforced fan-out, output-byte and wall-time bounds; it never converts child count, text length or elapsed time into tokens, calls or billing.
 
 **0.24.0 C03 slice (ADR-0061/0064):** a connected host may publish bounded human-readable action keys backed by exact already-authorized requests. The dashboard displays only key/label/operation; typing a listed key resolves inside the original private host and still passes the existing host/selection/tip CAS and native validators. Unknown, stale or no-longer-authorized keys refuse before effects. Raw JSON remains compatibility-only; refresh remains read-only. `/grants host <fresh-id>|stop` now composes one production daily host from the loaded harness source jobs, current declared work, private socket, original ordinary controller and existing budget/authority validators. Pause blocks only new dispatch while current children continue; resume releases the exact hold after acknowledged native application. `refresh-current-work` explicitly mirrors the current selected ledger and advances its source checkpoint while ordinary redraw stays read-only. Stop never cancels a child. No controller is recovered from prior state.
 
@@ -1127,13 +1127,35 @@ Installation is an explicit handshake. A Herdr-hosted TUI with no matching plugi
 The choices are **Install and open**, **Not now**, and **Never ask**. Only the first runs
 `herdr plugin link` against the plugin directory inside the installed pi-daddy package. The other literal
 choices are stored under `$PI_CODING_AGENT_DIR/pi-daddy/dashboard-preference.json` and suppress later startup
-prompts. Dismissal, timeout or UI teardown returns no choice and stores nothing. `/grants dashboard` never
-installs an absent plugin: it reports the exact manual link command. A plugin pane
+prompts. Dismissal, timeout or UI teardown returns no choice and stores nothing.
+
+A same-ID dashboard linked from another package root is detected before enablement. Startup offers the separate
+literal choices **Relink and open** and **Not now**; only the first relinks the currently loaded bundled copy.
+Declining or dismissing this repair changes neither the existing link nor the startup preference, so a later
+session may repair it. Protocol-incompatible and otherwise unavailable plugins remain diagnostic failures rather
+than guessed replacements. `/grants dashboard` never installs an absent plugin: it reports the exact manual link
+command. A plugin pane
 opened before an active core/ledger prints exact `pi install`, ledger export and pi startup commands and changes
 no pi configuration.
 
 Plugin/core dashboard protocol is 1, represented by plugin version major 1. A mismatch renders an
 incompatibility diagnostic and no guessed tree. The plugin requires Herdr 0.8.0.
+
+A process-owned daily host publishes exact actions for pause/resume, source refresh, and up to eight currently
+active ordinary attempts. Each cancellation key names an execution ID and binds the original port, current
+revision and complete retained target through the existing host/native authority checks. It disappears when the
+original handle settles; stale frames, changed revisions and missing handles refuse before targeting another
+attempt. Cancellation requests abort only that child and do not imply rejection, acceptance, or cancellation of
+siblings. Reads and refresh never invoke cancellation. The daily host's v3 budget is also pinned to owner-private declared work. Up to eight deterministic labels expose selected-obligation priority changes, exact recorded scope successors and recorded same-scope alternatives. Selecting one rebuilds the exact current-revision `IntentRequest` and traverses existing intent validation, ordinary admission hold, native digest authority, and host/selection/tip CAS; rendering alone never changes selection. Before the hold releases, the owner atomically rebinds `work-current.json` and the current grants-session declaration; without that owner callback, scope-changing actions are not displayed.
+
+The separate opt-in measured route runs one no-tool Codex Sol/Terra prompt with in-memory session/settings, empty discovery roots, observed assistant identity, OAuth/subscription metadata and Pi-reported Usage. `measured-order-v1` composes that route into at most eight dependency nodes and three predeclared attempts per node. Its pinned hash-chained journal does not transfer ownership on restart: a foreign unfinished claim is unknown until an independently authorized exact acknowledgement, and that acknowledgement never settles or refunds the original resource reservation. A deterministic output contract gates dependencies: exact digest mode remains available, while bounded JSON projection mode admits free prose around exact source-derived fields. A dependent can consume the complete actual predecessor output in a sealed block carrying its observed hash; worst-case bytes are reserved up front. Acceptance remains unassessed.
+
+Each daily work observation also exposes the content-addressed runtime-facts manifest returned by the exact
+pinned harness bridge. It contains only projected attempt identity/state/resolution, terminal observed occurrence
+digests, and obligation acceptance/coverage. Checkpoint, expected-wait and prior-acceptance evidence are
+explicitly unavailable in this projection-only artifact; separately supplied host facts retain their own
+linkage and provenance. The manifest is navigable evidence, not acceptance,
+a defect label, or authority.
 
 The projection is pure and has no pi/Herdr UI dependency. It reconstructs from the complete ledger, keeps
 active nodes and their ancestry, collapses old completed subtrees, displays duration, definition, state,

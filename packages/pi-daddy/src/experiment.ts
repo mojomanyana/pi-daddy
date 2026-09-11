@@ -146,6 +146,12 @@ export function openExperiment(input: ExperimentBinding, hostAuthority: Experime
           let resolve!: (success: boolean) => void;
           return { promise: new Promise<boolean>(done => { resolve = done; }), done: (success: boolean) => resolve(success) };
         });
+        // Public readiness includes the durable spawn observation, not merely process creation.
+        // This closes the process-start -> spawn-ledger race for inspect and cancellation callers.
+        const observedStarted = reserved.map((run, i) => run.started.then(async value => {
+          if (value === "spawned") await append({ type: "spawn", executionId: c.variants[i].executionId });
+          return value;
+        }));
         const one = async (i: number) => {
           const v = c.variants[i]; let success = false, launched = false, primaryResult: VariantRecord | null = null;
           try {
@@ -155,8 +161,7 @@ export function openExperiment(input: ExperimentBinding, hostAuthority: Experime
             launched = true;
             const running = reserved[i].run(handles.get(v.executionId)!.signal);
             // Consume both promises even on bookkeeping failure. No untracked rejection or worker.
-            const observed = reserved[i].started.then(async value => { if (value === "spawned") await append({ type: "spawn", executionId: v.executionId }); });
-            const [result, observation] = await Promise.allSettled([running, observed]);
+            const [result, observation] = await Promise.allSettled([running, observedStarted[i]]);
             if (result.status === "rejected" || observation.status === "rejected") throw new Error("runtime/accounting/observation unknown");
             const data = Buffer.from(JSON.stringify(result.value) + "\n"), out = result.value.output;
             const cancelled = out.aborted && (Boolean(out.signal) || await reserved[i].started === "settled-without-spawn");
@@ -218,7 +223,7 @@ export function openExperiment(input: ExperimentBinding, hostAuthority: Experime
           }
           const view = await inspect().catch(unknown); primary.resolve(view.variants[0]); resolveBoundary(view); return view;
         })();
-        live = Object.freeze({ primary: primary.promise, completion, boundary: c.order ? boundary : completion, started: Object.freeze(reserved.map(r => r.started)) }); return live;
+        live = Object.freeze({ primary: primary.promise, completion, boundary: c.order ? boundary : completion, started: Object.freeze(observedStarted) }); return live;
       } catch (error) {
         fault = true;
         for (const run of reserved) await run.run(AbortSignal.abort()).catch(() => {});

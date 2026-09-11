@@ -5,7 +5,7 @@ import type { WorkProjectionContext, WorkFrozen } from "./work-ledger.ts";
 import type { DispatchAuthority } from "./dispatch-control.ts";
 import type { OrdinaryAuthority } from "./ordinary-children.ts";
 import type { ExperimentAuthority } from "./experiment-contract.ts";
-export const DASHBOARD_HARNESS_PIN = "127b349310dd8f28e5d6b12148a063fce66a77dd";
+export const DASHBOARD_HARNESS_PIN = "d123257e53d48a2cad6919708976b5371dc7590e";
 export interface HostEvent { id: string; prior: string | null; value: Record<string, unknown> }
 export interface HostJournal { read(): HostEvent[]; append(prior: string, value: Record<string, unknown>): HostEvent }
 /** Loaded trusted ports; an interface or caller-supplied pin is NOT module/human authentication. */
@@ -19,9 +19,11 @@ export interface DashboardHarness extends DebriefHarness {
   ingestPolicySource(path: string, source: string, previous?: string, expectedPolicy?: string): { checkpointId: string; sourceStatus: string; issues?: string[]; [key: string]: unknown };
   readArchiveCheckpoint(root: string, checkpoint: string): { checkpoint: { sourceManifestId: string; issues: string[]; [key: string]: unknown } };
   readArchiveSource(root: string, id: string): { status: string; bytes?: Uint8Array; reference?: { retention: string; sha256: string; [key: string]: unknown } };
-  captureArchivedWorkSignals(root: string, id: string, context: WorkFrozen<WorkProjectionContext>, facts: unknown): { caseBatchId: string; observationId: string; linkageManifestId: string };
+  captureArchivedWorkSignals(root: string, id: string, context: WorkFrozen<WorkProjectionContext>, facts: unknown): { caseBatchId: string; observationId: string; linkageManifestId: string; runtimeFactsManifestId: string };
   readRetainedExecution(root: string, id: string): { projection: unknown };
   projectRetainedExecutions(values: readonly unknown[]): unknown;
+  retainLearningLifecycle(root:string,input:unknown):string;
+  readLearningLifecycle(root:string,id:string):{version:string;state:string;predecessorManifestId:string|null;links:Record<string,unknown>};
 }
 export interface DashboardHostConfig {
   version: "producer-dashboard-host-v1"; trustDirectory: string; trustPolicyId: string; archiveRoot: string; scope: string; author: string;
@@ -29,6 +31,7 @@ export interface DashboardHostConfig {
   selection: WorkProjectionContext["selectedSnapshot"]; cases: CaseSelection | null; blind: DurableBlindBinding | null;
   budgetDigest: string; experimentDigest: string | null; harnessArtifactDigest: string;
   ordinaryDigest?: string;
+  learningLifecycleId?: string;
 }
 export interface DashboardHostRequest { version: "1.0"; requestId: string; hostDigest: string; expectedTip: string; selectionDigest: string; operation: "observe" | "present" | "presented" | "defer" | "debrief" | "dispatch" | "intent" | "cancel" | "dispatch-reconcile" | "intent-reconcile" | "ordinary-cancel"; payload: unknown }
 export interface DashboardHostAuthority {

@@ -16,6 +16,7 @@ import {
   type WorkRevision,
 } from "./work-ledger.ts";
 import { withFileLock } from "./file-lock.ts";
+import { resolveWorkSnapshotText } from "./work-ledger-snapshot.ts";
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:/@+\-]{0,127}$/;
 const DIGEST = /^[a-f0-9]{64}$/;
@@ -100,8 +101,8 @@ export async function declareWork(input: DeclareWorkInput): Promise<WorkFrozen<D
   }
   if (!ID.test(input.id) || typeof input.outcome !== "string" || !input.outcome.trim()) throw new TypeError("work declaration requires an identifier and non-empty outcome");
   const resolved = paths(input), outcomeDigest = sha256(input.outcome.trim());
-  await mkdir(dirname(resolved.ledgerPath), { recursive: true });
-  await mkdir(dirname(resolved.statePath), { recursive: true });
+  await mkdir(dirname(resolved.ledgerPath), { recursive: true, mode: 0o700 });
+  await mkdir(dirname(resolved.statePath), { recursive: true, mode: 0o700 });
   return withFileLock(resolved.statePath, "declared work", async () => {
     const existing = await loadDeclaredWork(resolved.statePath);
     if (existing) {
@@ -146,6 +147,11 @@ export async function declareWork(input: DeclareWorkInput): Promise<WorkFrozen<D
     await rm(pendingPath);
     return Object.freeze({ ...stored, statePath: resolved.statePath });
   });
+}
+
+/** Persist an already-applied exact selection so the next governed dispatch cannot keep using the old cached declaration. */
+export async function rebindDeclaredWork(state:WorkFrozen<DeclaredWorkState>,selectedSnapshot:NonNullable<WorkProjectionContext["selectedSnapshot"]>):Promise<WorkFrozen<DeclaredWorkState>>{
+ return withFileLock(state.statePath,"declared work rebind",async()=>{const current=await loadDeclaredWork(state.statePath);if(!current||JSON.stringify(current.selectedSnapshot)!==JSON.stringify(state.selectedSnapshot))throw Error("declared work rebind is stale; new dispatch remains unsupported");const text=await readFile(state.ledgerPath,"utf8"),resolved=resolveWorkSnapshotText(text,selectedSnapshot),binding=resolved.snapshot?.bindings[0];if(resolved.scopeState!=="valid"||!resolved.scope||!resolved.snapshot||!binding)throw Error("applied declared selection cannot bind future dispatch");const stored:StoredDeclaredWorkState={version:"pi-daddy-declared-work-v1",id:state.id,outcomeDigest:state.outcomeDigest,ledgerPath:state.ledgerPath,grantLedgerPath:state.grantLedgerPath,selectedSnapshot,scope:{kind:resolved.scope.kind,id:resolved.scope.id,revision:resolved.scope.revision,digest:resolved.scope.digest},intent:binding.intent,obligation:binding.obligation,policy:binding.policy};const temporary=`${state.statePath}.${process.pid}.${randomUUID()}.tmp`;try{await writeFile(temporary,`${JSON.stringify(stored,null,2)}\n`,{encoding:"utf8",mode:0o600,flag:"wx"});await rename(temporary,state.statePath);}finally{await rm(temporary,{force:true});}return Object.freeze({...stored,statePath:state.statePath});});
 }
 
 export type DeclaredOccurrenceIdentity = Pick<WorkOccurrencePayload["labels"], "toolCallId" | "taskId" | "workspaceId" | "definitionDigest" | "configurationDigest" | "modelId" | "effortId"> & {

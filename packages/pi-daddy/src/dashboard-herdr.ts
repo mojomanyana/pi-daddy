@@ -97,6 +97,7 @@ export type DashboardPluginState = "absent" | "disabled" | "compatible" | "incom
 export interface DashboardPluginStatus {
   state: DashboardPluginState;
   diagnostic: string;
+  incompatibility?: "package-root" | "protocol";
   plugin?: Record<string, unknown>;
 }
 
@@ -116,15 +117,8 @@ export async function inspectDashboardPlugin(
     const plugins = Array.isArray(parsed.result?.plugins) ? parsed.result.plugins as Record<string, unknown>[] : [];
     const plugin = plugins.find((candidate) => candidate.plugin_id === DASHBOARD_PLUGIN_ID);
     if (!plugin) return { state: "absent", diagnostic: `Herdr plugin ${DASHBOARD_PLUGIN_ID} is not installed.` };
-    // Provenance and protocol precede enabled state. Suggesting `plugin enable` for a same-id plugin from
-    // another package would ask the operator to activate software this package explicitly refuses to invoke.
-    if (expectedPluginRoot && (typeof plugin.plugin_root !== "string" || resolve(plugin.plugin_root) !== resolve(expectedPluginRoot))) {
-      return {
-        state: "incompatible",
-        diagnostic: `Herdr plugin ${DASHBOARD_PLUGIN_ID} is linked from a different package; relink the bundled copy.`,
-        plugin,
-      };
-    }
+    // Protocol and provenance both precede enabled state. A root-only repair is offered only when the
+    // registered manifest already speaks this core's protocol; unknown software is never replaced by guesswork.
     const major = protocolMajor(plugin.version);
     if (major !== DASHBOARD_PROTOCOL_VERSION) {
       return {
@@ -132,6 +126,15 @@ export async function inspectDashboardPlugin(
         diagnostic:
           `Herdr plugin ${DASHBOARD_PLUGIN_ID} uses protocol ${major ?? "unknown"}; ` +
           `this pi-daddy core requires ${DASHBOARD_PROTOCOL_VERSION}. Relink both from the same package.`,
+        incompatibility: "protocol",
+        plugin,
+      };
+    }
+    if (expectedPluginRoot && (typeof plugin.plugin_root !== "string" || resolve(plugin.plugin_root) !== resolve(expectedPluginRoot))) {
+      return {
+        state: "incompatible",
+        diagnostic: `Herdr plugin ${DASHBOARD_PLUGIN_ID} is linked from a different package; relink the bundled copy.`,
+        incompatibility: "package-root",
         plugin,
       };
     }

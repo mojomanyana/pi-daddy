@@ -5,6 +5,22 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ---
 
+## 2026-09-11 — variant usage availability is explicit
+
+Pi's extension API exposes assistant usage in `message_end` and supports nested `Usage` on tool results, but pi-daddy's separate `--print --no-session` child result carries neither event nor authoritative provider/billing counters. ADR-0069 keeps the existing transport and hard fan-out/output-byte/wall-time bounds while making `/grants variants` say **provider usage unavailable**. A red-first settled primary/shadow report assertion now passes. No child count, text size, client duration or planned ceiling is relabelled as measured tokens, calls, server time or cost.
+
+## 2026-09-11 — daily work links exact completion facts
+
+ADR-0068 pins harness source `d123257e53d48a2cad6919708976b5371dc7590e` and exposes its content-addressed `observed-work-runtime-v1` manifest on each successful work observation. The manifest records exact projected attempt state/resolution, terminal observed occurrence digests, and obligation acceptance/coverage while marking checkpoint, expected-wait and prior-acceptance history unavailable when no host facts exist. A red-first production-host assertion failed on the old bridge and now passes through the byte-vendored source. This is evidence navigation, not acceptance or a defect judgment.
+
+## 2026-09-11 — daily dashboard exact cancellation candidate
+
+ADR-0067 connects the production daily host to the already-existing original ordinary cancellation route. While an original retained child is active, the dashboard lists an exact `cancel-exec-…` action with its execution ID; selecting it binds the original port, current revision and complete target through existing host/native authority checks. The action disappears on settlement, and stale/missing handles refuse rather than being recovered from a ledger or terminal. Pause remains future-admission control; cancellation affects one selected child and implies no acceptance/rejection. The red-first production-host regression and 13 related host/cancellation tests pass; full candidate gates will be rerun after the next cohesive control slice.
+
+## 2026-09-11 — explicit dashboard relink repair candidate
+
+The released dashboard correctly rejects a `pi-daddy.dashboard` registration whose root belongs to another package, but the startup handshake only reported failure. This is the automatic-link mismatch preserved by the released isolated demo: a fresh package root and Herdr's existing global link cannot both satisfy exact provenance. ADR-0066 adds a literal **Relink and open** startup choice only for that exact mismatch, reusing the existing link, compatibility recheck, verified host and pane-open paths. Decline/dismissal changes neither link nor preference; protocol and unknown mismatches remain failures. Red-first targeted handshake and dashboard tests (21/21), typecheck, and the complete split unit gate (1,016/1,016 plus 205/205) pass in the new isolated campaign worktree. No global registry or running Herdr session was changed; independent review and PR work remain pending.
+
 ## 2026-09-11 — 0.24.0 release candidate prepared from merged follow-ups
 
 PRs 37, 38 and 39 merged in order with merge commits `b1ad39d`, `297bffe` and `7b06a83`; every approved head is reachable from final main. The release candidate bumps only public package `pi-daddy` to 0.24.0. It ships declared daily work, the production connected host with explicit refresh/reconnect and admission pause/resume, and opt-in primary/shadow variants while preserving the old wait-for-all path. Exact-head CI and one final read-only whole-candidate review are green. Release pack/install/registry/tag evidence remains downstream; no acceptance, C06 human choice, C08 domain result or provider-internal reasoning claim is added.

@@ -18,10 +18,15 @@ import { serveDashboardHost, connectDashboardHost } from "../src/dashboard-host-
 import { dashboardFrame, dashboardHostAction } from "../src/dashboard-cli.ts";
 after(cleanupTempDirs);
 test("loaded skill-harness extension bridge is accepted only at the exact supported source",async()=>{
- const w=await hostWorld(false),record={version:"skill-harness-dashboard-bridge-v1",sourceCommit:"127b349310dd8f28e5d6b12148a063fce66a77dd",api:w.api};
+ const w=await hostWorld(false),record={version:"skill-harness-dashboard-bridge-v1",sourceCommit:"d123257e53d48a2cad6919708976b5371dc7590e",api:w.api};
  const api=adoptDashboardHarnessBridge(record);assert.equal(api,w.api);assert.match(loadedDashboardHarnessDigest(api)!,/^[a-f0-9]{64}$/);
  assert.throws(()=>adoptDashboardHarnessBridge({...record,sourceCommit:"0".repeat(40)}),/supported harness bridge/);
  assert.throws(()=>adoptDashboardHarnessBridge({...record,api:{...w.api}}),/frozen harness API/);
+});
+
+test("dashboard frame navigates the retained learning lifecycle without inventing a choice",async()=>{
+ const w=await hostWorld(false,"signals",undefined,true),frame:any=await w.host.frame();
+ assert.equal(frame.learning.state,"awaiting-human-choice");assert.equal(frame.learning.links.choice,null);assert.equal(frame.learning.links.comparison.length,64);
 });
 
 test("actual dashboard consumes owned host projection without observing or steering on refresh",async()=>{
@@ -75,7 +80,7 @@ test("concurrent exact host CAS admits one request; missing authority records de
 });
 test("human action provider receives the current host CAS context and may resolve asynchronously",async()=>{
  const w=await hostWorld(false);let seen:any=null;const host=openDashboardHost({...w.options,humanActions:async context=>{seen=context;return [];}});
- const frame=await host.frame();assert.deepEqual(seen,{hostDigest:host.hostDigest,selectionDigest:frame.selectionDigest,tip:frame.tip,observations:[]});assert.deepEqual(frame.actions,[]);
+ const frame=await host.frame();assert.deepEqual(seen,{hostDigest:host.hostDigest,selectionDigest:frame.selectionDigest,tip:frame.tip,observations:[],preparedPresentationDigest:null});assert.deepEqual(frame.actions,[]);
 });
 
 test("human dashboard commands invoke only host-published exact approved actions",async()=>{
