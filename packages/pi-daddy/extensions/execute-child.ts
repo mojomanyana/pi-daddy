@@ -11,6 +11,7 @@ import { HerdrWriterCloseError, runHerdrPane } from "../src/run-herdr.ts";
 import { GovernanceRefusal, refusal, type StructuredRefusal } from "../src/refusals.ts";
 import { ENV_HERDR_KEEP_PANE, type GrantsSession } from "./session.ts";
 import { releaseDelegationWorkspace, type PreparedWorkspace } from "./workspace-runtime.ts";
+import { beginDeclaredWorkAttempt } from "./work-runtime.ts";
 
 export interface DelegationOutcome {
   ok: boolean;
@@ -104,6 +105,10 @@ async function executeChildBody(input: {
   const configuredTimeoutMs = timeoutFromEnv(process.env[ENV_CHILD_TIMEOUT]);
   const startedAt = new Date();
   const deadlineAt = new Date(startedAt.getTime() + configuredTimeoutMs).toISOString();
+  const workAttempt = await beginDeclaredWorkAttempt({
+    session, plan, childId, executionId, parentExecutionId, toolCallId: input.toolCallId,
+    preparedWorkspace, configuredTimeoutMs, startedAt,
+  });
   if (ledgerPath) {
     try {
       await appendLedgerEvent(
@@ -232,6 +237,8 @@ async function executeChildBody(input: {
     retention.finish({ code: output.code, signal: output.signal ?? null, timedOut: output.timedOut,
       aborted: output.aborted, truncated: output.truncated, failed: childFailed });
     releaseReason = output.timedOut ? "timeout" : output.aborted ? "cancelled" : childFailed ? "failed" : "completed";
+    if (workAttempt) try { await workAttempt.finish(childFailed ? "failed" : "completed"); }
+    catch (error) { teardownFailures.push(`declared work terminal record failed: ${String(error)}`); }
     if (ledgerPath) {
       terminalAttempted = true;
       await appendAfterRuntimeRecord(runtimeRecord, () => appendLedgerEvent(

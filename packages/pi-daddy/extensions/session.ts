@@ -49,7 +49,7 @@ import { republishable } from "./approvals.ts";
 import { storedGrantSessionState } from "./stored-grant-session.ts";
 import { nativeSessionRootFromEnv, type NativeSessionHost } from "../src/native-session-target.ts";
 import { ENV_ALLOW_UNRESOLVED_MODELS } from "../src/model-preflight.ts";
-
+import type { DeclaredWorkState } from "../src/work-command.ts";
 /**
  * Run governed children in herdr panes instead of captured child processes.
  *
@@ -127,6 +127,7 @@ export interface GrantsSession extends NativeSessionHost {
   readonly modelResolutionCache: Map<string, boolean>;
   /** Path to this extension, so a child granted `tool:delegate` can delegate in turn. */
   readonly extensionPath?: string;
+  declaredWork?: DeclaredWorkState; // Explicit operator selection; absence leaves execution visibly unbound.
 
   /** Approval keys approved for this session. In memory only — this dies with the process. */
   readonly sessionApprovals: Set<string>;

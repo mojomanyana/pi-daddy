@@ -654,6 +654,8 @@ it.
 
 ## Opt-in work-v4 evidence (candidate)
 
+**Post-0.23.0 continuation (ADR-0060, unreleased):** `pi-daddy work add --id <id> --outcome <text>` now creates one digest-only selected obligation without retaining the outcome text. The extension validates `.pi/work-current.json` at session start and ordinary governed delegation appends observed starting/terminal occurrences under its assigned execution identity. Exact redelivery is idempotent; a changed outcome under one id refuses; malformed state leaves work unbound. Runtime completion still does not create acceptance, and archive/authority coverage remains separate.
+
 The source candidate adds `pi-daddy/work-ledger` and versioned
 [work-v4 contract artifacts](../packages/pi-daddy/contracts/ledger/v4/README.md), under
 [ADR-0044](06-decisions/ADR-0044-opt-in-work-v4-evidence.md). Default `LEDGER_VERSION = 3`, its five-event

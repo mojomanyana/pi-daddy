@@ -5,6 +5,12 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ---
 
+## 2026-09-11 — post-merge declared work reaches ordinary execution
+
+On `factory-01a071db/post-merge-c01` from exact released main `1eb89f2`, ADR-0060 adds a supported digest-only `pi-daddy work add` declaration and binds the selected obligation to ordinary governed execution. Exact declaration and occurrence retries are idempotent; changed outcomes and malformed/relocated state refuse; runtime completion remains distinct from acceptance. Red-first targeted evidence is 45 tests plus typecheck; the full unit gate passed 1,202/1,202 (997 + separately batched 205). A fresh bounded live Sol occurrence used the source extension through real Pi delegation and produced execution `exec:3e57d79c-4f27-499c-a69b-49c3bb19ee7b`, with starting/completed work occurrences and a visible one-attempt daily dashboard. Two earlier pre-effect attempts exposed the provider/model reference spelling and a raw Pi tool-call ID outside work-v4's identifier grammar; the latter has a regression and digest-labelled join. No acceptance was invented and archive coverage remains unavailable.
+
+Next: C03 human-readable dashboard actions, then C04 bounded concurrent Sol/Terra variants. No merge or publication is authorized.
+
 ## 2026-09-11 — 0.23.0 release candidate prepared
 
 Fetched `main` at PR35 merge `1bc08605` is isolated on `codex/factory-release-0.23.0`. Only public package
