@@ -19,6 +19,7 @@ import type { SkillDefinition } from "../src/definitions.ts";
 import type { GatedPlan } from "./run-delegation.ts";
 import { loadApprovals, revokeAll, revokeApproval, type SubjectLookup } from "../src/approval-store.ts";
 import { verifyLedger } from "../src/ledger.ts";
+import { handleConnectedCommand } from "./grants-connected-command.ts";
 
 export interface GrantsCommandContext {
   cwd: string;
@@ -94,25 +95,7 @@ handler: async (args: string, ctx: any) => {
       return;
     }
 
-    if (sub === "host") {
-      try { ctx.ui.notify(`grants: ${await ctx.grants.runHost(target ?? "")}`, "info"); }
-      catch (error) { ctx.ui.notify(`grants: host unavailable — ${error instanceof Error ? error.message : String(error)}`, "error"); }
-      return;
-    }
-
-    if (sub === "dashboard") {
-      try {
-        const opened = await ctx.grants.openDashboard();
-        ctx.ui.notify(
-          `grants: dashboard ${opened.kind} in Herdr pane ${opened.paneId} without changing focus` +
-            (opened.visibleBesideCaller ? "." : " (the existing pane is in another tab)."),
-          "info",
-        );
-      } catch (error) {
-        ctx.ui.notify(`grants: dashboard unavailable — ${error instanceof Error ? error.message : String(error)}`, "error");
-      }
-      return;
-    }
+    if(await handleConnectedCommand(sub,target,{runHost:ctx.grants.runHost,openDashboard:ctx.grants.openDashboard,ui:ctx.ui}))return;
 
     if (sub === "ledger") {
       // The detector, made reachable. `verifyLedger` exists because nothing in this package had ever read
