@@ -155,6 +155,16 @@ export {
 export { renderDashboard, type DashboardRenderOptions } from "./dashboard-render.ts";
 
 export {
+  runMeasuredAgentSession,
+  piSdkMeasuredSessionHost,
+  type MeasuredSessionInput,
+  type MeasuredSessionHost,
+  type MeasuredSessionHostInput,
+  type MeasuredSessionHostResult,
+  type ProviderUsage,
+} from "./measured-session.ts";
+
+export {
   createApprovalGate,
   createApprovalGateProvider,
   timeoutMsFromEnv,

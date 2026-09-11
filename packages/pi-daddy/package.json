@@ -94,6 +94,10 @@
       "types": "./dist/effect-profile.d.ts",
       "default": "./dist/effect-profile.js"
     },
+    "./measured-session": {
+      "types": "./dist/measured-session.d.ts",
+      "default": "./dist/measured-session.js"
+    },
     "./execution-retention": {
       "types": "./dist/execution-retention.d.ts",
       "default": "./dist/execution-retention.js"
