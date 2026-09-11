@@ -66,7 +66,7 @@ export async function startDailyDashboardHost(input:DailyDashboardHostInput){
    const previous=context.observations.find(x=>x.sourceId==="work")?.checkpointId??null,refresh=request(context,"observe",{sourceId:"work",previousCheckpointId:previous,facts:context.observations.find(x=>x.sourceId==="facts")?.checkpointId?factsResultManifest:null},`refresh-work:${state.revision}:${context.tip.slice(0,12)}`);requestDigests.add(dashboardHostRequestDigest(refresh));
    const intentState=await openResourceBudget(budget).intentControls(null).inspect(),automatic=discoverDailyIntentActions(await readFile(input.declared.ledgerPath,"utf8"),intentState.selection,intentState.priorities);
    const candidates=[...proposals,...automatic].filter((p,index,all)=>all.findIndex(x=>x.key===p.key)===index).filter(p=>p.action==="reprioritize"||Boolean(input.onDeclaredWorkChanged)).slice(0,8);
-   const intents=candidates.filter(p=>intentKey(p.fromSelection)===intentKey(intentState.selection)).map(p=>{
+   const intents=(input.ordinary.quiescent()?candidates:[]).filter(p=>intentKey(p.fromSelection)===intentKey(intentState.selection)).map(p=>{
     const native=intentRequest({version:"intent-request-v1",requestId:`${p.key}:${intentState.revision}`,bindingDigest:config.budgetDigest,expectedRevision:intentState.revision,expectedSelection:intentState.selection,action:p.action,events:p.events,selection:p.selection,priorities:p.priorities});dispatchDigests.add(intentRequestDigest(native));
     const proposed=request(context,"intent",native,`host-intent:${p.key}:${intentState.revision}`);requestDigests.add(dashboardHostRequestDigest(proposed));return {key:p.key,label:p.label,request:proposed};
    });

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
-import { rm, writeFile } from "node:fs/promises";
+import { readFile, rm, writeFile } from "node:fs/promises";
 import { createResourceBudget, openResourceBudget, resourceBindingDigest } from "../src/resource-budget.ts";
 import { createMeasuredOrder, measuredOrderAcknowledgementDigest, measuredOrderDigest, openMeasuredOrder, type MeasuredOrder, type MeasuredOrderAuthority } from "../src/measured-order.ts";
 import { intentKey } from "../src/intent-control.ts";
@@ -43,6 +43,11 @@ test("free-form qualified output is sealed into the dependent review prompt with
  ]};
  let sealedPrompt="";const host:MeasuredSessionHost={run:async input=>{if(input.model.endsWith("terra")){sealedPrompt=input.prompt;return{...result(review),model:"gpt-5.6-terra"};}return result(draft);}},binding=await createMeasuredOrder({directory:join(root,"order"),budget,order}),authority:MeasuredOrderAuthority={authorityDigest,orderDigests:[measuredOrderDigest(order)],acknowledgementDigests:[]},controller=openMeasuredOrder(binding,authority,host);
  let view=await controller.advance();assert.equal(view.nodes[0].state,"satisfied");view=await controller.advance();assert.equal(view.nodes[1].state,"satisfied");assert.equal(view.nodes[1].outputSha256,sha(review));assert.match(sealedPrompt,new RegExp(sha(draft)));assert.ok(sealedPrompt.includes(draft));assert.equal(view.acceptance,"not-assessed");
+});
+
+test("result append refuses a journal replaced after the owned claim",async()=>{
+ const root=await tempDir("measured-order-midflight-"),budget=await createResourceBudget({directory:join(root,"budget"),authorityDigest,limits:{maxAttempts:1,maxInputBytes:32,maxConcurrent:1}}),attempt={attemptId:"rewrite:1",model:"openai-codex/gpt-5.6-sol" as const,thinkingLevel:"high" as const,prompt:"x",deadlineMs:1000,terminationGraceMs:100,maxRetainedOutputBytes:32,maxOutputTokens:8,includeDependencies:false,qualification:{version:"measured-output-exact-v1" as const,expectedSha256:sha("ok")}},order:MeasuredOrder={version:"measured-order-v1",orderId:"midflight",authorityDigest,budgetDigest:resourceBindingDigest(budget),nodes:[{nodeId:"write",dependencies:[],attempts:[attempt]}]},binding=await createMeasuredOrder({directory:join(root,"order"),budget,order}),authority={authorityDigest,orderDigests:[measuredOrderDigest(order)],acknowledgementDigests:[]},journal=join(root,"order","journal.jsonl");
+ const controller=openMeasuredOrder(binding,authority,{run:async()=>{const bytes=await readFile(journal);await rm(journal);await writeFile(journal,bytes,{mode:0o600});return result("ok");}});await assert.rejects(controller.advance(),/binding changed/);assert.equal((await readFile(journal,"utf8")).includes('"type":"result"'),false);
 });
 
 test("measured order restart refuses a replaced journal even when bytes match",async()=>{
