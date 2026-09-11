@@ -35,8 +35,11 @@ permissible, able to refuse or allow but never to narrow. **This package is now 
 is an argument rather than a veto. Definitions are **Agent Skills (`SKILL.md`)** files whose `allowed-tools`
 becomes the grant; the pi-subagents ceiling port is deleted; the interceptor survives only as a tripwire.
 
-**Current release state: 0.22.0, published and registry-verified 2026-09-04.** Invalid project stores fail
-closed with `GRANT_STORE_INVALID`; explicit child models are resolved before side effects; correlation accepts
+**Release-preparation evidence (2026-09-11): 0.23.0 candidate; the registry-verified baseline at that
+measurement was 0.22.0.** For current publication status consult npm and GitHub Releases. The candidate adds
+opt-in bounded factory control, retained evidence and dashboard-host APIs while keeping governance ledger v3
+as the default. Invalid project stores fail closed with `GRANT_STORE_INVALID`;
+explicit child models are resolved before side effects; correlation accepts
 only schema version `1.0` and the closed assurance-scope union; supplied tree/change state can narrow approval
 reuse; public declarations carry their Node-types peer contract; and cleanup failures no longer replace a
 primary operation error. ADR-0038's twenty-minute child timeout and ADR-0037's explicit project opt-in remain
@@ -63,8 +66,8 @@ new paths unforced. All forty-three had repairs; its review found status error p
 unproved. Forty-five had repairs; its review found a frozen-clock hang, shipped control artifacts and non-
 overlapping concurrency. All forty-eight have repairs; critical run `48da2009…` approved exact candidate tree
 `889fd02…`. PR #23 merged it in 0.20.0; R-172's split-target repair shipped through PR #25 in 0.20.1. npm
-`latest`, tag `v0.22.0` and the GitHub Release are verified. Read the top entry in `docs/SESSION-LOG.md` before
-touching it.
+As verified on 2026-09-04, npm `latest`, tag `v0.22.0` and the GitHub Release agreed; consult npm/GitHub for
+current publication status. Read the top entry in `docs/SESSION-LOG.md` before touching it.
 
 **PR #10 / ADR-0035 is merged and released in 0.19.0.** Its review lesson remains operational: adding a
 capability namespace is a nine-site change, the sites touched need the same adversarial read as the ones
@@ -143,7 +146,7 @@ docs/archive/             — SUPERSEDED, kept as evidence, never edited to matc
                             registers (discovery, assumptions, landscape, metrics), ROADMAP, gate reports,
                             both code reviews, the old specs, the completed implementation plan, and the
                             dead upstream proposal. See its README for why each stopped being current.
-packages/pi-daddy  — THE PRODUCT (0.22.0 released): Agent Skill
+packages/pi-daddy  — THE PRODUCT (0.23.0 source; current publication status is on npm/GitHub Releases): Agent Skill
                             definitions, resolver, v3 ledger (frozen v2 reader), delegate/delegate_all/
                             delegate_chain, catalog, bound human approval, process/herdr executors,
                             governed-writer leases, named checks, explicit Herdr dashboard plugin, and

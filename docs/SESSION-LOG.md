@@ -5,6 +5,21 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ---
 
+## 2026-09-11 — 0.23.0 release candidate prepared
+
+Fetched `main` at PR35 merge `1bc08605` is isolated on `codex/factory-release-0.23.0`. Only public package
+`pi-daddy` moves from 0.22.0 to 0.23.0; the private workspace root is excluded and dependency ranges are
+unchanged. The changelog records additive opt-in work-v4/evidence, resource/intent/experiment/order controls,
+dashboard/debrief/ordinary-host bridges and the three final PR35 repairs. Publication-state prose is a dated
+preparation snapshot and directs readers to npm/GitHub rather than claiming a timeless `latest`.
+
+The first versioned unit run correctly exposed two release literals still pinned to 0.22.0: both public
+work-v4 manifest checks failed. After updating those release assertions and the v4 contract's dated package
+reference, 220 focused tests and the complete 1196-unit suite passed. Typecheck, 36 model-free real-pi CI
+integration tests and installed-package smoke also pass. No mutation or model tests ran. Canonical pack
+inventory and fresh installed-artifact verification remain post-merge release steps; no tag, npm publication
+or GitHub Release has been created from this preparation branch.
+
 ## 2026-09-11 — PR35 review repairs prepared
 
 Three actionable PR35 findings are repaired on its existing branch. Best-effort post-execution lifecycle/

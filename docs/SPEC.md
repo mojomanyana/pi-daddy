@@ -5,7 +5,10 @@ to be decided. This file is authoritative for present behavior; ADRs record why 
 date. If code and this file disagree, report and repair the stale current-state claim rather than re-deriving
 present behavior from historical ADRs.
 
-Released baseline last synced against the code: **2026-09-04**, `pi-daddy` 0.22.0, pi 0.84.2; the dashboard plugin requires Herdr 0.8.0.
+**Release-preparation snapshot (2026-09-11):** the last registry-verified baseline was `pi-daddy` 0.22.0
+(verified 2026-09-04), with pi 0.84.2 and a Herdr 0.8.0 plugin floor; merged source was prepared as the
+0.23.0 candidate. For current publication status, consult [npm](https://www.npmjs.com/package/pi-daddy) and
+[GitHub Releases](https://github.com/mojomanyana/pi-daddy/releases).
 The **2026-09-06 work-v4 source candidate** is described separately below. It is not a release, activation,
 production authentication result or completed task/qualification gate.
 
