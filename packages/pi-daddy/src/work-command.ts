@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import {
   appendWorkLedgerEventOnce,
@@ -15,6 +15,7 @@ import {
   type WorkProjectionContext,
   type WorkRevision,
 } from "./work-ledger.ts";
+import { withFileLock } from "./file-lock.ts";
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:/@+\-]{0,127}$/;
 const DIGEST = /^[a-f0-9]{64}$/;
@@ -105,41 +106,52 @@ export async function declareWork(input: DeclareWorkInput): Promise<WorkFrozen<D
     throw new TypeError("work declaration requires an identifier and non-empty outcome");
   }
   const resolved = paths(input), outcomeDigest = sha256(input.outcome.trim());
-  const existing = await loadDeclaredWork(resolved.statePath);
-  if (existing) {
-    if (existing.id === input.id && existing.outcomeDigest === outcomeDigest) return existing;
-    throw new Error(`declared work id ${input.id} already names a different outcome`);
-  }
   await mkdir(dirname(resolved.ledgerPath), { recursive: true });
   await mkdir(dirname(resolved.statePath), { recursive: true });
-  const now = new Date();
-  const revision = (kind: WorkRevision["kind"], name: string, patch: Partial<Omit<WorkRevision, "digest">> = {}) =>
-    buildWorkRevisionEvent({ eventId: `work:${input.id}:${name}:1`, now, revision: {
-      kind, id: `work:${input.id}:${name}`, revision: 1, scopeId: `work:${input.id}:scope`, predecessor: null,
-      contentDigest: sha256(`${name}\0${outcomeDigest}`), parent: null, dependencies: [], ownerId: "local-operator",
-      permittedEffects: [], policy: null, ...patch,
+  return withFileLock(resolved.statePath, "declared work", async () => {
+    const existing = await loadDeclaredWork(resolved.statePath);
+    if (existing) {
+      if (existing.id === input.id && existing.outcomeDigest === outcomeDigest) return existing;
+      throw new Error(`declared work id ${input.id} already names a different outcome`);
+    }
+    const pendingPath = `${resolved.statePath}.pending`;
+    let prepared: { version: "pi-daddy-work-preparation-v1"; id: string; outcomeDigest: string; createdAt: string };
+    try {
+      prepared = JSON.parse(await readFile(pendingPath, "utf8"));
+      if (!prepared || Object.keys(prepared).sort().join() !== "createdAt,id,outcomeDigest,version" || prepared.version !== "pi-daddy-work-preparation-v1" || prepared.id !== input.id || prepared.outcomeDigest !== outcomeDigest || Number.isNaN(Date.parse(prepared.createdAt))) throw new Error("invalid");
+    } catch (error) {
+      if ((error as { code?: string }).code !== "ENOENT") throw new Error("another or invalid work declaration is pending; no events were replaced");
+      prepared = { version: "pi-daddy-work-preparation-v1", id: input.id, outcomeDigest, createdAt: new Date().toISOString() };
+      await writeFile(pendingPath, `${JSON.stringify(prepared)}\n`, { encoding: "utf8", mode: 0o600, flag: "wx" });
+    }
+    const now = new Date(prepared.createdAt);
+    const revision = (kind: WorkRevision["kind"], name: string, patch: Partial<Omit<WorkRevision, "digest">> = {}) =>
+      buildWorkRevisionEvent({ eventId: `work:${input.id}:${name}:1`, now, revision: {
+        kind, id: `work:${input.id}:${name}`, revision: 1, scopeId: `work:${input.id}:scope`, predecessor: null,
+        contentDigest: sha256(`${name}\0${outcomeDigest}`), parent: null, dependencies: [], ownerId: "local-operator",
+        permittedEffects: [], policy: null, ...patch,
+      } });
+    const scope = revision("scope", "scope"), policy = revision("policy", "policy");
+    const intent = revision("goal", "goal", { parent: revisionRef(scope) });
+    const obligation = revision("obligation", "obligation", { parent: revisionRef(intent), policy: revisionRef(policy) });
+    const binding = { intent: revisionRef(intent), obligation: revisionRef(obligation), artifact: null, policy: revisionRef(policy) };
+    const snapshot = buildWorkSnapshotEvent({ eventId: `work:${input.id}:snapshot:1`, now, snapshot: {
+      snapshotId: `work:${input.id}:selected`, scope: revisionRef(scope), revisions: [revisionRef(policy), revisionRef(intent), revisionRef(obligation)], bindings: [binding],
     } });
-  const scope = revision("scope", "scope");
-  const policy = revision("policy", "policy");
-  const intent = revision("goal", "goal", { parent: revisionRef(scope) });
-  const obligation = revision("obligation", "obligation", { parent: revisionRef(intent), policy: revisionRef(policy) });
-  const binding = { intent: revisionRef(intent), obligation: revisionRef(obligation), artifact: null, policy: revisionRef(policy) };
-  const snapshot = buildWorkSnapshotEvent({ eventId: `work:${input.id}:snapshot:1`, now, snapshot: {
-    snapshotId: `work:${input.id}:selected`, scope: revisionRef(scope), revisions: [revisionRef(policy), revisionRef(intent), revisionRef(obligation)], bindings: [binding],
-  } });
-  for (const event of [scope, policy, intent, obligation, snapshot]) {
-    await appendWorkLedgerEventOnce({ path: resolved.ledgerPath, grantLedgerPath: resolved.grantLedgerPath }, event);
-  }
-  const stored: StoredDeclaredWorkState = {
-    version: "pi-daddy-declared-work-v1", id: input.id, outcomeDigest, ledgerPath: resolved.ledgerPath,
-    grantLedgerPath: resolved.grantLedgerPath,
-    selectedSnapshot: { snapshot: { id: snapshot.payload.snapshot.snapshotId, digest: snapshot.payload.snapshot.digest }, event: eventRef(snapshot) },
-    scope: revisionRef(scope), intent: revisionRef(intent), obligation: revisionRef(obligation), policy: revisionRef(policy),
-  };
-  const temporary = `${resolved.statePath}.${process.pid}.tmp`;
-  await writeFile(temporary, `${JSON.stringify(stored, null, 2)}\n`, { encoding: "utf8", mode: 0o600, flag: "wx" });
-  await rename(temporary, resolved.statePath);
-  return Object.freeze({ ...stored, statePath: resolved.statePath });
+    for (const event of [scope, policy, intent, obligation, snapshot]) await appendWorkLedgerEventOnce({ path: resolved.ledgerPath, grantLedgerPath: resolved.grantLedgerPath }, event);
+    const stored: StoredDeclaredWorkState = {
+      version: "pi-daddy-declared-work-v1", id: input.id, outcomeDigest, ledgerPath: resolved.ledgerPath, grantLedgerPath: resolved.grantLedgerPath,
+      selectedSnapshot: { snapshot: { id: snapshot.payload.snapshot.snapshotId, digest: snapshot.payload.snapshot.digest }, event: eventRef(snapshot) },
+      scope: revisionRef(scope), intent: revisionRef(intent), obligation: revisionRef(obligation), policy: revisionRef(policy),
+    };
+    const temporary = `${resolved.statePath}.${process.pid}.${randomUUID()}.tmp`;
+    try {
+      await writeFile(temporary, `${JSON.stringify(stored, null, 2)}\n`, { encoding: "utf8", mode: 0o600, flag: "wx" });
+      await rename(temporary, resolved.statePath);
+    } finally { await rm(temporary, { force: true }); }
+    await rm(pendingPath);
+    return Object.freeze({ ...stored, statePath: resolved.statePath });
+  });
 }
 
 export type DeclaredOccurrenceIdentity = Pick<WorkOccurrencePayload["labels"], "toolCallId" | "taskId" | "workspaceId" | "definitionDigest" | "configurationDigest" | "modelId" | "effortId"> & {

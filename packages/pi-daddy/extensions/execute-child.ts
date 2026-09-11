@@ -105,10 +105,6 @@ async function executeChildBody(input: {
   const configuredTimeoutMs = timeoutFromEnv(process.env[ENV_CHILD_TIMEOUT]);
   const startedAt = new Date();
   const deadlineAt = new Date(startedAt.getTime() + configuredTimeoutMs).toISOString();
-  const workAttempt = await beginDeclaredWorkAttempt({
-    session, plan, childId, executionId, parentExecutionId, toolCallId: input.toolCallId,
-    preparedWorkspace, configuredTimeoutMs, startedAt,
-  });
   if (ledgerPath) {
     try {
       await appendLedgerEvent(
@@ -131,6 +127,10 @@ async function executeChildBody(input: {
       throw error;
     }
   }
+  const workAttempt = await beginDeclaredWorkAttempt({
+    session, plan, childId, executionId, parentExecutionId, toolCallId: input.toolCallId,
+    preparedWorkspace, configuredTimeoutMs, startedAt,
+  });
 
   // The recorded deadline and executor timer are one fact. Waiting for the strict starting append consumes
   // the budget; handing the child a fresh full timeout would leave it live after the dashboard truthfully
@@ -157,7 +157,7 @@ async function executeChildBody(input: {
   if (sessionFlag >= 0) retention.observeSession({ source: "pi-session-file", value: plan.args[sessionFlag + 1] });
   let releaseReason = "failed";
   let retainWriterLease = false;
-  let terminalAttempted = false;
+  let terminalAttempted = false, workTerminalAttempted = false;
   const teardownFailures: string[] = [];
   let runtimeRecord: Promise<void> | undefined;
   const recordRunning = (executor: "process" | "herdr", pane?: { id: string; agentName: string }): void => {
@@ -237,7 +237,7 @@ async function executeChildBody(input: {
     retention.finish({ code: output.code, signal: output.signal ?? null, timedOut: output.timedOut,
       aborted: output.aborted, truncated: output.truncated, failed: childFailed });
     releaseReason = output.timedOut ? "timeout" : output.aborted ? "cancelled" : childFailed ? "failed" : "completed";
-    if (workAttempt) try { await workAttempt.finish(childFailed ? "failed" : "completed"); }
+    if (workAttempt) try { workTerminalAttempted = true; await workAttempt.finish(childFailed ? "failed" : "completed"); }
     catch (error) { teardownFailures.push(`declared work terminal record failed: ${String(error)}`); }
     if (ledgerPath) {
       terminalAttempted = true;
@@ -322,6 +322,8 @@ async function executeChildBody(input: {
     return withTeardownNotes(succeeded);
   } catch (error) {
     retention.finish({ code: null, signal: null, timedOut: false, aborted: Boolean(signal?.aborted), truncated: false, failed: true });
+    if (workAttempt && !workTerminalAttempted) try { workTerminalAttempted = true; await workAttempt.finish("failed"); }
+    catch (cause) { teardownFailures.push(`declared work terminal record failed: ${String(cause)}`); }
     retainWriterLease = Boolean(writerLease && isHerdrWriterCloseFailure(error));
     if (ledgerPath && !terminalAttempted) {
       // Best-effort: this records the failure, so it must not REPLACE the failure. A strict append that
