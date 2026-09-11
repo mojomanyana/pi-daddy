@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import {
@@ -21,9 +22,9 @@ const env = {
   HERDR_ENV: "1", HERDR_PANE_ID: "w1:p1", HERDR_TAB_ID: "w1:t1", HERDR_WORKSPACE_ID: "w1",
 };
 
-function hostAndPluginExec(options: { installed?: boolean } = {}) {
+function hostAndPluginExec(options: { installed?: boolean; linkedRoot?: string } = {}) {
   let installed = options.installed ?? false;
-  let linkedRoot: string | undefined;
+  let linkedRoot = options.linkedRoot;
   const calls: string[][] = [];
   const exec: HerdrExec = async (args) => {
     calls.push(args);
@@ -109,6 +110,45 @@ test("Install and open is the only startup choice that links software", async ()
   assert.equal(fake.calls.filter((args) => args[0] === "plugin" && args[1] === "link").length, 1);
   assert.equal(fake.calls.filter((args) => args[0] === "plugin" && args[1] === "pane" && args[2] === "open").length, 1);
   assert.ok(notices.some((message) => /opened.*without changing focus/i.test(message)));
+});
+
+test("a different-package dashboard link can be explicitly relinked and opened", async () => {
+  const root = await tempDir("dashboard-relink-");
+  const pluginRoot = join(root, "current-plugin");
+  const fake = hostAndPluginExec({ installed: true, linkedRoot: join(root, "old-plugin") });
+  let promptTitle = "";
+  let promptChoices: string[] = [];
+  const outcome = await offerDashboardHandshake({
+    mode: "tui", env, pid: 42, exec: fake.exec, cwd: root, ledgerPath: join(root, "ledger.jsonl"),
+    pluginRoot, preferencePath: dashboardPreferencePath(root), paneStatePath: join(root, "panes.json"),
+    ui: {
+      select: async (title, choices) => { promptTitle = title; promptChoices = choices; return "Relink and open"; },
+      notify: () => {},
+    },
+  });
+  assert.match(promptTitle, /different package/i);
+  assert.deepEqual(promptChoices, ["Relink and open", "Not now"]);
+  assert.equal(outcome, "installed");
+  assert.deepEqual(fake.calls.find((args) => args[0] === "plugin" && args[1] === "link")?.slice(0, 4),
+    ["plugin", "link", pluginRoot, "--enabled"]);
+  assert.equal(fake.calls.filter((args) => args[0] === "plugin" && args[1] === "pane" && args[2] === "open").length, 1);
+});
+
+test("declining a different-package relink changes neither link nor startup preference", async () => {
+  const root = await tempDir("dashboard-relink-decline-");
+  const fake = hostAndPluginExec({ installed: true, linkedRoot: join(root, "old-plugin") });
+  const preferencePath = dashboardPreferencePath(root);
+  let prompts = 0;
+  const input = {
+    mode: "tui" as const, env, pid: 42, exec: fake.exec, cwd: root, ledgerPath: join(root, "ledger.jsonl"),
+    pluginRoot: join(root, "current-plugin"), preferencePath, paneStatePath: join(root, "panes.json"),
+    ui: { select: async () => { prompts += 1; return "Not now"; }, notify: () => {} },
+  };
+  assert.equal(await offerDashboardHandshake(input), "deferred");
+  assert.equal(await offerDashboardHandshake(input), "deferred");
+  assert.equal(prompts, 2, "a declined repair is not a permanent suppression choice");
+  assert.equal(fake.calls.some((args) => args[0] === "plugin" && args[1] === "link"), false);
+  await assert.rejects(() => readFile(preferencePath), /ENOENT/);
 });
 
 test("outside Herdr the startup handshake and command are diagnostics, not a server reachability guess", async () => {

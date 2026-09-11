@@ -8,7 +8,7 @@ import { createDispatchBudget, openResourceBudget, resourceBindingDigest } from 
 import { dispatchRequestDigest, type DispatchRequest } from "./dispatch-control.ts";
 import { serveDashboardHost } from "./dashboard-host-transport.ts";
 import type { DeclaredWorkState } from "./work-command.ts";
-import type { OrdinaryChildren } from "./ordinary-children.ts";
+import { ordinaryCancellation, ordinaryCancellationDigest, type OrdinaryChildren, type OrdinaryTarget } from "./ordinary-children.ts";
 import { dataDigest } from "./debrief-contract.ts";
 
 export interface DailyDashboardHostInput {id:string;cwd:string;directory:string;socketPath?:string;declared:DeclaredWorkState;ordinary:OrdinaryChildren;harness:DashboardHarness;author:string}
@@ -32,15 +32,21 @@ export async function startDailyDashboardHost(input:DailyDashboardHostInput){
  const policyPath=join(input.directory,"archive-policy.json"),policyBytes=JSON.stringify(policy);await writeFile(policyPath,policyBytes,{mode:0o600,flag:"wx"});
  const authorityDigest=dataDigest({kind:"daily-dashboard-host",id:input.id,cwd:input.cwd}),budget=await createDispatchBudget({directory:join(input.directory,"budget"),authorityDigest,limits:{maxAttempts:6,maxInputBytes:65536,maxConcurrent:3}});
  const config:DashboardHostConfig={version:"producer-dashboard-host-v1",trustDirectory,trustPolicyId,archiveRoot,scope:`daily:${input.id}`,author:input.author,policyPath,policySha256:hash(policyBytes),sources:[{id:"work",kind:"work"},{id:"facts",kind:"facts"}],selection:input.declared.selectedSnapshot,cases:null,blind:null,budgetDigest:resourceBindingDigest(budget),experimentDigest:null,harnessArtifactDigest:harnessDigest,ordinaryDigest:input.ordinary.bindingDigest};
- const requestDigests=new Set<string>(),dispatchDigests=new Set<string>();let host:ReturnType<typeof createDashboardHost>,factsResultManifest:string|null=null;
- const authority=():DashboardHostAuthority=>({hostDigests:[dashboardHostDigest(config)],requestDigests:[...requestDigests],workContext:{selectedSnapshot:config.selection,authority:null},dispatch:{authorityDigest,requestDigests:[...dispatchDigests]},experiment:null});
+ const requestDigests=new Set<string>(),dispatchDigests=new Set<string>(),ordinaryDigests=new Set<string>();let host:ReturnType<typeof createDashboardHost>,factsResultManifest:string|null=null;
+ const authority=():DashboardHostAuthority=>({hostDigests:[dashboardHostDigest(config)],requestDigests:[...requestDigests],workContext:{selectedSnapshot:config.selection,authority:null},dispatch:{authorityDigest,requestDigests:[...dispatchDigests]},experiment:null,ordinary:{bindingDigest:input.ordinary.bindingDigest,requestDigests:[...ordinaryDigests]}});
  const request=(context:{hostDigest:string;selectionDigest:string;tip:string},operation:DashboardHostRequest["operation"],payload:unknown,requestId:string):DashboardHostRequest=>({version:"1.0",requestId,hostDigest:context.hostDigest,selectionDigest:context.selectionDigest,expectedTip:context.tip,operation,payload});
  host=createDashboardHost({harness:input.harness,config,budget,ordinary:input.ordinary,authority,beforeObservation:sourceId=>sourceId==="work"?refreshWork():Promise.resolve(),humanActions:async context=>{
    const state=await openResourceBudget(budget).controls(null).inspect(),action=state.paused?"resume-dispatch":"pause-dispatch",key=state.paused?"resume-dispatch":"pause-new-dispatch";
    const native:DispatchRequest={version:"1.0",requestId:`${action}:${state.revision}`,bindingDigest:config.budgetDigest,expectedRevision:state.revision,action,targetExecutionId:null};dispatchDigests.add(dispatchRequestDigest(native));
    const hostRequest=request(context,"dispatch",native,`host-${action}:${state.revision}`);requestDigests.add(dashboardHostRequestDigest(hostRequest));
    const previous=context.observations.find(x=>x.sourceId==="work")?.checkpointId??null,refresh=request(context,"observe",{sourceId:"work",previousCheckpointId:previous,facts:context.observations.find(x=>x.sourceId==="facts")?.checkpointId?factsResultManifest:null},`refresh-work:${state.revision}:${context.tip.slice(0,12)}`);requestDigests.add(dashboardHostRequestDigest(refresh));
-   return [{key,label:state.paused?"Resume new governed dispatch":"Pause new governed dispatch; running children continue",request:hostRequest},{key:"refresh-current-work",label:"Capture current declared work and attempts",request:refresh}];
+   const ordinary=input.ordinary.inspect() as {revision:number;children:{target:OrdinaryTarget;state:string}[]};
+   const cancellations=ordinary.children.filter(row=>row.state==="active").sort((a,b)=>a.target.executionId.localeCompare(b.target.executionId)).slice(0,8).map(row=>{
+    const native=ordinaryCancellation({version:"ordinary-cancel-v1",requestId:`cancel:${row.target.executionId.slice(5)}`,bindingDigest:input.ordinary.bindingDigest,expectedRevision:ordinary.revision,target:row.target});ordinaryDigests.add(ordinaryCancellationDigest(native));
+    const cancel=request(context,"ordinary-cancel",native,`host-cancel:${row.target.executionId.slice(5)}:${ordinary.revision}`);requestDigests.add(dashboardHostRequestDigest(cancel));
+    return {key:`cancel-${row.target.executionId.replace(":","-")}`,label:`Cancel running attempt ${row.target.executionId}`,request:cancel};
+   });
+   return [{key,label:state.paused?"Resume new governed dispatch":"Pause new governed dispatch; running children continue",request:hostRequest},{key:"refresh-current-work",label:"Capture current declared work and attempts",request:refresh},...cancellations];
  }});
  const before=await host.frame(),observeFacts=request({hostDigest:host.hostDigest,selectionDigest:before.selectionDigest,tip:before.tip},"observe",{sourceId:"facts",previousCheckpointId:null,facts:null},"observe-current-facts");requestDigests.add(dashboardHostRequestDigest(observeFacts));const factsResult=await host.action(observeFacts) as {result:{sourceManifestId:string}};factsResultManifest=factsResult.result.sourceManifestId;
  const afterFacts=await host.frame(),observeWork=request({hostDigest:host.hostDigest,selectionDigest:afterFacts.selectionDigest,tip:afterFacts.tip},"observe",{sourceId:"work",previousCheckpointId:null,facts:factsResult.result.sourceManifestId},"observe-current-work");requestDigests.add(dashboardHostRequestDigest(observeWork));await host.action(observeWork);

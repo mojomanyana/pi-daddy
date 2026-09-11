@@ -88,22 +88,31 @@ export async function offerDashboardHandshake(input: DashboardHandshakeInput): P
     if (preference) return "suppressed";
     const plugin = await inspectDashboardPlugin(exec, input.pluginRoot);
     if (plugin.state === "compatible") return "already-installed";
-    if (plugin.state !== "absent") {
+    const replacingDifferentPackage = plugin.state === "incompatible" && plugin.incompatibility === "package-root";
+    if (plugin.state !== "absent" && !replacingDifferentPackage) {
       input.ui.notify(`pi-daddy dashboard: ${plugin.diagnostic}`, "error");
       return "failed";
     }
 
+    const affirmative = replacingDifferentPackage ? "Relink and open" : "Install and open";
+    const choices = replacingDifferentPackage ? [affirmative, "Not now"] : [affirmative, "Not now", "Never ask"];
     const choice = await input.ui.select(
-      "Herdr detected. Install and open the pi-daddy dashboard?",
-      ["Install and open", "Not now", "Never ask"],
+      replacingDifferentPackage
+        ? "The pi-daddy dashboard is linked from a different package. Relink this bundled copy and open it?"
+        : "Herdr detected. Install and open the pi-daddy dashboard?",
+      choices,
     );
-    if (choice !== "Install and open" && choice !== "Not now" && choice !== "Never ask") {
+    if (!choices.includes(choice ?? "")) {
       // Escape, timeout and UI teardown return undefined. None is an operator choice, so none may become a
       // durable preference merely because the dialog disappeared.
       input.ui.notify("pi-daddy dashboard: installation prompt dismissed; no preference was stored.", "info");
       return "deferred";
     }
-    if (choice !== "Install and open") {
+    if (choice !== affirmative) {
+      if (replacingDifferentPackage) {
+        input.ui.notify("pi-daddy dashboard: existing link unchanged; no preference was stored.", "info");
+        return "deferred";
+      }
       const recorded = choice === "Never ask" ? "never" : "not-now";
       await savePreference(input.preferencePath, recorded);
       input.ui.notify(

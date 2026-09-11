@@ -97,6 +97,7 @@ export type DashboardPluginState = "absent" | "disabled" | "compatible" | "incom
 export interface DashboardPluginStatus {
   state: DashboardPluginState;
   diagnostic: string;
+  incompatibility?: "package-root" | "protocol";
   plugin?: Record<string, unknown>;
 }
 
@@ -122,6 +123,7 @@ export async function inspectDashboardPlugin(
       return {
         state: "incompatible",
         diagnostic: `Herdr plugin ${DASHBOARD_PLUGIN_ID} is linked from a different package; relink the bundled copy.`,
+        incompatibility: "package-root",
         plugin,
       };
     }
@@ -132,6 +134,7 @@ export async function inspectDashboardPlugin(
         diagnostic:
           `Herdr plugin ${DASHBOARD_PLUGIN_ID} uses protocol ${major ?? "unknown"}; ` +
           `this pi-daddy core requires ${DASHBOARD_PROTOCOL_VERSION}. Relink both from the same package.`,
+        incompatibility: "protocol",
         plugin,
       };
     }
