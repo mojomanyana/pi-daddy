@@ -65,7 +65,7 @@ export default function (pi: ExtensionAPI) {
 
   const session = createGrantsSession(extensionPath);
   associateOrdinaryHost(pi,session);
-  const dailyHost=createDailyDashboardSession({ordinary:()=>ordinaryChildrenFor(pi),declared:()=>session.declaredWork,cwd:()=>session.cwd,env:process.env,author:"local-operator"});
+  const dailyHost=createDailyDashboardSession({ordinary:()=>ordinaryChildrenFor(pi),declared:()=>session.declaredWork,rebind:state=>{session.declaredWork=state;},cwd:()=>session.cwd,env:process.env,author:"local-operator"});
   const dashboardPluginRoot = fileURLToPath(new URL("../herdr-plugin/", import.meta.url));
   const dashboardPaths = defaultDashboardPaths(
     process.env.PI_CODING_AGENT_DIR?.trim() || join(homedir(), ".pi", "agent"),

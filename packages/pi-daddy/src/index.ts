@@ -166,6 +166,9 @@ export {
   type MeasuredSessionHostResult,
   type ProviderUsage,
 } from "./measured-session.ts";
+export { createMeasuredOrder, openMeasuredOrder, measuredOrderDigest, measuredOrderAcknowledgementDigest, qualifyMeasuredOutput,
+  type MeasuredOrder, type MeasuredOrderNode, type MeasuredOrderAttempt, type MeasuredOutputContract, type MeasuredOrderBinding, type MeasuredOrderAuthority,
+  type MeasuredOrderAcknowledgement, type MeasuredOrderNodeView } from "./measured-order.ts";
 
 export {
   createApprovalGate,

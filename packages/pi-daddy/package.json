@@ -98,6 +98,10 @@
       "types": "./dist/measured-session.d.ts",
       "default": "./dist/measured-session.js"
     },
+    "./measured-order": {
+      "types": "./dist/measured-order.d.ts",
+      "default": "./dist/measured-order.js"
+    },
     "./execution-retention": {
       "types": "./dist/execution-retention.d.ts",
       "default": "./dist/execution-retention.js"

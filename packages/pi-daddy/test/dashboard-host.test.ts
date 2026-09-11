@@ -80,7 +80,7 @@ test("concurrent exact host CAS admits one request; missing authority records de
 });
 test("human action provider receives the current host CAS context and may resolve asynchronously",async()=>{
  const w=await hostWorld(false);let seen:any=null;const host=openDashboardHost({...w.options,humanActions:async context=>{seen=context;return [];}});
- const frame=await host.frame();assert.deepEqual(seen,{hostDigest:host.hostDigest,selectionDigest:frame.selectionDigest,tip:frame.tip,observations:[]});assert.deepEqual(frame.actions,[]);
+ const frame=await host.frame();assert.deepEqual(seen,{hostDigest:host.hostDigest,selectionDigest:frame.selectionDigest,tip:frame.tip,observations:[],preparedPresentationDigest:null});assert.deepEqual(frame.actions,[]);
 });
 
 test("human dashboard commands invoke only host-published exact approved actions",async()=>{

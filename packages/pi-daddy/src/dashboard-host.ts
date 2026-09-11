@@ -18,9 +18,11 @@ export const isDashboardHost=(value:unknown):value is DashboardHost=>typeof valu
 export type DashboardHost=ReturnType<typeof openDashboardHost>;
 export interface DashboardHostOptions { ordinary?:OrdinaryChildren; harness:DashboardHarness; config:DashboardHostConfig; budget:GovernedBudgetBinding; experiment?:ReturnType<typeof openExperiment>; authority:()=>DashboardHostAuthority|null;
   /** Exact actions constructed and authorized by the owner; the dashboard exposes only human labels/keys. */
-  humanActions?:(context:{hostDigest:string;selectionDigest:string;tip:string;observations:readonly {sourceId:string;checkpointId:string}[]})=>readonly {key:string;label:string;request:DashboardHostRequest}[]|Promise<readonly {key:string;label:string;request:DashboardHostRequest}[]>;
+  humanActions?:(context:{hostDigest:string;selectionDigest:string;tip:string;observations:readonly {sourceId:string;checkpointId:string}[];preparedPresentationDigest:string|null})=>readonly {key:string;label:string;request:DashboardHostRequest}[]|Promise<readonly {key:string;label:string;request:DashboardHostRequest}[]>;
   /** Explicit approved observation effect only; refresh/frame never invokes it. */
   beforeObservation?:(sourceId:string)=>Promise<void>;
+  /** Owner callback after the exact intent journal reports applied; failure keeps host acknowledgement unknown. */
+  afterIntentApplied?:(selection:IntentRequest["selection"])=>void|Promise<void>;
   /** Independently sourced current declaration. Never inferred from idle, a PID, title or request fields. */
   presence?:()=>{present:boolean;closing:boolean;evidenceDigest:string;expiresAt:number}|null;
 }
@@ -57,7 +59,7 @@ export function openDashboardHost(options:DashboardHostOptions){
   const observation=dashboardObservations(h,c,journal.read),history=()=>journal.read();
   const append=(value:Record<string,unknown>)=>journal.append(history().at(-1)!.id,value);
   const saved=():DebriefCheckpoint|null=>{const rows=history().filter(e=>e.value.type==="checkpoint");return rows.length?detached(rows.at(-1)!.value.checkpoint) as DebriefCheckpoint:null;};
-  let presenter:DebriefPresenter|undefined,busy=false,poisoned=false,presentationRevision:number|null=null,presenceDigest:string|null=null,attentionDeferred:string|null=null;
+  let presenter:DebriefPresenter|undefined,busy=false,poisoned=false,presentationRevision:number|null=null,presenceDigest:string|null=null,attentionDeferred:string|null=null,presentationAcknowledged=false;
   const ordinaryDispatchHoldKey=dataDigest({hostDigest,control:"pause-new-ordinary-dispatch"});
   let displayedActions:null|{tip:string;actions:{key:string;label:string;operation:DashboardHostRequest["operation"];request:DashboardHostRequest}[];digest:string}=null;
   const presence=()=>{const p=options.presence?.();return p&&p.present===true&&p.closing===true&&sha(p.evidenceDigest)&&Number.isFinite(p.expiresAt)&&p.expiresAt>Date.now()?p:null;};
@@ -74,7 +76,7 @@ export function openDashboardHost(options:DashboardHostOptions){
   const nativeRead=async()=>({dispatch:await budget.controls(null).inspect(),intent:budget.binding.intent?await budget.intentControls(null).inspect():null,experiment:experiment?await experiment.inspect():null,ordinary:ordinary?ordinary.inspect():null});
   const availableHumanActions=async()=>{
     const rows=history(),tip=rows.at(-1)!.id,selection=await currentSelection(),seen=new Set<string>();
-    const declared=await options.humanActions?.({hostDigest,selectionDigest:dashboardSelectionDigest(selection),tip,observations:observation.latest().map(x=>({sourceId:x.sourceId,checkpointId:x.checkpointId}))})??[],a=authority();
+    const declared=await options.humanActions?.({hostDigest,selectionDigest:dashboardSelectionDigest(selection),tip,observations:observation.latest().map(x=>({sourceId:x.sourceId,checkpointId:x.checkpointId})),preparedPresentationDigest:presenter&&presentationRevision!==null&&!presentationAcknowledged?dataDigest(presenter.view()):null})??[],a=authority();
     return declared.map(value=>{const x=detached(value);controlShape(x,["key","label","request"]);const request=dashboardHostRequest(x.request);
       if(!/^[a-zA-Z0-9:_-]{1,64}$/.test(x.key)||typeof x.label!=="string"||!x.label.trim()||Buffer.byteLength(x.label)>120||seen.has(x.key))throw Error("invalid human dashboard action");seen.add(x.key);
       if(request.hostDigest!==hostDigest||request.expectedTip!==tip||request.selectionDigest!==dashboardSelectionDigest(selection)||!a?.requestDigests.includes(dashboardHostRequestDigest(request)))throw Error("human dashboard action is stale or not exactly authorized");
@@ -134,11 +136,11 @@ export function openDashboardHost(options:DashboardHostOptions){
               attentionDeferred=null;const view=await presenter.open({mode:"manual",userPresent:true});await paused(p.dispatchRevision);
               if(attentionDeferred){presenter.close();presentationRevision=null;append({type:"defer",requestId:request.requestId,reason:attentionDeferred,weekly:true});result={state:"deferred",reason:attentionDeferred};}
               else {if(view.state!=="open")throw Error("presentation data/attention acknowledgement unavailable");
-                presentationRevision=p.dispatchRevision;presenceDigest=p.evidenceDigest;const frameDigest=dataDigest(view);append({type:"presentation",requestId:request.requestId,evidence:p,frameDigest,state:"prepared-not-delivery",automatic:"unqualified"});result={state:"prepared",frameDigest};}
+                presentationRevision=p.dispatchRevision;presenceDigest=p.evidenceDigest;presentationAcknowledged=false;const frameDigest=dataDigest(view);append({type:"presentation",requestId:request.requestId,evidence:p,frameDigest,state:"prepared-not-delivery",automatic:"unqualified"});result={state:"prepared",frameDigest};}
             }
           }else if(request.operation==="presented"){
             const p=detached(request.payload) as {frameDigest:string};if(Object.keys(p).join()!=="frameDigest"||!presenter||presentationRevision===null)throw Error("original prepared presentation required");
-            await paused(presentationRevision);if(presence()?.evidenceDigest!==presenceDigest)throw Error("user absent/presence changed");if(p.frameDigest!==dataDigest(presenter.view()))throw Error("stale presentation acknowledgement");result={state:"host-acknowledged-presentation",frameDigest:p.frameDigest,humanAuthentication:"unqualified"};
+            await paused(presentationRevision);if(presence()?.evidenceDigest!==presenceDigest)throw Error("user absent/presence changed");if(p.frameDigest!==dataDigest(presenter.view()))throw Error("stale presentation acknowledgement");presentationAcknowledged=true;result={state:"host-acknowledged-presentation",frameDigest:p.frameDigest,humanAuthentication:"unqualified"};
           }else if(request.operation==="defer"){
             presenter?.close();presentationRevision=null;append({type:"defer",requestId:request.requestId,weekly:true,evidence:request.payload});result={state:"deferred"};
           }else if(request.operation==="debrief"){
@@ -155,7 +157,7 @@ export function openDashboardHost(options:DashboardHostOptions){
             }else if(request.operation==="intent"||request.operation==="intent-reconcile"){
               const native=detached(intentRequest(request.payload as IntentRequest)) as IntentRequest,port=budget.intentControls(a!.dispatch),digest=intentRequestDigest(native);
               if(c.ordinaryDigest&&!ordinary)throw Error("original ordinary boundary unavailable; no recovery");
-              if(!ordinary)result=request.operation==="intent"?await port.request(native):await port.reconcile(native);
+              if(!ordinary){result=request.operation==="intent"?await port.request(native):await port.reconcile(native);const snapshot=result as {selection:IntentRequest["selection"];records:{requestId:string;application:string}[]},outcome=snapshot.records.find(r=>r.requestId===native.requestId);if(outcome?.application==="applied")await options.afterIntentApplied?.(snapshot.selection);}
               else {
               const pending=history().filter(e=>e.value.type==="ordinary-intent-pending"&&e.value.nativeRequestId===native.requestId);
               if(pending.some(e=>e.value.digest!==digest))throw Error("immutable pending ordinary intent ID");
@@ -169,8 +171,9 @@ export function openDashboardHost(options:DashboardHostOptions){
                 result={state:"pending-ordinary-boundary",nativeRequestId:native.requestId,application:"not-acknowledged"};
               }else{
                 result=(request.operation==="intent"||pending.length>0&&!exists)?await port.request(native):await port.reconcile(native);
-                const outcome=(result as {records:{requestId:string;application:string}[]}).records.find(r=>r.requestId===native.requestId);
+                const snapshot=result as {selection:IntentRequest["selection"];records:{requestId:string;application:string}[]},outcome=snapshot.records.find(r=>r.requestId===native.requestId);
                 if(held&&!outcome)throw Error("native intent application acknowledgement unavailable");
+                if(outcome?.application==="applied")await options.afterIntentApplied?.(snapshot.selection);
                 if(held&&["applied","not-applied"].includes(outcome!.application))releaseOrdinary=held.release;
               }
               }
