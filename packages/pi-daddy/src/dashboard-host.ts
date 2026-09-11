@@ -55,6 +55,7 @@ export function openDashboardHost(options:DashboardHostOptions){
   const append=(value:Record<string,unknown>)=>journal.append(history().at(-1)!.id,value);
   const saved=():DebriefCheckpoint|null=>{const rows=history().filter(e=>e.value.type==="checkpoint");return rows.length?detached(rows.at(-1)!.value.checkpoint) as DebriefCheckpoint:null;};
   let presenter:DebriefPresenter|undefined,busy=false,poisoned=false,presentationRevision:number|null=null,presenceDigest:string|null=null,attentionDeferred:string|null=null;
+  let displayedActions:null|{tip:string;actions:{key:string;label:string;operation:DashboardHostRequest["operation"];request:DashboardHostRequest}[];digest:string}=null;
   const presence=()=>{const p=options.presence?.();return p&&p.present===true&&p.closing===true&&sha(p.evidenceDigest)&&Number.isFinite(p.expiresAt)&&p.expiresAt>Date.now()?p:null;};
   const persistence:DebriefPersistence={durability:"host-owned",load:saved,compareAndSwap(expected,next){
     const rows=history(),previous=saved();if((previous?dataDigest(previous):null)!==expected)throw Error("stale attention CAS");
@@ -84,7 +85,9 @@ export function openDashboardHost(options:DashboardHostOptions){
       if(a&&presenter&&presentationRevision!==null&&presence()?.evidenceDigest===presenceDigest){try{await paused(presentationRevision);debrief=presenter.view();}catch{debrief=null;}}
       let controls:unknown=null;try{controls=await nativeRead();}catch(e){error=String(e);}
       const attention=trust.inspect(Date.now());let actions:{key:string;label:string;operation:string}[]=[];
-      try{actions=(await availableHumanActions()).map(({key,label,operation})=>({key,label,operation}));}catch(e){error=String(e);}
+      try{const available=await availableHumanActions(),digest=dataDigest(available.map(({key,label,operation,request})=>({key,label,operation,requestDigest:dashboardHostRequestDigest(request)})));
+        if(displayedActions?.tip===tip&&displayedActions.digest!==digest)throw Error("displayed dashboard actions changed before journal advance");
+        displayedActions={tip,actions:available,digest};actions=available.map(({key,label,operation})=>({key,label,operation}));}catch(e){error=String(e);}
       return freeze(detached({version:"producer-dashboard-frame-v1",hostDigest,selectionDigest:dashboardSelectionDigest(selection),selectionState,tip,source,controls,debrief,attention,error,actions,
         requests:rows.filter(e=>["claim","result","presentation","defer","ordinary-intent-pending"].includes(String(e.value.type))).map(e=>e.value),
         control:rows.some(e=>e.value.type==="host-failure")?"failed":rows.some(e=>e.value.type==="claim"&&!rows.some(r=>r.value.type==="result"&&r.value.requestId===e.value.requestId))?"unknown":"not-assessed",
@@ -92,7 +95,9 @@ export function openDashboardHost(options:DashboardHostOptions){
     },
     /** Explicit reconciliation is read-only. A retained claim is never replayed as an effect. */
     reconcile:()=>api.frame(),
-    async humanAction(key:string){const found=(await availableHumanActions()).find(action=>action.key===key);if(!found)throw Error(`unknown dashboard action ${JSON.stringify(key)}`);return api.action(found.request);},
+    async humanAction(key:string){const tip=history().at(-1)!.id;if(!displayedActions||displayedActions.tip!==tip)throw Error("dashboard actions must be displayed at the current tip");
+      const found=displayedActions.actions.find(action=>action.key===key);if(!found)throw Error(`unknown dashboard action ${JSON.stringify(key)}`);
+      const current=(await availableHumanActions()).find(action=>action.key===key);if(!current||current.label!==found.label||dashboardHostRequestDigest(current.request)!==dashboardHostRequestDigest(found.request))throw Error("displayed dashboard action changed; no effect attempted");return api.action(found.request);},
     async action(input:DashboardHostRequest){
       const request=dashboardHostRequest(input),digest=dashboardHostRequestDigest(request);
       if(busy||poisoned)throw Error("dashboard operation busy or acknowledgement unknown");busy=true;let attempted=false;

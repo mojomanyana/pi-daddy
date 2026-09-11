@@ -5,6 +5,10 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ---
 
+## 2026-09-11 — displayed dashboard actions cannot be remapped
+
+REV-SPEC-001 is repaired on C03. The host freezes the exact key/label/operation/request-digest set first rendered at a journal tip. A command requires that displayed tip and rechecks the provider's current exact action before using the displayed request; remapping a key between frame and Enter now refuses before an effect. The private socket and original CAS/native validators remain unchanged. A red-first regression mutates the action provider between frame and command.
+
 ## 2026-09-11 — overall-review C01 blockers repaired
 
 The single milestone review found REV-QUAL-001/002 and REV-SPEC-002 on PR37. Declaration now serializes its whole graph/state transaction and persists a private preparation timestamp, so concurrent exact calls collapse and an interrupted final publication retries byte-identical events. Ordinary work starts only after strict lifecycle prerequisites and every post-start executor throw attempts a failed terminal observation without masking the primary error. Session transitions remove only dashboard values this extension instance published; operator overrides survive. Red-first regressions cover concurrent declaration, interrupted recovery, pre-start ledger refusal, executor throw and valid-to-absent/malformed dashboard input transitions. No acceptance or recovery authority was inferred.
