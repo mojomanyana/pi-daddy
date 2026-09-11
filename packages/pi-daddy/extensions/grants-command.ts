@@ -21,6 +21,7 @@ import type { VariantRunAccounting } from "./session.ts";
 import { handleConnectedCommand } from "./grants-connected-command.ts";
 import { loadApprovals, revokeAll, revokeApproval, type SubjectLookup } from "../src/approval-store.ts";
 import { verifyLedger } from "../src/ledger.ts";
+import { handleConnectedCommand } from "./grants-connected-command.ts";
 
 export interface GrantsCommandContext {
   cwd: string;
