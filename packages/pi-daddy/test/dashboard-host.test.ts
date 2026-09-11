@@ -10,12 +10,20 @@ import { cleanupTempDirs, tempDir } from "./tmp.ts";
 import { hostWorld } from "./dashboard-host-world.ts";
 import { hash } from "./debrief-durable-fixture.ts";
 import { createDashboardHost, openDashboardHost, dashboardHostRequestDigest } from "../src/dashboard-host.ts";
+import { adoptDashboardHarnessBridge, loadedDashboardHarnessDigest } from "../src/dashboard-harness.ts";
 import { openResourceBudget } from "../src/resource-budget.ts";
 import { fixedIntentRequests } from "./intent-control-fixture.ts";
 import { intentRequestDigest } from "../src/intent-control.ts";
 import { serveDashboardHost, connectDashboardHost } from "../src/dashboard-host-transport.ts";
 import { dashboardFrame, dashboardHostAction } from "../src/dashboard-cli.ts";
 after(cleanupTempDirs);
+test("loaded skill-harness extension bridge is accepted only at the exact supported source",async()=>{
+ const w=await hostWorld(false),record={version:"skill-harness-dashboard-bridge-v1",sourceCommit:"127b349310dd8f28e5d6b12148a063fce66a77dd",api:w.api};
+ const api=adoptDashboardHarnessBridge(record);assert.equal(api,w.api);assert.match(loadedDashboardHarnessDigest(api)!,/^[a-f0-9]{64}$/);
+ assert.throws(()=>adoptDashboardHarnessBridge({...record,sourceCommit:"0".repeat(40)}),/supported harness bridge/);
+ assert.throws(()=>adoptDashboardHarnessBridge({...record,api:{...w.api}}),/frozen harness API/);
+});
+
 test("actual dashboard consumes owned host projection without observing or steering on refresh",async()=>{
  const w=await hostWorld(),path=join(w.config.trustDirectory,"producer-host/events.jsonl"),before=await readFile(path);
  const rendered=await dashboardFrame({cwd:w.root,connected:w.host,dailyJson:true} as never);const view=JSON.parse(rendered);assert.equal(view.version,"producer-dashboard-frame-v1");assert.equal(view.workerInteractions,0);assert.equal(view.attention.attentionUsed,0);assert.equal(view.debrief,null);assert.deepEqual(await readFile(path),before);
@@ -65,6 +73,11 @@ test("concurrent exact host CAS admits one request; missing authority records de
  const settled=await Promise.allSettled([w.host.action(r),w.reopen().action(second)]);assert.equal(settled.filter(r=>r.status==="fulfilled").length,1);
  const next=w.reopen(),request=await w.request("defer",{reason:"denied"});w.authority!.requestDigests=[];assert.equal((await next.action(request)).state,"denied");
 });
+test("human action provider receives the current host CAS context and may resolve asynchronously",async()=>{
+ const w=await hostWorld(false);let seen:any=null;const host=openDashboardHost({...w.options,humanActions:async context=>{seen=context;return [];}});
+ const frame=await host.frame();assert.deepEqual(seen,{hostDigest:host.hostDigest,selectionDigest:frame.selectionDigest,tip:frame.tip});assert.deepEqual(frame.actions,[]);
+});
+
 test("human dashboard commands invoke only host-published exact approved actions",async()=>{
  const w=await hostWorld(false),request=await w.request("defer",{reason:"weekly"},"ui-defer");let current=request;w.authority!.requestDigests=[...w.authority!.requestDigests,dashboardHostRequestDigest(request)];
  const host=openDashboardHost({...w.options,humanActions:()=>[{key:"defer-weekly",label:"Defer cards until weekly review",request:current}]});

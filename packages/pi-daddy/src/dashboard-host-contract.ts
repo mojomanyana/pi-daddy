@@ -12,6 +12,9 @@ export interface HostJournal { read(): HostEvent[]; append(prior: string, value:
 export interface DashboardHarness extends DebriefHarness {
   learningJournal(path: string, initial?: Record<string, unknown>): HostJournal;
   openTrustLifecycle(path: string): { history(): HostEvent[]; inspect(now: number): { policyId: string; attentionUsed: number; tip: string; grantExpansion: false }; expose(id: string, now: number): { mode: string; reason: string; replayed: boolean } };
+  createTrustLifecycle(path:string,input:unknown,authorized:readonly string[]):unknown;
+  trustPolicyDigest(input:unknown):string;
+  retainArchiveSource(root:string,input:unknown):{manifestId:string};
   archivePolicyBinding(path: string, source: string): { policySha256: string; archiveRoot: string };
   ingestPolicySource(path: string, source: string, previous?: string, expectedPolicy?: string): { checkpointId: string; sourceStatus: string; issues?: string[]; [key: string]: unknown };
   readArchiveCheckpoint(root: string, checkpoint: string): { checkpoint: { sourceManifestId: string; issues: string[]; [key: string]: unknown } };

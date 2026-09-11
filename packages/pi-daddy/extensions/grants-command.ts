@@ -62,6 +62,8 @@ export interface GrantsCommandContext {
   runInit: () => Promise<void>;
   /** Open or reuse the read-only Herdr dashboard; injected so this diagnostic never becomes enforcement. */
   openDashboard: () => Promise<{ kind: "opened" | "reused"; paneId: string; visibleBesideCaller: boolean }>;
+  /** Explicit same-process production host lifecycle; owns no model call and never cancels a child on stop. */
+  runHost: (target: string) => Promise<string>;
 }
 
 /**
@@ -71,12 +73,12 @@ export interface GrantsCommandContext {
 const PREVIEW_LIMIT = 12;
 
 /** The verbs `/grants` answers to. Anything else is refused rather than silently treated as no verb. */
-const KNOWN_SUBCOMMANDS: readonly string[] = ["init", "dashboard", "ledger", "approvals", "revoke"];
+const KNOWN_SUBCOMMANDS: readonly string[] = ["init", "host", "dashboard", "ledger", "approvals", "revoke"];
 
 export const grantsCommand = {
   description:
     "Show this session's capability grant, delegation depth, and known agent-type ceilings; " +
-    "/grants dashboard | /grants approvals | /grants ledger | /grants revoke <key>|--all",
+    "/grants host <fresh-id>|stop | /grants dashboard | /grants approvals | /grants ledger | /grants revoke <key>|--all",
 handler: async (args: string, ctx: any) => {
     // Everything this command may see, named in one place. Previously these were whatever happened to be in
     // the enclosing closure — which is how a diagnostic came to disagree with the enforcer (R-28).
@@ -89,6 +91,12 @@ handler: async (args: string, ctx: any) => {
 
     if (sub === "init") {
       await ctx.grants.runInit();
+      return;
+    }
+
+    if (sub === "host") {
+      try { ctx.ui.notify(`grants: ${await ctx.grants.runHost(target ?? "")}`, "info"); }
+      catch (error) { ctx.ui.notify(`grants: host unavailable — ${error instanceof Error ? error.message : String(error)}`, "error"); }
       return;
     }
 

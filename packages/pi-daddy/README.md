@@ -236,7 +236,9 @@ depth 2 · 1 active
 
 The plugin ships inside pi-daddy and is linked globally only after an explicit **Install and open** choice.
 Literal **Not now** and **Never ask** choices are persisted; dismissing or losing the dialog stores nothing.
-A connected host can publish exact pre-authorized actions as short commands such as `pause-new-work` or `defer-weekly`; the dashboard lists their human labels and accepts the key followed by Enter. The host resolves the key to its current CAS-bound request, so a person does not type JSON or tokens. Unknown/stale keys refuse before effects; raw JSON remains compatibility-only.
+A connected host can publish exact pre-authorized actions as short commands such as `pause-new-dispatch` or `defer-weekly`; the dashboard lists their human labels and accepts the key followed by Enter. The host resolves the key to its current CAS-bound request, so a person does not type JSON or tokens. Unknown/stale keys refuse before effects; raw JSON remains compatibility-only.
+
+On the unreleased continuation branches, load both the pi-daddy and candidate skill-harness extensions, declare work, reload, then run `/grants host <fresh-id>`. This creates one process-owned daily host, captures the current work/facts sources once, publishes its private socket to `/grants dashboard`, and lists `pause-new-dispatch` or `resume-dispatch` according to current control state. Pausing blocks only new governed ordinary children; a child already running keeps its original caller/result. `/grants host stop` closes the host and never cancels a child. Restart uses a fresh id; no PID, JSON/CAS envelope or prior controller is recovered.
 
 `/grants dashboard` never installs silently and prints the exact manual command when the plugin is absent. It
 checks the bundled plugin root and protocol before suggesting that a disabled plugin be enabled. Panes and
