@@ -14,10 +14,10 @@ Add a separate explicit `runMeasuredAgentSession` route rather than changing the
 
 - Exact models are limited to `openai-codex/gpt-5.6-sol` and `openai-codex/gpt-5.6-terra` with explicit thinking level.
 - One prompt consumes one existing resource-budget attempt before session creation.
-- Prompt bytes, output bytes, output tokens and wall time have caller-fixed ceilings.
+- Prompt bytes, requested generation tokens, retained output bytes and wall time have caller-fixed ceilings. The retained-byte check is post-generation and is not claimed as a provider generation-byte cap.
 - Settings and sessions are in memory. Resource discovery uses fresh temporary cwd/agent roots, clears context/skills/prompts, loads one factory-named inline extension, and enables no tools.
-- Provider/model identity and the complete Pi assistant-message usage shape are checked before success. Provider token counts and Pi's catalog-priced cost fields are retained as reported, not recomputed or described as subscription billing.
-- Timeout/operator abort calls the owned session abort path and the charged attempt settles cancelled; malformed usage, identity drift and output overflow settle failed.
+- Supported auth metadata must report both OAuth and subscription use before launch; no credential value is read, copied or printed. Observed assistant provider/model identity—not requested identity—is checked before success. The complete Pi assistant-message usage shape is retained. Provider token counts and Pi's catalog-priced cost estimates are not subscription charges.
+- A pre-aborted caller launches nothing and reserves nothing. Abort during setup is rechecked before prompting. Timeout/operator abort calls the owned session abort path; a settled abort charges cancelled. If the host does not settle inside the explicit termination grace, the call becomes unknown and its reservation remains active rather than being freed or refunded. Malformed usage, non-clean stop reason, identity drift and retained-output overflow charge failed while bounded evidence remains available.
 - Results remain `acceptance: not-assessed`; the route cannot adopt, publish, mutate global configuration or expand grants.
 
 The default print route remains unchanged and still reports usage unavailable.

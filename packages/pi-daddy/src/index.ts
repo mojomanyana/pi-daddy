@@ -157,6 +157,9 @@ export { renderDashboard, type DashboardRenderOptions } from "./dashboard-render
 export {
   runMeasuredAgentSession,
   piSdkMeasuredSessionHost,
+  verifyMeasuredSubscription,
+  MeasuredSessionFailure,
+  MeasuredSessionUnknownError,
   type MeasuredSessionInput,
   type MeasuredSessionHost,
   type MeasuredSessionHostInput,
