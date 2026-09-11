@@ -5,6 +5,12 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ---
 
+## 2026-09-11 — post-merge dashboard action keys replace ordinary JSON entry
+
+The stacked `factory-01a071db/post-merge-c03` branch implements ADR-0061. An original host can publish human labels/keys for exact requests already bound to current host, selection, tip and independent authority. The connected dashboard lists those keys and routes typed commands through the existing private transport and native validators; refresh still has no effect, and malformed/unknown/stale actions refuse. Raw JSON remains compatibility-only. Red-first host tests pass 21/21 across host boundaries, socket transport and ordinary cancellation; typecheck and the source line gate pass. Concrete busy-child steering remains unobserved, so C03 is in progress rather than complete.
+
+Next: wire one concrete pause/resume or priority action producer, exercise it against a busy owned child, then move to concurrent model/effort variants.
+
 ## 2026-09-11 — post-merge declared work reaches ordinary execution
 
 On `factory-01a071db/post-merge-c01` from exact released main `1eb89f2`, ADR-0060 adds a supported digest-only `pi-daddy work add` declaration and binds the selected obligation to ordinary governed execution. Exact declaration and occurrence retries are idempotent; changed outcomes and malformed/relocated state refuse; runtime completion remains distinct from acceptance. Red-first targeted evidence is 45 tests plus typecheck; the full unit gate passed 1,202/1,202 (997 + separately batched 205). A fresh bounded live Sol occurrence used the source extension through real Pi delegation and produced execution `exec:3e57d79c-4f27-499c-a69b-49c3bb19ee7b`, with starting/completed work occurrences and a visible one-attempt daily dashboard. Two earlier pre-effect attempts exposed the provider/model reference spelling and a raw Pi tool-call ID outside work-v4's identifier grammar; the latter has a regression and digest-labelled join. No acceptance was invented and archive coverage remains unavailable.

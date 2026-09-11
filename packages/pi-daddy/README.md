@@ -236,6 +236,8 @@ depth 2 · 1 active
 
 The plugin ships inside pi-daddy and is linked globally only after an explicit **Install and open** choice.
 Literal **Not now** and **Never ask** choices are persisted; dismissing or losing the dialog stores nothing.
+A connected host can publish exact pre-authorized actions as short commands such as `pause-new-work` or `defer-weekly`; the dashboard lists their human labels and accepts the key followed by Enter. The host resolves the key to its current CAS-bound request, so a person does not type JSON or tokens. Unknown/stale keys refuse before effects; raw JSON remains compatibility-only.
+
 `/grants dashboard` never installs silently and prints the exact manual command when the plugin is absent. It
 checks the bundled plugin root and protocol before suggesting that a disabled plugin be enabled. Panes and
 ledgers stay workspace/tab-specific: reuse rechecks the pane's current workspace/tab, a wrong-host open is

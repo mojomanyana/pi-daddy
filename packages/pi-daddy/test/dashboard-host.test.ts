@@ -60,6 +60,14 @@ test("concurrent exact host CAS admits one request; missing authority records de
  const settled=await Promise.allSettled([w.host.action(r),w.reopen().action(second)]);assert.equal(settled.filter(r=>r.status==="fulfilled").length,1);
  const next=w.reopen(),request=await w.request("defer",{reason:"denied"});w.authority!.requestDigests=[];assert.equal((await next.action(request)).state,"denied");
 });
+test("human dashboard commands invoke only host-published exact approved actions",async()=>{
+ const w=await hostWorld(false),request=await w.request("defer",{reason:"weekly"},"ui-defer");w.authority!.requestDigests=[...w.authority!.requestDigests,dashboardHostRequestDigest(request)];
+ const host=openDashboardHost({...w.options,humanActions:()=>[{key:"defer-weekly",label:"Defer cards until weekly review",request}]});
+ const rendered=await dashboardFrame({cwd:w.root,connected:host} as never);assert.match(rendered,/defer-weekly — Defer cards until weekly review/);assert.doesNotMatch(rendered,/expectedTip|selectionDigest/);
+ await assert.rejects(dashboardHostAction(host,"pause-everything"),/unknown dashboard action/);
+ const result:any=await dashboardHostAction(host,"defer-weekly");assert.equal(result.state,"acknowledged");
+});
+
 test("pre-effect stale CAS and immutable-ID refusals leave the original dashboard host usable",async()=>{
  const w=await hostWorld(false),stale=await w.request("defer",{reason:"stale"},"stale"),first=await w.request("defer",{reason:"first"},"first");await w.host.action(first);
  await assert.rejects(w.host.action(stale),/stale dashboard selection\/CAS/);assert.equal((await w.host.frame()).acknowledgement,"readback-only");await w.host.action(await w.request("defer",{reason:"after-stale"},"after-stale"));
@@ -73,9 +81,11 @@ test("required final host sync failure remains failure after complete bytes and 
  assert.ok(fired);assert.equal((await w.host.frame()).control,"failed");assert.equal((await w.reopen().frame()).control,"failed");assert.match(await readFile(path,"utf8"),/host-failure/);
 });
 test("private original-host socket serves actual dashboard frames and explicit approved requests",async()=>{
- const w=await hostWorld(false),short=await tempDir("pi-dh-","/tmp"),socket=join(short,"host.sock");await writeFile(join(w.root,"socket-location.json"),JSON.stringify({directory:short,socket}));const server=await serveDashboardHost(socket,w.host);
+ const w=await hostWorld(false),short=await tempDir("pi-dh-","/tmp"),socket=join(short,"host.sock");await writeFile(join(w.root,"socket-location.json"),JSON.stringify({directory:short,socket}));
+ const request=await w.request("defer",{reason:"weekly"},"socket-command");w.authority!.requestDigests=[...w.authority!.requestDigests,dashboardHostRequestDigest(request)];
+ const host=openDashboardHost({...w.options,humanActions:()=>[{key:"defer-weekly",label:"Defer until weekly review",request}]});const server=await serveDashboardHost(socket,host);
  try{const remote=connectDashboardHost(socket),before=await readFile(join(w.config.trustDirectory,"producer-host/events.jsonl"));assert.equal(JSON.parse(await dashboardFrame({cwd:w.root,connected:remote,dailyJson:true})).version,"producer-dashboard-frame-v1");assert.deepEqual(await readFile(join(w.config.trustDirectory,"producer-host/events.jsonl")),before);
   const env={...process.env};delete env.NODE_TEST_CONTEXT;const cli=await promisify(execFile)(process.execPath,[new URL("../src/dashboard-cli.ts",import.meta.url).pathname,"--once","--daily-json","--host-socket",socket],{env,timeout:12000});assert.equal(JSON.parse(cli.stdout).version,"producer-dashboard-frame-v1");assert.deepEqual(await readFile(join(w.config.trustDirectory,"producer-host/events.jsonl")),before);
-  const result=await dashboardHostAction(remote,JSON.stringify(await w.request("defer",{reason:"weekly"})));assert.equal(result.state,"acknowledged");
+  const result=await dashboardHostAction(remote,"defer-weekly");assert.equal(result.state,"acknowledged");
  }finally{await server.close();}
 });

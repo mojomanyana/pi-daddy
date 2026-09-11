@@ -17,6 +17,8 @@ const hosts=new WeakSet<object>();
 export const isDashboardHost=(value:unknown):value is DashboardHost=>typeof value==="object"&&value!==null&&hosts.has(value);
 export type DashboardHost=ReturnType<typeof openDashboardHost>;
 export interface DashboardHostOptions { ordinary?:OrdinaryChildren; harness:DashboardHarness; config:DashboardHostConfig; budget:GovernedBudgetBinding; experiment?:ReturnType<typeof openExperiment>; authority:()=>DashboardHostAuthority|null;
+  /** Exact actions constructed and authorized by the owner; the dashboard exposes only human labels/keys. */
+  humanActions?:()=>readonly {key:string;label:string;request:DashboardHostRequest}[];
   /** Independently sourced current declaration. Never inferred from idle, a PID, title or request fields. */
   presence?:()=>{present:boolean;closing:boolean;evidenceDigest:string;expiresAt:number}|null;
 }
@@ -65,6 +67,13 @@ export function openDashboardHost(options:DashboardHostOptions){
   const paused=async(revision:number)=>{const b=await boundary();if(ordinary&&!ordinary.quiescent())throw Error("original ordinary children not quiescent");if(experiment){const view=await experiment.inspect();if(view.budget?.active!==0||view.control!=="not-assessed")throw Error("original experiment not quiescent");}if(!b.dispatch.paused||b.dispatch.admission!=="paused"||b.dispatch.revision!==revision||b.active!==0)throw Error("safe paused selection unavailable");};
   const currentSelection=async()=>budget.binding.intent?(await budget.intentControls(null).inspect()).selection:c.selection;
   const nativeRead=async()=>({dispatch:await budget.controls(null).inspect(),intent:budget.binding.intent?await budget.intentControls(null).inspect():null,experiment:experiment?await experiment.inspect():null,ordinary:ordinary?ordinary.inspect():null});
+  const availableHumanActions=async()=>{
+    const rows=history(),tip=rows.at(-1)!.id,selection=await currentSelection(),a=authority(),seen=new Set<string>();
+    return (options.humanActions?.()??[]).map(value=>{const x=detached(value);controlShape(x,["key","label","request"]);const request=dashboardHostRequest(x.request);
+      if(!/^[a-zA-Z0-9:_-]{1,64}$/.test(x.key)||typeof x.label!=="string"||!x.label.trim()||Buffer.byteLength(x.label)>120||seen.has(x.key))throw Error("invalid human dashboard action");seen.add(x.key);
+      if(request.hostDigest!==hostDigest||request.expectedTip!==tip||request.selectionDigest!==dashboardSelectionDigest(selection)||!a?.requestDigests.includes(dashboardHostRequestDigest(request)))throw Error("human dashboard action is stale or not exactly authorized");
+      return {key:x.key,label:x.label,operation:request.operation,request};});
+  };
   const api={hostDigest,selectionDigest,
     async frame(){
       const rows=history(),tip=rows.at(-1)!.id,a=authority();let source:unknown=null,error:string|null=null;
@@ -74,14 +83,16 @@ export function openDashboardHost(options:DashboardHostOptions){
       let debrief:unknown=null;
       if(a&&presenter&&presentationRevision!==null&&presence()?.evidenceDigest===presenceDigest){try{await paused(presentationRevision);debrief=presenter.view();}catch{debrief=null;}}
       let controls:unknown=null;try{controls=await nativeRead();}catch(e){error=String(e);}
-      const attention=trust.inspect(Date.now());
-      return freeze(detached({version:"producer-dashboard-frame-v1",hostDigest,selectionDigest:dashboardSelectionDigest(selection),selectionState,tip,source,controls,debrief,attention,error,
+      const attention=trust.inspect(Date.now());let actions:{key:string;label:string;operation:string}[]=[];
+      try{actions=(await availableHumanActions()).map(({key,label,operation})=>({key,label,operation}));}catch(e){error=String(e);}
+      return freeze(detached({version:"producer-dashboard-frame-v1",hostDigest,selectionDigest:dashboardSelectionDigest(selection),selectionState,tip,source,controls,debrief,attention,error,actions,
         requests:rows.filter(e=>["claim","result","presentation","defer","ordinary-intent-pending"].includes(String(e.value.type))).map(e=>e.value),
         control:rows.some(e=>e.value.type==="host-failure")?"failed":rows.some(e=>e.value.type==="claim"&&!rows.some(r=>r.value.type==="result"&&r.value.requestId===e.value.requestId))?"unknown":"not-assessed",
         acknowledgement:poisoned?"unknown":"readback-only",identity:"independently-declared-host; not human/module authentication",activeBranch:null,acceptance:"not-assessed",freshness:"snapshot-unknown",workerInteractions:0}));
     },
     /** Explicit reconciliation is read-only. A retained claim is never replayed as an effect. */
     reconcile:()=>api.frame(),
+    async humanAction(key:string){const found=(await availableHumanActions()).find(action=>action.key===key);if(!found)throw Error(`unknown dashboard action ${JSON.stringify(key)}`);return api.action(found.request);},
     async action(input:DashboardHostRequest){
       const request=dashboardHostRequest(input),digest=dashboardHostRequestDigest(request);
       if(busy||poisoned)throw Error("dashboard operation busy or acknowledgement unknown");busy=true;let attempted=false;
