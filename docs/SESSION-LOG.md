@@ -5,6 +5,10 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ---
 
+## 2026-09-11 — 0.24.0 release candidate prepared from merged follow-ups
+
+PRs 37, 38 and 39 merged in order with merge commits `b1ad39d`, `297bffe` and `7b06a83`; every approved head is reachable from final main. The release candidate bumps only public package `pi-daddy` to 0.24.0. It ships declared daily work, the production connected host with explicit refresh/reconnect and admission pause/resume, and opt-in primary/shadow variants while preserving the old wait-for-all path. Exact-head CI and one final read-only whole-candidate review are green. Release pack/install/registry/tag evidence remains downstream; no acceptance, C06 human choice, C08 domain result or provider-internal reasoning claim is added.
+
 ## 2026-09-11 — retained work produces a silent coverage case without notes
 
 ADR-0063 pins harness `127b349310dd8f28e5d6b12148a063fce66a77dd` and lets a work source job request `facts:null`. The harness derives only exact scope/obligation/coverage with every semantic declaration array empty. A red-first connected-host test archives real work, creates a coverage candidate, and leaves attention at zero without a facts file or `/note`. No runtime failure became an objective violation; deadlines, expected waits, reopen history and authority remain absent.

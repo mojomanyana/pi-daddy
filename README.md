@@ -5,9 +5,7 @@ deliberate subset of what it holds and withholds the rest. Sub-agents may delega
 subset of what they themselves hold — enforced by **pi's own `--tools` allowlist**, with an append-only
 ledger of every grant and refusal whenever a ledger is configured.
 
-**Release-preparation evidence (2026-09-11):** source on `main` was staged as the `0.23.0` candidate, adding
-opt-in factory control, retained evidence and dashboard-host APIs while keeping governance ledger v3 as the
-default. At that measurement the published baseline was `0.22.0`. For current publication status, consult
+**Source release candidate (2026-09-11):** `0.24.0` adds declared daily work, a production connected-host lifecycle with explicit refresh, and opt-in primary/shadow variants while keeping governance ledger v3 and historical wait-for-all behavior unchanged. At preparation the published baseline was `0.23.0`. For current publication status, consult
 [npm](https://www.npmjs.com/package/pi-daddy) and [GitHub Releases](https://github.com/mojomanyana/pi-daddy/releases).
 `pi-daddy` is the only public package; the workspace root is private.
 

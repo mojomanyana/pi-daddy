@@ -392,7 +392,7 @@ test("published work-v4 fixtures come from real builders and the closed schema",
   }
   assert.equal(manifest.scripts["contracts:generate:v4"], "node scripts/generate-ledger-v4-contract.ts contracts/ledger/v4");
   assert.equal(manifest.scripts["contracts:generate"], "node scripts/generate-ledger-v3-contract.ts");
-  assert.equal(manifest.version, "0.23.0"); // Manifest target checks are NOT compiled-export validation.
+  assert.equal(manifest.version, "0.24.0"); // Manifest target checks are NOT compiled-export validation.
   const adrPath = join(repositoryRoot, "docs/06-decisions/ADR-0044-opt-in-work-v4-evidence.md");
   const adr = await readFile(adrPath, "utf8"), spec = await readFile(join(repositoryRoot, "docs/SPEC.md"), "utf8");
   assert.match(adr, /^\*\*Date:\*\* 2026-09-06$/m); assert.match(adr, /^\*\*Status:\*\* Accepted$/m);

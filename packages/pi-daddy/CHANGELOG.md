@@ -12,6 +12,16 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## 0.24.0 — declared daily work and concurrent variants (2026-09-11)
+
+- Add `pi-daddy work add --id <id> --outcome <text>`: retain a digest-only selected obligation, reject changed redelivery and unsupported destinations, and join ordinary governed attempts without storing outcome prose. Runtime completion remains distinct from acceptance.
+- Add the production `/grants host <fresh-id>|stop` lifecycle backed by the loaded skill-harness source bridge. The original process owns child handles, private socket transport and native validators; no authority is recovered from PID, pane labels or disk state.
+- Publish frozen `pause-new-dispatch`, `resume-dispatch` and `refresh-current-work` dashboard actions. Pause changes only new ordinary admission, running children keep their original caller/result, refresh advances the existing source checkpoint explicitly, and stop never cancels a child.
+- Add explicit bounded thinking selection to child argv and Work-v4 labels. Requested effort records selection only and is not proof of provider-internal reasoning.
+- Add opt-in `delegate_all` primary return with eventual original-owner shadow accounting. Existing calls still wait for all; shadow failure or cancellation cannot replace or delay the selected primary, and invalid primary selection refuses before any child starts.
+- Derive only exact retained scope, obligation and coverage when declared facts are absent. Deadlines, violations, prior acceptance, reopen history and unavailable artifact coverage are never inferred.
+- Candidate-installed bridge/host startup, live busy-child pause/resume, same-host refresh/reconnect and primary-before-shadow settlement were observed. These are path/lifecycle checks, not acceptance or efficacy measurements.
+
 ## 0.23.0 — bounded factory control and retained evidence (2026-09-11)
 
 - Add an opt-in work-ledger v4 contract, strict builders/readers, deterministic fixtures and explicit

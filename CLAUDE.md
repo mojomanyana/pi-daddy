@@ -35,9 +35,9 @@ permissible, able to refuse or allow but never to narrow. **This package is now 
 is an argument rather than a veto. Definitions are **Agent Skills (`SKILL.md`)** files whose `allowed-tools`
 becomes the grant; the pi-subagents ceiling port is deleted; the interceptor survives only as a tripwire.
 
-**Release-preparation evidence (2026-09-11): 0.23.0 candidate; the registry-verified baseline at that
-measurement was 0.22.0.** For current publication status consult npm and GitHub Releases. The candidate adds
-opt-in bounded factory control, retained evidence and dashboard-host APIs while keeping governance ledger v3
+**Release-preparation evidence (2026-09-11): 0.24.0 candidate; the registry-verified baseline at that
+measurement was 0.23.0.** For current publication status consult npm and GitHub Releases. The candidate adds
+declared daily work, production host refresh and opt-in primary/shadow variants while keeping governance ledger v3
 as the default. Invalid project stores fail closed with `GRANT_STORE_INVALID`;
 explicit child models are resolved before side effects; correlation accepts
 only schema version `1.0` and the closed assurance-scope union; supplied tree/change state can narrow approval
@@ -146,7 +146,7 @@ docs/archive/             — SUPERSEDED, kept as evidence, never edited to matc
                             registers (discovery, assumptions, landscape, metrics), ROADMAP, gate reports,
                             both code reviews, the old specs, the completed implementation plan, and the
                             dead upstream proposal. See its README for why each stopped being current.
-packages/pi-daddy  — THE PRODUCT (0.23.0 source; current publication status is on npm/GitHub Releases): Agent Skill
+packages/pi-daddy  — THE PRODUCT (0.24.0 source; current publication status is on npm/GitHub Releases): Agent Skill
                             definitions, resolver, v3 ledger (frozen v2 reader), delegate/delegate_all/
                             delegate_chain, catalog, bound human approval, process/herdr executors,
                             governed-writer leases, named checks, explicit Herdr dashboard plugin, and
