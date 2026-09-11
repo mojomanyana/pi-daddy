@@ -53,6 +53,10 @@
       "types": "./dist/dashboard-harness.d.ts",
       "default": "./dist/dashboard-harness.js"
     },
+    "./daily-dashboard-host": {
+      "types": "./dist/daily-dashboard-host.d.ts",
+      "default": "./dist/daily-dashboard-host.js"
+    },
     "./dashboard-host": {
       "types": "./dist/dashboard-host.d.ts",
       "default": "./dist/dashboard-host.js"

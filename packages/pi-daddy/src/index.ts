@@ -37,6 +37,7 @@ export {
 export { createDebriefPresenter, type DebriefPresenter, type DebriefHost, type DebriefFrame, type DebriefCheckpoint, type DebriefPersistence } from "./debrief.ts";
 export { ordinaryChildrenFor, ordinaryCancellation, ordinaryCancellationDigest, isOrdinaryChildren, type OrdinaryChildren, type OrdinaryCancellation, type OrdinaryAuthority, type OrdinaryTarget } from "./ordinary-children.ts";
 export { loadDashboardHarness, loadedDashboardHarnessDigest, type DashboardHarnessArtifact } from "./dashboard-harness.ts";
+export { startDailyDashboardHost, discoverDailyIntentActions, type DailyDashboardHostInput, type DailyIntentAction } from "./daily-dashboard-host.ts";
 export { createDashboardHost, openDashboardHost, dashboardHostDigest, dashboardHostRequestDigest, dashboardSelectionDigest, type DashboardHost, type DashboardHostConfig, type DashboardHostRequest, type DashboardHostAuthority, type DashboardHarness, type DashboardHostOptions } from "./dashboard-host.ts";
 export { serveDashboardHost, connectDashboardHost, ENV_DASHBOARD_HOST_SOCKET, type DashboardConnection } from "./dashboard-host-transport.ts";
 export { createRetainedDebrief, retainDebriefBlind, openDebriefBlindPreview, type DebriefHarness, type CaseSelection, type DurableBlindBinding } from "./debrief-host.ts";
