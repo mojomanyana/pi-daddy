@@ -6,8 +6,8 @@ import { dataDigest,byteDigest,detached,sha } from "./debrief-contract.ts";
 import { DASHBOARD_HARNESS_PIN,type DashboardHarness } from "./dashboard-host-contract.ts";
 export interface DashboardHarnessArtifact {version:"dashboard-harness-artifact-v1";sourceCommit:typeof DASHBOARD_HARNESS_PIN;files:Record<string,string>;typeboxRoot:string;typeboxPackageSha256:string}
 const loaded=new WeakMap<object,string>();
-export const DASHBOARD_HARNESS_BRIDGE_SOURCE="2a36632f8780289a2cb82fa42efff440e8530f9a";
-const bridgeFunctions=["learningJournal","createTrustLifecycle","openTrustLifecycle","trustPolicyDigest","archivePolicyBinding","ingestPolicySource","readArchiveCheckpoint","readArchiveSource","retainArchiveSource","captureArchivedWorkSignals","readRetainedExecution","projectRetainedExecutions","createWorkCaseReviewer","createWorkSignalReviewer","retainBlindIntervention","openBlindIntervention"] as const;
+export const DASHBOARD_HARNESS_BRIDGE_SOURCE="28b55d40a64ce7af8ed23410a137f2e3a075e522";
+const bridgeFunctions=["learningJournal","createTrustLifecycle","openTrustLifecycle","trustPolicyDigest","archivePolicyBinding","ingestPolicySource","readArchiveCheckpoint","readArchiveSource","retainArchiveSource","captureArchivedWorkSignals","readRetainedExecution","projectRetainedExecutions","createWorkCaseReviewer","createWorkSignalReviewer","retainBlindIntervention","openBlindIntervention","retainLearningLifecycle","readLearningLifecycle"] as const;
 /** Adopt the API published by the already-loaded skill-harness extension. Same-process source identity is not human authentication. */
 export function adoptDashboardHarnessBridge(input:unknown):DashboardHarness{
  const value=input as {version?:unknown;sourceCommit?:unknown;api?:unknown};
@@ -30,7 +30,7 @@ export async function loadDashboardHarness(artifactRoot:string,input:DashboardHa
  if(content.get("package.json")?.toString()!=='{"type":"module"}')throw Error("explicit ESM artifact root required");
  const directory=await mkdtemp(join(parent,"loaded-harness-"));for(const[p,b]of content){await mkdir(dirname(join(directory,p)),{recursive:true,mode:0o700});await writeFile(join(directory,p),b,{flag:"wx",mode:0o400});}
  await mkdir(join(directory,"node_modules"));await symlink(manifest.typeboxRoot,join(directory,"node_modules/typebox"));
- const names=["learning-journal","trust-lifecycle","archive-policy","archive-observer","archive-checkpoint","archived-work","execution-retention-archive","work-case-review","blind-intervention","evidence-archive","work-signal-observation","work-signal-cases","work-case-archive"];
+ const names=["learning-journal","trust-lifecycle","archive-policy","archive-observer","archive-checkpoint","archived-work","execution-retention-archive","work-case-review","blind-intervention","learning-lifecycle","evidence-archive","work-signal-observation","work-signal-cases","work-case-archive"];
  const api=Object.assign({},...await Promise.all([...names.map(n=>"packages/adapters/src/"+n+".js"),"core.js"].map(p=>{if(!content.has(p))throw Error("missing genuine harness entry");return import(pathToFileURL(join(directory,p)).href);}))) as DashboardHarness;
  for(const[p,digest]of files)if(byteDigest(await bytes(join(directory,p)))!==digest)throw Error("loaded harness bytes changed");
  Object.freeze(api);const digest=dataDigest(manifest);loaded.set(api,digest);return Object.freeze({api,artifactDigest:digest,directory,manifest});

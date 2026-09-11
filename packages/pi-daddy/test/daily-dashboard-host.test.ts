@@ -14,7 +14,7 @@ after(cleanupTempDirs);
 test("supported daily host command composition publishes fresh work and pauses only new ordinary dispatch", async () => {
   const root=await tempDir("daily-dashboard-production-"),declared=await declareWork({cwd:root,id:"daily-owned",outcome:"Exercise current work while steering only new dispatch"});
   const child=await ordinaryHostFixture(root),loadedRoot=join(root,"loaded");await mkdir(loadedRoot,{mode:0o700});const loaded=await connectedHarness(loadedRoot);
-  const harness=adoptDashboardHarnessBridge({version:"skill-harness-dashboard-bridge-v1",sourceCommit:"2a36632f8780289a2cb82fa42efff440e8530f9a",api:loaded.api});
+  const harness=adoptDashboardHarnessBridge({version:"skill-harness-dashboard-bridge-v1",sourceCommit:"28b55d40a64ce7af8ed23410a137f2e3a075e522",api:loaded.api});
   const running=await startDailyDashboardHost({id:"validation-01",cwd:root,directory:join(root,"host"),declared,ordinary:child.port,harness,author:"operator"});
   try {
     const remote=connectDashboardHost(running.socketPath),first=await remote.frame() as any;
@@ -31,7 +31,7 @@ test("supported daily host command composition publishes fresh work and pauses o
 test("daily host publishes deliberate cancellation for an exact active attempt", async () => {
   const root=await tempDir("daily-dashboard-cancel-"),declared=await declareWork({cwd:root,id:"daily-cancel",outcome:"Cancel only the selected running attempt"});
   const child=await ordinaryHostFixture(root),loadedRoot=join(root,"loaded");await mkdir(loadedRoot,{mode:0o700});const loaded=await connectedHarness(loadedRoot);
-  const harness=adoptDashboardHarnessBridge({version:"skill-harness-dashboard-bridge-v1",sourceCommit:"2a36632f8780289a2cb82fa42efff440e8530f9a",api:loaded.api});
+  const harness=adoptDashboardHarnessBridge({version:"skill-harness-dashboard-bridge-v1",sourceCommit:"28b55d40a64ce7af8ed23410a137f2e3a075e522",api:loaded.api});
   const running=await startDailyDashboardHost({id:"validation-cancel",cwd:root,directory:join(root,"host"),declared,ordinary:child.port,harness,author:"operator"});
   try {
     const remote=connectDashboardHost(running.socketPath),active=child.run("hold");await child.ready("hold");

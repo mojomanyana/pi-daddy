@@ -25,8 +25,9 @@ export interface DashboardHostOptions { ordinary?:OrdinaryChildren; harness:Dash
   presence?:()=>{present:boolean;closing:boolean;evidenceDigest:string;expiresAt:number}|null;
 }
 function configuration(input:DashboardHostConfig){
-  const c=detached(input);controlShape(c,["version","trustDirectory","trustPolicyId","archiveRoot","scope","author","policyPath","policySha256","sources","selection","cases","blind","budgetDigest","experimentDigest","harnessArtifactDigest",...(Object.hasOwn(c,"ordinaryDigest")?["ordinaryDigest"]:[])]);
+  const c=detached(input);controlShape(c,["version","trustDirectory","trustPolicyId","archiveRoot","scope","author","policyPath","policySha256","sources","selection","cases","blind","budgetDigest","experimentDigest","harnessArtifactDigest",...(Object.hasOwn(c,"ordinaryDigest")?["ordinaryDigest"]:[]),...(Object.hasOwn(c,"learningLifecycleId")?["learningLifecycleId"]:[])]);
   if(Object.hasOwn(c,"ordinaryDigest")&&!sha(c.ordinaryDigest))throw Error("invalid ordinary binding digest");
+  if(Object.hasOwn(c,"learningLifecycleId")&&!sha(c.learningLifecycleId))throw Error("invalid learning lifecycle manifest");
   if(c.version!=="producer-dashboard-host-v1"||![c.trustDirectory,c.archiveRoot,c.policyPath].every(p=>typeof p==="string"&&isAbsolute(p))||![c.trustPolicyId,c.policySha256,c.budgetDigest,c.harnessArtifactDigest].every(sha)||!(c.experimentDigest===null||sha(c.experimentDigest))||typeof c.scope!=="string"||!c.scope||c.scope.length>128||typeof c.author!=="string"||!c.author||c.author.length>256||!Array.isArray(c.sources)||c.sources.length<1||c.sources.length>32||new Set(c.sources.map(s=>s.id)).size!==c.sources.length||c.sources.filter(s=>s.kind==="work").length>1||c.sources.some(s=>!/^[a-zA-Z0-9:_-]{1,128}$/.test(s.id)||!["work","retention","facts"].includes(s.kind)))throw Error("invalid explicit dashboard host binding");
   return freeze(c);
 }
@@ -88,11 +89,12 @@ export function openDashboardHost(options:DashboardHostOptions){
       let debrief:unknown=null;
       if(a&&presenter&&presentationRevision!==null&&presence()?.evidenceDigest===presenceDigest){try{await paused(presentationRevision);debrief=presenter.view();}catch{debrief=null;}}
       let controls:unknown=null;try{controls=await nativeRead();}catch(e){error=String(e);}
+      let learning:unknown=null;if(c.learningLifecycleId)try{learning=h.readLearningLifecycle(c.archiveRoot,c.learningLifecycleId);}catch(e){error=String(e);}
       const attention=trust.inspect(Date.now());let actions:{key:string;label:string;operation:string}[]=[];
       try{const available=await availableHumanActions(),digest=dataDigest(available.map(({key,label,operation,request})=>({key,label,operation,requestDigest:dashboardHostRequestDigest(request)})));
         if(displayedActions?.tip===tip&&displayedActions.digest!==digest)throw Error("displayed dashboard actions changed before journal advance");
         displayedActions={tip,actions:available,digest};actions=available.map(({key,label,operation})=>({key,label,operation}));}catch(e){error=String(e);}
-      return freeze(detached({version:"producer-dashboard-frame-v1",hostDigest,selectionDigest:dashboardSelectionDigest(selection),selectionState,tip,source,controls,debrief,attention,error,actions,
+      return freeze(detached({version:"producer-dashboard-frame-v1",hostDigest,selectionDigest:dashboardSelectionDigest(selection),selectionState,tip,source,controls,learning,debrief,attention,error,actions,
         requests:rows.filter(e=>["claim","result","presentation","defer","ordinary-intent-pending"].includes(String(e.value.type))).map(e=>e.value),
         control:rows.some(e=>e.value.type==="host-failure")?"failed":rows.some(e=>e.value.type==="claim"&&!rows.some(r=>r.value.type==="result"&&r.value.requestId===e.value.requestId))?"unknown":"not-assessed",
         acknowledgement:poisoned?"unknown":"readback-only",identity:"independently-declared-host; not human/module authentication",activeBranch:null,acceptance:"not-assessed",freshness:"snapshot-unknown",workerInteractions:0}));

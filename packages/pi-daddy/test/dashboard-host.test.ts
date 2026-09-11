@@ -18,10 +18,15 @@ import { serveDashboardHost, connectDashboardHost } from "../src/dashboard-host-
 import { dashboardFrame, dashboardHostAction } from "../src/dashboard-cli.ts";
 after(cleanupTempDirs);
 test("loaded skill-harness extension bridge is accepted only at the exact supported source",async()=>{
- const w=await hostWorld(false),record={version:"skill-harness-dashboard-bridge-v1",sourceCommit:"2a36632f8780289a2cb82fa42efff440e8530f9a",api:w.api};
+ const w=await hostWorld(false),record={version:"skill-harness-dashboard-bridge-v1",sourceCommit:"28b55d40a64ce7af8ed23410a137f2e3a075e522",api:w.api};
  const api=adoptDashboardHarnessBridge(record);assert.equal(api,w.api);assert.match(loadedDashboardHarnessDigest(api)!,/^[a-f0-9]{64}$/);
  assert.throws(()=>adoptDashboardHarnessBridge({...record,sourceCommit:"0".repeat(40)}),/supported harness bridge/);
  assert.throws(()=>adoptDashboardHarnessBridge({...record,api:{...w.api}}),/frozen harness API/);
+});
+
+test("dashboard frame navigates the retained learning lifecycle without inventing a choice",async()=>{
+ const w=await hostWorld(false,"signals",undefined,true),frame:any=await w.host.frame();
+ assert.equal(frame.learning.state,"awaiting-human-choice");assert.equal(frame.learning.links.choice,null);assert.equal(frame.learning.links.comparison.length,64);
 });
 
 test("actual dashboard consumes owned host projection without observing or steering on refresh",async()=>{

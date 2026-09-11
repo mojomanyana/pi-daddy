@@ -5,7 +5,7 @@ import type { WorkProjectionContext, WorkFrozen } from "./work-ledger.ts";
 import type { DispatchAuthority } from "./dispatch-control.ts";
 import type { OrdinaryAuthority } from "./ordinary-children.ts";
 import type { ExperimentAuthority } from "./experiment-contract.ts";
-export const DASHBOARD_HARNESS_PIN = "2a36632f8780289a2cb82fa42efff440e8530f9a";
+export const DASHBOARD_HARNESS_PIN = "28b55d40a64ce7af8ed23410a137f2e3a075e522";
 export interface HostEvent { id: string; prior: string | null; value: Record<string, unknown> }
 export interface HostJournal { read(): HostEvent[]; append(prior: string, value: Record<string, unknown>): HostEvent }
 /** Loaded trusted ports; an interface or caller-supplied pin is NOT module/human authentication. */
@@ -22,6 +22,8 @@ export interface DashboardHarness extends DebriefHarness {
   captureArchivedWorkSignals(root: string, id: string, context: WorkFrozen<WorkProjectionContext>, facts: unknown): { caseBatchId: string; observationId: string; linkageManifestId: string; runtimeFactsManifestId: string };
   readRetainedExecution(root: string, id: string): { projection: unknown };
   projectRetainedExecutions(values: readonly unknown[]): unknown;
+  retainLearningLifecycle(root:string,input:unknown):string;
+  readLearningLifecycle(root:string,id:string):{version:string;state:string;predecessorManifestId:string|null;links:Record<string,unknown>};
 }
 export interface DashboardHostConfig {
   version: "producer-dashboard-host-v1"; trustDirectory: string; trustPolicyId: string; archiveRoot: string; scope: string; author: string;
@@ -29,6 +31,7 @@ export interface DashboardHostConfig {
   selection: WorkProjectionContext["selectedSnapshot"]; cases: CaseSelection | null; blind: DurableBlindBinding | null;
   budgetDigest: string; experimentDigest: string | null; harnessArtifactDigest: string;
   ordinaryDigest?: string;
+  learningLifecycleId?: string;
 }
 export interface DashboardHostRequest { version: "1.0"; requestId: string; hostDigest: string; expectedTip: string; selectionDigest: string; operation: "observe" | "present" | "presented" | "defer" | "debrief" | "dispatch" | "intent" | "cancel" | "dispatch-reconcile" | "intent-reconcile" | "ordinary-cancel"; payload: unknown }
 export interface DashboardHostAuthority {
