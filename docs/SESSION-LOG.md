@@ -17,6 +17,10 @@ The source now exposes a closed thinking-level field on `delegate` and each `del
 
 Next: await propagated CI, then test primary/shadow independence without reusing this consumed occurrence.
 
+## 2026-09-11 — C07 read-only chain found and closed a declaration mismatch
+
+A fresh bounded Sol→Terra review chain found that unreleased `DeclareWorkInput` exposed custom ledger/state paths while reload required fixed sibling paths. The coordinator confirmed it mechanically. The API now accepts only `cwd`, `id` and `outcome`; unknown destination fields refuse before writes. A red-first regression covers both former custom paths. The chain's `FIX` was advisory, not human acceptance.
+
 ## 2026-09-11 — displayed dashboard actions cannot be remapped
 
 REV-SPEC-001 is repaired on C03. The host freezes the exact key/label/operation/request-digest set first rendered at a journal tip. A command requires that displayed tip and rechecks the provider's current exact action before using the displayed request; remapping a key between frame and Enter now refuses before an effect. The private socket and original CAS/native validators remain unchanged. A red-first regression mutates the action provider between frame and command.

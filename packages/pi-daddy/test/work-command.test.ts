@@ -90,6 +90,12 @@ test("a retry resumes the exact prepared timestamp after state publication inter
   assert.equal(parseWorkLedgerText(await readFile(recovered.ledgerPath, "utf8")).events.length, 5);
 });
 
+test("declaration refuses unsupported custom destinations instead of creating an unloadable selection", async () => {
+  const cwd = await tempDir("work-command-custom-path-");
+  await assert.rejects(declareWork({ cwd, id: "custom", outcome: "Custom", ledgerPath: "other.jsonl" } as any), /unsupported work declaration field/);
+  await assert.rejects(declareWork({ cwd, id: "custom", outcome: "Custom", statePath: "other.json" } as any), /unsupported work declaration field/);
+});
+
 test("loadDeclaredWork fails closed for malformed or relocated state", async () => {
   const cwd = await tempDir("work-command-invalid-");
   const path = join(cwd, "work.json");
