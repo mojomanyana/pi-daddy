@@ -7,11 +7,11 @@ Date: 2026-09-11
 
 The released null-facts profile derives a silent coverage case from retained work, but its linkage does not expose a compact artifact for exact attempt completion and obligation coverage/acceptance facts. Consumers can re-read the complete work projection, yet the case → evidence navigation remains indirect. Missing checkpoint, expected-wait and prior-acceptance evidence must stay unavailable rather than being inferred from process completion.
 
-Skill-harness source commit `73ab11883bb1c8924dc5ebbe8a61c96e913ee437` adds a content-addressed `observed-work-runtime-v1` artifact to the existing archived-work signal linkage. It derives only from the pinned work-v4 projection.
+Skill-harness source commit `2a36632f8780289a2cb82fa42efff440e8530f9a` adds a content-addressed `observed-work-runtime-v1` artifact to the existing archived-work signal linkage. It derives only from the pinned work-v4 projection.
 
 ## Decision
 
-Re-pin the loaded dashboard bridge and its byte-verified fixture to that exact harness source. During a work observation, publish the returned `runtimeFactsManifestId` in the observation's metadata. The artifact records exact attempt identity/state/resolution, terminal observed occurrence digests when present, and each obligation's projected acceptance and coverage. It explicitly lists checkpoint, expected-wait and prior-acceptance history as unavailable when no host facts were supplied.
+Re-pin the loaded dashboard bridge and its byte-verified fixture to that exact harness source. During a work observation, publish the returned `runtimeFactsManifestId` in the observation's metadata. The artifact records exact attempt identity/state/resolution, terminal observed occurrence digests when present, and each obligation's projected acceptance and coverage. It explicitly lists checkpoint, expected-wait and prior-acceptance history as unavailable in this projection-only artifact; separately supplied host facts retain their own linkage and provenance.
 
 The manifest identity is evidence navigation, not acceptance, a checkpoint, a defect label, or authority. Existing signal cases remain silent and harness-owned. The source job still catches semantic derivation failure as an observation issue without blocking the worker; it does not substitute an empty artifact.
 

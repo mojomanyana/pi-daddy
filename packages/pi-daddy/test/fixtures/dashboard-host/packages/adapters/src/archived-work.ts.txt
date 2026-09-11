@@ -59,8 +59,7 @@ export function captureArchivedWorkSignals(root: string, manifestId: string, con
     }).sort((a,b) => a.executionId < b.executionId ? -1 : a.executionId > b.executionId ? 1 : 0),
     obligations: snapshot.obligations.map(obligation => ({ obligationDigest: obligation.digest, acceptance: obligation.acceptance, coverage: obligation.coverage }))
       .sort((a,b) => a.obligationDigest < b.obligationDigest ? -1 : a.obligationDigest > b.obligationDigest ? 1 : 0),
-    hostFactsProfile: suppliedFacts?.version ?? null,
-    unavailable: suppliedFacts === null ? ["checkpoint-evidence", "expected-wait-evidence", "prior-acceptance-history"] : [],
+    unavailable: ["checkpoint-evidence", "expected-wait-evidence", "prior-acceptance-history"],
   };
   const retainedRuntimeFacts = retainArchiveSource(root, { sourceId: `observed-runtime-${read.sourceSha256}`, parser: { id: "observed-work-runtime-facts", version: "1" }, retention: "exact", bytes: Buffer.from(JSON.stringify(runtimeFacts)) });
   // All four digests here are REVISION identities, not artifact content digests.

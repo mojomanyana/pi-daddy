@@ -22,7 +22,7 @@ const env = {
   HERDR_ENV: "1", HERDR_PANE_ID: "w1:p1", HERDR_TAB_ID: "w1:t1", HERDR_WORKSPACE_ID: "w1",
 };
 
-function hostAndPluginExec(options: { installed?: boolean; linkedRoot?: string } = {}) {
+function hostAndPluginExec(options: { installed?: boolean; linkedRoot?: string; version?: string } = {}) {
   let installed = options.installed ?? false;
   let linkedRoot = options.linkedRoot;
   const calls: string[][] = [];
@@ -32,7 +32,7 @@ function hostAndPluginExec(options: { installed?: boolean; linkedRoot?: string }
     if (args[0] === "pane" && args[1] === "process-info") return result({ process_info: { pane_id: "w1:p1", foreground_processes: [{ pid: 42 }] } });
     if (args[0] === "plugin" && args[1] === "list") {
       return result({ plugins: installed ? [{
-        plugin_id: DASHBOARD_PLUGIN_ID, version: "1.0.0", enabled: true, plugin_root: linkedRoot,
+        plugin_id: DASHBOARD_PLUGIN_ID, version: options.version ?? "1.0.0", enabled: true, plugin_root: linkedRoot,
       }] : [] });
     }
     if (args[0] === "plugin" && args[1] === "link") {
@@ -132,6 +132,20 @@ test("a different-package dashboard link can be explicitly relinked and opened",
   assert.deepEqual(fake.calls.find((args) => args[0] === "plugin" && args[1] === "link")?.slice(0, 4),
     ["plugin", "link", pluginRoot, "--enabled"]);
   assert.equal(fake.calls.filter((args) => args[0] === "plugin" && args[1] === "pane" && args[2] === "open").length, 1);
+});
+
+test("a different-package link with an incompatible protocol is not offered relink", async () => {
+  const root = await tempDir("dashboard-relink-protocol-");
+  const fake = hostAndPluginExec({ installed: true, linkedRoot: join(root, "old-plugin"), version: "2.0.0" });
+  let prompts = 0;
+  const outcome = await offerDashboardHandshake({
+    mode: "tui", env, pid: 42, exec: fake.exec, cwd: root, ledgerPath: join(root, "ledger.jsonl"),
+    pluginRoot: join(root, "current-plugin"), preferencePath: dashboardPreferencePath(root), paneStatePath: join(root, "panes.json"),
+    ui: { select: async () => { prompts += 1; return "Relink and open"; }, notify: () => {} },
+  });
+  assert.equal(outcome, "failed");
+  assert.equal(prompts, 0);
+  assert.equal(fake.calls.some((args) => args[0] === "plugin" && args[1] === "link"), false);
 });
 
 test("declining a different-package relink changes neither link nor startup preference", async () => {

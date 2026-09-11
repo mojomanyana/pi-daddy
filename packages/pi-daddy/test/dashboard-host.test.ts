@@ -18,7 +18,7 @@ import { serveDashboardHost, connectDashboardHost } from "../src/dashboard-host-
 import { dashboardFrame, dashboardHostAction } from "../src/dashboard-cli.ts";
 after(cleanupTempDirs);
 test("loaded skill-harness extension bridge is accepted only at the exact supported source",async()=>{
- const w=await hostWorld(false),record={version:"skill-harness-dashboard-bridge-v1",sourceCommit:"73ab11883bb1c8924dc5ebbe8a61c96e913ee437",api:w.api};
+ const w=await hostWorld(false),record={version:"skill-harness-dashboard-bridge-v1",sourceCommit:"2a36632f8780289a2cb82fa42efff440e8530f9a",api:w.api};
  const api=adoptDashboardHarnessBridge(record);assert.equal(api,w.api);assert.match(loadedDashboardHarnessDigest(api)!,/^[a-f0-9]{64}$/);
  assert.throws(()=>adoptDashboardHarnessBridge({...record,sourceCommit:"0".repeat(40)}),/supported harness bridge/);
  assert.throws(()=>adoptDashboardHarnessBridge({...record,api:{...w.api}}),/frozen harness API/);

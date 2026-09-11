@@ -1150,8 +1150,9 @@ siblings. Reads and refresh never invoke cancellation.
 
 Each daily work observation also exposes the content-addressed runtime-facts manifest returned by the exact
 pinned harness bridge. It contains only projected attempt identity/state/resolution, terminal observed occurrence
-digests, and obligation acceptance/coverage. When no host facts were supplied, checkpoint, expected-wait and
-prior-acceptance evidence are explicitly unavailable. The manifest is navigable evidence, not acceptance,
+digests, and obligation acceptance/coverage. Checkpoint, expected-wait and prior-acceptance evidence are
+explicitly unavailable in this projection-only artifact; separately supplied host facts retain their own
+linkage and provenance. The manifest is navigable evidence, not acceptance,
 a defect label, or authority.
 
 The projection is pure and has no pi/Herdr UI dependency. It reconstructs from the complete ledger, keeps
