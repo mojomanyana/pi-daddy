@@ -5,6 +5,10 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ---
 
+## 2026-09-11 — Node24 append/read finalization race repaired on PR37
+
+Fresh PR37 CI run 34576542484 exposed `factory cancellation uses the original running controller handle` failing on Node24 with `experiment source changed`. The experiment journal reader took a bounded prefix snapshot while a legitimate controller append grew the same inode, then treated growth as replacement. The narrow repair gives only the append-only journal path a prefix-stability mode: same inode/link, no shrink, and a second positioned read must match every captured byte. Strict result/common artifact reads retain the original size+mtime rejection. A deterministic injected-append regression failed before the repair and now passes; the exact CI cell plus that regression passed 20/20 focused repetitions on Node24. No source-change check was removed or generalized.
+
 ## 2026-09-11 — post-merge declared work reaches ordinary execution
 
 On `factory-01a071db/post-merge-c01` from exact released main `1eb89f2`, ADR-0060 adds a supported digest-only `pi-daddy work add` declaration and binds the selected obligation to ordinary governed execution. Exact declaration and occurrence retries are idempotent; changed outcomes and malformed/relocated state refuse; runtime completion remains distinct from acceptance. Red-first targeted evidence is 45 tests plus typecheck; the full unit gate passed 1,202/1,202 (997 + separately batched 205). A fresh bounded live Sol occurrence used the source extension through real Pi delegation and produced execution `exec:3e57d79c-4f27-499c-a69b-49c3bb19ee7b`, with starting/completed work occurrences and a visible one-attempt daily dashboard. Two earlier pre-effect attempts exposed the provider/model reference spelling and a raw Pi tool-call ID outside work-v4's identifier grammar; the latter has a regression and digest-labelled join. No acceptance was invented and archive coverage remains unavailable.
