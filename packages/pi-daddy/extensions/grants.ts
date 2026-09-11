@@ -49,7 +49,7 @@ import {
 
 import { associateOrdinaryHost } from "../src/ordinary-children.ts";
 import { loadDeclaredWork } from "../src/work-command.ts";
-import { ENV_DAILY_WORK, ENV_DAILY_SELECTION } from "../src/dashboard-cli.ts";
+import { replacePublishedDailyWork, type PublishedDailyWork } from "./daily-work-session.ts";
 export default function (pi: ExtensionAPI) {
   // The path pi loads as the extension, so a child granted `tool:delegate` can be started with `-e <this>`.
   // Only this file can say so about itself, which is why the session takes it rather than deriving it.
@@ -72,6 +72,7 @@ export default function (pi: ExtensionAPI) {
   // because the hooks below have to be registered before the tools and both need to call it — the tool
   // schemas describe which definitions are spawnable, and nothing knows that until a hook has run (R-39).
   const delegation = { refreshSpawnable: () => {} };
+  const publishedDailyWork: PublishedDailyWork = {};
 
   pi.on("session_start", async (_event, ctx) => {
     session.cwd = ctx.cwd;
@@ -81,11 +82,9 @@ export default function (pi: ExtensionAPI) {
     if (session.ledgerPath) session.ledgerPath = resolve(ctx.cwd, session.ledgerPath);
     try {
       try {
+        replacePublishedDailyWork(process.env, publishedDailyWork, undefined);
         session.declaredWork = (await loadDeclaredWork(join(ctx.cwd, ".pi", "work-current.json"))) ?? undefined;
-        if (session.declaredWork) {
-          process.env[ENV_DAILY_WORK] = session.declaredWork.ledgerPath;
-          process.env[ENV_DAILY_SELECTION] = JSON.stringify(session.declaredWork.selectedSnapshot);
-        }
+        replacePublishedDailyWork(process.env, publishedDailyWork, session.declaredWork);
       } catch (error) {
         session.declaredWork = undefined;
         ctx.ui.notify(

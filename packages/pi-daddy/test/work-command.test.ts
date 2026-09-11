@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { readFile, writeFile } from "node:fs/promises";
+import fsPromises, { readFile, writeFile } from "node:fs/promises";
+import { syncBuiltinESMExports } from "node:module";
 import { join } from "node:path";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 import {
@@ -61,6 +62,30 @@ test("same declaration and occurrence deliveries are idempotent; changed text un
   const starting = ingestion.events.find(event => event.event === "work_occurrence" && event.payload.state === "starting");
   assert.equal(starting && starting.event === "work_occurrence" ? starting.payload.labels.modelId : null, "openai-codex/gpt-5.6-sol");
   assert.match(starting && starting.event === "work_occurrence" ? starting.payload.labels.toolCallId! : "", /^toolcall:[a-f0-9]{64}$/);
+});
+
+test("concurrent identical declarations serialize to one five-event graph", async () => {
+  const cwd = await tempDir("work-command-concurrent-");
+  const [a, b] = await Promise.all([
+    declareWork({ cwd, id: "same", outcome: "One outcome" }),
+    declareWork({ cwd, id: "same", outcome: "One outcome" }),
+  ]);
+  assert.deepEqual(a, b);
+  assert.equal(parseWorkLedgerText(await readFile(a.ledgerPath, "utf8")).events.length, 5);
+});
+
+test("a retry resumes the exact prepared timestamp after state publication interruption", async () => {
+  const cwd = await tempDir("work-command-recovery-");
+  const statePath = join(cwd, ".pi", "work-current.json"), original = fsPromises.rename; let failed = false;
+  fsPromises.rename = (async (...args: Parameters<typeof fsPromises.rename>) => {
+    if (!failed && String(args[1]) === statePath) { failed = true; throw new Error("fixture state publication interruption"); }
+    return original(...args);
+  }) as typeof fsPromises.rename;
+  syncBuiltinESMExports();
+  try { await assert.rejects(declareWork({ cwd, id: "recover", outcome: "Recover me" }), /fixture state publication/); }
+  finally { fsPromises.rename = original; syncBuiltinESMExports(); }
+  const recovered = await declareWork({ cwd, id: "recover", outcome: "Recover me" });
+  assert.equal(parseWorkLedgerText(await readFile(recovered.ledgerPath, "utf8")).events.length, 5);
 });
 
 test("loadDeclaredWork fails closed for malformed or relocated state", async () => {

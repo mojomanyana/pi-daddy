@@ -83,6 +83,30 @@ test("ordinary execution records one selected attempt in the declared work ledge
   }
 });
 
+test("strict lifecycle refusal creates no declared attempt before execution prerequisites", async () => {
+  const dir = await tempDir("execute-child-work-prerequisite-");
+  const declaredWork = await declareWork({ cwd: dir, id: "not-started", outcome: "Never start" });
+  const invalidLedger = join(dir, "ledger-directory"); const { mkdir } = await import("node:fs/promises"); await mkdir(invalidLedger);
+  await assert.rejects(executePlannedChild({
+    session: { ledgerPath: invalidLedger, executor: { kind: "process" }, declaredWork } as GrantsSession,
+    plan: plan(), childId: "d0.1", executionId, parentExecutionId: null, cwd: dir,
+  }));
+  const events = parseWorkLedgerText(await readFile(declaredWork.ledgerPath, "utf8")).events;
+  assert.equal(events.filter(event => event.event === "work_occurrence").length, 0);
+});
+
+test("an executor setup throw finalizes an already-started declared attempt as failed", async () => {
+  const dir = await tempDir("execute-child-work-throw-");
+  const declaredWork = await declareWork({ cwd: dir, id: "executor-throw", outcome: "Record failure" });
+  const broken = { ...plan(), env: new Proxy({}, { ownKeys() { throw new Error("fixture executor setup"); } }) };
+  await assert.rejects(executePlannedChild({
+    session: { executor: { kind: "process" }, declaredWork } as GrantsSession,
+    plan: broken, childId: "d0.1", executionId, parentExecutionId: null, cwd: dir,
+  }), /fixture executor setup/);
+  const occurrences = parseWorkLedgerText(await readFile(declaredWork.ledgerPath, "utf8")).events.filter(event => event.event === "work_occurrence");
+  assert.deepEqual(occurrences.map(event => event.payload.state), ["starting", "failed"]);
+});
+
 test("a SIGTERM-ignoring child is hard-killed by the recorded lifecycle deadline", async () => {
   const dir = await tempDir("execute-child-hard-deadline-");
   const bin = join(dir, "bin");
