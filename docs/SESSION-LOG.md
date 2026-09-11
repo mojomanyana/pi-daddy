@@ -5,6 +5,10 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ---
 
+## 2026-09-11 — variant usage availability is explicit
+
+Pi's extension API exposes assistant usage in `message_end` and supports nested `Usage` on tool results, but pi-daddy's separate `--print --no-session` child result carries neither event nor authoritative provider/billing counters. ADR-0069 keeps the existing transport and hard fan-out/output-byte/wall-time bounds while making `/grants variants` say **provider usage unavailable**. A red-first settled primary/shadow report assertion now passes. No child count, text size, client duration or planned ceiling is relabelled as measured tokens, calls, server time or cost.
+
 ## 2026-09-11 — daily work links exact completion facts
 
 ADR-0068 pins harness source `73ab11883bb1c8924dc5ebbe8a61c96e913ee437` and exposes its content-addressed `observed-work-runtime-v1` manifest on each successful work observation. The manifest records exact projected attempt state/resolution, terminal observed occurrence digests, and obligation acceptance/coverage while marking checkpoint, expected-wait and prior-acceptance history unavailable when no host facts exist. A red-first production-host assertion failed on the old bridge and now passes through the byte-vendored source. This is evidence navigation, not acceptance or a defect judgment.

@@ -102,6 +102,7 @@ handler: async (args: string, ctx: any) => {
     if (sub === "variants") {
       const lines=[`grants: ${variantRuns.size} retained primary/shadow run(s)`];
       for(const run of variantRuns.values())lines.push(`  ${run.runId} ${run.state} — primary ${run.primaryExecutionId}; ${run.shadowExecutionIds.length} shadow(s)`+(!run.outcomes?"":` — ${run.outcomes.map(x=>`${x.role}:${x.ok?"completed":"failed"}`).join(", ")}`));
+      lines.push("  provider usage unavailable — child print transport retains no Usage event; fan-out, output bytes and wall time remain controller-bounded");
       ctx.ui.notify(lines.join("\n"),"info");return;
     }
 

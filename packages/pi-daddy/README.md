@@ -168,8 +168,9 @@ delegate_all({ children: [ {…}, {…}, {…} ] })                  // several 
 - **Fan-out stays bounded and waits for all by default.** At most 8 children per call, and the subtree budget
   bounds the whole tree. Every child uses the same plan-gate-audit path. The opt-in
   `completion:"primary", primary:N` form returns when that one-based child settles while the original
-  session retains bounded role/outcome accounting for its shadows; `/grants variants` displays it. Shadow
-  failure or later cancellation cannot replace/delay the primary result. This is not detached job recovery:
+  session retains bounded role/outcome accounting for its shadows; `/grants variants` displays it and explicitly
+  labels child provider usage unavailable because the print transport retains no Pi `Usage` event. Fan-out,
+  output bytes and wall time remain controller-bounded. Shadow failure or later cancellation cannot replace/delay the primary result. This is not detached job recovery:
   process exit ends ownership, and there is no retry, acceptance, winner selection or result-text store.
 - **One child can be refused while its siblings succeed**, and every outcome is reported. A fan-out that
   hid its refusals would let an orchestrator summarise four reviews when only three happened.
