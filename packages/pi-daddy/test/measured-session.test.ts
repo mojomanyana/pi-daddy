@@ -17,6 +17,12 @@ test('pre-aborted calls launch no host and reserve no attempt',async()=>{
  const f=await fixture(),signal=AbortSignal.abort('operator'),host:MeasuredSessionHost={run:async()=>{throw Error('must not run');}};
  await assert.rejects(runMeasuredAgentSession({...request(f.budget),signal},host),MeasuredSessionFailure);assert.equal((await openResourceBudget(f.budget).inspect()).attempts,0);
 });
+test('abort during reservation charges cancelled but launches no session host',async()=>{
+ const f=await fixture(),controller=new AbortController();let launched=false;
+ const host:MeasuredSessionHost={run:async()=>{launched=true;return{output:'late',usage:{input:1,output:1,cacheRead:0,cacheWrite:0,reasoning:0,totalTokens:2,cost:{input:0,output:0,cacheRead:0,cacheWrite:0,total:0}},provider:'openai-codex',model:'gpt-5.6-sol',stopReason:'aborted'};}};
+ const running=runMeasuredAgentSession({...request(f.budget),signal:controller.signal},host);queueMicrotask(()=>controller.abort('during-reservation'));
+ await assert.rejects(running,MeasuredSessionFailure);assert.equal(launched,false);assert.equal((await openResourceBudget(f.budget).inspect()).reservations[0].outcome,'cancelled');
+});
 test('identity, stop and retained-output failures preserve evidence and settle failed',async()=>{
  const usage={input:1,output:1,cacheRead:0,cacheWrite:0,reasoning:0,totalTokens:2,cost:{input:0,output:0,cacheRead:0,cacheWrite:0,total:0}};
  for(const [suffix,result,match] of [

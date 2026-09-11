@@ -31,8 +31,10 @@ export async function runMeasuredAgentSession(raw:MeasuredSessionInput,host:Meas
  const controller=new AbortController(),abort=()=>controller.abort(input.signal?.reason??'operator-cancellation');input.signal?.addEventListener('abort',abort,{once:true});if(input.signal?.aborted)abort();
  const timer=setTimeout(()=>controller.abort('deadline'),input.deadlineMs);let outcome:'completed'|'failed'|'cancelled'|null='failed';
  try{
+  const unknown=new Promise<never>((_,reject)=>controller.signal.addEventListener('abort',()=>setTimeout(()=>reject(new MeasuredSessionUnknownError()),input.terminationGraceMs),{once:true}));
+  if(controller.signal.aborted)throw new MeasuredSessionFailure('measured session cancelled after reservation',{state:'cancelled-before-host',reason:'caller-signal'});
   const running=host.run({model:input.model,thinkingLevel:input.thinkingLevel,prompt:input.prompt,deadlineMs:input.deadlineMs,maxOutputTokens:input.maxOutputTokens,tools:[],discovery:'factory-only',signal:controller.signal});
-  const result=await Promise.race([running,new Promise<never>((_,reject)=>controller.signal.addEventListener('abort',()=>setTimeout(()=>reject(new MeasuredSessionUnknownError()),input.terminationGraceMs),{once:true}))]);
+  const result=await Promise.race([running,unknown]);
   const outputBytes=Buffer.from(result.output),outputEvidence={sha256:createHash('sha256').update(outputBytes).digest('hex'),bytes:outputBytes.length,retainedPrefix:outputBytes.subarray(0,input.maxRetainedOutputBytes).toString('utf8')};
   let usage:ProviderUsage;try{usage=checkedUsage(result.usage);}catch(error){throw new MeasuredSessionFailure(String(error),{state:'failed',model:result.model,stopReason:result.stopReason,output:outputEvidence});}
   if(result.provider!=='openai-codex'||`${result.provider}/${result.model}`!==input.model)throw new MeasuredSessionFailure('measured model identity mismatch',{state:'failed',observedProvider:result.provider,observedModel:result.model,stopReason:result.stopReason,output:outputEvidence,usage});
