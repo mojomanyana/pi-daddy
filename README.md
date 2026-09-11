@@ -5,7 +5,7 @@ deliberate subset of what it holds and withholds the rest. Sub-agents may delega
 subset of what they themselves hold — enforced by **pi's own `--tools` allowlist**, with an append-only
 ledger of every grant and refusal whenever a ledger is configured.
 
-**Source release candidate (2026-09-11):** `0.24.0` adds declared daily work, a production connected-host lifecycle with explicit refresh, and opt-in primary/shadow variants while keeping governance ledger v3 and historical wait-for-all behavior unchanged. At preparation the published baseline was `0.23.0`. For current publication status, consult
+**Source release candidate (2026-09-12):** `0.25.0` adds practical declared-work steering/rebind, explicit closing review, opt-in measured sessions and bounded dependent measured orders while preserving existing governance and ordinary-child behavior. At preparation the published baseline was `0.24.0`. For current publication status, consult
 [npm](https://www.npmjs.com/package/pi-daddy) and [GitHub Releases](https://github.com/mojomanyana/pi-daddy/releases).
 `pi-daddy` is the only public package; the workspace root is private.
 

@@ -1,6 +1,6 @@
 # Candidate completion index
 
-This index covers pi-daddy PR #41 and skill-harness PR #78. It is a release-readiness record, not a merge, release, publication, acceptance, adoption, or later-outcome claim.
+This index covers merged pi-daddy PR #41 and skill-harness PR #78 plus the 0.25.0/0.15.0 release line. Release preparation and publication evidence remain distinct from acceptance, adoption, or later outcomes.
 
 ## Requirements, code, and evidence
 
@@ -14,7 +14,7 @@ This index covers pi-daddy PR #41 and skill-harness PR #78. It is a release-read
 | C06 failure-derived learning | Loaded skill-harness bridge: `readLearningLifecycle` / `retainLearningLifecycle`; factory-order adoption boundary | Retained original race → case → hypothesis → old/new comparison; repair review APPROVE; monotonic lifecycle tests | Human quality choice, then separate adoption authority; see exact actions below. |
 | C07 useful dependent order | `pi-daddy/measured-order` and root export | Exact and free-form projection contracts; complete sealed predecessor bytes/hash; original-owner unknown recovery; inode replacement refusal; both retained NWS outputs pass the contract offline | No live order was replayed merely to prove packaging. Effectful work still needs a separately qualified profile. |
 | C08 second domain | Frozen public source, deterministic oracle and concise blind comparison card | Prior independent no-tool Sol/Terra SDK outputs preserve all 22 rows and nine source fields | Human bulletin choice and any later publication/outcome; see exact action below. |
-| C09/C10 portability and reconciliation | Package exports, Pi extension manifests and exact bridge pin | Isolated packed install, explicit-only extension host, in-memory settings/session, empty discovery and zero provider requests; exact-head CI and focused repair approval | Keep both PRs unmerged until an authorized merge decision. |
+| C09/C10 portability and reconciliation | Package exports, Pi extension manifests and exact bridge pin | Feature PRs merged with exact reviewed ancestry; release/version PRs and canonical artifact verification follow the live runbooks | Registry/tag/downloaded-byte verification remains required before calling 0.15.0/0.25.0 released. |
 
 ## What actually ran
 
@@ -29,7 +29,7 @@ No additional live proof is indispensable for packaging: the uncertainty under t
 1. **Daily trust policy (C02).** Required input: an independently labelled calibration/exposure set for detector `coverage_gap`, version `work-signals-v1:declared-work-v1`, bound to the exact `daily:<host-id>` population and retained case manifests. Do not substitute settled attempts for labels. Next action: provide the intended fresh host ID plus the labelled manifest IDs as `flagged` or `unflagged`; then create/qualify that exact trust lifecycle before `/grants host closing`, pause dispatch, settle or cancel active attempts, choose `prepare-case-cards`, inspect at most five cards, and choose `acknowledge-case-cards` only when visible.
 2. **Failure-derived improvement choice (C06).** Rendered artifact: `evidence/full-completion-20260911/c06-failure-improvement/READY-FOR-HUMAN.md`. Next action: reply with exactly one of `variant-2f61202ea5a9`, `variant-7acaa09a1e19`, `both`, or `neither`. A choice still does not activate adoption. If the eligible repair is chosen, separately authorize or reject adoption binding `fc20db5bb1ed87df0d9508775d3786cf0801cf330a47b18b39746e2f53a843a7` for future orders.
 3. **Public bulletin choice (C08).** Rendered artifact: `evidence/full-completion-20260911/c08-public-weather/BRIEF-READY-FOR-HUMAN.md` (4,355 bytes; SHA-256 `ae00313f031023de87ec2d9bf2cda845bd3d012ee110705aae2021d0e1f63f82`). Next action: reply with exactly one of `variant-6bda086a81b82e1d`, `variant-ac68828f57a5cd71`, `both`, or `neither`. Reveal, publication and later outcomes stay null until their own authorized steps.
-4. **Merge/release.** Next action, when desired, is an explicit merge decision for each currently green PR. No release or global installation is implied by merging.
+4. **Release state.** Merge and publication are explicitly authorized and proceed through green release PRs, canonical artifacts, dependency-ordered exact-once publication, tags and downloaded-byte verification. This still does not answer items 1–3.
 
 ## Receipts
 
