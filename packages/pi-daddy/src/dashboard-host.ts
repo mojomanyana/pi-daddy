@@ -18,7 +18,9 @@ export const isDashboardHost=(value:unknown):value is DashboardHost=>typeof valu
 export type DashboardHost=ReturnType<typeof openDashboardHost>;
 export interface DashboardHostOptions { ordinary?:OrdinaryChildren; harness:DashboardHarness; config:DashboardHostConfig; budget:GovernedBudgetBinding; experiment?:ReturnType<typeof openExperiment>; authority:()=>DashboardHostAuthority|null;
   /** Exact actions constructed and authorized by the owner; the dashboard exposes only human labels/keys. */
-  humanActions?:(context:{hostDigest:string;selectionDigest:string;tip:string})=>readonly {key:string;label:string;request:DashboardHostRequest}[]|Promise<readonly {key:string;label:string;request:DashboardHostRequest}[]>;
+  humanActions?:(context:{hostDigest:string;selectionDigest:string;tip:string;observations:readonly {sourceId:string;checkpointId:string}[]})=>readonly {key:string;label:string;request:DashboardHostRequest}[]|Promise<readonly {key:string;label:string;request:DashboardHostRequest}[]>;
+  /** Explicit approved observation effect only; refresh/frame never invokes it. */
+  beforeObservation?:(sourceId:string)=>Promise<void>;
   /** Independently sourced current declaration. Never inferred from idle, a PID, title or request fields. */
   presence?:()=>{present:boolean;closing:boolean;evidenceDigest:string;expiresAt:number}|null;
 }
@@ -71,7 +73,7 @@ export function openDashboardHost(options:DashboardHostOptions){
   const nativeRead=async()=>({dispatch:await budget.controls(null).inspect(),intent:budget.binding.intent?await budget.intentControls(null).inspect():null,experiment:experiment?await experiment.inspect():null,ordinary:ordinary?ordinary.inspect():null});
   const availableHumanActions=async()=>{
     const rows=history(),tip=rows.at(-1)!.id,selection=await currentSelection(),seen=new Set<string>();
-    const declared=await options.humanActions?.({hostDigest,selectionDigest:dashboardSelectionDigest(selection),tip})??[],a=authority();
+    const declared=await options.humanActions?.({hostDigest,selectionDigest:dashboardSelectionDigest(selection),tip,observations:observation.latest().map(x=>({sourceId:x.sourceId,checkpointId:x.checkpointId}))})??[],a=authority();
     return declared.map(value=>{const x=detached(value);controlShape(x,["key","label","request"]);const request=dashboardHostRequest(x.request);
       if(!/^[a-zA-Z0-9:_-]{1,64}$/.test(x.key)||typeof x.label!=="string"||!x.label.trim()||Buffer.byteLength(x.label)>120||seen.has(x.key))throw Error("invalid human dashboard action");seen.add(x.key);
       if(request.hostDigest!==hostDigest||request.expectedTip!==tip||request.selectionDigest!==dashboardSelectionDigest(selection)||!a?.requestDigests.includes(dashboardHostRequestDigest(request)))throw Error("human dashboard action is stale or not exactly authorized");
@@ -115,6 +117,7 @@ export function openDashboardHost(options:DashboardHostOptions){
         let result:unknown,releaseOrdinary:(()=>void)|undefined;
         try{
           if(request.operation==="observe"){
+            const sourceId=(request.payload as {sourceId?:unknown})?.sourceId;if(typeof sourceId!=="string")throw Error("exact observation source required");await options.beforeObservation?.(sourceId);
             const captured=observation.observe(request.payload,a!,selection);append({type:"observation",observation:captured});result=captured;
           }else if(request.operation==="present"){
             const p=detached(request.payload) as {userPresent:boolean;closing:boolean;evidenceDigest:string;dispatchRevision:number};
