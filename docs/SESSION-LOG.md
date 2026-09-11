@@ -5,6 +5,10 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ---
 
+## 2026-09-11 — C07 read-only chain found and closed a declaration mismatch
+
+A fresh bounded Sol→Terra review chain found that unreleased `DeclareWorkInput` exposed custom ledger/state paths while reload required fixed sibling paths. The coordinator confirmed it mechanically. The API now accepts only `cwd`, `id` and `outcome`; unknown destination fields refuse before writes. A red-first regression covers both former custom paths. The chain's `FIX` was advisory, not human acceptance.
+
 ## 2026-09-11 — overall-review C01 blockers repaired
 
 The single milestone review found REV-QUAL-001/002 and REV-SPEC-002 on PR37. Declaration now serializes its whole graph/state transaction and persists a private preparation timestamp, so concurrent exact calls collapse and an interrupted final publication retries byte-identical events. Ordinary work starts only after strict lifecycle prerequisites and every post-start executor throw attempts a failed terminal observation without masking the primary error. Session transitions remove only dashboard values this extension instance published; operator overrides survive. Red-first regressions cover concurrent declaration, interrupted recovery, pre-start ledger refusal, executor throw and valid-to-absent/malformed dashboard input transitions. No acceptance or recovery authority was inferred.

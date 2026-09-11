@@ -46,18 +46,11 @@ export interface DeclareWorkInput {
   cwd: string;
   id: string;
   outcome: string;
-  ledgerPath?: string;
-  statePath?: string;
-  grantLedgerPath?: string | null;
 }
 
-function paths(input: DeclareWorkInput): { ledgerPath: string; statePath: string; grantLedgerPath: string | null } {
+function paths(input: DeclareWorkInput): { ledgerPath: string; statePath: string; grantLedgerPath: null } {
   const root = resolve(input.cwd);
-  return {
-    ledgerPath: resolve(root, input.ledgerPath ?? join(".pi", "work.jsonl")),
-    statePath: resolve(root, input.statePath ?? join(".pi", "work-current.json")),
-    grantLedgerPath: input.grantLedgerPath === undefined ? null : input.grantLedgerPath === null ? null : resolve(root, input.grantLedgerPath),
-  };
+  return { ledgerPath: join(root, ".pi", "work.jsonl"), statePath: join(root, ".pi", "work-current.json"), grantLedgerPath: null };
 }
 
 const exactKeys = (value: object, expected: readonly string[]): boolean => {
@@ -102,9 +95,10 @@ export async function loadDeclaredWork(statePath: string): Promise<WorkFrozen<De
 }
 
 export async function declareWork(input: DeclareWorkInput): Promise<WorkFrozen<DeclaredWorkState>> {
-  if (!input || typeof input !== "object" || !ID.test(input.id) || typeof input.outcome !== "string" || !input.outcome.trim()) {
-    throw new TypeError("work declaration requires an identifier and non-empty outcome");
+  if (!input || typeof input !== "object" || Object.keys(input).some(key => !["cwd", "id", "outcome"].includes(key))) {
+    throw new TypeError("unsupported work declaration field");
   }
+  if (!ID.test(input.id) || typeof input.outcome !== "string" || !input.outcome.trim()) throw new TypeError("work declaration requires an identifier and non-empty outcome");
   const resolved = paths(input), outcomeDigest = sha256(input.outcome.trim());
   await mkdir(dirname(resolved.ledgerPath), { recursive: true });
   await mkdir(dirname(resolved.statePath), { recursive: true });
