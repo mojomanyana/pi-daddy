@@ -5,6 +5,12 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ---
 
+## 2026-09-11 — bounded concurrent Sol/Terra attempts reach the dashboard
+
+The stacked C04 slice retains `correlation.context_id` as work-v4 variant identity. Fresh occurrence `factory-01a071db-c04-sol-terra-20260911-01` consumed exactly one parent dispatch/integration pair and one response from each of two concurrent tool-free children (four total, no judge/retry/fallback). Sol and Terra starts were 26ms apart and overlapped for more than five seconds; outputs and execution IDs stayed separate, and the existing coworking dashboard showed two attached attempts. The actual tool schema/arguments carried no thinking field, so effort is honestly `null`; thinking-level variants and primary/shadow independence remain open.
+
+Next: repair PR37's exact Node24 source-read/finalization race without weakening source-change safety, propagate forward, then expose explicit effort and complete C04.
+
 ## 2026-09-11 — post-merge dashboard action keys replace ordinary JSON entry
 
 The stacked `factory-01a071db/post-merge-c03` branch implements ADR-0061. An original host can publish human labels/keys for exact requests already bound to current host, selection, tip and independent authority. The connected dashboard lists those keys and routes typed commands through the existing private transport and native validators; refresh still has no effect, and malformed/unknown/stale actions refuse. Raw JSON remains compatibility-only. Red-first host tests pass 21/21 across host boundaries, socket transport and ordinary cancellation; typecheck and the source line gate pass. Concrete busy-child steering remains unobserved, so C03 is in progress rather than complete.

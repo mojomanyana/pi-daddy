@@ -67,9 +67,10 @@ test("ordinary execution records one selected attempt in the declared work ledge
   const oldPath = process.env.PATH;
   process.env.PATH = `${bin}${delimiter}${oldPath ?? ""}`;
   try {
+    const variantPlan = { ...plan(), correlation: { schema_version: "1.0" as const, context_id: "sol-low" } };
     const outcome = await executePlannedChild({
       session: { executor: { kind: "process" }, declaredWork } as GrantsSession,
-      plan: plan(), childId: "d0.1", executionId, parentExecutionId: null, toolCallId: "call-1", cwd: dir,
+      plan: variantPlan, childId: "d0.1", executionId, parentExecutionId: null, toolCallId: "call-1", cwd: dir,
     });
     assert.equal(outcome.ok, true);
     const work = parseWorkLedgerText(await readFile(declaredWork.ledgerPath, "utf8"));
@@ -77,6 +78,7 @@ test("ordinary execution records one selected attempt in the declared work ledge
     assert.deepEqual(occurrences.map(event => event.payload.state), ["starting", "completed"]);
     assert.equal(occurrences[0].payload.executionId, executionId);
     assert.equal(occurrences[0].payload.labels.taskId, plan().taskDigest);
+    assert.equal(occurrences[0].payload.variantId, "sol-low");
   } finally {
     if (oldPath === undefined) delete process.env.PATH;
     else process.env.PATH = oldPath;

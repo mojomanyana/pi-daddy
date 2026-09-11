@@ -654,6 +654,8 @@ it.
 
 ## Opt-in work-v4 evidence (candidate)
 
+**Post-0.23.0 C04 slice (ADR-0062, unreleased):** ordinary attempt joins retain caller-declared correlation `context_id` as non-authoritative variant identity. Requested model/effort are recorded only from actual child argv. A bounded live `delegate_all` run observed overlapping Sol/Terra children and separate results; the tool schema did not carry thinking, so effort stayed unknown. This is not yet the full model/effort or primary/shadow claim.
+
 **Post-0.23.0 C03 continuation (ADR-0061, unreleased):** a connected host may publish bounded human-readable action keys backed by exact already-authorized requests. The dashboard displays only key/label/operation; typing a listed key resolves inside the original private host and still passes the existing host/selection/tip CAS and native validators. Unknown, stale or no-longer-authorized keys refuse before effects. Raw JSON remains compatibility-only; refresh remains read-only. Concrete busy-child steering is not yet live-qualified.
 
 **Post-0.23.0 continuation (ADR-0060, unreleased):** `pi-daddy work add --id <id> --outcome <text>` now creates one digest-only selected obligation without retaining the outcome text. The extension validates `.pi/work-current.json` at session start and ordinary governed delegation appends observed starting/terminal occurrences under its assigned execution identity. Exact redelivery is idempotent; a changed outcome under one id refuses; malformed state leaves work unbound. Runtime completion still does not create acceptance, and archive/authority coverage remains separate.

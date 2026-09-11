@@ -37,6 +37,7 @@ test("same declaration and occurrence deliveries are idempotent; changed text un
     executionId: "exec:00000000-0000-4000-8000-000000000101",
     parentExecutionId: null,
     childId: "d0.1",
+    variantId: "sol-low",
     toolCallId: "call_123|fc_456",
     taskId: "task-1",
     workspaceId: null,
@@ -61,6 +62,7 @@ test("same declaration and occurrence deliveries are idempotent; changed text un
   const starting = ingestion.events.find(event => event.event === "work_occurrence" && event.payload.state === "starting");
   assert.equal(starting && starting.event === "work_occurrence" ? starting.payload.labels.modelId : null, "openai-codex/gpt-5.6-sol");
   assert.match(starting && starting.event === "work_occurrence" ? starting.payload.labels.toolCallId! : "", /^toolcall:[a-f0-9]{64}$/);
+  assert.equal(starting && starting.event === "work_occurrence" ? starting.payload.variantId : null, "sol-low");
 });
 
 test("loadDeclaredWork fails closed for malformed or relocated state", async () => {

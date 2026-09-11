@@ -26,6 +26,7 @@ export async function beginDeclaredWorkAttempt(input: {
     executionId: input.executionId,
     parentExecutionId: input.parentExecutionId,
     childId: input.childId,
+    variantId: input.plan.correlation?.context_id ?? null,
     toolCallId: input.toolCallId ?? null,
     taskId: input.plan.correlation?.task_id ?? input.plan.taskDigest,
     workspaceId: input.preparedWorkspace?.workspace.workspaceId ?? input.plan.correlation?.workspace_id ?? null,
