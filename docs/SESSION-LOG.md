@@ -5,6 +5,10 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ---
 
+## 2026-09-11 — daily work links exact completion facts
+
+ADR-0068 pins harness source `73ab11883bb1c8924dc5ebbe8a61c96e913ee437` and exposes its content-addressed `observed-work-runtime-v1` manifest on each successful work observation. The manifest records exact projected attempt state/resolution, terminal observed occurrence digests, and obligation acceptance/coverage while marking checkpoint, expected-wait and prior-acceptance history unavailable when no host facts exist. A red-first production-host assertion failed on the old bridge and now passes through the byte-vendored source. This is evidence navigation, not acceptance or a defect judgment.
+
 ## 2026-09-11 — daily dashboard exact cancellation candidate
 
 ADR-0067 connects the production daily host to the already-existing original ordinary cancellation route. While an original retained child is active, the dashboard lists an exact `cancel-exec-…` action with its execution ID; selecting it binds the original port, current revision and complete target through existing host/native authority checks. The action disappears on settlement, and stale/missing handles refuse rather than being recovered from a ledger or terminal. Pause remains future-admission control; cancellation affects one selected child and implies no acceptance/rejection. The red-first production-host regression and 13 related host/cancellation tests pass; full candidate gates will be rerun after the next cohesive control slice.

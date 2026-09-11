@@ -25,6 +25,7 @@ export function dashboardObservations(h: DashboardHarness, c: DashboardHostConfi
         captured.factSourceManifestId=factSource?.sourceManifestId??null;captured.factBasis=factSource?"explicit-host-declarations-not-authenticated-truth":"derived-retained-work-only";
         if(dataDigest(authority.workContext.selectedSnapshot)!==dataDigest(selection))throw Error("independent source selection changed");
         try { const signals=h.captureArchivedWorkSignals(root,sourceManifestId,authority.workContext,facts);
+          captured.runtimeFactsManifestId=signals.runtimeFactsManifestId;
           cases={version:"work-signals-v1",batchId:signals.caseBatchId,observationId:signals.observationId};linkageManifestId=signals.linkageManifestId;
         } catch(error) { captured.semanticFailure=String(error); } // Retain checkpoint/gap even when nomination is unavailable.
       } else {if(input.facts!==null||captured.kind!=="execution-retention-v2")throw Error("retention source requires exact referenced-blobs policy");h.readRetainedExecution(root,captured.checkpointId);}
