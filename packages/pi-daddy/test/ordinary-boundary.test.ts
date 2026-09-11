@@ -9,6 +9,7 @@ import { hostWorld } from "./dashboard-host-world.ts";
 import { selectionProposal } from "./intent-selection-fixture.ts";
 import { tempDir,cleanupTempDirs } from "./tmp.ts";
 import { intentRequestDigest,type IntentRequest } from "../src/intent-control.ts";
+import { dispatchRequestDigest,type DispatchRequest } from "../src/dispatch-control.ts";
 import { openResourceBudget } from "../src/resource-budget.ts";
 import { openDashboardHost } from "../src/dashboard-host.ts";
 import { associateOrdinaryHost, holdOrdinaryDispatch, ordinaryChildrenFor, retainOrdinaryChild } from "../src/ordinary-children.ts";
@@ -20,6 +21,15 @@ test("best-effort observation failure permits quiescence while required failure 
  for(const [suffix,control] of [["2","failed"],["3","unknown"]] as const){const session={},host={};associateOrdinaryHost(host,session);const port=ordinaryChildrenFor(session),child=retainOrdinaryChild(port,occurrence(`00000000-0000-4000-8000-00000000000${suffix}`))!;child.settle({ok:false},control);
   assert.equal(port.quiescent(),false);assert.throws(()=>holdOrdinaryDispatch(port,"b".repeat(64)),/unavailable; no recovery/);assert.equal((port.inspect() as any).admission,"open");assert.ok(retainOrdinaryChild(port,occurrence(`00000000-0000-4000-8000-00000000001${suffix}`)),"an unavailable boundary must not install a global hold");}
 });
+test("dashboard pause blocks only new ordinary dispatch while a busy child continues, then resume reopens admission",async()=>{
+ const child=await ordinaryHostFixture(await tempDir("ordinary-pause-live-"));try{const active=child.run("hold");await child.ready("hold");const w=await hostWorld(false,"signals",child.port),budget=openResourceBudget(w.budget);
+  const revision=await w.pause();assert.equal((await budget.controls(null).inspect()).paused,true);assert.equal((child.port.inspect() as any).children.find((r:any)=>r.state==="active").target.toolCallId,"call:hold");
+  assert.match(String((await child.run("blocked")).error),/ordinary dispatch held/);
+  const native:DispatchRequest={version:"1.0",requestId:"resume-live",bindingDigest:w.config.budgetDigest,expectedRevision:revision,action:"resume-dispatch",targetExecutionId:null};w.authority!.dispatch!.requestDigests=[...w.authority!.dispatch!.requestDigests,dispatchRequestDigest(native)];await w.host.action(await w.request("dispatch",native));
+  assert.equal((await budget.controls(null).inspect()).paused,false);assert.equal((await child.run("fast")).value.details.exitCode,0);assert.equal((child.port.inspect() as any).children.find((r:any)=>r.target.toolCallId==="call:hold").state,"active");await active;
+ }finally{await child.close();}
+});
+
 test("P05 intent direction waits for actual attached ordinary child and explicit original-boundary reconciliation",async()=>{
  const child=await ordinaryHostFixture(await tempDir("ordinary-direction-"));try{
   const w=await hostWorld(false,"signals",child.port),p=selectionProposal(),done=child.run("held");await child.ready("held");const before=await readFile(w.workPath,"utf8");

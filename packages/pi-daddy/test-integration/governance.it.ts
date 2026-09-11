@@ -435,7 +435,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     const text = r.notifies.map((n) => n.message).join("\n");
 
     assert.match(text, /unknown subcommand "ledgr" — did nothing/, "it must say it did nothing");
-    assert.match(text, /Known: init, dashboard, ledger, approvals, revoke/, "and what it does know");
+    assert.match(text, /Known: init, host, dashboard, ledger, approvals, revoke/, "and what it does know");
     assert.ok(!/holding    /.test(text), "and must NOT print the status screen, which is what made it look fine");
   });
 

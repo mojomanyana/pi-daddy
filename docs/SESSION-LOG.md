@@ -9,6 +9,10 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 A fresh bounded Sol→Terra review chain found that unreleased `DeclareWorkInput` exposed custom ledger/state paths while reload required fixed sibling paths. The coordinator confirmed it mechanically. The API now accepts only `cwd`, `id` and `outcome`; unknown destination fields refuse before writes. A red-first regression covers both former custom paths. The chain's `FIX` was advisory, not human acceptance.
 
+## 2026-09-11 — displayed dashboard actions cannot be remapped
+
+REV-SPEC-001 is repaired on C03. The host freezes the exact key/label/operation/request-digest set first rendered at a journal tip. A command requires that displayed tip and rechecks the provider's current exact action before using the displayed request; remapping a key between frame and Enter now refuses before an effect. The private socket and original CAS/native validators remain unchanged. A red-first regression mutates the action provider between frame and command.
+
 ## 2026-09-11 — overall-review C01 blockers repaired
 
 The single milestone review found REV-QUAL-001/002 and REV-SPEC-002 on PR37. Declaration now serializes its whole graph/state transaction and persists a private preparation timestamp, so concurrent exact calls collapse and an interrupted final publication retries byte-identical events. Ordinary work starts only after strict lifecycle prerequisites and every post-start executor throw attempts a failed terminal observation without masking the primary error. Session transitions remove only dashboard values this extension instance published; operator overrides survive. Red-first regressions cover concurrent declaration, interrupted recovery, pre-start ledger refusal, executor throw and valid-to-absent/malformed dashboard input transitions. No acceptance or recovery authority was inferred.
@@ -16,6 +20,12 @@ The single milestone review found REV-QUAL-001/002 and REV-SPEC-002 on PR37. Dec
 ## 2026-09-11 — Node24 append/read finalization race repaired on PR37
 
 Fresh PR37 CI run 34576542484 exposed `factory cancellation uses the original running controller handle` failing on Node24 with `experiment source changed`. The experiment journal reader took a bounded prefix snapshot while a legitimate controller append grew the same inode, then treated growth as replacement. The narrow repair gives only the append-only journal path a prefix-stability mode: same inode/link, no shrink, and a second positioned read must match every captured byte. Strict result/common artifact reads retain the original size+mtime rejection. A deterministic injected-append regression failed before the repair and now passes; the exact CI cell plus that regression passed 20/20 focused repetitions on Node24. No source-change check was removed or generalized.
+
+## 2026-09-11 — post-merge dashboard action keys replace ordinary JSON entry
+
+The stacked `factory-01a071db/post-merge-c03` branch implements ADR-0061. An original host can publish human labels/keys for exact requests already bound to current host, selection, tip and independent authority. The connected dashboard lists those keys and routes typed commands through the existing private transport and native validators; refresh still has no effect, and malformed/unknown/stale actions refuse. Raw JSON remains compatibility-only. Red-first host tests pass 21/21 across host boundaries, socket transport and ordinary cancellation; typecheck and the source line gate pass. Concrete busy-child steering remains unobserved, so C03 is in progress rather than complete.
+
+Next: wire one concrete pause/resume or priority action producer, exercise it against a busy owned child, then move to concurrent model/effort variants.
 
 ## 2026-09-11 — post-merge declared work reaches ordinary execution
 

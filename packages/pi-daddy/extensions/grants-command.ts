@@ -19,6 +19,7 @@ import type { SkillDefinition } from "../src/definitions.ts";
 import type { GatedPlan } from "./run-delegation.ts";
 import { loadApprovals, revokeAll, revokeApproval, type SubjectLookup } from "../src/approval-store.ts";
 import { verifyLedger } from "../src/ledger.ts";
+import { handleConnectedCommand } from "./grants-connected-command.ts";
 
 export interface GrantsCommandContext {
   cwd: string;
@@ -62,6 +63,8 @@ export interface GrantsCommandContext {
   runInit: () => Promise<void>;
   /** Open or reuse the read-only Herdr dashboard; injected so this diagnostic never becomes enforcement. */
   openDashboard: () => Promise<{ kind: "opened" | "reused"; paneId: string; visibleBesideCaller: boolean }>;
+  /** Explicit same-process production host lifecycle; owns no model call and never cancels a child on stop. */
+  runHost: (target: string) => Promise<string>;
 }
 
 /**
@@ -71,12 +74,12 @@ export interface GrantsCommandContext {
 const PREVIEW_LIMIT = 12;
 
 /** The verbs `/grants` answers to. Anything else is refused rather than silently treated as no verb. */
-const KNOWN_SUBCOMMANDS: readonly string[] = ["init", "dashboard", "ledger", "approvals", "revoke"];
+const KNOWN_SUBCOMMANDS: readonly string[] = ["init", "host", "dashboard", "ledger", "approvals", "revoke"];
 
 export const grantsCommand = {
   description:
     "Show this session's capability grant, delegation depth, and known agent-type ceilings; " +
-    "/grants dashboard | /grants approvals | /grants ledger | /grants revoke <key>|--all",
+    "/grants host <fresh-id>|stop | /grants dashboard | /grants approvals | /grants ledger | /grants revoke <key>|--all",
 handler: async (args: string, ctx: any) => {
     // Everything this command may see, named in one place. Previously these were whatever happened to be in
     // the enclosing closure — which is how a diagnostic came to disagree with the enforcer (R-28).
@@ -92,19 +95,7 @@ handler: async (args: string, ctx: any) => {
       return;
     }
 
-    if (sub === "dashboard") {
-      try {
-        const opened = await ctx.grants.openDashboard();
-        ctx.ui.notify(
-          `grants: dashboard ${opened.kind} in Herdr pane ${opened.paneId} without changing focus` +
-            (opened.visibleBesideCaller ? "." : " (the existing pane is in another tab)."),
-          "info",
-        );
-      } catch (error) {
-        ctx.ui.notify(`grants: dashboard unavailable — ${error instanceof Error ? error.message : String(error)}`, "error");
-      }
-      return;
-    }
+    if(await handleConnectedCommand(sub,target,{runHost:ctx.grants.runHost,openDashboard:ctx.grants.openDashboard,ui:ctx.ui}))return;
 
     if (sub === "ledger") {
       // The detector, made reachable. `verifyLedger` exists because nothing in this package had ever read

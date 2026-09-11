@@ -17,6 +17,10 @@ const hosts=new WeakSet<object>();
 export const isDashboardHost=(value:unknown):value is DashboardHost=>typeof value==="object"&&value!==null&&hosts.has(value);
 export type DashboardHost=ReturnType<typeof openDashboardHost>;
 export interface DashboardHostOptions { ordinary?:OrdinaryChildren; harness:DashboardHarness; config:DashboardHostConfig; budget:GovernedBudgetBinding; experiment?:ReturnType<typeof openExperiment>; authority:()=>DashboardHostAuthority|null;
+  /** Exact actions constructed and authorized by the owner; the dashboard exposes only human labels/keys. */
+  humanActions?:(context:{hostDigest:string;selectionDigest:string;tip:string;observations:readonly {sourceId:string;checkpointId:string}[]})=>readonly {key:string;label:string;request:DashboardHostRequest}[]|Promise<readonly {key:string;label:string;request:DashboardHostRequest}[]>;
+  /** Explicit approved observation effect only; refresh/frame never invokes it. */
+  beforeObservation?:(sourceId:string)=>Promise<void>;
   /** Independently sourced current declaration. Never inferred from idle, a PID, title or request fields. */
   presence?:()=>{present:boolean;closing:boolean;evidenceDigest:string;expiresAt:number}|null;
 }
@@ -53,6 +57,8 @@ export function openDashboardHost(options:DashboardHostOptions){
   const append=(value:Record<string,unknown>)=>journal.append(history().at(-1)!.id,value);
   const saved=():DebriefCheckpoint|null=>{const rows=history().filter(e=>e.value.type==="checkpoint");return rows.length?detached(rows.at(-1)!.value.checkpoint) as DebriefCheckpoint:null;};
   let presenter:DebriefPresenter|undefined,busy=false,poisoned=false,presentationRevision:number|null=null,presenceDigest:string|null=null,attentionDeferred:string|null=null;
+  const ordinaryDispatchHoldKey=dataDigest({hostDigest,control:"pause-new-ordinary-dispatch"});
+  let displayedActions:null|{tip:string;actions:{key:string;label:string;operation:DashboardHostRequest["operation"];request:DashboardHostRequest}[];digest:string}=null;
   const presence=()=>{const p=options.presence?.();return p&&p.present===true&&p.closing===true&&sha(p.evidenceDigest)&&Number.isFinite(p.expiresAt)&&p.expiresAt>Date.now()?p:null;};
   const persistence:DebriefPersistence={durability:"host-owned",load:saved,compareAndSwap(expected,next){
     const rows=history(),previous=saved();if((previous?dataDigest(previous):null)!==expected)throw Error("stale attention CAS");
@@ -65,6 +71,14 @@ export function openDashboardHost(options:DashboardHostOptions){
   const paused=async(revision:number)=>{const b=await boundary();if(ordinary&&!ordinary.quiescent())throw Error("original ordinary children not quiescent");if(experiment){const view=await experiment.inspect();if(view.budget?.active!==0||view.control!=="not-assessed")throw Error("original experiment not quiescent");}if(!b.dispatch.paused||b.dispatch.admission!=="paused"||b.dispatch.revision!==revision||b.active!==0)throw Error("safe paused selection unavailable");};
   const currentSelection=async()=>budget.binding.intent?(await budget.intentControls(null).inspect()).selection:c.selection;
   const nativeRead=async()=>({dispatch:await budget.controls(null).inspect(),intent:budget.binding.intent?await budget.intentControls(null).inspect():null,experiment:experiment?await experiment.inspect():null,ordinary:ordinary?ordinary.inspect():null});
+  const availableHumanActions=async()=>{
+    const rows=history(),tip=rows.at(-1)!.id,selection=await currentSelection(),seen=new Set<string>();
+    const declared=await options.humanActions?.({hostDigest,selectionDigest:dashboardSelectionDigest(selection),tip,observations:observation.latest().map(x=>({sourceId:x.sourceId,checkpointId:x.checkpointId}))})??[],a=authority();
+    return declared.map(value=>{const x=detached(value);controlShape(x,["key","label","request"]);const request=dashboardHostRequest(x.request);
+      if(!/^[a-zA-Z0-9:_-]{1,64}$/.test(x.key)||typeof x.label!=="string"||!x.label.trim()||Buffer.byteLength(x.label)>120||seen.has(x.key))throw Error("invalid human dashboard action");seen.add(x.key);
+      if(request.hostDigest!==hostDigest||request.expectedTip!==tip||request.selectionDigest!==dashboardSelectionDigest(selection)||!a?.requestDigests.includes(dashboardHostRequestDigest(request)))throw Error("human dashboard action is stale or not exactly authorized");
+      return {key:x.key,label:x.label,operation:request.operation,request};});
+  };
   const api={hostDigest,selectionDigest,
     async frame(){
       const rows=history(),tip=rows.at(-1)!.id,a=authority();let source:unknown=null,error:string|null=null;
@@ -74,14 +88,20 @@ export function openDashboardHost(options:DashboardHostOptions){
       let debrief:unknown=null;
       if(a&&presenter&&presentationRevision!==null&&presence()?.evidenceDigest===presenceDigest){try{await paused(presentationRevision);debrief=presenter.view();}catch{debrief=null;}}
       let controls:unknown=null;try{controls=await nativeRead();}catch(e){error=String(e);}
-      const attention=trust.inspect(Date.now());
-      return freeze(detached({version:"producer-dashboard-frame-v1",hostDigest,selectionDigest:dashboardSelectionDigest(selection),selectionState,tip,source,controls,debrief,attention,error,
+      const attention=trust.inspect(Date.now());let actions:{key:string;label:string;operation:string}[]=[];
+      try{const available=await availableHumanActions(),digest=dataDigest(available.map(({key,label,operation,request})=>({key,label,operation,requestDigest:dashboardHostRequestDigest(request)})));
+        if(displayedActions?.tip===tip&&displayedActions.digest!==digest)throw Error("displayed dashboard actions changed before journal advance");
+        displayedActions={tip,actions:available,digest};actions=available.map(({key,label,operation})=>({key,label,operation}));}catch(e){error=String(e);}
+      return freeze(detached({version:"producer-dashboard-frame-v1",hostDigest,selectionDigest:dashboardSelectionDigest(selection),selectionState,tip,source,controls,debrief,attention,error,actions,
         requests:rows.filter(e=>["claim","result","presentation","defer","ordinary-intent-pending"].includes(String(e.value.type))).map(e=>e.value),
         control:rows.some(e=>e.value.type==="host-failure")?"failed":rows.some(e=>e.value.type==="claim"&&!rows.some(r=>r.value.type==="result"&&r.value.requestId===e.value.requestId))?"unknown":"not-assessed",
         acknowledgement:poisoned?"unknown":"readback-only",identity:"independently-declared-host; not human/module authentication",activeBranch:null,acceptance:"not-assessed",freshness:"snapshot-unknown",workerInteractions:0}));
     },
     /** Explicit reconciliation is read-only. A retained claim is never replayed as an effect. */
     reconcile:()=>api.frame(),
+    async humanAction(key:string){const tip=history().at(-1)!.id;if(!displayedActions||displayedActions.tip!==tip)throw Error("dashboard actions must be displayed at the current tip");
+      const found=displayedActions.actions.find(action=>action.key===key);if(!found)throw Error(`unknown dashboard action ${JSON.stringify(key)}`);
+      const current=(await availableHumanActions()).find(action=>action.key===key);if(!current||current.label!==found.label||dashboardHostRequestDigest(current.request)!==dashboardHostRequestDigest(found.request))throw Error("displayed dashboard action changed; no effect attempted");return api.action(found.request);},
     async action(input:DashboardHostRequest){
       const request=dashboardHostRequest(input),digest=dashboardHostRequestDigest(request);
       if(busy||poisoned)throw Error("dashboard operation busy or acknowledgement unknown");busy=true;let attempted=false;
@@ -97,6 +117,7 @@ export function openDashboardHost(options:DashboardHostOptions){
         let result:unknown,releaseOrdinary:(()=>void)|undefined;
         try{
           if(request.operation==="observe"){
+            const sourceId=(request.payload as {sourceId?:unknown})?.sourceId;if(typeof sourceId!=="string")throw Error("exact observation source required");await options.beforeObservation?.(sourceId);
             const captured=observation.observe(request.payload,a!,selection);append({type:"observation",observation:captured});result=captured;
           }else if(request.operation==="present"){
             const p=detached(request.payload) as {userPresent:boolean;closing:boolean;evidenceDigest:string;dispatchRevision:number};
@@ -124,9 +145,11 @@ export function openDashboardHost(options:DashboardHostOptions){
             presenter?.close();presentationRevision=null;
             if(request.operation==="dispatch"||request.operation==="dispatch-reconcile"){
               const native=dispatchRequest(request.payload as DispatchRequest);if(native.action==="cancel-execution")throw Error("cancellation needs exact separately approved native bridge");
-              const port=budget.controls(a!.dispatch);
+              const port=budget.controls(a!.dispatch),ordinaryHold=ordinary&&["pause-dispatch","resume-dispatch"].includes(native.action)?holdOrdinaryDispatch(ordinary,ordinaryDispatchHoldKey):undefined;
               if(request.operation==="dispatch-reconcile"&&(await port.inspect()).records.find(r=>r.request.requestId===native.requestId)?.digest!==dispatchRequestDigest(native))throw Error("exact original dispatch reconciliation required");
               result=request.operation==="dispatch"?await port.request(native):await port.reconcile(native.requestId);
+              const record=(result as {records:{request:{requestId:string};decision:string;application:string}[]}).records.find(r=>r.request.requestId===native.requestId);
+              if(ordinaryHold&&(record?.decision!=="approved"||native.action==="resume-dispatch"&&record.application==="applied"))ordinaryHold.release();
             }else if(request.operation==="intent"||request.operation==="intent-reconcile"){
               const native=detached(intentRequest(request.payload as IntentRequest)) as IntentRequest,port=budget.intentControls(a!.dispatch),digest=intentRequestDigest(native);
               if(c.ordinaryDigest&&!ordinary)throw Error("original ordinary boundary unavailable; no recovery");

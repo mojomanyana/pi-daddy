@@ -52,7 +52,10 @@ export interface DashboardFrameOptions {
 }
 export async function dashboardHostAction(host:DashboardConnection,line:string){
   if(!isDashboardConnection(host)||Buffer.byteLength(line)>60000)throw Error("genuine bounded dashboard connection required");
-  return host.action(dashboardHostRequest(parseRetentionJson(line,60000) as DashboardHostRequest));
+  const command=line.trim();
+  if(command.startsWith("{"))return host.action(dashboardHostRequest(parseRetentionJson(command,60000) as DashboardHostRequest));
+  if(!/^[a-zA-Z0-9:_-]{1,64}$/.test(command))throw Error("dashboard action must be a listed command key");
+  return host.humanAction(command);
 }
 
 function shellQuote(value: string): string {
@@ -96,9 +99,11 @@ export async function dashboardFrame(options: DashboardFrameOptions): Promise<st
     try{view=await options.connected.frame();}catch{return "PI-DADDY — CONNECTED HOST UNAVAILABLE\nNo prior acceptance, presentation or continuity substituted. No action retried.";}
     if(options.dailyJson||options.debriefJson)return JSON.stringify(view);
     const source=view.source as {daily?:Parameters<typeof renderDailyView>[0]}|null;
+    const actions=(view.actions as {key:string;label:string}[]|undefined)??[];
     return ["PI-DADDY — CONNECTED HOST (snapshot; identity/acceptance not authenticated)",source?.daily?renderDailyView(source.daily,options.width):"Source unavailable; no previous acceptance substituted.",
       view.debrief?renderDebrief(view.debrief as Parameters<typeof renderDebrief>[0],options.width):"Debrief deferred/closed. No implicit presentation or steering.",
-      `Attention reserved ${view.attention.attentionUsed}/5 (not proof of delivery). Tip ${view.tip}.`,"Explicit exact approved JSON requests only; refresh never acts."].join("\n\n");
+      `Attention reserved ${view.attention.attentionUsed}/5 (not proof of delivery). Tip ${view.tip}.`,
+      actions.length?`ACTIONS — type one command and Enter\n${actions.map(action=>`  ${action.key} — ${action.label}`).join("\n")}`:"ACTIONS — none currently authorized; refresh never acts."].join("\n\n");
   }
   if (options.debrief || options.debriefJson) {
     if (!isDebriefPresenter(options.debrief)) return "PI-DADDY — DEBRIEF UNAVAILABLE: genuine presenter/host missing";

@@ -47,8 +47,9 @@ import {
   openDashboardCommand,
 } from "../src/dashboard-handshake.ts";
 
-import { associateOrdinaryHost } from "../src/ordinary-children.ts";
+import { associateOrdinaryHost, ordinaryChildrenFor } from "../src/ordinary-children.ts";
 import { loadDeclaredWork } from "../src/work-command.ts";
+import { createDailyDashboardSession } from "./daily-dashboard-session.ts";
 import { replacePublishedDailyWork, type PublishedDailyWork } from "./daily-work-session.ts";
 export default function (pi: ExtensionAPI) {
   // The path pi loads as the extension, so a child granted `tool:delegate` can be started with `-e <this>`.
@@ -63,6 +64,7 @@ export default function (pi: ExtensionAPI) {
 
   const session = createGrantsSession(extensionPath);
   associateOrdinaryHost(pi,session);
+  const dailyHost=createDailyDashboardSession({ordinary:()=>ordinaryChildrenFor(pi),declared:()=>session.declaredWork,cwd:()=>session.cwd,env:process.env,author:"local-operator"});
   const dashboardPluginRoot = fileURLToPath(new URL("../herdr-plugin/", import.meta.url));
   const dashboardPaths = defaultDashboardPaths(
     process.env.PI_CODING_AGENT_DIR?.trim() || join(homedir(), ".pi", "agent"),
@@ -247,6 +249,8 @@ export default function (pi: ExtensionAPI) {
    * `exit` remains the backstop. SIGKILL still orphans panes, exactly as R-62 records, and no signal handler is
    * installed here for the reason R-62 gives: it would turn pi's "interrupt this turn" into "exit pi".
    */
+  pi.on("session_shutdown", async () => { await dailyHost.close().catch(() => undefined); });
+
   pi.on("agent_settled", async () => {
     try {
       if (session.executor.kind !== "herdr" || openPaneCount() === 0) return undefined;
@@ -375,6 +379,7 @@ export default function (pi: ExtensionAPI) {
               await loadProjectDefinitions(session, ctx.cwd);
               delegation.refreshSpawnable();
             }),
+          runHost: (target: string) => dailyHost.run(target),
           openDashboard: () => openDashboardCommand({
             env: process.env,
             pid: process.pid,
