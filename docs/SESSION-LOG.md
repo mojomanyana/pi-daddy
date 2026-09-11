@@ -9,7 +9,11 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 The stacked C04 slice retains `correlation.context_id` as work-v4 variant identity. Fresh occurrence `factory-01a071db-c04-sol-terra-20260911-01` consumed exactly one parent dispatch/integration pair and one response from each of two concurrent tool-free children (four total, no judge/retry/fallback). Sol and Terra starts were 26ms apart and overlapped for more than five seconds; outputs and execution IDs stayed separate, and the existing coworking dashboard showed two attached attempts. The actual tool schema/arguments carried no thinking field, so effort is honestly `null`; thinking-level variants and primary/shadow independence remain open.
 
-Next: repair PR37's exact Node24 source-read/finalization race without weakening source-change safety, propagate forward, then expose explicit effort and complete C04.
+Next: expose explicit effort and complete C04 after the propagated Node24 repair is green.
+
+## 2026-09-11 — Node24 append/read finalization race repaired on PR37
+
+Fresh PR37 CI run 34576542484 exposed `factory cancellation uses the original running controller handle` failing on Node24 with `experiment source changed`. The experiment journal reader took a bounded prefix snapshot while a legitimate controller append grew the same inode, then treated growth as replacement. The narrow repair gives only the append-only journal path a prefix-stability mode: same inode/link, no shrink, and a second positioned read must match every captured byte. Strict result/common artifact reads retain the original size+mtime rejection. A deterministic injected-append regression failed before the repair and now passes; the exact CI cell plus that regression passed 20/20 focused repetitions on Node24. No source-change check was removed or generalized.
 
 ## 2026-09-11 — post-merge dashboard action keys replace ordinary JSON entry
 
