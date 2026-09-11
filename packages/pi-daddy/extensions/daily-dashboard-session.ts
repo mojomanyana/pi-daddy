@@ -23,7 +23,7 @@ export function createDailyDashboardSession(input:{ordinary:()=>OrdinaryChildren
    const paths=dailyDashboardPaths(input.cwd(),target);await mkdir(join(homedir(),".local","state","pi-daddy","hosts"),{recursive:true,mode:0o700});await mkdir(paths.socketDirectory,{recursive:true,mode:0o700});
    current=await startDailyDashboardHost({id:target,cwd:input.cwd(),directory:paths.directory,socketPath:paths.socketPath,declared,ordinary:input.ordinary(),harness:adoptDashboardHarnessBridge(bridge) as never,author:input.author});
    publishedSocket=current.socketPath;input.env[ENV_DASHBOARD_HOST_SOCKET]=publishedSocket;
-   return `daily host started at ${publishedSocket}; current declared work/facts were captured once. Run /grants dashboard, then use only its listed action keys. Runtime remains unaccepted.`;
+   return `daily host started at ${publishedSocket}; current declared work/facts were captured. Run /grants dashboard, then use only its listed pause/resume/refresh action keys. Runtime remains unaccepted.`;
   },
   async close(){if(current)await current.close();if(publishedSocket&&input.env[ENV_DASHBOARD_HOST_SOCKET]===publishedSocket)delete input.env[ENV_DASHBOARD_HOST_SOCKET];current=null;publishedSocket=undefined;}
  });
