@@ -171,11 +171,16 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
     access: Type.Union([Type.Literal("read"), Type.Literal("write")]),
   });
 
+  const thinkingShape = Type.Optional(Type.Union(
+    ["off", "minimal", "low", "medium", "high", "xhigh", "max"].map(level => Type.Literal(level)),
+    { description: "Requested Pi thinking level; unsupported model/level combinations fail in the child." },
+  ));
   const childShape = Type.Object({
     task: Type.String({ description: "The task for this sub-agent. It receives only this." }),
     agent: Type.Optional(Type.String({ description: describeAgent(spawnable()) })),
     tools: Type.Optional(Type.Array(Type.String(), { description: "Capabilities, when no 'agent' fits." })),
     model: Type.Optional(Type.String({ description: "Model as provider/id. Defaults to this session's." })),
+    thinking: thinkingShape,
     correlation: Type.Optional(correlationShape),
     workspace: Type.Optional(workspaceShape),
   });
@@ -207,6 +212,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
             "Defaults to this session's model, already provider-qualified.",
         }),
       ),
+      thinking: thinkingShape,
       correlation: Type.Optional(correlationShape),
       workspace: Type.Optional(workspaceShape),
   });
@@ -231,6 +237,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
           agent: params.agent,
           tools: params.tools,
           model: params.model,
+          thinking: params.thinking,
           correlation: params.correlation,
           workspace: params.workspace,
         },

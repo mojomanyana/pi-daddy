@@ -93,6 +93,14 @@ async function harness(env: Record<string, string>, existingDir?: string) {
  * `delegate_all` nests it inside each `children` item. Getting this wrong is how a test passes for the
  * wrong tool — it happened while writing these, and the assertion caught it.
  */
+test("delegate and delegate_all expose explicit bounded thinking levels", async () => {
+  const { tools } = await harness({ [ENV_GRANT]: "tool:delegate" });
+  const single = tools.get("delegate")!.parameters as any;
+  const child = (tools.get("delegate_all")!.parameters as any).properties.children.items;
+  assert.deepEqual(single.properties.thinking.anyOf.map((value: any) => value.const), ["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
+  assert.deepEqual(child.properties.thinking, single.properties.thinking);
+});
+
 function agentDescriptionOf(spec: ToolSpec): string {
   const schema = spec.parameters as {
     properties?: {

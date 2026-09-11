@@ -9,7 +9,9 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 The stacked C04 slice retains `correlation.context_id` as work-v4 variant identity. Fresh occurrence `factory-01a071db-c04-sol-terra-20260911-01` consumed exactly one parent dispatch/integration pair and one response from each of two concurrent tool-free children (four total, no judge/retry/fallback). Sol and Terra starts were 26ms apart and overlapped for more than five seconds; outputs and execution IDs stayed separate, and the existing coworking dashboard showed two attached attempts. The actual tool schema/arguments carried no thinking field, so effort is honestly `null`; thinking-level variants and primary/shadow independence remain open.
 
-Next: expose explicit effort and complete C04 after the propagated Node24 repair is green.
+The source now exposes a closed thinking-level field on `delegate` and each `delegate_all` child and carries it through the existing planner to child argv. Schema/argv tests and typecheck pass; no second live wave was run, so this addition is ready to try rather than validated. Primary/shadow independence remains open.
+
+Next: await propagated CI, then test primary/shadow independence without reusing this consumed occurrence.
 
 ## 2026-09-11 — Node24 append/read finalization race repaired on PR37
 
