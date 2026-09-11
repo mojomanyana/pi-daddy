@@ -5,7 +5,7 @@ import type { WorkProjectionContext, WorkFrozen } from "./work-ledger.ts";
 import type { DispatchAuthority } from "./dispatch-control.ts";
 import type { OrdinaryAuthority } from "./ordinary-children.ts";
 import type { ExperimentAuthority } from "./experiment-contract.ts";
-export const DASHBOARD_HARNESS_PIN = "28b55d40a64ce7af8ed23410a137f2e3a075e522";
+export const DASHBOARD_HARNESS_PIN = "d123257e53d48a2cad6919708976b5371dc7590e";
 export interface HostEvent { id: string; prior: string | null; value: Record<string, unknown> }
 export interface HostJournal { read(): HostEvent[]; append(prior: string, value: Record<string, unknown>): HostEvent }
 /** Loaded trusted ports; an interface or caller-supplied pin is NOT module/human authentication. */

@@ -11,7 +11,7 @@ Pi's extension API exposes assistant usage in `message_end` and supports nested 
 
 ## 2026-09-11 — daily work links exact completion facts
 
-ADR-0068 pins harness source `28b55d40a64ce7af8ed23410a137f2e3a075e522` and exposes its content-addressed `observed-work-runtime-v1` manifest on each successful work observation. The manifest records exact projected attempt state/resolution, terminal observed occurrence digests, and obligation acceptance/coverage while marking checkpoint, expected-wait and prior-acceptance history unavailable when no host facts exist. A red-first production-host assertion failed on the old bridge and now passes through the byte-vendored source. This is evidence navigation, not acceptance or a defect judgment.
+ADR-0068 pins harness source `d123257e53d48a2cad6919708976b5371dc7590e` and exposes its content-addressed `observed-work-runtime-v1` manifest on each successful work observation. The manifest records exact projected attempt state/resolution, terminal observed occurrence digests, and obligation acceptance/coverage while marking checkpoint, expected-wait and prior-acceptance history unavailable when no host facts exist. A red-first production-host assertion failed on the old bridge and now passes through the byte-vendored source. This is evidence navigation, not acceptance or a defect judgment.
 
 ## 2026-09-11 — daily dashboard exact cancellation candidate
 

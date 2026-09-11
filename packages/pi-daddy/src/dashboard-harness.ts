@@ -6,7 +6,7 @@ import { dataDigest,byteDigest,detached,sha } from "./debrief-contract.ts";
 import { DASHBOARD_HARNESS_PIN,type DashboardHarness } from "./dashboard-host-contract.ts";
 export interface DashboardHarnessArtifact {version:"dashboard-harness-artifact-v1";sourceCommit:typeof DASHBOARD_HARNESS_PIN;files:Record<string,string>;typeboxRoot:string;typeboxPackageSha256:string}
 const loaded=new WeakMap<object,string>();
-export const DASHBOARD_HARNESS_BRIDGE_SOURCE="28b55d40a64ce7af8ed23410a137f2e3a075e522";
+export const DASHBOARD_HARNESS_BRIDGE_SOURCE="d123257e53d48a2cad6919708976b5371dc7590e";
 const bridgeFunctions=["learningJournal","createTrustLifecycle","openTrustLifecycle","trustPolicyDigest","archivePolicyBinding","ingestPolicySource","readArchiveCheckpoint","readArchiveSource","retainArchiveSource","captureArchivedWorkSignals","readRetainedExecution","projectRetainedExecutions","createWorkCaseReviewer","createWorkSignalReviewer","retainBlindIntervention","openBlindIntervention","retainLearningLifecycle","readLearningLifecycle"] as const;
 /** Adopt the API published by the already-loaded skill-harness extension. Same-process source identity is not human authentication. */
 export function adoptDashboardHarnessBridge(input:unknown):DashboardHarness{

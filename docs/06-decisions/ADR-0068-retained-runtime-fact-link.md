@@ -7,7 +7,7 @@ Date: 2026-09-11
 
 The released null-facts profile derives a silent coverage case from retained work, but its linkage does not expose a compact artifact for exact attempt completion and obligation coverage/acceptance facts. Consumers can re-read the complete work projection, yet the case → evidence navigation remains indirect. Missing checkpoint, expected-wait and prior-acceptance evidence must stay unavailable rather than being inferred from process completion.
 
-Skill-harness source commit `28b55d40a64ce7af8ed23410a137f2e3a075e522` adds a content-addressed `observed-work-runtime-v1` artifact to the existing archived-work signal linkage. It derives only from the pinned work-v4 projection.
+Skill-harness source commit `d123257e53d48a2cad6919708976b5371dc7590e` adds a content-addressed `observed-work-runtime-v1` artifact to the existing archived-work signal linkage. It derives only from the pinned work-v4 projection.
 
 ## Decision
 

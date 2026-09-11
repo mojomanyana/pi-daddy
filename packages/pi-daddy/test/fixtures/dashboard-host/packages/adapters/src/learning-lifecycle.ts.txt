@@ -29,6 +29,8 @@ function validate(root:string,input:LearningLifecycleInput,depth=0):LearningLife
  if(input.predecessorManifestId){
   const prior=read(root,input.predecessorManifestId,depth+1);
   if(prior.links.case!==input.caseManifestId||prior.links.hypothesis!==input.hypothesisManifestId||prior.links.comparison!==input.comparisonManifestId)throw Error('learning lifecycle identity changed');
+  for(const key of ['choice','adoption','rollback'] as const)if(prior.links[key]!==null&&prior.links[key]!==({choice:input.choiceManifestId,adoption:input.adoptionManifestId,rollback:input.rollbackManifestId})[key])throw Error('learning lifecycle cannot regress or replace decisions');
+  if(prior.links.outcomes.some((id,index)=>input.outcomeManifestIds[index]!==id))throw Error('learning lifecycle cannot regress or replace outcomes');
  }
  const state:LearningLifecycleState=input.outcomeManifestIds.length?'outcome-observed':input.rollbackManifestId?'rolled-back':input.adoptionManifestId?'adopted-awaiting-outcome':input.choiceManifestId?'decision-recorded':'awaiting-human-choice';
  return {version:'retained-learning-lifecycle-v1',state,predecessorManifestId:input.predecessorManifestId,links:{case:input.caseManifestId,hypothesis:input.hypothesisManifestId,comparison:input.comparisonManifestId,choice:input.choiceManifestId,adoption:input.adoptionManifestId,rollback:input.rollbackManifestId,outcomes:[...input.outcomeManifestIds]}};

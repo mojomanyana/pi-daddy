@@ -1,8 +1,8 @@
 # Actual connected harness source fixture
 
 37 exact Git source bodies from LOCAL harness commit
-`28b55d40a64ce7af8ed23410a137f2e3a075e522`, tree
-`35b8b9743c3d9169b2d666923c7ac40f51d9b408`. This dependency is not asserted public.
+`d123257e53d48a2cad6919708976b5371dc7590e`, tree
+`dc10ed79e776087a2d5de4de28ab4a53e07b5b5f`. This dependency is not asserted public.
 `provenance.json` binds every original path, target and SHA256. `.ts.txt` keeps native Node test discovery
 from treating vendored source as a package. No manually rewritten success-shaped writer is substituted.
 
