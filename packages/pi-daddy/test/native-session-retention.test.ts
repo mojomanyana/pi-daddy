@@ -163,7 +163,7 @@ test("existing Herdr native replies bind session bytes to the exact pane and exe
   const f = await native(), archive = await tempDir("herdr-native-archive-");
   const prior = process.env[ENV_NATIVE_SESSION_ROOT]; process.env[ENV_NATIVE_SESSION_ROOT] = f.root;
   try {
-    const h = beginExecutionRetention(identity, archive); const calls: string[] = [];
+    const h = beginExecutionRetention(identity, archive); const calls: string[] = []; let gets = 0;
     const info = { pane_id: "w1:p2", agent: "pi", agent_session: { agent: "pi", source: "fixture-native-integration", kind: "path", value: f.path } };
     assert.equal(herdrSessionReference(info, "different-pane"), null);
     assert.equal(herdrSessionReference({ ...info, agent_session: { ...info.agent_session, agent: "other" } }, "w1:p2"), null);
@@ -172,7 +172,7 @@ test("existing Herdr native replies bind session bytes to the exact pane and exe
         const verb = args.slice(0, 2).join(" "); calls.push(verb);
         const result = verb === "tab create" ? { root_pane: { pane_id: "w1:p2", tab_id: "w1:t2" } }
           : verb === "agent start" ? { agent: { ...info, state_change_seq: 1 } }
-          : verb === "agent get" ? { agent: { ...info, state_change_seq: 2, agent_status: "idle" } }
+          : verb === "agent get" ? { agent: { ...info, state_change_seq: ++gets + 1, agent_status: "idle", screen_detection_skipped: true } }
           : verb === "agent read" ? { output: "output" } : { ok: true };
         return { code: 0, stdout: JSON.stringify({ result }), stderr: "" };
       } });
@@ -180,6 +180,6 @@ test("existing Herdr native replies bind session bytes to the exact pane and exe
     const path = (await h.flush()).manifestPath!; const m = parseExecutionRetentionManifest(await readFile(path, "utf8"));
     assert.equal(m.native.sessionId, f.manager.getSessionId()); assert.equal(m.identity.toolCallId, "call:exact");
     assert.equal(m.native.branchLeafId, null); assert.equal(m.content.session.status, "retained");
-    assert.deepEqual(calls, ["tab create", "agent start", "agent prompt", "agent get", "agent read"]);
+    assert.deepEqual(calls, ["tab create", "agent start", "agent get", "agent prompt", "agent get", "agent read"]);
   } finally { prior === undefined ? delete process.env[ENV_NATIVE_SESSION_ROOT] : process.env[ENV_NATIVE_SESSION_ROOT] = prior; }
 });
