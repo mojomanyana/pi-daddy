@@ -5,10 +5,10 @@ to be decided. This file is authoritative for present behavior; ADRs record why 
 date. If code and this file disagree, report and repair the stale current-state claim rather than re-deriving
 present behavior from historical ADRs.
 
-**Release-preparation snapshot (2026-09-12):** the last registry-verified baseline was `pi-daddy` 0.24.0,
+**Release-preparation snapshot (2026-09-12):** the last registry-verified baseline was `pi-daddy` 0.25.0,
 with a Herdr 0.8.0 **dashboard-plugin** floor; the separate native-lifecycle Herdr child route is verified
 only with Herdr 0.8.2 and Pi 0.85.1, and refuses before prompt if that lifecycle authority cannot activate.
-Merged source is prepared as the 0.25.0 candidate. For current
+Merged source is prepared as the 0.25.1 candidate. For current
 publication status, consult [npm](https://www.npmjs.com/package/pi-daddy) and
 [GitHub Releases](https://github.com/mojomanyana/pi-daddy/releases). Runtime completion, a dashboard host,
 retained evidence and requested thinking remain distinct from human acceptance and provider-internal reasoning.
