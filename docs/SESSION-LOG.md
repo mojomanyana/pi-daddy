@@ -5,6 +5,19 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ---
 
+## 2026-09-12 — 0.25.1 Herdr completion patch release preparation
+
+PR #44 merged as `233c495a88ee19e4a82203b50425700409807b91`, preserving independently
+Sol-reviewed head `da520a67fde34070d587df237791ae46e010f5e9`. Terra implemented the native
+lifecycle repair. The fix passed 1,241 unit tests, both Node CI jobs and one no-tools Codex OAuth
+Terra executor smoke: native idle -> working -> done, code 0, confirmed cleanup in about 6.5 seconds.
+The smoke establishes executor compatibility, not a measured order or browser acceptance.
+The owner authorized merge and publication of this patch. This release preparation changes
+version metadata, its existing assertions and release documentation only. Canonical archive,
+installed-host and registry integrity verification follow the current publishing runbook.
+Separate owner-private host setup and stale first-use host directory errors remain follow-ups.
+No global install or unrelated running session changes are part of publication.
+
 ## 2026-09-12 — 0.25.0 release line prepared from merged full-completion work
 
 Feature PR #41 merged as `5cea7c03f926c50607bc8a16f320040b80dfb8f0`, preserving reviewed head `8b8fc7dab6a8d20bf7b595a147a067726e1f4947` as its second parent. The 0.25.0 release line adds practical daily steering/rebind, explicit closing review, measured sessions and bounded dependent orders; `docs/PUBLISHING.md` defines canonical pack, installed-host, dependency-order publication and integrity checks. Historical C08 SDK runs, no-model retained replay and the packaged route remain separately named. Human trust labels, quality decisions, configured adoption and later outcomes remain unresolved.

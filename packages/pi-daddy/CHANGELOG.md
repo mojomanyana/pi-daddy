@@ -12,6 +12,17 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## 0.25.1 — reliable Herdr child completion (2026-09-12)
+
+- Fix a governed child finishing while its parent keeps waiting with Pi 0.85.1 and Herdr 0.8.2.
+  Children explicitly load the pinned, lifecycle-only Herdr integration; general extension discovery
+  stays disabled and the granted tool surface is unchanged.
+- Require native idle activation before prompting and a newer terminal sequence before settlement.
+  Missing activation or stale terminal state refuses within a bounded wait and cleans up the child.
+- Preserve existing public exports and ship the upstream Apache-2.0 notice and license.
+- Verified route: Pi 0.85.1 / Herdr 0.8.2. Ordinary subprocess compatibility is unchanged.
+  This does not repair standalone Herdr screen detection or the separate first-use host setup errors.
+
 ## 0.25.0 — practical daily steering and measured orders (2026-09-12)
 
 - Add protocol-safe dashboard relink, exact active-attempt cancellation and durable measured-session spawn acknowledgement. Unknown/protocol-incompatible plugins still fail closed.

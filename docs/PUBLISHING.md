@@ -1,3 +1,29 @@
+# Publishing pi-daddy 0.25.1
+
+The owner authorized merge and publication on 2026-09-12. Registry baseline: 0.25.0.
+Only pi-daddy changes; skill-harness 0.15.0 and Principal 3.2.0 remain unchanged.
+
+1. Preserve feature PR #44 merge `233c495a88ee19e4a82203b50425700409807b91`.
+   Land this metadata-only patch release through a green PR; no direct main commit.
+2. From a fresh clean worktree at the exact release merge, run typecheck/build and installed-package
+   smoke, then retain a canonical npm pack archive, JSON inventory and SHA-256/SHA-512 integrity.
+3. Install the exact archive under a fresh isolated prefix. Load only explicit pi-daddy and
+   skill-harness 0.15.0 extensions in an SDK host with in-memory stores, no active tools and zero
+   provider requests. Verify public entrypoints, learning bridge and bundled native reporter bytes.
+   The recorded live Terra executor smoke on the unchanged PR #44 runtime is the live gate
+   for this metadata-only patch; do not repeat paid calls solely for the version bump.
+4. Recheck that 0.25.1 is absent, then publish the canonical archive exactly once. If the response
+   is ambiguous, inspect registry metadata and downloaded bytes before considering any retry.
+5. Verify registry version, latest tag and downloaded archive bytes. Create immutable tag
+   `v0.25.1` at the exact release merge and a GitHub Release. Never overwrite a published version,
+   rewrite a tag, bypass authentication/OTP, or globally install/link as part of publishing.
+
+Publication is distinct from the subsequent fresh human demo, browser acceptance and host setup repair.
+
+---
+
+## Prior 0.25.0 runbook (historical)
+
 # Publishing pi-daddy 0.25.0
 
 Live npm baseline: 0.24.0. The owner authorized merge, release and publication on 2026-09-12. `pi-daddy` is the only public package; the workspace root is private. Principal is unchanged.
