@@ -1151,10 +1151,18 @@ incompatibility diagnostic and no guessed tree. The plugin requires Herdr 0.8.0.
 
 A process-owned daily host publishes exact actions for pause/resume, source refresh, and up to eight currently
 active ordinary attempts. Each cancellation key names an execution ID and binds the original port, current
-revision and complete retained target through the existing host/native authority checks. It disappears when the
-original handle settles; stale frames, changed revisions and missing handles refuse before targeting another
-attempt. Cancellation requests abort only that child and do not imply rejection, acceptance, or cancellation of
-siblings. Reads and refresh never invoke cancellation. The daily host's v3 budget is also pinned to owner-private declared work. Up to eight deterministic labels expose selected-obligation priority changes, exact recorded scope successors and recorded same-scope alternatives. Selecting one rebuilds the exact current-revision `IntentRequest` and traverses existing intent validation, ordinary admission hold, native digest authority, and host/selection/tip CAS; rendering alone never changes selection. Before the hold releases, the owner atomically rebinds `work-current.json` and the current grants-session declaration; without that owner callback, scope-changing actions are not displayed.
+revision and complete retained target through the existing host/native authority checks. A read-only redraw may
+add or remove displayed actions at the same host-journal tip when ordinary children attach or settle; it writes no
+journal record. A key retains its first exact request meaning within that tip, so a same-tip changed request under an
+existing key is withheld rather than remapped; a stale selected key is revalidated against the current exact action,
+target, revision and digest before any effect. Per-tip retained key meanings are capped at 224: 28 generations of
+the daily maximum eight active ordinary children fit inside the 64 KiB bounded frame. Exhaustion refuses the
+whole new frame before retaining or publishing any of its new keys. Cancellation keys include the ordinary revision,
+so a fresh frame can publish current exact targets after sibling attachment or settlement without changing an older
+key's meaning. A row marked `abortRequested` is not advertised again while its original caller settlement remains
+pending. It disappears when the original handle settles; stale frames, changed revisions and missing handles refuse
+before targeting another attempt. Cancellation requests abort only that child and do not imply
+rejection, acceptance, or cancellation of siblings. Reads and refresh never invoke cancellation. The daily host's v3 budget is also pinned to owner-private declared work. Up to eight deterministic labels expose selected-obligation priority changes, exact recorded scope successors and recorded same-scope alternatives. Selecting one rebuilds the exact current-revision `IntentRequest` and traverses existing intent validation, ordinary admission hold, native digest authority, and host/selection/tip CAS; rendering alone never changes selection. Before the hold releases, the owner atomically rebinds `work-current.json` and the current grants-session declaration; without that owner callback, scope-changing actions are not displayed.
 
 The separate opt-in measured route runs one no-tool Codex Sol/Terra prompt with in-memory session/settings, empty discovery roots, observed assistant identity, OAuth/subscription metadata and Pi-reported Usage. `measured-order-v1` composes that route into at most eight dependency nodes and three predeclared attempts per node. Its pinned hash-chained journal does not transfer ownership on restart: a foreign unfinished claim is unknown until an independently authorized exact acknowledgement, and that acknowledgement never settles or refunds the original resource reservation. A deterministic output contract gates dependencies: exact digest mode remains available, while bounded JSON projection mode admits free prose around exact source-derived fields. A dependent can consume the complete actual predecessor output in a sealed block carrying its observed hash; worst-case bytes are reserved up front. Acceptance remains unassessed.
 

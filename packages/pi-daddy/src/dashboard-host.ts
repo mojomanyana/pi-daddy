@@ -14,6 +14,8 @@ import { dashboardHostDigest, dashboardHostRequest, dashboardHostRequestDigest, 
   type DashboardHarness, type DashboardHostConfig, type DashboardHostRequest, type DashboardHostAuthority } from "./dashboard-host-contract.ts";
 export * from "./dashboard-host-contract.ts";
 const hosts=new WeakSet<object>();
+/** 224 worst-case key/label/operation rows fit the 64 KiB frame; this is 28 eight-child ordinary generations. */
+const MAX_DISPLAYED_ACTIONS_PER_TIP=224;
 export const isDashboardHost=(value:unknown):value is DashboardHost=>typeof value==="object"&&value!==null&&hosts.has(value);
 export type DashboardHost=ReturnType<typeof openDashboardHost>;
 export interface DashboardHostOptions { ordinary?:OrdinaryChildren; harness:DashboardHarness; config:DashboardHostConfig; budget:GovernedBudgetBinding; experiment?:ReturnType<typeof openExperiment>; authority:()=>DashboardHostAuthority|null;
@@ -61,7 +63,9 @@ export function openDashboardHost(options:DashboardHostOptions){
   const saved=():DebriefCheckpoint|null=>{const rows=history().filter(e=>e.value.type==="checkpoint");return rows.length?detached(rows.at(-1)!.value.checkpoint) as DebriefCheckpoint:null;};
   let presenter:DebriefPresenter|undefined,busy=false,poisoned=false,presentationRevision:number|null=null,presenceDigest:string|null=null,attentionDeferred:string|null=null,presentationAcknowledged=false;
   const ordinaryDispatchHoldKey=dataDigest({hostDigest,control:"pause-new-ordinary-dispatch"});
-  let displayedActions:null|{tip:string;actions:{key:string;label:string;operation:DashboardHostRequest["operation"];request:DashboardHostRequest}[];digest:string}=null;
+  // A host frame is a read-only snapshot: ordinary children may attach or settle without advancing this journal.
+  // Within one tip, a key keeps its first exact request; humanAction revalidates it against current native authority.
+  let displayedActions:null|{tip:string;actions:Map<string,{key:string;label:string;operation:DashboardHostRequest["operation"];request:DashboardHostRequest}>}=null;
   const presence=()=>{const p=options.presence?.();return p&&p.present===true&&p.closing===true&&sha(p.evidenceDigest)&&Number.isFinite(p.expiresAt)&&p.expiresAt>Date.now()?p:null;};
   const persistence:DebriefPersistence={durability:"host-owned",load:saved,compareAndSwap(expected,next){
     const rows=history(),previous=saved();if((previous?dataDigest(previous):null)!==expected)throw Error("stale attention CAS");
@@ -93,9 +97,17 @@ export function openDashboardHost(options:DashboardHostOptions){
       let controls:unknown=null;try{controls=await nativeRead();}catch(e){error=String(e);}
       let learning:unknown=null;if(c.learningLifecycleId)try{learning=h.readLearningLifecycle(c.archiveRoot,c.learningLifecycleId);}catch(e){error=String(e);}
       const attention=trust.inspect(Date.now());let actions:{key:string;label:string;operation:string}[]=[];
-      try{const available=await availableHumanActions(),digest=dataDigest(available.map(({key,label,operation,request})=>({key,label,operation,requestDigest:dashboardHostRequestDigest(request)})));
-        if(displayedActions?.tip===tip&&displayedActions.digest!==digest)throw Error("displayed dashboard actions changed before journal advance");
-        displayedActions={tip,actions:available,digest};actions=available.map(({key,label,operation})=>({key,label,operation}));}catch(e){error=String(e);}
+      try{const available=await availableHumanActions();
+        // A frame that completed after its captured tip is stale and cannot replace a newer display generation.
+        if(history().at(-1)!.id===tip){
+          if(!displayedActions||displayedActions.tip!==tip)displayedActions={tip,actions:new Map()};
+          const additions=available.filter(action=>!displayedActions!.actions.has(action.key));
+          if(displayedActions.actions.size+additions.length>MAX_DISPLAYED_ACTIONS_PER_TIP)throw Error("displayed dashboard action capacity exhausted");
+          const shown=available.filter(action=>{const prior=displayedActions!.actions.get(action.key);
+            if(prior&&dashboardHostRequestDigest(prior.request)!==dashboardHostRequestDigest(action.request))return false;
+            if(!prior)displayedActions!.actions.set(action.key,action);return true;});
+          actions=shown.map(({key,label,operation})=>({key,label,operation}));
+        }}catch(e){error=String(e);}
       return freeze(detached({version:"producer-dashboard-frame-v1",hostDigest,selectionDigest:dashboardSelectionDigest(selection),selectionState,tip,source,controls,learning,debrief,attention,error,actions,
         requests:rows.filter(e=>["claim","result","presentation","defer","ordinary-intent-pending"].includes(String(e.value.type))).map(e=>e.value),
         control:rows.some(e=>e.value.type==="host-failure")?"failed":rows.some(e=>e.value.type==="claim"&&!rows.some(r=>r.value.type==="result"&&r.value.requestId===e.value.requestId))?"unknown":"not-assessed",
@@ -104,7 +116,7 @@ export function openDashboardHost(options:DashboardHostOptions){
     /** Explicit reconciliation is read-only. A retained claim is never replayed as an effect. */
     reconcile:()=>api.frame(),
     async humanAction(key:string){const tip=history().at(-1)!.id;if(!displayedActions||displayedActions.tip!==tip)throw Error("dashboard actions must be displayed at the current tip");
-      const found=displayedActions.actions.find(action=>action.key===key);if(!found)throw Error(`unknown dashboard action ${JSON.stringify(key)}`);
+      const found=displayedActions.actions.get(key);if(!found)throw Error(`unknown dashboard action ${JSON.stringify(key)}`);
       const current=(await availableHumanActions()).find(action=>action.key===key);if(!current||current.label!==found.label||dashboardHostRequestDigest(current.request)!==dashboardHostRequestDigest(found.request))throw Error("displayed dashboard action changed; no effect attempted");return api.action(found.request);},
     async action(input:DashboardHostRequest){
       const request=dashboardHostRequest(input),digest=dashboardHostRequestDigest(request);
