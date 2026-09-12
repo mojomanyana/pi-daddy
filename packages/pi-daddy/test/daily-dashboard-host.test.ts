@@ -89,6 +89,21 @@ test("daily host gives revision-distinct exact cancellations when active sibling
   } finally {await running.close();await child.close();}
 });
 
+test("daily host retains a usable current cancellation through 75 same-tip sibling lifecycles", async () => {
+  const root=await tempDir("daily-dashboard-history-"),declared=await declareWork({cwd:root,id:"daily-history",outcome:"Retain exact controls across supported same-tip ordinary lifetimes"});
+  const child=await ordinaryHostFixture(root),loadedRoot=join(root,"loaded");await mkdir(loadedRoot,{mode:0o700});const loaded=await connectedHarness(loadedRoot);
+  const harness=adoptDashboardHarnessBridge({version:"skill-harness-dashboard-bridge-v1",sourceCommit:"d123257e53d48a2cad6919708976b5371dc7590e",api:loaded.api});
+  const first=retainOrdinaryChild(child.port,{executionId:"exec:22222222-2222-4222-8222-222222222222",parentExecutionId:null,toolCallId:"call:original"});
+  const running=await startDailyDashboardHost({id:"validation-history",cwd:root,directory:join(root,"host"),declared,ordinary:child.port,harness,author:"operator"});
+  try {
+    const remote=connectDashboardHost(running.socketPath);for(let index=0;index<75;index++){
+      const suffix=String(index).padStart(12,"0"),sibling=retainOrdinaryChild(child.port,{executionId:`exec:33333333-3333-4333-8333-${suffix}`,parentExecutionId:null,toolCallId:`call:sibling-${index}`});
+      assert.ok((await remote.frame() as any).actions.some((action:any)=>String(action.key).startsWith("cancel-exec-")));sibling.settle({state:"settled"},"not-assessed");assert.ok((await remote.frame() as any).actions.some((action:any)=>String(action.key).startsWith("cancel-exec-")));
+    }
+    const frame=await remote.frame() as any,cancel=frame.actions.find((action:any)=>String(action.label).includes("22222222-2222-4222-8222-222222222222"));assert.ok(cancel,"the original child must retain a fresh exact cancellation after cumulative sibling churn");await remote.humanAction(cancel.key);assert.equal(first.signal.aborted,true);assert.equal((child.port.inspect() as any).children.find((row:any)=>row.target.toolCallId==="call:original").abortRequested,true);assert.equal((child.port.inspect() as any).children.filter((row:any)=>row.target.toolCallId?.startsWith("call:sibling-")).every((row:any)=>row.state==="settled"),true,"the current cancellation must not affect settled siblings");
+  } finally {first.settle({state:"settled"},"not-assessed");await running.close();await child.close();}
+});
+
 test("daily host stops advertising an abort-requested child until its original caller settles", async () => {
   const root=await tempDir("daily-dashboard-abort-pending-"),declared=await declareWork({cwd:root,id:"daily-abort-pending",outcome:"Do not repeat cancellation while original settlement is pending"});
   const child=await ordinaryHostFixture(root),loadedRoot=join(root,"loaded");await mkdir(loadedRoot,{mode:0o700});const loaded=await connectedHarness(loadedRoot);

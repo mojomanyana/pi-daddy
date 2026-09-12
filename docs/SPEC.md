@@ -1155,8 +1155,10 @@ revision and complete retained target through the existing host/native authority
 add or remove displayed actions at the same host-journal tip when ordinary children attach or settle; it writes no
 journal record. A key retains its first exact request meaning within that tip, so a same-tip changed request under an
 existing key is withheld rather than remapped; a stale selected key is revalidated against the current exact action,
-target, revision and digest before any effect. Per-tip retained key meanings are capped at 224: 28 generations of
-the daily maximum eight active ordinary children fit inside the 64 KiB bounded frame. Exhaustion refuses the
+target, revision and digest before any effect. Per-tip retained key meanings are capped at 32,768. Ordinary
+retention admits at most 1,024 rows and 1,024 cancellation requests; attach, settlement and cancellation can make
+at most 3,072 ordinary revision advances, with at most eight visible targets per advance (24,576 meanings), leaving
+room for fixed daily controls. This retained history is separate from one returned frame. Exhaustion refuses the
 whole new frame before retaining or publishing any of its new keys. Cancellation keys include the ordinary revision,
 so a fresh frame can publish current exact targets after sibling attachment or settlement without changing an older
 key's meaning. A row marked `abortRequested` is not advertised again while its original caller settlement remains

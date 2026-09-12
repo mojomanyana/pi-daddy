@@ -14,8 +14,9 @@ import { dashboardHostDigest, dashboardHostRequest, dashboardHostRequestDigest, 
   type DashboardHarness, type DashboardHostConfig, type DashboardHostRequest, type DashboardHostAuthority } from "./dashboard-host-contract.ts";
 export * from "./dashboard-host-contract.ts";
 const hosts=new WeakSet<object>();
-/** 224 worst-case key/label/operation rows fit the 64 KiB frame; this is 28 eight-child ordinary generations. */
-const MAX_DISPLAYED_ACTIONS_PER_TIP=224;
+/** Ordinary retention caps rows and cancellations at 1,024 each: attach, settle and cancel can advance 3,072 revisions.
+ * At eight visible targets per revision that is 24,576 immutable cancellation meanings; fixed controls fit inside 32,768. */
+const MAX_DISPLAYED_ACTIONS_PER_TIP=32_768;
 export const isDashboardHost=(value:unknown):value is DashboardHost=>typeof value==="object"&&value!==null&&hosts.has(value);
 export type DashboardHost=ReturnType<typeof openDashboardHost>;
 export interface DashboardHostOptions { ordinary?:OrdinaryChildren; harness:DashboardHarness; config:DashboardHostConfig; budget:GovernedBudgetBinding; experiment?:ReturnType<typeof openExperiment>; authority:()=>DashboardHostAuthority|null;

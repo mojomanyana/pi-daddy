@@ -5,6 +5,19 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ---
 
+## 2026-09-12 — dashboard complete same-tip ordinary lifetime history repair
+
+Sol review found the 224 retained-key cap was incorrectly justified by one returned frame and could exhaust during
+ordinary sibling churn while a child remained active. The retained history now caps at 32,768: the ordinary port
+allows at most 1,024 rows and 1,024 cancellations, so attach, settlement and cancellation permit at most 3,072
+revision advances; at the daily maximum eight visible targets that is 24,576 revision-distinct cancellation meanings,
+leaving room for fixed controls. This is a history bound, not a transport-size claim. A production daily-host
+regression keeps one retained child active through 75 sibling attach/frame/settle/frame cycles and then cancels only
+that original target. The synthetic cap regression accumulates small batches to the exact boundary, proves a
+multi-key overflow mutates none, then assigns a previously refused key a different exact request in the remaining
+slot. Focused tests, typecheck and build pass. Per coordinator instruction the full suite is not rerun until
+independent approval; no test establishes dashboard UI acceptance or live measured behavior.
+
 ## 2026-09-12 — dashboard abort-pending and bounded same-tip history repair
 
 Sol's next review found two bounded-control gaps. A child remains active after its original abort is requested until
