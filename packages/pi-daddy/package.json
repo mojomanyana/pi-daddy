@@ -238,6 +238,8 @@
     "src",
     "contracts",
     "herdr-plugin",
+    "THIRD_PARTY_LICENSES",
+    "THIRD_PARTY_NOTICES.md",
     "README.md",
     "CHANGELOG.md",
     "LICENSE"

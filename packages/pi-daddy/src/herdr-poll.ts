@@ -58,6 +58,15 @@ export function seqOf(result: Record<string, unknown> | undefined): number {
 
 /** How often to poll `agent get` while waiting for the child to settle. */
 export const POLL_INTERVAL_MS = 750;
+/**
+ * A prompt accepted from a terminal state must produce an observable lifecycle change promptly.
+ *
+ * Herdr 0.8's `agent prompt --wait` documents this same five-second bound. We retain polling because it
+ * supplies the bounded live pane snapshots, but refuse rather than holding a parent for twenty minutes when
+ * the only reported state remains the pre-prompt terminal state. That is a detector/integration failure, not
+ * evidence that a child settled.
+ */
+export const FRESH_LIFECYCLE_TIMEOUT_MS = 5_000;
 /** Lines of pane tail reported per poll. Matches the status block's own tail, so nothing is fetched unused. */
 export const DEFAULT_SNAPSHOT_LINES = 3;
 
@@ -74,6 +83,31 @@ export const DEFAULT_SNAPSHOT_LINES = 3;
  * `state_change_seq` has advanced past the value observed before prompting. `agent wait` is deliberately
  * not used at all: its contract cannot express "settled *after* this point".
  */
+/**
+ * Establish the bundled Pi lifecycle reporter's idle baseline before prompt dispatch.
+ *
+ * `screen_detection_skipped` is Herdr's reported fact that a full lifecycle authority owns this pane.
+ * Waiting for it prevents the reporter's asynchronously queued initial idle report from becoming a
+ * post-prompt sequence advance. This is not completion: no prompt has been sent at this point.
+ */
+export async function waitForLifecycleBaseline(
+  exec: HerdrExec,
+  request: PollTarget,
+  deadline: number,
+): Promise<{ before?: number; aborted?: boolean; spawnError?: string }> {
+  const interval = request.pollIntervalMs ?? POLL_INTERVAL_MS;
+  for (;;) {
+    if (request.signal?.aborted) return { aborted: true };
+    if (Date.now() >= deadline) return { spawnError: "Herdr did not activate the bundled Pi lifecycle reporter before prompt dispatch" };
+    const reply = parseReply(await exec(["agent", "get", request.name]));
+    if (reply.error) return { spawnError: `herdr agent get failed: ${reply.error}` };
+    const agent = (reply.result?.agent ?? reply.result ?? {}) as { agent_status?: string; state_change_seq?: number; screen_detection_skipped?: boolean };
+    const seq = typeof agent.state_change_seq === "number" ? agent.state_change_seq : -1;
+    if (agent.screen_detection_skipped === true && agent.agent_status && TERMINAL.has(agent.agent_status) && seq >= 0) return { before: seq };
+    await new Promise<void>((resolve) => setTimeout(resolve, Math.min(interval, Math.max(0, deadline - Date.now()))));
+  }
+}
+
 export async function waitForSettled(
   exec: HerdrExec,
   request: PollTarget,
@@ -88,6 +122,7 @@ export async function waitForSettled(
   // No cross-poll state is kept, deliberately: the previous design remembered what it had reported so it could
   // send a diff, and that is what broke — see `tailLines`. A snapshot needs no memory.
   const keep = request.snapshotLines ?? DEFAULT_SNAPSHOT_LINES;
+  let staleTerminalSince: number | undefined;
 
   for (;;) {
     if (request.signal?.aborted) return { aborted: true };
@@ -114,9 +149,24 @@ export async function waitForSettled(
       }
     }
 
-    if (status && TERMINAL.has(status) && seq > before) return { status };
+    if (status && TERMINAL.has(status)) {
+      if (seq > before) return { status };
+      // Do not turn this pane's text into a completion signal. A known agent whose screen rule misses a new
+      // UI shape falls back to idle, precisely the state R-33 says is unsafe to accept. A stable stale
+      // terminal state for this bounded interval is instead a loud compatibility refusal (issue #43).
+      staleTerminalSince ??= Date.now();
+      if (Date.now() - staleTerminalSince >= FRESH_LIFECYCLE_TIMEOUT_MS) {
+        return {
+          spawnError:
+            `herdr reported ${status} without a post-prompt lifecycle change for ${FRESH_LIFECYCLE_TIMEOUT_MS}ms; ` +
+            "refusing to treat the pre-prompt terminal state as completion. Update Herdr's Pi detector or inspect its lifecycle reporting.",
+        };
+      }
+    } else {
+      staleTerminalSince = undefined;
+    }
 
-    await new Promise((r) => setTimeout(r, Math.min(interval, Math.max(0, deadline - Date.now()))));
+    await new Promise<void>((resolve) => setTimeout(resolve, Math.min(interval, Math.max(0, deadline - Date.now()))));
   }
 }
 

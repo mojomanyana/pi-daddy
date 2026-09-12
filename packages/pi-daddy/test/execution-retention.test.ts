@@ -124,7 +124,7 @@ test("named check producer retains its complete actual receipt with a synthetic 
 
 test("herdr observations reuse existing native replies and snapshots without extra control calls", async () => {
   const dir = await tempDir("p02-herdr-"); const h = beginExecutionRetention({ ...identity, executor: "herdr" }, dir);
-  const calls: string[] = [];
+  const calls: string[] = []; let gets = 0;
   const run = await runHerdrPane({ args: ["--no-session"], prompt: "fixture", env: {}, cwd: dir, name: "reused", keepPane: true,
     onPane: (paneId, agentName) => h.native({ paneId, agentName }), onNativeTab: tabId => h.native({ tabId }),
     onObservation: bytes => h.capture("paneSnapshot", bytes, true),
@@ -132,13 +132,13 @@ test("herdr observations reuse existing native replies and snapshots without ext
       const verb = args.slice(0, 2).join(" "); calls.push(verb);
       const result = verb === "tab create" ? { root_pane: { pane_id: "w1:p2", tab_id: "w1:t2" } }
         : verb === "agent start" ? { agent: { state_change_seq: 1 } }
-        : verb === "agent get" ? { agent: { state_change_seq: 2, agent_status: "idle" } }
+        : verb === "agent get" ? { agent: { state_change_seq: ++gets + 1, agent_status: "idle", screen_detection_skipped: true } }
         : verb === "agent read" ? { output: "native pane bytes" } : { ok: true };
       return { code: 0, stdout: JSON.stringify({ result }), stderr: "" };
     } });
   assert.equal(run.code, 0); h.finish(terminal);
   const path = (await h.flush()).manifestPath!; const m = await manifest(path);
-  assert.deepEqual(calls, ["tab create", "agent start", "agent prompt", "agent get", "agent read"]);
+  assert.deepEqual(calls, ["tab create", "agent start", "agent get", "agent prompt", "agent get", "agent read"]);
   assert.equal(m.native.paneId, "w1:p2"); assert.equal(m.native.tabId, "w1:t2");
   assert.match(m.native.agentName!, /^reused/); assert.equal(m.native.sessionId, null); assert.equal(m.native.branchLeafId, null);
   assert.equal((await readFile(join(path, "..", m.content.paneSnapshot.path!))).toString(), "native pane bytes");

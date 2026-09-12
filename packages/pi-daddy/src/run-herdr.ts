@@ -27,9 +27,11 @@ import type { ChildRunResult } from "./run-child.ts";
 import { DEFAULT_MAX_OUTPUT_BYTES, DEFAULT_TIMEOUT_MS } from "./run-child.ts";
 import { MAX_OPEN_PANES, markPaneSettled, trackPane, trimOpenPanes, untrackPane } from "./pane-reaper.ts";
 import { defaultExec, parseReply, type HerdrExec } from "./herdr-cli.ts";
-import { readPane, waitForSettled, seqOf, observeHerdrSession, type PollTarget } from "./herdr-poll.ts";
+import { FRESH_LIFECYCLE_TIMEOUT_MS, readPane, waitForLifecycleBaseline, waitForSettled, observeHerdrSession, type PollTarget } from "./herdr-poll.ts";
 import { stageSystemPrompt } from "./herdr-stage.ts";
 import { uniqueAgentName } from "./herdr-name.ts";
+import { bundledHerdrPiLifecycleExtension } from "./herdr-pi-lifecycle.ts";
+import { startHerdrAgent } from "./herdr-start.ts";
 
 /**
  * Re-exported so importers of the executor still reach the protocol at the name they always used.
@@ -42,13 +44,15 @@ export { type HerdrExec, parseReply } from "./herdr-cli.ts";
 export { splitSystemPrompt, stageSystemPrompt } from "./herdr-stage.ts";
 /** Re-exported: the name rules moved to `./herdr-name.ts` under the ceiling; tests import them here. */
 export { uniqueAgentName } from "./herdr-name.ts";
+/** Re-exported after startup retry extraction; existing executor importers keep this public constant. */
+export { PANE_READY_POLL_MS } from "./herdr-start.ts";
 /**
  * Re-exported so `test/run-herdr.test.ts` and any importer keep reaching these where they always were.
  *
  * `POLL_INTERVAL_MS` and `newSuffix` moved to `./herdr-poll.ts` under the 400-line ceiling; the names are part
  * of this module's surface and moving a file should not move an export.
  */
-export { DEFAULT_SNAPSHOT_LINES, POLL_INTERVAL_MS, readPane, tailLines, waitForSettled, type PollTarget } from "./herdr-poll.ts";
+export { DEFAULT_SNAPSHOT_LINES, POLL_INTERVAL_MS, readPane, tailLines, waitForLifecycleBaseline, waitForSettled, type PollTarget } from "./herdr-poll.ts";
 
 export interface HerdrRunRequest {
   /** `planSpawn` args **without** the prompt — see `prompt`. */
@@ -122,10 +126,6 @@ export class HerdrWriterCloseError extends Error {
   }
 }
 
-/** How often to retry `agent start` while a freshly created pane is still reaching its shell prompt. */
-export const PANE_READY_POLL_MS = 300;
-
-
 /**
  * Run one governed child in a pane and return its output.
  *
@@ -162,7 +162,16 @@ export async function runHerdrPane(request: HerdrRunRequest): Promise<ChildRunRe
   const staged = await stageSystemPrompt(request.args);
   if (staged.error) return { ...empty, spawnError: staged.error };
   const promptDir = staged.promptDir;
-  const effectiveArgs = staged.args;
+  let lifecycleExtension: string;
+  try {
+    lifecycleExtension = bundledHerdrPiLifecycleExtension();
+  } catch (error) {
+    if (promptDir) await rm(promptDir, { recursive: true, force: true }).catch(() => undefined);
+    return { ...empty, spawnError: String(error) };
+  }
+  // Pi's `--no-extensions` disables discovery, not this explicit, package-pinned lifecycle reporter. It
+  // registers no tools; pi's existing `--tools` allowlist remains the governed child surface.
+  const effectiveArgs = [...staged.args, "-e", lifecycleExtension];
 
   const create = ["tab", "create", "--label", request.name, "--cwd", request.cwd];
   if (request.workspace) create.push("--workspace", request.workspace);
@@ -301,11 +310,19 @@ export async function runHerdrPane(request: HerdrRunRequest): Promise<ChildRunRe
   let settledCleanly = false;
 
   return runWithFinalizers(async () => {
-    const started = await startAgent(exec, agentName, paneId, effectiveArgs, deadline);
+    const started = await startHerdrAgent(exec, agentName, paneId, effectiveArgs, deadline);
     if (started.error) return { ...empty, spawnError: `herdr agent start failed: ${started.error}` };
 
-    // The state counter BEFORE prompting is what makes the wait correct — see the R-33 note below.
-    const before = seqOf(started.result);
+    // The bundled reporter queues its initial idle state asynchronously. Establish its native-authority
+    // baseline before prompting, otherwise that initial report could advance the counter after prompt and
+    // be mistaken for settlement.
+    const baseline = await waitForLifecycleBaseline(
+      exec,
+      { ...request, name: agentName, nativePaneId: paneId },
+      Math.min(deadline, Date.now() + FRESH_LIFECYCLE_TIMEOUT_MS),
+    );
+    if (baseline.aborted) return { ...empty, aborted: true };
+    if (baseline.spawnError || baseline.before === undefined) return { ...empty, spawnError: baseline.spawnError ?? "Herdr lifecycle baseline is unavailable" };
     observeHerdrSession(started.result?.agent, paneId, request.onSessionReference);
 
     const prompted = parseReply(await exec(["agent", "prompt", agentName, request.prompt]));
@@ -318,7 +335,7 @@ export async function runHerdrPane(request: HerdrRunRequest): Promise<ChildRunRe
       }
     }
 
-    const settled = await waitForSettled(exec, { ...request, name: agentName, nativePaneId: paneId }, before, deadline, maxOutputBytes);
+    const settled = await waitForSettled(exec, { ...request, name: agentName, nativePaneId: paneId }, baseline.before, deadline, maxOutputBytes);
     if (settled.aborted || settled.timedOut) {
       // Still read: a timed-out child usually produced something, and a partial answer labelled partial is
       // more useful than none. R-03's rule — a missing result must never look like an empty one.
@@ -366,33 +383,4 @@ export async function runHerdrPane(request: HerdrRunRequest): Promise<ChildRunRe
     label: "herdr pane finalizer failed",
     run: () => cleanup(settledCleanly),
   }]);
-}
-
-/**
- * Start the agent, retrying while the pane is still coming up.
- *
- * **Measured, and only visible once automated.** A pane created by `tab create` is not immediately at a
- * shell prompt, and `herdr agent start` requires one — it fails with
- * `agent_pane_busy: … is not an available shell`. Driving the two commands by hand hid this completely,
- * because the think-time between them was longer than the shell took to start; the first scripted run hit
- * it every time.
- *
- * Retried rather than preceded by a fixed sleep: a sleep long enough for a loaded machine is wasted on
- * every spawn, and a fan-out pays it per child. Only the busy condition is retried — any other error is a
- * real failure and returns immediately.
- */
-async function startAgent(
-  exec: HerdrExec,
-  name: string,
-  paneId: string,
-  args: string[],
-  deadline: number,
-): Promise<{ result?: Record<string, unknown>; error?: string }> {
-  for (;;) {
-    const reply = parseReply(await exec(["agent", "start", name, "--kind", "pi", "--pane", paneId, "--", ...args]));
-    if (!reply.error) return reply;
-    const busy = /not an available shell|agent_pane_busy/.test(reply.error);
-    if (!busy || Date.now() >= deadline) return reply;
-    await new Promise((r) => setTimeout(r, PANE_READY_POLL_MS));
-  }
 }

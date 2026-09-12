@@ -17,8 +17,10 @@ import { MAX_CHILDREN_PER_CALL } from "../src/fanout.ts";
 interface FakeOptions {
   /** `state_change_seq` reported by `agent start`, i.e. the state BEFORE prompting. */
   startSeq?: number;
-  /** Statuses returned by successive `agent get` calls. */
+  /** Statuses returned by successive `agent get` calls after the lifecycle baseline. */
   getSequence?: Array<{ agent_status: string; state_change_seq: number }>;
+  /** Initial reporter states observed before prompt dispatch. */
+  baselineSequence?: Array<{ agent_status: string; state_change_seq: number; screen_detection_skipped?: boolean }>;
   output?: string;
   failAt?: string;
 }
@@ -26,6 +28,8 @@ interface FakeOptions {
 function fakeHerdr(options: FakeOptions = {}) {
   const calls: string[][] = [];
   const gets = [...(options.getSequence ?? [{ agent_status: "idle", state_change_seq: 99 }])];
+  const baselines = [...(options.baselineSequence ?? [{ agent_status: "idle", state_change_seq: options.startSeq ?? 10, screen_detection_skipped: true }])];
+  let lifecycleBaseline = true;
 
   const exec: HerdrExec = async (args) => {
     calls.push(args);
@@ -45,7 +49,11 @@ function fakeHerdr(options: FakeOptions = {}) {
     }
     if (verb === "agent prompt") return { code: 0, stdout: JSON.stringify({ id: "x", result: { ok: true } }), stderr: "" };
     if (verb === "agent get") {
-      const next = gets.length > 1 ? gets.shift()! : gets[0];
+      // A real Herdr child establishes the explicit reporter's idle baseline before prompt; the remaining
+      // sequence models post-prompt observations.
+      const next = lifecycleBaseline
+        ? (baselines.length > 1 ? baselines.shift()! : (lifecycleBaseline = false, baselines[0]))
+        : gets.length > 1 ? gets.shift()! : gets[0];
       return { code: 0, stdout: JSON.stringify({ id: "x", result: { agent: next } }), stderr: "" };
     }
     if (verb === "agent read") {
@@ -100,7 +108,10 @@ test("argv is passed after `--`, and the task is NOT in it", async () => {
 
   const start = fake.calls.find((c) => c[0] === "agent" && c[1] === "start")!;
   const after = start.slice(start.indexOf("--") + 1);
-  assert.deepEqual(after, ["--no-session", "--no-extensions", "--tools", "read"]);
+  assert.deepEqual(after.slice(0, 4), ["--no-session", "--no-extensions", "--tools", "read"]);
+  assert.deepEqual(after.slice(4, 5), ["-e"], "only the pinned lifecycle extension bypasses discovery");
+  assert.match(after[5]!, /src\/vendor\/herdr-pi-lifecycle\.ts$/, "the extension is package-owned, never model-chosen");
+  assert.equal(after.length, 6, "no unrelated extension is injected");
   assert.ok(!start.includes("review the diff"), "the task must not reach argv");
 
   const prompt = fake.calls.find((c) => c[0] === "agent" && c[1] === "prompt")!;
@@ -124,6 +135,61 @@ test("R-33: a pre-existing idle state does not count as completion", async () =>
   assert.equal(result.code, 0);
   assert.match(result.text, /the child's answer/);
   assert.ok(fake.verbs().filter((v) => v === "agent get").length >= 3, "it must keep polling past the stale state");
+});
+
+test("a delayed native idle report is baselined before prompt, while fast start/settled remains completion", async () => {
+  // The official reporter queues session_start's idle report. If prompting raced it, that report could advance
+  // the start reply's sequence and look like a completed child. The native-authority baseline must be observed
+  // first; only the subsequent working/idle transition may settle.
+  const fake = fakeHerdr({
+    startSeq: 10,
+    baselineSequence: [
+      { agent_status: "idle", state_change_seq: 10, screen_detection_skipped: false },
+      { agent_status: "idle", state_change_seq: 11, screen_detection_skipped: true },
+    ],
+    getSequence: [
+      { agent_status: "idle", state_change_seq: 11 },
+      { agent_status: "working", state_change_seq: 12 },
+      { agent_status: "idle", state_change_seq: 13 },
+    ],
+  });
+
+  const result = await runHerdrPane(request({ exec: fake.exec, pollIntervalMs: 1 }));
+  assert.equal(result.code, 0);
+  const promptAt = fake.calls.findIndex((call) => call.slice(0, 2).join(" ") === "agent prompt");
+  assert.ok(promptAt > fake.calls.findIndex((call) => call.slice(0, 2).join(" ") === "agent get"), "prompt follows the native baseline");
+  assert.equal(fake.verbs().filter((verb) => verb === "agent get").length, 5, "the delayed idle was not accepted as completion");
+});
+
+test("Pi screen-detector fallback idle never settles a fresh child, even when its pane has final-looking text", async (t) => {
+  // Regression for the Pi 0.85.1 bordered `Working` indicator: Herdr 0.8.2's Pi manifest 2026.06.10.1
+  // looked only for `Working...`, reported the known-agent idle fallback, and did not advance its lifecycle
+  // sequence. This is an injected, provider-free replay of that observation; the pane text is deliberately
+  // arbitrary so it cannot become completion authority.
+  //
+  // The production change that breaks this is dropping `seq > before`: then the stale idle is accepted and
+  // the final-looking text below is returned as a completed child report.
+  const fake = fakeHerdr({
+    startSeq: 10,
+    getSequence: [{ agent_status: "idle", state_change_seq: 10 }],
+    output: "Done: index.html was written and read back.",
+  });
+
+  let clock = 0, gets = 0;
+  t.mock.method(Date, "now", () => clock);
+  const exec: HerdrExec = async (args) => {
+    if (args.slice(0, 2).join(" ") === "agent get" && ++gets > 1) clock += 1_000;
+    return fake.exec(args);
+  };
+  // Only Date.now is controlled. The production poll sleep remains real and short; the broad deadline
+  // proves the five-second stale-lifecycle threshold, rather than deadline expiry, causes the refusal.
+  const result = await runHerdrPane(request({ exec, pollIntervalMs: 1, timeoutMs: 100_000 }));
+  assert.equal(result.timedOut, false, "detector failure refuses before the ordinary child deadline");
+  assert.match(String(result.spawnError), /without a post-prompt lifecycle change/);
+  assert.equal(result.text, "", "final-looking terminal text is not completion authority");
+  assert.ok(fake.verbs().filter((verb) => verb === "agent get").length > 1, "it must observe the stale state before refusing");
+  assert.ok(fake.verbs().includes("tab close"), "a refused fresh-lifecycle observation closes the still-governed child tab");
+  assert.equal(openPaneCount(), 0, "the closed tab is removed from the reaper registry");
 });
 
 test("R-33: `agent wait` is never used, because its contract cannot express 'after this point'", async () => {

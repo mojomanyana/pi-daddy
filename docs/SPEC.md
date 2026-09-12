@@ -6,7 +6,9 @@ date. If code and this file disagree, report and repair the stale current-state 
 present behavior from historical ADRs.
 
 **Release-preparation snapshot (2026-09-12):** the last registry-verified baseline was `pi-daddy` 0.24.0,
-with a Herdr 0.8.0 plugin floor; merged source is prepared as the 0.25.0 candidate. For current
+with a Herdr 0.8.0 **dashboard-plugin** floor; the separate native-lifecycle Herdr child route is verified
+only with Herdr 0.8.2 and Pi 0.85.1, and refuses before prompt if that lifecycle authority cannot activate.
+Merged source is prepared as the 0.25.0 candidate. For current
 publication status, consult [npm](https://www.npmjs.com/package/pi-daddy) and
 [GitHub Releases](https://github.com/mojomanyana/pi-daddy/releases). Runtime completion, a dashboard host,
 retained evidence and requested thinking remain distinct from human acceptance and provider-internal reasoning.
@@ -1059,7 +1061,13 @@ no `--env`, but a pane's environment reaches the shell that launches the agent);
 is staged to a temp file because `agent start` types argv into a shell and rejects what it cannot encode;
 `--print` is incompatible with an interactive agent; a fresh pane is not yet at a shell prompt, so
 `agent start` is retried while it comes up; and settling requires a terminal status **and** an advanced
-`state_change_seq`, because `agent wait --until idle` matches the state the agent was already in.
+`state_change_seq`, because `agent wait --until idle` matches the state the agent was already in. Every
+Herdr Pi child explicitly loads pi-daddy's pinned, lifecycle-only Herdr reporter under `--no-extensions`; it
+must establish that reporter's native idle baseline before the prompt, so its delayed initial report cannot
+look like completion. This native route is verified with **Herdr 0.8.2 and Pi 0.85.1**; it does not raise
+pi-daddy's ordinary subprocess Pi peer floor. If that lifecycle authority cannot activate before its five-second
+bound, or if Herdr keeps reporting the pre-prompt terminal state for five seconds, pi-daddy refuses with a
+detection/lifecycle diagnostic rather than accepting pane text or holding the parent to its ordinary child deadline.
 
 ## Watching a delegation run
 

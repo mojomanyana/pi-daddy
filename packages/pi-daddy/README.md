@@ -887,4 +887,4 @@ Known gaps, stated because a gap nobody wrote down is the one that surprises som
 
 `docs/SPEC.md` in the repository is the authoritative current-state document; the ADRs hold the reasoning.
 
-Requires pi ≥ 0.83.0, Node ≥ 22.19. MIT.
+Requires pi ≥ 0.83.0 and Node ≥ 22.19. The ordinary subprocess route retains that floor; the bundled native Herdr lifecycle child route is verified with Herdr 0.8.2 and Pi 0.85.1 and refuses if its lifecycle authority cannot activate. MIT.
