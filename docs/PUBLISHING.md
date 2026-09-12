@@ -1,3 +1,23 @@
+# Publishing pi-daddy 0.25.2
+
+Owner authorization: 2026-09-12. Registry baseline: 0.25.1. Only pi-daddy changes.
+
+1. Preserve PR #46 merge `3451fca5ff6a5d20ab138bd905fc422e86abd8ed`. Land metadata via a green PR.
+2. From a fresh clean worktree at the exact release merge, run typecheck/build and installed-package smoke.
+   Retain one canonical npm pack archive, JSON inventory and SHA-256/SHA-512 integrity.
+3. Install that archive in a fresh isolated prefix with skill-harness 0.15.0 and Pi 0.85.1.
+   Load explicit extensions with in-memory stores and zero provider requests; verify public entrypoints
+   and bundled native reporter bytes. No paid model call is needed for this metadata-only release.
+4. Recheck 0.25.2 is absent; publish the canonical archive once. If ambiguous, inspect registry bytes before retry.
+5. Verify registry version, latest and downloaded bytes. Create immutable v0.25.2 at the exact release merge
+   and its GitHub Release. Never overwrite versions/tags or bypass authentication.
+6. After publication verification, separately perform the explicitly authorized local package update.
+   Do not restart unrelated sessions. Fresh human cancellation testing remains a separate acceptance gate.
+
+---
+
+## Prior 0.25.1 runbook (historical)
+
 # Publishing pi-daddy 0.25.1
 
 The owner authorized merge and publication on 2026-09-12. Registry baseline: 0.25.0.

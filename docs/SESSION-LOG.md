@@ -5,6 +5,16 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ---
 
+## 2026-09-12 — 0.25.2 release preparation
+
+PR #46 merged as `3451fca5ff6a5d20ab138bd905fc422e86abd8ed`, preserving Sol-approved head
+`cbf328956c8653f4bfbedaf1db017c79819c05a1`. Both Node CI jobs passed, including full units,
+model-free Pi integration and installed-package smoke. The final focused dashboard gate passed 28 tests.
+The owner authorized merge, patch publication, local update, and a fresh cancellation test.
+This release changes only metadata, existing version assertions and release documentation; the coordinator
+reviews that scope. Global update follows verified publication as a separate authorized operation.
+No new model calls are needed for the metadata release. Human cancellation acceptance remains pending.
+
 ## 2026-09-12 — dashboard complete same-tip ordinary lifetime history repair
 
 Sol review found the 224 retained-key cap was incorrectly justified by one returned frame and could exhaust during

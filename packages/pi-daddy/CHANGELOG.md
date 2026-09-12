@@ -12,6 +12,14 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## 0.25.2 — live dashboard cancellation controls (2026-09-12)
+
+- Refresh cancellation controls when ordinary children attach or settle after an idle dashboard frame.
+- Preserve each displayed command's exact meaning; revision-specific keys prevent stale commands from targeting another child.
+- Hide cancellation already requested while the original caller settles, and bound retained command history across supported child lifetimes.
+- Independently reviewed by Sol; regression coverage includes idle-to-active display, sibling churn, stale frames, and pending cancellation.
+- Fresh human dashboard cancellation acceptance remains a separate post-install test.
+
 ## 0.25.1 — reliable Herdr child completion (2026-09-12)
 
 - Fix a governed child finishing while its parent keeps waiting with Pi 0.85.1 and Herdr 0.8.2.
