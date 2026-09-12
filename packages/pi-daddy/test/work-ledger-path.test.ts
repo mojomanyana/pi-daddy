@@ -1105,7 +1105,7 @@ test("public work-ledger subpath is additive without changing legacy export targ
   const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
   assert.deepEqual(manifest.exports["./work-ledger"], { types: "./dist/work-ledger.d.ts", default: "./dist/work-ledger.js" });
   assert.deepEqual(manifest.exports["./ledger"], { types: "./dist/ledger.d.ts", default: "./dist/ledger.js" });
-  assert.equal(manifest.version, "0.25.1");
+  assert.equal(manifest.version, "0.25.2");
 });
 
 test("public shared execution joins yield one actual attempt with two bindings and no wire acceptance", () => {
