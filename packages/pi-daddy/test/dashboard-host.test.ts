@@ -93,6 +93,29 @@ test("human dashboard commands invoke only host-published exact approved actions
  current=request;const result:any=await dashboardHostAction(host,"defer-weekly");assert.equal(result.state,"acknowledged");
 });
 
+test("same-tip redraw cannot remap a displayed command key before its operator submits it",async()=>{
+ const w=await hostWorld(false),first=await w.request("defer",{reason:"first"},"same-tip-first"),second=await w.request("observe",{sourceId:"facts",previousCheckpointId:null,facts:null},"same-tip-second");let current=first;
+ w.authority!.requestDigests=[...w.authority!.requestDigests,dashboardHostRequestDigest(first),dashboardHostRequestDigest(second)];
+ const host=openDashboardHost({...w.options,humanActions:()=>[{key:"same-tip",label:"Exact action",request:current}]});const f1:any=await host.frame();assert.deepEqual(f1.actions.map((action:any)=>action.key),["same-tip"]);
+ const before=await readFile(join(w.config.trustDirectory,"producer-host/events.jsonl"));current=second;const f2:any=await host.frame();
+ assert.deepEqual(f2.actions,[],"a same-tip key cannot acquire a second exact request meaning");await assert.rejects(dashboardHostAction(host,"same-tip"),/displayed dashboard action changed; no effect attempted/);assert.deepEqual(await readFile(join(w.config.trustDirectory,"producer-host/events.jsonl")),before,"a stale displayed key must not claim or invoke its replacement");
+});
+
+test("out-of-order same-tip frames cannot overwrite the first completed key meaning",async()=>{
+ const w=await hostWorld(false),first=await w.request("defer",{reason:"first"},"out-of-order-first"),second=await w.request("observe",{sourceId:"facts",previousCheckpointId:null,facts:null},"out-of-order-second");w.authority!.requestDigests=[...w.authority!.requestDigests,dashboardHostRequestDigest(first),dashboardHostRequestDigest(second)];
+ let calls=0,resolveFirst!:()=>void,resolveSecond!:()=>void;const host=openDashboardHost({...w.options,humanActions:()=>new Promise(resolve=>{if(++calls===1)resolveFirst=()=>resolve([{key:"out-of-order",label:"First",request:first}]);else resolveSecond=()=>resolve([{key:"out-of-order",label:"Second",request:second}]);})});
+ const waitFor=async(count:number)=>{const deadline=Date.now()+3000;while(calls<count){if(Date.now()>deadline)throw Error("asynchronous action provider did not start");await new Promise(resolve=>setTimeout(resolve,5));}};
+ const pendingFirst=host.frame();await waitFor(1);const pendingSecond=host.frame();await waitFor(2);resolveSecond();const secondFrame:any=await pendingSecond;resolveFirst();const firstFrame:any=await pendingFirst;
+ assert.deepEqual(secondFrame.actions.map((action:any)=>action.key),["out-of-order"]);assert.deepEqual(firstFrame.actions,[],"a late frame cannot overwrite the exact key meaning already displayed at this tip");
+});
+
+test("same-tip displayed action history accumulates bounded additions atomically",async()=>{
+ const w=await hostWorld(false),perTipLimit=32_768,batch=256;let mode:"fill"|"overflow"|"permit"="fill",next=0;const host=openDashboardHost({...w.options,humanActions:context=>{const request=(requestId:string)=>{const value={version:"1.0" as const,requestId,hostDigest:context.hostDigest,selectionDigest:context.selectionDigest,expectedTip:context.tip,operation:"defer" as const,payload:{reason:requestId}};w.authority!.requestDigests=[...w.authority!.requestDigests,dashboardHostRequestDigest(value)];return value;};if(mode==="overflow"){const value=request("overflow");return ["refused-a","refused-b"].map(key=>({key,label:"Capacity action",request:value}));}if(mode==="permit")return [{key:"refused-a",label:"Capacity action",request:request("permitted-different")}];const value=request("fill");return Array.from({length:Math.min(batch,perTipLimit-1-next)},()=>({key:`capacity-${next++}`,label:"Capacity action",request:value}));}});
+ const before=await readFile(join(w.config.trustDirectory,"producer-host/events.jsonl"));while(next<perTipLimit-1){const frame:any=await host.frame();assert.equal(frame.error,null);assert.ok(frame.actions.length>0&&frame.actions.length<=batch);}
+ mode="overflow";const overflow:any=await host.frame();assert.match(overflow.error,/displayed dashboard action capacity exhausted/);assert.deepEqual(overflow.actions,[]);assert.deepEqual(await readFile(join(w.config.trustDirectory,"producer-host/events.jsonl")),before,"capacity refusal must not write a host claim or repaint record");
+ mode="permit";const permitted:any=await host.frame();assert.equal(permitted.error,null);assert.deepEqual(permitted.actions.map((action:any)=>action.key),["refused-a"],"a key refused atomically may later receive a different exact meaning when capacity permits");
+});
+
 test("pre-effect stale CAS and immutable-ID refusals leave the original dashboard host usable",async()=>{
  const w=await hostWorld(false),stale=await w.request("defer",{reason:"stale"},"stale"),first=await w.request("defer",{reason:"first"},"first");await w.host.action(first);
  await assert.rejects(w.host.action(stale),/stale dashboard selection\/CAS/);assert.equal((await w.host.frame()).acknowledgement,"readback-only");await w.host.action(await w.request("defer",{reason:"after-stale"},"after-stale"));

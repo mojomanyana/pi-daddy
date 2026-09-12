@@ -5,6 +5,56 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ---
 
+## 2026-09-12 — dashboard complete same-tip ordinary lifetime history repair
+
+Sol review found the 224 retained-key cap was incorrectly justified by one returned frame and could exhaust during
+ordinary sibling churn while a child remained active. The retained history now caps at 32,768: the ordinary port
+allows at most 1,024 rows and 1,024 cancellations, so attach, settlement and cancellation permit at most 3,072
+revision advances; at the daily maximum eight visible targets that is 24,576 revision-distinct cancellation meanings,
+leaving room for fixed controls. This is a history bound, not a transport-size claim. A production daily-host
+regression keeps one retained child active through 75 sibling attach/frame/settle/frame cycles and then cancels only
+that original target. The synthetic cap regression accumulates small batches to the exact boundary, proves a
+multi-key overflow mutates none, then assigns a previously refused key a different exact request in the remaining
+slot. Focused tests, typecheck and build pass. Per coordinator instruction the full suite is not rerun until
+independent approval; no test establishes dashboard UI acceptance or live measured behavior.
+
+## 2026-09-12 — dashboard abort-pending and bounded same-tip history repair
+
+Sol's next review found two bounded-control gaps. A child remains active after its original abort is requested until
+its original caller settles, so advertising it again created a changed native cancellation request that poisoned the
+host after its claim. Daily actions now exclude `abortRequested` rows. The immutable same-tip key map also needed a
+finite lifetime: it retains at most 224 meanings, covering 28 generations of the daily maximum eight active
+children within the 64 KiB frame bound; overflow refuses the whole new frame before map mutation or action
+publication. Red-first regressions cover delayed original settlement/no repeated cancellation and the exact
+same-tip history boundary/overflow with unchanged host-journal bytes. Focused dashboard tests, typecheck and
+build pass. Per coordinator instruction the full unit suite is not rerun until independent review approves this
+final behavior. No test evidence establishes dashboard UI acceptance or a live measured run.
+
+## 2026-09-12 — dashboard same-tip action identity repair
+
+Sol review found the first repaint repair could overwrite a displayed key's exact request at the same journal tip:
+an operator viewing the older frame could submit that key and execute the newer request. The host now keeps the
+first exact request meaning for each key within a tip, withholds a same-key changed request, and ignores a late
+frame captured at an older tip. Daily cancellation keys now include the ordinary revision, allowing a fresh frame to
+supply usable current targets after sibling attachment or settlement without remapping an older key. Command-time
+current-action, digest, revision, target and native authority validation remains unchanged; redraws write no journal
+records. Red-first tests cover F1 key→A then F2 key→B with no stale claim/effect, out-of-order async frames, and
+two active children whose stale first cancellation cannot affect either sibling while fresh revision-distinct actions
+cancel only their selected target. Test evidence does not establish dashboard UI acceptance or a live measured run.
+Independent Sol review remains coordinator-owned.
+
+## 2026-09-12 — dashboard live ordinary cancellation repaint repair
+
+Released 0.25.1 rejected a changed daily-host action digest at an unchanged host-journal tip. Ordinary child
+attachment and settlement change the cancellation candidates without writing that journal, so the frame silently
+returned no actions while retaining the exact cancellation authority elsewhere. The host now replaces its latest
+read-only displayed snapshot on every frame and retains the existing command-time revalidation of the current
+key, exact request digest, native revision and retained target. No frame/reconciliation write was added. A
+red-first daily-host regression covers initial controls, ordinary attach, same-tip changed frame, exact
+cancellation, settlement and refreshed controls; it passed after the repair. Typecheck, build and the full
+1,242-unit documented gate also pass. Test evidence does not establish dashboard UI acceptance or a live measured
+run. Independent Sol review remains for the coordinator.
+
 ## 2026-09-12 — 0.25.1 Herdr completion patch release preparation
 
 PR #44 merged as `233c495a88ee19e4a82203b50425700409807b91`, preserving independently

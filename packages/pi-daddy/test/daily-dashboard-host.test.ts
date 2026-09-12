@@ -6,6 +6,7 @@ import { appendDeclaredWorkOccurrence, declareWork, type DeclaredWorkState } fro
 import { parseWorkLedgerText } from "../src/work-ledger.ts";
 import { adoptDashboardHarnessBridge } from "../src/dashboard-harness.ts";
 import { startDailyDashboardHost } from "../src/daily-dashboard-host.ts";
+import { retainOrdinaryChild } from "../src/ordinary-children.ts";
 import { connectDashboardHost } from "../src/dashboard-host-transport.ts";
 import { connectedHarness } from "./dashboard-host-fixture.ts";
 import { ordinaryHostFixture } from "./ordinary-host-fixture.ts";
@@ -50,6 +51,70 @@ test("daily host offers case preparation only at explicit quiescent closing paus
  const running=await startDailyDashboardHost({id:"validation-closing",cwd:root,directory:join(root,"host"),declared,ordinary:child.port,harness,author:"operator",presence:()=>({present:true,closing:true,evidenceDigest:evidence,expiresAt:Date.now()+60_000})});
  try{const remote=connectDashboardHost(running.socketPath);let frame=await remote.frame() as any;assert.equal(frame.actions.some((x:any)=>x.key==="prepare-case-cards"),false);await remote.humanAction("pause-new-dispatch");frame=await remote.frame() as any;const prepare=frame.actions.find((x:any)=>x.key==="prepare-case-cards");assert.ok(prepare);const prepared=await running.host.humanAction(prepare.key) as any;assert.equal(prepared.result.state,"deferred");assert.equal(prepared.result.reason,"policy-unavailable");frame=await remote.frame() as any;assert.equal(frame.debrief,null);assert.equal(frame.attention.attentionUsed,0);assert.equal(frame.actions.some((x:any)=>x.key==="acknowledge-case-cards"),false);}
  finally{await running.close();await child.close();}
+});
+
+test("daily host redraw publishes an exact cancellation after ordinary attachment without a journal write", async () => {
+  const root=await tempDir("daily-dashboard-live-cancel-"),declared=await declareWork({cwd:root,id:"daily-live-cancel",outcome:"Redraw live cancellation controls without changing host history"});
+  const child=await ordinaryHostFixture(root),loadedRoot=join(root,"loaded");await mkdir(loadedRoot,{mode:0o700});const loaded=await connectedHarness(loadedRoot);
+  const harness=adoptDashboardHarnessBridge({version:"skill-harness-dashboard-bridge-v1",sourceCommit:"d123257e53d48a2cad6919708976b5371dc7590e",api:loaded.api});
+  const running=await startDailyDashboardHost({id:"validation-live-cancel",cwd:root,directory:join(root,"host"),declared,ordinary:child.port,harness,author:"operator"});
+  try {
+    const remote=connectDashboardHost(running.socketPath),initial=await remote.frame() as any;
+    assert.equal(initial.error,null);assert.deepEqual(initial.actions.map((x:any)=>x.key),["pause-new-dispatch","refresh-current-work"]);
+    const active=child.run("hold");await child.ready("hold");
+    const live=await remote.frame() as any,cancel=live.actions.find((x:any)=>String(x.key).startsWith("cancel-exec-"));
+    assert.equal(live.tip,initial.tip,"ordinary attachment must not need a host-journal write to repaint");assert.equal(live.error,null);assert.ok(cancel,"a redraw at the same host tip must publish the active child cancellation");
+    await remote.humanAction(cancel.key);
+    assert.match(String((await active).error),/cancelled|aborted/i);
+    const settled=await remote.frame() as any;
+    assert.equal(settled.error,null);assert.equal(settled.actions.some((x:any)=>x.key===cancel.key),false);assert.deepEqual(settled.actions.map((x:any)=>x.key),["pause-new-dispatch","refresh-current-work"]);
+  } finally {await running.close();await child.close();}
+});
+
+test("daily host gives revision-distinct exact cancellations when active siblings change", async () => {
+  const root=await tempDir("daily-dashboard-sibling-cancel-"),declared=await declareWork({cwd:root,id:"daily-sibling-cancel",outcome:"Keep displayed cancellation targets exact as siblings change"});
+  const child=await ordinaryHostFixture(root),loadedRoot=join(root,"loaded");await mkdir(loadedRoot,{mode:0o700});const loaded=await connectedHarness(loadedRoot);
+  const harness=adoptDashboardHarnessBridge({version:"skill-harness-dashboard-bridge-v1",sourceCommit:"d123257e53d48a2cad6919708976b5371dc7590e",api:loaded.api});
+  const running=await startDailyDashboardHost({id:"validation-sibling-cancel",cwd:root,directory:join(root,"host"),declared,ordinary:child.port,harness,author:"operator"});
+  try {
+    const remote=connectDashboardHost(running.socketPath),first=child.run("first");await child.ready("first");
+    const f1=await remote.frame() as any,oldCancel=f1.actions.find((x:any)=>String(x.key).startsWith("cancel-exec-"));assert.ok(oldCancel);
+    const sibling=child.run("sibling");await child.ready("sibling");const f2=await remote.frame() as any;
+    assert.equal(f2.actions.some((x:any)=>x.key===oldCancel.key),false,"a changed ordinary revision must not remap the old cancellation key");const before=JSON.stringify(child.port.inspect());
+    await assert.rejects(remote.humanAction(oldCancel.key),/dashboard refused or acknowledgement unknown/);assert.equal(JSON.stringify(child.port.inspect()),before,"a stale first display must not cancel either child");
+    const currentFirst=f2.actions.find((x:any)=>x.label===oldCancel.label);assert.ok(currentFirst,"a fresh frame must offer the first child at its current revision");await remote.humanAction(currentFirst.key);assert.match(String((await first).error),/cancelled|aborted/i);
+    assert.equal((child.port.inspect() as any).children.find((row:any)=>row.target.toolCallId==="call:sibling").state,"active","cancelling the first target must not cancel its sibling");
+    const f3=await remote.frame() as any,remaining=f3.actions.find((x:any)=>String(x.key).startsWith("cancel-exec-"));assert.ok(remaining,"a settlement revision must expose a fresh exact sibling cancellation");await remote.humanAction(remaining.key);assert.match(String((await sibling).error),/cancelled|aborted/i);
+    assert.deepEqual((await remote.frame() as any).actions.map((x:any)=>x.key),["pause-new-dispatch","refresh-current-work"]);
+  } finally {await running.close();await child.close();}
+});
+
+test("daily host retains a usable current cancellation through 75 same-tip sibling lifecycles", async () => {
+  const root=await tempDir("daily-dashboard-history-"),declared=await declareWork({cwd:root,id:"daily-history",outcome:"Retain exact controls across supported same-tip ordinary lifetimes"});
+  const child=await ordinaryHostFixture(root),loadedRoot=join(root,"loaded");await mkdir(loadedRoot,{mode:0o700});const loaded=await connectedHarness(loadedRoot);
+  const harness=adoptDashboardHarnessBridge({version:"skill-harness-dashboard-bridge-v1",sourceCommit:"d123257e53d48a2cad6919708976b5371dc7590e",api:loaded.api});
+  const first=retainOrdinaryChild(child.port,{executionId:"exec:22222222-2222-4222-8222-222222222222",parentExecutionId:null,toolCallId:"call:original"});
+  const running=await startDailyDashboardHost({id:"validation-history",cwd:root,directory:join(root,"host"),declared,ordinary:child.port,harness,author:"operator"});
+  try {
+    const remote=connectDashboardHost(running.socketPath);for(let index=0;index<75;index++){
+      const suffix=String(index).padStart(12,"0"),sibling=retainOrdinaryChild(child.port,{executionId:`exec:33333333-3333-4333-8333-${suffix}`,parentExecutionId:null,toolCallId:`call:sibling-${index}`});
+      assert.ok((await remote.frame() as any).actions.some((action:any)=>String(action.key).startsWith("cancel-exec-")));sibling.settle({state:"settled"},"not-assessed");assert.ok((await remote.frame() as any).actions.some((action:any)=>String(action.key).startsWith("cancel-exec-")));
+    }
+    const frame=await remote.frame() as any,cancel=frame.actions.find((action:any)=>String(action.label).includes("22222222-2222-4222-8222-222222222222"));assert.ok(cancel,"the original child must retain a fresh exact cancellation after cumulative sibling churn");await remote.humanAction(cancel.key);assert.equal(first.signal.aborted,true);assert.equal((child.port.inspect() as any).children.find((row:any)=>row.target.toolCallId==="call:original").abortRequested,true);assert.equal((child.port.inspect() as any).children.filter((row:any)=>row.target.toolCallId?.startsWith("call:sibling-")).every((row:any)=>row.state==="settled"),true,"the current cancellation must not affect settled siblings");
+  } finally {first.settle({state:"settled"},"not-assessed");await running.close();await child.close();}
+});
+
+test("daily host stops advertising an abort-requested child until its original caller settles", async () => {
+  const root=await tempDir("daily-dashboard-abort-pending-"),declared=await declareWork({cwd:root,id:"daily-abort-pending",outcome:"Do not repeat cancellation while original settlement is pending"});
+  const child=await ordinaryHostFixture(root),loadedRoot=join(root,"loaded");await mkdir(loadedRoot,{mode:0o700});const loaded=await connectedHarness(loadedRoot);
+  const harness=adoptDashboardHarnessBridge({version:"skill-harness-dashboard-bridge-v1",sourceCommit:"d123257e53d48a2cad6919708976b5371dc7590e",api:loaded.api});
+  const retained=retainOrdinaryChild(child.port,{executionId:"exec:11111111-1111-4111-8111-111111111111",parentExecutionId:null,toolCallId:"call:delayed-settlement"});
+  const running=await startDailyDashboardHost({id:"validation-abort-pending",cwd:root,directory:join(root,"host"),declared,ordinary:child.port,harness,author:"operator"});
+  try {
+    const remote=connectDashboardHost(running.socketPath),first=await remote.frame() as any,cancel=first.actions.find((x:any)=>String(x.key).startsWith("cancel-exec-"));assert.ok(cancel);await remote.humanAction(cancel.key);
+    const pending=await remote.frame() as any;assert.equal((child.port.inspect() as any).children[0].abortRequested,true);assert.equal(pending.actions.some((x:any)=>x.key.startsWith("cancel-exec-")),false,"an abort-requested original child must not be advertised again before settlement");
+    await remote.humanAction("refresh-current-work");assert.equal((await remote.frame() as any).acknowledgement,"readback-only","withholding the repeated control keeps the host usable");
+  } finally {retained.settle({state:"settled"},"not-assessed");await running.close();await child.close();}
 });
 
 test("daily host publishes deliberate cancellation for an exact active attempt", async () => {
