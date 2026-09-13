@@ -17,7 +17,7 @@ export async function preparePrivateHostRoot(root:string):Promise<void>{
  if(!state.isDirectory()||state.isSymbolicLink()||(state.mode&0o077n)!==0n||state.uid!==BigInt(process.getuid?.()??-1)||await realpath(root)!==root)throw Error("owner-private non-symlink host state root required");
 }
 
-export function createDailyDashboardSession(input:{ordinary:()=>OrdinaryChildren;declared:()=>DeclaredWorkState|undefined;rebind:(state:DeclaredWorkState)=>void;cwd:()=>string;env:Record<string,string|undefined>;author:string}){
+export function createDailyDashboardSession(input:{ordinary:()=>OrdinaryChildren;declared:()=>DeclaredWorkState|undefined;rebind:(state:DeclaredWorkState)=>void;cwd:()=>string;env:Record<string,string|undefined>;author:string;home?:string}){
  let current:null|Awaited<ReturnType<typeof startDailyDashboardHost>>=null,publishedSocket:string|undefined,closing:null|{present:true;closing:true;evidenceDigest:string;expiresAt:number}=null;
  return Object.freeze({
   async run(target:string){
@@ -27,9 +27,9 @@ export function createDailyDashboardSession(input:{ordinary:()=>OrdinaryChildren
    if(target==="closing"){if(!current)throw Error("daily host is not running");const expiresAt=Date.now()+120_000;closing={present:true,closing:true,evidenceDigest:createHash("sha256").update(`${input.cwd()}\0${expiresAt}\0${randomUUID()}`).digest("hex"),expiresAt};return "explicit closing presence recorded for two minutes; pause new dispatch and finish/cancel active attempts, then choose prepare-case-cards in the dashboard. No card is counted as delivered until visibly acknowledged.";}
    if(!idPattern.test(target))throw Error("usage — /grants host <fresh-id> | closing | stop");if(current)throw Error("daily host already running in this session; use closing or stop");
    const declared=input.declared();if(!declared)throw Error("declare current work first with pi-daddy work add, then reload");
-   const bridge=(globalThis as Record<PropertyKey,unknown>)[BRIDGE];if(!bridge)throw Error("loaded skill-harness extension bridge unavailable; load the candidate skill-harness extension in this Pi session");
-   const paths=dailyDashboardPaths(input.cwd(),target),root=join(homedir(),".local","state","pi-daddy","hosts");await preparePrivateHostRoot(root);await mkdir(paths.socketDirectory,{recursive:true,mode:0o700});
+   const home=input.home??homedir(),paths=dailyDashboardPaths(input.cwd(),target,home),root=join(home,".local","state","pi-daddy","hosts");await preparePrivateHostRoot(root);await mkdir(paths.socketDirectory,{recursive:true,mode:0o700});
    try{await lstat(paths.directory);throw Error(`host ID ${target} already has preserved state; choose a fresh host ID (the existing state was not opened, deleted or reused)`);}catch(error){if((error as NodeJS.ErrnoException).code!=="ENOENT")throw error;}
+   const bridge=(globalThis as Record<PropertyKey,unknown>)[BRIDGE];if(!bridge)throw Error("loaded skill-harness extension bridge unavailable; load the candidate skill-harness extension in this Pi session");
    try{current=await startDailyDashboardHost({id:target,cwd:input.cwd(),directory:paths.directory,socketPath:paths.socketPath,declared,ordinary:input.ordinary(),harness:adoptDashboardHarnessBridge(bridge) as never,author:input.author,presence:()=>closing,onDeclaredWorkChanged:input.rebind});}catch(error){if((error as NodeJS.ErrnoException).code==="EEXIST")throw Error(`host ID ${target} could not start because state already exists; choose a fresh host ID. Existing state was preserved.`);throw error;}
    publishedSocket=current.socketPath;input.env[ENV_DASHBOARD_HOST_SOCKET]=publishedSocket;
    return `daily host started at ${publishedSocket}; current declared work/facts were captured. Run /grants dashboard, then use only its listed pause/resume/refresh/cancel/scope/priority/alternative action keys. Runtime remains unaccepted.`;

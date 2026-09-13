@@ -143,6 +143,18 @@ test("work add refuses incomplete and unknown arguments without writing", () => 
   });
 });
 
+test("init refuses existing non-directory and symlink .pi state without following or changing it", async () => {
+  const root = await tempDir("init-existing-pi-"), fileProject = join(root, "file"), linkProject = join(root, "link"), target = join(root, "target");
+  await mkdir(fileProject); await writeFile(join(fileProject, ".pi"), "preserve");
+  const fileResult = await applyInit(planInit([], fileProject, []));
+  assert.match(fileResult.failed[0]?.error ?? "", /not a directory/);
+  assert.equal(await readFile(join(fileProject, ".pi"), "utf8"), "preserve");
+  await mkdir(linkProject); await mkdir(target); await symlink(target, join(linkProject, ".pi"));
+  const linkResult = await applyInit(planInit([], linkProject, []));
+  assert.match(linkResult.failed[0]?.error ?? "", /not a directory/);
+  assert.equal(await (await import("node:fs/promises")).readlink(join(linkProject, ".pi")), target);
+});
+
 test("a declared ceiling is copied VERBATIM — the author's declaration is the ceiling", async () => {
   const cwd = await project();
   await skillPackage(cwd, "pkg-a", "1.0.0", { review: DECLARED });

@@ -38,16 +38,12 @@ import { grantsCommand } from "./grants-command.ts";
 import { runInit } from "./init-command.ts";
 import { planWithApprovals } from "./run-delegation.ts";
 import { createGrantsSession, loadProjectDefinitions, type GrantsSession } from "./session.ts";
+import { markReload } from "./reload-environment.ts";
 import { resolveExecutor } from "./executor-session.ts";
 import { reportSessionStart } from "./session-report.ts";
 import { SPAWN_TOOLS, tripwireReason } from "./tripwire.ts";
 import { reportGrantStoreRefusal } from "./grant-store-refusal.ts";
-import {
-  defaultDashboardPaths,
-  offerDashboardHandshake,
-  openDashboardCommand,
-} from "../src/dashboard-handshake.ts";
-
+import { defaultDashboardPaths, offerDashboardHandshake, openDashboardCommand } from "../src/dashboard-handshake.ts";
 import { associateOrdinaryHost, ordinaryChildrenFor } from "../src/ordinary-children.ts";
 import { loadDeclaredWork } from "../src/work-command.ts";
 import { createDailyDashboardSession } from "./daily-dashboard-session.ts";
@@ -250,7 +246,10 @@ export default function (pi: ExtensionAPI) {
    * `exit` remains the backstop. SIGKILL still orphans panes, exactly as R-62 records, and no signal handler is
    * installed here for the reason R-62 gives: it would turn pi's "interrupt this turn" into "exit pi".
    */
-  pi.on("session_shutdown", async () => { await dailyHost.close().catch(() => undefined); });
+  pi.on("session_shutdown", async (event) => {
+    if ((event as { reason?: unknown })?.reason === "reload") markReload(session.reloadLifecycle);
+    await dailyHost.close().catch(() => undefined);
+  });
 
   pi.on("agent_settled", async () => {
     try {

@@ -64,9 +64,9 @@ export function dashboardActionFeedback(command:string,outcome:unknown):string{
   const state=typeof value.state==="string"?value.state:"unrecognised host response";
   if(state==="failed-or-unknown"||state==="readback-only")return `NO ACTION CLAIM: ${command} returned ${state}; inspect/reconcile explicitly.`;
   if(state!=="acknowledged")return `NOT APPLIED: ${command} returned ${state}.`;
-  const result=value.result&&typeof value.result==="object"?value.result as {application?:unknown;records?:unknown}:null;
-  const application=typeof result?.application==="string"?result.application:Array.isArray(result?.records)?result.records.find((record:unknown)=>record&&typeof record==="object"&&typeof (record as {application?:unknown}).application==="string") as {application?:string}|undefined:undefined;
-  const nativeApplication=typeof application==="string"?application:application?.application;
+  const result=value.result&&typeof value.result==="object"?value.result as {application?:unknown}:null;
+  // A retained records[] snapshot has no outer dashboard request correlation. Never select an old receipt.
+  const nativeApplication=typeof result?.application==="string"?result.application:undefined;
   if(nativeApplication==="applied")return `ACKNOWLEDGED: ${command}; native application applied.`;
   if(nativeApplication)return `ACKNOWLEDGED: ${command}; native application ${nativeApplication}, so no applied effect is claimed.`;
   return `ACKNOWLEDGED: ${command}; refreshed state is shown below (no native application claim).`;

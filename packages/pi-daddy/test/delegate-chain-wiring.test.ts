@@ -19,6 +19,8 @@ import { ENV_FANOUT, ENV_GATED, ENV_GRANT, ENV_LEDGER } from "../src/propagation
 import { parseDashboardLedger } from "../src/dashboard-projection.ts";
 import { definition, harness, restoreEnv } from "./chain-harness.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
+import { planDelegation } from "../src/delegate.ts";
+import { chainStepSpec } from "../src/chain.ts";
 
 after(cleanupTempDirs);
 afterEach(restoreEnv);
@@ -83,6 +85,13 @@ test("delegate_chain exposes and forwards the same bounded thinking levels as de
   const { tools } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate" });
   const step = (tools.get("delegate_chain")!.parameters as any).properties.steps.items;
   assert.deepEqual(step.properties.thinking.anyOf.map((value: any) => value.const), ["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
+});
+
+test("delegate_chain preserves each requested thinking level through planning into that child's argv", async () => {
+  const step = chainStepSpec({ task: "inspect {previous}", tools: ["read"], model: "known/model", thinking: "high" }, "prior output");
+  const planned = planDelegation(step, { ownGrant: ["tool:read"], depth: 0, maxDepth: 2, gated: [], definitions: new Map() });
+  assert.equal(planned.ok, true);
+  assert.deepEqual(planned.args.slice(planned.args.indexOf("--thinking"), planned.args.indexOf("--thinking") + 2), ["--thinking", "high"]);
 });
 
 test("ADR-0033: a chain longer than the budget is refused BEFORE any dialog", async () => {

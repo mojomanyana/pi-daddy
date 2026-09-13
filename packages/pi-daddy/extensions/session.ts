@@ -49,7 +49,7 @@ import { storedGrantSessionState } from "./stored-grant-session.ts";
 import { nativeSessionRootFromEnv, type NativeSessionHost } from "../src/native-session-target.ts";
 import { ENV_ALLOW_UNRESOLVED_MODELS } from "../src/model-preflight.ts";
 import type { DeclaredWorkState } from "../src/work-command.ts";
-import { rememberChildPublication, sourceEnvironment } from "./reload-environment.ts";
+import { beginExtensionLifecycle, rememberChildPublication, type ReloadLifecycle } from "./reload-environment.ts";
 /**
  * Run governed children in herdr panes instead of captured child processes.
  *
@@ -131,6 +131,8 @@ export interface GrantsSession extends NativeSessionHost {
   declaredWork?: DeclaredWorkState; // Explicit operator selection; absence leaves execution visibly unbound.
   /** Primary-return fan-outs retained by this original session; bounded and human-readable via /grants variants. */
   readonly variantRuns: Map<string, VariantRunAccounting>;
+  /** Root identity retained only until Pi's explicit reload shutdown hands it to the next extension instance. */
+  readonly reloadLifecycle: ReloadLifecycle;
 
   /** Approval keys approved for this session. In memory only — this dies with the process. */
   readonly sessionApprovals: Set<string>;
@@ -239,8 +241,10 @@ export async function loadProjectDefinitions(session: GrantsSession, cwd: string
   session.catalog = await session.catalogReady;
 }
 
-export function createGrantsSession(extensionPath: string | undefined): GrantsSession {
-  const environment = sourceEnvironment();
+export function createGrantsSession(extensionPath: string | undefined, lifecycle?: ReloadLifecycle): GrantsSession {
+  const started = lifecycle ? undefined : beginExtensionLifecycle();
+  const activeLifecycle = lifecycle ?? started!.lifecycle;
+  const environment = lifecycle ? process.env : started!.environment;
   // Governance is opt-in: with PI_GRANTS_GRANT unset AND no stored grant for this directory, the session
   // holds the wildcard and nothing is blocked. This extension must never silently tighten a normal
   // workflow.
@@ -312,6 +316,7 @@ export function createGrantsSession(extensionPath: string | undefined): GrantsSe
     modelResolutionCache: new Map<string, boolean>(),
     extensionPath,
     variantRuns: new Map(),
+    reloadLifecycle: activeLifecycle,
 
     sessionApprovals: new Set<string>(),
     sessionApprovalBindings: new Map<string, ApprovalBinding>(),
@@ -381,7 +386,7 @@ export function createGrantsSession(extensionPath: string | undefined): GrantsSe
         governed: session.governed,
       });
       for (const [key, value] of Object.entries(env)) process.env[key] = value;
-      rememberChildPublication();
+      rememberChildPublication(activeLifecycle);
     },
   };
 

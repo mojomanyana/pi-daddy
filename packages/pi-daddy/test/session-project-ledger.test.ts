@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { after, test } from "node:test";
+import grantsExtension from "../extensions/grants.ts";
 import { createGrantsSession } from "../extensions/session.ts";
+import { markReload } from "../extensions/reload-environment.ts";
 import { grantStorePath, projectLedgerPath, saveGrant } from "../src/grant-store.ts";
 import { GRANT_ENV_KEYS } from "../src/propagation.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
@@ -49,8 +51,6 @@ test("extension reload keeps a root at depth zero while a real child environment
   const originalCwd = process.cwd();
   const keys = [...GRANT_ENV_KEYS, "PI_CODING_AGENT_DIR"] as const;
   const original = new Map(keys.map(key => [key, process.env[key]]));
-  const marker = Symbol.for("pi-daddy.root-governance-environment.v1");
-  const originalMarker = (globalThis as Record<PropertyKey, unknown>)[marker];
   try {
     process.chdir(cwd);
     for (const key of keys) delete process.env[key];
@@ -61,21 +61,70 @@ test("extension reload keeps a root at depth zero while a real child environment
     first.publishChildEnv();
     assert.equal(process.env.PI_GRANTS_DEPTH, "1", "the first lifecycle publishes child-only state");
 
+    markReload(first.reloadLifecycle);
     const reloaded = createGrantsSession(undefined);
-    assert.equal(reloaded.depth, 0, "a same-process extension reload must recover root identity");
+    assert.equal(reloaded.depth, 0, "a same-owner extension reload must recover root identity");
     assert.equal(reloaded.maxDepth, 2);
 
-    // A separately initialized process has no same-process publication marker, so its inherited depth stays real.
-    delete (globalThis as Record<PropertyKey, unknown>)[marker];
+    // An explicit root replacement must become the new baseline, including its inherited-approval provenance.
+    process.env.PI_GRANTS_GRANT = "tool:read";
+    delete process.env.PI_GRANTS_DEPTH;
+    process.env.PI_GRANTS_MAX_DEPTH = "1";
+    process.env.PI_GRANTS_APPROVED = "tool:read@<delegate>";
+    const narrowed = createGrantsSession(undefined);
+    assert.deepEqual(narrowed.inherited, ["tool:read"]);
+    assert.equal(narrowed.maxDepth, 1);
+    assert.ok(narrowed.inheritedApprovals.has("tool:read@<delegate>"));
+    narrowed.publishChildEnv();
+    markReload(narrowed.reloadLifecycle);
+    const narrowedReload = createGrantsSession(undefined);
+    assert.deepEqual(narrowedReload.inherited, ["tool:read"], "reload must not restore the earlier wider root grant");
+    assert.equal(narrowedReload.maxDepth, 1);
+    assert.ok(narrowedReload.inheritedApprovals.has("tool:read@<delegate>"));
+
+    // A separately initialized SDK session has a distinct owner even in the same JavaScript realm.
     const child = createGrantsSession(undefined);
     assert.equal(child.depth, 1, "a genuine child retains the parent-published depth limit");
+    assert.equal(child.maxDepth, 1);
+    assert.ok(child.inheritedApprovals.has("tool:read@<delegate>"));
   } finally {
     process.chdir(originalCwd);
     for (const key of keys) {
       const value = original.get(key);
       value === undefined ? delete process.env[key] : process.env[key] = value;
     }
-    originalMarker === undefined ? delete (globalThis as Record<PropertyKey, unknown>)[marker] : (globalThis as Record<PropertyKey, unknown>)[marker] = originalMarker;
+  }
+});
+
+test("actual extension reload is owned by its Pi API, not a same-process SDK child's environment", async () => {
+  const cwd = await tempDir("grants-reload-lifecycle-"), agentDir = await tempDir("grants-reload-lifecycle-agent-");
+  const originalCwd = process.cwd(), keys = [...GRANT_ENV_KEYS, "PI_CODING_AGENT_DIR", "PI_GRANTS_HERDR"] as const;
+  const original = new Map(keys.map(key => [key, process.env[key]]));
+  const makePi = () => {
+    const hooks = new Map<string, any>();
+    return { hooks, api: { on: (name: string, handler: any) => hooks.set(name, handler), registerTool: () => {}, registerCommand: () => {}, getAllTools: () => [{ name: "read" }, { name: "delegate" }] } };
+  };
+  const start = async (pi: ReturnType<typeof makePi>) => {
+    const notices: string[] = [];
+    grantsExtension(pi.api as never);
+    await pi.hooks.get("session_start")({}, { cwd, mode: "json", ui: { notify: (message: string) => notices.push(message), select: async () => undefined }, modelRegistry: { find: () => undefined } });
+    return notices.join("\n");
+  };
+  try {
+    process.chdir(cwd); for (const key of keys) delete process.env[key];
+    process.env.PI_CODING_AGENT_DIR = agentDir; process.env.PI_GRANTS_HERDR = "0";
+    await saveGrant(cwd, ["tool:read", "tool:delegate"]);
+    const root = makePi();
+    await start(root); // publishes child depth 1
+    await root.hooks.get("session_shutdown")({ reason: "reload" });
+    const reloadedApi = makePi();
+    const reload = await start(reloadedApi);
+    assert.match(reload, /depth 0\/2/, "Pi's shutdown/reload lifecycle recovers root identity across a new API object");
+    const child = makePi();
+    const childStart = await start(child);
+    assert.match(childStart, /depth 1\/2/, "a different same-process SDK Pi session remains an inherited child");
+  } finally {
+    process.chdir(originalCwd); for (const key of keys) { const value = original.get(key); value === undefined ? delete process.env[key] : process.env[key] = value; }
   }
 });
 

@@ -35,6 +35,7 @@ test("dashboard feedback never upgrades host readback, unknown or pending result
   assert.match(dashboardActionFeedback("revise-scope", { state: "acknowledged", result: { application: "not-applied" } }), /no applied effect is claimed/);
   assert.match(dashboardActionFeedback("revise-scope", { state: "acknowledged", result: { application: "pending-ordinary-boundary" } }), /no applied effect is claimed/);
   assert.match(dashboardActionFeedback("pause-new-dispatch", { state: "acknowledged", result: { application: "applied" } }), /native application applied/);
+  assert.doesNotMatch(dashboardActionFeedback("resume-dispatch", { state: "acknowledged", result: { records: [{ request: { requestId: "old" }, application: "applied" }, { request: { requestId: "current" }, application: "pending" }] } }), /native application applied/, "uncorrelated historical records cannot speak for the current dashboard command");
 });
 
 test("an incompatible core/plugin protocol is loud and renders no guessed tree", async () => {
