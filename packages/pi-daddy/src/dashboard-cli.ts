@@ -243,11 +243,10 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
     const rendered = feedback ? `${frame}\n\n${feedback}` : frame;
     if (rendered === previous && !clear) return;
     previous = rendered;
-    process.stdout.write(clear ? `\u001b]0;PI-DADDY\u0007\u001b[2J\u001b[H${rendered}\n\n` : `${rendered}\n`);
-    if (input) {
-      input.setPrompt("COMMAND — type an exact listed key, then Enter (refresh never acts): ");
-      input.prompt(true); // preserves readline's unfinished line across each refresh.
-    }
+    const prompt = "COMMAND — type an exact listed key, then Enter (refresh never acts): ";
+    const draft = input?.line ?? "";
+    process.stdout.write(clear ? `\u001b]0;PI-DADDY\u0007\u001b[2J\u001b[H${rendered}\n\n${input ? prompt + draft : ""}` : `${rendered}\n`);
+    if (input) input.setPrompt(prompt);
   };
 
   if (cli.once) {

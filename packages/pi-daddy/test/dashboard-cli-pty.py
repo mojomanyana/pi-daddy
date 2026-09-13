@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Model-free PTY regression for dashboard readline redraw/feedback/replay behavior."""
-import json, os, pty, select, socket, subprocess, sys, tempfile, threading, time
+import json, os, pty, re, select, socket, subprocess, sys, tempfile, threading, time
 
 root=os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 tmp=tempfile.mkdtemp(prefix="pi-daddy-dashboard-pty-")
@@ -30,14 +30,11 @@ def read(seconds):
 out=read(.5);os.write(master,b"pau");out+=read(.7)
 # Interpret the last clear/home redraw as the visible terminal screen, not historical terminal echo.
 visible=out.rsplit("\x1b[2J\x1b[H",1)[-1]
-while "\x1b[" in visible:
- start=visible.index("\x1b[");end=visible.find("m",start)
- if end<0: break
- visible=visible[:start]+visible[end+1:]
+visible=re.sub(r"\x1b\][^\x07]*\x07|\x1b\[[0-?]*[ -/]*[@-~]", "", visible)
 assert "COMMAND — type an exact listed key, then Enter (refresh never acts): pau" in visible, visible
 os.write(master,b"se\n");os.write(master,b"pause\n");out+=read(1.1)
 assert actions==["pause"], actions
 assert "HOST ERROR — fixture host error" in out, out
 assert "pending-ordinary-boundary, so no applied effect is claimed" in out, out
-os.write(master,b"\x03");p.wait(timeout=3);os.close(master)
+p.terminate();p.wait(timeout=3);os.close(master)
 print("PTY_OK",json.dumps({"actions":actions,"bytes":len(out)}))
