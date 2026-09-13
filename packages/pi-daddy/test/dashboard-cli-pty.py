@@ -28,7 +28,13 @@ def read(seconds):
   if ready: out+=os.read(master,65536)
  return out.decode(errors="replace")
 out=read(.5);os.write(master,b"pau");out+=read(.7)
-assert "pau" in out, out
+# Interpret the last clear/home redraw as the visible terminal screen, not historical terminal echo.
+visible=out.rsplit("\x1b[2J\x1b[H",1)[-1]
+while "\x1b[" in visible:
+ start=visible.index("\x1b[");end=visible.find("m",start)
+ if end<0: break
+ visible=visible[:start]+visible[end+1:]
+assert "COMMAND — type an exact listed key, then Enter (refresh never acts): pau" in visible, visible
 os.write(master,b"se\n");os.write(master,b"pause\n");out+=read(1.1)
 assert actions==["pause"], actions
 assert "HOST ERROR — fixture host error" in out, out
