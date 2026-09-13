@@ -38,7 +38,8 @@ import { grantsCommand } from "./grants-command.ts";
 import { runInit } from "./init-command.ts";
 import { planWithApprovals } from "./run-delegation.ts";
 import { createGrantsSession, loadProjectDefinitions, type GrantsSession } from "./session.ts";
-import { markReload } from "./reload-environment.ts";
+import { bindReloadLifecycle } from "./reload-environment.ts";
+import { reconcileActiveDelegationTools } from "./delegation-activation.ts";
 import { resolveExecutor } from "./executor-session.ts";
 import { reportSessionStart } from "./session-report.ts";
 import { SPAWN_TOOLS, tripwireReason } from "./tripwire.ts";
@@ -58,7 +59,6 @@ export default function (pi: ExtensionAPI) {
       return undefined;
     }
   })();
-
   const session = createGrantsSession(extensionPath);
   associateOrdinaryHost(pi,session);
   const dailyHost=createDailyDashboardSession({ordinary:()=>ordinaryChildrenFor(pi),declared:()=>session.declaredWork,rebind:state=>{session.declaredWork=state;},cwd:()=>session.cwd,env:process.env,author:"local-operator"});
@@ -66,7 +66,6 @@ export default function (pi: ExtensionAPI) {
   const dashboardPaths = defaultDashboardPaths(
     process.env.PI_CODING_AGENT_DIR?.trim() || join(homedir(), ".pi", "agent"),
   );
-
   // Filled in by `registerDelegationTools` at the bottom of this function. A holder rather than a reordering,
   // because the hooks below have to be registered before the tools and both need to call it — the tool
   // schemas describe which definitions are spawnable, and nothing knows that until a hook has run (R-39).
@@ -74,6 +73,12 @@ export default function (pi: ExtensionAPI) {
   const publishedDailyWork: PublishedDailyWork = {};
 
   pi.on("session_start", async (_event, ctx) => {
+    // Real SDK contexts always supply SessionManager. The fallback keeps lightweight wiring fixtures
+    // isolated; it cannot carry state into another extension instance.
+    const owner = (ctx as { sessionManager?: object }).sessionManager ?? session;
+    const reload = bindReloadLifecycle(owner, session.reloadLifecycle);
+    session.reconcileEnvironment(reload.environment, reload.lifecycle);
+    reconcileActiveDelegationTools(pi, session);
     session.cwd = ctx.cwd;
     // A routed child changes cwd. Publishing a relative ledger string unchanged therefore fragments one
     // execution tree across workspaces. Resolve it once at the root's actual pi cwd; descendants inherit
@@ -246,8 +251,7 @@ export default function (pi: ExtensionAPI) {
    * `exit` remains the backstop. SIGKILL still orphans panes, exactly as R-62 records, and no signal handler is
    * installed here for the reason R-62 gives: it would turn pi's "interrupt this turn" into "exit pi".
    */
-  pi.on("session_shutdown", async (event) => {
-    if ((event as { reason?: unknown })?.reason === "reload") markReload(session.reloadLifecycle);
+  pi.on("session_shutdown", async () => {
     await dailyHost.close().catch(() => undefined);
   });
 
@@ -340,13 +344,9 @@ export default function (pi: ExtensionAPI) {
     return { block: true, reason };
   });
 
-  // Governed delegation. Unlike the tripwire above this PROVISIONS: the grant is an argument, so the
-  // orchestrator hands each child exactly the capabilities it should have. Registered only when this
-  // session may delegate, so withholding `tool:delegate` genuinely makes a session a leaf.
-  //
-  // Registration necessarily happens HERE, before any hook has run, so the tools cannot yet know which
-  // definitions exist — hence `refreshSpawnable`, called from both hooks above once they do. R-39 is what
-  // happens without it: every model in every governed session is told `Available: none`.
+  // Definitions are registered before session_start because Pi builds the tool registry in the factory.
+  // They remain inactive until the owner-bound session_start reconciliation above decides this session may
+  // delegate; this is what prevents a foreign reload environment from widening authority.
   delegation.refreshSpawnable = registerDelegationTools(pi, session).refreshSpawnable;
 
   pi.registerCommand("grants", {

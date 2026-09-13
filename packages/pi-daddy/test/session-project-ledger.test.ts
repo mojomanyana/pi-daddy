@@ -4,7 +4,7 @@ import { dirname } from "node:path";
 import { after, test } from "node:test";
 import grantsExtension from "../extensions/grants.ts";
 import { createGrantsSession } from "../extensions/session.ts";
-import { markReload } from "../extensions/reload-environment.ts";
+import { bindReloadLifecycle } from "../extensions/reload-environment.ts";
 import { grantStorePath, projectLedgerPath, saveGrant } from "../src/grant-store.ts";
 import { GRANT_ENV_KEYS } from "../src/propagation.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
@@ -46,7 +46,7 @@ test("an invalid project store creates a refused governed session instead of a w
   }
 });
 
-test("extension reload keeps a root at depth zero while a real child environment remains inherited", async () => {
+test("owner-bound reload restores its root while a distinct owner keeps inherited child state", async () => {
   const cwd = await tempDir("grants-reload-root-"), agentDir = await tempDir("grants-reload-agent-");
   const originalCwd = process.cwd();
   const keys = [...GRANT_ENV_KEYS, "PI_CODING_AGENT_DIR"] as const;
@@ -56,37 +56,43 @@ test("extension reload keeps a root at depth zero while a real child environment
     for (const key of keys) delete process.env[key];
     process.env.PI_CODING_AGENT_DIR = agentDir;
     await saveGrant(cwd, ["tool:read"]);
-    const first = createGrantsSession(undefined);
-    assert.equal(first.depth, 0);
+    const owner = {}, first = createGrantsSession(undefined);
+    let bound = bindReloadLifecycle(owner, first.reloadLifecycle);
+    first.reconcileEnvironment(bound.environment, bound.lifecycle);
     first.publishChildEnv();
-    assert.equal(process.env.PI_GRANTS_DEPTH, "1", "the first lifecycle publishes child-only state");
+    assert.equal(process.env.PI_GRANTS_DEPTH, "1", "the first owner publishes child-only state");
 
-    markReload(first.reloadLifecycle);
     const reloaded = createGrantsSession(undefined);
-    assert.equal(reloaded.depth, 0, "a same-owner extension reload must recover root identity");
+    bound = bindReloadLifecycle(owner, reloaded.reloadLifecycle);
+    reloaded.reconcileEnvironment(bound.environment, bound.lifecycle);
+    assert.equal(reloaded.depth, 0, "the same owner recovers its root rather than its child publication");
     assert.equal(reloaded.maxDepth, 2);
 
-    // An explicit root replacement must become the new baseline, including its inherited-approval provenance.
+    // A root replacement is accepted only when it is not a package publication from any owner.
     process.env.PI_GRANTS_GRANT = "tool:read";
     delete process.env.PI_GRANTS_DEPTH;
     process.env.PI_GRANTS_MAX_DEPTH = "1";
     process.env.PI_GRANTS_APPROVED = "tool:read@<delegate>";
     const narrowed = createGrantsSession(undefined);
+    bound = bindReloadLifecycle(owner, narrowed.reloadLifecycle);
+    narrowed.reconcileEnvironment(bound.environment, bound.lifecycle);
     assert.deepEqual(narrowed.inherited, ["tool:read"]);
     assert.equal(narrowed.maxDepth, 1);
     assert.ok(narrowed.inheritedApprovals.has("tool:read@<delegate>"));
     narrowed.publishChildEnv();
-    markReload(narrowed.reloadLifecycle);
+
     const narrowedReload = createGrantsSession(undefined);
-    assert.deepEqual(narrowedReload.inherited, ["tool:read"], "reload must not restore the earlier wider root grant");
+    bound = bindReloadLifecycle(owner, narrowedReload.reloadLifecycle);
+    narrowedReload.reconcileEnvironment(bound.environment, bound.lifecycle);
+    assert.deepEqual(narrowedReload.inherited, ["tool:read"], "reload keeps the explicit narrowing");
     assert.equal(narrowedReload.maxDepth, 1);
     assert.ok(narrowedReload.inheritedApprovals.has("tool:read@<delegate>"));
 
-    // A separately initialized SDK session has a distinct owner even in the same JavaScript realm.
     const child = createGrantsSession(undefined);
-    assert.equal(child.depth, 1, "a genuine child retains the parent-published depth limit");
+    bound = bindReloadLifecycle({}, child.reloadLifecycle);
+    child.reconcileEnvironment(bound.environment, bound.lifecycle);
+    assert.equal(child.depth, 1, "a distinct owner starts from the published child state");
     assert.equal(child.maxDepth, 1);
-    assert.ok(child.inheritedApprovals.has("tool:read@<delegate>"));
   } finally {
     process.chdir(originalCwd);
     for (const key of keys) {
@@ -100,27 +106,27 @@ test("actual extension reload is owned by its Pi API, not a same-process SDK chi
   const cwd = await tempDir("grants-reload-lifecycle-"), agentDir = await tempDir("grants-reload-lifecycle-agent-");
   const originalCwd = process.cwd(), keys = [...GRANT_ENV_KEYS, "PI_CODING_AGENT_DIR", "PI_GRANTS_HERDR"] as const;
   const original = new Map(keys.map(key => [key, process.env[key]]));
-  const makePi = () => {
-    const hooks = new Map<string, any>();
-    return { hooks, api: { on: (name: string, handler: any) => hooks.set(name, handler), registerTool: () => {}, registerCommand: () => {}, getAllTools: () => [{ name: "read" }, { name: "delegate" }] } };
+  const makePi = (sessionManager: object) => {
+    const hooks = new Map<string, any>(), active = new Set(["read", "bash", "edit", "write"]);
+    return { hooks, api: { on: (name: string, handler: any) => hooks.set(name, handler), registerTool: () => {}, registerCommand: () => {}, getAllTools: () => [{ name: "read" }, { name: "delegate" }], getActiveTools: () => [...active], setActiveTools: (names: string[]) => { active.clear(); names.forEach(name => active.add(name)); } }, sessionManager };
   };
   const start = async (pi: ReturnType<typeof makePi>) => {
     const notices: string[] = [];
     grantsExtension(pi.api as never);
-    await pi.hooks.get("session_start")({}, { cwd, mode: "json", ui: { notify: (message: string) => notices.push(message), select: async () => undefined }, modelRegistry: { find: () => undefined } });
+    await pi.hooks.get("session_start")({}, { cwd, mode: "json", sessionManager: pi.sessionManager, ui: { notify: (message: string) => notices.push(message), select: async () => undefined }, modelRegistry: { find: () => undefined } });
     return notices.join("\n");
   };
   try {
     process.chdir(cwd); for (const key of keys) delete process.env[key];
     process.env.PI_CODING_AGENT_DIR = agentDir; process.env.PI_GRANTS_HERDR = "0";
     await saveGrant(cwd, ["tool:read", "tool:delegate"]);
-    const root = makePi();
+    const manager = {}, root = makePi(manager);
     await start(root); // publishes child depth 1
     await root.hooks.get("session_shutdown")({ reason: "reload" });
-    const reloadedApi = makePi();
+    const reloadedApi = makePi(manager);
     const reload = await start(reloadedApi);
-    assert.match(reload, /depth 0\/2/, "Pi's shutdown/reload lifecycle recovers root identity across a new API object");
-    const child = makePi();
+    assert.match(reload, /depth 0\/2/, "Pi's stable SessionManager recovers root identity across a new API object");
+    const child = makePi({});
     const childStart = await start(child);
     assert.match(childStart, /depth 1\/2/, "a different same-process SDK Pi session remains an inherited child");
   } finally {

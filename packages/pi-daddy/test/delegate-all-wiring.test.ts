@@ -66,7 +66,7 @@ async function harness(env: Record<string, string>, existingDir?: string) {
   // entirely; a test that wants the other paths overrides it and says why.
   Object.assign(process.env, { [ENV_HERDR]: "0", ...env });
 
-  const tools = new Map<string, ToolSpec>(),commands=new Map<string,any>();
+  const tools = new Map<string, ToolSpec>(),commands=new Map<string,any>(), activeTools = new Set(["read", "grep", "write"]);
   const hooks = new Map<string, (e: unknown, c: unknown) => unknown>();
   const ctx = {
     cwd: dir,
@@ -80,10 +80,12 @@ async function harness(env: Record<string, string>, existingDir?: string) {
     registerTool: (spec: ToolSpec) => void tools.set(spec.name, spec),
     registerCommand: (name:string,spec:any) => void commands.set(name,spec),
     getAllTools: () => ["read", "grep", "write", "delegate"].map((name) => ({ name })),
+    getActiveTools: () => [...activeTools],
+    setActiveTools: (names: string[]) => { activeTools.clear(); names.forEach(name => activeTools.add(name)); },
   } as never);
 
   await hooks.get("session_start")!({}, ctx);
-  return { dir, tools, commands, ctx };
+  return { dir, tools, commands, ctx, activeTools };
 }
 
 /**
@@ -151,12 +153,13 @@ test("a relative ledger becomes one absolute child-inherited path before routing
   );
 });
 
-test("delegate_all is NOT registered when tool:delegate is withheld", async () => {
-  // The S-5 property, extended to the new tool: "withhold tool:delegate and the child is a leaf" must stay
-  // true, or fan-out becomes a way around it.
-  const { tools } = await harness({ [ENV_GRANT]: "tool:read" });
-  assert.ok(!tools.has("delegate_all"));
-  assert.ok(!tools.has("delegate"));
+test("delegation definitions stay inactive when tool:delegate is withheld", async () => {
+  // Reload must register provisional definitions, but the owner-bound activation is S-5's enforcement:
+  // withholding tool:delegate still makes the model-facing surface a leaf.
+  const { tools, activeTools } = await harness({ [ENV_GRANT]: "tool:read" });
+  assert.ok(tools.has("delegate_all"), "definitions are available for a later owner-bound restoration");
+  assert.ok(!activeTools.has("delegate_all"));
+  assert.ok(!activeTools.has("delegate"));
 });
 
 test("more children than the per-call limit is refused before anything runs", async () => {

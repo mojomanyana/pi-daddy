@@ -121,14 +121,13 @@ export interface DelegationRegistration {
 
 
 /**
- * Register `delegate` and `delegate_all` — but only if this session may delegate.
+ * Register delegation definitions before session_start.
  *
- * The conditional is the whole of S-5: an unconditionally-registered `delegate` appears in every child's
- * ceiling, so a delegator without it was told every single agent type "requires tool:delegate".
+ * Pi recreates this API before it supplies the stable session owner. Definitions must therefore exist for a
+ * reload whose provisional environment is narrower than its owner; `grants.ts` activates them only after
+ * owner-bound reconciliation, so a holder without `tool:delegate` remains a leaf at every dispatch boundary.
  */
 export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession): DelegationRegistration {
-  if (!session.mayDelegate) return { refreshSpawnable: () => {} };
-
   /**
    * Definitions this session is actually authorised to spawn (ADR-0017), for the tool description.
    *

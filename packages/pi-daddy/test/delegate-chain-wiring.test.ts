@@ -25,14 +25,15 @@ import { chainStepSpec } from "../src/chain.ts";
 after(cleanupTempDirs);
 afterEach(restoreEnv);
 
-test("delegate_chain is registered beside the other two, and only when the session may delegate", async () => {
-  const { tools } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate" });
+test("delegate_chain is activated beside the other two only when the session may delegate", async () => {
+  const { tools, activeTools } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate" });
   for (const name of ["delegate", "delegate_all", "delegate_chain"]) {
-    assert.ok(tools.has(name), `${name} must be registered`);
+    assert.ok(tools.has(name), `${name} must be registered provisionally`);
+    assert.ok(activeTools.has(name), `${name} must be active for an authorised owner`);
   }
 
   const leaf = await harness({ [ENV_GRANT]: "tool:read" });
-  assert.ok(!leaf.tools.has("delegate_chain"), "S-5: withholding tool:delegate must make a session a leaf");
+  assert.ok(!leaf.activeTools.has("delegate_chain"), "S-5: withholding tool:delegate must make a session a leaf");
 });
 
 test("the three tool descriptions do not contradict each other about shape", async () => {

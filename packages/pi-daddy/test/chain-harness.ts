@@ -78,7 +78,7 @@ export async function harness(env: Record<string, string>, existingDir?: string,
   for (const k of KEYS) delete process.env[k];
   Object.assign(process.env, { [ENV_HERDR]: "0", ...env });
 
-  const tools = new Map<string, ToolSpec>();
+  const tools = new Map<string, ToolSpec>(), activeTools = new Set(["read", "grep", "write", "bash"]);
   const hooks = new Map<string, (e: unknown, c: unknown) => unknown>();
   const selects: string[] = [];
   const offered: string[][] = [];
@@ -108,8 +108,10 @@ export async function harness(env: Record<string, string>, existingDir?: string,
     registerTool: (spec: ToolSpec) => void tools.set(spec.name, spec),
     registerCommand: () => {},
     getAllTools: () => ["read", "grep", "write", "bash", "delegate"].map((name) => ({ name })),
+    getActiveTools: () => [...activeTools],
+    setActiveTools: (names: string[]) => { activeTools.clear(); names.forEach(name => activeTools.add(name)); },
   } as never);
 
   await hooks.get("session_start")!({}, ctx);
-  return { dir, tools, ctx, selects, offered };
+  return { dir, tools, activeTools, ctx, selects, offered };
 }
