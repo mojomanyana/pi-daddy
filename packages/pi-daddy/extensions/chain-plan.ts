@@ -50,6 +50,7 @@ export async function planChain(
         agent: step.agent,
         tools: step.tools,
         model: step.model,
+        thinking: step.thinking,
         correlation: step.workspace
           ? { ...(step.correlation ?? {}), workspace_id: step.workspace.workspace_id }
           : step.correlation,

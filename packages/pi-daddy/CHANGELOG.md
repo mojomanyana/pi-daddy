@@ -12,6 +12,13 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## Unreleased — usability follow-up
+
+- Pi's explicit extension shutdown/reload lifecycle recovers the root governance environment instead of consuming child-only depth publication; changed root settings and separately inherited same-process SDK sessions remain distinct.
+- Connected dashboard refresh preserves the unfinished command line, shows host-frame errors and conservative acknowledgement/result feedback, and continues to offer only exact displayed action keys.
+- New `init`/work control directories are private at creation; unsafe or prior daily-host state is preserved and requires a fresh host ID rather than reuse.
+- `delegate_chain` now accepts each step's validated `thinking` level and forwards it with that step's model request.
+
 ## 0.25.2 — live dashboard cancellation controls (2026-09-12)
 
 - Refresh cancellation controls when ordinary children attach or settle after an idle dashboard frame.

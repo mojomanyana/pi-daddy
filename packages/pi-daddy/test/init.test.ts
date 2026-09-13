@@ -24,7 +24,7 @@
  */
 
 import assert from "node:assert/strict";
-import { chmod, mkdir, readFile, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, stat, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { ceilingForDefinition, parseSkillDefinition } from "../src/definitions.ts";
@@ -56,6 +56,16 @@ const project = async () => {
 
 
 after(cleanupTempDirs);
+
+test("init creates a new project .pi directory private without changing existing state", async () => {
+  const cwd = await tempDir("init-private-pi-");
+  const plan = planInit([], cwd, []);
+  const outcome = await applyInit(plan);
+  assert.deepEqual(outcome.failed, []);
+  assert.equal((await stat(join(cwd, ".pi"))).mode & 0o077, 0, "new .pi state must not inherit permissive defaults");
+  await applyInit(plan);
+  assert.equal((await stat(join(cwd, ".pi"))).mode & 0o077, 0, "repeat init must not chmod or repurpose existing state");
+});
 
 const DECLARED = `---
 name: review
@@ -131,6 +141,18 @@ test("work add refuses incomplete and unknown arguments without writing", () => 
   assert.deepEqual(parseArgs(["node", "pi-daddy", "work", "add", "--id", "x", "--outcome", "y", "--accept"]), {
     command: "work-add", force: false, errors: ["unknown option --accept"], id: "x", outcome: "y",
   });
+});
+
+test("init refuses existing non-directory and symlink .pi state without following or changing it", async () => {
+  const root = await tempDir("init-existing-pi-"), fileProject = join(root, "file"), linkProject = join(root, "link"), target = join(root, "target");
+  await mkdir(fileProject); await writeFile(join(fileProject, ".pi"), "preserve");
+  const fileResult = await applyInit(planInit([], fileProject, []));
+  assert.match(fileResult.failed[0]?.error ?? "", /not a directory/);
+  assert.equal(await readFile(join(fileProject, ".pi"), "utf8"), "preserve");
+  await mkdir(linkProject); await mkdir(target); await symlink(target, join(linkProject, ".pi"));
+  const linkResult = await applyInit(planInit([], linkProject, []));
+  assert.match(linkResult.failed[0]?.error ?? "", /not a directory/);
+  assert.equal(await (await import("node:fs/promises")).readlink(join(linkProject, ".pi")), target);
 });
 
 test("a declared ceiling is copied VERBATIM — the author's declaration is the ceiling", async () => {

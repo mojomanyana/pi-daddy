@@ -5,6 +5,10 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ---
 
+## 2026-09-13 — usability follow-up candidate (unreleased)
+
+The four-source usability follow-up is locally implemented on `codex/factory-usability-20260913`: Pi's explicit shutdown/reload lifecycle restores root governance identity instead of consuming pi-daddy's child publication, while a distinct same-process SDK child still inherits its real limit; the connected dashboard preserves a typed exact key across refresh and reports frame/result uncertainty without calling it applied; new init/work and host state are private at creation and prior host IDs are preserved with fresh-ID recovery; and every `delegate_chain` step now accepts/forwards the closed thinking level used by delegate/fan-out. Focused model-free tests and typecheck are recorded in the campaign implementation receipt. No human UI acceptance, model call, global install, running-session change, release or publication is claimed.
+
 ## 2026-09-12 — 0.25.2 release preparation
 
 PR #46 merged as `3451fca5ff6a5d20ab138bd905fc422e86abd8ed`, preserving Sol-approved head

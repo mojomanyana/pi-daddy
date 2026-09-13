@@ -19,18 +19,21 @@ import { ENV_FANOUT, ENV_GATED, ENV_GRANT, ENV_LEDGER } from "../src/propagation
 import { parseDashboardLedger } from "../src/dashboard-projection.ts";
 import { definition, harness, restoreEnv } from "./chain-harness.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
+import { planDelegation } from "../src/delegate.ts";
+import { chainStepSpec } from "../src/chain.ts";
 
 after(cleanupTempDirs);
 afterEach(restoreEnv);
 
-test("delegate_chain is registered beside the other two, and only when the session may delegate", async () => {
-  const { tools } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate" });
+test("delegate_chain is activated beside the other two only when the session may delegate", async () => {
+  const { tools, activeTools } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate" });
   for (const name of ["delegate", "delegate_all", "delegate_chain"]) {
-    assert.ok(tools.has(name), `${name} must be registered`);
+    assert.ok(tools.has(name), `${name} must be registered provisionally`);
+    assert.ok(activeTools.has(name), `${name} must be active for an authorised owner`);
   }
 
   const leaf = await harness({ [ENV_GRANT]: "tool:read" });
-  assert.ok(!leaf.tools.has("delegate_chain"), "S-5: withholding tool:delegate must make a session a leaf");
+  assert.ok(!leaf.activeTools.has("delegate_chain"), "S-5: withholding tool:delegate must make a session a leaf");
 });
 
 test("the three tool descriptions do not contradict each other about shape", async () => {
@@ -77,6 +80,19 @@ test("ADR-0033: a chain refused at the gate spawns NOTHING", async () => {
   const lines = (await readFile(ledger, "utf8").catch(() => "")).trim();
   const spawned = lines ? lines.split("\n").map((l) => JSON.parse(l)).filter((r) => r.blocked === false) : [];
   assert.deepEqual(spawned, [], "a chain declined at the gate must not have provisioned any child");
+});
+
+test("delegate_chain exposes and forwards the same bounded thinking levels as delegate", async () => {
+  const { tools } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate" });
+  const step = (tools.get("delegate_chain")!.parameters as any).properties.steps.items;
+  assert.deepEqual(step.properties.thinking.anyOf.map((value: any) => value.const), ["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
+});
+
+test("delegate_chain preserves each requested thinking level through planning into that child's argv", async () => {
+  const step = chainStepSpec({ task: "inspect {previous}", tools: ["read"], model: "known/model", thinking: "high" }, "prior output");
+  const planned = planDelegation(step, { ownGrant: ["tool:read"], depth: 0, maxDepth: 2, gated: [], definitions: new Map() });
+  assert.equal(planned.ok, true);
+  assert.deepEqual(planned.args.slice(planned.args.indexOf("--thinking"), planned.args.indexOf("--thinking") + 2), ["--thinking", "high"]);
 });
 
 test("ADR-0033: a chain longer than the budget is refused BEFORE any dialog", async () => {

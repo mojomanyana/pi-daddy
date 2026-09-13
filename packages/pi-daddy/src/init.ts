@@ -22,7 +22,7 @@
  * for, rather than a grant nobody decided.
  */
 
-import { mkdir, open, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, open, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { agentCapability, workspaceCapability } from "./capabilities.ts";
 import { ceilingForDefinition } from "./definitions.ts";
@@ -372,6 +372,23 @@ async function replace(path: string, content: string, outcome: InitOutcome): Pro
  */
 export async function applyInit(plan: InitPlan, options: { force?: boolean } = {}): Promise<InitOutcome> {
   const outcome: InitOutcome = { written: [], kept: [], failed: [] };
+  const projectPi = join(plan.grantEnvPath, "..");
+  try {
+    // A new project gets a private control directory. Existing operator/Pi state is never chmodded or reused.
+    await mkdir(projectPi, { mode: 0o700 });
+    const created = await lstat(projectPi);
+    if (!created.isDirectory() || created.isSymbolicLink()) throw Error("private .pi directory creation failed");
+  } catch (error) {
+    if ((error as { code?: string }).code !== "EEXIST") {
+      outcome.failed.push({ path: projectPi, error: error instanceof Error ? error.message : String(error) });
+      return outcome;
+    }
+    const existing = await lstat(projectPi);
+    if (existing.isSymbolicLink() || !existing.isDirectory()) {
+      outcome.failed.push({ path: projectPi, error: "existing .pi state is not a directory; it was not followed or changed" });
+      return outcome;
+    }
+  }
   const force = options.force === true;
   for (const skill of plan.skills) {
     if (force) await replace(skill.targetPath, skill.content, outcome);

@@ -285,7 +285,8 @@ export function childEnv(input: ChildEnvInput): Record<string, string> {
   // whatever was there before — the parent's own, unclamped `PI_GRANTS_APPROVED` — visible to every child.
   // `parseList("")` is `[]`, so an empty value reads back exactly as an absent one.
   env[ENV_APPROVED] = inheritApprovals(input.approved ?? [], inheritable).join(",");
-  if (input.ledgerPath) env[ENV_LEDGER] = input.ledgerPath;
+  // Empty is an explicit one-run ledger opt-out and must overwrite a prior publication too.
+  if (input.ledgerPath !== undefined) env[ENV_LEDGER] = input.ledgerPath;
   return env;
 }
 

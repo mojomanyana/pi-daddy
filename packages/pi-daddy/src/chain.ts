@@ -156,6 +156,8 @@ export interface ChainStep {
   agent?: string;
   tools?: string[];
   model?: string;
+  /** Requested Pi thinking level; validated by the same schema as delegate/delegate_all. */
+  thinking?: string;
   correlation?: import("./correlation.ts").CorrelationMetadata;
   workspace?: { workspace_id: string; access: import("./workspace.ts").WorkspaceAccess };
 }

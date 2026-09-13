@@ -30,6 +30,7 @@ import { type GrantsSession } from "./session.ts";
 import { newDelegationOccurrence } from "./execution-occurrence.ts";
 import { correlationShape as buildCorrelationShape } from "./correlation-shape.ts";
 import { completePrimary } from "./primary-shadow.ts";
+import { assertDelegationAuthority } from "./delegation-authority.ts";
 
 /**
  * Wire a set of children to pi's partial-result channel — ADR-0032.
@@ -121,14 +122,13 @@ export interface DelegationRegistration {
 
 
 /**
- * Register `delegate` and `delegate_all` — but only if this session may delegate.
+ * Register delegation definitions at owner-bound session_start.
  *
- * The conditional is the whole of S-5: an unconditionally-registered `delegate` appears in every child's
- * ceiling, so a delegator without it was told every single agent type "requires tool:delegate".
+ * Pi exposes factory registrations before `bindExtensions()`, so this timing keeps the pre-start surface
+ * empty. Owner reconciliation precedes registration and activation, so a holder without `tool:delegate`
+ * remains a leaf at every dispatch boundary.
  */
 export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession): DelegationRegistration {
-  if (!session.mayDelegate) return { refreshSpawnable: () => {} };
-
   /**
    * Definitions this session is actually authorised to spawn (ADR-0017), for the tool description.
    *
@@ -142,9 +142,8 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
   /**
    * **R-39.** This used to be computed once, right here, and it was always `[]`.
    *
-   * `registerDelegationTools` is called synchronously from the extension factory, while
-   * `session.definitions` is only populated in the `session_start` hook — which fires afterwards. So every
-   * model in every governed session was told `Available: none.` and did the reasonable thing: it used
+   * `registerDelegationTools` runs at `session_start`, before that hook loads definitions. So every model
+   * in every governed session was told `Available: none.` and did the reasonable thing: it used
    * `delegate({tools})`, the path with no operator-authored instructions, no `agent:` prerequisite, no body
    * digest on the record, and no `always` approval available. **ADR-0017 and ADR-0019 bought expressiveness
    * the model was structurally prevented from using**, and every dialog was a `<delegate>` dialog again.
@@ -230,6 +229,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       "sub-agent must itself delegate further; withhold it to make the sub-agent a leaf.",
     parameters: delegateParams,
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
+      assertDelegationAuthority(session);
       // ADR-0032: one child, same block. `_onUpdate` was discarded here, so a delegation showed the bare word
       // `delegate` for up to DEFAULT_TIMEOUT_MS — twenty minutes by default.
       const progress = progressReporter(session, [params.agent ?? "delegate"], onUpdate as never);
@@ -302,6 +302,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       "completion=primary with a 1-based primary returns that result while shadows remain owned/accounted.",
     parameters: delegateAllParams,
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
+      assertDelegationAuthority(session);
       const children = params.children ?? [],primaryMode=params.completion==="primary";
       if(primaryMode!==Number.isInteger(params.primary)||primaryMode&&(params.primary!<1||params.primary!>children.length))throw new GovernanceRefusal(refusal("FANOUT_EXCEEDED","primary fan-out requires one in-range 1-based primary"));
       if(primaryMode&&session.variantRuns.size>=128)throw new GovernanceRefusal(refusal("FANOUT_EXCEEDED","primary/shadow accounting capacity exhausted"));
