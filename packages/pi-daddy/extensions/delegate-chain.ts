@@ -34,6 +34,7 @@ import { chainApprovalFacts, newChainApprovalAudit, rememberChainApproval } from
 import { newExecutionId } from "../src/execution-id.ts";
 import { planChain, type GateRequest } from "./chain-plan.ts";
 import { preflightModel } from "../src/model-preflight.ts";
+import { assertDelegationAuthority } from "./delegation-authority.ts";
 
 /** One chain step is one execution occurrence, however many capability dialogs contributed to its answer. */
 function mergeGateOutcomes(outcomes: readonly ApprovalOutcome[]): ApprovalOutcome {
@@ -59,9 +60,6 @@ function mergeGateOutcomes(outcomes: readonly ApprovalOutcome[]): ApprovalOutcom
 }
 
 export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): void {
-  // No `mayDelegate` guard here: `registerDelegationTools` already returns before calling this, so a second check
-  // was dead code that made the leaf half of a wiring test pass for the wrong reason. The guard lives in one place.
-
   const stepShape = Type.Object({
     task: Type.String({
       description:
@@ -102,6 +100,7 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
       "do not hold. A failed step ABORTS the rest, and you still receive everything that completed.",
     parameters: params,
     async execute(_toolCallId, args, signal, onUpdate, ctx) {
+      assertDelegationAuthority(session);
       const steps = args.steps ?? [];
 
       // **Every cheap refusal happens before any human is asked.** Yesterday's lesson on the `delegate` path: with

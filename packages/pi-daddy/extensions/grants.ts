@@ -66,9 +66,8 @@ export default function (pi: ExtensionAPI) {
   const dashboardPaths = defaultDashboardPaths(
     process.env.PI_CODING_AGENT_DIR?.trim() || join(homedir(), ".pi", "agent"),
   );
-  // Filled in by `registerDelegationTools` at the bottom of this function. A holder rather than a reordering,
-  // because the hooks below have to be registered before the tools and both need to call it — the tool
-  // schemas describe which definitions are spawnable, and nothing knows that until a hook has run (R-39).
+  // Definitions are registered only after owner-bound session_start. Until then there is no delegation
+  // dispatch surface; afterwards this callback refreshes their model-facing spawnable-definition text.
   const delegation = { refreshSpawnable: () => {} };
   const publishedDailyWork: PublishedDailyWork = {};
 
@@ -78,6 +77,8 @@ export default function (pi: ExtensionAPI) {
     const owner = (ctx as { sessionManager?: object }).sessionManager ?? session;
     const reload = bindReloadLifecycle(owner, session.reloadLifecycle);
     session.reconcileEnvironment(reload.environment, reload.lifecycle);
+    session.ownerBound = true;
+    delegation.refreshSpawnable = registerDelegationTools(pi, session).refreshSpawnable;
     reconcileActiveDelegationTools(pi, session);
     session.cwd = ctx.cwd;
     // A routed child changes cwd. Publishing a relative ledger string unchanged therefore fragments one
@@ -343,11 +344,6 @@ export default function (pi: ExtensionAPI) {
     }
     return { block: true, reason };
   });
-
-  // Definitions are registered before session_start because Pi builds the tool registry in the factory.
-  // They remain inactive until the owner-bound session_start reconciliation above decides this session may
-  // delegate; this is what prevents a foreign reload environment from widening authority.
-  delegation.refreshSpawnable = registerDelegationTools(pi, session).refreshSpawnable;
 
   pi.registerCommand("grants", {
     ...grantsCommand,

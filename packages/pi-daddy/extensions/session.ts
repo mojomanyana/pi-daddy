@@ -125,6 +125,8 @@ export interface GrantsSession extends NativeSessionHost {
   fanoutBudget: number;
   /** Whether delegation tools are active. Reconciled against the owner-bound root at session_start. */
   mayDelegate: boolean;
+  /** True only after session_start binds this instance to ctx.sessionManager. */
+  ownerBound: boolean;
   /** Operator escape hatch for custom model resolution. Exact `1`, read once for the session. */
   allowUnresolvedModels: boolean;
   /** Results from pi's synchronous model catalogue, shared by every delegation in this session. */
@@ -275,7 +277,6 @@ export function createGrantsSession(extensionPath: string | undefined, lifecycle
   // `NaN`, and every comparison against `NaN` is false, so depth limiting switched itself off.
   const bounds = depthConfig(environment[ENV_DEPTH], environment[ENV_MAX_DEPTH]);
   const { depth, maxDepth } = bounds;
-
   const emptyCatalog = makeCatalog([]);
 
   const session: GrantsSession = {
@@ -310,22 +311,20 @@ export function createGrantsSession(extensionPath: string | undefined, lifecycle
      * call was unconditional, `DELEGATE_CAPABILITY` was imported and never used, and "withhold it and the
      * child is a leaf" was simply untrue on this path.
      *
-     * Decided on the INHERITED grant rather than `ownGrant`, because registration happens at load time,
-     * before any tools are observed. An ungoverned session registers it as before.
+     * Provisional before owner binding; session_start recomputes it from that owner's root before activation.
      */
     mayDelegate: !governed || inherited.includes(DELEGATE_CAPABILITY) || inherited.includes(WILDCARD),
+    ownerBound: false,
     allowUnresolvedModels: environment[ENV_ALLOW_UNRESOLVED_MODELS] === "1",
     nativeSessionRoot: nativeSessionRootFromEnv(process.env),
     modelResolutionCache: new Map<string, boolean>(),
     extensionPath,
     variantRuns: new Map(),
     reloadLifecycle: activeLifecycle,
-
     sessionApprovals: new Set<string>(),
     sessionApprovalBindings: new Map<string, ApprovalBinding>(),
     inheritedApprovals: parseInherited(environment[ENV_APPROVED]),
     approvalGateFor: createApprovalGateProvider(),
-
     cwd: process.cwd(),
     ownGrant: deriveOwnGrant(inherited, null),
     observed: false,
@@ -333,7 +332,6 @@ export function createGrantsSession(extensionPath: string | undefined, lifecycle
     definitions: new Map<string, SkillDefinition>(),
     catalog: emptyCatalog,
     catalogReady: Promise.resolve(emptyCatalog),
-
     delegationContext: async (approved?: InheritableApproval[]) => ({
       ownGrant: session.ownGrant,
       depth: session.depth,

@@ -9,7 +9,7 @@ const fixture = process.env.PI_DADDY_SDK_NODE_MODULES;
 if (!fixture) throw new Error("set PI_DADDY_SDK_NODE_MODULES to the matching SDK node_modules directory");
 const sdk = await import(pathToFileURL(join(fixture, "@earendil-works/pi-coding-agent/dist/index.js")).href);
 const ai = await import(pathToFileURL(join(fixture, "@earendil-works/pi-ai/dist/index.js")).href);
-const grants = (await import(pathToFileURL(join(process.cwd(), "extensions/grants.ts")).href)).default;
+const grantsPath = join(process.cwd(), "extensions/grants.ts");
 const root = await mkdtemp(join(tmpdir(), "pi-daddy-sdk-reload-"));
 const keys = ["PI_GRANTS_GRANT", "PI_GRANTS_DEPTH", "PI_GRANTS_MAX_DEPTH", "PI_GRANTS_APPROVED", "PI_GRANTS_HERDR"];
 const saved = Object.fromEntries(keys.map(key => [key, process.env[key]]));
@@ -33,20 +33,32 @@ async function make(name, grant, maxDepth) {
   const loader = new sdk.DefaultResourceLoader({
     cwd, agentDir, settingsManager: settings, systemPromptOverride: () => "",
     agentsFilesOverride: () => ({ agentsFiles: [], diagnostics: [] }), skillsOverride: () => ({ skills: [], diagnostics: [] }),
-    promptsOverride: () => ({ prompts: [], diagnostics: [] }), extensionFactories: [{ name, factory: grants }],
+    promptsOverride: () => ({ prompts: [], diagnostics: [] }), additionalExtensionPaths: [grantsPath], noExtensions: true,
   });
   await loader.reload();
   const made = await sdk.createAgentSession({ cwd, agentDir, resourceLoader: loader, sessionManager: sdk.SessionManager.inMemory(cwd), settingsManager: settings, modelRuntime });
   const notices = [];
+  const preBindTools = made.session.getActiveToolNames();
+  const preBindDelegate = made.session.getToolDefinition("delegate");
   await made.session.bindExtensions({ mode: "print", uiContext: ui(notices) });
-  return { ...made, notices };
+  return { ...made, notices, preBindTools, preBindDelegate };
 }
 try {
   for (const key of keys) delete process.env[key];
   const a = await make("A", "tool:read", "1");
+  assert.equal(a.preBindTools.includes("delegate"), false, "before bindExtensions no delegation tool is active");
+  assert.equal(a.preBindDelegate, undefined, "before bindExtensions no delegation handler is registered");
   assert(a.notices.some(message => message.includes("depth 0/1")), "A session_start must report its root");
+  const directDelegate = a.session.getToolDefinition("delegate");
+  assert(directDelegate, "session_start registers inactive definitions for direct inspection");
+  await assert.rejects(
+    () => directDelegate.execute("prestart-bypass", { task: "must not run" }, undefined, undefined, { modelRegistry: { find: () => undefined } }),
+    /does not hold tool:delegate/,
+    "a direct inactive-handler invocation must refuse before planning or any provider request",
+  );
   const b = await make("B", "tool:read,tool:bash,tool:delegate", "2");
   assert(b.notices.some(message => message.includes("depth 0/2")), "B session_start must report its distinct root");
+  assert.equal(b.session.getActiveToolNames().includes("delegate"), true, "owner-bound B activates its authorised delegation tools");
 
   for (let reload = 1; reload <= 2; reload++) {
     a.notices.length = 0;

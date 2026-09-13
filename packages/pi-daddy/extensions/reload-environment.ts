@@ -4,10 +4,15 @@ import { GRANT_ENV_KEYS } from "../src/propagation.ts";
 export interface ReloadLifecycle { root: Record<string, string | undefined>; published?: Record<string, string | undefined> }
 type SessionOwner = object;
 
-const owners = new WeakMap<SessionOwner, ReloadLifecycle>();
-// `process.env` has one latest writer. This records that writer; it is never a reload handoff and is never
-// consumed. The WeakMap above, keyed by ctx.sessionManager, is the only place a reload obtains its root.
-let latestChildPublication: { lifecycle: ReloadLifecycle; environment: Record<string, string | undefined> } | undefined;
+interface ReloadState {
+  owners: WeakMap<SessionOwner, ReloadLifecycle>;
+  latestChildPublication?: { lifecycle: ReloadLifecycle; environment: Record<string, string | undefined> };
+}
+const RELOAD_STATE = Symbol.for("pi-daddy.reload-environment.v1");
+function state(): ReloadState {
+  const global = globalThis as typeof globalThis & { [key: symbol]: ReloadState | undefined };
+  return global[RELOAD_STATE] ?? (global[RELOAD_STATE] = { owners: new WeakMap() });
+}
 
 function snapshot(): Record<string, string | undefined> {
   return Object.fromEntries(GRANT_ENV_KEYS.map(key => [key, process.env[key]]));
@@ -34,14 +39,15 @@ export function bindReloadLifecycle(owner: SessionOwner, provisional: ReloadLife
   lifecycle: ReloadLifecycle;
   environment: NodeJS.ProcessEnv;
 } {
-  const existing = owners.get(owner);
+  const holder = state();
+  const existing = holder.owners.get(owner);
   if (!existing) {
-    owners.set(owner, provisional);
+    holder.owners.set(owner, provisional);
     return { lifecycle: provisional, environment: withRoot(provisional.root) };
   }
 
   const current = snapshot();
-  if (!latestChildPublication || !same(current, latestChildPublication.environment)) {
+  if (!holder.latestChildPublication || !same(current, holder.latestChildPublication.environment)) {
     // No pi-daddy lifecycle published what is currently in process.env, so this is an explicit change to
     // this owner's root rather than another bound session's child state.
     existing.root = current;
@@ -53,5 +59,5 @@ export function bindReloadLifecycle(owner: SessionOwner, provisional: ReloadLife
 export function rememberChildPublication(lifecycle: ReloadLifecycle): void {
   const environment = snapshot();
   lifecycle.published = environment;
-  latestChildPublication = { lifecycle, environment };
+  state().latestChildPublication = { lifecycle, environment };
 }
