@@ -24,7 +24,7 @@
  */
 
 import assert from "node:assert/strict";
-import { chmod, mkdir, readFile, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, stat, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { ceilingForDefinition, parseSkillDefinition } from "../src/definitions.ts";
@@ -56,6 +56,16 @@ const project = async () => {
 
 
 after(cleanupTempDirs);
+
+test("init creates a new project .pi directory private without changing existing state", async () => {
+  const cwd = await tempDir("init-private-pi-");
+  const plan = planInit([], cwd, []);
+  const outcome = await applyInit(plan);
+  assert.deepEqual(outcome.failed, []);
+  assert.equal((await stat(join(cwd, ".pi"))).mode & 0o077, 0, "new .pi state must not inherit permissive defaults");
+  await applyInit(plan);
+  assert.equal((await stat(join(cwd, ".pi"))).mode & 0o077, 0, "repeat init must not chmod or repurpose existing state");
+});
 
 const DECLARED = `---
 name: review

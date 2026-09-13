@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import {
   DASHBOARD_PROTOCOL_VERSION,
+  dashboardActionFeedback,
   dashboardFrame,
 } from "../src/dashboard-cli.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
@@ -26,6 +27,14 @@ test("a plugin opened before pi-daddy explains exact setup without modifying pi"
   assert.match(frame, /pi install npm:pi-daddy/);
   assert.match(frame, /export PI_GRANTS_LEDGER=/);
   assert.match(frame, /\/grants dashboard/);
+});
+
+test("dashboard feedback never upgrades host readback, unknown or pending results to applied", () => {
+  assert.match(dashboardActionFeedback("pause-new-dispatch", { state: "failed-or-unknown" }), /NO ACTION CLAIM/);
+  assert.match(dashboardActionFeedback("pause-new-dispatch", { state: "readback-only" }), /NO ACTION CLAIM/);
+  assert.match(dashboardActionFeedback("revise-scope", { state: "acknowledged", result: { application: "not-applied" } }), /no applied effect is claimed/);
+  assert.match(dashboardActionFeedback("revise-scope", { state: "acknowledged", result: { application: "pending-ordinary-boundary" } }), /no applied effect is claimed/);
+  assert.match(dashboardActionFeedback("pause-new-dispatch", { state: "acknowledged", result: { application: "applied" } }), /native application applied/);
 });
 
 test("an incompatible core/plugin protocol is loud and renders no guessed tree", async () => {

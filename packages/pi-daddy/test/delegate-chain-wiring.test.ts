@@ -79,6 +79,12 @@ test("ADR-0033: a chain refused at the gate spawns NOTHING", async () => {
   assert.deepEqual(spawned, [], "a chain declined at the gate must not have provisioned any child");
 });
 
+test("delegate_chain exposes and forwards the same bounded thinking levels as delegate", async () => {
+  const { tools } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate" });
+  const step = (tools.get("delegate_chain")!.parameters as any).properties.steps.items;
+  assert.deepEqual(step.properties.thinking.anyOf.map((value: any) => value.const), ["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
+});
+
 test("ADR-0033: a chain longer than the budget is refused BEFORE any dialog", async () => {
   // Cardinality is checked first: a chain on its way to being refused must not interrupt the operator. The
   // production change that breaks this: moving the budget check after the gate.

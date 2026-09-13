@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import {
   appendWorkLedgerEventOnce,
@@ -101,8 +101,15 @@ export async function declareWork(input: DeclareWorkInput): Promise<WorkFrozen<D
   }
   if (!ID.test(input.id) || typeof input.outcome !== "string" || !input.outcome.trim()) throw new TypeError("work declaration requires an identifier and non-empty outcome");
   const resolved = paths(input), outcomeDigest = sha256(input.outcome.trim());
-  await mkdir(dirname(resolved.ledgerPath), { recursive: true, mode: 0o700 });
-  await mkdir(dirname(resolved.statePath), { recursive: true, mode: 0o700 });
+  const projectPi = dirname(resolved.ledgerPath);
+  try {
+    // Create only a new project control directory as private; never chmod or repurpose an existing one.
+    await mkdir(projectPi, { mode: 0o700 });
+  } catch (error) {
+    if ((error as { code?: string }).code !== "EEXIST") throw error;
+    const existing = await lstat(projectPi);
+    if (!existing.isDirectory() || existing.isSymbolicLink()) throw Error("existing .pi state is not a directory; it was not followed or changed");
+  }
   return withFileLock(resolved.statePath, "declared work", async () => {
     const existing = await loadDeclaredWork(resolved.statePath);
     if (existing) {

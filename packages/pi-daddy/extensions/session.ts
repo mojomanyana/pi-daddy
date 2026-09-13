@@ -49,6 +49,7 @@ import { storedGrantSessionState } from "./stored-grant-session.ts";
 import { nativeSessionRootFromEnv, type NativeSessionHost } from "../src/native-session-target.ts";
 import { ENV_ALLOW_UNRESOLVED_MODELS } from "../src/model-preflight.ts";
 import type { DeclaredWorkState } from "../src/work-command.ts";
+import { rememberChildPublication, sourceEnvironment } from "./reload-environment.ts";
 /**
  * Run governed children in herdr panes instead of captured child processes.
  *
@@ -239,6 +240,7 @@ export async function loadProjectDefinitions(session: GrantsSession, cwd: string
 }
 
 export function createGrantsSession(extensionPath: string | undefined): GrantsSession {
+  const environment = sourceEnvironment();
   // Governance is opt-in: with PI_GRANTS_GRANT unset AND no stored grant for this directory, the session
   // holds the wildcard and nothing is blocked. This extension must never silently tighten a normal
   // workflow.
@@ -252,20 +254,20 @@ export function createGrantsSession(extensionPath: string | undefined): GrantsSe
   // and therefore before `ctx` exists. That ordering is forced by S-5: whether `delegate` is registered at
   // all is decided here, and a grant arriving later could not inform it. `session_start` re-checks the two
   // against each other and says so if they differ, which is the only case this can get wrong.
-  const grantRaw = process.env[ENV_GRANT];
+  const grantRaw = environment[ENV_GRANT];
   const storeCwd = process.cwd();
   // One root-only store read supplies both decisions made by `/grants init`. A child always has ENV_GRANT,
   // so it cannot activate a ledger merely because its routed cwd happens to have a v2 store (ADR-0037).
   const storedState = storedGrantSessionState(grantRaw, storeCwd);
   const { governed, inherited, refusal: grantStoreRefusal } = storedState;
-  const ledgerRaw = process.env[ENV_LEDGER];
+  const ledgerRaw = environment[ENV_LEDGER];
   // Capture provenance before publishChildEnv writes this session's derived default into process.env. A later
   // `/grants init` for ctx.cwd must not mistake our own publication for an operator override.
   const ledgerFromEnvironment = ledgerRaw !== undefined;
   const storedLedger = storedState.defaultLedger;
   // G7 / A-S4 + B-I4: strict, three-way parsing that fails CLOSED. A malformed bound used to yield
   // `NaN`, and every comparison against `NaN` is false, so depth limiting switched itself off.
-  const bounds = depthConfig(process.env[ENV_DEPTH], process.env[ENV_MAX_DEPTH]);
+  const bounds = depthConfig(environment[ENV_DEPTH], environment[ENV_MAX_DEPTH]);
   const { depth, maxDepth } = bounds;
 
   const emptyCatalog = makeCatalog([]);
@@ -281,21 +283,21 @@ export function createGrantsSession(extensionPath: string | undefined): GrantsSe
     // did. Inside a session the operator already chose to govern, handing a child `bash` hands it an
     // ungoverned-descendant escape hatch, and doing that silently is what changes here.
     // `PI_GRANTS_GATED=""` turns the default off; absent and empty are deliberately distinguishable.
-    gated: governed ? gatedFromEnv(process.env[ENV_GATED]) : parseList(process.env[ENV_GATED]),
+    gated: governed ? gatedFromEnv(environment[ENV_GATED]) : parseList(environment[ENV_GATED]),
     // Presence wins, including an explicitly empty value for a one-run opt-out. The store is eligible only
     // when ENV_GRANT was absent above, preserving the environment as the child's single authority channel.
     ledgerPath: ledgerRaw !== undefined ? ledgerRaw : storedLedger,
     // The un-probed reading. `resolveExecutor` replaces it at session start; until then a `1` already reads as
     // a refusal, which is the safe direction — a delegation that somehow ran before the probe would refuse
     // rather than quietly use the wrong executor.
-    executor: chooseExecutor(process.env[ENV_HERDR], null),
+    executor: chooseExecutor(environment[ENV_HERDR], null),
     // `ownSpawnId` comes from the parent (F8), so ids form one tree across process boundaries instead of
     // every level restarting at `d0` and the ledger becoming unjoinable.
-    ownSpawnId: process.env[ENV_PARENT_ID]?.trim() || `d${depth}`,
-    ownExecutionId: process.env[ENV_EXECUTION_ID]?.trim() || undefined,
+    ownSpawnId: environment[ENV_PARENT_ID]?.trim() || `d${depth}`,
+    ownExecutionId: environment[ENV_EXECUTION_ID]?.trim() || undefined,
     // The cardinality bound ADR-0008 never had: it attenuates downward like depth, so a subtree can never
     // create more descendants than its root was given — with no shared state, no lock and no counter file.
-    fanoutBudget: budgetFromEnv(process.env[ENV_FANOUT]),
+    fanoutBudget: budgetFromEnv(environment[ENV_FANOUT]),
     /**
      * Review finding S-5, fixed. The comment on the tools has always claimed conditional registration; the
      * call was unconditional, `DELEGATE_CAPABILITY` was imported and never used, and "withhold it and the
@@ -305,7 +307,7 @@ export function createGrantsSession(extensionPath: string | undefined): GrantsSe
      * before any tools are observed. An ungoverned session registers it as before.
      */
     mayDelegate: !governed || inherited.includes(DELEGATE_CAPABILITY) || inherited.includes(WILDCARD),
-    allowUnresolvedModels: process.env[ENV_ALLOW_UNRESOLVED_MODELS] === "1",
+    allowUnresolvedModels: environment[ENV_ALLOW_UNRESOLVED_MODELS] === "1",
     nativeSessionRoot: nativeSessionRootFromEnv(process.env),
     modelResolutionCache: new Map<string, boolean>(),
     extensionPath,
@@ -313,7 +315,7 @@ export function createGrantsSession(extensionPath: string | undefined): GrantsSe
 
     sessionApprovals: new Set<string>(),
     sessionApprovalBindings: new Map<string, ApprovalBinding>(),
-    inheritedApprovals: parseInherited(process.env[ENV_APPROVED]),
+    inheritedApprovals: parseInherited(environment[ENV_APPROVED]),
     approvalGateFor: createApprovalGateProvider(),
 
     cwd: process.cwd(),
@@ -379,6 +381,7 @@ export function createGrantsSession(extensionPath: string | undefined): GrantsSe
         governed: session.governed,
       });
       for (const [key, value] of Object.entries(env)) process.env[key] = value;
+      rememberChildPublication();
     },
   };
 

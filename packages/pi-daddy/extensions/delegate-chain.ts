@@ -71,6 +71,10 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
     agent: Type.Optional(Type.String({ description: "Definition to spawn for this step." })),
     tools: Type.Optional(Type.Array(Type.String(), { description: "Capabilities, when no 'agent' fits." })),
     model: Type.Optional(Type.String({ description: "Model as provider/id. Defaults to this session's." })),
+    thinking: Type.Optional(Type.Union(
+      ["off", "minimal", "low", "medium", "high", "xhigh", "max"].map(level => Type.Literal(level)),
+      { description: "Requested Pi thinking level; unsupported model/level combinations fail in the child." },
+    )),
     correlation: Type.Optional(correlationShape()),
     workspace: Type.Optional(Type.Object({
       workspace_id: Type.String(),

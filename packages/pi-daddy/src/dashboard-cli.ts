@@ -58,6 +58,20 @@ export async function dashboardHostAction(host:DashboardConnection,line:string){
   return host.humanAction(command);
 }
 
+/** A fulfilled host call is not necessarily an applied native effect; keep those facts distinct in the UI. */
+export function dashboardActionFeedback(command:string,outcome:unknown):string{
+  const value=outcome&&typeof outcome==="object"?outcome as {state?:unknown;result?:unknown}:{};
+  const state=typeof value.state==="string"?value.state:"unrecognised host response";
+  if(state==="failed-or-unknown"||state==="readback-only")return `NO ACTION CLAIM: ${command} returned ${state}; inspect/reconcile explicitly.`;
+  if(state!=="acknowledged")return `NOT APPLIED: ${command} returned ${state}.`;
+  const result=value.result&&typeof value.result==="object"?value.result as {application?:unknown;records?:unknown}:null;
+  const application=typeof result?.application==="string"?result.application:Array.isArray(result?.records)?result.records.find((record:unknown)=>record&&typeof record==="object"&&typeof (record as {application?:unknown}).application==="string") as {application?:string}|undefined:undefined;
+  const nativeApplication=typeof application==="string"?application:application?.application;
+  if(nativeApplication==="applied")return `ACKNOWLEDGED: ${command}; native application applied.`;
+  if(nativeApplication)return `ACKNOWLEDGED: ${command}; native application ${nativeApplication}, so no applied effect is claimed.`;
+  return `ACKNOWLEDGED: ${command}; refreshed state is shown below (no native application claim).`;
+}
+
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
 }
@@ -96,14 +110,15 @@ export async function dashboardFrame(options: DashboardFrameOptions): Promise<st
   if(options.connected){
     if(!isDashboardConnection(options.connected))throw Error("original dashboard connection required");
     let view:Awaited<ReturnType<DashboardConnection["frame"]>>;
-    try{view=await options.connected.frame();}catch{return "PI-DADDY — CONNECTED HOST UNAVAILABLE\nNo prior acceptance, presentation or continuity substituted. No action retried.";}
+    try{view=await options.connected.frame();}catch(error){return `PI-DADDY — CONNECTED HOST ERROR\n${error instanceof Error ? error.message : String(error)}\nNo prior acceptance, presentation or continuity substituted. No action retried.`;}
     if(options.dailyJson||options.debriefJson)return JSON.stringify(view);
     const source=view.source as {daily?:Parameters<typeof renderDailyView>[0]}|null;
     const actions=(view.actions as {key:string;label:string}[]|undefined)??[];
-    return ["PI-DADDY — CONNECTED HOST (snapshot; identity/acceptance not authenticated)",source?.daily?renderDailyView(source.daily,options.width):"Source unavailable; no previous acceptance substituted.",
+    const hostError=typeof view.error==="string"&&view.error?`HOST ERROR — ${view.error}`:null;
+    return ["PI-DADDY — CONNECTED HOST (snapshot; identity/acceptance not authenticated)",hostError,source?.daily?renderDailyView(source.daily,options.width):"Source unavailable; no previous acceptance substituted.",
       view.debrief?renderDebrief(view.debrief as Parameters<typeof renderDebrief>[0],options.width):"Debrief deferred/closed. No implicit presentation or steering.",
-      `Attention reserved ${view.attention.attentionUsed}/5 (not proof of delivery). Tip ${view.tip}.`,
-      actions.length?`ACTIONS — type one command and Enter\n${actions.map(action=>`  ${action.key} — ${action.label}`).join("\n")}`:"ACTIONS — none currently authorized; refresh never acts."].join("\n\n");
+      `Host control ${view.control}; acknowledgement ${view.acknowledgement}. Attention reserved ${view.attention.attentionUsed}/5 (not proof of delivery). Tip ${view.tip}.`,
+      actions.length?`ACTIONS — type one command and Enter\n${actions.map(action=>`  ${action.key} — ${action.label}`).join("\n")}`:"ACTIONS — none currently authorized; refresh never acts."].filter((line):line is string=>Boolean(line)).join("\n\n");
   }
   if (options.debrief || options.debriefJson) {
     if (!isDebriefPresenter(options.debrief)) return "PI-DADDY — DEBRIEF UNAVAILABLE: genuine presenter/host missing";
@@ -213,6 +228,8 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
   }
   const dailyReader = createDailyViewReader();
   let previous = "";
+  let feedback = "";
+  let input: ReturnType<typeof createInterface> | null = null;
   const draw = async (clear: boolean): Promise<void> => {
     const frame = await dashboardFrame({
       cwd,
@@ -223,15 +240,21 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
       details: cli.details,
       dailyView, dailyReader, dailyJson: cli.dailyJson, debrief, debriefJson: cli.debriefJson, connected,
     });
-    if (frame === previous && !clear) return;
-    previous = frame;
-    process.stdout.write(clear ? `\u001b]0;PI-DADDY\u0007\u001b[2J\u001b[H${frame}` : `${frame}\n`);
+    const rendered = feedback ? `${frame}\n\n${feedback}` : frame;
+    if (rendered === previous && !clear) return;
+    previous = rendered;
+    process.stdout.write(clear ? `\u001b]0;PI-DADDY\u0007\u001b[2J\u001b[H${rendered}\n\n` : `${rendered}\n`);
+    if (input) {
+      input.setPrompt("COMMAND — type an exact listed key, then Enter (refresh never acts): ");
+      input.prompt(true); // preserves readline's unfinished line across each refresh.
+    }
   };
 
   if (cli.once) {
     await draw(false);
     return;
   }
+  input = debrief || connected ? createInterface({ input: process.stdin, output: process.stdout, terminal: true }) : null;
   await draw(true);
   let drawing = false;
   const redraw = (): void => {
@@ -239,13 +262,16 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
     drawing = true;
     void draw(true).finally(() => { drawing = false; });
   };
-  const input = debrief || connected ? createInterface({ input: process.stdin, terminal: false }) : null;
   let acting = false;
   input?.on("line", line => {
-    if (acting) return;
+    if (acting) return; // never replay a line typed while the prior exact command is still settling.
     acting = true;
-    void (connected?dashboardHostAction(connected,line):debriefAction(debrief!, line)).catch(() => { process.stderr.write("Debrief action refused or acknowledgement unknown; inspect/reconcile explicitly.\n"); })
-      .finally(() => { acting = false; redraw(); });
+    feedback = `COMMAND ${line.trim() || "(empty)"} — applying the displayed exact request…`;
+    void (connected?dashboardHostAction(connected,line):debriefAction(debrief!, line)).then(outcome => {
+      feedback = connected ? dashboardActionFeedback(line.trim() || "command", outcome) : `ACKNOWLEDGED: ${line.trim() || "command"}. Refreshed state is shown below.`;
+    }).catch(error => {
+      feedback = `REJECTED: ${error instanceof Error ? error.message : String(error)}. No command was retried; inspect the refreshed offered keys.`;
+    }).finally(() => { acting = false; redraw(); });
   });
   const timer = setInterval(redraw, DASHBOARD_REFRESH_MS);
   process.on("SIGWINCH", redraw);

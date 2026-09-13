@@ -3,7 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { after, test } from "node:test";
 import { createGrantsSession } from "../extensions/session.ts";
-import { grantStorePath, projectLedgerPath } from "../src/grant-store.ts";
+import { grantStorePath, projectLedgerPath, saveGrant } from "../src/grant-store.ts";
 import { GRANT_ENV_KEYS } from "../src/propagation.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
@@ -41,6 +41,41 @@ test("an invalid project store creates a refused governed session instead of a w
     originalAgentDir === undefined ? delete process.env.PI_CODING_AGENT_DIR : process.env.PI_CODING_AGENT_DIR = originalAgentDir;
     originalGrant === undefined ? delete process.env.PI_GRANTS_GRANT : process.env.PI_GRANTS_GRANT = originalGrant;
     originalLedger === undefined ? delete process.env.PI_GRANTS_LEDGER : process.env.PI_GRANTS_LEDGER = originalLedger;
+  }
+});
+
+test("extension reload keeps a root at depth zero while a real child environment remains inherited", async () => {
+  const cwd = await tempDir("grants-reload-root-"), agentDir = await tempDir("grants-reload-agent-");
+  const originalCwd = process.cwd();
+  const keys = [...GRANT_ENV_KEYS, "PI_CODING_AGENT_DIR"] as const;
+  const original = new Map(keys.map(key => [key, process.env[key]]));
+  const marker = Symbol.for("pi-daddy.root-governance-environment.v1");
+  const originalMarker = (globalThis as Record<PropertyKey, unknown>)[marker];
+  try {
+    process.chdir(cwd);
+    for (const key of keys) delete process.env[key];
+    process.env.PI_CODING_AGENT_DIR = agentDir;
+    await saveGrant(cwd, ["tool:read"]);
+    const first = createGrantsSession(undefined);
+    assert.equal(first.depth, 0);
+    first.publishChildEnv();
+    assert.equal(process.env.PI_GRANTS_DEPTH, "1", "the first lifecycle publishes child-only state");
+
+    const reloaded = createGrantsSession(undefined);
+    assert.equal(reloaded.depth, 0, "a same-process extension reload must recover root identity");
+    assert.equal(reloaded.maxDepth, 2);
+
+    // A separately initialized process has no same-process publication marker, so its inherited depth stays real.
+    delete (globalThis as Record<PropertyKey, unknown>)[marker];
+    const child = createGrantsSession(undefined);
+    assert.equal(child.depth, 1, "a genuine child retains the parent-published depth limit");
+  } finally {
+    process.chdir(originalCwd);
+    for (const key of keys) {
+      const value = original.get(key);
+      value === undefined ? delete process.env[key] : process.env[key] = value;
+    }
+    originalMarker === undefined ? delete (globalThis as Record<PropertyKey, unknown>)[marker] : (globalThis as Record<PropertyKey, unknown>)[marker] = originalMarker;
   }
 });
 
