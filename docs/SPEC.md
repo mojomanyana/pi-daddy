@@ -454,7 +454,7 @@ leaf.
 | Output | — | 1 MiB | Per child; beyond it the child is killed and the result flagged truncated. |
 
 Depth and budget **attenuate downward** through the environment; the timeout is an operator preference and
-deliberately just inherits. Pi reloads an extension in the same process, so pi-daddy retains that root process's original governance environment separately from its child-only publication: reload starts the root at its actual depth, while a new child process retains its inherited depth, approvals and provenance.
+deliberately just inherits. Pi's explicit reload shutdown hands the retiring extension's root environment to exactly the next extension lifecycle; a changed root environment becomes the new baseline. A distinct same-process SDK session has no reload handoff and therefore retains its genuine inherited depth, approvals and provenance.
 
 A budget rather than a per-call cap because a cap of K with depth D still permits K^D — the same exponential
 wearing a smaller number. Subtractive bounds compose across process boundaries with no shared state.
