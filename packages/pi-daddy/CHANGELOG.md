@@ -12,6 +12,12 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## 0.26.1 — measured-order fractional usage repair (2026-09-14)
+
+- Preserve fractional measured-order usage when serializing results, so bounded recovery and dependent review retain exact reported usage.
+- Reviewed source fix evidence includes 1,258 prior full tests, 28 final focused tests and typecheck; a bounded three-call Terra-negative/recovery and dependent-Sol-review demo settled all calls.
+- The demo is execution evidence only: it does not establish human-quality acceptance.
+
 ## 0.26.0 — usability follow-up (2026-09-13)
 
 - Fix Pi reload ownership: an owner-keyed global `WeakMap` survives extension path-cache reload, and delegation registers only after that owner's `session_start`; root settings and a separately inherited same-process SDK child remain distinct.

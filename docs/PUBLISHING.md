@@ -1,3 +1,17 @@
+# Publishing pi-daddy 0.26.1
+
+Release preparation: 2026-09-14. Registry baseline: 0.26.0. Only pi-daddy changes.
+
+1. Preserve PR #50 merge `339c8a9f73df4d18f471ac97aeb00e656adbab03`, which contains the reviewed source fix `ed529db`. Land this metadata-only release through a green PR; do not alter runtime or source.
+2. The reviewed source evidence is 1,258 prior full tests, 28 final focused tests and typecheck. A bounded live demo made three calls: an intentional Terra negative, Terra recovery and dependent Sol review; exact fractional usage was preserved and all calls settled. This is not human-quality acceptance.
+3. After merge, the coordinator uses a fresh clean worktree at the exact release merge for typecheck/build and installed-package smoke, then retains one canonical npm pack archive, JSON inventory and SHA-256/SHA-512 integrity.
+4. Install that archive in a fresh isolated prefix with the pinned skill-harness and Pi dependencies. Load explicit extensions with in-memory stores and zero provider requests; verify public entrypoints and bundled native reporter bytes. Do not repeat model calls solely for metadata.
+5. Recheck 0.26.1 is absent; publish the canonical archive once. If ambiguous, inspect registry bytes before retry. Verify the registry version, latest and downloaded bytes, then create immutable `v0.26.1` at the exact release merge and its GitHub Release. Never overwrite versions/tags or bypass authentication.
+
+---
+
+## Prior 0.26.0 runbook (historical)
+
 # Publishing pi-daddy 0.26.0
 
 Owner authorization: 2026-09-13. Registry baseline: 0.25.2. Only pi-daddy changes.
