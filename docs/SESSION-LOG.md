@@ -5,6 +5,17 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ---
 
+## 2026-09-14 — 0.26.1 release preparation
+
+PR #50 merged as `339c8a9f73df4d18f471ac97aeb00e656adbab03`, containing reviewed source fix
+`ed529db`. This release changes only pi-daddy version metadata, lockfile, existing exact-version
+assertions and release documentation; runtime and source are unchanged. Prior source evidence is 1,258
+full tests, then 28 final focused tests and typecheck. A bounded live three-call demo recorded an
+intentional Terra negative, Terra recovery and dependent Sol review; exact fractional usage was preserved
+and all calls settled. This is execution evidence, not human-quality acceptance. The coordinator reviews
+metadata, creates the release PR and performs canonical packaging after merge; no model call is needed for
+this metadata release.
+
 ## 2026-09-13 — 0.26.0 release preparation
 
 Feature PR #48 merged as `8b67598c64cb4a225ea7994622f29098d296b278`, preserving the
