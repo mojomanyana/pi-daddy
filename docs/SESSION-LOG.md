@@ -5,6 +5,21 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ---
 
+## 2026-09-14 — full producer product delivery candidate (unreleased)
+
+The isolated `codex/factory-product-producer-20260914` worktree implements the proposal's outcome-first
+panel, bounded ordinary multi-task/model/effort/dependency setup, retained results, live intent controls,
+and public harness learning/next-order adoption/rollback/observation integration. ADR-0073 records the
+composition decisions; the packaged PRODUCT-GUIDE and REQUIREMENTS register are the concise current flow.
+Existing governance/executor owners and frozen historical contracts remain; missing labels/quality/trust/
+current independent authority/later outcomes remain explicit, not fabricated success.
+
+The peer contract uses the raw P01 snapshot digest. Adoption authoring composes public origin/choice
+readback and the existing core binding builder; it needs no new private helper or protocol JSON from users.
+Focused regressions accompany source. The delivery's `producer-evidence/CURRENT.md` and final readiness
+receipt carry exact tree/check state. No model experiment, broad suite, independent end review, installed
+cross-package acceptance or publication is claimed by this entry. Those are the coordinator's next gates.
+
 ## 2026-09-14 — 0.26.1 release preparation
 
 PR #50 merged as `339c8a9f73df4d18f471ac97aeb00e656adbab03`, containing reviewed source fix

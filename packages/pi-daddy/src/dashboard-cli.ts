@@ -10,6 +10,8 @@ import { parseDashboardLedger } from "./dashboard-projection.ts";
 import { renderDashboard } from "./dashboard-render.ts";
 import { createDailyViewReader, isDailyViewReader, readDailyView, type DailyViewOptions } from "./daily-view.ts";
 import { renderDailyView } from "./daily-view-render.ts";
+import { renderDailyPanel, panelLines, learningSummary, type PanelAction, type WorkPresentation } from "./daily-panel.ts";
+import { createDashboardMenu } from "./dashboard-menu.ts";
 import { projectWorkLedger, type WorkProjectionContext } from "./work-ledger.ts";
 import { parseRetentionJson } from "./retention-json.ts";
 import { createInterface } from "node:readline";
@@ -49,6 +51,7 @@ export interface DashboardFrameOptions {
   debrief?: DebriefPresenter;
   debriefJson?: boolean;
   connected?: DashboardConnection;
+  actionMenu?: ReturnType<typeof createDashboardMenu>;
 }
 export async function dashboardHostAction(host:DashboardConnection,line:string){
   if(!isDashboardConnection(host)||Buffer.byteLength(line)>60000)throw Error("genuine bounded dashboard connection required");
@@ -60,10 +63,10 @@ export async function dashboardHostAction(host:DashboardConnection,line:string){
 
 /** A fulfilled host call is not necessarily an applied native effect; keep those facts distinct in the UI. */
 export function dashboardActionFeedback(command:string,outcome:unknown):string{
-  const value=outcome&&typeof outcome==="object"?outcome as {state?:unknown;result?:unknown}:{};
+  const value=outcome&&typeof outcome==="object"?outcome as {state?:unknown;result?:unknown;error?:unknown;reason?:unknown}:{};
   const state=typeof value.state==="string"?value.state:"unrecognised host response";
   if(state==="failed-or-unknown"||state==="readback-only")return `NO ACTION CLAIM: ${command} returned ${state}; inspect/reconcile explicitly.`;
-  if(state!=="acknowledged")return `NOT APPLIED: ${command} returned ${state}.`;
+  if(state!=="acknowledged")return `NOT APPLIED: ${command} returned ${state}.${typeof (value.error??value.reason)==="string"?` ${String(value.error??value.reason).slice(0,1024)}`:""}`;
   const result=value.result&&typeof value.result==="object"?value.result as {application?:unknown}:null;
   // A retained records[] snapshot has no outer dashboard request correlation. Never select an old receipt.
   const nativeApplication=typeof result?.application==="string"?result.application:undefined;
@@ -110,15 +113,14 @@ export async function dashboardFrame(options: DashboardFrameOptions): Promise<st
   if(options.connected){
     if(!isDashboardConnection(options.connected))throw Error("original dashboard connection required");
     let view:Awaited<ReturnType<DashboardConnection["frame"]>>;
-    try{view=await options.connected.frame();}catch(error){return `PI-DADDY — CONNECTED HOST ERROR\n${error instanceof Error ? error.message : String(error)}\nNo prior acceptance, presentation or continuity substituted. No action retried.`;}
+    try{view=await options.connected.frame();}catch(error){options.actionMenu?.clear();return panelLines(["PI-DADDY — Disconnected", "The original host is unavailable. No action was retried.", "Return to Pi: /grants host, then /grants dashboard.", ...(options.details?[String(error)]:[])],options.width);}
     if(options.dailyJson||options.debriefJson)return JSON.stringify(view);
     const source=view.source as {daily?:Parameters<typeof renderDailyView>[0]}|null;
-    const actions=(view.actions as {key:string;label:string}[]|undefined)??[];
-    const hostError=typeof view.error==="string"&&view.error?`HOST ERROR — ${view.error}`:null;
-    return ["PI-DADDY — CONNECTED HOST (snapshot; identity/acceptance not authenticated)",hostError,source?.daily?renderDailyView(source.daily,options.width):"Source unavailable; no previous acceptance substituted.",
-      view.debrief?renderDebrief(view.debrief as Parameters<typeof renderDebrief>[0],options.width):"Debrief deferred/closed. No implicit presentation or steering.",
-      `Host control ${view.control}; acknowledgement ${view.acknowledgement}. Attention reserved ${view.attention.attentionUsed}/5 (not proof of delivery). Tip ${view.tip}.`,
-      actions.length?`ACTIONS — type one command and Enter\n${actions.map(action=>`  ${action.key} — ${action.label}`).join("\n")}`:"ACTIONS — none currently authorized; refresh never acts."].filter((line):line is string=>Boolean(line)).join("\n\n");
+    const actions=(view.actions as PanelAction[]|undefined)??[];
+    const menu=(options.actionMenu??createDashboardMenu()).show(view.tip,actions);
+    const learning=view.debrief?["Retained review open below"]:learningSummary(view.learning);
+    const summary=source?.daily?renderDailyPanel(source.daily,options.width,{details:options.details,connected:true,presentation:view.presentation as WorkPresentation|null,error:view.error,controls:view.controls,control:view.control,actions:menu,learning}):panelLines(["PI-DADDY — Needs you","Work observation unavailable. Capture current work or open Details.",...menu.map(a=>`${a.choice}  ${a.label}`)],options.width);
+    return [summary,view.debrief?renderDebrief(view.debrief as Parameters<typeof renderDebrief>[0],options.width):"",options.details?panelLines([`Host control ${view.control}; acknowledgement ${view.acknowledgement}. Attention reserved ${view.attention.attentionUsed}/5. Tip ${view.tip}.`,JSON.stringify(view.controls),JSON.stringify(view.learning),...actions.map(a=>`${a.key} — ${a.label}`)],options.width):""].filter(Boolean).join("\n\n");
   }
   if (options.debrief || options.debriefJson) {
     if (!isDebriefPresenter(options.debrief)) return "PI-DADDY — DEBRIEF UNAVAILABLE: genuine presenter/host missing";
@@ -128,7 +130,7 @@ export async function dashboardFrame(options: DashboardFrameOptions): Promise<st
     try {
       if (options.dailyReader !== undefined && !isDailyViewReader(options.dailyReader)) throw new TypeError("untrusted daily reader callback");
       const view = await (options.dailyReader ?? readDailyView)(options.dailyView);
-      return options.dailyJson ? JSON.stringify(view) : renderDailyView(view, options.width);
+      return options.dailyJson ? JSON.stringify(view) : renderDailyPanel(view, options.width, { details: options.details });
     } catch {
       return "PI-DADDY — DAILY VIEW UNAVAILABLE\nInvalid or unavailable read-only input. No previous acceptance or continuity was substituted.";
     }
@@ -227,6 +229,8 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
     if (!host.debrief) await debrief.open({ mode: "manual", userPresent: true }); // Explicit CLI fixture only; never override a host deferral.
   }
   const dailyReader = createDailyViewReader();
+  const actionMenu=createDashboardMenu();
+  let details=cli.details;
   let previous = "";
   let feedback = "";
   let input: ReturnType<typeof createInterface> | null = null;
@@ -237,13 +241,13 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
       protocol,
       color: cli.color,
       width: process.stdout.columns || 80,
-      details: cli.details,
+      details, actionMenu,
       dailyView, dailyReader, dailyJson: cli.dailyJson, debrief, debriefJson: cli.debriefJson, connected,
     });
-    const rendered = feedback ? `${frame}\n\n${feedback}` : frame;
+    const rendered = feedback ? `${panelLines([feedback], process.stdout.columns || 80)}\n\n${frame}` : frame;
     if (rendered === previous && !clear) return;
     previous = rendered;
-    const prompt = "COMMAND — type an exact listed key, then Enter (refresh never acts): ";
+    const prompt = "Action number / d Details, then Enter: ";
     const draft = input?.line ?? "";
     process.stdout.write(clear ? `\u001b]0;PI-DADDY\u0007\u001b[2J\u001b[H${rendered}\n\n${input ? prompt + draft : ""}` : `${rendered}\n`);
     if (input) input.setPrompt(prompt);
@@ -253,7 +257,7 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
     await draw(false);
     return;
   }
-  input = debrief || connected ? createInterface({ input: process.stdin, output: process.stdout, terminal: true }) : null;
+  input = createInterface({ input: process.stdin, output: process.stdout, terminal: Boolean(process.stdin.isTTY) });
   await draw(true);
   let drawing = false;
   const redraw = (): void => {
@@ -264,10 +268,18 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
   let acting = false;
   input?.on("line", line => {
     if (acting) return; // never replay a line typed while the prior exact command is still settling.
+    if(line.trim().toLowerCase()==="d"){details=!details;redraw();return;}
     acting = true;
-    feedback = `COMMAND ${line.trim() || "(empty)"} — applying the displayed exact request…`;
-    void (connected?dashboardHostAction(connected,line):debriefAction(debrief!, line)).then(outcome => {
-      feedback = connected ? dashboardActionFeedback(line.trim() || "command", outcome) : `ACKNOWLEDGED: ${line.trim() || "command"}. Refreshed state is shown below.`;
+    let label=line.trim()||"(empty)";
+    const act=async()=>{
+      if(connected&&/^\d+$/.test(line.trim())){const selected=actionMenu.select(line.trim());label=selected.label;return connected.humanAction(selected.key,{tip:selected.tip,requestDigest:selected.requestDigest});}
+      if(connected)return dashboardHostAction(connected,line);
+      if(debrief)return debriefAction(debrief,line);
+      throw Error("Read-only snapshot; no controls connected");
+    };
+    feedback = `Action ${label} — awaiting acknowledgement…`;
+    void act().then(outcome => {
+      feedback = connected ? dashboardActionFeedback(label, outcome) : `ACKNOWLEDGED: ${label}. Refreshed state is shown below.`;
     }).catch(error => {
       feedback = `REJECTED: ${error instanceof Error ? error.message : String(error)}. No command was retried; inspect the refreshed offered keys.`;
     }).finally(() => { acting = false; redraw(); });

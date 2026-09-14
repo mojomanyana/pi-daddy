@@ -11,12 +11,12 @@ export async function beginDeclaredWorkAttempt(input: {
   childId: string;
   executionId: string;
   parentExecutionId: string | null;
-  toolCallId?: string;
+  toolCallId?: string; declaredWork?: GrantsSession["declaredWork"];
   preparedWorkspace?: PreparedWorkspace;
   configuredTimeoutMs: number;
   startedAt: Date;
 }): Promise<null | { finish(state: Extract<WorkOccurrencePayload["state"], "completed" | "failed">): Promise<void> }> {
-  const state = input.session.declaredWork;
+  const state = input.declaredWork ?? input.session.declaredWork;
   if (!state) return null;
   const argument = (flag: string): string | null => {
     const index = input.plan.args.indexOf(flag);

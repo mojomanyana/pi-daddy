@@ -1,7 +1,8 @@
 import type { DailyView } from "./daily-view.ts";
+export { renderDailyPanel as renderDailyView } from "./daily-panel.ts";
 const clean = (value: unknown) => String(value ?? "unknown").replace(/[\p{Cc}\p{Cf}]/gu, " ").replace(/\s+/g, " ").trim();
 /** Text-only, accessible labels. No command links, control actions, model calls or terminal input. */
-export function renderDailyView(view: DailyView, width = 100): string {
+export function renderDailyDetails(view: DailyView, width = 100): string {
   const lines = ["PI-DADDY — READ-ONLY DAILY VIEW", view.narrative,
     `Scope: ${view.scope ? `${view.scope.id} revision ${view.scope.revision} digest ${view.scope.digest}` : "UNRESOLVED — select an exact P01 snapshot"}`,
     `Acceptance authority: ${view.authority}; coverage: PARTIAL; freshness: SNAPSHOT / UNKNOWN`,

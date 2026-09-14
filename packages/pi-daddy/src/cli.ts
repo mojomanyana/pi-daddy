@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * `pi-daddy` — the command line, which today has exactly one subcommand.
+ * `pi-daddy` — scaffolding, read-only work inspection and the installed product guide.
  *
  * Thin on purpose: argv in, `discoverSkillPackages` + `planInit` + `applyInit`, report out. Every decision
  * lives in `./init.ts`, `./grant-env.ts` and `./skill-packages.ts` as functions that touch no argv and print
@@ -21,7 +21,9 @@ import { UnsafeGrantError } from "./grant-env.ts";
 import { applyInit, countDeclaring, planInit, type InitPlan } from "./init.ts";
 import { registeredWorkspaceIds } from "./workspace.ts";
 import { discoverSkillPackages, skillPackageRoots, type RefusedSkill, type SkillPackage } from "./skill-packages.ts";
-import { declareWork } from "./work-command.ts";
+import { declareWork, loadDeclaredWork } from "./work-command.ts";
+import { listWorkSetups, workPresentation } from "./work-setup.ts";
+import { panelText } from "./daily-panel.ts";
 
 const USAGE = `pi-daddy — capability governance for pi sub-agents
 
@@ -30,6 +32,11 @@ Usage:
                                            packages that declare skills (package.json "pi": {"skills": …})
   pi-daddy work add --id <id> --outcome <text> [--dir <path>]
                                            declare one current obligation for ordinary delegation
+  pi-daddy work list | work show [--dir <path>]
+                                           inspect saved setups or selected outcome (no model calls)
+  In Pi: /grants work                     guided multi-task/model/effort/dependency setup and run
+         /grants learning                 retained review, trust, adoption and later outcomes
+  pi-daddy guide | current               installed product guide / current requirement register
   pi-daddy --help | --version
 
 init copies each declared SKILL.md into .pi/skills/ and writes a grant naming exactly what those files
@@ -41,7 +48,7 @@ placeholder and stays unspawnable until you fill it in. Capabilities that can ch
             It never rewrites .pi/grants.env — delete that file if you want it regenerated.`;
 
 export interface ParsedArgs {
-  command: "init" | "work-add" | "help" | "version";
+  command: "init" | "work-add" | "work-list" | "work-show" | "guide" | "current" | "help" | "version";
   dir?: string;
   force: boolean;
   id?: string;
@@ -64,10 +71,12 @@ export function parseArgs(argv: string[]): ParsedArgs {
   if (args.includes("--version") || args.includes("-v")) return { command: "version", force: false, errors: [] };
 
   const [command, ...tail] = args;
+  if(command==="guide"||command==="current")return{command,force:false,errors:tail.length?[`${command} takes no arguments`]:[]};
   if (command !== "init" && command !== "work") return { command: "help", force: false, errors: [`unknown command "${command}"`] };
   const work = command === "work";
-  const rest = work && tail[0] === "add" ? tail.slice(1) : tail;
-  if (work && tail[0] !== "add") return { command: "work-add", force: false, errors: ["work needs subcommand add"] };
+  const workVerb = tail[0];
+  const rest = work ? tail.slice(1) : tail;
+  if (work && !["add", "list", "show"].includes(workVerb)) return { command: "work-add", force: false, errors: ["work needs add, list or show; /grants work opens guided setup in Pi"] };
 
   const errors: string[] = [];
   let dir: string | undefined;
@@ -77,11 +86,11 @@ export function parseArgs(argv: string[]): ParsedArgs {
     const arg = rest[i];
     if (arg === "--force" && !work) {
       force = true;
-    } else if (arg === "--id" && work) {
+    } else if (arg === "--id" && work && workVerb === "add") {
       const value = rest[i + 1];
       if (value === undefined || value.startsWith("-")) errors.push("--id needs a value");
       else { id = value; i += 1; }
-    } else if (arg === "--outcome" && work) {
+    } else if (arg === "--outcome" && work && workVerb === "add") {
       const value = rest[i + 1];
       if (value === undefined || value.startsWith("-")) errors.push("--outcome needs text");
       else { outcome = value; i += 1; }
@@ -104,6 +113,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     }
   }
 
+  if (work && workVerb !== "add") return { command: workVerb === "list" ? "work-list" : "work-show", force: false, errors, ...(dir ? { dir } : {}) };
   if (work) {
     if (!id && !errors.some(error => error.startsWith("--id"))) errors.push("--id needs a value");
     if (!outcome && !errors.some(error => error.startsWith("--outcome"))) errors.push("--outcome needs text");
@@ -280,6 +290,15 @@ export async function main(argv: string[]): Promise<number> {
   }
   if (parsed.command === "help") {
     console.log(USAGE);
+    return 0;
+  }
+  if(parsed.command==="guide"||parsed.command==="current"){
+    console.log(await readFile(new URL(parsed.command==="guide"?"../PRODUCT-GUIDE.md":"../REQUIREMENTS.md",import.meta.url),"utf8"));return 0;
+  }
+  if (parsed.command === "work-list" || parsed.command === "work-show") {
+    const cwd=resolvePath(parsed.dir??process.cwd());
+    if(parsed.command==="work-list") {const setups=await listWorkSetups(cwd);console.log(setups.map((s,i)=>`${i+1}. ${panelText(s.setup.outcome)} — ${s.setup.tasks.length} tasks; up to ${s.setup.maxParallel} parallel`).join("\n")||"No saved multi-task setups. In Pi: /grants work");}
+    else {const state=await loadDeclaredWork(resolvePath(cwd,".pi/work-current.json")),view=state?await workPresentation(state):null;console.log(view?[panelText(view.outcome),...view.obligations.map(o=>`- ${panelText(o.outcome)}`)].join("\n"):state?"Selected legacy work; outcome text unavailable":"No work selected. In Pi: /grants work");}
     return 0;
   }
   if (parsed.command === "work-add") {

@@ -5,7 +5,7 @@ deliberate subset of what it holds and withholds the rest. Sub-agents may delega
 subset of what they themselves hold — enforced by **pi's own `--tools` allowlist**, with an append-only
 ledger of every grant and refusal whenever a ledger is configured.
 
-**Source release candidate (2026-09-12):** `0.25.2` repairs cancellation controls when children
+**Earlier release-preparation snapshot (2026-09-12):** `0.25.2` repairs cancellation controls when children
 start after the dashboard opens, preserving exact targets and stale-command refusal.
 The registry baseline at preparation was `0.25.1`. For current publication status, consult
 [npm](https://www.npmjs.com/package/pi-daddy) and [GitHub Releases](https://github.com/mojomanyana/pi-daddy/releases).
@@ -16,8 +16,10 @@ package initializes nothing, and legacy stores are not silently migrated. Malfor
 closed with a loud `GRANT_STORE_INVALID` refusal. `docs/SESSION-LOG.md` and `docs/SPEC.md` are the current
 detailed record.
 
-**Want to run it?** [`docs/RUNNING-IT.md`](docs/RUNNING-IT.md) — setup in six steps, then a feature built
-end to end with seven governed sub-agents, sequential where output feeds input and parallel where it does not.
+**Want to run it?** Start with the concise installed [product guide](packages/pi-daddy/PRODUCT-GUIDE.md)
+and [current requirement register](packages/pi-daddy/REQUIREMENTS.md): ordinary work setup, meaningful
+side panel and retained learning/adoption. [RUNNING-IT.md](docs/RUNNING-IT.md) preserves the more detailed
+seven-sub-agent walkthrough. The new full-product source delivery is unreleased pending end review/testing.
 
 ## What it actually does
 

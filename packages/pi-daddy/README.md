@@ -21,6 +21,16 @@ for this project. See *What this governs, and what it does not*.
 > **Known gaps are stated rather than implied** — see *Status* at the end of this file. The largest is
 > deliberate: a child granted `bash` escapes governance entirely, by decision.
 
+## Everyday work and learning
+
+Start with the short installed **[PRODUCT-GUIDE.md](./PRODUCT-GUIDE.md)** and
+**[current requirement register](./REQUIREMENTS.md)**. `/grants work` now authors/selects bounded multi-task
+and dependent work with explicit agent/model/effort choices; `/grants host` and `/grants dashboard` show
+outcomes, real active work and numbered controls; `/grants learning` opens retained cases, comparisons,
+trust, quality/adoption choices and next-order settings through the loaded harness. These are source
+implementation paths, not evidence that calibration, human acceptance or publication has occurred.
+The historical worked-example transcripts below remain evidence for their stated versions.
+
 ## What this governs, and what it does not
 
 **It governs the tool surface: which tools pi exposes to a model.** That part is structural, not advisory —

@@ -32,6 +32,8 @@ export interface DashboardHostConfig {
   budgetDigest: string; experimentDigest: string | null; harnessArtifactDigest: string;
   ordinaryDigest?: string;
   learningLifecycleId?: string;
+  /** Explicit host journal, while reusing the original trust store/attention across host lifetimes. */
+  journalDirectory?: string;
 }
 export interface DashboardHostRequest { version: "1.0"; requestId: string; hostDigest: string; expectedTip: string; selectionDigest: string; operation: "observe" | "present" | "presented" | "defer" | "debrief" | "dispatch" | "intent" | "cancel" | "dispatch-reconcile" | "intent-reconcile" | "ordinary-cancel"; payload: unknown }
 export interface DashboardHostAuthority {

@@ -18,6 +18,8 @@ export interface DailyAttempt {
   executionId: string; logicalChildId: string | null; intentRuntime: string;
   archive: ArchiveExecution | null; sourceAvailability: Array<{ sha256: string; state: "available" | "missing" | "mismatch" | "error" }>;
   issues: string[]; activeBranch: null;
+  /** Observed launch configuration, not a claim about provider-internal reasoning. */
+  modelId?: string | null; effortId?: string | null;
 }
 export interface DailyObligation {
   key: string; intent: RevisionRef; obligation: RevisionRef; policy: RevisionRef;
@@ -40,6 +42,10 @@ function contextCopy(value: DailyViewOptions["workContext"]): WorkProjectionCont
   const copied = JSON.parse(canonicalWorkJson(copyWorkJson(value ?? { selectedSnapshot: null, authority: null }))) as WorkProjectionContext;
   if (projectWorkLedger("", copied).errors.some(e => e.code === "WORK_CONTEXT_INVALID")) throw new TypeError("invalid independent P01 context");
   return copied;
+}
+function observedLabel(labels: readonly { modelId: string | null; effortId: string | null }[], key: "modelId" | "effortId"): string | null {
+  const values = [...new Set(labels.map(label => label[key]))];
+  return values.length === 1 ? values[0] : null;
 }
 const readers = new WeakSet<object>();
 /** Only actual factory readers may carry continuity state through the dashboard; not arbitrary callbacks. */
@@ -107,6 +113,8 @@ export function createDailyViewReader() {
     for (const attempt of work.runtime?.attempts ?? []) attempts.set(attempt.executionId, {
       executionId: attempt.executionId, logicalChildId: attempt.childId, intentRuntime: attempt.state, archive: null,
       sourceAvailability: [], issues: attempt.problems.map(p => `P01:${p.code}`), activeBranch: null,
+      ...(observedLabel(attempt.observedLabels, "modelId")!==null?{modelId:observedLabel(attempt.observedLabels,"modelId")}:{}),
+      ...(observedLabel(attempt.observedLabels, "effortId")!==null?{effortId:observedLabel(attempt.observedLabels,"effortId")}:{}),
     });
     for (const entry of archive) {
       const a = attempts.get(entry.executionId) ?? { executionId: entry.executionId, logicalChildId: null, intentRuntime: "unknown",

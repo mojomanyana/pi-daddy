@@ -10,10 +10,11 @@ import {
   loadDeclaredWork,
 } from "../src/work-command.ts";
 import { parseWorkLedgerText, projectWorkLedger } from "../src/work-ledger.ts";
+import { workPresentation } from "../src/work-setup.ts";
 
 after(cleanupTempDirs);
 
-test("declareWork creates a selected obligation without retaining the outcome text", async () => {
+test("declareWork keeps outcome text out of governance ledgers and retains private digest-bound presentation", async () => {
   const cwd = await tempDir("work-command-");
   const declared = await declareWork({ cwd, id: "factory-c01", outcome: "Show a real task in Herdr" });
   const text = await readFile(declared.ledgerPath, "utf8");
@@ -25,6 +26,7 @@ test("declareWork creates a selected obligation without retaining the outcome te
   assert.doesNotMatch(text + stateText, /Show a real task in Herdr/);
   assert.equal(loaded?.id, "factory-c01");
   assert.equal(loaded?.obligation.kind, "obligation");
+  assert.equal((await workPresentation(loaded!))?.outcome, "Show a real task in Herdr");
 });
 
 test("same declaration and occurrence deliveries are idempotent; changed text under an id is refused", async () => {

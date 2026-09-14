@@ -2,6 +2,15 @@ import { refusal, type StructuredRefusal } from "./refusals.ts";
 
 export const ENV_ALLOW_UNRESOLVED_MODELS = "PI_GRANTS_ALLOW_UNRESOLVED_MODELS";
 
+/** Pi's resolved catalogue carries provider support in thinkingLevelMap. Never silently clamp a user's choice. */
+export function supportedModelEfforts(model: { reasoning: boolean; thinkingLevelMap?: Partial<Record<string, string | null>> }): ("off"|"minimal"|"low"|"medium"|"high"|"xhigh"|"max")[] {
+  if (!model.reasoning) return ["off"];
+  return (["off","minimal","low","medium","high","xhigh","max"] as const).filter(level => {
+    const mapped=model.thinkingLevelMap?.[level];
+    return mapped!==null && ((level!=="xhigh"&&level!=="max") || mapped!==undefined);
+  });
+}
+
 export interface ModelCatalogue {
   find(provider: string, modelId: string): unknown;
 }
