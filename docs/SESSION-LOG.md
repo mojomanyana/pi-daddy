@@ -5,6 +5,21 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ---
 
+## 0.27.0 release metadata preparation — feature gates pending
+
+Isolated `codex/release-pi-daddy-0.27.0` starts at
+`b9cbef9087b3596a0d930c0ec9b843f34c0f27e8`: Sol-approved producer runtime and the passing
+supported-command expectation repair. Only package/lock version, exact-version assertions and essential
+release/guide metadata change. Planned matching skill-harness release: 0.16.0. Original producer worktree
+and historical runbooks are untouched; the old 0.26.1 publishing instructions are retained as history.
+
+Feature CI/integration and feature merge remain pending. The coordinator opens a release PR only after
+those gates, then qualifies one canonical artifact in a fresh isolated two-extension install with actual
+registry/learning linkage and zero provider requests. Prior live-route evidence remains historical;
+no repeat model calls are required solely for metadata. This preparation performs only metadata/diff
+checks, not tests/build/install/publication or acceptance/calibration. Exact base/path/check hashes and
+handoff summary live in `release-producer-evidence/RELEASE-METADATA-READY.json`.
+
 ## 2026-09-14 — PR52 Sol/CI repair candidate (unreleased)
 
 Repair starts from reviewed producer `264782f0df019c36c4cb5a33b55c16c7ce67d6c4`, preserving
