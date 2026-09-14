@@ -2,8 +2,9 @@
 
 Matching harness release planned: **skill-harness 0.16.0**. The private workspace root is never published.
 Preparation base: `b9cbef9087b3596a0d930c0ec9b843f34c0f27e8`, containing Sol-approved producer
-runtime plus the passing supported-command assertion fix. **Feature CI/integration are still pending;
-no feature merge, release merge, publication or installed qualification is claimed.** This work changes
+runtime plus the passing supported-command assertion fix. **Feature PR #52 merged at
+`b974963a7d0ba5a74fdafe331356c348a1fba565` after green CI, independent review and the model-free cross-package integration check.
+Release merge, publication and final installed qualification remain pending.** This work changes
 version/lock, exact-version expectations and release/guide metadata only; no dependency upgrade or runtime edit.
 
 ## What this candidate delivers
