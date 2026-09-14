@@ -69,7 +69,7 @@ export function openDashboardHost(options:DashboardHostOptions){
   const observation=dashboardObservations(h,c,journal.read),history=()=>journal.read();
   const append=(value:Record<string,unknown>)=>journal.append(history().at(-1)!.id,value);
   const saved=():DebriefCheckpoint|null=>{const rows=history().filter(e=>e.value.type==="checkpoint");return rows.length?detached(rows.at(-1)!.value.checkpoint) as DebriefCheckpoint:null;};
-  let presenter:DebriefPresenter|undefined,busy=false,poisoned=false,presentationRevision:number|null=null,presenceDigest:string|null=null,attentionDeferred:string|null=null,presentationAcknowledged=false;
+  let presenter:DebriefPresenter|undefined,busy=false,poisoned=false,stopped=false,presentationRevision:number|null=null,presenceDigest:string|null=null,attentionDeferred:string|null=null,presentationAcknowledged=false;
   const ordinaryDispatchHoldKey=dataDigest({hostDigest,control:"pause-new-ordinary-dispatch"});
   // A host frame is a read-only snapshot: ordinary children may attach or settle without advancing this journal.
   // Within one tip, a key keeps its first exact request; humanAction revalidates it against current native authority.
@@ -95,6 +95,21 @@ export function openDashboardHost(options:DashboardHostOptions){
       return {key:x.key,label:x.label,operation:request.operation,request};});
   };
   const api={hostDigest,selectionDigest,
+    /** Same owner gate as action: checking stop cannot race a newly admitted effect. Never releases a hold. */
+    async stop(){
+      if(stopped)return;if(busy)throw Error("Cannot stop: dashboard operation busy; wait for its acknowledgement first");busy=true;
+      try{
+        const rows=history();
+        if(poisoned||rows.some(e=>e.value.type==="host-failure")||rows.some(e=>e.value.type==="claim"&&!rows.some(r=>r.value.type==="result"&&r.value.requestId===e.value.requestId)))throw Error("Cannot stop: acknowledgement unknown; retain this original host for readback. Do not repeat effects. Ending the whole Pi session does not reconcile or release this hold.");
+        if(c.ordinaryDigest&&!ordinary)throw Error("Cannot stop: original ordinary boundary unavailable; no recovery");
+        const dispatch=await budget.controls(null).inspect();
+        if(dispatch.admission==="blocked-pending")throw Error("Cannot stop: pending original control requires explicit reconciliation, then resume before stopping");
+        if(dispatch.paused||ordinary&&(ordinary.inspect() as {admission:string}).admission!=="open")throw Error("Cannot stop: resume new work in the original dashboard first. Any pending intent also needs its original reconciliation; no hold was released.");
+        stopped=true;presenter?.close();presentationRevision=null;
+      }finally{busy=false;}
+    },
+    /** Final owner-session disposal only, not /grants host stop. Disconnects without resolving/releasing any control. */
+    endSession(){stopped=true;presenter?.close();presentationRevision=null;},
     async frame(){
       const rows=history(),tip=rows.at(-1)!.id,a=authority();let source:unknown=null,error:string|null=null;
       let selection=c.selection,selectionState="current-control-snapshot";
@@ -111,7 +126,7 @@ export function openDashboardHost(options:DashboardHostOptions){
       const attention=trust.inspect(Date.now());let actions:{key:string;label:string;operation:string;requestDigest:string}[]=[];
       try{const available=await availableHumanActions();
         // A frame that completed after its captured tip is stale and cannot replace a newer display generation.
-        if(history().at(-1)!.id===tip){
+        if(!stopped&&history().at(-1)!.id===tip){
           if(!displayedActions||displayedActions.tip!==tip)displayedActions={tip,actions:new Map()};
           const additions=available.filter(action=>!displayedActions!.actions.has(action.key));
           if(displayedActions.actions.size+additions.length>MAX_DISPLAYED_ACTIONS_PER_TIP)throw Error("displayed dashboard action capacity exhausted");
@@ -133,6 +148,7 @@ export function openDashboardHost(options:DashboardHostOptions){
       const current=(await availableHumanActions()).find(action=>action.key===key);if(!current||current.label!==found.label||dashboardHostRequestDigest(current.request)!==dashboardHostRequestDigest(found.request))throw Error("displayed dashboard action changed; no effect attempted");return api.action(found.request);},
     async action(input:DashboardHostRequest){
       const request=dashboardHostRequest(input),digest=dashboardHostRequestDigest(request);
+      if(stopped)throw Error("dashboard host stopped; no effect attempted");
       if(busy||poisoned)throw Error("dashboard operation busy or acknowledgement unknown");busy=true;let attempted=false;
       try{
         const rows=history(),old=rows.find(e=>e.value.type==="claim"&&e.value.requestId===request.requestId);
@@ -177,8 +193,10 @@ export function openDashboardHost(options:DashboardHostOptions){
               const port=budget.controls(a!.dispatch),ordinaryHold=ordinary&&["pause-dispatch","resume-dispatch"].includes(native.action)?holdOrdinaryDispatch(ordinary,ordinaryDispatchHoldKey):undefined;
               if(request.operation==="dispatch-reconcile"&&(await port.inspect()).records.find(r=>r.request.requestId===native.requestId)?.digest!==dispatchRequestDigest(native))throw Error("exact original dispatch reconciliation required");
               result=request.operation==="dispatch"?await port.request(native):await port.reconcile(native.requestId);
-              const record=(result as {records:{request:{requestId:string};decision:string;application:string}[]}).records.find(r=>r.request.requestId===native.requestId);
-              if(ordinaryHold&&(record?.decision!=="approved"||native.action==="resume-dispatch"&&record.application==="applied"))ordinaryHold.release();
+              const snapshot=result as import("./dispatch-control.ts").DispatchSnapshot,record=snapshot.records.find(r=>r.request.requestId===native.requestId);
+              if(!record)throw Error("native dispatch application acknowledgement unavailable");
+              // A denied resume must not undo an earlier pause/pending control. Release only after final host sync.
+              if(ordinaryHold&&(native.action==="resume-dispatch"&&record.decision==="approved"&&record.application==="applied"||record.application==="not-applied"&&snapshot.admission==="enabled"))releaseOrdinary=ordinaryHold.release;
             }else if(request.operation==="intent"||request.operation==="intent-reconcile"){
               const native=detached(intentRequest(request.payload as IntentRequest)) as IntentRequest,port=budget.intentControls(a!.dispatch),digest=intentRequestDigest(native);
               if(c.ordinaryDigest&&!ordinary)throw Error("original ordinary boundary unavailable; no recovery");

@@ -5,6 +5,26 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ---
 
+## 2026-09-14 — PR52 Sol/CI repair candidate (unreleased)
+
+Repair starts from reviewed producer `264782f0df019c36c4cb5a33b55c16c7ce67d6c4`, preserving
+that commit and all prior READY/review evidence. SOL-1 gets an original-owner stop gate: paused, pending,
+busy and unknown control refuses without losing the host/socket. Denied and unacknowledged resumes keep
+outstanding admission held; explicit successful resume permits stop/start. Final Pi session disposal is
+separate and never releases/reconciles unknown effects. SOL-3 resolves retained registry lineage and shows
+the exact restore digest and all task model/effort rows before rollback consent. SOL-2's existing ordinary
+registry proof fields are documented for the harness and forced by activation/readback-recovery checks;
+no fixed-policy contract is changed.
+
+Four CI failures used retired display labels. Their repairs preserve exact action binding, stale refusal,
+75-sibling current cancellation availability, original-handle cancellation and sibling isolation rather
+than deleting those checks. Focused new regressions, the two affected regression files, original boundary
+checks and type/build checks are the bounded repair gate; exact outcomes and source hashes are in the new
+`producer-evidence/REPAIR-READY.json`, not the historical READY. The first local stop-test attempt lacked
+the package-local fixture dependency link; reusing the existing ignored workspace dependency directory
+required no install. No models, nested agents, full suite, publishing or reviewed-history rewrite belongs
+to this repair step. Coordinator-owned independent repair review and broader CI remain next.
+
 ## 2026-09-14 — full producer product delivery candidate (unreleased)
 
 The isolated `codex/factory-product-producer-20260914` worktree implements the proposal's outcome-first

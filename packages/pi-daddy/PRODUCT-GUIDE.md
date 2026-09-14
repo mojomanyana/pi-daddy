@@ -49,8 +49,12 @@ attempt at the original boundary; it is not automatically retried. Reads/redraws
 **`/grants work`** also selects saved setups or the task for ordinary `delegate`, changes priorities,
 and records scope revisions or alternatives. Live changes use the existing owner's validation/CAS.
 Topology changes require new work; active runs are never rebound. A selected-scope change prevents the
-old bounded order's remaining children from starting. Stopping a host preserves its evidence, not a
-recoverable controller. **Disconnected** means live actions are unavailable, not that children stopped.
+old bounded order's remaining children from starting. **`/grants host stop` refuses while paused: choose
+Resume new work in the original dashboard first.** Busy/pending controls must finish or be explicitly
+reconciled first. Unknown acknowledgements keep the host for readback; stop never silently releases them.
+Ending the whole Pi session disconnects the host, but does not reconcile unknown effects. A successful
+stop preserves evidence, not a recoverable controller, and cancels no child. **Disconnected** means live
+actions are unavailable, not that children stopped.
 
 For shell inspection only: `pi-daddy work list` and `pi-daddy work show` (`--dir` is optional).
 The existing `pi-daddy work add --id … --outcome …` single-obligation entry point remains supported.
@@ -74,8 +78,8 @@ The existing `pi-daddy work add --id … --outcome …` single-obligation entry 
 Deliberate review does **not** reserve earned automatic exposure. For an automatic closing request use
 `/grants host closing`, pause new work and settle/cancel active children. The panel offers retained case
 cards only under the original presence/quiescence/trust/attention rules. A visible acknowledgement is
-separate from preparation. If trust changes, explicitly stop/start the host to bind the original configured
-trust store; its retained attention is reused, never refilled.
+separate from preparation. If trust changes, explicitly resume new work, then stop/start the host to bind
+the original configured trust store; its retained attention is reused, never refilled.
 
 ## Adopt settings for later orders
 
@@ -93,7 +97,9 @@ Subsequent bounded `/grants work` runs ask for fresh eligibility and pin the pro
 migrate. Ordinary direct `delegate` calls keep their explicit caller configuration. After selecting different work,
 this menu explicitly reconnects that scope's saved settings or creates a fresh baseline; old stores remain.
 
-**Roll back active adoption** separately confirms the exact recorded restore target for next orders.
+**Roll back active adoption** shows the immutable restore digest and each task's exact retained model/effort
+before separate consent for next orders. With nested adoptions, this is the previous profile, not necessarily
+baseline. Missing or inconsistent registry lineage refuses instead of substituting a named profile.
 If effect and learning linkage separate on failure, **Recover learning link** reconnects the original
 registry observation without replaying activation/rollback.
 

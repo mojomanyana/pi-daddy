@@ -25,6 +25,9 @@ the record of how the package got here and are worth keeping; they are not worth
   quality/reveal, adopt/reject/defer, independent eligibility, activation and later observation stay separate.
 - Additive model/effort-only next-order registry, original receipt linkage, rollback and readback recovery;
   active/old runs stay pinned. Existing fixed-policy, ledger and retention contracts remain unchanged.
+- PR52 review repairs: refuse host stop while pause/pending/unknown control remains; preserve holds on
+  denied or unacknowledged resumes. Show the retained restore digest and every task model/effort before
+  rollback consent; cover exact activation/readback receipt identities and friendly-label CI regressions.
 - Packaged concise guide/register. Independent end review, broad/installed validation and release are
   still separate gates; no actual calibration, human acceptance or production improvement is claimed.
 

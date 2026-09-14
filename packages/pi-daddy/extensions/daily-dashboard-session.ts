@@ -20,12 +20,13 @@ export async function preparePrivateHostRoot(root:string):Promise<void>{
 }
 
 export function createDailyDashboardSession(input:{ordinary:()=>OrdinaryChildren;declared:()=>DeclaredWorkState|undefined;rebind:(state:DeclaredWorkState)=>void;cwd:()=>string;env:Record<string,string|undefined>;author:string;home?:string}){
- let current:null|Awaited<ReturnType<typeof startDailyDashboardHost>>=null,publishedSocket:string|undefined,closing:null|{present:true;closing:true;evidenceDigest:string;expiresAt:number}=null;
+ let ended=false,current:null|Awaited<ReturnType<typeof startDailyDashboardHost>>=null,publishedSocket:string|undefined,closing:null|{present:true;closing:true;evidenceDigest:string;expiresAt:number}=null;
  return Object.freeze({
   get running(){return current!==null;},
   async frame(){if(!current)throw Error("Start /grants host first");return current.host.frame();},
   async choose(key:string,binding?:{tip:string;requestDigest:string}){if(!current)throw Error("Start /grants host first");if(binding)return current.host.humanAction(key,binding);const frame=await current.host.frame(),action=frame.actions.find(a=>a.key===key);if(!action)throw Error("Action unavailable at the current boundary");return current.host.humanAction(key,{tip:frame.tip,requestDigest:action.requestDigest});},
   async run(target:string){
+   if(ended)throw Error("Original Pi session has ended; no host replacement or control recovery");
    if(!target)target=`daily-${randomUUID().slice(0,8)}`;
    if(target==="stop"){
     if(!current)return "daily host is not running";await current.close();current=null;closing=null;if(publishedSocket&&input.env[ENV_DASHBOARD_HOST_SOCKET]===publishedSocket)delete input.env[ENV_DASHBOARD_HOST_SOCKET];publishedSocket=undefined;return "daily host stopped; no child was cancelled";
@@ -41,6 +42,7 @@ export function createDailyDashboardSession(input:{ordinary:()=>OrdinaryChildren
    publishedSocket=current.socketPath;input.env[ENV_DASHBOARD_HOST_SOCKET]=publishedSocket;
    return `daily host started at ${publishedSocket}; current declared work/facts were captured. Run /grants dashboard for numbered actions or /grants work for work setup. Runtime remains unaccepted.`;
   },
-  async close(){if(current)await current.close();if(publishedSocket&&input.env[ENV_DASHBOARD_HOST_SOCKET]===publishedSocket)delete input.env[ENV_DASHBOARD_HOST_SOCKET];current=null;closing=null;publishedSocket=undefined;}
+  /** Called only when the original Pi session ends; no hold release or effect reconciliation. */
+  async close(){ended=true;if(current)await current.endSession();if(publishedSocket&&input.env[ENV_DASHBOARD_HOST_SOCKET]===publishedSocket)delete input.env[ENV_DASHBOARD_HOST_SOCKET];current=null;closing=null;publishedSocket=undefined;}
  });
 }

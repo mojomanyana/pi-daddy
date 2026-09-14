@@ -117,7 +117,8 @@ export async function workPolicyMenu(ctx: ExtensionCommandContext, state: Declar
   const root = workspace.configuration().archiveRoot;
   const evidence = retain(harness, root, "producer-rollback-request", { reason: "operator-request", adoptionId: receipt.id, observedRevision: current.revision });
   const request = workspace.previewRollback(comparison.name, "operator-request", [evidence], Date.now() + 120_000);
-  if (!await ctx.ui.confirm("Roll back NEXT orders?", "Restore the recorded previous model/effort profile. No active run changes; no defect or improvement is inferred.")) return;
+  const restore = await registry.previewRollback(request);
+  if (!await ctx.ui.confirm("Roll back NEXT orders?", `Restore candidate: ${restore.restoreCandidateDigest}\n${restore.candidate.profiles.map(p => `${p.taskId}: ${p.model} / ${p.thinking}`).join("\n")}\nNo active run changes; no defect or improvement is inferred.`)) return;
   const a = authority(binding.initial.authorityId); a.adoption = { id: a.id, adoptions: [], rollbacks: [request.id] };
   workspace.prepareRollback(comparison.name, request, a.adoption, Date.now(), { adoptionId: receipt.id, candidateDigest: current.candidateDigest, scopeDigest: current.scopeDigest });
   const applied = await registry.rollback(request, a), registryManifestId = retain(harness, root, "producer-registry", applied);

@@ -96,5 +96,10 @@ export async function startDailyDashboardHost(input:DailyDashboardHostInput){
  const before=await host.frame(),observeFacts=request({hostDigest:host.hostDigest,selectionDigest:before.selectionDigest,tip:before.tip},"observe",{sourceId:"facts",previousCheckpointId:null,facts:null},"observe-current-facts");requestDigests.add(dashboardHostRequestDigest(observeFacts));const factsResult=await host.action(observeFacts) as {result:{sourceManifestId:string}};factsResultManifest=factsResult.result.sourceManifestId;
  const afterFacts=await host.frame(),observeWork=request({hostDigest:host.hostDigest,selectionDigest:afterFacts.selectionDigest,tip:afterFacts.tip},"observe",{sourceId:"work",previousCheckpointId:null,facts:factsResult.result.sourceManifestId},"observe-current-work");requestDigests.add(dashboardHostRequestDigest(observeWork));await host.action(observeWork);
  const socketPath=input.socketPath??join(input.directory,"dashboard.sock"),server=await serveDashboardHost(socketPath,host);
- let closed=false;return Object.freeze({host,socketPath,directory:input.directory,async close(){if(closed)return;closed=true;await server.close();}});
+ let closed=false;const disconnect=async()=>{if(closed)return;closed=true;await server.close();};
+ return Object.freeze({host,socketPath,directory:input.directory,
+  async close(){if(closed)return;await host.stop();await disconnect();},
+  /** Final Pi owner-session disposal, never a manual host replacement or implicit resume. */
+  async endSession(){host.endSession();await disconnect();}
+ });
 }

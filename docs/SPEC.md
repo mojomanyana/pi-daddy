@@ -12,7 +12,11 @@ The short installed [PRODUCT-GUIDE](../packages/pi-daddy/PRODUCT-GUIDE.md) and
 `/grants work` authors/selects 1–8 task DAGs with explicit models/effort and bounded parallelism; runs use
 original delegation, grants, approval, timeout and cancellation owners. Complete predecessor output is
 bounded to 32 KiB; retained results to 1 MiB. No automatic retry or controller recovery. Pause holds
-pending admission, not active children. Scope changes prevent old pending attempts at original admission.
+pending admission, not active children. `/grants host stop` refuses while paused, pending, busy or
+acknowledgement-unknown, preserving the original host/socket. Resume explicitly before stopping; pending
+controls require original reconciliation. Resume releases ordinary admission only after final host
+acknowledgement; a denied resume cannot undo a prior pause. Final Pi session disposal disconnects without
+releasing or reconciling outstanding holds. Scope changes prevent old pending attempts at original admission.
 
 The default daily panel leads with outcome/state and observed active models/effort. Numbered choices carry
 the exact host tip/request binding and never gain a new meaning on repaint. Finished attempts collapse;
@@ -23,8 +27,11 @@ and acknowledgement, execution, acceptance and unknown usage remain distinct.
 archive/population/author bind the connection; original trust/attention is reused, not refilled. Deliberate
 review remains separate from earned closing exposure. The additive `ordinary-work-policy-v1` registry can
 change only models/effort on unchanged scoped task IDs/definition names (not a file/tree pin), through existing adoption/rollback
-predicates and separately supplied independent authority/current eligibility. Old runs remain pinned;
-actual later output linkage permits unknown outcomes and never infers acceptance or calibration. Existing
+predicates and separately supplied independent authority/current eligibility. Rollback consent displays
+the immutable restore digest and every task's exact retained model/effort, resolved from validated registry
+lineage rather than a mutable named file. Activation and readback recovery retain original applied state,
+request ID, last-change operation/adoption ID and complete activation receipt for harness validation;
+recovery never repeats registry effects. Old runs remain pinned; actual later output linkage permits unknown outcomes and never infers acceptance or calibration. Existing
 fixed-policy/factory-order contracts (and their scope fingerprint) are unchanged. See ADR-0073 for rationale.
 Independent end review, broad/installed validation and publication are not established by this source change.
 

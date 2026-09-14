@@ -59,6 +59,12 @@ export function openWorkPolicyRegistry(binding: WorkPolicyRegistry) {
   const authority = (host: FactoryAuthority | null) => requireFactoryAuthority(factoryAuthority(host), binding.initial.authorityId);
   const eligible = (r: WorkPolicyActivation, host: FactoryAuthority) => { const facts = host.facts.find(f => f.bindingId === r.binding.id)?.facts; if (!facts) throw Error("current independent eligibility facts required"); validateAdoptionReceipt(r.receipt, r.binding, host.adoption, facts, Date.now()); };
   return { inspect,
+    /** Pure validated replay of the proposed rollback; resolves original retained bytes, never a mutable named file. */
+    async previewRollback(request: RollbackRequest) {
+      const r=cloneExperiment(request),events=(await store.read()).events,s=replay(binding,events);
+      const restored=replay(binding,[...events,{type:"rollback",request:r,fromRevision:s.revision}]);
+      return {requestId:r.id,adoptionId:r.adoptionId,expectedRevision:s.revision,restoreCandidateDigest:workPolicyDigest(restored.candidate),candidate:cloneExperiment(restored.candidate)};
+    },
     async activate(request: WorkPolicyActivation, host: FactoryAuthority | null) {
       const r = cloneExperiment(request), a = authority(host); if (!a.activationDigests.includes(workPolicyActivationDigest(r))) throw Error("exact independent activation approval required");
       await store.transaction(async (events, append) => { eligible(r,a); const s = replay(binding, events), old = s.requests.get(r.requestId); if (old) { if (old !== workPolicyActivationDigest(r)) throw Error("immutable activation ID"); return; } const event = { type: "activate", request: r }; replay(binding, [...events, event]); await append(event); }); return inspect();

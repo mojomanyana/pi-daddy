@@ -57,3 +57,26 @@ campaign; independent whole-change review, broad suites, installed cross-package
 release remain coordinator gates. No live experiment, human acceptance, calibration, activation or
 production improvement is established merely by adding these paths. ADR-0008/0012/0016 and the frozen
 published ledger/retention contracts remain the safety boundary.
+
+## 2026-09-14 PR52 review repair amendment
+
+Sol's independent review requested changes (SOL-1/2/3), so the earlier candidate is not approved.
+A manual host stop now uses the original action gate and refuses outstanding pause/pending/unknown
+control without dropping the host/socket or releasing a hold. Explicit acknowledged resume precedes stop;
+a denied resume cannot clear a prior pause, and a lost final resume acknowledgement retains admission.
+Final owner-session disposal only disconnects and prevents reuse of that session wrapper; it never claims
+control reconciliation. This is separate from manual host replacement, not a forced-resume escape hatch.
+
+Resolve a rollback preview by pure validated registry replay. Final consent shows the immutable restore
+digest and all retained task/model/effort rows, including nested restoration to a non-baseline profile.
+No authority or rollback write is produced by preview or a declined confirmation. Original activation
+and inspect views already supply applied/request/last-change/full-receipt proof; the producer keeps those
+identities on learning recovery. The harness must validate them (SOL-2), not infer activation from candidate
+state. Fixed-policy contracts are unchanged and bare legacy views are not upgraded into proof.
+
+Focused stop/race/acknowledgement and rollback/activation/recovery regressions accompany these repairs.
+The four PR52 CI failures used retired labels, including an opaque ID removed from cancellation labels;
+assertions now target current labels and exact displayed cancellation bindings, retaining stale refusal,
+75-sibling availability, original-handle effects, and sibling isolation checks. Fresh check/source identities
+belong in `producer-evidence/REPAIR-READY.json`; prior READY/review receipts remain untouched. Independent
+repair review, broader CI and installed/live qualification remain coordinator gates.
