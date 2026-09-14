@@ -12,6 +12,25 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## Unreleased — ordinary work and learning product (2026-09-14, ADR-0073)
+
+- Outcome-first daily panel, observed active model/effort, collapsed history and exact-frame numbered
+  actions. The former diagnostic renderer remains `renderDailyDetails`; frozen fixtures stay unchanged.
+- `/grants work` authoring/selecting of 1–8-task DAGs, scope/alternative/priority changes and explicit
+  model/effort. Bounded runs reuse original delegation/approval/executor/cancellation owners, retain full
+  bounded results, wait on pause and refuse stale pinned scope at admission. No automatic retries.
+- Separate private instruction/presentation retention, including single-work outcome labels; governance
+  ledgers still do not store instruction text. CLI `work list`/`work show` and public setup/run exports.
+- `/grants learning` uses the loaded harness's scoped workspace/wizard. Original trust attention is reused;
+  quality/reveal, adopt/reject/defer, independent eligibility, activation and later observation stay separate.
+- Additive model/effort-only next-order registry, original receipt linkage, rollback and readback recovery;
+  active/old runs stay pinned. Existing fixed-policy, ledger and retention contracts remain unchanged.
+- PR52 review repairs: refuse host stop while pause/pending/unknown control remains; preserve holds on
+  denied or unacknowledged resumes. Show the retained restore digest and every task model/effort before
+  rollback consent; cover exact activation/readback receipt identities and friendly-label CI regressions.
+- Packaged concise guide/register. Independent end review, broad/installed validation and release are
+  still separate gates; no actual calibration, human acceptance or production improvement is claimed.
+
 ## 0.26.1 — measured-order fractional usage repair (2026-09-14)
 
 - Preserve fractional measured-order usage when serializing results, so bounded recovery and dependent review retain exact reported usage.

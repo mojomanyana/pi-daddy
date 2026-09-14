@@ -86,7 +86,7 @@ test("human action provider receives the current host CAS context and may resolv
 test("human dashboard commands invoke only host-published exact approved actions",async()=>{
  const w=await hostWorld(false),request=await w.request("defer",{reason:"weekly"},"ui-defer");let current=request;w.authority!.requestDigests=[...w.authority!.requestDigests,dashboardHostRequestDigest(request)];
  const host=openDashboardHost({...w.options,humanActions:()=>[{key:"defer-weekly",label:"Defer cards until weekly review",request:current}]});
- const rendered=await dashboardFrame({cwd:w.root,connected:host} as never);assert.match(rendered,/defer-weekly — Defer cards until weekly review/);assert.doesNotMatch(rendered,/expectedTip|selectionDigest/);
+ const rendered=await dashboardFrame({cwd:w.root,connected:host} as never);assert.match(rendered,/(?:^|\n)1 Defer cards until weekly review(?:\n|$)/);assert.doesNotMatch(rendered,/defer-weekly|expectedTip|selectionDigest/);
  await assert.rejects(dashboardHostAction(host,"pause-everything"),/unknown dashboard action/);
  const remapped={...request,requestId:"ui-remapped",operation:"observe" as const,payload:{sourceId:"facts",previousCheckpointId:null,facts:null}};w.authority!.requestDigests=[...w.authority!.requestDigests,dashboardHostRequestDigest(remapped)];current=remapped;
  await assert.rejects(dashboardHostAction(host,"defer-weekly"),/displayed dashboard action changed/);

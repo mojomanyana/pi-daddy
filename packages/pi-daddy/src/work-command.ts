@@ -17,6 +17,8 @@ import {
 } from "./work-ledger.ts";
 import { withFileLock } from "./file-lock.ts";
 import { resolveWorkSnapshotText } from "./work-ledger-snapshot.ts";
+import { readProductJson, writeProductJson } from "./product-files.ts";
+import { intentKey } from "./intent-control.ts";
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:/@+\-]{0,127}$/;
 const DIGEST = /^[a-f0-9]{64}$/;
@@ -88,7 +90,8 @@ export async function loadDeclaredWork(statePath: string): Promise<WorkFrozen<De
     const ingestion = parseWorkLedgerText(ledger);
     const projection = projectWorkLedger(ledger, { selectedSnapshot: value.selectedSnapshot, authority: null });
     const obligation = projection.obligations.find(item => item.binding.obligation.digest === value.obligation.digest);
-    if (!ingestion.complete || projection.scopeState !== "valid" || !obligation || projection.selectedSnapshot?.digest !== value.selectedSnapshot.snapshot.digest) throw new Error("unbound");
+    const selected = resolveWorkSnapshotText(ledger, value.selectedSnapshot);
+    if (!ingestion.complete || projection.scopeState !== "valid" || !obligation || projection.selectedSnapshot?.digest !== value.selectedSnapshot.snapshot.digest || intentKey(obligation.binding.intent) !== intentKey(value.intent) || intentKey(obligation.binding.policy) !== intentKey(value.policy) || !selected.scope || selected.scope.digest !== value.scope.digest || selected.scope.id !== value.scope.id || selected.scope.revision !== value.scope.revision) throw new Error("unbound");
     return Object.freeze({ ...value, statePath: resolve(statePath) });
   } catch {
     throw new Error("invalid declared work state; no task was selected");
@@ -112,10 +115,12 @@ export async function declareWork(input: DeclareWorkInput): Promise<WorkFrozen<D
   }
   return withFileLock(resolved.statePath, "declared work", async () => {
     const existing = await loadDeclaredWork(resolved.statePath);
-    if (existing) {
-      if (existing.id === input.id && existing.outcomeDigest === outcomeDigest) return existing;
-      throw new Error(`declared work id ${input.id} already names a different outcome`);
-    }
+    if (existing && (existing.id !== input.id || existing.outcomeDigest !== outcomeDigest)) throw new Error(`declared work id ${input.id} already names a different outcome`);
+    const outcomePath = join(projectPi, "work-outcomes", `${outcomeDigest}.json`);
+    const retained = await readProductJson(outcomePath);
+    if (retained && JSON.stringify(retained) !== JSON.stringify({ outcome: input.outcome.trim() })) throw Error("declared outcome identity conflict");
+    if (!retained) await writeProductJson(outcomePath, { outcome: input.outcome.trim() });
+    if (existing) return existing;
     const pendingPath = `${resolved.statePath}.pending`;
     let prepared: { version: "pi-daddy-work-preparation-v1"; id: string; outcomeDigest: string; createdAt: string };
     try {
@@ -158,7 +163,7 @@ export async function declareWork(input: DeclareWorkInput): Promise<WorkFrozen<D
 
 /** Persist an already-applied exact selection so the next governed dispatch cannot keep using the old cached declaration. */
 export async function rebindDeclaredWork(state:WorkFrozen<DeclaredWorkState>,selectedSnapshot:NonNullable<WorkProjectionContext["selectedSnapshot"]>):Promise<WorkFrozen<DeclaredWorkState>>{
- return withFileLock(state.statePath,"declared work rebind",async()=>{const current=await loadDeclaredWork(state.statePath);if(!current||JSON.stringify(current.selectedSnapshot)!==JSON.stringify(state.selectedSnapshot))throw Error("declared work rebind is stale; new dispatch remains unsupported");const text=await readFile(state.ledgerPath,"utf8"),resolved=resolveWorkSnapshotText(text,selectedSnapshot),binding=resolved.snapshot?.bindings[0];if(resolved.scopeState!=="valid"||!resolved.scope||!resolved.snapshot||!binding)throw Error("applied declared selection cannot bind future dispatch");const stored:StoredDeclaredWorkState={version:"pi-daddy-declared-work-v1",id:state.id,outcomeDigest:state.outcomeDigest,ledgerPath:state.ledgerPath,grantLedgerPath:state.grantLedgerPath,selectedSnapshot,scope:{kind:resolved.scope.kind,id:resolved.scope.id,revision:resolved.scope.revision,digest:resolved.scope.digest},intent:binding.intent,obligation:binding.obligation,policy:binding.policy};const temporary=`${state.statePath}.${process.pid}.${randomUUID()}.tmp`;try{await writeFile(temporary,`${JSON.stringify(stored,null,2)}\n`,{encoding:"utf8",mode:0o600,flag:"wx"});await rename(temporary,state.statePath);}finally{await rm(temporary,{force:true});}return Object.freeze({...stored,statePath:state.statePath});});
+ return withFileLock(state.statePath,"declared work rebind",async()=>{const current=await loadDeclaredWork(state.statePath);if(!current||intentKey(current.selectedSnapshot)!==intentKey(state.selectedSnapshot))throw Error("declared work rebind is stale; new dispatch remains unsupported");const text=await readFile(state.ledgerPath,"utf8"),resolved=resolveWorkSnapshotText(text,selectedSnapshot),binding=resolved.snapshot?.bindings[0];if(resolved.scopeState!=="valid"||!resolved.scope||!resolved.snapshot||!binding)throw Error("applied declared selection cannot bind future dispatch");const stored:StoredDeclaredWorkState={version:"pi-daddy-declared-work-v1",id:state.id,outcomeDigest:state.outcomeDigest,ledgerPath:state.ledgerPath,grantLedgerPath:state.grantLedgerPath,selectedSnapshot,scope:{kind:resolved.scope.kind,id:resolved.scope.id,revision:resolved.scope.revision,digest:resolved.scope.digest},intent:binding.intent,obligation:binding.obligation,policy:binding.policy};const temporary=`${state.statePath}.${process.pid}.${randomUUID()}.tmp`;try{await writeFile(temporary,`${JSON.stringify(stored,null,2)}\n`,{encoding:"utf8",mode:0o600,flag:"wx"});await rename(temporary,state.statePath);}finally{await rm(temporary,{force:true});}return Object.freeze({...stored,statePath:state.statePath});});
 }
 
 export type DeclaredOccurrenceIdentity = Pick<WorkOccurrencePayload["labels"], "toolCallId" | "taskId" | "workspaceId" | "definitionDigest" | "configurationDigest" | "modelId" | "effortId"> & {

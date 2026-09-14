@@ -76,12 +76,12 @@ export interface GrantsCommandContext {
 const PREVIEW_LIMIT = 12;
 
 /** The verbs `/grants` answers to. Anything else is refused rather than silently treated as no verb. */
-const KNOWN_SUBCOMMANDS: readonly string[] = ["init", "host", "variants", "dashboard", "ledger", "approvals", "revoke"];
+const KNOWN_SUBCOMMANDS: readonly string[] = ["work", "learning", "init", "host", "variants", "dashboard", "ledger", "approvals", "revoke"];
 
 export const grantsCommand = {
   description:
     "Show this session's capability grant, delegation depth, and known agent-type ceilings; " +
-    "/grants host <fresh-id>|stop | /grants variants | /grants dashboard | /grants approvals | /grants ledger | /grants revoke <key>|--all",
+    "/grants work (setup/run/results) | /grants learning | /grants host [fresh-id]|stop | /grants dashboard | /grants approvals | /grants ledger",
 handler: async (args: string, ctx: any) => {
     // Everything this command may see, named in one place. Previously these were whatever happened to be in
     // the enclosing closure — which is how a diagnostic came to disagree with the enforcer (R-28).

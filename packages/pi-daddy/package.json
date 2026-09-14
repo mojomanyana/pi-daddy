@@ -37,6 +37,12 @@
       "types": "./dist/ledger.d.ts",
       "default": "./dist/ledger.js"
     },
+    "./work-setup": { "types": "./dist/work-setup.d.ts", "default": "./dist/work-setup.js" },
+    "./work-command": { "types": "./dist/work-command.d.ts", "default": "./dist/work-command.js" },
+    "./work-run": { "types": "./dist/work-run.d.ts", "default": "./dist/work-run.js" },
+    "./work-policy-registry": { "types": "./dist/work-policy-registry.d.ts", "default": "./dist/work-policy-registry.js" },
+    "./factory-registry": { "types": "./dist/factory-registry.d.ts", "default": "./dist/factory-registry.js" },
+    "./learning-connection": { "types": "./dist/learning-connection.d.ts", "default": "./dist/learning-connection.js" },
     "./work-ledger": {
       "types": "./dist/work-ledger.d.ts",
       "default": "./dist/work-ledger.js"
@@ -241,6 +247,8 @@
     "THIRD_PARTY_LICENSES",
     "THIRD_PARTY_NOTICES.md",
     "README.md",
+    "PRODUCT-GUIDE.md",
+    "REQUIREMENTS.md",
     "CHANGELOG.md",
     "LICENSE"
   ],

@@ -48,6 +48,8 @@ import { defaultDashboardPaths, offerDashboardHandshake, openDashboardCommand } 
 import { associateOrdinaryHost, ordinaryChildrenFor } from "../src/ordinary-children.ts";
 import { loadDeclaredWork } from "../src/work-command.ts";
 import { createDailyDashboardSession } from "./daily-dashboard-session.ts";
+import { createWorkSession } from "./work-session.ts";
+import { createLearningSession } from "./learning-session.ts";
 import { replacePublishedDailyWork, type PublishedDailyWork } from "./daily-work-session.ts";
 export default function (pi: ExtensionAPI) {
   // The path pi loads as the extension, so a child granted `tool:delegate` can be started with `-e <this>`.
@@ -70,6 +72,8 @@ export default function (pi: ExtensionAPI) {
   // dispatch surface; afterwards this callback refreshes their model-facing spawnable-definition text.
   const delegation = { refreshSpawnable: () => {} };
   const publishedDailyWork: PublishedDailyWork = {};
+  const workSession=createWorkSession(session,dailyHost,()=>replacePublishedDailyWork(process.env,publishedDailyWork,session.declaredWork));
+  const learningSession=createLearningSession(dailyHost);
 
   pi.on("session_start", async (_event, ctx) => {
     // Real SDK contexts always supply SessionManager. The fallback keeps lightweight wiring fixtures
@@ -253,7 +257,7 @@ export default function (pi: ExtensionAPI) {
    * installed here for the reason R-62 gives: it would turn pi's "interrupt this turn" into "exit pi".
    */
   pi.on("session_shutdown", async () => {
-    await dailyHost.close().catch(() => undefined);
+    await workSession.close(); await dailyHost.close().catch(() => undefined);
   });
 
   pi.on("agent_settled", async () => {
@@ -349,7 +353,7 @@ export default function (pi: ExtensionAPI) {
     ...grantsCommand,
     // Built per invocation and spelled out field by field, rather than passing the session whole: what a
     // read-only diagnostic may see is a decision, and `GrantsCommandContext` is where it is recorded.
-    handler: (args, ctx) =>
+    handler: (args, ctx) => /^learning(?:\s|$)/.test(args.trim()) ? learningSession.run(args.trim().slice(8).trim(),ctx).catch(error=>{ctx.ui.notify(String(error),"error");}) : /^work(?:\s|$)/.test(args.trim()) ? workSession.run(args.trim().slice(4).trim(),ctx).catch(error=>{ctx.ui.notify(String(error),"error");}) :
       grantsCommand.handler(args, {
         ...ctx,
         grants: {

@@ -1,3 +1,4 @@
+import type { WorkPresentation } from "./daily-panel.ts";
 import { isOrdinaryChildren, holdOrdinaryDispatch, type OrdinaryChildren, type OrdinaryCancellation } from "./ordinary-children.ts";
 import { loadedDashboardHarnessDigest } from "./dashboard-harness.ts";
 import { join, isAbsolute } from "node:path";
@@ -22,6 +23,11 @@ export type DashboardHost=ReturnType<typeof openDashboardHost>;
 export interface DashboardHostOptions { ordinary?:OrdinaryChildren; harness:DashboardHarness; config:DashboardHostConfig; budget:GovernedBudgetBinding; experiment?:ReturnType<typeof openExperiment>; authority:()=>DashboardHostAuthority|null;
   /** Exact actions constructed and authorized by the owner; the dashboard exposes only human labels/keys. */
   humanActions?:(context:{hostDigest:string;selectionDigest:string;tip:string;observations:readonly {sourceId:string;checkpointId:string}[];preparedPresentationDigest:string|null})=>readonly {key:string;label:string;request:DashboardHostRequest}[]|Promise<readonly {key:string;label:string;request:DashboardHostRequest}[]>;
+  /** Read-only, digest-bound local outcome labels. Never grants acceptance or control. */
+  presentation?: () => WorkPresentation | null | Promise<WorkPresentation | null>;
+  currentWork?: () => Promise<import("./daily-view.ts").DailyView>;
+  learningView?: () => unknown;
+  afterObservation?: (observation: import("./dashboard-observation.ts").DashboardObservation) => void;
   /** Explicit approved observation effect only; refresh/frame never invokes it. */
   beforeObservation?:(sourceId:string)=>Promise<void>;
   /** Owner callback after the exact intent journal reports applied; failure keeps host acknowledgement unknown. */
@@ -30,7 +36,8 @@ export interface DashboardHostOptions { ordinary?:OrdinaryChildren; harness:Dash
   presence?:()=>{present:boolean;closing:boolean;evidenceDigest:string;expiresAt:number}|null;
 }
 function configuration(input:DashboardHostConfig){
-  const c=detached(input);controlShape(c,["version","trustDirectory","trustPolicyId","archiveRoot","scope","author","policyPath","policySha256","sources","selection","cases","blind","budgetDigest","experimentDigest","harnessArtifactDigest",...(Object.hasOwn(c,"ordinaryDigest")?["ordinaryDigest"]:[]),...(Object.hasOwn(c,"learningLifecycleId")?["learningLifecycleId"]:[])]);
+  const c=detached(input);controlShape(c,["version","trustDirectory","trustPolicyId","archiveRoot","scope","author","policyPath","policySha256","sources","selection","cases","blind","budgetDigest","experimentDigest","harnessArtifactDigest",...(Object.hasOwn(c,"ordinaryDigest")?["ordinaryDigest"]:[]),...(Object.hasOwn(c,"learningLifecycleId")?["learningLifecycleId"]:[]),...(Object.hasOwn(c,"journalDirectory")?["journalDirectory"]:[])]);
+  if(c.journalDirectory!==undefined&&(typeof c.journalDirectory!=="string"||!isAbsolute(c.journalDirectory)))throw Error("explicit host journal directory required");
   if(Object.hasOwn(c,"ordinaryDigest")&&!sha(c.ordinaryDigest))throw Error("invalid ordinary binding digest");
   if(Object.hasOwn(c,"learningLifecycleId")&&!sha(c.learningLifecycleId))throw Error("invalid learning lifecycle manifest");
   if(c.version!=="producer-dashboard-host-v1"||![c.trustDirectory,c.archiveRoot,c.policyPath].every(p=>typeof p==="string"&&isAbsolute(p))||![c.trustPolicyId,c.policySha256,c.budgetDigest,c.harnessArtifactDigest].every(sha)||!(c.experimentDigest===null||sha(c.experimentDigest))||typeof c.scope!=="string"||!c.scope||c.scope.length>128||typeof c.author!=="string"||!c.author||c.author.length>256||!Array.isArray(c.sources)||c.sources.length<1||c.sources.length>32||new Set(c.sources.map(s=>s.id)).size!==c.sources.length||c.sources.filter(s=>s.kind==="work").length>1||c.sources.some(s=>!/^[a-zA-Z0-9:_-]{1,128}$/.test(s.id)||!["work","retention","facts"].includes(s.kind)))throw Error("invalid explicit dashboard host binding");
@@ -43,7 +50,7 @@ export function createDashboardHost(options:DashboardHostOptions){
   if(!a?.hostDigests.includes(dashboardHostDigest(c)))throw Error("independent exact host authority required");
   const trust=h.openTrustLifecycle(c.trustDirectory),view=trust.inspect(Date.now());
   if(view.policyId!==c.trustPolicyId)throw Error("trust policy changed");
-  h.learningJournal(join(c.trustDirectory,"producer-host"),{type:"producer-host-initial",config:c});
+  h.learningJournal(c.journalDirectory??join(c.trustDirectory,"producer-host"),{type:"producer-host-initial",config:c});
   return openDashboardHost(options);
 }
 /** Existing native writers + original controllers; no model, launch, authority-file loader or PID recovery. */
@@ -53,7 +60,7 @@ export function openDashboardHost(options:DashboardHostOptions){
   const budget=openResourceBudget(options.budget),experiment=options.experiment,ordinary=options.ordinary;
   if(ordinary&&(!isOrdinaryChildren(ordinary)||ordinary.bindingDigest!==c.ordinaryDigest))throw Error("original ordinary controller binding required");
   if(resourceBindingDigest(budget.binding)!==c.budgetDigest||experiment&&(!isExperimentController(experiment)||experimentBindingDigest(experiment.binding)!==c.experimentDigest))throw Error("original controller binding required");
-  const trust=h.openTrustLifecycle(c.trustDirectory),journal=h.learningJournal(join(c.trustDirectory,"producer-host"));
+  const trust=h.openTrustLifecycle(c.trustDirectory),journal=h.learningJournal(c.journalDirectory??join(c.trustDirectory,"producer-host"));
   const initial=journal.read()[0].value;
   if(initial.type!=="producer-host-initial"||dataDigest(initial.config)!==hostDigest)throw Error("host store binding changed; no new budget");
   const trustInput=trust.history()[0].value.input as {archiveRoot:string;component:unknown;exposure:{attentionRemaining:number}|null};
@@ -62,7 +69,7 @@ export function openDashboardHost(options:DashboardHostOptions){
   const observation=dashboardObservations(h,c,journal.read),history=()=>journal.read();
   const append=(value:Record<string,unknown>)=>journal.append(history().at(-1)!.id,value);
   const saved=():DebriefCheckpoint|null=>{const rows=history().filter(e=>e.value.type==="checkpoint");return rows.length?detached(rows.at(-1)!.value.checkpoint) as DebriefCheckpoint:null;};
-  let presenter:DebriefPresenter|undefined,busy=false,poisoned=false,presentationRevision:number|null=null,presenceDigest:string|null=null,attentionDeferred:string|null=null,presentationAcknowledged=false;
+  let presenter:DebriefPresenter|undefined,busy=false,poisoned=false,stopped=false,presentationRevision:number|null=null,presenceDigest:string|null=null,attentionDeferred:string|null=null,presentationAcknowledged=false;
   const ordinaryDispatchHoldKey=dataDigest({hostDigest,control:"pause-new-ordinary-dispatch"});
   // A host frame is a read-only snapshot: ordinary children may attach or settle without advancing this journal.
   // Within one tip, a key keeps its first exact request; humanAction revalidates it against current native authority.
@@ -88,39 +95,60 @@ export function openDashboardHost(options:DashboardHostOptions){
       return {key:x.key,label:x.label,operation:request.operation,request};});
   };
   const api={hostDigest,selectionDigest,
+    /** Same owner gate as action: checking stop cannot race a newly admitted effect. Never releases a hold. */
+    async stop(){
+      if(stopped)return;if(busy)throw Error("Cannot stop: dashboard operation busy; wait for its acknowledgement first");busy=true;
+      try{
+        const rows=history();
+        if(poisoned||rows.some(e=>e.value.type==="host-failure")||rows.some(e=>e.value.type==="claim"&&!rows.some(r=>r.value.type==="result"&&r.value.requestId===e.value.requestId)))throw Error("Cannot stop: acknowledgement unknown; retain this original host for readback. Do not repeat effects. Ending the whole Pi session does not reconcile or release this hold.");
+        if(c.ordinaryDigest&&!ordinary)throw Error("Cannot stop: original ordinary boundary unavailable; no recovery");
+        const dispatch=await budget.controls(null).inspect();
+        if(dispatch.admission==="blocked-pending")throw Error("Cannot stop: pending original control requires explicit reconciliation, then resume before stopping");
+        if(dispatch.paused||ordinary&&(ordinary.inspect() as {admission:string}).admission!=="open")throw Error("Cannot stop: resume new work in the original dashboard first. Any pending intent also needs its original reconciliation; no hold was released.");
+        stopped=true;presenter?.close();presentationRevision=null;
+      }finally{busy=false;}
+    },
+    /** Final owner-session disposal only, not /grants host stop. Disconnects without resolving/releasing any control. */
+    endSession(){stopped=true;presenter?.close();presentationRevision=null;},
     async frame(){
       const rows=history(),tip=rows.at(-1)!.id,a=authority();let source:unknown=null,error:string|null=null;
       let selection=c.selection,selectionState="current-control-snapshot";
       try{selection=await currentSelection();}catch(e){error=String(e);selectionState="unavailable-host-declaration-only";}
-      try{source=await observation.view(selectionState==="current-control-snapshot"?a:null,selection);}catch(e){error=String(e);}
+      try{source=await observation.view(selectionState==="current-control-snapshot"?a:null,selection);
+        if(options.currentWork)source={...(source as object),daily:await options.currentWork()};
+      }catch(e){error=String(e);}
       let debrief:unknown=null;
       if(a&&presenter&&presentationRevision!==null&&presence()?.evidenceDigest===presenceDigest){try{await paused(presentationRevision);debrief=presenter.view();}catch{debrief=null;}}
       let controls:unknown=null;try{controls=await nativeRead();}catch(e){error=String(e);}
       let learning:unknown=null;if(c.learningLifecycleId)try{learning=h.readLearningLifecycle(c.archiveRoot,c.learningLifecycleId);}catch(e){error=String(e);}
-      const attention=trust.inspect(Date.now());let actions:{key:string;label:string;operation:string}[]=[];
+      let presentation:WorkPresentation|null=null;try{presentation=await options.presentation?.()??null;}catch(e){error=String(e);}
+      if(options.learningView)try{learning=options.learningView();}catch(e){learning={state:"deferred",reason:String(e)};}
+      const attention=trust.inspect(Date.now());let actions:{key:string;label:string;operation:string;requestDigest:string}[]=[];
       try{const available=await availableHumanActions();
         // A frame that completed after its captured tip is stale and cannot replace a newer display generation.
-        if(history().at(-1)!.id===tip){
+        if(!stopped&&history().at(-1)!.id===tip){
           if(!displayedActions||displayedActions.tip!==tip)displayedActions={tip,actions:new Map()};
           const additions=available.filter(action=>!displayedActions!.actions.has(action.key));
           if(displayedActions.actions.size+additions.length>MAX_DISPLAYED_ACTIONS_PER_TIP)throw Error("displayed dashboard action capacity exhausted");
           const shown=available.filter(action=>{const prior=displayedActions!.actions.get(action.key);
             if(prior&&dashboardHostRequestDigest(prior.request)!==dashboardHostRequestDigest(action.request))return false;
             if(!prior)displayedActions!.actions.set(action.key,action);return true;});
-          actions=shown.map(({key,label,operation})=>({key,label,operation}));
+          actions=shown.map(({key,label,operation,request})=>({key,label,operation,requestDigest:dashboardHostRequestDigest(request)}));
         }}catch(e){error=String(e);}
-      return freeze(detached({version:"producer-dashboard-frame-v1",hostDigest,selectionDigest:dashboardSelectionDigest(selection),selectionState,tip,source,controls,learning,debrief,attention,error,actions,
+      return freeze(detached({version:"producer-dashboard-frame-v1",hostDigest,selectionDigest:dashboardSelectionDigest(selection),selectionState,tip,source,controls,learning,debrief,attention,error,actions,presentation,
         requests:rows.filter(e=>["claim","result","presentation","defer","ordinary-intent-pending"].includes(String(e.value.type))).map(e=>e.value),
         control:rows.some(e=>e.value.type==="host-failure")?"failed":rows.some(e=>e.value.type==="claim"&&!rows.some(r=>r.value.type==="result"&&r.value.requestId===e.value.requestId))?"unknown":"not-assessed",
         acknowledgement:poisoned?"unknown":"readback-only",identity:"independently-declared-host; not human/module authentication",activeBranch:null,acceptance:"not-assessed",freshness:"snapshot-unknown",workerInteractions:0}));
     },
     /** Explicit reconciliation is read-only. A retained claim is never replayed as an effect. */
     reconcile:()=>api.frame(),
-    async humanAction(key:string){const tip=history().at(-1)!.id;if(!displayedActions||displayedActions.tip!==tip)throw Error("dashboard actions must be displayed at the current tip");
+    async humanAction(key:string,expected?:{tip:string;requestDigest:string}){const tip=history().at(-1)!.id;if(expected&&expected.tip!==tip)throw Error("displayed action is stale; select again");if(!displayedActions||displayedActions.tip!==tip)throw Error("dashboard actions must be displayed at the current tip");
       const found=displayedActions.actions.get(key);if(!found)throw Error(`unknown dashboard action ${JSON.stringify(key)}`);
+      if(expected&&dashboardHostRequestDigest(found.request)!==expected.requestDigest)throw Error("displayed action identity changed; no effect attempted");
       const current=(await availableHumanActions()).find(action=>action.key===key);if(!current||current.label!==found.label||dashboardHostRequestDigest(current.request)!==dashboardHostRequestDigest(found.request))throw Error("displayed dashboard action changed; no effect attempted");return api.action(found.request);},
     async action(input:DashboardHostRequest){
       const request=dashboardHostRequest(input),digest=dashboardHostRequestDigest(request);
+      if(stopped)throw Error("dashboard host stopped; no effect attempted");
       if(busy||poisoned)throw Error("dashboard operation busy or acknowledgement unknown");busy=true;let attempted=false;
       try{
         const rows=history(),old=rows.find(e=>e.value.type==="claim"&&e.value.requestId===request.requestId);
@@ -135,7 +163,7 @@ export function openDashboardHost(options:DashboardHostOptions){
         try{
           if(request.operation==="observe"){
             const sourceId=(request.payload as {sourceId?:unknown})?.sourceId;if(typeof sourceId!=="string")throw Error("exact observation source required");await options.beforeObservation?.(sourceId);
-            const captured=observation.observe(request.payload,a!,selection);append({type:"observation",observation:captured});result=captured;
+            const captured=observation.observe(request.payload,a!,selection);append({type:"observation",observation:captured});options.afterObservation?.(captured);result=captured;
           }else if(request.operation==="present"){
             const p=detached(request.payload) as {userPresent:boolean;closing:boolean;evidenceDigest:string;dispatchRevision:number};
             if(Object.keys(p).sort().join()!=="closing,dispatchRevision,evidenceDigest,userPresent"||!sha(p.evidenceDigest)||typeof p.userPresent!=="boolean"||typeof p.closing!=="boolean"||!Number.isSafeInteger(p.dispatchRevision))throw Error("explicit presence/boundary evidence required");
@@ -165,8 +193,10 @@ export function openDashboardHost(options:DashboardHostOptions){
               const port=budget.controls(a!.dispatch),ordinaryHold=ordinary&&["pause-dispatch","resume-dispatch"].includes(native.action)?holdOrdinaryDispatch(ordinary,ordinaryDispatchHoldKey):undefined;
               if(request.operation==="dispatch-reconcile"&&(await port.inspect()).records.find(r=>r.request.requestId===native.requestId)?.digest!==dispatchRequestDigest(native))throw Error("exact original dispatch reconciliation required");
               result=request.operation==="dispatch"?await port.request(native):await port.reconcile(native.requestId);
-              const record=(result as {records:{request:{requestId:string};decision:string;application:string}[]}).records.find(r=>r.request.requestId===native.requestId);
-              if(ordinaryHold&&(record?.decision!=="approved"||native.action==="resume-dispatch"&&record.application==="applied"))ordinaryHold.release();
+              const snapshot=result as import("./dispatch-control.ts").DispatchSnapshot,record=snapshot.records.find(r=>r.request.requestId===native.requestId);
+              if(!record)throw Error("native dispatch application acknowledgement unavailable");
+              // A denied resume must not undo an earlier pause/pending control. Release only after final host sync.
+              if(ordinaryHold&&(native.action==="resume-dispatch"&&record.decision==="approved"&&record.application==="applied"||record.application==="not-applied"&&snapshot.admission==="enabled"))releaseOrdinary=ordinaryHold.release;
             }else if(request.operation==="intent"||request.operation==="intent-reconcile"){
               const native=detached(intentRequest(request.payload as IntentRequest)) as IntentRequest,port=budget.intentControls(a!.dispatch),digest=intentRequestDigest(native);
               if(c.ordinaryDigest&&!ordinary)throw Error("original ordinary boundary unavailable; no recovery");
@@ -202,6 +232,11 @@ export function openDashboardHost(options:DashboardHostOptions){
             }else throw Error("unsupported dashboard operation");
           }
         }catch(error){presenter?.close();presentationRevision=null;append({type:"result",requestId:request.requestId,state:"failed-or-unknown",reason:String(error)});throw error;}
+        if(["dispatch","dispatch-reconcile","intent","intent-reconcile"].includes(request.operation)&&result&&typeof result==="object"){
+          const snapshot=result as {records?:{requestId?:string;request?:{requestId:string};application?:string}[]},nativeId=(request.payload as {requestId:string}).requestId;
+          const applied=snapshot.records?.find(r=>(r.requestId??r.request?.requestId)===nativeId);
+          if(applied?.application)result={...result,application:applied.application,nativeRequestId:nativeId};
+        }
         append({type:"result",requestId:request.requestId,state:"acknowledged",resultDigest:dataDigest(result??null)});releaseOrdinary?.();return {state:"acknowledged",result};
       }catch(error){if(attempted){poisoned=true;try{if(history().some(e=>e.value.type==="claim"&&e.value.requestId===request.requestId))append({type:"host-failure",requestId:request.requestId,reason:String(error)});}catch{/* Failure recording also unacknowledged; no claim of no effects. */}}throw error;}finally{busy=false;}
     }

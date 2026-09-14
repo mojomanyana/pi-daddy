@@ -45,7 +45,8 @@ export { renderDebrief, debriefAction as dashboardDebriefAction } from "./debrie
 export { type ReviewPort, type ReviewRequest, type BlindPort, type BlindChoice } from "./debrief-contract.ts";
 export { readDailyView, createDailyViewReader, DAILY_VIEW_VERSION, type DailyView, type DailyViewOptions,
   type DailyAttempt, type DailyObligation } from "./daily-view.ts";
-export { renderDailyView } from "./daily-view-render.ts";
+export { renderDailyView, renderDailyDetails } from "./daily-view-render.ts";
+export { renderDailyPanel, type PanelOptions, type WorkPresentation } from "./daily-panel.ts";
 export { parseArchiveProjection, ARCHIVE_PROJECTION_VERSION } from "./daily-view-input.ts";
 export { bindWorkIntent } from "./intent-application.ts";
 export { intentRequestDigest, parseIntentRequest, type IntentRequest, type IntentSelection, type IntentPriority,
@@ -154,6 +155,11 @@ export {
 } from "./dashboard-projection.ts";
 
 export { renderDashboard, type DashboardRenderOptions } from "./dashboard-render.ts";
+export { declareWork, loadDeclaredWork, type DeclaredWorkState } from "./work-command.ts";
+export { workSetup, recordWorkSetup, selectRecordedWork, loadWorkSetup, listWorkSetups, workPresentation, type WorkSetup, type WorkTaskSetup, type RecordedWorkSetup } from "./work-setup.ts";
+export { runWorkSetup, inspectWorkRun, type WorkRunResult, type WorkRunInitial, type WorkPolicyPin } from "./work-run.ts";
+export { workPolicy, workPolicyDigest, policyForSetup, createWorkPolicyRegistry, openWorkPolicyRegistry, workPolicyActivationDigest, type WorkPolicy, type WorkPolicyRegistry, type WorkPolicyActivation } from "./work-policy-registry.ts";
+export { learningHarness, bindLearningConnection, loadLearningConnection, bindLearningAdoption, learningScopeDigest, type LearningConnection, type LearningWorkspace } from "./learning-connection.ts";
 
 export {
   runMeasuredAgentSession,

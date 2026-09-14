@@ -5,6 +5,41 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ---
 
+## 2026-09-14 — PR52 Sol/CI repair candidate (unreleased)
+
+Repair starts from reviewed producer `264782f0df019c36c4cb5a33b55c16c7ce67d6c4`, preserving
+that commit and all prior READY/review evidence. SOL-1 gets an original-owner stop gate: paused, pending,
+busy and unknown control refuses without losing the host/socket. Denied and unacknowledged resumes keep
+outstanding admission held; explicit successful resume permits stop/start. Final Pi session disposal is
+separate and never releases/reconciles unknown effects. SOL-3 resolves retained registry lineage and shows
+the exact restore digest and all task model/effort rows before rollback consent. SOL-2's existing ordinary
+registry proof fields are documented for the harness and forced by activation/readback-recovery checks;
+no fixed-policy contract is changed.
+
+Four CI failures used retired display labels. Their repairs preserve exact action binding, stale refusal,
+75-sibling current cancellation availability, original-handle cancellation and sibling isolation rather
+than deleting those checks. Focused new regressions, the two affected regression files, original boundary
+checks and type/build checks are the bounded repair gate; exact outcomes and source hashes are in the new
+`producer-evidence/REPAIR-READY.json`, not the historical READY. The first local stop-test attempt lacked
+the package-local fixture dependency link; reusing the existing ignored workspace dependency directory
+required no install. No models, nested agents, full suite, publishing or reviewed-history rewrite belongs
+to this repair step. Coordinator-owned independent repair review and broader CI remain next.
+
+## 2026-09-14 — full producer product delivery candidate (unreleased)
+
+The isolated `codex/factory-product-producer-20260914` worktree implements the proposal's outcome-first
+panel, bounded ordinary multi-task/model/effort/dependency setup, retained results, live intent controls,
+and public harness learning/next-order adoption/rollback/observation integration. ADR-0073 records the
+composition decisions; the packaged PRODUCT-GUIDE and REQUIREMENTS register are the concise current flow.
+Existing governance/executor owners and frozen historical contracts remain; missing labels/quality/trust/
+current independent authority/later outcomes remain explicit, not fabricated success.
+
+The peer contract uses the raw P01 snapshot digest. Adoption authoring composes public origin/choice
+readback and the existing core binding builder; it needs no new private helper or protocol JSON from users.
+Focused regressions accompany source. The delivery's `producer-evidence/CURRENT.md` and final readiness
+receipt carry exact tree/check state. No model experiment, broad suite, independent end review, installed
+cross-package acceptance or publication is claimed by this entry. Those are the coordinator's next gates.
+
 ## 2026-09-14 — 0.26.1 release preparation
 
 PR #50 merged as `339c8a9f73df4d18f471ac97aeb00e656adbab03`, containing reviewed source fix

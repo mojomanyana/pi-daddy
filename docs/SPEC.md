@@ -5,7 +5,37 @@ to be decided. This file is authoritative for present behavior; ADRs record why 
 date. If code and this file disagree, report and repair the stale current-state claim rather than re-deriving
 present behavior from historical ADRs.
 
-**Release-preparation snapshot (2026-09-12):** the last registry-verified baseline was `pi-daddy` 0.25.1,
+## Ordinary work and learning product (unreleased producer delivery, 2026-09-14)
+
+The short installed [PRODUCT-GUIDE](../packages/pi-daddy/PRODUCT-GUIDE.md) and
+[current requirement register](../packages/pi-daddy/REQUIREMENTS.md) describe normal entry points.
+`/grants work` authors/selects 1–8 task DAGs with explicit models/effort and bounded parallelism; runs use
+original delegation, grants, approval, timeout and cancellation owners. Complete predecessor output is
+bounded to 32 KiB; retained results to 1 MiB. No automatic retry or controller recovery. Pause holds
+pending admission, not active children. `/grants host stop` refuses while paused, pending, busy or
+acknowledgement-unknown, preserving the original host/socket. Resume explicitly before stopping; pending
+controls require original reconciliation. Resume releases ordinary admission only after final host
+acknowledgement; a denied resume cannot undo a prior pause. Final Pi session disposal disconnects without
+releasing or reconciling outstanding holds. Scope changes prevent old pending attempts at original admission.
+
+The default daily panel leads with outcome/state and observed active models/effort. Numbered choices carry
+the exact host tip/request binding and never gain a new meaning on repaint. Finished attempts collapse;
+`renderDailyDetails` preserves the old diagnostics and historical fixture rendering. Reads never dispatch,
+and acknowledgement, execution, acceptance and unknown usage remain distinct.
+
+`/grants learning` uses the original loaded harness workspace/wizard. Exact raw selected snapshot digest,
+archive/population/author bind the connection; original trust/attention is reused, not refilled. Deliberate
+review remains separate from earned closing exposure. The additive `ordinary-work-policy-v1` registry can
+change only models/effort on unchanged scoped task IDs/definition names (not a file/tree pin), through existing adoption/rollback
+predicates and separately supplied independent authority/current eligibility. Rollback consent displays
+the immutable restore digest and every task's exact retained model/effort, resolved from validated registry
+lineage rather than a mutable named file. Activation and readback recovery retain original applied state,
+request ID, last-change operation/adoption ID and complete activation receipt for harness validation;
+recovery never repeats registry effects. Old runs remain pinned; actual later output linkage permits unknown outcomes and never infers acceptance or calibration. Existing
+fixed-policy/factory-order contracts (and their scope fingerprint) are unchanged. See ADR-0073 for rationale.
+Independent end review, broad/installed validation and publication are not established by this source change.
+
+**Earlier release-preparation snapshot (2026-09-12):** the last registry-verified baseline was `pi-daddy` 0.25.1,
 with a Herdr 0.8.0 **dashboard-plugin** floor; the separate native-lifecycle Herdr child route is verified
 only with Herdr 0.8.2 and Pi 0.85.1, and refuses before prompt if that lifecycle authority cannot activate.
 Merged source is prepared as the 0.25.2 candidate. For current
@@ -659,7 +689,7 @@ it.
 
 **0.24.0 C03 slice (ADR-0061/0064):** a connected host may publish bounded human-readable action keys backed by exact already-authorized requests. The dashboard displays only key/label/operation; typing a listed key resolves inside the original private host and still passes the existing host/selection/tip CAS and native validators. Unknown, stale or no-longer-authorized keys refuse before effects. Raw JSON remains compatibility-only; refresh remains read-only. The terminal keeps an unfinished listed-key command visible across refreshes and reports host-frame errors plus conservative acknowledgement/native-application state: a fulfilled request is not labelled applied when it is readback-only, failed/unknown, pending or not-applied. `/grants host <fresh-id>|stop` now composes one production daily host from the loaded harness source jobs, current declared work, private socket, original ordinary controller and existing budget/authority validators. Pause blocks only new dispatch while current children continue; resume releases the exact hold after acknowledged native application. `refresh-current-work` explicitly mirrors the current selected ledger and advances its source checkpoint while ordinary redraw stays read-only. Stop never cancels a child. No controller is recovered from prior state. A failed or previous host ID is preserved rather than reopened, deleted or reused; choose a fresh ID. Newly created host state roots are owner-private and symlinks refuse.
 
-**0.24.0 C01 slice (ADR-0060):** `pi-daddy work add --id <id> --outcome <text>` now creates one digest-only selected obligation without retaining the outcome text. The extension validates `.pi/work-current.json` at session start and ordinary governed delegation appends observed starting/terminal occurrences under its assigned execution identity. Exact redelivery is idempotent; a changed outcome under one id refuses; malformed state leaves work unbound. Runtime completion still does not create acceptance, and archive/authority coverage remains separate.
+**Ordinary declared work:** `pi-daddy work add --id <id> --outcome <text>` retains its compatible single selected obligation. Outcome text is now retained separately in an owner-only digest-bound presentation file; governance/state selection records remain text-free. Existing declarations with absent presentation stay valid and report missing labels. The extension validates `.pi/work-current.json` at session start and ordinary governed delegation appends observed starting/terminal occurrences under its assigned execution identity. Explicit multi-task runs supply a separate exact obligation binding per child rather than mutating session state concurrently. Exact redelivery is idempotent; a changed outcome under one id refuses; malformed state leaves ordinary work unbound and the work menu refuses it. Runtime completion still does not create acceptance, and archive/authority coverage remains separate.
 
 The source candidate adds `pi-daddy/work-ledger` and versioned
 [work-v4 contract artifacts](../packages/pi-daddy/contracts/ledger/v4/README.md), under

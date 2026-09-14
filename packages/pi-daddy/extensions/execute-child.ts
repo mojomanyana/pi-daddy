@@ -94,7 +94,7 @@ async function executeChildBody(input: {
   childId: string;
   executionId: string;
   parentExecutionId: string | null;
-  toolCallId?: string;
+  toolCallId?: string; declaredWork?: GrantsSession["declaredWork"];
   cwd: string;
   preparedWorkspace?: PreparedWorkspace;
   signal?: AbortSignal;
@@ -128,7 +128,7 @@ async function executeChildBody(input: {
     }
   }
   const workAttempt = await beginDeclaredWorkAttempt({
-    session, plan, childId, executionId, parentExecutionId, toolCallId: input.toolCallId,
+    session, plan, childId, executionId, parentExecutionId, toolCallId: input.toolCallId, declaredWork: input.declaredWork,
     preparedWorkspace, configuredTimeoutMs, startedAt,
   });
 
