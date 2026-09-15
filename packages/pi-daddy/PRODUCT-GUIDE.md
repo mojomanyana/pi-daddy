@@ -40,11 +40,20 @@ The run is finite, with no automatic retry or restart recovery. Esc requests can
 original children to settle. Ordinary model work has **no universal dollar/token cap**; provider usage is
 not invented from output size. Effort is an observed/requested launch setting, not measured internal thought.
 
+## Inspect the read-only execution ledger
+
+The ledger dashboard (`pi-daddy-dashboard --ledger <path>`, without a connected host or daily inputs)
+shows the latest three quiet roots per workflow and in the ungrouped tree, plus the latest two quiet
+children per parent. Hidden roots have a visible count; hidden child subtrees retain their count.
+Type `h`, then Enter, to expand all completed history; repeat to collapse. Active, failed, refused
+and incomplete branches and their ancestors always stay visible. `d`, then Enter, toggles governance
+details independently. These controls only change the display, and reset when the dashboard restarts.
+
 ## Read and steer the panel
 
 The outcome comes first, followed by **Running**, **Waiting**, **Needs you** or **Finished**. Active rows
 show observed model/effort; unknown observations stay unknown. Completed attempts are collapsed.
-**Finished is not accepted.** `d` opens diagnostics/history. There are no guessed percentages or ETAs.
+**Finished is not accepted.** In this connected daily panel, `d` opens diagnostics and attempt history. There are no guessed percentages or ETAs.
 
 Enter a displayed **number** for its action. A repaint never gives an old number a new meaning; stale
 choices refuse. Feedback distinguishes acknowledgement, applied control, pending and unknown results.

@@ -1225,8 +1225,12 @@ a defect label, or authority.
 The projection is pure and has no pi/Herdr UI dependency. It reconstructs from the complete ledger, keeps
 active nodes and their ancestry, collapses old completed subtrees, displays duration, definition, state,
 phase label and live Herdr pane identity, and uses yellow/green/red/grey for active/completed/failed-or-refused/
-incomplete-or-historical. Expanded terminal mode can show effective grant, workspace, executor and
-correlation. Raw corrupt lines are deliberately not rendered because a foreign line may contain the task or
+incomplete-or-historical. The compact ledger tree retains three quiet roots per workflow or ungrouped
+section and two quiet children per parent, with counts for hidden roots and child subtrees. In ledger mode,
+`h` followed by Enter expands all completed history and repeats to collapse; active and attention branches
+and their ancestors remain visible. `d` independently toggles effective grant, workspace, executor and
+correlation details. Both are transient display state. Connected daily/debrief action semantics are unchanged
+([ADR-0075](06-decisions/ADR-0075-explicit-completed-ledger-history.md)). Raw corrupt lines are deliberately not rendered because a foreign line may contain the task or
 output fields this ledger forbids; line number and validation reason are sufficient and the file is untouched.
 Schema-shaped prose cannot stand in for an identifier, and terminal sanitation removes Unicode control and
 format characters (`Cc`/`Cf`), including C1 CSI/OSC/ST and bidi controls.

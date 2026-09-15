@@ -5,6 +5,25 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ---
 
+## 2026-09-15 - completed ledger history visibility candidate
+
+Isolated branch `codex/session-learning-20260915`, base `96fdbf2`. The operator confirmed six Pi
+delegations were tracked; the compact renderer silently omitted roots beyond its three-root default.
+ADR-0075 records a visible hidden-root count and local h/Enter history expansion/collapse, independent of
+d/Enter governance Details. Expansion also reveals collapsed completed children. Active and attention
+branches retain their ancestors even with compact limits set to zero. The connected daily/debrief route
+keeps its existing semantics; the product guide now distinguishes the two display paths.
+
+Candidate validation: 35 focused renderer, projection and CLI tests passed, including a real offline CLI
+readline round trip. Five adjacent daily-panel and module-size checks also passed. TypeScript check and
+`git diff --check` passed. Node 26.7.0 and the existing
+product-delivery producer node_modules were reused through a local symlink without installs or dependency
+changes. Tests identify the production behavior whose regression would fail each assertion.
+
+This is synthetic offline display evidence, not an installed live-pane claim. No model calls, live
+Pi/Herdr controls, mutation tests, commits, pushes, merge or publication were performed. Independent final
+review remains pending; historical records and the immutable blueprint were preserved.
+
 ## 2026-09-15 — managed-install dependency follow-up for 0.27.2
 
 PR54 merged and pi-daddy 0.27.1 published with matching archive bytes. Local update changed one package,
