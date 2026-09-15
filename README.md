@@ -21,9 +21,10 @@ and [current requirement register](packages/pi-daddy/REQUIREMENTS.md): ordinary 
 side panel and retained learning/adoption. [RUNNING-IT.md](docs/RUNNING-IT.md) preserves the more detailed
 seven-sub-agent walkthrough. **0.27.0 is a release candidate**, paired with planned skill-harness **0.16.0**:
 an outcome-first Herdr panel, ordinary bounded work setup/runs, explicit model/effort and retained learning
-with safe scoped next-order adoption/rollback. Producer runtime is Sol-approved; feature CI/integration,
-merge, installed qualification and publication remain pending. [PUBLISHING.md](docs/PUBLISHING.md) is the
-coordinator's release plan, not evidence those gates passed.
+with safe scoped next-order adoption/rollback. Producer runtime is Sol-approved; feature PR #52 merged
+with green CI at `b974963a7d0ba5a74fdafe331356c348a1fba565`. Release PR CI/merge, installed qualification
+and publication remain pending. [PUBLISHING.md](docs/PUBLISHING.md) is the coordinator's release plan,
+not evidence those remaining gates passed.
 
 ## What it actually does
 

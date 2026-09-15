@@ -7,9 +7,10 @@ present behavior from historical ADRs.
 
 ## Ordinary work and learning product (0.27.0 release candidate)
 
-Matching harness release planned: **0.16.0**. This metadata candidate preserves the Sol-approved producer
-runtime in `b9cbef9087b3596a0d930c0ec9b843f34c0f27e8`; feature CI/integration, merge, installed
-qualification and publication remain pending. [PUBLISHING.md](./PUBLISHING.md) records the coordinator gates.
+Matching harness release planned: **0.16.0**. This release candidate preserves the Sol-approved producer
+runtime in `b9cbef9087b3596a0d930c0ec9b843f34c0f27e8`. Feature PR #52 merged with green CI at
+`b974963a7d0ba5a74fdafe331356c348a1fba565`. Release PR CI/merge, installed qualification and publication
+remain pending. [PUBLISHING.md](./PUBLISHING.md) records the coordinator gates.
 
 The short installed [PRODUCT-GUIDE](../packages/pi-daddy/PRODUCT-GUIDE.md) and
 [current requirement register](../packages/pi-daddy/REQUIREMENTS.md) describe normal entry points.
@@ -37,7 +38,7 @@ lineage rather than a mutable named file. Activation and readback recovery retai
 request ID, last-change operation/adoption ID and complete activation receipt for harness validation;
 recovery never repeats registry effects. Old runs remain pinned; actual later output linkage permits unknown outcomes and never infers acceptance or calibration. Existing
 fixed-policy/factory-order contracts (and their scope fingerprint) are unchanged. See ADR-0073 for rationale.
-Metadata consistency does not establish feature CI/integration, installed validation, publication or human acceptance.
+Metadata consistency does not establish release CI, installed validation, publication or human acceptance.
 
 **Earlier release-preparation snapshot (2026-09-12):** the last registry-verified baseline was `pi-daddy` 0.25.1,
 with a Herdr 0.8.0 **dashboard-plugin** floor; the separate native-lifecycle Herdr child route is verified

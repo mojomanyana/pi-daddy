@@ -1,7 +1,8 @@
 # Work and learning in Pi
 
 This guide targets **pi-daddy 0.27.0** with matching **skill-harness 0.16.0** (planned releases).
-Producer runtime is Sol-approved; feature CI/integration, merge, installed qualification and publication
+Producer runtime is Sol-approved; feature PR #52 merged with green CI at
+`b974963a7d0ba5a74fdafe331356c348a1fba565`. Release PR CI/merge, installed qualification and publication
 remain pending. Version metadata is not a publication, acceptance or calibration claim.
 The [current requirement register](./REQUIREMENTS.md) separates implementation from release evidence.
 From an installed shell command, `pi-daddy guide` prints this guide; `pi-daddy current` prints the register.

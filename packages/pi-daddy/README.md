@@ -23,9 +23,10 @@ for this project. See *What this governs, and what it does not*.
 
 ## Everyday work and learning — 0.27.0 release candidate
 
-Paired with planned **skill-harness 0.16.0**. Producer runtime is Sol-approved; feature CI/integration,
-merge, installed qualification and publication are still pending. This version preparation changes only
-metadata, not runtime or dependencies.
+Paired with planned **skill-harness 0.16.0**. Producer runtime is Sol-approved; feature PR #52 merged
+with green CI at `b974963a7d0ba5a74fdafe331356c348a1fba565`. Release PR CI/merge, installed qualification
+and publication remain pending. Release preparation changes metadata and test synchronization only,
+not runtime or dependencies.
 
 Start with the short installed **[PRODUCT-GUIDE.md](./PRODUCT-GUIDE.md)** and
 **[current requirement register](./REQUIREMENTS.md)**. `/grants work` now authors/selects bounded multi-task
