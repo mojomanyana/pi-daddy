@@ -20,6 +20,13 @@ Follow-up candidate evidence: corrected installed-package smoke passed using onl
 --legacy-peer-deps, including standalone CLI and configured skill references with no copies. Independent
 Sol review of all eight changed files passed without findings; no dependency versions moved in the lock.
 
+The first 0.27.2 CI run passed unit/integration checks but its stricter installed smoke exposed the same
+runtime-dependency issue for TypeBox: local npm had hoisted an indirect copy, while CI correctly did not.
+Both direct external runtime imports (SDK and TypeBox) are now declared as dependencies. Existing peer
+contracts remain; no model calls or runtime logic changes are added.
+
+Final dependency candidate: installed smoke also passes under Node24.19.0/npm10.8.2 with peer resolution disabled; no dependency versions changed. Fresh required CI remains the merge gate.
+
 ## 2026-09-15 — 0.27.1 configured runtime skill discovery candidate
 
 At base `6bf5e167`, branch `codex/fix-package-skill-discovery-20260915` replaces setup's universal copying

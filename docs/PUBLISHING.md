@@ -2,7 +2,8 @@
 
 0.27.1 passed isolated archive checks that explicitly supplied the Pi SDK, but final managed local
 verification exposed that Pi uses npm --legacy-peer-deps. Its standalone CLI therefore lacked the SDK.
-This follow-up declares that existing SDK requirement as a runtime dependency; no discovery logic changes.
+This follow-up declares the SDK and TypeBox as runtime dependencies; no discovery logic changes.
+The corrected CI smoke also exposed TypeBox relying on transitive dependency hoisting.
 
 1. Review the dependency/lock/test change and pass required PR CI, including installed smoke with
    --legacy-peer-deps and no explicit SDK installation.
