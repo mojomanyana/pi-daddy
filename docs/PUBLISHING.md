@@ -1,3 +1,76 @@
+# Publishing pi-daddy 0.27.0 — preparation only
+
+Matching harness release planned: **skill-harness 0.16.0**. The private workspace root is never published.
+Preparation base: `b9cbef9087b3596a0d930c0ec9b843f34c0f27e8`, containing Sol-approved producer
+runtime plus the passing supported-command assertion fix. **Feature PR #52 merged at
+`b974963a7d0ba5a74fdafe331356c348a1fba565` after green CI, independent review and the model-free cross-package integration check.
+Release merge, publication and final installed qualification remain pending.** This work changes
+version/lock, exact-version expectations and release/guide metadata only; no dependency upgrade or runtime edit.
+
+## What this candidate delivers
+
+- Outcome-first Herdr panel: observed active model/effort, collapsed finished attempts, Details and
+  exact-frame numbered controls. Unknown acknowledgement is not applied control; finished is not accepted.
+- Ordinary `/grants work` setup/selection and finite runs: 1–8 tasks, explicit models/effort, dependencies
+  and bounded concurrency through original grants/approvals/executors. No automatic retry or universal
+  ordinary-model dollar cap. Pause holds new admission; stop refuses outstanding pause/pending/unknown
+  control, retaining the original owner until an explicit acknowledged resume/reconciliation.
+- `/grants learning` composes the original harness workspace for retained cases/comparisons, full-artifact
+  quality before reveal, and separate adopt/reject/defer. Original scoped trust/attention is not refilled.
+- Scoped next-order adoption changes only model/effort for unchanged task IDs/definition names and
+  assessment meaning. Current independent eligibility and exact consent remain required. Rollback shows
+  the immutable restore digest and every task profile; old orders stay pinned. Learning linkage retains
+  exact original applied request/adoption receipts, and readback recovery never repeats an effect.
+
+## Coordinator gates and canonical artifact procedure — NOT executed by metadata preparation
+
+1. Wait for feature CI/integration to pass and the feature PR to merge. Record the exact feature merge
+   and its reviewed-source ancestry. Only then open the metadata release PR; preserve the approved runtime,
+   obtain release review/required CI, and merge through the normal PR route. Do not bypass a failing gate.
+2. At the exact release merge, take a fresh clean worktree and record `git rev-parse HEAD` with every
+   measurement. Perform the coordinator's required type/build checks. **Pack pi-daddy once**, with normal
+   lifecycle scripts, into one canonical npm archive. Retain its npm JSON inventory, SHA-256 and SHA-512
+   integrity and exact source/dependency/tool versions. Install, inspect and publish those same bytes;
+   do not invoke smoke helpers that silently create a replacement archive or repack an equivalent tree.
+   If artifact qualification fails, stop and record the failed artifact; a changed candidate needs review
+   and a newly identified release attempt, never relabelling of prior evidence.
+3. Use that archive and the harness coordinator's exact canonical **0.16.0** artifact set in a **fresh
+   isolated prefix/project and fresh Pi session**, not a global install, existing host or `/reload` upgrade.
+   Pin the recorded Pi/harness dependency versions. Load only the two explicit pi-daddy and skill-harness
+   extensions with in-memory credential/model/settings/session stores, empty ambient resource discovery
+   and no active model tools. Instrument provider dispatch and assert **zero provider requests**; do not
+   read private credentials/sessions or start provider-backed work merely to qualify version metadata.
+   Verify packaged guide/current commands, work setup/readback, public work/run/policy/learning exports,
+   original host/panel controls, and bundled native reporter bytes from the installed archive.
+4. The installed check must exercise **actual registry/learning linkage**, not only bridge registration
+   or a fabricated wrapper-shaped fixture. Use clearly labelled deterministic retained test artifacts and
+   explicit test-only consent/eligibility inputs, never claim these are human labels or calibration.
+   Through the installed original workspace and ordinary registry, validate raw P01 scope binding,
+   full-artifact choice/reveal ordering, separately authorized activation, and retention/linking of the
+   actual returned applied registry view. Assert exact request ID, last-change activation/adoption ID and
+   full prepared receipt identity; missing/mismatched inner proof must refuse. Pin a next order without
+   launching it, reconnect the original readback receipt without replay, preview the exact rollback
+   digest/per-task profile, apply an explicitly authorized rollback and link its actual receipt.
+   Baseline/prior pins must remain unchanged, missing evidence must defer, and provider requests must
+   still equal zero. Record package hashes, fixture nature and observed results; API availability alone
+   is not this gate. No production acceptance, calibrated trust or later efficacy follows from the check.
+5. Prior live-route evidence (including the bounded Terra negative/recovery and dependent Sol review
+   recorded for earlier versions below) remains **historical evidence at its original source and scope**.
+   It does not qualify the new installed two-extension flow. Do not repeat model calls solely for metadata;
+   any separately required live/user acceptance work needs its own authorization and evidence.
+6. Only after the preceding gates and explicit publication authorization, verify the matching harness
+   0.16.0 artifacts/registry releases in their dependency order. Recheck pi-daddy 0.27.0 is absent, then
+   publish the **same canonical archive exactly once**. On an ambiguous response inspect registry metadata
+   and downloaded bytes before any retry. Never overwrite a version/tag or bypass authentication/OTP.
+7. Verify registry version, latest and downloaded bytes against the canonical archive. Create immutable
+   `v0.27.0` at the exact release merge and its GitHub Release with the qualified evidence and remaining
+   limits. Any authorized local update is separate; do not restart unrelated sessions. Publication does
+   not supply human acceptance, calibration, configured production adoption or later outcomes.
+
+---
+
+## Prior 0.26.1 runbook (historical)
+
 # Publishing pi-daddy 0.26.1
 
 Release preparation: 2026-09-14. Registry baseline: 0.26.0. Only pi-daddy changes.

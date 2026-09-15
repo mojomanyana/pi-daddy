@@ -1,7 +1,8 @@
 # Current producer requirement register
 
-**Delivery baseline:** 2026-09-14 proposal; additive to source 0.26.1. This is current product scope, not
-an npm/release receipt or a replacement for dated evidence. Read [PRODUCT-GUIDE.md](./PRODUCT-GUIDE.md).
+**Release candidate:** pi-daddy **0.27.0**, paired with planned skill-harness **0.16.0**, implementing the
+2026-09-14 proposal. This is current product scope, not an npm/release receipt or a replacement for dated
+evidence. Read [PRODUCT-GUIDE.md](./PRODUCT-GUIDE.md).
 
 | Requirement | Supported entry point / implementation | Boundary / remaining evidence |
 | --- | --- | --- |
@@ -22,8 +23,9 @@ Implementation is present in source. Focused regression files accompany setup, s
 binding, original late-admission guard, learning composition and additive registry. Legacy diagnostic view
 fixtures remain checked through `renderDailyDetails`; ordinary `renderDailyView` is the concise panel.
 
-**Independent whole-change PR review, broad automated suites, installed cross-package/Herdr user-flow
-validation and publication are coordinator gates, not claimed complete here.** A narrow type/build/unit or
+**Producer runtime is Sol-approved; feature PR #52 merged with green CI at
+`b974963a7d0ba5a74fdafe331356c348a1fba565`. Release PR CI/merge, installed cross-package/Herdr
+qualification and publication remain pending coordinator gates.** A narrow type/build/unit or
 bridge check is not evidence of live model quality, calibrated trust, actual adoption/rollback or later
 production improvement. Exact candidate/check receipts belong with the delivery evidence, not invented
 inside this portable register.

@@ -12,9 +12,15 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
-## Unreleased — ordinary work and learning product (2026-09-14, ADR-0073)
+## 0.27.0 — ordinary work and learning product (release candidate; ADR-0073)
 
-- Outcome-first daily panel, observed active model/effort, collapsed history and exact-frame numbered
+Prepared from `b9cbef9087b3596a0d930c0ec9b843f34c0f27e8`: Sol-approved producer runtime plus the
+passing supported-command assertion fix. Feature PR #52 merged with green CI at
+`b974963a7d0ba5a74fdafe331356c348a1fba565`. Release PR CI/merge, installed qualification and publication
+remain pending. Matching skill-harness release planned: **0.16.0**. Release preparation changes metadata
+and test synchronization only; dependencies and runtime are unchanged.
+
+- Outcome-first Herdr daily panel, observed active model/effort, collapsed history and exact-frame numbered
   actions. The former diagnostic renderer remains `renderDailyDetails`; frozen fixtures stay unchanged.
 - `/grants work` authoring/selecting of 1–8-task DAGs, scope/alternative/priority changes and explicit
   model/effort. Bounded runs reuse original delegation/approval/executor/cancellation owners, retain full
@@ -28,8 +34,9 @@ the record of how the package got here and are worth keeping; they are not worth
 - PR52 review repairs: refuse host stop while pause/pending/unknown control remains; preserve holds on
   denied or unacknowledged resumes. Show the retained restore digest and every task model/effort before
   rollback consent; cover exact activation/readback receipt identities and friendly-label CI regressions.
-- Packaged concise guide/register. Independent end review, broad/installed validation and release are
-  still separate gates; no actual calibration, human acceptance or production improvement is claimed.
+- Packaged concise guide/register for pi-daddy 0.27.0 with skill-harness 0.16.0. Release PR CI/merge,
+  installed two-extension linkage qualification and publication remain separate coordinator gates; no
+  actual calibration, human acceptance or production improvement is claimed.
 
 ## 0.26.1 — measured-order fractional usage repair (2026-09-14)
 

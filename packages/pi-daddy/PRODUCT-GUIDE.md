@@ -1,13 +1,17 @@
 # Work and learning in Pi
 
-This guide describes the additive producer delivery, not a publication or calibration claim.
+This guide targets **pi-daddy 0.27.0** with matching **skill-harness 0.16.0** (planned releases).
+Producer runtime is Sol-approved; feature PR #52 merged with green CI at
+`b974963a7d0ba5a74fdafe331356c348a1fba565`. Release PR CI/merge, installed qualification and publication
+remain pending. Version metadata is not a publication, acceptance or calibration claim.
 The [current requirement register](./REQUIREMENTS.md) separates implementation from release evidence.
 From an installed shell command, `pi-daddy guide` prints this guide; `pi-daddy current` prints the register.
 
 ## Start once
 
-Install **pi-daddy** and **skill-harness** with Pi's normal package manager (`pi install npm:pi-daddy`
-and `pi install npm:skill-harness`) using releases that include this guide and the learning workspace.
+After both releases are qualified and published, install the matching pair with Pi's normal package manager:
+`pi install npm:pi-daddy@0.27.0` and `pi install npm:skill-harness@0.16.0`.
+Do not treat these planned version commands as evidence the packages are already available.
 Start a **fresh Pi session** after upgrading the harness: its existing immutable bridge survives `/reload`.
 In the project, run `/grants init`, review capability consent, then `/grants` to see usable definitions.
 Existing Principal/runtime skill definitions still work; this flow adds no special Principal policy.
