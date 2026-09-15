@@ -11,6 +11,7 @@ export interface DashboardRenderOptions {
   width?: number;
   color?: boolean;
   details?: boolean;
+  history?: boolean;
   completedRoots?: number;
   completedChildren?: number;
 }
@@ -209,12 +210,20 @@ export function renderDashboard(projection: DashboardProjection, options: Dashbo
     width: Math.max(10, options.width ?? 80),
     color: options.color ?? true,
     details: options.details ?? false,
-    completedRoots: Math.max(0, options.completedRoots ?? 3),
-    completedChildren: Math.max(0, options.completedChildren ?? 2),
+    completedRoots: options.history ? Infinity : Math.max(0, options.completedRoots ?? 3),
+    completedChildren: options.history ? Infinity : Math.max(0, options.completedChildren ?? 2),
   };
   const index = treeIndex(projection.nodes);
   const lines = [paint("PI-DADDY", 1, resolved.color), ""];
 
+  const renderRoots = (roots: DashboardNode[]): void => {
+    const selected = selectedRoots(roots, index, resolved.completedRoots);
+    const hidden = roots.length - selected.length;
+    if (hidden > 0) lines.push(paint(
+      `... ${hidden} completed root${hidden === 1 ? "" : "s"} hidden`, 90, resolved.color,
+    ));
+    for (const root of selected) lines.push(...renderTree(root, index, resolved));
+  };
   const rendered = new Set<string>();
   for (const workflow of projection.workflows) {
     const roots = index.roots.filter((root) => root.correlation?.run_id === workflow.runId);
@@ -223,16 +232,12 @@ export function renderDashboard(projection: DashboardProjection, options: Dashbo
     for (const root of roots) rendered.add(root.executionId);
     lines.push(workflowHeader(workflow, resolved.color));
     for (const fact of facts) lines.push(truncate(workflowFactLine(fact, resolved.color), resolved.width));
-    for (const root of selectedRoots(roots, index, resolved.completedRoots)) {
-      lines.push(...renderTree(root, index, resolved));
-    }
+    renderRoots(roots);
     lines.push("");
   }
 
   const generic = index.roots.filter((root) => !rendered.has(root.executionId));
-  for (const root of selectedRoots(generic, index, resolved.completedRoots)) {
-    lines.push(...renderTree(root, index, resolved));
-  }
+  renderRoots(generic);
   if (projection.nodes.length === 0) lines.push(paint("No governed executions recorded yet.", 90, resolved.color));
 
   if (projection.corrupt.length > 0) {

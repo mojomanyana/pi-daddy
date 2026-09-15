@@ -143,3 +143,56 @@ test("expanded details show governance identifiers but never task text or child 
   assert.match(rendered, /line 9: field task is forbidden/);
   assert.doesNotMatch(rendered, /SECRET/);
 });
+
+// Removing the root summary, ignoring history, or letting limits hide important branches breaks these.
+test("six completed roots report three hidden and history restores all independently of details", () => {
+  const nodes = Array.from({ length: 6 }, (_, i) => node({
+    executionId: `exec:${i}`, agentName: `review-${i}`, state: "completed",
+    startedAt: new Date(Date.parse(at) + i * 1000).toISOString(),
+  }));
+  for (const workflows of [projection(nodes).workflows, []]) {
+    const view = projection(nodes, { workflows });
+    const compact = renderDashboard(view, { color: false, details: true });
+    assert.match(compact, /3 completed roots hidden/);
+    for (let i = 0; i < 3; i++) assert.doesNotMatch(compact, new RegExp(`review-${i}`));
+    for (let i = 3; i < 6; i++) assert.match(compact, new RegExp(`review-${i}`));
+    const expanded = renderDashboard(view, { color: false, history: true });
+    for (let i = 0; i < 6; i++) assert.match(expanded, new RegExp(`review-${i}`));
+    assert.doesNotMatch(expanded, /roots hidden|grant tool:read/);
+    assert.equal(renderDashboard(view, { color: false, details: true, history: false }), compact);
+  }
+});
+
+test("hidden root counts are local to each workflow and the ungrouped tree", () => {
+  const nodes = [4, 5, 6].flatMap((count, group) => Array.from({ length: count }, (_, i) => node({
+    executionId: `exec:${group}-${i}`, agentName: `group-${group}-${i}`, state: "completed",
+    correlation: group < 2 ? { run_id: `run-${group}` } : undefined,
+  })));
+  const workflows = [0, 1].map(i => ({ ...projection([]).workflows[0], runId: `run-${i}`, label: `workflow-${i}` }));
+  const compact = renderDashboard(projection(nodes, { workflows }), { color: false });
+  assert.match(compact, /workflow-0[^]*1 completed root hidden[^]*workflow-1[^]*2 completed roots hidden[^]*3 completed roots hidden/);
+  assert.equal((compact.match(/group-\d-\d/g) ?? []).length, 9);
+  const expanded = renderDashboard(projection(nodes, { workflows }), { color: false, history: true });
+  assert.equal((expanded.match(/group-\d-\d/g) ?? []).length, 15);
+  assert.doesNotMatch(expanded, /roots? hidden/);
+});
+
+test("zero history limits preserve every active and attention branch with its ancestors", () => {
+  const states = ["authorised", "starting", "running", "failed", "refused", "incomplete"] as const;
+  const nodes = states.flatMap((state, i) => [
+    node({ executionId: `parent-${i}`, agentName: `ancestor-${i}`, state: "completed" }),
+    node({ executionId: `middle-${i}`, parentExecutionId: `parent-${i}`, agentName: `middle-${i}`, state: "completed" }),
+    node({ executionId: `child-${i}`, parentExecutionId: `middle-${i}`, agentName: `important-${i}`, state }),
+    node({ executionId: `sibling-${i}`, parentExecutionId: `parent-${i}`, agentName: `quiet-${i}`, state: "completed" }),
+  ]);
+  const view = projection(nodes);
+  const compact = renderDashboard(view, { color: false, completedRoots: 0, completedChildren: 0 });
+  for (let i = 0; i < states.length; i++) {
+    for (const name of ["ancestor", "middle", "important"]) assert.match(compact, new RegExp(`${name}-${i}`));
+    assert.doesNotMatch(compact, new RegExp(`quiet-${i}`));
+  }
+  assert.equal((compact.match(/1 completed subtree/g) ?? []).length, 6);
+  const expanded = renderDashboard(view, { color: false, completedRoots: 0, completedChildren: 0, history: true });
+  for (let i = 0; i < states.length; i++) assert.match(expanded, new RegExp(`quiet-${i}`));
+  assert.doesNotMatch(expanded, /completed subtree|roots? hidden/);
+});

@@ -8,6 +8,7 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseDashboardLedger } from "./dashboard-projection.ts";
 import { renderDashboard } from "./dashboard-render.ts";
+import { createDashboardDisplayControls } from "./dashboard-display-controls.ts";
 import { createDailyViewReader, isDailyViewReader, readDailyView, type DailyViewOptions } from "./daily-view.ts";
 import { renderDailyView } from "./daily-view-render.ts";
 import { renderDailyPanel, panelLines, learningSummary, type PanelAction, type WorkPresentation } from "./daily-panel.ts";
@@ -44,6 +45,7 @@ export interface DashboardFrameOptions {
   color?: boolean;
   width?: number;
   details?: boolean;
+  history?: boolean;
   now?: Date;
   dailyView?: DailyViewOptions;
   dailyReader?: ReturnType<typeof createDailyViewReader>;
@@ -159,6 +161,7 @@ export async function dashboardFrame(options: DashboardFrameOptions): Promise<st
     color: options.color,
     width: options.width,
     details: options.details,
+    history: options.history,
   });
   return waiting ? `${rendered}\n\nwaiting for ledger ${ledgerPath}` : rendered;
 }
@@ -230,7 +233,7 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
   }
   const dailyReader = createDailyViewReader();
   const actionMenu=createDashboardMenu();
-  let details=cli.details;
+  const display = createDashboardDisplayControls(cli.details, Boolean(ledgerPath && !connected && !debrief && !cli.debriefJson && !dailyView));
   let previous = "";
   let feedback = "";
   let input: ReturnType<typeof createInterface> | null = null;
@@ -241,13 +244,13 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
       protocol,
       color: cli.color,
       width: process.stdout.columns || 80,
-      details, actionMenu,
+      ...display.state, actionMenu,
       dailyView, dailyReader, dailyJson: cli.dailyJson, debrief, debriefJson: cli.debriefJson, connected,
     });
     const rendered = feedback ? `${panelLines([feedback], process.stdout.columns || 80)}\n\n${frame}` : frame;
     if (rendered === previous && !clear) return;
     previous = rendered;
-    const prompt = "Action number / d Details, then Enter: ";
+    const prompt = display.prompt();
     const draft = input?.line ?? "";
     process.stdout.write(clear ? `\u001b]0;PI-DADDY\u0007\u001b[2J\u001b[H${rendered}\n\n${input ? prompt + draft : ""}` : `${rendered}\n`);
     if (input) input.setPrompt(prompt);
@@ -268,7 +271,7 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
   let acting = false;
   input?.on("line", line => {
     if (acting) return; // never replay a line typed while the prior exact command is still settling.
-    if(line.trim().toLowerCase()==="d"){details=!details;redraw();return;}
+    if (display.input(line)) { redraw(); return; }
     acting = true;
     let label=line.trim()||"(empty)";
     const act=async()=>{
