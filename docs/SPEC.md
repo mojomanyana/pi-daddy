@@ -370,15 +370,30 @@ Deleting the stored file un-governs the directory; `/grants` prints its path.
 is one deliberate `/grants init` per project, which stores both choices for future plain `pi` starts. Merely
 installing pi-daddy initializes nothing and writes no project ledger.
 
-## Getting definitions onto disk: `pi-daddy init`
+## Setting up definitions: `pi-daddy init`
 
-`npx pi-daddy init` creates a newly absent project `.pi` directory owner-private (`0700`) before it writes its own files; it never chmods, follows, overwrites or repurposes existing state. `npx pi-daddy init` reads `<cwd>/node_modules` for packages declaring skills in their own `package.json`
-(`"pi": {"skills": ["./review", …]}` — pi's convention, and how `principal-pi-skills` ships), copies each
-declared `SKILL.md` into `<cwd>/.pi/skills/<name>/`, and writes `<cwd>/.pi/grants.env`. A newly generated
-environment file exports `.pi/grants.jsonl`; setting or sourcing it therefore makes the same load-bearing
-choice. An existing `.pi/grants.env` remains untouched, including a custom or formerly commented ledger line.
+`npx pi-daddy init` and `/grants init` reference runtime skills already enabled in Pi at their installed
+or local source paths (ADR-0074). Definitions and the capability catalog use the same Pi package resolver:
+project/global configuration, manifest patterns, resource exclusions and `PI_CODING_AGENT_DIR` apply.
+Discovery reads settings without locks or writes, skips missing packages without installation, and executes
+no extensions or model calls. Malformed settings stop discovery with an error.
+
+Fresh configured package setup creates no `.pi/skills/` copies. Existing local overrides remain effective,
+including their narrowed ceilings, and are never overwritten, even with `--force`. Upgrading an installed
+package therefore updates its referenced definitions at the next discovery. Existing legacy copies are
+not deleted or migrated automatically: review them before removing an intentional override.
+
+Unregistered npm skill packages remain a compatibility scaffold: setup reads their explicit `pi.skills`
+manifest and copies them to `.pi/skills/<name>/SKILL.md`. Runtime discovery does not scan npm roots.
+Configured disabled or missing packages cannot re-enter through this fallback.
+
+Setup creates a newly absent project `.pi` directory owner-private (`0700`) and writes `.pi/grants.env`.
+Existing `.pi/grants.env` remains untouched, including custom grant and ledger lines. A newly generated
+environment file exports `.pi/grants.jsonl`; sourcing it makes that ledger choice.
 
 **It chooses no ceiling** (ADR-0028). That is the whole boundary, and each rule below is one half of it:
+
+The following copy rules apply only to the legacy unregistered npm fallback:
 
 | Case | What `init` writes |
 |---|---|
@@ -386,7 +401,7 @@ choice. An existing `.pi/grants.env` remains untouched, including a custom or fo
 | It declares none | The file plus a **commented** placeholder, so the copy is still *undeclared* and still unspawnable. Uncommenting it unedited yields `tool:<list`, which the catalog refuses — a working default would be pi-daddy deciding, with one keystroke in front of it. |
 | The target file exists | **Kept.** The edit an operator made to it is the capability decision. `--force` rewrites and says it discards them. |
 
-**The generated grant is read-only by default** (ADR-0029). It holds what the copied files declare **minus**
+**The generated grant is read-only by default** (ADR-0029). It holds what the selected definitions declare **minus**
 anything that can change the machine — `tool:bash` (and whatever else `PI_GRANTS_GATED` defaults to),
 `tool:write`, `tool:edit`, `tool:edit-diff`, and the universal capabilities — plus one `agent:<name>` per
 definition that can actually run within it, plus `tool:delegate`, without which no delegation tool is
@@ -398,7 +413,7 @@ ceilings would give the bound and the bounded a single author who is not the ope
 gated by default, so a live `tool:write` would reach a child with no dialog at all.
 
 An undeclared or pattern-carrying skill contributes nothing and is listed under `NOT AUTHORISED` with its
-fix. An `agent:<other>` a ceiling names but `init` did not write is **reported, never granted** — it would
+fix. An `agent:<other>` a ceiling names but `init` did not select is **reported, never granted** — it would
 authorise a file from any skill root. Every capability is annotated with the definition it came from, and a
 declared `tool:` id pi has no tool for (`Glob` is the live case) is flagged as a caution rather than
 discovered at spawn time.
@@ -415,13 +430,10 @@ if anything unexpected got through — a backstop that does not depend on those 
 since twice now they were not.
 
 Writes use `open(path, "wx")`: an existing file is **kept**, and nothing is ever written **through a
-symlink** (R-79, the same property `approval-store.ts` has under ADR-0014). `--force` rewrites the
+symlink** (R-79, the same property `approval-store.ts` has under ADR-0014). `--force` rewrites only legacy unregistered npm
 definition copies, unlinking first so a link is replaced rather than followed, and **never** regenerates
 `.pi/grants.env` — that file is the reviewed artifact, and deleting it is how to regenerate it.
 
-Discovery reads each package's declaration and never scans for files named `SKILL.md`: a scan would offer a
-package's fixtures and its vendored copies of other people's skills as spawnable sub-agents. It does not
-read `~/.pi/agent/skills/` — definitions there are already discovered and governed where they are.
 
 ## What a session start says
 

@@ -36,6 +36,12 @@ trust, quality/adoption choices and next-order settings through the loaded harne
 implementation paths, not evidence that calibration, human acceptance or publication has occurred.
 The historical worked-example transcripts below remain evidence for their stated versions.
 
+
+Configured runtime skills are used directly at their installed paths; setup creates no duplicate
+`.pi/skills/` copies. Pi package/resource filters and `PI_CODING_AGENT_DIR` apply. Existing local overrides
+and `.pi/grants.env` stay intact. Only legacy npm packages never registered with Pi are copied by init;
+`--force` applies only to those copies. Review old local copies before removing them to use package updates.
+
 ## What this governs, and what it does not
 
 **It governs the tool surface: which tools pi exposes to a model.** That part is structural, not advisory —
@@ -800,7 +806,7 @@ Subpaths are exported individually (`pi-daddy/resolve`, `/ledger`, `/spawn`, `/d
 ```bash
 pi install npm:pi-daddy     # as a pi extension
 npm i pi-daddy              # as a library (the resolver, ledger and spawn planner are pure)
-npx pi-daddy init           # as a command: scaffold .pi/skills/ and .pi/grants.env from installed
+npx pi-daddy init           # as a command: prepare .pi/grants.env using enabled installed
                             # skill packages — see the worked example above
 npx pi-daddy work add --id daily-1 --outcome "Ship the declared slice"
                             # select one digest-only obligation; /reload then /grants dashboard

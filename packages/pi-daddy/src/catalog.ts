@@ -18,8 +18,8 @@
  * supported for hand-authored grants; `deriveOwnGrant` already matches them by bare name.
  */
 
-import { readdir, stat } from "node:fs/promises";
-import { homedir } from "node:os";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { resolveSkillResources, skillResourceName } from "./skill-resources.ts";
 import { join } from "node:path";
 import { loadDefinitions, type SkillDefinition } from "./definitions.ts";
 import { PI_BUILTIN_TOOLS, WILDCARD } from "./pi-tools.ts";
@@ -55,45 +55,15 @@ export function classifyToolNames(observed: string[]): CatalogEntry[] {
 
 /** Skill roots pi discovers, project first. */
 export function skillDirs(cwd: string): string[] {
-  return [join(cwd, ".pi", "skills"), join(homedir(), ".pi", "agent", "skills")];
+  return [join(cwd, ".pi", "skills"), join(getAgentDir(), "skills")];
 }
 
-/**
- * Discover skills: a directory containing `SKILL.md` is one skill named after the directory; a top-level
- * `.md` file is a skill named after the file. Mirrors pi's documented convention.
- *
- * Directories are not descended into beyond one level, matching pi's rule that a directory containing
- * `SKILL.md` is a single skill rather than a tree to explore.
- */
+/** Enumerate the same enabled Pi resource paths as definitions, preserving resolver precedence. */
 export async function loadSkills(cwd: string): Promise<CatalogEntry[]> {
   const found = new Map<string, CatalogEntry>();
-  for (const dir of skillDirs(cwd)) {
-    let names: string[];
-    try {
-      names = await readdir(dir);
-    } catch {
-      continue; // absent skill root is normal
-    }
-    for (const name of names.sort()) {
-      const path = join(dir, name);
-      try {
-        const info = await stat(path);
-        if (info.isDirectory()) {
-          const inner = await readdir(path).catch(() => [] as string[]);
-          if (inner.includes("SKILL.md") && !found.has(name)) {
-            found.set(name, { capability: `skill:${name}`, kind: "skill", source: path });
-          }
-        } else if (name.endsWith(".md")) {
-          const skill = name.replace(/\.md$/, "");
-          if (!found.has(skill)) {
-            found.set(skill, { capability: `skill:${skill}`, kind: "skill", source: path });
-          }
-        }
-      } catch {
-        // An unreadable entry is simply not catalogued; it therefore cannot be granted, which is the
-        // fail-closed direction.
-      }
-    }
+  for (const { path } of (await resolveSkillResources(cwd)).skills) {
+    const name = skillResourceName(path);
+    if (!found.has(name)) found.set(name, { capability: `skill:${name}`, kind: "skill", source: path });
   }
   return [...found.values()];
 }

@@ -12,6 +12,15 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## 0.27.1 — reference enabled installed runtime skills (ADR-0074)
+
+- Setup uses configured Pi runtime skills directly instead of copying them into `.pi/skills`, avoiding
+  duplicate warnings and stale local copies after package upgrades.
+- Definitions and the capability catalog honor Pi package/resource filters, scope precedence and
+  `PI_CODING_AGENT_DIR` without installs, extension execution or model calls.
+- Existing local overrides and grant files stay intact; unregistered npm packages retain legacy scaffolding.
+  Review old local copies before removing them to follow installed package updates.
+
 ## 0.27.0 — ordinary work and learning product (release candidate; ADR-0073)
 
 Prepared from `b9cbef9087b3596a0d930c0ec9b843f34c0f27e8`: Sol-approved producer runtime plus the

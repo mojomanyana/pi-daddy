@@ -1,9 +1,9 @@
 /**
  * `pi-daddy init` — scaffold a governed project from the skill packages already installed (B2, P3).
  *
- * Today an operator wanting to govern a package of skills must, per skill: create a directory, copy the
- * body, hand-write frontmatter, choose a capability set with no guidance, and assemble a `PI_GRANTS_GRANT`
- * string by hand. Seven times, for `principal-pi-skills`. This does the mechanical parts.
+ * Legacy unregistered npm packages can be scaffolded per skill: create a directory, copy the
+ * body and declaration copies plus a starting `PI_GRANTS_GRANT`. Configured enabled Pi resources
+ * are referenced where installed instead (ADR-0074); no competing .pi/skills copy is created.
  *
  * **The line it does not cross, and the reason this module exists at all:** `init` writes files an operator
  * then **reviews, edits and commits**. It never chooses a ceiling. A skill that declares `allowed-tools` is
@@ -32,23 +32,9 @@ import { PI_BUILTIN_TOOLS } from "./pi-tools.ts";
 import type { Capability } from "./resolve.ts";
 import type { SkillPackage } from "./skill-packages.ts";
 
-/** Why a discovered skill is not authorised in the generated grant. `null` means it is. */
 /**
- * How many of `from`'s skills actually **declare** a ceiling.
- *
- * Exported because the number is printed to an operator and was wrong: `cli.ts` filtered on
- * `withheld === null`, which is false for all three `WithholdReason`s — so a skill that declares
- * `allowed-tools` perfectly well and merely needs a withheld capability counted as not declaring one.
- * Against `principal-pi-skills` that printed *"7 skill(s), 3 declaring allowed-tools"* while all seven
- * declared. R-28's shape: a diagnostic disagreeing with the thing it describes.
- *
- * **It was invisible until the integration worked.** Before ceilings shipped, none of the seven declared
- * and the line read *"0 declaring"* — correct by coincidence, for the wrong reason. A count that is right
- * only while the interesting case is absent is the kind this project keeps finding.
- *
- * `undeclared` is the only reason that means "did not declare". `pattern` declared something this package
- * refuses to reinterpret, and `needs-withheld` declared something fine that the operator must opt into —
- * both are declarations.
+ * Count declarations, not authorizations (R-73). Both pattern and needs-withheld mean the skill
+ * declared a ceiling; only undeclared means it did not. The CLI must report the same distinction.
  */
 export function countDeclaring(skills: PlannedSkill[], from: string): number {
   return skills.filter((s) => s.from === from && s.withheld !== "undeclared").length;
@@ -62,6 +48,8 @@ export interface PlannedSkill {
   from: string;
   sourcePath: string;
   targetPath: string;
+  /** Configured skills stay at their installed/local source, including when --force is used. */
+  referenced?: boolean;
   /** Exactly what would be written — the file verbatim, or the file plus a commented note. */
   content: string;
   /** The declared ceiling, empty when the declaration is absent or unusable. */
@@ -191,7 +179,8 @@ export function planInit(
         name,
         from: `${pkg.name}@${pkg.version}`,
         sourcePath: skill.path,
-        targetPath: join(cwd, ".pi", "skills", name, "SKILL.md"),
+        targetPath: skill.referenced ? skill.path : join(cwd, ".pi", "skills", name, "SKILL.md"),
+        referenced: skill.referenced,
         content: withPlaceholder(skill.text, withheld === null, note),
         ceiling: ceiling.capabilities,
         withheld,
@@ -391,6 +380,7 @@ export async function applyInit(plan: InitPlan, options: { force?: boolean } = {
   }
   const force = options.force === true;
   for (const skill of plan.skills) {
+    if (skill.referenced) continue;
     if (force) await replace(skill.targetPath, skill.content, outcome);
     else await createUnlessPresent(skill.targetPath, skill.content, outcome);
   }

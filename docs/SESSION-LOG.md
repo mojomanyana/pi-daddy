@@ -5,6 +5,36 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ---
 
+## 2026-09-15 — 0.27.1 configured runtime skill discovery candidate
+
+At base `6bf5e167`, branch `codex/fix-package-skill-discovery-20260915` replaces setup's universal copying
+with references to Pi-enabled installed/local runtime skills. Definitions, catalog and setup share a
+read-only Pi package resolver; missing sources skip installation, disabled resources stay excluded, and
+selected local overrides retain their ceilings. A malformed local override cannot expose a wider package
+ceiling. Legacy unregistered npm scaffolding remains available. ADR-0074 records the reversal.
+
+Local validation: 71 focused tests passed (`skill-resources`, `init`, `definitions`, `catalog`), TypeScript
+check and package build passed, and `git diff --check` passed. No mutation suite, model call or user/Herdr
+session was run. Node 26.7.0 and reused Pi SDK 0.85.1 dependencies were used without dependency installation.
+The coordinator verified the required resolver/settings APIs in the published SDK 0.83.0 archive; the
+existing peer floor is unchanged. Runtime testing of that older SDK is not claimed.
+
+Independent coordinator filesystem/Pi checks passed for actual Principal 3.2.0 global and project installs:
+seven skills, no project copies or Pi collision diagnostics, and matching definition/catalog source paths
+through init, repeat and force. Evidence is retained outside source under the task's evidence directory.
+Independent code review, required CI, merge, canonical archive qualification, publication/tag and local
+installed update remain release gates; this entry is candidate evidence, not a publication claim.
+
+Final candidate review addendum (same day): independent Sol review found two parser/reporting edges:
+blank/comment-separated YAML collections and invalid UTF-8 before the frontmatter header. Both were
+corrected with targeted regressions; the final independent verdict is PASS with no remaining actionable
+findings. Final focused run: 72 passed; typecheck and build passed. Required CI/publication remain pending.
+
+Required CI follow-up: the first PR54 run exposed an approval-persistence fixture that disabled the
+entire Pi agent directory and a four-line module-size overrun. The fixture now obstructs only the
+approval-cache parent; source comments were shortened without changing runtime behavior. Both affected
+test files pass locally (36 tests). The failed CI logs are retained; the corrected commit requires fresh CI.
+
 ## 0.27.0 release metadata preparation — feature gates pending
 
 Isolated `codex/release-pi-daddy-0.27.0` starts at

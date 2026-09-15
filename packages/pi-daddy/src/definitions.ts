@@ -20,9 +20,8 @@
  */
 
 import { createHash } from "node:crypto";
-import { readFile, readdir } from "node:fs/promises";
-import { join } from "node:path";
-import { skillDirs } from "./catalog.ts";
+import { readFile } from "node:fs/promises";
+import { resolveSkillResources, skillResourceName } from "./skill-resources.ts";
 import { CAPABILITY_NAMESPACE_PREFIXES } from "./capabilities.ts";
 import type { Capability } from "./resolve.ts";
 
@@ -133,6 +132,11 @@ export function parseSkillDefinition(source: string, text: string): SkillDefinit
       continue;
     }
 
+    // A YAML collection/block we cannot parse is not an explicit empty ceiling.
+    if (key === "allowed-tools" && value === "") {
+      const nextValue = lines.slice(i + 1).find(line => line.trim() !== "" && !/^\s*#/.test(line));
+      if (/^\s+\S/.test(nextValue ?? "")) continue;
+    }
     fields.set(key, value);
   }
 
@@ -144,21 +148,13 @@ export function parseSkillDefinition(source: string, text: string): SkillDefinit
     // skills by their directory, so trusting a frontmatter `name` lets our view and the loader's
     // disagree about which file a name refers to. The spec requires `name` to match the parent
     // directory anyway, so a mismatch is the file's defect and not something to honour.
-    name: nameFromPath(source),
+    name: skillResourceName(source),
     description,
     allowedTools: fields.get("allowed-tools"),
     metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
     body: text.slice(match[0].length).trim(),
     source,
   };
-}
-
-/** `/skills/review/SKILL.md` -> `review`; `/skills/triage.md` -> `triage`. */
-function nameFromPath(source: string): string {
-  const parts = source.split("/").filter((p) => p.length > 0);
-  const last = parts.at(-1) ?? "";
-  if (last.toLowerCase() === "skill.md") return parts.at(-2) ?? "";
-  return last.replace(/\.md$/i, "");
 }
 
 /**
@@ -199,41 +195,17 @@ export function ceilingForDefinition(definition: SkillDefinition): DefinitionCei
 }
 
 /**
- * Discover `SKILL.md` definitions under pi's skill roots.
- *
- * Deliberately the SAME roots and the same convention the catalog uses (`skillDirs`): a directory
- * containing `SKILL.md` is one definition named after the directory, and a top-level `.md` is one named
- * after the file. If discovery and the catalog disagreed, a definition could be spawnable but not
- * grantable, or listed but unspawnable.
- *
- * Earlier directories win on a name collision, matching pi's own precedence — project before global.
+ * Read definitions from Pi's enabled resources, including installed packages and local overrides.
+ * Resolver precedence and filters are shared with the capability catalog; unregistered npm packages
+ * are not runtime resources until legacy init explicitly scaffolds them.
  */
 export async function loadDefinitions(cwd: string): Promise<Map<string, SkillDefinition>> {
   const definitions = new Map<string, SkillDefinition>();
-  for (const dir of skillDirs(cwd)) {
-    let names: string[];
-    try {
-      names = await readdir(dir);
-    } catch {
-      continue; // an absent skill root is normal
-    }
-    for (const name of [...names].sort()) {
-      // A directory holding SKILL.md, or a top-level .md — try the former first, exactly as the
-      // catalog does, so the two cannot disagree about what exists.
-      const candidates = [join(dir, name, "SKILL.md"), ...(name.endsWith(".md") ? [join(dir, name)] : [])];
-      for (const path of candidates) {
-        let text: string;
-        try {
-          text = await readFile(path, "utf8");
-        } catch {
-          continue; // not this shape; try the next candidate
-        }
-        const parsed = parseSkillDefinition(path, text);
-        // First writer wins, so project definitions shadow global ones rather than the reverse.
-        if (parsed && !definitions.has(parsed.name)) definitions.set(parsed.name, parsed);
-        break;
-      }
-    }
+  for (const { path } of (await resolveSkillResources(cwd)).skills) {
+    let text: string;
+    try { text = await readFile(path, "utf8"); } catch { continue; }
+    const parsed = parseSkillDefinition(path, text);
+    if (parsed && !definitions.has(parsed.name)) definitions.set(parsed.name, parsed);
   }
   return definitions;
 }

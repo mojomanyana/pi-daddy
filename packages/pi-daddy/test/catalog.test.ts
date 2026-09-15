@@ -12,6 +12,8 @@ import {
 } from "../src/catalog.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
+process.env.PI_CODING_AGENT_DIR = await tempDir("grants-discovery-agent-");
+
 after(cleanupTempDirs);
 
 test("classifies pi built-ins vs extension-provided tools", () => {
