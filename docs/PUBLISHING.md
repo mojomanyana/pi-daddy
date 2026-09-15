@@ -1,3 +1,22 @@
+# Publishing pi-daddy 0.27.2 — standalone CLI dependency
+
+0.27.1 passed isolated archive checks that explicitly supplied the Pi SDK, but final managed local
+verification exposed that Pi uses npm --legacy-peer-deps. Its standalone CLI therefore lacked the SDK.
+This follow-up declares the SDK and TypeBox as runtime dependencies; no discovery logic changes.
+The corrected CI smoke also exposed TypeBox relying on transitive dependency hoisting.
+
+1. Review the dependency/lock/test change and pass required PR CI, including installed smoke with
+   --legacy-peer-deps and no explicit SDK installation.
+2. Merge through the PR, pack once from the exact merge, install that archive into a fresh prefix using
+   --legacy-peer-deps alone, and run the global/project skill-discovery checks. No model calls.
+3. Publish those exact verified bytes once as 0.27.2; verify npm bytes/latest, immutable tag and release.
+4. Update via Pi's managed installer, verify local files and standalone discovery in the prepared fresh
+   project, and leave existing sessions and old project skill copies untouched.
+
+Prior release attempts and their evidence remain unchanged below.
+
+---
+
 # Publishing pi-daddy 0.27.1 — duplicate skill setup fix
 
 This patch references configured enabled installed runtime skills directly in setup, definitions and the

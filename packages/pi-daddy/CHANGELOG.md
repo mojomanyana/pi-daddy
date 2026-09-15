@@ -12,6 +12,13 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## 0.27.2 — standalone CLI runtime dependency (2026-09-15)
+
+- Declare the Pi SDK and TypeBox as runtime dependencies, so standalone pi-daddy commands work after Pi's managed
+  installer omits peer dependencies. The 0.27.1 local-update check exposed the missing dependency.
+- Installed-package smoke now uses the same peer-omitting npm mode as Pi, without injecting the SDK.
+- Skill discovery and grant behavior are unchanged; the no-copy setup fix remains in place.
+
 ## 0.27.1 — reference enabled installed runtime skills (ADR-0074)
 
 - Setup uses configured Pi runtime skills directly instead of copying them into `.pi/skills`, avoiding
