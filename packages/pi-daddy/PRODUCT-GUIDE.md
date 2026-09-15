@@ -1,7 +1,7 @@
 # Work and learning in Pi
 
-This guide targets **pi-daddy 0.27.1** with **skill-harness 0.16.0**. The 0.27.1 patch references enabled
-installed runtime skills directly and prevents setup from creating duplicate project copies.
+This guide targets **pi-daddy 0.27.3** with **skill-harness 0.17.0**. Completed ledger history now has
+visible hidden counts and an h + Enter toggle. Existing installed-skill discovery remains unchanged.
 Release qualification and publication are recorded in the release PR; version metadata alone is not proof.
 The [current requirement register](./REQUIREMENTS.md) separates implementation from release evidence.
 From an installed shell command, `pi-daddy guide` prints this guide; `pi-daddy current` prints the register.
@@ -9,7 +9,7 @@ From an installed shell command, `pi-daddy guide` prints this guide; `pi-daddy c
 ## Start once
 
 After the patch is published, install it with Pi's normal package manager:
-`pi install npm:pi-daddy@0.27.1` and `pi install npm:skill-harness@0.16.0`.
+`pi install npm:pi-daddy@0.27.3` and `pi install npm:skill-harness@0.17.0`.
 Do not treat these planned version commands as evidence the packages are already available.
 Start a **fresh Pi session** after upgrading the harness: its existing immutable bridge survives `/reload`.
 In the project, run `/grants init`, review capability consent, then `/grants` to see usable definitions.
