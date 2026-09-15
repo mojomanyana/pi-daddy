@@ -30,6 +30,11 @@ blank/comment-separated YAML collections and invalid UTF-8 before the frontmatte
 corrected with targeted regressions; the final independent verdict is PASS with no remaining actionable
 findings. Final focused run: 72 passed; typecheck and build passed. Required CI/publication remain pending.
 
+Required CI follow-up: the first PR54 run exposed an approval-persistence fixture that disabled the
+entire Pi agent directory and a four-line module-size overrun. The fixture now obstructs only the
+approval-cache parent; source comments were shortened without changing runtime behavior. Both affected
+test files pass locally (36 tests). The failed CI logs are retained; the corrected commit requires fresh CI.
+
 ## 0.27.0 release metadata preparation — feature gates pending
 
 Isolated `codex/release-pi-daddy-0.27.0` starts at

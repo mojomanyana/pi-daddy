@@ -804,7 +804,11 @@ test("a failed always-store write is ledgered as session-only with no fake expir
   const oldPath = process.env.PATH;
   const oldAgentDir = process.env.PI_CODING_AGENT_DIR;
   process.env.PATH = `${bin}:${oldPath}`;
-  process.env.PI_CODING_AGENT_DIR = "/dev/null";
+  const agentDir = await tempDir("grants-persist-downgrade-agent-");
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+  // Fail only the approval-cache write. Making the entire agent directory unreadable also disables
+  // configured skill discovery, so the test would never reach its intended persistence boundary.
+  await writeFile(join(agentDir, "grants-approvals"), "not a directory");
   try {
     const { tools, ctx } = await harness({
       [ENV_GRANT]: "agent:worker,tool:bash,tool:delegate", [ENV_LEDGER]: ledger,
