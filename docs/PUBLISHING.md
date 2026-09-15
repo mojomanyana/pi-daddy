@@ -1,3 +1,25 @@
+# Publishing pi-daddy 0.27.1 — duplicate skill setup fix
+
+This patch references configured enabled installed runtime skills directly in setup, definitions and the
+capability catalog. It preserves explicit local overrides, existing grant files, and unregistered npm
+scaffold compatibility. No dependency upgrade, model run, Herdr operation or unrelated feature release is
+required. ADR-0074 records the change from universal copying.
+
+1. Review the fix independently, run focused regressions/typecheck/build, and merge one PR containing the
+   fix, documentation and patch version through required CI. No direct main push or bypass.
+2. From the exact merge, pack once with normal lifecycle scripts. Record source SHA, archive SHA-256 and
+   npm integrity. Validate that exact archive in isolated global/project package setups against Pi, using
+   actual installed skills: init/repeat/force must create no duplicate skill directory; definitions and
+   catalog must reference installed paths. Use no model calls or user sessions.
+3. Publish those same qualified archive bytes as 0.27.1, verify npm version/integrity, tag the exact merge,
+   and update the local installed package through its existing install mechanism. Verify local version and
+   discovery without controlling live Herdr panes. Record publication and local-update evidence in the PR.
+
+The following 0.27.0 preparation runbook is retained as historical context; its pending language describes
+that candidate's preparation and does not govern this patch.
+
+---
+
 # Publishing pi-daddy 0.27.0 — preparation only
 
 Matching harness release planned: **skill-harness 0.16.0**. The private workspace root is never published.

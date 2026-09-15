@@ -1,34 +1,15 @@
 /**
- * Which installed npm packages ship `SKILL.md` definitions — read from their own manifests.
- *
- * `pi-daddy init` scaffolds a governed project from whatever skill packages are already installed, and
- * this is how it finds them: **a package declares its skills in `package.json`'s `pi.skills` array**, which
- * is pi's own convention and how pi itself loads them. Measured against `principal-pi-skills@2.3.1`:
- *
- * ```json
- * "pi": { "skills": ["./decide", "./architect", "./plan", "./build", "./review", "./debug", "./git-ops"] }
- * ```
- *
- * **A declaration, never a heuristic.** Walking `node_modules` looking for files called `SKILL.md` would
- * find a package's test fixtures, its examples, and its vendored copies of someone else's skills — and
- * would then offer to install them as spawnable sub-agents. A package that says which of its files are
- * skills has said so on purpose, and that is the only list this reads.
- *
- * What it deliberately does NOT do: scan `~/.pi/agent/skills/`. Definitions already in a skill root are
- * discovered by `loadDefinitions` and governed as they stand; copying them into a project would duplicate
- * them under a name that shadows the original (project wins on collision), which is a change nobody asked
- * for.
- *
- * **Everything read here comes from a third party**, so this module is also where the refusals live: a
- * name, a declared capability id, or a path that cannot safely be written into a generated file is refused
- * with a reason rather than passed on (R-77, R-78, R-80). `init` generates a shell file an operator
- * `source`s; the only strings that may reach it are ones that survived a whitelist here.
+ * Setup discovers enabled Pi resources in place through its package resolver. Configured packages
+ * are never copied into another autoload root. For legacy npm installs unregistered with Pi only,
+ * the explicit package.json pi.skills declaration remains a scaffold source (ADR-0074).
+ * Names, ceilings and bytes are checked before they can enter the generated shell grant.
  */
 
 import { readdir, readFile, realpath } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { ceilingForDefinition, parseSkillDefinition, type SkillDefinition } from "./definitions.ts";
+import { resolveSkillResources, skillResourceName } from "./skill-resources.ts";
 import { WILDCARD } from "./pi-tools.ts";
 import { AGENT_WILDCARD, WORKSPACE_WILDCARD, type Capability } from "./resolve.ts";
 import { isSafeCapability } from "./capabilities.ts";
@@ -38,6 +19,8 @@ export interface DiscoveredSkill {
   /** The file verbatim. `init` copies it rather than regenerating it, so nothing is lost in a round trip. */
   text: string;
   path: string;
+  /** Already enabled by Pi; setup must reference it rather than making a competing copy. */
+  referenced?: boolean;
 }
 
 /** Why a declared skill was refused before it could be planned. Each has a different fix. */
@@ -248,21 +231,63 @@ export function skillPackageRoots(cwd: string): string[] {
 }
 
 export async function discoverSkillPackages(cwd: string): Promise<SkillPackage[]> {
-  const dirs: string[] = [];
-  const seenNames = new Set<string>();
-  for (const root of skillPackageRoots(cwd)) await collectFrom(root, dirs);
-
+  const resolved = await resolveSkillResources(cwd);
   const packages: SkillPackage[] = [];
-  for (const dir of dirs) {
-    const found = await readSkillPackage(dir);
-    // First root wins on a name collision: the project's pinned copy outranks the machine-wide one, and
-    // silently preferring the other would make a committed lockfile stop meaning anything.
-    if (found && !seenNames.has(found.name)) {
-      seenNames.add(found.name);
-      packages.push(found);
-    }
+  const seenSkills = new Set<string>();
+  const runtimeNames = new Set(resolved.skills.map(s => skillResourceName(s.path)));
+  const configuredRoots = new Set(resolved.configured.flatMap(p => p.installedPath ? [resolve(p.installedPath)] : []));
+  const configuredNames = new Set<string>(resolved.configured.flatMap(p => {
+    if (!p.source.startsWith("npm:")) return [];
+    const spec = p.source.slice(4);
+    const versionAt = spec.indexOf("@", 1);
+    return [versionAt < 0 ? spec : spec.slice(0, versionAt)];
+  }));
+  for (const root of configuredRoots) {
+    try { configuredNames.add(JSON.parse(await readFile(join(root, "package.json"), "utf8")).name); } catch { /* absent */ }
   }
-  return packages.sort((a, b) => a.name.localeCompare(b.name));
+  for (const resource of resolved.skills) {
+    const bytes = await readFile(resource.path).catch(() => null);
+    if (bytes === null) continue;
+    const text = bytes.toString("utf8");
+    const resourceName = skillResourceName(resource.path);
+    if (seenSkills.has(resourceName)) continue;
+    seenSkills.add(resourceName);
+    let name = resource.metadata.source;
+    let version = "local";
+    if (resource.metadata.origin === "package" && resource.metadata.baseDir) {
+      try {
+        const manifest = JSON.parse(await readFile(join(resource.metadata.baseDir, "package.json"), "utf8"));
+        name = manifest.name ?? name; version = manifest.version ?? version;
+      } catch { /* the resource can be used without optional display metadata */ }
+    } else name = `${resource.metadata.scope} skills`;
+    let pkg = packages.find(p => p.name === name && p.version === version);
+    if (!pkg) { pkg = { name, version, skills: [], refused: [], unreadable: [] }; packages.push(pkg); }
+    if (!Buffer.from(text, "utf8").equals(bytes)) {
+      pkg.refused.push({ subject: resourceName, reason: "not-utf8", detail: [] });
+      continue;
+    }
+    const definition = parseSkillDefinition(resource.path, text);
+    if (!definition) continue;
+    const skill = { definition, text, path: resource.path, referenced: true };
+    const refusal = refusalFor(skill);
+    if (refusal) pkg.refused.push(refusal); else pkg.skills.push(skill);
+  }
+
+  // Compatibility for npm installs that were never registered with Pi. Runtime discovery never scans
+  // node_modules. A configured package (including one disabled by a filter) must not re-enter here.
+  const dirs: string[] = [];
+  for (const root of skillPackageRoots(cwd)) await collectFrom(root, dirs);
+  const seenNames = new Set(packages.map(p => p.name));
+  for (const dir of dirs) {
+    if (configuredRoots.has(resolve(dir))) continue;
+    const found = await readSkillPackage(dir);
+    if (!found || configuredNames.has(found.name) || seenNames.has(found.name)) continue;
+    seenNames.add(found.name);
+    found.skills = found.skills.filter(skill => !runtimeNames.has(skill.definition.name));
+    packages.push(found);
+  }
+  return packages;
+
 }
 
 /** Append every package directory under one `node_modules`, scoped packages included. */

@@ -1,9 +1,9 @@
 /**
  * `pi-daddy init` — scaffold a governed project from the skill packages already installed (B2, P3).
  *
- * Today an operator wanting to govern a package of skills must, per skill: create a directory, copy the
- * body, hand-write frontmatter, choose a capability set with no guidance, and assemble a `PI_GRANTS_GRANT`
- * string by hand. Seven times, for `principal-pi-skills`. This does the mechanical parts.
+ * Legacy unregistered npm packages can be scaffolded per skill: create a directory, copy the
+ * body and declaration copies plus a starting `PI_GRANTS_GRANT`. Configured enabled Pi resources
+ * are referenced where installed instead (ADR-0074); no competing .pi/skills copy is created.
  *
  * **The line it does not cross, and the reason this module exists at all:** `init` writes files an operator
  * then **reviews, edits and commits**. It never chooses a ceiling. A skill that declares `allowed-tools` is
@@ -62,6 +62,8 @@ export interface PlannedSkill {
   from: string;
   sourcePath: string;
   targetPath: string;
+  /** Configured skills stay at their installed/local source, including when --force is used. */
+  referenced?: boolean;
   /** Exactly what would be written — the file verbatim, or the file plus a commented note. */
   content: string;
   /** The declared ceiling, empty when the declaration is absent or unusable. */
@@ -191,7 +193,8 @@ export function planInit(
         name,
         from: `${pkg.name}@${pkg.version}`,
         sourcePath: skill.path,
-        targetPath: join(cwd, ".pi", "skills", name, "SKILL.md"),
+        targetPath: skill.referenced ? skill.path : join(cwd, ".pi", "skills", name, "SKILL.md"),
+        referenced: skill.referenced,
         content: withPlaceholder(skill.text, withheld === null, note),
         ceiling: ceiling.capabilities,
         withheld,
@@ -391,6 +394,7 @@ export async function applyInit(plan: InitPlan, options: { force?: boolean } = {
   }
   const force = options.force === true;
   for (const skill of plan.skills) {
+    if (skill.referenced) continue;
     if (force) await replace(skill.targetPath, skill.content, outcome);
     else await createUnlessPresent(skill.targetPath, skill.content, outcome);
   }

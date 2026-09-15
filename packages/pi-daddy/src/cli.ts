@@ -28,7 +28,7 @@ import { panelText } from "./daily-panel.ts";
 const USAGE = `pi-daddy — capability governance for pi sub-agents
 
 Usage:
-  pi-daddy init [--force] [--dir <path>]   scaffold .pi/skills/ and .pi/grants.env from installed
+  pi-daddy init [--force] [--dir <path>]   prepare .pi/grants.env from enabled installed
                                            packages that declare skills (package.json "pi": {"skills": …})
   pi-daddy work add --id <id> --outcome <text> [--dir <path>]
                                            declare one current obligation for ordinary delegation
@@ -39,12 +39,12 @@ Usage:
   pi-daddy guide | current               installed product guide / current requirement register
   pi-daddy --help | --version
 
-init copies each declared SKILL.md into .pi/skills/ and writes a grant naming exactly what those files
-declare. It never chooses a ceiling: a skill declaring no \`allowed-tools\` is copied with a commented
-placeholder and stays unspawnable until you fill it in. Capabilities that can change your machine
+init references skills already enabled in Pi at their installed or local paths. Legacy unregistered npm
+skills are copied into .pi/skills/. It never chooses a ceiling: missing or unusable \`allowed-tools\`
+stays unspawnable. Capabilities that can change your machine
 (bash, write, edit) are written COMMENTED — uncomment them deliberately. Review the files, then commit.
 
-  --force   rewrite the SKILL.md copies that already exist. This DISCARDS any \`allowed-tools\` you added.
+  --force   rewrite legacy unregistered npm SKILL.md copies that already exist. This DISCARDS any \`allowed-tools\` you added.
             It never rewrites .pi/grants.env — delete that file if you want it regenerated.`;
 
 export interface ParsedArgs {
@@ -131,7 +131,7 @@ async function init(cwd: string, force: boolean): Promise<number> {
     // `pi install npm:principal-pi-skills`, which installs to the agent root, was told to install a package
     // they had already installed (R-75).
     console.log(
-      `pi-daddy init: no installed package declares skills (a package.json "pi": {"skills": [...]} ` +
+      `pi-daddy init: no enabled configured skills or unregistered npm package declares skills (a package.json "pi": {"skills": [...]} ` +
         `field). Nothing to scaffold.\n\nLooked in:\n` +
         skillPackageRoots(cwd).map((r) => `  ${r}\n`).join("") +
         `\n  pi install npm:principal-pi-skills    # seven skills, and registers it with pi\n` +
@@ -171,7 +171,7 @@ async function init(cwd: string, force: boolean): Promise<number> {
   // `--force` is destructive and says so at the moment it acts, not only in `--help` — which is the one
   // place the operator running the command is not reading.
   if (force) {
-    const existing = plan.skills.length;
+    const existing = plan.skills.filter(s => !s.referenced).length;
     console.log(
       `\n--force: rewriting up to ${existing} SKILL.md cop${existing === 1 ? "y" : "ies"} from the installed\n` +
         `packages. Any \`allowed-tools\` you wrote in them is DISCARDED. .pi/grants.env is never rewritten.`,
@@ -180,6 +180,7 @@ async function init(cwd: string, force: boolean): Promise<number> {
 
   const outcome = await applyInit(plan, { force });
   const short = (path: string) => relative(cwd, path) || path;
+  for (const skill of plan.skills.filter(s => s.referenced)) console.log(`using ${short(skill.sourcePath)} (enabled in Pi; no copy)`);
   for (const path of outcome.written) console.log(`wrote ${short(path)}`);
   for (const path of outcome.kept) console.log(`kept  ${short(path)} (already present — left exactly as it is)`);
   for (const failure of outcome.failed) console.error(`FAILED ${short(failure.path)}: ${failure.error}`);

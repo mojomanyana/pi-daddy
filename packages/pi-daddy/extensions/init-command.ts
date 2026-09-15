@@ -44,8 +44,8 @@ export async function runInit(
   const packages = await discoverSkillPackages(ctx.cwd);
   if (packages.length === 0) {
     ctx.ui.notify(
-      "grants: no packages declaring skills found in node_modules. Install one — e.g. " +
-        "`npm i principal-pi-skills` — then run /grants init again.",
+      "grants: no enabled configured skills or unregistered npm skill packages found. Install and enable one — e.g. " +
+        "`pi install npm:principal-pi-skills` — then run /grants init again.",
       "warning",
     );
     return;
@@ -55,6 +55,7 @@ export async function runInit(
   const outcome = await applyInit(plan);
   const lines = [
     `grants: ${plan.skills.length} definition(s) from ${packages.map((p) => `${p.name}@${p.version}`).join(", ")}`,
+    `  using ${plan.skills.filter(s => s.referenced).length} enabled definition(s) in place; no copies`,
     `  wrote ${outcome.written.length}, kept ${outcome.kept.length} already present` +
       `${outcome.failed.length > 0 ? `, ${outcome.failed.length} FAILED` : ""}`,
   ];

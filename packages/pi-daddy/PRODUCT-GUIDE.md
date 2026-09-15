@@ -1,20 +1,22 @@
 # Work and learning in Pi
 
-This guide targets **pi-daddy 0.27.0** with matching **skill-harness 0.16.0** (planned releases).
-Producer runtime is Sol-approved; feature PR #52 merged with green CI at
-`b974963a7d0ba5a74fdafe331356c348a1fba565`. Release PR CI/merge, installed qualification and publication
-remain pending. Version metadata is not a publication, acceptance or calibration claim.
+This guide targets **pi-daddy 0.27.1** with **skill-harness 0.16.0**. The 0.27.1 patch references enabled
+installed runtime skills directly and prevents setup from creating duplicate project copies.
+Release qualification and publication are recorded in the release PR; version metadata alone is not proof.
 The [current requirement register](./REQUIREMENTS.md) separates implementation from release evidence.
 From an installed shell command, `pi-daddy guide` prints this guide; `pi-daddy current` prints the register.
 
 ## Start once
 
-After both releases are qualified and published, install the matching pair with Pi's normal package manager:
-`pi install npm:pi-daddy@0.27.0` and `pi install npm:skill-harness@0.16.0`.
+After the patch is published, install it with Pi's normal package manager:
+`pi install npm:pi-daddy@0.27.1` and `pi install npm:skill-harness@0.16.0`.
 Do not treat these planned version commands as evidence the packages are already available.
 Start a **fresh Pi session** after upgrading the harness: its existing immutable bridge survives `/reload`.
 In the project, run `/grants init`, review capability consent, then `/grants` to see usable definitions.
-Existing Principal/runtime skill definitions still work; this flow adds no special Principal policy.
+Enabled installed runtime skills are used in place, using Pi's package filters and config directory.
+No `.pi/skills/` copies are created for them. Existing local overrides and `.pi/grants.env` are preserved;
+review old copies before removing one to follow installed package updates. Unregistered npm packages retain
+legacy copy scaffolding. This works for any runtime skill package; there is no Principal-specific policy.
 A definition without `allowed-tools` remains unavailable until its author declares a ceiling.
 Select an available authenticated Pi model; this product never copies credentials or chooses a fallback.
 
