@@ -12,6 +12,13 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## 0.27.3 — visible completed delegation history (2026-09-15)
+
+- Show how many completed roots and children the compact ledger dashboard hides.
+- Use h + Enter to expand/collapse finished history independently of Details.
+- Active and attention ancestry remains visible; connected daily/debrief controls are unchanged.
+- Expanded history can exceed the viewport; this patch does not add pagination.
+
 ## 0.27.2 — standalone CLI runtime dependency (2026-09-15)
 
 - Declare the Pi SDK and TypeBox as runtime dependencies, so standalone pi-daddy commands work after Pi's managed

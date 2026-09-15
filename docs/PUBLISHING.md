@@ -1,3 +1,26 @@
+# Publishing pi-daddy 0.27.3 — completed-history visibility
+
+Feature PR56 merged at 557d546 after independent Sol review and both required CI legs.
+This release changes version/lock, version expectations and documentation only.
+User authorized merge and release in the coordinator session on 2026-09-15.
+
+1. Merge this metadata PR only after required CI passes. Record the exact merge SHA.
+2. Pack once from a fresh clean checkout of that SHA, with normal lifecycle scripts.
+   Retain the archive, npm inventory, source/toolchain identity and SHA-256/SHA-512.
+3. Install those exact bytes into a fresh prefix with scripts disabled and
+   --legacy-peer-deps. Verify the public CLI, version, dashboard render/history
+   behavior and standalone discovery; use offline synthetic data, no model calls.
+   Pair with the canonical harness 0.17.0 archives for its installed Pi learning check.
+4. Recheck version absence, publish only those verified bytes once, then compare
+   downloaded registry bytes. Create immutable v0.27.3 at the verified merge and
+   its GitHub Release. On an uncertain publish response inspect before retrying.
+5. Update local packages using Pi's managed installer only after publication;
+   verify installed versions separately. Do not reload or stop other sessions.
+
+The previous release orders below are preserved historical evidence.
+
+---
+
 # Publishing pi-daddy 0.27.2 — standalone CLI dependency
 
 0.27.1 passed isolated archive checks that explicitly supplied the Pi SDK, but final managed local
