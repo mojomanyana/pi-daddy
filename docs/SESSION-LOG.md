@@ -5,6 +5,21 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ---
 
+## 2026-09-15 — managed-install dependency follow-up for 0.27.2
+
+PR54 merged and pi-daddy 0.27.1 published with matching archive bytes. Local update changed one package,
+but final standalone discovery failed with ERR_MODULE_NOT_FOUND for the Pi SDK: Pi installs with
+--legacy-peer-deps, whereas isolated qualification had explicitly installed that peer. That qualification
+did not represent Pi's install mode. Evidence and immutable 0.27.1 remain preserved.
+
+0.27.2 declares the SDK as a runtime dependency without changing its supported range or discovery code.
+Installed smoke now omits peers and adds no SDK separately, so the former package declaration fails.
+Review, CI, installed archive verification, publication and managed local verification remain gates.
+
+Follow-up candidate evidence: corrected installed-package smoke passed using only the packed archive and
+--legacy-peer-deps, including standalone CLI and configured skill references with no copies. Independent
+Sol review of all eight changed files passed without findings; no dependency versions moved in the lock.
+
 ## 2026-09-15 — 0.27.1 configured runtime skill discovery candidate
 
 At base `6bf5e167`, branch `codex/fix-package-skill-discovery-20260915` replaces setup's universal copying

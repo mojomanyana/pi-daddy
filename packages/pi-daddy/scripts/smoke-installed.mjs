@@ -33,7 +33,8 @@ const run = (cmd, args, cwd) =>
 try {
   const packed = run("npm", ["pack", "--pack-destination", work], pkgDir).trim().split("\n").pop();
   writeFileSync(join(work, "package.json"), JSON.stringify({ name: "smoke", private: true, type: "module" }));
-  run("npm", ["i", "--no-audit", "--no-fund", join(work, packed)], work);
+  // Pi's managed npm installs omit host peers. The CLI must carry its own runtime dependencies.
+  run("npm", ["i", "--legacy-peer-deps", "--no-audit", "--no-fund", join(work, packed)], work);
   if (existsSync(join(work, "node_modules/pi-daddy/dist/run-child-test-control.js"))) {
     throw new Error("test-only run-child control leaked into the installed package");
   }
@@ -130,6 +131,25 @@ try {
   // detect. Rule 7 applies to smoke assertions too.
   const copied = readFileSync(join(work, ".pi", "skills", "review", "SKILL.md"), "utf8");
   if (copied !== skillSource) throw new Error(`init did not copy the declaration verbatim:\n${copied}`);
+
+  // A fresh configured project must also work without an explicitly installed SDK peer.
+  const configuredProject = join(work, "configured-project");
+  mkdirSync(join(configuredProject, ".pi"), { recursive: true });
+  writeFileSync(join(configuredProject, ".pi", "settings.json"), JSON.stringify({ packages: [skillPkg] }));
+  const configuredOut = run(join(work, "node_modules", ".bin", "pi-daddy"), ["init"], configuredProject);
+  if (!configuredOut.includes("enabled in Pi; no copy") || existsSync(join(configuredProject, ".pi", "skills"))) {
+    throw new Error("configured installed CLI setup did not reference skills in place");
+  }
+  writeFileSync(join(work, "configured-probe.mjs"), [
+    'import assert from "node:assert/strict";',
+    'import { loadDefinitions } from "pi-daddy/definitions";',
+    'import { buildCatalog } from "pi-daddy/catalog";',
+    'const definitions = await loadDefinitions(process.cwd());',
+    'assert.equal(definitions.get("review")?.source, ' + JSON.stringify(join(skillPkg, "review", "SKILL.md")) + ');',
+    'const catalog = await buildCatalog({ cwd: process.cwd(), observedTools: null });',
+    'assert(catalog.has("agent:review") && catalog.has("skill:review"));',
+  ].join("\n"));
+  run("node", [join(work, "configured-probe.mjs")], configuredProject);
 
   const dashboardOut = run(
     join(work, "node_modules", ".bin", "pi-daddy-dashboard"),
