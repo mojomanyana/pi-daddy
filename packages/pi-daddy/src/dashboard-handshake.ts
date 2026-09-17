@@ -13,6 +13,7 @@ import {
 } from "./dashboard-herdr.ts";
 import { DASHBOARD_PROTOCOL_VERSION } from "./dashboard-cli.ts";
 import type { HerdrExec } from "./herdr-cli.ts";
+import { defaultActivityTimelinePath, parseActivityTimeline, renderActivityTimeline } from "./activity-timeline.ts";
 
 export type DashboardPromptChoice = "not-now" | "never";
 interface DashboardPreference {
@@ -87,7 +88,13 @@ export async function offerDashboardHandshake(input: DashboardHandshakeInput): P
     const preference = await loadPreference(input.preferencePath);
     if (preference) return "suppressed";
     const plugin = await inspectDashboardPlugin(exec, input.pluginRoot);
-    if (plugin.state === "compatible") return "already-installed";
+    // A compatible bundled panel is local software already chosen by the operator. Present it by default;
+    // pane identity makes this one panel per caller tab/session and --no-focus avoids focus theft.
+    if (plugin.state === "compatible") {
+      const opened = await openOrReuseDashboard({ exec, host: host.host, ledgerPath: input.ledgerPath ?? "", cwd: input.cwd, statePath: input.paneStatePath, pluginRoot: input.pluginRoot, allowInactive: true });
+      input.ui.notify(`pi-daddy dashboard ${opened.kind} in pane ${opened.paneId} without changing focus.`, "info");
+      return "already-installed";
+    }
     const replacingDifferentPackage = plugin.state === "incompatible" && plugin.incompatibility === "package-root";
     if (plugin.state !== "absent" && !replacingDifferentPackage) {
       input.ui.notify(`pi-daddy dashboard: ${plugin.diagnostic}`, "error");
@@ -157,21 +164,19 @@ export interface DashboardCommandInput {
   paneStatePath: string;
 }
 
-export async function openDashboardCommand(input: DashboardCommandInput): Promise<DashboardOpenResult> {
+export type DashboardCommandResult = DashboardOpenResult | { kind: "fallback"; frame: string; visibleBesideCaller: false };
+async function piFallback(cwd: string, reason: string): Promise<Extract<DashboardCommandResult, { kind: "fallback" }>> {
+  try { return { kind: "fallback", visibleBesideCaller: false, frame: `${reason}\n\n${renderActivityTimeline(parseActivityTimeline(await readFile(defaultActivityTimelinePath(cwd), "utf8")))}` }; }
+  catch { return { kind: "fallback", visibleBesideCaller: false, frame: `${reason}\n\nNo local activity recorded yet.` }; }
+}
+export async function openDashboardCommand(input: DashboardCommandInput): Promise<DashboardCommandResult> {
   const exec = input.exec ?? dashboardHerdrExec;
-  // Order is deliberate: a server elsewhere must not make an outside-pi command look hosted.
+  // A panel can only target this verified process; otherwise /grants dashboard renders the local Pi fallback.
   const host = await verifyHerdrHost({ env: input.env, pid: input.pid, exec });
-  if (!host.ok) throw new Error(host.diagnostic);
-  if (!input.ledgerPath?.trim()) {
-    throw new Error("no pi-daddy ledger is configured — set PI_GRANTS_LEDGER, then retry /grants dashboard");
-  }
+  if (!host.ok) return piFallback(input.cwd, `Herdr panel unavailable: ${host.diagnostic}`);
+  if (!input.ledgerPath?.trim()) return piFallback(input.cwd, "Herdr panel has no governance ledger; showing the local activity timeline.");
   const plugin = await inspectDashboardPlugin(exec, input.pluginRoot);
-  if (plugin.state === "absent") {
-    throw new Error(
-      `the pi-daddy Herdr plugin is not installed. Nothing was installed automatically. Run: ` +
-      `herdr plugin link ${quote(resolve(input.pluginRoot))} --enabled`,
-    );
-  }
+  if (plugin.state === "absent") return piFallback(input.cwd, `Herdr panel is not linked. Run: herdr plugin link ${quote(resolve(input.pluginRoot))} --enabled`);
   if (plugin.state === "disabled") {
     throw new Error(`the pi-daddy Herdr plugin is disabled. Run: herdr plugin enable ${DASHBOARD_PLUGIN_ID}`);
   }

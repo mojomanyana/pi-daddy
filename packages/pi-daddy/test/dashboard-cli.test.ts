@@ -10,6 +10,7 @@ import {
 } from "../src/dashboard-cli.ts";
 import { createDashboardDisplayControls } from "../src/dashboard-display-controls.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
+import { ActivityTimelineRecorder, defaultActivityTimelinePath, parseActivityTimeline } from "../src/activity-timeline.ts";
 
 after(cleanupTempDirs);
 
@@ -28,6 +29,19 @@ test("a plugin opened before pi-daddy explains exact setup without modifying pi"
   assert.match(frame, /pi install npm:pi-daddy/);
   assert.match(frame, /export PI_GRANTS_LEDGER=/);
   assert.match(frame, /\/grants dashboard/);
+});
+
+test("activity dashboard filters and loads exact private prompt/final only on demand", async () => {
+  const cwd = await tempDir("dashboard-activity-"); const recorder = new ActivityTimelineRecorder(cwd, { PI_DADDY_ACTIVITY_ROOT: "root-a" });
+  await recorder.start("exact submitted prompt", "model-a", "high"); await recorder.skill("skill_available", { name: "review", source: "/skills/review", digest: "a".repeat(64) }); await recorder.finish("exact final response");
+  const task = parseActivityTimeline(await import("node:fs/promises").then(({ readFile }) => readFile(defaultActivityTimelinePath(cwd), "utf8"))).tasks[0]!;
+  const compact = await dashboardFrame({ cwd, details: true, filter: "skills" });
+  assert.match(compact, /skill review/);
+  assert.match(compact, new RegExp(`p ${task.id}`)); assert.doesNotMatch(compact, /exact submitted prompt/);
+  const shown = await dashboardFrame({ cwd, details: true, activityDetail: { taskId: task.id, field: "final" } });
+  assert.match(shown, /exact final response/);
+  const bad = await dashboardFrame({ cwd, activityDetail: { taskId: "../secret", field: "final" } });
+  assert.match(bad, /ACTIVITY DETAIL UNAVAILABLE/);
 });
 
 test("dashboard feedback never upgrades host readback, unknown or pending results to applied", () => {

@@ -63,7 +63,7 @@ export interface GrantsCommandContext {
    */
   runInit: () => Promise<void>;
   /** Open or reuse the read-only Herdr dashboard; injected so this diagnostic never becomes enforcement. */
-  openDashboard: () => Promise<{ kind: "opened" | "reused"; paneId: string; visibleBesideCaller: boolean }>;
+  openDashboard: () => Promise<{ kind: "opened" | "reused"; paneId: string; visibleBesideCaller: boolean } | { kind: "fallback"; frame: string; visibleBesideCaller: false }>;
   /** Explicit same-process production host lifecycle; owns no model call and never cancels a child on stop. */
   runHost: (target: string) => Promise<string>;
   variantRuns: Map<string, VariantRunAccounting>;

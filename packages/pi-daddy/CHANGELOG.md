@@ -12,6 +12,15 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## 0.28.0 — unified activity timeline and default-on operation
+
+- Combine root turns, delegated agents and observed/declared skill activity in one filtered timeline with history.
+- Load exact submitted prompts and final responses on demand from bounded private local content references.
+- Track leaf children through a no-tool observer without expanding grants or tool allowlists.
+- Enable root governance and local observation by default, with explicit opt-outs and compatible Herdr auto-presentation/Pi fallback.
+- Available, read and declared-active skills remain distinct; shell-only reads and unavailable editor provenance are not invented.
+- Upgrade behavior: local prompt/final retention is now default-on. Use the documented metadata-only or observation-off option when desired. This does not enable uploads, model learning calls or automatic policy adoption.
+
 ## 0.27.4 — independent Herdr delegation names (2026-09-17)
 
 - Generate a fresh execution suffix instead of a process-local counter, preventing parallel Pi parents

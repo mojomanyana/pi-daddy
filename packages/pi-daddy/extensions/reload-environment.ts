@@ -1,7 +1,7 @@
 import { GRANT_ENV_KEYS } from "../src/propagation.ts";
 
 /** The root baseline and latest child publication for one real Pi session owner. */
-export interface ReloadLifecycle { root: Record<string, string | undefined>; published?: Record<string, string | undefined> }
+export interface ReloadLifecycle { root: Record<string, string | undefined>; published?: Record<string, string | undefined>; activityRootId?: string }
 type SessionOwner = object;
 
 interface ReloadState {

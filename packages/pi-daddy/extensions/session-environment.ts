@@ -10,7 +10,7 @@ import { storedGrantSessionState } from "./stored-grant-session.ts";
 import { chooseExecutor, ENV_HERDR } from "../src/executor.ts";
 import { ENV_ALLOW_UNRESOLVED_MODELS } from "../src/model-preflight.ts";
 import type { ReloadLifecycle } from "./reload-environment.ts";
-import type { GrantsSession } from "./session.ts";
+import { ENV_GOVERNANCE, type GrantsSession } from "./session.ts";
 
 /** Rebuild every authority-bearing factory input once session_start identifies its real SDK owner. */
 export function reconcileSessionEnvironment(
@@ -21,8 +21,9 @@ export function reconcileSessionEnvironment(
   const bounds = depthConfig(environment[ENV_DEPTH], environment[ENV_MAX_DEPTH]);
   const ledgerRaw = environment[ENV_LEDGER];
   session.ledgerFromEnvironment = ledgerRaw !== undefined;
-  session.governed = stored.governed;
-  session.inherited = stored.inherited;
+  const governanceOff = environment[ENV_GOVERNANCE]?.trim() === "off" || environment[ENV_GOVERNANCE]?.trim() === "0";
+  session.governed = !governanceOff;
+  session.inherited = governanceOff ? stored.inherited : stored.governed ? stored.inherited : [WILDCARD];
   session.depth = bounds.depth;
   session.maxDepth = bounds.maxDepth;
   session.malformedBounds = bounds.malformed;
@@ -35,6 +36,8 @@ export function reconcileSessionEnvironment(
   session.mayDelegate = !session.governed || session.inherited.includes(DELEGATE_CAPABILITY) || session.inherited.includes(WILDCARD);
   session.allowUnresolvedModels = environment[ENV_ALLOW_UNRESOLVED_MODELS] === "1";
   session.reloadLifecycle = lifecycle;
+  session.activityRootId = lifecycle.activityRootId ?? session.activityRootId;
+  lifecycle.activityRootId = session.activityRootId;
   session.inheritedApprovals = parseInherited(environment[ENV_APPROVED]);
   session.ownGrant = deriveOwnGrant(session.inherited, null);
   session.observed = false;

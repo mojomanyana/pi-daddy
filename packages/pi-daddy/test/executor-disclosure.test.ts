@@ -22,12 +22,13 @@ import grantsExtension from "../extensions/grants.ts";
 import { ENV_HERDR } from "../src/executor.ts";
 import { ENV_APPROVED, ENV_DEPTH, ENV_FANOUT, ENV_GATED, ENV_GRANT, ENV_LEDGER, ENV_MAX_DEPTH, ENV_PARENT_ID } from "../src/propagation.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
+import { ENV_GOVERNANCE } from "../extensions/session.ts";
 
 after(cleanupTempDirs);
 
 const KEYS = [
   ENV_GRANT, ENV_DEPTH, ENV_MAX_DEPTH, ENV_GATED, ENV_APPROVED, ENV_LEDGER, ENV_FANOUT, ENV_PARENT_ID, ENV_HERDR,
-  "HERDR_ENV", "HERDR_PANE_ID", "HERDR_TAB_ID", "HERDR_WORKSPACE_ID",
+  ENV_GOVERNANCE, "HERDR_ENV", "HERDR_PANE_ID", "HERDR_TAB_ID", "HERDR_WORKSPACE_ID",
 ];
 const saved = new Map<string, string | undefined>();
 
@@ -88,11 +89,11 @@ test("a governed session that can delegate names its executor at session start",
   assert.match(executorLine(notices), /PI_GRANTS_HERDR=0/);
 });
 
-test("an UNGOVERNED session that can still spawn names its executor too", async () => {
+test("the explicit governance opt-out still names its executor", async () => {
   // The defect this prevents. With no PI_GRANTS_GRANT the session holds the wildcard and `mayDelegate` is
   // true, so `delegate` is registered and children are spawned — under whichever executor was chosen. Gating
   // the line on `governed` would have relocated those children into panes without a word.
-  const { notices } = await harness({ [ENV_HERDR]: "0" });
+  const { notices } = await harness({ [ENV_HERDR]: "0", [ENV_GOVERNANCE]: "off" });
   assert.match(executorLine(notices), /captured subprocess/, "an ungoverned session still runs children somewhere");
   assert.ok(
     !notices.some((n) => n.includes("holding [")),
@@ -128,7 +129,7 @@ test("/grants dashboard is registered and diagnoses an outside-Herdr session", a
   });
   notices.length = 0;
   await commands.get("grants")!.handler("dashboard", ctx);
-  assert.match(notices.join("\n"), /dashboard unavailable.*not hosted inside Herdr/i);
+  assert.match(notices.join("\n"), /Herdr panel unavailable:.*not hosted inside Herdr/i);
   assert.doesNotMatch(notices.join("\n"), /grants: ACTIVE/, "dashboard must not fall through to the status screen");
 });
 

@@ -12,7 +12,7 @@ import { GovernanceRefusal, refusal, type StructuredRefusal } from "../src/refus
 import { ENV_HERDR_KEEP_PANE, type GrantsSession } from "./session.ts";
 import { releaseDelegationWorkspace, type PreparedWorkspace } from "./workspace-runtime.ts";
 import { beginDeclaredWorkAttempt } from "./work-runtime.ts";
-
+import { ActivityTimelineRecorder, ENV_ACTIVITY_PARENT_TASK } from "../src/activity-timeline.ts";
 export interface DelegationOutcome {
   ok: boolean;
   text: string;
@@ -30,7 +30,6 @@ export interface DelegationOutcome {
   /** A loud best-effort post-execution observation failure; execution ownership is still settled. */
   control?: "failed";
 }
-
 /**
  * The upstream controller's token, honoured ONLY when the child otherwise exited cleanly non-zero.
  *
@@ -65,7 +64,6 @@ export function isHerdrWriterCloseFailure(error: unknown): boolean {
   return error instanceof HerdrWriterCloseError ||
     hasFinalizerError(error, (value) => value instanceof HerdrWriterCloseError);
 }
-
 export interface ChildProgressUpdate {
   chunk?: string;
   snapshot?: string[];
@@ -73,7 +71,6 @@ export interface ChildProgressUpdate {
   agentName?: string;
   state?: "starting" | "running" | "completed" | "failed";
 }
-
 /**
  * Execute one already-approved plan, record lifecycle, and release any workspace lease on every path
  * EXCEPT a failed herdr writer-tab close, which deliberately retains the lease because the pane may
@@ -102,6 +99,9 @@ async function executeChildBody(input: {
 }): Promise<DelegationOutcome> {
   const { session, plan, childId, executionId, parentExecutionId, preparedWorkspace, signal, onProgress } = input;
   const ledgerPath = session.ledgerPath;
+  let activityParent: string | undefined, activity = new ActivityTimelineRecorder(input.cwd), activityStarted = false, activityFinished = false;
+  try { const env = { ...process.env }; for (const name of ["PI_DADDY_ACTIVITY_PATH", "PI_DADDY_ACTIVITY_ROOT", "PI_DADDY_ACTIVITY_TASK", ENV_ACTIVITY_PARENT_TASK]) { const value = plan.env[name]; if (value) env[name] = value; } activity = new ActivityTimelineRecorder(input.cwd, env); activityParent = plan.env[ENV_ACTIVITY_PARENT_TASK]; } catch {}
+  try { await activity.childStarted(executionId, activityParent, input.agent ?? "governed child", (plan.args.at(-1) ?? "").trimStart()); activityStarted = true; } catch {}
   const configuredTimeoutMs = timeoutFromEnv(process.env[ENV_CHILD_TIMEOUT]);
   const startedAt = new Date();
   const deadlineAt = new Date(startedAt.getTime() + configuredTimeoutMs).toISOString();
@@ -237,6 +237,7 @@ async function executeChildBody(input: {
     retention.finish({ code: output.code, signal: output.signal ?? null, timedOut: output.timedOut,
       aborted: output.aborted, truncated: output.truncated, failed: childFailed });
     releaseReason = output.timedOut ? "timeout" : output.aborted ? "cancelled" : childFailed ? "failed" : "completed";
+    if (activityStarted) try { await activity.childFinished(executionId, activityParent, input.agent ?? "governed child", output.text, childFailed ? output.aborted ? "cancelled" : "failed" : "completed"); activityFinished = true; } catch { /* observation does not control execution */ }
     if (workAttempt) try { workTerminalAttempted = true; await workAttempt.finish(childFailed ? "failed" : "completed"); }
     catch (error) { teardownFailures.push(`declared work terminal record failed: ${String(error)}`); }
     if (ledgerPath) {
@@ -321,6 +322,7 @@ async function executeChildBody(input: {
     await teardown();
     return withTeardownNotes(succeeded);
   } catch (error) {
+    if (activityStarted && !activityFinished) try { await activity.childFinished(executionId, activityParent, input.agent ?? "governed child", "", signal?.aborted ? "cancelled" : "failed"); } catch { /* observation does not control execution */ }
     retention.finish({ code: null, signal: null, timedOut: false, aborted: Boolean(signal?.aborted), truncated: false, failed: true });
     if (workAttempt && !workTerminalAttempted) try { workTerminalAttempted = true; await workAttempt.finish("failed"); }
     catch (cause) { teardownFailures.push(`declared work terminal record failed: ${String(cause)}`); }
@@ -350,7 +352,6 @@ async function executeChildBody(input: {
     // collected into an array nothing read.
     throw errorWithTeardownNotes(error, teardownFailures);
   }
-
   /**
    * Surfaces a teardown failure WITHOUT discarding the result. The child already ran; telling the
    * orchestrator "ledger write failed" and nothing else made a completed delegation indistinguishable
@@ -374,7 +375,6 @@ function errorWithTeardownNotes(error: unknown, notes: readonly string[]): unkno
   if (error instanceof Error) return new Error([error.message, ...notes].join("; "), { cause: error });
   return error;
 }
-
   function withTeardownNotes(outcome: DelegationOutcome): DelegationOutcome {
     const observed = { ...outcome, retention: retention.status() };
     if (teardownFailures.length === 0) return observed;

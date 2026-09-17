@@ -13,7 +13,7 @@
  * module reads them **through this object**, live, rather than capturing a copy at load time; capturing a
  * copy of `ownGrant` before observation is exactly how a stale upper bound would become an enforced one.
  */
-
+import { randomUUID } from "node:crypto";
 import { parseInherited, type InheritableApproval } from "../src/approval.ts";
 import type { ApprovalBinding } from "../src/correlation.ts";
 import { createApprovalGateProvider } from "../src/approval-prompt.ts";
@@ -81,19 +81,10 @@ export { ENV_HERDR } from "../src/executor.ts";
 export { ENV_HERDR_WORKSPACE } from "../src/herdr-cli.ts";
 /** Keep each child's pane after it finishes, for inspection. Off by default: fan-out would flood it. */
 export const ENV_HERDR_KEEP_PANE = "PI_GRANTS_HERDR_KEEP_PANE";
-
+export const ENV_GOVERNANCE = "PI_DADDY_GOVERNANCE";
 export interface VariantRunAccounting {runId:string;primaryExecutionId:string;shadowExecutionIds:string[];state:"running"|"settled";outcomes:null|{executionId:string;role:"primary"|"shadow";ok:boolean;reason:string|null}[]}
 export interface GrantsSession extends NativeSessionHost {
-  /**
-   * False when neither `PI_GRANTS_GRANT` nor a stored grant applies: the session holds the wildcard and
-   * nothing is governed.
-   *
-   * **Mutable, because `/grants init` makes an ungoverned session governed mid-run.** The first version of
-   * ADR-0030 left this readonly on the reasoning that a store is read at creation and `init` only runs where
-   * one exists — which is false for the first `init` in a directory, the most common case there is. The
-   * session then bounded every spawn by the new grant while `/grants` reported "inactive", so the status
-   * line contradicted the enforcer. Found by running it.
-   */
+  /** False only for the explicit PI_DADDY_GOVERNANCE opt-out; otherwise roots are observed-bound. */
   governed: boolean;
   /** The upper bound handed down by the delegator, before this session's own tools are observed. */
   inherited: Capability[];
@@ -133,6 +124,11 @@ export interface GrantsSession extends NativeSessionHost {
   readonly modelResolutionCache: Map<string, boolean>;
   /** Path to this extension, so a child granted `tool:delegate` can delegate in turn. */
   readonly extensionPath?: string;
+  /** Hook-only observer path for leaf children; it exposes no tools. */
+  readonly observerExtensionPath?: string;
+  /** Stable root identity plus current turn, used only to join local activity facts. */
+  activityRootId: string;
+  activity?: { rootId: string; path: string; taskId?: string };
   declaredWork?: DeclaredWorkState; // Explicit operator selection; absence leaves execution visibly unbound.
   /** Primary-return fan-outs retained by this original session; bounded and human-readable via /grants variants. */
   readonly variantRuns: Map<string, VariantRunAccounting>;
@@ -171,7 +167,6 @@ export interface GrantsSession extends NativeSessionHost {
    * but non-deterministically: the same delegation succeeded or failed on timing alone.
    */
   catalogReady: Promise<Catalog>;
-
   /**
    * The one place a delegation context is built — and therefore the one place each field is spelled.
    *
@@ -185,7 +180,6 @@ export interface GrantsSession extends NativeSessionHost {
    * diagnostic that disagrees with enforcement is not expressible.
    */
   delegationContext(approved?: InheritableApproval[]): Promise<DelegationContext>;
-
   /**
    * Publish what children inherit. Written once at session start, and republished whenever this
    * session's own approvals change (see `obtainApprovals`) — never once per spawn. That distinction is
@@ -215,7 +209,6 @@ export interface GrantsSession extends NativeSessionHost {
   adoptGrant(grant: Capability[], projectLedger?: string): void;
   reconcileEnvironment(environment: NodeJS.ProcessEnv, lifecycle: ReloadLifecycle): void;
 }
-
 /**
  * Parse the environment once and build the session every other module reads through.
  *
@@ -244,30 +237,23 @@ export async function loadProjectDefinitions(session: GrantsSession, cwd: string
   });
   session.catalog = await session.catalogReady;
 }
-
-export function createGrantsSession(extensionPath: string | undefined, lifecycle?: ReloadLifecycle): GrantsSession {
+export function createGrantsSession(extensionPath: string | undefined, lifecycle?: ReloadLifecycle, observerExtensionPath?: string): GrantsSession {
   const started = lifecycle ? undefined : beginExtensionLifecycle();
   const activeLifecycle = lifecycle ?? started!.lifecycle;
   const environment = lifecycle ? process.env : started!.environment;
-  // Governance is opt-in: with PI_GRANTS_GRANT unset AND no stored grant for this directory, the session
-  // holds the wildcard and nothing is blocked. This extension must never silently tighten a normal
-  // workflow.
-  //
-  // **Two sources, and the environment always wins** (ADR-0030). The variable is how a CHILD is governed
-  // and how CI is configured, so a store that could override it would let a directory quietly widen or
-  // narrow a child its parent had already bounded. The store is consulted only when the variable is absent,
-  // which is exactly the case it was added for: a human at a terminal who ran `/grants init` here.
-  //
-  // `process.cwd()` rather than `ctx.cwd`, because this runs in the extension factory — before any hook,
-  // and therefore before `ctx` exists. That ordering is forced by S-5: whether `delegate` is registered at
-  // all is decided here, and a grant arriving later could not inform it. `session_start` re-checks the two
-  // against each other and says so if they differ, which is the only case this can get wrong.
+  const activityRootId = activeLifecycle.activityRootId ?? randomUUID();
+  activeLifecycle.activityRootId = activityRootId;
+  // Local governance is on unless PI_DADDY_GOVERNANCE opts out; explicit inherited grants still win.
+  // The factory precedes ctx, so its cwd/store identity is reconciled at session_start.
   const grantRaw = environment[ENV_GRANT];
   const storeCwd = process.cwd();
   // One root-only store read supplies both decisions made by `/grants init`. A child always has ENV_GRANT,
   // so it cannot activate a ledger merely because its routed cwd happens to have a v2 store (ADR-0037).
   const storedState = storedGrantSessionState(grantRaw, storeCwd);
-  const { governed, inherited, refusal: grantStoreRefusal } = storedState;
+  const governanceOff = environment[ENV_GOVERNANCE]?.trim() === "off" || environment[ENV_GOVERNANCE]?.trim() === "0";
+  const governed = governanceOff ? false : true;
+  const inherited = governanceOff ? storedState.inherited : storedState.governed ? storedState.inherited : [WILDCARD];
+  const grantStoreRefusal = storedState.refusal;
   const ledgerRaw = environment[ENV_LEDGER];
   // Capture provenance before publishChildEnv writes this session's derived default into process.env. A later
   // `/grants init` for ctx.cwd must not mistake our own publication for an operator override.
@@ -278,7 +264,6 @@ export function createGrantsSession(extensionPath: string | undefined, lifecycle
   const bounds = depthConfig(environment[ENV_DEPTH], environment[ENV_MAX_DEPTH]);
   const { depth, maxDepth } = bounds;
   const emptyCatalog = makeCatalog([]);
-
   const session: GrantsSession = {
     governed,
     inherited,
@@ -319,6 +304,8 @@ export function createGrantsSession(extensionPath: string | undefined, lifecycle
     nativeSessionRoot: nativeSessionRootFromEnv(process.env),
     modelResolutionCache: new Map<string, boolean>(),
     extensionPath,
+    observerExtensionPath,
+    activityRootId,
     variantRuns: new Map(),
     reloadLifecycle: activeLifecycle,
     sessionApprovals: new Set<string>(),
@@ -339,6 +326,8 @@ export function createGrantsSession(extensionPath: string | undefined, lifecycle
       gated: session.gated,
       ledgerPath: session.ledgerPath,
       extensionPath: session.extensionPath,
+      observerExtensionPath: session.observerExtensionPath,
+      activity: session.activity,
       catalog: await session.catalogReady,
       // R-32: where each granted skill lives, so `planSpawn` can pass `--skill` for those and only those.
       // Derived from the catalog's own `source`, so it cannot drift from what was discovered.
@@ -355,10 +344,8 @@ export function createGrantsSession(extensionPath: string | undefined, lifecycle
       interactive: session.executor.kind === "herdr",
       ...(approved ? { approved } : {}),
     }),
-
     storeCwd,
     ...(grantStoreRefusal ? { grantStoreRefusal } : {}),
-
     adoptGrant: (grant: Capability[], projectLedger?: string) => {
       // Governed too, not just bounded. A session that starts with no grant and then runs `/grants init` is
       // governed from that moment: every spawn is bounded by what was just stored. Leaving this false made
@@ -373,7 +360,6 @@ export function createGrantsSession(extensionPath: string | undefined, lifecycle
       }
       session.publishChildEnv();
     },
-
     reconcileEnvironment: (environment, lifecycle) => reconcileSessionEnvironment(session, environment, lifecycle),
     publishChildEnv: () => {
       const env = childEnv({

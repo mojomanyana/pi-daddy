@@ -183,6 +183,7 @@ export async function reportSessionStart(session: GrantsSession, ctx: SessionRep
     ctx.ui.notify(`grants: executor — ${session.executor.disclosure}`, "error");
   }
 
+  if (!session.governed) info.push("grants: governance off by PI_DADDY_GOVERNANCE; observation and the local timeline remain independent.");
   if (session.governed) {
     info.push(
       `grants: depth ${session.depth}/${session.maxDepth}, holding [${session.ownGrant.join(", ") || "nothing"}]`,

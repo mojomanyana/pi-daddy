@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { DELEGATE_CAPABILITY, normaliseCapability, planDelegation } from "../src/delegate.ts";
 import { ENV_DEPTH, ENV_GRANT, ENV_MAX_DEPTH } from "../src/propagation.ts";
+import { ENV_ACTIVITY_PARENT_TASK, ENV_ACTIVITY_PATH, ENV_ACTIVITY_ROOT, ENV_ACTIVITY_TASK } from "../src/activity-timeline.ts";
 import type { SkillDefinition } from "../src/definitions.ts";
 
 const ctx = (over: Partial<Parameters<typeof planDelegation>[1]> = {}) => ({
@@ -81,9 +82,12 @@ test("spawning is a capability: the extension is passed only when delegate is gr
 
   const leaf = planDelegation(
     { task: "x", tools: ["read"] },
-    ctx({ ownGrant: ["tool:read", DELEGATE_CAPABILITY], extensionPath: "/x/grants.ts" }),
+    ctx({ ownGrant: ["tool:read", DELEGATE_CAPABILITY], extensionPath: "/x/grants.ts", observerExtensionPath: "/x/activity.ts", activity: { rootId: "root-1", path: "/private/activity.jsonl", taskId: "turn-1" }, childExecutionId: "exec-1" }),
   );
-  assert.ok(!leaf.args.includes("-e"), "a leaf child must not receive the delegation machinery");
+  assert.ok(leaf.args.includes("/x/activity.ts"), "a leaf gets only the no-tool observer, not delegation machinery");
+  assert.ok(!leaf.args.includes("/x/grants.ts"));
+  assert.equal(leaf.env[ENV_GRANT], "tool:read", "observation does not widen the grant");
+  assert.deepEqual({ path: leaf.env[ENV_ACTIVITY_PATH], root: leaf.env[ENV_ACTIVITY_ROOT], task: leaf.env[ENV_ACTIVITY_TASK], parent: leaf.env[ENV_ACTIVITY_PARENT_TASK] }, { path: "/private/activity.jsonl", root: "root-1", task: "exec-1", parent: "turn-1" });
 });
 
 test("a child cannot be granted delegate unless the delegator holds it", () => {
