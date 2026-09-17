@@ -1,16 +1,18 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, mkdir, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { test } from "node:test";
+import { after, test } from "node:test";
 import { registerActivityTimeline } from "../extensions/activity-timeline.ts";
 import { ActivityTimelineRecorder, activityTaskKey, ENV_ACTIVITY_PARENT_TASK, ENV_ACTIVITY_PATH, ENV_ACTIVITY_ROOT, ENV_ACTIVITY_TASK, defaultActivityTimelinePath, detailForTimeline, parseActivityTimeline } from "../src/activity-timeline.ts";
+import { cleanupTempDirs, tempDir } from "./tmp.ts";
+
+after(cleanupTempDirs);
 
 function fixture() { const hooks = new Map<string, Function>(), tools = new Map<string, unknown>(); return { hooks, tools, api: { on: (name: string, handler: Function) => hooks.set(name, handler), registerTool: (tool: { name: string }) => tools.set(tool.name, tool) } }; }
 const ctx = (cwd: string) => ({ cwd, model: { id: "test-model" }, thinkingLevel: "high", ui: { notify: () => {} } });
 
 test("actual extension hooks record root turns, skill availability/read/declaration, and an injected leaf in one root", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "activity-hooks-")), skill = join(cwd, "skills", "review", "SKILL.md");
+  const cwd = await tempDir("activity-hooks-"), skill = join(cwd, "skills", "review", "SKILL.md");
   await mkdir(join(cwd, "skills", "review"), { recursive: true }); await writeFile(skill, "---\nname: review\n---\nreview\n");
   const root = fixture(), state: { activityRootId?: string; activity?: { rootId: string; path: string; taskId?: string } } = { activityRootId: "root-session" };
   registerActivityTimeline(root.api as never, state);

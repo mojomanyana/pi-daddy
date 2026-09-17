@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { test } from "node:test";
+import { readFile } from "node:fs/promises";
+import { after, test } from "node:test";
 import { ActivityTimelineRecorder, activityTaskKey, defaultActivityTimelinePath, detailForTimeline, parseActivityTimeline } from "../src/activity-timeline.ts";
+import { cleanupTempDirs, tempDir } from "./tmp.ts";
+
+after(cleanupTempDirs);
 
 test("shared child recorder links an extension-disabled governed child without changing its grant", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "activity-child-"));
+  const cwd = await tempDir("activity-child-");
   const recorder = new ActivityTimelineRecorder(cwd, {});
   await recorder.childStarted("exec-child", "root:session-a", "review", "inspect the change");
   await recorder.childFinished("exec-child", "root:session-a", "review", "final text", "completed");
@@ -17,7 +18,7 @@ test("shared child recorder links an extension-disabled governed child without c
 });
 
 test("exact prompt and final are loaded only by a validated task reference", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "activity-detail-"));
+  const cwd = await tempDir("activity-detail-");
   const recorder = new ActivityTimelineRecorder(cwd, { PI_DADDY_ACTIVITY_ROOT: "root-a" });
   await recorder.start("submitted prompt"); await recorder.finish("exact final");
   const path = defaultActivityTimelinePath(cwd);
@@ -29,7 +30,7 @@ test("exact prompt and final are loaded only by a validated task reference", asy
 });
 
 test("detail selection binds root plus task and rejects an ambiguous task-id shorthand", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "activity-detail-roots-")), path = defaultActivityTimelinePath(cwd);
+  const cwd = await tempDir("activity-detail-roots-"), path = defaultActivityTimelinePath(cwd);
   const first = new ActivityTimelineRecorder(cwd, { PI_DADDY_ACTIVITY_ROOT: "root-a" });
   const second = new ActivityTimelineRecorder(cwd, { PI_DADDY_ACTIVITY_ROOT: "root-b" });
   await first.childStarted("same-task", undefined, "one", "first prompt"); await first.childFinished("same-task", undefined, "one", "first final", "completed");
@@ -45,7 +46,7 @@ test("detail selection binds root plus task and rejects an ambiguous task-id sho
 });
 
 test("observation-off writes neither metadata nor private content", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "activity-off-"));
+  const cwd = await tempDir("activity-off-");
   const recorder = new ActivityTimelineRecorder(cwd, { PI_DADDY_ACTIVITY_TIMELINE: "off" });
   await recorder.start("private prompt");
   await assert.rejects(readFile(defaultActivityTimelinePath(cwd), "utf8"), { code: "ENOENT" });
