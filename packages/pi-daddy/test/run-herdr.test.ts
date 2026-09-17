@@ -825,7 +825,7 @@ test("each spawn gets a UNIQUE agent name, because herdr binds a name to its tab
     fake.calls.find((c) => c[0] === "agent" && c[1] === "start")![2];
   assert.notEqual(nameOf(first), nameOf(second), "two spawns from one base name must not collide");
   for (const fake of [first, second]) {
-    assert.match(nameOf(fake), /^child-1-\d+$/, "and the base must stay readable in the name");
+    assert.match(nameOf(fake), /^child-1-[a-f0-9]{20}$/, "and the base must stay readable in the name");
   }
 });
 

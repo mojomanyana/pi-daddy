@@ -12,6 +12,13 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## 0.27.4 — independent Herdr delegation names (2026-09-17)
+
+- Generate a fresh execution suffix instead of a process-local counter, preventing parallel Pi parents
+  and extension reloads from reusing globally reserved Herdr agent names.
+- Keep readable tab labels and valid agent names within Herdr's 32-character limit.
+- Regression coverage exercises parallel processes and fresh module instances; grant and cleanup behavior is unchanged.
+
 ## 0.27.3 — visible completed delegation history (2026-09-15)
 
 - Show how many completed roots and children the compact ledger dashboard hides.
