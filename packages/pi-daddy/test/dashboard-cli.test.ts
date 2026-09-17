@@ -10,7 +10,7 @@ import {
 } from "../src/dashboard-cli.ts";
 import { createDashboardDisplayControls } from "../src/dashboard-display-controls.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
-import { ActivityTimelineRecorder, defaultActivityTimelinePath, parseActivityTimeline } from "../src/activity-timeline.ts";
+import { ActivityTimelineRecorder, activityTaskKey, defaultActivityTimelinePath, parseActivityTimeline } from "../src/activity-timeline.ts";
 
 after(cleanupTempDirs);
 
@@ -37,11 +37,22 @@ test("activity dashboard filters and loads exact private prompt/final only on de
   const task = parseActivityTimeline(await import("node:fs/promises").then(({ readFile }) => readFile(defaultActivityTimelinePath(cwd), "utf8"))).tasks[0]!;
   const compact = await dashboardFrame({ cwd, details: true, filter: "skills" });
   assert.match(compact, /skill review/);
-  assert.match(compact, new RegExp(`p ${task.id}`)); assert.doesNotMatch(compact, /exact submitted prompt/);
-  const shown = await dashboardFrame({ cwd, details: true, activityDetail: { taskId: task.id, field: "final" } });
+  const taskKey = activityTaskKey(task.rootId, task.id);
+  assert.match(compact, new RegExp(`p ${taskKey}`)); assert.doesNotMatch(compact, /exact submitted prompt/);
+  const shown = await dashboardFrame({ cwd, details: true, activityDetail: { taskKey, field: "final" } });
   assert.match(shown, /exact final response/);
-  const bad = await dashboardFrame({ cwd, activityDetail: { taskId: "../secret", field: "final" } });
+  const bad = await dashboardFrame({ cwd, activityDetail: { taskKey: "../secret", field: "final" } });
   assert.match(bad, /ACTIVITY DETAIL UNAVAILABLE/);
+});
+
+test("dashboard detail commands select same-named tasks by root key and reject shorthand", async () => {
+  const cwd = await tempDir("dashboard-activity-roots-"), first = new ActivityTimelineRecorder(cwd, { PI_DADDY_ACTIVITY_ROOT: "root-a" }), second = new ActivityTimelineRecorder(cwd, { PI_DADDY_ACTIVITY_ROOT: "root-b" });
+  await first.childStarted("same-task", undefined, "one", "first prompt"); await first.childFinished("same-task", undefined, "one", "first final", "completed");
+  await second.childStarted("same-task", undefined, "two", "second prompt"); await second.childFinished("same-task", undefined, "two", "second final", "completed");
+  const firstKey = activityTaskKey("root-a", "same-task"), secondKey = activityTaskKey("root-b", "same-task");
+  for (const [taskKey, field, expected] of [[firstKey, "prompt", "first prompt"], [firstKey, "final", "first final"], [secondKey, "prompt", "second prompt"], [secondKey, "final", "second final"]] as const) assert.match(await dashboardFrame({ cwd, activityDetail: { taskKey, field } }), new RegExp(expected));
+  const ambiguous = await dashboardFrame({ cwd, activityDetail: { taskKey: "same-task", field: "prompt" } });
+  assert.match(ambiguous, /ACTIVITY DETAIL UNAVAILABLE/); assert.doesNotMatch(ambiguous, /first prompt|second prompt/);
 });
 
 test("dashboard feedback never upgrades host readback, unknown or pending results to applied", () => {

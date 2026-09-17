@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { registerActivityTimeline } from "../extensions/activity-timeline.ts";
-import { ActivityTimelineRecorder, ENV_ACTIVITY_PARENT_TASK, ENV_ACTIVITY_PATH, ENV_ACTIVITY_ROOT, ENV_ACTIVITY_TASK, defaultActivityTimelinePath, detailForTimeline, parseActivityTimeline } from "../src/activity-timeline.ts";
+import { ActivityTimelineRecorder, activityTaskKey, ENV_ACTIVITY_PARENT_TASK, ENV_ACTIVITY_PATH, ENV_ACTIVITY_ROOT, ENV_ACTIVITY_TASK, defaultActivityTimelinePath, detailForTimeline, parseActivityTimeline } from "../src/activity-timeline.ts";
 
 function fixture() { const hooks = new Map<string, Function>(), tools = new Map<string, unknown>(); return { hooks, tools, api: { on: (name: string, handler: Function) => hooks.set(name, handler), registerTool: (tool: { name: string }) => tools.set(tool.name, tool) } }; }
 const ctx = (cwd: string) => ({ cwd, model: { id: "test-model" }, thinkingLevel: "high", ui: { notify: () => {} } });
@@ -40,7 +40,7 @@ test("actual extension hooks record root turns, skill availability/read/declarat
   assert.equal(timeline.tasks.length, 2, "the observer attaches to the parent-owned child execution instead of inventing another child task");
   const task = timeline.tasks.find(value => value.id === "exec-leaf")!;
   assert.equal(task.rootId, "root-session"); assert.equal(task.parentTaskId, turn);
-  assert.equal((await detailForTimeline(defaultActivityTimelinePath(cwd), turn, "prompt")).text, "finalized submitted prompt");
+  assert.equal((await detailForTimeline(defaultActivityTimelinePath(cwd), activityTaskKey("root-session", turn), "prompt")).text, "finalized submitted prompt");
   assert.equal(task.skills.find(value => value.source === skill)?.available, true);
   assert.equal(task.skills.find(value => value.source === skill)?.read, true);
   assert.equal(timeline.tasks.find(value => value.id === turn)?.skills.find(value => value.digest === "a".repeat(64))?.active, true, "declared active remains distinct from observed read");

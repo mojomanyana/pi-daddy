@@ -48,7 +48,7 @@ export interface DashboardFrameOptions {
   details?: boolean;
   history?: boolean;
   filter?: TimelineFilter;
-  activityDetail?: { taskId: string; field: "prompt" | "final" };
+  activityDetail?: { taskKey: string; field: "prompt" | "final" };
   now?: Date;
   dailyView?: DailyViewOptions;
   dailyReader?: ReturnType<typeof createDailyViewReader>;
@@ -148,8 +148,8 @@ export async function dashboardFrame(options: DashboardFrameOptions): Promise<st
       const activityPath = resolve(options.cwd, configuredPath);
       const activity = await readFile(activityPath, "utf8");
       const timeline = parseActivityTimeline(activity);
-      let content: { taskId: string; field: "prompt" | "final"; text: string } | undefined;
-      if (options.activityDetail) try { content = await detailForTimeline(activityPath, options.activityDetail.taskId, options.activityDetail.field); } catch (error) { return `PI-DADDY — ACTIVITY DETAIL UNAVAILABLE\n${error instanceof Error ? error.message : String(error)}`; }
+      let content: { taskKey: string; field: "prompt" | "final"; text: string } | undefined;
+      if (options.activityDetail) try { content = await detailForTimeline(activityPath, options.activityDetail.taskKey, options.activityDetail.field); } catch (error) { return `PI-DADDY — ACTIVITY DETAIL UNAVAILABLE\n${error instanceof Error ? error.message : String(error)}`; }
       return renderActivityTimeline(timeline, { details: options.details, filter: options.filter, content });
     } catch (error) {
       if ((error as { code?: string }).code === "ENOENT") return setupFrame(options.cwd);
@@ -178,8 +178,8 @@ export async function dashboardFrame(options: DashboardFrameOptions): Promise<st
   let timeline: string | undefined;
   if (text.trimStart().startsWith('{"version":1')) {
     const activity = parseActivityTimeline(text);
-    let content: { taskId: string; field: "prompt" | "final"; text: string } | undefined;
-    if (options.activityDetail) try { content = await detailForTimeline(ledgerPath, options.activityDetail.taskId, options.activityDetail.field); } catch (error) { return `PI-DADDY — ACTIVITY DETAIL UNAVAILABLE\n${error instanceof Error ? error.message : String(error)}`; }
+    let content: { taskKey: string; field: "prompt" | "final"; text: string } | undefined;
+    if (options.activityDetail) try { content = await detailForTimeline(ledgerPath, options.activityDetail.taskKey, options.activityDetail.field); } catch (error) { return `PI-DADDY — ACTIVITY DETAIL UNAVAILABLE\n${error instanceof Error ? error.message : String(error)}`; }
     timeline = renderActivityTimeline(activity, { details: options.details, filter: options.filter, content });
   }
   const rendered = timeline ?? renderDashboard(parseDashboardLedger(text, { now: options.now }), {

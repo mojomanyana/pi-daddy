@@ -34,6 +34,12 @@ export interface ActivityIdentity { rootId: string; path: string; taskId?: strin
 
 const sha = (value: string) => createHash("sha256").update(value).digest("hex");
 const validId = (value: unknown) => typeof value === "string" && value.length > 0 && value.length <= 200;
+/** Stable, unambiguous local selector: encoded root identity and task id, separated once by `:`. */
+export const activityTaskKey = (rootId: string, taskId: string) => `${encodeURIComponent(rootId)}:${encodeURIComponent(taskId)}`;
+function taskFromKey(value: string): { rootId: string; taskId: string } | null {
+  const parts = value.split(":"); if (parts.length !== 2 || value.length > 1400) return null;
+  try { const [rootId, taskId] = parts.map(decodeURIComponent); return validId(rootId) && validId(taskId) && value === activityTaskKey(rootId, taskId) ? { rootId, taskId } : null; } catch { return null; }
+}
 function validRef(value: unknown): value is ContentReference {
   const ref = value as ContentReference | null;
   return !!ref && typeof ref === "object" && DIGEST.test(String(ref.digest)) && Number.isSafeInteger(ref.bytes) && ref.bytes >= 0 &&
@@ -77,19 +83,19 @@ export function parseActivityTimeline(text: string): ActivityTimeline {
   return { tasks: [...tasks.values()].sort((a, b) => a.startedAt.localeCompare(b.startedAt)), refusals };
 }
 function mark(status: TimelineTask["status"]): string { return status === "active" ? "●" : status === "needs-you" ? "!" : status === "failed" || status === "cancelled" ? "×" : "✓"; }
-export function renderActivityTimeline(timeline: ActivityTimeline, options: { filter?: TimelineFilter; details?: boolean; content?: { taskId: string; field: "prompt" | "final"; text: string } } = {}): string {
+export function renderActivityTimeline(timeline: ActivityTimeline, options: { filter?: TimelineFilter; details?: boolean; content?: { taskKey: string; field: "prompt" | "final"; text: string } } = {}): string {
   const filter = options.filter ?? "everything", lines = ["PI-DADDY ACTIVITY", ""];
   const tasks = timeline.tasks.filter(task => filter === "everything" || filter === "needs-you" && task.status === "needs-you" || filter === "agents" && task.agents.length > 0 || filter === "skills" && task.skills.length > 0);
   for (const task of tasks) {
     lines.push(`${task.parentTaskId ? "  └─ " : ""}${mark(task.status)} ${task.id}  ${task.status}${task.model ? ` · ${task.model}` : ""}${task.thinking ? ` · requested thinking ${task.thinking}` : ""}`);
     if (filter !== "agents") for (const skill of task.skills) lines.push(`  skill ${skill.name} · ${skill.available ? "available" : "availability unknown"}; ${skill.read ? "read" : "not observed read"}; ${skill.active ? "declared active" : "not declared active"}${skill.superseded ? "; superseded" : ""}`);
     if (filter !== "skills") for (const agent of task.agents) lines.push(`  agent ${agent.agent} · ${agent.state}${agent.parentTaskId ? ` · parent ${agent.parentTaskId}` : ""}`);
-    if (options.details && (task.prompt || task.final)) lines.push(`  private details: p ${task.id} (submitted prompt) · f ${task.id} (final response)`);
+    if (options.details && (task.prompt || task.final)) { const key = activityTaskKey(task.rootId, task.id); lines.push(`  private details: p ${key} (submitted prompt) · f ${key} (final response)`); }
   }
-  if (options.content) lines.push("", `PRIVATE ${options.content.field.toUpperCase()} · ${options.content.taskId}`, options.content.text);
+  if (options.content) lines.push("", `PRIVATE ${options.content.field.toUpperCase()} · ${options.content.taskKey}`, options.content.text);
   if (!tasks.length) lines.push("No activity recorded yet.");
   if (timeline.refusals.length) lines.push(...timeline.refusals.map(refusal => `timeline refusal: ${refusal}`));
-  lines.push("", "Filters: Everything · Agents · Skills · Needs-you. Type p <task-id> or f <task-id> after d Details for exact local content. Read is observation; active is a declaration; neither proves compliance.");
+  lines.push("", "Filters: Everything · Agents · Skills · Needs-you. Type p <root-id:task-id> or f <root-id:task-id> after d Details; shorthand task ids are refused. Read is observation; active is a declaration; neither proves compliance.");
   return lines.join("\n");
 }
 export const defaultActivityTimelinePath = (cwd: string) => join(cwd, ".pi", "pi-daddy", "activity.jsonl");
@@ -118,10 +124,10 @@ export async function readActivityContent(timelinePath: string, reference: Conte
   const handle = await open(target, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try { const before = await handle.stat(); if (!before.isFile() || before.nlink !== 1 || before.size > MAX_CONTENT_BYTES) throw Error("TIMELINE_REFERENCE_INVALID"); const value = await handle.readFile("utf8"), after = await handle.stat(); if (after.size !== before.size || Buffer.byteLength(value) !== reference.bytes || sha(value) !== reference.digest) throw Error("TIMELINE_REFERENCE_TAMPERED"); return value; } finally { await handle.close(); }
 }
-export async function detailForTimeline(timelinePath: string, taskId: string, field: "prompt" | "final"): Promise<{ taskId: string; field: "prompt" | "final"; text: string }> {
-  if (!validId(taskId)) throw Error("TIMELINE_DETAIL_INVALID");
+export async function detailForTimeline(timelinePath: string, taskKey: string, field: "prompt" | "final"): Promise<{ taskKey: string; field: "prompt" | "final"; text: string }> {
+  const identity = taskFromKey(taskKey); if (!identity) throw Error("TIMELINE_DETAIL_INVALID");
   const timeline = parseActivityTimeline(await readFile(timelinePath, "utf8"));
-  const task = timeline.tasks.find(value => value.id === taskId);
+  const task = timeline.tasks.find(value => value.rootId === identity.rootId && value.id === identity.taskId);
   const reference = task?.[field]; if (!reference) throw Error("TIMELINE_DETAIL_UNAVAILABLE");
-  return { taskId, field, text: await readActivityContent(timelinePath, reference) };
+  return { taskKey, field, text: await readActivityContent(timelinePath, reference) };
 }

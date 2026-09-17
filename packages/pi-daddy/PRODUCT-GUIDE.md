@@ -1,6 +1,6 @@
 # Work and learning in Pi
 
-This guide targets **pi-daddy 0.27.4** with **skill-harness 0.17.0**. Completed ledger history now has
+This guide targets **pi-daddy 0.28.0** with **skill-harness 0.17.0**. Completed ledger history now has
 visible hidden counts and an h + Enter toggle. Existing installed-skill discovery remains unchanged.
 Release qualification and publication are recorded in the release PR; version metadata alone is not proof.
 The [current requirement register](./REQUIREMENTS.md) separates implementation from release evidence.
@@ -9,7 +9,7 @@ From an installed shell command, `pi-daddy guide` prints this guide; `pi-daddy c
 ## Start once
 
 After the patch is published, install it with Pi's normal package manager:
-`pi install npm:pi-daddy@0.27.3` and `pi install npm:skill-harness@0.17.0`.
+`pi install npm:pi-daddy@0.28.0` and `pi install npm:skill-harness@0.17.0`.
 Do not treat these planned version commands as evidence the packages are already available.
 Start a **fresh Pi session** after upgrading the harness: its existing immutable bridge survives `/reload`.
 The extension starts with local governance, observation and the timeline on; `/grants init` remains an optional way to save an explicit project ceiling, not a bootstrap requirement. Run `/grants` to see the root's observed tool ceiling and usable definitions.
@@ -52,8 +52,9 @@ when Herdr/panel setup is unavailable. `PI_DADDY_GOVERNANCE=off` is the visible 
 Those choices do not silently add grants, tools or child authority.
 
 The dashboard's Everything / Agents / Skills / Needs-you filters and `h` history toggle are keyboard
-controls. Press `d`, then use `p <task-id>` or `f <task-id>` to load the exact local finalized user message or
-final response after path, size and digest checks. Pi exposes the finalized user message, not a separate
+controls. Press `d`, then use `p <root-id:task-id>` or `f <root-id:task-id>` exactly as shown on the row
+to load the exact local finalized user message or final response after path, size and digest checks. A bare
+task id is refused so simultaneous roots cannot select each other's private content. Pi exposes the finalized user message, not a separate
 pre-transform editor buffer, so entered-text provenance is explicitly unavailable rather than guessed. A skill being available, read, or declaring itself active
 are distinct facts; none proves compliance. Runtime skills can honestly report declared state with
 a generic `activity_lifecycle` call; it adds no authority.
