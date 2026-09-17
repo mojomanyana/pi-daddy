@@ -258,7 +258,7 @@
     "test": "node scripts/unit-tests.ts",
     "test:dashboard-pty": "if [ \"$(uname -s)\" = Linux ]; then python3 test/dashboard-cli-pty.py; else echo 'dashboard PTY probe requires Unix pty/Unix sockets'; fi",
     "test:integration": "node --test test-integration/*.it.ts",
-    "test:integration:ci": "node --test test-integration/approval.it.ts test-integration/governance.it.ts",
+    "test:integration:ci": "node --test test-integration/approval.it.ts test-integration/governance.it.ts test-integration/activity.it.ts",
     "contracts:generate": "node scripts/generate-ledger-v3-contract.ts",
     "contracts:generate:v4": "node scripts/generate-ledger-v4-contract.ts contracts/ledger/v4",
     "prepack": "npm run build",

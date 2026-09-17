@@ -21,9 +21,9 @@ for this project. See *What this governs, and what it does not*.
 > **Known gaps are stated rather than implied** — see *Status* at the end of this file. The largest is
 > deliberate: a child granted `bash` escapes governance entirely, by decision.
 
-## Everyday work and learning — 0.27.0 release candidate
+## Everyday work and learning — 0.28.0 release candidate
 
-Paired with planned **skill-harness 0.16.0**. Producer runtime is Sol-approved; feature PR #52 merged
+Paired with planned **skill-harness 0.17.0**. Producer runtime is Sol-approved; feature PR #52 merged
 with green CI at `b974963a7d0ba5a74fdafe331356c348a1fba565`. Release PR CI/merge, installed qualification
 and publication remain pending. Release preparation changes metadata and test synchronization only,
 not runtime or dependencies.
@@ -606,20 +606,19 @@ so refusing is cheap and silence is not.
 `manager.spawn()` over the event bus and never produces a `tool_call` at all (ADR-0013 Finding 6), so a
 tool-name check cannot see it. It catches the ordinary case loudly. It is not containment.
 
-**Governance is opt-in.** With `PI_GRANTS_GRANT` unset, the session holds the wildcard and nothing is
-blocked — this extension must never silently tighten a normal workflow. Since 0.5.0 that holds for
-**descendants** too: an ungoverned session publishes no governance variables at all. It previously
-exported its own observed tool surface as its children's grant, so "inactive" governance quietly governed
-everything below it.
+**Governance defaults on.** With `PI_GRANTS_GRANT` unset, a root starts with the wildcard only as an
+upper bound and is tightened to Pi's observed tool surface before it can delegate. Descendants still receive
+only their parent-computed narrowing grant. Set `PI_DADDY_GOVERNANCE=off` for the visible local opt-out;
+observation and the activity timeline remain independent.
 
 ### Configuration, and how it fails
 
 | Variable | Default | Notes |
 | :--- | :--- | :--- |
-| `PI_GRANTS_GRANT` | unset → use this directory's stored init choice, or ungoverned when none exists | Presence switches governance on and bypasses the whole cwd store; this is how children and CI stay environment-only. |
+| `PI_GRANTS_GRANT` | unset → observed-root ceiling, or this directory's stored init choice | Presence supplies an explicit ceiling and bypasses the whole cwd store; children receive their parent-computed value. |
 | `PI_GRANTS_MAX_DEPTH` | `2` | Child-depth bound. `0` disables spawning. |
 | `PI_GRANTS_DEPTH` | `0` | This session's own depth; set by the parent, not by hand. |
-| `PI_GRANTS_GATED` | **`tool:bash`** in a governed session | Capabilities needing human approval. Set to `""` to gate nothing. Gating is closed under subsumption, so this also covers `write`/`edit`/`read`/`grep`/`find`/`ls` (ADR-0012). |
+| `PI_GRANTS_GATED` | **`tool:bash`** when governance is on | Capabilities needing human approval. Set to `""` to gate nothing. Gating is closed under subsumption, so this also covers `write`/`edit`/`read`/`grep`/`find`/`ls` (ADR-0012). |
 | `PI_GRANTS_APPROVED` | unset | Inherited `capability@subject#sha256` entries; set by the parent, clamped to the child's own grant, and honoured only against the definition body the child itself loaded (ADR-0022). |
 | `PI_GRANTS_APPROVAL_TIMEOUT` | `120` (seconds) | How long a dialog waits. `0` or an unreadable value means **no timeout**: waiting forever denies nothing, so it is the safe reading of a value we do not understand. |
 | `PI_GRANTS_LEDGER` | unset → a v2 `/grants init` choice uses `<cwd>/.pi/grants.jsonl`; otherwise not recording | Presence overrides the project default; `""` disables it for one run. Any effective path is load-bearing. |
@@ -633,6 +632,7 @@ everything below it.
 | `PI_GRANTS_HERDR` | unset ⇒ **probe** | Three-state. Unset probes for a reachable herdr and uses panes if one answers; `1` demands panes and refuses every delegation if herdr is unreachable; `0` demands captured subprocesses. Never detected from `herdr` merely being on `PATH`. |
 | `PI_GRANTS_HERDR_WORKSPACE` | the parent's `HERDR_WORKSPACE_ID` | herdr workspace for spawned panes. Defaults to the workspace this session is in, so a child is a tab away rather than a workspace away. |
 | `PI_GRANTS_HERDR_KEEP_PANE` | unset | `1` keeps each child's pane for inspection, and no sweep closes it. Off by default: a fan-out would flood the workspace. |
+| `PI_DADDY_GOVERNANCE` | on | `off` or `0` explicitly opts this local session out of governance. |
 | `PI_CODING_AGENT_DIR` | `~/.pi/agent` | pi's own variable, not ours — but it decides where stored project grants/ledger consent and persisted approvals live. |
 
 **A malformed value disables spawning; it never falls back to a default.** Stored grants are likewise
