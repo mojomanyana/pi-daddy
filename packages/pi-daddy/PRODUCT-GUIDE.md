@@ -1,6 +1,6 @@
 # Work and learning in Pi
 
-This guide targets **pi-daddy 0.28.0** with **skill-harness 0.17.0**. Completed ledger history now has
+This guide targets **pi-daddy 0.28.1** with **skill-harness 0.17.0**. Completed ledger history now has
 visible hidden counts and an h + Enter toggle. Existing installed-skill discovery remains unchanged.
 Release qualification and publication are recorded in the release PR; version metadata alone is not proof.
 The [current requirement register](./REQUIREMENTS.md) separates implementation from release evidence.
@@ -9,7 +9,7 @@ From an installed shell command, `pi-daddy guide` prints this guide; `pi-daddy c
 ## Start once
 
 After the patch is published, install it with Pi's normal package manager:
-`pi install npm:pi-daddy@0.28.0` and `pi install npm:skill-harness@0.17.0`.
+`pi install npm:pi-daddy@0.28.1` and `pi install npm:skill-harness@0.17.0`.
 Do not treat these planned version commands as evidence the packages are already available.
 Start a **fresh Pi session** after upgrading the harness: its existing immutable bridge survives `/reload`.
 The extension starts with local governance, observation and the timeline on; `/grants init` remains an optional way to save an explicit project ceiling, not a bootstrap requirement. Run `/grants` to see the root's observed tool ceiling and usable definitions.
@@ -59,7 +59,8 @@ response after path, size and digest checks. An alias never renumbers when the p
 root appears. The legacy `p <root-id:task-id>` / `f <root-id:task-id>` form remains valid; a bare task id is
 refused so simultaneous roots cannot select each other's private content. Pi exposes the finalized user
 message, not a separate pre-transform editor buffer, so entered-text provenance is explicitly unavailable
-rather than guessed.
+rather than guessed. Private detail text is rendered as literal local text: terminal controls are shown as
+escapes, intentional line breaks remain, and long lines wrap to the panel width.
 
 The timeline labels every state as text as well as color: **USER** prompts are blue, **AGENT** activity cyan,
 **SKILL** facts purple, **WAIT** / **NEEDS YOU** amber, **FAIL** red, and **DONE** execution completion green.

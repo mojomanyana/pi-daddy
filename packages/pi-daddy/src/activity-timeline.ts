@@ -103,8 +103,36 @@ export function resolveActivityTaskSelector(timeline: ActivityTimeline, selector
 
 const ANSI_SGR = /\u001b\[[0-9;]*m/g;
 const WIDE_CELL = /\p{Extended_Pictographic}|[\u2E80-\u9FFF\uF900-\uFAFF]/u;
-function clean(value: string | undefined): string { return (value ?? "").replace(/[\p{Cc}\p{Cf}]/gu, " ").replace(/\s+/g, " ").trim(); }
+/** Render controls as literal escapes; only content newlines retain their structural meaning. */
+function visualizeControls(value: string, preserveNewlines = false): string {
+  let output = "";
+  for (let index = 0; index < value.length;) {
+    const codePoint = value.codePointAt(index); if (codePoint === undefined) break;
+    const char = String.fromCodePoint(codePoint), next = index + char.length;
+    if (char === "\r" && value[next] === "\n") { output += preserveNewlines ? "\n" : "\\n"; index = next + 1; continue; }
+    if (char === "\n") { output += preserveNewlines ? "\n" : "\\n"; index = next; continue; }
+    if (codePoint < 0x20 || codePoint === 0x7f) output += `\\x${codePoint.toString(16).padStart(2, "0")}`;
+    else if ((codePoint >= 0x80 && codePoint <= 0x9f) || /\p{Cf}/u.test(char)) output += `\\u{${codePoint.toString(16)}}`;
+    else output += char;
+    index = next;
+  }
+  return output;
+}
+function clean(value: string | undefined): string { return visualizeControls(value ?? "").replace(/\s+/g, " ").trim(); }
 function cellWidth(value: string): number { return [...value.replace(ANSI_SGR, "")].reduce((sum, char) => sum + (WIDE_CELL.test(char) ? 2 : 1), 0); }
+function wrapDetailLine(value: string, width: number): string[] {
+  if (value.length === 0) return [""];
+  const lines: string[] = []; let line = "", cells = 0;
+  for (const char of value) {
+    const next = WIDE_CELL.test(char) ? 2 : 1;
+    if (cells + next > width && line) { lines.push(line); line = ""; cells = 0; }
+    line += char; cells += next;
+  }
+  lines.push(line); return lines;
+}
+function safeDetailLines(value: string, width: number): string[] {
+  return visualizeControls(value, true).split("\n").flatMap(line => wrapDetailLine(line, width));
+}
 function truncate(value: string, width: number): string {
   if (cellWidth(value) <= width) return value;
   const target = Math.max(0, width - 1); let cells = 0, output = "", styled = false;
@@ -184,7 +212,7 @@ export function renderActivityTimeline(timeline: ActivityTimeline, options: Acti
   for (const root of selectedRoots.shown) renderTask(root, "", "");
   if (!selectedRoots.shown.length) lines.push("No matching local activity recorded yet.");
   if (timeline.refusals.length) lines.push(...timeline.refusals.map(refusal => paint(`FAIL timeline refusal: ${clean(refusal)}`, 31, color)));
-  if (options.content) lines.push("", `${paint("PRIVATE", 34, color)} ${options.content.field.toUpperCase()} · ${options.content.taskKey}`, options.content.text);
+  if (options.content) lines.push("", `${paint("PRIVATE", 34, color)} ${options.content.field.toUpperCase()} · ${clean(options.content.taskKey)}`, ...safeDetailLines(options.content.text, width));
   lines.push("", "Keys: d details · h history · Everything|Agents|Skills|Needs-you · p|f <r#/t# or root:task>. Read and declared active are observations, not compliance or acceptance.");
   return lines.map(line => truncate(line, width)).join("\n");
 }

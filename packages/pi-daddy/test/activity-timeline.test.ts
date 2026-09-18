@@ -52,6 +52,27 @@ test("timeline groups child outcomes under a clearly-ended parent with stable sh
   assert.ok(narrow.split("\n").every(line => line.length <= 32), "all activity lines honour the requested terminal width");
 });
 
+test("detail content visualizes terminal controls, preserves newlines, and wraps without ANSI", () => {
+  const metadataTimeline = parseActivityTimeline(JSON.stringify(event("task_started", { model: "m\u001b]2;owned\u0007" })));
+  const metadata = renderActivityTimeline(metadataTimeline, { color: false, width: 120 });
+  assert.doesNotMatch(metadata, /\u001b|\u0007/, "metadata cannot write terminal controls");
+  assert.match(metadata, /model m\\x1b]2;owned\\x07/);
+  const previousNoColor = process.env.NO_COLOR; process.env.NO_COLOR = "1";
+  try { assert.doesNotMatch(renderActivityTimeline(metadataTimeline, { color: true }), /\u001b/, "NO_COLOR forbids renderer ANSI too"); }
+  finally { previousNoColor === undefined ? delete process.env.NO_COLOR : process.env.NO_COLOR = previousNoColor; }
+  const timeline = parseActivityTimeline(JSON.stringify(event("task_started")));
+  const content = "ok\u001b]2;owned\u0007\nTHIS-LINE-IS-WAY-TOO-LONG";
+  const output = renderActivityTimeline(timeline, {
+    color: false, width: 20,
+    content: { taskKey: "root-a:task-a", field: "final", text: content },
+  });
+  assert.doesNotMatch(output, /\u001b|\u0007/, "private content cannot write terminal controls");
+  assert.match(output, /ok\\x1b]2;owned\\x07/);
+  assert.match(output, /THIS-LINE-IS-WAY-TO/);
+  assert.match(output, /-LONG/);
+  assert.ok(output.split("\n").every(line => line.length <= 20), "detail lines wrap rather than overrun the terminal width");
+});
+
 test("quiet activity history collapses with counts but preserves failed context", () => {
   const events = Array.from({ length: 5 }, (_, index) => [
     event("task_started", { taskId: `quiet-${index}`, agent: `quiet-${index}`, at: `2026-09-18T12:00:0${index}.000Z` }),

@@ -12,6 +12,19 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## 0.28.1 — activity timeline safety and clearer outcomes
+
+- Render private prompt/final detail content as safe literal text: terminal controls are escaped, deliberate
+  line breaks are retained, and long detail lines wrap to the panel width. Metadata receives the same
+  control escaping; color-disabled output cannot gain ANSI/OSC sequences from retained content.
+- Clarify the default activity tree with semantic labels/colors, stable short selectors, compact quiet history,
+  separate parent-turn/child outcomes, and visible observed child-failure totals. Completion is not acceptance.
+- Pi's public extension/theme surface still cannot apply a per-extension background to ordinary assistant
+  transcript messages, so prompt/response backgrounds remain unchanged and no transcript is mutated.
+- The retained screenshot's `Herdr did not activate the bundled Pi lifecycle reporter before prompt dispatch`
+  launcher error remains unresolved: no retained demo session/log was present to prove a packet-local cause,
+  so no launcher behavior changed in this patch.
+
 ## 0.28.0 — unified activity timeline and default-on operation
 
 - Combine root turns, delegated agents and observed/declared skill activity in one filtered timeline with history.
