@@ -36,13 +36,25 @@ test("activity dashboard filters and loads exact private prompt/final only on de
   await recorder.start("exact submitted prompt", "model-a", "high"); await recorder.skill("skill_available", { name: "review", source: "/skills/review", digest: "a".repeat(64) }); await recorder.finish("exact final response");
   const task = parseActivityTimeline(await import("node:fs/promises").then(({ readFile }) => readFile(defaultActivityTimelinePath(cwd), "utf8"))).tasks[0]!;
   const compact = await dashboardFrame({ cwd, details: true, filter: "skills" });
-  assert.match(compact, /skill review/);
+  assert.match(compact, /SKILL review/);
   const taskKey = activityTaskKey(task.rootId, task.id);
-  assert.match(compact, new RegExp(`p ${taskKey}`)); assert.doesNotMatch(compact, /exact submitted prompt/);
+  assert.match(compact, new RegExp(`legacy ${taskKey}`)); assert.doesNotMatch(compact, /exact submitted prompt/);
   const shown = await dashboardFrame({ cwd, details: true, activityDetail: { taskKey, field: "final" } });
   assert.match(shown, /exact final response/);
   const bad = await dashboardFrame({ cwd, activityDetail: { taskKey: "../secret", field: "final" } });
   assert.match(bad, /ACTIVITY DETAIL UNAVAILABLE/);
+});
+
+test("dashboard keeps displayed short aliases stable and resolves them only to their own root-qualified task", async () => {
+  const cwd = await tempDir("dashboard-activity-alias-"), recorder = new ActivityTimelineRecorder(cwd, { PI_DADDY_ACTIVITY_ROOT: "root-a" });
+  await recorder.start("first prompt"); await recorder.finish("first final");
+  const display = createDashboardDisplayControls(true, true);
+  const frame = () => dashboardFrame({ cwd, color: false, width: 120, ...display.state, activityAliases: display.aliases });
+  assert.match(await frame(), /User turn \[r1\/t1\]/);
+  assert.equal(display.input("f r1/t1"), true);
+  assert.match(await frame(), /first final/);
+  await new ActivityTimelineRecorder(cwd, { PI_DADDY_ACTIVITY_ROOT: "root-b" }).start("second prompt");
+  assert.match(await frame(), /PRIVATE FINAL · root-a:/, "the old alias keeps selecting root-a after another root appears");
 });
 
 test("dashboard detail commands select same-named tasks by root key and reject shorthand", async () => {

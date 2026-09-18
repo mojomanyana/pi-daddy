@@ -52,12 +52,29 @@ when Herdr/panel setup is unavailable. `PI_DADDY_GOVERNANCE=off` is the visible 
 Those choices do not silently add grants, tools or child authority.
 
 The dashboard's Everything / Agents / Skills / Needs-you filters and `h` history toggle are keyboard
-controls. Press `d`, then use `p <root-id:task-id>` or `f <root-id:task-id>` exactly as shown on the row
-to load the exact local finalized user message or final response after path, size and digest checks. A bare
-task id is refused so simultaneous roots cannot select each other's private content. Pi exposes the finalized user message, not a separate
-pre-transform editor buffer, so entered-text provenance is explicitly unavailable rather than guessed. A skill being available, read, or declaring itself active
-are distinct facts; none proves compliance. Runtime skills can honestly report declared state with
-a generic `activity_lifecycle` call; it adds no authority.
+controls. Quiet completed roots and child tasks collapse with visible counts; failed, waiting and active
+context remains visible. `d` reveals metadata and private-content controls. Rows use stable session-local
+aliases such as `r1/t2`; use `p r1/t2` or `f r1/t2` to load the exact local finalized user message or final
+response after path, size and digest checks. An alias never renumbers when the panel refreshes or another
+root appears. The legacy `p <root-id:task-id>` / `f <root-id:task-id>` form remains valid; a bare task id is
+refused so simultaneous roots cannot select each other's private content. Pi exposes the finalized user
+message, not a separate pre-transform editor buffer, so entered-text provenance is explicitly unavailable
+rather than guessed.
+
+The timeline labels every state as text as well as color: **USER** prompts are blue, **AGENT** activity cyan,
+**SKILL** facts purple, **WAIT** / **NEEDS YOU** amber, **FAIL** red, and **DONE** execution completion green.
+`PARENT TURN ENDED` is deliberately separate from child outcome; a parent with failed launches shows a
+red `OBSERVED CHILD FAILURES` total and never calls that accepted. Availability-only runtime skills stay out
+of the default view (use Details or the Skills filter); read and declared active remain separate concise
+facts. A skill being available, read, or declaring itself active proves neither compliance nor acceptance.
+`--no-color`, `NO_COLOR`, non-TTY dashboard output and the programmatic `color: false` option keep the
+same text/icons without terminal escapes.
+
+Pi's public theme format supplies only a global `userMessageBg`, and the public extension API can select a
+registered theme but exposes no per-extension renderer or background token for ordinary assistant transcript
+messages. pi-daddy therefore does **not** alter Pi prompt/response transcript backgrounds or mutate messages;
+the reversible visual presentation is the activity panel's accents and metadata only. Runtime skills can
+honestly report declared state with a generic `activity_lifecycle` call; it adds no authority.
 
 ## Inspect the read-only execution ledger
 
