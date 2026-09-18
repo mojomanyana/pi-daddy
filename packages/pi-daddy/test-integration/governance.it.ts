@@ -790,14 +790,19 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     );
   });
 
-  test("an ungoverned session reports itself inactive", async () => {
+  test("the explicit governance opt-out reports itself inactive", async () => {
+    const cwd = await projectOnce();
+    const r = await runCommand({ cwd, command: "/grants", env: { PI_DADDY_GOVERNANCE: "off" } });
+    assert.ok(r.notifies.some((n) => n.message.includes("grants: inactive")));
+  });
+
+  test("a root defaults governance on without a provider call", async () => {
     const cwd = await projectOnce();
     const r = await runCommand({ cwd, command: "/grants" });
-
-    assert.ok(
-      r.notifies.some((n) => n.message.includes("grants: inactive")),
-      "with PI_GRANTS_GRANT unset the README promises nothing is blocked",
-    );
+    const text = r.notifies.map((n) => n.message).join("\n");
+    assert.match(text, /grants: ACTIVE/);
+    assert.match(text, /holding\s+tool:\*/);
+    assert.doesNotMatch(text, /grants: inactive/);
   });
 
 });

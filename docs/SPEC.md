@@ -364,11 +364,14 @@ decision, not what the enforcer reads.
 A stored grant or ledger choice is **never consulted by a child**. Presence of `PI_GRANTS_GRANT` bypasses the
 whole cwd store; children use only the environment their parent writes, so propagation stays single-channel.
 For an eligible root store, `PI_GRANTS_LEDGER` still wins, including an explicitly empty one-run opt-out.
-Deleting the stored file un-governs the directory; `/grants` prints its path.
+Deleting a stored file removes that project's saved ceiling; the default observed-root ceiling remains until
+`PI_DADDY_GOVERNANCE=off` is explicitly set. `/grants` prints the active source.
 
-**Governance and default recording are still opt-in.** Setting environment variables is one route. The other
-is one deliberate `/grants init` per project, which stores both choices for future plain `pi` starts. Merely
-installing pi-daddy initializes nothing and writes no project ledger.
+**Local governance and activity observation default on when the extension is enabled.** Before the first
+provider request the root holds the wildcard only as an upper bound; after that request it is bounded by the
+actual Pi tool surface, and every child still receives a narrowing `--tools` allowlist. `/grants init` remains
+an optional way to save a narrower project ceiling and optional governance ledger; it does not bootstrap the
+activity timeline or grant extra authority.
 
 ## Setting up definitions: `pi-daddy init`
 
@@ -1354,9 +1357,9 @@ loudly.
 
 | Variable | Default | Notes |
 |---|---|---|
-| `PI_GRANTS_GRANT` | unset ⇒ **ungoverned unless this directory has a stored init choice** | Presence switches governance on and bypasses the whole cwd store, including its ledger default (ADR-0030/0037) — it is how a child is governed and how CI is configured. |
+| `PI_GRANTS_GRANT` | unset ⇒ observed-root ceiling | Presence supplies an explicit ceiling and bypasses the cwd store, including its ledger default (ADR-0030/0037); a child always receives its parent-computed value. |
 | `PI_GRANTS_MAX_DEPTH` / `PI_GRANTS_DEPTH` | `2` / `0` | Depth is set by the parent, not by hand. |
-| `PI_GRANTS_GATED` | `tool:bash` when governed | `""` gates nothing. Closed under subsumption. |
+| `PI_GRANTS_GATED` | `tool:bash` when governance is on | `""` gates nothing. Closed under subsumption. |
 | `PI_GRANTS_APPROVED` | unset | `capability@subject#sha256` entries, inherited, clamped, and verified against the definition the child loaded (ADR-0022). |
 | `PI_GRANTS_APPROVAL_TIMEOUT` | `120` | Seconds a dialog waits. `0` or unreadable ⇒ **no timeout**: waiting forever denies nothing. |
 | `PI_GRANTS_FANOUT` | `8` | Subtree budget. |
@@ -1370,6 +1373,9 @@ loudly.
 | `PI_GRANTS_HERDR` | unset (= probe) | `1` demands herdr panes and refuses if unreachable; `0` demands subprocesses; unset probes. |
 | `PI_GRANTS_HERDR_WORKSPACE` | the parent's `HERDR_WORKSPACE_ID` | Which herdr workspace a child's pane goes in. |
 | `PI_GRANTS_HERDR_KEEP_PANE` | unset | Keep panes past `agent_settled`, for inspection. No sweep closes them. |
+| `PI_DADDY_GOVERNANCE` | on | `off` or `0` is the visible local governance opt-out; it does not turn observation off. |
+| `PI_DADDY_ACTIVITY_TIMELINE` | on | `off` or `0` stops new local activity events; governance remains unchanged. |
+| `PI_DADDY_ACTIVITY_CONTENT` | private local content | `metadata-only` or `off` stores only digest/size for new prompt/final references. |
 | `PI_CODING_AGENT_DIR` | `~/.pi/agent` | pi's own variable; it owns stored project grant/ledger choices and per-project persisted approvals. |
 
 **Malformed configuration disables spawning rather than falling back**, and says which variable it was — a

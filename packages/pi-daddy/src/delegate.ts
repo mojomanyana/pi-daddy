@@ -34,6 +34,7 @@ import {
 import { resolveDelegationApproval } from "./delegation-approval.ts";
 import type { Delegation, DelegationContext, DelegationRequest } from "./delegate-types.ts";
 import { assertCapabilitiesArePropagatable } from "./capabilities.ts";
+import { ENV_ACTIVITY_PARENT_TASK, ENV_ACTIVITY_PATH, ENV_ACTIVITY_ROOT, ENV_ACTIVITY_TASK } from "./activity-timeline.ts";
 export type { Delegation, DelegationContext, DelegationRequest } from "./delegate-types.ts";
 
 export function planDelegation(request: DelegationRequest, ctx: DelegationContext): Delegation {
@@ -286,13 +287,11 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
     }, "DEFINITION_UNREADABLE");
   }
 
-  // A child may only delegate further if it was granted the capability AND has the extension to do it.
+  // `-e` loads even under `--no-extensions`. A delegate-capable child loads the governance extension;
+  // a leaf gets only the no-tool observer. Neither path alters --tools or the computed grant.
   const args = [...plan.args];
-  if (canSubDelegate && ctx.extensionPath) {
-    // `-e` loads even under `--no-extensions`, which planSpawn sets — that is precisely why the
-    // extension is added explicitly here and nowhere else.
-    args.splice(args.length - 1, 0, "-e", ctx.extensionPath);
-  }
+  const observer = canSubDelegate ? ctx.extensionPath : ctx.observerExtensionPath;
+  if (observer) args.splice(args.length - 1, 0, "-e", observer);
 
   // `inheritableGrant`, not `result.effective` directly: this is the path a DELEGATED child's grant
   // actually travels, and the "held but never inherited" rule for `tool:*` and `workspace:*` was enforced
@@ -322,6 +321,14 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
   // reason on the other path.
   env[ENV_APPROVED] = inheritApprovals(ctx.approved ?? [], inheritable).join(",");
   if (ctx.ledgerPath) env[ENV_LEDGER] = ctx.ledgerPath;
+  // These local observation values are per-child argv environment, never process-global grant state.
+  // A child cannot acquire a tool or a larger grant by receiving them.
+  if (ctx.activity?.taskId && ctx.childExecutionId) {
+    env[ENV_ACTIVITY_PATH] = ctx.activity.path;
+    env[ENV_ACTIVITY_ROOT] = ctx.activity.rootId;
+    env[ENV_ACTIVITY_TASK] = ctx.childExecutionId;
+    env[ENV_ACTIVITY_PARENT_TASK] = ctx.activity.taskId;
+  }
 
   return {
     ok: true,

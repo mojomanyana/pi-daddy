@@ -61,6 +61,10 @@ export interface DelegationContext {
   ledgerPath?: string;
   /** Path to this extension, so a child granted `tool:delegate` can delegate in turn. */
   extensionPath?: string;
+  /** No-tool activity observer injected only for governed leaf children. */
+  observerExtensionPath?: string;
+  /** Parent-owned local activity identity for this exact turn. */
+  activity?: { rootId: string; path: string; taskId?: string };
   /** Live capability catalog. When supplied, capabilities absent from it are refused as unknown. */
   catalog?: Catalog;
   /**

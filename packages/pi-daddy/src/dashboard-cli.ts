@@ -8,6 +8,7 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseDashboardLedger } from "./dashboard-projection.ts";
 import { renderDashboard } from "./dashboard-render.ts";
+import { defaultActivityTimelinePath, detailForTimeline, parseActivityTimeline, renderActivityTimeline, type TimelineFilter } from "./activity-timeline.ts";
 import { createDashboardDisplayControls } from "./dashboard-display-controls.ts";
 import { createDailyViewReader, isDailyViewReader, readDailyView, type DailyViewOptions } from "./daily-view.ts";
 import { renderDailyView } from "./daily-view-render.ts";
@@ -46,6 +47,8 @@ export interface DashboardFrameOptions {
   width?: number;
   details?: boolean;
   history?: boolean;
+  filter?: TimelineFilter;
+  activityDetail?: { taskKey: string; field: "prompt" | "final" };
   now?: Date;
   dailyView?: DailyViewOptions;
   dailyReader?: ReturnType<typeof createDailyViewReader>;
@@ -137,9 +140,24 @@ export async function dashboardFrame(options: DashboardFrameOptions): Promise<st
       return "PI-DADDY — DAILY VIEW UNAVAILABLE\nInvalid or unavailable read-only input. No previous acceptance or continuity was substituted.";
     }
   }
-  if (!options.ledgerPath) return setupFrame(options.cwd);
+  // Timeline is the default local activity surface. Retain the existing setup frame until a real
+  // extension-owned timeline exists, so opening a plugin before Pi has run remains explanatory.
+  const configuredPath = options.ledgerPath ?? defaultActivityTimelinePath(options.cwd);
+  if (!options.ledgerPath) {
+    try {
+      const activityPath = resolve(options.cwd, configuredPath);
+      const activity = await readFile(activityPath, "utf8");
+      const timeline = parseActivityTimeline(activity);
+      let content: { taskKey: string; field: "prompt" | "final"; text: string } | undefined;
+      if (options.activityDetail) try { content = await detailForTimeline(activityPath, options.activityDetail.taskKey, options.activityDetail.field); } catch (error) { return `PI-DADDY — ACTIVITY DETAIL UNAVAILABLE\n${error instanceof Error ? error.message : String(error)}`; }
+      return renderActivityTimeline(timeline, { details: options.details, filter: options.filter, content });
+    } catch (error) {
+      if ((error as { code?: string }).code === "ENOENT") return setupFrame(options.cwd);
+      return "PI-DADDY — ACTIVITY UNAVAILABLE\nTimeline could not be read; no substitute view was shown.";
+    }
+  }
 
-  const ledgerPath = resolve(options.cwd, options.ledgerPath);
+  const ledgerPath = resolve(options.cwd, configuredPath);
   let text = "";
   let waiting = false;
   try {
@@ -157,7 +175,14 @@ export async function dashboardFrame(options: DashboardFrameOptions): Promise<st
     }
   }
 
-  const rendered = renderDashboard(parseDashboardLedger(text, { now: options.now }), {
+  let timeline: string | undefined;
+  if (text.trimStart().startsWith('{"version":1')) {
+    const activity = parseActivityTimeline(text);
+    let content: { taskKey: string; field: "prompt" | "final"; text: string } | undefined;
+    if (options.activityDetail) try { content = await detailForTimeline(ledgerPath, options.activityDetail.taskKey, options.activityDetail.field); } catch (error) { return `PI-DADDY — ACTIVITY DETAIL UNAVAILABLE\n${error instanceof Error ? error.message : String(error)}`; }
+    timeline = renderActivityTimeline(activity, { details: options.details, filter: options.filter, content });
+  }
+  const rendered = timeline ?? renderDashboard(parseDashboardLedger(text, { now: options.now }), {
     color: options.color,
     width: options.width,
     details: options.details,
@@ -233,7 +258,7 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
   }
   const dailyReader = createDailyViewReader();
   const actionMenu=createDashboardMenu();
-  const display = createDashboardDisplayControls(cli.details, Boolean(ledgerPath && !connected && !debrief && !cli.debriefJson && !dailyView));
+  const display = createDashboardDisplayControls(cli.details, Boolean(!connected && !debrief && !cli.debriefJson && !dailyView));
   let previous = "";
   let feedback = "";
   let input: ReturnType<typeof createInterface> | null = null;

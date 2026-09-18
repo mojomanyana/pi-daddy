@@ -98,6 +98,12 @@ test("dismissing the startup prompt stores no consent choice", async () => {
   assert.equal(fake.calls.some((args) => args[1] === "link"), false);
 });
 
+test("a compatible bundled Herdr plugin opens the ordinary panel without another bootstrap prompt", async () => {
+  const root = await tempDir("dashboard-default-panel-"); const pluginRoot = join(root, "plugin"), fake = hostAndPluginExec({ installed: true, linkedRoot: pluginRoot }); let prompts = 0;
+  assert.equal(await offerDashboardHandshake({ mode: "tui", env, pid: 42, exec: fake.exec, cwd: root, ledgerPath: join(root, "activity.jsonl"), pluginRoot, preferencePath: dashboardPreferencePath(root), paneStatePath: join(root, "panes.json"), ui: { select: async () => { prompts += 1; return "Not now"; }, notify: () => {} } }), "already-installed");
+  assert.equal(prompts, 0); assert.equal(fake.calls.filter(args => args[0] === "plugin" && args[1] === "pane" && args[2] === "open").length, 1);
+});
+
 test("Install and open is the only startup choice that links software", async () => {
   const root = await tempDir("dashboard-install-");
   const fake = hostAndPluginExec();
@@ -174,19 +180,21 @@ test("outside Herdr the startup handshake and command are diagnostics, not a ser
     ui: { select: async () => { prompts += 1; return "Install and open"; }, notify: () => {} },
   });
   assert.equal(prompts, 0);
-  await assert.rejects(() => openDashboardCommand({
+  const fallback = await openDashboardCommand({
     env: {}, pid: 42, exec: async () => result({ plugins: [] }), cwd: root, ledgerPath: join(root, "ledger.jsonl"),
     pluginRoot: join(root, "plugin"), paneStatePath: join(root, "panes.json"),
-  }), /not hosted inside Herdr/i);
+  });
+  assert.equal(fallback.kind, "fallback"); assert.match(fallback.frame, /not hosted inside Herdr/i);
 });
 
 test("/grants dashboard checks the exact host before ledger, then ledger before plugin", async () => {
   const root = await tempDir("dashboard-command-order-");
   const fake = hostAndPluginExec();
-  await assert.rejects(() => openDashboardCommand({
+  const fallback = await openDashboardCommand({
     env, pid: 42, exec: fake.exec, cwd: root, ledgerPath: undefined,
     pluginRoot: join(root, "plugin"), paneStatePath: join(root, "panes.json"),
-  }), /no pi-daddy ledger is configured/i);
+  });
+  assert.equal(fallback.kind, "fallback"); assert.match(fallback.frame, /local activity timeline/i);
   assert.deepEqual(fake.calls.map((args) => args.slice(0, 2)), [
     ["pane", "current"], ["pane", "process-info"],
   ]);
@@ -195,9 +203,10 @@ test("/grants dashboard checks the exact host before ledger, then ledger before 
 test("/grants dashboard never installs an absent plugin silently and gives the exact link command", async () => {
   const root = await tempDir("dashboard-command-");
   const fake = hostAndPluginExec();
-  await assert.rejects(() => openDashboardCommand({
+  const fallback = await openDashboardCommand({
     env, pid: 42, exec: fake.exec, cwd: root, ledgerPath: join(root, "ledger.jsonl"),
     pluginRoot: join(root, "bundled plugin"), paneStatePath: join(root, "panes.json"),
-  }), /herdr plugin link .*bundled plugin.*--enabled/);
+  });
+  assert.equal(fallback.kind, "fallback"); assert.match(fallback.frame, /herdr plugin link .*bundled plugin.*--enabled/);
   assert.equal(fake.calls.some((args) => args[1] === "link"), false);
 });

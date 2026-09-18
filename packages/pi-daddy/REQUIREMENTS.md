@@ -1,6 +1,6 @@
 # Current producer requirement register
 
-**Release candidate:** pi-daddy **0.27.0**, paired with planned skill-harness **0.16.0**, implementing the
+**Release candidate:** pi-daddy **0.28.0**, paired with planned skill-harness **0.17.0**, implementing the
 2026-09-14 proposal. This is current product scope, not an npm/release receipt or a replacement for dated
 evidence. Read [PRODUCT-GUIDE.md](./PRODUCT-GUIDE.md).
 

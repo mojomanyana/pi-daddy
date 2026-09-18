@@ -20,7 +20,6 @@
  * spawn triggered the human prompt, and `childEnv` clamps it to the grant again on the way out. Each
  * child derives its own grant from the tool array of its first provider request.
  */
-
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
@@ -51,9 +50,10 @@ import { createDailyDashboardSession } from "./daily-dashboard-session.ts";
 import { createWorkSession } from "./work-session.ts";
 import { createLearningSession } from "./learning-session.ts";
 import { replacePublishedDailyWork, type PublishedDailyWork } from "./daily-work-session.ts";
+import { defaultActivityTimelinePath } from "../src/activity-timeline.ts";
+import { registerActivityTimeline } from "./activity-timeline.ts";
 export default function (pi: ExtensionAPI) {
   // The path pi loads as the extension, so a child granted `tool:delegate` can be started with `-e <this>`.
-  // Only this file can say so about itself, which is why the session takes it rather than deriving it.
   const extensionPath = (() => {
     try {
       return fileURLToPath(import.meta.url);
@@ -61,8 +61,10 @@ export default function (pi: ExtensionAPI) {
       return undefined;
     }
   })();
-  const session = createGrantsSession(extensionPath);
+  const observerExtensionPath = fileURLToPath(new URL("./activity-timeline.ts", import.meta.url));
+  const session = createGrantsSession(extensionPath, undefined, observerExtensionPath);
   associateOrdinaryHost(pi,session);
+  registerActivityTimeline(pi, session);
   const dailyHost=createDailyDashboardSession({ordinary:()=>ordinaryChildrenFor(pi),declared:()=>session.declaredWork,rebind:state=>{session.declaredWork=state;},cwd:()=>session.cwd,env:process.env,author:"local-operator"});
   const dashboardPluginRoot = fileURLToPath(new URL("../herdr-plugin/", import.meta.url));
   const dashboardPaths = defaultDashboardPaths(
@@ -74,7 +76,6 @@ export default function (pi: ExtensionAPI) {
   const publishedDailyWork: PublishedDailyWork = {};
   const workSession=createWorkSession(session,dailyHost,()=>replacePublishedDailyWork(process.env,publishedDailyWork,session.declaredWork));
   const learningSession=createLearningSession(dailyHost);
-
   pi.on("session_start", async (_event, ctx) => {
     // Real SDK contexts always supply SessionManager. The fallback keeps lightweight wiring fixtures
     // isolated; it cannot carry state into another extension instance.
@@ -207,7 +208,7 @@ export default function (pi: ExtensionAPI) {
           env: process.env,
           pid: process.pid,
           cwd: ctx.cwd,
-          ledgerPath: session.ledgerPath,
+          ledgerPath: session.ledgerPath ?? defaultActivityTimelinePath(ctx.cwd),
           pluginRoot: dashboardPluginRoot,
           preferencePath: dashboardPaths.preferencePath,
           paneStatePath: dashboardPaths.paneStatePath,
@@ -385,7 +386,7 @@ export default function (pi: ExtensionAPI) {
             env: process.env,
             pid: process.pid,
             cwd: ctx.cwd,
-            ledgerPath: session.ledgerPath,
+            ledgerPath: session.ledgerPath ?? defaultActivityTimelinePath(ctx.cwd),
             pluginRoot: dashboardPluginRoot,
             paneStatePath: dashboardPaths.paneStatePath,
           }),

@@ -1,6 +1,6 @@
 # Work and learning in Pi
 
-This guide targets **pi-daddy 0.27.3** with **skill-harness 0.17.0**. Completed ledger history now has
+This guide targets **pi-daddy 0.28.0** with **skill-harness 0.17.0**. Completed ledger history now has
 visible hidden counts and an h + Enter toggle. Existing installed-skill discovery remains unchanged.
 Release qualification and publication are recorded in the release PR; version metadata alone is not proof.
 The [current requirement register](./REQUIREMENTS.md) separates implementation from release evidence.
@@ -9,10 +9,10 @@ From an installed shell command, `pi-daddy guide` prints this guide; `pi-daddy c
 ## Start once
 
 After the patch is published, install it with Pi's normal package manager:
-`pi install npm:pi-daddy@0.27.3` and `pi install npm:skill-harness@0.17.0`.
+`pi install npm:pi-daddy@0.28.0` and `pi install npm:skill-harness@0.17.0`.
 Do not treat these planned version commands as evidence the packages are already available.
 Start a **fresh Pi session** after upgrading the harness: its existing immutable bridge survives `/reload`.
-In the project, run `/grants init`, review capability consent, then `/grants` to see usable definitions.
+The extension starts with local governance, observation and the timeline on; `/grants init` remains an optional way to save an explicit project ceiling, not a bootstrap requirement. Run `/grants` to see the root's observed tool ceiling and usable definitions.
 Enabled installed runtime skills are used in place, using Pi's package filters and config directory.
 No `.pi/skills/` copies are created for them. Existing local overrides and `.pi/grants.env` are preserved;
 review old copies before removing one to follow installed package updates. Unregistered npm packages retain
@@ -39,6 +39,25 @@ Select an available authenticated Pi model; this product never copies credential
 The run is finite, with no automatic retry or restart recovery. Esc requests cancellation and waits for
 original children to settle. Ordinary model work has **no universal dollar/token cap**; provider usage is
 not invented from output size. Effort is an observed/requested launch setting, not measured internal thought.
+
+## Activity timeline
+
+When the extension runs, pi-daddy records a local activity timeline by default at
+`.pi/pi-daddy/activity.jsonl`. It shows separate parent turns, governed child lifecycles, observed
+skill-file availability/reads, and declared runtime-skill lifecycle. A compatible Herdr plugin opens one
+right-side panel per parent tab without taking focus; `/grants dashboard` remains the visible Pi fallback
+when Herdr/panel setup is unavailable. `PI_DADDY_GOVERNANCE=off` is the visible governance opt-out;
+`PI_DADDY_ACTIVITY_TIMELINE=off` stops observation; and
+`PI_DADDY_ACTIVITY_CONTENT=metadata-only` stores only digest/size metadata for new prompts/final answers.
+Those choices do not silently add grants, tools or child authority.
+
+The dashboard's Everything / Agents / Skills / Needs-you filters and `h` history toggle are keyboard
+controls. Press `d`, then use `p <root-id:task-id>` or `f <root-id:task-id>` exactly as shown on the row
+to load the exact local finalized user message or final response after path, size and digest checks. A bare
+task id is refused so simultaneous roots cannot select each other's private content. Pi exposes the finalized user message, not a separate
+pre-transform editor buffer, so entered-text provenance is explicitly unavailable rather than guessed. A skill being available, read, or declaring itself active
+are distinct facts; none proves compliance. Runtime skills can honestly report declared state with
+a generic `activity_lifecycle` call; it adds no authority.
 
 ## Inspect the read-only execution ledger
 
