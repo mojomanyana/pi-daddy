@@ -22,7 +22,7 @@ the record of how the package got here and are worth keeping; they are not worth
 - Pi's public extension/theme surface still cannot apply a per-extension background to ordinary assistant
   transcript messages, so prompt/response backgrounds remain unchanged and no transcript is mutated.
 - The retained screenshot's `Herdr did not activate the bundled Pi lifecycle reporter before prompt dispatch`
-  launcher error remains unresolved: no retained demo session/log was present to prove a packet-local cause,
+  launcher error remains unresolved: no retained demo session/log was inspected in that pass to prove a packet-local cause,
   so no launcher behavior changed in this patch.
 
 ## 0.28.0 — unified activity timeline and default-on operation
