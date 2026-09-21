@@ -18,6 +18,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { digestDefinition, parseSkillDefinition } from "../src/kernel/definitions.ts";
 import { cleanupTempDirs, fixture, piAvailable, runCommand, tempDir, verdictFor } from "./harness.ts";
+import { projectLedgerPath } from "../src/kernel/project-paths.ts";
 
 after(cleanupTempDirs);
 
@@ -621,7 +622,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     });
     const overriddenText = overridden.notifies.map((n) => n.message).join("\n");
     assert.ok(overriddenText.includes(`ledger     ${explicitLedger}`), overriddenText);
-    assert.ok(!overriddenText.includes(join(cwd, ".pi", "grants.jsonl")), "the explicit path wins");
+    assert.ok(!overriddenText.includes(projectLedgerPath(cwd)), "the explicit path wins");
 
     const disabled = await runCommand({
       cwd,

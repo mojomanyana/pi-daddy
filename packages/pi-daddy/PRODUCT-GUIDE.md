@@ -14,7 +14,7 @@ Do not treat these planned version commands as evidence the packages are already
 Start a **fresh Pi session** after upgrading the harness: its existing immutable bridge survives `/reload`.
 The extension starts with local governance, observation and the timeline on; `/grants init` remains an optional way to save an explicit project ceiling, not a bootstrap requirement. Run `/grants` to see the root's observed tool ceiling and usable definitions.
 Enabled installed runtime skills are used in place, using Pi's package filters and config directory.
-No `.pi/skills/` copies are created for them. Existing local overrides and `.pi/grants.env` are preserved;
+No `.pi/skills/` copies are created for them. Existing local overrides and `.pi/pi-daddy/settings.json` are preserved;
 review old copies before removing one to follow installed package updates. Unregistered npm packages retain
 legacy copy scaffolding. This works for any runtime skill package; there is no Principal-specific policy.
 A definition without `allowed-tools` remains unavailable until its author declares a ceiling.
@@ -162,10 +162,10 @@ improvement or automatic rollback. More extensive independent observation entry 
 
 ## Boundaries and local state
 
-`.pi/work-setups/` holds private setup history; `.pi/work-current.json` selects work;
-`.pi/learning-workspace.json` and `.pi/work-policy-registry.json` are navigation/binding records, not authority.
-`.pi/work-registry-bindings/` preserves settings-store bindings per work scope.
-Original bounded run/control stores live under the operator's local state directory; `.pi/work-last-run.json`
+`.pi/pi-daddy/work-setups/` holds private setup history; `.pi/pi-daddy/work-current.json` selects work;
+`.pi/pi-daddy/learning-workspace.json` and `.pi/pi-daddy/work-policy-registry.json` are navigation/binding records, not authority.
+`.pi/pi-daddy/work-registry-bindings/` preserves settings-store bindings per work scope.
+Original bounded run/control stores live under the operator's local state directory; `.pi/pi-daddy/work-last-run.json`
 locates the most recent result. Do not hand-edit these records. Invalid/aliased/mismatched bytes refuse.
 
 This governs **Pi's tool surface**, not a hostile process or same-UID actor. `bash` can escape governance;

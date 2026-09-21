@@ -13,6 +13,7 @@ import { ordinaryHostFixture } from "./ordinary-host-fixture.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 import { intentWorld } from "./intent-control-fixture.ts";
 import { fixtureText } from "./work-ledger-fixtures.ts";
+import { projectStateDir, workLedgerPath } from "../src/kernel/project-paths.ts";
 after(cleanupTempDirs);
 
 test("supported daily host command composition publishes fresh work and pauses only new ordinary dispatch", async () => {
@@ -80,15 +81,15 @@ test("supported daily host command composition publishes fresh work and pauses o
 
 test("daily host exposes friendly scope, priority and approved-alternative actions through exact intent authority", async () => {
   const root = await tempDir("daily-dashboard-intent-"),
-    pi = join(root, ".pi");
-  await mkdir(pi, { mode: 0o700 });
+    pi = projectStateDir(root);
+  await mkdir(pi, { mode: 0o700, recursive: true });
   const w = intentWorld();
   await writeFile(join(pi, "work.jsonl"), fixtureText([...w.initial, ...w.changes, ...w.recorded]), { mode: 0o600 });
   const declared: any = {
     version: "pi-daddy-declared-work-v1",
     id: "daily-intent",
     outcomeDigest: "0".repeat(64),
-    ledgerPath: join(pi, "work.jsonl"),
+    ledgerPath: workLedgerPath(root),
     statePath: join(pi, "work-current.json"),
     grantLedgerPath: null,
     selectedSnapshot: w.selection(w.base),

@@ -118,8 +118,9 @@ export interface ChildRunResult {
 
 /** 1 MiB. A delegation returns a summary; anything larger is a runaway, not an answer. */
 export const DEFAULT_MAX_OUTPUT_BYTES = 1024 * 1024;
-/** 20 minutes. Long-running sub-agent work often exceeded ten; a hang remains bounded. */
-export const DEFAULT_TIMEOUT_MS = 20 * 60 * 1000;
+/** 60 minutes since 2026-09-21 (ADR-0038 note): a wall clock still, so a working child is killed at the cap; the
+ * activity-based deadline is the next PR. Twenty minutes cut builds mid-run. */
+export const DEFAULT_TIMEOUT_MS = 60 * 60 * 1000;
 /** Grace between SIGTERM and SIGKILL. A child that ignores SIGTERM must not make the timeout advisory. */
 export const DEFAULT_KILL_GRACE_MS = 5000;
 

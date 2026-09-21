@@ -76,7 +76,7 @@ test("a new init opts this project into its ledger, while a legacy grant does no
   const expected = { grant: ["tool:read"], projectLedger: true };
   assert.deepEqual(loadStoredGrantSync(cwd), expected);
   assert.deepEqual(await loadStoredGrant(cwd), expected, "sync factory and async diagnostics share one parser");
-  assert.equal(projectLedgerPath(cwd), join(cwd, ".pi", "grants.jsonl"));
+  assert.equal(projectLedgerPath(cwd), join(cwd, ".pi", "pi-daddy", "grants.jsonl"));
 
   const raw = JSON.parse(await readFile(grantStorePath(cwd), "utf8")) as Record<string, unknown>;
   assert.equal(raw.version, 2, "ledger consent is explicit in a versioned store, never inferred from existence");

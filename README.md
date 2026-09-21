@@ -11,7 +11,7 @@ The registry baseline at preparation was `0.25.1`. For current publication statu
 [npm](https://www.npmjs.com/package/pi-daddy) and [GitHub Releases](https://github.com/mojomanyana/pi-daddy/releases).
 `pi-daddy` is the only public package; the workspace root is private.
 
-One explicit `/grants init` now persists both the project grant and `.pi/grants.jsonl`; merely installing the
+One explicit `/grants init` now persists both the project grant and `.pi/pi-daddy/grants.jsonl`; merely installing the
 package initializes nothing, and legacy stores are not silently migrated. Malformed project state now fails
 closed with a loud `GRANT_STORE_INVALID` refusal. `docs/SESSION-LOG.md` and `docs/SPEC.md` are the current
 detailed record.

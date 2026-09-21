@@ -23,6 +23,7 @@ export {
 } from "./native-session.ts";
 import { ENV_EXECUTION_ARCHIVE } from "../kernel/env-names.ts";
 export { ENV_EXECUTION_ARCHIVE } from "../kernel/env-names.ts";
+import { isUnderPiProjectDir } from "../kernel/project-paths.ts";
 
 /** Operator-owned archive boundary; never a model-facing parameter or an authority source. */
 export const RETENTION_VERSION = "2.0";
@@ -98,7 +99,7 @@ export const retentionConfigurationDigest = (configuration: unknown): string => 
  */
 export function beginExecutionRetention(identity: RetentionIdentity, directory = process.env[ENV_EXECUTION_ARCHIVE]) {
   const archiveId = randomUUID();
-  const valid = Boolean(directory && isAbsolute(directory) && !directory.split(/[\\/]/).includes(".pi"));
+  const valid = Boolean(directory && isAbsolute(directory) && !isUnderPiProjectDir(directory));
   const admitted = valid && active < MAX_ACTIVE;
   const root = admitted ? join(directory!, archiveId) : null;
   const manifestPath = root ? join(root, "manifest.json") : null;

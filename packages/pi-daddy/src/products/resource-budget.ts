@@ -38,6 +38,7 @@ import {
   type DispatchRequest,
   type DispatchState,
 } from "./dispatch-control.ts";
+import { isUnderPiProjectDir } from "../kernel/project-paths.ts";
 
 export interface ResourceLimits {
   maxAttempts: number;
@@ -179,7 +180,7 @@ function binding<T extends GovernedBudgetBinding>(x: T): Readonly<T> {
     !isAbsolute(x.directory) ||
     resolve(x.directory) !== x.directory ||
     x.directory.length > 1024 ||
-    x.directory.split("/").includes(".pi") ||
+    isUnderPiProjectDir(x.directory) ||
     ![x.device, x.inode, x.journalDevice, x.journalInode].every((v) => typeof v === "string" && /^\d+$/.test(v)) ||
     !digest(x.authorityDigest)
   )
@@ -271,7 +272,7 @@ async function createBudget(
     typeof directoryPath !== "string" ||
     !isAbsolute(directoryPath) ||
     resolve(directoryPath) !== directoryPath ||
-    directoryPath.split("/").includes(".pi") ||
+    isUnderPiProjectDir(directoryPath) ||
     !digest(authorityDigest)
   )
     fail("INVALID", "invalid budget creation");

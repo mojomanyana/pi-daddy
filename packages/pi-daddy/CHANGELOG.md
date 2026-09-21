@@ -14,6 +14,17 @@ the record of how the package got here and are worth keeping; they are not worth
 
 ## Unreleased — source layered under `src/{kernel,governance,executors,products}` (ADR-0076 PR 2)
 
+**PR 3c (same unreleased line, BREAKING for operators):** every project file lives under `.pi/pi-daddy/`
+(`grants.jsonl`, `work.jsonl`, `work-current.json`, `work-setups/`, `work-outcomes/`, `work-policy-registry.json`,
+`work-policies/`, `work-registry-bindings/`, `learning-workspace.json`, `work-last-run.json`, `activity.jsonl`,
+`content/`), and every user-level store under `<agent dir>/pi-daddy/` (`grants/`, `approvals/`,
+`workspace-leases/`). **Nothing is migrated** (operator decision following ADR-0020): a session that finds a store
+at its old location and not at the new one says so at start; run `/grants init` again and answer the gate again.
+The old project ledger is left in place for the single-ledger release to import. `pi-daddy init` no longer writes
+`.pi/grants.env`; it writes `.pi/pi-daddy/settings.json`, the same reviewable record as JSON, plus a
+`.gitignore` that keeps everything else in that directory out of commits. **The default child timeout is sixty
+minutes** (was twenty; ADR-0038 dated note); an inactivity-based deadline is the next PR after the ledger format.
+
 **PR 3b (same unreleased line, BREAKING for operators and importers):** every `PI_GRANTS_*` environment
 variable is now `PI_DADDY_*` (same suffix; `PI_GRANTS_LEDGER` becomes `PI_DADDY_LEDGER`, which the dashboard
 already used for the same path). Legacy names are still read for one minor release with a warning; children are

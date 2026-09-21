@@ -18,7 +18,14 @@ import { readFile } from "node:fs/promises";
 import { relative, resolve as resolvePath } from "node:path";
 import { pathToFileURL } from "node:url";
 import { UnsafeGrantError } from "./kernel/grant-env.ts";
-import { applyInit, countDeclaring, planInit, type InitPlan } from "./governance/init.ts";
+import {
+  applyInit,
+  countDeclaring,
+  planInit,
+  type InitPlan,
+  GITIGNORE_REINCLUDE_LINES,
+  settingsIgnoredByGit,
+} from "./governance/init.ts";
 import { registeredWorkspaceIds } from "./kernel/workspace.ts";
 import {
   discoverSkillPackages,
@@ -30,11 +37,16 @@ import { declareWork, loadDeclaredWork } from "./products/work-command.ts";
 import { listWorkSetups, workPresentation } from "./products/work-setup.ts";
 import { panelText } from "./products/daily-panel.ts";
 import { adoptLegacyEnvironment, legacyEnvironmentWarning } from "./kernel/env-names.ts";
+import { declaredWorkPath } from "./kernel/project-paths.ts";
+import { PI_PROJECT_DIR, PROJECT_FILES, PROJECT_STATE_DIRNAME } from "./kernel/project-paths.ts";
+
+/** The reviewable record, as the operator sees it relative to the project (ADR-0076 PR 3c). */
+const SETTINGS_REL = `${PI_PROJECT_DIR}/${PROJECT_STATE_DIRNAME}/${PROJECT_FILES.settings}`;
 
 const USAGE = `pi-daddy — capability governance for pi sub-agents
 
 Usage:
-  pi-daddy init [--force] [--dir <path>]   prepare .pi/grants.env from enabled installed
+  pi-daddy init [--force] [--dir <path>]   prepare ${SETTINGS_REL} from enabled installed
                                            packages that declare skills (package.json "pi": {"skills": …})
   pi-daddy work add --id <id> --outcome <text> [--dir <path>]
                                            declare one current obligation for ordinary delegation
@@ -51,7 +63,7 @@ stays unspawnable. Capabilities that can change your machine
 (bash, write, edit) are written COMMENTED — uncomment them deliberately. Review the files, then commit.
 
   --force   rewrite legacy unregistered npm SKILL.md copies that already exist. This DISCARDS any \`allowed-tools\` you added.
-            It never rewrites .pi/grants.env — delete that file if you want it regenerated.`;
+            It never rewrites ${SETTINGS_REL} — delete that file if you want it regenerated.`;
 
 export interface ParsedArgs {
   command: "init" | "work-add" | "work-list" | "work-show" | "guide" | "current" | "help" | "version";
@@ -205,7 +217,7 @@ async function init(cwd: string, force: boolean): Promise<number> {
     const existing = plan.skills.filter((s) => !s.referenced).length;
     console.log(
       `\n--force: rewriting up to ${existing} SKILL.md cop${existing === 1 ? "y" : "ies"} from the installed\n` +
-        `packages. Any \`allowed-tools\` you wrote in them is DISCARDED. .pi/grants.env is never rewritten.`,
+        `packages. Any \`allowed-tools\` you wrote in them is DISCARDED. settings.json is never rewritten.`,
     );
   }
 
@@ -217,7 +229,7 @@ async function init(cwd: string, force: boolean): Promise<number> {
   for (const path of outcome.kept) console.log(`kept  ${short(path)} (already present — left exactly as it is)`);
   for (const failure of outcome.failed) console.error(`FAILED ${short(failure.path)}: ${failure.error}`);
 
-  report(plan);
+  await report(plan);
   // A refusal is a non-zero exit so CI can see it: a package that tried to write a capability into the
   // grant through a name or a declaration is a fact a build should be able to fail on.
   return outcome.failed.length > 0 || refused.length > 0 ? 1 : 0;
@@ -250,7 +262,7 @@ function reportRefusal(pkg: SkillPackage, refusal: RefusedSkill): string {
 }
 
 /** What the operator has to do next, and what pi-daddy deliberately did not do for them. */
-function report(plan: InitPlan): void {
+async function report(plan: InitPlan): Promise<void> {
   const undeclared = plan.skills.filter((s) => s.withheld === "undeclared");
   const patterned = plan.skills.filter((s) => s.withheld === "pattern");
 
@@ -263,7 +275,7 @@ function report(plan: InitPlan): void {
         `${undeclared.map((s) => s.name).join(", ")}.\n` +
         `Each copy carries a commented \`allowed-tools:\` line. pi-daddy does not choose ceilings — that\n` +
         `decision is what you review and commit, so it is yours to write. Then add each \`agent:<name>\`\n` +
-        `to PI_DADDY_GRANT in .pi/grants.env.`,
+        `to the grant in ${SETTINGS_REL}.`,
     );
   }
 
@@ -271,7 +283,7 @@ function report(plan: InitPlan): void {
     const needed = [...plan.withheldCapabilities].map(([c, who]) => `${c} (${who.join(", ")})`).join(", ");
     console.log(
       `\nWITHHELD BY DEFAULT: ${needed}.\n` +
-        `These can change your machine, so they are written COMMENTED in .pi/grants.env along with the\n` +
+        `These can change your machine, so they are listed under \`withheld\` in settings.json along with the\n` +
         `\`agent:\` ids of the definitions that need them. Uncomment deliberately — that is the decision.`,
     );
   }
@@ -289,7 +301,7 @@ function report(plan: InitPlan): void {
     console.log(
       `\nROUTABLE WORKSPACES: ${plan.routableWorkspaces.join(", ")}.\n` +
         `Routing a child to one needs its id in PI_DADDY_GRANT (ADR-0035); without it the delegation is\n` +
-        `refused WORKSPACE_NOT_AUTHORIZED. They are listed COMMENTED in .pi/grants.env and never granted for\n` +
+        `refused WORKSPACE_NOT_AUTHORIZED. They are listed under \`routableWorkspaces\` in settings.json and never granted for\n` +
         `you — which worktree a child starts in is not something a package can declare.` +
         (blocked.length > 0
           ? `\nUntil you grant one, these cannot be spawned: ${blocked.join(", ")} — add the capability, then\n` +
@@ -300,8 +312,11 @@ function report(plan: InitPlan): void {
 
   console.log(
     `\nLive grant (${plan.grant.length} capabilities): ${plan.grant.join(", ")}\n\n` +
-      `  $EDITOR .pi/grants.env         # review it, then commit it\n` +
-      `  source .pi/grants.env && pi    # /grants lists every definition and its verdict`,
+      ((await settingsIgnoredByGit(plan.settingsPath)) === true
+        ? `  NOTE: git ignores ${SETTINGS_REL} (root .gitignore covers ${PI_PROJECT_DIR}/); add ${GITIGNORE_REINCLUDE_LINES.join(" and ")} to commit it\n`
+        : "") +
+      `  $EDITOR ${SETTINGS_REL}   # review it, then commit it\n` +
+      `  pi                                   # /grants lists every definition and its verdict`,
   );
 }
 
@@ -349,7 +364,7 @@ export async function main(argv: string[]): Promise<number> {
           .join("\n") || "No saved multi-task setups. In Pi: /grants work",
       );
     } else {
-      const state = await loadDeclaredWork(resolvePath(cwd, ".pi/work-current.json")),
+      const state = await loadDeclaredWork(declaredWorkPath(cwd)),
         view = state ? await workPresentation(state) : null;
       console.log(
         view

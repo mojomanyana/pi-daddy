@@ -23,9 +23,12 @@ import {
   type IntentSelection,
   type IntentPriority,
 } from "./intent-control.ts";
+import { isUnderPiProjectDir, PI_PROJECT_DIR, PROJECT_STATE_DIRNAME, PROJECT_FILES } from "../kernel/project-paths.ts";
 const ref = (r: WorkFrozen<WorkRevision>) => ({ kind: r.kind, id: r.id, revision: r.revision, digest: r.digest });
 const entity = (r: { kind: string; id: string } | null) => (r ? `${r.kind}:${r.id}` : null);
-const allowedIntentPath = (path: string) => !path.split("/").includes(".pi") || path.endsWith("/.pi/work.jsonl");
+const allowedIntentPath = (path: string) =>
+  !isUnderPiProjectDir(path) ||
+  path.endsWith(`/${PI_PROJECT_DIR}/${PROJECT_STATE_DIRNAME}/${PROJECT_FILES.workLedger}`);
 export function workIntentBinding(input: WorkIntentBinding): WorkIntentBinding {
   controlShape(input, ["version", "path", "device", "inode", "grantLedgerPath", "selection", "priorities"]);
   if (

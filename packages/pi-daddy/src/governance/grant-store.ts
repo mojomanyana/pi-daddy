@@ -7,26 +7,30 @@
  * `source` a file and restart pi after making the project choice.
  *
  * **Outside the workspace, and that is the whole design.** A grant is a ceiling; a ceiling a governed child
- * can rewrite is not a ceiling. `<cwd>/.pi/grants.env` is writable by any child holding `tool:write`, so
+ * can rewrite is not a ceiling. `<cwd>/.pi/pi-daddy/settings.json` is writable by any child holding `tool:write`, so
  * storing the live grant there would let a child widen the *next* session's ceiling — ADR-0014's
  * self-defeating case verbatim, which is why persisted approvals were moved out of the workspace in the
- * first place. This reuses that pattern exactly: `$PI_CODING_AGENT_DIR/grants/<slug>-<hash>.json`, keyed by
+ * first place. This reuses that pattern exactly: `$PI_CODING_AGENT_DIR/pi-daddy/grants/<slug>-<hash>.json`, keyed by
  * the directory, unwritable by a narrowed child because a narrowed child holds no write access to `$HOME`.
  *
  * **It does not defend against a child holding `bash`** (ADR-0012). Nothing here does.
  *
- * `.pi/grants.env` is still written by `init` and is still worth committing — it is the *reviewable record*
- * of the decision, diffable in a PR. It is simply no longer the thing the enforcer reads.
+ * `.pi/pi-daddy/settings.json` is written by `init` and is worth committing — it is the *reviewable record*
+ * of the decision, diffable in a PR. It is not the thing the enforcer reads.
  */
 
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { mkdir, readFile, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
-import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { withFileLock, LockTimeoutError } from "./file-lock.ts";
 import type { Capability } from "../kernel/resolve.ts";
+import {
+  grantStorePath as userGrantStorePath,
+  projectLedgerPath as projectLedgerFile,
+  agentDir as resolveAgentDir,
+} from "../kernel/project-paths.ts";
 
 interface GrantFileV1 {
   version: 1;
@@ -48,7 +52,7 @@ interface GrantFileV2 {
 
 export interface StoredGrant {
   grant: Capability[];
-  /** Whether a root session defaults to `<cwd>/.pi/grants.jsonl`. False for every legacy v1 store. */
+  /** Whether a root session defaults to `<cwd>/.pi/pi-daddy/grants.jsonl`. False for every legacy v1 store. */
   projectLedger: boolean;
 }
 
@@ -62,7 +66,7 @@ export interface SaveGrantOptions {
 
 /** `$PI_CODING_AGENT_DIR`, or pi's default. Same resolution as the approval store. */
 function agentDir(): string {
-  return process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
+  return resolveAgentDir();
 }
 
 /**
@@ -73,9 +77,7 @@ function agentDir(): string {
  * checkouts can share a basename.
  */
 export function grantStorePath(cwd: string): string {
-  const slug = (basename(cwd) || "root").replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 40);
-  const hash = createHash("sha256").update(cwd, "utf8").digest("hex").slice(0, 16);
-  return join(agentDir(), "grants", `${slug}-${hash}.json`);
+  return userGrantStorePath(cwd); // `<agent dir>/pi-daddy/grants/<slug>-<16 hex>.json` since ADR-0076 PR 3c
 }
 
 /**
@@ -175,7 +177,7 @@ export async function loadGrant(cwd: string): Promise<Capability[] | null> {
 
 /** The one project-local default ADR-0037 binds to an explicit v2 init choice. */
 export function projectLedgerPath(cwd: string): string {
-  return resolve(cwd, ".pi", "grants.jsonl");
+  return projectLedgerFile(cwd);
 }
 
 export type SaveOutcome = "saved" | "failed" | "busy";

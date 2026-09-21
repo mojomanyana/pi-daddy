@@ -1061,7 +1061,8 @@ test("a failed always-store write is ledgered as session-only with no fake expir
   process.env.PI_CODING_AGENT_DIR = agentDir;
   // Fail only the approval-cache write. Making the entire agent directory unreadable also disables
   // configured skill discovery, so the test would never reach its intended persistence boundary.
-  await writeFile(join(agentDir, "grants-approvals"), "not a directory");
+  await mkdir(join(agentDir, "pi-daddy"), { recursive: true });
+  await writeFile(join(agentDir, "pi-daddy", "approvals"), "not a directory");
   try {
     const { tools, ctx } = await harness(
       {

@@ -13,6 +13,7 @@ import { resolveSkillResources, skillResourceName } from "./skill-resources.ts";
 import { WILDCARD } from "./pi-tools.ts";
 import { AGENT_WILDCARD, WORKSPACE_WILDCARD, type Capability } from "./resolve.ts";
 import { isSafeCapability } from "./capabilities.ts";
+import { agentDir as resolveAgentDir } from "./project-paths.ts";
 
 export interface DiscoveredSkill {
   definition: SkillDefinition;
@@ -226,7 +227,7 @@ export async function readSkillPackage(packageDir: string): Promise<SkillPackage
  * Project first when both exist, because a package pinned in the repository is the one the team agreed on.
  */
 export function skillPackageRoots(cwd: string): string[] {
-  const agentDir = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
+  const agentDir = resolveAgentDir();
   return [join(cwd, "node_modules"), join(agentDir, "npm", "node_modules")];
 }
 

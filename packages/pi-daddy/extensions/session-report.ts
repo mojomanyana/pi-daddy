@@ -23,6 +23,16 @@ import { AGENT_WILDCARD } from "../src/kernel/resolve.ts";
 import { planWithApprovals } from "./run-delegation.ts";
 import type { GrantsSession } from "./session.ts";
 import { renderSpawnableSummary, summariseSpawnable } from "./spawn-summary.ts";
+import {
+  approvalsPath,
+  grantStorePath,
+  legacyGrantEnvPath,
+  legacyProjectLedgerPath,
+  legacyUserApprovalsPath,
+  legacyUserGrantStorePath,
+  projectLedgerPath,
+  projectSettingsPath,
+} from "../src/kernel/project-paths.ts";
 
 /**
  * The slice of pi's context this module needs: a working directory and somewhere to speak.
@@ -55,6 +65,40 @@ export async function reportSessionStart(session: GrantsSession, ctx: SessionRep
   // different reason for not migrating: splitting it by `cwd` would be lossless, and it is still declined
   // because one-shot migration code in the layer with nine defects buys less than one re-approval costs.
   try {
+    // ADR-0076 PR 3c moved the user-level stores under one pi-daddy/ directory WITHOUT migration (operator
+    // decision, following ADR-0020). Name what was left behind, so "why does it ask again" has an answer.
+    for (const [label, legacy, current, action] of [
+      [
+        "grant store",
+        legacyUserGrantStorePath(ctx.cwd),
+        grantStorePath(ctx.cwd),
+        "run /grants init to record this project's grant again",
+      ],
+      [
+        "approvals",
+        legacyUserApprovalsPath(ctx.cwd),
+        approvalsPath(ctx.cwd),
+        "answer the gate again; stored approvals are not migrated",
+      ],
+      [
+        "project ledger",
+        legacyProjectLedgerPath(ctx.cwd),
+        projectLedgerPath(ctx.cwd),
+        "it is kept; the single-ledger release will import it",
+      ],
+      [
+        "grants.env",
+        legacyGrantEnvPath(ctx.cwd),
+        projectSettingsPath(ctx.cwd),
+        "it is no longer written or read; a shell that still sources it points PI_DADDY_LEDGER at the old ledger — delete the file",
+      ],
+    ] as const) {
+      if (existsSync(legacy) && !existsSync(current))
+        ctx.ui.notify(
+          `grants: ${label} found at its pre-0.30 location ${legacy} and not at ${current} — ${action}.`,
+          "warning",
+        );
+    }
     if (existsSync(sharedApprovalsPath())) {
       ctx.ui.notify(
         `grants: ignoring ${sharedApprovalsPath()} — approvals are now stored one file per governed ` +

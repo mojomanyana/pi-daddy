@@ -118,13 +118,11 @@ try {
 
   const initOut = run(join(work, "node_modules", ".bin", "pi-daddy"), ["init"], work);
   if (!initOut.includes("found fake-skills@1.0.0")) throw new Error(`init did not find the package:\n${initOut}`);
-  const grantEnv = readFileSync(join(work, ".pi", "grants.env"), "utf8");
-  if (!grantEnv.includes('PI_DADDY_GRANT="agent:review,tool:delegate,tool:grep,tool:read"')) {
-    throw new Error(`init wrote the wrong grant:\n${grantEnv}`);
+  const settings = JSON.parse(readFileSync(join(work, ".pi", "pi-daddy", "settings.json"), "utf8"));
+  if (settings.version !== 1 || settings.ledger !== "grants.jsonl" || !Array.isArray(settings.grant)) {
+    throw new Error(`init did not record its project settings:\n${JSON.stringify(settings)}`);
   }
-  if (!grantEnv.split(/\r?\n/).includes('export PI_DADDY_LEDGER=".pi/grants.jsonl"')) {
-    throw new Error(`init did not enable its project ledger:\n${grantEnv}`);
-  }
+
   // VERBATIM means byte-for-byte, so compare the whole file. The first version asserted that
   // `allowed-tools: Read, Grep` was PRESENT, which survives a mutation that injects the six-line commented
   // placeholder into a declared skill — an assertion whose message named a production change it could not

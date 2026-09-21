@@ -26,6 +26,7 @@ import { PI_BUILTIN_TOOLS, WILDCARD } from "./pi-tools.ts";
 import { AGENT_WILDCARD, WORKSPACE_WILDCARD, type Capability } from "./resolve.ts";
 import { loadWorkspaceRegistry, type WorkspaceRegistryFile } from "./workspace.ts";
 import { isSafeWorkspaceId } from "./capabilities.ts";
+import { piProjectDir } from "./project-paths.ts";
 
 export type CapabilityKind = "builtin" | "extension" | "skill" | "agentType" | "workspace";
 
@@ -55,7 +56,7 @@ export function classifyToolNames(observed: string[]): CatalogEntry[] {
 
 /** Skill roots pi discovers, project first. */
 export function skillDirs(cwd: string): string[] {
-  return [join(cwd, ".pi", "skills"), join(getAgentDir(), "skills")];
+  return [join(piProjectDir(cwd), "skills"), join(getAgentDir(), "skills")];
 }
 
 /** Enumerate the same enabled Pi resource paths as definitions, preserving resolver precedence. */

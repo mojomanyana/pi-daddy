@@ -8,7 +8,8 @@
  */
 
 import { discoverSkillPackages } from "../src/kernel/skill-packages.ts";
-import { applyInit, planInit } from "../src/governance/init.ts";
+import { applyInit, GITIGNORE_REINCLUDE_LINES, planInit, settingsIgnoredByGit } from "../src/governance/init.ts";
+import { PI_PROJECT_DIR } from "../src/kernel/project-paths.ts";
 import { registeredWorkspaceIds } from "../src/kernel/workspace.ts";
 import { grantStorePath, projectLedgerPath, saveGrant } from "../src/governance/grant-store.ts";
 import { expandSubsumed, SUBSUMPTION, type Capability } from "../src/kernel/resolve.ts";
@@ -154,9 +155,14 @@ export async function runInit(
     lines.push(
       `  ROUTABLE WORKSPACES, listed and NOT granted: ${plan.routableWorkspaces.join(", ")}`,
       `    routing a child to one needs its id in the grant (ADR-0035); add the ones this project may use to ` +
-        `${plan.grantEnvPath}. Which worktree a child starts in is not something a package can declare for you.`,
+        `${plan.settingsPath}. Which worktree a child starts in is not something a package can declare for you.`,
     );
   }
+  if ((await settingsIgnoredByGit(plan.settingsPath)) === true)
+    lines.push(
+      `  NOTE: git ignores ${plan.settingsPath} (your root .gitignore covers ${PI_PROJECT_DIR}/), so the reviewable record ` +
+        `cannot be committed until you add: ${GITIGNORE_REINCLUDE_LINES.join("  ")}`,
+    );
   lines.push(`  live now (${finalGrant.length} capabilities) — no restart. /grants shows the verdicts.`);
   ctx.ui.notify(lines.join("\n"), "info");
 }

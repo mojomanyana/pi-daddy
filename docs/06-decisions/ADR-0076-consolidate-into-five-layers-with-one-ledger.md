@@ -258,7 +258,15 @@ inventory of the stores (below) and the size of the formatting change made one c
 formatter, guards, prose-asserting tests deleted. 3b: `PI_DADDY_*` only with an explicit governance key list,
 exports under ten. 3c: one project state directory, `grants.env` retired, user-level stores under one
 `pi-daddy/` directory. 3d: one record format and one reader, version 0.30.0. (Amended the same day: the
-state-directory move touches init, the stores, the smoke test and forty ledger-path assertions, so it left 3b.) Each takes
+state-directory move touches init, the stores, the smoke test and forty ledger-path assertions, so it left 3b.)
+
+**3c decisions (2026-09-21, operator).** The user-level grant store and approvals move under one `pi-daddy/`
+directory **without migration**, following ADR-0020's precedent literally: a session names the old location and
+asks for `/grants init` or a fresh approval; nothing copies authority. `settings.json` is the one committable
+file in `.pi/pi-daddy/`; init writes a `.gitignore` beside it excluding everything else. The default child
+timeout rises from twenty to sixty minutes now (ADR-0038 dated note), and an inactivity-based deadline on pi's
+JSON event stream is scheduled as **PR 3e**, after the format change, because a `pi --print` child gives the
+parent no activity signal until it exits. Each takes
 rule 10's review pass; the checklist rows stay as written with their PR column read as 3a/3b/3c.
 
 **The inventory found twenty-one stores, not ten, and the grants ledger has no hash chain at all.** The only

@@ -11,7 +11,9 @@ export const projectProductDirectory = (path: string) => directory(path, false);
 async function directory(path: string, ownerOnly: boolean): Promise<void> {
   if (resolve(path) !== path) throw Error("absolute canonical product directory required");
   try {
-    await mkdir(path, { mode: 0o700 });
+    // Recursive since ADR-0076 PR 3c: product files live two levels down (`.pi/pi-daddy/`). Created directories
+    // get 0o700; an existing `.pi` is never chmodded, and the checks below apply to the leaf.
+    await mkdir(path, { mode: 0o700, recursive: true });
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
   }
@@ -51,7 +53,8 @@ export async function readProductJson(path: string, limit = 128 * 1024): Promise
   return parseRetentionJson(new TextDecoder("utf-8", { fatal: true }).decode(snapshot.bytes), limit);
 }
 export async function writeProductJson(path: string, value: unknown, replace = false): Promise<void> {
-  await (basename(dirname(path)) === ".pi" ? projectProductDirectory : privateDirectory)(dirname(path));
+  // Every product file now lives under the owner-only project state directory (ADR-0076 PR 3c).
+  await privateDirectory(dirname(path));
   const text = JSON.stringify(value, null, 2) + "\n";
   if (Buffer.byteLength(text) > 128 * 1024) throw Error("product file bound exceeded");
   if (!replace) {

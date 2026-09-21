@@ -126,7 +126,8 @@ test("top-level Pi exclusions stay excluded and existing grants remain unchanged
   await mkdir(join(path, ".."), { recursive: true });
   await writeFile(path, text("local"));
   await writeFile(join(cwd, ".pi", "settings.json"), JSON.stringify({ skills: ["!skills/local/**"] }));
-  await writeFile(join(cwd, ".pi", "grants.env"), "# deliberately retained grant\n");
+  await mkdir(join(cwd, ".pi", "pi-daddy"), { recursive: true });
+  await writeFile(join(cwd, ".pi", "pi-daddy", "settings.json"), '{ "retained": true }\n');
   const plan = planInit(await discoverSkillPackages(cwd), cwd);
   assert.equal(
     plan.skills.some((s) => s.name === "local"),
@@ -135,7 +136,7 @@ test("top-level Pi exclusions stay excluded and existing grants remain unchanged
   assert.equal((await loadDefinitions(cwd)).has("local"), false);
   assert.equal((await buildCatalog({ cwd, observedTools: null })).has("skill:local"), false);
   await applyInit(plan, { force: true });
-  assert.equal(await readFile(join(cwd, ".pi", "grants.env"), "utf8"), "# deliberately retained grant\n");
+  assert.equal(await readFile(join(cwd, ".pi", "pi-daddy", "settings.json"), "utf8"), '{ "retained": true }\n');
 });
 
 test("malformed local override never falls through to a wider installed definition", async () => {

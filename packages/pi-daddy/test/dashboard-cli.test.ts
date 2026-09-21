@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import { mkdir, symlink, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { after, test } from "node:test";
 import { DASHBOARD_PROTOCOL_VERSION, dashboardActionFeedback, dashboardFrame } from "../src/products/dashboard-cli.ts";
 import { createDashboardDisplayControls } from "../src/products/dashboard-display-controls.ts";
@@ -12,6 +12,7 @@ import {
   defaultActivityTimelinePath,
   parseActivityTimeline,
 } from "../src/products/activity-timeline.ts";
+import { projectLedgerPath } from "../src/kernel/project-paths.ts";
 
 after(cleanupTempDirs);
 
@@ -143,7 +144,7 @@ test("an incompatible core/plugin protocol is loud and renders no guessed tree",
 
 test("a configured ledger that does not exist yet remains a live empty view", async () => {
   const cwd = await tempDir("dashboard-empty-");
-  const ledgerPath = join(cwd, ".pi", "grants.jsonl");
+  const ledgerPath = projectLedgerPath(cwd);
   const frame = await dashboardFrame({ cwd, ledgerPath, color: false, width: 100 });
   assert.match(frame, /No governed executions recorded yet/);
   assert.match(frame, /waiting for ledger/);
@@ -151,8 +152,8 @@ test("a configured ledger that does not exist yet remains a live empty view", as
 
 test("a corrupt ledger is surfaced and never rewritten", async () => {
   const cwd = await tempDir("dashboard-corrupt-");
-  const ledgerPath = join(cwd, ".pi", "grants.jsonl");
-  await mkdir(join(cwd, ".pi"));
+  const ledgerPath = projectLedgerPath(cwd);
+  await mkdir(dirname(ledgerPath), { recursive: true });
   const content = "{not-json\n";
   await writeFile(ledgerPath, content);
   const frame = await dashboardFrame({ cwd, ledgerPath, color: false, width: 100 });

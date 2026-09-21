@@ -9,6 +9,7 @@ import { experimentHash } from "../src/products/experiment-contract.ts";
 import type { LearningHarness, LearningWorkspace } from "../src/products/learning-connection.ts";
 import type { DeclaredWorkState } from "../src/products/work-command.ts";
 import type { ProductionObservation } from "../src/products/vendor/adoption.ts";
+import { lastWorkRunPath } from "../src/kernel/project-paths.ts";
 
 /** Link actual later-run bytes/pin; only an explicit independent human supplies outcome labels. */
 export async function linkLatestWorkOutcome(
@@ -17,9 +18,7 @@ export async function linkLatestWorkOutcome(
   workspace: LearningWorkspace,
   harness: LearningHarness,
 ) {
-  const binding = (await readProductJson(
-    join(ctx.cwd, ".pi", "work-last-run.json"),
-  )) as ControlBinding<WorkRunInitial> | null;
+  const binding = (await readProductJson(lastWorkRunPath(ctx.cwd))) as ControlBinding<WorkRunInitial> | null;
   if (!binding) throw Error("No retained later bounded order is available");
   const run = await inspectWorkRun(binding),
     pin = binding.initial.policyPin;

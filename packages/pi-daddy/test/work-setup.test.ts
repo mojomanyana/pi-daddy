@@ -18,6 +18,7 @@ import { readDailyView } from "../src/products/daily-view.ts";
 import { withOrdinaryChild } from "../extensions/ordinary-runtime.ts";
 import type { GrantsSession } from "../extensions/session.ts";
 import { supportedModelEfforts } from "../src/kernel/model-preflight.ts";
+import { declaredWorkPath, workSetupsDir } from "../src/kernel/project-paths.ts";
 after(cleanupTempDirs);
 export function setup() {
   return workSetup({
@@ -51,7 +52,7 @@ test("ordinary setup retains a selected multi-task DAG with exact private labels
   await mkdir(join(cwd, ".pi"), { mode: 0o755 });
   const recorded = await recordWorkSetup(cwd, setup());
   assert.equal((await stat(join(cwd, ".pi"))).mode & 0o777, 0o755);
-  assert.equal(await loadDeclaredWork(join(cwd, ".pi", "work-current.json")), null, "recording is not selection");
+  assert.equal(await loadDeclaredWork(declaredWorkPath(cwd)), null, "recording is not selection");
   const selected = await selectRecordedWork(recorded, null),
     loaded = await loadWorkSetup((await loadDeclaredWork(selected.statePath))!);
   assert.deepEqual(loaded?.setup, setup());
@@ -63,8 +64,7 @@ test("ordinary setup retains a selected multi-task DAG with exact private labels
   assert.ok(p.obligations.every((o) => o.acceptance !== "accepted-under-supplied-authority"));
   assert.doesNotMatch(bytes, /Ship a usable page|Read requirements|provider\/model-a/);
   assert.equal(
-    (await stat(join(cwd, ".pi", "work-setups", `${recorded.state.selectedSnapshot.snapshot.digest}.json`))).mode &
-      0o777,
+    (await stat(join(workSetupsDir(cwd), `${recorded.state.selectedSnapshot.snapshot.digest}.json`))).mode & 0o777,
     0o600,
   );
   assert.equal((await listWorkSetups(cwd)).length, 1);
@@ -83,7 +83,7 @@ test("cycles, silent topology edits, changed metadata and unsafe local files ref
   changed.tasks[1].dependencies = [];
   await assert.rejects(recordWorkSetup(cwd, changed, "revise", r.state), /topology changes require a new work/);
   assert.equal(await readFile(r.state.ledgerPath, "utf8"), before);
-  const path = join(cwd, ".pi", "work-setups", `${r.state.selectedSnapshot.snapshot.digest}.json`),
+  const path = join(workSetupsDir(cwd), `${r.state.selectedSnapshot.snapshot.digest}.json`),
     metadata = (await readProductJson(path)) as any;
   metadata.setup.maxParallel = 1;
   await writeProductJson(path, metadata, true);

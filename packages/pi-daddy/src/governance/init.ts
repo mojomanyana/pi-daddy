@@ -23,7 +23,7 @@
  */
 
 import { lstat, mkdir, open, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { agentCapability, workspaceCapability } from "../kernel/capabilities.ts";
 import { ceilingForDefinition } from "../kernel/definitions.ts";
 import { runWithFinalizers } from "./finalization.ts";
@@ -31,12 +31,23 @@ import {
   ALWAYS_LIVE,
   assertGrantIsWritable,
   isLiveByDefault,
-  renderGrantEnv,
+  renderProjectSettings,
   type GrantEnvSkill,
 } from "../kernel/grant-env.ts";
 import { PI_BUILTIN_TOOLS } from "../kernel/pi-tools.ts";
 import type { Capability } from "../kernel/resolve.ts";
 import type { SkillPackage } from "../kernel/skill-packages.ts";
+import {
+  PI_PROJECT_DIR,
+  PROJECT_FILES,
+  PROJECT_GITIGNORE_CONTENT,
+  PROJECT_STATE_DIRNAME,
+  piProjectDir,
+  projectGitignorePath,
+  projectSettingsPath,
+  projectStateDir,
+} from "../kernel/project-paths.ts";
+import { spawnSync } from "node:child_process";
 
 /**
  * Count declarations, not authorizations (R-73). Both pattern and needs-withheld mean the skill
@@ -69,14 +80,17 @@ export interface InitPlan {
   skills: PlannedSkill[];
   /** Definitions two packages both declare. First wins; the loser is named rather than silently dropped. */
   collisions: string[];
-  /** The live grant — what `source .pi/grants.env` actually sets. */
+  /** The live grant — what `settings.json` records and the grant store applies. */
   grant: Capability[];
   /** Withheld capability → the definitions that declared it (ADR-0029). Emitted commented. */
   withheldCapabilities: Map<Capability, string[]>;
   /** `workspace:<id>` this project could route to (ADR-0035). Always commented — `init` does not choose. */
   routableWorkspaces: Capability[];
-  grantEnvPath: string;
-  grantEnvContent: string;
+  /** `<cwd>/.pi/pi-daddy` — created owner-only by apply. */
+  stateDir: string;
+  settingsPath: string;
+  settingsContent: string;
+  gitignorePath: string;
   /** Capabilities a declared ceiling names that pi 0.84.1 has no tool for — a caution, not a verdict. */
   cautions: string[];
 }
@@ -185,7 +199,7 @@ export function planInit(
         name,
         from: `${pkg.name}@${pkg.version}`,
         sourcePath: skill.path,
-        targetPath: skill.referenced ? skill.path : join(cwd, ".pi", "skills", name, "SKILL.md"),
+        targetPath: skill.referenced ? skill.path : join(piProjectDir(cwd), "skills", name, "SKILL.md"),
         referenced: skill.referenced,
         content: withPlaceholder(skill.text, withheld === null, note),
         ceiling: ceiling.capabilities,
@@ -284,8 +298,10 @@ export function planInit(
     grant,
     withheldCapabilities,
     routableWorkspaces,
-    grantEnvPath: join(cwd, ".pi", "grants.env"),
-    grantEnvContent: renderGrantEnv({
+    stateDir: projectStateDir(cwd),
+    settingsPath: projectSettingsPath(cwd),
+    gitignorePath: projectGitignorePath(cwd),
+    settingsContent: renderProjectSettings({
       skills: grantEnvSkills,
       live: grant,
       withheld: withheldCapabilities,
@@ -359,32 +375,64 @@ async function replace(path: string, content: string, outcome: InitOutcome): Pro
  * edit an operator makes to one of these files IS the capability decision, and the second run of a
  * scaffolding command is exactly when it would be destroyed.
  *
- * **`--force` never regenerates `.pi/grants.env`** (R-79). It rewrites the definition copies, which is the
+ * **`--force` never regenerates `settings.json`** (R-79). It rewrites the definition copies, which is the
  * documented re-sync path for R-74 — but the grant file is the *reviewed artifact*, and an operator who had
  * deleted `agent:build` and added a ledger path would have had both silently restored to generated defaults
  * by a command whose usage text mentions only `allowed-tools`. Deleting the file is how to regenerate it,
  * and that is not something anyone does by accident.
  */
+/**
+ * Whether git would ignore `settings.json` anyway — the common case, because most projects' root `.gitignore`
+ * lists `.pi/`, and git never descends into an ignored directory, so the nested `!settings.json` cannot
+ * re-include it (ADR-0076 PR 3c review finding). `true` = ignored, `false` = tracked-or-untracked, `null` =
+ * not a git checkout or git unavailable; the caller only warns on `true`.
+ */
+export async function settingsIgnoredByGit(settingsPath: string): Promise<boolean | null> {
+  try {
+    const { status } = spawnSync(
+      "git",
+      ["-C", dirname(dirname(dirname(settingsPath))), "check-ignore", "-q", "--", settingsPath],
+      {
+        stdio: "ignore",
+        timeout: 5000,
+      },
+    );
+    if (status === 0) return true;
+    if (status === 1) return false;
+    return null; // 128: not a repository, or git refused
+  } catch {
+    return null;
+  }
+}
+
+/** The two lines an operator adds to the root `.gitignore` so the reviewable record is committable. */
+export const GITIGNORE_REINCLUDE_LINES = [
+  `!${PI_PROJECT_DIR}/`,
+  `!${PI_PROJECT_DIR}/${PROJECT_STATE_DIRNAME}/${PROJECT_FILES.settings}`,
+];
+
 export async function applyInit(plan: InitPlan, options: { force?: boolean } = {}): Promise<InitOutcome> {
   const outcome: InitOutcome = { written: [], kept: [], failed: [] };
-  const projectPi = join(plan.grantEnvPath, "..");
-  try {
-    // A new project gets a private control directory. Existing operator/Pi state is never chmodded or reused.
-    await mkdir(projectPi, { mode: 0o700 });
-    const created = await lstat(projectPi);
-    if (!created.isDirectory() || created.isSymbolicLink()) throw Error("private .pi directory creation failed");
-  } catch (error) {
-    if ((error as { code?: string }).code !== "EEXIST") {
-      outcome.failed.push({ path: projectPi, error: error instanceof Error ? error.message : String(error) });
-      return outcome;
-    }
-    const existing = await lstat(projectPi);
-    if (existing.isSymbolicLink() || !existing.isDirectory()) {
-      outcome.failed.push({
-        path: projectPi,
-        error: "existing .pi state is not a directory; it was not followed or changed",
-      });
-      return outcome;
+  // pi's `.pi` first, then our owner-only state directory inside it. Existing operator/Pi state is never
+  // chmodded, followed through a symlink, or reused if it is not a directory.
+  for (const dir of [dirname(plan.stateDir), plan.stateDir]) {
+    try {
+      await mkdir(dir, { mode: 0o700 });
+      const created = await lstat(dir);
+      if (!created.isDirectory() || created.isSymbolicLink()) throw Error("private state directory creation failed");
+    } catch (error) {
+      if ((error as { code?: string }).code !== "EEXIST") {
+        outcome.failed.push({ path: dir, error: error instanceof Error ? error.message : String(error) });
+        return outcome;
+      }
+      const existing = await lstat(dir);
+      if (existing.isSymbolicLink() || !existing.isDirectory()) {
+        outcome.failed.push({
+          path: dir,
+          error: "existing state path is not a directory; it was not followed or changed",
+        });
+        return outcome;
+      }
     }
   }
   const force = options.force === true;
@@ -393,6 +441,7 @@ export async function applyInit(plan: InitPlan, options: { force?: boolean } = {
     if (force) await replace(skill.targetPath, skill.content, outcome);
     else await createUnlessPresent(skill.targetPath, skill.content, outcome);
   }
-  await createUnlessPresent(plan.grantEnvPath, plan.grantEnvContent, outcome);
+  await createUnlessPresent(plan.settingsPath, plan.settingsContent, outcome);
+  await createUnlessPresent(plan.gitignorePath, PROJECT_GITIGNORE_CONTENT, outcome);
   return outcome;
 }

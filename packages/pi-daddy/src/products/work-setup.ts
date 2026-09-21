@@ -17,6 +17,7 @@ import { withFileLock } from "../governance/file-lock.ts";
 import { intentKey, type IntentSelection } from "./intent-control.ts";
 import { privateDirectory, projectProductDirectory, readProductJson, writeProductJson } from "./product-files.ts";
 import type { WorkPresentation } from "./daily-panel.ts";
+import { projectStateDir, declaredWorkPath, workSetupsDir, PROJECT_FILES } from "../kernel/project-paths.ts";
 
 export const WORK_EFFORTS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 export interface WorkTaskSetup {
@@ -111,10 +112,10 @@ export async function recordWorkSetup(
   expected: DeclaredWorkState | null = null,
 ): Promise<RecordedWorkSetup> {
   const setup = workSetup(value),
-    root = join(resolve(cwd), ".pi"),
-    statePath = join(root, "work-current.json");
-  await projectProductDirectory(root);
-  await privateDirectory(join(root, "work-setups"));
+    root = projectStateDir(cwd),
+    statePath = declaredWorkPath(cwd);
+  await privateDirectory(root);
+  await privateDirectory(workSetupsDir(cwd));
   return withFileLock(statePath, "work setup", async () => {
     const current = await loadDeclaredWork(statePath);
     if (intentKey(current?.selectedSnapshot ?? null) !== intentKey(expected?.selectedSnapshot ?? null))
@@ -305,7 +306,7 @@ export async function selectRecordedWork(
   });
 }
 export async function listWorkSetups(cwd: string): Promise<RecordedWorkSetup[]> {
-  const root = join(resolve(cwd), ".pi", "work-setups");
+  const root = workSetupsDir(cwd);
   let files: string[];
   try {
     files = await readdir(root);
@@ -318,7 +319,7 @@ export async function listWorkSetups(cwd: string): Promise<RecordedWorkSetup[]> 
   for (const file of files.filter((f) => /^[a-f0-9]{64}\.json$/.test(f)).sort()) {
     const value = (await readProductJson(join(root, file))) as RecordedWorkSetup;
     if (
-      value?.state?.statePath !== join(resolve(cwd), ".pi", "work-current.json") ||
+      value?.state?.statePath !== declaredWorkPath(cwd) ||
       file !== `${value.state.selectedSnapshot.snapshot.digest}.json`
     )
       throw Error("invalid work setup history");
@@ -330,11 +331,11 @@ export async function workSetupForSelection(
   cwd: string,
   selection: IntentSelection,
 ): Promise<RecordedWorkSetup | null> {
-  const path = join(resolve(cwd), ".pi", "work-setups", `${selection.snapshot.digest}.json`),
+  const path = join(workSetupsDir(cwd), `${selection.snapshot.digest}.json`),
     value = (await readProductJson(path)) as RecordedWorkSetup | null;
   if (!value) return null;
   if (
-    value.state?.statePath !== join(resolve(cwd), ".pi", "work-current.json") ||
+    value.state?.statePath !== declaredWorkPath(cwd) ||
     intentKey(value.state.selectedSnapshot) !== intentKey(selection)
   )
     throw Error("recorded selection labels mismatch");
@@ -356,7 +357,7 @@ export async function workPresentation(state: DeclaredWorkState): Promise<WorkPr
       }),
     };
   const value = (await readProductJson(
-    join(dirname(state.statePath), "work-outcomes", `${state.outcomeDigest}.json`),
+    join(dirname(state.statePath), PROJECT_FILES.workOutcomes, `${state.outcomeDigest}.json`),
   )) as { outcome: string } | null;
   if (!value) return null;
   if (

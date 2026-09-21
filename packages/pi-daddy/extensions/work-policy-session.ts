@@ -27,10 +27,11 @@ import { privateDirectory, readProductJson, writeProductJson } from "../src/prod
 import type { AdoptionBinding, AdoptionFacts } from "../src/products/vendor/adoption.ts";
 import type { FactoryAuthority } from "../src/products/factory-contract.ts";
 import { experimentHash } from "../src/products/experiment-contract.ts";
+import { workPolicyRegistryPath, workPoliciesDir, workRegistryBindingsDir } from "../src/kernel/project-paths.ts";
 
-const descriptor = (cwd: string) => join(cwd, ".pi", "work-policy-registry.json");
-const policyPath = (cwd: string, digest: string) => join(cwd, ".pi", "work-policies", `${digest}.json`);
-const registryHistoryPath = (cwd: string, scope: string) => join(cwd, ".pi", "work-registry-bindings", `${scope}.json`);
+const descriptor = (cwd: string) => workPolicyRegistryPath(cwd);
+const policyPath = (cwd: string, digest: string) => join(workPoliciesDir(cwd), `${digest}.json`);
+const registryHistoryPath = (cwd: string, scope: string) => join(workRegistryBindingsDir(cwd), `${scope}.json`);
 async function retainRegistryBinding(cwd: string, binding: WorkPolicyRegistry) {
   const path = registryHistoryPath(cwd, binding.initial.scopeDigest),
     old = await readProductJson(path);
@@ -234,11 +235,11 @@ export async function workPolicyMenu(
   if (choice === menu[1]) {
     let adoptionBinding = workspace.comparisonContext(comparison.name).adoptionBinding;
     if (!adoptionBinding) {
-      const files = await readdir(join(ctx.cwd, ".pi", "work-policies"));
+      const files = await readdir(workPoliciesDir(ctx.cwd));
       if (files.length > 128) throw Error("candidate profile bound exceeded");
       const candidates: { name: string; policy: WorkPolicy }[] = [];
       for (const file of files.filter((f) => /^[a-f0-9]{64}\.json$/.test(f))) {
-        const saved = (await readProductJson(join(ctx.cwd, ".pi", "work-policies", file))) as {
+        const saved = (await readProductJson(join(workPoliciesDir(ctx.cwd), file))) as {
           name: string;
           policy: WorkPolicy;
         };

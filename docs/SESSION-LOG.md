@@ -5,6 +5,55 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ---
 
+## 2026-09-21 — ADR-0076 PR 3c: one project state directory, settings.json, sixty-minute default
+
+Worktree `claude/adr-0076-pr3c-state-directory` from `73299b5` (PR 3b merged). `src/kernel/project-paths.ts` owns
+every location: project state under `<cwd>/.pi/pi-daddy/` and user state under `<agent dir>/pi-daddy/`
+(`grants/`, `approvals/`, `workspace-leases/`). `test/project-paths.test.ts` was red first (fifty-eight `.pi`
+literals in code across twenty-six files) and now refuses any pi-daddy path literal outside that module; pi's
+own locations (`.pi/skills`, `.pi/settings.json`, `~/.pi/agent`) may still be named in operator text. The
+`.includes(".pi")` refusal guards in the private journals became one predicate with the same semantics.
+
+`pi-daddy init` writes `.pi/pi-daddy/settings.json` (JSON; `buildProjectSettings` keeps every fact the shell file
+carried: grant, per-definition declarations and reasons, withheld capabilities with who declared them, routable
+workspaces, cross-references, cautions, ledger file, default gate) and a `.gitignore` that keeps everything else
+in that directory out of commits. `.pi/grants.env` is no longer written; existing files are ignored, as they always
+were by code. Product directories are created recursively since the state path is two levels deep.
+
+**Operator decisions this session.** The user-level stores move **without migration**, ADR-0020's precedent
+applied literally: `session-report` warns at start when a grant store, approvals file or project ledger exists
+at its pre-3c location and not at the new one, and says what to do. The default child timeout is **sixty
+minutes** (ADR-0038 dated note; test updated): the operator saw working builds killed at twenty. The real fix,
+an inactivity deadline on pi's JSON event stream, is **PR 3e** after the format change, because a `pi --print`
+child gives the parent no activity signal until it exits.
+
+Evidence at `73299b5` plus these edits: typecheck clean; `prettier --check .` clean; project-paths, init, store,
+work, session and layering tests green; smoke OK (its check now reads `settings.json`); model-free integration
+against real pi 0.84.2 with the new default ledger path: 38/38; full unit failing set equals the baseline after
+one daily-host test was repointed. Independent review pass (code-reviewer subagent, seven hypotheses): ten
+findings, all repaired here. The two that mattered: the nested `.gitignore` is inert when a project's root
+`.gitignore` covers `.pi/` (git never descends into an ignored directory), so init now runs `git check-ignore`
+and prints the two re-include lines when the record is uncommittable, with a red-first test; and a recursive
+mkdir in the work command never throws EEXIST, which had made its symlink refusal unreachable, so it creates the
+two levels one at a time as init does. Also: the old `grants.env` is now named at session start (a shell that
+still sources it points the ledger variable at the old ledger); stale twenty-minute comments and two `1200`
+table cells corrected; dead slug/hash code and unused imports removed from the stores; the lease directory uses
+the shared helper; a duplicate content-store path entry removed; `settings.json` takes its ledger name from the
+constant and sorts `withheld` so the file stays diffable; a stale shell-file sentence fixed.
+
+### NEXT SESSION
+
+1. **PR 3d** — one record envelope and one reader across the stores; private controller journals stay under
+   `~/.local/state/pi-daddy/`; importer for the old `.pi/grants.jsonl`; version 0.30.0; skill-harness re-pins.
+2. **PR 3e** — inactivity-based child deadline: children run in pi's JSON event mode, the parent kills only
+   after N minutes without an event, and the dashboard shows live progress. Replaces the wall clock ADR-0038
+   left in place.
+3. PR 4 harness peer + contracts pruned; PR 5 SPEC as layer map + fresh-session probe; PR 6 advisors
+   (ADR-0077, shared package); PR 7 context handoff (ADR-0078); PR 8; PR 9.
+
+
+---
+
 ## 2026-09-21 — ADR-0076 PR 3b: one environment namespace, nine export keys
 
 Worktree `claude/adr-0076-pr3b-env-exports-state` from `797ffef` (PR 3a merged). `src/kernel/env-names.ts` now owns

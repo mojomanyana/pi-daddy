@@ -42,6 +42,7 @@ import { createFixtureDebrief } from "./debrief-fixture.ts";
 export const ENV_DEBRIEF_FIXTURE = "PI_DADDY_DEBRIEF_FIXTURE";
 export { debriefAction as dashboardDebriefAction } from "./debrief-render.ts";
 import { adoptLegacyEnvironment, ENV_LEDGER, legacyEnvironmentWarning } from "../kernel/env-names.ts";
+import { projectLedgerPath } from "../kernel/project-paths.ts";
 
 export const ENV_DAILY_ARCHIVE = "PI_DADDY_ARCHIVE_PROJECTION";
 export const ENV_DAILY_WORK = "PI_DADDY_WORK_LEDGER";
@@ -119,7 +120,7 @@ function shellQuote(value: string): string {
 }
 
 function setupFrame(cwd: string): string {
-  const ledger = resolve(cwd, ".pi", "grants.jsonl");
+  const ledger = projectLedgerPath(cwd);
   return [
     "PI-DADDY",
     "",
