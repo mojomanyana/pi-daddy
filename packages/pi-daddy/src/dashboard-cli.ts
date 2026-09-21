@@ -8,7 +8,7 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseDashboardLedger } from "./dashboard-projection.ts";
 import { renderDashboard } from "./dashboard-render.ts";
-import { defaultActivityTimelinePath, detailForTimeline, parseActivityTimeline, renderActivityTimeline, type TimelineFilter } from "./activity-timeline.ts";
+import { ActivityTimelineAliases, defaultActivityTimelinePath, detailForTimeline, parseActivityTimeline, renderActivityTimeline, resolveActivityTaskSelector, type TimelineFilter } from "./activity-timeline.ts";
 import { createDashboardDisplayControls } from "./dashboard-display-controls.ts";
 import { createDailyViewReader, isDailyViewReader, readDailyView, type DailyViewOptions } from "./daily-view.ts";
 import { renderDailyView } from "./daily-view-render.ts";
@@ -49,6 +49,7 @@ export interface DashboardFrameOptions {
   history?: boolean;
   filter?: TimelineFilter;
   activityDetail?: { taskKey: string; field: "prompt" | "final" };
+  activityAliases?: ActivityTimelineAliases;
   now?: Date;
   dailyView?: DailyViewOptions;
   dailyReader?: ReturnType<typeof createDailyViewReader>;
@@ -149,8 +150,8 @@ export async function dashboardFrame(options: DashboardFrameOptions): Promise<st
       const activity = await readFile(activityPath, "utf8");
       const timeline = parseActivityTimeline(activity);
       let content: { taskKey: string; field: "prompt" | "final"; text: string } | undefined;
-      if (options.activityDetail) try { content = await detailForTimeline(activityPath, options.activityDetail.taskKey, options.activityDetail.field); } catch (error) { return `PI-DADDY — ACTIVITY DETAIL UNAVAILABLE\n${error instanceof Error ? error.message : String(error)}`; }
-      return renderActivityTimeline(timeline, { details: options.details, filter: options.filter, content });
+      if (options.activityDetail) try { const taskKey = resolveActivityTaskSelector(timeline, options.activityDetail.taskKey, options.activityAliases); if (!taskKey) throw Error("TIMELINE_DETAIL_INVALID"); content = await detailForTimeline(activityPath, taskKey, options.activityDetail.field); } catch (error) { return `PI-DADDY — ACTIVITY DETAIL UNAVAILABLE\n${error instanceof Error ? error.message : String(error)}`; }
+      return renderActivityTimeline(timeline, { details: options.details, history: options.history, filter: options.filter, color: options.color, width: options.width, aliases: options.activityAliases, content });
     } catch (error) {
       if ((error as { code?: string }).code === "ENOENT") return setupFrame(options.cwd);
       return "PI-DADDY — ACTIVITY UNAVAILABLE\nTimeline could not be read; no substitute view was shown.";
@@ -179,8 +180,8 @@ export async function dashboardFrame(options: DashboardFrameOptions): Promise<st
   if (text.trimStart().startsWith('{"version":1')) {
     const activity = parseActivityTimeline(text);
     let content: { taskKey: string; field: "prompt" | "final"; text: string } | undefined;
-    if (options.activityDetail) try { content = await detailForTimeline(ledgerPath, options.activityDetail.taskKey, options.activityDetail.field); } catch (error) { return `PI-DADDY — ACTIVITY DETAIL UNAVAILABLE\n${error instanceof Error ? error.message : String(error)}`; }
-    timeline = renderActivityTimeline(activity, { details: options.details, filter: options.filter, content });
+    if (options.activityDetail) try { const taskKey = resolveActivityTaskSelector(activity, options.activityDetail.taskKey, options.activityAliases); if (!taskKey) throw Error("TIMELINE_DETAIL_INVALID"); content = await detailForTimeline(ledgerPath, taskKey, options.activityDetail.field); } catch (error) { return `PI-DADDY — ACTIVITY DETAIL UNAVAILABLE\n${error instanceof Error ? error.message : String(error)}`; }
+    timeline = renderActivityTimeline(activity, { details: options.details, history: options.history, filter: options.filter, color: options.color, width: options.width, aliases: options.activityAliases, content });
   }
   const rendered = timeline ?? renderDashboard(parseDashboardLedger(text, { now: options.now }), {
     color: options.color,
@@ -208,7 +209,7 @@ interface CliOptions {
 function parseArgs(argv: string[]): CliOptions {
   let once = false;
   let details = false;
-  let color = process.stdout.isTTY;
+  let color = Boolean(process.stdout.isTTY) && process.env.NO_COLOR === undefined;
   let ledgerPath: string | undefined, archivePath: string | undefined, workPath: string | undefined, selection: string | undefined;
   let dailyJson = false, debriefFixture = false, debriefJson = false;let hostSocket:string|undefined;
   for (let index = 0; index < argv.length; index += 1) {
@@ -269,7 +270,7 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
       protocol,
       color: cli.color,
       width: process.stdout.columns || 80,
-      ...display.state, actionMenu,
+      ...display.state, activityAliases: display.aliases, actionMenu,
       dailyView, dailyReader, dailyJson: cli.dailyJson, debrief, debriefJson: cli.debriefJson, connected,
     });
     const rendered = feedback ? `${panelLines([feedback], process.stdout.columns || 80)}\n\n${frame}` : frame;

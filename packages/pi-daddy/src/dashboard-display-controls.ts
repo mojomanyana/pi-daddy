@@ -1,8 +1,12 @@
 /** Local display controls; these never dispatch actions to an owner or change ledger state. */
+import { ActivityTimelineAliases } from "./activity-timeline.ts";
+
 export function createDashboardDisplayControls(details: boolean, ledger: boolean) {
   const state: { details: boolean; history: boolean; filter?: "everything" | "agents" | "skills" | "needs-you"; activityDetail?: { taskKey: string; field: "prompt" | "final" } } = { details, history: false, ...(ledger ? { filter: "everything" as const } : {}) };
+  // Held by the panel process, so a refresh or a newly observed root cannot renumber an already displayed alias.
+  const aliases = new ActivityTimelineAliases();
   return {
-    state,
+    state, aliases,
     input(line: string): boolean {
       const input = line.trim(), key = input.toLowerCase();
       if (key === "d") { state.details = !state.details; return true; }
@@ -14,7 +18,7 @@ export function createDashboardDisplayControls(details: boolean, ledger: boolean
     },
     prompt(): string {
       return ledger
-        ? `d Details / h ${state.history ? "Collapse" : "Expand"} history / Everything|Agents|Skills|Needs-you / p|f <root-id:task-id>, then Enter: `
+        ? `d Details / h ${state.history ? "Collapse" : "Expand"} history / Everything|Agents|Skills|Needs-you / p|f <r#/t# or root:task>, then Enter: `
         : "Action number / d Details, then Enter: ";
     },
   };
