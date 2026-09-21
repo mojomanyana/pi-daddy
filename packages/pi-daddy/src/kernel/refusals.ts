@@ -37,6 +37,8 @@ export const REFUSAL_CODES = [
   "CHECK_CONFIGURATION_INVALID",
   "CHECK_IDENTITY_UNAVAILABLE",
   "CHECK_IDENTITY_MISMATCH",
+  // ADR-0076 PR 3d: a ledger with a torn or tampered tail refuses appends until an explicit repair.
+  "LEDGER_DAMAGED",
 ] as const;
 
 export type RefusalCode = (typeof REFUSAL_CODES)[number];

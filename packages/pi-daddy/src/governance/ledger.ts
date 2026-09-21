@@ -317,15 +317,40 @@ export { verifyLedger, type LedgerReport } from "./ledger-report.ts";
  * — because a child running with granted capabilities and no audit line is what the ledger exists to
  * prevent. That is the opposite of what the approvals store does with the same lock, and deliberately so.
  */
+/** The envelope kind for a governance event. Every LedgerEventKind maps; an unknown event shape is a `fact`. */
+export function recordKindForEvent(event: { event?: string }): RecordKind {
+  switch (event.event) {
+    case "capability_decision":
+      return "capability";
+    case "child_lifecycle":
+      return "lifecycle";
+    case "workspace_lease":
+      return "lease";
+    case "check_receipt":
+      return "check";
+    case "workflow_fact":
+      return "fact";
+    default:
+      return "capability"; // legacy unversioned GrantRecord values are capability decisions
+  }
+}
+
 export async function appendLedgerEvent(
   options: LedgerOptions,
   event: RuntimeLedgerEvent | GrantRecord,
 ): Promise<void> {
-  const line = `${JSON.stringify(event)}\n`;
+  // Serialise first: a value JSON cannot represent is a caller TypeError before any filesystem effect, exactly
+  // as the pre-envelope writer behaved (a directory or lock must not appear for an event that cannot be written).
+  JSON.stringify(event);
   try {
-    await appendLedgerLine(options, line);
+    // ADR-0076 PR 3d: every event rides in the shared record envelope; the event stays the body unchanged.
+    // The envelope `at` is the writer's clock; the body keeps its own `ts`. An event with a malformed `ts` is a
+    // corrupt BODY the report names, not a damaged envelope that stops the read.
+    await appendEnvelopeRecord(options.path, recordKindForEvent(event), event);
   } catch (error) {
     if (options.strict ?? true) {
+      // A damaged ledger is a refusal with a stable code, not a generic write failure (operator decision).
+      if (error instanceof GovernanceRefusal) throw error;
       throw new Error(`grant ledger write failed (failing closed): ${String(error)}`);
     }
     // A non-strict append is a deliberate choice not to fail closed. It is NOT a choice to be silent:
@@ -374,3 +399,5 @@ export {
   type WorkflowFactProvenance,
   type WorkflowFactState,
 } from "./workflow-facts.ts";
+import { appendRecord as appendEnvelopeRecord, type RecordKind } from "./record.ts";
+import { GovernanceRefusal } from "../kernel/refusals.ts";

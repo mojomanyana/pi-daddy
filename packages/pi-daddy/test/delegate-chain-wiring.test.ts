@@ -93,7 +93,7 @@ test("ADR-0033: a chain refused at the gate spawns NOTHING", async () => {
   const spawned = lines
     ? lines
         .split("\n")
-        .map((l) => JSON.parse(l))
+        .map((l) => JSON.parse(l).body)
         .filter((r) => r.blocked === false)
     : [];
   assert.deepEqual(spawned, [], "a chain declined at the gate must not have provisioned any child");
@@ -174,7 +174,7 @@ test("an unresolved chain model is ledgered before any approval dialog", async (
   const events = (await readFile(ledger, "utf8"))
     .trim()
     .split("\n")
-    .map((line) => JSON.parse(line));
+    .map((line) => JSON.parse(line).body);
   assert.equal(events.at(-1)?.refusal?.code, "MODEL_UNRESOLVED");
   assert.equal(events.at(-1)?.blocked, true);
 });
@@ -243,7 +243,7 @@ test("ADR-0033: a step that can NEVER run refuses the chain before anyone is ask
     0,
     "a doomed step must not raise a dialog — `tool:bash` was gated and never asked about",
   );
-  const record = JSON.parse((await readFile(ledger, "utf8")).trim());
+  const record = JSON.parse((await readFile(ledger, "utf8")).trim()).body;
   assert.equal(record.refusal.code, "UNKNOWN_TOOL");
   assert.match(record.taskDigest, /^[a-f0-9]{64}$/);
   assert.ok(record.requested.includes("agent:ghost"));
@@ -471,7 +471,7 @@ test("ADR-0033: a gate-refused chain WRITES a ledger line naming the refused sub
     .trim()
     .split("\n")
     .filter(Boolean)
-    .map((l) => JSON.parse(l));
+    .map((l) => JSON.parse(l).body);
   const refusal = lines.find((record) => record.humanDenied === true);
   assert.ok(refusal, `a refused chain must leave a record; got ${JSON.stringify(lines)}`);
   assert.equal(refusal.agentType, "shaper", "the record must name the subject that was DENIED, not the first step");
@@ -506,7 +506,7 @@ test("ledger v3: mixed gate outcomes on ONE chain step remain one execution deci
     .trim()
     .split("\n")
     .filter(Boolean)
-    .map((line) => JSON.parse(line));
+    .map((line) => JSON.parse(line).body);
   assert.equal(decisions.length, 1, "one execution occurrence must have one capability decision");
   assert.deepEqual(decisions[0].approved, ["tool:read"]);
   assert.equal(decisions[0].humanDenied, true);

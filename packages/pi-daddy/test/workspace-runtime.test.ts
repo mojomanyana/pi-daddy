@@ -131,7 +131,7 @@ test("a retained lease whose helper already died is ledgered `lost`, not `retain
   const events = (await readFile(ledgerPath, "utf8"))
     .trim()
     .split("\n")
-    .map((line) => JSON.parse(line));
+    .map((line) => JSON.parse(line).body);
   const release = events.at(-1);
   assert.equal(release.event, "workspace_lease");
   assert.equal(

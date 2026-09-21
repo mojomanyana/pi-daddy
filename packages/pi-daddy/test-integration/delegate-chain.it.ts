@@ -64,7 +64,7 @@ describe("delegate_chain, with steps that really run", { skip }, () => {
     const lines = (await readFile(ledger, "utf8"))
       .trim()
       .split("\n")
-      .map((l) => JSON.parse(l));
+      .map((l) => JSON.parse(l).body);
     const second = lines.find((r) => r.childId?.endsWith(".2"));
     assert.ok(second, "the second step must have a record");
     assert.equal(
@@ -89,7 +89,7 @@ describe("delegate_chain, with steps that really run", { skip }, () => {
     const first = (await readFile(ledger, "utf8"))
       .trim()
       .split("\n")
-      .map((l) => JSON.parse(l))[0];
+      .map((l) => JSON.parse(l).body)[0];
     assert.equal(first.taskFrom, undefined, "an empty string here would assert a predecessor that does not exist");
   });
 
@@ -138,7 +138,7 @@ describe("delegate_chain, with steps that really run", { skip }, () => {
     const lines = (await readFile(ledger, "utf8"))
       .trim()
       .split("\n")
-      .map((l) => JSON.parse(l));
+      .map((l) => JSON.parse(l).body);
     assert.equal(lines.find((line) => line.childId?.endsWith(".2"))?.refusal?.code, "CHILD_EXIT_NONZERO");
     assert.ok(!lines.some((line) => line.childId?.endsWith(".3")), "step 3 must not appear in the ledger at all");
   });

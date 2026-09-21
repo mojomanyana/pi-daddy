@@ -1,5 +1,3 @@
-import { createRequire } from "node:module";
-import { Compile } from "typebox/compile";
 import type { CorrelationMetadata } from "../kernel/correlation.ts";
 import {
   isLedgerObject as object,
@@ -10,6 +8,7 @@ import {
   type LedgerV3Object as ObjectRecord,
 } from "../governance/ledger-v3-validation.ts";
 import { isLedgerCapabilityIdentifier, isLedgerDisplayIdentifier } from "../kernel/ledger-identifiers.ts";
+import { readRecords } from "../governance/record.ts";
 
 export type DashboardState =
   "authorised" | "starting" | "running" | "completed" | "failed" | "refused" | "incomplete" | "historical";
@@ -87,7 +86,6 @@ const START_GRACE_MS = 5_000;
 const EXECUTORS = new Set(["process", "herdr"]);
 // The artifact is frozen, so projection can validate the exact published v2 contract rather than grow a
 // second partial reader. `createRequire` resolves from both src/ in tests and dist/ in the installed package.
-const LEDGER_V2 = Compile(createRequire(import.meta.url)("../../contracts/ledger/v2/ledger-event.schema.json"));
 const TERMINAL_STATES = new Set(["completed", "failed"]);
 
 interface Occurrence {
@@ -291,20 +289,16 @@ export function parseDashboardLedger(text: string, options: DashboardProjectionO
   const workflowFacts: DashboardWorkflowFact[] = [];
   let orphanEvents = 0;
 
-  text.split("\n").forEach((raw, index) => {
-    if (raw.trim() === "") return;
+  // ADR-0076 PR 3d: the ledger is record envelopes. Only the failure class of a damaged line crosses to the
+  // display, never its bytes: a torn line can contain exactly the task text this surface promises not to render.
+  const read = readRecords(text);
+  read.records.forEach((record, index) => {
     const line = index + 1;
-    let event: ObjectRecord;
-    try {
-      const parsed: unknown = JSON.parse(raw);
-      if (!object(parsed)) throw new Error("line is not a JSON object");
-      event = parsed;
-    } catch {
-      // JSON.parse diagnostics may quote the offending input. A foreign/torn line can contain exactly the
-      // task or output text this surface promises never to render, so only the failure class crosses here.
-      corrupt.push({ line, reason: "invalid JSON" });
+    if (!object(record.body)) {
+      corrupt.push({ line, reason: "record body is not an object" });
       return;
     }
+    const event: ObjectRecord = record.body;
 
     if (event.ledgerVersion === undefined && event.event === undefined) {
       const node = legacyNode(event, line, now);
@@ -313,7 +307,10 @@ export function parseDashboardLedger(text: string, options: DashboardProjectionO
       return;
     }
     if (event.ledgerVersion === 2) {
-      if (!LEDGER_V2.Check(event)) {
+      // Only reachable through the one-time import of a pre-format ledger. The frozen v2 schema reader is gone;
+      // what remains is the identity rule it enforced, or it is corruption rather than a historical row.
+      // v2 predates execution identity: a valid v2 event names its discriminator and its child, nothing more.
+      if (typeof event.event !== "string" || typeof event.childId !== "string") {
         corrupt.push({ line, reason: "invalid ledger v2 event" });
         return;
       }
@@ -391,6 +388,7 @@ export function parseDashboardLedger(text: string, options: DashboardProjectionO
     } else if (event.event === "workspace_lease") occurrence.leases.push(event);
     occurrences.set(executionId, occurrence);
   });
+  if (read.damage) corrupt.push({ line: read.damage.line, reason: `ledger damaged: ${read.damage.reason}` });
 
   const cycles = executionParentCycles(occurrences);
   for (const executionId of cycles) {

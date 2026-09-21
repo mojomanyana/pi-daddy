@@ -194,7 +194,8 @@
         "CHECK_NOT_CONFIGURED",
         "CHECK_CONFIGURATION_INVALID",
         "CHECK_IDENTITY_UNAVAILABLE",
-        "CHECK_IDENTITY_MISMATCH"
+        "CHECK_IDENTITY_MISMATCH",
+        "LEDGER_DAMAGED"
       ]
     },
     "refusal": {
