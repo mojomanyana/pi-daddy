@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/mojomanyana/pi-daddy/contracts/ledger/v3/ledger-event.schema.json",
+  "$id": "https://github.com/mojomanyana/pi-daddy/contracts/ledger-record/v1/governance-event.schema.json",
   "title": "pi-daddy ledgerVersion 3 event",
   "description": "One JSON object per JSONL line. Version 3 adds unique execution identity and explicit parent execution identity; legacy and v2 lines are intentionally outside this schema.",
   "oneOf": [

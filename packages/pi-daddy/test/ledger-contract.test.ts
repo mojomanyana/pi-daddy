@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -34,15 +35,21 @@ import {
 import type { CorrelationMetadata } from "../src/kernel/correlation.ts";
 import type { DefinitionDigest } from "../src/kernel/definitions.ts";
 import type { StructuredRefusal } from "../src/kernel/refusals.ts";
-import { buildLedgerV3ContractFixtures, generateLedgerV3Contract } from "../scripts/generate-ledger-v3-contract.ts";
+import {
+  buildLedgerV3ContractFixtures,
+  buildRecordEnvelopeSchema,
+  generateLedgerV3Contract,
+} from "../scripts/generate-ledger-record-contract.ts";
+import { RECORD_KINDS } from "../src/governance/record.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
 after(cleanupTempDirs);
 
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
-const contractRoot = join(packageRoot, "contracts", "ledger", "v3");
-const schemaPath = join(contractRoot, "ledger-event.schema.json");
-const v2Root = join(packageRoot, "contracts", "ledger", "v2");
+const contractRoot = join(packageRoot, "contracts", "ledger-record", "v1");
+const schemaPath = join(contractRoot, "governance-event.schema.json");
+// Ledger v2 is archived (ADR-0076 PR 3d): it is no longer shipped or read, only kept as a historical record.
+const v2Archive = join(packageRoot, "..", "..", "docs", "archive", "contracts", "ledger", "v2");
 const executionId = "exec:00000000-0000-4000-8000-000000000001";
 
 type SchemaNode = {
@@ -498,7 +505,7 @@ test("every v3 builder emits explicit execution identity, including a running He
   assert.equal(workflow.provenance, "planned");
 });
 
-test("regenerating v3 restores the refusal enum without touching the frozen v2 schema", async () => {
+test("regenerating the record contract restores the refusal enum and writes the envelope schema", async () => {
   const dir = await tempDir("ledger-v3-contract-");
   const schemaCopy = join(dir, "ledger-event.schema.json");
   const original = await json(schemaPath);
@@ -509,19 +516,18 @@ test("regenerating v3 restores the refusal enum without touching the frozen v2 s
   await generateLedgerV3Contract({ schema: schemaCopy, fixtures: fixtureCopies });
   assert.equal((await json(join(fixtureCopies, "capability-decision.json"))).ledgerVersion, 3);
   assert.deepEqual((await json(schemaCopy)).$defs.refusalCode.enum, [...REFUSAL_CODES]);
-  assert.equal(
-    (await json(join(v2Root, "ledger-event.schema.json"))).$defs.capabilityDecision.properties.ledgerVersion.const,
-    2,
-  );
+  // The envelope schema is generated from the runtime's constants; the published file must equal the builder.
+  assert.deepEqual(await json(join(contractRoot, "record.schema.json")), buildRecordEnvelopeSchema());
+  assert.deepEqual(buildRecordEnvelopeSchema().properties.kind.enum, [...RECORD_KINDS]);
 });
 
-test("v2 stays a frozen readable historical contract", async () => {
-  const schema = await json(join(v2Root, "ledger-event.schema.json"));
+test("v2 is archived, not shipped: the package has no ledger/v2 and the archive still validates itself", async () => {
+  assert.equal(existsSync(join(packageRoot, "contracts", "ledger", "v2")), false, "ADR-0076 PR 3d retired it");
+  const schema = await json(join(v2Archive, "ledger-event.schema.json"));
   const validator = Compile(schema);
   for (const name of ["capability-decision", "workspace-lease", "child-lifecycle", "check-receipt"]) {
-    const fixture = await json(join(v2Root, "fixtures", `${name}.json`));
+    const fixture = await json(join(v2Archive, "fixtures", `${name}.json`));
     assert.equal(fixture.ledgerVersion, 2);
     assert.equal(validator.Check(fixture), true, name);
-    assert.equal(Object.hasOwn(fixture, "executionId"), false);
   }
 });

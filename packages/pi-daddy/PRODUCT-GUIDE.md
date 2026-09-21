@@ -79,6 +79,11 @@ honestly report declared state with a generic `activity_lifecycle` call; it adds
 
 ## Inspect the read-only execution ledger
 
+Every ledger line is a record envelope chained to the previous line. If pi crashed mid-write, the dashboard shows
+every intact record plus one "ledger damaged at line N" marker, new delegations refuse with `LEDGER_DAMAGED`, and
+`pi-daddy ledger repair <path>` previews the torn tail by line number and size; `--yes` truncates it. An old
+`.pi/grants.jsonl` is imported once at session start and left untouched.
+
 The ledger dashboard (`pi-daddy-dashboard --ledger <path>`, without a connected host or daily inputs)
 shows the latest three quiet roots per workflow and in the ungrouped tree, plus the latest two quiet
 children per parent. Hidden roots have a visible count; hidden child subtrees retain their count.

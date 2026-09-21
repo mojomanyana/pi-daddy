@@ -19,6 +19,10 @@ import { dirname, join } from "node:path";
 import { digestDefinition, parseSkillDefinition } from "../src/kernel/definitions.ts";
 import { cleanupTempDirs, fixture, piAvailable, runCommand, tempDir, verdictFor } from "./harness.ts";
 import { projectLedgerPath } from "../src/kernel/project-paths.ts";
+import { recordLines } from "../test/record-fixtures.ts";
+
+// ADR-0076 PR 3d: ledger files are record envelopes; these fixtures still describe the bodies.
+const rawLines = (...json: string[]) => recordLines(...json.map((j) => JSON.parse(j) as unknown));
 
 after(cleanupTempDirs);
 
@@ -197,19 +201,22 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
       ledger,
       // One valid record, then a torn one. Corruption must be REPORTED, because a line that silently
       // fails to parse is indistinguishable from a spawn that never happened. Its bytes stay private.
-      `${JSON.stringify({
-        ts: new Date().toISOString(),
-        parentId: "d0",
-        childId: "d0.1",
-        depth: 1,
-        requested: ["tool:read"],
-        parentGrant: ["tool:read"],
-        effective: ["tool:read"],
-        denied: [],
-        clipped: [],
-        gatedBlocked: [],
-        blocked: false,
-      })}\n${secret} {"parentId":"d0","childId":"d0.2","dep\n`,
+      recordLines(
+        {
+          ts: new Date().toISOString(),
+          parentId: "d0",
+          childId: "d0.1",
+          depth: 1,
+          requested: ["tool:read"],
+          parentGrant: ["tool:read"],
+          effective: ["tool:read"],
+          denied: [],
+          clipped: [],
+          gatedBlocked: [],
+          blocked: false,
+        },
+        `${secret} {"parentId":"d0","childId":"d0.2","dep`,
+      ),
       "utf8",
     );
 
@@ -252,7 +259,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     };
     await writeFile(
       ledger,
-      [
+      rawLines(
         // A mixed record — two capabilities, two sources — plus a legacy line that must not be believed.
         JSON.stringify({
           ...base,
@@ -267,7 +274,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
           approvalSources: { "tool:bash": "persisted" },
         }),
         JSON.stringify({ ...base, childId: "d0.3", approved: ["tool:bash"], approvalSource: "prompt" }),
-      ].join("\n") + "\n",
+      ),
       "utf8",
     );
 
@@ -321,7 +328,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     const parsed = parseSkillDefinition(`${cwd}/.pi/skills/docs-writer/SKILL.md`, DOCS_WRITER);
     assert.ok(parsed, "precondition: the fixture parses");
     const real = digestDefinition(parsed).sha256;
-    await writeFile(ledger, `${line(real, "d0.1")}\n${line(real, "d0.2")}\n${line("0".repeat(64), "d0.3")}\n`, "utf8");
+    await writeFile(ledger, rawLines(line(real, "d0.1"), line(real, "d0.2"), line("0".repeat(64), "d0.3")), "utf8");
 
     const r = await runCommand({
       cwd,
@@ -443,11 +450,11 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     };
     await writeFile(
       ledger,
-      [
+      rawLines(
         JSON.stringify({ ...base, childId: "d0.1", agentType: "deploy" }),
         JSON.stringify({ ...base, childId: "d0.2", agentType: "deploy" }),
         JSON.stringify({ ...base, childId: "d0.3", agentType: "deploy" }),
-      ].join("\n") + "\n",
+      ),
       "utf8",
     );
 
@@ -541,7 +548,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     const lines = (await readFile(projectLedgerPath(cwd), "utf8"))
       .trim()
       .split("\n")
-      .map((line) => JSON.parse(line));
+      .map((line) => JSON.parse(line).body);
     assert.equal(lines.at(-1)?.refusal?.code, "GRANT_STORE_INVALID");
     assert.equal(lines.at(-1)?.refusal?.details?.reason, "unsupported-version");
   });
@@ -689,7 +696,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     const ledger = join(dir, "ledger.jsonl");
     await writeFile(
       ledger,
-      `${JSON.stringify({
+      recordLines({
         ts: new Date().toISOString(),
         parentId: "d0",
         childId: "d0.1",
@@ -701,7 +708,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
         clipped: [],
         gatedBlocked: [],
         blocked: true,
-      })}\n`,
+      }),
       "utf8",
     );
 

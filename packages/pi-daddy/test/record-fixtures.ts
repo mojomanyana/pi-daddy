@@ -34,7 +34,8 @@ export function recordLinesOf(kind: RecordKind | null, ...items: unknown[]): str
       id: `r-${seq}`,
       body: item,
     };
-    const line: string = JSON.stringify({ ...draft, digest: recordDigest(draft) });
+    const plain = JSON.parse(JSON.stringify(draft)) as Record<string, unknown>;
+    const line: string = JSON.stringify({ ...plain, digest: recordDigest(plain) });
     out.push(line);
     prevLine = line;
   }

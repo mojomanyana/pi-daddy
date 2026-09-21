@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/mojomanyana/pi-daddy/contracts/ledger-record/v1/record.schema.json",
+  "title": "pi-daddy ledger record envelope v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v",
+    "seq",
+    "prev",
+    "at",
+    "kind",
+    "id",
+    "body",
+    "digest"
+  ],
+  "properties": {
+    "v": {
+      "const": 1
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "prev": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      ],
+      "description": "SHA-256 of the previous line's bytes; null for the first record"
+    },
+    "at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "the writer's clock, not the body's timestamp"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "binding",
+        "capability",
+        "lifecycle",
+        "approval",
+        "lease",
+        "check",
+        "fact",
+        "work",
+        "control",
+        "experiment",
+        "activity",
+        "advice"
+      ]
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "body": {
+      "description": "the record payload; a governance event validates against governance-event.schema.json"
+    },
+    "imported": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "line"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "description": "present on records copied from a pre-format ledger; the source is left untouched"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "SHA-256 of the canonical JSON of the record without this field"
+    }
+  }
+}

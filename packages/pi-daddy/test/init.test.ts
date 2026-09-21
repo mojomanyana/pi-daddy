@@ -1174,3 +1174,27 @@ test("init reports when the root .gitignore makes settings.json uncommittable (A
     "not a repository: no claim",
   );
 });
+
+test("pi-daddy ledger repair parses, previews by default and truncates only with --yes (ADR-0076 PR 3d)", async () => {
+  assert.deepEqual(parseArgs(["node", "cli", "ledger", "repair", "/tmp/x.jsonl"]), {
+    command: "ledger-repair",
+    force: false,
+    errors: [],
+    ledgerPath: "/tmp/x.jsonl",
+    yes: false,
+  });
+  assert.equal(parseArgs(["node", "cli", "ledger", "repair", "/tmp/x.jsonl", "--yes"]).yes, true);
+  assert.deepEqual(parseArgs(["node", "cli", "ledger", "verify"]).errors, [
+    "ledger needs: repair <path> [--yes] | import <source> <target>",
+  ]);
+  const dir = await project();
+  const path = join(dir, "ledger.jsonl");
+  const { appendRecord, readRecordsFile } = await import("../src/governance/record.ts");
+  await appendRecord(path, "capability", { n: 1 });
+  await writeFile(path, `${await readFile(path, "utf8")}{"v":1,"seq":2,"torn`);
+  assert.equal(await main(["node", "cli", "ledger", "repair", path]), 1, "preview exits non-zero and changes nothing");
+  assert.equal((await readRecordsFile(path)).damage?.line, 2);
+  assert.equal(await main(["node", "cli", "ledger", "repair", path, "--yes"]), 0);
+  assert.equal((await readRecordsFile(path)).damage, null);
+  assert.equal(await main(["node", "cli", "ledger", "repair", path]), 0, "an intact ledger has nothing to repair");
+});

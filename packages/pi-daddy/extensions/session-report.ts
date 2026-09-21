@@ -84,7 +84,7 @@ export async function reportSessionStart(session: GrantsSession, ctx: SessionRep
         "project ledger",
         legacyProjectLedgerPath(ctx.cwd),
         projectLedgerPath(ctx.cwd),
-        "it is kept; the single-ledger release will import it",
+        "it is imported once at session start; the old file is kept untouched",
       ],
       [
         "grants.env",

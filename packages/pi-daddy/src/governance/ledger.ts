@@ -401,3 +401,38 @@ export {
 } from "./workflow-facts.ts";
 import { appendRecord as appendEnvelopeRecord, type RecordKind } from "./record.ts";
 import { GovernanceRefusal } from "../kernel/refusals.ts";
+
+/**
+ * One-time import of a pre-format ledger (`.pi/grants.jsonl` written before ADR-0076 PR 3d) into a record
+ * envelope file. Each intact line becomes one record with an `imported` marker naming the source and line;
+ * the source is never modified. Import stops at the first unparsable source line and reports it, so a torn
+ * legacy tail is visible rather than silently dropped. Returns what happened; a target that already exists
+ * is left alone (`skipped: "target-exists"`).
+ */
+export async function importLegacyLedger(
+  sourcePath: string,
+  targetPath: string,
+): Promise<{ imported: number; stoppedAt: number | null; skipped: "target-exists" | "source-missing" | null }> {
+  const { existsSync } = await import("node:fs");
+  const { readFile } = await import("node:fs/promises");
+  if (existsSync(targetPath)) return { imported: 0, stoppedAt: null, skipped: "target-exists" };
+  if (!existsSync(sourcePath)) return { imported: 0, stoppedAt: null, skipped: "source-missing" };
+  const lines = (await readFile(sourcePath, "utf8")).split("\n");
+  let imported = 0;
+  for (const [index, raw] of lines.entries()) {
+    if (raw.trim().length === 0) continue;
+    let event: { event?: string; ts?: string };
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("not an object");
+      event = parsed as { event?: string; ts?: string };
+    } catch {
+      return { imported, stoppedAt: index + 1, skipped: null };
+    }
+    await appendEnvelopeRecord(targetPath, recordKindForEvent(event), event, {
+      imported: { path: sourcePath, line: index + 1 },
+    });
+    imported += 1;
+  }
+  return { imported, stoppedAt: null, skipped: null };
+}

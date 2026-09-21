@@ -103,7 +103,7 @@ test("timeline groups child outcomes under a clearly-ended parent with stable sh
 
 test("detail content visualizes terminal controls, preserves newlines, and wraps without ANSI", () => {
   const metadataTimeline = parseActivityTimeline(
-    JSON.stringify(event("task_started", { model: "m\u001b]2;owned\u0007" })),
+    recordLinesOf("activity", event("task_started", { model: "m\u001b]2;owned\u0007" })),
   );
   const metadata = renderActivityTimeline(metadataTimeline, { color: false, width: 120 });
   assert.doesNotMatch(metadata, /\u001b|\u0007/, "metadata cannot write terminal controls");
@@ -162,7 +162,10 @@ test("equal task ids from separate roots never mix parent activity", () => {
 
 test("invalid, tampered and oversized private references refuse rather than exposing a path", () => {
   const timeline = parseActivityTimeline(
-    `${JSON.stringify(event("task_started", { prompt: { digest: "nope", bytes: 999999, ref: "../../secret" } }))}\n`,
+    recordLinesOf(
+      "activity",
+      event("task_started", { prompt: { digest: "nope", bytes: 999999, ref: "../../secret" } }),
+    ),
   );
   assert.equal(timeline.refusals.length, 1);
   assert.match(renderActivityTimeline(timeline, { details: true }), /timeline refusal/);

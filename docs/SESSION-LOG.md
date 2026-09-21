@@ -5,6 +5,47 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ---
 
+## 2026-09-21 — ADR-0076 PR 3d-i: the record envelope for the grants ledger and activity timeline, 0.30.0
+
+Branch `claude/adr-0076-pr3d-record-format`, rebased onto the cleanup (`fc16b10`). `src/governance/record.ts` is the
+one envelope: sequence, previous-line hash, writer clock, closed kind set, body, digest; `appendRecord` reads only the
+tail and refuses `LEDGER_DAMAGED` on a torn or tampered tail; `readRecords` returns the intact prefix plus one damage
+marker; `repairLedger` truncates only with explicit consent. Red-first tests cover chain, digest, torn tail, tamper,
+sequence gap and unknown kind. The grants ledger writer, the verify report and the dashboard projection use it (the
+frozen v2 schema reader is gone; imported v2 bodies keep the identity rule it enforced). The activity timeline uses
+the same envelope. `importLegacyLedger` copies a pre-format ledger once at session start, bodies verbatim with source
+markers. `pi-daddy ledger repair <path> [--yes]` previews by line number and size, truncates only with `--yes`. Ledger
+v3 moved to `contracts/ledger-record/v1/governance-event.schema.json` beside the generated `record.schema.json`;
+ledger v2 and its generator are archived. Version is 0.30.0. The work ledger keeps its v4 line: 54 byte-level cases
+pin it, and the operator moved its conversion to PR 3d-ii.
+
+Independent review pass (code-reviewer subagent, eight hypotheses): nine findings, all repaired. The two that
+mattered: `ledger repair --yes` on a pre-format file would have deleted it whole, and the writer's refusal
+recommended exactly that — repair now refuses any file whose first line is not a record and both messages say
+"import, do not repair" (`pi-daddy ledger import <source> <target>` added); and the digest was computed before
+serialisation, so a body carrying a `Date` would read back as damage and brick the store — the record is now
+digested over its serialised round-trip. Also repaired: a record larger than the 256 KiB tail window made the file
+unappendable (full read fallback); the import await lacked its own try (R-60); repair on a missing path threw;
+a mid-file tamper is now a stated limit in the module header and the preview warns when dropped lines still parse;
+the usage line was misplaced; a duplicate smoke assertion went. Refuted: chain and digest soundness otherwise,
+fail-closed on every strict path, no content leakage in any damage message, importer semantics, no remaining raw
+readers, contract exactness, version consistency.
+
+Evidence after the repairs, working tree on top of `3a6f0a9` (wip; squashed into the PR commit): Prettier check
+clean from the repo root; `tsc -p tsconfig.check.json` zero errors; `npm run test:integration:ci` 38 pass, 0 fail
+against a real pi; `npm run test:smoke` OK; `npm test` 1021 pass, 0 fail in the main run and 205 pass, 0 fail in the
+second runner. Docs-only follow-ups (this paragraph, the PR number) ship inside the same PR by rule 10.
+
+### NEXT SESSION
+
+1. **PR 3d-ii**: work ledger and the private controller journals on the envelope; intent-control v1 retired.
+2. **PR 3e**: inactivity-based child deadline on pi's JSON event stream.
+3. PR 4 harness peer; PR 5 SPEC as layer map + fresh-session probe; PR 6 advisors (ADR-0077, shared package);
+   PR 7 context handoff (ADR-0078); PR 8; PR 9.
+
+
+---
+
 ## 2026-09-21 — cleanup before PR 3d: archive, trim, retire, delete
 
 Branch `claude/adr-0076-cleanup` from `c59e0a3`. Operator direction: "do a cleanup first, big one". All four parts

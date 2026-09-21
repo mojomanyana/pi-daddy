@@ -107,3 +107,54 @@ test("sequence numbers must be contiguous from 1 and kinds must be known", () =>
     reason: "unknown kind",
   });
 });
+
+// Review findings on PR 3d-i, each pinned. Production change that breaks each: reverting the named repair.
+test("a body with toJSON is digested over what was written, so it reads back intact", async () => {
+  const path = join(await tempDir("record-tojson-"), "ledger.jsonl");
+  await appendRecord(path, "activity", { at: new Date("2026-09-21T00:00:00.000Z"), n: 1 });
+  const read = await readRecordsFile(path);
+  assert.equal(read.damage, null);
+  assert.deepEqual(read.records[0].body, { at: "2026-09-21T00:00:00.000Z", n: 1 });
+  await appendRecord(path, "activity", { n: 2 });
+});
+
+test("a record larger than the tail window is still appendable", async () => {
+  const path = join(await tempDir("record-large-"), "ledger.jsonl");
+  await appendRecord(path, "capability", { n: 1 });
+  await appendRecord(path, "capability", { blob: "x".repeat(300 * 1024) });
+  const third = await appendRecord(path, "capability", { n: 3 });
+  assert.equal(third.seq, 3);
+  assert.equal((await readRecordsFile(path)).damage, null);
+});
+
+test("repair refuses to truncate a pre-format ledger, and reports a missing file", async () => {
+  const dir = await tempDir("record-preformat-");
+  const old = join(dir, "grants.jsonl");
+  await writeFile(old, `${JSON.stringify({ ts: "2026-08-16T10:00:00.000Z", childId: "d0.1", effective: [] })}\n`);
+  const preview = await repairLedger(old, { apply: true });
+  assert.equal(preview.preFormat, true);
+  assert.equal(preview.keptLines, 0);
+  assert.match(await readFile(old, "utf8"), /d0\.1/, "apply:true on a pre-format file changed nothing");
+  await assert.rejects(
+    appendRecord(old, "capability", { n: 1 }),
+    (error: unknown) =>
+      error instanceof GovernanceRefusal &&
+      error.code === LEDGER_DAMAGED &&
+      /predates the record format/.test(error.message),
+  );
+  assert.equal((await repairLedger(join(dir, "missing.jsonl"), { apply: false })).missing, true);
+});
+
+test("damage in the middle is reported on read and counted as parseable in a repair preview", async () => {
+  const path = join(await tempDir("record-middle-"), "ledger.jsonl");
+  for (const n of [1, 2, 3]) await appendRecord(path, "capability", { n });
+  const lines = (await readFile(path, "utf8")).split("\n");
+  const tampered = JSON.parse(lines[1]);
+  tampered.body.n = 99;
+  lines[1] = JSON.stringify(tampered);
+  await writeFile(path, lines.join("\n"));
+  const preview = await repairLedger(path, { apply: false });
+  assert.equal(preview.keptLines, 1);
+  assert.equal(preview.dropped.length, 2);
+  assert.equal(preview.droppedParseable, 2, "both remaining lines still parse: not a torn tail");
+});

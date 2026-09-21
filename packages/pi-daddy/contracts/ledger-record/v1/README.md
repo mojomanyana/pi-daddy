@@ -4,7 +4,7 @@ Canonical machine contract for one `ledgerVersion: 3` JSONL line:
 
 - `ledger-event.schema.json` — closed JSON Schema draft 2020-12 event union.
 - `fixtures/*.json` — deterministic examples generated through the production builders by
-  `scripts/generate-ledger-v3-contract.ts`.
+  `scripts/generate-ledger-record-contract.ts`.
 
 ## Dispatch and compatibility
 
@@ -34,3 +34,11 @@ All timestamp fields share one schema/runtime profile: JSON Schema `date-time` w
 ## Privacy and provenance
 
 The privacy boundary is unchanged: no task text, prompts, tool arguments, child output, or tool results. Fields displayed as identities and every capability use explicit ASCII identifier grammars in both schema and runtime; public builders assert that their serialized event passes the same exact reader. Correlation display fields use the identifier grammar rather than free-form prose, and a top-level null `assurance_scope` is omitted/rejected consistently. Trusted task/definition digests remain outside `correlation`. Correlation is caller-declared join metadata and never becomes proof that a workflow transition was validated or that an inline skill executed.
+
+## Note 2026-09-21 — this directory was `contracts/ledger/v3`
+
+Since ADR-0076 PR 3d every ledger line is a **record envelope** (`record.schema.json`: format, sequence, previous-line
+hash, writer timestamp, kind, id, body, digest). What this README calls a v3 event is now the **body** of a record of
+kind `capability`, `lifecycle`, `lease`, `check` or `fact`; the event fields are unchanged and
+`governance-event.schema.json` is the same schema under its new name. Ledger v2 is archived under
+`docs/archive/contracts/ledger/v2` and no longer read; a pre-format ledger is imported once at session start.

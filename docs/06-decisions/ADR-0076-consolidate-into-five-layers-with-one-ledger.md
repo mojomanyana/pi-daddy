@@ -311,3 +311,7 @@ The work ledger's conversion moved from 3d-i to 3d-ii (operator decision the sam
 suite pins the v4 line, and 54 of those cases assert properties of the raw line, so its conversion is a deliberate
 rewrite rather than a repoint. 3d-i ships the envelope for the grants ledger and the activity timeline.
 
+**3d-i landed (2026-09-21):** the envelope, reader, repair command, importer and `ledger-record/v1` contract, for the
+grants ledger and activity timeline, at version 0.30.0. The checklist row "one hash-chained ledger" is therefore
+half-done by design: the work ledger and the private controller journals follow in 3d-ii.
+

@@ -12,7 +12,16 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
-## Unreleased — source layered under `src/{kernel,governance,executors,products}` (ADR-0076 PR 2)
+## 0.30.0 — one record envelope, one namespace, one state directory (ADR-0076 PRs 2 through 3d-i and the cleanup)
+
+**PR 3d-i (BREAKING wire):** every grants-ledger and activity-timeline line is a record envelope
+(`contracts/ledger-record/v1/record.schema.json`); governance events are the `body`, unchanged
+(`governance-event.schema.json`, formerly ledger v3). A damaged file is read up to the damage and refuses appends with
+`LEDGER_DAMAGED` until `pi-daddy ledger repair <path> --yes`. A pre-format `.pi/grants.jsonl` is imported once at
+session start; ledger v2 is archived and no longer read. Consumers that pinned ledger v3 re-pin to
+`ledger-record/v1`; the work ledger keeps its v4 line until PR 3d-ii.
+
+**Earlier on this line (PR 2):** source layered under `src/{kernel,governance,executors,products}`
 
 **Cleanup (same unreleased line, BREAKING):** five features are deleted: the bwrap digest effect profile,
 factory orders, measured orders and sessions, the producer IPC bridge, and `delegate_all`'s primary/shadow mode

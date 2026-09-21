@@ -39,6 +39,8 @@ import { panelText } from "./products/daily-panel.ts";
 import { adoptLegacyEnvironment, legacyEnvironmentWarning } from "./kernel/env-names.ts";
 import { declaredWorkPath } from "./kernel/project-paths.ts";
 import { PI_PROJECT_DIR, PROJECT_FILES, PROJECT_STATE_DIRNAME } from "./kernel/project-paths.ts";
+import { repairLedger } from "./governance/record.ts";
+import { importLegacyLedger } from "./governance/ledger.ts";
 
 /** The reviewable record, as the operator sees it relative to the project (ADR-0076 PR 3c). */
 const SETTINGS_REL = `${PI_PROJECT_DIR}/${PROJECT_STATE_DIRNAME}/${PROJECT_FILES.settings}`;
@@ -52,6 +54,8 @@ Usage:
                                            declare one current obligation for ordinary delegation
   pi-daddy work list | work show [--dir <path>]
                                            inspect saved setups or selected outcome (no model calls)
+  pi-daddy ledger repair <path> [--yes]   show the damaged tail of a ledger; --yes truncates it (ADR-0076)
+  pi-daddy ledger import <source> <target> copy a pre-format ledger into the record format; the source is untouched
   In Pi: /grants work                     guided multi-task/model/effort/dependency setup and run
          /grants learning                 retained review, trust, adoption and later outcomes
   pi-daddy guide | current               installed product guide / current requirement register
@@ -66,7 +70,21 @@ stays unspawnable. Capabilities that can change your machine
             It never rewrites ${SETTINGS_REL} — delete that file if you want it regenerated.`;
 
 export interface ParsedArgs {
-  command: "init" | "work-add" | "work-list" | "work-show" | "guide" | "current" | "help" | "version";
+  command:
+    | "init"
+    | "work-add"
+    | "work-list"
+    | "work-show"
+    | "ledger-repair"
+    | "ledger-import"
+    | "guide"
+    | "current"
+    | "help"
+    | "version";
+  importTarget?: string;
+  /** `ledger repair <path>`: the ledger file; `yes` applies, otherwise preview only. */
+  ledgerPath?: string;
+  yes?: boolean;
   dir?: string;
   force: boolean;
   id?: string;
@@ -91,6 +109,25 @@ export function parseArgs(argv: string[]): ParsedArgs {
   const [command, ...tail] = args;
   if (command === "guide" || command === "current")
     return { command, force: false, errors: tail.length ? [`${command} takes no arguments`] : [] };
+  if (command === "ledger") {
+    // ADR-0076 PR 3d: `ledger repair <path> [--yes]` previews, --yes truncates; `ledger import <source> <target>`.
+    const [verb, target, ...flags] = tail;
+    if (verb === "import") {
+      const [source, dest, ...extra] = tail.slice(1);
+      if (!source || !dest || source.startsWith("-") || dest.startsWith("-") || extra.length)
+        return { command: "help", force: false, errors: ["ledger import needs: <source> <target>"] };
+      return { command: "ledger-import", force: false, errors: [], ledgerPath: source, importTarget: dest };
+    }
+    if (verb !== "repair" || !target || target.startsWith("-"))
+      return {
+        command: "help",
+        force: false,
+        errors: ["ledger needs: repair <path> [--yes] | import <source> <target>"],
+      };
+    const unknown = flags.filter((f) => f !== "--yes");
+    if (unknown.length) return { command: "help", force: false, errors: [`unknown option "${unknown[0]}"`] };
+    return { command: "ledger-repair", force: false, errors: [], ledgerPath: target, yes: flags.includes("--yes") };
+  }
   if (command !== "init" && command !== "work")
     return { command: "help", force: false, errors: [`unknown command "${command}"`] };
   const work = command === "work";
@@ -349,6 +386,64 @@ export async function main(argv: string[]): Promise<number> {
         "utf8",
       ),
     );
+    return 0;
+  }
+  if (parsed.command === "ledger-import") {
+    const source = resolvePath(process.cwd(), parsed.ledgerPath!),
+      target = resolvePath(process.cwd(), parsed.importTarget!);
+    const result = await importLegacyLedger(source, target);
+    if (result.skipped === "source-missing") {
+      console.error(`pi-daddy: no such file: ${source}`);
+      return 1;
+    }
+    if (result.skipped === "target-exists") {
+      console.error(`pi-daddy: ${target} already exists; import writes only into a new file`);
+      return 1;
+    }
+    console.log(
+      `pi-daddy: imported ${result.imported} record(s) from ${source} into ${target}; the source is untouched` +
+        (result.stoppedAt !== null ? `. Stopped at unparsable source line ${result.stoppedAt}.` : "."),
+    );
+    return result.stoppedAt === null ? 0 : 1;
+  }
+  if (parsed.command === "ledger-repair") {
+    const path = resolvePath(process.cwd(), parsed.ledgerPath!);
+    const preview = await repairLedger(path, { apply: false });
+    if (preview.missing) {
+      console.error(`pi-daddy: no such file: ${path}`);
+      return 1;
+    }
+    if (preview.preFormat) {
+      console.error(
+        `pi-daddy: ${path} predates the record format; repairing it would delete it whole. ` +
+          `Run \`pi-daddy ledger import ${path} <target>\` instead. Nothing was changed.`,
+      );
+      return 1;
+    }
+    if (preview.dropped.length === 0) {
+      console.log(`pi-daddy: ${path} is intact (${preview.keptLines} records); nothing to repair`);
+      return 0;
+    }
+    // Line numbers and sizes only: a torn line can contain exactly the task text this program never prints.
+    console.log(
+      `pi-daddy: ${path} is damaged after record ${preview.keptLines}; ${preview.dropped.length} line(s) would be dropped:\n` +
+        preview.dropped
+          .map((line, i) => `  line ${preview.keptLines + i + 1}: ${Buffer.byteLength(line, "utf8")} bytes`)
+          .join("\n"),
+    );
+    if (preview.droppedParseable > 0)
+      console.log(
+        `pi-daddy: WARNING — ${preview.droppedParseable} of those lines still parse as records. This looks like damage in the ` +
+          `middle of the file, not a torn tail; repairing drops every record after it. Inspect before you truncate.`,
+      );
+    if (!parsed.yes) {
+      console.log(
+        "pi-daddy: preview only. Re-run with --yes to truncate the damaged tail; intact records are never rewritten.",
+      );
+      return 1;
+    }
+    const result = await repairLedger(path, { apply: true });
+    console.log(`pi-daddy: dropped ${result.dropped.length} line(s); ${result.keptLines} records remain`);
     return 0;
   }
   if (parsed.command === "work-list" || parsed.command === "work-show") {

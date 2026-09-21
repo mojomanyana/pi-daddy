@@ -57,6 +57,8 @@ import { defaultActivityTimelinePath } from "../src/products/activity-timeline.t
 import { registerActivityTimeline } from "./activity-timeline.ts";
 import { legacyEnvironmentWarning } from "../src/kernel/env-names.ts";
 import { agentDir, declaredWorkPath } from "../src/kernel/project-paths.ts";
+import { importLegacyLedger } from "../src/governance/ledger.ts";
+import { legacyProjectLedgerPath, projectLedgerPath } from "../src/kernel/project-paths.ts";
 export default function (pi: ExtensionAPI) {
   // The path pi loads as the extension, so a child granted `tool:delegate` can be started with `-e <this>`.
   const extensionPath = (() => {
@@ -107,6 +109,26 @@ export default function (pi: ExtensionAPI) {
     // this absolute identity verbatim, and resolve(abs) remains abs at every deeper session start.
     if (session.ledgerPath) session.ledgerPath = resolve(ctx.cwd, session.ledgerPath);
     try {
+      // ADR-0076 PR 3d: a pre-format project ledger is imported once into the record envelope, bodies verbatim, each
+      // record marked with its source line; the old file is left untouched. Happens before any spawn can append.
+      if (session.governed) {
+        // R-60: its own try — a failed import must not take session start down; it is reported and governance
+        // continues against the new ledger path (an append there still fails closed if that path is unwritable).
+        try {
+          const imported = await importLegacyLedger(legacyProjectLedgerPath(ctx.cwd), projectLedgerPath(ctx.cwd));
+          if (imported.imported > 0 || imported.stoppedAt !== null)
+            ctx.ui.notify(
+              `grants: imported ${imported.imported} record(s) from ${legacyProjectLedgerPath(ctx.cwd)} into ${projectLedgerPath(ctx.cwd)}` +
+                (imported.stoppedAt !== null
+                  ? `; stopped at unparsable source line ${imported.stoppedAt} (kept)`
+                  : "") +
+                "; the old file is untouched.",
+              imported.stoppedAt !== null ? "warning" : "info",
+            );
+        } catch (error) {
+          ctx.ui.notify(`grants: legacy ledger import failed: ${String(error)}`, "error");
+        }
+      }
       try {
         replacePublishedDailyWork(process.env, publishedDailyWork, undefined);
         session.declaredWork = (await loadDeclaredWork(declaredWorkPath(ctx.cwd))) ?? undefined;
