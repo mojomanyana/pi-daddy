@@ -3,7 +3,7 @@ import { execFileSync, spawn } from "node:child_process";
 import { mkdir, symlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
-import { DASHBOARD_PROTOCOL_VERSION, dashboardActionFeedback, dashboardFrame } from "../src/products/dashboard-cli.ts";
+import { DASHBOARD_PROTOCOL_VERSION, dashboardFrame } from "../src/products/dashboard-cli.ts";
 import { createDashboardDisplayControls } from "../src/products/dashboard-display-controls.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 import {
@@ -93,39 +93,6 @@ test("dashboard detail commands select same-named tasks by root key and reject s
   const ambiguous = await dashboardFrame({ cwd, activityDetail: { taskKey: "same-task", field: "prompt" } });
   assert.match(ambiguous, /ACTIVITY DETAIL UNAVAILABLE/);
   assert.doesNotMatch(ambiguous, /first prompt|second prompt/);
-});
-
-test("dashboard feedback never upgrades host readback, unknown or pending results to applied", () => {
-  assert.match(dashboardActionFeedback("pause-new-dispatch", { state: "failed-or-unknown" }), /NO ACTION CLAIM/);
-  assert.match(dashboardActionFeedback("pause-new-dispatch", { state: "readback-only" }), /NO ACTION CLAIM/);
-  assert.match(
-    dashboardActionFeedback("revise-scope", { state: "acknowledged", result: { application: "not-applied" } }),
-    /no applied effect is claimed/,
-  );
-  assert.match(
-    dashboardActionFeedback("revise-scope", {
-      state: "acknowledged",
-      result: { application: "pending-ordinary-boundary" },
-    }),
-    /no applied effect is claimed/,
-  );
-  assert.match(
-    dashboardActionFeedback("pause-new-dispatch", { state: "acknowledged", result: { application: "applied" } }),
-    /native application applied/,
-  );
-  assert.doesNotMatch(
-    dashboardActionFeedback("resume-dispatch", {
-      state: "acknowledged",
-      result: {
-        records: [
-          { request: { requestId: "old" }, application: "applied" },
-          { request: { requestId: "current" }, application: "pending" },
-        ],
-      },
-    }),
-    /native application applied/,
-    "uncorrelated historical records cannot speak for the current dashboard command",
-  );
 });
 
 test("an incompatible core/plugin protocol is loud and renders no guessed tree", async () => {

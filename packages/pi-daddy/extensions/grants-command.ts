@@ -66,8 +66,6 @@ export interface GrantsCommandContext {
     | { kind: "opened" | "reused"; paneId: string; visibleBesideCaller: boolean }
     | { kind: "fallback"; frame: string; visibleBesideCaller: false }
   >;
-  /** Explicit same-process production host lifecycle; owns no model call and never cancels a child on stop. */
-  runHost: (target: string) => Promise<string>;
 }
 
 /**
@@ -77,21 +75,12 @@ export interface GrantsCommandContext {
 const PREVIEW_LIMIT = 12;
 
 /** The verbs `/grants` answers to. Anything else is refused rather than silently treated as no verb. */
-const KNOWN_SUBCOMMANDS: readonly string[] = [
-  "work",
-  "learning",
-  "init",
-  "host",
-  "dashboard",
-  "ledger",
-  "approvals",
-  "revoke",
-];
+const KNOWN_SUBCOMMANDS: readonly string[] = ["init", "dashboard", "ledger", "approvals", "revoke"];
 
 export const grantsCommand = {
   description:
     "Show this session's capability grant, delegation depth, and known agent-type ceilings; " +
-    "/grants work (setup/run/results) | /grants learning | /grants host [fresh-id]|stop | /grants dashboard | /grants approvals | /grants ledger",
+    "/grants init | /grants dashboard | /grants approvals | /grants revoke | /grants ledger",
   handler: async (args: string, ctx: any) => {
     // Everything this command may see, named in one place. Previously these were whatever happened to be in
     // the enclosing closure — which is how a diagnostic came to disagree with the enforcer (R-28).
@@ -121,7 +110,6 @@ export const grantsCommand = {
 
     if (
       await handleConnectedCommand(sub, target, {
-        runHost: ctx.grants.runHost,
         openDashboard: ctx.grants.openDashboard,
         ui: ctx.ui,
       })
@@ -159,11 +147,8 @@ export const grantsCommand = {
             ? ` · ${report.executors.unknown} not recorded (written before 0.16.0, which added the field)`
             : ""),
       );
-      if (report.workflowFacts > 0) {
-        lines.push(
-          `  workflow   ${report.workflowFacts} provenance-labelled fact(s) — not counted as enforced children`,
-        );
-      }
+      if (report.retired > 0)
+        lines.push(`  retired    ${report.retired} event(s) of a kind written by an earlier version; valid history`);
       // R-51. ADR-0018 advertises that the ledger answers "did these four children run the same
       // instructions?" and "has this definition changed since?" — and nothing read `definitionDigest`, so
       // both needed hand-written jq and the second was not reproducible with `sha256sum` (the digest covers

@@ -1,6 +1,6 @@
 {
   "name": "pi-daddy",
-  "version": "0.30.0",
+  "version": "0.31.0",
   "description": "Capability governance for pi sub-agents: spawn Agent Skills (SKILL.md) definitions whose allowed-tools becomes a grant that can only narrow going down a delegation tree, enforced by pi's own --tools allowlist, with an append-only ledger.",
   "keywords": [
     "pi-package",
@@ -29,34 +29,6 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
-    "./kernel": {
-      "types": "./dist/kernel/index.d.ts",
-      "default": "./dist/kernel/index.js"
-    },
-    "./ledger": {
-      "types": "./dist/governance/ledger-public.d.ts",
-      "default": "./dist/governance/ledger-public.js"
-    },
-    "./approvals": {
-      "types": "./dist/governance/approvals-public.d.ts",
-      "default": "./dist/governance/approvals-public.js"
-    },
-    "./executors": {
-      "types": "./dist/executors/index.d.ts",
-      "default": "./dist/executors/index.js"
-    },
-    "./dashboard": {
-      "types": "./dist/products/dashboard-public.d.ts",
-      "default": "./dist/products/dashboard-public.js"
-    },
-    "./work": {
-      "types": "./dist/products/work-public.d.ts",
-      "default": "./dist/products/work-public.js"
-    },
-    "./learning": {
-      "types": "./dist/products/learning-public.d.ts",
-      "default": "./dist/products/learning-public.js"
-    },
     "./contracts/*": "./contracts/*"
   },
   "bin": {
@@ -72,8 +44,6 @@
     "THIRD_PARTY_LICENSES",
     "THIRD_PARTY_NOTICES.md",
     "README.md",
-    "PRODUCT-GUIDE.md",
-    "REQUIREMENTS.md",
     "CHANGELOG.md",
     "LICENSE"
   ],
@@ -81,11 +51,9 @@
     "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.check.json",
     "test": "node scripts/unit-tests.ts",
-    "test:dashboard-pty": "if [ \"$(uname -s)\" = Linux ]; then python3 test/dashboard-cli-pty.py; else echo 'dashboard PTY probe requires Unix pty/Unix sockets'; fi",
     "test:integration": "node --test test-integration/*.it.ts",
     "test:integration:ci": "node --test test-integration/approval.it.ts test-integration/governance.it.ts test-integration/activity.it.ts",
     "contracts:generate": "node scripts/generate-ledger-record-contract.ts",
-    "contracts:generate:v4": "node scripts/generate-ledger-v4-contract.ts contracts/ledger/v4",
     "prepack": "npm run build",
     "test:smoke": "node scripts/smoke-installed.mjs"
   },

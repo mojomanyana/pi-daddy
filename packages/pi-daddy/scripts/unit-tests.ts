@@ -2,16 +2,12 @@ import { readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
-/** The 205-case path FILE aggregates existing 30s/60s groups. Only that wrapper gets 120s. */
+/** One batch: every unit test file, each case bounded by the same timeout. */
 export function unitTestBatches(files: readonly string[]) {
   const all = [...files].sort();
   if (new Set(all).size !== all.length || all.some((f) => !/^test\/[a-zA-Z0-9-]+\.test\.ts$/.test(f)))
     throw Error("exact ordinary file inventory required");
-  const path = "test/work-ledger-path.test.ts";
-  return [
-    { files: all.filter((f) => f !== path), timeout: 45000, outer: 180000 },
-    { files: all.filter((f) => f === path), timeout: 120000, outer: 125000 },
-  ].filter((b) => b.files.length);
+  return [{ files: all, timeout: 45000, outer: 180000 }].filter((b) => b.files.length);
 }
 /** Every required file is run once, including after a failed earlier batch; no test-name filtering. */
 export function runUnitTests(directory = process.cwd()) {

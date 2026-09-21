@@ -1,5 +1,4 @@
 export interface GrantsConnectedCommandContext {
-  runHost: (target: string) => Promise<string>;
   openDashboard: () => Promise<
     | { kind: "opened" | "reused"; paneId: string; visibleBesideCaller: boolean }
     | { kind: "fallback"; frame: string; visibleBesideCaller: false }
@@ -12,14 +11,6 @@ export async function handleConnectedCommand(
   target: string | undefined,
   ctx: GrantsConnectedCommandContext,
 ): Promise<boolean> {
-  if (sub === "host") {
-    try {
-      ctx.ui.notify(`grants: ${await ctx.runHost(target ?? "")}`, "info");
-    } catch (error) {
-      ctx.ui.notify(`grants: host unavailable — ${error instanceof Error ? error.message : String(error)}`, "error");
-    }
-    return true;
-  }
   if (sub === "dashboard") {
     try {
       const opened = await ctx.openDashboard();

@@ -12,6 +12,26 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## 0.31.0 — the big cleanup: the delegate path and its record, nothing else (BREAKING)
+
+Deleted, by operator decision, everything that was not the three tools, approvals, the ledger, workspaces, executors,
+the activity timeline and the read-only dashboard: the skill-harness learning product (`/grants host`, `/grants
+learning`, daily dashboard host, debrief, blind interventions, adoption policy, experiments, resource budget, intent and
+dispatch control, ordinary-children cancellation), the work DAG (`/grants work`, `pi-daddy work *`) and the work
+ledger v4, the daily view and panel, the check runner and workflow facts (ledger event kinds `check_receipt` and
+`workflow_fact`, refusal codes `CHECK_*`), the `guide` and `current` commands, `PRODUCT-GUIDE.md` and
+`REQUIREMENTS.md`. `pi-daddy-dashboard` takes only `--ledger`, `--once`, `--details`, `--no-color`.
+
+**What to do about it.** The export map is now the root and `contracts/*` only: replace any import from
+`pi-daddy/kernel`, `/ledger`, `/approvals`, `/executors`, `/dashboard`, `/work` or `/learning` with `pi-daddy`. Every
+contract except `contracts/ledger-record/v1` is gone; regenerate consumers from that one. skill-harness is no longer
+referenced. Project files `work.jsonl`, `work-current.json`, `work-setups/`, `work-outcomes/`, `work-policy-registry.json`,
+`work-policies/`, `work-registry-bindings/`, `learning-workspace.json` and `work-last-run.json` under `.pi/pi-daddy/`
+are no longer read or written; delete them when you like.
+
+The repository's `docs/` folder, `CLAUDE.md` and the pre-commit branch guard are gone too; `AGENTS.md` carries the
+rules, the decisions still in force, the measured facts and the roadmap, and `README.md` is the product description.
+
 ## 0.30.0 — one record envelope, one namespace, one state directory (ADR-0076 PRs 2 through 3d-i and the cleanup)
 
 **PR 3d-i (BREAKING wire):** every grants-ledger and activity-timeline line is a record envelope

@@ -1,5 +1,5 @@
 import { Compile } from "typebox/compile";
-import { parseWorkJson } from "./work-ledger-json.ts";
+import { parseRetentionJson } from "./retention-json.ts";
 import type { ExecutionRetentionManifest } from "./execution-retention.ts";
 
 const string = (maxLength = 512) => ({
@@ -193,7 +193,7 @@ export function parseExecutionRetentionManifest(text: string): ExecutionRetentio
   // Manifest numbers are integers; use the existing exact-token parser before lossy Number conversion.
   let value: unknown;
   try {
-    value = parseWorkJson(text);
+    value = parseRetentionJson(text);
   } catch {
     throw new TypeError("invalid retention JSON");
   }

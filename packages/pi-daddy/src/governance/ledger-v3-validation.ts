@@ -1,10 +1,20 @@
 import { normaliseCorrelation, type CorrelationMetadata } from "../kernel/correlation.ts";
 import { isExecutionId } from "../kernel/execution-id.ts";
 import { REFUSAL_CODES } from "../kernel/refusals.ts";
-import { isWorkflowFactId, isWorkflowIdentifier, workflowFactStateMatches } from "./workflow-fact-id.ts";
 import { isLedgerCapabilityIdentifier, isLedgerDisplayIdentifier } from "../kernel/ledger-identifiers.ts";
 
 export type LedgerV3Object = Record<string, unknown>;
+
+/**
+ * Event kinds that 0.30.0 and earlier wrote and 0.31.0 no longer builds (the check runner and workflow facts were
+ * deleted). A ledger is append-only, so a line written then is still a valid line now: readers accept these
+ * discriminators as historical and count them, and nothing here can produce a new one. Removing a kind from this
+ * set turns an operator's existing record into "corrupt" on upgrade, which is the failure this set exists to prevent.
+ */
+export const RETIRED_LEDGER_EVENT_KINDS: ReadonlySet<string> = new Set(["check_receipt", "workflow_fact"]);
+export function isRetiredLedgerEvent(event: { event?: unknown }): boolean {
+  return typeof event.event === "string" && RETIRED_LEDGER_EVENT_KINDS.has(event.event);
+}
 
 const SHA256_RE = /^[a-f0-9]{64}$/i;
 const EXECUTORS = new Set(["process", "herdr"]);
@@ -132,31 +142,6 @@ const FIELDS = {
     "deadlineAt",
     "herdrPaneId",
     "herdrAgentName",
-    "correlation",
-  ]),
-  check_receipt: new Set([
-    "ledgerVersion",
-    "event",
-    "ts",
-    "executionId",
-    "parentExecutionId",
-    "childId",
-    "receiptId",
-    "workspaceId",
-    "checkId",
-    "treeSha",
-    "correlation",
-  ]),
-  workflow_fact: new Set([
-    "ledgerVersion",
-    "event",
-    "ts",
-    "factId",
-    "source",
-    "provenance",
-    "kind",
-    "subject",
-    "state",
     "correlation",
   ]),
 } as const;
@@ -367,52 +352,19 @@ function validateChildLifecycle(event: LedgerV3Object): string | null {
   return null;
 }
 
-function validateCheckReceipt(event: LedgerV3Object): string | null {
-  if (
-    !SHA256_RE.test(String(event.receiptId)) ||
-    !isLedgerDisplayIdentifier(event.workspaceId) ||
-    !isLedgerDisplayIdentifier(event.checkId) ||
-    !isNonEmptyString(event.treeSha) ||
-    !optional(event, "correlation", validCorrelation)
-  ) {
-    return "check receipt required fields are invalid";
-  }
-  return null;
-}
-
-function validateWorkflowFact(event: LedgerV3Object): string | null {
-  if (
-    !isTimestamp(event.ts) ||
-    !isWorkflowFactId(event.factId) ||
-    !isWorkflowIdentifier(event.source) ||
-    !isWorkflowIdentifier(event.subject) ||
-    !["planned", "observed", "controller_validated"].includes(String(event.provenance)) ||
-    !["workflow_phase", "inline_skill", "transition"].includes(String(event.kind)) ||
-    !["pending", "observed", "started", "completed", "blocked"].includes(String(event.state)) ||
-    !validCorrelation(event.correlation) ||
-    !isNonEmptyString((event.correlation as LedgerV3Object).run_id)
-  ) {
-    return "workflow fact required fields are invalid";
-  }
-  return workflowFactStateMatches(event.provenance, event.state)
-    ? null
-    : "workflow fact provenance contradicts its state";
-}
-
 /** Exact, content-free runtime validation for one closed ledger v3 event. */
 export function validateLedgerV3Event(event: LedgerV3Object): string | null {
   if (event.ledgerVersion !== 3) return "unsupported ledger version";
   const kind = event.event;
+  if (isRetiredLedgerEvent(event)) return null; // historical; accepted as written, never validated field by field
   if (typeof kind !== "string" || !Object.hasOwn(FIELDS, kind)) return "unknown ledger event discriminator";
   const allowed = FIELDS[kind as EventKind];
   if (Object.keys(event).some((field) => !allowed.has(field))) return "ledger v3 contains an unsupported field";
-  if (kind === "workflow_fact") return validateWorkflowFact(event);
   const base = validateBase(event);
   if (base) return base;
   if (kind === "capability_decision") return validateCapabilityDecision(event);
   if (kind === "workspace_lease") return validateWorkspaceLease(event);
-  if (kind === "child_lifecycle") return validateChildLifecycle(event);
-  return validateCheckReceipt(event);
+  return validateChildLifecycle(event);
 }
 
 /** Ensure a public builder cannot emit bytes the closed v3 reader would reject. */

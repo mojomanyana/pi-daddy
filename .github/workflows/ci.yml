@@ -6,8 +6,8 @@
 # know to run is not a control, it is a feature"* — and the guards in this repository that never had this
 # failure are the mechanical ones: the line ceiling, the branch guard, the refusal enumeration.
 #
-# So: the suites run on every pull request. Since 2026-08-22 protected `main` requires both matrix legs,
-# a red run blocks merge (see `docs/WORKING-RULES.md` rule 10).
+# So: the suites run on every pull request. `main` carries no branch protection (measured 2026-09-22), so a red
+# run is information for the operator who merges, not a mechanical block (AGENTS.md, hard rules).
 name: CI
 
 on:
@@ -86,4 +86,4 @@ jobs:
 #  - `npm run test:integration` additionally exercises a real Herdr server. CI runs the real-pi subset above;
 #    the Herdr tier stays a local gate because no daemon is provisioned here.
 #  - `PI_DADDY_IT_MODEL=1` costs money and is never run unattended.
-#  - Protected `main` requires both matrix legs, with `enforce_admins` on (verified 2026-08-22).
+#  - `main` has no branch protection; both legs are advisory to the operator who merges (measured 2026-09-22).

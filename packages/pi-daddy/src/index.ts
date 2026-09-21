@@ -11,137 +11,19 @@ export {
 export {
   appendLedgerEvent,
   appendRecord,
-  buildCheckReceiptLedgerEvent,
   buildChildLifecycleEvent,
   buildRecord,
   buildWorkspaceLeaseEvent,
-  buildWorkflowFactEvent,
-  WORKFLOW_FACT_KINDS,
-  WORKFLOW_FACT_PROVENANCE,
-  WORKFLOW_FACT_STATES,
   isEscalationAttempt,
   LEDGER_VERSION,
-  type CheckReceiptLedgerEvent,
   type ChildLifecycleEvent,
   type GrantRecord,
   type LedgerOptions,
   type RuntimeLedgerEvent,
   type WorkspaceLeaseEvent,
   type WorkspaceLeaseOutcome,
-  type WorkflowFactEvent,
-  type WorkflowFactKind,
-  type WorkflowFactProvenance,
-  type WorkflowFactState,
 } from "./governance/ledger.ts";
 
-export {
-  createDebriefPresenter,
-  type DebriefPresenter,
-  type DebriefHost,
-  type DebriefFrame,
-  type DebriefCheckpoint,
-  type DebriefPersistence,
-} from "./products/debrief.ts";
-export {
-  ordinaryChildrenFor,
-  ordinaryCancellation,
-  ordinaryCancellationDigest,
-  isOrdinaryChildren,
-  type OrdinaryChildren,
-  type OrdinaryCancellation,
-  type OrdinaryAuthority,
-  type OrdinaryTarget,
-} from "./products/ordinary-children.ts";
-export {
-  loadDashboardHarness,
-  loadedDashboardHarnessDigest,
-  type DashboardHarnessArtifact,
-} from "./products/dashboard-harness.ts";
-export {
-  startDailyDashboardHost,
-  discoverDailyIntentActions,
-  type DailyDashboardHostInput,
-  type DailyIntentAction,
-} from "./products/daily-dashboard-host.ts";
-export {
-  createDashboardHost,
-  openDashboardHost,
-  dashboardHostDigest,
-  dashboardHostRequestDigest,
-  dashboardSelectionDigest,
-  type DashboardHost,
-  type DashboardHostConfig,
-  type DashboardHostRequest,
-  type DashboardHostAuthority,
-  type DashboardHarness,
-  type DashboardHostOptions,
-} from "./products/dashboard-host.ts";
-export {
-  serveDashboardHost,
-  connectDashboardHost,
-  ENV_DASHBOARD_HOST_SOCKET,
-  type DashboardConnection,
-} from "./products/dashboard-host-transport.ts";
-export {
-  createRetainedDebrief,
-  retainDebriefBlind,
-  openDebriefBlindPreview,
-  type DebriefHarness,
-  type CaseSelection,
-  type DurableBlindBinding,
-} from "./products/debrief-host.ts";
-export { renderDebrief, debriefAction as dashboardDebriefAction } from "./products/debrief-render.ts";
-export { type ReviewPort, type ReviewRequest, type BlindPort, type BlindChoice } from "./products/debrief-contract.ts";
-export {
-  readDailyView,
-  createDailyViewReader,
-  DAILY_VIEW_VERSION,
-  type DailyView,
-  type DailyViewOptions,
-  type DailyAttempt,
-  type DailyObligation,
-} from "./products/daily-view.ts";
-export { renderDailyView, renderDailyDetails } from "./products/daily-view-render.ts";
-export { renderDailyPanel, type PanelOptions, type WorkPresentation } from "./products/daily-panel.ts";
-export { parseArchiveProjection, ARCHIVE_PROJECTION_VERSION } from "./products/daily-view-input.ts";
-export { bindWorkIntent } from "./products/intent-application.ts";
-export {
-  intentRequestDigest,
-  parseIntentRequest,
-  type IntentRequest,
-  type IntentSelection,
-  type IntentPriority,
-  type IntentAdmission,
-  type IntentSnapshot,
-  type IntentReceipt,
-  type WorkIntentBinding,
-} from "./products/intent-control.ts";
-export {
-  dispatchRequestDigest,
-  parseDispatchRequest,
-  type DispatchRequest,
-  type DispatchAuthority,
-  type DispatchRecord,
-  type DispatchSnapshot,
-} from "./products/dispatch-control.ts";
-export {
-  createResourceBudget,
-  createDispatchBudget,
-  createIntentBudget,
-  createExperimentBudget,
-  openResourceBudget,
-  resourceBindingDigest,
-  ResourceAdmissionError,
-  type BudgetBinding,
-  type DispatchBudgetBinding,
-  type IntentBudgetBinding,
-  type ExperimentBudgetBinding,
-  type GovernedBudgetBinding,
-  type ResourceLimits,
-  type AttemptDemand,
-  type ResourcePermit,
-  type BudgetSnapshot,
-} from "./products/resource-budget.ts";
 export { planSpawn, type SpawnPlan, type SpawnPlanInput } from "./kernel/spawn.ts";
 export {
   beginExecutionRetention,
@@ -225,14 +107,6 @@ export {
 
 export { acquireWorkspaceLease, defaultWorkspaceLeaseDir, type WorkspaceLease } from "./governance/workspace-lease.ts";
 
-export {
-  buildCheckEnvironment,
-  runNamedCheck,
-  type CheckDefinition,
-  type CheckReceipt,
-  type CheckRegistry,
-} from "./governance/check-runner.ts";
-
 export { isExecutionId, newExecutionId, type ExecutionId } from "./kernel/execution-id.ts";
 
 export {
@@ -241,49 +115,9 @@ export {
   type DashboardProjection,
   type DashboardState,
   type DashboardWorkflow,
-  type DashboardWorkflowFact,
 } from "./products/dashboard-projection.ts";
 
 export { renderDashboard, type DashboardRenderOptions } from "./products/dashboard-render.ts";
-export { declareWork, loadDeclaredWork, type DeclaredWorkState } from "./products/work-command.ts";
-export {
-  workSetup,
-  recordWorkSetup,
-  selectRecordedWork,
-  loadWorkSetup,
-  listWorkSetups,
-  workPresentation,
-  type WorkSetup,
-  type WorkTaskSetup,
-  type RecordedWorkSetup,
-} from "./products/work-setup.ts";
-export {
-  runWorkSetup,
-  inspectWorkRun,
-  type WorkRunResult,
-  type WorkRunInitial,
-  type WorkPolicyPin,
-} from "./products/work-run.ts";
-export {
-  workPolicy,
-  workPolicyDigest,
-  policyForSetup,
-  createWorkPolicyRegistry,
-  openWorkPolicyRegistry,
-  workPolicyActivationDigest,
-  type WorkPolicy,
-  type WorkPolicyRegistry,
-  type WorkPolicyActivation,
-} from "./products/work-policy-registry.ts";
-export {
-  learningHarness,
-  bindLearningConnection,
-  loadLearningConnection,
-  bindLearningAdoption,
-  learningScopeDigest,
-  type LearningConnection,
-  type LearningWorkspace,
-} from "./products/learning-connection.ts";
 
 export {
   createApprovalGate,
@@ -296,3 +130,51 @@ export {
   type PromptOutcomeKind,
   type PromptRequest,
 } from "./governance/approval-prompt.ts";
+
+// ADR-0076 cleanup: the `pi-daddy/kernel`, `/ledger`, `/approvals`, `/executors` and `/dashboard` subpaths are
+// gone; the root is the one public surface. Wildcard re-exports of the layers keep every name reachable.
+export * from "./kernel/capabilities.ts";
+export * from "./kernel/catalog.ts";
+export * from "./kernel/chain.ts";
+export * from "./kernel/definitions.ts";
+export * from "./kernel/delegate-types.ts";
+export * from "./kernel/delegate.ts";
+export * from "./kernel/delegation-approval.ts";
+export * from "./kernel/env-names.ts";
+export * from "./kernel/fanout.ts";
+export * from "./kernel/grant-env.ts";
+export * from "./kernel/ledger-identifiers.ts";
+export * from "./kernel/model-preflight.ts";
+export * from "./kernel/pi-tools.ts";
+export * from "./kernel/progress.ts";
+export * from "./kernel/propagation.ts";
+export * from "./kernel/routing-authority.ts";
+export * from "./kernel/run-child.ts";
+export * from "./kernel/skill-packages.ts";
+export * from "./kernel/skill-resources.ts";
+export * from "./governance/ledger-events.ts";
+export * from "./governance/ledger-report.ts";
+export * from "./governance/ledger-v3-validation.ts";
+export * from "./governance/record.ts";
+export * from "./governance/retention-json.ts";
+export * from "./governance/finalization.ts";
+export * from "./governance/grant-store.ts";
+export * from "./governance/lease-helper.ts";
+export * from "./governance/lease-record.ts";
+export * from "./governance/file-lock.ts";
+export * from "./governance/init.ts";
+export * from "./executors/executor.ts";
+export * from "./executors/herdr-cli.ts";
+export * from "./executors/herdr-name.ts";
+export * from "./executors/herdr-pi-lifecycle.ts";
+export * from "./executors/herdr-poll.ts";
+export * from "./executors/herdr-stage.ts";
+export * from "./executors/herdr-start.ts";
+export * from "./executors/native-session-target.ts";
+export * from "./executors/pane-reaper.ts";
+export * from "./executors/run-herdr.ts";
+export * from "./products/dashboard-display-controls.ts";
+export * from "./products/dashboard-handshake.ts";
+export * from "./products/dashboard-herdr.ts";
+export * from "./products/activity-timeline.ts";
+export { runDashboard, dashboardFrame, DASHBOARD_PROTOCOL_VERSION } from "./products/dashboard-cli.ts";

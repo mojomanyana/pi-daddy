@@ -20,7 +20,6 @@
  */
 
 import { readFile } from "node:fs/promises";
-import { appendLedgerLine } from "./ledger-append.ts";
 import type { Capability, ResolveResult } from "../kernel/resolve.ts";
 import type { ExecutorKind } from "../kernel/delegate-types.ts";
 import type { DefinitionDigest } from "../kernel/definitions.ts";
@@ -35,13 +34,7 @@ import { assertExecutionId } from "../kernel/execution-id.ts";
 import { assertLedgerV3Wire } from "./ledger-v3-validation.ts";
 
 export const LEDGER_VERSION = 3 as const;
-export const LEDGER_EVENT_KINDS = [
-  "capability_decision",
-  "workspace_lease",
-  "child_lifecycle",
-  "check_receipt",
-  "workflow_fact",
-] as const;
+export const LEDGER_EVENT_KINDS = ["capability_decision", "workspace_lease", "child_lifecycle"] as const;
 export type LedgerEventKind = (typeof LEDGER_EVENT_KINDS)[number];
 export const LEDGER_GATE_OUTCOMES = ["declined", "dismissed", "no-ui", "error"] as const;
 export type LedgerGateOutcome = (typeof LEDGER_GATE_OUTCOMES)[number];
@@ -326,9 +319,9 @@ export function recordKindForEvent(event: { event?: string }): RecordKind {
       return "lifecycle";
     case "workspace_lease":
       return "lease";
-    case "check_receipt":
+    case "check_receipt": // retired kind, still imported from pre-format ledgers
       return "check";
-    case "workflow_fact":
+    case "workflow_fact": // retired kind, still imported from pre-format ledgers
       return "fact";
     default:
       return "capability"; // legacy unversioned GrantRecord values are capability decisions
@@ -374,14 +367,12 @@ export {
   WORKSPACE_ACCESSES,
   WORKSPACE_LEASE_OUTCOMES,
   WORKSPACE_RECOVERY_VALUES,
-  buildCheckReceiptLedgerEvent,
   buildChildLifecycleEvent,
   buildWorkspaceLeaseEvent,
   type CapabilityDecisionEvent,
   type ChildLifecycleEvent,
   type ChildLifecycleState,
   type ChildProcessSignal,
-  type CheckReceiptLedgerEvent,
   type RuntimeLedgerEvent,
   type WorkspaceAccess,
   type WorkspaceLeaseEvent,
@@ -389,16 +380,6 @@ export {
   type WorkspaceRecovery,
 } from "./ledger-events.ts";
 
-export {
-  WORKFLOW_FACT_KINDS,
-  WORKFLOW_FACT_PROVENANCE,
-  WORKFLOW_FACT_STATES,
-  buildWorkflowFactEvent,
-  type WorkflowFactEvent,
-  type WorkflowFactKind,
-  type WorkflowFactProvenance,
-  type WorkflowFactState,
-} from "./workflow-facts.ts";
 import { appendRecord as appendEnvelopeRecord, type RecordKind } from "./record.ts";
 import { GovernanceRefusal } from "../kernel/refusals.ts";
 

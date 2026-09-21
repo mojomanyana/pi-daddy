@@ -44,14 +44,7 @@ import { grantStorePath } from "../src/governance/grant-store.ts";
 import type { Capability } from "../src/kernel/resolve.ts";
 import { discoverSkillPackages, readSkillPackage } from "../src/kernel/skill-packages.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
-import {
-  declaredWorkPath,
-  projectLedgerPath,
-  workLedgerPath,
-  workPoliciesDir,
-  workPolicyRegistryPath,
-  workSetupsDir,
-} from "../src/kernel/project-paths.ts";
+import { projectLedgerPath } from "../src/kernel/project-paths.ts";
 
 /**
  * A project directory **and an isolated agent root**.
@@ -132,76 +125,6 @@ async function skillPackage(
   );
   return dir;
 }
-
-test("work add is a supported declaration command and never prints retained outcome text", async () => {
-  const cwd = await project();
-  const lines: string[] = [];
-  const original = console.log;
-  console.log = (...args: unknown[]) => {
-    lines.push(args.join(" "));
-  };
-  try {
-    assert.deepEqual(
-      parseArgs([
-        "node",
-        "pi-daddy",
-        "work",
-        "add",
-        "--id",
-        "daily-1",
-        "--outcome",
-        "Keep the dashboard useful",
-        "--dir",
-        cwd,
-      ]),
-      {
-        command: "work-add",
-        force: false,
-        errors: [],
-        id: "daily-1",
-        outcome: "Keep the dashboard useful",
-        dir: cwd,
-      },
-    );
-    assert.equal(
-      await main([
-        "node",
-        "pi-daddy",
-        "work",
-        "add",
-        "--id",
-        "daily-1",
-        "--outcome",
-        "Keep the dashboard useful",
-        "--dir",
-        cwd,
-      ]),
-      0,
-    );
-  } finally {
-    console.log = original;
-  }
-  assert.ok(lines.some((line) => line.includes("declared daily-1")));
-  assert.ok(lines.some((line) => line.includes("/grants dashboard")));
-  assert.ok(lines.every((line) => !line.includes("Keep the dashboard useful")));
-  assert.match(await readFile(workLedgerPath(cwd), "utf8"), /work:daily-1:obligation/);
-});
-
-test("work add refuses incomplete and unknown arguments without writing", () => {
-  assert.deepEqual(parseArgs(["node", "pi-daddy", "work", "add", "--id", "x"]), {
-    command: "work-add",
-    force: false,
-    errors: ["--outcome needs text"],
-    id: "x",
-  });
-  assert.deepEqual(parseArgs(["node", "pi-daddy", "work", "add", "--id", "x", "--outcome", "y", "--accept"]), {
-    command: "work-add",
-    force: false,
-    errors: ["unknown option --accept"],
-    id: "x",
-    outcome: "y",
-  });
-});
 
 test("init refuses existing non-directory and symlink .pi state without following or changing it", async () => {
   const root = await tempDir("init-existing-pi-"),

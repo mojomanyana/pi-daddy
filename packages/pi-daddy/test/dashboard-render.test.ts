@@ -43,7 +43,6 @@ function projection(nodes: DashboardNode[], overrides: Partial<DashboardProjecti
         provenance: "caller-declared",
       },
     ],
-    workflowFacts: [],
     corrupt: [],
     orphanEvents: 0,
     active: nodes.filter((candidate) => ["authorised", "starting", "running"].includes(candidate.state)).length,

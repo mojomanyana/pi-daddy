@@ -49,7 +49,6 @@ import { republishable } from "./approvals.ts";
 import { storedGrantSessionState } from "./stored-grant-session.ts";
 import { nativeSessionRootFromEnv, type NativeSessionHost } from "../src/executors/native-session-target.ts";
 import { ENV_ALLOW_UNRESOLVED_MODELS } from "../src/kernel/model-preflight.ts";
-import type { DeclaredWorkState } from "../src/products/work-command.ts";
 import { beginExtensionLifecycle, rememberChildPublication, type ReloadLifecycle } from "./reload-environment.ts";
 import { reconcileSessionEnvironment } from "./session-environment.ts";
 /**
@@ -150,7 +149,6 @@ export interface GrantsSession extends NativeSessionHost {
   /** Stable root identity plus current turn, used only to join local activity facts. */
   activityRootId: string;
   activity?: { rootId: string; path: string; taskId?: string };
-  declaredWork?: DeclaredWorkState; // Explicit operator selection; absence leaves execution visibly unbound.
   /** Root identity keyed to ctx.sessionManager once session_start supplies it. */
   reloadLifecycle: ReloadLifecycle;
   /** Approval keys approved for this session. In memory only — this dies with the process. */
