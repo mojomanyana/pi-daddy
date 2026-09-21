@@ -50,7 +50,7 @@ The result is stored **outside your project** (`$PI_CODING_AGENT_DIR/grants/…`
 you are already in — **no restart, no `source`** (ADR-0030). Outside, because a grant is a *ceiling*, and a
 ceiling a child holding `tool:write` could rewrite is not a ceiling.
 
-The same explicit init enables `.pi/grants.jsonl` now and on future plain `pi` starts (ADR-0037). Every spawn
+The same explicit init enables `.pi/pi-daddy/grants.jsonl` now and on future plain `pi` starts (ADR-0037). Every spawn
 and refusal is therefore recorded, and `/grants dashboard` is ready without exporting a second variable.
 Existing pre-0.21 stored grants keep their no-ledger behavior until you rerun `/grants init` once.
 
@@ -76,11 +76,11 @@ whose path `/grants` prints, and the directory is ungoverned again.
 ### The alternative: an environment variable
 
 `PI_DADDY_GRANT` **always wins over the store**, because it is how a *child* is governed and how CI is
-configured. `init` also writes `.pi/grants.env` — commit it: it is the reviewable record of the decision,
+configured. `init` also writes `.pi/pi-daddy/settings.json` — commit it: it is the reviewable record of the decision,
 diffable in a PR, even though it is no longer what the enforcer reads.
 
 ```bash
-source .pi/grants.env && pi     # explicit, and what CI does
+pi                              # the stored grant applies; settings.json is the record
 ```
 
 ---

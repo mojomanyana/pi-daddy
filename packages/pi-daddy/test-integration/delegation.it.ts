@@ -16,6 +16,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import { cleanupTempDirs, fixture, modelTestsEnabled, piAvailable, runPrompt } from "./harness.ts";
+import { projectLedgerPath } from "../src/kernel/project-paths.ts";
 
 after(cleanupTempDirs);
 
@@ -38,7 +39,7 @@ const ledgerLines = async (path: string): Promise<Record<string, unknown>[]> => 
 describe("end-to-end delegation", { skip }, () => {
   test("a child is provisioned with exactly its grant, and cannot exceed it", async () => {
     const cwd = await fixture();
-    const ledger = join(cwd, ".pi", "grants.jsonl");
+    const ledger = projectLedgerPath(cwd);
     const target = join(cwd, "should-not-exist.txt");
 
     const r = await runPrompt({
@@ -67,7 +68,7 @@ describe("end-to-end delegation", { skip }, () => {
 
   test("a delegation cannot grant what the session does not hold, and the attempt is recorded", async () => {
     const cwd = await fixture();
-    const ledger = join(cwd, ".pi", "grants.jsonl");
+    const ledger = projectLedgerPath(cwd);
 
     const r = await runPrompt({
       cwd,

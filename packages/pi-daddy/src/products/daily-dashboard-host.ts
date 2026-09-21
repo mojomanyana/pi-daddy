@@ -36,6 +36,7 @@ import { resolveWorkSnapshotText } from "../governance/work-ledger-snapshot.ts";
 import { workPresentation, workSetupForSelection } from "./work-setup.ts";
 import { createDailyViewReader } from "./daily-view.ts";
 import { learningHarness, learningScopeDigest, type LearningConnection } from "./learning-connection.ts";
+import { workLedgerPath } from "../kernel/project-paths.ts";
 
 export interface DailyIntentAction {
   key: string;
@@ -145,7 +146,7 @@ export async function startDailyDashboardHost(input: DailyDashboardHostInput) {
     throw Error("explicit bounded daily host configuration required");
   const harnessDigest = loadedDashboardHarnessDigest(input.harness);
   if (!harnessDigest) throw Error("loaded skill-harness bridge required");
-  if (input.declared.ledgerPath !== join(input.cwd, ".pi", "work.jsonl"))
+  if (input.declared.ledgerPath !== workLedgerPath(input.cwd))
     throw Error("current declared work must belong to this host project");
   const learning = input.learning
       ? learningHarness(input.harness).openLearningWorkspace(input.learning.directory)

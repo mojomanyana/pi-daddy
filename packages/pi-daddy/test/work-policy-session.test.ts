@@ -24,6 +24,7 @@ import type { LearningHarness, LearningWorkspace } from "../src/products/learnin
 import type { FactoryAuthority } from "../src/products/factory-contract.ts";
 import { experimentHash } from "../src/products/experiment-contract.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
+import { workPoliciesDir, workPolicyRegistryPath } from "../src/kernel/project-paths.ts";
 after(cleanupTempDirs);
 const d = (c: string) => c.repeat(64);
 
@@ -62,7 +63,7 @@ async function fixture() {
       baseline: base,
     }),
     registry = openWorkPolicyRegistry(binding);
-  await writeProductJson(join(cwd, ".pi", "work-policy-registry.json"), binding);
+  await writeProductJson(workPolicyRegistryPath(cwd), binding);
   let selected: WorkPolicyActivation,
     mode = "Activate adopted comparison for next orders",
     consent = true,
@@ -133,7 +134,7 @@ async function fixture() {
       binding: adoption,
       receipt,
     };
-    await writeProductJson(join(cwd, ".pi", "work-policies", `${workPolicyDigest(candidate)}.json`), {
+    await writeProductJson(join(workPoliciesDir(cwd), `${workPolicyDigest(candidate)}.json`), {
       version: "named-work-policy-v1",
       name,
       policy: candidate,

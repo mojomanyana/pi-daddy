@@ -2,6 +2,7 @@
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { DefaultPackageManager, getAgentDir, SettingsManager } from "@earendil-works/pi-coding-agent";
+import { piProjectDir } from "./project-paths.ts";
 
 interface SkillResources {
   skills: {
@@ -22,7 +23,7 @@ export async function resolveSkillResources(cwd: string): Promise<SkillResources
   const agentDir = getAgentDir();
   const settingsManager = SettingsManager.fromStorage({
     withLock(scope, read) {
-      const path = scope === "global" ? join(agentDir, "settings.json") : join(cwd, ".pi", "settings.json");
+      const path = scope === "global" ? join(agentDir, "settings.json") : join(piProjectDir(cwd), "settings.json");
       let text: string | undefined;
       try {
         text = readFileSync(path, "utf8");

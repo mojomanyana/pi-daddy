@@ -16,6 +16,7 @@ import { newDelegationOccurrence } from "./execution-occurrence.ts";
 import { assertDelegationAuthority } from "./delegation-authority.ts";
 import type { GrantsSession } from "./session.ts";
 import { prepareNextWorkPolicy } from "./work-policy-session.ts";
+import { lastWorkRunPath } from "../src/kernel/project-paths.ts";
 
 export async function runSelectedWork(
   session: GrantsSession,
@@ -133,7 +134,7 @@ export async function runSelectedWork(
     if ("error" in result) throw (result as unknown as { error: unknown }).error;
   } else result = await run((text) => ctx.ui.notify(text, "info"));
   // Navigation index only; the original occurrence ledger/control journal remains the result authority.
-  await writeProductJson(join(session.cwd, ".pi", "work-last-run.json"), result.binding, true);
+  await writeProductJson(lastWorkRunPath(session.cwd), result.binding, true);
   return result;
 }
 export async function showWorkResults(ctx: ExtensionCommandContext, result: WorkRunResult): Promise<void> {

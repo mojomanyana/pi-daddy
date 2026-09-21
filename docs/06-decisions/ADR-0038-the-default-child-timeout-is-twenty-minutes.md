@@ -37,3 +37,15 @@ change.
 
 Revisit when completed-work measurements show twenty minutes is still routinely too short, or when the longer
 hang/resource occupancy causes an operational problem.
+
+## Note 2026-09-21 — the default is sixty minutes; the limit is still a wall clock
+
+The operator reported children killed at twenty minutes while still working (a build running the suite), and
+chose, in the ADR-0076 PR 3c session: raise the default to 3600 seconds now, and replace the wall clock with an
+inactivity deadline in its own pull request after the single-ledger release. The cap semantics are unchanged by
+this note: `PI_DADDY_CHILD_TIMEOUT` (formerly `PI_GRANTS_CHILD_TIMEOUT`) is still seconds, inherited, and zero
+or malformed still selects the default. What changes is only the number, and the record that the number was
+never the real problem: a child running with `pi --print` gives the parent no activity signal until it exits,
+so no wall-clock value distinguishes working from hung. The inactivity deadline needs pi's JSON event mode on the
+child and is scheduled as ADR-0076 PR 3e.
+

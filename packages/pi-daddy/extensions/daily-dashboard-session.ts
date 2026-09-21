@@ -9,6 +9,7 @@ import type { DeclaredWorkState } from "../src/products/work-command.ts";
 import type { OrdinaryChildren } from "../src/products/ordinary-children.ts";
 import { learningHarness, loadLearningConnection } from "../src/products/learning-connection.ts";
 import { readProductJson } from "../src/products/product-files.ts";
+import { learningConnectionPath } from "../src/kernel/project-paths.ts";
 
 const BRIDGE = Symbol.for("skill-harness.dashboard-host.v1"),
   idPattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
@@ -118,7 +119,7 @@ export function createDailyDashboardSession(input: {
           "loaded skill-harness extension bridge unavailable; load the skill-harness extension in this Pi session",
         );
       const harness = adoptDashboardHarnessBridge(bridge),
-        savedLearning = await readProductJson(join(input.cwd(), ".pi", "learning-workspace.json")),
+        savedLearning = await readProductJson(learningConnectionPath(input.cwd())),
         learning = savedLearning
           ? await loadLearningConnection(input.cwd(), declared, learningHarness(harness), input.author)
           : null;

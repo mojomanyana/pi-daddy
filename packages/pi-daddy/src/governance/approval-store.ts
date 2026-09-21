@@ -33,10 +33,14 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { withFileLock } from "./file-lock.ts";
-import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { entryVerdict, type ApprovalEntry, type EntryVerdict, type SubjectSnapshot } from "../kernel/approval.ts";
 import { isApprovalBinding } from "../kernel/correlation.ts";
+import {
+  approvalsPath as userApprovalsPath,
+  piProjectDir,
+  agentDir as resolveAgentDir,
+} from "../kernel/project-paths.ts";
 
 interface ApprovalFile {
   version: 1;
@@ -95,14 +99,9 @@ export type SubjectLookup = (subject: string) => SubjectSnapshot | null;
  * real and required, which is the opposite failure mode: forgetting it is a type error.
  */
 export function approvalsPath(cwd: string): string {
-  const slug = (basename(cwd) || "root").replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 40);
-  // 16 hex = 64 bits, not the 6 this shipped with. ADR-0020 deleted the `foreign-cwd` carry-through on the
-  // premise that one file means one directory — so inside a hash collision R-41 returns *with its
-  // mitigation removed*: the second project's save deletes the first's entries. At 24 bits a deliberate
-  // collision costs about 16.7M hashes, well under a second, and an accidental one arrives at a few
-  // thousand governed directories. The premise has to be worth what was removed to rely on it.
-  const hash = createHash("sha256").update(cwd, "utf8").digest("hex").slice(0, 16);
-  return join(agentDir(), "grants-approvals", `${slug}-${hash}.json`);
+  // `<agent dir>/pi-daddy/approvals/<slug>-<16 hex>.json` — the 64-bit hash and its R-41 rationale live in
+  // project-paths.ts since ADR-0076 PR 3c.
+  return userApprovalsPath(cwd);
 }
 
 /**
@@ -126,12 +125,12 @@ export function sharedApprovalsPath(): string {
  * the only honest path.
  */
 export function legacyApprovalsPath(cwd: string): string {
-  return join(cwd, ".pi", "grants-approvals.json");
+  return join(piProjectDir(cwd), "grants-approvals.json");
 }
 
 /** `$PI_CODING_AGENT_DIR`, or pi's default. Matches how pi-subagents resolves the same directory. */
 function agentDir(): string {
-  return process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
+  return resolveAgentDir();
 }
 
 /** The subject half of `capability@subject`. Capability ids contain `:` but never `@`. */

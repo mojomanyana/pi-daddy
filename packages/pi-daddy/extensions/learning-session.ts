@@ -16,6 +16,7 @@ import { privateDirectory } from "../src/products/product-files.ts";
 import { workPolicyMenu } from "./work-policy-session.ts";
 import { linkLatestWorkOutcome } from "./learning-outcome-session.ts";
 import type { createDailyDashboardSession } from "./daily-dashboard-session.ts";
+import { declaredWorkPath } from "../src/kernel/project-paths.ts";
 
 /** Normal human-only entrypoint: delegates canonical learning decisions to the loaded harness wizard. */
 export function createLearningSession(host: ReturnType<typeof createDailyDashboardSession>) {
@@ -26,7 +27,7 @@ export function createLearningSession(host: ReturnType<typeof createDailyDashboa
       if (!ctx.hasUI) throw Error("Open /grants learning in interactive Pi");
       busy = true;
       try {
-        const declared = await loadDeclaredWork(join(ctx.cwd, ".pi", "work-current.json"));
+        const declared = await loadDeclaredWork(declaredWorkPath(ctx.cwd));
         if (!declared) throw Error("Declare work with /grants work first so learning has an exact scope");
         const bridge = (globalThis as Record<PropertyKey, unknown>)[Symbol.for("skill-harness.dashboard-host.v1")];
         const h = learningHarness(adoptDashboardHarnessBridge(bridge));

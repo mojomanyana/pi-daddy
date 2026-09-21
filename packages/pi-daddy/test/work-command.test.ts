@@ -7,6 +7,7 @@ import { cleanupTempDirs, tempDir } from "./tmp.ts";
 import { appendDeclaredWorkOccurrence, declareWork, loadDeclaredWork } from "../src/products/work-command.ts";
 import { parseWorkLedgerText, projectWorkLedger } from "../src/governance/work-ledger.ts";
 import { workPresentation } from "../src/products/work-setup.ts";
+import { declaredWorkPath } from "../src/kernel/project-paths.ts";
 
 after(cleanupTempDirs);
 
@@ -90,7 +91,7 @@ test("concurrent identical declarations serialize to one five-event graph", asyn
 
 test("a retry resumes the exact prepared timestamp after state publication interruption", async () => {
   const cwd = await tempDir("work-command-recovery-");
-  const statePath = join(cwd, ".pi", "work-current.json"),
+  const statePath = declaredWorkPath(cwd),
     original = fsPromises.rename;
   let failed = false;
   fsPromises.rename = (async (...args: Parameters<typeof fsPromises.rename>) => {

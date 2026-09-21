@@ -6,6 +6,7 @@ import { runWithFinalizers } from "../governance/finalization.ts";
 import { ownedDirectory, readExperimentFile } from "./experiment-store.ts";
 import { cloneExperiment, closed, experimentHash } from "./experiment-contract.ts";
 import { freezeWork, parseWorkJson } from "../governance/work-ledger-json.ts";
+import { isUnderPiProjectDir } from "../kernel/project-paths.ts";
 export interface ControlBinding<T> {
   version: "control-journal-v1";
   directory: string;
@@ -21,7 +22,7 @@ export async function createControlJournal<T>(directory: string, input: T): Prom
     typeof directory !== "string" ||
     directory !== resolve(directory) ||
     directory.length > 1024 ||
-    directory.split("/").includes(".pi")
+    isUnderPiProjectDir(directory)
   )
     throw new Error("explicit control directory required");
   await ownedDirectory(dirname(directory));
@@ -53,7 +54,7 @@ export function controlJournal<T>(input: ControlBinding<T>) {
   if (
     b.version !== "control-journal-v1" ||
     b.directory !== resolve(b.directory) ||
-    b.directory.split("/").includes(".pi") ||
+    isUnderPiProjectDir(b.directory) ||
     [b.device, b.inode, b.journalDevice, b.journalInode].some((v) => !/^\d+$/.test(v))
   )
     throw new Error("invalid control binding");

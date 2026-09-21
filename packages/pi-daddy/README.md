@@ -39,7 +39,7 @@ The historical worked-example transcripts below remain evidence for their stated
 
 Configured runtime skills are used directly at their installed paths; setup creates no duplicate
 `.pi/skills/` copies. Pi package/resource filters and `PI_CODING_AGENT_DIR` apply. Existing local overrides
-and `.pi/grants.env` stay intact. Only legacy npm packages never registered with Pi are copied by init;
+and `.pi/pi-daddy/settings.json` stay intact. Only legacy npm packages never registered with Pi are copied by init;
 `--force` applies only to those copies. Review old local copies before removing them to use package updates.
 
 ## What this governs, and what it does not
@@ -322,7 +322,7 @@ silently showing fewer rows:
 | `type-missing` | the definition was deleted or renamed, and a new file could later claim the name |
 
 **The store lives outside the governed workspace**, one file per governed directory under
-`$PI_CODING_AGENT_DIR/grants-approvals/` (default `~/.pi/agent/`). It used to sit at `<cwd>/.pi/grants-approvals.json`, which was self-defeating in
+`$PI_CODING_AGENT_DIR/pi-daddy/approvals/` (default `~/.pi/agent/`). It used to sit at `<cwd>/.pi/grants-approvals.json`, which was self-defeating in
 this package's own recommended configuration: `PI_DADDY_GATED=tool:write` means *"may use write, may not
 pass it down without a human"* — and **a session that may use `write` can write the approvals file.** A
 reviewer forged an entry end to end, including a matching definition so the ceiling compared equal, and got
@@ -401,7 +401,7 @@ All fields are optional; existing callers behave unchanged.
   **BREAKING in 0.19.0 — routing now requires a capability.** A delegation naming `workspace_id: W` needs
   `workspace:W` in the caller's grant, or it is refused `WORKSPACE_NOT_AUTHORIZED`. Every grant that routes
   must add it: `PI_DADDY_GRANT="tool:read,tool:delegate,workspace:W"`. `pi-daddy init` lists the registered
-  ids commented in `.pi/grants.env`. A child can only route on to ids it was granted itself, so this is also
+  ids under `routableWorkspaces` in `settings.json`. A child can only route on to ids it was granted itself, so this is also
   the list of what any descendant could reach; `workspace:*` exists but is held and never inherited, which
   makes it the wrong answer for anything but a single-worktree setup. `PI_DADDY_GATED=workspace:W` asks a
   human first. Enforced by pi-daddy before the spawn, not by pi's `--tools` — see `docs/SPEC.md` on the
@@ -455,7 +455,7 @@ historical; malformed v2 never becomes a grey row or orphan count. A field/event
 ```bash
 # `agent:` ids say WHICH definitions this session may spawn (0.8.0); `tool:` ids say what it may grant them.
 PI_DADDY_GRANT="agent:review,tool:read,tool:grep,tool:find,tool:ls,tool:delegate" \
-PI_DADDY_LEDGER=.pi/grants.jsonl \
+PI_DADDY_LEDGER=.pi/pi-daddy/grants.jsonl \
 PI_DADDY_MAX_DEPTH=2 \
 pi
 # The relative ledger is resolved once at session start and inherited as one absolute path,
@@ -510,7 +510,7 @@ pi                      # then, inside pi:
 **`pi install`, not `npm install`** — it registers the package with pi, which is what makes the extension
 auto-load; presence in `node_modules` alone does nothing. `/grants init` asks only about the capabilities
 that can change your machine and applies the answer to the running session, no restart (ADR-0030). That one
-project opt-in now also enables `.pi/grants.jsonl` immediately and for every later plain `pi` start
+project opt-in now also enables `.pi/pi-daddy/grants.jsonl` immediately and for every later plain `pi` start
 (ADR-0037), so `/grants ledger` and `/grants dashboard` need no shell export. Merely installing the package
 does not initialize unrelated directories. `npx pi-daddy init` does the same scaffolding from a shell, and
 both search pi's install root as well as the project's. A pre-0.21 stored grant is not retroactive recording
@@ -520,7 +520,7 @@ consent; run `/grants init` once after upgrading to enable its default ledger.
 found principal-pi-skills@2.3.1 — 7 skill(s), 0 declaring allowed-tools
 wrote .pi/skills/decide/SKILL.md
 … six more `wrote` lines, one per skill …
-wrote .pi/grants.env
+wrote .pi/pi-daddy/settings.json
 
 7 skill(s) declare no allowed-tools and cannot be spawned until they do: decide, architect, plan,
 build, review, debug, git-ops. Each copy carries a commented `allowed-tools:` line. pi-daddy does
@@ -551,14 +551,14 @@ the ceiling is the one `principal-pi-skills` PR #30 settled on by re-deriving it
   ---
 ```
 
-and in `.pi/grants.env`, whose `PI_DADDY_GRANT` line `init` wrote as `"tool:delegate"` — you add the rest:
+and in `.pi/pi-daddy/settings.json`, whose `grant` `init` wrote as `["tool:delegate"]` — you add the rest:
 
 ```sh
 export PI_DADDY_GRANT="agent:decide,tool:read,tool:grep,tool:find,tool:ls,tool:delegate"
 ```
 
 ```bash
-source .pi/grants.env && pi
+pi
 ```
 
 ```
@@ -621,10 +621,10 @@ observation and the activity timeline remain independent.
 | `PI_DADDY_GATED` | **`tool:bash`** when governance is on | Capabilities needing human approval. Set to `""` to gate nothing. Gating is closed under subsumption, so this also covers `write`/`edit`/`read`/`grep`/`find`/`ls` (ADR-0012). |
 | `PI_DADDY_APPROVED` | unset | Inherited `capability@subject#sha256` entries; set by the parent, clamped to the child's own grant, and honoured only against the definition body the child itself loaded (ADR-0022). |
 | `PI_DADDY_APPROVAL_TIMEOUT` | `120` (seconds) | How long a dialog waits. `0` or an unreadable value means **no timeout**: waiting forever denies nothing, so it is the safe reading of a value we do not understand. |
-| `PI_DADDY_LEDGER` | unset → a v2 `/grants init` choice uses `<cwd>/.pi/grants.jsonl`; otherwise not recording | Presence overrides the project default; `""` disables it for one run. Any effective path is load-bearing. |
+| `PI_DADDY_LEDGER` | unset → a v2 `/grants init` choice uses `<cwd>/.pi/pi-daddy/grants.jsonl`; otherwise not recording | Presence overrides the project default; `""` disables it for one run. Any effective path is load-bearing. |
 | `PI_DADDY_WORKSPACE_REGISTRY` | unset | Operator-owned `{version:1, workspaces:{id:{path}}}` file, required only for workspace-routed spawns. |
 | `PI_DADDY_WORKSPACE_LEASE_DIR` | under `$PI_CODING_AGENT_DIR/pi-daddy/` | Kernel writer locks and ownership metadata. |
-| `PI_DADDY_CHILD_TIMEOUT` | `1200` (seconds) | Wall-clock limit for a child. Inherited by descendants — an operator preference, deliberately *not* attenuating state. |
+| `PI_DADDY_CHILD_TIMEOUT` | `3600` (seconds) | Wall-clock limit for a child. Inherited by descendants — an operator preference, deliberately *not* attenuating state. |
 | `PI_DADDY_ALLOW_UNRESOLVED_MODELS` | unset | Exact `1` lets pi attempt custom model resolution; otherwise an explicit provider/id missing from pi's session catalogue refuses before lease, approval or spawn. |
 | `PI_DADDY_FANOUT` | `8` | Per-call width and downward subtree budget; not a session-total counter. Malformed or `0` falls back to the default. |
 | `PI_DADDY_PARENT_ID` | `d0` | Readable logical tree position; set by the parent and allowed to repeat across calls. |
@@ -772,7 +772,7 @@ const plan = planSpawn({ effective: result.effective, prompt: task });
 // -> ["--print","--no-session","--no-extensions","--no-skills","--no-context-files",
 //     "--no-prompt-templates","--tools","grep,read"," summarise src/"]
 
-await appendRecord({ path: ".pi/grants.jsonl" }, buildRecord({
+await appendRecord({ path: ".pi/pi-daddy/grants.jsonl" }, buildRecord({
   /* capability fields … */ result, blocked: false, executor: "process",
   executionId: newExecutionId(), parentExecutionId: null, taskDigest: digestTask(task), now: new Date(),
 }));
@@ -806,7 +806,7 @@ Subpaths are exported individually (`pi-daddy/kernel`, `/ledger`, `/spawn`, `/de
 ```bash
 pi install npm:pi-daddy     # as a pi extension
 npm i pi-daddy              # as a library (the resolver, ledger and spawn planner are pure)
-npx pi-daddy init           # as a command: prepare .pi/grants.env using enabled installed
+npx pi-daddy init           # as a command: prepare .pi/pi-daddy/settings.json using enabled installed
                             # skill packages — see the worked example above
 npx pi-daddy work add --id daily-1 --outcome "Ship the declared slice"
                             # select one digest-only obligation; /reload then /grants dashboard

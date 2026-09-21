@@ -19,6 +19,7 @@ import { withFileLock } from "../governance/file-lock.ts";
 import { resolveWorkSnapshotText } from "../governance/work-ledger-snapshot.ts";
 import { readProductJson, writeProductJson } from "./product-files.ts";
 import { intentKey } from "./intent-control.ts";
+import { workLedgerPath, declaredWorkPath, workOutcomesDir } from "../kernel/project-paths.ts";
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:/@+\-]{0,127}$/;
 const DIGEST = /^[a-f0-9]{64}$/;
@@ -59,8 +60,8 @@ export interface DeclareWorkInput {
 function paths(input: DeclareWorkInput): { ledgerPath: string; statePath: string; grantLedgerPath: null } {
   const root = resolve(input.cwd);
   return {
-    ledgerPath: join(root, ".pi", "work.jsonl"),
-    statePath: join(root, ".pi", "work-current.json"),
+    ledgerPath: workLedgerPath(root),
+    statePath: declaredWorkPath(root),
     grantLedgerPath: null,
   };
 }
@@ -170,20 +171,24 @@ export async function declareWork(input: DeclareWorkInput): Promise<WorkFrozen<D
   const resolved = paths(input),
     outcomeDigest = sha256(input.outcome.trim());
   const projectPi = dirname(resolved.ledgerPath);
-  try {
-    // Create only a new project control directory as private; never chmod or repurpose an existing one.
-    await mkdir(projectPi, { mode: 0o700 });
-  } catch (error) {
-    if ((error as { code?: string }).code !== "EEXIST") throw error;
-    const existing = await lstat(projectPi);
-    if (!existing.isDirectory() || existing.isSymbolicLink())
-      throw Error("existing .pi state is not a directory; it was not followed or changed");
+  // Two levels since ADR-0076 PR 3c, created one at a time WITHOUT `recursive`: a recursive mkdir never throws
+  // EEXIST, which would make the symlink refusal below unreachable (review finding). Never chmod or repurpose
+  // an existing directory.
+  for (const dir of [dirname(projectPi), projectPi]) {
+    try {
+      await mkdir(dir, { mode: 0o700 });
+    } catch (error) {
+      if ((error as { code?: string }).code !== "EEXIST") throw error;
+      const existing = await lstat(dir);
+      if (!existing.isDirectory() || existing.isSymbolicLink())
+        throw Error("existing state path is not a directory; it was not followed or changed");
+    }
   }
   return withFileLock(resolved.statePath, "declared work", async () => {
     const existing = await loadDeclaredWork(resolved.statePath);
     if (existing && (existing.id !== input.id || existing.outcomeDigest !== outcomeDigest))
       throw new Error(`declared work id ${input.id} already names a different outcome`);
-    const outcomePath = join(projectPi, "work-outcomes", `${outcomeDigest}.json`);
+    const outcomePath = join(workOutcomesDir(input.cwd), `${outcomeDigest}.json`);
     const retained = await readProductJson(outcomePath);
     if (retained && JSON.stringify(retained) !== JSON.stringify({ outcome: input.outcome.trim() }))
       throw Error("declared outcome identity conflict");

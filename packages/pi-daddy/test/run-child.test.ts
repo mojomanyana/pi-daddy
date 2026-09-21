@@ -22,8 +22,8 @@ import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
 after(cleanupTempDirs);
 
-test("an unset child timeout defaults to twenty minutes", () => {
-  assert.equal(timeoutFromEnv(undefined), 20 * 60 * 1000);
+test("an unset child timeout defaults to sixty minutes (ADR-0038 note, 2026-09-21)", () => {
+  assert.equal(timeoutFromEnv(undefined), 60 * 60 * 1000);
 });
 
 const node = (script: string, over = {}) => ({

@@ -13,6 +13,7 @@ import {
   experimentHash,
   type ExperimentCharter,
 } from "./experiment-contract.ts";
+import { isUnderPiProjectDir } from "../kernel/project-paths.ts";
 export interface ExperimentBinding {
   version: "experiment-binding-v1";
   directory: string;
@@ -104,7 +105,7 @@ export function validateExperimentBinding(value: ExperimentBinding): ExperimentB
     typeof b.directory !== "string" ||
     b.directory !== resolve(b.directory) ||
     b.directory.length > 1024 ||
-    b.directory.split("/").includes(".pi") ||
+    isUnderPiProjectDir(b.directory) ||
     [b.device, b.inode, b.journalDevice, b.journalInode].some((v) => typeof v !== "string" || !/^\d+$/.test(v)) ||
     b.budget.version !== "4.0"
   )
@@ -119,7 +120,7 @@ export async function createExperimentStore(
   charter: ExperimentCharter,
   bytes: Uint8Array,
 ): Promise<ExperimentBinding> {
-  if (directory !== resolve(directory) || directory.split("/").includes(".pi"))
+  if (directory !== resolve(directory) || isUnderPiProjectDir(directory))
     throw new Error("explicit unprotected absolute destination required");
   await ownedDirectory(dirname(directory));
   await mkdir(directory, { mode: 0o700 });

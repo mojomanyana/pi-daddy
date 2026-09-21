@@ -21,6 +21,7 @@ import { dashboardActionFeedback } from "../src/products/dashboard-cli.ts";
 import { runSelectedWork, showWorkResults } from "./work-run-session.ts";
 import type { GrantsSession } from "./session.ts";
 import type { createDailyDashboardSession } from "./daily-dashboard-session.ts";
+import { declaredWorkPath, lastWorkRunPath } from "../src/kernel/project-paths.ts";
 
 const cancelled = () => Error("Work setup cancelled; nothing selected or launched");
 async function ask(ctx: ExtensionCommandContext, title: string, initial = ""): Promise<string> {
@@ -130,7 +131,7 @@ export function createWorkSession(
   const shutdown = new AbortController();
   const run = async (verb: string, ctx: ExtensionCommandContext) => {
     if (!ctx.hasUI) throw Error("Use /grants work in interactive Pi for setup and explicit run confirmation");
-    const current = await loadDeclaredWork(join(ctx.cwd, ".pi", "work-current.json"));
+    const current = await loadDeclaredWork(declaredWorkPath(ctx.cwd));
     if (current) {
       session.declaredWork = current;
       rebind();
@@ -187,9 +188,7 @@ export function createWorkSession(
       return;
     }
     if (choice === menu[7]) {
-      const binding = (await readProductJson(
-        join(ctx.cwd, ".pi", "work-last-run.json"),
-      )) as ControlBinding<WorkRunInitial> | null;
+      const binding = (await readProductJson(lastWorkRunPath(ctx.cwd))) as ControlBinding<WorkRunInitial> | null;
       if (!binding) throw Error("No bounded run result is retained for this project yet");
       await showWorkResults(ctx, await inspectWorkRun(binding));
       return;

@@ -28,7 +28,12 @@ import { chmod, mkdir, readFile, stat, symlink, writeFile } from "node:fs/promis
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { ceilingForDefinition, parseSkillDefinition } from "../src/kernel/definitions.ts";
-import { countDeclaring, type PlannedSkill, type WithholdReason } from "../src/governance/init.ts";
+import {
+  countDeclaring,
+  type PlannedSkill,
+  type WithholdReason,
+  settingsIgnoredByGit,
+} from "../src/governance/init.ts";
 import { main, parseArgs } from "../src/cli.ts";
 import { assertGrantIsWritable, UnsafeGrantError } from "../src/kernel/grant-env.ts";
 import { applyInit, planInit, withPlaceholder } from "../src/governance/init.ts";
@@ -39,6 +44,14 @@ import { grantStorePath } from "../src/governance/grant-store.ts";
 import type { Capability } from "../src/kernel/resolve.ts";
 import { discoverSkillPackages, readSkillPackage } from "../src/kernel/skill-packages.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
+import {
+  declaredWorkPath,
+  projectLedgerPath,
+  workLedgerPath,
+  workPoliciesDir,
+  workPolicyRegistryPath,
+  workSetupsDir,
+} from "../src/kernel/project-paths.ts";
 
 /**
  * A project directory **and an isolated agent root**.
@@ -171,7 +184,7 @@ test("work add is a supported declaration command and never prints retained outc
   assert.ok(lines.some((line) => line.includes("declared daily-1")));
   assert.ok(lines.some((line) => line.includes("/grants dashboard")));
   assert.ok(lines.every((line) => !line.includes("Keep the dashboard useful")));
-  assert.match(await readFile(join(cwd, ".pi", "work.jsonl"), "utf8"), /work:daily-1:obligation/);
+  assert.match(await readFile(workLedgerPath(cwd), "utf8"), /work:daily-1:obligation/);
 });
 
 test("work add refuses incomplete and unknown arguments without writing", () => {
@@ -265,12 +278,14 @@ test("the grant authorises only what can actually be spawned, and always tool:de
   assert.equal(plan.skills.find((s) => s.name === "git-ops")?.withheld, "pattern");
   // The withheld ones are NAMED in the file, not silently absent — that is the difference between
   // "governance is working" and "did the install fail?".
-  assert.match(plan.grantEnvContent, /NOT AUTHORISED/);
-  assert.match(plan.grantEnvContent, /plan: declares no `allowed-tools`/);
-  assert.match(plan.grantEnvContent, /git-ops: declares Bash\(git:\*\)/);
-  assert.match(plan.grantEnvContent, /export PI_DADDY_GRANT="agent:review,tool:delegate,tool:grep,tool:read"/);
-  assert.match(plan.grantEnvContent, /^export PI_DADDY_LEDGER="\.pi\/grants\.jsonl"$/m);
-  assert.doesNotMatch(plan.grantEnvContent, /^#export PI_DADDY_LEDGER=/m, "explicit init enables its project ledger");
+  const settings = JSON.parse(plan.settingsContent);
+  const byName = Object.fromEntries(settings.definitions.map((d: { name: string }) => [d.name, d]));
+  assert.equal(byName.plan.spawnable, false);
+  assert.match(byName.plan.reason, /declares no `allowed-tools`/);
+  assert.equal(byName["git-ops"].spawnable, false);
+  assert.match(byName["git-ops"].reason, /declares Bash\(git:\*\)/);
+  assert.deepEqual(settings.grant, ["agent:review", "tool:delegate", "tool:grep", "tool:read"]);
+  assert.equal(settings.ledger, "grants.jsonl", "explicit init enables its project ledger");
 });
 
 test("a declared capability pi has no tool for is flagged, because the spawn will be refused", async () => {
@@ -287,7 +302,7 @@ test("a declared capability pi has no tool for is flagged, because the spawn wil
   const plan = planInit(await discoverSkillPackages(cwd), cwd);
   assert.equal(plan.cautions.length, 1);
   assert.match(plan.cautions[0], /decide declares tool:glob, which pi 0\.84\.1 has no tool for/);
-  assert.match(plan.grantEnvContent, /# CAUTION: decide declares tool:glob/);
+  assert.match(JSON.parse(plan.settingsContent).cautions[0], /decide declares tool:glob/);
 });
 
 test("an existing file is KEPT, because the edit an operator made to it is the decision", async () => {
@@ -297,7 +312,7 @@ test("an existing file is KEPT, because the edit an operator made to it is the d
 
   const first = await applyInit(plan);
   assert.deepEqual(first.kept, []);
-  assert.equal(first.written.length, 2, "the SKILL.md and .pi/grants.env");
+  assert.equal(first.written.length, 3, "the SKILL.md, settings.json and its .gitignore");
 
   // The operator does what the placeholder asks: they decide.
   const target = join(cwd, ".pi", "skills", "plan", "SKILL.md");
@@ -305,7 +320,7 @@ test("an existing file is KEPT, because the edit an operator made to it is the d
 
   const second = await applyInit(plan);
   assert.deepEqual(second.written, [], "a second run must not touch a thing");
-  assert.equal(second.kept.length, 2);
+  assert.equal(second.kept.length, 3, "the SKILL.md, settings.json and its .gitignore");
   assert.match(await readFile(target, "utf8"), /allowed-tools: Read, Grep/, "the operator's ceiling survived");
 
   // R-79: `--force` rewrites the definition COPIES and never `.pi/grants.env`. The grant file is the
@@ -313,7 +328,7 @@ test("an existing file is KEPT, because the edit an operator made to it is the d
   // have both silently restored by a command whose usage text mentions only `allowed-tools`.
   const forced = await applyInit(plan, { force: true });
   assert.deepEqual(forced.written, [target], "only the SKILL.md copy is rewritten");
-  assert.deepEqual(forced.kept, [plan.grantEnvPath], "the reviewed grant survives --force");
+  assert.deepEqual(forced.kept, [plan.settingsPath, plan.gitignorePath], "the reviewed grant survives --force");
   assert.doesNotMatch(await readFile(target, "utf8"), /^allowed-tools:/m, "--force discards it, as documented");
 });
 
@@ -387,10 +402,10 @@ test("a definition name that could inject a capability, a shell command or a pat
 
   const plan = planInit(packages, cwd);
   assert.deepEqual(plan.grant, ["agent:git-ops", "tool:delegate", "tool:grep", "tool:read"]);
-  assert.match(
-    plan.grantEnvContent,
-    /export PI_DADDY_GRANT="agent:git-ops,tool:delegate,tool:grep,tool:read"/,
-    "a name must not be able to add a capability to the line the operator sources",
+  assert.deepEqual(
+    JSON.parse(plan.settingsContent).grant,
+    ["agent:git-ops", "tool:delegate", "tool:grep", "tool:read"],
+    "a name must not be able to add a capability to the recorded grant",
   );
   // Every write stays under .pi/skills/, so `..` cannot place a file anywhere else.
   for (const skill of plan.skills)
@@ -436,13 +451,18 @@ test("init scaffolds the registered workspaces, commented, and grants none of th
     false,
     "init must not choose which worktree a child starts in",
   );
-  assert.match(plan.grantEnvContent, /# ROUTABLE WORKSPACES/);
-  assert.match(plan.grantEnvContent, /^#   workspace:prod$/m, "offered, commented");
-  assert.match(plan.grantEnvContent, /^#   workspace:staging$/m, "including one nothing declared");
-  assert.match(plan.grantEnvContent, /WORKSPACE_NOT_AUTHORIZED/, "the refusal it explains is named");
-  // The live line is the thing an operator sources: it must not contain a workspace id anywhere.
-  const live = /export PI_DADDY_GRANT="([^"]*)"/.exec(plan.grantEnvContent)?.[1] ?? "";
-  assert.equal(live.includes("workspace:"), false, live);
+  const routed = JSON.parse(plan.settingsContent);
+  assert.deepEqual(
+    routed.routableWorkspaces,
+    ["workspace:prod", "workspace:staging"],
+    "offered, including one nothing declared",
+  );
+  // The recorded grant is what the store applies: it must not contain a workspace id anywhere.
+  assert.equal(
+    routed.grant.some((c: string) => c.startsWith("workspace:")),
+    false,
+    JSON.stringify(routed.grant),
+  );
 
   // A definition needing a withheld capability is not authorised to run either — the existing rule, which
   // now also covers routing, so `agent:deployer` stays out of the grant until `workspace:prod` is granted.
@@ -453,7 +473,7 @@ test("init scaffolds the registered workspaces, commented, and grants none of th
   await skillPackage(bare, "plain-pkg", "1.0.0", { review: DECLARED });
   const noRegistry = planInit(await discoverSkillPackages(bare), bare, []);
   assert.deepEqual(noRegistry.routableWorkspaces, []);
-  assert.equal(noRegistry.grantEnvContent.includes("ROUTABLE WORKSPACES"), false);
+  assert.deepEqual(JSON.parse(noRegistry.settingsContent).routableWorkspaces, []);
 });
 
 /**
@@ -490,10 +510,8 @@ test("`pi-daddy init` reads the real registry — the wiring, not just the plan"
     assert.deepEqual(await registeredWorkspaceIds(), ["prod-1", "sandbox"]);
 
     assert.equal(await main(["node", "cli", "init", "--dir", cwd]), 0);
-    const written = await readFile(join(cwd, ".pi", "grants.env"), "utf8");
-    assert.match(written, /# ROUTABLE WORKSPACES/);
-    assert.match(written, /^#   workspace:prod-1$/m);
-    assert.match(written, /^#   workspace:sandbox$/m);
+    const written = JSON.parse(await readFile(join(cwd, ".pi", "pi-daddy", "settings.json"), "utf8"));
+    assert.deepEqual(written.routableWorkspaces, ["workspace:prod-1", "workspace:sandbox"]);
     const live = /export PI_DADDY_GRANT="([^"]*)"/.exec(written)?.[1] ?? "";
     assert.equal(live.includes("workspace:"), false, live);
 
@@ -628,10 +646,10 @@ test("`/grants init` stores and adopts the project ledger as one decision", asyn
   };
   assert.deepEqual(
     { version: stored.version, projectLedger: stored.projectLedger, adoptedLedger },
-    { version: 2, projectLedger: true, adoptedLedger: join(cwd, ".pi", "grants.jsonl") },
+    { version: 2, projectLedger: true, adoptedLedger: projectLedgerPath(cwd) },
     "the atomic store and the running session describe the same opt-in",
   );
-  assert.match(notices.join("\n"), /ledger .*\.pi\/grants\.jsonl.*future pi sessions/i);
+  assert.match(notices.join("\n"), /ledger .*\.pi\/pi-daddy\/grants\.jsonl.*future pi sessions/i);
 });
 
 /**
@@ -676,8 +694,8 @@ test("`pi-daddy init` says out loud that a routing package cannot be spawned yet
   assert.doesNotMatch(out, /Live grant \([^)]*\): [^\n]*workspace:/, "and routing is still not granted");
 
   // The generated file keeps the `agent:` instruction even though routing is its only withheld capability.
-  const env = await readFile(join(cwd, ".pi", "grants.env"), "utf8");
-  assert.match(env, /…and then: agent:deployer/);
+  const recorded = JSON.parse(await readFile(join(cwd, ".pi", "pi-daddy", "settings.json"), "utf8"));
+  assert.ok(recorded.withheldDefinitions.includes("deployer"));
 });
 
 /**
@@ -826,8 +844,8 @@ test("R-78: a declared capability that could break out of the generated shell fi
 
   const plan = planInit(packages, cwd);
   assert.deepEqual(plan.grant, ["tool:delegate"]);
-  assert.doesNotMatch(plan.grantEnvContent, /touch/, "no fragment of the payload reaches the sourced file");
-  assert.match(plan.grantEnvContent, /^export PI_DADDY_GRANT="tool:delegate"$/m);
+  assert.doesNotMatch(plan.settingsContent, /touch/, "no fragment of the payload reaches the recorded file");
+  assert.deepEqual(JSON.parse(plan.settingsContent).grant, ["tool:delegate"]);
 });
 
 test("R-78: the grant string is charset-checked before the file is written, whatever got past the whitelist", () => {
@@ -862,7 +880,7 @@ test("R-78: a package may not hand itself tool:* or agent:*", async () => {
   ]);
   const plan = planInit(packages, cwd);
   assert.deepEqual(plan.grant, ["tool:delegate"]);
-  assert.doesNotMatch(plan.grantEnvContent, /has no tool for/, "the caution that called tool:* harmless is gone");
+  assert.doesNotMatch(plan.settingsContent, /has no tool for/, "the caution that called tool:* harmless is gone");
 });
 
 test("ADR-0029: capabilities that can change the machine are written COMMENTED, not live", async () => {
@@ -893,10 +911,12 @@ test("ADR-0029: capabilities that can change the machine are written COMMENTED, 
     "a definition that cannot receive what it declares is not authorised either",
   );
   // …and every one of them is named, with who needs it, one uncomment away.
-  assert.match(plan.grantEnvContent, /WITHHELD BY DEFAULT/);
-  assert.match(plan.grantEnvContent, /#   tool:bash\s+\(build\)/);
-  assert.match(plan.grantEnvContent, /#   tool:write\s+\(build\)/);
-  assert.match(plan.grantEnvContent, /agent:build/);
+  const withheld = JSON.parse(plan.settingsContent);
+  const declaredBy = (c: string) =>
+    withheld.withheld.find((w: { capability: string }) => w.capability === c)?.declaredBy;
+  assert.deepEqual(declaredBy("tool:bash"), ["build"]);
+  assert.deepEqual(declaredBy("tool:write"), ["build"]);
+  assert.ok(withheld.withheldDefinitions.includes("build"));
   assert.deepEqual([...plan.withheldCapabilities.keys()].sort(), ["tool:bash", "tool:write"]);
 });
 
@@ -915,8 +935,9 @@ test("an agent: id naming a definition init did not write is reported, never gra
   const plan = planInit(await discoverSkillPackages(cwd), cwd);
   assert.ok(!plan.grant.includes("agent:deploy-prod"), "a package must not authorise a definition it did not ship");
   assert.deepEqual(plan.grant, ["agent:plan", "tool:delegate", "tool:read"]);
-  assert.match(plan.grantEnvContent, /NOT GRANTED/);
-  assert.match(plan.grantEnvContent, /plan declares agent:deploy-prod/);
+  assert.deepEqual(JSON.parse(plan.settingsContent).crossReferences, [
+    { from: "plan", capability: "agent:deploy-prod" },
+  ]);
 });
 
 test("R-79: an existing but UNREADABLE file is kept, not overwritten", async (t) => {
@@ -938,7 +959,11 @@ test("R-79: an existing but UNREADABLE file is kept, not overwritten", async (t)
   const outcome = await applyInit(plan);
   await chmod(target, 0o600);
   assert.deepEqual(outcome.kept, [target], "the unreadable file is KEPT, not treated as absent");
-  assert.deepEqual(outcome.written, [plan.grantEnvPath], "and grants.env, which really was absent, is written");
+  assert.deepEqual(
+    outcome.written,
+    [plan.settingsPath, plan.gitignorePath],
+    "and settings.json, which really was absent, is written",
+  );
   assert.equal(await readFile(target, "utf8"), "OPERATOR EDIT\n", "the operator's file survived");
 });
 
@@ -1125,4 +1150,27 @@ test("R-75: the project's copy outranks the machine-wide one", async () => {
   const found = await discoverSkillPackages(cwd);
   assert.equal(found.length, 1, "one name, one package — not two");
   assert.equal(found[0].version, "9.9.9", "the project's pinned copy is the one used");
+});
+
+test("init reports when the root .gitignore makes settings.json uncommittable (ADR-0076 PR 3c review)", async () => {
+  // Production change that breaks this: dropping settingsIgnoredByGit or the NOTE it feeds.
+  const cwd = await project();
+  const { execFileSync } = await import("node:child_process");
+  execFileSync("git", ["init", "-q"], { cwd });
+  await skillPackage(cwd, "pkg-a", "1.0.0", { review: DECLARED });
+  const plan = planInit(await discoverSkillPackages(cwd), cwd);
+  await applyInit(plan);
+  assert.equal(await settingsIgnoredByGit(plan.settingsPath), false, "without a root ignore the record is committable");
+  await writeFile(join(cwd, ".gitignore"), ".pi/\n");
+  assert.equal(await settingsIgnoredByGit(plan.settingsPath), true, "the common root ignore hides it");
+  await writeFile(
+    join(cwd, ".gitignore"),
+    ".pi/\n!.pi/\n!.pi/pi-daddy/settings.json\n.pi/pi-daddy/*\n!.pi/pi-daddy/settings.json\n",
+  );
+  assert.equal(await settingsIgnoredByGit(plan.settingsPath), false, "the documented re-include lines work");
+  assert.equal(
+    await settingsIgnoredByGit(join(await project(), ".pi", "pi-daddy", "settings.json")),
+    null,
+    "not a repository: no claim",
+  );
 });

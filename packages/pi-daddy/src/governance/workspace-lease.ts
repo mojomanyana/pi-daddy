@@ -10,17 +10,16 @@ import {
 export type { LeaseReleaseOutcome, WorkspaceLease } from "./lease-record.ts";
 import { once } from "node:events";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { GovernanceRefusal, refusal } from "../kernel/refusals.ts";
 import type { ValidatedWorkspace, WorkspaceAccess } from "../kernel/workspace.ts";
 import { assertCloseBounds, HELPER_SOURCE, LEASE_READY, unrefStream } from "./lease-helper.ts";
 import { ENV_WORKSPACE_LEASE_DIR } from "../kernel/env-names.ts";
 export { ENV_WORKSPACE_LEASE_DIR } from "../kernel/env-names.ts";
+import { workspaceLeasesDir } from "../kernel/project-paths.ts";
 
 export function defaultWorkspaceLeaseDir(env: NodeJS.ProcessEnv = process.env): string {
-  const agentDir = env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
-  return env[ENV_WORKSPACE_LEASE_DIR] ?? join(agentDir, "pi-daddy", "workspace-leases");
+  return env[ENV_WORKSPACE_LEASE_DIR] ?? workspaceLeasesDir(env);
 }
 
 /**

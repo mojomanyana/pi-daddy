@@ -56,6 +56,7 @@ import { replacePublishedDailyWork, type PublishedDailyWork } from "./daily-work
 import { defaultActivityTimelinePath } from "../src/products/activity-timeline.ts";
 import { registerActivityTimeline } from "./activity-timeline.ts";
 import { legacyEnvironmentWarning } from "../src/kernel/env-names.ts";
+import { agentDir, declaredWorkPath } from "../src/kernel/project-paths.ts";
 export default function (pi: ExtensionAPI) {
   // The path pi loads as the extension, so a child granted `tool:delegate` can be started with `-e <this>`.
   const extensionPath = (() => {
@@ -80,9 +81,7 @@ export default function (pi: ExtensionAPI) {
     author: "local-operator",
   });
   const dashboardPluginRoot = fileURLToPath(new URL("../herdr-plugin/", import.meta.url));
-  const dashboardPaths = defaultDashboardPaths(
-    process.env.PI_CODING_AGENT_DIR?.trim() || join(homedir(), ".pi", "agent"),
-  );
+  const dashboardPaths = defaultDashboardPaths(agentDir());
   // Definitions are registered only after owner-bound session_start. Until then there is no delegation
   // dispatch surface; afterwards this callback refreshes their model-facing spawnable-definition text.
   const delegation = { refreshSpawnable: () => {} };
@@ -110,7 +109,7 @@ export default function (pi: ExtensionAPI) {
     try {
       try {
         replacePublishedDailyWork(process.env, publishedDailyWork, undefined);
-        session.declaredWork = (await loadDeclaredWork(join(ctx.cwd, ".pi", "work-current.json"))) ?? undefined;
+        session.declaredWork = (await loadDeclaredWork(declaredWorkPath(ctx.cwd))) ?? undefined;
         replacePublishedDailyWork(process.env, publishedDailyWork, session.declaredWork);
       } catch (error) {
         session.declaredWork = undefined;

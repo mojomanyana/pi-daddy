@@ -71,7 +71,7 @@ export const POLL_INTERVAL_MS = 750;
  * A prompt accepted from a terminal state must produce an observable lifecycle change promptly.
  *
  * Herdr 0.8's `agent prompt --wait` documents this same five-second bound. We retain polling because it
- * supplies the bounded live pane snapshots, but refuse rather than holding a parent for twenty minutes when
+ * supplies the bounded live pane snapshots, but refuse rather than holding a parent for the whole child timeout when
  * the only reported state remains the pre-prompt terminal state. That is a detector/integration failure, not
  * evidence that a child settled.
  */
@@ -132,7 +132,7 @@ export async function waitForSettled(
 ): Promise<{ status?: string; timedOut?: boolean; aborted?: boolean; spawnError?: string }> {
   const interval = request.pollIntervalMs ?? POLL_INTERVAL_MS;
   // ADR-0032. The pane is read on every poll so the parent can show what the child is doing, rather than the
-  // one word `delegate` for up to twenty minutes by default.
+  // one word `delegate` for up to sixty minutes by default.
   //
   // No cross-poll state is kept, deliberately: the previous design remembered what it had reported so it could
   // send a diff, and that is what broke — see `tailLines`. A snapshot needs no memory.

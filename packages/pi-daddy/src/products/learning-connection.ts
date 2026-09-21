@@ -13,6 +13,7 @@ import {
   type RollbackRequest,
   type ProductionObservation,
 } from "./vendor/adoption.ts";
+import { learningConnectionPath } from "../kernel/project-paths.ts";
 
 export interface LearningConfiguration {
   archiveRoot: string;
@@ -163,7 +164,7 @@ export async function bindLearningConnection(
     configuration,
     selection: state.selectedSnapshot,
   };
-  await writeProductJson(join(resolve(cwd), ".pi", "learning-workspace.json"), connection, true);
+  await writeProductJson(learningConnectionPath(cwd), connection, true);
   return connection;
 }
 export async function loadLearningConnection(
@@ -172,7 +173,7 @@ export async function loadLearningConnection(
   harness: LearningHarness,
   author: string,
 ): Promise<{ connection: LearningConnection; workspace: LearningWorkspace } | null> {
-  const c = (await readProductJson(join(resolve(cwd), ".pi", "learning-workspace.json"))) as LearningConnection | null;
+  const c = (await readProductJson(learningConnectionPath(cwd))) as LearningConnection | null;
   if (!c) return null;
   if (
     Object.keys(c).sort().join() !== "configuration,directory,selection,version" ||

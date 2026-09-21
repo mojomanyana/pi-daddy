@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { appendFile, mkdir, open, readFile, realpath, rename, writeFile } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
+import { activityTimelinePath } from "../kernel/project-paths.ts";
 
 export const ACTIVITY_TIMELINE_VERSION = 1 as const;
 export const ENV_ACTIVITY_TIMELINE = "PI_DADDY_ACTIVITY_TIMELINE";
@@ -515,7 +516,7 @@ export function renderActivityTimeline(timeline: ActivityTimeline, options: Acti
   return lines.map((line) => truncate(line, width)).join("\n");
 }
 
-export const defaultActivityTimelinePath = (cwd: string) => join(cwd, ".pi", "pi-daddy", "activity.jsonl");
+export const defaultActivityTimelinePath = (cwd: string) => activityTimelinePath(cwd);
 export function activityIdentity(cwd: string, env: NodeJS.ProcessEnv = process.env): ActivityIdentity {
   const configured = env[ENV_ACTIVITY_TIMELINE]?.trim(),
     transported = env[ENV_ACTIVITY_PATH]?.trim();
