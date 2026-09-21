@@ -3943,3 +3943,25 @@ any catch/finalizer that cannot report both primary and cleanup failures.
 | 2026-09-02 | R-156 | Trigger fired again: root README still advertised 0.18.1 and an open PR #10 through the 0.21.0 release, including the mutable-main-SHA form R-156 had already rejected. Release record now updates every operational summary | 0.21.0 release close |
 | 2026-09-04 | R-177 | Added MEASURED — retained Wave A v6 JSONL shows a child leave an empty CWD and edit a pinned checkout; mtime and invocation window agree, and v7 refused the dirty checkout. This confirms SPEC's existing non-containment boundary rather than a governance-rule failure | principal qualification evidence |
 | 2026-09-04 | R-178 | Added and fixed — a consumer final report replaced an unpersisted primary exception; the same shape existed in four pi-daddy finalizers. Shared preservation keeps primary identity/code and attaches cleanup failures; a named regression plus mutation forces it | containment-finding follow-up |
+
+## R-179 · The first advisor rides an alpha endpoint and a model released three days ago — M×M, OPEN
+
+**Recorded 2026-09-21 (ADR-0076).** Jev is reached through OpenRouter's `POST /api/alpha/decisions`, an
+endpoint OpenRouter itself marks alpha, for a model (`typesafe/jev-1.13`) released 2026-09-18. Public
+accuracy evidence is one 50-request routing sample and one vendor benchmark; nobody has published
+calibration for "is this tool result relevant to that code task". **Mitigation by design:** advisors are
+default off, every call has a two-second timeout and degrades to "no advice", the adapter is one file behind
+one interface, and `pruned` handoff cannot become a default until `docs/probes/jev-handoff/` measures
+precision and recall on the operator's own sessions. **Trigger:** the endpoint changes shape or is withdrawn,
+or the probe shows recall below what a reviewer needs; either reopens whether the advisor ships on by default
+anywhere.
+
+## R-180 · The load-bearing `allowed-tools` field is experimental in the standard — L×H, OPEN
+
+**Recorded 2026-09-21.** The Agent Skills specification still marks `allowed-tools` "Experimental. Support
+for this field may vary", and the reference implementation (Claude Code) documents that it does not restrict
+tools. pi-daddy is the only surveyed harness that treats the field as structural (ADR-0016). A rename or
+semantic change upstream would leave every definition's ceiling undeclared, which this package already
+handles by refusing to spawn (ADR-0028's "undeclared ceiling never becomes unrestricted"). **Trigger:** a
+specification release that renames, deprecates or redefines the field; the response is a reader that accepts
+both names for one release and an ADR, not a silent fallback.

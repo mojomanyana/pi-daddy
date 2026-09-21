@@ -5,6 +5,262 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ---
 
+## 2026-09-21 — ADR-0076: the consolidation programme, PR 1 (truth and glossary)
+
+Branch `claude/adr-0076-consolidation-programme` from `f3f4ae4` (0.28.0). A roast of the codebase and a sourced
+landscape survey preceded this entry; both are summarised in ADR-0076's Context with the numbers they produced.
+The operator's answers in the same session are recorded there as decisions: keep every capability but reshape
+contracts; layers before features; context handoff is the first coordination feature; "quality is fixed"
+means a fresh session ships a delegate-path change from README, SPEC and the glossary alone; a
+non-generative decision model (Jev via OpenRouter) is usable at four decision points, default off, toggled
+from the dashboard, every use recorded as advice.
+
+This PR changes documents only: ADR-0076 accepted; `docs/GLOSSARY.md` created; `CLAUDE.md` reduced to
+orientation with no counts or versions; README counts corrected (ADR count, unit count, Agent Skills adoption
+count); the release-note block that opened `docs/SPEC.md` moved here verbatim (below) and replaced by a pointer
+to PRODUCT-GUIDE and REQUIREMENTS until PR 5 rewrites SPEC as a layer map; two risk entries added (R-179 Jev
+endpoint is alpha, R-180 `allowed-tools` is experimental in the standard). No code, contract or test changed.
+Author's own read is the review for this docs-only PR, said here per rule 10.
+
+Verification on this machine at `f3f4ae4` plus these edits: the two tests that read documents
+(`risk-register-status`, `work-ledger-contract`) pass, 16 of 16. The full unit runner exits non-zero here
+because `/usr/bin/bwrap` is absent: every failing case is in `effect-profile`, `dispatch-control` and
+`dashboard-host-boundary` and fails with `ENOENT … /usr/bin/bwrap`; CI installs `bubblewrap` before the
+suite. No other case failed. Required CI on the pull request is the merge gate.
+
+Cross-session note for ADR-0077: the skill-harness session reported that its operator chose to consume the
+advisors code as one small published package shared by both repositories (Decider interface, null decider,
+Jev adapter, typed errors), not as a pi-daddy subpath export. ADR-0076 describes `advisors/` as an in-repo
+layer; ADR-0077 must decide the package boundary and this is flagged to the operator before it is written.
+
+### NEXT SESSION
+
+1. **PR 2 — layers.** Create `kernel/`, `governance/`, `executors/`, `advisors/`, `products/` under
+   `packages/pi-daddy/src` (and mirror in `extensions/`), move files, add the import-direction test red at the
+   eleven sites listed in ADR-0076, make it green with hooks, not exemptions. No behaviour change; full unit
+   and integration suites are the proof.
+2. **PR 3 — one ledger, one state directory, `PI_DADDY_*` only, exports under ten, statement-count guard.**
+   Ships as 0.30.0. skill-harness re-pins once (its session was told on 2026-09-21).
+3. **PR 4 — skill-harness as optional versioned peer; contracts pruned.**
+4. **PR 5 — SPEC rewritten as the layer map**, with the no-hex/no-PR-token test. First fresh-session probe.
+5. Then PR 6 advisors (ADR-0077), PR 7 context handoff (ADR-0078), PR 8 selection/routing/signals, PR 9 the
+   Jev handoff probe and the second fresh-session run.
+
+The older NEXT SESSION block further down (dated 2026-09-04) is superseded by this list.
+
+### Release-note paragraphs moved verbatim from `docs/SPEC.md` (2026-09-21)
+
+## Ordinary work and learning product (0.27.0 release candidate)
+
+Matching harness release planned: **0.16.0**. This release candidate preserves the Sol-approved producer
+runtime in `b9cbef9087b3596a0d930c0ec9b843f34c0f27e8`. Feature PR #52 merged with green CI at
+`b974963a7d0ba5a74fdafe331356c348a1fba565`. Release PR CI/merge, installed qualification and publication
+remain pending. [PUBLISHING.md](./PUBLISHING.md) records the coordinator gates.
+
+The short installed [PRODUCT-GUIDE](../packages/pi-daddy/PRODUCT-GUIDE.md) and
+[current requirement register](../packages/pi-daddy/REQUIREMENTS.md) describe normal entry points.
+`/grants work` authors/selects 1–8 task DAGs with explicit models/effort and bounded parallelism; runs use
+original delegation, grants, approval, timeout and cancellation owners. Complete predecessor output is
+bounded to 32 KiB; retained results to 1 MiB. No automatic retry or controller recovery. Pause holds
+pending admission, not active children. `/grants host stop` refuses while paused, pending, busy or
+acknowledgement-unknown, preserving the original host/socket. Resume explicitly before stopping; pending
+controls require original reconciliation. Resume releases ordinary admission only after final host
+acknowledgement; a denied resume cannot undo a prior pause. Final Pi session disposal disconnects without
+releasing or reconciling outstanding holds. Scope changes prevent old pending attempts at original admission.
+
+The default daily panel leads with outcome/state and observed active models/effort. Numbered choices carry
+the exact host tip/request binding and never gain a new meaning on repaint. Finished attempts collapse;
+`renderDailyDetails` preserves the old diagnostics and historical fixture rendering. Reads never dispatch,
+and acknowledgement, execution, acceptance and unknown usage remain distinct.
+
+`/grants learning` uses the original loaded harness workspace/wizard. Exact raw selected snapshot digest,
+archive/population/author bind the connection; original trust/attention is reused, not refilled. Deliberate
+review remains separate from earned closing exposure. The additive `ordinary-work-policy-v1` registry can
+change only models/effort on unchanged scoped task IDs/definition names (not a file/tree pin), through existing adoption/rollback
+predicates and separately supplied independent authority/current eligibility. Rollback consent displays
+the immutable restore digest and every task's exact retained model/effort, resolved from validated registry
+lineage rather than a mutable named file. Activation and readback recovery retain original applied state,
+request ID, last-change operation/adoption ID and complete activation receipt for harness validation;
+recovery never repeats registry effects. Old runs remain pinned; actual later output linkage permits unknown outcomes and never infers acceptance or calibration. Existing
+fixed-policy/factory-order contracts (and their scope fingerprint) are unchanged. See ADR-0073 for rationale.
+Metadata consistency does not establish release CI, installed validation, publication or human acceptance.
+
+**Earlier release-preparation snapshot (2026-09-12):** the last registry-verified baseline was `pi-daddy` 0.25.1,
+with a Herdr 0.8.0 **dashboard-plugin** floor; the separate native-lifecycle Herdr child route is verified
+only with Herdr 0.8.2 and Pi 0.85.1, and refuses before prompt if that lifecycle authority cannot activate.
+Merged source is prepared as the 0.25.2 candidate. For current
+publication status, consult [npm](https://www.npmjs.com/package/pi-daddy) and
+[GitHub Releases](https://github.com/mojomanyana/pi-daddy/releases). Runtime completion, a dashboard host,
+retained evidence and requested thinking remain distinct from human acceptance and provider-internal reasoning.
+
+The **local opt-in producer IPC bridge** binds an already reserved original v4 permit to one frozen
+parent budget/order/experiment/execution/host-charter/invocation binding. A separate fixed model-free
+namespace child emits only canonical `{id,sequence:1}` plus LF. Exact bounded bytes, original stdout EOF
+and original child completion precede a one-use Node Readable replay to the original trusted host port;
+correlation and composed original cancellation stay outside the frame. The existing reservation spans
+child and host lifetimes. Observer timeout is not settlement; late acknowledgement cannot upgrade a
+failed effect, and required accounting failure stays visible even with complete settlement bytes.
+References are evidence only. The fixed digest/hold profile, null model/effort/skills, ordinary Pi runtime
+restrictions, original review and seq226 are unchanged. No live SDK/model qualification or publication is
+implied. See [ADR-0059](06-decisions/ADR-0059-original-reservation-ipc-bridge.md) and the
+[precise callable contract](../packages/pi-daddy/contracts/producer-ipc/v1/README.md).
+
+The **local P05 ordinary-boundary repair** now queues intent direction while an attached original
+ordinary child is busy and holds new ordinary admission across asynchronous native application. Only
+explicit reconciliation at both original ordinary/resource boundaries plus a successful final host
+acknowledgement releases that hold. Failed/unknown acknowledgements retain it despite applied bytes.
+A best-effort terminal observation note does not convert a known-settled child into an unrecoverable
+execution boundary; genuinely failed/unknown ownership still refuses quiescence, and an already unavailable
+boundary refuses before installing a global ordinary hold.
+Original caller lifetimes and read-only refresh remain unchanged. Guide reconciliation does not invent
+a generic entity/topology/opaque-policy editor from broader wording; see
+[ADR-0058](06-decisions/ADR-0058-reconcile-guide-and-hold-original-intent-boundary.md).
+
+The **safe-boundary followup** adds opt-in cancellation capture from actual original grants
+extension/session handles and routes exact approved ordinary cancellation through the existing dashboard
+journal/CLI. Caller, fanout sibling and worker-result lifetimes remain original; failed observations and
+host acknowledgements stay separate from success. Late opt-in cannot certify an empty registry's coverage.
+Versioned `intent-request-v2` applies direct non-scope successors through existing P01/CAS/quiescence and
+append-once APIs without widening entity, owner, topology, policy or effects. See
+[ADR-0057](06-decisions/ADR-0057-original-ordinary-control-and-ci-driver-boundaries.md),
+[ordinary control](../packages/pi-daddy/contracts/ordinary-control/v1/README.md) and
+[intent v2](../packages/pi-daddy/contracts/intent-control/v2/README.md). CI stages only a new byte-verified
+private runtime, preserving shared cache/production guards; the205-case path file gets a bounded120s
+aggregate allowance with existing case deadlines. Remote bwrap provisioning and exact remote remeasurement
+remain unauthorized/unestablished. No new publication or overall acceptance follows these local changes.
+
+The **local connected dashboard host** now connects explicit ordinary native-retention targets,
+actual harness policy/checkpoint/fact-source/semantic observation and the existing daily read path.
+It uses the pinned real trust/learning journal and case/blind writers for durable five-total attention,
+manual paused presentation preparation/acknowledgement and reconnect without automatic reveal. Explicit
+whole-request/CAS dashboard routes reach actual P01 intent/resource controls and original P11 cancellation
+handles; a private bounded socket connects the existing CLI/plugin without reconstituting ownership.
+See [ADR-0056](06-decisions/ADR-0056-connected-observation-and-dashboard-host.md) and the
+[host contract](../packages/pi-daddy/contracts/dashboard-host/v1/README.md). SPEC001/002 repository gaps
+are narrowed, not claimed fully closed: physical retention/redaction/export handling, wider revisions and
+generalized ordinary/live steering remain separately named. Structural declarations and byte-checked
+loaded artifacts do not authenticate humans/modules or qualify an atomic deployed closing pause.
+
+The **overall-quality repairs** preserves required controller failures independently of
+worker artifacts, restores exact rollback adoption lineage/revalidation, and uses actual P01 receipt
+applicability across distinct snapshot identities. Views expose controller failed/unknown/not-assessed;
+none certifies clean control merely from completed workers. Lifecycle fixtures require real live readiness;
+CI adds exact prerequisite telemetry and bounds without provisioning, skips or relaxed guards.
+See [ADR-0055](06-decisions/ADR-0055-overall-quality-repairs.md). The original whole-change review remains
+CHANGES-REQUESTED on both axes. OAR-SPEC-001..007 remain OPEN implementable integration gaps, not waived or
+externalized by this batch. Remote native prerequisites/matrix/downstream and overall acceptance remain
+unqualified. Source through6212b9d is published in draft PR35; subsequent ordinary-boundary amendments are LOCAL ONLY.
+
+The additive **P08 retained-host bridge** explicitly consumes work-signals-v1/case-v3 selected batches
+and the durable blind writer ports tested at harness638494af0a0058edf9a9b1b02e57af894ab46ed6. Zero-card
+observation issues remain visible. Reconnect reads original quality without revealing; one blind question
+still consumes one of five total slots. Versioned attention checkpoints bind original signal and comparison
+identities; canonical decisions remain harness-owned. V2/manual behavior stays opt-in compatible.
+See [ADR-0054](06-decisions/ADR-0054-explicit-signals-and-durable-blind-debrief.md) and the
+[bridge contract](../packages/pi-daddy/contracts/debrief/v2/README.md). Host ports are not authentication,
+live pause/model qualification or acceptance. These amendments are local pending exact publication clearance.
+
+Cancellation control readback uses the existing experiment/resource locks; public experiment inspect and
+reconcile remain read-only, unlocked and fallible on concurrent changes. Required failures still reject
+and can follow an actual effect. Test listeners are exception-safe across missing prerequisites, ordinary
+fixture teardown respects explicit retention, and native/CommonJS fixtures no longer depend on repository
+CWD/module scope. See [ADR-0053](06-decisions/ADR-0053-owned-control-readback-and-test-lifetimes.md).
+
+The **local P15 fixed-profile order slice** compiles a bounded, independently authorized multi-node charter
+into the existing P11 controller using explicit fixed-experiment-v2 scheduling. Exact P01 obligations/source,
+frozen objective policies, pre-reserved recovery, designated product decisions and dependency eligibility
+are deterministic. Independent nodes continue while affected branches pause; status needs no model transport.
+Control snapshots synchronize on existing locks; ordinary views do not. A bounded operational registry uses
+exact pinned22606c2 adoption predicates plus fresh trusted-host approvals/facts to apply actual next-order
+candidate changes and explicit rollback. Existing orders remain pinned. Only unstarted orders can migrate
+through a durable supersession/successor/renewal receipt; active/history-bearing migration refuses.
+[P15 contract](../packages/pi-daddy/contracts/factory-order/v1/README.md). Objective satisfaction is not generic
+P01 acceptance, calibrated eligibility, model work or full factory qualification. New source LOCAL ONLY.
+
+The **local partial P11 fixed-profile experiment controller** uses a new explicit v4 resource journal for
+atomic whole-experiment/retry/shadow admission, existing capped fan-out in waves, immutable common/variant
+artifacts and independently approved charters. Its primary promise does not wait for shadow or judge;
+original live handles own cancellation/deadline and full completion. Restart reads bound state without
+relaunch/refund; missing old outcomes remain unknown. Actual bounded digest/hold workers are supported,
+not general model/effort/skill variants, live pi/Herdr steering, evaluation or adoption. Optional P01 source
+bindings pin actual common work bytes/selection, not acceptance. [P15 contract](../packages/pi-daddy/contracts/experiment/v1/README.md).
+The earlier P02 native865-vs1316 failure remains preserved: deterministic capture/append ordering demonstrates
+that terminal/verified is not a final-byte barrier. The governed-process test now drains original live
+observations explicitly; native verified-format/partial coverage and no-fsync/full-session guarantees remain.
+New source LOCAL ONLY; full P11 and overall acceptance remain pending.
+
+The **local P08 debrief candidate** extends the existing dashboard/plugin with a bounded manual weekly
+queue, explicit harness-owned labels and quality-before-reveal blind views. Exact harness4460af9/0475e1f
+contracts/fixtures are pinned. Five total attention slots include the blind question, persist across reopen
+through a host checkpoint, and are never refilled by answers/skip. Label authority/history stays with the
+real harness writer; no dashboard decision store or worker messages are added. Missing writer/identity /
+persistence disables actions; automatic closing-pause/exposure-policy/live qualification remains deferred,
+not inferred from agent_end or idle flags. The [P10/P12/P13 integration contract](../packages/pi-daddy/contracts/debrief/v1/README.md)
+distinguishes the real programmatic/fixture path from pending deployment and public-seed blinding limits.
+New source local only; overall acceptance pending. P05 cancellation/live-route limitations remain unchanged.
+
+The **local P05 intent-application continuation** now supplies actual bounded P01 scope successor,
+priority and recorded-alternative adapters, rather than treating omitted code as permanent external gaps.
+An explicit v3 resource binding pins owned work bytes; existing controller receipts retain exact selections
+and operational ranks without duplicating intent contents. Independently authorized complete changes apply
+at reservation quiescence, using strict P01 builders/ingestion and exact-ID append/reconciliation. Actual
+fixed-profile reservations enforce explicit primary scheduling. Permissions cannot expand; unknown receipts,
+torn data and crash locks never become successful application or automatic recovery. See the
+[intent adapter contract/matrix](../packages/pi-daddy/contracts/intent-control/v1/README.md). Owned cancellation
+bridging remains implementation work; general live steering remains unqualified. New source local only;
+overall acceptance pending. The earlier dispatch-only protocol below retains its own narrower matrix.
+
+The **local 2026-09-08 P05 candidate** implements independently authorized pause/resume of future
+reservations in an explicitly created v2 resource budget. Exact request identity, expected dispatch
+revision, persisted decision/application/outcome and reconciliation share the existing reservation lock
+and journal. Busy requests block new admission but apply only at zero-reservation boundaries; status reads
+never write or control workers. Work-v4 remains the sole intent source. Cancellation, scope revision,
+reprioritization, alternative selection and general live steering remain unsupported by this bounded
+protocol. The [P15 control contract/matrix](../packages/pi-daddy/contracts/dispatch-control/v1/README.md)
+preserves unknown acknowledgement and P02/P04/P06 limitations. Local only; overall acceptance pending.
+
+The **local 2026-09-08 P04 candidate** adds a read-only daily mode to the existing dashboard/plugin.
+It consumes exact pinned P03 execution archive snapshots and independently projects P01 work intent under
+explicit host authority. Unstarted obligations, exact attempts, scope revision, acceptance, runtime,
+coverage/check evidence and source references remain separate. CLI selection alone cannot supply approval;
+archive exit0 never counts as accepted. Reconnect resnapshots retain gaps and freshness stays unknown.
+The [P04 read-model contract for P07/P08](../packages/pi-daddy/contracts/daily-view/v1/README.md) publishes
+types and deterministic fixtures. Live passive transport/freshness qualification remains BLOCKED without
+a deployed P03 input. No model/worker/native-gate calls or P05 steering are added. Local only; independent
+overall review and formal acceptance remain pending.
+
+The **local 2026-09-08 P06 candidate** adds one opt-in fixed-code `linux-bwrap-digest-v1` runtime profile,
+not a general pi/bash sandbox. Actual bounded namespace/effect probes precede admission; each fresh owned
+probe fixture is removed after all probe children settle, including failure paths, without targeting old
+store entries. Immutable byte inputs and stdout-only results exclude writable/shared workspace destinations. A separately bound durable
+journal reserves attempts, input bytes and active invocation slots across orders/experiments. Cancellation
+never refunds cumulative charges; duplicates, lost ownership, unsupported profiles and substituted stores
+fail closed. Aggregate CPU/memory/PID and provider-money caps remain unsupported, as do arbitrary model or
+shell workloads. Existing delegation/check semantics are unchanged. See the
+[profile/accounting contract](../packages/pi-daddy/contracts/effect-profile/v1/README.md) for exact native
+observations, trust boundaries, restart behavior and limits. This is partial P06 coverage, local only;
+independent overall review and formal acceptance remain pending.
+
+The **local 2026-09-08 execution-retention 2.0 source candidate** retains bounded raw output, assembled
+results, complete available check receipts and validated private native session bytes at existing governed
+launch seams. Public call IDs and execution parentage remain exact and separate from logical names.
+`PI_GRANTS_EXECUTION_ARCHIVE` opts in; native file reads additionally require an owner-private
+`PI_GRANTS_NATIVE_SESSION_ROOT`. Herdr's native id/path references are consumed without extra RPCs.
+A live pi SessionManager can supply a checked active leaf; file tails cannot. Default ephemeral process
+children and file/Herdr-only active branches remain explicitly missing/unknown. No auth harvesting,
+monitoring extension, injected worker message or model call is added. Queued observation I/O is not awaited
+by worker control and does not change mandatory receipt failures. Retention never establishes acceptance
+or complete evidence. The [strict v2 producer contract for P03](../packages/pi-daddy/contracts/execution-retention/v2/README.md)
+defines supported routes, schema/builders, reproducible fixtures, privacy bounds and exact unsupported
+routes. Historical v1 semantics and receipts are preserved. Independent overall review and formal final
+acceptance remain pending; no per-task review pass or live qualification is asserted.
+
+**herdr's own contracts are now checked by `test-integration/herdr.it.ts`** against a live server, in an isolated
+workspace it creates and closes. That suite exists because three shipping defects hid behind the unit fake — the
+fake is a *claim* about herdr, and nothing checked the claim.
+
+---
+
 ## 2026-09-15 - completed ledger history visibility candidate
 
 Isolated branch `codex/session-learning-20260915`, base `96fdbf2`. The operator confirmed six Pi

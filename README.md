@@ -28,7 +28,7 @@ not evidence those remaining gates passed.
 
 ## What it actually does
 
-A spawnable agent is an **Agent Skills `SKILL.md`** file — the open standard, already read by 16+ tools. Its
+A spawnable agent is an **Agent Skills `SKILL.md`** file — the open standard, listed by 48 clients on the agentskills.io showcase as of 2026-09-21. Its
 `allowed-tools` field becomes the grant; its body becomes the child's system prompt.
 
 ```yaml
@@ -81,9 +81,10 @@ somebody.
 | Path | What it is |
 | :--- | :--- |
 | **`docs/SPEC.md`** | **What the product is, precisely. No history. Start here.** |
+| `docs/GLOSSARY.md` | Every term, one line each. |
 | `docs/SESSION-LOG.md` | Current state and what's next, newest first. |
 | `docs/03-risks.md` | Live risk register. R-25 onward are current. |
-| `docs/06-decisions/` | Forty-three ADRs. Reversals are kept and marked; **0016** is the current architecture, **0008** the invariant, **0012** why `bash` is out of scope, and **0039**–**0043** the Wave 1 audit decisions. |
+| `docs/06-decisions/` | The ADRs. Reversals are kept and marked; **0016** is the current architecture, **0008** the invariant, **0012** why `bash` is out of scope, **0039**–**0043** the Wave 1 audit decisions, and **0076** the consolidation programme. |
 | `docs/probes/` | Measurement evidence against real software. Each states what it does **not** establish. |
 | `docs/archive/` | Superseded, kept as evidence, never edited to match today. Don't start here. |
 | `packages/pi-daddy/` | The product. |
@@ -92,7 +93,7 @@ somebody.
 
 ```bash
 cd packages/pi-daddy
-npm test                   # 741 unit tests — pure, no pi, no network
+npm test                   # unit tests — pure, no pi, no network
 npm run typecheck          # src + extensions + test + test-integration
 npm run test:integration   # 48 tests against a REAL pi process/Herdr server, no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and USE every subpath
