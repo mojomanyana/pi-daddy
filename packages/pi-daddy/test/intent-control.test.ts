@@ -12,7 +12,6 @@ import { createIntentBudget, openResourceBudget } from "../src/products/resource
 import { intentRequestDigest, parseIntentRequest, type IntentRequest } from "../src/products/intent-control.ts";
 import { appendWorkLedgerEvent, parseWorkLedgerText, projectWorkLedger } from "../src/governance/work-ledger.ts";
 import { readDailyView } from "../src/products/daily-view.ts";
-import { prepareDigestProfile, runDigestProfile } from "../src/products/effect-profile.ts";
 import { intentWorld, fixedIntentRequests, fixedIntentAuthority, hostDigest } from "./intent-control-fixture.ts";
 async function fixture() {
   const root = await tempDir("intent-application-");
@@ -176,44 +175,6 @@ test("reconciliation checks the complete original request against receipt refere
   await assert.rejects(f.controls.request(f.requests.revise), /receipt projection/);
   await assert.rejects(f.controls.reconcile(f.requests.revise), /receipt projection/);
   assert.equal(await readFile(f.path, "utf8"), f.w.text);
-});
-
-test("actual fixed-profile dispatch consumes the explicit priority policy without expanding resource limits", async () => {
-  const f = await fixture();
-  await f.controls.request(f.requests.revise);
-  await f.controls.request(f.requests.priority);
-  const profile = await prepareDigestProfile(f.binding),
-    state = await f.controls.inspect();
-  const a = {
-    attemptId: "scheduled",
-    orderId: "order",
-    experimentId: "experiment",
-    kind: "primary" as const,
-    parentAttemptId: null,
-  };
-  await assert.rejects(runDigestProfile(profile, { attempt: a, bytes: Buffer.from("x") }), /v3 reservations/);
-  await assert.rejects(
-    runDigestProfile(profile, {
-      attempt: a,
-      bytes: Buffer.from("x"),
-      intent: {
-        selection: state.selection,
-        revision: state.revision,
-        obligation: f.requests.priority.priorities[1].obligation,
-      },
-    }),
-    /out-of-priority/,
-  );
-  assert.equal((await f.budget.inspect()).attempts, 0);
-  const result = await runDigestProfile(profile, {
-    attempt: a,
-    bytes: Buffer.from("x"),
-    intent: { selection: state.selection, revision: state.revision, obligation: state.nextObligation! },
-  });
-  assert.equal(result.output.code, 0);
-  assert.ok(result.digest);
-  assert.equal((await f.controls.inspect()).nextObligation?.id, "obligation-2");
-  assert.deepEqual(f.binding.limits, { maxAttempts: 8, maxInputBytes: 128, maxConcurrent: 2 });
 });
 
 test("work append completed but controller receipt failed: unknown until exact request reconciliation, no duplicate intent", async (t) => {

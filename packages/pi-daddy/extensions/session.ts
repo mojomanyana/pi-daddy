@@ -102,13 +102,6 @@ export function activityChildEnv(activity: { rootId: string; path: string; taskI
       : {};
 }
 /** Keep each child's pane after it finishes, for inspection. Off by default: fan-out would flood it. */
-export interface VariantRunAccounting {
-  runId: string;
-  primaryExecutionId: string;
-  shadowExecutionIds: string[];
-  state: "running" | "settled";
-  outcomes: null | { executionId: string; role: "primary" | "shadow"; ok: boolean; reason: string | null }[];
-}
 export interface GrantsSession extends NativeSessionHost {
   /** Legacy PI_GRANTS_* names adopted at construction (ADR-0076 PR 3b); the session-start warning names them. */
   readonly adoptedLegacyEnv: readonly string[];
@@ -158,8 +151,6 @@ export interface GrantsSession extends NativeSessionHost {
   activityRootId: string;
   activity?: { rootId: string; path: string; taskId?: string };
   declaredWork?: DeclaredWorkState; // Explicit operator selection; absence leaves execution visibly unbound.
-  /** Primary-return fan-outs retained by this original session; bounded and human-readable via /grants variants. */
-  readonly variantRuns: Map<string, VariantRunAccounting>;
   /** Root identity keyed to ctx.sessionManager once session_start supplies it. */
   reloadLifecycle: ReloadLifecycle;
   /** Approval keys approved for this session. In memory only — this dies with the process. */
@@ -342,7 +333,6 @@ export function createGrantsSession(
     extensionPath,
     observerExtensionPath,
     activityRootId,
-    variantRuns: new Map(),
     reloadLifecycle: activeLifecycle,
     sessionApprovals: new Set<string>(),
     sessionApprovalBindings: new Map<string, ApprovalBinding>(),

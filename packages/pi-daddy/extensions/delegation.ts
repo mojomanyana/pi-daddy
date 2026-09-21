@@ -35,7 +35,6 @@ import { isCriticalAssuranceBlock, type DelegationOutcome } from "./execute-chil
 import { type GrantsSession } from "./session.ts";
 import { newDelegationOccurrence } from "./execution-occurrence.ts";
 import { correlationShape as buildCorrelationShape } from "./correlation-shape.ts";
-import { completePrimary } from "./primary-shadow.ts";
 import { assertDelegationAuthority } from "./delegation-authority.ts";
 
 /**
@@ -200,18 +199,6 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       maxItems: MAX_CHILDREN_PER_CALL,
       description: "The sub-agents to run concurrently. Each is independent and unaware of the others.",
     }),
-    completion: Type.Optional(
-      Type.Literal("primary", {
-        description: "Return when the selected primary settles; shadows continue under the original owner.",
-      }),
-    ),
-    primary: Type.Optional(
-      Type.Integer({
-        minimum: 1,
-        maximum: MAX_CHILDREN_PER_CALL,
-        description: "1-based primary child; required with completion=primary.",
-      }),
-    ),
   });
 
   const delegateParams = Type.Object({
@@ -322,22 +309,11 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       `At most ${MAX_CHILDREN_PER_CALL} children per call, and a session-wide budget bounds the total ` +
       "across the whole delegation subtree. Children cannot see each other or share context. Use this " +
       "when independent tasks can proceed in parallel — several reviewers over one diff, say — and read " +
-      "every child's outcome, because one can be refused while the others succeed. For independent variants, " +
-      "completion=primary with a 1-based primary returns that result while shadows remain owned/accounted.",
+      "every child's outcome, because one can be refused while the others succeed.",
     parameters: delegateAllParams,
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
       assertDelegationAuthority(session);
-      const children = params.children ?? [],
-        primaryMode = params.completion === "primary";
-      if (
-        primaryMode !== Number.isInteger(params.primary) ||
-        (primaryMode && (params.primary! < 1 || params.primary! > children.length))
-      )
-        throw new GovernanceRefusal(
-          refusal("FANOUT_EXCEEDED", "primary fan-out requires one in-range 1-based primary"),
-        );
-      if (primaryMode && session.variantRuns.size >= 128)
-        throw new GovernanceRefusal(refusal("FANOUT_EXCEEDED", "primary/shadow accounting capacity exhausted"));
+      const children = params.children ?? [];
       const split = splitBudget(session.fanoutBudget, children.length);
       if (!split.ok) {
         // Thrown, not returned: a returned `isError` is discarded by pi, so a refusal that came back as a
@@ -373,31 +349,6 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
           return childFailureOutcome(error, session.depth + 1);
         }
       });
-      if (primaryMode) {
-        const completed = await completePrimary({
-            session,
-            primaryIndex: params.primary! - 1,
-            occurrences,
-            pending,
-            settle: progress.settle,
-          }),
-          primary = completed.primary;
-        if (!primary.ok) {
-          if (isCriticalAssuranceBlock(primary)) throw new Error(primary.text);
-          throw totalFanoutFailure([primary], `primary child failed: ${primary.reason}`);
-        }
-        return {
-          content: [{ type: "text", text: primary.text || "(no output)" }],
-          details: {
-            primary: params.primary,
-            shadows: children.length - 1,
-            primaryExecutionId: completed.runId,
-            shadowSettlement: "retained-by-original-owner",
-            granted: primary.granted,
-            retention: primary.retention,
-          },
-        };
-      }
       const outcomes = await Promise.all(pending);
       progress.settle(outcomes);
       // The upstream controller's verdict outranks our own infrastructure noise — it is the answer the

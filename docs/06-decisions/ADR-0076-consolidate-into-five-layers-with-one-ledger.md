@@ -292,3 +292,22 @@ largest file measured 395) and caps any line at 200 characters, which is below e
 (300 to 1,815) and above every legitimately unbreakable one after the seventeen longest were split. Vendored
 files are excluded from formatting because their bytes are hash-pinned; the first formatting run caught that by
 failing the adoption-pin test.
+
+## Amendment 2026-09-21 — the cleanup, and the five capabilities that did not survive it
+
+Between PR 3c and PR 3d the operator asked for a cleanup before more format work, and chose all four parts
+offered: archive the process documents; trim the session log, the risk register and the READMEs; retire
+superseded contract versions; **delete the lab features**. The last reverses the 2026-09-21 brainstorm answer
+"keep every capability" for exactly five: the bwrap digest **effect profile**, **factory orders**, **measured
+orders and sessions**, the **producer IPC** bridge and **primary/shadow** fan-out with `/grants variants`. The
+roast had listed each as a feature with no plausible user, and the dependency map showed they formed one
+closed lab: the experiment runner existed to run digest workers, the factory to schedule them, the measured
+route to compare two hard-coded models on them. What stayed is what the learning flow actually consumes —
+the experiment contract types, the experiment store and control journal, the resource budget and dispatch
+control — and the dashboard host lost only its experiment cancellation route. The bubblewrap CI steps went with
+the profile. This amendment records the reversal so the earlier answer is not read as still standing.
+
+The work ledger's conversion moved from 3d-i to 3d-ii (operator decision the same day): its 205-case byte-level
+suite pins the v4 line, and 54 of those cases assert properties of the raw line, so its conversion is a deliberate
+rewrite rather than a repoint. 3d-i ships the envelope for the grants ledger and the activity timeline.
+

@@ -38,11 +38,6 @@ the risk register to learn what a word means. When a term is retired by the cons
 - **activity timeline** — the local record of parent turns, child lifecycles and skill-file reads, `.pi/pi-daddy/activity.jsonl`; merges into the single ledger in ADR-0076 PR 3.
 - **control journal** — the append-only record of dashboard control actions; merges into the single ledger in ADR-0076 PR 3.
 - **daily host / daily panel / dashboard host** — the in-process controller `/grants host` starts, reachable over a private socket, and the Herdr panel that projects it.
-- **primary / shadow (variants)** — a `delegate_all` mode where one primary child's result is returned and shadow children's results are accounted separately.
-- **producer** — three senses: (1) the opt-in model-free **producer IPC** child that emits one `{id,sequence:1}` line; (2) the "producer requirement register", `REQUIREMENTS.md`, the 2026-09-14 product delivery; (3) in chains and DAGs, the predecessor whose output is handed to the next step.
-- **effect profile / digest profile** — `linux-bwrap-digest-v1`, a fixed non-shell operation inside a bwrap namespace that hashes at most 16 KiB.
-- **factory order** — a DAG of one to sixteen nodes whose only supported operation is the digest profile (`contracts/factory-order/v1`).
-- **measured order / measured session** — a DAG of tool-less SDK sessions on the two Sol and Terra model IDs with predeclared output hashes and recorded provider usage (ADR-0072).
 - **Sol, Terra** — the model IDs `openai-codex/gpt-5.6-sol` and `openai-codex/gpt-5.6-terra`. "Sol-approved" in a dated document means a review run by that model passed; it does not name a human.
 - **P01 … P15** — work-package numbers from the operator's 2026-09-14 product proposal, which is not in this repository. Referenced in code and documents: P01 (work-setup builders and the selected work snapshot), P03 (daily-view projection contract), P05 (ordinary admission hold), P08 (retained-host debrief bridge), P11 (experiment controller and cancellation handles), P15 (factory orders). Other numbers are not referenced here.
 
@@ -68,3 +63,8 @@ the risk register to learn what a word means. When a term is retired by the cons
 
 - **DTCM (Dynamic Tool & Context Management)** — the token-economics thesis ADR-0007 retired; kept verbatim in every dated document as evidence, never find-and-replaced.
 - **pi-agent-grants** — the package's name before ADR-0027; the one rename that did go through the record, with what it made untrue listed there.
+- **primary / shadow (variants)** — RETIRED 2026-09-21 (cleanup, deleted from the package): a `delegate_all` mode where one primary child's result is returned and shadow children's results are accounted separately.
+- **producer** — RETIRED 2026-09-21 (cleanup, deleted from the package): three senses: (1) the opt-in model-free **producer IPC** child that emits one `{id,sequence:1}` line; (2) the "producer requirement register", `REQUIREMENTS.md`, the 2026-09-14 product delivery; (3) in chains and DAGs, the predecessor whose output is handed to the next step.
+- **effect profile / digest profile** — RETIRED 2026-09-21 (cleanup, deleted from the package): `linux-bwrap-digest-v1`, a fixed non-shell operation inside a bwrap namespace that hashes at most 16 KiB.
+- **factory order** — RETIRED 2026-09-21 (cleanup, deleted from the package): a DAG of one to sixteen nodes whose only supported operation is the digest profile (`contracts/factory-order/v1`).
+- **measured order / measured session** — RETIRED 2026-09-21 (cleanup, deleted from the package): a DAG of tool-less SDK sessions on the two Sol and Terra model IDs with predeclared output hashes and recorded provider usage (ADR-0072).

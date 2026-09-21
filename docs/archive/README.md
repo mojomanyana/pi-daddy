@@ -40,3 +40,16 @@ claim later falsified — those mentions *are* the evidence.
 - **`docs/probes/`** — measurement evidence, all run against real software, each with a "what this does not
   establish" section.
 - **`docs/SESSION-LOG.md`** — state and next actions, newest first.
+
+## Added by the 2026-09-21 cleanup (ADR-0076)
+
+- `process/` — HANDOFF-principal-pi-skills-integration, HANDOFF-principal-pi-skills-v3-assurance,
+  HANDOFF-ledger-v2-contract, USING-WITH-PRINCIPAL-PI-SKILLS, PUBLISHING, RUNNING-IT, FINAL-READINESS-INDEX:
+  hand-off and release-procedure documents for work that has landed. The product guide and SPEC are current.
+- `plans/`, `handoff/` — the completed implementation plans and the Wave 1 audit hand-off.
+- `SESSION-LOG-2026-08-to-09-14.md` — session-log entries before 2026-09-15, verbatim.
+- `03-risks-resolved.md` — every risk entry whose headline status was FIXED, RETIRED or CLOSED, verbatim;
+  cited numbers resolve here.
+- `CHANGELOG-prepublication.md` — package versions before 0.13.0, none of which was published.
+- `contracts/execution-retention/v1/` — superseded by v2; no code reads it.
+

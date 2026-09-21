@@ -4,7 +4,6 @@ import type { DebriefHarness, DurableBlindBinding, CaseSelection } from "./debri
 import type { WorkProjectionContext, WorkFrozen } from "../governance/work-ledger.ts";
 import type { DispatchAuthority } from "./dispatch-control.ts";
 import type { OrdinaryAuthority } from "./ordinary-children.ts";
-import type { ExperimentAuthority } from "./experiment-contract.ts";
 export const DASHBOARD_HARNESS_PIN = "d123257e53d48a2cad6919708976b5371dc7590e";
 export interface HostEvent {
   id: string;
@@ -90,7 +89,6 @@ export interface DashboardHostRequest {
     | "debrief"
     | "dispatch"
     | "intent"
-    | "cancel"
     | "dispatch-reconcile"
     | "intent-reconcile"
     | "ordinary-cancel";
@@ -101,7 +99,6 @@ export interface DashboardHostAuthority {
   requestDigests: readonly string[];
   workContext: WorkFrozen<WorkProjectionContext>;
   dispatch: DispatchAuthority | null;
-  experiment: ExperimentAuthority | null;
   ordinary?: OrdinaryAuthority | null;
 }
 export const dashboardHostDigest = (c: DashboardHostConfig): string => dataDigest(c);
@@ -121,7 +118,6 @@ export function dashboardHostRequest(input: DashboardHostRequest) {
       "debrief",
       "dispatch",
       "intent",
-      "cancel",
       "dispatch-reconcile",
       "intent-reconcile",
       "ordinary-cancel",

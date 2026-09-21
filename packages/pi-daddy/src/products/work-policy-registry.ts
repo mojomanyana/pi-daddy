@@ -8,9 +8,69 @@ import {
   type AdoptionBinding,
   type AdoptionReceipt,
   type RollbackRequest,
+  type AdoptionAuthority,
+  type AdoptionFacts,
 } from "./vendor/adoption.ts";
-import { factoryAuthority, requireFactoryAuthority, type FactoryAuthority } from "./factory-contract.ts";
 import { WORK_EFFORTS, type WorkSetup } from "./work-setup.ts";
+
+const hex = (x: unknown) => typeof x === "string" && /^[a-f0-9]{64}$/.test(x);
+// Moved here from the deleted factory-contract.ts (cleanup 2026-09-21): the adoption registry is the only remaining
+// consumer of the independent-authority check.
+export interface FactoryAuthority {
+  id: string;
+  orderDigests: readonly string[];
+  decisionDigests: readonly string[];
+  cancellationDigests?: readonly string[];
+  activationDigests: readonly string[];
+  migrationDigests: readonly string[];
+  adoption: AdoptionAuthority | null;
+  facts: readonly { bindingId: string; facts: AdoptionFacts }[];
+}
+
+export function factoryAuthority(value: FactoryAuthority | null): FactoryAuthority | null {
+  if (value === null) return null;
+  const a = cloneExperiment(value);
+  closed(a, [
+    "id",
+    "orderDigests",
+    "decisionDigests",
+    "activationDigests",
+    "migrationDigests",
+    "adoption",
+    "facts",
+    ...(Object.hasOwn(a, "cancellationDigests") ? ["cancellationDigests"] : []),
+  ]);
+  if (
+    typeof a.id !== "string" ||
+    !/^[a-zA-Z0-9:_-]{1,128}$/.test(a.id) ||
+    [
+      a.orderDigests,
+      a.decisionDigests,
+      a.activationDigests,
+      a.migrationDigests,
+      ...(Object.hasOwn(a, "cancellationDigests") ? [a.cancellationDigests!] : []),
+    ].some((xs) => !Array.isArray(xs) || xs.length > 128 || xs.some((x) => !hex(x))) ||
+    !Array.isArray(a.facts) ||
+    a.facts.length > 128
+  )
+    throw new Error("invalid independent factory authority");
+  const ids = new Set<string>();
+  for (const f of a.facts as FactoryAuthority["facts"]) {
+    closed(f, ["bindingId", "facts"]);
+    if (!hex(f.bindingId) || ids.has(f.bindingId)) throw new Error("ambiguous independent facts");
+    ids.add(f.bindingId);
+  }
+  if (a.adoption !== null) {
+    closed(a.adoption, ["id", "adoptions", "rollbacks"]);
+    if (a.adoption.id !== a.id) throw new Error("independent authority identity mismatch");
+  }
+  return a;
+}
+
+export function requireFactoryAuthority(a: FactoryAuthority | null, id: string) {
+  if (!a || a.id !== id) throw new Error("independent factory authority required");
+  return a;
+}
 
 /** Additive profile: ONLY model/effort may change. Task IDs and definition names stay fixed. Normal definition-digest/grant checks still run; this is not a filesystem pin. */
 export interface WorkPolicy {

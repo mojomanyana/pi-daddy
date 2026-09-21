@@ -19,12 +19,10 @@ import {
 } from "../src/products/dashboard-host.ts";
 import { dispatchRequestDigest, type DispatchRequest } from "../src/products/dispatch-control.ts";
 import { ordinaryHostRetention } from "./dashboard-retention-fixture.ts";
-import { hostExperiment } from "./dashboard-experiment-fixture.ts";
-import { experimentBindingDigest } from "../src/products/experiment.ts";
 import type { OrdinaryChildren } from "../src/products/ordinary-children.ts";
 export async function hostWorld(
   blind = true,
-  kind: "signals" | "zero" | "v2" | "experiment" | "retention" = "signals",
+  kind: "signals" | "zero" | "v2" | "retention" = "signals",
   ordinary?: OrdinaryChildren,
   withLearning = false,
 ) {
@@ -180,7 +178,6 @@ export async function hostWorld(
     comparisonId = b
       ? api.retainBlindIntervention(archiveRoot, b.manifest, b.evidence, b.qualification, "operator")
       : null;
-  const experiment = kind === "experiment" ? await hostExperiment(root) : null;
   const learningLifecycleId = withLearning
     ? api.retainLearningLifecycle(archiveRoot, {
         caseManifestId: evidence.manifestId,
@@ -211,7 +208,7 @@ export async function hostWorld(
     cases,
     blind: comparisonId ? { comparisonId, author: "operator" } : null,
     budgetDigest: resourceBindingDigest(budget),
-    experimentDigest: experiment ? experimentBindingDigest(experiment.controller.binding) : null,
+    experimentDigest: null,
     harnessArtifactDigest: artifactDigest,
     ...(ordinary ? { ordinaryDigest: ordinary.bindingDigest } : {}),
     ...(learningLifecycleId ? { learningLifecycleId } : {}),
@@ -221,7 +218,6 @@ export async function hostWorld(
     requestDigests: [],
     workContext: { selectedSnapshot: config.selection, authority: null },
     dispatch: { authorityDigest: hostDigest, requestDigests: [] },
-    experiment: experiment?.authority ?? null,
   };
   const presence = { present: true, closing: true, evidenceDigest: hash("presence"), expiresAt: Date.now() + 600000 };
   const options = {
@@ -229,7 +225,6 @@ export async function hostWorld(
       harness: api,
       config,
       budget,
-      experiment: experiment?.controller,
       authority: () => authority,
       presence: () => presence,
     },
@@ -285,7 +280,6 @@ export async function hostWorld(
     request,
     pause,
     presence,
-    experiment,
     get authority() {
       return authority;
     },

@@ -306,7 +306,6 @@ export async function startDailyDashboardHost(input: DailyDashboardHostInput) {
     requestDigests: [...requestDigests],
     workContext: { selectedSnapshot: workSelection, authority: null },
     dispatch: { authorityDigest, requestDigests: [...dispatchDigests] },
-    experiment: null,
     ordinary: { bindingDigest: input.ordinary.bindingDigest, requestDigests: [...ordinaryDigests] },
   });
   const request = (

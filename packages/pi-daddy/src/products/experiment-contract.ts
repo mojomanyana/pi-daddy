@@ -3,8 +3,8 @@ import { createHash } from "node:crypto";
 import { intentKey, type WorkIntentBinding } from "./intent-control.ts";
 import { workIntentBinding } from "./intent-application.ts";
 import { freezeWork, parseWorkJson } from "../governance/work-ledger-json.ts";
-import { orderSchedule, type OrderSchedule } from "./order-schedule.ts";
-import { DIGEST_PROFILE } from "./effect-profile.ts";
+/** The retired fixed-digest profile id, kept so existing experiment bindings on disk still validate (cleanup 2026-09-21). */
+export const DIGEST_PROFILE = "linux-bwrap-digest-v1" as const;
 export const experimentHash = (value: unknown) => createHash("sha256").update(intentKey(value)).digest("hex");
 export const byteHash = (bytes: Uint8Array | string) => createHash("sha256").update(bytes).digest("hex");
 export const cloneExperiment = <T>(value: T): T => JSON.parse(intentKey(value));
@@ -25,7 +25,6 @@ export interface ExperimentVariant {
 }
 export interface ExperimentCharter {
   version: "fixed-experiment-v1" | "fixed-experiment-v2";
-  order?: OrderSchedule;
   experimentId: string;
   orderId: string;
   budgetDigest: string;
@@ -110,20 +109,8 @@ export function experimentCharter(input: ExperimentCharter): ExperimentCharter {
   }
   if (c.mode === "concurrent-shadow" && (c.variants.length !== 2 || c.variants[1].kind !== "shadow"))
     throw new TypeError("concurrent shadow requires exactly primary and shadow");
-  if (c.version === "fixed-experiment-v2") {
-    if (c.mode !== "bounded-waves" || !c.common.work)
-      throw new Error("orders require pinned work and bounded scheduling");
-    c.order = orderSchedule(
-      c.order!,
-      c.variants.map((v) => v.executionId),
-    );
-    for (const n of c.order.nodes)
-      for (const [i, id] of n.executions.entries()) {
-        const v = c.variants.find((v) => v.executionId === id)!;
-        if (i ? v.kind !== "retry" || v.parentExecutionId !== n.executions[i - 1] : v.kind !== "primary")
-          throw new Error("node recovery lineage mismatch");
-      }
-  }
+  if (c.version === "fixed-experiment-v2")
+    throw new Error("fixed-experiment-v2 orders were retired with the factory lab (cleanup 2026-09-21)");
   return freezeWork(c) as ExperimentCharter;
 }
 export const parseExperimentCharter = (text: string) =>

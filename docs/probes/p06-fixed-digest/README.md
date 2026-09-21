@@ -30,3 +30,6 @@ runtime images, aggregate CPU/memory/PID/provider-dollar caps, shared writable d
 rollback resistance, full-controller-crash cleanup qualification or complete P06/factory acceptance.
 Cancellation observations are not used to reclaim any crashed-controller reservation. See the
 [explicit contract](../../../packages/pi-daddy/contracts/effect-profile/v1/README.md).
+
+**Note 2026-09-21.** The code this probe measured (`effect-profile.ts`) and its contract were deleted by the ADR-0076
+cleanup; the rerun command above no longer exists. The measurement stands as a record of what bubblewrap did on this host.

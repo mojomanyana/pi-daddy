@@ -17,7 +17,6 @@ import type { ExecutorChoice } from "../src/executors/executor.ts";
 import type { Catalog } from "../src/kernel/catalog.ts";
 import type { SkillDefinition } from "../src/kernel/definitions.ts";
 import type { GatedPlan } from "./run-delegation.ts";
-import type { VariantRunAccounting } from "./session.ts";
 import { handleConnectedCommand } from "./grants-connected-command.ts";
 import { loadApprovals, revokeAll, revokeApproval, type SubjectLookup } from "../src/governance/approval-store.ts";
 import { verifyLedger } from "../src/governance/ledger.ts";
@@ -69,7 +68,6 @@ export interface GrantsCommandContext {
   >;
   /** Explicit same-process production host lifecycle; owns no model call and never cancels a child on stop. */
   runHost: (target: string) => Promise<string>;
-  variantRuns: Map<string, VariantRunAccounting>;
 }
 
 /**
@@ -84,7 +82,6 @@ const KNOWN_SUBCOMMANDS: readonly string[] = [
   "learning",
   "init",
   "host",
-  "variants",
   "dashboard",
   "ledger",
   "approvals",
@@ -113,7 +110,6 @@ export const grantsCommand = {
       inheritedApprovals,
       snapshotOf,
       previewDelegation,
-      variantRuns,
     } = ctx.grants as GrantsCommandContext;
 
     const [sub, target] = args.trim().split(/\s+/).filter(Boolean);
@@ -131,25 +127,6 @@ export const grantsCommand = {
       })
     )
       return;
-
-    if (sub === "variants") {
-      const lines = [`grants: ${variantRuns.size} retained primary/shadow run(s)`];
-      for (const run of variantRuns.values())
-        lines.push(
-          `  ${run.runId} ${run.state} — primary ${run.primaryExecutionId}; ${run.shadowExecutionIds.length} shadow(s)` +
-            (!run.outcomes
-              ? ""
-              : ` — ${run.outcomes.map((x) => `${x.role}:${x.ok ? "completed" : "failed"}`).join(", ")}`),
-        );
-      lines.push(
-        "  provider usage unavailable on the default child print transport; fan-out, output bytes and wall time remain controller-bounded",
-      );
-      lines.push(
-        "  opt-in measured no-tool sessions can retain Pi Usage for exact Sol/Terra attempts; this is not ordinary-child or subscription-billing coverage",
-      );
-      ctx.ui.notify(lines.join("\n"), "info");
-      return;
-    }
 
     if (sub === "ledger") {
       // The detector, made reachable. `verifyLedger` exists because nothing in this package had ever read

@@ -131,8 +131,9 @@ test("delegate and delegate_all expose explicit bounded thinking levels", async 
   );
   assert.deepEqual(child.properties.thinking, single.properties.thinking);
   const fanout = tools.get("delegate_all")!.parameters as any;
-  assert.equal(fanout.properties.completion.const, "primary");
-  assert.equal(fanout.properties.primary.minimum, 1);
+  // Cleanup 2026-09-21: primary/shadow fan-out was deleted; the schema must not quietly grow it back.
+  assert.equal(fanout.properties.completion, undefined);
+  assert.equal(fanout.properties.primary, undefined);
 });
 
 function agentDescriptionOf(spec: ToolSpec): string {
@@ -208,20 +209,6 @@ test("more children than the per-call limit is refused before anything runs", as
         .execute("t", { children: refusedChildren(MAX_CHILDREN_PER_CALL + 1) }, undefined, undefined, ctx),
     /per-call limit/,
   );
-});
-
-test("primary completion requires one in-range primary before any child starts", async () => {
-  const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate" }),
-    all = tools.get("delegate_all")!;
-  for (const args of [
-    { completion: "primary", children: refusedChildren(2) },
-    { primary: 1, children: refusedChildren(2) },
-    { completion: "primary", primary: 3, children: refusedChildren(2) },
-  ])
-    await assert.rejects(
-      () => all.execute("invalid-primary", args, undefined, undefined, ctx),
-      /one in-range 1-based primary/,
-    );
 });
 
 test("a fan-out wider than the remaining budget is refused, naming the remedy", async () => {
@@ -628,111 +615,6 @@ const poll = setInterval(() => {
   } finally {
     if (oldPath === undefined) delete process.env.PATH;
     else process.env.PATH = oldPath;
-  }
-});
-
-test("primary completion returns before two shadows while their failure and cancellation remain accounted", async () => {
-  const bin = await tempDir("grants-primary-shadow-shim-"),
-    ledger = join(bin, "ledger.jsonl"),
-    readyFail = join(bin, "fail.ready"),
-    readyOk = join(bin, "ok.ready"),
-    readyCancel = join(bin, "cancel.ready"),
-    release = join(bin, "release");
-  await writeFile(
-    join(bin, "pi"),
-    `#!/usr/bin/env node
-const fs=require('node:fs'),task=process.argv.at(-1).trim(),wait=(test,done)=>{const timer=setInterval(()=>{if(test()){clearInterval(timer);done();}},5)};
-if(task==='primary')wait(()=>fs.existsSync(${JSON.stringify(readyFail)})&&fs.existsSync(${JSON.stringify(readyOk)}),()=>{process.stdout.write('PRIMARY')});
-else if(task==='primary-cancel')wait(()=>fs.existsSync(${JSON.stringify(readyCancel)}),()=>{process.stdout.write('PRIMARY-CANCEL')});
-else {fs.writeFileSync(task==='shadow-fail'?${JSON.stringify(readyFail)}:task==='shadow-ok'?${JSON.stringify(readyOk)}:${JSON.stringify(readyCancel)},'ready');wait(()=>fs.existsSync(${JSON.stringify(release)}),()=>{process.stdout.write(task);process.exit(task==='shadow-fail'?1:0)});}`,
-  );
-  await chmod(join(bin, "pi"), 0o755);
-  const oldPath = process.env.PATH;
-  process.env.PATH = `${bin}:${oldPath}`;
-  try {
-    const { tools, commands, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate", [ENV_LEDGER]: ledger }),
-      all = tools.get("delegate_all")!;
-    const terminal = async (count: number) => {
-      const deadline = Date.now() + 3000;
-      let rows: any[] = [];
-      while (Date.now() < deadline) {
-        rows = (await readFile(ledger, "utf8"))
-          .trim()
-          .split("\n")
-          .map((line) => JSON.parse(line))
-          .filter((x) => x.event === "child_lifecycle" && ["completed", "failed"].includes(x.state));
-        if (rows.length === count) return rows;
-        await new Promise((r) => setTimeout(r, 20));
-      }
-      return rows;
-    };
-    const result = (await all.execute(
-      "primary-run",
-      {
-        completion: "primary",
-        primary: 1,
-        children: [
-          { task: "primary", tools: ["read"] },
-          { task: "shadow-fail", tools: ["read"] },
-          { task: "shadow-ok", tools: ["read"] },
-        ],
-      },
-      undefined,
-      undefined,
-      ctx,
-    )) as any;
-    assert.match(result.content[0].text, /PRIMARY/);
-    assert.equal(result.details.primary, 1);
-    assert.equal(result.details.shadows, 2);
-    assert.equal((await terminal(1)).length, 1, "both ready shadows must still be unsettled when the primary returns");
-    await writeFile(release, "release");
-    const settled = await terminal(3);
-    assert.deepEqual(settled.map((x) => x.state).sort(), ["completed", "completed", "failed"]);
-    let report = "";
-    (ctx.ui as any).notify = (message: string) => {
-      report = message;
-    };
-    // Terminal ledger bytes precede teardown and the owner's asynchronous accounting continuation.
-    const reportDeadline = Date.now() + 3000;
-    while (Date.now() < reportDeadline && !/settled/.test(report)) {
-      await commands.get("grants").handler("variants", ctx);
-      if (!/settled/.test(report)) await new Promise<void>((resolve) => setTimeout(resolve, 20));
-    }
-    assert.match(
-      report,
-      /settled[\s\S]*primary:completed[\s\S]*shadow:failed[\s\S]*shadow:completed/,
-      "original owner must settle variant accounting after terminal child records",
-    );
-    assert.match(
-      report,
-      /provider usage\s+unavailable/i,
-      "the user-facing variant report must not imply child token or billing evidence",
-    );
-    await rm(release);
-    const controller = new AbortController(),
-      cancelled = (await all.execute(
-        "primary-cancel",
-        {
-          completion: "primary",
-          primary: 1,
-          children: [
-            { task: "primary-cancel", tools: ["read"] },
-            { task: "shadow-cancel", tools: ["read"] },
-          ],
-        },
-        controller.signal,
-        undefined,
-        ctx,
-      )) as any;
-    assert.match(cancelled.content[0].text, /PRIMARY-CANCEL/);
-    controller.abort();
-    assert.equal(
-      (await terminal(5)).length,
-      5,
-      "the original ledger must retain final accounting after shadow cancellation",
-    );
-  } finally {
-    process.env.PATH = oldPath;
   }
 });
 
