@@ -20,7 +20,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { planSpawn } from "../src/spawn.ts";
+import { planSpawn } from "../src/kernel/spawn.ts";
 
 /** The task always lands in the final argv element; these tests are about what pi sees there. */
 const promptArg = (args: string[]) => args[args.length - 1];

@@ -8,9 +8,9 @@ import {
   inheritApprovals,
   offeredScopes,
   shouldSeekApproval,
-} from "../src/approval.ts";
-import { resolve } from "../src/resolve.ts";
-import { planDelegation } from "../src/delegate.ts";
+} from "../src/kernel/approval.ts";
+import { resolve } from "../src/kernel/resolve.ts";
+import { planDelegation } from "../src/kernel/delegate.ts";
 
 test("a gated capability with nothing else wrong is worth asking a human about", () => {
   const result = resolve({
@@ -123,7 +123,7 @@ test("expiry is TTL days after approval, as an ISO instant", () => {
   assert.equal(expiryFor(at), "2026-09-08T14:02:11.331Z");
 });
 
-import { entryVerdict, resolveApprovals, type ApprovalEntry } from "../src/approval.ts";
+import { entryVerdict, resolveApprovals, type ApprovalEntry } from "../src/kernel/approval.ts";
 
 const CWD = "/repo/a";
 const NOW = new Date("2026-08-20T00:00:00.000Z");

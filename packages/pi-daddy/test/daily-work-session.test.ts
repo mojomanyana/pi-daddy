@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { replacePublishedDailyWork } from "../extensions/daily-work-session.ts";
-import { ENV_DAILY_SELECTION, ENV_DAILY_WORK } from "../src/dashboard-cli.ts";
+import { ENV_DAILY_SELECTION, ENV_DAILY_WORK } from "../src/products/dashboard-cli.ts";
 
 const state = { ledgerPath: "/tmp/work.jsonl", selectedSnapshot: { snapshot: { id: "s", digest: "a".repeat(64) }, event: { eventId: "e", digest: "b".repeat(64) } } } as any;
 

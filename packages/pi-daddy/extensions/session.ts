@@ -14,15 +14,15 @@
  * copy of `ownGrant` before observation is exactly how a stale upper bound would become an enforced one.
  */
 import { randomUUID } from "node:crypto";
-import { parseInherited, type InheritableApproval } from "../src/approval.ts";
-import type { ApprovalBinding } from "../src/correlation.ts";
-import { createApprovalGateProvider } from "../src/approval-prompt.ts";
-import { makeCatalog, skillPathsFromCatalog, type Catalog } from "../src/catalog.ts";
-import type { SkillDefinition } from "../src/definitions.ts";
-import { DELEGATE_CAPABILITY, type DelegationContext } from "../src/delegate.ts";
-import { budgetFromEnv } from "../src/fanout.ts";
-import { chooseExecutor, ENV_HERDR, type ExecutorChoice } from "../src/executor.ts";
-import { WILDCARD } from "../src/pi-tools.ts";
+import { parseInherited, type InheritableApproval } from "../src/kernel/approval.ts";
+import type { ApprovalBinding } from "../src/kernel/correlation.ts";
+import { createApprovalGateProvider } from "../src/governance/approval-prompt.ts";
+import { makeCatalog, skillPathsFromCatalog, type Catalog } from "../src/kernel/catalog.ts";
+import type { SkillDefinition } from "../src/kernel/definitions.ts";
+import { DELEGATE_CAPABILITY, type DelegationContext } from "../src/kernel/delegate.ts";
+import { budgetFromEnv } from "../src/kernel/fanout.ts";
+import { chooseExecutor, ENV_HERDR, type ExecutorChoice } from "../src/executors/executor.ts";
+import { WILDCARD } from "../src/kernel/pi-tools.ts";
 import {
   childEnv,
   depthConfig,
@@ -39,17 +39,17 @@ import {
   ENV_PARENT_ID,
   GRANT_ENV_KEYS,
   parseList,
-} from "../src/propagation.ts";
-import type { Capability } from "../src/resolve.ts";
-import { loadDefinitions } from "../src/definitions.ts";
-import { buildCatalog } from "../src/catalog.ts";
-import { ENV_WORKSPACE_REGISTRY } from "../src/workspace.ts";
-import type { GrantStoreRefusalReason } from "../src/grant-store.ts";
+} from "../src/kernel/propagation.ts";
+import type { Capability } from "../src/kernel/resolve.ts";
+import { loadDefinitions } from "../src/kernel/definitions.ts";
+import { buildCatalog } from "../src/kernel/catalog.ts";
+import { ENV_WORKSPACE_REGISTRY } from "../src/kernel/workspace.ts";
+import type { GrantStoreRefusalReason } from "../src/governance/grant-store.ts";
 import { republishable } from "./approvals.ts";
 import { storedGrantSessionState } from "./stored-grant-session.ts";
-import { nativeSessionRootFromEnv, type NativeSessionHost } from "../src/native-session-target.ts";
-import { ENV_ALLOW_UNRESOLVED_MODELS } from "../src/model-preflight.ts";
-import type { DeclaredWorkState } from "../src/work-command.ts";
+import { nativeSessionRootFromEnv, type NativeSessionHost } from "../src/executors/native-session-target.ts";
+import { ENV_ALLOW_UNRESOLVED_MODELS } from "../src/kernel/model-preflight.ts";
+import type { DeclaredWorkState } from "../src/products/work-command.ts";
 import { beginExtensionLifecycle, rememberChildPublication, type ReloadLifecycle } from "./reload-environment.ts";
 import { reconcileSessionEnvironment } from "./session-environment.ts";
 /**
@@ -63,10 +63,10 @@ import { reconcileSessionEnvironment } from "./session-environment.ts";
  * `/grants`. Both executors still enforce the identical grant: the plan is the same, only the place it runs
  * differs.
  *
- * The table itself is a pure function in `../src/executor.ts`; re-exported here because this is where every
+ * The table itself is a pure function in `src/executors/executor.ts`; re-exported here because this is where every
  * other `PI_GRANTS_*` name lives and a reader looking for it will look here.
  */
-export { ENV_HERDR } from "../src/executor.ts";
+export { ENV_HERDR } from "../src/executors/executor.ts";
 /**
  * herdr workspace for spawned panes — re-exported from where it is actually READ.
  *
@@ -78,7 +78,16 @@ export { ENV_HERDR } from "../src/executor.ts";
  * `HERDR_WORKSPACE_ID`, because a child in a different workspace from the session that spawned it makes switching
  * to it a workspace hop (ADR-0032). This name is the operator's explicit override.
  */
-export { ENV_HERDR_WORKSPACE } from "../src/herdr-cli.ts";
+export { ENV_HERDR_WORKSPACE } from "../src/executors/herdr-cli.ts";
+import { ENV_ACTIVITY_PARENT_TASK, ENV_ACTIVITY_PATH, ENV_ACTIVITY_ROOT, ENV_ACTIVITY_TASK } from "../src/products/activity-timeline.ts";
+
+/** The activity timeline's per-child observation identity, handed to the kernel through `childEnv` (ADR-0076). */
+export function activityChildEnv(activity: { rootId: string; path: string; taskId?: string } | undefined) {
+  return (child: { childExecutionId?: string }): Readonly<Record<string, string>> =>
+    activity?.taskId && child.childExecutionId
+      ? { [ENV_ACTIVITY_PATH]: activity.path, [ENV_ACTIVITY_ROOT]: activity.rootId, [ENV_ACTIVITY_TASK]: child.childExecutionId, [ENV_ACTIVITY_PARENT_TASK]: activity.taskId }
+      : {};
+}
 /** Keep each child's pane after it finishes, for inspection. Off by default: fan-out would flood it. */
 export const ENV_HERDR_KEEP_PANE = "PI_GRANTS_HERDR_KEEP_PANE";
 export const ENV_GOVERNANCE = "PI_DADDY_GOVERNANCE";
@@ -327,7 +336,7 @@ export function createGrantsSession(extensionPath: string | undefined, lifecycle
       ledgerPath: session.ledgerPath,
       extensionPath: session.extensionPath,
       observerExtensionPath: session.observerExtensionPath,
-      activity: session.activity,
+      childEnv: activityChildEnv(session.activity),
       catalog: await session.catalogReady,
       // R-32: where each granted skill lives, so `planSpawn` can pass `--skill` for those and only those.
       // Derived from the catalog's own `source`, so it cannot drift from what was discovered.

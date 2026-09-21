@@ -6,16 +6,10 @@ import { join } from "node:path";
 import { existsSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { after, test } from "node:test";
-import {
-  acquireWorkspaceLease,
-  leaseAcquisitionOutcome,
-  leaseReleaseLedgerOutcome,
-  loadWorkspaceRegistry,
-  resolveWorkspace,
-  validateRegisteredWorkspace,
-} from "../src/workspace.ts";
-import { GovernanceRefusal } from "../src/refusals.ts";
-import { leasePaths } from "../src/lease-record.ts";
+import { loadWorkspaceRegistry, resolveWorkspace, validateRegisteredWorkspace } from "../src/kernel/workspace.ts";
+import { acquireWorkspaceLease, leaseAcquisitionOutcome, leaseReleaseLedgerOutcome } from "../src/governance/workspace-lease.ts";
+import { GovernanceRefusal } from "../src/kernel/refusals.ts";
+import { leasePaths } from "../src/governance/lease-record.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 import { liveFixtureReady } from "./lifecycle-ready.ts";
 
@@ -133,10 +127,12 @@ test("parent SIGKILL stops the attached writer before releasing the lease", asyn
   const root = await gitWorkspace();
   const marker = join(root, "LATE_WRITE");
   const leaseDir = await tempDir("workspace-leases-");
-  const moduleUrl = pathToFileURL(join(process.cwd(), "src", "workspace.ts")).href;
+  const moduleUrl = pathToFileURL(join(process.cwd(), "src", "kernel", "workspace.ts")).href;
+  const leaseUrl = pathToFileURL(join(process.cwd(), "src", "governance", "workspace-lease.ts")).href;
   const code = `
     import { spawn } from "node:child_process";
-    import { validateRegisteredWorkspace, acquireWorkspaceLease } from ${JSON.stringify(moduleUrl)};
+    import { validateRegisteredWorkspace } from ${JSON.stringify(moduleUrl)};
+    import { acquireWorkspaceLease } from ${JSON.stringify(leaseUrl)};
     const workspace = await validateRegisteredWorkspace({workspaceId:"w1", registeredRoot:${JSON.stringify(root)}});
     const lease = await acquireWorkspaceLease({workspace, access:"write", leaseDir:${JSON.stringify(leaseDir)}, ownerId:"parent"});
     const child = spawn(process.execPath,["-e",${JSON.stringify(`setTimeout(()=>require("fs").writeFileSync(${JSON.stringify(marker)},"late"),1000);setInterval(()=>{},1000)`)}]);
@@ -304,9 +300,11 @@ test("teardown kills the whole holder group, not just the wrapper", async () => 
 test("SIGKILL releases the kernel lease and the next owner records recovery", async () => {
   const root = await gitWorkspace();
   const leaseDir = await tempDir("workspace-leases-");
-  const moduleUrl = pathToFileURL(join(process.cwd(), "src", "workspace.ts")).href;
+  const moduleUrl = pathToFileURL(join(process.cwd(), "src", "kernel", "workspace.ts")).href;
+  const leaseUrl = pathToFileURL(join(process.cwd(), "src", "governance", "workspace-lease.ts")).href;
   const code = `
-    import { validateRegisteredWorkspace, acquireWorkspaceLease } from ${JSON.stringify(moduleUrl)};
+    import { validateRegisteredWorkspace } from ${JSON.stringify(moduleUrl)};
+    import { acquireWorkspaceLease } from ${JSON.stringify(leaseUrl)};
     const workspace = await validateRegisteredWorkspace({workspaceId:"w1", registeredRoot:${JSON.stringify(root)}});
     await acquireWorkspaceLease({workspace, access:"write", leaseDir:${JSON.stringify(leaseDir)}, ownerId:"crashed"});
     process.stdout.write("READY\\n");
@@ -574,9 +572,11 @@ test("a retained lease releases its process, and the lock is recoverable afterwa
   // herdr is installed — it is, on the machine this was written on, and inheriting the 15s default while the
   // successor loop waits 5s made the outcome ambient state in a suite advertised as fast and pure.
   const fakeBin = await stubHerdr("exit 1");
-  const moduleUrl = pathToFileURL(join(process.cwd(), "src", "workspace.ts")).href;
+  const moduleUrl = pathToFileURL(join(process.cwd(), "src", "kernel", "workspace.ts")).href;
+  const leaseUrl = pathToFileURL(join(process.cwd(), "src", "governance", "workspace-lease.ts")).href;
   const code = `
-    import { validateRegisteredWorkspace, acquireWorkspaceLease } from ${JSON.stringify(moduleUrl)};
+    import { validateRegisteredWorkspace } from ${JSON.stringify(moduleUrl)};
+    import { acquireWorkspaceLease } from ${JSON.stringify(leaseUrl)};
     const workspace = await validateRegisteredWorkspace({workspaceId:"w1", registeredRoot:${JSON.stringify(root)}});
     const lease = await acquireWorkspaceLease({
       workspace, access:"write", leaseDir:${JSON.stringify(leaseDir)}, ownerId:"retainer",
@@ -653,9 +653,11 @@ test("a herdr that hangs on close does not strand the lock forever", async () =>
   const fakeBin = await tempDir("fake-herdr-hung-"),readyFile=join(fakeBin,"ready.json"),stderrPath=join(fakeBin,"stderr.txt"),sleeper=join(fakeBin,"sleeper.cjs");
   await writeFile(sleeper,`setTimeout(()=>process.exit(0),10000);require('node:fs').writeFileSync(${JSON.stringify(readyFile)},JSON.stringify({ready:true,pid:process.pid}),{flag:'wx'});`);
   await writeFile(join(fakeBin,"herdr"),`#!/bin/sh\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(sleeper)} 2>>${JSON.stringify(stderrPath)}\n`,{mode:0o755});
-  const moduleUrl = pathToFileURL(join(process.cwd(), "src", "workspace.ts")).href;
+  const moduleUrl = pathToFileURL(join(process.cwd(), "src", "kernel", "workspace.ts")).href;
+  const leaseUrl = pathToFileURL(join(process.cwd(), "src", "governance", "workspace-lease.ts")).href;
   const code = `
-    import { validateRegisteredWorkspace, acquireWorkspaceLease } from ${JSON.stringify(moduleUrl)};
+    import { validateRegisteredWorkspace } from ${JSON.stringify(moduleUrl)};
+    import { acquireWorkspaceLease } from ${JSON.stringify(leaseUrl)};
     const workspace = await validateRegisteredWorkspace({workspaceId:"w1", registeredRoot:${JSON.stringify(root)}});
     const lease = await acquireWorkspaceLease({
       workspace, access:"write", leaseDir:${JSON.stringify(leaseDir)}, ownerId:"retainer",

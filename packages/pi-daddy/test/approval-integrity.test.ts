@@ -15,9 +15,9 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { approvalKey, inheritApprovals, parseInherited, verifyInherited, type InheritableApproval } from "../src/approval.ts";
-import { approvalsPath, legacyApprovalsPath } from "../src/approval-store.ts";
-import { resolveApprovals } from "../src/approval.ts";
+import { approvalKey, inheritApprovals, parseInherited, verifyInherited, type InheritableApproval } from "../src/kernel/approval.ts";
+import { approvalsPath, legacyApprovalsPath } from "../src/governance/approval-store.ts";
+import { resolveApprovals } from "../src/kernel/approval.ts";
 
 const inheritable = (over: Partial<InheritableApproval> = {}): InheritableApproval => ({
   capability: "tool:write",

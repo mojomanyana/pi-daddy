@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { planDelegation } from "../src/delegate.ts";
-import { isExecutionId, newExecutionId } from "../src/execution-id.ts";
-import { ENV_EXECUTION_ID } from "../src/propagation.ts";
+import { planDelegation } from "../src/kernel/delegate.ts";
+import { isExecutionId, newExecutionId } from "../src/kernel/execution-id.ts";
+import { ENV_EXECUTION_ID } from "../src/kernel/propagation.ts";
 
 const context = {
   ownGrant: ["tool:read"],

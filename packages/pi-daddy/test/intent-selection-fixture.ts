@@ -1,4 +1,4 @@
-import { buildWorkRevisionEvent,buildWorkSnapshotEvent } from "../src/work-ledger.ts";
+import { buildWorkRevisionEvent,buildWorkSnapshotEvent } from "../src/governance/work-ledger.ts";
 import { fixtureRevisionRef as ref,fixtureEventRef as er } from "./work-ledger-fixtures.ts";
 import { intentWorld } from "./intent-control-fixture.ts";
 export function selectionProposal(options:{effect?:string;owner?:string}={}){

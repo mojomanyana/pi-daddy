@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { test } from "node:test";
-import { uniqueAgentName } from "../src/herdr-name.ts";
+import { uniqueAgentName } from "../src/executors/herdr-name.ts";
 
 const run = promisify(execFile);
-const moduleUrl = new URL("../src/herdr-name.ts", import.meta.url).href;
+const moduleUrl = new URL("../src/executors/herdr-name.ts", import.meta.url).href;
 
 test("parallel parents using the same definition and child ID have distinct names", async () => {
   const script = "import { uniqueAgentName } from " + JSON.stringify(moduleUrl)

@@ -9,7 +9,7 @@ import {
   buildRecord,
   buildWorkspaceLeaseEvent,
   verifyLedger,
-} from "../src/ledger.ts";
+} from "../src/governance/ledger.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
 after(cleanupTempDirs);

@@ -24,9 +24,9 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { planDelegation } from "../src/delegate.ts";
-import type { SkillDefinition } from "../src/definitions.ts";
-import type { Capability } from "../src/resolve.ts";
+import { planDelegation } from "../src/kernel/delegate.ts";
+import type { SkillDefinition } from "../src/kernel/definitions.ts";
+import type { Capability } from "../src/kernel/resolve.ts";
 import {
   renderSpawnableSummary,
   summariseSpawnable,

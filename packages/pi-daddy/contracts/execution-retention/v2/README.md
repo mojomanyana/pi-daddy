@@ -21,7 +21,7 @@ actual daily status; see `contracts/dashboard-host/v1/README.md`. No observer se
 - Six standalone manifest fixtures and their exact referenced blob bytes:
   `pi-daddy/contracts/execution-retention/v2/fixtures/*`.
 - Source-owned schema, closed/frozen builder, exact integer/duplicate-aware JSON reader:
-  `src/retention-contract.ts`, exported as `RETENTION_SCHEMA`, `buildExecutionRetentionManifest`,
+  `src/governance/retention-contract.ts`, exported as `RETENTION_SCHEMA`, `buildExecutionRetentionManifest`,
   `parseExecutionRetentionManifest`.
 - Source-owned generator: `scripts/generate-retention-contract.ts`. No import-time writes or default target.
 

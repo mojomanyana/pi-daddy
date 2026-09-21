@@ -5,7 +5,7 @@ import { syncBuiltinESMExports } from "node:module";
 import { join } from "node:path";
 import { tempDir, cleanupTempDirs } from "./tmp.ts";
 import { unitTestBatches } from "../scripts/unit-tests.ts";
-import { digestRuntime, inspectDigestPrerequisites } from "../src/effect-profile-runtime.ts";
+import { digestRuntime, inspectDigestPrerequisites } from "../src/products/effect-profile-runtime.ts";
 after(cleanupTempDirs);
 test("independent CI telemetry reports all prerequisites after an early lookup failure without claiming qualification",async()=>{
   const node=await fs.realpath(process.execPath),original=fs.lstat,seen:string[]=[];

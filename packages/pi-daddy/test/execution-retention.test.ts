@@ -3,16 +3,16 @@ import { after, test } from "node:test";
 import { mkdir, readFile, readdir, writeFile, chmod, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
-import { beginExecutionRetention, ENV_EXECUTION_ARCHIVE, verifyRetainedBytes, type ExecutionRetentionManifest } from "../src/execution-retention.ts";
+import { beginExecutionRetention, ENV_EXECUTION_ARCHIVE, verifyRetainedBytes, type ExecutionRetentionManifest } from "../src/governance/execution-retention.ts";
 import { executePlannedChild } from "../extensions/execute-child.ts";
-import { planDelegation } from "../src/delegate.ts";
+import { planDelegation } from "../src/kernel/delegate.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 after(cleanupTempDirs);
 import grantsExtension from "../extensions/grants.ts";
-import { newExecutionId } from "../src/execution-id.ts";
-import { runChild } from "../src/run-child.ts";
-import { runHerdrPane } from "../src/run-herdr.ts";
-import { runNamedCheck } from "../src/check-runner.ts";
+import { newExecutionId } from "../src/kernel/execution-id.ts";
+import { runChild } from "../src/kernel/run-child.ts";
+import { runHerdrPane } from "../src/executors/run-herdr.ts";
+import { runNamedCheck } from "../src/governance/check-runner.ts";
 const identity = { executionId: "execution:a", parentExecutionId: "execution:parent", childId: "same-name",
   toolCallId: "call:a", executor: "process" as const, taskDigest: "a".repeat(64), definitionDigest: null,
   configurationDigest: "b".repeat(64), workspaceId: null };

@@ -56,7 +56,7 @@ const view = await read({ archiveProjectionPath, workLedgerPath, workContext: in
 ## Output contract
 
 `version: "pi-daddy-daily-view-v1"`, `readOnly:true`, `freshness:"snapshot-unknown"`, `coverage:"partial"`.
-Public TypeScript types: `DailyView`, `DailyObligation`, `DailyAttempt`, `DailyViewOptions` in `src/daily-view.ts`.
+Public TypeScript types: `DailyView`, `DailyObligation`, `DailyAttempt`, `DailyViewOptions` in `src/products/daily-view.ts`.
 The deterministic `fixtures/view.json` and `fixtures/view.txt` are emitted by the actual reader/renderer.
 
 - `scope` is an exact P01 revision or null; `selectedSnapshot` retains the exact selection references.

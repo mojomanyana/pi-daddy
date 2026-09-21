@@ -1,8 +1,8 @@
 import { mkdir,writeFile,readFile } from "node:fs/promises";
 import { join } from "node:path";
 import grantsExtension from "../extensions/grants.ts";
-import { GRANT_ENV_KEYS } from "../src/propagation.ts";
-import { ordinaryChildrenFor } from "../src/ordinary-children.ts";
+import { GRANT_ENV_KEYS } from "../src/kernel/propagation.ts";
+import { ordinaryChildrenFor } from "../src/products/ordinary-children.ts";
 /** Actual ordinary public tools/executor; Node worker fixture, no model or live pi deployment. */
 export async function ordinaryHostFixture(root:string){
  const bin=join(root,"ordinary-bin");await mkdir(bin);await writeFile(join(bin,"pi"),`#!${process.execPath}\nimport fs from 'node:fs';const task=process.argv.at(-1).trim();fs.writeFileSync(task+'.ready','ready',{flag:'wx'});process.stdout.write('owned output');if(task==='fast')process.exit(0);setTimeout(()=>process.exit(0),8000);`,{mode:0o700});

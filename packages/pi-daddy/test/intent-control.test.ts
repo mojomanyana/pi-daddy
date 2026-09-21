@@ -7,12 +7,12 @@ import { promisify } from "node:util";
 import { Compile } from "typebox/compile";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 after(cleanupTempDirs);
-import { bindWorkIntent } from "../src/intent-application.ts";
-import { createIntentBudget, openResourceBudget } from "../src/resource-budget.ts";
-import { intentRequestDigest, parseIntentRequest, type IntentRequest } from "../src/intent-control.ts";
-import { appendWorkLedgerEvent, parseWorkLedgerText, projectWorkLedger } from "../src/work-ledger.ts";
-import { readDailyView } from "../src/daily-view.ts";
-import { prepareDigestProfile, runDigestProfile } from "../src/effect-profile.ts";
+import { bindWorkIntent } from "../src/products/intent-application.ts";
+import { createIntentBudget, openResourceBudget } from "../src/products/resource-budget.ts";
+import { intentRequestDigest, parseIntentRequest, type IntentRequest } from "../src/products/intent-control.ts";
+import { appendWorkLedgerEvent, parseWorkLedgerText, projectWorkLedger } from "../src/governance/work-ledger.ts";
+import { readDailyView } from "../src/products/daily-view.ts";
+import { prepareDigestProfile, runDigestProfile } from "../src/products/effect-profile.ts";
 import { intentWorld, fixedIntentRequests, fixedIntentAuthority, hostDigest } from "./intent-control-fixture.ts";
 async function fixture() {
   const root = await tempDir("intent-application-"); await chmod(root, 0o700);
@@ -147,7 +147,7 @@ test("torn work bytes and physical substitution fail closed without reset or alt
 });
 
 test("real cross-process duplicate applications append one exact work revision set", async () => {
-  const f = await fixture(), module = new URL("../src/resource-budget.ts", import.meta.url).href, fixtures = new URL("./intent-control-fixture.ts", import.meta.url).href;
+  const f = await fixture(), module = new URL("../src/products/resource-budget.ts", import.meta.url).href, fixtures = new URL("./intent-control-fixture.ts", import.meta.url).href;
   const code = `const {openResourceBudget}=await import(${JSON.stringify(module)});const {fixedIntentAuthority,fixedIntentRequests}=await import(${JSON.stringify(fixtures)});const b=JSON.parse(process.argv[1]);await openResourceBudget(b).intentControls(fixedIntentAuthority(b)).request(fixedIntentRequests(b).revise);`;
   await Promise.all(Array.from({ length: 3 }, () => promisify(execFile)(process.execPath, ["--input-type=module", "-e", code, JSON.stringify(f.binding)], { env: { PATH: "", HOME: f.root, TMPDIR: f.root }, timeout: 10000 })));
   assert.equal(parseWorkLedgerText(await readFile(f.path, "utf8")).events.length, 11);
@@ -155,7 +155,7 @@ test("real cross-process duplicate applications append one exact work revision s
 });
 
 test("actual controller crash preserves pending receipts and non-expiring locks; status cannot reclaim them", async () => {
-  const f = await fixture(), module = new URL("../src/resource-budget.ts", import.meta.url).href, fixtures = new URL("./intent-control-fixture.ts", import.meta.url).href;
+  const f = await fixture(), module = new URL("../src/products/resource-budget.ts", import.meta.url).href, fixtures = new URL("./intent-control-fixture.ts", import.meta.url).href;
   const code = `import{open}from'node:fs/promises';const {openResourceBudget}=await import(${JSON.stringify(module)});const {fixedIntentAuthority,fixedIntentRequests}=await import(${JSON.stringify(fixtures)});const b=JSON.parse(process.argv[1]);const h=await open(b.intent.path,'r'),p=Object.getPrototypeOf(h);await h.close();const original=p.writeFile;let n=0;p.writeFile=async function(data,...args){if(String(data).includes('"event":"work_revision"')&&++n===2)process.exit(73);return original.call(this,data,...args)};await openResourceBudget(b).intentControls(fixedIntentAuthority(b)).request(fixedIntentRequests(b).revise);`;
   await assert.rejects(promisify(execFile)(process.execPath, ["--input-type=module", "-e", code, JSON.stringify(f.binding)], { env: { PATH: "", HOME: f.root, TMPDIR: f.root }, timeout: 10000 }), { code: 73 });
   const lockPath = join(f.binding.directory, "budget.jsonl.lock"), lock = await readFile(lockPath);

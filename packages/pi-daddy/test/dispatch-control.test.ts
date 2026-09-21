@@ -6,11 +6,11 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 after(cleanupTempDirs);
-import { createDispatchBudget, createResourceBudget, openResourceBudget, resourceBindingDigest, type GovernedBudgetBinding } from "../src/resource-budget.ts";
+import { createDispatchBudget, createResourceBudget, openResourceBudget, resourceBindingDigest, type GovernedBudgetBinding } from "../src/products/resource-budget.ts";
 import { Compile } from "typebox/compile";
 import type { TSchema } from "typebox";
-import { dispatchRequestDigest, parseDispatchRequest, type DispatchRequest } from "../src/dispatch-control.ts";
-import { prepareDigestProfile, runDigestProfile } from "../src/effect-profile.ts";
+import { dispatchRequestDigest, parseDispatchRequest, type DispatchRequest } from "../src/products/dispatch-control.ts";
+import { prepareDigestProfile, runDigestProfile } from "../src/products/effect-profile.ts";
 const authorityDigest = "a".repeat(64);
 async function fixture() {
   const root = await tempDir("dispatch-controls-"); await chmod(root, 0o700);
@@ -96,7 +96,7 @@ test("status reads have no journal, lock, directory or session/control side effe
 });
 
 test("real cross-process redelivery persists one request and one application", async () => {
-  const b = await fixture(), r = request(b), module = new URL("../src/resource-budget.ts", import.meta.url).href;
+  const b = await fixture(), r = request(b), module = new URL("../src/products/resource-budget.ts", import.meta.url).href;
   const code = `const {openResourceBudget}=await import(${JSON.stringify(module)});await openResourceBudget(JSON.parse(process.argv[1])).controls(JSON.parse(process.argv[2])).request(JSON.parse(process.argv[3]));`;
   await Promise.all(Array.from({ length: 4 }, () => promisify(execFile)(process.execPath, ["--input-type=module", "-e", code, JSON.stringify(b), JSON.stringify(grant(b)), JSON.stringify(r)], { env: { PATH: "", HOME: b.directory, TMPDIR: b.directory }, timeout: 10000 })));
   const lines = (await readFile(join(b.directory, "budget.jsonl"), "utf8")).trim().split("\n");

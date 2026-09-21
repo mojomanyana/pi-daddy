@@ -6,12 +6,12 @@ import {
   toPiToolsAllowlist,
   UNIVERSAL_CAPABILITIES,
   expandSubsumed,
-} from "../src/resolve.ts";
-import { buildRecord, isEscalationAttempt } from "../src/ledger.ts";
-import { planSpawn } from "../src/spawn.ts";
-import { WORKSPACE_WILDCARD } from "../src/resolve.ts";
-import { normaliseCapability, workspaceCapability } from "../src/capabilities.ts";
-import { childEnv, ENV_GRANT } from "../src/propagation.ts";
+} from "../src/kernel/resolve.ts";
+import { buildRecord, isEscalationAttempt } from "../src/governance/ledger.ts";
+import { planSpawn } from "../src/kernel/spawn.ts";
+import { WORKSPACE_WILDCARD } from "../src/kernel/resolve.ts";
+import { normaliseCapability, workspaceCapability } from "../src/kernel/capabilities.ts";
+import { childEnv, ENV_GRANT } from "../src/kernel/propagation.ts";
 
 const R = (over: Partial<Parameters<typeof resolve>[0]> = {}) =>
   resolve({ requested: [], parentGrant: [], ...over });

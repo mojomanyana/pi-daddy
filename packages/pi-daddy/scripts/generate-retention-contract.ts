@@ -2,9 +2,9 @@ import { createHash } from "node:crypto";
 import { mkdir, writeFile, readFile, readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { buildExecutionRetentionManifest, RETENTION_SCHEMA } from "../src/retention-contract.ts";
-import { missingNativeSession, parseNativeSessionBytes } from "../src/native-session.ts";
-import type { ExecutionRetentionManifest, RetainedContent } from "../src/execution-retention.ts";
+import { buildExecutionRetentionManifest, RETENTION_SCHEMA } from "../src/governance/retention-contract.ts";
+import { missingNativeSession, parseNativeSessionBytes } from "../src/governance/native-session.ts";
+import type { ExecutionRetentionManifest, RetainedContent } from "../src/governance/execution-retention.ts";
 
 const sha = (bytes: string) => createHash("sha256").update(bytes).digest("hex");
 const missing = (): RetainedContent => ({ status: "missing", path: null, sha256: null, bytes: null });

@@ -4,12 +4,12 @@ import { delimiter, join } from "node:path";
 import { after, test } from "node:test";
 import { appendAfterRuntimeRecord, executePlannedChild, isHerdrWriterCloseFailure } from "../extensions/execute-child.ts";
 import type { GrantsSession } from "../extensions/session.ts";
-import type { Delegation } from "../src/delegate.ts";
-import { runWithFinalizers } from "../src/finalization.ts";
-import { HerdrWriterCloseError } from "../src/run-herdr.ts";
-import { ENV_CHILD_TIMEOUT } from "../src/run-child.ts";
-import { declareWork } from "../src/work-command.ts";
-import { parseWorkLedgerText } from "../src/work-ledger.ts";
+import type { Delegation } from "../src/kernel/delegate.ts";
+import { runWithFinalizers } from "../src/governance/finalization.ts";
+import { HerdrWriterCloseError } from "../src/executors/run-herdr.ts";
+import { ENV_CHILD_TIMEOUT } from "../src/kernel/run-child.ts";
+import { declareWork } from "../src/products/work-command.ts";
+import { parseWorkLedgerText } from "../src/governance/work-ledger.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
 after(cleanupTempDirs);

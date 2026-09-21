@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { renderDailyPanel, learningSummary } from "../src/daily-panel.ts";
-import { readDailyView } from "../src/daily-view.ts";
-import { createDashboardMenu } from "../src/dashboard-menu.ts";
-import { dashboardActionFeedback } from "../src/dashboard-cli.ts";
+import { renderDailyPanel, learningSummary } from "../src/products/daily-panel.ts";
+import { readDailyView } from "../src/products/daily-view.ts";
+import { createDashboardMenu } from "../src/products/dashboard-menu.ts";
+import { dashboardActionFeedback } from "../src/products/dashboard-cli.ts";
 
 test("ordinary panel leads with outcome/state, escapes metadata, hides IDs and shows observed model/effort",async()=>{
   const view=structuredClone(await readDailyView({}));view.scope={kind:"scope",id:"protocol-scope",revision:1,digest:"a".repeat(64)};

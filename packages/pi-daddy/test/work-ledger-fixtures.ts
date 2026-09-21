@@ -2,7 +2,7 @@ import {
   buildWorkRevisionEvent, buildWorkSnapshotEvent, buildWorkOccurrenceEvent, buildWorkAcceptanceEvent,
   type WorkProjectionContext, type WorkRevision, type RevisionRef, type WorkRevisionEvent,
   type WorkFrozen, type WorkLedgerEvent, type EventRef,
-} from "../src/work-ledger.ts";
+} from "../src/governance/work-ledger.ts";
 
 // FIXTURE TRUST-BOUNDARY SIMULATION; for selected snapshot; under fixture authority.
 // No input claims, file paths or incoming streams are accepted by this controller. The fixed

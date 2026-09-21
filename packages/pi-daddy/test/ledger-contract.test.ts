@@ -4,10 +4,10 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, test } from "node:test";
 import { Compile } from "typebox/compile";
-import { APPROVAL_SCOPES, APPROVAL_SOURCES } from "../src/approval.ts";
-import { EXECUTOR_KINDS } from "../src/executor.ts";
-import { validateLedgerV3Event } from "../src/ledger-v3-validation.ts";
-import { REFUSAL_CODES } from "../src/refusals.ts";
+import { APPROVAL_SCOPES, APPROVAL_SOURCES } from "../src/kernel/approval.ts";
+import { EXECUTOR_KINDS } from "../src/executors/executor.ts";
+import { validateLedgerV3Event } from "../src/governance/ledger-v3-validation.ts";
+import { REFUSAL_CODES } from "../src/kernel/refusals.ts";
 import {
   CHILD_LIFECYCLE_STATES,
   CHILD_PROCESS_SIGNALS,
@@ -30,10 +30,10 @@ import {
   type GrantRecord,
   type WorkspaceLeaseEvent,
   type WorkflowFactEvent,
-} from "../src/ledger.ts";
-import type { CorrelationMetadata } from "../src/correlation.ts";
-import type { DefinitionDigest } from "../src/definitions.ts";
-import type { StructuredRefusal } from "../src/refusals.ts";
+} from "../src/governance/ledger.ts";
+import type { CorrelationMetadata } from "../src/kernel/correlation.ts";
+import type { DefinitionDigest } from "../src/kernel/definitions.ts";
+import type { StructuredRefusal } from "../src/kernel/refusals.ts";
 import {
   buildLedgerV3ContractFixtures,
   generateLedgerV3Contract,

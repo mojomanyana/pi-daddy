@@ -1,5 +1,5 @@
-import type { InheritableApproval } from "../src/approval.ts";
-import type { Capability } from "../src/resolve.ts";
+import type { InheritableApproval } from "../src/kernel/approval.ts";
+import type { Capability } from "../src/kernel/resolve.ts";
 import type { ApprovalOutcome } from "./approvals.ts";
 
 export interface ChainApprovalAudit {

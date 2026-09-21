@@ -1,14 +1,14 @@
-import { parseInherited } from "../src/approval.ts";
-import { DELEGATE_CAPABILITY } from "../src/delegate.ts";
-import { budgetFromEnv } from "../src/fanout.ts";
-import { WILDCARD } from "../src/pi-tools.ts";
+import { parseInherited } from "../src/kernel/approval.ts";
+import { DELEGATE_CAPABILITY } from "../src/kernel/delegate.ts";
+import { budgetFromEnv } from "../src/kernel/fanout.ts";
+import { WILDCARD } from "../src/kernel/pi-tools.ts";
 import {
   depthConfig, deriveOwnGrant, gatedFromEnv, ENV_APPROVED, ENV_DEPTH, ENV_EXECUTION_ID, ENV_FANOUT,
   ENV_GATED, ENV_GRANT, ENV_LEDGER, ENV_MAX_DEPTH, ENV_PARENT_ID, parseList,
-} from "../src/propagation.ts";
+} from "../src/kernel/propagation.ts";
 import { storedGrantSessionState } from "./stored-grant-session.ts";
-import { chooseExecutor, ENV_HERDR } from "../src/executor.ts";
-import { ENV_ALLOW_UNRESOLVED_MODELS } from "../src/model-preflight.ts";
+import { chooseExecutor, ENV_HERDR } from "../src/executors/executor.ts";
+import { ENV_ALLOW_UNRESOLVED_MODELS } from "../src/kernel/model-preflight.ts";
 import type { ReloadLifecycle } from "./reload-environment.ts";
 import { ENV_GOVERNANCE, type GrantsSession } from "./session.ts";
 

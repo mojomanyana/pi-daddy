@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { preflightModel } from "../src/model-preflight.ts";
+import { preflightModel } from "../src/kernel/model-preflight.ts";
 
 test("model preflight uses pi's provider/id catalogue and caches each answer per session", () => {
   let finds = 0;

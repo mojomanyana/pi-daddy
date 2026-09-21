@@ -4,8 +4,8 @@
  * Split out of `./approvals.ts` only to stay under the 400-line module ceiling this project enforces
  * mechanically; `./approvals.ts` re-exports both names.
  */
-import { revokeApproval } from "../src/approval-store.ts";
-import type { Capability } from "../src/resolve.ts";
+import { revokeApproval } from "../src/governance/approval-store.ts";
+import type { Capability } from "../src/kernel/resolve.ts";
 import { snapshotOf } from "./approvals.ts";
 import type { GrantsSession } from "./session.ts";
 

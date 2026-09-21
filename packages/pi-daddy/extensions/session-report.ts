@@ -17,9 +17,9 @@
  */
 
 import { existsSync } from "node:fs";
-import { legacyApprovalsPath, sharedApprovalsPath } from "../src/approval-store.ts";
-import { verifyLedger } from "../src/ledger.ts";
-import { AGENT_WILDCARD } from "../src/resolve.ts";
+import { legacyApprovalsPath, sharedApprovalsPath } from "../src/governance/approval-store.ts";
+import { verifyLedger } from "../src/governance/ledger.ts";
+import { AGENT_WILDCARD } from "../src/kernel/resolve.ts";
 import { planWithApprovals } from "./run-delegation.ts";
 import type { GrantsSession } from "./session.ts";
 import { renderSpawnableSummary, summariseSpawnable } from "./spawn-summary.ts";

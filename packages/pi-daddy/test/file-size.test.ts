@@ -27,10 +27,19 @@ const packageRoot = join(import.meta.dirname, "..");
 test("no shipped module exceeds the line ceiling", async () => {
   const oversized: string[] = [];
 
+  // Recursive since ADR-0076 moved `src/` into layer directories; a non-recursive read would have checked
+  // only the two composition roots and reported the guard green. Vendored files are exempt, as before.
+  const walk = async (dir: string): Promise<string[]> => {
+    const out: string[] = [];
+    for (const entry of await readdir(join(packageRoot, dir), { withFileTypes: true })) {
+      const relative = `${dir}/${entry.name}`;
+      if (entry.isDirectory()) { if (entry.name !== "vendor") out.push(...await walk(relative)); }
+      else if (entry.name.endsWith(".ts")) out.push(relative);
+    }
+    return out;
+  };
   for (const dir of ["src", "extensions"]) {
-    for (const name of await readdir(join(packageRoot, dir))) {
-      if (!name.endsWith(".ts")) continue;
-      const relative = `${dir}/${name}`;
+    for (const relative of await walk(dir)) {
       const lines = (await readFile(join(packageRoot, relative), "utf8")).split("\n").length;
       if (lines > MAX_LINES) oversized.push(`${relative} (${lines} lines)`);
     }

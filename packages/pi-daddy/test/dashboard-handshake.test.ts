@@ -6,9 +6,9 @@ import {
   dashboardPreferencePath,
   offerDashboardHandshake,
   openDashboardCommand,
-} from "../src/dashboard-handshake.ts";
-import { DASHBOARD_PLUGIN_ID } from "../src/dashboard-herdr.ts";
-import type { HerdrExec } from "../src/herdr-cli.ts";
+} from "../src/products/dashboard-handshake.ts";
+import { DASHBOARD_PLUGIN_ID } from "../src/products/dashboard-herdr.ts";
+import type { HerdrExec } from "../src/executors/herdr-cli.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
 after(cleanupTempDirs);

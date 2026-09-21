@@ -1,5 +1,5 @@
-import type { DeclaredWorkState } from "../src/work-command.ts";
-import { ENV_DAILY_SELECTION, ENV_DAILY_WORK } from "../src/dashboard-cli.ts";
+import type { DeclaredWorkState } from "../src/products/work-command.ts";
+import { ENV_DAILY_SELECTION, ENV_DAILY_WORK } from "../src/products/dashboard-cli.ts";
 
 export interface PublishedDailyWork { work?: string; selection?: string }
 

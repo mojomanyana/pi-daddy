@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { planDelegation } from "../src/delegate.ts";
-import { approvalBindingDigest, digestTask } from "../src/correlation.ts";
-import { inheritApprovals, resolveApprovals, type ApprovalEntry } from "../src/approval.ts";
-import type { SkillDefinition } from "../src/definitions.ts";
+import { planDelegation } from "../src/kernel/delegate.ts";
+import { approvalBindingDigest, digestTask } from "../src/kernel/correlation.ts";
+import { inheritApprovals, resolveApprovals, type ApprovalEntry } from "../src/kernel/approval.ts";
+import type { SkillDefinition } from "../src/kernel/definitions.ts";
 
 const def: SkillDefinition = {
   name: "debugger",
@@ -231,7 +231,7 @@ test("a bound approval does not satisfy an uncorrelated delegation for the same 
 });
 
 test("an internally contradictory persisted binding is not a binding at all", async () => {
-  const { isApprovalBinding } = await import("../src/correlation.ts");
+  const { isApprovalBinding } = await import("../src/kernel/correlation.ts");
   const bound = planDelegation(BOUND_REQUEST, base);
   assert.ok(bound.approvalBinding);
   assert.equal(isApprovalBinding(bound.approvalBinding), true);

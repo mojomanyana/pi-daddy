@@ -22,9 +22,9 @@ import {
   parseGrantFile,
   projectLedgerPath,
   saveGrant,
-} from "../src/grant-store.ts";
+} from "../src/governance/grant-store.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
-import { expandSubsumed, type Capability } from "../src/resolve.ts";
+import { expandSubsumed, type Capability } from "../src/kernel/resolve.ts";
 
 after(cleanupTempDirs);
 

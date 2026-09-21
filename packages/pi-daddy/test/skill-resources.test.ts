@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import { mkdir, readFile, writeFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { applyInit, planInit } from "../src/init.ts";
-import { discoverSkillPackages } from "../src/skill-packages.ts";
-import { loadDefinitions, ceilingForDefinition } from "../src/definitions.ts";
-import { buildCatalog } from "../src/catalog.ts";
+import { applyInit, planInit } from "../src/governance/init.ts";
+import { discoverSkillPackages } from "../src/kernel/skill-packages.ts";
+import { loadDefinitions, ceilingForDefinition } from "../src/kernel/definitions.ts";
+import { buildCatalog } from "../src/kernel/catalog.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 after(cleanupTempDirs);
 

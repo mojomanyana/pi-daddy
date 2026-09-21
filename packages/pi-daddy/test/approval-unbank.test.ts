@@ -19,7 +19,7 @@
 
 import assert from "node:assert/strict";
 import { after, afterEach, test } from "node:test";
-import { ENV_APPROVED, ENV_GATED, ENV_GRANT, ENV_LEDGER } from "../src/propagation.ts";
+import { ENV_APPROVED, ENV_GATED, ENV_GRANT, ENV_LEDGER } from "../src/kernel/propagation.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 import { harness, restoreEnv } from "./chain-harness.ts";
 

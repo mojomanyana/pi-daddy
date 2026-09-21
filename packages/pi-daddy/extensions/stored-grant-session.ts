@@ -4,10 +4,10 @@ import {
   projectLedgerPath,
   type GrantStoreRefusalReason,
   type StoredGrant,
-} from "../src/grant-store.ts";
-import { WILDCARD } from "../src/pi-tools.ts";
-import { parseList } from "../src/propagation.ts";
-import type { Capability } from "../src/resolve.ts";
+} from "../src/governance/grant-store.ts";
+import { WILDCARD } from "../src/kernel/pi-tools.ts";
+import { parseList } from "../src/kernel/propagation.ts";
+import type { Capability } from "../src/kernel/resolve.ts";
 
 export interface StoredGrantSessionState {
   stored?: StoredGrant;

@@ -14,14 +14,14 @@ import {
   budgetFromEnv,
   childSpawnId,
   splitBudget,
-} from "../src/fanout.ts";
+} from "../src/kernel/fanout.ts";
 import { isCriticalAssuranceBlock } from "../extensions/execute-child.ts";
 import {
   childFailureOutcome,
   throwFanoutInfrastructure,
   totalFanoutFailure,
 } from "../extensions/fanout-outcome.ts";
-import { GovernanceRefusal, refusal } from "../src/refusals.ts";
+import { GovernanceRefusal, refusal } from "../src/kernel/refusals.ts";
 
 test("spawning spends from the budget before the remainder is shared", () => {
   // The parent pays one unit per child it creates. Without that, spawning would be free for the parent and

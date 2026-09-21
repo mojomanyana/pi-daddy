@@ -3,9 +3,9 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createHash } from "node:crypto";
 import ts from "typescript";
-import type { DebriefCheckpoint, DebriefPersistence } from "../src/debrief.ts";
-import { withFileLock } from "../src/file-lock.ts";
-import { dataDigest, detached } from "../src/debrief-contract.ts";
+import type { DebriefCheckpoint, DebriefPersistence } from "../src/products/debrief.ts";
+import { withFileLock } from "../src/governance/file-lock.ts";
+import { dataDigest, detached } from "../src/products/debrief-contract.ts";
 const fixtures = new URL("fixtures/debrief-host/", import.meta.url), contract = new URL("../contracts/debrief/v1/", import.meta.url);
 const json = async (p: string) => JSON.parse(await readFile(new URL(p, contract), "utf8"));
 /** Exact immutable upstream bodies; import specifiers only are mapped into this disposable module set.

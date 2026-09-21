@@ -2,13 +2,13 @@ import { createHash, randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { lstat, mkdir, realpath } from "node:fs/promises";
 import { join } from "node:path";
-import { adoptDashboardHarnessBridge } from "../src/dashboard-harness.ts";
-import { ENV_DASHBOARD_HOST_SOCKET } from "../src/dashboard-host-transport.ts";
-import { startDailyDashboardHost } from "../src/daily-dashboard-host.ts";
-import type { DeclaredWorkState } from "../src/work-command.ts";
-import type { OrdinaryChildren } from "../src/ordinary-children.ts";
-import { learningHarness, loadLearningConnection } from "../src/learning-connection.ts";
-import { readProductJson } from "../src/product-files.ts";
+import { adoptDashboardHarnessBridge } from "../src/products/dashboard-harness.ts";
+import { ENV_DASHBOARD_HOST_SOCKET } from "../src/products/dashboard-host-transport.ts";
+import { startDailyDashboardHost } from "../src/products/daily-dashboard-host.ts";
+import type { DeclaredWorkState } from "../src/products/work-command.ts";
+import type { OrdinaryChildren } from "../src/products/ordinary-children.ts";
+import { learningHarness, loadLearningConnection } from "../src/products/learning-connection.ts";
+import { readProductJson } from "../src/products/product-files.ts";
 
 const BRIDGE=Symbol.for("skill-harness.dashboard-host.v1"),idPattern=/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 export function dailyDashboardPaths(cwd:string,id:string,home=homedir(),uid=process.getuid?.()??0){const key=createHash("sha256").update(`${cwd}\0${id}`).digest("hex");return {directory:join(home,".local","state","pi-daddy","hosts",key.slice(0,16)),socketDirectory:join("/tmp",`pi-daddy-${uid}`),socketPath:join("/tmp",`pi-daddy-${uid}`,`host-${key.slice(0,20)}.sock`)};}

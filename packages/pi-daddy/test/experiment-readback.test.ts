@@ -6,13 +6,13 @@ import { appendFile, chmod, open, readFile, readdir, writeFile } from "node:fs/p
 import { join } from "node:path";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 after(cleanupTempDirs);
-import { createExperimentBudget, openResourceBudget, resourceBindingDigest } from "../src/resource-budget.ts";
-import { DIGEST_PROFILE, prepareDigestProfile } from "../src/effect-profile.ts";
-import { createExperiment, openExperiment, experimentBindingDigest, experimentCharterDigest, experimentCancellationDigest, type ExperimentCharter, type ExperimentCancellation } from "../src/experiment.ts";
-import { byteHash } from "../src/experiment-contract.ts";
-import { readExperimentFile } from "../src/experiment-store.ts";
-import { MAX_CHILDREN_PER_CALL } from "../src/fanout.ts";
-import { bindWorkIntent } from "../src/intent-application.ts";
+import { createExperimentBudget, openResourceBudget, resourceBindingDigest } from "../src/products/resource-budget.ts";
+import { DIGEST_PROFILE, prepareDigestProfile } from "../src/products/effect-profile.ts";
+import { createExperiment, openExperiment, experimentBindingDigest, experimentCharterDigest, experimentCancellationDigest, type ExperimentCharter, type ExperimentCancellation } from "../src/products/experiment.ts";
+import { byteHash } from "../src/products/experiment-contract.ts";
+import { readExperimentFile } from "../src/products/experiment-store.ts";
+import { MAX_CHILDREN_PER_CALL } from "../src/kernel/fanout.ts";
+import { bindWorkIntent } from "../src/products/intent-application.ts";
 import { intentWorld } from "./intent-control-fixture.ts";
 const authorityDigest = "a".repeat(64);
 async function fixture(n = 2, hold = false, deadlineMs = 15000) {

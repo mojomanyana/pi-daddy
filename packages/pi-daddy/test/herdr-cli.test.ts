@@ -14,7 +14,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { PROBE_TIMEOUT_MS, parseReply, probeHerdr, resolveWorkspace, type HerdrExec } from "../src/herdr-cli.ts";
+import { PROBE_TIMEOUT_MS, parseReply, probeHerdr, resolveWorkspace, type HerdrExec } from "../src/executors/herdr-cli.ts";
 
 test("the probe asks `tab list`, because it is the cheapest command that proves a server answered", async () => {
   const calls: string[][] = [];

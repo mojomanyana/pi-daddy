@@ -23,15 +23,15 @@ import { after, test } from "node:test";
 import { readdir, rename, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { join } from "node:path";
-import { planDelegation } from "../src/delegate.ts";
-import { makeCatalog, classifyToolNames, unknownCapabilities, workspaceEntries } from "../src/catalog.ts";
-import { WORKSPACE_WILDCARD, resolve } from "../src/resolve.ts";
-import { ENV_APPROVED, ENV_GRANT, inheritableGrant } from "../src/propagation.ts";
-import { ceilingForDefinition, type SkillDefinition } from "../src/definitions.ts";
-import { loadWorkspaceRegistry, registeredWorkspaceIds, resolveWorkspace } from "../src/workspace.ts";
+import { planDelegation } from "../src/kernel/delegate.ts";
+import { makeCatalog, classifyToolNames, unknownCapabilities, workspaceEntries } from "../src/kernel/catalog.ts";
+import { WORKSPACE_WILDCARD, resolve } from "../src/kernel/resolve.ts";
+import { ENV_APPROVED, ENV_GRANT, inheritableGrant } from "../src/kernel/propagation.ts";
+import { ceilingForDefinition, type SkillDefinition } from "../src/kernel/definitions.ts";
+import { loadWorkspaceRegistry, registeredWorkspaceIds, resolveWorkspace } from "../src/kernel/workspace.ts";
 
-import { buildCatalog } from "../src/catalog.ts";
-import { DELEGATE_SUBJECT, type InheritableApproval } from "../src/approval.ts";
+import { buildCatalog } from "../src/kernel/catalog.ts";
+import { DELEGATE_SUBJECT, type InheritableApproval } from "../src/kernel/approval.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
 after(cleanupTempDirs);

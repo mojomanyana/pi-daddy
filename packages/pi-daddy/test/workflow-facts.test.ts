@@ -2,12 +2,12 @@ import assert from "node:assert/strict";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { buildWorkflowFactEvent, verifyLedger } from "../src/ledger.ts";
+import { buildWorkflowFactEvent, verifyLedger } from "../src/governance/ledger.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
 after(cleanupTempDirs);
-import { parseDashboardLedger } from "../src/dashboard-projection.ts";
-import { renderDashboard } from "../src/dashboard-render.ts";
+import { parseDashboardLedger } from "../src/products/dashboard-projection.ts";
+import { renderDashboard } from "../src/products/dashboard-render.ts";
 
 const now = new Date("2026-08-28T12:00:00.000Z");
 

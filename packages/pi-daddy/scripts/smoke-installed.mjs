@@ -35,7 +35,7 @@ try {
   writeFileSync(join(work, "package.json"), JSON.stringify({ name: "smoke", private: true, type: "module" }));
   // Pi's managed npm installs omit host peers. The CLI must carry its own runtime dependencies.
   run("npm", ["i", "--legacy-peer-deps", "--no-audit", "--no-fund", join(work, packed)], work);
-  if (existsSync(join(work, "node_modules/pi-daddy/dist/run-child-test-control.js"))) {
+  if (existsSync(join(work, "node_modules/pi-daddy/dist/kernel/run-child-test-control.js"))) {
     throw new Error("test-only run-child control leaked into the installed package");
   }
 
@@ -163,7 +163,7 @@ try {
     join(work, "node_modules", "pi-daddy", "herdr-plugin", "herdr-plugin.toml"),
     "utf8",
   );
-  if (!pluginManifest.includes('id = "pi-daddy.dashboard"') || !pluginManifest.includes("dist/dashboard-cli.js")) {
+  if (!pluginManifest.includes('id = "pi-daddy.dashboard"') || !pluginManifest.includes("dist/products/dashboard-cli.js")) {
     throw new Error("installed package dropped or changed the bundled Herdr plugin");
   }
 

@@ -4,10 +4,10 @@ import fs from "node:fs/promises";
 import { syncBuiltinESMExports } from "node:module";
 import { join } from "node:path";
 import { tempDir, cleanupTempDirs } from "./tmp.ts";
-import { createExperimentBudget, resourceBindingDigest } from "../src/resource-budget.ts";
-import { createExperiment, openExperiment, experimentCharterDigest, type ExperimentCharter } from "../src/experiment.ts";
-import { prepareDigestProfile } from "../src/effect-profile.ts";
-import { byteHash } from "../src/experiment-contract.ts";
+import { createExperimentBudget, resourceBindingDigest } from "../src/products/resource-budget.ts";
+import { createExperiment, openExperiment, experimentCharterDigest, type ExperimentCharter } from "../src/products/experiment.ts";
+import { prepareDigestProfile } from "../src/products/effect-profile.ts";
+import { byteHash } from "../src/products/experiment-contract.ts";
 after(cleanupTempDirs);
 async function fixture() {
   const root = await tempDir("controller-failure-"), bytes = Buffer.from("owned");

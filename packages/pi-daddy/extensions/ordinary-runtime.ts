@@ -1,6 +1,6 @@
-import { retainSessionChild } from "../src/ordinary-children.ts";
-import { dataDigest } from "../src/debrief-contract.ts";
-import { runWithFinalizers } from "../src/finalization.ts";
+import { retainSessionChild } from "../src/products/ordinary-children.ts";
+import { dataDigest } from "../src/products/debrief-contract.ts";
+import { runWithFinalizers } from "../src/governance/finalization.ts";
 import { releaseDelegationWorkspace,type PreparedWorkspace } from "./workspace-runtime.ts";
 import type { GrantsSession } from "./session.ts";
 import type { DelegationOutcome } from "./execute-child.ts";

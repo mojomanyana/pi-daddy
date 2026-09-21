@@ -12,8 +12,8 @@
  */
 
 import { nativeDelegationContext } from "./delegation-native.ts";
-import { DELEGATE_SUBJECT, shouldSeekApproval } from "../src/approval.ts";
-import { planDelegation } from "../src/delegate.ts";
+import { DELEGATE_SUBJECT, shouldSeekApproval } from "../src/kernel/approval.ts";
+import { planDelegation } from "../src/kernel/delegate.ts";
 import {
   obtainApprovals,
   republishable,
@@ -22,11 +22,11 @@ import {
   type ApprovalOutcome,
   type ApprovalUIContext,
 } from "./approvals.ts";
-import type { InheritableApproval } from "../src/approval.ts";
+import type { InheritableApproval } from "../src/kernel/approval.ts";
 import type { GrantsSession } from "./session.ts";
-import type { CorrelationMetadata } from "../src/correlation.ts";
-import { preflightModel, type ModelCatalogue } from "../src/model-preflight.ts";
-import { GovernanceRefusal, refusal as structuredRefusal } from "../src/refusals.ts";
+import type { CorrelationMetadata } from "../src/kernel/correlation.ts";
+import { preflightModel, type ModelCatalogue } from "../src/kernel/model-preflight.ts";
+import { GovernanceRefusal, refusal as structuredRefusal } from "../src/kernel/refusals.ts";
 import { executePlannedChild, type DelegationOutcome } from "./execute-child.ts";
 import { recordDelegationDecision, type ApprovalLedgerFacts } from "./delegation-ledger.ts";
 import type { ExecutionOccurrenceIds } from "./execution-occurrence.ts";

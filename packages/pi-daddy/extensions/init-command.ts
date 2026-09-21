@@ -7,11 +7,11 @@
  * guard exists to defend — every wiring bug this package has had lived in that file.
  */
 
-import { discoverSkillPackages } from "../src/skill-packages.ts";
-import { applyInit, planInit } from "../src/init.ts";
-import { registeredWorkspaceIds } from "../src/workspace.ts";
-import { grantStorePath, projectLedgerPath, saveGrant } from "../src/grant-store.ts";
-import { expandSubsumed, SUBSUMPTION, type Capability } from "../src/resolve.ts";
+import { discoverSkillPackages } from "../src/kernel/skill-packages.ts";
+import { applyInit, planInit } from "../src/governance/init.ts";
+import { registeredWorkspaceIds } from "../src/kernel/workspace.ts";
+import { grantStorePath, projectLedgerPath, saveGrant } from "../src/governance/grant-store.ts";
+import { expandSubsumed, SUBSUMPTION, type Capability } from "../src/kernel/resolve.ts";
 import type { GrantsSession } from "./session.ts";
 
 /**
@@ -71,7 +71,7 @@ export async function runInit(
 
   for (const [capability, neededBy] of plan.withheldCapabilities) {
     // **Do not ask a question whose answer cannot matter.** `tool:bash` subsumes `write`, `edit` and
-    // `edit-diff` (`SUBSUMPTION`, `src/resolve.ts`), so once bash is granted those are already conferred.
+    // `edit-diff` (`SUBSUMPTION`, `src/kernel/resolve.ts`), so once bash is granted those are already conferred.
     // The first version asked anyway: an operator could answer *no* to `tool:write`, watch `/grants` allow
     // `build` with `tool:write`, and reasonably conclude the dialog was decorative. It was — that is R-47's
     // shape, a control that appears to do something and does not, inside a control built to prevent it.

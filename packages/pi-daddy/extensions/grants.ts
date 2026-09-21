@@ -11,7 +11,7 @@
  * four were defects of *scope*: a value that was whatever happened to be in the closure at one call site.
  * Each module now takes the session as an argument, so what it can see is written down.
  *
- * Propagation is race-free by construction — see `../src/propagation.ts`. Nothing per-child is pushed:
+ * Propagation is race-free by construction — see `src/kernel/propagation.ts`. Nothing per-child is pushed:
  * the environment carries only parent-level facts (identical for every sibling), never a value computed
  * for one specific spawn. It is published at session start, and republished whenever this session's own
  * approvals change (a human approves something new for the session) — never per spawn, never keyed to a
@@ -24,13 +24,13 @@ import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { WILDCARD } from "../src/pi-tools.ts";
-import { buildCatalog } from "../src/catalog.ts";
-import { ENV_WORKSPACE_REGISTRY } from "../src/workspace.ts";
-import { appendRecord, buildRecord } from "../src/ledger.ts";
-import { openPaneCount, reapOpenPanesAsync } from "../src/pane-reaper.ts";
+import { WILDCARD } from "../src/kernel/pi-tools.ts";
+import { buildCatalog } from "../src/kernel/catalog.ts";
+import { ENV_WORKSPACE_REGISTRY } from "../src/kernel/workspace.ts";
+import { appendRecord, buildRecord } from "../src/governance/ledger.ts";
+import { openPaneCount, reapOpenPanesAsync } from "../src/executors/pane-reaper.ts";
 import {
-  ENV_GRANT, deriveOwnGrant, observeToolNames } from "../src/propagation.ts";
+  ENV_GRANT, deriveOwnGrant, observeToolNames } from "../src/kernel/propagation.ts";
 import { snapshotOf } from "./approvals.ts";
 import { registerDelegationTools } from "./delegation.ts";
 import { grantsCommand } from "./grants-command.ts";
@@ -43,14 +43,14 @@ import { resolveExecutor } from "./executor-session.ts";
 import { reportSessionStart } from "./session-report.ts";
 import { SPAWN_TOOLS, tripwireReason } from "./tripwire.ts";
 import { reportGrantStoreRefusal } from "./grant-store-refusal.ts";
-import { defaultDashboardPaths, offerDashboardHandshake, openDashboardCommand } from "../src/dashboard-handshake.ts";
-import { associateOrdinaryHost, ordinaryChildrenFor } from "../src/ordinary-children.ts";
-import { loadDeclaredWork } from "../src/work-command.ts";
+import { defaultDashboardPaths, offerDashboardHandshake, openDashboardCommand } from "../src/products/dashboard-handshake.ts";
+import { associateOrdinaryHost, ordinaryChildrenFor } from "../src/products/ordinary-children.ts";
+import { loadDeclaredWork } from "../src/products/work-command.ts";
 import { createDailyDashboardSession } from "./daily-dashboard-session.ts";
 import { createWorkSession } from "./work-session.ts";
 import { createLearningSession } from "./learning-session.ts";
 import { replacePublishedDailyWork, type PublishedDailyWork } from "./daily-work-session.ts";
-import { defaultActivityTimelinePath } from "../src/activity-timeline.ts";
+import { defaultActivityTimelinePath } from "../src/products/activity-timeline.ts";
 import { registerActivityTimeline } from "./activity-timeline.ts";
 export default function (pi: ExtensionAPI) {
   // The path pi loads as the extension, so a child granted `tool:delegate` can be started with `-e <this>`.

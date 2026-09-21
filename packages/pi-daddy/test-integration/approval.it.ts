@@ -30,9 +30,9 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { after, describe, test } from "node:test";
-import { expiryFor, type ApprovalEntry } from "../src/approval.ts";
-import { approvalsPath } from "../src/approval-store.ts";
-import { digestDefinition, parseSkillDefinition } from "../src/definitions.ts";
+import { expiryFor, type ApprovalEntry } from "../src/kernel/approval.ts";
+import { approvalsPath } from "../src/governance/approval-store.ts";
+import { digestDefinition, parseSkillDefinition } from "../src/kernel/definitions.ts";
 import { cleanupTempDirs, fixture, modelTestsEnabled, piAvailable, runCommand, runPrompt, tempDir, verdictFor } from "./harness.ts";
 
 after(cleanupTempDirs);

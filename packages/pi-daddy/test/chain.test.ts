@@ -14,7 +14,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { HANDOFF_MAX_BYTES, MAX_ARG_STRLEN, PLACEHOLDER, chainStepSpec, composeStepTask, fenceHandoff } from "../src/chain.ts";
+import { HANDOFF_MAX_BYTES, MAX_ARG_STRLEN, PLACEHOLDER, chainStepSpec, composeStepTask, fenceHandoff } from "../src/kernel/chain.ts";
 
 const nonceOf = (fenced: string): string => {
   const match = fenced.match(/<<<PRIOR-AGENT-OUTPUT ([0-9a-f]+)>>>/);

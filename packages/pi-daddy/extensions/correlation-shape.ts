@@ -1,6 +1,6 @@
 import { Type } from "typebox";
 
-/** The model-facing form of correlation schema 1.0; runtime validation in src/correlation.ts is the backstop. */
+/** The model-facing form of correlation schema 1.0; runtime validation in src/kernel/correlation.ts is the backstop. */
 export function correlationShape() {
   const assuranceScope = Type.Union([
     Type.Object({

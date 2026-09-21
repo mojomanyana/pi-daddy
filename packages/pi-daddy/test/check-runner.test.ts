@@ -3,9 +3,10 @@ import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { runNamedCheck } from "../src/check-runner.ts";
-import { computeGitCandidateIdentity } from "../src/git-identity.ts";
-import { acquireWorkspaceLease, validateRegisteredWorkspace } from "../src/workspace.ts";
+import { runNamedCheck } from "../src/governance/check-runner.ts";
+import { computeGitCandidateIdentity } from "../src/governance/git-identity.ts";
+import { validateRegisteredWorkspace } from "../src/kernel/workspace.ts";
+import { acquireWorkspaceLease } from "../src/governance/workspace-lease.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 import { execFileSync, spawn } from "node:child_process";
 import { once } from "node:events";
@@ -195,8 +196,8 @@ test("parent SIGKILL stops a named check before releasing its workspace lease", 
   const leaseDir = await tempDir("check-crash-leases-");
   const ready = join(ws.root, "CHECK_READY");
   const late = join(ws.root, "CHECK_LATE_WRITE");
-  const checkUrl = pathToFileURL(join(process.cwd(), "src", "check-runner.ts")).href;
-  const workspaceUrl = pathToFileURL(join(process.cwd(), "src", "workspace.ts")).href;
+  const checkUrl = pathToFileURL(join(process.cwd(), "src", "governance", "check-runner.ts")).href;
+  const workspaceUrl = pathToFileURL(join(process.cwd(), "src", "kernel", "workspace.ts")).href;
   const childCode = `
     import {runNamedCheck} from ${JSON.stringify(checkUrl)};
     import {validateRegisteredWorkspace} from ${JSON.stringify(workspaceUrl)};
@@ -295,7 +296,7 @@ test("a malformed check definition is refused rather than normalised", async () 
 });
 
 test("an evidence check declared `read` still takes the exclusive writer lease", async () => {
-  // `src/check-runner.ts` hardcodes `leaseAccess = "write"` with a comment explaining that a check's
+  // `src/governance/check-runner.ts` hardcodes `leaseAccess = "write"` with a comment explaining that a check's
   // pre/post candidate identities are worthless if another governed writer can interleave. Changing that
   // line to `leaseAccess = access` left the suite green, so the comment was the only thing enforcing it.
   const ws = await workspace();

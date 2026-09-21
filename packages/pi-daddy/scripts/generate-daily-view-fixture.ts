@@ -2,8 +2,8 @@ import { mkdir, readFile, writeFile, mkdtemp } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { dailyFixture, dailyAuthority } from "../test/daily-view-fixture.ts";
-import { readDailyView } from "../src/daily-view.ts";
-import { renderDailyView } from "../src/daily-view-render.ts";
+import { readDailyView } from "../src/products/daily-view.ts";
+import { renderDailyView } from "../src/products/daily-view-render.ts";
 
 /** Explicit owned scratch location; no model/transport or production authority factory. */
 export async function buildDailyFixture(scratchParent: string): Promise<Record<string, string>> {

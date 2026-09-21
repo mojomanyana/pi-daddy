@@ -9,10 +9,10 @@ import { join } from "node:path";
 import { createServer } from "node:net";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 after(cleanupTempDirs);
-import { createResourceBudget, openResourceBudget } from "../src/resource-budget.ts";
-import { prepareDigestProfile, runDigestProfile, type DigestProfile } from "../src/effect-profile.ts";
-import { digestNamespaceArgs, digestRuntime } from "../src/effect-profile-runtime.ts";
-import { runChild } from "../src/run-child.ts";
+import { createResourceBudget, openResourceBudget } from "../src/products/resource-budget.ts";
+import { prepareDigestProfile, runDigestProfile, type DigestProfile } from "../src/products/effect-profile.ts";
+import { digestNamespaceArgs, digestRuntime } from "../src/products/effect-profile-runtime.ts";
+import { runChild } from "../src/kernel/run-child.ts";
 import { nativeResultDiagnostic, NATIVE_DIAGNOSTIC_TEXT_BYTES } from "./native-result-diagnostic.ts";
 const hash = (text: string) => createHash("sha256").update(text).digest("hex");
 async function fixture() {

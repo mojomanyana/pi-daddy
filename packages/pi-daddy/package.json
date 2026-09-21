@@ -30,191 +30,209 @@
       "default": "./dist/index.js"
     },
     "./resolve": {
-      "types": "./dist/resolve.d.ts",
-      "default": "./dist/resolve.js"
+      "types": "./dist/kernel/resolve.d.ts",
+      "default": "./dist/kernel/resolve.js"
     },
     "./ledger": {
-      "types": "./dist/ledger.d.ts",
-      "default": "./dist/ledger.js"
+      "types": "./dist/governance/ledger.d.ts",
+      "default": "./dist/governance/ledger.js"
     },
-    "./work-setup": { "types": "./dist/work-setup.d.ts", "default": "./dist/work-setup.js" },
-    "./work-command": { "types": "./dist/work-command.d.ts", "default": "./dist/work-command.js" },
-    "./work-run": { "types": "./dist/work-run.d.ts", "default": "./dist/work-run.js" },
-    "./work-policy-registry": { "types": "./dist/work-policy-registry.d.ts", "default": "./dist/work-policy-registry.js" },
-    "./factory-registry": { "types": "./dist/factory-registry.d.ts", "default": "./dist/factory-registry.js" },
-    "./learning-connection": { "types": "./dist/learning-connection.d.ts", "default": "./dist/learning-connection.js" },
+    "./work-setup": {
+      "types": "./dist/products/work-setup.d.ts",
+      "default": "./dist/products/work-setup.js"
+    },
+    "./work-command": {
+      "types": "./dist/products/work-command.d.ts",
+      "default": "./dist/products/work-command.js"
+    },
+    "./work-run": {
+      "types": "./dist/products/work-run.d.ts",
+      "default": "./dist/products/work-run.js"
+    },
+    "./work-policy-registry": {
+      "types": "./dist/products/work-policy-registry.d.ts",
+      "default": "./dist/products/work-policy-registry.js"
+    },
+    "./factory-registry": {
+      "types": "./dist/products/factory-registry.d.ts",
+      "default": "./dist/products/factory-registry.js"
+    },
+    "./learning-connection": {
+      "types": "./dist/products/learning-connection.d.ts",
+      "default": "./dist/products/learning-connection.js"
+    },
     "./work-ledger": {
-      "types": "./dist/work-ledger.d.ts",
-      "default": "./dist/work-ledger.js"
+      "types": "./dist/governance/work-ledger.d.ts",
+      "default": "./dist/governance/work-ledger.js"
     },
     "./factory-order": {
-      "types": "./dist/factory-order.d.ts",
-      "default": "./dist/factory-order.js"
+      "types": "./dist/products/factory-order.d.ts",
+      "default": "./dist/products/factory-order.js"
     },
     "./experiment": {
-      "types": "./dist/experiment.d.ts",
-      "default": "./dist/experiment.js"
+      "types": "./dist/products/experiment.d.ts",
+      "default": "./dist/products/experiment.js"
     },
     "./dashboard-harness": {
-      "types": "./dist/dashboard-harness.d.ts",
-      "default": "./dist/dashboard-harness.js"
+      "types": "./dist/products/dashboard-harness.d.ts",
+      "default": "./dist/products/dashboard-harness.js"
     },
     "./daily-dashboard-host": {
-      "types": "./dist/daily-dashboard-host.d.ts",
-      "default": "./dist/daily-dashboard-host.js"
+      "types": "./dist/products/daily-dashboard-host.d.ts",
+      "default": "./dist/products/daily-dashboard-host.js"
     },
     "./dashboard-host": {
-      "types": "./dist/dashboard-host.d.ts",
-      "default": "./dist/dashboard-host.js"
+      "types": "./dist/products/dashboard-host.d.ts",
+      "default": "./dist/products/dashboard-host.js"
     },
     "./dashboard-host-transport": {
-      "types": "./dist/dashboard-host-transport.d.ts",
-      "default": "./dist/dashboard-host-transport.js"
+      "types": "./dist/products/dashboard-host-transport.d.ts",
+      "default": "./dist/products/dashboard-host-transport.js"
     },
     "./debrief-host": {
-      "types": "./dist/debrief-host.d.ts",
-      "default": "./dist/debrief-host.js"
+      "types": "./dist/products/debrief-host.d.ts",
+      "default": "./dist/products/debrief-host.js"
     },
     "./contracts/debrief/v2/*": "./contracts/debrief/v2/*",
     "./debrief": {
-      "types": "./dist/debrief.d.ts",
-      "default": "./dist/debrief.js"
+      "types": "./dist/products/debrief.d.ts",
+      "default": "./dist/products/debrief.js"
     },
     "./daily-view": {
-      "types": "./dist/daily-view.d.ts",
-      "default": "./dist/daily-view.js"
+      "types": "./dist/products/daily-view.d.ts",
+      "default": "./dist/products/daily-view.js"
     },
     "./intent-control": {
-      "types": "./dist/intent-control.d.ts",
-      "default": "./dist/intent-control.js"
+      "types": "./dist/products/intent-control.d.ts",
+      "default": "./dist/products/intent-control.js"
     },
     "./dispatch-control": {
-      "types": "./dist/dispatch-control.d.ts",
-      "default": "./dist/dispatch-control.js"
+      "types": "./dist/products/dispatch-control.d.ts",
+      "default": "./dist/products/dispatch-control.js"
     },
     "./resource-budget": {
-      "types": "./dist/resource-budget.d.ts",
-      "default": "./dist/resource-budget.js"
+      "types": "./dist/products/resource-budget.d.ts",
+      "default": "./dist/products/resource-budget.js"
     },
     "./producer-ipc": {
-      "types": "./dist/producer-ipc.d.ts",
-      "default": "./dist/producer-ipc.js"
+      "types": "./dist/products/producer-ipc.d.ts",
+      "default": "./dist/products/producer-ipc.js"
     },
     "./effect-profile": {
-      "types": "./dist/effect-profile.d.ts",
-      "default": "./dist/effect-profile.js"
+      "types": "./dist/products/effect-profile.d.ts",
+      "default": "./dist/products/effect-profile.js"
     },
     "./measured-session": {
-      "types": "./dist/measured-session.d.ts",
-      "default": "./dist/measured-session.js"
+      "types": "./dist/products/measured-session.d.ts",
+      "default": "./dist/products/measured-session.js"
     },
     "./measured-order": {
-      "types": "./dist/measured-order.d.ts",
-      "default": "./dist/measured-order.js"
+      "types": "./dist/products/measured-order.d.ts",
+      "default": "./dist/products/measured-order.js"
     },
     "./execution-retention": {
-      "types": "./dist/execution-retention.d.ts",
-      "default": "./dist/execution-retention.js"
+      "types": "./dist/governance/execution-retention.d.ts",
+      "default": "./dist/governance/execution-retention.js"
     },
     "./spawn": {
-      "types": "./dist/spawn.d.ts",
-      "default": "./dist/spawn.js"
+      "types": "./dist/kernel/spawn.d.ts",
+      "default": "./dist/kernel/spawn.js"
     },
     "./delegate": {
-      "types": "./dist/delegate.d.ts",
-      "default": "./dist/delegate.js"
+      "types": "./dist/kernel/delegate.d.ts",
+      "default": "./dist/kernel/delegate.js"
     },
     "./catalog": {
-      "types": "./dist/catalog.d.ts",
-      "default": "./dist/catalog.js"
+      "types": "./dist/kernel/catalog.d.ts",
+      "default": "./dist/kernel/catalog.js"
     },
     "./propagation": {
-      "types": "./dist/propagation.d.ts",
-      "default": "./dist/propagation.js"
+      "types": "./dist/kernel/propagation.d.ts",
+      "default": "./dist/kernel/propagation.js"
     },
     "./definitions": {
-      "types": "./dist/definitions.d.ts",
-      "default": "./dist/definitions.js"
+      "types": "./dist/kernel/definitions.d.ts",
+      "default": "./dist/kernel/definitions.js"
     },
     "./fanout": {
-      "types": "./dist/fanout.d.ts",
-      "default": "./dist/fanout.js"
+      "types": "./dist/kernel/fanout.d.ts",
+      "default": "./dist/kernel/fanout.js"
     },
     "./pi-tools": {
-      "types": "./dist/pi-tools.d.ts",
-      "default": "./dist/pi-tools.js"
+      "types": "./dist/kernel/pi-tools.d.ts",
+      "default": "./dist/kernel/pi-tools.js"
     },
     "./run-herdr": {
-      "types": "./dist/run-herdr.d.ts",
-      "default": "./dist/run-herdr.js"
+      "types": "./dist/executors/run-herdr.d.ts",
+      "default": "./dist/executors/run-herdr.js"
     },
     "./herdr-poll": {
-      "types": "./dist/herdr-poll.d.ts",
-      "default": "./dist/herdr-poll.js"
+      "types": "./dist/executors/herdr-poll.d.ts",
+      "default": "./dist/executors/herdr-poll.js"
     },
     "./herdr-cli": {
-      "types": "./dist/herdr-cli.d.ts",
-      "default": "./dist/herdr-cli.js"
+      "types": "./dist/executors/herdr-cli.d.ts",
+      "default": "./dist/executors/herdr-cli.js"
     },
     "./executor": {
-      "types": "./dist/executor.d.ts",
-      "default": "./dist/executor.js"
+      "types": "./dist/executors/executor.d.ts",
+      "default": "./dist/executors/executor.js"
     },
     "./progress": {
-      "types": "./dist/progress.d.ts",
-      "default": "./dist/progress.js"
+      "types": "./dist/kernel/progress.d.ts",
+      "default": "./dist/kernel/progress.js"
     },
     "./chain": {
-      "types": "./dist/chain.d.ts",
-      "default": "./dist/chain.js"
+      "types": "./dist/kernel/chain.d.ts",
+      "default": "./dist/kernel/chain.js"
     },
     "./run-child": {
-      "types": "./dist/run-child.d.ts",
-      "default": "./dist/run-child.js"
+      "types": "./dist/kernel/run-child.d.ts",
+      "default": "./dist/kernel/run-child.js"
     },
     "./approval": {
-      "types": "./dist/approval.d.ts",
-      "default": "./dist/approval.js"
+      "types": "./dist/kernel/approval.d.ts",
+      "default": "./dist/kernel/approval.js"
     },
     "./approval-store": {
-      "types": "./dist/approval-store.d.ts",
-      "default": "./dist/approval-store.js"
+      "types": "./dist/governance/approval-store.d.ts",
+      "default": "./dist/governance/approval-store.js"
     },
     "./approval-prompt": {
-      "types": "./dist/approval-prompt.d.ts",
-      "default": "./dist/approval-prompt.js"
+      "types": "./dist/governance/approval-prompt.d.ts",
+      "default": "./dist/governance/approval-prompt.js"
     },
     "./init": {
-      "types": "./dist/init.d.ts",
-      "default": "./dist/init.js"
+      "types": "./dist/governance/init.d.ts",
+      "default": "./dist/governance/init.js"
     },
     "./skill-packages": {
-      "types": "./dist/skill-packages.d.ts",
-      "default": "./dist/skill-packages.js"
+      "types": "./dist/kernel/skill-packages.d.ts",
+      "default": "./dist/kernel/skill-packages.js"
     },
     "./correlation": {
-      "types": "./dist/correlation.d.ts",
-      "default": "./dist/correlation.js"
+      "types": "./dist/kernel/correlation.d.ts",
+      "default": "./dist/kernel/correlation.js"
     },
     "./refusals": {
-      "types": "./dist/refusals.d.ts",
-      "default": "./dist/refusals.js"
+      "types": "./dist/kernel/refusals.d.ts",
+      "default": "./dist/kernel/refusals.js"
     },
     "./workspace": {
-      "types": "./dist/workspace.d.ts",
-      "default": "./dist/workspace.js"
+      "types": "./dist/governance/workspace-public.d.ts",
+      "default": "./dist/governance/workspace-public.js"
     },
     "./check-runner": {
-      "types": "./dist/check-runner.d.ts",
-      "default": "./dist/check-runner.js"
+      "types": "./dist/governance/check-runner.d.ts",
+      "default": "./dist/governance/check-runner.js"
     },
     "./dashboard-projection": {
-      "types": "./dist/dashboard-projection.d.ts",
-      "default": "./dist/dashboard-projection.js"
+      "types": "./dist/products/dashboard-projection.d.ts",
+      "default": "./dist/products/dashboard-projection.js"
     },
     "./dashboard-render": {
-      "types": "./dist/dashboard-render.d.ts",
-      "default": "./dist/dashboard-render.js"
+      "types": "./dist/products/dashboard-render.d.ts",
+      "default": "./dist/products/dashboard-render.js"
     },
     "./contracts/factory-order/v1/*": "./contracts/factory-order/v1/*",
     "./contracts/experiment/v1/*": "./contracts/experiment/v1/*",
@@ -236,7 +254,7 @@
   },
   "bin": {
     "pi-daddy": "./dist/cli.js",
-    "pi-daddy-dashboard": "./dist/dashboard-cli.js"
+    "pi-daddy-dashboard": "./dist/products/dashboard-cli.js"
   },
   "files": [
     "dist",

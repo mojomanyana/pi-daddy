@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { createGrantsSession, ENV_GOVERNANCE } from "../extensions/session.ts";
-import { ENV_GRANT } from "../src/propagation.ts";
+import { ENV_GRANT } from "../src/kernel/propagation.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
 after(cleanupTempDirs);

@@ -8,9 +8,9 @@ import {
   buildRecord,
   buildWorkspaceLeaseEvent,
   buildWorkflowFactEvent,
-} from "../src/ledger.ts";
-import type { CorrelationMetadata } from "../src/correlation.ts";
-import { REFUSAL_CODES } from "../src/refusals.ts";
+} from "../src/governance/ledger.ts";
+import type { CorrelationMetadata } from "../src/kernel/correlation.ts";
+import { REFUSAL_CODES } from "../src/kernel/refusals.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const contractDir = join(here, "..", "contracts", "ledger", "v3");

@@ -12,7 +12,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ceilingForDefinition, parseSkillDefinition } from "../src/definitions.ts";
+import { ceilingForDefinition, parseSkillDefinition } from "../src/kernel/definitions.ts";
 
 const skill = (frontmatter: string, body = "Do the thing.") => `---\n${frontmatter}\n---\n\n${body}\n`;
 

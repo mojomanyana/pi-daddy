@@ -16,7 +16,7 @@ import { once } from "node:events";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { pathToFileURL } from "node:url";
-import { runChild, takeBytes, timeoutFromEnv } from "../src/run-child.ts";
+import { runChild, takeBytes, timeoutFromEnv } from "../src/kernel/run-child.ts";
 import { withRunChildTestControl } from "./run-child-test-control.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 

@@ -8,9 +8,9 @@ import {
   appendDeclaredWorkOccurrence,
   declareWork,
   loadDeclaredWork,
-} from "../src/work-command.ts";
-import { parseWorkLedgerText, projectWorkLedger } from "../src/work-ledger.ts";
-import { workPresentation } from "../src/work-setup.ts";
+} from "../src/products/work-command.ts";
+import { parseWorkLedgerText, projectWorkLedger } from "../src/governance/work-ledger.ts";
+import { workPresentation } from "../src/products/work-setup.ts";
 
 after(cleanupTempDirs);
 

@@ -5,6 +5,57 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ---
 
+## 2026-09-21 — ADR-0076 PR 2: five layers cut, import direction enforced
+
+Worktree `claude/adr-0076-pr2-layers` from `ea72a58` (PR 1 merged), rebased onto `d55b80c` (0.28.1, PR #60, merged by
+another session meanwhile) before CI; three conflicts resolved (changelog order, one import, one version assertion). Every `src/` file now lives under
+`kernel/`, `governance/`, `executors/` or `products/` (`advisors/` is reserved for PR 6); `src/index.ts`,
+`src/cli.ts` and `extensions/` are the composition layer. `test/layering.test.ts` was written red first (159
+stray root files, then seven upward edges) and is green with zero exemptions; the ADR carries a dated
+amendment recording how each edge was closed and where the Decision's expectations differed from the tree.
+`test/file-size.test.ts` now recurses, since a non-recursive read would have guarded only two files and
+reported green.
+
+Behaviour-neutral by intent; two deliberate edits: the planner takes a `childEnv` hook instead of importing
+the activity timeline, refusing `PI_GRANTS_*` or already-set keys (forced by a new test), and `ExecutorKind`
+moved into the kernel. `pi-daddy/workspace` stays whole through `governance/workspace-public.ts`; export
+keys and root exports are unchanged; `dist/` targets moved with their files. Four contract READMEs and three
+SPEC sentences that named old paths were repointed. One import-rewriter false positive was caught and
+reverted: a `"./.."` fixture literal in `test/init.test.ts`.
+
+Evidence on this machine at `ea72a58` plus these edits, HEAD printed in the same commands: typecheck clean;
+layering 2/2; the full unit runner's failing set is byte-identical to the unchanged tree's: 59 cases, 57 of them
+`ENOENT /usr/bin/bwrap` (CI installs bubblewrap) and 2 pre-existing `measured-order` journal-replacement
+assertions that fail identically at `ea72a58` on this WSL2 filesystem, with no new and no vanished failures; model-free integration tier
+against real pi 0.84.2: 38/38; pack-and-install smoke: OK, after it caught the `pi-daddy/workspace` subpath
+losing `defaultWorkspaceLeaseDir`, which is why `workspace-public.ts` exists. Independent review pass (code-reviewer subagent, adversarial hypotheses A–F written first): five
+findings, all repaired in the same change. (1) `pi-daddy/workspace` had lost `ENV_WORKSPACE_LEASE_DIR`, the
+seventh lease name, while the ADR amendment claimed the subpath was whole; restored, and
+`test/workspace-public-surface.test.ts` now forces the full surface. (2) This entry's evidence sentence
+called all 59 failures bubblewrap; corrected above. (3) `THIRD_PARTY_NOTICES.md`, `adoption-pin.json` and the
+factory-order README named the old vendor paths; repointed. (4) The layering test missed `createRequire`,
+`new URL`, template imports and bare `pi-daddy/` self-imports; covered, and its docstring now states what it
+does not cover. (5) Stale old-path prose in comments, including one written in this change; repointed
+mechanically outside import lines. Refuted: runtime path loading, non-path literal rewrites beyond the one
+already reverted, `childEnv` widening, other lost exports.
+
+Cross-session notes: the skill-harness session reported (1) the advisors code should ship as one small
+package shared by both repositories, and (2) a planned `skill-research-v1` work template needs a few KiB of
+structured context plus file paths handed between sibling and dependent children. Both are inputs to
+ADR-0077/0078; neither changes this PR.
+
+### NEXT SESSION
+
+1. **PR 3 — one ledger, one state directory, `PI_DADDY_*` only, exports under ten, statement-count guard
+   with a 120-character line cap.** Ships as 0.30.0. Delete the prose-asserting tests. skill-harness re-pins.
+2. **PR 4 — skill-harness as optional versioned peer; contracts pruned.**
+3. **PR 5 — SPEC as the layer map** with the no-hex/no-PR-token test; first fresh-session probe.
+4. PR 6 advisors (ADR-0077, shared package boundary to decide), PR 7 context handoff (ADR-0078, must carry
+   structured context and file paths between siblings), PR 8 selection/routing/signals, PR 9 probes.
+
+
+---
+
 ## 2026-09-21 — ADR-0076: the consolidation programme, PR 1 (truth and glossary)
 
 Branch `claude/adr-0076-consolidation-programme` from `f3f4ae4` (0.28.0). A roast of the codebase and a sourced

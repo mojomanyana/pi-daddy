@@ -12,7 +12,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { resolve } from "../src/resolve.ts";
+import { resolve } from "../src/kernel/resolve.ts";
 
 const R = (over: Partial<Parameters<typeof resolve>[0]> = {}) =>
   resolve({ requested: [], parentGrant: [], ...over });

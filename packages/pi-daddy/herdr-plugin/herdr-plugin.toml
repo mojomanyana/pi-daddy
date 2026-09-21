@@ -14,5 +14,5 @@ command = [
   "node",
   "--input-type=module",
   "-e",
-  "import('node:url').then(({ pathToFileURL }) => import(pathToFileURL(process.env.HERDR_PLUGIN_ROOT + '/../dist/dashboard-cli.js').href)).then(m => m.runDashboard()).catch(e => { console.error(e); process.exitCode = 1; })"
+  "import('node:url').then(({ pathToFileURL }) => import(pathToFileURL(process.env.HERDR_PLUGIN_ROOT + '/../dist/products/dashboard-cli.js').href)).then(m => m.runDashboard()).catch(e => { console.error(e); process.exitCode = 1; })"
 ]

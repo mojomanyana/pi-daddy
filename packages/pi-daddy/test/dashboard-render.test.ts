@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { renderDashboard } from "../src/dashboard-render.ts";
-import type { DashboardNode, DashboardProjection } from "../src/dashboard-projection.ts";
+import { renderDashboard } from "../src/products/dashboard-render.ts";
+import type { DashboardNode, DashboardProjection } from "../src/products/dashboard-projection.ts";
 
 const at = "2026-08-28T12:00:00.000Z";
 

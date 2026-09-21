@@ -8,17 +8,17 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { Compile } from "typebox/compile";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
-import { verifyLedger } from "../src/ledger.ts";
-import { parseDashboardLedger } from "../src/dashboard-projection.ts";
-import { inspectWorkLedger } from "../src/work-ledger.ts";
+import { verifyLedger } from "../src/governance/ledger.ts";
+import { parseDashboardLedger } from "../src/products/dashboard-projection.ts";
+import { inspectWorkLedger } from "../src/governance/work-ledger.ts";
 import { layoutFixture, layoutAuthority, fixtureText } from "./work-ledger-fixtures.ts";
 after(cleanupTempDirs);
 import {
   buildWorkRevisionEvent, buildWorkSnapshotEvent, buildWorkOccurrenceEvent,
   buildWorkAcceptanceEvent, parseWorkLedgerText, WorkInputError,
-} from "../src/work-ledger.ts";
-import { canonicalWorkJson, parseWorkJson } from "../src/work-ledger-json.ts";
-import type { RevisionRef, WorkRevision, WorkInputCode } from "../src/work-ledger-types.ts";
+} from "../src/governance/work-ledger.ts";
+import { canonicalWorkJson, parseWorkJson } from "../src/governance/work-ledger-json.ts";
+import type { RevisionRef, WorkRevision, WorkInputCode } from "../src/governance/work-ledger-types.ts";
 
 // Foundation tests below are pure. Published-contract checks at the end use explicit fresh targets
 // and bounded Node-only children; no package manager, model, source generation default or worktree.
@@ -555,7 +555,7 @@ test("layout options fixtures are reproducible without Principal vocabulary", as
     assert.deepEqual(await readFile(join(dir, "ledger-event.schema.json")), await readFile(join(contractRoot, "ledger-event.schema.json")));
   }
   assert.deepEqual(await collateral(), before);
-  const ctx = layoutAuthority(), { projectWorkLedger } = await import("../src/work-ledger.ts");
+  const ctx = layoutAuthority(), { projectWorkLedger } = await import("../src/governance/work-ledger.ts");
   const positive = projectWorkLedger(fixtureText(layout), ctx);
   assert.deepEqual(positive.progress, { accepted: 1, total: 1 });
   assert.deepEqual(positive.runtime!.counts, { attempts: 2, variants: 3, observedCompletedAttempts: 2 });

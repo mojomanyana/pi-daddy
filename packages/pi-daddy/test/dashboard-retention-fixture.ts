@@ -1,7 +1,7 @@
 import { mkdir,writeFile,chmod,readFile } from "node:fs/promises";
 import { join,relative } from "node:path";
 import grantsExtension from "../extensions/grants.ts";
-import { drainExecutionRetention,parseExecutionRetentionManifest } from "../src/execution-retention.ts";
+import { drainExecutionRetention,parseExecutionRetentionManifest } from "../src/governance/execution-retention.ts";
 /** Real ordinary tool/host/executor/retention path, with an explicit no-model Node process fixture. */
 export async function ordinaryHostRetention(root:string){
  const bin=join(root,"bin"),native=join(root,"native");await mkdir(bin);await mkdir(native,{mode:0o700});await writeFile(join(bin,"pi"),`#!${process.execPath}\nimport fs from 'node:fs';import{randomUUID}from'node:crypto';const args=process.argv.slice(2),index=args.indexOf('--session');if(index<0)throw Error('missing authorized native target');fs.writeFileSync(args[index+1],JSON.stringify({type:'session',version:3,id:randomUUID(),timestamp:new Date().toISOString(),cwd:process.cwd()})+'\\n',{flag:'wx',mode:0o600});process.stdout.write('ordinary retained fixture output');`);await chmod(join(bin,"pi"),0o700);

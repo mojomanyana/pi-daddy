@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
 import { join } from 'node:path';
 import { cleanupTempDirs, tempDir } from './tmp.ts';
-import { createResourceBudget, openResourceBudget } from '../src/resource-budget.ts';
-import { MeasuredSessionFailure, MeasuredSessionUnknownError, runMeasuredAgentSession, verifyMeasuredSubscription, type MeasuredSessionHost } from '../src/measured-session.ts';
+import { createResourceBudget, openResourceBudget } from '../src/products/resource-budget.ts';
+import { MeasuredSessionFailure, MeasuredSessionUnknownError, runMeasuredAgentSession, verifyMeasuredSubscription, type MeasuredSessionHost } from '../src/products/measured-session.ts';
 after(cleanupTempDirs);
 const authorityDigest='9'.repeat(64);
 async function fixture(){const root=await tempDir('measured-session-'),budget=await createResourceBudget({directory:join(root,'budget'),authorityDigest,limits:{maxAttempts:2,maxInputBytes:2048,maxConcurrent:2}});return{root,budget};}

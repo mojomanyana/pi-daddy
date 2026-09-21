@@ -1,22 +1,12 @@
-import type { CorrelationMetadata } from "../src/correlation.ts";
-import type { Capability } from "../src/resolve.ts";
+import type { CorrelationMetadata } from "../src/kernel/correlation.ts";
+import type { Capability } from "../src/kernel/resolve.ts";
 import {
   appendLedgerEvent,
   buildWorkspaceLeaseEvent,
-} from "../src/ledger.ts";
-import { GovernanceRefusal, refusal, type StructuredRefusal } from "../src/refusals.ts";
-import {
-  acquireWorkspaceLease,
-  defaultWorkspaceLeaseDir,
-  ENV_WORKSPACE_REGISTRY,
-  loadWorkspaceRegistry,
-  resolveWorkspace,
-  type ValidatedWorkspace,
-  type WorkspaceAccess,
-  type WorkspaceLease,
-  leaseAcquisitionOutcome,
-  type LeaseReleaseOutcome,
-} from "../src/workspace.ts";
+} from "../src/governance/ledger.ts";
+import { GovernanceRefusal, refusal, type StructuredRefusal } from "../src/kernel/refusals.ts";
+import { ENV_WORKSPACE_REGISTRY, loadWorkspaceRegistry, resolveWorkspace, type ValidatedWorkspace, type WorkspaceAccess } from "../src/kernel/workspace.ts";
+import { acquireWorkspaceLease, defaultWorkspaceLeaseDir, type WorkspaceLease, leaseAcquisitionOutcome, type LeaseReleaseOutcome } from "../src/governance/workspace-lease.ts";
 
 export interface DelegationWorkspaceSpec {
   workspace_id: string;

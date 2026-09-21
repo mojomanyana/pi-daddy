@@ -96,7 +96,7 @@ for a restored nonbaseline candidate now refuse replay. No silent migration or a
 ## Applied adoption, subsequent-order pins and rollback
 
 Exact pure upstream source `22606c21adb118b9ae395fe93a197609a63e05e3:packages/core/src/adoption.ts` is vendored
-unchanged in src/vendor/adoption.ts; adoption-pin.json records its hash. Its predicates are CONDITIONAL,
+unchanged in src/products/vendor/adoption.ts; adoption-pin.json records its hash. Its predicates are CONDITIONAL,
 not an activation service or authenticated authority. No model evaluation is performed here.
 
 FactoryAuthority is separately retained host input: id, exact order/decision/activation/migration digests,

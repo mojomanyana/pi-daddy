@@ -7,7 +7,7 @@
  *
  * **Nothing here re-implements a governance rule.** Every step goes through `runOneDelegation`, so the grant, the
  * ceiling, `agent:<name>` authorisation, the depth bound, the ledger and `--tools` enforcement are exactly what a
- * single `delegate` gets. What a chain adds is the handoff (`src/chain.ts`), one gate instead of N, a budget unit
+ * single `delegate` gets. What a chain adds is the handoff (`src/kernel/chain.ts`), one gate instead of N, a budget unit
  * per step, and abort-on-failure.
  *
  * **Why the upfront gate is exact rather than an approximation**, which is the least obvious thing here: an approval
@@ -18,22 +18,22 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import type { InheritableApproval } from "../src/approval.ts";
-import { DELEGATE_SUBJECT } from "../src/approval.ts";
-import { chainStepSpec, PLACEHOLDER } from "../src/chain.ts";
-import { MAX_CHAIN_STEPS, childSpawnId, splitBudget } from "../src/fanout.ts";
-import { PAINT_INTERVAL_MS, appendTail, emptyTail, renderProgress, replaceTail, throttle, type ChildProgress } from "../src/progress.ts";
+import type { InheritableApproval } from "../src/kernel/approval.ts";
+import { DELEGATE_SUBJECT } from "../src/kernel/approval.ts";
+import { chainStepSpec, PLACEHOLDER } from "../src/kernel/chain.ts";
+import { MAX_CHAIN_STEPS, childSpawnId, splitBudget } from "../src/kernel/fanout.ts";
+import { PAINT_INTERVAL_MS, appendTail, emptyTail, renderProgress, replaceTail, throttle, type ChildProgress } from "../src/kernel/progress.ts";
 import { correlationShape } from "./correlation-shape.ts";
 import { recordChainRefusal } from "./chain-ledger.ts";
 import { obtainApprovals, snapshotOf, type ApprovalOutcome } from "./approvals.ts";
 import { runOneDelegation } from "./run-delegation.ts";
 import { isCriticalAssuranceBlock } from "./execute-child.ts";
 import type { GrantsSession } from "./session.ts";
-import { GovernanceRefusal, refusal, type StructuredRefusal } from "../src/refusals.ts";
+import { GovernanceRefusal, refusal, type StructuredRefusal } from "../src/kernel/refusals.ts";
 import { chainApprovalFacts, newChainApprovalAudit, rememberChainApproval } from "./chain-approval-facts.ts";
-import { newExecutionId } from "../src/execution-id.ts";
+import { newExecutionId } from "../src/kernel/execution-id.ts";
 import { planChain, type GateRequest } from "./chain-plan.ts";
-import { preflightModel } from "../src/model-preflight.ts";
+import { preflightModel } from "../src/kernel/model-preflight.ts";
 import { assertDelegationAuthority } from "./delegation-authority.ts";
 
 /** One chain step is one execution occurrence, however many capability dialogs contributed to its answer. */

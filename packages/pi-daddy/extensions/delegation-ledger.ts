@@ -1,5 +1,5 @@
-import type { Delegation } from "../src/delegate.ts";
-import { appendRecord, buildRecord } from "../src/ledger.ts";
+import type { Delegation } from "../src/kernel/delegate.ts";
+import { appendRecord, buildRecord } from "../src/governance/ledger.ts";
 import type { ApprovalOutcome } from "./approvals.ts";
 import type { ExecutionOccurrenceIds } from "./execution-occurrence.ts";
 import type { GrantsSession } from "./session.ts";

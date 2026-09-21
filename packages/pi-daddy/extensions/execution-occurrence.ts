@@ -1,5 +1,5 @@
-import { newExecutionId } from "../src/execution-id.ts";
-import { childSpawnId } from "../src/fanout.ts";
+import { newExecutionId } from "../src/kernel/execution-id.ts";
+import { childSpawnId } from "../src/kernel/fanout.ts";
 import type { GrantsSession } from "./session.ts";
 
 /** Readable logical position plus the unique identity used for every lifecycle join. */

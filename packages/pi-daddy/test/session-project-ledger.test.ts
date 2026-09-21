@@ -5,8 +5,8 @@ import { after, test } from "node:test";
 import grantsExtension from "../extensions/grants.ts";
 import { createGrantsSession } from "../extensions/session.ts";
 import { bindReloadLifecycle } from "../extensions/reload-environment.ts";
-import { grantStorePath, projectLedgerPath, saveGrant } from "../src/grant-store.ts";
-import { GRANT_ENV_KEYS } from "../src/propagation.ts";
+import { grantStorePath, projectLedgerPath, saveGrant } from "../src/governance/grant-store.ts";
+import { GRANT_ENV_KEYS } from "../src/kernel/propagation.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
 after(cleanupTempDirs);

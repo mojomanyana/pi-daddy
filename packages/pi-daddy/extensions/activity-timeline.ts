@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { ActivityTimelineRecorder, ENV_ACTIVITY_TASK, type ActivityIdentity, type ActivitySkill } from "../src/activity-timeline.ts";
+import { ActivityTimelineRecorder, ENV_ACTIVITY_TASK, type ActivityIdentity, type ActivitySkill } from "../src/products/activity-timeline.ts";
 
 export interface ActivitySessionState { activityRootId?: string; activity?: ActivityIdentity & { taskId?: string } }
 interface HookContext { cwd: string; model?: { id?: string }; thinkingLevel?: string; ui: { notify(message: string, level?: "info" | "warning" | "error"): void } }

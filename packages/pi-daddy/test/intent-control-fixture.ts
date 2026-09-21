@@ -1,7 +1,7 @@
-import { buildWorkRevisionEvent, buildWorkSnapshotEvent, type WorkRevision } from "../src/work-ledger.ts";
+import { buildWorkRevisionEvent, buildWorkSnapshotEvent, type WorkRevision } from "../src/governance/work-ledger.ts";
 import { fixtureRevisionRef as ref, fixtureEventRef as er, fixtureText } from "./work-ledger-fixtures.ts";
-import { resourceBindingDigest, type GovernedBudgetBinding } from "../src/resource-budget.ts";
-import { intentRequestDigest, type IntentRequest } from "../src/intent-control.ts";
+import { resourceBindingDigest, type GovernedBudgetBinding } from "../src/products/resource-budget.ts";
+import { intentRequestDigest, type IntentRequest } from "../src/products/intent-control.ts";
 export const hostDigest = "a".repeat(64);
 export function intentWorld(expand = false) {
   const now = new Date("2026-09-08T00:00:00Z");

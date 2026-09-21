@@ -2,9 +2,9 @@ import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import { readFile, writeFile } from "node:fs/promises";
-import { runChild } from "../src/run-child.ts";
+import { runChild } from "../src/kernel/run-child.ts";
 import { createHash } from "node:crypto";
-import { openResourceBudget, type BudgetSnapshot } from "../src/resource-budget.ts";
+import { openResourceBudget, type BudgetSnapshot } from "../src/products/resource-budget.ts";
 import { cleanupTempDirs } from "./tmp.ts";
 import { ipcWorld as world, withIpcChild, ipcEmitter, ipcReferences } from "./producer-ipc-fixture.ts";
 after(cleanupTempDirs);
@@ -82,7 +82,7 @@ test("the reserved input bytes and digest name the complete parent binding, not 
 
 test("opt-in root and subpath exports expose the same original bridge, without a model/runtime option",async()=>{
   const w=await world(),root=await import("../src/index.ts"),pkg=JSON.parse(await readFile(new URL("../package.json",import.meta.url),"utf8"));
-  assert.equal("createProducerIpcHost" in root,true);assert.deepEqual(pkg.exports["./producer-ipc"],{types:"./dist/producer-ipc.d.ts",default:"./dist/producer-ipc.js"});
+  assert.equal("createProducerIpcHost" in root,true);assert.deepEqual(pkg.exports["./producer-ipc"],{types:"./dist/products/producer-ipc.d.ts",default:"./dist/products/producer-ipc.js"});
   const host=w.ipc.createProducerIpcHost({owner:w.owner,binding:w.binding,exchange:async()=>ipcReferences});
   await assert.rejects(w.ipc.startProducerIpc({...{owner:w.owner,permit:w.permit,binding:w.binding,host,signal:new AbortController().signal,timeoutMs:10000},model:"forbidden"} as Parameters<typeof w.ipc.startProducerIpc>[0]),/closed/);
   for(const bad of [{...w.binding,invocationId:"x".repeat(129)},{...w.binding,sequence:1},{...w.binding,charterSha256:"unbound"}])assert.throws(()=>w.ipc.producerIpcBinding(bad));

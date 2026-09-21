@@ -7,7 +7,7 @@ import {
   digestTask,
   normaliseCorrelation,
   type CorrelationMetadata,
-} from "../src/correlation.ts";
+} from "../src/kernel/correlation.ts";
 
 const upstream: CorrelationMetadata = {
   schema_version: "1.0",
@@ -106,7 +106,7 @@ test("candidate tree identity is separate from committed HEAD identity", () => {
 
 /**
  * `correlation` is a MODEL-FACING tool parameter on all three delegation tools, and it is copied verbatim
- * onto every append-only ledger event. `src/ledger.ts` states the invariant in its own header — capability
+ * onto every append-only ledger event. `src/governance/ledger.ts` states the invariant in its own header — capability
  * ids, counts and identifiers only, never prompts, tool arguments or results — and ADR-0034 repeats that
  * the ledger must never carry task text.
  *
@@ -115,7 +115,7 @@ test("candidate tree identity is separate from committed HEAD identity", () => {
  * ledger through it, and disabling the cap entirely left the suite green (R-111).
  */
 test("correlation is a whitelist of the pinned contract, not a free-form blob", async () => {
-  const { normaliseCorrelation } = await import("../src/correlation.ts");
+  const { normaliseCorrelation } = await import("../src/kernel/correlation.ts");
 
   // Every declared field still survives untouched — the contract requires passing them through unchanged.
   const declared: CorrelationMetadata = {
@@ -159,7 +159,7 @@ test("correlation is a whitelist of the pinned contract, not a free-form blob", 
 });
 
 test("an oversized correlation is a RECORDED refusal, not an exception escaping the planner", async () => {
-  const { planDelegation } = await import("../src/delegate.ts");
+  const { planDelegation } = await import("../src/kernel/delegate.ts");
   // It threw a bare `Error` from outside every try in `planDelegation`, so this produced a governed
   // refusal with no code and no ledger line at all — the ledger file was never even created (R-112).
   const plan = planDelegation(

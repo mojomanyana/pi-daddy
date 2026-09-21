@@ -7,7 +7,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 after(cleanupTempDirs);
-import { createResourceBudget, openResourceBudget, type AttemptDemand } from "../src/resource-budget.ts";
+import { createResourceBudget, openResourceBudget, type AttemptDemand } from "../src/products/resource-budget.ts";
 const hash = (s: string) => createHash("sha256").update(s).digest("hex");
 const request = (attemptId: string, more: Partial<AttemptDemand> = {}): AttemptDemand => ({ attemptId, orderId: "order-a", experimentId: "experiment-a", kind: "primary", parentAttemptId: null, inputBytes: 3, inputDigest: hash("abc"), ...more });
 async function fixture(limits = { maxAttempts: 4, maxInputBytes: 12, maxConcurrent: 2 }) {
@@ -72,7 +72,7 @@ test("restart retains outstanding reservations; duplicate and late receipts do n
 
 test("real cross-process reservations serialize and exact redeliveries never launch twice", async () => {
   const binding = await fixture({ maxAttempts: 8, maxInputBytes: 24, maxConcurrent: 8 });
-  const module = new URL("../src/resource-budget.ts", import.meta.url).href;
+  const module = new URL("../src/products/resource-budget.ts", import.meta.url).href;
   const code = `const {openResourceBudget}=await import(${JSON.stringify(module)});try{await openResourceBudget(JSON.parse(process.argv[1])).reserve(JSON.parse(process.argv[2]));console.log('reserved')}catch(e){console.log(e.code)}`;
   const run = () => promisify(execFile)(process.execPath, ["--input-type=module", "-e", code, JSON.stringify(binding), JSON.stringify(request("duplicate"))], {
     env: { PATH: "", HOME: binding.directory, TMPDIR: binding.directory, PI_CODING_AGENT_DIR: binding.directory }, timeout: 10000,

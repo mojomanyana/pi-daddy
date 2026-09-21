@@ -19,7 +19,7 @@ import {
   replaceTail,
   throttle,
   type ChildProgress,
-} from "../src/progress.ts";
+} from "../src/kernel/progress.ts";
 
 test("the tail holds the LAST three lines, however many arrive", () => {
   let tail = appendTail(emptyTail, "");
