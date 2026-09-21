@@ -250,3 +250,35 @@ because their importer is composition.
 **Public surface.** Export keys in `package.json` are unchanged; their `dist/` targets moved with the files.
 Root exports are unchanged. The `DelegationContext.activity` field is gone from the planner's public type,
 replaced by `childEnv`; that is the one type-level change a direct `planDelegation` consumer would notice.
+
+## Amendment 2026-09-21 — PR 3 is three pull requests, and what the store inventory changed
+
+**PR 3 lands as 3a, 3b and 3c.** The consolidation row set was one pull request in the Decision; an inventory
+of the stores (below) and the size of the formatting change made one change unreviewable. 3a: formatter,
+guards, prose-asserting tests deleted. 3b: `PI_DADDY_*` only with an explicit governance key list, exports
+under ten, one project state directory. 3c: one record format and one reader, version 0.30.0. Each takes
+rule 10's review pass; the checklist rows stay as written with their PR column read as 3a/3b/3c.
+
+**The inventory found twenty-one stores, not ten, and the grants ledger has no hash chain at all.** The only
+chained journals are the control journal, the experiment store and the measured-order journal, and all three
+refuse by policy to live under `.pi/` because they hold private controller state under
+`~/.local/state/pi-daddy/`. Several stores pin device and inode identity and a header line into their binding,
+and the work ledger refuses any path that aliases the grants ledger. So the Decision's "one hash-chained
+`ledger.jsonl`" for everything would reverse a privacy policy and break every existing binding. The operator
+chose, on 2026-09-21: **one record envelope, one reader library and one project state directory; the private
+controller journals keep their location and adopt the same format.** The dashboard reads all of them through
+one projection. The checklist row "one hash-chained ledger.jsonl" is read accordingly.
+
+**The environment rename collides with the kernel guard.** Products already use `PI_DADDY_*`, so after the
+rename the `childEnv` guard cannot refuse by prefix. The operator chose: the kernel exports the closed list of
+governance keys (grant, depth, max depth, gated, approved, ledger, fan-out, parent id, execution id, herdr,
+child timeout), the guard refuses exactly those plus any key already set, and a test asserts the list equals
+what propagation writes.
+
+**The 120-character cap is enforced by Prettier, not by the guard.** 41 files had lines Prettier could not
+break (string literals, regexes, comment prose) or minified embedded scripts. The operator chose Prettier at
+width 120 as a root dev dependency with a CI check. The module guard counts statements (ceiling 400, the
+largest file measured 395) and caps any line at 200 characters, which is below every minified line found
+(300 to 1,815) and above every legitimately unbreakable one after the seventeen longest were split. Vendored
+files are excluded from formatting because their bytes are hash-pinned; the first formatting run caught that by
+failing the adoption-pin test.

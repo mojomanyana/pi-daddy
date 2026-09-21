@@ -23,10 +23,7 @@ test("execution ids are globally unique occurrences, not logical tree positions"
 
 test("a planned child receives its unique execution id through the governed environment", () => {
   const executionId = newExecutionId();
-  const plan = planDelegation(
-    { task: "inspect", tools: ["read"] },
-    { ...context, childExecutionId: executionId },
-  );
+  const plan = planDelegation({ task: "inspect", tools: ["read"] }, { ...context, childExecutionId: executionId });
 
   assert.equal(plan.ok, true);
   assert.equal(plan.env[ENV_EXECUTION_ID], executionId);

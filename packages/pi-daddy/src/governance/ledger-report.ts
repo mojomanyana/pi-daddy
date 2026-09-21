@@ -29,8 +29,15 @@ export interface LedgerReport {
   /** Every parsed ledger event, including lifecycle and lease events. */
   events: number;
   workspaceLeases: {
-    acquired: number; uncontended: number; refused: number; released: number;
-    releasedUnrecorded: number; lost: number; retained: number; timeout: number; recovered: number;
+    acquired: number;
+    uncontended: number;
+    refused: number;
+    released: number;
+    releasedUnrecorded: number;
+    lost: number;
+    retained: number;
+    timeout: number;
+    recovered: number;
   };
   lifecycle: { starting: number; running: number; completed: number; failed: number };
   /** Planned/observed/controller-validated facts; never counted as enforced child executions. */
@@ -144,13 +151,17 @@ const LEASE_OUTCOME_COUNTERS: Record<WorkspaceLeaseOutcome, keyof LedgerReport["
 };
 
 function requireVersioned(event: Record<string, unknown>, fields: string[]): void {
-  if ((event.ledgerVersion !== 2 && event.ledgerVersion !== 3) || typeof event.ts !== "string" ||
-      fields.some((field) => typeof event[field] !== "string" || event[field] === "")) {
+  if (
+    (event.ledgerVersion !== 2 && event.ledgerVersion !== 3) ||
+    typeof event.ts !== "string" ||
+    fields.some((field) => typeof event[field] !== "string" || event[field] === "")
+  ) {
     throw new Error("invalid versioned ledger event");
   }
-  if (event.ledgerVersion === 3 &&
-      (!isExecutionId(event.executionId) ||
-       (event.parentExecutionId !== null && !isExecutionId(event.parentExecutionId)))) {
+  if (
+    event.ledgerVersion === 3 &&
+    (!isExecutionId(event.executionId) || (event.parentExecutionId !== null && !isExecutionId(event.parentExecutionId)))
+  ) {
     throw new Error("invalid v3 execution identity");
   }
 }
@@ -162,7 +173,11 @@ function requireCapabilityDecision(event: Record<string, unknown>): void {
       throw new Error("invalid capability decision arrays");
     }
   }
-  if (!Number.isInteger(event.depth) || typeof event.blocked !== "boolean" || !/^[a-f0-9]{64}$/i.test(String(event.taskDigest))) {
+  if (
+    !Number.isInteger(event.depth) ||
+    typeof event.blocked !== "boolean" ||
+    !/^[a-f0-9]{64}$/i.test(String(event.taskDigest))
+  ) {
     throw new Error("invalid capability decision identity");
   }
 }
@@ -177,7 +192,17 @@ export async function verifyLedger(path: string): Promise<LedgerReport> {
         exists: false,
         records: 0,
         events: 0,
-        workspaceLeases: { acquired: 0, uncontended: 0, refused: 0, released: 0, releasedUnrecorded: 0, lost: 0, retained: 0, timeout: 0, recovered: 0 },
+        workspaceLeases: {
+          acquired: 0,
+          uncontended: 0,
+          refused: 0,
+          released: 0,
+          releasedUnrecorded: 0,
+          lost: 0,
+          retained: 0,
+          timeout: 0,
+          recovered: 0,
+        },
         lifecycle: { starting: 0, running: 0, completed: 0, failed: 0 },
         workflowFacts: 0,
         corrupt: [],
@@ -202,7 +227,17 @@ export async function verifyLedger(path: string): Promise<LedgerReport> {
   const digests = new Map<string, { name: string; source: string; sha256: string; spawns: number }>();
   let records = 0;
   let events = 0;
-  const workspaceLeases = { acquired: 0, uncontended: 0, refused: 0, released: 0, releasedUnrecorded: 0, lost: 0, retained: 0, timeout: 0, recovered: 0 };
+  const workspaceLeases = {
+    acquired: 0,
+    uncontended: 0,
+    refused: 0,
+    released: 0,
+    releasedUnrecorded: 0,
+    lost: 0,
+    retained: 0,
+    timeout: 0,
+    recovered: 0,
+  };
   const lifecycle = { starting: 0, running: 0, completed: 0, failed: 0 };
   let workflowFacts = 0;
   let escalationAttempts = 0;
@@ -278,7 +313,8 @@ export async function verifyLedger(path: string): Promise<LedgerReport> {
       else executors.unknown += 1;
       if (parsed.humanDenied) {
         humanDenied += 1;
-        const subject = parsed.agentType === undefined || parsed.agentType === "delegate" ? DELEGATE_SUBJECT : parsed.agentType;
+        const subject =
+          parsed.agentType === undefined || parsed.agentType === "delegate" ? DELEGATE_SUBJECT : parsed.agentType;
         for (const capability of parsed.gatedBlocked ?? []) deniedPairs.add(`${capability}@${subject}`);
       }
       // A **plain, non-empty** object. Three shapes were accepted here that must not be, all of them
@@ -300,7 +336,8 @@ export async function verifyLedger(path: string): Promise<LedgerReport> {
         // **Stated limit:** a definition genuinely named `delegate` is indistinguishable from the `tools:`
         // form in this field, and their two distinct approvals count as one pair. `DELEGATE_SUBJECT`'s own
         // angle brackets exist to make that collision impossible, and the ledger drops them.
-        const subject = parsed.agentType === undefined || parsed.agentType === "delegate" ? DELEGATE_SUBJECT : parsed.agentType;
+        const subject =
+          parsed.agentType === undefined || parsed.agentType === "delegate" ? DELEGATE_SUBJECT : parsed.agentType;
         for (const [capability, source] of Object.entries(sources)) {
           // `Object.hasOwn`, never `in`: `in` walks the prototype, so a source of `"toString"` or
           // `"valueOf"` passed the check, wrote a STRING into a counter, made `attributed` a string, and

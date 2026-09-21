@@ -36,17 +36,27 @@ export class LockTimeoutError extends Error {
   }
 }
 
-export interface FileLockOptions { readonly staleRecovery?: "age" | "disabled" }
+export interface FileLockOptions {
+  readonly staleRecovery?: "age" | "disabled";
+}
 function lockPolicy(options: FileLockOptions | undefined): "age" | "disabled" {
   if (options === undefined) return "age";
-  const invalid = (): never => { throw new TypeError("invalid file lock options"); };
-  if (options === null || typeof options !== "object" || Array.isArray(options) ||
-      ![Object.prototype, null].includes(Object.getPrototypeOf(options))) return invalid();
+  const invalid = (): never => {
+    throw new TypeError("invalid file lock options");
+  };
+  if (
+    options === null ||
+    typeof options !== "object" ||
+    Array.isArray(options) ||
+    ![Object.prototype, null].includes(Object.getPrototypeOf(options))
+  )
+    return invalid();
   const keys = Reflect.ownKeys(options);
-  if (keys.some(key => key !== "staleRecovery")) return invalid();
+  if (keys.some((key) => key !== "staleRecovery")) return invalid();
   if (!keys.length) return "age";
   const field = Object.getOwnPropertyDescriptor(options, "staleRecovery")!;
-  if (!Object.hasOwn(field, "value") || !field.enumerable || !["age", "disabled"].includes(field.value)) return invalid();
+  if (!Object.hasOwn(field, "value") || !field.enumerable || !["age", "disabled"].includes(field.value))
+    return invalid();
   return field.value;
 }
 
@@ -76,7 +86,12 @@ function lockPolicy(options: FileLockOptions | undefined): "age" | "disabled" {
  * The timeout is short *on purpose*: work refused because a file was busy is recoverable and loud, while
  * work that hangs waiting for a lock is neither.
  */
-export async function withFileLock<T>(path: string, label: string, work: () => Promise<T>, options?: FileLockOptions): Promise<T> {
+export async function withFileLock<T>(
+  path: string,
+  label: string,
+  work: () => Promise<T>,
+  options?: FileLockOptions,
+): Promise<T> {
   const staleRecovery = lockPolicy(options); // Detached once, before I/O or any wait.
   const lockPath = `${path}.lock`;
   const deadline = Date.now() + LOCK_TIMEOUT_MS;
@@ -116,15 +131,16 @@ export async function withFileLock<T>(path: string, label: string, work: () => P
 
       // Someone else holds it. Break it only if it is old enough to be abandoned — and only the exact file
       // we judged, so a lock created in the gap survives.
-      if (staleRecovery === "age") try {
-        const held = await stat(lockPath);
-        if (Date.now() - held.mtimeMs > STALE_LOCK_MS) {
-          const abandoned = await readFile(lockPath, "utf8").catch(() => undefined);
-          if (abandoned !== undefined) await removeIfOurs(lockPath, abandoned.trim());
+      if (staleRecovery === "age")
+        try {
+          const held = await stat(lockPath);
+          if (Date.now() - held.mtimeMs > STALE_LOCK_MS) {
+            const abandoned = await readFile(lockPath, "utf8").catch(() => undefined);
+            if (abandoned !== undefined) await removeIfOurs(lockPath, abandoned.trim());
+          }
+        } catch {
+          /* it vanished between the check and the stat — the next attempt will simply take it */
         }
-      } catch {
-        /* it vanished between the check and the stat — the next attempt will simply take it */
-      }
 
       if (Date.now() >= deadline) throw new LockTimeoutError(label);
       await new Promise((r) => setTimeout(r, 25));
@@ -134,11 +150,16 @@ export async function withFileLock<T>(path: string, label: string, work: () => P
     let bodyFailed = false;
     try {
       return await work();
-    } catch (error) { bodyFailed = true; throw error; }
-    finally {
+    } catch (error) {
+      bodyFailed = true;
+      throw error;
+    } finally {
       if (staleRecovery === "disabled") {
-        try { await releaseDisabledLock(handle, lockPath, token); }
-        catch (error) { if (!bodyFailed) throw error; } // Preserve even a falsy primary rejection.
+        try {
+          await releaseDisabledLock(handle, lockPath, token);
+        } catch (error) {
+          if (!bodyFailed) throw error;
+        } // Preserve even a falsy primary rejection.
       } else {
         await handle.close().catch(() => undefined);
         // Legacy age policy remains best effort; never remove a demonstrably different token.
@@ -151,11 +172,22 @@ export async function withFileLock<T>(path: string, label: string, work: () => P
 /** Disabled ownership cannot silently manufacture an indefinite orphan after a successful body.
  * Try token-checked removal even if close failed; report the first failure after both attempts.
  * Appended bytes are not rolled back, and a primary body error takes precedence at the caller. */
-async function releaseDisabledLock(handle: Awaited<ReturnType<typeof open>>, lockPath: string, token: string): Promise<void> {
+async function releaseDisabledLock(
+  handle: Awaited<ReturnType<typeof open>>,
+  lockPath: string,
+  token: string,
+): Promise<void> {
   let failure: { error: unknown } | null = null;
-  try { await handle.close(); } catch (error) { failure = { error }; }
-  try { await removeIfOurs(lockPath, token, true); }
-  catch (error) { failure ??= { error }; }
+  try {
+    await handle.close();
+  } catch (error) {
+    failure = { error };
+  }
+  try {
+    await removeIfOurs(lockPath, token, true);
+  } catch (error) {
+    failure ??= { error };
+  }
   if (failure) throw failure.error;
 }
 

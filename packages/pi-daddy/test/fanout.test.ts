@@ -16,11 +16,7 @@ import {
   splitBudget,
 } from "../src/kernel/fanout.ts";
 import { isCriticalAssuranceBlock } from "../extensions/execute-child.ts";
-import {
-  childFailureOutcome,
-  throwFanoutInfrastructure,
-  totalFanoutFailure,
-} from "../extensions/fanout-outcome.ts";
+import { childFailureOutcome, throwFanoutInfrastructure, totalFanoutFailure } from "../extensions/fanout-outcome.ts";
 import { GovernanceRefusal, refusal } from "../src/kernel/refusals.ts";
 
 test("spawning spends from the budget before the remainder is shared", () => {
@@ -128,14 +124,21 @@ test("every sibling's infrastructure error survives, not just the first", () => 
   );
 
   // One error is still raised as itself, so an ordinary single failure keeps its identity and its type.
-  assert.throws(() => throwFanoutInfrastructure(outcomes, [first]), (error: unknown) => error === first);
+  assert.throws(
+    () => throwFanoutInfrastructure(outcomes, [first]),
+    (error: unknown) => error === first,
+  );
 });
 
 test("a critical-assurance block outranks infrastructure noise without hiding it", () => {
   const retained = new Error("herdr writer tab would not close — lease retained");
   const blocked = {
-    ok: false, text: "BLOCKED_CRITICAL_ASSURANCE gate not satisfied", reason: "exited with code 3",
-    granted: [], depth: 1, exitCode: 3,
+    ok: false,
+    text: "BLOCKED_CRITICAL_ASSURANCE gate not satisfied",
+    reason: "exited with code 3",
+    granted: [],
+    depth: 1,
+    exitCode: 3,
   };
 
   // The token wins — it is the answer the caller is waiting for, and ADR-0034 requires it unchanged.
@@ -169,8 +172,24 @@ test("a swallowed child reports which error it swallowed", () => {
 
 test("mixed refusal codes all survive a total fan-out failure", () => {
   const failed = [
-    { ok: false, text: "", reason: "a", granted: [], depth: 1, exitCode: null, refusal: refusal("DEPTH_EXCEEDED", "a") },
-    { ok: false, text: "", reason: "b", granted: [], depth: 1, exitCode: null, refusal: refusal("GATED_UNAPPROVED", "b") },
+    {
+      ok: false,
+      text: "",
+      reason: "a",
+      granted: [],
+      depth: 1,
+      exitCode: null,
+      refusal: refusal("DEPTH_EXCEEDED", "a"),
+    },
+    {
+      ok: false,
+      text: "",
+      reason: "b",
+      granted: [],
+      depth: 1,
+      exitCode: null,
+      refusal: refusal("GATED_UNAPPROVED", "b"),
+    },
   ];
   const mixed = totalFanoutFailure(failed, "fan-out failed");
   assert.equal(mixed.code, "FANOUT_FAILED");

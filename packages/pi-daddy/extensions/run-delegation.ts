@@ -155,9 +155,7 @@ export async function planWithApprovals(
       plan = {
         ...plan,
         reason: approval.reason,
-        ...(approval.refusalCode
-          ? { refusal: structuredRefusal(approval.refusalCode, approval.reason) }
-          : {}),
+        ...(approval.refusalCode ? { refusal: structuredRefusal(approval.refusalCode, approval.reason) } : {}),
       };
     }
   } catch (error) {
@@ -204,7 +202,8 @@ export async function runOneDelegation(
    */
   options: {
     /** Actual public execute argument, never read from model-authored correlation or output. */
-    toolCallId?: string; declaredWork?: GrantsSession["declaredWork"];
+    toolCallId?: string;
+    declaredWork?: GrantsSession["declaredWork"];
     /** Progress for the parent's status block (ADR-0032). Display only. */
     onProgress?: (update: {
       /** Appended (process executor: a genuine byte stream). */
@@ -281,7 +280,12 @@ export async function runOneDelegation(
     session.modelResolutionCache,
     session.allowUnresolvedModels,
   );
-  const {extra,refusal:nativeRefusal}=await nativeDelegationContext(session,ids,budget,Boolean(executorRefusal||modelRefusal));
+  const { extra, refusal: nativeRefusal } = await nativeDelegationContext(
+    session,
+    ids,
+    budget,
+    Boolean(executorRefusal || modelRefusal),
+  );
   executorRefusal ||= nativeRefusal;
   let preparedWorkspace: PreparedWorkspace | undefined;
   let approvalOutcome: ApprovalOutcome | undefined;
@@ -309,9 +313,10 @@ export async function runOneDelegation(
         plan = gated.plan;
         approvalOutcome = gated.approval;
       } catch (error) {
-        const value = error instanceof GovernanceRefusal
-          ? { code: error.code, message: error.message, ...(error.details ? { details: error.details } : {}) }
-          : structuredRefusal("WORKSPACE_LEASE_STALE", `workspace setup failed (${String(error)})`);
+        const value =
+          error instanceof GovernanceRefusal
+            ? { code: error.code, message: error.message, ...(error.details ? { details: error.details } : {}) }
+            : structuredRefusal("WORKSPACE_LEASE_STALE", `workspace setup failed (${String(error)})`);
         plan = { ...plan, ok: false, reason: value.message, refusal: value };
       }
     }
@@ -340,8 +345,14 @@ export async function runOneDelegation(
   // The capability decision provisions the child, so this append remains load-bearing and fails closed.
   try {
     await recordDelegationDecision({
-      session, plan, ids, agent: spec.agent, taskFrom, taskFromExecutionId,
-      approval: approvalOutcome, approvalFacts,
+      session,
+      plan,
+      ids,
+      agent: spec.agent,
+      taskFrom,
+      taskFromExecutionId,
+      approval: approvalOutcome,
+      approvalFacts,
     });
   } catch (error) {
     plan = {
@@ -389,7 +400,8 @@ export async function runOneDelegation(
     childId: ids.childId,
     executionId: ids.executionId,
     parentExecutionId: ids.parentExecutionId,
-    toolCallId: options.toolCallId, declaredWork: options.declaredWork,
+    toolCallId: options.toolCallId,
+    declaredWork: options.declaredWork,
     cwd: ctx.cwd,
     preparedWorkspace,
     signal,

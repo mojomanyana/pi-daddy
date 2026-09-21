@@ -14,8 +14,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { resolve } from "../src/kernel/resolve.ts";
 
-const R = (over: Partial<Parameters<typeof resolve>[0]> = {}) =>
-  resolve({ requested: [], parentGrant: [], ...over });
+const R = (over: Partial<Parameters<typeof resolve>[0]> = {}) => resolve({ requested: [], parentGrant: [], ...over });
 
 test("gating write also gates bash, because bash can write", () => {
   const r = R({

@@ -97,14 +97,14 @@ export function resolveDelegationApproval(input: {
   const forSubject = (input.approved ?? []).filter((approval) => approval.subject === subject);
   const approvedCapabilities = forSubject
     .filter((approval) =>
-      approvalBinding
-        ? approvalBindingsEqual(approval.binding, approvalBinding)
-        : approval.binding === undefined,
+      approvalBinding ? approvalBindingsEqual(approval.binding, approvalBinding) : approval.binding === undefined,
     )
     .map((approval) => approval.capability);
-  const bindingMismatch = approvalBinding !== undefined && forSubject.some(
-    (approval) => approval.binding !== undefined && !approvalBindingsEqual(approval.binding, approvalBinding),
-  );
+  const bindingMismatch =
+    approvalBinding !== undefined &&
+    forSubject.some(
+      (approval) => approval.binding !== undefined && !approvalBindingsEqual(approval.binding, approvalBinding),
+    );
   const result = resolve({
     requested: input.requested,
     parentGrant: input.parentGrant,

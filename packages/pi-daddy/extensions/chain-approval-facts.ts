@@ -36,10 +36,13 @@ export function chainApprovalFacts(
   subject: string,
 ): Pick<ApprovalOutcome, "approved" | "sources" | "scopes" | "expiresAt" | "uses" | "humanDenied"> {
   const entries = available.filter((approval) => approval.subject === subject);
-  const values = <T>(map: Map<string, T>) => Object.fromEntries(entries.flatMap((approval) => {
-    const value = map.get(`${approval.capability}@${approval.subject}`);
-    return value === undefined ? [] : [[approval.capability, value]];
-  }));
+  const values = <T>(map: Map<string, T>) =>
+    Object.fromEntries(
+      entries.flatMap((approval) => {
+        const value = map.get(`${approval.capability}@${approval.subject}`);
+        return value === undefined ? [] : [[approval.capability, value]];
+      }),
+    );
   return {
     approved: entries.map((approval) => approval.capability),
     sources: values(audit.sources),

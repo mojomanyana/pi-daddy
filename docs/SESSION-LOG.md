@@ -5,6 +5,47 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ---
 
+## 2026-09-21 — ADR-0076 PR 3a: Prettier, statement-count guard, prose tests deleted
+
+Worktree `claude/adr-0076-pr3a-format-guards` from `5da2dfe` (PR 2 merged on top of 0.28.1). Prettier 3 at width
+120 is a root dev dependency with `npm run format` / `format:check` and a CI step before typecheck; `src/`,
+`extensions/`, `test/`, `test-integration/` and `scripts/` were formatted once. Vendored files are excluded: the
+first run reformatted `products/vendor/adoption.ts` and the adoption-pin test went red, which is the guard working.
+`test/file-size.test.ts` now counts statements through the TypeScript AST (ceiling 400; largest file 395) and caps
+every shipped line at 200 characters; a self-test proves it measures statements, not newlines. Seventeen lines
+over 200 characters were split with identical runtime bytes: message strings into concatenations, five embedded
+child scripts into one statement per line inside their template literals. `test/risk-register-status.test.ts`
+and the ADR/SPEC prose assertions in `work-ledger-contract.test.ts` are deleted; the contract README link check
+stays. One source-shape regex in `namespace-diagnostics.test.ts` became whitespace-tolerant.
+
+Three operator decisions from the PR 3 checkpoint are recorded in ADR-0076's second amendment: PR 3 lands as
+3a/3b/3c; one record format and reader with the private controller journals staying under `~/.local/state`;
+`PI_DADDY_*` with an explicit governance key list; Prettier for the width cap. The store inventory that forced
+them (twenty-one stores, no chain on the grants ledger, three journals that refuse `.pi/`, inode-pinned bindings)
+is summarised there.
+
+Evidence at `5da2dfe` plus these edits: typecheck clean; `prettier --check .` clean; guards 3/3; layering 2/2;
+model-free integration against real pi 0.84.2: 38/38; smoke OK; the full unit runner's failing set equals the
+baseline set recorded at `454774b` (59 bubblewrap/WSL2 cases), no new, no vanished. Independent review pass
+(code-reviewer subagent): every rewritten string and embedded script verified byte- or AST-identical by canonicalising
+both trees; four findings, all repaired here — the package README still described the line-count guard, R-144 still
+named the deleted test as R-72's control (dated note added), the guard's header called 400 statements "the 400-line
+spirit" while 24 modules exceed 400 lines after formatting (reworded with the numbers), and `scripts/` was formatted
+but unguarded (now under the line cap).
+
+### NEXT SESSION
+
+1. **PR 3b** — `PI_DADDY_*` only with the exported governance key list and its test; export map under ten;
+   `.pi/pi-daddy/` as the one project state directory (`settings.json`, `grant.json`, `approvals/`, `content/`);
+   `.pi/grants.env` retired; deprecation warnings for old names for one minor release.
+2. **PR 3c** — one record envelope and one reader across the twenty-one stores; private controller journals keep
+   `~/.local/state/pi-daddy/`; importer for old `.pi/grants.jsonl`; version 0.30.0; skill-harness re-pins.
+3. PR 4 harness peer + contracts pruned; PR 5 SPEC as layer map + fresh-session probe; PR 6 advisors
+   (ADR-0077, shared package); PR 7 context handoff (ADR-0078); PR 8; PR 9.
+
+
+---
+
 ## 2026-09-21 — ADR-0076 PR 2: five layers cut, import direction enforced
 
 Worktree `claude/adr-0076-pr2-layers` from `ea72a58` (PR 1 merged), rebased onto `d55b80c` (0.28.1, PR #60, merged by

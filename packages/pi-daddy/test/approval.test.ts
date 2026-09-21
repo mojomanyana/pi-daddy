@@ -97,7 +97,12 @@ test("always is NEVER offered on the delegate path — the model controls the su
 // ADR-0022 (hardened after F1): a definition subject must carry a body pin to cross a boundary at all, so
 // these fixtures carry one. `<delegate>` legitimately does not — it names no file — and that case is
 // covered in `approval-integrity.test.ts`.
-const inh = (capability: string) => ({ capability, subject: "docs-writer", scope: "session" as const, bodySha256: "body-digest" });
+const inh = (capability: string) => ({
+  capability,
+  subject: "docs-writer",
+  scope: "session" as const,
+  bodySha256: "body-digest",
+});
 
 test("an inherited approval is intersected with the child's grant", () => {
   assert.deepEqual(inheritApprovals([inh("tool:write"), inh("tool:bash")], ["tool:read", "tool:write"]), [

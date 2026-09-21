@@ -15,11 +15,11 @@ import { approvalBindingsEqual, type ApprovalBinding } from "./correlation.ts";
 
 /** How far a single yes reaches in time. */
 export const APPROVAL_SCOPES = ["once", "session", "always"] as const;
-export type ApprovalScope = typeof APPROVAL_SCOPES[number];
+export type ApprovalScope = (typeof APPROVAL_SCOPES)[number];
 
 /** Where a yes came from, for the ledger. These call for different follow-ups, so they stay distinct. */
 export const APPROVAL_SOURCES = ["prompt", "session", "persisted", "inherited"] as const;
-export type ApprovalSource = typeof APPROVAL_SOURCES[number];
+export type ApprovalSource = (typeof APPROVAL_SOURCES)[number];
 
 /** Which call site is asking. Determines the scopes offered — see `offeredScopes`. */
 export type ApprovalPath = "definition" | "delegate";
@@ -141,7 +141,9 @@ export function inheritApprovals(approved: InheritableApproval[], grant: Capabil
   return [
     ...new Set(
       approved
-        .filter((a) => a.scope !== "once" && a.binding === undefined && a.capability !== WILDCARD && held.has(a.capability))
+        .filter(
+          (a) => a.scope !== "once" && a.binding === undefined && a.capability !== WILDCARD && held.has(a.capability),
+        )
         // A definition subject MUST carry a pin to cross a boundary (ADR-0022, hardened after F1).
         //
         // `verifyInherited` honours an unpinned entry by decision — `<delegate>` names no file and a
@@ -247,12 +249,7 @@ export interface ApprovalEntry {
 }
 
 export type EntryVerdict =
-  | "valid"
-  | "expired"
-  | "foreign-cwd"
-  | "type-changed"
-  | "instructions-changed"
-  | "type-missing";
+  "valid" | "expired" | "foreign-cwd" | "type-changed" | "instructions-changed" | "type-missing";
 
 /**
  * What a subject looks like RIGHT NOW — one lookup, not two (ADR-0019).
@@ -364,7 +361,8 @@ export function resolveApprovals(input: ResolveApprovalsInput): ResolveApprovals
   const needsPrompt: Capability[] = [];
   const scopeMismatched: Capability[] = [];
   const expired: Capability[] = [];
-  const sources: Record<Capability, ApprovalSource> = {}, scopes: Record<Capability, ApprovalScope> = {};
+  const sources: Record<Capability, ApprovalSource> = {},
+    scopes: Record<Capability, ApprovalScope> = {};
   const expiresAt: Record<Capability, string> = {};
 
   for (const capability of [...new Set(input.gated)].sort()) {
@@ -375,21 +373,30 @@ export function resolveApprovals(input: ResolveApprovalsInput): ResolveApprovals
     const inheritedApplies = expected === undefined && inherited.has(key);
     const legacySessionApplies = expected === undefined && input.sessionApprovals.has(key);
     const boundSessionApplies = expected !== undefined && approvalBindingsEqual(sessionBinding, expected);
-    const persistedApplies = persisted !== undefined && (
-      expected === undefined ? persisted.binding === undefined : approvalBindingsEqual(persisted.binding, expected)
-    );
+    const persistedApplies =
+      persisted !== undefined &&
+      (expected === undefined ? persisted.binding === undefined : approvalBindingsEqual(persisted.binding, expected));
 
     if (inheritedApplies) {
-      approved.push(capability); sources[capability] = "inherited"; scopes[capability] = "session";
+      approved.push(capability);
+      sources[capability] = "inherited";
+      scopes[capability] = "session";
     } else if (legacySessionApplies || boundSessionApplies) {
-      approved.push(capability); sources[capability] = "session"; scopes[capability] = "session";
+      approved.push(capability);
+      sources[capability] = "session";
+      scopes[capability] = "session";
     } else if (persistedApplies) {
-      approved.push(capability); sources[capability] = "persisted"; scopes[capability] = "always";
+      approved.push(capability);
+      sources[capability] = "persisted";
+      scopes[capability] = "always";
       expiresAt[capability] = persisted!.expiresAt;
     } else {
       needsPrompt.push(capability);
       if (input.expiredKeys?.has(key)) expired.push(capability);
-      else if (expected !== undefined && (sessionBinding !== undefined || persisted !== undefined || input.sessionApprovals.has(key))) {
+      else if (
+        expected !== undefined &&
+        (sessionBinding !== undefined || persisted !== undefined || input.sessionApprovals.has(key))
+      ) {
         scopeMismatched.push(capability);
       }
     }

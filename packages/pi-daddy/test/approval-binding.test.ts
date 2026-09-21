@@ -25,19 +25,33 @@ const base = {
   spawnId: "d0",
 };
 const correlation = {
-  schema_version: "1.0", run_id: "run-1", task_id: "task-1", workspace_id: "w1", context_id: "ctx-1",
-  tree_sha: "a".repeat(40), last_change_seq: 7,
+  schema_version: "1.0",
+  run_id: "run-1",
+  task_id: "task-1",
+  workspace_id: "w1",
+  context_id: "ctx-1",
+  tree_sha: "a".repeat(40),
+  last_change_seq: 7,
 };
 
 test("a correlated plan computes trusted task and approval bindings", () => {
-  const plan = planDelegation({
-    task: "probe one failure", agent: "debugger",
-    correlation: { ...correlation, task_digest: "f".repeat(64) },
-    boundWorkspaceId: "w1", boundContextId: "ctx-1",
-  }, base);
+  const plan = planDelegation(
+    {
+      task: "probe one failure",
+      agent: "debugger",
+      correlation: { ...correlation, task_digest: "f".repeat(64) },
+      boundWorkspaceId: "w1",
+      boundContextId: "ctx-1",
+    },
+    base,
+  );
   assert.equal(plan.ok, false, "precondition: bash is gated");
   assert.equal(plan.taskDigest, digestTask("probe one failure"));
-  assert.notEqual(plan.taskDigest, plan.correlation?.task_digest, "external correlation cannot replace the trusted digest");
+  assert.notEqual(
+    plan.taskDigest,
+    plan.correlation?.task_digest,
+    "external correlation cannot replace the trusted digest",
+  );
   assert.equal(plan.approvalBinding?.workspace_id, "w1");
   assert.equal(plan.approvalBinding?.context_id, "ctx-1");
   assert.equal(plan.approvalBinding?.parent_id, "d0");
@@ -61,7 +75,11 @@ test("the planner binds supplied tree state but never turns correlation into wor
     { task: "probe one failure", agent: "debugger", correlation: { ...correlation, tree_sha: "" } },
     base,
   );
-  assert.equal(emptySupplied.approvalBinding?.tree_sha, "", "even an empty caller-supplied value is bound, not omitted");
+  assert.equal(
+    emptySupplied.approvalBinding?.tree_sha,
+    "",
+    "even an empty caller-supplied value is bound, not omitted",
+  );
 });
 
 /** A correlated request whose binding scope comes from trusted routing, not from `correlation`. */
@@ -126,28 +144,43 @@ test("session and persisted approvals require the exact binding when one is expe
     binding,
   };
   const exactSession = resolveApprovals({
-    gated: ["tool:bash"], subject: "debugger", sessionApprovals: new Set(),
-    sessionApprovalBindings: new Map([[key, binding]]), persisted: new Map(), expectedBinding: binding,
+    gated: ["tool:bash"],
+    subject: "debugger",
+    sessionApprovals: new Set(),
+    sessionApprovalBindings: new Map([[key, binding]]),
+    persisted: new Map(),
+    expectedBinding: binding,
   });
   assert.deepEqual(exactSession.approved, ["tool:bash"]);
 
   const wrongSession = resolveApprovals({
-    gated: ["tool:bash"], subject: "debugger", sessionApprovals: new Set(),
-    sessionApprovalBindings: new Map([[key, changed]]), persisted: new Map(), expectedBinding: binding,
+    gated: ["tool:bash"],
+    subject: "debugger",
+    sessionApprovals: new Set(),
+    sessionApprovalBindings: new Map([[key, changed]]),
+    persisted: new Map(),
+    expectedBinding: binding,
   });
   assert.deepEqual(wrongSession.needsPrompt, ["tool:bash"]);
   assert.deepEqual(wrongSession.scopeMismatched, ["tool:bash"]);
 
   const wrongPersisted = resolveApprovals({
-    gated: ["tool:bash"], subject: "debugger", sessionApprovals: new Set(),
-    persisted: new Map([[key, { ...entry, binding: changed }]]), expectedBinding: binding,
+    gated: ["tool:bash"],
+    subject: "debugger",
+    sessionApprovals: new Set(),
+    persisted: new Map([[key, { ...entry, binding: changed }]]),
+    expectedBinding: binding,
   });
   assert.deepEqual(wrongPersisted.approved, []);
   assert.deepEqual(wrongPersisted.scopeMismatched, ["tool:bash"]);
 
   const expired = resolveApprovals({
-    gated: ["tool:bash"], subject: "debugger", sessionApprovals: new Set(), persisted: new Map(),
-    expectedBinding: binding, expiredKeys: new Set([key]),
+    gated: ["tool:bash"],
+    subject: "debugger",
+    sessionApprovals: new Set(),
+    persisted: new Map(),
+    expectedBinding: binding,
+    expiredKeys: new Set([key]),
   });
   assert.deepEqual(expired.expired, ["tool:bash"]);
 });
@@ -161,17 +194,25 @@ test("binding effective capabilities exactly match the eventual grant when agent
     definitions: new Map([["debugger", self]]),
   };
   const blocked = planDelegation({ task: "self", agent: "debugger", correlation }, ctx);
-  const allowed = planDelegation({ task: "self", agent: "debugger", correlation }, {
-    ...ctx,
-    approved: [{ capability: "agent:debugger", subject: "debugger", scope: "once", binding: blocked.approvalBinding }],
-  });
+  const allowed = planDelegation(
+    { task: "self", agent: "debugger", correlation },
+    {
+      ...ctx,
+      approved: [
+        { capability: "agent:debugger", subject: "debugger", scope: "once", binding: blocked.approvalBinding },
+      ],
+    },
+  );
   assert.equal(allowed.ok, true, allowed.reason);
   assert.deepEqual(blocked.approvalBinding?.effective, allowed.effective);
 });
 
 test("bound approval identity is deterministic and absent tree fields preserve the v1 digest", () => {
   const a = planDelegation({ task: "probe one failure", agent: "debugger", correlation }, base).approvalBinding!;
-  const b = planDelegation({ task: "probe one failure", agent: "debugger", correlation: { ...correlation } }, base).approvalBinding!;
+  const b = planDelegation(
+    { task: "probe one failure", agent: "debugger", correlation: { ...correlation } },
+    base,
+  ).approvalBinding!;
   assert.equal(approvalBindingDigest(a), approvalBindingDigest(b));
 
   const { tree_sha: _tree, last_change_seq: _sequence, ...legacyCorrelation } = correlation;
@@ -196,16 +237,31 @@ test("a bound approval is never inherited across a delegation boundary", () => {
   const bound = planDelegation(BOUND_REQUEST, base);
   assert.ok(bound.approvalBinding, "precondition: this call is task-bound");
 
-  const published = inheritApprovals([
-    { capability: "tool:bash", subject: "debugger", scope: "always", bodySha256: "a".repeat(64), binding: bound.approvalBinding },
-    { capability: "tool:read", subject: "debugger", scope: "always", bodySha256: "a".repeat(64) },
-  ], ["tool:bash", "tool:read"]);
+  const published = inheritApprovals(
+    [
+      {
+        capability: "tool:bash",
+        subject: "debugger",
+        scope: "always",
+        bodySha256: "a".repeat(64),
+        binding: bound.approvalBinding,
+      },
+      { capability: "tool:read", subject: "debugger", scope: "always", bodySha256: "a".repeat(64) },
+    ],
+    ["tool:bash", "tool:read"],
+  );
 
   // Dropping `binding === undefined` from `inheritApprovals` makes a task-scoped answer subtree-wide.
-  assert.equal(published.some((key) => key.startsWith("tool:bash")), false,
-    "a task-bound answer must not be republished to a child");
-  assert.equal(published.some((key) => key.startsWith("tool:read")), true,
-    "an unbound approval still crosses, or this test would pass for the wrong reason");
+  assert.equal(
+    published.some((key) => key.startsWith("tool:bash")),
+    false,
+    "a task-bound answer must not be republished to a child",
+  );
+  assert.equal(
+    published.some((key) => key.startsWith("tool:read")),
+    true,
+    "an unbound approval still crosses, or this test would pass for the wrong reason",
+  );
 });
 
 test("a bound approval does not satisfy an uncorrelated delegation for the same capability and subject", () => {
@@ -237,7 +293,10 @@ test("an internally contradictory persisted binding is not a binding at all", as
   assert.equal(isApprovalBinding(bound.approvalBinding), true);
   // This guard's only trust boundary is a binding parsed off disk, so digests that disagree with the
   // capability arrays beside them must be rejected rather than merely improbable.
-  assert.equal(isApprovalBinding({ ...bound.approvalBinding, requested: ["tool:read", "tool:bash", "tool:write"] }), false);
+  assert.equal(
+    isApprovalBinding({ ...bound.approvalBinding, requested: ["tool:read", "tool:bash", "tool:write"] }),
+    false,
+  );
   assert.equal(isApprovalBinding({ ...bound.approvalBinding, effective_sha256: "b".repeat(64) }), false);
   assert.equal(isApprovalBinding({ ...bound.approvalBinding, workspace_id: 7 }), false);
 });
@@ -252,10 +311,7 @@ test("an internally contradictory persisted binding is not a binding at all", as
  * The production change that breaks this: removing the `mayRouteToWorkspace` guard from `planDelegation`.
  */
 test("routing to a workspace the session does not hold is refused and recorded as an escalation", () => {
-  const ungranted = planDelegation(
-    { task: "probe one failure", agent: "debugger", boundWorkspaceId: "prod" },
-    base,
-  );
+  const ungranted = planDelegation({ task: "probe one failure", agent: "debugger", boundWorkspaceId: "prod" }, base);
   assert.equal(ungranted.ok, false);
   assert.equal(ungranted.refusal?.code, "WORKSPACE_NOT_AUTHORIZED");
   // In `denied`, so `isEscalationAttempt` and every audit query see it — the DEFINITION_NOT_AUTHORIZED shape.
@@ -265,10 +321,7 @@ test("routing to a workspace the session does not hold is refused and recorded a
   assert.match(ungranted.reason ?? "", /may route to: workspace:w1, workspace:w2/);
 
   // A session holding it routes normally.
-  const granted = planDelegation(
-    { task: "probe one failure", agent: "debugger", boundWorkspaceId: "w1" },
-    base,
-  );
+  const granted = planDelegation({ task: "probe one failure", agent: "debugger", boundWorkspaceId: "w1" }, base);
   // It still hits the gate for `tool:bash`, which is the point: routing authority is a SEPARATE question
   // from capability approval, and passing one does not pass the other.
   assert.notEqual(granted.refusal?.code, "WORKSPACE_NOT_AUTHORIZED", granted.reason);

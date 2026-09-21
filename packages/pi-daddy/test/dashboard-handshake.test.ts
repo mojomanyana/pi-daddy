@@ -19,7 +19,10 @@ const result = (value: Record<string, unknown>) => ({
   stderr: "",
 });
 const env = {
-  HERDR_ENV: "1", HERDR_PANE_ID: "w1:p1", HERDR_TAB_ID: "w1:t1", HERDR_WORKSPACE_ID: "w1",
+  HERDR_ENV: "1",
+  HERDR_PANE_ID: "w1:p1",
+  HERDR_TAB_ID: "w1:t1",
+  HERDR_WORKSPACE_ID: "w1",
 };
 
 function hostAndPluginExec(options: { installed?: boolean; linkedRoot?: string; version?: string } = {}) {
@@ -28,12 +31,23 @@ function hostAndPluginExec(options: { installed?: boolean; linkedRoot?: string; 
   const calls: string[][] = [];
   const exec: HerdrExec = async (args) => {
     calls.push(args);
-    if (args[0] === "pane" && args[1] === "current") return result({ pane: { pane_id: "w1:p1", tab_id: "w1:t1", workspace_id: "w1" } });
-    if (args[0] === "pane" && args[1] === "process-info") return result({ process_info: { pane_id: "w1:p1", foreground_processes: [{ pid: 42 }] } });
+    if (args[0] === "pane" && args[1] === "current")
+      return result({ pane: { pane_id: "w1:p1", tab_id: "w1:t1", workspace_id: "w1" } });
+    if (args[0] === "pane" && args[1] === "process-info")
+      return result({ process_info: { pane_id: "w1:p1", foreground_processes: [{ pid: 42 }] } });
     if (args[0] === "plugin" && args[1] === "list") {
-      return result({ plugins: installed ? [{
-        plugin_id: DASHBOARD_PLUGIN_ID, version: options.version ?? "1.0.0", enabled: true, plugin_root: linkedRoot,
-      }] : [] });
+      return result({
+        plugins: installed
+          ? [
+              {
+                plugin_id: DASHBOARD_PLUGIN_ID,
+                version: options.version ?? "1.0.0",
+                enabled: true,
+                plugin_root: linkedRoot,
+              },
+            ]
+          : [],
+      });
     }
     if (args[0] === "plugin" && args[1] === "link") {
       installed = true;
@@ -41,9 +55,12 @@ function hostAndPluginExec(options: { installed?: boolean; linkedRoot?: string; 
       return result({ type: "plugin_linked" });
     }
     if (args[0] === "plugin" && args[1] === "pane" && args[2] === "open") {
-      return result({ plugin_pane: { pane: { pane_id: "w1:p2", terminal_id: "term", tab_id: "w1:t1", workspace_id: "w1" } } });
+      return result({
+        plugin_pane: { pane: { pane_id: "w1:p2", terminal_id: "term", tab_id: "w1:t1", workspace_id: "w1" } },
+      });
     }
-    if (args[0] === "pane" && args[1] === "get") return result({ pane: { pane_id: "w1:p2", terminal_id: "term", tab_id: "w1:t1", workspace_id: "w1" } });
+    if (args[0] === "pane" && args[1] === "get")
+      return result({ pane: { pane_id: "w1:p2", terminal_id: "term", tab_id: "w1:t1", workspace_id: "w1" } });
     throw new Error(`unexpected ${args.join(" ")}`);
   };
   return { exec, calls };
@@ -66,14 +83,21 @@ test("Not now is recorded and prevents repeated startup prompts", async () => {
     preferencePath,
     paneStatePath: join(root, "panes.json"),
     ui: {
-      select: async (_title: string, choices: string[]) => { prompts += 1; assert.deepEqual(choices, ["Install and open", "Not now", "Never ask"]); return "Not now"; },
+      select: async (_title: string, choices: string[]) => {
+        prompts += 1;
+        assert.deepEqual(choices, ["Install and open", "Not now", "Never ask"]);
+        return "Not now";
+      },
       notify: (message: string) => void notices.push(message),
     },
   };
   await offerDashboardHandshake(input);
   await offerDashboardHandshake(input);
   assert.equal(prompts, 1);
-  assert.equal(fake.calls.some((args) => args[1] === "link"), false);
+  assert.equal(
+    fake.calls.some((args) => args[1] === "link"),
+    false,
+  );
 });
 
 test("dismissing the startup prompt stores no consent choice", async () => {
@@ -90,18 +114,51 @@ test("dismissing the startup prompt stores no consent choice", async () => {
     pluginRoot: join(root, "plugin"),
     preferencePath: dashboardPreferencePath(root),
     paneStatePath: join(root, "panes.json"),
-    ui: { select: async () => { prompts += 1; return undefined; }, notify: () => {} },
+    ui: {
+      select: async () => {
+        prompts += 1;
+        return undefined;
+      },
+      notify: () => {},
+    },
   };
   assert.equal(await offerDashboardHandshake(input), "deferred");
   assert.equal(await offerDashboardHandshake(input), "deferred");
   assert.equal(prompts, 2, "dismissal is not the literal Not now choice and must not be persisted as one");
-  assert.equal(fake.calls.some((args) => args[1] === "link"), false);
+  assert.equal(
+    fake.calls.some((args) => args[1] === "link"),
+    false,
+  );
 });
 
 test("a compatible bundled Herdr plugin opens the ordinary panel without another bootstrap prompt", async () => {
-  const root = await tempDir("dashboard-default-panel-"); const pluginRoot = join(root, "plugin"), fake = hostAndPluginExec({ installed: true, linkedRoot: pluginRoot }); let prompts = 0;
-  assert.equal(await offerDashboardHandshake({ mode: "tui", env, pid: 42, exec: fake.exec, cwd: root, ledgerPath: join(root, "activity.jsonl"), pluginRoot, preferencePath: dashboardPreferencePath(root), paneStatePath: join(root, "panes.json"), ui: { select: async () => { prompts += 1; return "Not now"; }, notify: () => {} } }), "already-installed");
-  assert.equal(prompts, 0); assert.equal(fake.calls.filter(args => args[0] === "plugin" && args[1] === "pane" && args[2] === "open").length, 1);
+  const root = await tempDir("dashboard-default-panel-");
+  const pluginRoot = join(root, "plugin"),
+    fake = hostAndPluginExec({ installed: true, linkedRoot: pluginRoot });
+  let prompts = 0;
+  assert.equal(
+    await offerDashboardHandshake({
+      mode: "tui",
+      env,
+      pid: 42,
+      exec: fake.exec,
+      cwd: root,
+      ledgerPath: join(root, "activity.jsonl"),
+      pluginRoot,
+      preferencePath: dashboardPreferencePath(root),
+      paneStatePath: join(root, "panes.json"),
+      ui: {
+        select: async () => {
+          prompts += 1;
+          return "Not now";
+        },
+        notify: () => {},
+      },
+    }),
+    "already-installed",
+  );
+  assert.equal(prompts, 0);
+  assert.equal(fake.calls.filter((args) => args[0] === "plugin" && args[1] === "pane" && args[2] === "open").length, 1);
 });
 
 test("Install and open is the only startup choice that links software", async () => {
@@ -109,8 +166,15 @@ test("Install and open is the only startup choice that links software", async ()
   const fake = hostAndPluginExec();
   const notices: string[] = [];
   await offerDashboardHandshake({
-    mode: "tui", env, pid: 42, exec: fake.exec, cwd: root, ledgerPath: join(root, "ledger.jsonl"),
-    pluginRoot: join(root, "plugin"), preferencePath: dashboardPreferencePath(root), paneStatePath: join(root, "panes.json"),
+    mode: "tui",
+    env,
+    pid: 42,
+    exec: fake.exec,
+    cwd: root,
+    ledgerPath: join(root, "ledger.jsonl"),
+    pluginRoot: join(root, "plugin"),
+    preferencePath: dashboardPreferencePath(root),
+    paneStatePath: join(root, "panes.json"),
     ui: { select: async () => "Install and open", notify: (message: string) => void notices.push(message) },
   });
   assert.equal(fake.calls.filter((args) => args[0] === "plugin" && args[1] === "link").length, 1);
@@ -125,18 +189,33 @@ test("a different-package dashboard link can be explicitly relinked and opened",
   let promptTitle = "";
   let promptChoices: string[] = [];
   const outcome = await offerDashboardHandshake({
-    mode: "tui", env, pid: 42, exec: fake.exec, cwd: root, ledgerPath: join(root, "ledger.jsonl"),
-    pluginRoot, preferencePath: dashboardPreferencePath(root), paneStatePath: join(root, "panes.json"),
+    mode: "tui",
+    env,
+    pid: 42,
+    exec: fake.exec,
+    cwd: root,
+    ledgerPath: join(root, "ledger.jsonl"),
+    pluginRoot,
+    preferencePath: dashboardPreferencePath(root),
+    paneStatePath: join(root, "panes.json"),
     ui: {
-      select: async (title, choices) => { promptTitle = title; promptChoices = choices; return "Relink and open"; },
+      select: async (title, choices) => {
+        promptTitle = title;
+        promptChoices = choices;
+        return "Relink and open";
+      },
       notify: () => {},
     },
   });
   assert.match(promptTitle, /different package/i);
   assert.deepEqual(promptChoices, ["Relink and open", "Not now"]);
   assert.equal(outcome, "installed");
-  assert.deepEqual(fake.calls.find((args) => args[0] === "plugin" && args[1] === "link")?.slice(0, 4),
-    ["plugin", "link", pluginRoot, "--enabled"]);
+  assert.deepEqual(fake.calls.find((args) => args[0] === "plugin" && args[1] === "link")?.slice(0, 4), [
+    "plugin",
+    "link",
+    pluginRoot,
+    "--enabled",
+  ]);
   assert.equal(fake.calls.filter((args) => args[0] === "plugin" && args[1] === "pane" && args[2] === "open").length, 1);
 });
 
@@ -145,13 +224,29 @@ test("a different-package link with an incompatible protocol is not offered reli
   const fake = hostAndPluginExec({ installed: true, linkedRoot: join(root, "old-plugin"), version: "2.0.0" });
   let prompts = 0;
   const outcome = await offerDashboardHandshake({
-    mode: "tui", env, pid: 42, exec: fake.exec, cwd: root, ledgerPath: join(root, "ledger.jsonl"),
-    pluginRoot: join(root, "current-plugin"), preferencePath: dashboardPreferencePath(root), paneStatePath: join(root, "panes.json"),
-    ui: { select: async () => { prompts += 1; return "Relink and open"; }, notify: () => {} },
+    mode: "tui",
+    env,
+    pid: 42,
+    exec: fake.exec,
+    cwd: root,
+    ledgerPath: join(root, "ledger.jsonl"),
+    pluginRoot: join(root, "current-plugin"),
+    preferencePath: dashboardPreferencePath(root),
+    paneStatePath: join(root, "panes.json"),
+    ui: {
+      select: async () => {
+        prompts += 1;
+        return "Relink and open";
+      },
+      notify: () => {},
+    },
   });
   assert.equal(outcome, "failed");
   assert.equal(prompts, 0);
-  assert.equal(fake.calls.some((args) => args[0] === "plugin" && args[1] === "link"), false);
+  assert.equal(
+    fake.calls.some((args) => args[0] === "plugin" && args[1] === "link"),
+    false,
+  );
 });
 
 test("declining a different-package relink changes neither link nor startup preference", async () => {
@@ -160,14 +255,30 @@ test("declining a different-package relink changes neither link nor startup pref
   const preferencePath = dashboardPreferencePath(root);
   let prompts = 0;
   const input = {
-    mode: "tui" as const, env, pid: 42, exec: fake.exec, cwd: root, ledgerPath: join(root, "ledger.jsonl"),
-    pluginRoot: join(root, "current-plugin"), preferencePath, paneStatePath: join(root, "panes.json"),
-    ui: { select: async () => { prompts += 1; return "Not now"; }, notify: () => {} },
+    mode: "tui" as const,
+    env,
+    pid: 42,
+    exec: fake.exec,
+    cwd: root,
+    ledgerPath: join(root, "ledger.jsonl"),
+    pluginRoot: join(root, "current-plugin"),
+    preferencePath,
+    paneStatePath: join(root, "panes.json"),
+    ui: {
+      select: async () => {
+        prompts += 1;
+        return "Not now";
+      },
+      notify: () => {},
+    },
   };
   assert.equal(await offerDashboardHandshake(input), "deferred");
   assert.equal(await offerDashboardHandshake(input), "deferred");
   assert.equal(prompts, 2, "a declined repair is not a permanent suppression choice");
-  assert.equal(fake.calls.some((args) => args[0] === "plugin" && args[1] === "link"), false);
+  assert.equal(
+    fake.calls.some((args) => args[0] === "plugin" && args[1] === "link"),
+    false,
+  );
   await assert.rejects(() => readFile(preferencePath), /ENOENT/);
 });
 
@@ -175,38 +286,75 @@ test("outside Herdr the startup handshake and command are diagnostics, not a ser
   const root = await tempDir("dashboard-outside-");
   let prompts = 0;
   await offerDashboardHandshake({
-    mode: "tui", env: {}, pid: 42, exec: async () => result({ plugins: [] }), cwd: root,
-    pluginRoot: join(root, "plugin"), preferencePath: dashboardPreferencePath(root), paneStatePath: join(root, "panes.json"),
-    ui: { select: async () => { prompts += 1; return "Install and open"; }, notify: () => {} },
+    mode: "tui",
+    env: {},
+    pid: 42,
+    exec: async () => result({ plugins: [] }),
+    cwd: root,
+    pluginRoot: join(root, "plugin"),
+    preferencePath: dashboardPreferencePath(root),
+    paneStatePath: join(root, "panes.json"),
+    ui: {
+      select: async () => {
+        prompts += 1;
+        return "Install and open";
+      },
+      notify: () => {},
+    },
   });
   assert.equal(prompts, 0);
   const fallback = await openDashboardCommand({
-    env: {}, pid: 42, exec: async () => result({ plugins: [] }), cwd: root, ledgerPath: join(root, "ledger.jsonl"),
-    pluginRoot: join(root, "plugin"), paneStatePath: join(root, "panes.json"),
+    env: {},
+    pid: 42,
+    exec: async () => result({ plugins: [] }),
+    cwd: root,
+    ledgerPath: join(root, "ledger.jsonl"),
+    pluginRoot: join(root, "plugin"),
+    paneStatePath: join(root, "panes.json"),
   });
-  assert.equal(fallback.kind, "fallback"); assert.match(fallback.frame, /not hosted inside Herdr/i);
+  assert.equal(fallback.kind, "fallback");
+  assert.match(fallback.frame, /not hosted inside Herdr/i);
 });
 
 test("/grants dashboard checks the exact host before ledger, then ledger before plugin", async () => {
   const root = await tempDir("dashboard-command-order-");
   const fake = hostAndPluginExec();
   const fallback = await openDashboardCommand({
-    env, pid: 42, exec: fake.exec, cwd: root, ledgerPath: undefined,
-    pluginRoot: join(root, "plugin"), paneStatePath: join(root, "panes.json"),
+    env,
+    pid: 42,
+    exec: fake.exec,
+    cwd: root,
+    ledgerPath: undefined,
+    pluginRoot: join(root, "plugin"),
+    paneStatePath: join(root, "panes.json"),
   });
-  assert.equal(fallback.kind, "fallback"); assert.match(fallback.frame, /local activity timeline/i);
-  assert.deepEqual(fake.calls.map((args) => args.slice(0, 2)), [
-    ["pane", "current"], ["pane", "process-info"],
-  ]);
+  assert.equal(fallback.kind, "fallback");
+  assert.match(fallback.frame, /local activity timeline/i);
+  assert.deepEqual(
+    fake.calls.map((args) => args.slice(0, 2)),
+    [
+      ["pane", "current"],
+      ["pane", "process-info"],
+    ],
+  );
 });
 
 test("/grants dashboard never installs an absent plugin silently and gives the exact link command", async () => {
   const root = await tempDir("dashboard-command-");
   const fake = hostAndPluginExec();
   const fallback = await openDashboardCommand({
-    env, pid: 42, exec: fake.exec, cwd: root, ledgerPath: join(root, "ledger.jsonl"),
-    pluginRoot: join(root, "bundled plugin"), paneStatePath: join(root, "panes.json"),
+    env,
+    pid: 42,
+    exec: fake.exec,
+    cwd: root,
+    ledgerPath: join(root, "ledger.jsonl"),
+    pluginRoot: join(root, "bundled plugin"),
+    paneStatePath: join(root, "panes.json"),
   });
-  assert.equal(fallback.kind, "fallback"); assert.match(fallback.frame, /herdr plugin link .*bundled plugin.*--enabled/);
-  assert.equal(fake.calls.some((args) => args[1] === "link"), false);
+  assert.equal(fallback.kind, "fallback");
+  assert.match(fallback.frame, /herdr plugin link .*bundled plugin.*--enabled/);
+  assert.equal(
+    fake.calls.some((args) => args[1] === "link"),
+    false,
+  );
 });

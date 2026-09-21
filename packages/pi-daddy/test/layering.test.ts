@@ -35,7 +35,7 @@ async function walk(dir: string): Promise<string[]> {
   const out: string[] = [];
   for (const entry of await readdir(dir, { withFileTypes: true })) {
     const path = join(dir, entry.name);
-    if (entry.isDirectory()) out.push(...await walk(path));
+    if (entry.isDirectory()) out.push(...(await walk(path)));
     else if (entry.name.endsWith(".ts")) out.push(path);
   }
   return out;
@@ -60,12 +60,16 @@ function mayImport(from: string, to: string): boolean {
 
 test("every src file lives in a layer directory, except the two composition roots", async () => {
   const files = await walk(join(packageRoot, "src"));
-  const stray = files.map(f => relative(packageRoot, f)).filter(f => layerOf(f) === null);
-  assert.deepEqual(stray, [], `src files outside kernel/, governance/, executors/, advisors/, products/: ${stray.join(", ")}`);
+  const stray = files.map((f) => relative(packageRoot, f)).filter((f) => layerOf(f) === null);
+  assert.deepEqual(
+    stray,
+    [],
+    `src files outside kernel/, governance/, executors/, advisors/, products/: ${stray.join(", ")}`,
+  );
 });
 
 test("no import points upward across layers", async () => {
-  const files = [...await walk(join(packageRoot, "src")), ...await walk(join(packageRoot, "extensions"))];
+  const files = [...(await walk(join(packageRoot, "src"))), ...(await walk(join(packageRoot, "extensions")))];
   const upward: string[] = [];
   for (const file of files) {
     const fromRel = relative(packageRoot, file);
@@ -73,8 +77,10 @@ test("no import points upward across layers", async () => {
     if (fromLayer === null) continue; // reported by the other test
     const source = await readFile(file, "utf8");
     if (fromLayer !== "composition") {
-      if (SELF_IMPORT.test(source)) upward.push(`${fromRel} [${fromLayer}] -> pi-daddy/* (bare self-import resolves through the export map)`);
-      if (TEMPLATE_IMPORT.test(source)) upward.push(`${fromRel} [${fromLayer}] -> import(\`…\`) (template import cannot be checked)`);
+      if (SELF_IMPORT.test(source))
+        upward.push(`${fromRel} [${fromLayer}] -> pi-daddy/* (bare self-import resolves through the export map)`);
+      if (TEMPLATE_IMPORT.test(source))
+        upward.push(`${fromRel} [${fromLayer}] -> import(\`…\`) (template import cannot be checked)`);
     }
     for (const match of source.matchAll(IMPORT)) {
       const target = relative(packageRoot, normalize(join(dirname(file), match[1])));

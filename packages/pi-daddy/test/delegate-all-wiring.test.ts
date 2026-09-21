@@ -18,7 +18,14 @@ import { after, afterEach, test } from "node:test";
 import grantsExtension from "../extensions/grants.ts";
 import { MAX_CHILDREN_PER_CALL } from "../src/kernel/fanout.ts";
 import {
-  ENV_APPROVED, ENV_DEPTH, ENV_EXECUTION_ID, ENV_FANOUT, ENV_GATED, ENV_GRANT, ENV_LEDGER, ENV_MAX_DEPTH,
+  ENV_APPROVED,
+  ENV_DEPTH,
+  ENV_EXECUTION_ID,
+  ENV_FANOUT,
+  ENV_GATED,
+  ENV_GRANT,
+  ENV_LEDGER,
+  ENV_MAX_DEPTH,
   ENV_PARENT_ID,
 } from "../src/kernel/propagation.ts";
 import { ENV_HERDR } from "../src/executors/executor.ts";
@@ -31,8 +38,18 @@ import { execFileSync } from "node:child_process";
 after(cleanupTempDirs);
 
 const KEYS = [
-  ENV_GRANT, ENV_DEPTH, ENV_MAX_DEPTH, ENV_GATED, ENV_APPROVED, ENV_LEDGER, ENV_FANOUT, ENV_PARENT_ID,
-  ENV_EXECUTION_ID, ENV_HERDR, ENV_WORKSPACE_REGISTRY, ENV_WORKSPACE_LEASE_DIR,
+  ENV_GRANT,
+  ENV_DEPTH,
+  ENV_MAX_DEPTH,
+  ENV_GATED,
+  ENV_APPROVED,
+  ENV_LEDGER,
+  ENV_FANOUT,
+  ENV_PARENT_ID,
+  ENV_EXECUTION_ID,
+  ENV_HERDR,
+  ENV_WORKSPACE_REGISTRY,
+  ENV_WORKSPACE_LEASE_DIR,
 ];
 const saved = new Map<string, string | undefined>();
 
@@ -45,7 +62,13 @@ interface ToolSpec {
   name: string;
   /** Captured so a test can read what the MODEL is told, which is where R-39 lived. */
   parameters?: unknown;
-  execute: (id: string, params: Record<string, unknown>, signal: AbortSignal | undefined, onUpdate: undefined, ctx: unknown) => Promise<unknown>;
+  execute: (
+    id: string,
+    params: Record<string, unknown>,
+    signal: AbortSignal | undefined,
+    onUpdate: undefined,
+    ctx: unknown,
+  ) => Promise<unknown>;
 }
 
 async function harness(env: Record<string, string>, existingDir?: string) {
@@ -62,22 +85,29 @@ async function harness(env: Record<string, string>, existingDir?: string) {
   // entirely; a test that wants the other paths overrides it and says why.
   Object.assign(process.env, { [ENV_HERDR]: "0", ...env });
 
-  const tools = new Map<string, ToolSpec>(),commands=new Map<string,any>(), activeTools = new Set(["read", "grep", "write"]);
+  const tools = new Map<string, ToolSpec>(),
+    commands = new Map<string, any>(),
+    activeTools = new Set(["read", "grep", "write"]);
   const hooks = new Map<string, (e: unknown, c: unknown) => unknown>();
   const ctx = {
     cwd: dir,
     ui: { notify: () => {}, select: async () => undefined },
     signal: undefined,
-    modelRegistry: { find: (provider: string, id: string) => provider === "known" && id === "model" ? { provider, id } : undefined },
+    modelRegistry: {
+      find: (provider: string, id: string) => (provider === "known" && id === "model" ? { provider, id } : undefined),
+    },
   };
 
   grantsExtension({
     on: (name: string, handler: (e: unknown, c: unknown) => unknown) => void hooks.set(name, handler),
     registerTool: (spec: ToolSpec) => void tools.set(spec.name, spec),
-    registerCommand: (name:string,spec:any) => void commands.set(name,spec),
+    registerCommand: (name: string, spec: any) => void commands.set(name, spec),
     getAllTools: () => ["read", "grep", "write", "delegate"].map((name) => ({ name })),
     getActiveTools: () => [...activeTools],
-    setActiveTools: (names: string[]) => { activeTools.clear(); names.forEach(name => activeTools.add(name)); },
+    setActiveTools: (names: string[]) => {
+      activeTools.clear();
+      names.forEach((name) => activeTools.add(name));
+    },
   } as never);
 
   await hooks.get("session_start")!({}, ctx);
@@ -95,9 +125,14 @@ test("delegate and delegate_all expose explicit bounded thinking levels", async 
   const { tools } = await harness({ [ENV_GRANT]: "tool:delegate" });
   const single = tools.get("delegate")!.parameters as any;
   const child = (tools.get("delegate_all")!.parameters as any).properties.children.items;
-  assert.deepEqual(single.properties.thinking.anyOf.map((value: any) => value.const), ["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
+  assert.deepEqual(
+    single.properties.thinking.anyOf.map((value: any) => value.const),
+    ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
+  );
   assert.deepEqual(child.properties.thinking, single.properties.thinking);
-  const fanout=tools.get("delegate_all")!.parameters as any;assert.equal(fanout.properties.completion.const,"primary");assert.equal(fanout.properties.primary.minimum,1);
+  const fanout = tools.get("delegate_all")!.parameters as any;
+  assert.equal(fanout.properties.completion.const, "primary");
+  assert.equal(fanout.properties.primary.minimum, 1);
 });
 
 function agentDescriptionOf(spec: ToolSpec): string {
@@ -108,9 +143,7 @@ function agentDescriptionOf(spec: ToolSpec): string {
     };
   };
   return (
-    schema?.properties?.agent?.description ??
-    schema?.properties?.children?.items?.properties?.agent?.description ??
-    ""
+    schema?.properties?.agent?.description ?? schema?.properties?.children?.items?.properties?.agent?.description ?? ""
   );
 }
 
@@ -128,14 +161,22 @@ test("all three tool schemas expose only correlation contract 1.0 and its closed
   const { tools } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate" });
   for (const name of ["delegate", "delegate_all", "delegate_chain"]) {
     const parameters = tools.get(name)?.parameters as any;
-    const item = name === "delegate" ? parameters : parameters.properties[name === "delegate_all" ? "children" : "steps"].items;
+    const item =
+      name === "delegate" ? parameters : parameters.properties[name === "delegate_all" ? "children" : "steps"].items;
     const correlation = item.properties.correlation;
     assert.equal(correlation.properties.schema_version.const, "1.0", `${name} pins the upstream version`);
-    assert.equal(correlation.additionalProperties, false, `${name} rejects undeclared correlation fields in its tool schema`);
+    assert.equal(
+      correlation.additionalProperties,
+      false,
+      `${name} rejects undeclared correlation fields in its tool schema`,
+    );
     const variants = correlation.properties.assurance_scope.anyOf ?? correlation.properties.assurance_scope.oneOf;
     assert.equal(variants.length, 2, `${name} exposes exactly the two scope variants`);
     assert.deepEqual(variants.map((variant: any) => variant.properties.type.const).sort(), ["entire-run", "selectors"]);
-    assert.ok(variants.every((variant: any) => variant.additionalProperties === false), `${name} closes each scope variant`);
+    assert.ok(
+      variants.every((variant: any) => variant.additionalProperties === false),
+      `${name} closes each scope variant`,
+    );
   }
 });
 
@@ -161,14 +202,26 @@ test("delegation definitions stay inactive when tool:delegate is withheld", asyn
 test("more children than the per-call limit is refused before anything runs", async () => {
   const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate", [ENV_FANOUT]: "1000" });
   await assert.rejects(
-    () => tools.get("delegate_all")!.execute("t", { children: refusedChildren(MAX_CHILDREN_PER_CALL + 1) }, undefined, undefined, ctx),
+    () =>
+      tools
+        .get("delegate_all")!
+        .execute("t", { children: refusedChildren(MAX_CHILDREN_PER_CALL + 1) }, undefined, undefined, ctx),
     /per-call limit/,
   );
 });
 
-test("primary completion requires one in-range primary before any child starts",async()=>{
- const {tools,ctx}=await harness({[ENV_GRANT]:"tool:read,tool:delegate"}),all=tools.get("delegate_all")!;
- for(const args of [{completion:"primary",children:refusedChildren(2)},{primary:1,children:refusedChildren(2)},{completion:"primary",primary:3,children:refusedChildren(2)}])await assert.rejects(()=>all.execute("invalid-primary",args,undefined,undefined,ctx),/one in-range 1-based primary/);
+test("primary completion requires one in-range primary before any child starts", async () => {
+  const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate" }),
+    all = tools.get("delegate_all")!;
+  for (const args of [
+    { completion: "primary", children: refusedChildren(2) },
+    { primary: 1, children: refusedChildren(2) },
+    { completion: "primary", primary: 3, children: refusedChildren(2) },
+  ])
+    await assert.rejects(
+      () => all.execute("invalid-primary", args, undefined, undefined, ctx),
+      /one in-range 1-based primary/,
+    );
 });
 
 test("a fan-out wider than the remaining budget is refused, naming the remedy", async () => {
@@ -188,7 +241,8 @@ test("every child is reported, and an all-failed fan-out throws rather than retu
     (error: Error & { code?: string }) => {
       assert.equal(error.code, "CAPABILITY_ESCALATION");
       assert.match(error.message, /every child was refused/);
-      for (const n of [1, 2, 3]) assert.match(error.message, new RegExp(`child ${n} — FAILED`), `child ${n} must appear`);
+      for (const n of [1, 2, 3])
+        assert.match(error.message, new RegExp(`child ${n} — FAILED`), `child ${n} must appear`);
       assert.match(error.message, /tool:write/, "and the reason must name the capability");
       return true;
     },
@@ -204,7 +258,7 @@ test("a progress renderer failure cannot kill a process child", async () => {
   try {
     const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate" });
     let updates = 0;
-    const result = await tools.get("delegate")!.execute(
+    const result = (await tools.get("delegate")!.execute(
       "display-failure",
       { task: "finish despite display failure", tools: ["read"] },
       undefined,
@@ -213,7 +267,7 @@ test("a progress renderer failure cannot kill a process child", async () => {
         throw new Error("display callback failed");
       }) as never,
       ctx,
-    ) as { content: Array<{ text: string }> };
+    )) as { content: Array<{ text: string }> };
     assert.match(result.content[0]?.text ?? "", /child completed/);
     assert.ok(updates >= 2, "the final frame should still be attempted after a failed interim frame");
   } finally {
@@ -230,7 +284,7 @@ test("a chain progress renderer failure cannot kill its process step", async () 
   try {
     const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate", [ENV_FANOUT]: "12" });
     let updates = 0;
-    const result = await tools.get("delegate_chain")!.execute(
+    const result = (await tools.get("delegate_chain")!.execute(
       "chain-display-failure",
       { steps: [{ task: "finish despite display failure", tools: ["read"] }] },
       undefined,
@@ -239,7 +293,7 @@ test("a chain progress renderer failure cannot kill its process step", async () 
         throw new Error("chain display callback failed");
       }) as never,
       ctx,
-    ) as { content: Array<{ text: string }> };
+    )) as { content: Array<{ text: string }> };
     assert.match(result.content[0]?.text ?? "", /chain child completed/);
     assert.ok(updates >= 2, "the chain final frame should still be attempted");
   } finally {
@@ -256,9 +310,19 @@ test("mixed all-failed fan-out does not assign one child's refusal code to the a
   try {
     const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate" });
     await assert.rejects(
-      () => tools.get("delegate_all")!.execute("mixed", {
-        children: [{ task: "denied", tools: ["write"] }, { task: "runtime", tools: ["read"] }],
-      }, undefined, undefined, ctx),
+      () =>
+        tools.get("delegate_all")!.execute(
+          "mixed",
+          {
+            children: [
+              { task: "denied", tools: ["write"] },
+              { task: "runtime", tools: ["read"] },
+            ],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
       (error: Error & { code?: string; details?: Record<string, unknown> }) => {
         // The name of this test is the invariant: no CHILD's code may become the aggregate's. It used to
         // be checked by asserting no code at all, which also threw away the machine-readable half — on
@@ -266,7 +330,9 @@ test("mixed all-failed fan-out does not assign one child's refusal code to the a
         // in `details` now, under an aggregate code that is deliberately not any child's.
         assert.equal(error.code, "FANOUT_FAILED");
         assert.match(error.message, /every child was refused or failed/);
-        const codes = String(error.details?.codes ?? "").split(",").filter(Boolean);
+        const codes = String(error.details?.codes ?? "")
+          .split(",")
+          .filter(Boolean);
         assert.ok(codes.length > 1, `mixed codes must all survive, got ${JSON.stringify(codes)}`);
         assert.equal(codes.includes("FANOUT_FAILED"), false, "the aggregate code is not a child's code");
         return true;
@@ -285,9 +351,16 @@ test("F8: concurrent siblings get distinct, hierarchical ledger ids", async () =
   const ledger = join(dir, "ledger.jsonl");
   const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate", [ENV_LEDGER]: ledger });
 
-  await tools.get("delegate_all")!.execute("t", { children: refusedChildren(3) }, undefined, undefined, ctx).catch(() => undefined);
+  await tools
+    .get("delegate_all")!
+    .execute("t", { children: refusedChildren(3) }, undefined, undefined, ctx)
+    .catch(() => undefined);
 
-  const lines = (await readFile(ledger, "utf8")).trim().split("\n").filter(Boolean).map((l) => JSON.parse(l));
+  const lines = (await readFile(ledger, "utf8"))
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((l) => JSON.parse(l));
   assert.equal(lines.length, 3, "each child is audited, including refusals");
   const ids = lines.map((l) => l.childId);
   assert.equal(new Set(ids).size, 3, `siblings must be distinguishable, got ${JSON.stringify(ids)}`);
@@ -306,8 +379,14 @@ test("two concurrent delegate calls reuse the logical position but never the exe
     delegate.execute("b", { task: "second", tools: ["write"] }, undefined, undefined, ctx).catch(() => undefined),
   ]);
 
-  const records = (await readFile(ledger, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
-  assert.deepEqual(records.map((record) => record.childId), ["d0.1", "d0.1"]);
+  const records = (await readFile(ledger, "utf8"))
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  assert.deepEqual(
+    records.map((record) => record.childId),
+    ["d0.1", "d0.1"],
+  );
   assert.equal(new Set(records.map((record) => record.executionId)).size, 2);
   assert.ok(records.every((record) => record.parentExecutionId === null));
 });
@@ -339,7 +418,11 @@ test("ADR-0018: the digest reaches the LEDGER FILE, not just the plan", async ()
     .execute("t", { task: TASK_SENTINEL, agent: "patterned" }, undefined, undefined, ctx)
     .catch(() => undefined);
 
-  const [line] = (await readFile(ledger, "utf8")).trim().split("\n").filter(Boolean).map((l) => JSON.parse(l));
+  const [line] = (await readFile(ledger, "utf8"))
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((l) => JSON.parse(l));
   assert.equal(line.blocked, true);
   assert.equal(line.definitionDigest?.name, "patterned");
   assert.equal(
@@ -363,9 +446,16 @@ test("a child's ledger id descends from an inherited parent id, not from depth",
     [ENV_EXECUTION_ID]: "exec:00000000-0000-4000-8000-000000000009",
   });
 
-  await tools.get("delegate_all")!.execute("t", { children: refusedChildren(2) }, undefined, undefined, ctx).catch(() => undefined);
+  await tools
+    .get("delegate_all")!
+    .execute("t", { children: refusedChildren(2) }, undefined, undefined, ctx)
+    .catch(() => undefined);
 
-  const lines = (await readFile(ledger, "utf8")).trim().split("\n").filter(Boolean).map((l) => JSON.parse(l));
+  const lines = (await readFile(ledger, "utf8"))
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((l) => JSON.parse(l));
   assert.deepEqual(lines.map((l) => l.childId).sort(), ["d0.2.1", "d0.2.2"]);
   assert.ok(lines.every((line) => line.parentExecutionId === "exec:00000000-0000-4000-8000-000000000009"));
 });
@@ -432,11 +522,12 @@ test("ADR-0031: a session that DEMANDED herdr and cannot reach it refuses every 
     });
 
     await assert.rejects(
-      () => tools.get("delegate")!.execute("c1", { task: "read the file", tools: ["read"] }, undefined, undefined, {
-        cwd: process.cwd(),
-        ui: { notify: () => {}, select: async () => undefined },
-        hasUI: false,
-      }),
+      () =>
+        tools.get("delegate")!.execute("c1", { task: "read the file", tools: ["read"] }, undefined, undefined, {
+          cwd: process.cwd(),
+          ui: { notify: () => {}, select: async () => undefined },
+          hasUI: false,
+        }),
       (error: Error) => {
         assert.match(error.message, /PI_GRANTS_HERDR/, "the refusal must name the variable that caused it");
         assert.match(error.message, /refused/);
@@ -456,11 +547,12 @@ test("ADR-0031: PI_GRANTS_HERDR=0 spawns nothing through herdr and does not refu
   // A capability the session does not hold, so it is refused for THAT reason and never spawned — the same
   // trick the rest of this suite uses to stay fast. What matters is which reason comes back.
   await assert.rejects(
-    () => tools.get("delegate")!.execute("c1", { task: "write a file", tools: ["write"] }, undefined, undefined, {
-      cwd: process.cwd(),
-      ui: { notify: () => {}, select: async () => undefined },
-      hasUI: false,
-    }),
+    () =>
+      tools.get("delegate")!.execute("c1", { task: "write a file", tools: ["write"] }, undefined, undefined, {
+        cwd: process.cwd(),
+        ui: { notify: () => {}, select: async () => undefined },
+        hasUI: false,
+      }),
     (error: Error) => {
       assert.doesNotMatch(error.message, /PI_GRANTS_HERDR/, "a PI_GRANTS_HERDR=0 session must never blame herdr");
       return true;
@@ -474,7 +566,9 @@ test("ADR-0032: delegate_all paints DURING the run, one block covering every chi
   // final-only updates cannot release either child; the bounded fixture deadline fails the execution.
   const bin = await tempDir("grants-fanout-progress-shim-");
   const release = join(bin, "release");
-  await writeFile(join(bin, "pi"), `#!/usr/bin/env node
+  await writeFile(
+    join(bin, "pi"),
+    `#!/usr/bin/env node
 const { existsSync } = require('node:fs');
 const task = process.argv.at(-1).trim();
 if (!['one', 'two'].includes(task)) throw new Error('unexpected fixture task');
@@ -486,7 +580,8 @@ const poll = setInterval(() => {
   clearTimeout(deadline);
   process.stdout.write('child-' + task + '-done\\n');
 }, 10);
-`);
+`,
+  );
   await chmod(join(bin, "pi"), 0o755);
   const oldPath = process.env.PATH;
   process.env.PATH = `${bin}:${oldPath ?? ""}`;
@@ -497,21 +592,30 @@ const poll = setInterval(() => {
     const onUpdate = (partial: { content: Array<{ text: string }> }) => {
       const frame = partial.content[0].text;
       frames.push(frame);
-      if (!combinedWhileRunning && frame.includes("child-one-ready") && frame.includes("child-two-ready") &&
-          (frame.match(/^delegate\s+running\b/gm) ?? []).length === 2) {
+      if (
+        !combinedWhileRunning &&
+        frame.includes("child-one-ready") &&
+        frame.includes("child-two-ready") &&
+        (frame.match(/^delegate\s+running\b/gm) ?? []).length === 2
+      ) {
         // Assertions belong below: production deliberately isolates renderer callback exceptions.
         writeFileSync(release, "both children observed running with output\n");
         combinedWhileRunning = frame;
       }
     };
 
-    const result = await tools.get("delegate_all")!.execute(
+    const result = (await tools.get("delegate_all")!.execute(
       "t",
-      { children: [{ task: "one", tools: ["read"] }, { task: "two", tools: ["read"] }] },
+      {
+        children: [
+          { task: "one", tools: ["read"] },
+          { task: "two", tools: ["read"] },
+        ],
+      },
       undefined,
       onUpdate as never,
       ctx,
-    ) as { content: Array<{ text: string }>; details: { children: number; failed: number } };
+    )) as { content: Array<{ text: string }>; details: { children: number; failed: number } };
 
     assert.ok(combinedWhileRunning, "both children's output must share an update before either settles");
     assert.equal(result.details.children, 2);
@@ -527,24 +631,109 @@ const poll = setInterval(() => {
   }
 });
 
-test("primary completion returns before two shadows while their failure and cancellation remain accounted",async()=>{
- const bin=await tempDir("grants-primary-shadow-shim-"),ledger=join(bin,"ledger.jsonl"),readyFail=join(bin,"fail.ready"),readyOk=join(bin,"ok.ready"),readyCancel=join(bin,"cancel.ready"),release=join(bin,"release");await writeFile(join(bin,"pi"),`#!/usr/bin/env node
+test("primary completion returns before two shadows while their failure and cancellation remain accounted", async () => {
+  const bin = await tempDir("grants-primary-shadow-shim-"),
+    ledger = join(bin, "ledger.jsonl"),
+    readyFail = join(bin, "fail.ready"),
+    readyOk = join(bin, "ok.ready"),
+    readyCancel = join(bin, "cancel.ready"),
+    release = join(bin, "release");
+  await writeFile(
+    join(bin, "pi"),
+    `#!/usr/bin/env node
 const fs=require('node:fs'),task=process.argv.at(-1).trim(),wait=(test,done)=>{const timer=setInterval(()=>{if(test()){clearInterval(timer);done();}},5)};
 if(task==='primary')wait(()=>fs.existsSync(${JSON.stringify(readyFail)})&&fs.existsSync(${JSON.stringify(readyOk)}),()=>{process.stdout.write('PRIMARY')});
 else if(task==='primary-cancel')wait(()=>fs.existsSync(${JSON.stringify(readyCancel)}),()=>{process.stdout.write('PRIMARY-CANCEL')});
-else {fs.writeFileSync(task==='shadow-fail'?${JSON.stringify(readyFail)}:task==='shadow-ok'?${JSON.stringify(readyOk)}:${JSON.stringify(readyCancel)},'ready');wait(()=>fs.existsSync(${JSON.stringify(release)}),()=>{process.stdout.write(task);process.exit(task==='shadow-fail'?1:0)});}`);await chmod(join(bin,"pi"),0o755);const oldPath=process.env.PATH;process.env.PATH=`${bin}:${oldPath}`;
- try{const {tools,commands,ctx}=await harness({[ENV_GRANT]:"tool:read,tool:delegate",[ENV_LEDGER]:ledger}),all=tools.get("delegate_all")!;const terminal=async(count:number)=>{const deadline=Date.now()+3000;let rows:any[]=[];while(Date.now()<deadline){rows=(await readFile(ledger,"utf8")).trim().split("\n").map(line=>JSON.parse(line)).filter(x=>x.event==="child_lifecycle"&&["completed","failed"].includes(x.state));if(rows.length===count)return rows;await new Promise(r=>setTimeout(r,20));}return rows;};
-  const result=await all.execute("primary-run",{completion:"primary",primary:1,children:[{task:"primary",tools:["read"]},{task:"shadow-fail",tools:["read"]},{task:"shadow-ok",tools:["read"]}]},undefined,undefined,ctx) as any;
-  assert.match(result.content[0].text,/PRIMARY/);assert.equal(result.details.primary,1);assert.equal(result.details.shadows,2);assert.equal((await terminal(1)).length,1,"both ready shadows must still be unsettled when the primary returns");await writeFile(release,"release");const settled=await terminal(3);assert.deepEqual(settled.map(x=>x.state).sort(),["completed","completed","failed"]);let report="";(ctx.ui as any).notify=(message:string)=>{report=message;};
-  // Terminal ledger bytes precede teardown and the owner's asynchronous accounting continuation.
-  const reportDeadline=Date.now()+3000;
-  while(Date.now()<reportDeadline&&!/settled/.test(report)){
-   await commands.get("grants").handler("variants",ctx);
-   if(!/settled/.test(report))await new Promise<void>(resolve=>setTimeout(resolve,20));
+else {fs.writeFileSync(task==='shadow-fail'?${JSON.stringify(readyFail)}:task==='shadow-ok'?${JSON.stringify(readyOk)}:${JSON.stringify(readyCancel)},'ready');wait(()=>fs.existsSync(${JSON.stringify(release)}),()=>{process.stdout.write(task);process.exit(task==='shadow-fail'?1:0)});}`,
+  );
+  await chmod(join(bin, "pi"), 0o755);
+  const oldPath = process.env.PATH;
+  process.env.PATH = `${bin}:${oldPath}`;
+  try {
+    const { tools, commands, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate", [ENV_LEDGER]: ledger }),
+      all = tools.get("delegate_all")!;
+    const terminal = async (count: number) => {
+      const deadline = Date.now() + 3000;
+      let rows: any[] = [];
+      while (Date.now() < deadline) {
+        rows = (await readFile(ledger, "utf8"))
+          .trim()
+          .split("\n")
+          .map((line) => JSON.parse(line))
+          .filter((x) => x.event === "child_lifecycle" && ["completed", "failed"].includes(x.state));
+        if (rows.length === count) return rows;
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      return rows;
+    };
+    const result = (await all.execute(
+      "primary-run",
+      {
+        completion: "primary",
+        primary: 1,
+        children: [
+          { task: "primary", tools: ["read"] },
+          { task: "shadow-fail", tools: ["read"] },
+          { task: "shadow-ok", tools: ["read"] },
+        ],
+      },
+      undefined,
+      undefined,
+      ctx,
+    )) as any;
+    assert.match(result.content[0].text, /PRIMARY/);
+    assert.equal(result.details.primary, 1);
+    assert.equal(result.details.shadows, 2);
+    assert.equal((await terminal(1)).length, 1, "both ready shadows must still be unsettled when the primary returns");
+    await writeFile(release, "release");
+    const settled = await terminal(3);
+    assert.deepEqual(settled.map((x) => x.state).sort(), ["completed", "completed", "failed"]);
+    let report = "";
+    (ctx.ui as any).notify = (message: string) => {
+      report = message;
+    };
+    // Terminal ledger bytes precede teardown and the owner's asynchronous accounting continuation.
+    const reportDeadline = Date.now() + 3000;
+    while (Date.now() < reportDeadline && !/settled/.test(report)) {
+      await commands.get("grants").handler("variants", ctx);
+      if (!/settled/.test(report)) await new Promise<void>((resolve) => setTimeout(resolve, 20));
+    }
+    assert.match(
+      report,
+      /settled[\s\S]*primary:completed[\s\S]*shadow:failed[\s\S]*shadow:completed/,
+      "original owner must settle variant accounting after terminal child records",
+    );
+    assert.match(
+      report,
+      /provider usage\s+unavailable/i,
+      "the user-facing variant report must not imply child token or billing evidence",
+    );
+    await rm(release);
+    const controller = new AbortController(),
+      cancelled = (await all.execute(
+        "primary-cancel",
+        {
+          completion: "primary",
+          primary: 1,
+          children: [
+            { task: "primary-cancel", tools: ["read"] },
+            { task: "shadow-cancel", tools: ["read"] },
+          ],
+        },
+        controller.signal,
+        undefined,
+        ctx,
+      )) as any;
+    assert.match(cancelled.content[0].text, /PRIMARY-CANCEL/);
+    controller.abort();
+    assert.equal(
+      (await terminal(5)).length,
+      5,
+      "the original ledger must retain final accounting after shadow cancellation",
+    );
+  } finally {
+    process.env.PATH = oldPath;
   }
-  assert.match(report,/settled[\s\S]*primary:completed[\s\S]*shadow:failed[\s\S]*shadow:completed/,"original owner must settle variant accounting after terminal child records");assert.match(report,/provider usage\s+unavailable/i,"the user-facing variant report must not imply child token or billing evidence");
-  await rm(release);const controller=new AbortController(),cancelled=await all.execute("primary-cancel",{completion:"primary",primary:1,children:[{task:"primary-cancel",tools:["read"]},{task:"shadow-cancel",tools:["read"]}]},controller.signal,undefined,ctx) as any;assert.match(cancelled.content[0].text,/PRIMARY-CANCEL/);controller.abort();assert.equal((await terminal(5)).length,5,"the original ledger must retain final accounting after shadow cancellation");
- }finally{process.env.PATH=oldPath;}
 });
 
 test("ADR-0032: delegate paints too — it is the one-child case of the same block", async () => {
@@ -585,7 +774,10 @@ test("ADR-0031: the ledger records the executor a REAL spawn ran under, not a co
   //
   // This drives the real extension end to end and reads the real ledger file, once per executor. The production
   // change that breaks it: hardcoding either call site, or dropping `session.executor.kind`.
-  for (const [herdr, expected] of [["0", "process"], ["1", "herdr"]] as const) {
+  for (const [herdr, expected] of [
+    ["0", "process"],
+    ["1", "herdr"],
+  ] as const) {
     const dir = await tempDir("grants-executor-ledger-");
     const ledger = join(dir, "ledger.jsonl");
     // PATH is emptied for the herdr case so the probe fails and the delegation refuses — a refusal still writes a
@@ -606,7 +798,11 @@ test("ADR-0031: the ledger records the executor a REAL spawn ran under, not a co
       process.env.PATH = realPath;
     }
 
-    const lines = (await readFile(ledger, "utf8")).trim().split("\n").filter(Boolean).map((l) => JSON.parse(l));
+    const lines = (await readFile(ledger, "utf8"))
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .map((l) => JSON.parse(l));
     assert.ok(lines.length >= 1, `no record written for PI_GRANTS_HERDR=${herdr}`);
     for (const record of lines) {
       assert.equal(record.executor, expected, `PI_GRANTS_HERDR=${herdr} must record executor ${expected}`);
@@ -632,7 +828,10 @@ async function registeredWorkspaceFixture() {
 test("an unresolved model is ledgered and starts no child process", async () => {
   const bin = await tempDir("grants-model-preflight-");
   const marker = join(bin, "started");
-  await writeFile(join(bin, "pi"), `#!/usr/bin/env node\nrequire('node:fs').writeFileSync(${JSON.stringify(marker)}, 'started')\n`);
+  await writeFile(
+    join(bin, "pi"),
+    `#!/usr/bin/env node\nrequire('node:fs').writeFileSync(${JSON.stringify(marker)}, 'started')\n`,
+  );
   await chmod(join(bin, "pi"), 0o755);
   const ledger = join(bin, "ledger.jsonl");
   const oldPath = process.env.PATH;
@@ -640,13 +839,17 @@ test("an unresolved model is ledgered and starts no child process", async () => 
   try {
     const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate", [ENV_LEDGER]: ledger });
     await assert.rejects(
-      () => tools.get("delegate")!.execute(
-        "bad-model", { task: "read", tools: ["read"], model: "missing/model" }, undefined, undefined, ctx,
-      ),
+      () =>
+        tools
+          .get("delegate")!
+          .execute("bad-model", { task: "read", tools: ["read"], model: "missing/model" }, undefined, undefined, ctx),
       (error: Error & { code?: string }) => error.code === "MODEL_UNRESOLVED" && /missing\/model/.test(error.message),
     );
     await assert.rejects(() => readFile(marker), /ENOENT/, "preflight must happen before spawn");
-    const decisions = (await readFile(ledger, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+    const decisions = (await readFile(ledger, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
     assert.equal(decisions.at(-1)?.refusal?.code, "MODEL_UNRESOLVED");
   } finally {
     process.env.PATH = oldPath;
@@ -656,7 +859,10 @@ test("an unresolved model is ledgered and starts no child process", async () => 
 test("BLOCKED_CRITICAL_ASSURANCE from a child remains a failed delegation and the token is unchanged", async () => {
   const bin = await tempDir("grants-pi-blocked-shim-");
   const shim = join(bin, "pi");
-  await writeFile(shim, "#!/usr/bin/env node\nprocess.stdout.write('BLOCKED_CRITICAL_ASSURANCE\\nMissing controls:\\n- review');process.exit(3)\n");
+  await writeFile(
+    shim,
+    "#!/usr/bin/env node\nprocess.stdout.write('BLOCKED_CRITICAL_ASSURANCE\\nMissing controls:\\n- review');process.exit(3)\n",
+  );
   await chmod(shim, 0o755);
   const oldPath = process.env.PATH;
   process.env.PATH = `${bin}:${oldPath}`;
@@ -677,19 +883,38 @@ test("BLOCKED_CRITICAL_ASSURANCE from a child remains a failed delegation and th
 test("fan-out and chain cannot turn one BLOCKED_CRITICAL_ASSURANCE child into partial success", async () => {
   const bin = await tempDir("grants-pi-partial-blocked-shim-");
   const shim = join(bin, "pi");
-  await writeFile(shim, `#!/usr/bin/env node
+  await writeFile(
+    shim,
+    `#!/usr/bin/env node
 const blocked=process.argv.join(' ').includes('BLOCKME');
 process.stdout.write(blocked?'BLOCKED_CRITICAL_ASSURANCE\\nMissing controls:\\n- review':'OK');
 process.exit(blocked?3:0);
-`);
+`,
+  );
   await chmod(shim, 0o755);
   const oldPath = process.env.PATH;
   process.env.PATH = `${bin}:${oldPath}`;
   try {
     const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate" });
     for (const [name, args] of [
-      ["delegate_all", { children: [{ task: "good", tools: ["read"] }, { task: "BLOCKME", tools: ["read"] }] }],
-      ["delegate_chain", { steps: [{ task: "good", tools: ["read"] }, { task: "BLOCKME", tools: ["read"] }] }],
+      [
+        "delegate_all",
+        {
+          children: [
+            { task: "good", tools: ["read"] },
+            { task: "BLOCKME", tools: ["read"] },
+          ],
+        },
+      ],
+      [
+        "delegate_chain",
+        {
+          steps: [
+            { task: "good", tools: ["read"] },
+            { task: "BLOCKME", tools: ["read"] },
+          ],
+        },
+      ],
     ] as const) {
       await assert.rejects(
         () => tools.get(name)!.execute("blocked", args, undefined, undefined, ctx),
@@ -712,15 +937,22 @@ test("partial chain results retain per-step structured refusals", async () => {
   process.env.PATH = `${bin}:${oldPath}`;
   try {
     const { tools, ctx } = await harness({
-      [ENV_GRANT]: "tool:read,tool:bash,tool:delegate", [ENV_GATED]: "tool:bash",
+      [ENV_GRANT]: "tool:read,tool:bash,tool:delegate",
+      [ENV_GATED]: "tool:bash",
     });
     Object.assign(ctx, { hasUI: false, mode: "rpc" });
-    const result = await tools.get("delegate_chain")!.execute("partial", {
-      steps: [
-        { task: "first", tools: ["read"] },
-        { task: "second", tools: ["bash"], correlation: { run_id: "run-1" } },
-      ],
-    }, undefined, undefined, ctx) as { details: { refusals: Array<{ code?: string } | null> } };
+    const result = (await tools.get("delegate_chain")!.execute(
+      "partial",
+      {
+        steps: [
+          { task: "first", tools: ["read"] },
+          { task: "second", tools: ["bash"], correlation: { run_id: "run-1" } },
+        ],
+      },
+      undefined,
+      undefined,
+      ctx,
+    )) as { details: { refusals: Array<{ code?: string } | null> } };
     assert.equal(result.details.refusals[0], null);
     assert.equal(result.details.refusals[1]?.code, "GATED_UNAPPROVED");
   } finally {
@@ -738,18 +970,38 @@ test("chain once approvals are attributed and consumed by the step/capability th
   process.env.PATH = `${bin}:${oldPath}`;
   try {
     const { tools, ctx } = await harness({
-      [ENV_GRANT]: "tool:read,tool:bash,tool:delegate", [ENV_GATED]: "tool:read,tool:bash", [ENV_LEDGER]: ledger,
+      [ENV_GRANT]: "tool:read,tool:bash,tool:delegate",
+      [ENV_GATED]: "tool:read,tool:bash",
+      [ENV_LEDGER]: ledger,
     });
     let prompts = 0;
     Object.assign(ctx, { hasUI: true, mode: "rpc" });
-    (ctx.ui as { select: () => Promise<string | undefined> }).select = async () => { prompts += 1; return "Allow once"; };
-    await tools.get("delegate_chain")!.execute("once", {
-      steps: [{ task: "read", tools: ["read"] }, { task: "shell", tools: ["bash"] }],
-    }, undefined, undefined, ctx);
+    (ctx.ui as { select: () => Promise<string | undefined> }).select = async () => {
+      prompts += 1;
+      return "Allow once";
+    };
+    await tools.get("delegate_chain")!.execute(
+      "once",
+      {
+        steps: [
+          { task: "read", tools: ["read"] },
+          { task: "shell", tools: ["bash"] },
+        ],
+      },
+      undefined,
+      undefined,
+      ctx,
+    );
     assert.equal(prompts, 2, "the step-2 approval must not be spent or re-prompted on step 1");
-    const decisions = (await readFile(ledger, "utf8")).trim().split("\n").map((line) => JSON.parse(line))
+    const decisions = (await readFile(ledger, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line))
       .filter((event) => event.event === "capability_decision" && !event.blocked);
-    assert.deepEqual(decisions.map((record) => record.approved), [["tool:read"], ["tool:bash"]]);
+    assert.deepEqual(
+      decisions.map((record) => record.approved),
+      [["tool:read"], ["tool:bash"]],
+    );
   } finally {
     process.env.PATH = oldPath;
   }
@@ -775,7 +1027,10 @@ test("a correlated session approval cannot replay for a different task", async (
     await tools.get("delegate")!.execute("b", { ...common, task: "probe exact failure" }, undefined, undefined, ctx);
     assert.equal(prompts, 1, "same exact binding may reuse the session answer");
     await assert.rejects(
-      () => tools.get("delegate")!.execute("c", { ...common, task: "probe a different failure" }, undefined, undefined, ctx),
+      () =>
+        tools
+          .get("delegate")!
+          .execute("c", { ...common, task: "probe a different failure" }, undefined, undefined, ctx),
       (error: Error & { code?: string }) => {
         assert.equal(error.code, "APPROVAL_SCOPE_MISMATCH");
         assert.match(error.message, /^delegation refused: .*dismissed/);
@@ -791,8 +1046,10 @@ test("a correlated session approval cannot replay for a different task", async (
 test("a failed always-store write is ledgered as session-only with no fake expiry", async () => {
   const dir = await tempDir("grants-persist-downgrade-");
   await mkdir(join(dir, ".pi", "skills", "worker"), { recursive: true });
-  await writeFile(join(dir, ".pi", "skills", "worker", "SKILL.md"),
-    "---\nname: worker\ndescription: works\nallowed-tools: Bash\n---\nWork.\n");
+  await writeFile(
+    join(dir, ".pi", "skills", "worker", "SKILL.md"),
+    "---\nname: worker\ndescription: works\nallowed-tools: Bash\n---\nWork.\n",
+  );
   const ledger = join(dir, "ledger.jsonl");
   const bin = await tempDir("grants-persist-downgrade-bin-");
   await writeFile(join(bin, "pi"), "#!/usr/bin/env node\nprocess.stdout.write('OK')\n");
@@ -806,13 +1063,21 @@ test("a failed always-store write is ledgered as session-only with no fake expir
   // configured skill discovery, so the test would never reach its intended persistence boundary.
   await writeFile(join(agentDir, "grants-approvals"), "not a directory");
   try {
-    const { tools, ctx } = await harness({
-      [ENV_GRANT]: "agent:worker,tool:bash,tool:delegate", [ENV_LEDGER]: ledger,
-    }, dir);
+    const { tools, ctx } = await harness(
+      {
+        [ENV_GRANT]: "agent:worker,tool:bash,tool:delegate",
+        [ENV_LEDGER]: ledger,
+      },
+      dir,
+    );
     Object.assign(ctx, { hasUI: true, mode: "rpc" });
-    (ctx.ui as { select: () => Promise<string | undefined> }).select = async () => "Always allow in this project (30 days)";
+    (ctx.ui as { select: () => Promise<string | undefined> }).select = async () =>
+      "Always allow in this project (30 days)";
     await tools.get("delegate")!.execute("persist", { task: "work", agent: "worker" }, undefined, undefined, ctx);
-    const record = (await readFile(ledger, "utf8")).trim().split("\n").map((line) => JSON.parse(line))
+    const record = (await readFile(ledger, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line))
       .find((event) => event.event === "capability_decision");
     assert.equal(record.approvalScopes["tool:bash"], "session");
     assert.equal(record.approvalExpiresAt, undefined);
@@ -829,33 +1094,50 @@ test("a write-capable child cannot underdeclare read access to bypass a writer c
   const workspace = await validateRegisteredWorkspace({ workspaceId: "w1", registeredRoot: dir });
   const held = await acquireWorkspaceLease({ workspace, access: "write", leaseDir, ownerId: "existing" });
   try {
-    const { tools, ctx } = await harness({
-      // `workspace:w1` required since ADR-0035: routing is an authority the caller must hold.
-      [ENV_GRANT]: "tool:read,tool:bash,tool:delegate,workspace:w1",
-      [ENV_LEDGER]: ledger,
-      [ENV_WORKSPACE_REGISTRY]: registry,
-      [ENV_WORKSPACE_LEASE_DIR]: leaseDir,
-    }, dir);
+    const { tools, ctx } = await harness(
+      {
+        // `workspace:w1` required since ADR-0035: routing is an authority the caller must hold.
+        [ENV_GRANT]: "tool:read,tool:bash,tool:delegate,workspace:w1",
+        [ENV_LEDGER]: ledger,
+        [ENV_WORKSPACE_REGISTRY]: registry,
+        [ENV_WORKSPACE_LEASE_DIR]: leaseDir,
+      },
+      dir,
+    );
     await assert.rejects(
-      () => tools.get("delegate")!.execute("t", {
-        task: "write despite the label",
-        tools: ["bash"],
-        workspace: { workspace_id: "w1", access: "read" },
-        correlation: { schema_version: "1.0", run_id: "run-1", task_id: "task-1", tree_sha: "a".repeat(40) },
-      }, undefined, undefined, ctx),
+      () =>
+        tools.get("delegate")!.execute(
+          "t",
+          {
+            task: "write despite the label",
+            tools: ["bash"],
+            workspace: { workspace_id: "w1", access: "read" },
+            correlation: { schema_version: "1.0", run_id: "run-1", task_id: "task-1", tree_sha: "a".repeat(40) },
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
       (error: Error & { code?: string }) => {
         assert.equal(error.code, "WORKSPACE_WRITE_CONFLICT");
         assert.match(error.message, /^delegation refused: .*active pi-daddy-governed writer/);
         return true;
       },
     );
-    const lines = (await readFile(ledger, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+    const lines = (await readFile(ledger, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
     const refusedLease = lines.find((line) => line.event === "workspace_lease" && line.outcome === "refused");
     assert.ok(refusedLease);
     assert.equal(refusedLease.access, "write", "trusted capabilities override the model's read label");
     const decision = lines.find((line) => line.event === "capability_decision");
     assert.equal(decision.refusal.code, "WORKSPACE_WRITE_CONFLICT");
-    assert.equal(lines.some((line) => line.event === "child_lifecycle"), false, "no process reached starting");
+    assert.equal(
+      lines.some((line) => line.event === "child_lifecycle"),
+      false,
+      "no process reached starting",
+    );
   } finally {
     await held.release("test-complete");
   }
@@ -865,22 +1147,34 @@ test("a governed process starts in the validated workspace with the same effecti
   const { dir, registry, leaseDir } = await registeredWorkspaceFixture();
   const bin = await tempDir("grants-pi-shim-");
   const shim = join(bin, "pi");
-  await writeFile(shim, `#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify({cwd:process.cwd(),argv:process.argv.slice(2)}))\n`);
+  await writeFile(
+    shim,
+    `#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify({cwd:process.cwd(),argv:process.argv.slice(2)}))\n`,
+  );
   await chmod(shim, 0o755);
   const oldPath = process.env.PATH;
   process.env.PATH = `${bin}:${oldPath}`;
   try {
-    const { tools, ctx } = await harness({
-      [ENV_GRANT]: "tool:read,tool:delegate,workspace:w1",
-      [ENV_WORKSPACE_REGISTRY]: registry,
-      [ENV_WORKSPACE_LEASE_DIR]: leaseDir,
-    }, dir);
-    const result = await tools.get("delegate")!.execute("t", {
-      task: "report",
-      tools: ["read"],
-      workspace: { workspace_id: "w1", access: "read" },
-      correlation: { run_id: "run-1", task_id: "task-1", workspace_id: "w1" },
-    }, undefined, undefined, ctx) as { content: Array<{ text: string }> };
+    const { tools, ctx } = await harness(
+      {
+        [ENV_GRANT]: "tool:read,tool:delegate,workspace:w1",
+        [ENV_WORKSPACE_REGISTRY]: registry,
+        [ENV_WORKSPACE_LEASE_DIR]: leaseDir,
+      },
+      dir,
+    );
+    const result = (await tools.get("delegate")!.execute(
+      "t",
+      {
+        task: "report",
+        tools: ["read"],
+        workspace: { workspace_id: "w1", access: "read" },
+        correlation: { run_id: "run-1", task_id: "task-1", workspace_id: "w1" },
+      },
+      undefined,
+      undefined,
+      ctx,
+    )) as { content: Array<{ text: string }> };
     const child = JSON.parse(result.content[0].text);
     assert.equal(child.cwd, dir);
     const at = child.argv.indexOf("--tools");
@@ -898,9 +1192,18 @@ test("ADR-0031: a pre-0.16 ledger line, which has no executor field, still parse
   const dir = await tempDir("grants-legacy-ledger-");
   const ledger = join(dir, "ledger.jsonl");
   const legacy = {
-    ts: "2026-08-16T10:00:00.000Z", parentId: "d0", childId: "d0.1", depth: 1, agentType: "review",
-    requested: ["tool:read"], parentGrant: ["tool:read"], effective: ["tool:read"],
-    denied: [], clipped: [], gatedBlocked: [], blocked: false,
+    ts: "2026-08-16T10:00:00.000Z",
+    parentId: "d0",
+    childId: "d0.1",
+    depth: 1,
+    agentType: "review",
+    requested: ["tool:read"],
+    parentGrant: ["tool:read"],
+    effective: ["tool:read"],
+    denied: [],
+    clipped: [],
+    gatedBlocked: [],
+    blocked: false,
   };
   await writeFile(ledger, `${JSON.stringify(legacy)}\n`, "utf8");
 

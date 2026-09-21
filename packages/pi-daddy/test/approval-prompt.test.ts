@@ -234,10 +234,7 @@ test("two independently created gates do NOT share a queue — the provider is w
     notify: () => {},
   };
   const options = { ui, hasUI: true, mode: "tui" };
-  const both = Promise.all([
-    createApprovalGate(options).request(req()),
-    createApprovalGate(options).request(req()),
-  ]);
+  const both = Promise.all([createApprovalGate(options).request(req()), createApprovalGate(options).request(req())]);
   release("Allow once");
   await both;
   assert.equal(calls, 2, "separate gates each raise their own dialog — the stacked-dialog failure");
@@ -324,7 +321,11 @@ test("exact bound approvals never share a dialog across different tasks/workspac
     mode: "interactive",
     ui: {
       notify: () => {},
-      select: async () => { dialogs += 1; await new Promise((r) => setTimeout(r, 20)); return SCOPE_LABELS.session; },
+      select: async () => {
+        dialogs += 1;
+        await new Promise((r) => setTimeout(r, 20));
+        return SCOPE_LABELS.session;
+      },
     },
   });
   const shared = { capability: "tool:bash", subject: "<delegate>", path: "delegate" as const };
@@ -345,7 +346,10 @@ test("R-29: a refusal is shared too — one 'Deny' does not become three dialogs
     gate.request({ ...shared, task: "audit module B" }),
   ]);
 
-  assert.ok(outcomes.every((o) => o.kind === "declined"), "a human's no answers every pending caller");
+  assert.ok(
+    outcomes.every((o) => o.kind === "declined"),
+    "a human's no answers every pending caller",
+  );
   assert.equal(titles.length, 1, "re-asking after a decline is how you train someone to click yes");
 });
 
@@ -395,5 +399,8 @@ test("R-66: a `once` answer is never marked joined, because nobody may ride it",
 
   const outcomes = await Promise.all(Array.from({ length: 3 }, () => gate.request(request)));
   assert.equal(dialogs, 3, "each caller asks its own question for a `once`");
-  assert.deepEqual(outcomes.map((o) => o.joined ?? false), [false, false, false]);
+  assert.deepEqual(
+    outcomes.map((o) => o.joined ?? false),
+    [false, false, false],
+  );
 });

@@ -60,7 +60,7 @@ export async function unbankApprovals(
   if (stranded.length > 0) {
     ctx.ui.notify(
       `grants: this delegation was refused, but a stored approval for ${stranded.join(", ")} could not be ` +
-      `revoked and still stands — remove it with \`/grants revoke\` if it was not intended.`,
+        `revoked and still stands — remove it with \`/grants revoke\` if it was not intended.`,
     );
   }
 }

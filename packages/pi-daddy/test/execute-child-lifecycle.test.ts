@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { chmod, readFile, rm, writeFile } from "node:fs/promises";
 import { delimiter, join } from "node:path";
 import { after, test } from "node:test";
-import { appendAfterRuntimeRecord, executePlannedChild, isHerdrWriterCloseFailure } from "../extensions/execute-child.ts";
+import {
+  appendAfterRuntimeRecord,
+  executePlannedChild,
+  isHerdrWriterCloseFailure,
+} from "../extensions/execute-child.ts";
 import type { GrantsSession } from "../extensions/session.ts";
 import type { Delegation } from "../src/kernel/delegate.ts";
 import { runWithFinalizers } from "../src/governance/finalization.ts";
@@ -32,10 +36,16 @@ function plan(): Delegation {
 test("an attached Herdr close failure still retains the writer lease", async () => {
   let caught: unknown;
   try {
-    await runWithFinalizers(
-      async () => { throw new Error("primary executor failure"); },
-      [{ label: "finalizer failed", run: () => { throw new HerdrWriterCloseError("w1:t9"); } }],
-    );
+    await runWithFinalizers(async () => {
+      throw new Error("primary executor failure");
+    }, [
+      {
+        label: "finalizer failed",
+        run: () => {
+          throw new HerdrWriterCloseError("w1:t9");
+        },
+      },
+    ]);
   } catch (error) {
     caught = error;
   }
@@ -45,8 +55,14 @@ test("an attached Herdr close failure still retains the writer lease", async () 
 test("a terminal lifecycle append waits for the running append it follows", async () => {
   const order: string[] = [];
   let release!: () => void;
-  const running = new Promise<void>((resolve) => { release = resolve; }).then(() => { order.push("running"); });
-  const terminal = appendAfterRuntimeRecord(running, async () => { order.push("terminal"); });
+  const running = new Promise<void>((resolve) => {
+    release = resolve;
+  }).then(() => {
+    order.push("running");
+  });
+  const terminal = appendAfterRuntimeRecord(running, async () => {
+    order.push("terminal");
+  });
 
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(order, [], "terminal must not overtake a pending running append");
@@ -70,12 +86,20 @@ test("ordinary execution records one selected attempt in the declared work ledge
     const variantPlan = { ...plan(), correlation: { schema_version: "1.0" as const, context_id: "sol-low" } };
     const outcome = await executePlannedChild({
       session: { executor: { kind: "process" }, declaredWork } as GrantsSession,
-      plan: variantPlan, childId: "d0.1", executionId, parentExecutionId: null, toolCallId: "call-1", cwd: dir,
+      plan: variantPlan,
+      childId: "d0.1",
+      executionId,
+      parentExecutionId: null,
+      toolCallId: "call-1",
+      cwd: dir,
     });
     assert.equal(outcome.ok, true);
     const work = parseWorkLedgerText(await readFile(declaredWork.ledgerPath, "utf8"));
-    const occurrences = work.events.filter(event => event.event === "work_occurrence");
-    assert.deepEqual(occurrences.map(event => event.payload.state), ["starting", "completed"]);
+    const occurrences = work.events.filter((event) => event.event === "work_occurrence");
+    assert.deepEqual(
+      occurrences.map((event) => event.payload.state),
+      ["starting", "completed"],
+    );
     assert.equal(occurrences[0].payload.executionId, executionId);
     assert.equal(occurrences[0].payload.labels.taskId, plan().taskDigest);
     assert.equal(occurrences[0].payload.variantId, "sol-low");
@@ -88,25 +112,55 @@ test("ordinary execution records one selected attempt in the declared work ledge
 test("strict lifecycle refusal creates no declared attempt before execution prerequisites", async () => {
   const dir = await tempDir("execute-child-work-prerequisite-");
   const declaredWork = await declareWork({ cwd: dir, id: "not-started", outcome: "Never start" });
-  const invalidLedger = join(dir, "ledger-directory"); const { mkdir } = await import("node:fs/promises"); await mkdir(invalidLedger);
-  await assert.rejects(executePlannedChild({
-    session: { ledgerPath: invalidLedger, executor: { kind: "process" }, declaredWork } as GrantsSession,
-    plan: plan(), childId: "d0.1", executionId, parentExecutionId: null, cwd: dir,
-  }));
+  const invalidLedger = join(dir, "ledger-directory");
+  const { mkdir } = await import("node:fs/promises");
+  await mkdir(invalidLedger);
+  await assert.rejects(
+    executePlannedChild({
+      session: { ledgerPath: invalidLedger, executor: { kind: "process" }, declaredWork } as GrantsSession,
+      plan: plan(),
+      childId: "d0.1",
+      executionId,
+      parentExecutionId: null,
+      cwd: dir,
+    }),
+  );
   const events = parseWorkLedgerText(await readFile(declaredWork.ledgerPath, "utf8")).events;
-  assert.equal(events.filter(event => event.event === "work_occurrence").length, 0);
+  assert.equal(events.filter((event) => event.event === "work_occurrence").length, 0);
 });
 
 test("an executor setup throw finalizes an already-started declared attempt as failed", async () => {
   const dir = await tempDir("execute-child-work-throw-");
   const declaredWork = await declareWork({ cwd: dir, id: "executor-throw", outcome: "Record failure" });
-  const broken = { ...plan(), env: new Proxy({}, { ownKeys() { throw new Error("fixture executor setup"); } }) };
-  await assert.rejects(executePlannedChild({
-    session: { executor: { kind: "process" }, declaredWork } as GrantsSession,
-    plan: broken, childId: "d0.1", executionId, parentExecutionId: null, cwd: dir,
-  }), /fixture executor setup/);
-  const occurrences = parseWorkLedgerText(await readFile(declaredWork.ledgerPath, "utf8")).events.filter(event => event.event === "work_occurrence");
-  assert.deepEqual(occurrences.map(event => event.payload.state), ["starting", "failed"]);
+  const broken = {
+    ...plan(),
+    env: new Proxy(
+      {},
+      {
+        ownKeys() {
+          throw new Error("fixture executor setup");
+        },
+      },
+    ),
+  };
+  await assert.rejects(
+    executePlannedChild({
+      session: { executor: { kind: "process" }, declaredWork } as GrantsSession,
+      plan: broken,
+      childId: "d0.1",
+      executionId,
+      parentExecutionId: null,
+      cwd: dir,
+    }),
+    /fixture executor setup/,
+  );
+  const occurrences = parseWorkLedgerText(await readFile(declaredWork.ledgerPath, "utf8")).events.filter(
+    (event) => event.event === "work_occurrence",
+  );
+  assert.deepEqual(
+    occurrences.map((event) => event.payload.state),
+    ["starting", "failed"],
+  );
 });
 
 test("a SIGTERM-ignoring child is hard-killed by the recorded lifecycle deadline", async () => {
@@ -115,7 +169,11 @@ test("a SIGTERM-ignoring child is hard-killed by the recorded lifecycle deadline
   const { mkdir } = await import("node:fs/promises");
   await mkdir(bin);
   const shim = join(bin, "pi");
-  await writeFile(shim, "#!/usr/bin/env node\nprocess.on('SIGTERM', () => {});\nsetInterval(() => {}, 1000);\n", "utf8");
+  await writeFile(
+    shim,
+    "#!/usr/bin/env node\nprocess.on('SIGTERM', () => {});\nsetInterval(() => {}, 1000);\n",
+    "utf8",
+  );
   await chmod(shim, 0o755);
 
   const ledgerPath = join(dir, "ledger.jsonl");
@@ -127,11 +185,18 @@ test("a SIGTERM-ignoring child is hard-killed by the recorded lifecycle deadline
   try {
     const outcome = await executePlannedChild({
       session: { ledgerPath, executor: { kind: "process" } } as GrantsSession,
-      plan: plan(), childId: "d0.1", executionId, parentExecutionId: null, cwd: dir,
+      plan: plan(),
+      childId: "d0.1",
+      executionId,
+      parentExecutionId: null,
+      cwd: dir,
     });
     assert.equal(outcome.timedOut, true);
 
-    const events = (await readFile(ledgerPath, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+    const events = (await readFile(ledgerPath, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
     const starting = events.find((event) => event.state === "starting");
     const terminal = events.find((event) => event.state === "failed");
     assert.ok(starting?.deadlineAt && terminal?.ts);
@@ -153,7 +218,11 @@ test("the executor receives only the time remaining on the recorded lifecycle de
   const { mkdir } = await import("node:fs/promises");
   await mkdir(bin);
   const shim = join(bin, "pi");
-  await writeFile(shim, "#!/usr/bin/env node\nconsole.log(Date.now());\nsetTimeout(() => process.exit(0), 600);\n", "utf8");
+  await writeFile(
+    shim,
+    "#!/usr/bin/env node\nconsole.log(Date.now());\nsetTimeout(() => process.exit(0), 600);\n",
+    "utf8",
+  );
   await chmod(shim, 0o755);
 
   const ledgerPath = join(dir, "ledger.jsonl");
@@ -167,16 +236,26 @@ test("the executor receives only the time remaining on the recorded lifecycle de
   try {
     const outcome = await executePlannedChild({
       session: { ledgerPath, executor: { kind: "process" } } as GrantsSession,
-      plan: plan(), childId: "d0.1", executionId, parentExecutionId: null, cwd: dir,
+      plan: plan(),
+      childId: "d0.1",
+      executionId,
+      parentExecutionId: null,
+      cwd: dir,
     });
     assert.equal(outcome.ok, false);
     assert.equal(outcome.timedOut, true, "ledger waiting consumes the same deadline the dashboard records");
 
-    const events = (await readFile(ledgerPath, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+    const events = (await readFile(ledgerPath, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
     const starting = events.find((event) => event.state === "starting");
     const terminal = events.find((event) => event.state === "failed");
     assert.ok(starting?.deadlineAt && terminal?.ts);
-    assert.ok(Date.parse(terminal.ts) <= Date.parse(starting.deadlineAt) + 100, "termination tracks the recorded deadline");
+    assert.ok(
+      Date.parse(terminal.ts) <= Date.parse(starting.deadlineAt) + 100,
+      "termination tracks the recorded deadline",
+    );
   } finally {
     clearTimeout(release);
     if (oldPath === undefined) delete process.env.PATH;

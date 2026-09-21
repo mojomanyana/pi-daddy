@@ -14,7 +14,13 @@ import { Type } from "typebox";
 import { maySpawnDefinition } from "../src/kernel/delegate.ts";
 import { MAX_CHILDREN_PER_CALL, splitBudget } from "../src/kernel/fanout.ts";
 import {
-  PAINT_INTERVAL_MS, appendTail, emptyTail, renderProgress, replaceTail, throttle, type ChildProgress,
+  PAINT_INTERVAL_MS,
+  appendTail,
+  emptyTail,
+  renderProgress,
+  replaceTail,
+  throttle,
+  type ChildProgress,
 } from "../src/kernel/progress.ts";
 import { registerChainTool } from "./delegate-chain.ts";
 import { GovernanceRefusal, refusal } from "../src/kernel/refusals.ts";
@@ -71,30 +77,32 @@ function progressReporter(
 
   return {
     /** One sink per child index, shaped for `runOneDelegation`'s `onProgress`. */
-    sink: (index: number) => (update: {
-      chunk?: string;
-      snapshot?: string[];
-      paneId?: string;
-      agentName?: string;
-      state?: ChildProgress["state"];
-    }) => {
-      const child = children[index];
-      if (!child) return;
-      if (update.paneId) child.paneId = update.paneId;
-      // **Reported, not derived.** It used to be rebuilt here from the label and the child id, which was true
-      // until `runHerdrPane` began uniquifying the name to stop herdr's `agent_name_taken` — after which the
-      // block named an agent that did not exist, and an operator following it would find nothing. The name is
-      // known only where it is minted, so it travels from there.
-      if (update.agentName) child.agentName = update.agentName;
-      // Two shapes, deliberately distinct, because the two executors are: a subprocess APPENDS bytes, a pane
-      // reports a SNAPSHOT that replaces. Collapsing them into one "output" field is what caused the herdr
-      // path's amplification, so the difference is spelled out in the type rather than remembered.
-      if (update.chunk) child.tail = appendTail(child.tail, update.chunk);
-      if (update.snapshot) child.tail = replaceTail(update.snapshot);
-      if (update.state) child.state = update.state;
-      else if (child.state === "starting") child.state = "running";
-      paint.call();
-    },
+    sink:
+      (index: number) =>
+      (update: {
+        chunk?: string;
+        snapshot?: string[];
+        paneId?: string;
+        agentName?: string;
+        state?: ChildProgress["state"];
+      }) => {
+        const child = children[index];
+        if (!child) return;
+        if (update.paneId) child.paneId = update.paneId;
+        // **Reported, not derived.** It used to be rebuilt here from the label and the child id, which was true
+        // until `runHerdrPane` began uniquifying the name to stop herdr's `agent_name_taken` — after which the
+        // block named an agent that did not exist, and an operator following it would find nothing. The name is
+        // known only where it is minted, so it travels from there.
+        if (update.agentName) child.agentName = update.agentName;
+        // Two shapes, deliberately distinct, because the two executors are: a subprocess APPENDS bytes, a pane
+        // reports a SNAPSHOT that replaces. Collapsing them into one "output" field is what caused the herdr
+        // path's amplification, so the difference is spelled out in the type rather than remembered.
+        if (update.chunk) child.tail = appendTail(child.tail, update.chunk);
+        if (update.snapshot) child.tail = replaceTail(update.snapshot);
+        if (update.state) child.state = update.state;
+        else if (child.state === "starting") child.state = "running";
+        paint.call();
+      },
     /** Record how each child ended and leave the final frame on screen. */
     settle: (outcomes: Array<{ ok: boolean }>) => {
       const at = Date.now();
@@ -119,7 +127,6 @@ export interface DelegationRegistration {
    */
   refreshSpawnable: () => void;
 }
-
 
 /**
  * Register delegation definitions at owner-bound session_start.
@@ -171,10 +178,12 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
     access: Type.Union([Type.Literal("read"), Type.Literal("write")]),
   });
 
-  const thinkingShape = Type.Optional(Type.Union(
-    ["off", "minimal", "low", "medium", "high", "xhigh", "max"].map(level => Type.Literal(level)),
-    { description: "Requested Pi thinking level; unsupported model/level combinations fail in the child." },
-  ));
+  const thinkingShape = Type.Optional(
+    Type.Union(
+      ["off", "minimal", "low", "medium", "high", "xhigh", "max"].map((level) => Type.Literal(level)),
+      { description: "Requested Pi thinking level; unsupported model/level combinations fail in the child." },
+    ),
+  );
   const childShape = Type.Object({
     task: Type.String({ description: "The task for this sub-agent. It receives only this." }),
     agent: Type.Optional(Type.String({ description: describeAgent(spawnable()) })),
@@ -191,32 +200,42 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       maxItems: MAX_CHILDREN_PER_CALL,
       description: "The sub-agents to run concurrently. Each is independent and unaware of the others.",
     }),
-    completion: Type.Optional(Type.Literal("primary", {description:"Return when the selected primary settles; shadows continue under the original owner."})),
-    primary: Type.Optional(Type.Integer({minimum:1,maximum:MAX_CHILDREN_PER_CALL,description:"1-based primary child; required with completion=primary."})),
+    completion: Type.Optional(
+      Type.Literal("primary", {
+        description: "Return when the selected primary settles; shadows continue under the original owner.",
+      }),
+    ),
+    primary: Type.Optional(
+      Type.Integer({
+        minimum: 1,
+        maximum: MAX_CHILDREN_PER_CALL,
+        description: "1-based primary child; required with completion=primary.",
+      }),
+    ),
   });
 
   const delegateParams = Type.Object({
-      task: Type.String({ description: "The task for the sub-agent. It receives only this." }),
-      agent: Type.Optional(Type.String({ description: describeAgent(spawnable()) })),
-      tools: Type.Optional(
-        Type.Array(Type.String(), {
-          description:
-            "Capabilities to grant when no 'agent' is named, e.g. [\"read\",\"grep\"] or " +
-            "[\"tool:read\",\"ext:pkg/tool\"]. Empty means no tools. Ignored when 'agent' is given.",
-        }),
-      ),
-      model: Type.Optional(
-        Type.String({
-          // A bare id resolves across all known providers and can land on one there is no key for, so the
-          // form is named rather than implied — see the "Verified live" defect in the README.
-          description:
-            "Model for the sub-agent as provider/id, e.g. \"openai-codex/gpt-5.6-sol\". " +
-            "Defaults to this session's model, already provider-qualified.",
-        }),
-      ),
-      thinking: thinkingShape,
-      correlation: Type.Optional(correlationShape),
-      workspace: Type.Optional(workspaceShape),
+    task: Type.String({ description: "The task for the sub-agent. It receives only this." }),
+    agent: Type.Optional(Type.String({ description: describeAgent(spawnable()) })),
+    tools: Type.Optional(
+      Type.Array(Type.String(), {
+        description:
+          'Capabilities to grant when no \'agent\' is named, e.g. ["read","grep"] or ' +
+          '["tool:read","ext:pkg/tool"]. Empty means no tools. Ignored when \'agent\' is given.',
+      }),
+    ),
+    model: Type.Optional(
+      Type.String({
+        // A bare id resolves across all known providers and can land on one there is no key for, so the
+        // form is named rather than implied — see the "Verified live" defect in the README.
+        description:
+          'Model for the sub-agent as provider/id, e.g. "openai-codex/gpt-5.6-sol". ' +
+          "Defaults to this session's model, already provider-qualified.",
+      }),
+    ),
+    thinking: thinkingShape,
+    correlation: Type.Optional(correlationShape),
+    workspace: Type.Optional(workspaceShape),
   });
 
   pi.registerTool({
@@ -269,7 +288,12 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
 
       return {
         content: [{ type: "text", text: outcome.text || "(no output)" }],
-        details: { granted: outcome.granted, depth: outcome.depth, exitCode: outcome.exitCode, retention: outcome.retention },
+        details: {
+          granted: outcome.granted,
+          depth: outcome.depth,
+          exitCode: outcome.exitCode,
+          retention: outcome.retention,
+        },
       };
     },
   });
@@ -303,9 +327,17 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
     parameters: delegateAllParams,
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
       assertDelegationAuthority(session);
-      const children = params.children ?? [],primaryMode=params.completion==="primary";
-      if(primaryMode!==Number.isInteger(params.primary)||primaryMode&&(params.primary!<1||params.primary!>children.length))throw new GovernanceRefusal(refusal("FANOUT_EXCEEDED","primary fan-out requires one in-range 1-based primary"));
-      if(primaryMode&&session.variantRuns.size>=128)throw new GovernanceRefusal(refusal("FANOUT_EXCEEDED","primary/shadow accounting capacity exhausted"));
+      const children = params.children ?? [],
+        primaryMode = params.completion === "primary";
+      if (
+        primaryMode !== Number.isInteger(params.primary) ||
+        (primaryMode && (params.primary! < 1 || params.primary! > children.length))
+      )
+        throw new GovernanceRefusal(
+          refusal("FANOUT_EXCEEDED", "primary fan-out requires one in-range 1-based primary"),
+        );
+      if (primaryMode && session.variantRuns.size >= 128)
+        throw new GovernanceRefusal(refusal("FANOUT_EXCEEDED", "primary/shadow accounting capacity exhausted"));
       const split = splitBudget(session.fanoutBudget, children.length);
       if (!split.ok) {
         // Thrown, not returned: a returned `isError` is discarded by pi, so a refusal that came back as a
@@ -315,7 +347,11 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
 
       // ADR-0032: ONE status block covering every child. `onUpdate` replaces the tool's rendered result, so a
       // painter per child would have each overwriting the others.
-      const progress = progressReporter(session, children.map((c) => c.agent ?? "delegate"), onUpdate as never);
+      const progress = progressReporter(
+        session,
+        children.map((c) => c.agent ?? "delegate"),
+        onUpdate as never,
+      );
 
       // Concurrent by construction. Each child gets its own budget share and its own ledger id, so the
       // records form a tree and two siblings can never be confused for one another.
@@ -324,21 +360,45 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       // live and its writer lease is deliberately retained" — a resource-retention notice, not a per-child
       // failure. Losing it meant nobody was told a lease is held with no owner until the process exits
       // (R-116).
-      const infrastructureErrors: unknown[] = [],occurrences=children.map((_,index)=>newDelegationOccurrence(session,index));
+      const infrastructureErrors: unknown[] = [],
+        occurrences = children.map((_, index) => newDelegationOccurrence(session, index));
       const pending = children.map(async (child, index): Promise<DelegationOutcome> => {
-          try {
-            return await runOneDelegation(
-              session, child,
-              occurrences[index],
-              split.perChild, ctx, signal, { onProgress: progress.sink(index), toolCallId: _toolCallId },
-            );
-          } catch (error) {
-            infrastructureErrors.push(error);
-            return childFailureOutcome(error, session.depth + 1);
-          }
-        });
-      if(primaryMode){const completed=await completePrimary({session,primaryIndex:params.primary!-1,occurrences,pending,settle:progress.settle}),primary=completed.primary;if(!primary.ok){if(isCriticalAssuranceBlock(primary))throw new Error(primary.text);throw totalFanoutFailure([primary],`primary child failed: ${primary.reason}`);}return {content:[{type:"text",text:primary.text||"(no output)"}],details:{primary:params.primary,shadows:children.length-1,primaryExecutionId:completed.runId,shadowSettlement:"retained-by-original-owner",granted:primary.granted,retention:primary.retention}};}
-      const outcomes=await Promise.all(pending);
+        try {
+          return await runOneDelegation(session, child, occurrences[index], split.perChild, ctx, signal, {
+            onProgress: progress.sink(index),
+            toolCallId: _toolCallId,
+          });
+        } catch (error) {
+          infrastructureErrors.push(error);
+          return childFailureOutcome(error, session.depth + 1);
+        }
+      });
+      if (primaryMode) {
+        const completed = await completePrimary({
+            session,
+            primaryIndex: params.primary! - 1,
+            occurrences,
+            pending,
+            settle: progress.settle,
+          }),
+          primary = completed.primary;
+        if (!primary.ok) {
+          if (isCriticalAssuranceBlock(primary)) throw new Error(primary.text);
+          throw totalFanoutFailure([primary], `primary child failed: ${primary.reason}`);
+        }
+        return {
+          content: [{ type: "text", text: primary.text || "(no output)" }],
+          details: {
+            primary: params.primary,
+            shadows: children.length - 1,
+            primaryExecutionId: completed.runId,
+            shadowSettlement: "retained-by-original-owner",
+            granted: primary.granted,
+            retention: primary.retention,
+          },
+        };
+      }
+      const outcomes = await Promise.all(pending);
       progress.settle(outcomes);
       // The upstream controller's verdict outranks our own infrastructure noise — it is the answer the
       // caller is waiting for, and ADR-0034 requires it to pass through unchanged. But an infrastructure

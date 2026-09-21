@@ -52,10 +52,9 @@ test("observing an empty tool set yields an empty grant, not the inherited one",
 });
 
 test("ext: capabilities match on their bare tool name", () => {
-  assert.deepEqual(
-    deriveOwnGrant(["ext:pi-web-access/web_search", "tool:read"], ["web_search"]),
-    ["ext:pi-web-access/web_search"],
-  );
+  assert.deepEqual(deriveOwnGrant(["ext:pi-web-access/web_search", "tool:read"], ["web_search"]), [
+    "ext:pi-web-access/web_search",
+  ]);
 });
 
 test("R-36: observation does not drop capabilities it cannot speak about", () => {
@@ -63,10 +62,11 @@ test("R-36: observation does not drop capabilities it cannot speak about", () =>
   // definition — neither is ever a tool, so their absence from the array is not evidence of anything.
   // Before ADR-0017 step 1 this returned ["tool:read"], so a child could not re-grant a skill it held and
   // `/grants` stopped listing it — silently, and in the narrowing direction, which is why it survived.
-  assert.deepEqual(
-    deriveOwnGrant(["tool:read", "tool:bash", "skill:review", "agent:reviewer"], ["read"]),
-    ["agent:reviewer", "skill:review", "tool:read"],
-  );
+  assert.deepEqual(deriveOwnGrant(["tool:read", "tool:bash", "skill:review", "agent:reviewer"], ["read"]), [
+    "agent:reviewer",
+    "skill:review",
+    "tool:read",
+  ]);
 });
 
 test("R-36: a wildcard holder keeps its non-tool capabilities too", () => {
@@ -83,10 +83,9 @@ test("R-36: an empty tool observation still drops every tool, and only tools", (
 
 test("R-36: a skill survives three levels, which is the property that was broken", () => {
   const root = deriveOwnGrant(["tool:read", "skill:review", "agent:reviewer"], ["read"]);
-  const child = deriveOwnGrant(
-    parseList(childEnv({ ownGrant: root, depth: 0, maxDepth: 3, gated: [] })[ENV_GRANT]),
-    ["read"],
-  );
+  const child = deriveOwnGrant(parseList(childEnv({ ownGrant: root, depth: 0, maxDepth: 3, gated: [] })[ENV_GRANT]), [
+    "read",
+  ]);
   const grandchild = deriveOwnGrant(
     parseList(childEnv({ ownGrant: child, depth: 1, maxDepth: 3, gated: [] })[ENV_GRANT]),
     ["read"],
@@ -115,8 +114,14 @@ test("a wildcard root that never observed its tools hands down nothing (fails cl
 
 test("transitivity across three levels holds with derivation", () => {
   const root = deriveOwnGrant([WILDCARD], ["read", "bash", "write"]);
-  const child = deriveOwnGrant(parseList(childEnv({ ownGrant: root, depth: 0, maxDepth: 3, gated: [] })[ENV_GRANT]), ["read", "bash"]);
-  const grandchild = deriveOwnGrant(parseList(childEnv({ ownGrant: child, depth: 1, maxDepth: 3, gated: [] })[ENV_GRANT]), ["read", "bash", "write"]);
+  const child = deriveOwnGrant(parseList(childEnv({ ownGrant: root, depth: 0, maxDepth: 3, gated: [] })[ENV_GRANT]), [
+    "read",
+    "bash",
+  ]);
+  const grandchild = deriveOwnGrant(
+    parseList(childEnv({ ownGrant: child, depth: 1, maxDepth: 3, gated: [] })[ENV_GRANT]),
+    ["read", "bash", "write"],
+  );
   assert.ok(!grandchild.includes("tool:write"), "write was dropped at level 1 and cannot be reacquired at level 2");
   assert.deepEqual(grandchild.sort(), ["tool:bash", "tool:read"]);
 });
@@ -140,11 +145,18 @@ test("an inherited approval is intersected with what the child actually gets", (
     depth: 0,
     maxDepth: 2,
     gated: ["tool:write"],
-    approved: [{ capability: "tool:write", subject: "docs-writer", scope: "session", bodySha256: "body-digest" }, { capability: "tool:bash", subject: "docs-writer", scope: "session", bodySha256: "body-digest" }],
+    approved: [
+      { capability: "tool:write", subject: "docs-writer", scope: "session", bodySha256: "body-digest" },
+      { capability: "tool:bash", subject: "docs-writer", scope: "session", bodySha256: "body-digest" },
+    ],
   });
   // ADR-0014: the published value is `capability@subject`, so an approval cannot satisfy a subject
   // it was never given for.
-  assert.equal(env[ENV_APPROVED], "tool:write@docs-writer#body-digest", "bash was approved upstream but is not held here");
+  assert.equal(
+    env[ENV_APPROVED],
+    "tool:write@docs-writer#body-digest",
+    "bash was approved upstream but is not held here",
+  );
 });
 
 test("no approvals means the variable is EMPTY, not absent — an absent key would not overwrite", () => {
@@ -159,7 +171,10 @@ test("no approvals means the variable is EMPTY, not absent — an absent key wou
 test("an empty approvals value reads back as no approvals", () => {
   // The whole always-write scheme rests on this: "" must not parse as a one-element list.
   assert.deepEqual(parseList(""), []);
-  assert.deepEqual(parseList(childEnv({ ownGrant: ["tool:read"], depth: 0, maxDepth: 2, gated: [] })[ENV_APPROVED]), []);
+  assert.deepEqual(
+    parseList(childEnv({ ownGrant: ["tool:read"], depth: 0, maxDepth: 2, gated: [] })[ENV_APPROVED]),
+    [],
+  );
 });
 
 test("publishing a narrowed grant CLEARS a previously published approval", () => {
@@ -170,11 +185,27 @@ test("publishing a narrowed grant CLEARS a previously published approval", () =>
     for (const [k, v] of Object.entries(env)) target[k] = v;
   };
 
-  publish(childEnv({ ownGrant: ["tool:read", "tool:write"], depth: 0, maxDepth: 2, gated: ["tool:write"], approved: [{ capability: "tool:write", subject: "docs-writer", scope: "session", bodySha256: "body-digest" }] }));
+  publish(
+    childEnv({
+      ownGrant: ["tool:read", "tool:write"],
+      depth: 0,
+      maxDepth: 2,
+      gated: ["tool:write"],
+      approved: [{ capability: "tool:write", subject: "docs-writer", scope: "session", bodySha256: "body-digest" }],
+    }),
+  );
   assert.equal(target[ENV_APPROVED], "tool:write@docs-writer#body-digest");
 
   // The session observes its real tool surface and loses `write`; the approval no longer applies.
-  publish(childEnv({ ownGrant: ["tool:read"], depth: 0, maxDepth: 2, gated: ["tool:write"], approved: [{ capability: "tool:write", subject: "docs-writer", scope: "session", bodySha256: "body-digest" }] }));
+  publish(
+    childEnv({
+      ownGrant: ["tool:read"],
+      depth: 0,
+      maxDepth: 2,
+      gated: ["tool:write"],
+      approved: [{ capability: "tool:write", subject: "docs-writer", scope: "session", bodySha256: "body-digest" }],
+    }),
+  );
   assert.equal(target[ENV_APPROVED], "", "the stale approval is cleared, not left behind");
 });
 
@@ -184,7 +215,10 @@ test("the wildcard is never inherited as an approval", () => {
     depth: 0,
     maxDepth: 2,
     gated: [],
-    approved: [{ capability: "tool:*", subject: "docs-writer", scope: "session", bodySha256: "body-digest" }, { capability: "tool:read", subject: "docs-writer", scope: "session", bodySha256: "body-digest" }],
+    approved: [
+      { capability: "tool:*", subject: "docs-writer", scope: "session", bodySha256: "body-digest" },
+      { capability: "tool:read", subject: "docs-writer", scope: "session", bodySha256: "body-digest" },
+    ],
   });
   assert.equal(env[ENV_APPROVED], "tool:read@docs-writer#body-digest");
 });
@@ -207,13 +241,28 @@ test("delegate hands the child only approvals for capabilities it was actually g
       maxDepth: 2,
       gated: ["tool:write", "tool:bash"],
       definitions: new Map([
-        ["docs-writer", { name: "docs-writer", allowedTools: "Read Write", body: "Write docs.", source: "/x/docs-writer/SKILL.md" } as never],
+        [
+          "docs-writer",
+          {
+            name: "docs-writer",
+            allowedTools: "Read Write",
+            body: "Write docs.",
+            source: "/x/docs-writer/SKILL.md",
+          } as never,
+        ],
       ]),
-      approved: [{ capability: "tool:write", subject: "docs-writer", scope: "session", bodySha256: "body-digest" }, { capability: "tool:bash", subject: "docs-writer", scope: "session", bodySha256: "body-digest" }],
+      approved: [
+        { capability: "tool:write", subject: "docs-writer", scope: "session", bodySha256: "body-digest" },
+        { capability: "tool:bash", subject: "docs-writer", scope: "session", bodySha256: "body-digest" },
+      ],
     },
   );
   assert.equal(plan.ok, true, plan.reason ?? "expected ok");
-  assert.equal(plan.env[ENV_APPROVED], "tool:write@docs-writer#body-digest", "bash was approved but not granted to this child");
+  assert.equal(
+    plan.env[ENV_APPROVED],
+    "tool:write@docs-writer#body-digest",
+    "bash was approved but not granted to this child",
+  );
 });
 
 test("an approval for one definition does NOT satisfy another — ADR-0014's A-S6, enforced in the planner", () => {
@@ -330,7 +379,14 @@ test("a comma in a capability id is refused, not split into extra capabilities",
 test("a legitimate grant is unaffected, including the exotic id forms", () => {
   // The fix must not narrow what an operator can already express. `ext:` ids carry `/` and may be
   // npm-scoped; `skill:`/`agent:` names carry `-` and `_`.
-  for (const id of ["tool:read", "ext:@scope/pkg/web_search", "skill:my-skill", "agent:my_agent", "tool:*", "agent:*"]) {
+  for (const id of [
+    "tool:read",
+    "ext:@scope/pkg/web_search",
+    "skill:my-skill",
+    "agent:my_agent",
+    "tool:*",
+    "agent:*",
+  ]) {
     assert.equal(isWellFormedCapability(id), true, id);
   }
   for (const id of ["agent:x,tool:bash", "tool:a\nb", "tool:a\rb", " tool:read", "tool:read ", ""]) {

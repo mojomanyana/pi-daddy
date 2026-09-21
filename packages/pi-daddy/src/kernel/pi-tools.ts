@@ -18,8 +18,15 @@ import type { Capability } from "./resolve.ts";
 /** Capability held only by a delegator authorised to hand out everything. */
 export const WILDCARD: Capability = "tool:*";
 
-
 /** pi's built-in tools, observed against 0.84.1. `parallel` was added since 0.83.0 — see R-31. */
 export const PI_BUILTIN_TOOLS = [
-  "bash", "edit", "edit-diff", "find", "grep", "ls", "parallel", "read", "write",
+  "bash",
+  "edit",
+  "edit-diff",
+  "find",
+  "grep",
+  "ls",
+  "parallel",
+  "read",
+  "write",
 ] as const;

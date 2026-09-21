@@ -20,15 +20,36 @@ import { join } from "node:path";
 import { after, afterEach, test } from "node:test";
 import grantsExtension from "../extensions/grants.ts";
 import { ENV_HERDR } from "../src/executors/executor.ts";
-import { ENV_APPROVED, ENV_DEPTH, ENV_FANOUT, ENV_GATED, ENV_GRANT, ENV_LEDGER, ENV_MAX_DEPTH, ENV_PARENT_ID } from "../src/kernel/propagation.ts";
+import {
+  ENV_APPROVED,
+  ENV_DEPTH,
+  ENV_FANOUT,
+  ENV_GATED,
+  ENV_GRANT,
+  ENV_LEDGER,
+  ENV_MAX_DEPTH,
+  ENV_PARENT_ID,
+} from "../src/kernel/propagation.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 import { ENV_GOVERNANCE } from "../extensions/session.ts";
 
 after(cleanupTempDirs);
 
 const KEYS = [
-  ENV_GRANT, ENV_DEPTH, ENV_MAX_DEPTH, ENV_GATED, ENV_APPROVED, ENV_LEDGER, ENV_FANOUT, ENV_PARENT_ID, ENV_HERDR,
-  ENV_GOVERNANCE, "HERDR_ENV", "HERDR_PANE_ID", "HERDR_TAB_ID", "HERDR_WORKSPACE_ID",
+  ENV_GRANT,
+  ENV_DEPTH,
+  ENV_MAX_DEPTH,
+  ENV_GATED,
+  ENV_APPROVED,
+  ENV_LEDGER,
+  ENV_FANOUT,
+  ENV_PARENT_ID,
+  ENV_HERDR,
+  ENV_GOVERNANCE,
+  "HERDR_ENV",
+  "HERDR_PANE_ID",
+  "HERDR_TAB_ID",
+  "HERDR_WORKSPACE_ID",
 ];
 const saved = new Map<string, string | undefined>();
 
@@ -79,9 +100,7 @@ async function harness(env: Record<string, string>, existingDir?: string) {
  * one joined message; a helper that searched whole notices would have missed that entirely.
  */
 const executorLine = (notices: string[]) =>
-  notices
-    .flatMap((n) => n.split("\n"))
-    .find((line) => line.startsWith("grants: executor — ")) ?? "";
+  notices.flatMap((n) => n.split("\n")).find((line) => line.startsWith("grants: executor — ")) ?? "";
 
 test("a governed session that can delegate names its executor at session start", async () => {
   const { notices } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate", [ENV_HERDR]: "0" });
@@ -154,7 +173,11 @@ test("/grants and the session banner never disagree about the executor", async (
   notices.length = 0;
 
   await commands.get("grants")!.handler("", ctx);
-  const row = notices.join("\n").split("\n").find((l) => l.includes("executor")) ?? "";
+  const row =
+    notices
+      .join("\n")
+      .split("\n")
+      .find((l) => l.includes("executor")) ?? "";
 
   const shared = banner.replace(/^grants: executor — /, "").trim();
   assert.ok(shared.length > 0);
@@ -177,12 +200,11 @@ test("every info line arrives in ONE notify, because pi overwrites consecutive o
     "utf8",
   );
 
-  const { notices } = await harness(
-    { [ENV_GRANT]: "agent:reviewer,tool:read,tool:delegate", [ENV_HERDR]: "0" },
-    dir,
-  );
+  const { notices } = await harness({ [ENV_GRANT]: "agent:reviewer,tool:read,tool:delegate", [ENV_HERDR]: "0" }, dir);
 
-  const info = notices.filter((n) => n.startsWith("grants: executor") || n.includes("holding [") || n.includes("spawnable"));
+  const info = notices.filter(
+    (n) => n.startsWith("grants: executor") || n.includes("holding [") || n.includes("spawnable"),
+  );
   assert.equal(info.length, 1, `expected one joined info notify, got ${info.length}: ${JSON.stringify(info)}`);
   // And all three facts must be inside it — a single notify that dropped one would be the same defect.
   assert.match(info[0], /grants: executor — /);

@@ -7,7 +7,11 @@ import { existsSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { after, test } from "node:test";
 import { loadWorkspaceRegistry, resolveWorkspace, validateRegisteredWorkspace } from "../src/kernel/workspace.ts";
-import { acquireWorkspaceLease, leaseAcquisitionOutcome, leaseReleaseLedgerOutcome } from "../src/governance/workspace-lease.ts";
+import {
+  acquireWorkspaceLease,
+  leaseAcquisitionOutcome,
+  leaseReleaseLedgerOutcome,
+} from "../src/governance/workspace-lease.ts";
 import { GovernanceRefusal } from "../src/kernel/refusals.ts";
 import { leasePaths } from "../src/governance/lease-record.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
@@ -69,14 +73,20 @@ test("workspace registry resolves IDs to validated Git worktrees and rejects mis
   const registry = await loadWorkspaceRegistry(registryPath);
   const resolved = await resolveWorkspace(registry, "w1");
   assert.equal(resolved.root, root);
-  await assert.rejects(() => validateRegisteredWorkspace({ workspaceId: "w1", registeredRoot: root, suppliedRoot: other }), (error: unknown) => {
-    assert.equal((error as GovernanceRefusal).code, "WORKSPACE_NOT_REGISTERED");
-    return true;
-  });
-  await assert.rejects(() => resolveWorkspace(registry, "missing"), (error: unknown) => {
-    assert.equal((error as GovernanceRefusal).code, "WORKSPACE_NOT_REGISTERED");
-    return true;
-  });
+  await assert.rejects(
+    () => validateRegisteredWorkspace({ workspaceId: "w1", registeredRoot: root, suppliedRoot: other }),
+    (error: unknown) => {
+      assert.equal((error as GovernanceRefusal).code, "WORKSPACE_NOT_REGISTERED");
+      return true;
+    },
+  );
+  await assert.rejects(
+    () => resolveWorkspace(registry, "missing"),
+    (error: unknown) => {
+      assert.equal((error as GovernanceRefusal).code, "WORKSPACE_NOT_REGISTERED");
+      return true;
+    },
+  );
 });
 
 test("read/read and read/write may share a workspace", async () => {
@@ -115,7 +125,8 @@ test("an already-cancelled lease request starts no holder", async () => {
   const leaseDir = await tempDir("workspace-leases-");
   controller.abort();
   await assert.rejects(
-    () => acquireWorkspaceLease({ workspace, access: "write", leaseDir, ownerId: "cancelled", signal: controller.signal }),
+    () =>
+      acquireWorkspaceLease({ workspace, access: "write", leaseDir, ownerId: "cancelled", signal: controller.signal }),
     (error: unknown) => {
       assert.equal((error as GovernanceRefusal).code, "WORKSPACE_WRITE_CONFLICT");
       return true;
@@ -142,7 +153,9 @@ test("parent SIGKILL stops the attached writer before releasing the lease", asyn
   `;
   const parent = spawn(process.execPath, ["--input-type=module", "-e", code], { stdio: ["ignore", "pipe", "pipe"] });
   let output = "";
-  parent.stdout.on("data", (chunk) => { output += String(chunk); });
+  parent.stdout.on("data", (chunk) => {
+    output += String(chunk);
+  });
   for (let i = 0; i < 100 && !output.includes("READY"); i += 1) await new Promise((r) => setTimeout(r, 25));
   assert.match(output, /READY/);
   parent.kill("SIGKILL");
@@ -150,8 +163,10 @@ test("parent SIGKILL stops the attached writer before releasing the lease", asyn
   const workspace = await validateRegisteredWorkspace({ workspaceId: "w1", registeredRoot: root });
   let recovered;
   for (let i = 0; i < 100; i += 1) {
-    try { recovered = await trackedLease({ workspace, access: "write", leaseDir, ownerId: "next" }); break; }
-    catch (error) {
+    try {
+      recovered = await trackedLease({ workspace, access: "write", leaseDir, ownerId: "next" });
+      break;
+    } catch (error) {
       if ((error as GovernanceRefusal).code !== "WORKSPACE_WRITE_CONFLICT") throw error;
       await new Promise((r) => setTimeout(r, 25));
     }
@@ -173,11 +188,20 @@ test("a stale lease object cannot overwrite a successor's active metadata", asyn
   const leaseDir = await tempDir("workspace-leases-");
   const workspace = await validateRegisteredWorkspace({ workspaceId: "w1", registeredRoot: root });
   const stale = await trackedLease({ workspace, access: "write", leaseDir, ownerId: "stale" });
-  const metadataPath = join(leaseDir, (await readdir(leaseDir)).find((name) => name.endsWith(".json"))!);
+  const metadataPath = join(
+    leaseDir,
+    (await readdir(leaseDir)).find((name) => name.endsWith(".json"))!,
+  );
 
   const successor = {
-    version: 1, state: "active", token: "successor-token", owner_id: "second",
-    workspace_id: "w1", root, pid: process.pid, acquired_at: new Date().toISOString(),
+    version: 1,
+    state: "active",
+    token: "successor-token",
+    owner_id: "second",
+    workspace_id: "w1",
+    root,
+    pid: process.pid,
+    acquired_at: new Date().toISOString(),
   };
   await writeFile(metadataPath, `${JSON.stringify(successor)}\n`);
 
@@ -197,7 +221,10 @@ test("release reports `lost` instead of throwing when the helper is already gone
   const leaseDir = await tempDir("workspace-leases-");
   const workspace = await validateRegisteredWorkspace({ workspaceId: "w1", registeredRoot: root });
   const lease = await trackedLease({ workspace, access: "write", leaseDir, ownerId: "doomed" });
-  const metadataPath = join(leaseDir, (await readdir(leaseDir)).find((name) => name.endsWith(".json"))!);
+  const metadataPath = join(
+    leaseDir,
+    (await readdir(leaseDir)).find((name) => name.endsWith(".json"))!,
+  );
   process.kill(JSON.parse(await readFile(metadataPath, "utf8")).pid, "SIGKILL");
   await lease.lost;
   // Throwing here discarded a COMPLETED child's entire output and masked whatever error was already in
@@ -210,7 +237,10 @@ test("killing the recorded helper pid really does free the kernel lock", async (
   const leaseDir = await tempDir("workspace-leases-");
   const workspace = await validateRegisteredWorkspace({ workspaceId: "w1", registeredRoot: root });
   const first = await trackedLease({ workspace, access: "write", leaseDir, ownerId: "first" });
-  const metadataPath = join(leaseDir, (await readdir(leaseDir)).find((name) => name.endsWith(".json"))!);
+  const metadataPath = join(
+    leaseDir,
+    (await readdir(leaseDir)).find((name) => name.endsWith(".json"))!,
+  );
   // The recorded pid must be the HELPER, which is what actually holds the lock file descriptor: `flock`
   // is not passed `--close`, so killing only the wrapper leaves the lock held by an orphan and every
   // later acquisition reports a conflict that no live writer explains (R-99, probe g35).
@@ -218,8 +248,9 @@ test("killing the recorded helper pid really does free the kernel lock", async (
   await first.lost;
   let second;
   for (let i = 0; i < 60 && !second; i += 1) {
-    try { second = await trackedLease({ workspace, access: "write", leaseDir, ownerId: "second" }); }
-    catch (error) {
+    try {
+      second = await trackedLease({ workspace, access: "write", leaseDir, ownerId: "second" });
+    } catch (error) {
       assert.equal((error as GovernanceRefusal).code, "WORKSPACE_WRITE_CONFLICT");
       await new Promise((r) => setTimeout(r, 20));
     }
@@ -233,11 +264,14 @@ test("an unreadable predecessor record yields `unknown` recovery, never a clean 
   const leaseDir = await tempDir("workspace-leases-");
   const workspace = await validateRegisteredWorkspace({ workspaceId: "w1", registeredRoot: root });
   const first = await trackedLease({ workspace, access: "write", leaseDir, ownerId: "first" });
-  const metadataPath = join(leaseDir, (await readdir(leaseDir)).find((name) => name.endsWith(".json"))!);
+  const metadataPath = join(
+    leaseDir,
+    (await readdir(leaseDir)).find((name) => name.endsWith(".json"))!,
+  );
   assert.equal(await first.release("done"), "released");
   // Truncated, hand-edited, or written by a future version. Reading this as `recovered: false` silently
   // downgrades "the previous writer may have died mid-write" to the reassuring answer (R-100).
-  await writeFile(metadataPath, "{\"version\":1,\"state\":");
+  await writeFile(metadataPath, '{"version":1,"state":');
   const next = await trackedLease({ workspace, access: "write", leaseDir, ownerId: "next" });
   assert.equal(next.recovered, "unknown");
   await next.release("test-complete");
@@ -267,33 +301,49 @@ test("teardown kills the whole holder group, not just the wrapper", async () => 
   const scriptDir = await tempDir("workspace-stub-flock-");
   const pidFile = join(scriptDir, "lingering.pid");
   const stub = join(scriptDir, "stub-flock.sh");
-  const wrapper=join(scriptDir,"wrapper.cjs"),stderrPath=join(scriptDir,"stderr.txt");
-  const sleeper='setTimeout(()=>process.exit(0),10000);process.send({ready:true,pid:process.pid});';
-  await writeFile(wrapper,`const {spawn}=require('node:child_process');const child=spawn(${JSON.stringify(process.execPath)},['-e',${JSON.stringify(sleeper)}],{stdio:['ignore','ignore','inherit','ipc']});child.on('error',e=>{console.error(e);process.exit(91)});child.on('message',m=>{if(m.ready&&m.pid===child.pid)require('node:fs').writeFileSync(${JSON.stringify(pidFile)},JSON.stringify({ready:true,pid:child.pid}),{flag:'wx'});});child.on('close',()=>process.exit(92));`);
-  await writeFile(stub, `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(wrapper)} 2>>${JSON.stringify(stderrPath)}\n`, {mode:0o755});
+  const wrapper = join(scriptDir, "wrapper.cjs"),
+    stderrPath = join(scriptDir, "stderr.txt");
+  const sleeper = "setTimeout(()=>process.exit(0),10000);process.send({ready:true,pid:process.pid});";
+  await writeFile(
+    wrapper,
+    `const {spawn}=require('node:child_process');const child=spawn(${JSON.stringify(process.execPath)},['-e',${JSON.stringify(sleeper)}],{stdio:['ignore','ignore','inherit','ipc']});child.on('error',e=>{console.error(e);process.exit(91)});child.on('message',m=>{if(m.ready&&m.pid===child.pid)require('node:fs').writeFileSync(${JSON.stringify(pidFile)},JSON.stringify({ready:true,pid:child.pid}),{flag:'wx'});});child.on('close',()=>process.exit(92));`,
+  );
+  await writeFile(
+    stub,
+    `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(wrapper)} 2>>${JSON.stringify(stderrPath)}\n`,
+    { mode: 0o755 },
+  );
 
   const workspace = await validateRegisteredWorkspace({ workspaceId: "w1", registeredRoot: root });
-  const acquisition = acquireWorkspaceLease({workspace, access:"write", leaseDir, ownerId:"never-ready", flockCommand:stub, acquisitionTimeoutMs:2000});
-  void acquisition.catch(()=>{});
+  const acquisition = acquireWorkspaceLease({
+    workspace,
+    access: "write",
+    leaseDir,
+    ownerId: "never-ready",
+    flockCommand: stub,
+    acquisitionTimeoutMs: 2000,
+  });
+  void acquisition.catch(() => {});
   try {
-    await liveFixtureReady(pidFile,()=>readFile(stderrPath,"utf8").catch(()=>"no stderr file"));
-    await assert.rejects(
-      acquisition,
-      (error: unknown) => {
-        assert.equal((error as GovernanceRefusal).code, "WORKSPACE_LEASE_STALE");
-        return true;
-      },
-    );
+    await liveFixtureReady(pidFile, () => readFile(stderrPath, "utf8").catch(() => "no stderr file"));
+    await assert.rejects(acquisition, (error: unknown) => {
+      assert.equal((error as GovernanceRefusal).code, "WORKSPACE_LEASE_STALE");
+      return true;
+    });
     const lingering = JSON.parse(await readFile(pidFile, "utf8")).pid;
     assert.ok(Number.isInteger(lingering) && lingering > 0, "the stand-in must have recorded its child");
     let alive = true;
     for (let i = 0; i < 40 && alive; i += 1) {
-      try { process.kill(lingering, 0); await new Promise((r) => setTimeout(r, 25)); }
-      catch { alive = false; }
+      try {
+        process.kill(lingering, 0);
+        await new Promise((r) => setTimeout(r, 25));
+      } catch {
+        alive = false;
+      }
     }
     assert.equal(alive, false, "a timed-out acquisition must not leave a descendant holding the lock");
   } finally {
-    await acquisition.catch(()=>{});
+    await acquisition.catch(() => {});
   }
 });
 
@@ -312,7 +362,9 @@ test("SIGKILL releases the kernel lease and the next owner records recovery", as
   `;
   const holder = spawn(process.execPath, ["--input-type=module", "-e", code], { stdio: ["ignore", "pipe", "pipe"] });
   let output = "";
-  holder.stdout.on("data", (chunk) => { output += String(chunk); });
+  holder.stdout.on("data", (chunk) => {
+    output += String(chunk);
+  });
   for (let i = 0; i < 100 && !output.includes("READY"); i += 1) await new Promise((r) => setTimeout(r, 25));
   assert.match(output, /READY/);
   holder.kill("SIGKILL");
@@ -345,10 +397,14 @@ test("no working flock means no lease, never an unlocked one", async () => {
   const leaseDir = await tempDir("workspace-leases-");
   const workspace = await validateRegisteredWorkspace({ workspaceId: "w1", registeredRoot: root });
   await assert.rejects(
-    () => acquireWorkspaceLease({
-      workspace, access: "write", leaseDir, ownerId: "no-flock",
-      flockCommand: join(root, "definitely-not-a-real-flock"),
-    }),
+    () =>
+      acquireWorkspaceLease({
+        workspace,
+        access: "write",
+        leaseDir,
+        ownerId: "no-flock",
+        flockCommand: join(root, "definitely-not-a-real-flock"),
+      }),
     (error: unknown) => {
       assert.equal((error as GovernanceRefusal).code, "WORKSPACE_LEASE_STALE");
       return true;
@@ -397,15 +453,23 @@ test("a registered root that is not a Git worktree is refused", async () => {
  */
 test("a registry that is not valid JSON is refused as a governance refusal, not a SyntaxError", async () => {
   const dir = await tempDir("workspace-badjson-");
-  for (const [name, body] of [["truncated", "{"], ["empty", ""], ["garbage", "not json at all"]] as const) {
+  for (const [name, body] of [
+    ["truncated", "{"],
+    ["empty", ""],
+    ["garbage", "not json at all"],
+  ] as const) {
     const path = join(dir, `${name}.json`);
     await writeFile(path, body, "utf8");
-    await assert.rejects(loadWorkspaceRegistry(path), (e: Error & { code?: string; details?: Record<string, string> }) => {
-      assert.equal(e.code, "WORKSPACE_NOT_REGISTERED", name);
-      assert.match(e.message, /not valid JSON/, name);
-      assert.equal(e.details?.registry_path, path, "an external controller needs the path in the details");
-      return true;
-    }, `${name} must be a structured refusal`);
+    await assert.rejects(
+      loadWorkspaceRegistry(path),
+      (e: Error & { code?: string; details?: Record<string, string> }) => {
+        assert.equal(e.code, "WORKSPACE_NOT_REGISTERED", name);
+        assert.match(e.message, /not valid JSON/, name);
+        assert.equal(e.details?.registry_path, path, "an external controller needs the path in the details");
+        return true;
+      },
+      `${name} must be a structured refusal`,
+    );
   }
 });
 
@@ -490,7 +554,10 @@ test("attaching a child to a dead lease is refused, not ignored", () => {
     const leaseDir = await tempDir("workspace-leases-");
     const workspace = await validateRegisteredWorkspace({ workspaceId: "w1", registeredRoot: root });
     const lease = await trackedLease({ workspace, access: "write", leaseDir, ownerId: "doomed" });
-    const metadataPath = join(leaseDir, (await readdir(leaseDir)).find((name) => name.endsWith(".json"))!);
+    const metadataPath = join(
+      leaseDir,
+      (await readdir(leaseDir)).find((name) => name.endsWith(".json"))!,
+    );
     process.kill(JSON.parse(await readFile(metadataPath, "utf8")).pid, "SIGKILL");
     await lease.lost;
     assert.throws(
@@ -592,13 +659,17 @@ test("a retained lease releases its process, and the lock is recoverable afterwa
   });
   try {
     let output = "";
-    holder.stdout.on("data", (chunk) => { output += String(chunk); });
+    holder.stdout.on("data", (chunk) => {
+      output += String(chunk);
+    });
     // The timer is CLEARED. Left dangling it kept the file alive for the whole deadline on every green run
     // — +10s on a suite advertised as fast — which is the same "a bound is not free" lesson as R-146 itself.
     let deadline: NodeJS.Timeout | undefined;
     const exited = await Promise.race([
       once(holder, "close").then(() => "exited" as const),
-      new Promise<"hung">((resolve) => { deadline = setTimeout(() => resolve("hung"), 10_000); }),
+      new Promise<"hung">((resolve) => {
+        deadline = setTimeout(() => resolve("hung"), 10_000);
+      }),
     ]).finally(() => clearTimeout(deadline));
     assert.match(output, /RETAINED/, "the child never reached markRetained");
     assert.equal(
@@ -621,8 +692,9 @@ test("a retained lease releases its process, and the lock is recoverable afterwa
   const workspace = await validateRegisteredWorkspace({ workspaceId: "w1", registeredRoot: root });
   let successor;
   for (let i = 0; i < 200 && !successor; i += 1) {
-    try { successor = await trackedLease({ workspace, access: "write", leaseDir, ownerId: "successor" }); }
-    catch (error) {
+    try {
+      successor = await trackedLease({ workspace, access: "write", leaseDir, ownerId: "successor" });
+    } catch (error) {
       if ((error as GovernanceRefusal).code !== "WORKSPACE_WRITE_CONFLICT") throw error;
       await new Promise((r) => setTimeout(r, 25));
     }
@@ -650,9 +722,19 @@ test("a herdr that hangs on close does not strand the lock forever", async () =>
   // A herdr that accepts the close and never answers — the case a retry count cannot bound.
   // A10s Node sleeper outlives the ~5s successor window; no bare PATH sleep can silently exit127.
   // Its actual ready acknowledgement and held-lock observation must precede the1500ms close timeout.
-  const fakeBin = await tempDir("fake-herdr-hung-"),readyFile=join(fakeBin,"ready.json"),stderrPath=join(fakeBin,"stderr.txt"),sleeper=join(fakeBin,"sleeper.cjs");
-  await writeFile(sleeper,`setTimeout(()=>process.exit(0),10000);require('node:fs').writeFileSync(${JSON.stringify(readyFile)},JSON.stringify({ready:true,pid:process.pid}),{flag:'wx'});`);
-  await writeFile(join(fakeBin,"herdr"),`#!/bin/sh\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(sleeper)} 2>>${JSON.stringify(stderrPath)}\n`,{mode:0o755});
+  const fakeBin = await tempDir("fake-herdr-hung-"),
+    readyFile = join(fakeBin, "ready.json"),
+    stderrPath = join(fakeBin, "stderr.txt"),
+    sleeper = join(fakeBin, "sleeper.cjs");
+  await writeFile(
+    sleeper,
+    `setTimeout(()=>process.exit(0),10000);require('node:fs').writeFileSync(${JSON.stringify(readyFile)},JSON.stringify({ready:true,pid:process.pid}),{flag:'wx'});`,
+  );
+  await writeFile(
+    join(fakeBin, "herdr"),
+    `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(sleeper)} 2>>${JSON.stringify(stderrPath)}\n`,
+    { mode: 0o755 },
+  );
   const moduleUrl = pathToFileURL(join(process.cwd(), "src", "kernel", "workspace.ts")).href;
   const leaseUrl = pathToFileURL(join(process.cwd(), "src", "governance", "workspace-lease.ts")).href;
   const code = `
@@ -671,8 +753,12 @@ test("a herdr that hangs on close does not strand the lock forever", async () =>
     stdio: ["ignore", "pipe", "pipe"],
     env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH ?? ""}` },
   });
-  const holderClosed=once(holder,"close");void holderClosed.catch(()=>{});let holderStderr="";
-  holder.stderr.on("data",chunk=>{holderStderr+=String(chunk);});
+  const holderClosed = once(holder, "close");
+  void holderClosed.catch(() => {});
+  let holderStderr = "";
+  holder.stderr.on("data", (chunk) => {
+    holderStderr += String(chunk);
+  });
   try {
     // Bounded, like its sibling above. Unbounded, the mutation that reverts the retain-path `unref` made THIS
     // test wedge the runner forever instead of failing — R-119's shape, in the file whose other test exists to
@@ -680,22 +766,40 @@ test("a herdr that hangs on close does not strand the lock forever", async () =>
     let deadline: NodeJS.Timeout | undefined;
     const exited = await Promise.race([
       holderClosed.then(() => "exited" as const),
-      new Promise<"hung">((resolve) => { deadline = setTimeout(() => resolve("hung"), 20_000); }),
+      new Promise<"hung">((resolve) => {
+        deadline = setTimeout(() => resolve("hung"), 20_000);
+      }),
     ]).finally(() => clearTimeout(deadline));
-    assert.equal(exited, "exited", "the holder never exited: "+holderStderr);
+    assert.equal(exited, "exited", "the holder never exited: " + holderStderr);
     assert.equal(holder.exitCode, 0, holderStderr);
   } finally {
-    holder.kill("SIGKILL");let timer:NodeJS.Timeout|undefined;
-    try{await Promise.race([holderClosed,new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new Error("original holder did not settle: "+holderStderr)),1000);})]);}finally{clearTimeout(timer);}
+    holder.kill("SIGKILL");
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      await Promise.race([
+        holderClosed,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error("original holder did not settle: " + holderStderr)), 1000);
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
-  const sleeperPid=await liveFixtureReady(readyFile,()=>readFile(stderrPath,"utf8").catch(()=>"no stderr file"));
+  const sleeperPid = await liveFixtureReady(readyFile, () =>
+    readFile(stderrPath, "utf8").catch(() => "no stderr file"),
+  );
   const workspace = await validateRegisteredWorkspace({ workspaceId: "w1", registeredRoot: root });
-  await assert.rejects(trackedLease({workspace,access:"write",leaseDir,ownerId:"must-still-be-held"}),e=>(e as GovernanceRefusal).code==="WORKSPACE_WRITE_CONFLICT");
+  await assert.rejects(
+    trackedLease({ workspace, access: "write", leaseDir, ownerId: "must-still-be-held" }),
+    (e) => (e as GovernanceRefusal).code === "WORKSPACE_WRITE_CONFLICT",
+  );
   let successor;
   for (let i = 0; i < 200 && !successor; i += 1) {
-    try { successor = await trackedLease({ workspace, access: "write", leaseDir, ownerId: "successor" }); }
-    catch (error) {
+    try {
+      successor = await trackedLease({ workspace, access: "write", leaseDir, ownerId: "successor" });
+    } catch (error) {
       if ((error as GovernanceRefusal).code !== "WORKSPACE_WRITE_CONFLICT") throw error;
       await new Promise((r) => setTimeout(r, 25));
     }
@@ -706,7 +810,7 @@ test("a herdr that hangs on close does not strand the lock forever", async () =>
       "reports an active governed writer for a workspace nothing is running in (R-146, R-102)",
   );
   await successor.release("test-complete");
-  assert.throws(()=>process.kill(sleeperPid,0),{code:"ESRCH"},"the actual hung close process must be settled");
+  assert.throws(() => process.kill(sleeperPid, 0), { code: "ESRCH" }, "the actual hung close process must be settled");
 });
 
 /**
@@ -731,8 +835,12 @@ test("release() after markRetained answers `retained` and leaves the record alon
   process.env.PATH = `${fakeBin}:${previousPath ?? ""}`;
   try {
     const lease = await trackedLease({
-      workspace, access: "write", leaseDir, ownerId: "retainer",
-      herdrCloseAttempts: 1, herdrCloseTimeoutMs: 500,
+      workspace,
+      access: "write",
+      leaseDir,
+      ownerId: "retainer",
+      herdrCloseAttempts: 1,
+      herdrCloseTimeoutMs: 500,
     });
     lease.attachHerdrTab("tab-that-will-not-close");
     await lease.markRetained("herdr-close-failed");

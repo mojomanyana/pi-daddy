@@ -105,7 +105,11 @@ test("PI_DADDY_ALLOW_MAIN=1 waives it, loudly", { skip }, async () => {
   // dishonest kind of control. It must announce itself, or a waived commit looks like an ordinary one.
   const { code, stderr } = await hook(await repoOn("main"), { PI_DADDY_ALLOW_MAIN: "1" });
   assert.equal(code, 0);
-  assert.match(stderr, /PI_DADDY_ALLOW_MAIN/, "a silent waiver is R-70's shape — the quietest output for the loudest event");
+  assert.match(
+    stderr,
+    /PI_DADDY_ALLOW_MAIN/,
+    "a silent waiver is R-70's shape — the quietest output for the loudest event",
+  );
 });
 
 test("only the exact value `1` waives it", { skip }, async () => {
@@ -138,7 +142,11 @@ test("an in-progress merge, cherry-pick or revert is not refused", { skip }, asy
 
   assert.ok(existsSync(join(dir, ".git", "MERGE_HEAD")), "the fixture must really be mid-merge");
   const { code } = await hook(dir);
-  assert.equal(code, 0, "refusing a conflicted merge leaves `git merge --quit` as the only escape, which discards the resolution");
+  assert.equal(
+    code,
+    0,
+    "refusing a conflicted merge leaves `git merge --quit` as the only escape, which discards the resolution",
+  );
 });
 
 test("a detached HEAD is not guarded", { skip }, async () => {

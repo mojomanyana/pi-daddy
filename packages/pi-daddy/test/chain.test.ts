@@ -14,7 +14,14 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { HANDOFF_MAX_BYTES, MAX_ARG_STRLEN, PLACEHOLDER, chainStepSpec, composeStepTask, fenceHandoff } from "../src/kernel/chain.ts";
+import {
+  HANDOFF_MAX_BYTES,
+  MAX_ARG_STRLEN,
+  PLACEHOLDER,
+  chainStepSpec,
+  composeStepTask,
+  fenceHandoff,
+} from "../src/kernel/chain.ts";
 
 const nonceOf = (fenced: string): string => {
   const match = fenced.match(/<<<PRIOR-AGENT-OUTPUT ([0-9a-f]+)>>>/);
@@ -200,7 +207,11 @@ test("a caller CANNOT dictate the nonce, however it calls fenceHandoff", () => {
   assert.doesNotMatch(forced, /deadbeefdeadbeef/, "a caller-supplied nonce must be ignored entirely");
   assert.match(forced, /<<<PRIOR-AGENT-OUTPUT [0-9a-f]{32}>>>/, "and a fresh 32-hex nonce used instead");
 
-  const alsoForced = (composeStepTask as unknown as (t: string, p: string, n?: string) => string)("x {previous}", "y", "cafebabe");
+  const alsoForced = (composeStepTask as unknown as (t: string, p: string, n?: string) => string)(
+    "x {previous}",
+    "y",
+    "cafebabe",
+  );
   assert.doesNotMatch(alsoForced, /cafebabe/);
 });
 
@@ -221,7 +232,10 @@ test("chainStepSpec composes the task and passes everything else through untouch
   // the run loop and therefore unreachable; it is a function now so this test can exist.
   //
   // The production change that breaks this: returning `step` unchanged, or dropping `previous`.
-  const spec = chainStepSpec({ task: `look at ${PLACEHOLDER}`, agent: "review", tools: ["read"], model: "p/m" }, "FINDINGS_7B2");
+  const spec = chainStepSpec(
+    { task: `look at ${PLACEHOLDER}`, agent: "review", tools: ["read"], model: "p/m" },
+    "FINDINGS_7B2",
+  );
 
   assert.match(spec.task, /PRIOR-AGENT-OUTPUT/, "the handoff must be fenced into the task");
   assert.ok(spec.task.includes("FINDINGS_7B2"), "and must carry the predecessor's output");

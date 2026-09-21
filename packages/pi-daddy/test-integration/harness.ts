@@ -173,11 +173,15 @@ export function runPi(options: RunOptions): Promise<RunResult> {
               };
           child.stdin.write(`${JSON.stringify(response)}\n`);
         } else if (event.type === "message_end") {
-          const message = event.message as { role?: string; content?: { type: string; name?: string; arguments?: unknown }[] };
+          const message = event.message as {
+            role?: string;
+            content?: { type: string; name?: string; arguments?: unknown }[];
+          };
           if (message?.role === "toolResult") result.toolResults.push(message as Record<string, unknown>);
           if (message?.role === "assistant") {
             for (const part of message.content ?? []) {
-              if (part.type === "toolCall") result.toolCalls.push({ name: String(part.name), arguments: part.arguments });
+              if (part.type === "toolCall")
+                result.toolCalls.push({ name: String(part.name), arguments: part.arguments });
             }
           }
         } else if (event.type === "agent_settled") {

@@ -9,8 +9,22 @@
 
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
-import { HerdrWriterCloseError, runHerdrPane, splitSystemPrompt, uniqueAgentName, type HerdrExec } from "../src/executors/run-herdr.ts";
-import { MAX_OPEN_PANES, markPaneSettled, openPaneCount, reapOpenPanes, reapOpenPanesAsync, trackPane, trimOpenPanes } from "../src/executors/pane-reaper.ts";
+import {
+  HerdrWriterCloseError,
+  runHerdrPane,
+  splitSystemPrompt,
+  uniqueAgentName,
+  type HerdrExec,
+} from "../src/executors/run-herdr.ts";
+import {
+  MAX_OPEN_PANES,
+  markPaneSettled,
+  openPaneCount,
+  reapOpenPanes,
+  reapOpenPanesAsync,
+  trackPane,
+  trimOpenPanes,
+} from "../src/executors/pane-reaper.ts";
 import { DEFAULT_SNAPSHOT_LINES } from "../src/executors/herdr-poll.ts";
 import { MAX_CHILDREN_PER_CALL } from "../src/kernel/fanout.ts";
 
@@ -28,7 +42,11 @@ interface FakeOptions {
 function fakeHerdr(options: FakeOptions = {}) {
   const calls: string[][] = [];
   const gets = [...(options.getSequence ?? [{ agent_status: "idle", state_change_seq: 99 }])];
-  const baselines = [...(options.baselineSequence ?? [{ agent_status: "idle", state_change_seq: options.startSeq ?? 10, screen_detection_skipped: true }])];
+  const baselines = [
+    ...(options.baselineSequence ?? [
+      { agent_status: "idle", state_change_seq: options.startSeq ?? 10, screen_detection_skipped: true },
+    ]),
+  ];
   let lifecycleBaseline = true;
 
   const exec: HerdrExec = async (args) => {
@@ -38,26 +56,45 @@ function fakeHerdr(options: FakeOptions = {}) {
       return { code: 1, stdout: JSON.stringify({ id: "x", error: { code: "boom", message: "it broke" } }), stderr: "" };
     }
     if (verb === "tab create") {
-      return { code: 0, stdout: JSON.stringify({ id: "x", result: { root_pane: { pane_id: "w1:p9", tab_id: "w1:t9" } } }), stderr: "" };
+      return {
+        code: 0,
+        stdout: JSON.stringify({ id: "x", result: { root_pane: { pane_id: "w1:p9", tab_id: "w1:t9" } } }),
+        stderr: "",
+      };
     }
     if (verb === "agent start") {
       return {
         code: 0,
-        stdout: JSON.stringify({ id: "x", result: { agent: { state_change_seq: options.startSeq ?? 10 }, argv: ["pi", ...args.slice(args.indexOf("--") + 1)] } }),
+        stdout: JSON.stringify({
+          id: "x",
+          result: {
+            agent: { state_change_seq: options.startSeq ?? 10 },
+            argv: ["pi", ...args.slice(args.indexOf("--") + 1)],
+          },
+        }),
         stderr: "",
       };
     }
-    if (verb === "agent prompt") return { code: 0, stdout: JSON.stringify({ id: "x", result: { ok: true } }), stderr: "" };
+    if (verb === "agent prompt")
+      return { code: 0, stdout: JSON.stringify({ id: "x", result: { ok: true } }), stderr: "" };
     if (verb === "agent get") {
       // A real Herdr child establishes the explicit reporter's idle baseline before prompt; the remaining
       // sequence models post-prompt observations.
       const next = lifecycleBaseline
-        ? (baselines.length > 1 ? baselines.shift()! : (lifecycleBaseline = false, baselines[0]))
-        : gets.length > 1 ? gets.shift()! : gets[0];
+        ? baselines.length > 1
+          ? baselines.shift()!
+          : ((lifecycleBaseline = false), baselines[0])
+        : gets.length > 1
+          ? gets.shift()!
+          : gets[0];
       return { code: 0, stdout: JSON.stringify({ id: "x", result: { agent: next } }), stderr: "" };
     }
     if (verb === "agent read") {
-      return { code: 0, stdout: JSON.stringify({ id: "x", result: { output: options.output ?? "the child's answer" } }), stderr: "" };
+      return {
+        code: 0,
+        stdout: JSON.stringify({ id: "x", result: { output: options.output ?? "the child's answer" } }),
+        stderr: "",
+      };
     }
     return { code: 0, stdout: JSON.stringify({ id: "x", result: { type: "ok" } }), stderr: "" };
   };
@@ -110,7 +147,11 @@ test("argv is passed after `--`, and the task is NOT in it", async () => {
   const after = start.slice(start.indexOf("--") + 1);
   assert.deepEqual(after.slice(0, 4), ["--no-session", "--no-extensions", "--tools", "read"]);
   assert.deepEqual(after.slice(4, 5), ["-e"], "only the pinned lifecycle extension bypasses discovery");
-  assert.match(after[5]!, /src\/executors\/vendor\/herdr-pi-lifecycle\.ts$/, "the extension is package-owned, never model-chosen");
+  assert.match(
+    after[5]!,
+    /src\/executors\/vendor\/herdr-pi-lifecycle\.ts$/,
+    "the extension is package-owned, never model-chosen",
+  );
   assert.equal(after.length, 6, "no unrelated extension is injected");
   assert.ok(!start.includes("review the diff"), "the task must not reach argv");
 
@@ -157,8 +198,15 @@ test("a delayed native idle report is baselined before prompt, while fast start/
   const result = await runHerdrPane(request({ exec: fake.exec, pollIntervalMs: 1 }));
   assert.equal(result.code, 0);
   const promptAt = fake.calls.findIndex((call) => call.slice(0, 2).join(" ") === "agent prompt");
-  assert.ok(promptAt > fake.calls.findIndex((call) => call.slice(0, 2).join(" ") === "agent get"), "prompt follows the native baseline");
-  assert.equal(fake.verbs().filter((verb) => verb === "agent get").length, 5, "the delayed idle was not accepted as completion");
+  assert.ok(
+    promptAt > fake.calls.findIndex((call) => call.slice(0, 2).join(" ") === "agent get"),
+    "prompt follows the native baseline",
+  );
+  assert.equal(
+    fake.verbs().filter((verb) => verb === "agent get").length,
+    5,
+    "the delayed idle was not accepted as completion",
+  );
 });
 
 test("Pi screen-detector fallback idle never settles a fresh child, even when its pane has final-looking text", async (t) => {
@@ -175,7 +223,8 @@ test("Pi screen-detector fallback idle never settles a fresh child, even when it
     output: "Done: index.html was written and read back.",
   });
 
-  let clock = 0, gets = 0;
+  let clock = 0,
+    gets = 0;
   t.mock.method(Date, "now", () => clock);
   const exec: HerdrExec = async (args) => {
     if (args.slice(0, 2).join(" ") === "agent get" && ++gets > 1) clock += 1_000;
@@ -187,8 +236,14 @@ test("Pi screen-detector fallback idle never settles a fresh child, even when it
   assert.equal(result.timedOut, false, "detector failure refuses before the ordinary child deadline");
   assert.match(String(result.spawnError), /without a post-prompt lifecycle change/);
   assert.equal(result.text, "", "final-looking terminal text is not completion authority");
-  assert.ok(fake.verbs().filter((verb) => verb === "agent get").length > 1, "it must observe the stale state before refusing");
-  assert.ok(fake.verbs().includes("tab close"), "a refused fresh-lifecycle observation closes the still-governed child tab");
+  assert.ok(
+    fake.verbs().filter((verb) => verb === "agent get").length > 1,
+    "it must observe the stale state before refusing",
+  );
+  assert.ok(
+    fake.verbs().includes("tab close"),
+    "a refused fresh-lifecycle observation closes the still-governed child tab",
+  );
   assert.equal(openPaneCount(), 0, "the closed tab is removed from the reaper registry");
 });
 
@@ -320,7 +375,9 @@ test("agent start is retried while a fresh pane is still reaching its shell prom
     if (args[0] === "agent" && args[1] === "start" && ++starts <= 2) {
       return {
         code: 1,
-        stdout: JSON.stringify({ error: { code: "agent_pane_busy", message: "agent target pane w1:p9 is not an available shell" } }),
+        stdout: JSON.stringify({
+          error: { code: "agent_pane_busy", message: "agent target pane w1:p9 is not an available shell" },
+        }),
         stderr: "",
       };
     }
@@ -402,7 +459,11 @@ test("a completed run leaves its pane for agent_settled, and the sweep clears it
 
   assert.equal((await reapOpenPanesAsync(fakeHerdr().exec)).length, 1, "the agent_settled sweep closes it");
   assert.equal(openPaneCount(), before);
-  assert.deepEqual(reapOpenPanes(() => {}), [], "and the exit backstop then has nothing left to do");
+  assert.deepEqual(
+    reapOpenPanes(() => {}),
+    [],
+    "and the exit backstop then has nothing left to do",
+  );
 });
 
 test("a pane orphaned by a killed process is closed by the reaper", async () => {
@@ -412,7 +473,10 @@ test("a pane orphaned by a killed process is closed by the reaper", async () => 
   trackPane({ tab: "w1:t42", name: "orphan" });
   assert.equal(openPaneCount(), 1);
 
-  assert.deepEqual(reapOpenPanes((args) => void closed.push(args)), ["w1:t42"]);
+  assert.deepEqual(
+    reapOpenPanes((args) => void closed.push(args)),
+    ["w1:t42"],
+  );
   // **One command, not two.** This asserted `agent stop` ran first, "so the agent is stopped before its tab goes
   // away" — but `herdr agent stop` does not exist (measured against 0.7.5: it prints the usage banner and exits
   // 0, which reads as success). Closing the tab is the kill, and issuing a phantom command before it bought
@@ -447,7 +511,11 @@ test("R-65: a pane herdr REFUSED to close stays tracked, so the reaper still has
 
   await runHerdrPane(request({ exec }));
   assert.equal(openPaneCount(), before + 1, "a pane we failed to close must remain the reaper's problem");
-  assert.deepEqual(reapOpenPanes(() => {}), ["w1:t9"], "and the reaper must try it again at exit");
+  assert.deepEqual(
+    reapOpenPanes(() => {}),
+    ["w1:t9"],
+    "and the reaper must try it again at exit",
+  );
   assert.equal(openPaneCount(), before);
 });
 
@@ -458,7 +526,12 @@ test("R-65: the exit sweep is bounded in TOTAL, not per call", async () => {
   for (let i = 0; i < 8; i += 1) trackPane({ tab: `w1:t${i}`, name: `a${i}` });
   let clock = 0;
   // Every call "takes" 2s of the fake clock, so the 6s budget must stop the sweep partway.
-  const closed = reapOpenPanes(() => { clock += 2000; }, () => clock);
+  const closed = reapOpenPanes(
+    () => {
+      clock += 2000;
+    },
+    () => clock,
+  );
   assert.ok(closed.length < 8, `the budget must stop the sweep, closed ${closed.length}`);
   assert.ok(openPaneCount() > 0, "and what it did not reach stays tracked rather than being silently dropped");
   reapOpenPanes(() => {});
@@ -527,7 +600,11 @@ test("ADR-0032: a SCROLLED pane shows its current tail rather than re-reporting"
   });
   const exec: HerdrExec = async (args) => {
     if (args.slice(0, 2).join(" ") === "agent read") {
-      return { code: 0, stdout: JSON.stringify({ id: "x", result: { output: windows[Math.min(poll++, 2)] } }), stderr: "" };
+      return {
+        code: 0,
+        stdout: JSON.stringify({ id: "x", result: { output: windows[Math.min(poll++, 2)] } }),
+        stderr: "",
+      };
     }
     return fake.exec(args);
   };
@@ -568,7 +645,9 @@ test("a Herdr child is running only after agent start and prompt both succeed", 
   const events: string[] = [];
   const fake = fakeHerdr();
   await runHerdrPane({
-    ...request(), exec: fake.exec, pollIntervalMs: 1,
+    ...request(),
+    exec: fake.exec,
+    pollIntervalMs: 1,
     onPane: () => events.push("pane-created"),
     onRunning: () => events.push("running"),
   });

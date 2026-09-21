@@ -27,7 +27,13 @@ import { join } from "node:path";
 import { agentCapability, workspaceCapability } from "../kernel/capabilities.ts";
 import { ceilingForDefinition } from "../kernel/definitions.ts";
 import { runWithFinalizers } from "./finalization.ts";
-import { ALWAYS_LIVE, assertGrantIsWritable, isLiveByDefault, renderGrantEnv, type GrantEnvSkill } from "../kernel/grant-env.ts";
+import {
+  ALWAYS_LIVE,
+  assertGrantIsWritable,
+  isLiveByDefault,
+  renderGrantEnv,
+  type GrantEnvSkill,
+} from "../kernel/grant-env.ts";
 import { PI_BUILTIN_TOOLS } from "../kernel/pi-tools.ts";
 import type { Capability } from "../kernel/resolve.ts";
 import type { SkillPackage } from "../kernel/skill-packages.ts";
@@ -374,7 +380,10 @@ export async function applyInit(plan: InitPlan, options: { force?: boolean } = {
     }
     const existing = await lstat(projectPi);
     if (existing.isSymbolicLink() || !existing.isDirectory()) {
-      outcome.failed.push({ path: projectPi, error: "existing .pi state is not a directory; it was not followed or changed" });
+      outcome.failed.push({
+        path: projectPi,
+        error: "existing .pi state is not a directory; it was not followed or changed",
+      });
       return outcome;
     }
   }

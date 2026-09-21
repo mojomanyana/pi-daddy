@@ -7,8 +7,12 @@ export const WORK_RECORDS = 10_000;
 const MAX_DEPTH = 16;
 const MAX_ARRAY = 256;
 export type WorkJson = null | boolean | number | string | WorkJson[] | { [key: string]: WorkJson };
-const invalid = (): never => { throw new WorkInputError("WORK_SCHEMA_INVALID"); };
-const limit = (): never => { throw new WorkInputError("WORK_LIMIT_EXCEEDED"); };
+const invalid = (): never => {
+  throw new WorkInputError("WORK_SCHEMA_INVALID");
+};
+const limit = (): never => {
+  throw new WorkInputError("WORK_LIMIT_EXCEEDED");
+};
 
 function unicode(value: string): string {
   // RFC 8785 refuses lone UTF-16 surrogates, including ones decoded from escapes.
@@ -64,7 +68,12 @@ export function copyWorkJson(value: unknown): WorkJson {
       const fields = ownWorkFields(v);
       result = {};
       for (const key of Object.keys(fields)) {
-        Object.defineProperty(result, key, { value: copy(fields[key].value, depth + 1), enumerable: true, writable: true, configurable: true });
+        Object.defineProperty(result, key, {
+          value: copy(fields[key].value, depth + 1),
+          enumerable: true,
+          writable: true,
+          configurable: true,
+        });
       }
     }
     ancestors.delete(v);
@@ -83,7 +92,7 @@ function integerToken(token: string): number {
   digits = digits.slice(0, digits.length - trailing);
   shift += BigInt(trailing);
   if (shift < 0n || BigInt(digits.length) + shift > 16n) invalid();
-  const exact = BigInt(digits) * (10n ** shift);
+  const exact = BigInt(digits) * 10n ** shift;
   if (exact > BigInt(Number.MAX_SAFE_INTEGER)) invalid();
   return Number(match[1] === "-" ? -exact : exact);
 }
@@ -116,8 +125,12 @@ export function parseWorkJson(text: string): WorkJson {
   if (typeof text !== "string") invalid();
   if (Buffer.byteLength(text, "utf8") > WORK_EVENT_BYTES) limit();
   let at = 0;
-  const syntax = (): never => { throw new WorkInputError("WORK_JSON_INVALID"); };
-  const whitespace = () => { while (at < text.length && /[ \t\r\n]/.test(text[at])) at++; };
+  const syntax = (): never => {
+    throw new WorkInputError("WORK_JSON_INVALID");
+  };
+  const whitespace = () => {
+    while (at < text.length && /[ \t\r\n]/.test(text[at])) at++;
+  };
   function string(): string {
     const start = at++;
     while (at < text.length) {
@@ -149,26 +162,35 @@ export function parseWorkJson(text: string): WorkJson {
       const end = object ? "}" : "]";
       const entries: Array<[string, JsonNode]> = [];
       const items: JsonNode[] = [];
-      if (text[at] !== end) for (;;) {
-        whitespace();
-        let key = "";
-        if (object) {
-          if (text[at] !== '"') syntax();
-          key = string();
+      if (text[at] !== end)
+        for (;;) {
           whitespace();
-          if (text[at++] !== ":") syntax();
-        } else if (items.length >= MAX_ARRAY) limit();
-        const child = value(depth + 1);
-        if (object) entries.push([key, child]); else items.push(child);
-        whitespace();
-        if (text[at] === end) break;
-        if (text[at++] !== ",") syntax();
-      }
+          let key = "";
+          if (object) {
+            if (text[at] !== '"') syntax();
+            key = string();
+            whitespace();
+            if (text[at++] !== ":") syntax();
+          } else if (items.length >= MAX_ARRAY) limit();
+          const child = value(depth + 1);
+          if (object) entries.push([key, child]);
+          else items.push(child);
+          whitespace();
+          if (text[at] === end) break;
+          if (text[at++] !== ",") syntax();
+        }
       at++;
       return object ? { type: "object", entries } : { type: "array", items };
     }
-    for (const [token, literal] of [["null", null], ["true", true], ["false", false]] as const) {
-      if (text.startsWith(token, at)) { at += token.length; return { type: "literal", value: literal }; }
+    for (const [token, literal] of [
+      ["null", null],
+      ["true", true],
+      ["false", false],
+    ] as const) {
+      if (text.startsWith(token, at)) {
+        at += token.length;
+        return { type: "literal", value: literal };
+      }
     }
     const token = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/.exec(text.slice(at));
     if (!token) return syntax();
@@ -186,36 +208,51 @@ function emit(value: WorkJson): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(emit).join(",")}]`;
   // Emit keys directly: reconstructing a JS object would reorder numeric-looking keys.
-  return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${emit(value[key])}`).join(",")}}`;
+  return `{${Object.keys(value)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${emit(value[key])}`)
+    .join(",")}}`;
 }
 
 /** RFC 8785 emission restricted to our validated JSON profile; not an archival-byte identity. */
-export function canonicalWorkJson(value: unknown): string { return emit(copyWorkJson(value)); }
+export function canonicalWorkJson(value: unknown): string {
+  return emit(copyWorkJson(value));
+}
 export function workDigest(value: unknown): string {
   return createHash("sha256").update(canonicalWorkJson(value), "utf8").digest("hex");
 }
 /** @internal ONLY validated constituents / internally constructed plain results. Output collections
  * are not wire records: they may contain >256 claims, problems, labels, or conflict alternatives.
  * Never use this emitter in place of copyWorkJson/strict ingestion at an input boundary. */
-export function workResultKey<T>(value: T): string { return emit(value as unknown as WorkJson); }
+export function workResultKey<T>(value: T): string {
+  return emit(value as unknown as WorkJson);
+}
 export function sortWorkResults<T>(values: Iterable<T>): T[] {
-  const rows = new Map([...values].map(value => [workResultKey(value), value]));
-  return [...rows].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([, value]) => value);
+  const rows = new Map([...values].map((value) => [workResultKey(value), value]));
+  return [...rows].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([, value]) => value);
 }
 export function mergeWorkProblems(values: readonly WorkFrozen<WorkProblem>[]): WorkFrozen<WorkProblem>[] {
   const rows = new Map<string, WorkFrozen<WorkProblem>>();
   for (const row of values) {
-    const id = workResultKey([row.code, row.reference]), prior = rows.get(id);
-    rows.set(id, { ...row, affectedObligations: sortWorkResults([...(prior?.affectedObligations ?? []), ...row.affectedObligations]) });
+    const id = workResultKey([row.code, row.reference]),
+      prior = rows.get(id);
+    rows.set(id, {
+      ...row,
+      affectedObligations: sortWorkResults([...(prior?.affectedObligations ?? []), ...row.affectedObligations]),
+    });
   }
   return sortWorkResults(rows.values());
 }
 export function mergeWorkConflicts(values: readonly WorkFrozen<WorkConflict>[]): WorkFrozen<WorkConflict>[] {
   const rows = new Map<string, WorkFrozen<WorkConflict>>();
   for (const row of values) {
-    const id = workResultKey([row.kind, row.id]), prior = rows.get(id);
-    rows.set(id, { ...row, digests: sortWorkResults([...(prior?.digests ?? []), ...row.digests]),
-      affectedObligations: sortWorkResults([...(prior?.affectedObligations ?? []), ...row.affectedObligations]) });
+    const id = workResultKey([row.kind, row.id]),
+      prior = rows.get(id);
+    rows.set(id, {
+      ...row,
+      digests: sortWorkResults([...(prior?.digests ?? []), ...row.digests]),
+      affectedObligations: sortWorkResults([...(prior?.affectedObligations ?? []), ...row.affectedObligations]),
+    });
   }
   return sortWorkResults(rows.values());
 }

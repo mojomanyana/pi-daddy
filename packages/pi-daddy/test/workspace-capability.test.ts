@@ -67,7 +67,10 @@ test("a child CAN be granted a workspace capability — with a catalog present, 
 
   // And the unknown check itself: exempt as a NAMESPACE, so an id absent from the registry still passes
   // here and is refused precisely later, by `resolveWorkspace`, with WORKSPACE_NOT_REGISTERED.
-  assert.deepEqual(unknownCapabilities(["workspace:prod", "workspace:never-registered", WORKSPACE_WILDCARD], catalog), []);
+  assert.deepEqual(
+    unknownCapabilities(["workspace:prod", "workspace:never-registered", WORKSPACE_WILDCARD], catalog),
+    [],
+  );
   // **A SLASH id, because the exemption must cover what the registry accepts.** A mutation reverted this
   // predicate to the TOOL-name grammar with all three suites green: every other case here uses
   // `workspace:prod`, which both grammars accept, so nothing crossed the one channel where they differ.
@@ -130,7 +133,9 @@ test("`workspace:*` cannot be handed to a child by either route", () => {
 
   // And the shared rule, which both routes now call.
   assert.deepEqual(inheritableGrant(["tool:read", "tool:*", WORKSPACE_WILDCARD, "workspace:prod", "agent:*"]), [
-    "tool:read", "workspace:prod", "agent:*",
+    "tool:read",
+    "workspace:prod",
+    "agent:*",
   ]);
 });
 
@@ -153,10 +158,13 @@ test("`workspace:*` cannot be handed to a child by either route", () => {
  * Breaks by: `const inheritable = result.effective;` in `delegate.ts`.
  */
 test("R-135: a delegated child never inherits `tool:*`, on the path that actually spawns", () => {
-  const plan = planDelegation(
-    { task: "t", tools: ["tool:*"] },
-    { ownGrant: ["tool:*"], depth: 0, maxDepth: 3, gated: [], approved: [] } as never,
-  );
+  const plan = planDelegation({ task: "t", tools: ["tool:*"] }, {
+    ownGrant: ["tool:*"],
+    depth: 0,
+    maxDepth: 3,
+    gated: [],
+    approved: [],
+  } as never);
   assert.equal(plan.ok, true, "granting it is allowed — governance is opt-in and a root may hold it");
   assert.deepEqual(plan.effective, ["tool:*"], "and the record says what was granted");
   assert.equal(plan.env[ENV_GRANT], "", "but the child inherits the ENUMERATED grant only — here, nothing");
@@ -164,10 +172,13 @@ test("R-135: a delegated child never inherits `tool:*`, on the path that actuall
   // `tool:*` keeps its established silent strip rather than joining `workspace:*`'s refusal, and the
   // asymmetry is deliberate: an ungoverned session's own grant IS `tool:*`, so refusing to spawn from one
   // would break governance-is-opt-in. `workspace:*` is only ever in `requested` because somebody asked.
-  const alongside = planDelegation(
-    { task: "t", tools: ["tool:*", "read"] },
-    { ownGrant: ["tool:*"], depth: 0, maxDepth: 3, gated: [], approved: [] } as never,
-  );
+  const alongside = planDelegation({ task: "t", tools: ["tool:*", "read"] }, {
+    ownGrant: ["tool:*"],
+    depth: 0,
+    maxDepth: 3,
+    gated: [],
+    approved: [],
+  } as never);
   assert.equal(alongside.env[ENV_GRANT], "tool:read", "the enumerated part still descends");
 });
 
@@ -251,8 +262,11 @@ test("PI_GRANTS_GATED=workspace:<id> asks a human before routing there", () => {
  */
 test("a definition may declare a workspace it routes to, and the id survives intact", () => {
   const def: SkillDefinition = {
-    name: "deployer", description: "deploys", allowedTools: "Read, workspace:prod, agent:helper",
-    body: "b", source: "/skills/deployer/SKILL.md",
+    name: "deployer",
+    description: "deploys",
+    allowedTools: "Read, workspace:prod, agent:helper",
+    body: "b",
+    source: "/skills/deployer/SKILL.md",
   };
   assert.deepEqual(ceilingForDefinition(def).capabilities, ["agent:helper", "tool:read", "workspace:prod"]);
   // Not `tool:workspace:prod` — the bug this replaces produced a capability that names nothing, was refused
@@ -265,12 +279,17 @@ test("a definition may declare a workspace it routes to, and the id survives int
  * Breaks by: removing the `anyWorkspace` clause from `subsumedBy`.
  */
 test("a wildcard holder is not told its own namespace is `subsumed`", () => {
-  assert.deepEqual(resolve({ requested: ["workspace:prod"], parentGrant: [WORKSPACE_WILDCARD], gated: [] }).subsumedBy, []);
+  assert.deepEqual(
+    resolve({ requested: ["workspace:prod"], parentGrant: [WORKSPACE_WILDCARD], gated: [] }).subsumedBy,
+    [],
+  );
   // The three wildcards agree, which is the property that kept drifting.
   assert.deepEqual(resolve({ requested: ["agent:x"], parentGrant: ["agent:*"], gated: [] }).subsumedBy, []);
   assert.deepEqual(resolve({ requested: ["tool:read"], parentGrant: ["tool:*"], gated: [] }).subsumedBy, []);
   // Still reported where it means something: `bash` really is broader than the list suggests.
-  assert.deepEqual(resolve({ requested: ["tool:grep"], parentGrant: ["tool:bash"], gated: [] }).subsumedBy, ["tool:grep"]);
+  assert.deepEqual(resolve({ requested: ["tool:grep"], parentGrant: ["tool:bash"], gated: [] }).subsumedBy, [
+    "tool:grep",
+  ]);
 });
 
 /**
@@ -295,23 +314,36 @@ test("a registry id that would not survive the grant grammar is refused at load"
   });
 
   const newline = await write("newline.json", { version: 1, workspaces: { "a\nb": { path: "/w/a" } } });
-  await assert.rejects(loadWorkspaceRegistry(newline), (e: Error & { code?: string }) => e.code === "GRANT_ID_MALFORMED");
+  await assert.rejects(
+    loadWorkspaceRegistry(newline),
+    (e: Error & { code?: string }) => e.code === "GRANT_ID_MALFORMED",
+  );
 
   const trailing = await write("trailing.json", { version: 1, workspaces: { "prod ": { path: "/w/p" } } });
-  await assert.rejects(loadWorkspaceRegistry(trailing), (e: Error & { code?: string }) => e.code === "GRANT_ID_MALFORMED");
+  await assert.rejects(
+    loadWorkspaceRegistry(trailing),
+    (e: Error & { code?: string }) => e.code === "GRANT_ID_MALFORMED",
+  );
 
   // **An internal space is refused, and an earlier version of this test asserted the opposite.** It blessed
   // `"east us"` and claimed "`workspace: prod` is one capability in every channel that carries it". That is
   // false, and the channel is one file over: `ceilingForDefinition` splits `allowed-tools` on `[\s,]+`.
   assert.deepEqual(
     ceilingForDefinition({
-      name: "d", description: "", allowedTools: "read, workspace:prod bash", body: "", source: "/s",
+      name: "d",
+      description: "",
+      allowedTools: "read, workspace:prod bash",
+      body: "",
+      source: "/s",
     } as SkillDefinition).capabilities,
     ["tool:bash", "tool:read", "workspace:prod"],
     "one space in a registry id buys routing over PRODUCTION plus a shell, neither of them typed",
   );
   const spaced = await write("spaced.json", { version: 1, workspaces: { "east us": { path: "/w/e" } } });
-  await assert.rejects(loadWorkspaceRegistry(spaced), (e: Error & { code?: string }) => e.code === "GRANT_ID_MALFORMED");
+  await assert.rejects(
+    loadWorkspaceRegistry(spaced),
+    (e: Error & { code?: string }) => e.code === "GRANT_ID_MALFORMED",
+  );
 
   // A wildcard as an id minted WORKSPACE_WILDCARD: an operator naming ONE worktree held routing authority
   // over every id in the registry, including ones added later, while `workspace:*` was simultaneously
@@ -322,13 +354,30 @@ test("a registry id that would not survive the grant grammar is refused at load"
   // The shell metacharacters that reached the generated file's ROUTABLE WORKSPACES block, whose own
   // instructions tell the operator to paste the id into PI_GRANTS_GRANT (R-77/R-78's argument).
   for (const hostile of [
-    'a";touch /tmp/pwned;x="', "a$(id)", "a" + String.fromCharCode(96) + "id", "a;b", "a'b",
-    "a|b", "a&b", "a>b", "a#b", "a[31m", "..", "caf\u00e9", "_leading", "-leading",
+    'a";touch /tmp/pwned;x="',
+    "a$(id)",
+    "a" + String.fromCharCode(96) + "id",
+    "a;b",
+    "a'b",
+    "a|b",
+    "a&b",
+    "a>b",
+    "a#b",
+    "a[31m",
+    "..",
+    "caf\u00e9",
+    "_leading",
+    "-leading",
   ]) {
-    const p = await write(`hostile-${Buffer.from(hostile).toString("hex").slice(0, 12)}.json`,
-      { version: 1, workspaces: { [hostile]: { path: "/w/x" } } });
-    await assert.rejects(loadWorkspaceRegistry(p), (e: Error & { code?: string }) => e.code === "GRANT_ID_MALFORMED",
-      `${JSON.stringify(hostile)} must be refused at the registry`);
+    const p = await write(`hostile-${Buffer.from(hostile).toString("hex").slice(0, 12)}.json`, {
+      version: 1,
+      workspaces: { [hostile]: { path: "/w/x" } },
+    });
+    await assert.rejects(
+      loadWorkspaceRegistry(p),
+      (e: Error & { code?: string }) => e.code === "GRANT_ID_MALFORMED",
+      `${JSON.stringify(hostile)} must be refused at the registry`,
+    );
   }
 
   // **A SLASH IS DELIBERATELY ALLOWED**, and this is the case the first version of this guard got wrong.
@@ -338,8 +387,10 @@ test("a registry id that would not survive the grant grammar is refused at load"
   const fine = await write("fine.json", {
     version: 1,
     workspaces: {
-      "prod-1": { path: "/w/p" }, "east.us_2": { path: "/w/e" },
-      "feature/x": { path: "/w/f" }, "claude/issue-42": { path: "/w/c" },
+      "prod-1": { path: "/w/p" },
+      "east.us_2": { path: "/w/e" },
+      "feature/x": { path: "/w/f" },
+      "claude/issue-42": { path: "/w/c" },
     },
   });
   assert.deepEqual(
@@ -460,7 +511,11 @@ test("a gated capability that is also requested is listed once", () => {
     ctx({ gated: ["workspace:prod"] }) as never,
   );
   assert.equal(plan.ok, false);
-  assert.deepEqual(plan.result.gatedBlocked, ["workspace:prod"], "the parent's authority and the child's grant are one entry");
+  assert.deepEqual(
+    plan.result.gatedBlocked,
+    ["workspace:prod"],
+    "the parent's authority and the child's grant are one entry",
+  );
   assert.doesNotMatch(plan.reason ?? "", /workspace:prod, workspace:prod/);
 });
 
@@ -481,25 +536,32 @@ test("a gated capability that is also requested is listed once", () => {
 test("an unregistered id is refused by a message that names the file and what it does hold", async () => {
   const dir = await tempDir("pi-daddy-names-");
   const path = join(dir, "registry.json");
-  await writeFile(path, JSON.stringify({
-    version: 1, workspaces: { prod: { path: "/w/p" }, staging: { path: "/w/s" } },
-  }), "utf8");
+  await writeFile(
+    path,
+    JSON.stringify({
+      version: 1,
+      workspaces: { prod: { path: "/w/p" }, staging: { path: "/w/s" } },
+    }),
+    "utf8",
+  );
 
   const registry = await loadWorkspaceRegistry(path);
   assert.equal(registry.source, path, "the object carries where it came from, so a caller cannot forget it");
 
-  await assert.rejects(resolveWorkspace(registry, "nope"), (e: Error & { code?: string; details?: Record<string, string> }) => {
-    assert.equal(e.code, "WORKSPACE_NOT_REGISTERED");
-    assert.match(e.message, new RegExp(path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), "names the FILE to edit");
-    assert.match(e.message, /it lists: prod, staging/, "and what it does hold");
-    assert.equal(e.details?.registry_path, path, "machine-readable for an external controller");
-    return true;
-  });
+  await assert.rejects(
+    resolveWorkspace(registry, "nope"),
+    (e: Error & { code?: string; details?: Record<string, string> }) => {
+      assert.equal(e.code, "WORKSPACE_NOT_REGISTERED");
+      assert.match(e.message, new RegExp(path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), "names the FILE to edit");
+      assert.match(e.message, /it lists: prod, staging/, "and what it does hold");
+      assert.equal(e.details?.registry_path, path, "machine-readable for an external controller");
+      return true;
+    },
+  );
 
   // A hand-built registry (tests, fixtures) has no source and must still produce a usable message.
-  await assert.rejects(
-    resolveWorkspace({ version: 1, workspaces: {} }, "nope"),
-    (e: Error) => /it lists nothing/.test(e.message),
+  await assert.rejects(resolveWorkspace({ version: 1, workspaces: {} }, "nope"), (e: Error) =>
+    /it lists nothing/.test(e.message),
   );
 });
 
@@ -534,36 +596,45 @@ test("a registry larger than the ceiling is refused rather than read into memory
  * every attempt SETTLES — a hang here is the defect either guard exists to prevent — and it is bounded by an
  * explicit `timeout`, because a hanging test file reports `fail 0` with tests `cancelled`.
  */
-test("the registry is checked on the descriptor it reads, and the descriptor is always closed", { timeout: 20_000 }, async () => {
-  const dir = await tempDir("pi-daddy-toctou-");
-  const path = join(dir, "registry.json");
-  const fifo = join(dir, "fifo");
-  const good = JSON.stringify({ version: 1, workspaces: { prod: { path: "/w/p" } } });
-  await new Promise<void>((ok, no) => execFile("mkfifo", [fifo], (e) => (e ? no(e) : ok())));
+test(
+  "the registry is checked on the descriptor it reads, and the descriptor is always closed",
+  { timeout: 20_000 },
+  async () => {
+    const dir = await tempDir("pi-daddy-toctou-");
+    const path = join(dir, "registry.json");
+    const fifo = join(dir, "fifo");
+    const good = JSON.stringify({ version: 1, workspaces: { prod: { path: "/w/p" } } });
+    await new Promise<void>((ok, no) => execFile("mkfifo", [fifo], (e) => (e ? no(e) : ok())));
 
-  const fdCount = async () => (await readdir("/proc/self/fd")).length;
-  const before = await fdCount();
+    const fdCount = async () => (await readdir("/proc/self/fd")).length;
+    const before = await fdCount();
 
-  // Swap a regular file and a FIFO at the same path while reading it, repeatedly. With `fstat` on the held
-  // descriptor every outcome is bounded: either a clean load or a refusal, never a wait.
-  let loaded = 0;
-  let refused = 0;
-  for (let i = 0; i < 150; i++) {
-    await writeFile(path, good, "utf8");
-    if (i % 2 === 0) {
-      await rename(path, join(dir, "away")).catch(() => {});
-      await rename(fifo, path).catch(() => {});
+    // Swap a regular file and a FIFO at the same path while reading it, repeatedly. With `fstat` on the held
+    // descriptor every outcome is bounded: either a clean load or a refusal, never a wait.
+    let loaded = 0;
+    let refused = 0;
+    for (let i = 0; i < 150; i++) {
+      await writeFile(path, good, "utf8");
+      if (i % 2 === 0) {
+        await rename(path, join(dir, "away")).catch(() => {});
+        await rename(fifo, path).catch(() => {});
+      }
+      try {
+        await loadWorkspaceRegistry(path);
+        loaded++;
+      } catch {
+        refused++;
+      }
+      await rename(path, fifo).catch(() => {});
+      await rename(join(dir, "away"), path).catch(() => {});
     }
-    try { await loadWorkspaceRegistry(path); loaded++; } catch { refused++; }
-    await rename(path, fifo).catch(() => {});
-    await rename(join(dir, "away"), path).catch(() => {});
-  }
-  assert.equal(loaded + refused, 150, "every attempt must settle — a hang here is the defect");
-  assert.ok(refused > 0, "at least one swap must have been observed, or the race never happened");
+    assert.equal(loaded + refused, 150, "every attempt must settle — a hang here is the defect");
+    assert.ok(refused > 0, "at least one swap must have been observed, or the race never happened");
 
-  const after = await fdCount();
-  assert.ok(after <= before + 2, `descriptors leaked across 150 reads: ${before} -> ${after}`);
-});
+    const after = await fdCount();
+    assert.ok(after <= before + 2, `descriptors leaked across 150 reads: ${before} -> ${after}`);
+  },
+);
 
 /** The catalog enumerates registered workspaces for `/grants` and `init`. Display, never authority. */
 test("registered workspaces are catalogued, and marked as their own kind", () => {

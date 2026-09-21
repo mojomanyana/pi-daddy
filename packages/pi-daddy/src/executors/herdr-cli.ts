@@ -37,9 +37,15 @@ export const defaultExec: HerdrExec = (args) =>
  * real reason on stderr, producing the useless diagnostic "unparseable herdr reply: ". A wrapper that
  * hides the substrate's own error message costs more time than it saves.
  */
-export function parseReply(reply: { stdout: string; stderr: string }): { result?: Record<string, unknown>; error?: string } {
+export function parseReply(reply: { stdout: string; stderr: string }): {
+  result?: Record<string, unknown>;
+  error?: string;
+} {
   try {
-    const parsed = JSON.parse(reply.stdout) as { result?: Record<string, unknown>; error?: { message?: string; code?: string } };
+    const parsed = JSON.parse(reply.stdout) as {
+      result?: Record<string, unknown>;
+      error?: { message?: string; code?: string };
+    };
     if (parsed.error) return { error: parsed.error.message ?? parsed.error.code ?? "herdr reported an error" };
     return { result: parsed.result };
   } catch {

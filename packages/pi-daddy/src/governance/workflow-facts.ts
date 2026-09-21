@@ -4,11 +4,11 @@ import { isWorkflowFactId, isWorkflowIdentifier, workflowFactStateMatches } from
 import { assertLedgerV3Wire } from "./ledger-v3-validation.ts";
 
 export const WORKFLOW_FACT_PROVENANCE = ["planned", "observed", "controller_validated"] as const;
-export type WorkflowFactProvenance = typeof WORKFLOW_FACT_PROVENANCE[number];
+export type WorkflowFactProvenance = (typeof WORKFLOW_FACT_PROVENANCE)[number];
 export const WORKFLOW_FACT_KINDS = ["workflow_phase", "inline_skill", "transition"] as const;
-export type WorkflowFactKind = typeof WORKFLOW_FACT_KINDS[number];
+export type WorkflowFactKind = (typeof WORKFLOW_FACT_KINDS)[number];
 export const WORKFLOW_FACT_STATES = ["pending", "observed", "started", "completed", "blocked"] as const;
-export type WorkflowFactState = typeof WORKFLOW_FACT_STATES[number];
+export type WorkflowFactState = (typeof WORKFLOW_FACT_STATES)[number];
 
 export interface WorkflowFactEvent {
   ledgerVersion: typeof LEDGER_VERSION;
@@ -38,15 +38,21 @@ export function buildWorkflowFactEvent(args: {
 }): WorkflowFactEvent {
   if (!isWorkflowFactId(args.factId)) throw new TypeError("factId must be a pi-daddy workflow fact id");
   if (!isWorkflowIdentifier(args.source)) throw new TypeError("workflow fact source must be an identifier");
-  if (!WORKFLOW_FACT_PROVENANCE.includes(args.provenance)) throw new TypeError("workflow fact provenance is not recognised");
+  if (!WORKFLOW_FACT_PROVENANCE.includes(args.provenance))
+    throw new TypeError("workflow fact provenance is not recognised");
   if (!WORKFLOW_FACT_KINDS.includes(args.kind)) throw new TypeError("workflow fact kind is not recognised");
-  if (!isWorkflowIdentifier(args.subject)) throw new TypeError("workflow fact subject must be an identifier, not task text");
+  if (!isWorkflowIdentifier(args.subject))
+    throw new TypeError("workflow fact subject must be an identifier, not task text");
   if (!WORKFLOW_FACT_STATES.includes(args.state)) throw new TypeError("workflow fact state is not recognised");
   const correlation = normaliseCorrelation(args.correlation);
   if (!correlation?.run_id) throw new TypeError("workflow facts require correlation.run_id");
   if (!workflowFactStateMatches(args.provenance, args.state)) {
-    const expected = args.provenance === "planned" ? "pending" : args.provenance === "observed"
-      ? "observed" : "started, completed, or blocked";
+    const expected =
+      args.provenance === "planned"
+        ? "pending"
+        : args.provenance === "observed"
+          ? "observed"
+          : "started, completed, or blocked";
     throw new TypeError(`${args.provenance.replaceAll("_", "-")} workflow facts must use ${expected}`);
   }
   const event: WorkflowFactEvent = {

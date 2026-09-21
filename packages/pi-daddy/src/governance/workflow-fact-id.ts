@@ -10,7 +10,9 @@ export function isWorkflowIdentifier(value: unknown): value is string {
 }
 
 export function workflowFactStateMatches(provenance: unknown, state: unknown): boolean {
-  return (provenance === "planned" && state === "pending") ||
+  return (
+    (provenance === "planned" && state === "pending") ||
     (provenance === "observed" && state === "observed") ||
-    (provenance === "controller_validated" && ["started", "completed", "blocked"].includes(String(state)));
+    (provenance === "controller_validated" && ["started", "completed", "blocked"].includes(String(state)))
+  );
 }

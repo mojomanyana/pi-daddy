@@ -234,16 +234,24 @@ export async function discoverSkillPackages(cwd: string): Promise<SkillPackage[]
   const resolved = await resolveSkillResources(cwd);
   const packages: SkillPackage[] = [];
   const seenSkills = new Set<string>();
-  const runtimeNames = new Set(resolved.skills.map(s => skillResourceName(s.path)));
-  const configuredRoots = new Set(resolved.configured.flatMap(p => p.installedPath ? [resolve(p.installedPath)] : []));
-  const configuredNames = new Set<string>(resolved.configured.flatMap(p => {
-    if (!p.source.startsWith("npm:")) return [];
-    const spec = p.source.slice(4);
-    const versionAt = spec.indexOf("@", 1);
-    return [versionAt < 0 ? spec : spec.slice(0, versionAt)];
-  }));
+  const runtimeNames = new Set(resolved.skills.map((s) => skillResourceName(s.path)));
+  const configuredRoots = new Set(
+    resolved.configured.flatMap((p) => (p.installedPath ? [resolve(p.installedPath)] : [])),
+  );
+  const configuredNames = new Set<string>(
+    resolved.configured.flatMap((p) => {
+      if (!p.source.startsWith("npm:")) return [];
+      const spec = p.source.slice(4);
+      const versionAt = spec.indexOf("@", 1);
+      return [versionAt < 0 ? spec : spec.slice(0, versionAt)];
+    }),
+  );
   for (const root of configuredRoots) {
-    try { configuredNames.add(JSON.parse(await readFile(join(root, "package.json"), "utf8")).name); } catch { /* absent */ }
+    try {
+      configuredNames.add(JSON.parse(await readFile(join(root, "package.json"), "utf8")).name);
+    } catch {
+      /* absent */
+    }
   }
   for (const resource of resolved.skills) {
     const bytes = await readFile(resource.path).catch(() => null);
@@ -257,11 +265,17 @@ export async function discoverSkillPackages(cwd: string): Promise<SkillPackage[]
     if (resource.metadata.origin === "package" && resource.metadata.baseDir) {
       try {
         const manifest = JSON.parse(await readFile(join(resource.metadata.baseDir, "package.json"), "utf8"));
-        name = manifest.name ?? name; version = manifest.version ?? version;
-      } catch { /* the resource can be used without optional display metadata */ }
+        name = manifest.name ?? name;
+        version = manifest.version ?? version;
+      } catch {
+        /* the resource can be used without optional display metadata */
+      }
     } else name = `${resource.metadata.scope} skills`;
-    let pkg = packages.find(p => p.name === name && p.version === version);
-    if (!pkg) { pkg = { name, version, skills: [], refused: [], unreadable: [] }; packages.push(pkg); }
+    let pkg = packages.find((p) => p.name === name && p.version === version);
+    if (!pkg) {
+      pkg = { name, version, skills: [], refused: [], unreadable: [] };
+      packages.push(pkg);
+    }
     if (!Buffer.from(text, "utf8").equals(bytes)) {
       pkg.refused.push({ subject: resourceName, reason: "not-utf8", detail: [] });
       continue;
@@ -270,24 +284,24 @@ export async function discoverSkillPackages(cwd: string): Promise<SkillPackage[]
     if (!definition) continue;
     const skill = { definition, text, path: resource.path, referenced: true };
     const refusal = refusalFor(skill);
-    if (refusal) pkg.refused.push(refusal); else pkg.skills.push(skill);
+    if (refusal) pkg.refused.push(refusal);
+    else pkg.skills.push(skill);
   }
 
   // Compatibility for npm installs that were never registered with Pi. Runtime discovery never scans
   // node_modules. A configured package (including one disabled by a filter) must not re-enter here.
   const dirs: string[] = [];
   for (const root of skillPackageRoots(cwd)) await collectFrom(root, dirs);
-  const seenNames = new Set(packages.map(p => p.name));
+  const seenNames = new Set(packages.map((p) => p.name));
   for (const dir of dirs) {
     if (configuredRoots.has(resolve(dir))) continue;
     const found = await readSkillPackage(dir);
     if (!found || configuredNames.has(found.name) || seenNames.has(found.name)) continue;
     seenNames.add(found.name);
-    found.skills = found.skills.filter(skill => !runtimeNames.has(skill.definition.name));
+    found.skills = found.skills.filter((skill) => !runtimeNames.has(skill.definition.name));
     packages.push(found);
   }
   return packages;
-
 }
 
 /** Append every package directory under one `node_modules`, scoped packages included. */

@@ -17,10 +17,29 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import grantsExtension from "../extensions/grants.ts";
 import { ENV_HERDR } from "../src/executors/executor.ts";
-import { ENV_APPROVED, ENV_DEPTH, ENV_FANOUT, ENV_GATED, ENV_GRANT, ENV_LEDGER, ENV_MAX_DEPTH, ENV_PARENT_ID } from "../src/kernel/propagation.ts";
+import {
+  ENV_APPROVED,
+  ENV_DEPTH,
+  ENV_FANOUT,
+  ENV_GATED,
+  ENV_GRANT,
+  ENV_LEDGER,
+  ENV_MAX_DEPTH,
+  ENV_PARENT_ID,
+} from "../src/kernel/propagation.ts";
 import { tempDir } from "./tmp.ts";
 
-const KEYS = [ENV_GRANT, ENV_DEPTH, ENV_MAX_DEPTH, ENV_GATED, ENV_APPROVED, ENV_LEDGER, ENV_FANOUT, ENV_PARENT_ID, ENV_HERDR];
+const KEYS = [
+  ENV_GRANT,
+  ENV_DEPTH,
+  ENV_MAX_DEPTH,
+  ENV_GATED,
+  ENV_APPROVED,
+  ENV_LEDGER,
+  ENV_FANOUT,
+  ENV_PARENT_ID,
+  ENV_HERDR,
+];
 const saved = new Map<string, string | undefined>();
 
 /** Restore every governance variable this harness clears. Call from each suite's `afterEach`. */
@@ -32,7 +51,13 @@ export function restoreEnv(): void {
 export interface ToolSpec {
   name: string;
   parameters?: unknown;
-  execute: (id: string, params: Record<string, unknown>, signal: undefined, onUpdate: unknown, ctx: unknown) => Promise<unknown>;
+  execute: (
+    id: string,
+    params: Record<string, unknown>,
+    signal: undefined,
+    onUpdate: unknown,
+    ctx: unknown,
+  ) => Promise<unknown>;
 }
 
 /** A definition holding exactly `allowedTools`, so a step's ceiling is whatever the test needs. */
@@ -78,13 +103,16 @@ export async function harness(env: Record<string, string>, existingDir?: string,
   for (const k of KEYS) delete process.env[k];
   Object.assign(process.env, { [ENV_HERDR]: "0", ...env });
 
-  const tools = new Map<string, ToolSpec>(), activeTools = new Set(["read", "grep", "write", "bash"]);
+  const tools = new Map<string, ToolSpec>(),
+    activeTools = new Set(["read", "grep", "write", "bash"]);
   const hooks = new Map<string, (e: unknown, c: unknown) => unknown>();
   const selects: string[] = [];
   const offered: string[][] = [];
   const ctx = {
     cwd: dir,
-    modelRegistry: { find: (provider: string, id: string) => provider === "known" && id === "model" ? { provider, id } : undefined },
+    modelRegistry: {
+      find: (provider: string, id: string) => (provider === "known" && id === "model" ? { provider, id } : undefined),
+    },
     hasUI: true,
     ui: {
       notify: () => {},
@@ -95,7 +123,8 @@ export async function harness(env: Record<string, string>, existingDir?: string,
         offered.push(options);
         if (answer === "decline") return undefined;
         // The literal Deny option, so `humanDenied` is set — see the `GateAnswer` note.
-        if (answer === "allow-then-decline" && selects.length > 1) return options.find((o) => /^deny$/i.test(o)) ?? options[0];
+        if (answer === "allow-then-decline" && selects.length > 1)
+          return options.find((o) => /^deny$/i.test(o)) ?? options[0];
         if (answer === "allow-once") return options.find((o) => o.includes("once")) ?? options[1];
         // "Allow for this session" — no persisted store is touched, which a test must never do.
         return options.find((o) => o.includes("this session")) ?? options[1];
@@ -109,7 +138,10 @@ export async function harness(env: Record<string, string>, existingDir?: string,
     registerCommand: () => {},
     getAllTools: () => ["read", "grep", "write", "bash", "delegate"].map((name) => ({ name })),
     getActiveTools: () => [...activeTools],
-    setActiveTools: (names: string[]) => { activeTools.clear(); names.forEach(name => activeTools.add(name)); },
+    setActiveTools: (names: string[]) => {
+      activeTools.clear();
+      names.forEach((name) => activeTools.add(name));
+    },
   } as never);
 
   await hooks.get("session_start")!({}, ctx);

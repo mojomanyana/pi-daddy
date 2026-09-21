@@ -31,11 +31,13 @@ const STYLE: Record<DashboardState, { symbol: string; color: number; label: stri
 };
 
 function clean(value: string | undefined): string {
-  return (value ?? "").replace(/[\p{Cc}\p{Cf}]/gu, " ").replace(/\s+/g, " ").trim();
+  return (value ?? "")
+    .replace(/[\p{Cc}\p{Cf}]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
-const displayIdentifier = (value: string | undefined): string =>
-  isLedgerDisplayIdentifier(value) ? value : "";
+const displayIdentifier = (value: string | undefined): string => (isLedgerDisplayIdentifier(value) ? value : "");
 
 const ANSI_SGR = /\u001b\[[0-9;]*m/g;
 const WIDE_CELL = /\p{Extended_Pictographic}|[\u2E80-\u9FFF\uF900-\uFAFF]/u;
@@ -90,8 +92,10 @@ function phaseLabel(node: DashboardNode): string {
 
 function workflowFactLine(fact: DashboardWorkflowFact, color: boolean): string {
   const marker = fact.provenance === "planned" ? "P" : fact.provenance === "observed" ? "O" : "V";
-  const symbol = fact.provenance === "planned" ? "○" : fact.provenance === "observed" ? "◉" : fact.state === "blocked" ? "✕" : "✓";
-  const code = fact.provenance === "planned" ? 90 : fact.provenance === "observed" ? 33 : fact.state === "blocked" ? 31 : 32;
+  const symbol =
+    fact.provenance === "planned" ? "○" : fact.provenance === "observed" ? "◉" : fact.state === "blocked" ? "✕" : "✓";
+  const code =
+    fact.provenance === "planned" ? 90 : fact.provenance === "observed" ? 33 : fact.state === "blocked" ? 31 : 32;
   return `${marker} ${paint(symbol, code, color)} ${displayIdentifier(fact.subject) || "unlabelled"}  ${fact.state}`;
 }
 
@@ -153,7 +157,9 @@ function nodeLine(node: DashboardNode, color: boolean): string {
     style.label.padEnd(10),
     elapsed(node.durationMs),
     suffix,
-  ].filter(Boolean).join(" ");
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 function detailLines(node: DashboardNode): string[] {
@@ -195,10 +201,13 @@ function renderTree(
     entries.forEach((entry, position) => {
       const last = position === entries.length - 1;
       if (entry.node) visit(entry.node, childPrefix, last ? "└─ " : "├─ ");
-      else lines.push(truncate(
-        `${childPrefix}${last ? "└─ " : "├─ "}${paint(`… ${entry.collapsed} completed subtree${entry.collapsed === 1 ? "" : "s"}`, 90, options.color)}`,
-        options.width,
-      ));
+      else
+        lines.push(
+          truncate(
+            `${childPrefix}${last ? "└─ " : "├─ "}${paint(`… ${entry.collapsed} completed subtree${entry.collapsed === 1 ? "" : "s"}`, 90, options.color)}`,
+            options.width,
+          ),
+        );
     });
   };
   visit(root, "", "");
@@ -219,9 +228,8 @@ export function renderDashboard(projection: DashboardProjection, options: Dashbo
   const renderRoots = (roots: DashboardNode[]): void => {
     const selected = selectedRoots(roots, index, resolved.completedRoots);
     const hidden = roots.length - selected.length;
-    if (hidden > 0) lines.push(paint(
-      `... ${hidden} completed root${hidden === 1 ? "" : "s"} hidden`, 90, resolved.color,
-    ));
+    if (hidden > 0)
+      lines.push(paint(`... ${hidden} completed root${hidden === 1 ? "" : "s"} hidden`, 90, resolved.color));
     for (const root of selected) lines.push(...renderTree(root, index, resolved));
   };
   const rendered = new Set<string>();
@@ -248,12 +256,22 @@ export function renderDashboard(projection: DashboardProjection, options: Dashbo
     }
   }
   if (projection.orphanEvents > 0) {
-    lines.push(paint(`${projection.orphanEvents} historical event(s) not joined — childId is not an occurrence id`, 90, resolved.color));
+    lines.push(
+      paint(
+        `${projection.orphanEvents} historical event(s) not joined — childId is not an occurrence id`,
+        90,
+        resolved.color,
+      ),
+    );
   }
   lines.push(
     "",
     paint(`depth ${projection.maxDepth} · ${projection.active} active`, 90, resolved.color),
-    paint("P planned · O observed inline · V controller-validated · E enforced child · D declared labels", 90, resolved.color),
+    paint(
+      "P planned · O observed inline · V controller-validated · E enforced child · D declared labels",
+      90,
+      resolved.color,
+    ),
   );
   return lines.map((line) => truncate(line, resolved.width)).join("\n");
 }

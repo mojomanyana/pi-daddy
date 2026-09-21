@@ -14,7 +14,13 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { PROBE_TIMEOUT_MS, parseReply, probeHerdr, resolveWorkspace, type HerdrExec } from "../src/executors/herdr-cli.ts";
+import {
+  PROBE_TIMEOUT_MS,
+  parseReply,
+  probeHerdr,
+  resolveWorkspace,
+  type HerdrExec,
+} from "../src/executors/herdr-cli.ts";
 
 test("the probe asks `tab list`, because it is the cheapest command that proves a server answered", async () => {
   const calls: string[][] = [];
@@ -29,7 +35,11 @@ test("the probe asks `tab list`, because it is the cheapest command that proves 
 
 test("an empty tab list is still a reachable server", async () => {
   // A fresh herdr with nothing open must not read as "herdr is down". Zero tabs is an ANSWER.
-  const exec: HerdrExec = async () => ({ code: 0, stdout: JSON.stringify({ id: "x", result: { tabs: [] } }), stderr: "" });
+  const exec: HerdrExec = async () => ({
+    code: 0,
+    stdout: JSON.stringify({ id: "x", result: { tabs: [] } }),
+    stderr: "",
+  });
   assert.equal((await probeHerdr({ exec })).ok, true);
 });
 

@@ -40,23 +40,29 @@ test("an invalid project store creates a refused governed session instead of a w
     assert.equal(session.ledgerPath, projectLedgerPath(cwd), "the refusal itself has a durable project trail");
   } finally {
     process.chdir(originalCwd);
-    originalAgentDir === undefined ? delete process.env.PI_CODING_AGENT_DIR : process.env.PI_CODING_AGENT_DIR = originalAgentDir;
-    originalGrant === undefined ? delete process.env.PI_GRANTS_GRANT : process.env.PI_GRANTS_GRANT = originalGrant;
-    originalLedger === undefined ? delete process.env.PI_GRANTS_LEDGER : process.env.PI_GRANTS_LEDGER = originalLedger;
+    originalAgentDir === undefined
+      ? delete process.env.PI_CODING_AGENT_DIR
+      : (process.env.PI_CODING_AGENT_DIR = originalAgentDir);
+    originalGrant === undefined ? delete process.env.PI_GRANTS_GRANT : (process.env.PI_GRANTS_GRANT = originalGrant);
+    originalLedger === undefined
+      ? delete process.env.PI_GRANTS_LEDGER
+      : (process.env.PI_GRANTS_LEDGER = originalLedger);
   }
 });
 
 test("owner-bound reload restores its root while a distinct owner keeps inherited child state", async () => {
-  const cwd = await tempDir("grants-reload-root-"), agentDir = await tempDir("grants-reload-agent-");
+  const cwd = await tempDir("grants-reload-root-"),
+    agentDir = await tempDir("grants-reload-agent-");
   const originalCwd = process.cwd();
   const keys = [...GRANT_ENV_KEYS, "PI_CODING_AGENT_DIR"] as const;
-  const original = new Map(keys.map(key => [key, process.env[key]]));
+  const original = new Map(keys.map((key) => [key, process.env[key]]));
   try {
     process.chdir(cwd);
     for (const key of keys) delete process.env[key];
     process.env.PI_CODING_AGENT_DIR = agentDir;
     await saveGrant(cwd, ["tool:read"]);
-    const owner = {}, first = createGrantsSession(undefined);
+    const owner = {},
+      first = createGrantsSession(undefined);
     let bound = bindReloadLifecycle(owner, first.reloadLifecycle);
     first.reconcileEnvironment(bound.environment, bound.lifecycle);
     first.publishChildEnv();
@@ -97,30 +103,59 @@ test("owner-bound reload restores its root while a distinct owner keeps inherite
     process.chdir(originalCwd);
     for (const key of keys) {
       const value = original.get(key);
-      value === undefined ? delete process.env[key] : process.env[key] = value;
+      value === undefined ? delete process.env[key] : (process.env[key] = value);
     }
   }
 });
 
 test("actual extension reload is owned by its Pi API, not a same-process SDK child's environment", async () => {
-  const cwd = await tempDir("grants-reload-lifecycle-"), agentDir = await tempDir("grants-reload-lifecycle-agent-");
-  const originalCwd = process.cwd(), keys = [...GRANT_ENV_KEYS, "PI_CODING_AGENT_DIR", "PI_GRANTS_HERDR"] as const;
-  const original = new Map(keys.map(key => [key, process.env[key]]));
+  const cwd = await tempDir("grants-reload-lifecycle-"),
+    agentDir = await tempDir("grants-reload-lifecycle-agent-");
+  const originalCwd = process.cwd(),
+    keys = [...GRANT_ENV_KEYS, "PI_CODING_AGENT_DIR", "PI_GRANTS_HERDR"] as const;
+  const original = new Map(keys.map((key) => [key, process.env[key]]));
   const makePi = (sessionManager: object) => {
-    const hooks = new Map<string, any>(), active = new Set(["read", "bash", "edit", "write"]);
-    return { hooks, api: { on: (name: string, handler: any) => hooks.set(name, handler), registerTool: () => {}, registerCommand: () => {}, getAllTools: () => [{ name: "read" }, { name: "delegate" }], getActiveTools: () => [...active], setActiveTools: (names: string[]) => { active.clear(); names.forEach(name => active.add(name)); } }, sessionManager };
+    const hooks = new Map<string, any>(),
+      active = new Set(["read", "bash", "edit", "write"]);
+    return {
+      hooks,
+      api: {
+        on: (name: string, handler: any) => hooks.set(name, handler),
+        registerTool: () => {},
+        registerCommand: () => {},
+        getAllTools: () => [{ name: "read" }, { name: "delegate" }],
+        getActiveTools: () => [...active],
+        setActiveTools: (names: string[]) => {
+          active.clear();
+          names.forEach((name) => active.add(name));
+        },
+      },
+      sessionManager,
+    };
   };
   const start = async (pi: ReturnType<typeof makePi>) => {
     const notices: string[] = [];
     grantsExtension(pi.api as never);
-    await pi.hooks.get("session_start")({}, { cwd, mode: "json", sessionManager: pi.sessionManager, ui: { notify: (message: string) => notices.push(message), select: async () => undefined }, modelRegistry: { find: () => undefined } });
+    await pi.hooks.get("session_start")(
+      {},
+      {
+        cwd,
+        mode: "json",
+        sessionManager: pi.sessionManager,
+        ui: { notify: (message: string) => notices.push(message), select: async () => undefined },
+        modelRegistry: { find: () => undefined },
+      },
+    );
     return notices.join("\n");
   };
   try {
-    process.chdir(cwd); for (const key of keys) delete process.env[key];
-    process.env.PI_CODING_AGENT_DIR = agentDir; process.env.PI_GRANTS_HERDR = "0";
+    process.chdir(cwd);
+    for (const key of keys) delete process.env[key];
+    process.env.PI_CODING_AGENT_DIR = agentDir;
+    process.env.PI_GRANTS_HERDR = "0";
     await saveGrant(cwd, ["tool:read", "tool:delegate"]);
-    const manager = {}, root = makePi(manager);
+    const manager = {},
+      root = makePi(manager);
     await start(root); // publishes child depth 1
     await root.hooks.get("session_shutdown")({ reason: "reload" });
     const reloadedApi = makePi(manager);
@@ -130,7 +165,11 @@ test("actual extension reload is owned by its Pi API, not a same-process SDK chi
     const childStart = await start(child);
     assert.match(childStart, /depth 1\/2/, "a different same-process SDK Pi session remains an inherited child");
   } finally {
-    process.chdir(originalCwd); for (const key of keys) { const value = original.get(key); value === undefined ? delete process.env[key] : process.env[key] = value; }
+    process.chdir(originalCwd);
+    for (const key of keys) {
+      const value = original.get(key);
+      value === undefined ? delete process.env[key] : (process.env[key] = value);
+    }
   }
 });
 

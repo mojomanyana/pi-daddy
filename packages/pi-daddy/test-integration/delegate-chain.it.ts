@@ -34,39 +34,62 @@ describe("delegate_chain, with steps that really run", { skip }, () => {
     //
     // The production change that breaks this: passing `step.task` straight through instead of `composeStepTask`.
     const ledger = join(await tempDir("grants-chain-"), "ledger.jsonl");
-    const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate", [ENV_LEDGER]: ledger, [ENV_FANOUT]: "12" });
-  
+    const { tools, ctx } = await harness({
+      [ENV_GRANT]: "tool:read,tool:delegate",
+      [ENV_LEDGER]: ledger,
+      [ENV_FANOUT]: "12",
+    });
+
     const result = (await tools
       .get("delegate_chain")!
       .execute(
         "c",
-        { steps: [{ task: "first", tools: ["read"] }, { task: "second saw: {previous}", tools: ["read"] }] },
+        {
+          steps: [
+            { task: "first", tools: ["read"] },
+            { task: "second saw: {previous}", tools: ["read"] },
+          ],
+        },
         undefined,
         undefined,
         ctx,
       )
       .catch((error: Error) => ({ content: [{ text: error.message }] }))) as { content: Array<{ text: string }> };
-  
+
     const text = result.content[0].text;
     assert.match(text, /step 1/);
     assert.match(text, /step 2/, "both steps must be reported");
-  
+
     // The second step's ledger record must name the first as the author of its task.
-    const lines = (await readFile(ledger, "utf8")).trim().split("\n").map((l) => JSON.parse(l));
+    const lines = (await readFile(ledger, "utf8"))
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l));
     const second = lines.find((r) => r.childId?.endsWith(".2"));
     assert.ok(second, "the second step must have a record");
-    assert.equal(second.taskFrom, lines.find((r) => r.childId?.endsWith(".1"))?.childId, "and must name its predecessor");
+    assert.equal(
+      second.taskFrom,
+      lines.find((r) => r.childId?.endsWith(".1"))?.childId,
+      "and must name its predecessor",
+    );
   });
 
   test("ADR-0033: step 1 names no predecessor", async () => {
     const ledger = join(await tempDir("grants-chain-"), "ledger.jsonl");
-    const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate", [ENV_LEDGER]: ledger, [ENV_FANOUT]: "12" });
+    const { tools, ctx } = await harness({
+      [ENV_GRANT]: "tool:read,tool:delegate",
+      [ENV_LEDGER]: ledger,
+      [ENV_FANOUT]: "12",
+    });
     await tools
       .get("delegate_chain")!
       .execute("c", { steps: [{ task: "only", tools: ["read"] }] }, undefined, undefined, ctx)
       .catch(() => undefined);
-  
-    const first = (await readFile(ledger, "utf8")).trim().split("\n").map((l) => JSON.parse(l))[0];
+
+    const first = (await readFile(ledger, "utf8"))
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l))[0];
     assert.equal(first.taskFrom, undefined, "an empty string here would assert a predecessor that does not exist");
   });
 
@@ -83,8 +106,12 @@ describe("delegate_chain, with steps that really run", { skip }, () => {
     // child pi does not know that provider and exits non-zero. That keeps this a genuine execution-phase failure
     // after step 1 while the pure tier separately pins unresolved-model refusal before any dialog.
     const ledger = join(await tempDir("grants-chain-"), "ledger.jsonl");
-    const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate", [ENV_LEDGER]: ledger, [ENV_FANOUT]: "12" });
-  
+    const { tools, ctx } = await harness({
+      [ENV_GRANT]: "tool:read,tool:delegate",
+      [ENV_LEDGER]: ledger,
+      [ENV_FANOUT]: "12",
+    });
+
     const result = (await tools
       .get("delegate_chain")!
       .execute(
@@ -101,14 +128,17 @@ describe("delegate_chain, with steps that really run", { skip }, () => {
         ctx,
       )
       .catch((error: Error) => ({ content: [{ text: error.message }] }))) as { content: Array<{ text: string }> };
-  
+
     const text = result.content[0].text;
     assert.match(text, /step 1 — completed/, "what completed must still be returned");
     assert.match(text, /step 2 .*FAILED/);
     assert.doesNotMatch(text, /step 3/, "the third step must never have run");
     assert.match(text, /stopped at step 2/, "and the abort must be stated, not inferred");
-  
-    const lines = (await readFile(ledger, "utf8")).trim().split("\n").map((l) => JSON.parse(l));
+
+    const lines = (await readFile(ledger, "utf8"))
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l));
     assert.equal(lines.find((line) => line.childId?.endsWith(".2"))?.refusal?.code, "CHILD_EXIT_NONZERO");
     assert.ok(!lines.some((line) => line.childId?.endsWith(".3")), "step 3 must not appear in the ledger at all");
   });
@@ -116,24 +146,37 @@ describe("delegate_chain, with steps that really run", { skip }, () => {
   test("ADR-0033: each step gets its own hierarchical ledger id", async () => {
     // F8's property, extended to a chain: two steps must never be confusable, and the ids must read as a tree.
     const ledger = join(await tempDir("grants-chain-"), "ledger.jsonl");
-    const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate", [ENV_LEDGER]: ledger, [ENV_FANOUT]: "12" });
+    const { tools, ctx } = await harness({
+      [ENV_GRANT]: "tool:read,tool:delegate",
+      [ENV_LEDGER]: ledger,
+      [ENV_FANOUT]: "12",
+    });
     await tools
       .get("delegate_chain")!
       .execute(
         "c",
-        { steps: [{ task: "a", tools: ["read"] }, { task: "b {previous}", tools: ["read"] }, { task: "c {previous}", tools: ["read"] }] },
+        {
+          steps: [
+            { task: "a", tools: ["read"] },
+            { task: "b {previous}", tools: ["read"] },
+            { task: "c {previous}", tools: ["read"] },
+          ],
+        },
         undefined,
         undefined,
         ctx,
       )
       .catch(() => undefined);
-  
+
     // **DISTINCT ids, not distinct LINES (R-155).** This asserted `new Set(ids).size === ids.length`, which was
     // true when one step wrote one ledger line and false from ADR-0034 on: `execute-child.ts` appends
     // `child_lifecycle` events alongside the planner's `capability_decision`, so one child legitimately owns
     // several lines. Measured on the released tree: 9 lines, 3 ids — the property held and the test did not.
     // It sat broken because this tier is opt-in and had never been run.
-    const ids = (await readFile(ledger, "utf8")).trim().split("\n").map((l) => JSON.parse(l).childId);
+    const ids = (await readFile(ledger, "utf8"))
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l).childId);
     assert.deepEqual(
       [...new Set(ids)],
       ["d0.1", "d0.2", "d0.3"],
@@ -153,18 +196,23 @@ describe("delegate_chain, with steps that really run", { skip }, () => {
       dir,
       "allow-session",
     );
-  
+
     const result = (await tools
       .get("delegate_chain")!
       .execute(
         "c",
-        { steps: [{ task: "dig", agent: "digger" }, { task: "dig deeper {previous}", agent: "digger" }] },
+        {
+          steps: [
+            { task: "dig", agent: "digger" },
+            { task: "dig deeper {previous}", agent: "digger" },
+          ],
+        },
         undefined,
         undefined,
         ctx,
       )
       .catch((error: Error) => ({ content: [{ text: error.message }] }))) as { content: Array<{ text: string }> };
-  
+
     assert.equal(selects.length, 1, `one subject means one dialog, got ${selects.length}`);
     assert.match(result.content[0].text, /step 2/, "and both steps must actually have run");
   });
@@ -188,18 +236,23 @@ describe("delegate_chain, with steps that really run", { skip }, () => {
       dir,
       "allow-once",
     );
-  
+
     await tools
       .get("delegate_chain")!
       .execute(
         "c",
-        { steps: [{ task: "STEP-ONE survey the north field", agent: "digger" }, { task: "STEP-TWO {previous}", agent: "digger" }] },
+        {
+          steps: [
+            { task: "STEP-ONE survey the north field", agent: "digger" },
+            { task: "STEP-TWO {previous}", agent: "digger" },
+          ],
+        },
         undefined,
         undefined,
         ctx,
       )
       .catch(() => undefined);
-  
+
     assert.equal(selects.length, 2, `a once answer must not cover a second step; got ${selects.length} dialog(s)`);
     assert.ok(
       selects.some((t) => t.includes("STEP-TWO")),

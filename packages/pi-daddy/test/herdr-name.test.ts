@@ -8,19 +8,21 @@ const run = promisify(execFile);
 const moduleUrl = new URL("../src/executors/herdr-name.ts", import.meta.url).href;
 
 test("parallel parents using the same definition and child ID have distinct names", async () => {
-  const script = "import { uniqueAgentName } from " + JSON.stringify(moduleUrl)
-    + "; console.log(JSON.stringify(Array.from({length: 12}, () => uniqueAgentName('review-d0.1'))));";
-  const replies = await Promise.all(Array.from({ length: 8 }, () =>
-    run(process.execPath, ["--input-type=module", "-e", script])));
-  const names = replies.flatMap(reply => JSON.parse(reply.stdout) as string[]);
+  const script =
+    "import { uniqueAgentName } from " +
+    JSON.stringify(moduleUrl) +
+    "; console.log(JSON.stringify(Array.from({length: 12}, () => uniqueAgentName('review-d0.1'))));";
+  const replies = await Promise.all(
+    Array.from({ length: 8 }, () => run(process.execPath, ["--input-type=module", "-e", script])),
+  );
+  const names = replies.flatMap((reply) => JSON.parse(reply.stdout) as string[]);
   assert.equal(new Set(names).size, names.length);
   for (const name of names) assert.match(name, /^review-d0-1-[a-f0-9]{20}$/);
 });
 
 test("fresh module instances do not reuse names after reload", async () => {
-  const modules = await Promise.all(Array.from({ length: 4 }, (_, index) =>
-    import(moduleUrl + "?reload=" + index)));
-  const names = modules.map(module => module.uniqueAgentName("review-d0.1") as string);
+  const modules = await Promise.all(Array.from({ length: 4 }, (_, index) => import(moduleUrl + "?reload=" + index)));
+  const names = modules.map((module) => module.uniqueAgentName("review-d0.1") as string);
   assert.equal(new Set(names).size, names.length);
 });
 

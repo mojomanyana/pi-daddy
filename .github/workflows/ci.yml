@@ -51,6 +51,9 @@ jobs:
 
       - run: npm ci
 
+      - name: formatting (Prettier, width 120 — ADR-0076 PR 3a)
+        run: npm run format:check
+
       - name: typecheck
         working-directory: packages/pi-daddy
         run: npm run typecheck

@@ -46,7 +46,9 @@ function pollObserverStatus(
   let status = "";
   let attempts = 0;
   while (!COMPLETE_OBSERVER_STATUS.test(status) && now() < limit && attempts++ < maxAttempts) {
-    try { status = readStatus(); } catch {}
+    try {
+      status = readStatus();
+    } catch {}
     if (!COMPLETE_OBSERVER_STATUS.test(status)) wait();
   }
   return status;
@@ -122,7 +124,9 @@ async function exitWhileControllerSleepsAcross(kind: "soft" | "hard") {
         const status = pollObserverStatus(
           () => readFileSync(exitedPath, "utf8"),
           Date.now,
-          () => { Atomics.wait(sleeper, 0, 0, 10); },
+          () => {
+            Atomics.wait(sleeper, 0, 0, 10);
+          },
           Date.now() + 1_000,
         );
         assert.match(status, /^exited:\d+\n$/, "only zombie state or ENOENT establishes exit");
@@ -130,14 +134,18 @@ async function exitWhileControllerSleepsAcross(kind: "soft" | "hard") {
       }
     },
   };
-  const result = kind === "hard"
-    ? await withRunChildTestControl({
-      hardDeadlineAtAfterSpawn: () => {
-        testClockSelected = true;
-        return (hardDeadlineAt = Date.now() + 500);
-      },
-    }, () => runChild(request))
-    : await runChild(request);
+  const result =
+    kind === "hard"
+      ? await withRunChildTestControl(
+          {
+            hardDeadlineAtAfterSpawn: () => {
+              testClockSelected = true;
+              return (hardDeadlineAt = Date.now() + 500);
+            },
+          },
+          () => runChild(request),
+        )
+      : await runChild(request);
   if (kind === "hard") assert.equal(testClockSelected, true, "the readiness-gated clock controlled this run");
   assert.equal(exiting, true, "the child reached its synchronized exit before the controller slept");
   return result;
@@ -157,7 +165,15 @@ test("partial observer status cannot establish exit", () => {
 
 test("observer terminal errors are complete but never exits", () => {
   for (const status of ["timeout\n", "error:EIO\n"]) {
-    assert.equal(pollObserverStatus(() => status, () => 0, () => {}, 1), status);
+    assert.equal(
+      pollObserverStatus(
+        () => status,
+        () => 0,
+        () => {},
+        1,
+      ),
+      status,
+    );
     assert.doesNotMatch(status, /^exited:\d+\n$/);
   }
 });
@@ -165,7 +181,10 @@ test("observer terminal errors are complete but never exits", () => {
 test("observer polling stops even when an injected clock is frozen", () => {
   let reads = 0;
   const result = pollObserverStatus(
-    () => { reads++; return "exited:1"; },
+    () => {
+      reads++;
+      return "exited:1";
+    },
     () => 0,
     () => {},
     1,
@@ -178,7 +197,10 @@ test("observer polling stops even when an injected clock is frozen", () => {
 test("observer polling retries read errors and expires permanent ones", () => {
   let reads = 0;
   const recovered = pollObserverStatus(
-    () => { if (reads++ === 0) throw new Error("transient"); return "exited:7\n"; },
+    () => {
+      if (reads++ === 0) throw new Error("transient");
+      return "exited:7\n";
+    },
     () => reads,
     () => {},
     4,
@@ -186,9 +208,13 @@ test("observer polling retries read errors and expires permanent ones", () => {
   assert.equal(recovered, "exited:7\n");
   let now = 0;
   const expired = pollObserverStatus(
-    () => { throw new Error("permanent"); },
+    () => {
+      throw new Error("permanent");
+    },
     () => now,
-    () => { now++; },
+    () => {
+      now++;
+    },
     2,
   );
   assert.equal(expired, "");
@@ -239,7 +265,10 @@ test("a descendant retaining output pipes cannot make the timeout unbounded", as
   const started = Date.now();
   const result = await runChild({
     command: process.execPath,
-    args: ["-e", `const {spawn}=require('child_process');spawn(process.execPath,['-e','setTimeout(()=>{},1000)'],{stdio:['ignore','inherit','inherit']});setInterval(()=>{},1000)`],
+    args: [
+      "-e",
+      `const {spawn}=require('child_process');spawn(process.execPath,['-e','setTimeout(()=>{},1000)'],{stdio:['ignore','inherit','inherit']});setInterval(()=>{},1000)`,
+    ],
     env: process.env,
     cwd: process.cwd(),
     timeoutMs: 30,
@@ -258,7 +287,11 @@ test("a soft timeout cannot rewrite a child that already exited successfully", a
     setTimeout(() => process.exit(0), Math.max(0, Number(process.env.PI_DADDY_TEST_TIMEOUT_AT) - Date.now() - 50));
   `;
   const result = await runChild({
-    command: process.execPath, args: ["-e", code], env, cwd: process.cwd(), timeoutMs: 500,
+    command: process.execPath,
+    args: ["-e", code],
+    env,
+    cwd: process.cwd(),
+    timeoutMs: 500,
   });
   assert.equal(result.code, 0);
   assert.equal(result.timedOut, false, "pipe drainage cannot let the soft timer rewrite an exited child");
@@ -280,7 +313,9 @@ test("the hard deadline is snapshotted before onSpawn", async () => {
   const request: Parameters<typeof runChild>[0] = node("setTimeout(()=>process.exit(0),500)", {
     timeoutMs: 5_000,
     hardDeadlineAt: Date.now() + 100,
-    onSpawn: () => { delete request.hardDeadlineAt; },
+    onSpawn: () => {
+      delete request.hardDeadlineAt;
+    },
   });
   const result = await runChild(request);
   assert.equal(result.timedOut, true);
@@ -315,7 +350,9 @@ test("retained descendant pipes do not keep the controller process alive after s
     process.stdout.write("DONE\\n");
   `;
   const started = Date.now();
-  const controller = spawn(process.execPath, ["--input-type=module", "-e", code], { stdio: ["ignore", "pipe", "pipe"] });
+  const controller = spawn(process.execPath, ["--input-type=module", "-e", code], {
+    stdio: ["ignore", "pipe", "pipe"],
+  });
   await once(controller, "close");
   assert.ok(Date.now() - started < 1000, "destroyed read ends must not keep the event loop alive");
 });
@@ -419,7 +456,10 @@ test("ADR-0032: streaming respects the same byte cap as capture", async () => {
   // **Exact, not `<= cap + 100`.** The slack had no derivation, and a reviewer showed it hid a real 60-byte
   // over-emission: injecting one extra write past the cap left the test green. The invariant is exact by
   // construction — what is streamed is a prefix of `text` — so the assertion should be too.
-  assert.ok(Buffer.byteLength(chunks.join("")) <= 1024, `streamed ${Buffer.byteLength(chunks.join(""))} bytes past 1024`);
+  assert.ok(
+    Buffer.byteLength(chunks.join("")) <= 1024,
+    `streamed ${Buffer.byteLength(chunks.join(""))} bytes past 1024`,
+  );
   assert.ok(Buffer.byteLength(result.text) <= 1024, "and the result must respect it as well");
 });
 
@@ -446,7 +486,10 @@ test("ADR-0032: the cap holds in BYTES for non-ASCII, and never splits a charact
     });
     assert.ok(Buffer.byteLength(result.text) <= 101, `${name}: result was ${Buffer.byteLength(result.text)} bytes`);
     assert.ok(Buffer.byteLength(chunks.join("")) <= 101, `${name}: stream was over the cap`);
-    assert.ok(!/[\uD800-\uDFFF]/.test(result.text.replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, "")), `${name}: lone surrogate`);
+    assert.ok(
+      !/[\uD800-\uDFFF]/.test(result.text.replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, "")),
+      `${name}: lone surrogate`,
+    );
     assert.ok(!result.text.includes("\uFFFD"), `${name}: a character was corrupted`);
   }
 });

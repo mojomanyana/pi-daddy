@@ -73,7 +73,7 @@ export function throwFanoutInfrastructure(
     throw new AggregateError(
       infrastructureErrors,
       `fan-out hit ${infrastructureErrors.length} infrastructure failures: ` +
-      infrastructureErrors.map((error) => String(error instanceof Error ? error.message : error)).join("; "),
+        infrastructureErrors.map((error) => String(error instanceof Error ? error.message : error)).join("; "),
     );
   }
 }
@@ -90,8 +90,10 @@ export function totalFanoutFailure(failed: readonly DelegationOutcome[], message
   if (codes.length === 1 && failed.every((outcome) => outcome.refusal)) {
     return new GovernanceRefusal(refusal(codes[0], message, { failed: failed.length }));
   }
-  return new GovernanceRefusal(refusal(
-    "FANOUT_FAILED", message,
-    { failed: failed.length, codes: codes.length > 0 ? codes.sort().join(",") : "none" },
-  ));
+  return new GovernanceRefusal(
+    refusal("FANOUT_FAILED", message, {
+      failed: failed.length,
+      codes: codes.length > 0 ? codes.sort().join(",") : "none",
+    }),
+  );
 }

@@ -4,7 +4,11 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { createHash } from "node:crypto";
-import { governedWorkspaceAccess, prepareDelegationWorkspace, releaseDelegationWorkspace } from "../extensions/workspace-runtime.ts";
+import {
+  governedWorkspaceAccess,
+  prepareDelegationWorkspace,
+  releaseDelegationWorkspace,
+} from "../extensions/workspace-runtime.ts";
 import { ENV_WORKSPACE_REGISTRY, validateRegisteredWorkspace } from "../src/kernel/workspace.ts";
 import { acquireWorkspaceLease, ENV_WORKSPACE_LEASE_DIR } from "../src/governance/workspace-lease.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
@@ -66,11 +70,14 @@ test("a ledger failure after lease acquisition releases the writer lock", async 
   process.env[ENV_WORKSPACE_LEASE_DIR] = leaseDir;
   try {
     await assert.rejects(
-      () => prepareDelegationWorkspace({
-        spec: { workspace_id: "w1", access: "write" }, childId: "d0.1",
-        executionId: "exec:00000000-0000-4000-8000-000000000001", parentExecutionId: null,
-        ledgerPath: ledgerDirectory,
-      }),
+      () =>
+        prepareDelegationWorkspace({
+          spec: { workspace_id: "w1", access: "write" },
+          childId: "d0.1",
+          executionId: "exec:00000000-0000-4000-8000-000000000001",
+          parentExecutionId: null,
+          ledgerPath: ledgerDirectory,
+        }),
       /grant ledger write failed/,
     );
     const workspace = await validateRegisteredWorkspace({ workspaceId: "w1", registeredRoot: root });
@@ -104,7 +111,9 @@ test("a retained lease whose helper already died is ledgered `lost`, not `retain
   const workspace = await validateRegisteredWorkspace({ workspaceId: "w1", registeredRoot: root });
   const lease = await acquireWorkspaceLease({ workspace, access: "write", leaseDir, ownerId: "o" });
 
-  const record = JSON.parse(await readFile(join(leaseDir, `${createHash("sha256").update(root, "utf8").digest("hex")}.json`), "utf8"));
+  const record = JSON.parse(
+    await readFile(join(leaseDir, `${createHash("sha256").update(root, "utf8").digest("hex")}.json`), "utf8"),
+  );
   process.kill(record.pid, "SIGKILL");
   await Promise.race([lease.lost, new Promise((r) => setTimeout(r, 5_000))]);
 
@@ -119,7 +128,10 @@ test("a retained lease whose helper already died is ledgered `lost`, not `retain
   });
 
   assert.equal(outcome, "lost");
-  const events = (await readFile(ledgerPath, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+  const events = (await readFile(ledgerPath, "utf8"))
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
   const release = events.at(-1);
   assert.equal(release.event, "workspace_lease");
   assert.equal(

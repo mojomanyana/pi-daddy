@@ -46,17 +46,25 @@ test("round trip: a saved grant loads back, sync and async alike", async () => {
 test("a new init opts this project into its ledger, while a legacy grant does not", async () => {
   const legacyCwd = await temp();
   assert.equal(await saveGrant(legacyCwd, ["tool:read"]), "saved");
-  assert.deepEqual(loadStoredGrantSync(legacyCwd), {
-    grant: ["tool:read"],
-    projectLedger: false,
-  }, "an existing v1 choice is not reinterpreted as ledger consent after upgrade");
-  await writeFile(grantStorePath(legacyCwd), JSON.stringify({
-    version: 1,
-    cwd: legacyCwd,
-    grant: ["tool:read"],
-    projectLedger: true,
-    writtenAt: "x",
-  }), "utf8");
+  assert.deepEqual(
+    loadStoredGrantSync(legacyCwd),
+    {
+      grant: ["tool:read"],
+      projectLedger: false,
+    },
+    "an existing v1 choice is not reinterpreted as ledger consent after upgrade",
+  );
+  await writeFile(
+    grantStorePath(legacyCwd),
+    JSON.stringify({
+      version: 1,
+      cwd: legacyCwd,
+      grant: ["tool:read"],
+      projectLedger: true,
+      writtenAt: "x",
+    }),
+    "utf8",
+  );
   assert.equal(
     loadStoredGrantSync(legacyCwd)?.projectLedger,
     false,
@@ -117,7 +125,11 @@ test("the loader distinguishes absent, malformed, unsupported, unreadable and wr
   assert.deepEqual(loadStoredGrantStateSync(cwd), { state: "refuse", reason: "malformed" });
   await writeFile(path, JSON.stringify({ version: 99, cwd, grant: ["tool:read"] }), "utf8");
   assert.deepEqual(await loadStoredGrantState(cwd), { state: "refuse", reason: "unsupported-version" });
-  await writeFile(path, JSON.stringify({ version: 2, cwd: "/elsewhere", grant: ["tool:read"], projectLedger: true }), "utf8");
+  await writeFile(
+    path,
+    JSON.stringify({ version: 2, cwd: "/elsewhere", grant: ["tool:read"], projectLedger: true }),
+    "utf8",
+  );
   assert.deepEqual(loadStoredGrantStateSync(cwd), { state: "refuse", reason: "wrong-cwd" });
 
   if (process.getuid?.() === 0) return t.skip("root ignores file permissions");

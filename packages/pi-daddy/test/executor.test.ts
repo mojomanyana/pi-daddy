@@ -77,8 +77,12 @@ test("an unrecognised value fails CLOSED to the dependency-free executor, loudly
 
 test("every outcome carries a disclosure line, because ADR-0031 rests on not being silent", () => {
   const cases: Array<[string | undefined, { ok: boolean; error?: string } | null]> = [
-    [undefined, reachable], [undefined, down], ["0", null],
-    ["1", reachable], ["1", down], ["nonsense", down],
+    [undefined, reachable],
+    [undefined, down],
+    ["0", null],
+    ["1", reachable],
+    ["1", down],
+    ["nonsense", down],
   ];
   for (const [raw, probe] of cases) {
     const choice = chooseExecutor(raw, probe);

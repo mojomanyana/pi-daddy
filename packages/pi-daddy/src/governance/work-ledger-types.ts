@@ -1,11 +1,18 @@
 /** Opt-in work-v4 wire identities; none of these declarations grants authority. */
-export type WorkFrozen<T> = T extends ReadonlyArray<infer E>
-  ? ReadonlyArray<WorkFrozen<E>>
-  : T extends object ? { readonly [K in keyof T]: WorkFrozen<T[K]> } : T;
+export type WorkFrozen<T> =
+  T extends ReadonlyArray<infer E>
+    ? ReadonlyArray<WorkFrozen<E>>
+    : T extends object
+      ? { readonly [K in keyof T]: WorkFrozen<T[K]> }
+      : T;
 export type WorkInputCode =
-  | "WORK_JSON_INVALID" | "WORK_DUPLICATE_MEMBER" | "WORK_LIMIT_EXCEEDED"
-  | "WORK_VERSION_UNSUPPORTED" | "WORK_SCHEMA_INVALID"
-  | "WORK_DIGEST_MISMATCH" | "WORK_CONTEXT_INVALID";
+  | "WORK_JSON_INVALID"
+  | "WORK_DUPLICATE_MEMBER"
+  | "WORK_LIMIT_EXCEEDED"
+  | "WORK_VERSION_UNSUPPORTED"
+  | "WORK_SCHEMA_INVALID"
+  | "WORK_DIGEST_MISMATCH"
+  | "WORK_CONTEXT_INVALID";
 
 export class WorkInputError extends TypeError {
   readonly code: WorkInputCode;
@@ -19,10 +26,18 @@ export class WorkInputError extends TypeError {
 export type WorkWriteCode = "WORK_DESTINATION_INVALID" | "WORK_DESTINATION_ALIAS" | "WORK_LEDGER_WRITE_FAILED";
 export class WorkLedgerWriteError extends Error {
   readonly code: WorkWriteCode;
-  constructor(code: WorkWriteCode) { super(code); this.name = "WorkLedgerWriteError"; this.code = code; }
+  constructor(code: WorkWriteCode) {
+    super(code);
+    this.name = "WorkLedgerWriteError";
+    this.code = code;
+  }
 }
-export type WorkInspectionCode = "WORK_INSPECTION_PATH_INVALID" | "WORK_INSPECTION_NOT_REGULAR" | "WORK_INSPECTION_READ_FAILED";
-export interface WorkInspectionDiagnostic { readonly line: null; readonly code: WorkInputCode | WorkInspectionCode }
+export type WorkInspectionCode =
+  "WORK_INSPECTION_PATH_INVALID" | "WORK_INSPECTION_NOT_REGULAR" | "WORK_INSPECTION_READ_FAILED";
+export interface WorkInspectionDiagnostic {
+  readonly line: null;
+  readonly code: WorkInputCode | WorkInspectionCode;
+}
 export interface WorkLedgerInspection {
   readonly version: 4;
   readonly status: "read" | "missing" | "error";
@@ -34,9 +49,20 @@ export interface WorkLedgerInspection {
 
 export type RevisionKind = "scope" | "goal" | "node" | "obligation" | "artifact" | "policy";
 export type WorkEventKind = "work_revision" | "work_snapshot" | "work_occurrence" | "work_acceptance";
-export interface RevisionRef { kind: RevisionKind; id: string; revision: number; digest: string }
-export interface EventRef { eventId: string; digest: string }
-export interface Identity { id: string; digest: string }
+export interface RevisionRef {
+  kind: RevisionKind;
+  id: string;
+  revision: number;
+  digest: string;
+}
+export interface EventRef {
+  eventId: string;
+  digest: string;
+}
+export interface Identity {
+  id: string;
+  digest: string;
+}
 export interface WorkRevision {
   kind: RevisionKind;
   id: string;
@@ -86,7 +112,11 @@ export interface WorkOccurrencePayload {
     effortId: string | null;
   };
 }
-export interface EvidenceRef { id: string; digest: string; event: EventRef | null }
+export interface EvidenceRef {
+  id: string;
+  digest: string;
+  event: EventRef | null;
+}
 export interface AcceptanceBinding {
   snapshot: Identity;
   scope: RevisionRef;
@@ -97,7 +127,10 @@ export interface AcceptanceBinding {
   policy: RevisionRef;
   evidence: EvidenceRef[];
 }
-export interface WorkAcceptancePayload { authorityId: string; binding: AcceptanceBinding }
+export interface WorkAcceptancePayload {
+  authorityId: string;
+  binding: AcceptanceBinding;
+}
 interface WorkEvent<K extends WorkEventKind, P> {
   ledgerVersion: 4;
   event: K;
@@ -111,7 +144,10 @@ export type WorkSnapshotEvent = WorkEvent<"work_snapshot", { snapshot: WorkSnaps
 export type WorkOccurrenceEvent = WorkEvent<"work_occurrence", WorkOccurrencePayload>;
 export type WorkAcceptanceEvent = WorkEvent<"work_acceptance", WorkAcceptancePayload>;
 export type WorkLedgerEvent = WorkRevisionEvent | WorkSnapshotEvent | WorkOccurrenceEvent | WorkAcceptanceEvent;
-export interface WorkDiagnostic { readonly line: number | null; readonly code: WorkInputCode }
+export interface WorkDiagnostic {
+  readonly line: number | null;
+  readonly code: WorkInputCode;
+}
 export interface WorkIngestion {
   readonly events: ReadonlyArray<WorkLedgerEvent>;
   readonly errors: ReadonlyArray<WorkDiagnostic>;
@@ -119,14 +155,32 @@ export interface WorkIngestion {
 }
 
 export type WorkResolutionCode =
-  | "INPUT_INCOMPLETE" | "NO_SELECTION" | "REFERENCE_MISSING"
-  | "SCOPE_INVALID" | "REVISION_INVALID" | "CYCLE" | "DEPENDENCY_INVALID"
-  | "EVENT_CONFLICT" | "ARTIFACT_UNSELECTED" | "ARTIFACT_DIGEST_MISMATCH"
-  | "NO_CLAIM" | "SUPERSEDED_BINDING" | "AUTHORITY_MISSING"
-  | "RECEIPT_MISSING" | "RECEIPT_MISMATCH" | "RECEIPT_CONFLICT" | "DECISION_CONFLICT"
-  | "TRUSTED_REJECTION" | "AVAILABILITY_MISSING" | "BYTES_UNAVAILABLE"
-  | "AVAILABILITY_CONFLICT" | "OCCURRENCE_CONFLICT"
-  | "PARENT_MISSING" | "PARENT_CYCLE" | "OBSERVATION_CONFLICT" | "BRANCH_UNKNOWN";
+  | "INPUT_INCOMPLETE"
+  | "NO_SELECTION"
+  | "REFERENCE_MISSING"
+  | "SCOPE_INVALID"
+  | "REVISION_INVALID"
+  | "CYCLE"
+  | "DEPENDENCY_INVALID"
+  | "EVENT_CONFLICT"
+  | "ARTIFACT_UNSELECTED"
+  | "ARTIFACT_DIGEST_MISMATCH"
+  | "NO_CLAIM"
+  | "SUPERSEDED_BINDING"
+  | "AUTHORITY_MISSING"
+  | "RECEIPT_MISSING"
+  | "RECEIPT_MISMATCH"
+  | "RECEIPT_CONFLICT"
+  | "DECISION_CONFLICT"
+  | "TRUSTED_REJECTION"
+  | "AVAILABILITY_MISSING"
+  | "BYTES_UNAVAILABLE"
+  | "AVAILABILITY_CONFLICT"
+  | "OCCURRENCE_CONFLICT"
+  | "PARENT_MISSING"
+  | "PARENT_CYCLE"
+  | "OBSERVATION_CONFLICT"
+  | "BRANCH_UNKNOWN";
 export type WorkReference =
   | { readonly type: "revision"; readonly ref: RevisionRef }
   | { readonly type: "event"; readonly ref: EventRef }
@@ -185,7 +239,10 @@ export interface WorkObligationResult {
   readonly claims: ReadonlyArray<EventRef>;
   readonly problems: ReadonlyArray<WorkProblem>;
 }
-export interface WorkOccurrenceView { readonly event: EventRef; readonly payload: WorkOccurrencePayload }
+export interface WorkOccurrenceView {
+  readonly event: EventRef;
+  readonly payload: WorkOccurrencePayload;
+}
 export interface WorkAttemptBinding {
   readonly scope: RevisionRef;
   readonly obligation: RevisionRef;

@@ -55,7 +55,7 @@ export async function runInit(
   const outcome = await applyInit(plan);
   const lines = [
     `grants: ${plan.skills.length} definition(s) from ${packages.map((p) => `${p.name}@${p.version}`).join(", ")}`,
-    `  using ${plan.skills.filter(s => s.referenced).length} enabled definition(s) in place; no copies`,
+    `  using ${plan.skills.filter((s) => s.referenced).length} enabled definition(s) in place; no copies`,
     `  wrote ${outcome.written.length}, kept ${outcome.kept.length} already present` +
       `${outcome.failed.length > 0 ? `, ${outcome.failed.length} FAILED` : ""}`,
   ];

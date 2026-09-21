@@ -26,7 +26,7 @@ export function storedGrantSessionState(grantRaw: string | undefined, cwd: strin
     ...(stored ? { stored } : {}),
     ...(refusal ? { refusal } : {}),
     governed: grantRaw !== undefined || stored !== undefined || refusal !== undefined,
-    inherited: grantRaw !== undefined ? parseList(grantRaw) : stored?.grant ?? (refusal ? [] : [WILDCARD]),
+    inherited: grantRaw !== undefined ? parseList(grantRaw) : (stored?.grant ?? (refusal ? [] : [WILDCARD])),
     // Invalid state authorises only a refusal line at this conventional path; no child can start from it.
     defaultLedger: stored?.projectLedger || refusal ? projectLedgerPath(cwd) : undefined,
   };

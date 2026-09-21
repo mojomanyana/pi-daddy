@@ -4,11 +4,7 @@ import fsPromises, { readFile, writeFile } from "node:fs/promises";
 import { syncBuiltinESMExports } from "node:module";
 import { join } from "node:path";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
-import {
-  appendDeclaredWorkOccurrence,
-  declareWork,
-  loadDeclaredWork,
-} from "../src/products/work-command.ts";
+import { appendDeclaredWorkOccurrence, declareWork, loadDeclaredWork } from "../src/products/work-command.ts";
 import { parseWorkLedgerText, projectWorkLedger } from "../src/governance/work-ledger.ts";
 import { workPresentation } from "../src/products/work-setup.ts";
 
@@ -22,7 +18,10 @@ test("declareWork keeps outcome text out of governance ledgers and retains priva
   const loaded = await loadDeclaredWork(declared.statePath);
 
   assert.equal(parseWorkLedgerText(text).events.length, 5);
-  assert.equal(projectWorkLedger(text, { selectedSnapshot: loaded!.selectedSnapshot, authority: null }).scopeState, "valid");
+  assert.equal(
+    projectWorkLedger(text, { selectedSnapshot: loaded!.selectedSnapshot, authority: null }).scopeState,
+    "valid",
+  );
   assert.doesNotMatch(text + stateText, /Show a real task in Herdr/);
   assert.equal(loaded?.id, "factory-c01");
   assert.equal(loaded?.obligation.kind, "obligation");
@@ -34,7 +33,10 @@ test("same declaration and occurrence deliveries are idempotent; changed text un
   const first = await declareWork({ cwd, id: "daily-task", outcome: "First outcome" });
   const repeated = await declareWork({ cwd, id: "daily-task", outcome: "First outcome" });
   assert.deepEqual(repeated, first);
-  await assert.rejects(declareWork({ cwd, id: "daily-task", outcome: "Changed outcome" }), /already names a different outcome/);
+  await assert.rejects(
+    declareWork({ cwd, id: "daily-task", outcome: "Changed outcome" }),
+    /already names a different outcome/,
+  );
 
   const occurrence = {
     executionId: "exec:00000000-0000-4000-8000-000000000101",
@@ -55,16 +57,24 @@ test("same declaration and occurrence deliveries are idempotent; changed text un
   await appendDeclaredWorkOccurrence(first, occurrence, "completed");
 
   const ingestion = parseWorkLedgerText(await readFile(first.ledgerPath, "utf8"));
-  assert.equal(ingestion.events.filter(event => event.event === "work_occurrence").length, 2);
+  assert.equal(ingestion.events.filter((event) => event.event === "work_occurrence").length, 2);
   const projection = projectWorkLedger(await readFile(first.ledgerPath, "utf8"), {
     selectedSnapshot: first.selectedSnapshot,
     authority: null,
   });
   assert.equal(projection.runtime?.attempts.length, 1);
   assert.equal(projection.runtime?.attempts[0].state, "completed");
-  const starting = ingestion.events.find(event => event.event === "work_occurrence" && event.payload.state === "starting");
-  assert.equal(starting && starting.event === "work_occurrence" ? starting.payload.labels.modelId : null, "openai-codex/gpt-5.6-sol");
-  assert.match(starting && starting.event === "work_occurrence" ? starting.payload.labels.toolCallId! : "", /^toolcall:[a-f0-9]{64}$/);
+  const starting = ingestion.events.find(
+    (event) => event.event === "work_occurrence" && event.payload.state === "starting",
+  );
+  assert.equal(
+    starting && starting.event === "work_occurrence" ? starting.payload.labels.modelId : null,
+    "openai-codex/gpt-5.6-sol",
+  );
+  assert.match(
+    starting && starting.event === "work_occurrence" ? starting.payload.labels.toolCallId! : "",
+    /^toolcall:[a-f0-9]{64}$/,
+  );
   assert.equal(starting && starting.event === "work_occurrence" ? starting.payload.variantId : null, "sol-low");
 });
 
@@ -80,22 +90,37 @@ test("concurrent identical declarations serialize to one five-event graph", asyn
 
 test("a retry resumes the exact prepared timestamp after state publication interruption", async () => {
   const cwd = await tempDir("work-command-recovery-");
-  const statePath = join(cwd, ".pi", "work-current.json"), original = fsPromises.rename; let failed = false;
+  const statePath = join(cwd, ".pi", "work-current.json"),
+    original = fsPromises.rename;
+  let failed = false;
   fsPromises.rename = (async (...args: Parameters<typeof fsPromises.rename>) => {
-    if (!failed && String(args[1]) === statePath) { failed = true; throw new Error("fixture state publication interruption"); }
+    if (!failed && String(args[1]) === statePath) {
+      failed = true;
+      throw new Error("fixture state publication interruption");
+    }
     return original(...args);
   }) as typeof fsPromises.rename;
   syncBuiltinESMExports();
-  try { await assert.rejects(declareWork({ cwd, id: "recover", outcome: "Recover me" }), /fixture state publication/); }
-  finally { fsPromises.rename = original; syncBuiltinESMExports(); }
+  try {
+    await assert.rejects(declareWork({ cwd, id: "recover", outcome: "Recover me" }), /fixture state publication/);
+  } finally {
+    fsPromises.rename = original;
+    syncBuiltinESMExports();
+  }
   const recovered = await declareWork({ cwd, id: "recover", outcome: "Recover me" });
   assert.equal(parseWorkLedgerText(await readFile(recovered.ledgerPath, "utf8")).events.length, 5);
 });
 
 test("declaration refuses unsupported custom destinations instead of creating an unloadable selection", async () => {
   const cwd = await tempDir("work-command-custom-path-");
-  await assert.rejects(declareWork({ cwd, id: "custom", outcome: "Custom", ledgerPath: "other.jsonl" } as any), /unsupported work declaration field/);
-  await assert.rejects(declareWork({ cwd, id: "custom", outcome: "Custom", statePath: "other.json" } as any), /unsupported work declaration field/);
+  await assert.rejects(
+    declareWork({ cwd, id: "custom", outcome: "Custom", ledgerPath: "other.jsonl" } as any),
+    /unsupported work declaration field/,
+  );
+  await assert.rejects(
+    declareWork({ cwd, id: "custom", outcome: "Custom", statePath: "other.json" } as any),
+    /unsupported work declaration field/,
+  );
 });
 
 test("loadDeclaredWork fails closed for malformed or relocated state", async () => {

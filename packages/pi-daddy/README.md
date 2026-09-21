@@ -849,8 +849,7 @@ as a success.** It is also checked against reintroduced defects, which is the po
 bug makes two of its tests fail, and the approval tests were verified by mutation (making an unpinned body
 digest fail *open* fails exactly one test; deleting the body comparison fails three).
 
-`test/file-size.test.ts` fails the build if any file in `src/` or `extensions/` exceeds 400 lines. It caught
-its own author the day after it was added: rather than raise the cap, `delegation.ts` was split.
+`test/file-size.test.ts` fails the build if any shipped module in `src/` or `extensions/` exceeds 400 statements (counted through the TypeScript AST, so deleting newlines does not help) or contains a line over 200 characters; Prettier at width 120 (`npm run format:check`, enforced in CI) is the everyday width guard. It used to count lines, and eight files were minified to fit under it (ADR-0076 PR 3a).
 
 ## Status
 

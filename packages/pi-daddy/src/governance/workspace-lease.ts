@@ -23,7 +23,6 @@ export function defaultWorkspaceLeaseDir(env: NodeJS.ProcessEnv = process.env): 
   return env[ENV_WORKSPACE_LEASE_DIR] ?? join(agentDir, "pi-daddy", "workspace-leases");
 }
 
-
 /**
  * The ledger outcome for a release. Exported because call sites had their own copies and the check runner's
  * asserted `released` unconditionally — reproducing in the evidence path the exact defect this union was
@@ -97,29 +96,45 @@ export async function acquireWorkspaceLease(input: {
     };
   }
   if (input.signal?.aborted) {
-    throw new GovernanceRefusal(refusal("WORKSPACE_WRITE_CONFLICT", `writer lease for ${input.workspace.workspaceId} was cancelled before acquisition`));
+    throw new GovernanceRefusal(
+      refusal(
+        "WORKSPACE_WRITE_CONFLICT",
+        `writer lease for ${input.workspace.workspaceId} was cancelled before acquisition`,
+      ),
+    );
   }
 
   await mkdir(input.leaseDir, { recursive: true, mode: 0o700 });
   const paths = leasePaths(input.leaseDir, input.workspace.root);
   const { spawn } = await import("node:child_process");
-  const holder = spawn(input.flockCommand ?? "flock", [
-    "--exclusive", "--nonblock", "--conflict-exit-code", "73", paths.lock,
-    process.execPath, "--input-type=module", "-e", HELPER_SOURCE,
-  ], {
-    stdio: ["pipe", "pipe", "pipe"],
-    env: {
-      ...process.env,
-      PI_DADDY_LEASE_MARKER: paths.marker,
-      PI_DADDY_LEASE_CLOSE_ATTEMPTS: String(input.herdrCloseAttempts ?? 10),
-      PI_DADDY_LEASE_CLOSE_TIMEOUT_MS: String(input.herdrCloseTimeoutMs ?? 15_000),
+  const holder = spawn(
+    input.flockCommand ?? "flock",
+    [
+      "--exclusive",
+      "--nonblock",
+      "--conflict-exit-code",
+      "73",
+      paths.lock,
+      process.execPath,
+      "--input-type=module",
+      "-e",
+      HELPER_SOURCE,
+    ],
+    {
+      stdio: ["pipe", "pipe", "pipe"],
+      env: {
+        ...process.env,
+        PI_DADDY_LEASE_MARKER: paths.marker,
+        PI_DADDY_LEASE_CLOSE_ATTEMPTS: String(input.herdrCloseAttempts ?? 10),
+        PI_DADDY_LEASE_CLOSE_TIMEOUT_MS: String(input.herdrCloseTimeoutMs ?? 15_000),
+      },
+      // Own process group, for two reasons. It lets teardown kill `flock` AND the helper holding the lock
+      // file descriptor as one unit even before the helper has reported its pid (R-99), and it stops a
+      // stray group signal — a terminal Ctrl-C, a closed window — from releasing a live writer's lock as
+      // a side effect.
+      detached: true,
     },
-    // Own process group, for two reasons. It lets teardown kill `flock` AND the helper holding the lock
-    // file descriptor as one unit even before the helper has reported its pid (R-99), and it stops a
-    // stray group signal — a terminal Ctrl-C, a closed window — from releasing a live writer's lock as
-    // a side effect.
-    detached: true,
-  });
+  );
 
   const timeoutMs = input.acquisitionTimeoutMs ?? 2000;
   let ready = false;
@@ -138,44 +153,76 @@ export async function acquireWorkspaceLease(input: {
     // unknown, and killing only the wrapper leaves a half-booted helper free to inherit the lock file
     // descriptor and hold it forever. Fall back to individual pids if the group is already reaped.
     if (holder.pid !== undefined) {
-      try { process.kill(-holder.pid, "SIGKILL"); return; } catch { /* group gone */ }
+      try {
+        process.kill(-holder.pid, "SIGKILL");
+        return;
+      } catch {
+        /* group gone */
+      }
     }
     if (Number.isInteger(helperPid)) {
-      try { process.kill(helperPid!, "SIGKILL"); } catch { /* already gone */ }
+      try {
+        process.kill(helperPid!, "SIGKILL");
+      } catch {
+        /* already gone */
+      }
     }
     holder.kill("SIGKILL");
   };
-  holder.stderr?.on("data", (chunk) => { stderr += String(chunk); });
+  holder.stderr?.on("data", (chunk) => {
+    stderr += String(chunk);
+  });
   try {
     await new Promise<void>((resolveReady, rejectReady) => {
-      const timer = setTimeout(() => rejectReady(new GovernanceRefusal(refusal(
-        "WORKSPACE_LEASE_STALE", `writer lease helper did not become ready within ${timeoutMs}ms`,
-      ))), timeoutMs);
+      const timer = setTimeout(
+        () =>
+          rejectReady(
+            new GovernanceRefusal(
+              refusal("WORKSPACE_LEASE_STALE", `writer lease helper did not become ready within ${timeoutMs}ms`),
+            ),
+          ),
+        timeoutMs,
+      );
       const cleanup = () => {
         clearTimeout(timer);
         input.signal?.removeEventListener("abort", onAbort);
       };
-      const onAbort = () => rejectReady(new GovernanceRefusal(refusal(
-        "WORKSPACE_WRITE_CONFLICT", `writer lease for ${input.workspace.workspaceId} was cancelled before acquisition`,
-      )));
+      const onAbort = () =>
+        rejectReady(
+          new GovernanceRefusal(
+            refusal(
+              "WORKSPACE_WRITE_CONFLICT",
+              `writer lease for ${input.workspace.workspaceId} was cancelled before acquisition`,
+            ),
+          ),
+        );
       input.signal?.addEventListener("abort", onAbort, { once: true });
       holder.once("error", (error) => {
         cleanup();
-        rejectReady(new GovernanceRefusal(refusal(
-          "WORKSPACE_LEASE_STALE", `workspace writer leases require a working flock command (${String(error)})`,
-        )));
+        rejectReady(
+          new GovernanceRefusal(
+            refusal(
+              "WORKSPACE_LEASE_STALE",
+              `workspace writer leases require a working flock command (${String(error)})`,
+            ),
+          ),
+        );
       });
       holder.once("close", (code) => {
         if (ready) return;
         cleanup();
         const codeName = code === 73 ? "WORKSPACE_WRITE_CONFLICT" : "WORKSPACE_LEASE_STALE";
-        rejectReady(new GovernanceRefusal(refusal(
-          codeName,
-          code === 73
-            ? `workspace ${input.workspace.workspaceId} already has an active pi-daddy-governed writer`
-            : `workspace lease helper exited before acquisition${stderr ? ` (${stderr.trim()})` : ""}`,
-          { workspace_id: input.workspace.workspaceId, root: input.workspace.root },
-        )));
+        rejectReady(
+          new GovernanceRefusal(
+            refusal(
+              codeName,
+              code === 73
+                ? `workspace ${input.workspace.workspaceId} already has an active pi-daddy-governed writer`
+                : `workspace lease helper exited before acquisition${stderr ? ` (${stderr.trim()})` : ""}`,
+              { workspace_id: input.workspace.workspaceId, root: input.workspace.root },
+            ),
+          ),
+        );
       });
       holder.stdout?.on("data", (chunk) => {
         const output = String(chunk);
@@ -209,10 +256,13 @@ export async function acquireWorkspaceLease(input: {
     await atomicMetadata(paths.metadata, metadata);
   } catch (error) {
     holder.stdin?.end();
-    throw new GovernanceRefusal(refusal(
-      "WORKSPACE_LEASE_STALE", `acquired the kernel writer lock but could not record its owner (${String(error)})`,
-      { workspace_id: input.workspace.workspaceId, root: input.workspace.root },
-    ));
+    throw new GovernanceRefusal(
+      refusal(
+        "WORKSPACE_LEASE_STALE",
+        `acquired the kernel writer lock but could not record its owner (${String(error)})`,
+        { workspace_id: input.workspace.workspaceId, root: input.workspace.root },
+      ),
+    );
   }
 
   // TWO variables, deliberately. `releasing` goes up the instant release begins, because the handshake
@@ -222,15 +272,22 @@ export async function acquireWorkspaceLease(input: {
   let releasing = false;
   let settled: LeaseReleaseOutcome | undefined;
   let lose!: (error: Error) => void;
-  const lost = new Promise<Error>((resolveLost) => { lose = resolveLost; });
+  const lost = new Promise<Error>((resolveLost) => {
+    lose = resolveLost;
+  });
   const lostError = () => new Error(`workspace writer lease helper exited for ${input.workspace.workspaceId}`);
-  holder.once("close", () => { if (!releasing) lose(lostError()); });
+  holder.once("close", () => {
+    if (!releasing) lose(lostError());
+  });
   if (holder.exitCode !== null || holder.signalCode !== null) queueMicrotask(() => lose(lostError()));
   const attach = (value: { process_pid: number } | { herdr_tab: string }) => {
     if (releasing || holder.exitCode !== null || holder.signalCode !== null || !holder.stdin?.writable) {
-      throw new GovernanceRefusal(refusal(
-        "WORKSPACE_LEASE_STALE", `writer lease for ${input.workspace.workspaceId} was lost before child attachment`,
-      ));
+      throw new GovernanceRefusal(
+        refusal(
+          "WORKSPACE_LEASE_STALE",
+          `writer lease for ${input.workspace.workspaceId} was lost before child attachment`,
+        ),
+      );
     }
     holder.stdin.write(`${JSON.stringify(value)}\n`);
   };
@@ -239,8 +296,12 @@ export async function acquireWorkspaceLease(input: {
     access: "write",
     ownerId: input.ownerId,
     recovered,
-    attachProcess(pid) { attach({ process_pid: pid }); },
-    attachHerdrTab(tabId) { attach({ herdr_tab: tabId }); },
+    attachProcess(pid) {
+      attach({ process_pid: pid });
+    },
+    attachHerdrTab(tabId) {
+      attach({ herdr_tab: tabId });
+    },
     lost,
     async markRetained(reason = "retained") {
       // Deliberately does NOT touch the kernel lock or the helper: the pane may still be live. It only
@@ -260,8 +321,14 @@ export async function acquireWorkspaceLease(input: {
       let recorded = false;
       if (current !== "malformed" && current?.token === token) {
         recorded = await atomicMetadata(paths.metadata, {
-          ...metadata, state: "released", released_at: new Date().toISOString(), release_reason: `retained:${reason}`,
-        }).then(() => true, () => false);
+          ...metadata,
+          state: "released",
+          released_at: new Date().toISOString(),
+          release_reason: `retained:${reason}`,
+        }).then(
+          () => true,
+          () => false,
+        );
       }
       /**
        * **It must, however, let THIS process exit (R-146).** Leaving the helper alone is the decision;

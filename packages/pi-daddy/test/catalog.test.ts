@@ -27,7 +27,10 @@ test("classifies pi built-ins vs extension-provided tools", () => {
 
 test("tool names are deduplicated and sorted", () => {
   const entries = classifyToolNames(["read", "read", "bash"]);
-  assert.deepEqual(entries.map((e) => e.capability), ["tool:bash", "tool:read"]);
+  assert.deepEqual(
+    entries.map((e) => e.capability),
+    ["tool:bash", "tool:read"],
+  );
 });
 
 test("catalog dedupes, sorts, and answers membership by kind", () => {
@@ -46,10 +49,7 @@ test("catalog dedupes, sorts, and answers membership by kind", () => {
 
 test("unknown capabilities are reported separately from denials", () => {
   const catalog = makeCatalog([{ capability: "tool:read", kind: "builtin" }]);
-  assert.deepEqual(unknownCapabilities(["tool:read", "tool:typo", "skill:gone"], catalog), [
-    "skill:gone",
-    "tool:typo",
-  ]);
+  assert.deepEqual(unknownCapabilities(["tool:read", "tool:typo", "skill:gone"], catalog), ["skill:gone", "tool:typo"]);
 });
 
 test("skills are discovered from SKILL.md directories and top-level .md files", async () => {
