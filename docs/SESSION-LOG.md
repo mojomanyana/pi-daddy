@@ -34,7 +34,7 @@ readers, contract exactness, version consistency.
 Evidence after the repairs, working tree on top of `3a6f0a9` (wip; squashed into the PR commit): Prettier check
 clean from the repo root; `tsc -p tsconfig.check.json` zero errors; `npm run test:integration:ci` 38 pass, 0 fail
 against a real pi; `npm run test:smoke` OK; `npm test` 1021 pass, 0 fail in the main run and 205 pass, 0 fail in the
-second runner. Docs-only follow-ups (this paragraph, the PR number) ship inside the same PR by rule 10.
+second runner. Pull request #67, squash-merged after CI.
 
 ### NEXT SESSION
 
