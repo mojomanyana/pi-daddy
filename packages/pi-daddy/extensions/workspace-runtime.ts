@@ -1,12 +1,21 @@
 import type { CorrelationMetadata } from "../src/kernel/correlation.ts";
 import type { Capability } from "../src/kernel/resolve.ts";
-import {
-  appendLedgerEvent,
-  buildWorkspaceLeaseEvent,
-} from "../src/governance/ledger.ts";
+import { appendLedgerEvent, buildWorkspaceLeaseEvent } from "../src/governance/ledger.ts";
 import { GovernanceRefusal, refusal, type StructuredRefusal } from "../src/kernel/refusals.ts";
-import { ENV_WORKSPACE_REGISTRY, loadWorkspaceRegistry, resolveWorkspace, type ValidatedWorkspace, type WorkspaceAccess } from "../src/kernel/workspace.ts";
-import { acquireWorkspaceLease, defaultWorkspaceLeaseDir, type WorkspaceLease, leaseAcquisitionOutcome, type LeaseReleaseOutcome } from "../src/governance/workspace-lease.ts";
+import {
+  ENV_WORKSPACE_REGISTRY,
+  loadWorkspaceRegistry,
+  resolveWorkspace,
+  type ValidatedWorkspace,
+  type WorkspaceAccess,
+} from "../src/kernel/workspace.ts";
+import {
+  acquireWorkspaceLease,
+  defaultWorkspaceLeaseDir,
+  type WorkspaceLease,
+  leaseAcquisitionOutcome,
+  type LeaseReleaseOutcome,
+} from "../src/governance/workspace-lease.ts";
 
 export interface DelegationWorkspaceSpec {
   workspace_id: string;
@@ -65,19 +74,21 @@ export async function prepareDelegationWorkspace(input: {
   ledgerPath?: string;
 }): Promise<PreparedWorkspace> {
   if (input.correlation?.workspace_id && input.correlation.workspace_id !== input.spec.workspace_id) {
-    throw new GovernanceRefusal(refusal(
-      "APPROVAL_SCOPE_MISMATCH",
-      `correlation workspace ${input.correlation.workspace_id} does not match requested workspace ${input.spec.workspace_id}`,
-      { workspace_id: input.spec.workspace_id },
-    ));
+    throw new GovernanceRefusal(
+      refusal(
+        "APPROVAL_SCOPE_MISMATCH",
+        `correlation workspace ${input.correlation.workspace_id} does not match requested workspace ${input.spec.workspace_id}`,
+        { workspace_id: input.spec.workspace_id },
+      ),
+    );
   }
   const registryPath = process.env[ENV_WORKSPACE_REGISTRY];
   if (!registryPath) {
-    throw new GovernanceRefusal(refusal(
-      "WORKSPACE_NOT_REGISTERED",
-      `${ENV_WORKSPACE_REGISTRY} is required when a delegation names a workspace`,
-      { workspace_id: input.spec.workspace_id },
-    ));
+    throw new GovernanceRefusal(
+      refusal("WORKSPACE_NOT_REGISTERED", `${ENV_WORKSPACE_REGISTRY} is required when a delegation names a workspace`, {
+        workspace_id: input.spec.workspace_id,
+      }),
+    );
   }
   const workspace = await resolveWorkspace(await loadWorkspaceRegistry(registryPath), input.spec.workspace_id);
   let lease: WorkspaceLease | undefined;
@@ -112,9 +123,10 @@ export async function prepareDelegationWorkspace(input: {
     // A load-bearing ledger failure can happen after the kernel lock was acquired. Release before trying
     // to record the refusal, or this live parent would strand its own writer lease until process exit.
     await lease?.release("setup-failed");
-    const structured: StructuredRefusal = error instanceof GovernanceRefusal
-      ? { code: error.code, message: error.message, ...(error.details ? { details: error.details } : {}) }
-      : refusal("WORKSPACE_LEASE_STALE", `workspace lease failed (${String(error)})`);
+    const structured: StructuredRefusal =
+      error instanceof GovernanceRefusal
+        ? { code: error.code, message: error.message, ...(error.details ? { details: error.details } : {}) }
+        : refusal("WORKSPACE_LEASE_STALE", `workspace lease failed (${String(error)})`);
     if (input.ledgerPath) {
       await appendLedgerEvent(
         { path: input.ledgerPath, strict: true },

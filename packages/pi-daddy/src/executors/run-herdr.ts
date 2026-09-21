@@ -27,7 +27,14 @@ import type { ChildRunResult } from "../kernel/run-child.ts";
 import { DEFAULT_MAX_OUTPUT_BYTES, DEFAULT_TIMEOUT_MS } from "../kernel/run-child.ts";
 import { MAX_OPEN_PANES, markPaneSettled, trackPane, trimOpenPanes, untrackPane } from "./pane-reaper.ts";
 import { defaultExec, parseReply, type HerdrExec } from "./herdr-cli.ts";
-import { FRESH_LIFECYCLE_TIMEOUT_MS, readPane, waitForLifecycleBaseline, waitForSettled, observeHerdrSession, type PollTarget } from "./herdr-poll.ts";
+import {
+  FRESH_LIFECYCLE_TIMEOUT_MS,
+  readPane,
+  waitForLifecycleBaseline,
+  waitForSettled,
+  observeHerdrSession,
+  type PollTarget,
+} from "./herdr-poll.ts";
 import { stageSystemPrompt } from "./herdr-stage.ts";
 import { uniqueAgentName } from "./herdr-name.ts";
 import { bundledHerdrPiLifecycleExtension } from "./herdr-pi-lifecycle.ts";
@@ -52,7 +59,15 @@ export { PANE_READY_POLL_MS } from "./herdr-start.ts";
  * `POLL_INTERVAL_MS` and `newSuffix` moved to `./herdr-poll.ts` under the 400-line ceiling; the names are part
  * of this module's surface and moving a file should not move an export.
  */
-export { DEFAULT_SNAPSHOT_LINES, POLL_INTERVAL_MS, readPane, tailLines, waitForLifecycleBaseline, waitForSettled, type PollTarget } from "./herdr-poll.ts";
+export {
+  DEFAULT_SNAPSHOT_LINES,
+  POLL_INTERVAL_MS,
+  readPane,
+  tailLines,
+  waitForLifecycleBaseline,
+  waitForSettled,
+  type PollTarget,
+} from "./herdr-poll.ts";
 
 export interface HerdrRunRequest {
   /** `planSpawn` args **without** the prompt — see `prompt`. */
@@ -117,7 +132,6 @@ export interface HerdrRunRequest {
   /** Poll cadence override. Exists so tests do not wait `POLL_INTERVAL_MS` per state transition. */
   pollIntervalMs?: number;
 }
-
 
 export class HerdrWriterCloseError extends Error {
   constructor(tabId: string) {
@@ -193,7 +207,13 @@ export async function runHerdrPane(request: HerdrRunRequest): Promise<ChildRunRe
   const rootPane = (created.result?.root_pane ?? {}) as { pane_id?: string; tab_id?: string };
   const paneId = rootPane.pane_id;
   const tabId = rootPane.tab_id;
-  if (tabId) { try { request.onNativeTab?.(tabId); } catch { /* observation only */ } }
+  if (tabId) {
+    try {
+      request.onNativeTab?.(tabId);
+    } catch {
+      /* observation only */
+    }
+  }
   // **Tracked BEFORE the pane-id check, not after.** A tab can exist from the moment this reply is parsed,
   // so registering later leaves a window — one herdr round-trip wide — in which a killed process orphans a
   // tab nothing would reap. The normal path had no such window and the error path did, which is backwards:
@@ -322,7 +342,8 @@ export async function runHerdrPane(request: HerdrRunRequest): Promise<ChildRunRe
       Math.min(deadline, Date.now() + FRESH_LIFECYCLE_TIMEOUT_MS),
     );
     if (baseline.aborted) return { ...empty, aborted: true };
-    if (baseline.spawnError || baseline.before === undefined) return { ...empty, spawnError: baseline.spawnError ?? "Herdr lifecycle baseline is unavailable" };
+    if (baseline.spawnError || baseline.before === undefined)
+      return { ...empty, spawnError: baseline.spawnError ?? "Herdr lifecycle baseline is unavailable" };
     observeHerdrSession(started.result?.agent, paneId, request.onSessionReference);
 
     const prompted = parseReply(await exec(["agent", "prompt", agentName, request.prompt]));
@@ -335,12 +356,24 @@ export async function runHerdrPane(request: HerdrRunRequest): Promise<ChildRunRe
       }
     }
 
-    const settled = await waitForSettled(exec, { ...request, name: agentName, nativePaneId: paneId }, baseline.before, deadline, maxOutputBytes);
+    const settled = await waitForSettled(
+      exec,
+      { ...request, name: agentName, nativePaneId: paneId },
+      baseline.before,
+      deadline,
+      maxOutputBytes,
+    );
     if (settled.aborted || settled.timedOut) {
       // Still read: a timed-out child usually produced something, and a partial answer labelled partial is
       // more useful than none. R-03's rule — a missing result must never look like an empty one.
       const partial = await readPane(exec, agentName, maxOutputBytes);
-      if (!partial.readFailed) { try { request.onObservation?.(Buffer.from(partial.text)); } catch { /* observation only */ } }
+      if (!partial.readFailed) {
+        try {
+          request.onObservation?.(Buffer.from(partial.text));
+        } catch {
+          /* observation only */
+        }
+      }
       return { ...empty, ...settled, text: partial.readFailed ? "" : partial.text, truncated: partial.truncated };
     }
     if (settled.spawnError) return { ...empty, spawnError: settled.spawnError };
@@ -358,7 +391,11 @@ export async function runHerdrPane(request: HerdrRunRequest): Promise<ChildRunRe
           `The work may have been done — check pane ${paneId} if it is still open.`,
       };
     }
-    try { request.onObservation?.(Buffer.from(out.text)); } catch { /* observation only */ }
+    try {
+      request.onObservation?.(Buffer.from(out.text));
+    } catch {
+      /* observation only */
+    }
     settledCleanly = true;
     // The trim may now reclaim this pane if the cap is exceeded. Until this point it must not: closing the tab
     // kills the child, and the child was still working.
@@ -371,16 +408,16 @@ export async function runHerdrPane(request: HerdrRunRequest): Promise<ChildRunRe
       text: [
         out.truncated ? `[grants] this pane exceeded the output cap; only its most recent output is below.\n` : "",
         out.text,
-        settled.status === "blocked"
-          ? `\n\n[grants] this agent is BLOCKED waiting for a human in pane ${paneId}.`
-          : "",
+        settled.status === "blocked" ? `\n\n[grants] this agent is BLOCKED waiting for a human in pane ${paneId}.` : "",
       ].join(""),
       truncated: out.truncated,
       timedOut: false,
       aborted: false,
     };
-  }, [{
-    label: "herdr pane finalizer failed",
-    run: () => cleanup(settledCleanly),
-  }]);
+  }, [
+    {
+      label: "herdr pane finalizer failed",
+      run: () => cleanup(settledCleanly),
+    },
+  ]);
 }

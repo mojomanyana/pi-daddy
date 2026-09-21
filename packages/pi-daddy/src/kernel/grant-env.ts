@@ -205,7 +205,7 @@ export function renderGrantEnv(input: GrantEnvInput): string {
     `export PI_GRANTS_GRANT="${input.live.join(",")}"`,
     "",
     "# Init enables this project ledger. It is LOAD-BEARING: a spawn that cannot be recorded is refused.",
-    '# PI_GRANTS_LEDGER still overrides the stored default used by plain `pi` after `/grants init`.',
+    "# PI_GRANTS_LEDGER still overrides the stored default used by plain `pi` after `/grants init`.",
     'export PI_GRANTS_LEDGER=".pi/grants.jsonl"',
     "",
     "# Optional. tool:bash is ALREADY gated by default, so this line only matters if you widen it:",

@@ -32,8 +32,35 @@ import { writeFileSync } from "node:fs";
 let clean=false, target=null, buffered="";
 process.stdout.write(${JSON.stringify(`${LEASE_READY}:`)}+process.pid+"\\n");
 process.stdin.setEncoding("utf8");
-process.stdin.on("data",chunk=>{buffered+=chunk;for(;;){const i=buffered.indexOf("\\n");if(i<0)break;const line=buffered.slice(0,i);buffered=buffered.slice(i+1);try{const value=JSON.parse(line);if(value.release)clean=true;else if(value.process_pid)target={process_pid:value.process_pid};else if(value.herdr_tab)target={herdr_tab:value.herdr_tab};}catch{}}});
-process.stdin.on("end",()=>{if(clean||!target)return process.exit(0);if(target.process_pid){try{process.kill(target.process_pid,"SIGTERM")}catch{return process.exit(0)}setTimeout(()=>{try{process.kill(target.process_pid,"SIGKILL")}catch{}},500);return setTimeout(()=>process.exit(0),750);}let left=Number(process.env.PI_DADDY_LEASE_CLOSE_ATTEMPTS||10);const giveUp=last=>{try{if(process.env.PI_DADDY_LEASE_MARKER)writeFileSync(process.env.PI_DADDY_LEASE_MARKER,JSON.stringify({reason:last&&(last.killed||last.signal==="SIGKILL")?"herdr-close-timeout":"herdr-close-failed",herdr_tab:target.herdr_tab})+"\\n")}catch{}process.exit(0)};const close=()=>execFile("herdr",["tab","close",target.herdr_tab],{timeout:Number(process.env.PI_DADDY_LEASE_CLOSE_TIMEOUT_MS||15000),killSignal:"SIGKILL"},error=>{if(!error)return process.exit(0);if(--left<=0)return giveUp(error);setTimeout(close,1000)});close();});
+process.stdin.on("data",chunk=>{buffered+=chunk;
+for(;
+;
+){const i=buffered.indexOf("\\n");
+if(i<0)break;
+const line=buffered.slice(0,i);
+buffered=buffered.slice(i+1);
+try{const value=JSON.parse(line);
+if(value.release)clean=true;
+else if(value.process_pid)target={process_pid:value.process_pid};
+else if(value.herdr_tab)target={herdr_tab:value.herdr_tab};
+}catch{}}});
+process.stdin.on("end",()=>{if(clean||!target)return process.exit(0);
+if(target.process_pid){try{process.kill(target.process_pid,"SIGTERM")}catch{return process.exit(0)}setTimeout(()=>{try{process.kill(target.process_pid,"SIGKILL")}catch{}},500);
+return setTimeout(()=>process.exit(0),750);
+}let left=Number(process.env.PI_DADDY_LEASE_CLOSE_ATTEMPTS||10);
+const giveUp=last=>{
+try{
+if(process.env.PI_DADDY_LEASE_MARKER)writeFileSync(process.env.PI_DADDY_LEASE_MARKER,
+JSON.stringify({reason:last&&(last.killed||last.signal==="SIGKILL")?"herdr-close-timeout":"herdr-close-failed",herdr_tab:target.herdr_tab})+"\\n")
+}catch{}
+process.exit(0)};
+const close=()=>execFile("herdr",["tab","close",target.herdr_tab],
+{timeout:Number(process.env.PI_DADDY_LEASE_CLOSE_TIMEOUT_MS||15000),killSignal:"SIGKILL"},
+error=>{if(!error)return process.exit(0);
+if(--left<=0)return giveUp(error);
+setTimeout(close,1000)});
+close();
+});
 process.stdin.resume();`;
 
 /**

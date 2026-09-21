@@ -13,7 +13,9 @@ import { spawn } from "node:child_process";
 import { StringDecoder } from "node:string_decoder";
 import { parseBound } from "./propagation.ts";
 
-interface RunChildTestControl { hardDeadlineAtAfterSpawn(): number }
+interface RunChildTestControl {
+  hardDeadlineAtAfterSpawn(): number;
+}
 const TEST_CONTROL = Symbol.for("pi-daddy.internal.run-child-test-control");
 
 function currentRunChildTestControl(): RunChildTestControl | undefined {
@@ -149,7 +151,14 @@ export function runChild(request: ChildRunRequest): Promise<ChildRunResult> {
     try {
       if (child.pid !== undefined) request.onSpawn?.(child.pid);
     } catch (error) {
-      const failed = { code: null, text: "", truncated: false, timedOut: false, aborted: false, spawnError: String(error) };
+      const failed = {
+        code: null,
+        text: "",
+        truncated: false,
+        timedOut: false,
+        aborted: false,
+        spawnError: String(error),
+      };
       child.stdout?.destroy();
       child.stderr?.destroy();
       child.once("error", () => settle(failed));
@@ -250,28 +259,47 @@ export function runChild(request: ChildRunRequest): Promise<ChildRunResult> {
 
     const observe = (stream: "stdout" | "stderr", chunk: Buffer) => {
       capture(chunk);
-      try { request.onObservation?.(stream, chunk); } catch { /* observation only */ }
+      try {
+        request.onObservation?.(stream, chunk);
+      } catch {
+        /* observation only */
+      }
     };
     child.stdout?.on("data", (chunk: Buffer) => observe("stdout", chunk));
     child.stderr?.on("data", (chunk: Buffer) => observe("stderr", chunk));
-    for (const stream of ["stdout", "stderr"] as const) child[stream]?.on("end", () => {
-      try { request.onStreamEnd?.(stream); } catch { /* passive observation only */ }
-    });
+    for (const stream of ["stdout", "stderr"] as const)
+      child[stream]?.on("end", () => {
+        try {
+          request.onStreamEnd?.(stream);
+        } catch {
+          /* passive observation only */
+        }
+      });
 
     timers.push(
-      setTimeout(() => controlIfRunning(() => {
-        timedOut = true;
-        stop();
-      }), timeoutMs),
+      setTimeout(
+        () =>
+          controlIfRunning(() => {
+            timedOut = true;
+            stop();
+          }),
+        timeoutMs,
+      ),
     );
     const activeHardDeadlineAt = testControl?.hardDeadlineAtAfterSpawn() ?? hardDeadlineAt;
     if (activeHardDeadlineAt !== undefined) {
       // Independent of the soft timer and measured from the recorded epoch, not from `spawn`: neither a
       // delayed soft callback nor spawn/setup time may start a fresh grace period beyond the lifecycle bound.
-      timers.push(setTimeout(() => controlIfRunning(() => {
-        timedOut = true;
-        child.kill("SIGKILL");
-      }), Math.max(0, activeHardDeadlineAt - Date.now())));
+      timers.push(
+        setTimeout(
+          () =>
+            controlIfRunning(() => {
+              timedOut = true;
+              child.kill("SIGKILL");
+            }),
+          Math.max(0, activeHardDeadlineAt - Date.now()),
+        ),
+      );
     }
 
     const onAbort = () => {
@@ -290,9 +318,7 @@ export function runChild(request: ChildRunRequest): Promise<ChildRunResult> {
       settle(result);
     };
 
-    child.on("error", (error) =>
-      finish({ code: null, text, truncated, timedOut, aborted, spawnError: String(error) }),
-    );
+    child.on("error", (error) => finish({ code: null, text, truncated, timedOut, aborted, spawnError: String(error) }));
     // `close` waits for every inherited pipe, including one retained by a detached grandchild. Once the
     // governed PID exits, allow a short drain and settle anyway so timeout/output bounds remain bounds.
     child.on("exit", (code, signal) => {

@@ -1,0 +1,16 @@
+# ADR-0076 PR 3a: formatting covers the shipped and tested TypeScript of the package only.
+node_modules
+**/node_modules
+**/dist
+packages/pi-daddy/contracts
+packages/pi-daddy/test/fixtures
+docs
+*.md
+*.json
+*.jsonl
+*.py
+*.mjs
+
+# Vendored foreign code is hash-pinned (THIRD_PARTY_NOTICES, adoption-pin.json); never reformat it.
+**/vendor/**
+.claude

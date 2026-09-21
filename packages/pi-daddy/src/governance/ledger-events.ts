@@ -13,22 +13,55 @@ import type { WorkflowFactEvent } from "./workflow-facts.ts";
 import { assertLedgerV3Wire } from "./ledger-v3-validation.ts";
 
 export const WORKSPACE_ACCESSES = ["read", "write"] as const;
-export type WorkspaceAccess = typeof WORKSPACE_ACCESSES[number];
+export type WorkspaceAccess = (typeof WORKSPACE_ACCESSES)[number];
 
 export const WORKSPACE_RECOVERY_VALUES = [false, true, "unknown"] as const;
-export type WorkspaceRecovery = typeof WORKSPACE_RECOVERY_VALUES[number];
+export type WorkspaceRecovery = (typeof WORKSPACE_RECOVERY_VALUES)[number];
 
 export const CHILD_LIFECYCLE_STATES = ["starting", "running", "completed", "failed"] as const;
-export type ChildLifecycleState = typeof CHILD_LIFECYCLE_STATES[number];
+export type ChildLifecycleState = (typeof CHILD_LIFECYCLE_STATES)[number];
 
 /** The complete Node signal vocabulary accepted by a v3 child-lifecycle event. */
 export const CHILD_PROCESS_SIGNALS = [
-  "SIGABRT", "SIGALRM", "SIGBUS", "SIGCHLD", "SIGCONT", "SIGFPE", "SIGHUP", "SIGILL", "SIGINT", "SIGIO",
-  "SIGIOT", "SIGKILL", "SIGPIPE", "SIGPOLL", "SIGPROF", "SIGPWR", "SIGQUIT", "SIGSEGV", "SIGSTKFLT",
-  "SIGSTOP", "SIGSYS", "SIGTERM", "SIGTRAP", "SIGTSTP", "SIGTTIN", "SIGTTOU", "SIGUNUSED", "SIGURG",
-  "SIGUSR1", "SIGUSR2", "SIGVTALRM", "SIGWINCH", "SIGXCPU", "SIGXFSZ", "SIGBREAK", "SIGLOST", "SIGINFO",
+  "SIGABRT",
+  "SIGALRM",
+  "SIGBUS",
+  "SIGCHLD",
+  "SIGCONT",
+  "SIGFPE",
+  "SIGHUP",
+  "SIGILL",
+  "SIGINT",
+  "SIGIO",
+  "SIGIOT",
+  "SIGKILL",
+  "SIGPIPE",
+  "SIGPOLL",
+  "SIGPROF",
+  "SIGPWR",
+  "SIGQUIT",
+  "SIGSEGV",
+  "SIGSTKFLT",
+  "SIGSTOP",
+  "SIGSYS",
+  "SIGTERM",
+  "SIGTRAP",
+  "SIGTSTP",
+  "SIGTTIN",
+  "SIGTTOU",
+  "SIGUNUSED",
+  "SIGURG",
+  "SIGUSR1",
+  "SIGUSR2",
+  "SIGVTALRM",
+  "SIGWINCH",
+  "SIGXCPU",
+  "SIGXFSZ",
+  "SIGBREAK",
+  "SIGLOST",
+  "SIGINFO",
 ] as const satisfies readonly NodeJS.Signals[];
-export type ChildProcessSignal = typeof CHILD_PROCESS_SIGNALS[number];
+export type ChildProcessSignal = (typeof CHILD_PROCESS_SIGNALS)[number];
 
 /**
  * `released` is a handover this owner performed. FOUR members were added by the 0.18.0 review pass, and
@@ -42,10 +75,17 @@ export type ChildProcessSignal = typeof CHILD_PROCESS_SIGNALS[number];
  *              overstated how many exclusions the kernel actually performed (R-105).
  */
 export const WORKSPACE_LEASE_OUTCOMES = [
-  "acquired", "uncontended", "refused", "released", "released-unrecorded", "lost", "retained", "timeout",
+  "acquired",
+  "uncontended",
+  "refused",
+  "released",
+  "released-unrecorded",
+  "lost",
+  "retained",
+  "timeout",
   "recovered",
 ] as const;
-export type WorkspaceLeaseOutcome = typeof WORKSPACE_LEASE_OUTCOMES[number];
+export type WorkspaceLeaseOutcome = (typeof WORKSPACE_LEASE_OUTCOMES)[number];
 
 export interface WorkspaceLeaseEvent extends LedgerEventBase {
   ledgerVersion: typeof LEDGER_VERSION;
@@ -105,11 +145,7 @@ export type CapabilityDecisionEvent = GrantRecord & {
 };
 
 export type RuntimeLedgerEvent =
-  | CapabilityDecisionEvent
-  | WorkspaceLeaseEvent
-  | ChildLifecycleEvent
-  | CheckReceiptLedgerEvent
-  | WorkflowFactEvent;
+  CapabilityDecisionEvent | WorkspaceLeaseEvent | ChildLifecycleEvent | CheckReceiptLedgerEvent | WorkflowFactEvent;
 
 export function buildWorkspaceLeaseEvent(args: {
   executionId: string;

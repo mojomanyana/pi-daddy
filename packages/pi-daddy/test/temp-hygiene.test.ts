@@ -30,26 +30,36 @@ const HELPER = "test/tmp.ts";
 
 test("cleanupTempDirs removes every directory tempDir handed out", async () => {
   // The default-removal oracle owns only its fresh child fixtures, not this suite's retained evidence.
-  const env = { ...process.env }; delete env[KEEP_ENV];
-  await promisify(execFile)(process.execPath, ["--input-type=module", "-e", `
+  const env = { ...process.env };
+  delete env[KEEP_ENV];
+  await promisify(execFile)(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      `
     import assert from 'node:assert/strict'; import { existsSync } from 'node:fs';
     import { tempDir, cleanupTempDirs } from ${JSON.stringify(new URL("./tmp.ts", import.meta.url).href)};
     const a=await tempDir('grants-hygiene-a-'), b=await tempDir('grants-hygiene-b-');
     assert.ok(existsSync(a)&&existsSync(b)); await cleanupTempDirs();
     assert.equal(existsSync(a),false); assert.equal(existsSync(b),false);
-  `], { env, timeout: 5000 });
+  `,
+    ],
+    { env, timeout: 5000 },
+  );
 });
 
 test(`${KEEP_ENV} keeps fixtures on disk for inspection`, async () => {
   // The property the old "left for inspection when a test fails" comment was protecting. It is worth
   // keeping, but as an opt-in rather than as the default that leaked thousands of directories.
-  const prior = process.env[KEEP_ENV]; process.env[KEEP_ENV] = "1";
+  const prior = process.env[KEEP_ENV];
+  process.env[KEEP_ENV] = "1";
   const kept = await tempDir("grants-hygiene-kept-");
   try {
     await cleanupTempDirs();
     assert.ok(existsSync(kept), "an explicit keep must survive teardown");
   } finally {
-    prior === undefined ? delete process.env[KEEP_ENV] : process.env[KEEP_ENV] = prior;
+    prior === undefined ? delete process.env[KEEP_ENV] : (process.env[KEEP_ENV] = prior);
     if (!prior) await rm(kept, { recursive: true, force: true });
   }
 });

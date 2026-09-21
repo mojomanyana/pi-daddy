@@ -20,7 +20,12 @@ import { pathToFileURL } from "node:url";
 import { UnsafeGrantError } from "./kernel/grant-env.ts";
 import { applyInit, countDeclaring, planInit, type InitPlan } from "./governance/init.ts";
 import { registeredWorkspaceIds } from "./kernel/workspace.ts";
-import { discoverSkillPackages, skillPackageRoots, type RefusedSkill, type SkillPackage } from "./kernel/skill-packages.ts";
+import {
+  discoverSkillPackages,
+  skillPackageRoots,
+  type RefusedSkill,
+  type SkillPackage,
+} from "./kernel/skill-packages.ts";
 import { declareWork, loadDeclaredWork } from "./products/work-command.ts";
 import { listWorkSetups, workPresentation } from "./products/work-setup.ts";
 import { panelText } from "./products/daily-panel.ts";
@@ -71,12 +76,19 @@ export function parseArgs(argv: string[]): ParsedArgs {
   if (args.includes("--version") || args.includes("-v")) return { command: "version", force: false, errors: [] };
 
   const [command, ...tail] = args;
-  if(command==="guide"||command==="current")return{command,force:false,errors:tail.length?[`${command} takes no arguments`]:[]};
-  if (command !== "init" && command !== "work") return { command: "help", force: false, errors: [`unknown command "${command}"`] };
+  if (command === "guide" || command === "current")
+    return { command, force: false, errors: tail.length ? [`${command} takes no arguments`] : [] };
+  if (command !== "init" && command !== "work")
+    return { command: "help", force: false, errors: [`unknown command "${command}"`] };
   const work = command === "work";
   const workVerb = tail[0];
   const rest = work ? tail.slice(1) : tail;
-  if (work && !["add", "list", "show"].includes(workVerb)) return { command: "work-add", force: false, errors: ["work needs add, list or show; /grants work opens guided setup in Pi"] };
+  if (work && !["add", "list", "show"].includes(workVerb))
+    return {
+      command: "work-add",
+      force: false,
+      errors: ["work needs add, list or show; /grants work opens guided setup in Pi"],
+    };
 
   const errors: string[] = [];
   let dir: string | undefined;
@@ -89,11 +101,17 @@ export function parseArgs(argv: string[]): ParsedArgs {
     } else if (arg === "--id" && work && workVerb === "add") {
       const value = rest[i + 1];
       if (value === undefined || value.startsWith("-")) errors.push("--id needs a value");
-      else { id = value; i += 1; }
+      else {
+        id = value;
+        i += 1;
+      }
     } else if (arg === "--outcome" && work && workVerb === "add") {
       const value = rest[i + 1];
       if (value === undefined || value.startsWith("-")) errors.push("--outcome needs text");
-      else { outcome = value; i += 1; }
+      else {
+        outcome = value;
+        i += 1;
+      }
     } else if (arg === "--dir") {
       const value = rest[i + 1];
       // A flag is not a path. Without this, `--dir --force` consumed the flag as the directory AND left
@@ -113,11 +131,19 @@ export function parseArgs(argv: string[]): ParsedArgs {
     }
   }
 
-  if (work && workVerb !== "add") return { command: workVerb === "list" ? "work-list" : "work-show", force: false, errors, ...(dir ? { dir } : {}) };
+  if (work && workVerb !== "add")
+    return { command: workVerb === "list" ? "work-list" : "work-show", force: false, errors, ...(dir ? { dir } : {}) };
   if (work) {
-    if (!id && !errors.some(error => error.startsWith("--id"))) errors.push("--id needs a value");
-    if (!outcome && !errors.some(error => error.startsWith("--outcome"))) errors.push("--outcome needs text");
-    return { command: "work-add", force: false, errors, ...(id ? { id } : {}), ...(outcome ? { outcome } : {}), ...(dir ? { dir } : {}) };
+    if (!id && !errors.some((error) => error.startsWith("--id"))) errors.push("--id needs a value");
+    if (!outcome && !errors.some((error) => error.startsWith("--outcome"))) errors.push("--outcome needs text");
+    return {
+      command: "work-add",
+      force: false,
+      errors,
+      ...(id ? { id } : {}),
+      ...(outcome ? { outcome } : {}),
+      ...(dir ? { dir } : {}),
+    };
   }
   return { command: "init", dir, force, errors };
 }
@@ -133,7 +159,9 @@ async function init(cwd: string, force: boolean): Promise<number> {
     console.log(
       `pi-daddy init: no enabled configured skills or unregistered npm package declares skills (a package.json "pi": {"skills": [...]} ` +
         `field). Nothing to scaffold.\n\nLooked in:\n` +
-        skillPackageRoots(cwd).map((r) => `  ${r}\n`).join("") +
+        skillPackageRoots(cwd)
+          .map((r) => `  ${r}\n`)
+          .join("") +
         `\n  pi install npm:principal-pi-skills    # seven skills, and registers it with pi\n` +
         `  npm install principal-pi-skills      # or pin it in this project instead`,
     );
@@ -158,7 +186,9 @@ async function init(cwd: string, force: boolean): Promise<number> {
     console.log(
       `found ${pkg.name}@${pkg.version} — ${pkg.skills.length} skill(s), ` +
         `${declaring} declaring allowed-tools` +
-        (pkg.unreadable.length > 0 ? `, ${pkg.unreadable.length} declared but unreadable (${pkg.unreadable.join(", ")})` : "") +
+        (pkg.unreadable.length > 0
+          ? `, ${pkg.unreadable.length} declared but unreadable (${pkg.unreadable.join(", ")})`
+          : "") +
         // Counted on this line as well as named below it: a reader who stops at the first line must not
         // read "0 skill(s)" as "this package ships none".
         (pkg.refused.length > 0 ? `, ${pkg.refused.length} REFUSED` : ""),
@@ -171,7 +201,7 @@ async function init(cwd: string, force: boolean): Promise<number> {
   // `--force` is destructive and says so at the moment it acts, not only in `--help` — which is the one
   // place the operator running the command is not reading.
   if (force) {
-    const existing = plan.skills.filter(s => !s.referenced).length;
+    const existing = plan.skills.filter((s) => !s.referenced).length;
     console.log(
       `\n--force: rewriting up to ${existing} SKILL.md cop${existing === 1 ? "y" : "ies"} from the installed\n` +
         `packages. Any \`allowed-tools\` you wrote in them is DISCARDED. .pi/grants.env is never rewritten.`,
@@ -180,7 +210,8 @@ async function init(cwd: string, force: boolean): Promise<number> {
 
   const outcome = await applyInit(plan, { force });
   const short = (path: string) => relative(cwd, path) || path;
-  for (const skill of plan.skills.filter(s => s.referenced)) console.log(`using ${short(skill.sourcePath)} (enabled in Pi; no copy)`);
+  for (const skill of plan.skills.filter((s) => s.referenced))
+    console.log(`using ${short(skill.sourcePath)} (enabled in Pi; no copy)`);
   for (const path of outcome.written) console.log(`wrote ${short(path)}`);
   for (const path of outcome.kept) console.log(`kept  ${short(path)} (already present — left exactly as it is)`);
   for (const failure of outcome.failed) console.error(`FAILED ${short(failure.path)}: ${failure.error}`);
@@ -293,13 +324,38 @@ export async function main(argv: string[]): Promise<number> {
     console.log(USAGE);
     return 0;
   }
-  if(parsed.command==="guide"||parsed.command==="current"){
-    console.log(await readFile(new URL(parsed.command==="guide"?"../PRODUCT-GUIDE.md":"../REQUIREMENTS.md",import.meta.url),"utf8"));return 0;
+  if (parsed.command === "guide" || parsed.command === "current") {
+    console.log(
+      await readFile(
+        new URL(parsed.command === "guide" ? "../PRODUCT-GUIDE.md" : "../REQUIREMENTS.md", import.meta.url),
+        "utf8",
+      ),
+    );
+    return 0;
   }
   if (parsed.command === "work-list" || parsed.command === "work-show") {
-    const cwd=resolvePath(parsed.dir??process.cwd());
-    if(parsed.command==="work-list") {const setups=await listWorkSetups(cwd);console.log(setups.map((s,i)=>`${i+1}. ${panelText(s.setup.outcome)} — ${s.setup.tasks.length} tasks; up to ${s.setup.maxParallel} parallel`).join("\n")||"No saved multi-task setups. In Pi: /grants work");}
-    else {const state=await loadDeclaredWork(resolvePath(cwd,".pi/work-current.json")),view=state?await workPresentation(state):null;console.log(view?[panelText(view.outcome),...view.obligations.map(o=>`- ${panelText(o.outcome)}`)].join("\n"):state?"Selected legacy work; outcome text unavailable":"No work selected. In Pi: /grants work");}
+    const cwd = resolvePath(parsed.dir ?? process.cwd());
+    if (parsed.command === "work-list") {
+      const setups = await listWorkSetups(cwd);
+      console.log(
+        setups
+          .map(
+            (s, i) =>
+              `${i + 1}. ${panelText(s.setup.outcome)} — ${s.setup.tasks.length} tasks; up to ${s.setup.maxParallel} parallel`,
+          )
+          .join("\n") || "No saved multi-task setups. In Pi: /grants work",
+      );
+    } else {
+      const state = await loadDeclaredWork(resolvePath(cwd, ".pi/work-current.json")),
+        view = state ? await workPresentation(state) : null;
+      console.log(
+        view
+          ? [panelText(view.outcome), ...view.obligations.map((o) => `- ${panelText(o.outcome)}`)].join("\n")
+          : state
+            ? "Selected legacy work; outcome text unavailable"
+            : "No work selected. In Pi: /grants work",
+      );
+    }
     return 0;
   }
   if (parsed.command === "work-add") {
@@ -310,10 +366,10 @@ export async function main(argv: string[]): Promise<number> {
     });
     console.log(
       `pi-daddy work: declared ${declared.id}\n` +
-      `  ledger    ${declared.ledgerPath}\n` +
-      `  selection ${declared.statePath}\n\n` +
-      `Ordinary governed delegations from this project will record attempts after the Pi extension loads it.\n` +
-      `Run /reload in an existing Pi session, then /grants dashboard. Runtime success is not acceptance.`,
+        `  ledger    ${declared.ledgerPath}\n` +
+        `  selection ${declared.statePath}\n\n` +
+        `Ordinary governed delegations from this project will record attempts after the Pi extension loads it.\n` +
+        `Run /reload in an existing Pi session, then /grants dashboard. Runtime success is not acceptance.`,
     );
     return 0;
   }

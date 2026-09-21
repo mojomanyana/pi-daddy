@@ -22,10 +22,7 @@ export type Capability = string;
  * `tools: []` (nothing at all) plus `recursive: true` still reached `pi.write` and `pi.bash` and
  * spawned a grandchild that wrote to disk. See docs/probes/pi-fabric-eval (probes 2, 4, 7, 8).
  */
-export const UNIVERSAL_CAPABILITIES: readonly Capability[] = [
-  "ext:pi-fabric/fabric_exec",
-  "tool:fabric_exec",
-];
+export const UNIVERSAL_CAPABILITIES: readonly Capability[] = ["ext:pi-fabric/fabric_exec", "tool:fabric_exec"];
 
 /**
  * Capabilities that functionally contain others.
@@ -41,15 +38,7 @@ export const UNIVERSAL_CAPABILITIES: readonly Capability[] = [
  *     narrow grant.** `subsumedBy` in the result says so, so a reviewer can see what the grant really means.
  */
 export const SUBSUMPTION: Readonly<Record<Capability, readonly Capability[]>> = {
-  "tool:bash": [
-    "tool:grep",
-    "tool:find",
-    "tool:ls",
-    "tool:read",
-    "tool:write",
-    "tool:edit",
-    "tool:edit-diff",
-  ],
+  "tool:bash": ["tool:grep", "tool:find", "tool:ls", "tool:read", "tool:write", "tool:edit", "tool:edit-diff"],
 };
 
 /** Expand a grant to everything it functionally confers. */
@@ -132,8 +121,7 @@ const unique = (xs: Capability[]): Capability[] => [...new Set(xs)].sort();
 export function resolve(input: ResolveInput): ResolveResult {
   const requested = unique(input.requested);
   const held = new Set(input.parentGrant);
-  const parent =
-    input.subsumption === false ? held : new Set(expandSubsumed(input.parentGrant));
+  const parent = input.subsumption === false ? held : new Set(expandSubsumed(input.parentGrant));
   /**
    * `agent:*` covers any `agent:<name>` — ADR-0023. It was the only wildcard rule in this function when
    * that was written; ADR-0035 added a third, so `covered()` now has `tool:*`, `agent:*` and `workspace:*`.
@@ -169,10 +157,11 @@ export function resolve(input: ResolveInput): ResolveResult {
   // Landing in `denied` is the right outcome rather than a throw: it fails closed AND records an
   // escalation attempt, so the ledger shows the attempt instead of a clean line.
   const covered = (c: Capability): boolean =>
-    isWellFormedCapability(c)
-    && (parent.has(c) || anyCapability
-      || (anyDefinition && c.startsWith("agent:"))
-      || (anyWorkspace && c.startsWith("workspace:")));
+    isWellFormedCapability(c) &&
+    (parent.has(c) ||
+      anyCapability ||
+      (anyDefinition && c.startsWith("agent:")) ||
+      (anyWorkspace && c.startsWith("workspace:")));
 
   const ceiling = input.ceiling === undefined ? null : new Set(input.ceiling);
   const gated = new Set(input.gated ?? []);
@@ -221,11 +210,13 @@ export function resolve(input: ResolveInput): ResolveResult {
     // its own `workspace:prod` reported as subsumed while the `agent:*` holder correctly saw nothing — the
     // field contradicting its own rule, and a false "broader than it looks" flag in the ledger and in
     // `/grants`. Every wildcard added to `covered()` above needs a line here; that is now three for three.
-    subsumedBy: effective.filter((c) =>
-      !held.has(c)
-      && !anyCapability
-      && !(anyDefinition && c.startsWith("agent:"))
-      && !(anyWorkspace && c.startsWith("workspace:"))),
+    subsumedBy: effective.filter(
+      (c) =>
+        !held.has(c) &&
+        !anyCapability &&
+        !(anyDefinition && c.startsWith("agent:")) &&
+        !(anyWorkspace && c.startsWith("workspace:")),
+    ),
   };
 }
 

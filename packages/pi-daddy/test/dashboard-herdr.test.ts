@@ -29,7 +29,10 @@ const hostedEnv = {
 
 test("a reachable server is not evidence that this pi session is hosted in Herdr", async () => {
   let calls = 0;
-  const exec: HerdrExec = async () => { calls += 1; return reply({ panes: [] }); };
+  const exec: HerdrExec = async () => {
+    calls += 1;
+    return reply({ panes: [] });
+  };
   const result = await verifyHerdrHost({ env: {}, pid: 42, exec });
   assert.equal(result.ok, false);
   assert.match(result.diagnostic, /not hosted inside Herdr/i);
@@ -41,7 +44,9 @@ test("host verification binds the Herdr pane to the actual pi process", async ()
   const exec: HerdrExec = async (args) => {
     calls.push(args);
     if (args[1] === "current") return reply({ pane: { pane_id: "w1:p1", tab_id: "w1:t1", workspace_id: "w1" } });
-    return reply({ process_info: { pane_id: "w1:p1", foreground_processes: [{ pid: 4242, name: "pi", argv: ["pi"] }] } });
+    return reply({
+      process_info: { pane_id: "w1:p1", foreground_processes: [{ pid: 4242, name: "pi", argv: ["pi"] }] },
+    });
   };
   const result = await verifyHerdrHost({ env: hostedEnv, pid: 4242, exec });
   assert.equal(result.ok, true);
@@ -57,9 +62,10 @@ test("host verification binds the Herdr pane to the actual pi process", async ()
 });
 
 test("host verification rejects process information returned for another pane", async () => {
-  const exec: HerdrExec = async (args) => args[1] === "current"
-    ? reply({ pane: { pane_id: "w1:p1", tab_id: "w1:t1", workspace_id: "w1" } })
-    : reply({ process_info: { pane_id: "w1:p9", foreground_processes: [{ pid: 42 }] } });
+  const exec: HerdrExec = async (args) =>
+    args[1] === "current"
+      ? reply({ pane: { pane_id: "w1:p1", tab_id: "w1:t1", workspace_id: "w1" } })
+      : reply({ process_info: { pane_id: "w1:p9", foreground_processes: [{ pid: 42 }] } });
   const result = await verifyHerdrHost({ env: hostedEnv, pid: 42, exec });
   assert.equal(result.ok, false);
   assert.match(result.diagnostic, /process information.*another pane/i);
@@ -69,29 +75,51 @@ test("plugin discovery distinguishes absent, disabled, compatible and incompatib
   const absent = await inspectDashboardPlugin(async () => reply({ plugins: [] }));
   assert.equal(absent.state, "absent");
 
-  const disabled = await inspectDashboardPlugin(async () => reply({ plugins: [{ plugin_id: DASHBOARD_PLUGIN_ID, version: "1.0.0", enabled: false }] }));
+  const disabled = await inspectDashboardPlugin(async () =>
+    reply({ plugins: [{ plugin_id: DASHBOARD_PLUGIN_ID, version: "1.0.0", enabled: false }] }),
+  );
   assert.equal(disabled.state, "disabled");
 
-  const compatible = await inspectDashboardPlugin(async () => reply({ plugins: [{ plugin_id: DASHBOARD_PLUGIN_ID, version: "1.4.0", enabled: true }] }));
+  const compatible = await inspectDashboardPlugin(async () =>
+    reply({ plugins: [{ plugin_id: DASHBOARD_PLUGIN_ID, version: "1.4.0", enabled: true }] }),
+  );
   assert.equal(compatible.state, "compatible");
 
-  const incompatible = await inspectDashboardPlugin(async () => reply({ plugins: [{ plugin_id: DASHBOARD_PLUGIN_ID, version: "2.0.0", enabled: true }] }));
+  const incompatible = await inspectDashboardPlugin(async () =>
+    reply({ plugins: [{ plugin_id: DASHBOARD_PLUGIN_ID, version: "2.0.0", enabled: true }] }),
+  );
   assert.equal(incompatible.state, "incompatible");
   assert.match(incompatible.diagnostic, /protocol/i);
 
   const wrongPackage = await inspectDashboardPlugin(
-    async () => reply({ plugins: [{
-      plugin_id: DASHBOARD_PLUGIN_ID, version: "1.0.0", enabled: true, plugin_root: "/other/package/herdr-plugin",
-    }] }),
+    async () =>
+      reply({
+        plugins: [
+          {
+            plugin_id: DASHBOARD_PLUGIN_ID,
+            version: "1.0.0",
+            enabled: true,
+            plugin_root: "/other/package/herdr-plugin",
+          },
+        ],
+      }),
     "/trusted/package/herdr-plugin",
   );
   assert.equal(wrongPackage.state, "incompatible");
   assert.match(wrongPackage.diagnostic, /different package/i);
 
   const disabledWrongPackage = await inspectDashboardPlugin(
-    async () => reply({ plugins: [{
-      plugin_id: DASHBOARD_PLUGIN_ID, version: "1.0.0", enabled: false, plugin_root: "/other/package/herdr-plugin",
-    }] }),
+    async () =>
+      reply({
+        plugins: [
+          {
+            plugin_id: DASHBOARD_PLUGIN_ID,
+            version: "1.0.0",
+            enabled: false,
+            plugin_root: "/other/package/herdr-plugin",
+          },
+        ],
+      }),
     "/trusted/package/herdr-plugin",
   );
   assert.equal(disabledWrongPackage.state, "incompatible", "provenance must be checked before suggesting enable");
@@ -157,8 +185,17 @@ test("opening targets the calling pi pane, splits right, keeps focus, omits inco
   const open = calls.find((args) => args[0] === "plugin" && args[1] === "pane" && args[2] === "open");
   assert.ok(open);
   assert.deepEqual(open.slice(0, 11), [
-    "plugin", "pane", "open", "--plugin", DASHBOARD_PLUGIN_ID, "--entrypoint", "dashboard",
-    "--placement", "split", "--target-pane", "w1:p1",
+    "plugin",
+    "pane",
+    "open",
+    "--plugin",
+    DASHBOARD_PLUGIN_ID,
+    "--entrypoint",
+    "dashboard",
+    "--placement",
+    "split",
+    "--target-pane",
+    "w1:p1",
   ]);
   assert.equal(open.includes("--workspace"), false, "Herdr rejects workspace_id for a split placement");
   assert.ok(open.includes("--direction") && open.includes("right"));
@@ -177,14 +214,26 @@ test("a stored pane cannot be reused under a ledger path it did not record", asy
     }
     if (args[0] === "plugin" && args[1] === "pane" && args[2] === "open") {
       openCount += 1;
-      return reply({ plugin_pane: { pane: {
-        pane_id: "w1:p2", terminal_id: "term-dashboard", tab_id: "w1:t1", workspace_id: "w1",
-      } } });
+      return reply({
+        plugin_pane: {
+          pane: {
+            pane_id: "w1:p2",
+            terminal_id: "term-dashboard",
+            tab_id: "w1:t1",
+            workspace_id: "w1",
+          },
+        },
+      });
     }
     if (args[0] === "pane" && args[1] === "get") {
-      return reply({ pane: {
-        pane_id: "w1:p2", terminal_id: "term-dashboard", tab_id: "w1:t1", workspace_id: "w1",
-      } });
+      return reply({
+        pane: {
+          pane_id: "w1:p2",
+          terminal_id: "term-dashboard",
+          tab_id: "w1:t1",
+          workspace_id: "w1",
+        },
+      });
     }
     if (args[0] === "pane" && args[1] === "process-info") {
       return reply({ process_info: { pane_id: "w1:p2", foreground_processes: [{ name: "pi-daddy-dashboard" }] } });
@@ -192,8 +241,11 @@ test("a stored pane cannot be reused under a ledger path it did not record", asy
     throw new Error(`unexpected ${args.join(" ")}`);
   };
   const input = {
-    exec, host: { paneId: "w1:p1", tabId: "w1:t1", workspaceId: "w1" },
-    ledgerPath: join(dir, "ledger.jsonl"), cwd: dir, statePath,
+    exec,
+    host: { paneId: "w1:p1", tabId: "w1:t1", workspaceId: "w1" },
+    ledgerPath: join(dir, "ledger.jsonl"),
+    cwd: dir,
+    statePath,
   };
   await openOrReuseDashboard(input);
   const store = JSON.parse(await readFile(statePath, "utf8")) as {
@@ -215,19 +267,36 @@ test("a newly opened dashboard pane is closed if Herdr returns it in another hos
       return reply({ plugins: [{ plugin_id: DASHBOARD_PLUGIN_ID, version: "1.0.0", enabled: true }] });
     }
     if (args[0] === "plugin" && args[1] === "pane" && args[2] === "open") {
-      return reply({ plugin_pane: { pane: {
-        pane_id: "w9:p2", terminal_id: "wrong-host", tab_id: "w9:t3", workspace_id: "w9",
-      } } });
+      return reply({
+        plugin_pane: {
+          pane: {
+            pane_id: "w9:p2",
+            terminal_id: "wrong-host",
+            tab_id: "w9:t3",
+            workspace_id: "w9",
+          },
+        },
+      });
     }
     if (args[0] === "plugin" && args[1] === "pane" && args[2] === "close") return reply({ type: "ok" });
     throw new Error(`unexpected ${args.join(" ")}`);
   };
 
-  await assert.rejects(() => openOrReuseDashboard({
-    exec, host: { paneId: "w1:p1", tabId: "w1:t1", workspaceId: "w1" },
-    ledgerPath: join(dir, "ledger.jsonl"), cwd: dir, statePath: join(dir, "state", "panes.json"),
-  }), /returned.*another.*workspace|returned.*another.*tab/i);
-  assert.ok(calls.some((args) => args.join(" ") === "plugin pane close w9:p2"), "wrong-host pane must be closed");
+  await assert.rejects(
+    () =>
+      openOrReuseDashboard({
+        exec,
+        host: { paneId: "w1:p1", tabId: "w1:t1", workspaceId: "w1" },
+        ledgerPath: join(dir, "ledger.jsonl"),
+        cwd: dir,
+        statePath: join(dir, "state", "panes.json"),
+      }),
+    /returned.*another.*workspace|returned.*another.*tab/i,
+  );
+  assert.ok(
+    calls.some((args) => args.join(" ") === "plugin pane close w9:p2"),
+    "wrong-host pane must be closed",
+  );
 });
 
 test("a dashboard pane moved away from the caller tab is replaced, not falsely reused", async () => {
@@ -241,15 +310,26 @@ test("a dashboard pane moved away from the caller tab is replaced, not falsely r
     }
     if (args[0] === "plugin" && args[1] === "pane" && args[2] === "open") {
       openCount += 1;
-      return reply({ plugin_pane: { pane: {
-        pane_id: `w1:p${openCount + 1}`, terminal_id: `term-${openCount}`, tab_id: "w1:t1", workspace_id: "w1",
-      } } });
+      return reply({
+        plugin_pane: {
+          pane: {
+            pane_id: `w1:p${openCount + 1}`,
+            terminal_id: `term-${openCount}`,
+            tab_id: "w1:t1",
+            workspace_id: "w1",
+          },
+        },
+      });
     }
     if (args[0] === "pane" && args[1] === "get") {
-      return reply({ pane: {
-        pane_id: moved ? "w2:p9" : "w1:p2", terminal_id: "term-1",
-        tab_id: moved ? "w2:t9" : "w1:t1", workspace_id: moved ? "w2" : "w1",
-      } });
+      return reply({
+        pane: {
+          pane_id: moved ? "w2:p9" : "w1:p2",
+          terminal_id: "term-1",
+          tab_id: moved ? "w2:t9" : "w1:t1",
+          workspace_id: moved ? "w2" : "w1",
+        },
+      });
     }
     if (args[0] === "pane" && args[1] === "process-info") {
       return reply({ process_info: { pane_id: args[3], foreground_processes: [{ name: "pi-daddy-dashboard" }] } });
@@ -257,8 +337,11 @@ test("a dashboard pane moved away from the caller tab is replaced, not falsely r
     throw new Error(`unexpected ${args.join(" ")}`);
   };
   const input = {
-    exec, host: { paneId: "w1:p1", tabId: "w1:t1", workspaceId: "w1" },
-    ledgerPath: join(dir, "ledger.jsonl"), cwd: dir, statePath,
+    exec,
+    host: { paneId: "w1:p1", tabId: "w1:t1", workspaceId: "w1" },
+    ledgerPath: join(dir, "ledger.jsonl"),
+    cwd: dir,
+    statePath,
   };
 
   assert.equal((await openOrReuseDashboard(input)).kind, "opened");
@@ -280,15 +363,25 @@ test("a malformed nested pane-store entry refuses instead of opening a duplicate
     }
     if (args[0] === "plugin" && args[1] === "pane" && args[2] === "open") {
       openCount += 1;
-      return reply({ plugin_pane: { pane: {
-        pane_id: `w1:p${openCount + 1}`, terminal_id: `term-${openCount}`, tab_id: "w1:t1", workspace_id: "w1",
-      } } });
+      return reply({
+        plugin_pane: {
+          pane: {
+            pane_id: `w1:p${openCount + 1}`,
+            terminal_id: `term-${openCount}`,
+            tab_id: "w1:t1",
+            workspace_id: "w1",
+          },
+        },
+      });
     }
     throw new Error(`unexpected ${args.join(" ")}`);
   };
   const input = {
-    exec, host: { paneId: "w1:p1", tabId: "w1:t1", workspaceId: "w1" },
-    ledgerPath: join(dir, "ledger.jsonl"), cwd: dir, statePath,
+    exec,
+    host: { paneId: "w1:p1", tabId: "w1:t1", workspaceId: "w1" },
+    ledgerPath: join(dir, "ledger.jsonl"),
+    cwd: dir,
+    statePath,
   };
   await openOrReuseDashboard(input);
   const store = JSON.parse(await readFile(statePath, "utf8")) as { panes: Record<string, unknown> };
@@ -310,23 +403,36 @@ test("a pane whose dashboard process exited is replaced rather than falsely reus
     }
     if (args[0] === "plugin" && args[1] === "pane" && args[2] === "open") {
       openCount += 1;
-      return reply({ plugin_pane: { pane: {
-        pane_id: `w1:p${openCount + 1}`, terminal_id: `term-${openCount}`, tab_id: "w1:t1", workspace_id: "w1",
-      } } });
+      return reply({
+        plugin_pane: {
+          pane: {
+            pane_id: `w1:p${openCount + 1}`,
+            terminal_id: `term-${openCount}`,
+            tab_id: "w1:t1",
+            workspace_id: "w1",
+          },
+        },
+      });
     }
     if (args[0] === "pane" && args[1] === "get") {
       return reply({ pane: { pane_id: "w1:p2", terminal_id: "term-1", tab_id: "w1:t1", workspace_id: "w1" } });
     }
     if (args[0] === "pane" && args[1] === "process-info") {
-      return reply({ process_info: {
-        pane_id: "w1:p2", foreground_processes: [{ name: dashboardAlive ? "pi-daddy-dashboard" : "bash" }],
-      } });
+      return reply({
+        process_info: {
+          pane_id: "w1:p2",
+          foreground_processes: [{ name: dashboardAlive ? "pi-daddy-dashboard" : "bash" }],
+        },
+      });
     }
     throw new Error(`unexpected ${args.join(" ")}`);
   };
   const input = {
-    exec, host: { paneId: "w1:p1", tabId: "w1:t1", workspaceId: "w1" },
-    ledgerPath: join(dir, "ledger.jsonl"), cwd: dir, statePath,
+    exec,
+    host: { paneId: "w1:p1", tabId: "w1:t1", workspaceId: "w1" },
+    ledgerPath: join(dir, "ledger.jsonl"),
+    cwd: dir,
+    statePath,
   };
   assert.equal((await openOrReuseDashboard(input)).kind, "opened");
   dashboardAlive = false;
@@ -347,22 +453,39 @@ test("a pane is closed if persisting its reuse identity fails", async (t) => {
     }
     if (args[0] === "plugin" && args[1] === "pane" && args[2] === "open") {
       await chmod(stateDir, 0o500);
-      return reply({ plugin_pane: { pane: {
-        pane_id: "w1:p2", terminal_id: "term-dashboard", tab_id: "w1:t1", workspace_id: "w1",
-      } } });
+      return reply({
+        plugin_pane: {
+          pane: {
+            pane_id: "w1:p2",
+            terminal_id: "term-dashboard",
+            tab_id: "w1:t1",
+            workspace_id: "w1",
+          },
+        },
+      });
     }
     if (args[0] === "plugin" && args[1] === "pane" && args[2] === "close") return reply({ type: "ok" });
     throw new Error(`unexpected ${args.join(" ")}`);
   };
   try {
-    await assert.rejects(() => openOrReuseDashboard({
-      exec, host: { paneId: "w1:p1", tabId: "w1:t1", workspaceId: "w1" },
-      ledgerPath: join(dir, "ledger.jsonl"), cwd: dir, statePath,
-    }), /EACCES|permission denied/i);
+    await assert.rejects(
+      () =>
+        openOrReuseDashboard({
+          exec,
+          host: { paneId: "w1:p1", tabId: "w1:t1", workspaceId: "w1" },
+          ledgerPath: join(dir, "ledger.jsonl"),
+          cwd: dir,
+          statePath,
+        }),
+      /EACCES|permission denied/i,
+    );
   } finally {
     await chmod(stateDir, 0o700).catch(() => undefined);
   }
-  assert.ok(calls.some((args) => args.join(" ") === "plugin pane close w1:p2"), "untracked pane must be closed");
+  assert.ok(
+    calls.some((args) => args.join(" ") === "plugin pane close w1:p2"),
+    "untracked pane must be closed",
+  );
 });
 
 test("the bundled plugin manifest pins Herdr and dashboard protocol compatibility", async () => {
@@ -374,11 +497,15 @@ test("the bundled plugin manifest pins Herdr and dashboard protocol compatibilit
 });
 
 test("/grants dashboard refuses before Herdr when no ledger is configured", async () => {
-  await assert.rejects(() => openOrReuseDashboard({
-    exec: async () => reply({}),
-    host: { paneId: "w1:p1", tabId: "w1:t1", workspaceId: "w1" },
-    ledgerPath: "",
-    cwd: "/tmp",
-    statePath: "/tmp/unused-dashboard-state.json",
-  }), /ledger.*configured/i);
+  await assert.rejects(
+    () =>
+      openOrReuseDashboard({
+        exec: async () => reply({}),
+        host: { paneId: "w1:p1", tabId: "w1:t1", workspaceId: "w1" },
+        ledgerPath: "",
+        cwd: "/tmp",
+        statePath: "/tmp/unused-dashboard-state.json",
+      }),
+    /ledger.*configured/i,
+  );
 });

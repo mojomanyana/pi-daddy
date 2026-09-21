@@ -3,8 +3,19 @@ import { DELEGATE_CAPABILITY } from "../src/kernel/delegate.ts";
 import { budgetFromEnv } from "../src/kernel/fanout.ts";
 import { WILDCARD } from "../src/kernel/pi-tools.ts";
 import {
-  depthConfig, deriveOwnGrant, gatedFromEnv, ENV_APPROVED, ENV_DEPTH, ENV_EXECUTION_ID, ENV_FANOUT,
-  ENV_GATED, ENV_GRANT, ENV_LEDGER, ENV_MAX_DEPTH, ENV_PARENT_ID, parseList,
+  depthConfig,
+  deriveOwnGrant,
+  gatedFromEnv,
+  ENV_APPROVED,
+  ENV_DEPTH,
+  ENV_EXECUTION_ID,
+  ENV_FANOUT,
+  ENV_GATED,
+  ENV_GRANT,
+  ENV_LEDGER,
+  ENV_MAX_DEPTH,
+  ENV_PARENT_ID,
+  parseList,
 } from "../src/kernel/propagation.ts";
 import { storedGrantSessionState } from "./stored-grant-session.ts";
 import { chooseExecutor, ENV_HERDR } from "../src/executors/executor.ts";
@@ -14,7 +25,9 @@ import { ENV_GOVERNANCE, type GrantsSession } from "./session.ts";
 
 /** Rebuild every authority-bearing factory input once session_start identifies its real SDK owner. */
 export function reconcileSessionEnvironment(
-  session: GrantsSession, environment: NodeJS.ProcessEnv, lifecycle: ReloadLifecycle,
+  session: GrantsSession,
+  environment: NodeJS.ProcessEnv,
+  lifecycle: ReloadLifecycle,
 ): void {
   const grantRaw = environment[ENV_GRANT];
   const stored = storedGrantSessionState(grantRaw, session.storeCwd);
@@ -33,7 +46,8 @@ export function reconcileSessionEnvironment(
   session.ownSpawnId = environment[ENV_PARENT_ID]?.trim() || `d${session.depth}`;
   session.ownExecutionId = environment[ENV_EXECUTION_ID]?.trim() || undefined;
   session.fanoutBudget = budgetFromEnv(environment[ENV_FANOUT]);
-  session.mayDelegate = !session.governed || session.inherited.includes(DELEGATE_CAPABILITY) || session.inherited.includes(WILDCARD);
+  session.mayDelegate =
+    !session.governed || session.inherited.includes(DELEGATE_CAPABILITY) || session.inherited.includes(WILDCARD);
   session.allowUnresolvedModels = environment[ENV_ALLOW_UNRESOLVED_MODELS] === "1";
   session.reloadLifecycle = lifecycle;
   session.activityRootId = lifecycle.activityRootId ?? session.activityRootId;

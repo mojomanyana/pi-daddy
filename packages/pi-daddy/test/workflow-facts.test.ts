@@ -36,14 +36,8 @@ test("workflow facts have explicit provenance and identifier-only privacy bounds
 });
 
 test("the public workflow-fact builder cannot emit a timestamp rejected by v3", () => {
-  assert.throws(
-    () => fact({ now: { toISOString: () => "1" } }),
-    /invalid ledger v3 event.*workflow fact/i,
-  );
-  assert.throws(
-    () => fact({ now: { toISOString: () => 1 } }),
-    /invalid ledger v3 event.*workflow fact/i,
-  );
+  assert.throws(() => fact({ now: { toISOString: () => "1" } }), /invalid ledger v3 event.*workflow fact/i);
+  assert.throws(() => fact({ now: { toISOString: () => 1 } }), /invalid ledger v3 event.*workflow fact/i);
 });
 
 test("the dashboard rejects malformed fact identity rather than accepting a lookalike", () => {
@@ -73,17 +67,24 @@ test("planned, observed and controller-validated facts remain distinct from enfo
     fact(),
     fact({
       factId: "fact:00000000-0000-4000-8000-000000000002",
-      provenance: "observed", kind: "inline_skill", subject: "build", state: "observed",
+      provenance: "observed",
+      kind: "inline_skill",
+      subject: "build",
+      state: "observed",
     }),
     fact({
       factId: "fact:00000000-0000-4000-8000-000000000003",
-      provenance: "controller_validated", kind: "transition", subject: "build-to-review", state: "completed",
+      provenance: "controller_validated",
+      kind: "transition",
+      subject: "build-to-review",
+      state: "completed",
     }),
   ];
   const projection = parseDashboardLedger(events.map((event) => JSON.stringify(event)).join("\n"), { now });
-  assert.deepEqual(projection.workflowFacts.map((entry) => entry.provenance), [
-    "planned", "observed", "controller-validated",
-  ]);
+  assert.deepEqual(
+    projection.workflowFacts.map((entry) => entry.provenance),
+    ["planned", "observed", "controller-validated"],
+  );
   const rendered = renderDashboard(projection, { color: false, width: 100 });
   assert.match(rendered, /P .*review:quality.*pending/);
   assert.match(rendered, /O .*build.*observed/);

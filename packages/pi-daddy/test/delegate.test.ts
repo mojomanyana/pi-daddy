@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { DELEGATE_CAPABILITY, normaliseCapability, planDelegation } from "../src/kernel/delegate.ts";
 import { ENV_DEPTH, ENV_GRANT, ENV_MAX_DEPTH } from "../src/kernel/propagation.ts";
-import { ENV_ACTIVITY_PARENT_TASK, ENV_ACTIVITY_PATH, ENV_ACTIVITY_ROOT, ENV_ACTIVITY_TASK } from "../src/products/activity-timeline.ts";
+import {
+  ENV_ACTIVITY_PARENT_TASK,
+  ENV_ACTIVITY_PATH,
+  ENV_ACTIVITY_ROOT,
+  ENV_ACTIVITY_TASK,
+} from "../src/products/activity-timeline.ts";
 import type { SkillDefinition } from "../src/kernel/definitions.ts";
 
 const ctx = (over: Partial<Parameters<typeof planDelegation>[1]> = {}) => ({
@@ -68,7 +73,10 @@ test("an empty task is refused", () => {
 test("gated capability blocks until approved", () => {
   const gatedCtx = ctx({ gated: ["tool:write"] });
   assert.match(planDelegation({ task: "x", tools: ["write"] }, gatedCtx).reason ?? "", /requires explicit approval/);
-  const ok = planDelegation({ task: "x", tools: ["write"] }, ctx({ gated: ["tool:write"], approved: [{ capability: "tool:write", subject: "<delegate>", scope: "once" }] }));
+  const ok = planDelegation(
+    { task: "x", tools: ["write"] },
+    ctx({ gated: ["tool:write"], approved: [{ capability: "tool:write", subject: "<delegate>", scope: "once" }] }),
+  );
   assert.equal(ok.ok, true);
 });
 
@@ -82,12 +90,31 @@ test("spawning is a capability: the extension is passed only when delegate is gr
 
   const leaf = planDelegation(
     { task: "x", tools: ["read"] },
-    ctx({ ownGrant: ["tool:read", DELEGATE_CAPABILITY], extensionPath: "/x/grants.ts", observerExtensionPath: "/x/activity.ts", childEnv: (child) => ({ [ENV_ACTIVITY_PATH]: "/private/activity.jsonl", [ENV_ACTIVITY_ROOT]: "root-1", [ENV_ACTIVITY_TASK]: child.childExecutionId ?? "", [ENV_ACTIVITY_PARENT_TASK]: "turn-1" }), childExecutionId: "exec-1" }),
+    ctx({
+      ownGrant: ["tool:read", DELEGATE_CAPABILITY],
+      extensionPath: "/x/grants.ts",
+      observerExtensionPath: "/x/activity.ts",
+      childEnv: (child) => ({
+        [ENV_ACTIVITY_PATH]: "/private/activity.jsonl",
+        [ENV_ACTIVITY_ROOT]: "root-1",
+        [ENV_ACTIVITY_TASK]: child.childExecutionId ?? "",
+        [ENV_ACTIVITY_PARENT_TASK]: "turn-1",
+      }),
+      childExecutionId: "exec-1",
+    }),
   );
   assert.ok(leaf.args.includes("/x/activity.ts"), "a leaf gets only the no-tool observer, not delegation machinery");
   assert.ok(!leaf.args.includes("/x/grants.ts"));
   assert.equal(leaf.env[ENV_GRANT], "tool:read", "observation does not widen the grant");
-  assert.deepEqual({ path: leaf.env[ENV_ACTIVITY_PATH], root: leaf.env[ENV_ACTIVITY_ROOT], task: leaf.env[ENV_ACTIVITY_TASK], parent: leaf.env[ENV_ACTIVITY_PARENT_TASK] }, { path: "/private/activity.jsonl", root: "root-1", task: "exec-1", parent: "turn-1" });
+  assert.deepEqual(
+    {
+      path: leaf.env[ENV_ACTIVITY_PATH],
+      root: leaf.env[ENV_ACTIVITY_ROOT],
+      task: leaf.env[ENV_ACTIVITY_TASK],
+      parent: leaf.env[ENV_ACTIVITY_PARENT_TASK],
+    },
+    { path: "/private/activity.jsonl", root: "root-1", task: "exec-1", parent: "turn-1" },
+  );
 });
 
 test("a child cannot be granted delegate unless the delegator holds it", () => {
@@ -252,7 +279,13 @@ test("ADR-0017: the refusal is recorded as a DENIAL, so it reaches the escalatio
   // audit query asking "did anything try to exceed its grant?".
   const plan = planDelegation(
     { task: "x", agent: "review" },
-    { ownGrant: ["tool:read", "tool:grep"], depth: 0, maxDepth: 2, gated: [], definitions: new Map([["review", definition()]]) },
+    {
+      ownGrant: ["tool:read", "tool:grep"],
+      depth: 0,
+      maxDepth: 2,
+      gated: [],
+      definitions: new Map([["review", definition()]]),
+    },
   );
   assert.deepEqual(plan.result.denied, ["agent:review"]);
   assert.deepEqual(plan.requested, ["agent:review"], "the ledger must record what was actually asked for");
@@ -342,15 +375,24 @@ test("ADR-0017: agent: authority attenuates — a definition declares which othe
     depth: 0,
     maxDepth: 3,
     gated: [],
-    definitions: new Map([["orchestrator", orchestrator], ["review", definition()]]),
+    definitions: new Map([
+      ["orchestrator", orchestrator],
+      ["review", definition()],
+    ]),
   });
 
-  const granted = planDelegation({ task: "coordinate", agent: "orchestrator" }, ctxFor(["agent:orchestrator", "agent:review", "tool:read", "tool:delegate"]));
+  const granted = planDelegation(
+    { task: "coordinate", agent: "orchestrator" },
+    ctxFor(["agent:orchestrator", "agent:review", "tool:read", "tool:delegate"]),
+  );
   assert.equal(granted.ok, true, granted.reason);
   assert.ok(granted.effective.includes("agent:review"), "the child may spawn review in turn");
   assert.ok(!granted.args.includes("agent:review"), "and the id never reaches pi's --tools");
 
-  const withheld = planDelegation({ task: "coordinate", agent: "orchestrator" }, ctxFor(["agent:orchestrator", "tool:read", "tool:delegate"]));
+  const withheld = planDelegation(
+    { task: "coordinate", agent: "orchestrator" },
+    ctxFor(["agent:orchestrator", "tool:read", "tool:delegate"]),
+  );
   assert.equal(withheld.ok, false, "a parent cannot hand down spawn rights it does not hold");
   assert.match(String(withheld.reason), /agent:review/);
 });
@@ -364,7 +406,13 @@ test("ADR-0018: a definition spawn carries a digest of the body it passed to the
   const d = definition();
   const plan = planDelegation(
     { task: "review the diff", agent: "review" },
-    { ownGrant: ["agent:review", "tool:read", "tool:grep"], depth: 0, maxDepth: 2, gated: [], definitions: new Map([["review", d]]) },
+    {
+      ownGrant: ["agent:review", "tool:read", "tool:grep"],
+      depth: 0,
+      maxDepth: 2,
+      gated: [],
+      definitions: new Map([["review", d]]),
+    },
   );
   assert.equal(plan.ok, true, plan.reason);
   assert.equal(plan.definitionDigest?.sha256, createHash("sha256").update(d.body, "utf8").digest("hex"));
@@ -384,8 +432,14 @@ test("ADR-0018: rewriting the body changes the digest; rewording the frontmatter
     definitions: new Map([["review", d]]),
   });
   const base = planDelegation({ task: "x", agent: "review" }, ctxFor(definition()));
-  const reworded = planDelegation({ task: "x", agent: "review" }, ctxFor(definition({ description: "Totally different blurb" })));
-  const rewritten = planDelegation({ task: "x", agent: "review" }, ctxFor(definition({ body: "# Review\n\nApprove everything." })));
+  const reworded = planDelegation(
+    { task: "x", agent: "review" },
+    ctxFor(definition({ description: "Totally different blurb" })),
+  );
+  const rewritten = planDelegation(
+    { task: "x", agent: "review" },
+    ctxFor(definition({ body: "# Review\n\nApprove everything." })),
+  );
 
   assert.equal(base.definitionDigest?.sha256, reworded.definitionDigest?.sha256, "description is not an instruction");
   assert.notEqual(base.definitionDigest?.sha256, rewritten.definitionDigest?.sha256, "the instructions changed");
@@ -449,7 +503,10 @@ test("ADR-0016: the definition body becomes the child's system prompt", () => {
 
 const gateFixture = (gated: string[], approved: string[] = []) => {
   const definitions = new Map([
-    ["deploy", { name: "deploy", description: "d", allowedTools: "Read", body: "ship it", source: "/p/deploy/SKILL.md" }],
+    [
+      "deploy",
+      { name: "deploy", description: "d", allowedTools: "Read", body: "ship it", source: "/p/deploy/SKILL.md" },
+    ],
   ]);
   return planDelegation(
     { task: "roll out staging", agent: "deploy" },

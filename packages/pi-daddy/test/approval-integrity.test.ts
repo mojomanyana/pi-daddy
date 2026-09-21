@@ -15,7 +15,13 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { approvalKey, inheritApprovals, parseInherited, verifyInherited, type InheritableApproval } from "../src/kernel/approval.ts";
+import {
+  approvalKey,
+  inheritApprovals,
+  parseInherited,
+  verifyInherited,
+  type InheritableApproval,
+} from "../src/kernel/approval.ts";
 import { approvalsPath, legacyApprovalsPath } from "../src/governance/approval-store.ts";
 import { resolveApprovals } from "../src/kernel/approval.ts";
 
@@ -141,7 +147,11 @@ test("ADR-0022: an inherited approval is dropped when the body it was given for 
   assert.deepEqual([...afterRewrite], [], "rewritten body: the approval does not apply");
 
   const deleted = verifyInherited(parseInherited(published.join(",")), () => null);
-  assert.deepEqual([...deleted], [], "definition gone: an approval pinned to it cannot be verified, so it fails closed");
+  assert.deepEqual(
+    [...deleted],
+    [],
+    "definition gone: an approval pinned to it cannot be verified, so it fails closed",
+  );
 });
 
 test("ADR-0022: an entry with no pin is still honoured, and one promising a pin without carrying it is not", () => {

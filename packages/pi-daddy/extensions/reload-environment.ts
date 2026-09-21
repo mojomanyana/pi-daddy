@@ -1,7 +1,11 @@
 import { GRANT_ENV_KEYS } from "../src/kernel/propagation.ts";
 
 /** The root baseline and latest child publication for one real Pi session owner. */
-export interface ReloadLifecycle { root: Record<string, string | undefined>; published?: Record<string, string | undefined>; activityRootId?: string }
+export interface ReloadLifecycle {
+  root: Record<string, string | undefined>;
+  published?: Record<string, string | undefined>;
+  activityRootId?: string;
+}
 type SessionOwner = object;
 
 interface ReloadState {
@@ -15,10 +19,10 @@ function state(): ReloadState {
 }
 
 function snapshot(): Record<string, string | undefined> {
-  return Object.fromEntries(GRANT_ENV_KEYS.map(key => [key, process.env[key]]));
+  return Object.fromEntries(GRANT_ENV_KEYS.map((key) => [key, process.env[key]]));
 }
 function same(left: Record<string, string | undefined>, right: Record<string, string | undefined>): boolean {
-  return GRANT_ENV_KEYS.every(key => left[key] === right[key]);
+  return GRANT_ENV_KEYS.every((key) => left[key] === right[key]);
 }
 function withRoot(root: Record<string, string | undefined>): NodeJS.ProcessEnv {
   return { ...process.env, ...root };
@@ -35,7 +39,10 @@ export function beginExtensionLifecycle(): { environment: NodeJS.ProcessEnv; lif
  * A matching latest publication is child state from a known owner, not an explicit replacement for this
  * owner. An unmatched environment change is an explicit root replacement for THIS owner only.
  */
-export function bindReloadLifecycle(owner: SessionOwner, provisional: ReloadLifecycle): {
+export function bindReloadLifecycle(
+  owner: SessionOwner,
+  provisional: ReloadLifecycle,
+): {
   lifecycle: ReloadLifecycle;
   environment: NodeJS.ProcessEnv;
 } {

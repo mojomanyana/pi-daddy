@@ -19,7 +19,13 @@ import { after, test } from "node:test";
 import { makeCatalog } from "../src/kernel/catalog.ts";
 import type { SkillDefinition } from "../src/kernel/definitions.ts";
 import { planDelegation } from "../src/kernel/delegate.ts";
-import { appendLedgerEvent, appendRecord, buildRecord, isEscalationAttempt, verifyLedger } from "../src/governance/ledger.ts";
+import {
+  appendLedgerEvent,
+  appendRecord,
+  buildRecord,
+  isEscalationAttempt,
+  verifyLedger,
+} from "../src/governance/ledger.ts";
 import { MAX_CHAIN_STEPS, MAX_CHILDREN_PER_CALL } from "../src/kernel/fanout.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
@@ -51,7 +57,8 @@ const recordFor = (plan: ReturnType<typeof planDelegation>, parentGrant: string[
     result: plan.result,
     blocked: !plan.ok,
     reason: plan.reason,
-    executor: "process", now: new Date(),
+    executor: "process",
+    now: new Date(),
   });
 
 test("an ALLOWED wildcard spawn is not recorded as an escalation attempt", () => {
@@ -128,10 +135,7 @@ test("a delegation refused before resolution still carries a result", () => {
     ["disabled", planDelegation({ task: "t", tools: [] }, { ...base, maxDepth: 0 })],
     ["depth limit", planDelegation({ task: "t", tools: [] }, { ...base, depth: 9 })],
     ["empty task", planDelegation({ task: "   ", tools: [] }, base)],
-    [
-      "unknown capability",
-      planDelegation({ task: "t", tools: ["nope"] }, { ...base, catalog: makeCatalog([]) }),
-    ],
+    ["unknown capability", planDelegation({ task: "t", tools: ["nope"] }, { ...base, catalog: makeCatalog([]) })],
   ] as const;
 
   for (const [label, plan] of cases) {
@@ -152,7 +156,8 @@ test("appendRecord writes one JSON line per record, appending", async () => {
     parentGrant: ["tool:read"],
     result: { effective: ["tool:read"], denied: [], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
     blocked: false,
-    executor: "process", now: new Date(),
+    executor: "process",
+    now: new Date(),
   });
 
   await appendRecord({ path }, record);
@@ -182,9 +187,7 @@ test("appendRecord in non-strict mode swallows the failure", async () => {
   await mkdir(dir, { recursive: true });
   await writeFile(blocker, "not a directory");
 
-  await assert.doesNotReject(() =>
-    appendRecord({ path: join(blocker, "grants.jsonl"), strict: false }, {} as never),
-  );
+  await assert.doesNotReject(() => appendRecord({ path: join(blocker, "grants.jsonl"), strict: false }, {} as never));
 });
 
 // ---------------------------------------------------------------------------
@@ -218,7 +221,8 @@ test("F13: a ledger of concurrent appends is fully parseable", async () => {
           parentGrant: big,
           result: { effective: big, denied: [], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
           blocked: false,
-          executor: "process", now: new Date(),
+          executor: "process",
+          now: new Date(),
         }),
       ),
     ),
@@ -234,11 +238,20 @@ test("verifyLedger reports a torn line instead of ignoring it", async () => {
   // happened — a gap in the audit trail that reads as an absence of activity.
   const dir = await tempDir("grants-torn-");
   const path = join(dir, "ledger.jsonl");
-  await appendRecord({ path }, buildRecord({
-    parentId: "d0", childId: "d0.1", depth: 1, requested: [], parentGrant: [],
-    result: { effective: [], denied: [], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
-    blocked: false, executor: "process", now: new Date(),
-  }));
+  await appendRecord(
+    { path },
+    buildRecord({
+      parentId: "d0",
+      childId: "d0.1",
+      depth: 1,
+      requested: [],
+      parentGrant: [],
+      result: { effective: [], denied: [], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
+      blocked: false,
+      executor: "process",
+      now: new Date(),
+    }),
+  );
   await writeFile(path, `${await readFile(path, "utf8")}{"parentId":"d0","childId":"d0.2","dep\n`, "utf8");
 
   const report = await verifyLedger(path);
@@ -262,11 +275,20 @@ test("verifyLedger counts escalation attempts, so the one signal is readable", a
   const dir = await tempDir("grants-esc-");
   const path = join(dir, "ledger.jsonl");
   for (const denied of [[], ["tool:write"], []]) {
-    await appendRecord({ path }, buildRecord({
-      parentId: "d0", childId: "d0.1", depth: 1, requested: [], parentGrant: [],
-      result: { effective: [], denied, clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
-      blocked: denied.length > 0, executor: "process", now: new Date(),
-    }));
+    await appendRecord(
+      { path },
+      buildRecord({
+        parentId: "d0",
+        childId: "d0.1",
+        depth: 1,
+        requested: [],
+        parentGrant: [],
+        result: { effective: [], denied, clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
+        blocked: denied.length > 0,
+        executor: "process",
+        now: new Date(),
+      }),
+    );
   }
   const report = await verifyLedger(path);
   assert.equal(report.records, 3);
@@ -279,12 +301,22 @@ test("ADR-0020: verifyLedger tallies where each yes came from, per capability", 
   const dir = await tempDir("grants-sources-");
   const path = join(dir, "ledger.jsonl");
   const record = (approvalSources: Record<string, string>, humanDenied = false) =>
-    appendRecord({ path }, buildRecord({
-      parentId: "d0", childId: "d0.1", depth: 1, requested: [], parentGrant: [],
-      result: { effective: [], denied: [], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
-      blocked: false, executor: "process", now: new Date(), approvalSources: approvalSources as never,
-      ...(humanDenied ? { humanDenied: true } : {}),
-    } as never));
+    appendRecord(
+      { path },
+      buildRecord({
+        parentId: "d0",
+        childId: "d0.1",
+        depth: 1,
+        requested: [],
+        parentGrant: [],
+        result: { effective: [], denied: [], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
+        blocked: false,
+        executor: "process",
+        now: new Date(),
+        approvalSources: approvalSources as never,
+        ...(humanDenied ? { humanDenied: true } : {}),
+      } as never),
+    );
 
   // Deliberately a MIXED record: two capabilities, two different sources. Counting per record instead of
   // per capability is the specific error R-46 already made once with the scalar, and it would report this
@@ -309,11 +341,22 @@ test("ADR-0020: records are counted separately from distinct capability@subject 
   const dir = await tempDir("grants-pairs-");
   const path = join(dir, "ledger.jsonl");
   const spawn = (agentType: string) =>
-    appendRecord({ path }, buildRecord({
-      parentId: "d0", childId: "d0.1", depth: 1, agentType, requested: [], parentGrant: [],
-      result: { effective: [], denied: [], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
-      blocked: false, executor: "process", now: new Date(), approvalSources: { "tool:write": "persisted" } as never,
-    } as never));
+    appendRecord(
+      { path },
+      buildRecord({
+        parentId: "d0",
+        childId: "d0.1",
+        depth: 1,
+        agentType,
+        requested: [],
+        parentGrant: [],
+        result: { effective: [], denied: [], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
+        blocked: false,
+        executor: "process",
+        now: new Date(),
+        approvalSources: { "tool:write": "persisted" } as never,
+      } as never),
+    );
 
   for (let i = 0; i < 5; i += 1) await spawn("deploy");
   await spawn("review");
@@ -333,8 +376,17 @@ test("R-64: a malformed approvalSources cannot corrupt the tally or delete the r
   // for — so "this package never writes that" is not a defence.
   const dir = await tempDir("grants-malformed-");
   const base = {
-    ts: "2026-08-14T00:00:00.000Z", parentId: "d0", childId: "d0.1", depth: 1,
-    requested: [], parentGrant: [], effective: [], denied: [], clipped: [], gatedBlocked: [], blocked: false,
+    ts: "2026-08-14T00:00:00.000Z",
+    parentId: "d0",
+    childId: "d0.1",
+    depth: 1,
+    requested: [],
+    parentGrant: [],
+    effective: [],
+    denied: [],
+    clipped: [],
+    gatedBlocked: [],
+    blocked: false,
   };
   const write = async (name: string, records: object[]) => {
     const p = join(dir, name);
@@ -349,7 +401,9 @@ test("R-64: a malformed approvalSources cannot corrupt the tally or delete the r
 
   // An array passed `typeof === "object"` and was tallied with numeric indices as capability names —
   // inventing a `0@deploy` pair and inflating `persisted`, which is R-63's direction.
-  const arr = await write("array.jsonl", [{ ...base, agentType: "deploy", approved: ["tool:write"], approvalSources: ["persisted"] as never }]);
+  const arr = await write("array.jsonl", [
+    { ...base, agentType: "deploy", approved: ["tool:write"], approvalSources: ["persisted"] as never },
+  ]);
   assert.equal(arr.bySource.persisted, 0, "an array is not a source map");
   assert.equal(arr.unattributed, 1, "and it is counted, not dropped");
 
@@ -379,13 +433,28 @@ test("R-64: the tools: form is keyed to <delegate>, the subject the approval lay
   const path = join(dir, "ledger.jsonl");
   const rec = (agentType: string | undefined, capability: string) =>
     JSON.stringify({
-      ts: "2026-08-14T00:00:00.000Z", parentId: "d0", childId: "d0.1", depth: 1, ...(agentType ? { agentType } : {}),
-      requested: [], parentGrant: [], effective: [], denied: [], clipped: [], gatedBlocked: [], blocked: false,
-      approved: [capability], approvalSources: { [capability]: "persisted" },
+      ts: "2026-08-14T00:00:00.000Z",
+      parentId: "d0",
+      childId: "d0.1",
+      depth: 1,
+      ...(agentType ? { agentType } : {}),
+      requested: [],
+      parentGrant: [],
+      effective: [],
+      denied: [],
+      clipped: [],
+      gatedBlocked: [],
+      blocked: false,
+      approved: [capability],
+      approvalSources: { [capability]: "persisted" },
     });
 
   // `agentType: "delegate"` is what run-delegation.ts writes for the tools: form — the shape that matters.
-  await writeFile(path, [rec("delegate", "tool:write"), rec(undefined, "tool:write"), rec("deploy", "tool:write")].join("\n") + "\n", "utf8");
+  await writeFile(
+    path,
+    [rec("delegate", "tool:write"), rec(undefined, "tool:write"), rec("deploy", "tool:write")].join("\n") + "\n",
+    "utf8",
+  );
 
   const { distinctBySource } = (await verifyLedger(path)).approvals;
   assert.equal(
@@ -405,13 +474,27 @@ test("R-69: the four kinds of unsatisfied gate are distinguishable in the record
   // ADR-0026 rests its decision on this vocabulary being able to say "nobody was there to ask" and be
   // believed, which is why it is recorded rather than inferred.
   const blocked = {
-    effective: [], denied: [], clipped: [], gatedBlocked: ["tool:bash"], universal: [], subsumedBy: [],
+    effective: [],
+    denied: [],
+    clipped: [],
+    gatedBlocked: ["tool:bash"],
+    universal: [],
+    subsumedBy: [],
   };
   const record = (gateOutcome: "no-ui" | "dismissed" | "error" | "declined" | "granted") =>
     buildRecord({
-      parentId: "d0", childId: "d0.1", depth: 1, agentType: "deploy", requested: ["tool:bash"],
-      parentGrant: ["tool:bash"], result: blocked, blocked: true, executor: "process", now: new Date(),
-      humanDenied: gateOutcome === "declined", gateOutcome,
+      parentId: "d0",
+      childId: "d0.1",
+      depth: 1,
+      agentType: "deploy",
+      requested: ["tool:bash"],
+      parentGrant: ["tool:bash"],
+      result: blocked,
+      blocked: true,
+      executor: "process",
+      now: new Date(),
+      humanDenied: gateOutcome === "declined",
+      gateOutcome,
     });
 
   assert.equal(record("no-ui").gateOutcome, "no-ui", "nobody was there — an operator pre-approves");
@@ -436,10 +519,15 @@ test("ADR-0031: a record names the executor, because the argv differs between th
   // and the herdr plan withholds `--print` — so two records with identical capabilities can describe different
   // argv, and nothing outside the record preserves which.
   const shape = {
-    parentId: "d0", childId: "d0.1", depth: 1, agentType: "review",
-    requested: ["tool:read"], parentGrant: ["tool:read"],
+    parentId: "d0",
+    childId: "d0.1",
+    depth: 1,
+    agentType: "review",
+    requested: ["tool:read"],
+    parentGrant: ["tool:read"],
     result: { effective: ["tool:read"], denied: [], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
-    blocked: false, now: new Date("2026-08-17T12:00:00Z"),
+    blocked: false,
+    now: new Date("2026-08-17T12:00:00Z"),
   };
 
   assert.equal(buildRecord({ ...shape, executor: "herdr" }).executor, "herdr");
@@ -450,10 +538,17 @@ test("ADR-0031: a REFUSED spawn still names an executor — the one the session 
   // A refused spawn has no executor of its own, and omitting the field would make "which refusals came from a
   // herdr session?" unanswerable. The honest value is what the session had settled on.
   const record = buildRecord({
-    parentId: "d0", childId: "d0.1", depth: 1, agentType: "review",
-    requested: ["tool:bash"], parentGrant: ["tool:read"],
+    parentId: "d0",
+    childId: "d0.1",
+    depth: 1,
+    agentType: "review",
+    requested: ["tool:bash"],
+    parentGrant: ["tool:read"],
     result: { effective: [], denied: ["tool:bash"], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
-    blocked: true, reason: "exceeds the parent grant", executor: "herdr", now: new Date(),
+    blocked: true,
+    reason: "exceeds the parent grant",
+    executor: "herdr",
+    now: new Date(),
   });
   assert.equal(record.blocked, true);
   assert.equal(record.executor, "herdr");
@@ -463,11 +558,20 @@ test("ADR-0031: the executor survives a round trip through the ledger file", asy
   // Written AND read back: a field the writer sets and the parser drops is the shape R-51 was.
   const dir = await tempDir("grants-executor-");
   const path = join(dir, "ledger.jsonl");
-  await appendRecord({ path }, buildRecord({
-    parentId: "d0", childId: "d0.1", depth: 1, requested: [], parentGrant: [],
-    result: { effective: [], denied: [], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
-    blocked: false, executor: "herdr", now: new Date(),
-  }));
+  await appendRecord(
+    { path },
+    buildRecord({
+      parentId: "d0",
+      childId: "d0.1",
+      depth: 1,
+      requested: [],
+      parentGrant: [],
+      result: { effective: [], denied: [], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
+      blocked: false,
+      executor: "herdr",
+      now: new Date(),
+    }),
+  );
 
   const [line] = (await readFile(path, "utf8")).trim().split("\n");
   assert.equal(JSON.parse(line).executor, "herdr");
@@ -484,10 +588,16 @@ test("ADR-0033: a chained step records WHICH child composed its task", () => {
   //
   // The production change that breaks this: dropping `taskFrom` from buildRecord.
   const base = {
-    parentId: "d0", childId: "d0.2", depth: 1, agentType: "review",
-    requested: ["tool:read"], parentGrant: ["tool:read"],
+    parentId: "d0",
+    childId: "d0.2",
+    depth: 1,
+    agentType: "review",
+    requested: ["tool:read"],
+    parentGrant: ["tool:read"],
     result: { effective: ["tool:read"], denied: [], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
-    blocked: false, executor: "process" as const, now: new Date("2026-08-17T12:00:00Z"),
+    blocked: false,
+    executor: "process" as const,
+    now: new Date("2026-08-17T12:00:00Z"),
   };
 
   assert.equal(buildRecord({ ...base, taskFrom: "d0.1" }).taskFrom, "d0.1");
@@ -497,10 +607,16 @@ test("ADR-0033: a NON-chained spawn asserts no prior author", () => {
   // Optional, unlike `executor`, and the asymmetry is the point: an empty string would claim a predecessor that
   // does not exist. The production change that breaks this: making the field required, or defaulting it to "".
   const record = buildRecord({
-    parentId: "d0", childId: "d0.1", depth: 1, agentType: "review",
-    requested: ["tool:read"], parentGrant: ["tool:read"],
+    parentId: "d0",
+    childId: "d0.1",
+    depth: 1,
+    agentType: "review",
+    requested: ["tool:read"],
+    parentGrant: ["tool:read"],
     result: { effective: ["tool:read"], denied: [], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
-    blocked: false, executor: "process", now: new Date(),
+    blocked: false,
+    executor: "process",
+    now: new Date(),
   });
   assert.equal(record.taskFrom, undefined);
   assert.ok(!("taskFrom" in record), "and the key should be absent, not present-and-undefined");
@@ -523,33 +639,75 @@ test("ADR-0033: MAX_CHAIN_STEPS is DERIVED from MAX_CHILDREN_PER_CALL, not merel
 
 test("shared append preserves legacy serialization and failure callback boundaries", async () => {
   const dir = await tempDir("legacy-append-boundary-");
-  for (const append of [appendLedgerEvent, appendRecord]) for (const strict of [undefined, true, false]) {
-    const path = join(dir, `absent-${append.name}-${strict}`, "ledger");
-    const cyclic: Record<string, unknown> = {}; cyclic.self = cyclic;
-    let calls = 0;
-    const options = { path, ...(strict === undefined ? {} : { strict }), onFailure() { calls++; } };
-    for (const malformed of [cyclic, { value: 1n }]) {
-      await assert.rejects(append(options, malformed as never), error => error instanceof TypeError && !error.message.includes("failing closed"));
-      assert.equal(calls, 0); assert.equal(existsSync(join(path, "..")), false); assert.equal(existsSync(path + ".lock"), false);
+  for (const append of [appendLedgerEvent, appendRecord])
+    for (const strict of [undefined, true, false]) {
+      const path = join(dir, `absent-${append.name}-${strict}`, "ledger");
+      const cyclic: Record<string, unknown> = {};
+      cyclic.self = cyclic;
+      let calls = 0;
+      const options = {
+        path,
+        ...(strict === undefined ? {} : { strict }),
+        onFailure() {
+          calls++;
+        },
+      };
+      for (const malformed of [cyclic, { value: 1n }]) {
+        await assert.rejects(
+          append(options, malformed as never),
+          (error) => error instanceof TypeError && !error.message.includes("failing closed"),
+        );
+        assert.equal(calls, 0);
+        assert.equal(existsSync(join(path, "..")), false);
+        assert.equal(existsSync(path + ".lock"), false);
+      }
+      const sentinel = new Error("fixture serialization sentinel");
+      await assert.rejects(
+        append(options, {
+          toJSON() {
+            throw sentinel;
+          },
+        } as never),
+        (error) => error === sentinel,
+      );
+      assert.equal(calls, 0);
+      assert.equal(existsSync(join(path, "..")), false);
+      const blocker = join(dir, `blocker-${append.name}-${strict}`);
+      await writeFile(blocker, "preserve");
+      const failures: unknown[] = [];
+      const bad = {
+        ...options,
+        path: join(blocker, "ledger"),
+        onFailure(error: unknown) {
+          failures.push(error);
+        },
+      };
+      if (strict === false) {
+        await append(bad, {} as never);
+        assert.equal(failures.length, 1);
+        assert.equal((failures[0] as NodeJS.ErrnoException).code, "EEXIST");
+        assert.equal((failures[0] as NodeJS.ErrnoException).syscall, "mkdir");
+        assert.ok(!(failures[0] as Error).message.includes("grant ledger write failed"));
+        const callbackSentinel = new Error("fixture callback sentinel");
+        let callbackCalls = 0;
+        await assert.rejects(
+          append(
+            {
+              ...bad,
+              onFailure() {
+                callbackCalls++;
+                throw callbackSentinel;
+              },
+            },
+            {} as never,
+          ),
+          (error) => error === callbackSentinel,
+        );
+        assert.equal(callbackCalls, 1);
+      } else {
+        await assert.rejects(append(bad, {} as never), /^Error: grant ledger write failed \(failing closed\):/);
+        assert.deepEqual(failures, []);
+      }
+      assert.equal(await readFile(blocker, "utf8"), "preserve");
     }
-    const sentinel = new Error("fixture serialization sentinel");
-    await assert.rejects(append(options, { toJSON() { throw sentinel; } } as never), error => error === sentinel);
-    assert.equal(calls, 0); assert.equal(existsSync(join(path, "..")), false);
-    const blocker = join(dir, `blocker-${append.name}-${strict}`); await writeFile(blocker, "preserve");
-    const failures: unknown[] = [];
-    const bad = { ...options, path: join(blocker, "ledger"), onFailure(error: unknown) { failures.push(error); } };
-    if (strict === false) {
-      await append(bad, {} as never); assert.equal(failures.length, 1);
-      assert.equal((failures[0] as NodeJS.ErrnoException).code, "EEXIST");
-      assert.equal((failures[0] as NodeJS.ErrnoException).syscall, "mkdir");
-      assert.ok(!(failures[0] as Error).message.includes("grant ledger write failed"));
-      const callbackSentinel = new Error("fixture callback sentinel"); let callbackCalls = 0;
-      await assert.rejects(append({ ...bad, onFailure() { callbackCalls++; throw callbackSentinel; } }, {} as never), error => error === callbackSentinel);
-      assert.equal(callbackCalls, 1);
-    } else {
-      await assert.rejects(append(bad, {} as never), /^Error: grant ledger write failed \(failing closed\):/);
-      assert.deepEqual(failures, []);
-    }
-    assert.equal(await readFile(blocker, "utf8"), "preserve");
-  }
 });

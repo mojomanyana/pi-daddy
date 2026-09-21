@@ -12,7 +12,7 @@ import type { StructuredRefusal } from "./refusals.ts";
 
 /** The two ways a child can be started. Defined here, below the executors, so the ledger and the planner can name it without importing an executor (ADR-0076 layering). */
 export const EXECUTOR_KINDS = ["process", "herdr"] as const;
-export type ExecutorKind = typeof EXECUTOR_KINDS[number];
+export type ExecutorKind = (typeof EXECUTOR_KINDS)[number];
 
 export interface DelegationRequest {
   task: string;

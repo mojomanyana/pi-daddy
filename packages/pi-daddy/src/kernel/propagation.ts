@@ -74,7 +74,10 @@ export const GRANT_ENV_KEYS = [
 ] as const;
 
 export const parseList = (raw: string | undefined): Capability[] =>
-  (raw ?? "").split(",").map((s) => s.trim()).filter((s) => s.length > 0);
+  (raw ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
 
 /** Does a bare pi tool name correspond to this capability? `read` matches `tool:read` and `ext:pkg/read`. */
 function matchesToolName(capability: Capability, toolName: string): boolean {
@@ -109,10 +112,7 @@ const isToolCapability = (capability: Capability): boolean =>
  * it. Silently, and in the narrowing direction, which is why it survived: nothing fails when a grant
  * quietly shrinks. It also made ADR-0017's `agent:` prerequisite unsatisfiable below the root.
  */
-export function deriveOwnGrant(
-  inheritedParentGrant: Capability[],
-  observedTools: string[] | null,
-): Capability[] {
+export function deriveOwnGrant(inheritedParentGrant: Capability[], observedTools: string[] | null): Capability[] {
   if (observedTools === null) return [...inheritedParentGrant];
   // Capabilities an observation cannot speak about ride through both branches untouched.
   const nonTool = inheritedParentGrant.filter((c) => !isToolCapability(c) && c !== WILDCARD);
@@ -123,9 +123,7 @@ export function deriveOwnGrant(
     return [...new Set([WILDCARD, ...enumerated, ...nonTool])].sort();
   }
   return [
-    ...inheritedParentGrant.filter(
-      (c) => isToolCapability(c) && observedTools.some((t) => matchesToolName(c, t)),
-    ),
+    ...inheritedParentGrant.filter((c) => isToolCapability(c) && observedTools.some((t) => matchesToolName(c, t))),
     ...nonTool,
   ].sort();
 }
@@ -300,10 +298,7 @@ export function childEnv(input: ChildEnvInput): Record<string, string> {
  * governance variable, which is what `delegate.ts`'s "nothing is written to the shared `process.env`"
  * claim actually requires. Consumers re-clamp anyway; this is the defence in depth behind that.
  */
-export function mergeChildEnv(
-  parentEnv: NodeJS.ProcessEnv,
-  planEnv: Record<string, string>,
-): NodeJS.ProcessEnv {
+export function mergeChildEnv(parentEnv: NodeJS.ProcessEnv, planEnv: Record<string, string>): NodeJS.ProcessEnv {
   const merged: NodeJS.ProcessEnv = { ...parentEnv };
   for (const key of GRANT_ENV_KEYS) delete merged[key];
   return { ...merged, ...planEnv };

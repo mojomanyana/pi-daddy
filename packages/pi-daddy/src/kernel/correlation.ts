@@ -68,21 +68,45 @@ const MAX_CORRELATION_SCOPE_BYTES = 4 * 1024;
  * refusal names it, which is an actionable break rather than a silent secrets sink.
  */
 const CORRELATION_FIELDS = new Set<keyof CorrelationMetadata>([
-  "schema_version", "run_id", "task_id", "workspace_id", "context_id", "phase", "assurance",
-  "assurance_effective", "policy_label", "assurance_source", "assurance_scope", "activated_at",
-  "plan_digest", "definition_digest", "task_digest", "base_sha", "head_sha", "tree_sha",
-  "event_seq", "last_change_seq", "last_authority_seq", "check_receipt_id",
+  "schema_version",
+  "run_id",
+  "task_id",
+  "workspace_id",
+  "context_id",
+  "phase",
+  "assurance",
+  "assurance_effective",
+  "policy_label",
+  "assurance_source",
+  "assurance_scope",
+  "activated_at",
+  "plan_digest",
+  "definition_digest",
+  "task_digest",
+  "base_sha",
+  "head_sha",
+  "tree_sha",
+  "event_seq",
+  "last_change_seq",
+  "last_authority_seq",
+  "check_receipt_id",
 ]);
 
-const CORRELATION_NUMERIC = new Set<keyof CorrelationMetadata>([
-  "event_seq", "last_change_seq", "last_authority_seq",
-]);
+const CORRELATION_NUMERIC = new Set<keyof CorrelationMetadata>(["event_seq", "last_change_seq", "last_authority_seq"]);
 
 // These fields are rendered as labels/identities. Treating arbitrary prose as an "id" let a model copy
 // task or output text into the ledger and dashboard through correlation while staying schema-valid.
 const CORRELATION_IDENTIFIERS = new Set<keyof CorrelationMetadata>([
-  "schema_version", "run_id", "task_id", "workspace_id", "context_id", "phase", "assurance",
-  "assurance_effective", "policy_label", "assurance_source",
+  "schema_version",
+  "run_id",
+  "task_id",
+  "workspace_id",
+  "context_id",
+  "phase",
+  "assurance",
+  "assurance_effective",
+  "policy_label",
+  "assurance_source",
 ]);
 
 function correlationRefusal(message: string, details?: Record<string, string | number>): GovernanceRefusal {
@@ -108,7 +132,10 @@ function normaliseAssuranceScope(value: unknown): AssuranceScope {
   if (keys.length !== 2 || keys[0] !== "selectors" || keys[1] !== "type") {
     throw correlationRefusal("assurance_scope must contain only type and selectors");
   }
-  if (!Array.isArray(scope.selectors) || !scope.selectors.every((selector) => typeof selector === "string" && selector.length > 0)) {
+  if (
+    !Array.isArray(scope.selectors) ||
+    !scope.selectors.every((selector) => typeof selector === "string" && selector.length > 0)
+  ) {
     throw correlationRefusal("assurance_scope selectors must be non-empty strings");
   }
   if (scope.type === "entire-run") {
@@ -150,10 +177,9 @@ export function normaliseCorrelation(input: CorrelationMetadata | undefined): Co
   const source = parsed as Record<string, unknown>;
   const undeclared = Object.keys(source).filter((key) => !CORRELATION_FIELDS.has(key as keyof CorrelationMetadata));
   if (undeclared.length > 0) {
-    throw correlationRefusal(
-      `carries fields outside the pinned schema 1.0 contract: ${undeclared.sort().join(", ")}`,
-      { undeclared: undeclared.sort().join(",") },
-    );
+    throw correlationRefusal(`carries fields outside the pinned schema 1.0 contract: ${undeclared.sort().join(", ")}`, {
+      undeclared: undeclared.sort().join(","),
+    });
   }
 
   const output: Record<string, unknown> = {};
@@ -162,10 +188,10 @@ export function normaliseCorrelation(input: CorrelationMetadata | undefined): Co
     if (key === "assurance_scope") {
       const size = Buffer.byteLength(JSON.stringify(value) ?? "");
       if (size > MAX_CORRELATION_SCOPE_BYTES) {
-        throw correlationTooLarge(
-          `assurance_scope exceeds ${MAX_CORRELATION_SCOPE_BYTES} bytes`,
-          { limit: MAX_CORRELATION_SCOPE_BYTES, actual: size },
-        );
+        throw correlationTooLarge(`assurance_scope exceeds ${MAX_CORRELATION_SCOPE_BYTES} bytes`, {
+          limit: MAX_CORRELATION_SCOPE_BYTES,
+          actual: size,
+        });
       }
       output[key] = normaliseAssuranceScope(value);
       continue;
@@ -185,10 +211,11 @@ export function normaliseCorrelation(input: CorrelationMetadata | undefined): Co
       });
     }
     if (value.length > MAX_CORRELATION_FIELD_CHARS) {
-      throw correlationTooLarge(
-        `${key} exceeds ${MAX_CORRELATION_FIELD_CHARS} characters`,
-        { field: key, limit: MAX_CORRELATION_FIELD_CHARS, actual: value.length },
-      );
+      throw correlationTooLarge(`${key} exceeds ${MAX_CORRELATION_FIELD_CHARS} characters`, {
+        field: key,
+        limit: MAX_CORRELATION_FIELD_CHARS,
+        actual: value.length,
+      });
     }
     if (CORRELATION_IDENTIFIERS.has(key as keyof CorrelationMetadata) && !isLedgerCorrelationIdentifier(value)) {
       throw correlationRefusal(`${key} must be an ASCII identifier, not free-form text`, { field: key });
@@ -293,12 +320,15 @@ export function approvalBindingDigest(binding: ApprovalBinding): string {
 export function isApprovalBinding(value: unknown): value is ApprovalBinding {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const binding = value as Partial<ApprovalBinding>;
-  return binding.version === "1" &&
+  return (
+    binding.version === "1" &&
     [binding.task_sha256, binding.requested_sha256, binding.effective_sha256].every(
       (digest) => typeof digest === "string" && /^[a-f0-9]{64}$/i.test(digest),
     ) &&
-    Array.isArray(binding.requested) && binding.requested.every((item) => typeof item === "string") &&
-    Array.isArray(binding.effective) && binding.effective.every((item) => typeof item === "string") &&
+    Array.isArray(binding.requested) &&
+    binding.requested.every((item) => typeof item === "string") &&
+    Array.isArray(binding.effective) &&
+    binding.effective.every((item) => typeof item === "string") &&
     typeof binding.parent_id === "string" &&
     ["definition_sha256", "workspace_id", "context_id", "tree_sha"].every((key) => {
       const value = (binding as Record<string, unknown>)[key];
@@ -310,7 +340,8 @@ export function isApprovalBinding(value: unknown): value is ApprovalBinding {
     // (`approval-store.ts`), so an internally contradictory record — digests that do not match the
     // capability arrays sitting beside them — must be unrepresentable rather than merely unlikely.
     binding.requested_sha256 === digestCapabilities(binding.requested as Capability[]) &&
-    binding.effective_sha256 === digestCapabilities(binding.effective as Capability[]);
+    binding.effective_sha256 === digestCapabilities(binding.effective as Capability[])
+  );
 }
 
 export function approvalBindingsEqual(a: ApprovalBinding | undefined, b: ApprovalBinding | undefined): boolean {

@@ -134,7 +134,7 @@ export function parseSkillDefinition(source: string, text: string): SkillDefinit
 
     // A YAML collection/block we cannot parse is not an explicit empty ceiling.
     if (key === "allowed-tools" && value === "") {
-      const nextValue = lines.slice(i + 1).find(line => line.trim() !== "" && !/^\s*#/.test(line));
+      const nextValue = lines.slice(i + 1).find((line) => line.trim() !== "" && !/^\s*#/.test(line));
       if (/^\s+\S/.test(nextValue ?? "")) continue;
     }
     fields.set(key, value);
@@ -203,7 +203,11 @@ export async function loadDefinitions(cwd: string): Promise<Map<string, SkillDef
   const definitions = new Map<string, SkillDefinition>();
   for (const { path } of (await resolveSkillResources(cwd)).skills) {
     let text: string;
-    try { text = await readFile(path, "utf8"); } catch { continue; }
+    try {
+      text = await readFile(path, "utf8");
+    } catch {
+      continue;
+    }
     const parsed = parseSkillDefinition(path, text);
     if (parsed && !definitions.has(parsed.name)) definitions.set(parsed.name, parsed);
   }

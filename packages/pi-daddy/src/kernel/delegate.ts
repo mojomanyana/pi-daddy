@@ -7,30 +7,28 @@ import { planSpawn } from "./spawn.ts";
 import { ceilingForDefinition, digestDefinition, type DefinitionDigest, type SkillDefinition } from "./definitions.ts";
 import { assertNarrowing, type Capability, type ResolveResult } from "./resolve.ts";
 import { checkRoutingAuthority, checkWorkspaceWildcardRequest } from "./routing-authority.ts";
-import {
-  DELEGATE_CAPABILITY,
-  agentCapability,
-  maySpawnDefinition,
-  normaliseCapability,
-} from "./capabilities.ts";
+import { DELEGATE_CAPABILITY, agentCapability, maySpawnDefinition, normaliseCapability } from "./capabilities.ts";
 
 // Re-exported so the split stays internal: `delegate.ts` has been the import site for these since 0.6.0 and
 // four modules plus the test suite name it. Moving the definitions without moving the door would be churn
 // charged to every caller for a line count they did not cause.
 export { DELEGATE_CAPABILITY, agentCapability, maySpawnDefinition, normaliseCapability } from "./capabilities.ts";
 import {
-  ENV_APPROVED, ENV_DEPTH, ENV_EXECUTION_ID, ENV_FANOUT, ENV_GATED, ENV_GRANT, ENV_LEDGER, ENV_MAX_DEPTH,
-  ENV_PARENT_ID, inheritableGrant,
+  ENV_APPROVED,
+  ENV_DEPTH,
+  ENV_EXECUTION_ID,
+  ENV_FANOUT,
+  ENV_GATED,
+  ENV_GRANT,
+  ENV_LEDGER,
+  ENV_MAX_DEPTH,
+  ENV_PARENT_ID,
+  inheritableGrant,
 } from "./propagation.ts";
 import { inheritApprovals, type InheritableApproval } from "./approval.ts";
 import { suggestForUnknown, unknownCapabilities, type Catalog } from "./catalog.ts";
 import { GovernanceRefusal, refusal, type RefusalCode, type StructuredRefusal } from "./refusals.ts";
-import {
-  digestTask,
-  normaliseCorrelation,
-  type ApprovalBinding,
-  type CorrelationMetadata,
-} from "./correlation.ts";
+import { digestTask, normaliseCorrelation, type ApprovalBinding, type CorrelationMetadata } from "./correlation.ts";
 import { resolveDelegationApproval } from "./delegation-approval.ts";
 import type { Delegation, DelegationContext, DelegationRequest } from "./delegate-types.ts";
 import { assertCapabilitiesArePropagatable } from "./capabilities.ts";
@@ -53,9 +51,10 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
   try {
     correlation = normaliseCorrelation(request.correlation);
   } catch (error) {
-    correlationRefused = error instanceof GovernanceRefusal
-      ? { code: error.code, message: error.message, ...(error.details ? { details: error.details } : {}) }
-      : refusal("CORRELATION_INVALID", String(error instanceof Error ? error.message : error));
+    correlationRefused =
+      error instanceof GovernanceRefusal
+        ? { code: error.code, message: error.message, ...(error.details ? { details: error.details } : {}) }
+        : refusal("CORRELATION_INVALID", String(error instanceof Error ? error.message : error));
   }
   const taskDigest = digestTask(request.task ?? "");
   const empty: Delegation = {
@@ -85,11 +84,14 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
   // before anything is said about the target, because they are governance questions about the SESSION.
   const routing = checkRoutingAuthority(request.boundWorkspaceId, ctx.ownGrant);
   if (routing) {
-    return denied({
-      ...empty,
-      ...(routing.denied ? { requested: routing.denied, result: { ...empty.result, denied: routing.denied } } : {}),
-      reason: routing.reason,
-    }, routing.code);
+    return denied(
+      {
+        ...empty,
+        ...(routing.denied ? { requested: routing.denied, result: { ...empty.result, denied: routing.denied } } : {}),
+        reason: routing.reason,
+      },
+      routing.code,
+    );
   }
 
   // ADR-0016. A named definition replaces the model's tool list with an operator-authored ceiling.
@@ -107,12 +109,15 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
     // here is simply an error.
     if (!definition) {
       const known = [...(ctx.definitions?.keys() ?? [])].sort();
-      return denied({
-        ...empty,
-        reason:
-          `unknown agent "${request.agent}"` +
-          (known.length > 0 ? ` — known definitions: ${known.join(", ")}` : " — no definitions were found"),
-      }, "UNKNOWN_DEFINITION");
+      return denied(
+        {
+          ...empty,
+          reason:
+            `unknown agent "${request.agent}"` +
+            (known.length > 0 ? ` — known definitions: ${known.join(", ")}` : " — no definitions were found"),
+        },
+        "UNKNOWN_DEFINITION",
+      );
     }
 
     // ADR-0017: authorisation comes BEFORE anything is said about the file. Which definitions this
@@ -126,17 +131,20 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
     if (!maySpawnDefinition(ctx.ownGrant, definition.name)) {
       const authorising = agentCapability(definition.name);
       const held = ctx.ownGrant.filter((c) => c.startsWith("agent:")).sort();
-      return denied({
-        ...empty,
-        requested: [authorising],
-        result: { ...empty.result, denied: [authorising] },
-        reason:
-          `cannot spawn "${definition.name}" — this session does not hold ${authorising} ` +
-          `(the definition lives at ${definition.source}). ` +
-          (held.length > 0
-            ? `It may spawn: ${held.join(", ")}.`
-            : `It may spawn no definitions at all; add ${authorising} to its grant to allow this one.`),
-      }, "DEFINITION_NOT_AUTHORIZED");
+      return denied(
+        {
+          ...empty,
+          requested: [authorising],
+          result: { ...empty.result, denied: [authorising] },
+          reason:
+            `cannot spawn "${definition.name}" — this session does not hold ${authorising} ` +
+            `(the definition lives at ${definition.source}). ` +
+            (held.length > 0
+              ? `It may spawn: ${held.join(", ")}.`
+              : `It may spawn no definitions at all; add ${authorising} to its grant to allow this one.`),
+        },
+        "DEFINITION_NOT_AUTHORIZED",
+      );
     }
 
     // ADR-0018. Recorded from here on — after authorisation, because the digest is a fact about a file
@@ -152,21 +160,27 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
 
     const ceiling = ceilingForDefinition(definition);
     if (ceiling.undeclared) {
-      return denied({
-        ...empty,
-        reason:
-          `agent "${definition.name}" declares no \`allowed-tools\`, so it cannot be spawned — add one ` +
-          `to ${definition.source}. An undeclared capability set is treated as NONE, never as everything.`,
-      }, "UNDECLARED_TOOLS");
+      return denied(
+        {
+          ...empty,
+          reason:
+            `agent "${definition.name}" declares no \`allowed-tools\`, so it cannot be spawned — add one ` +
+            `to ${definition.source}. An undeclared capability set is treated as NONE, never as everything.`,
+        },
+        "UNDECLARED_TOOLS",
+      );
     }
     if (ceiling.patterns.length > 0) {
-      return denied({
-        ...empty,
-        reason:
-          `agent "${definition.name}" restricts a tool with a pattern (${ceiling.patterns.join(", ")}), ` +
-          `which pi's --tools cannot express — it matches whole tool names only. Granting the bare tool ` +
-          `would widen the declaration and dropping it would silently narrow, so neither is done.`,
-      }, "CEILING_PATTERNS_UNRESOLVED");
+      return denied(
+        {
+          ...empty,
+          reason:
+            `agent "${definition.name}" restricts a tool with a pattern (${ceiling.patterns.join(", ")}), ` +
+            `which pi's --tools cannot express — it matches whole tool names only. Granting the bare tool ` +
+            `would widen the declaration and dropping it would silently narrow, so neither is done.`,
+        },
+        "CEILING_PATTERNS_UNRESOLVED",
+      );
     }
     requested = ceiling.capabilities;
     systemPrompt = definition.body;
@@ -190,14 +204,17 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
           return s === null ? null : `${c} → did you mean ${s}?`;
         })
         .filter((h): h is string => h !== null);
-      return denied({
-        ...empty,
-        requested,
-        reason:
-          `unknown capabilit${unknown.length === 1 ? "y" : "ies"}: ${unknown.join(", ")} — not present in ` +
-          `this session's catalog (typo, or an uninstalled package?)` +
-          (hints.length > 0 ? ` — ${hints.join("; ")}` : ""),
-      }, "UNKNOWN_TOOL");
+      return denied(
+        {
+          ...empty,
+          requested,
+          reason:
+            `unknown capabilit${unknown.length === 1 ? "y" : "ies"}: ${unknown.join(", ")} — not present in ` +
+            `this session's catalog (typo, or an uninstalled package?)` +
+            (hints.length > 0 ? ` — ${hints.join("; ")}` : ""),
+        },
+        "UNKNOWN_TOOL",
+      );
     }
   }
 
@@ -225,12 +242,15 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
   if (approvalBinding) Object.assign(empty, { approvalBinding });
 
   if (result.denied.length > 0) {
-    return denied({
-      ...empty,
-      requested,
-      result,
-      reason: `cannot grant ${result.denied.join(", ")} — this session does not hold it (capability escalation blocked)`,
-    }, "CAPABILITY_ESCALATION");
+    return denied(
+      {
+        ...empty,
+        requested,
+        result,
+        reason: `cannot grant ${result.denied.join(", ")} — this session does not hold it (capability escalation blocked)`,
+      },
+      "CAPABILITY_ESCALATION",
+    );
   }
   // ADR-0011: narrowing is checked BEFORE the gate, and the order is load-bearing rather than
   // stylistic. `assertNarrowing` refuses regardless of approval, so with the old order this returned
@@ -276,14 +296,17 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
   // not contain. `unknownCapabilities` above catches names absent from the catalog entirely; this
   // catches one that is known but whose path we could not resolve, which is a different fault.
   if (plan.unresolvedSkills.length > 0) {
-    return denied({
-      ...empty,
-      requested,
-      result,
-      reason:
-        `cannot locate ${plan.unresolvedSkills.join(", ")} on disk — granted but unresolvable, so the ` +
-        `child would silently lack it`,
-    }, "DEFINITION_UNREADABLE");
+    return denied(
+      {
+        ...empty,
+        requested,
+        result,
+        reason:
+          `cannot locate ${plan.unresolvedSkills.join(", ")} on disk — granted but unresolvable, so the ` +
+          `child would silently lack it`,
+      },
+      "DEFINITION_UNREADABLE",
+    );
   }
 
   // `-e` loads even under `--no-extensions`. A delegate-capable child loads the governance extension;

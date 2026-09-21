@@ -3005,6 +3005,8 @@ package before it lands. And any risk entry whose blast radius is bounded by a *
 
 ---
 
+**Note 2026-09-21 (ADR-0076 PR 3a).** `test/risk-register-status.test.ts`, named above as the live mechanical control for R-72, was deleted: a test on a document's wording is a CI guard on writing, not on behaviour, and it counted toward the unit total. R-72 therefore has no mechanical control again; its trigger stands and is now a reading discipline, which is what this register's rule 7 says a test that cannot fail should become.
+
 ## R-145 · A gated routing attempt takes the destination's exclusive writer lease before the human is asked — M×H, OPEN
 
 Added 2026-08-22 by the sixth pass. **New behaviour created by ADR-0035**, and not a defect in any single

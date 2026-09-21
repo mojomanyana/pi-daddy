@@ -12,14 +12,7 @@ import {
 import { isLedgerCapabilityIdentifier, isLedgerDisplayIdentifier } from "../kernel/ledger-identifiers.ts";
 
 export type DashboardState =
-  | "authorised"
-  | "starting"
-  | "running"
-  | "completed"
-  | "failed"
-  | "refused"
-  | "incomplete"
-  | "historical";
+  "authorised" | "starting" | "running" | "completed" | "failed" | "refused" | "incomplete" | "historical";
 
 export interface DashboardRuntimeIdentity {
   herdrPaneId?: string;
@@ -110,14 +103,21 @@ interface Occurrence {
 }
 
 const DISPLAYED_CORRELATION_FIELDS = [
-  "run_id", "task_id", "phase", "assurance", "assurance_effective", "policy_label",
+  "run_id",
+  "task_id",
+  "phase",
+  "assurance",
+  "assurance_effective",
+  "policy_label",
 ] as const satisfies ReadonlyArray<keyof CorrelationMetadata>;
 
 function correlationOf(value: unknown): CorrelationMetadata | undefined {
   if (!object(value)) return undefined;
   return DISPLAYED_CORRELATION_FIELDS.every(
     (field) => value[field] === undefined || isLedgerDisplayIdentifier(value[field]),
-  ) ? value as CorrelationMetadata : undefined;
+  )
+    ? (value as CorrelationMetadata)
+    : undefined;
 }
 
 function legacyNode(event: ObjectRecord, line: number, now: Date): DashboardNode | null {
@@ -129,7 +129,7 @@ function legacyNode(event: ObjectRecord, line: number, now: Date): DashboardNode
     parentExecutionId: null,
     logicalParentId: nonEmpty(event.parentId) ? event.parentId : undefined,
     logicalChildId: nonEmpty(event.childId) ? event.childId : `legacy:${line}`,
-    depth: Number.isInteger(event.depth) ? event.depth as number : 0,
+    depth: Number.isInteger(event.depth) ? (event.depth as number) : 0,
     agentName: isLedgerDisplayIdentifier(event.agentType) ? event.agentType : "historical-delegation",
     state: event.blocked === true ? "refused" : "historical",
     provenance: "historical-unjoinable",
@@ -138,9 +138,9 @@ function legacyNode(event: ObjectRecord, line: number, now: Date): DashboardNode
     durationMs: 0,
     effectiveGrant: strings(event.effective) ? event.effective.filter(isLedgerCapabilityIdentifier) : [],
     denied: event.denied.filter(isLedgerCapabilityIdentifier),
-    executor: EXECUTORS.has(String(event.executor)) ? event.executor as "process" | "herdr" : undefined,
+    executor: EXECUTORS.has(String(event.executor)) ? (event.executor as "process" | "herdr") : undefined,
     correlation: correlationOf(event.correlation),
-    refusal: object(event.refusal) ? event.refusal as DashboardNode["refusal"] : undefined,
+    refusal: object(event.refusal) ? (event.refusal as DashboardNode["refusal"]) : undefined,
   };
 }
 
@@ -151,7 +151,7 @@ function stateOf(occurrence: Occurrence, nowMs: number, graceMs: number): Dashbo
     const state = String(latest.state);
     if (TERMINAL_STATES.has(state)) return state as "completed" | "failed";
     const deadline = timestamp(latest.deadlineAt) ? Date.parse(latest.deadlineAt) : Number.POSITIVE_INFINITY;
-    return nowMs > deadline ? "incomplete" : state as "starting" | "running";
+    return nowMs > deadline ? "incomplete" : (state as "starting" | "running");
   }
   const age = nowMs - Date.parse(occurrence.firstTs);
   return occurrence.decision ? (age <= graceMs ? "authorised" : "incomplete") : "incomplete";
@@ -161,16 +161,25 @@ function nodeOf(occurrence: Occurrence, now: Date, graceMs: number): DashboardNo
   const decision = occurrence.decision;
   const latestLifecycle = occurrence.lifecycle.at(-1);
   const firstLifecycle = occurrence.lifecycle[0];
-  const lease = occurrence.leases.findLast((event) => ["acquired", "uncontended", "recovered"].includes(String(event.outcome)));
+  const lease = occurrence.leases.findLast((event) =>
+    ["acquired", "uncontended", "recovered"].includes(String(event.outcome)),
+  );
   const start = timestamp(firstLifecycle?.ts) ? firstLifecycle.ts : occurrence.firstTs;
   const terminal = latestLifecycle && TERMINAL_STATES.has(String(latestLifecycle.state)) ? latestLifecycle : undefined;
   const state = stateOf(occurrence, now.getTime(), graceMs);
   const deadline = timestamp(latestLifecycle?.deadlineAt)
     ? Date.parse(latestLifecycle.deadlineAt)
-    : latestLifecycle ? undefined : Date.parse(occurrence.firstTs) + graceMs;
-  const durationEnd = state === "refused"
-    ? Date.parse(start)
-    : terminal ? Date.parse(String(terminal.ts)) : state === "incomplete" && deadline ? deadline : now.getTime();
+    : latestLifecycle
+      ? undefined
+      : Date.parse(occurrence.firstTs) + graceMs;
+  const durationEnd =
+    state === "refused"
+      ? Date.parse(start)
+      : terminal
+        ? Date.parse(String(terminal.ts))
+        : state === "incomplete" && deadline
+          ? deadline
+          : now.getTime();
   const runtimeEvent = occurrence.lifecycle.findLast(
     (event) => nonEmpty(event.herdrPaneId) || nonEmpty(event.herdrAgentName),
   );
@@ -180,9 +189,10 @@ function nodeOf(occurrence: Occurrence, now: Date, graceMs: number): DashboardNo
         ...(nonEmpty(runtimeEvent.herdrAgentName) ? { herdrAgentName: runtimeEvent.herdrAgentName } : {}),
       }
     : undefined;
-  const correlation = correlationOf(decision?.correlation)
-    ?? correlationOf(latestLifecycle?.correlation)
-    ?? correlationOf(lease?.correlation);
+  const correlation =
+    correlationOf(decision?.correlation) ??
+    correlationOf(latestLifecycle?.correlation) ??
+    correlationOf(lease?.correlation);
   const logicalParentId = decision && nonEmpty(decision.parentId) ? decision.parentId : undefined;
   const agentName = decision && nonEmpty(decision.agentType) ? decision.agentType : "governed execution";
 
@@ -191,7 +201,7 @@ function nodeOf(occurrence: Occurrence, now: Date, graceMs: number): DashboardNo
     parentExecutionId: occurrence.parentExecutionId,
     logicalParentId,
     logicalChildId: occurrence.childId,
-    depth: Number.isInteger(decision?.depth) ? decision!.depth as number : 0,
+    depth: Number.isInteger(decision?.depth) ? (decision!.depth as number) : 0,
     agentName,
     state,
     provenance: "pi-daddy-enforced",
@@ -202,9 +212,17 @@ function nodeOf(occurrence: Occurrence, now: Date, graceMs: number): DashboardNo
     effectiveGrant: strings(decision?.effective) ? decision.effective : [],
     denied: strings(decision?.denied) ? decision.denied : [],
     executor: EXECUTORS.has(String(decision?.executor ?? latestLifecycle?.executor))
-      ? (decision?.executor ?? latestLifecycle?.executor) as "process" | "herdr"
+      ? ((decision?.executor ?? latestLifecycle?.executor) as "process" | "herdr")
       : undefined,
-    ...(lease ? { workspace: { id: String(lease.workspaceId), access: lease.access as "read" | "write", root: String(lease.root) } } : {}),
+    ...(lease
+      ? {
+          workspace: {
+            id: String(lease.workspaceId),
+            access: lease.access as "read" | "write",
+            root: String(lease.root),
+          },
+        }
+      : {}),
     ...(runtime ? { runtime } : {}),
     ...(correlation ? { correlation } : {}),
     ...(object(decision?.refusal) ? { refusal: decision.refusal as DashboardNode["refusal"] } : {}),
@@ -316,7 +334,10 @@ export function parseDashboardLedger(text: string, options: DashboardProjectionO
       workflowFacts.push({
         factId: event.factId as string,
         source: event.source as string,
-        provenance: event.provenance === "controller_validated" ? "controller-validated" : event.provenance as "planned" | "observed",
+        provenance:
+          event.provenance === "controller_validated"
+            ? "controller-validated"
+            : (event.provenance as "planned" | "observed"),
         kind: event.kind as DashboardWorkflowFact["kind"],
         subject: event.subject as string,
         state: event.state as DashboardWorkflowFact["state"],
@@ -336,9 +357,14 @@ export function parseDashboardLedger(text: string, options: DashboardProjectionO
       return;
     }
     const occurrence = seen ?? {
-      executionId, parentExecutionId, childId, firstLine: line,
-      firstTs: event.ts as string, lastTs: event.ts as string,
-      lifecycle: [], leases: [],
+      executionId,
+      parentExecutionId,
+      childId,
+      firstLine: line,
+      firstTs: event.ts as string,
+      lastTs: event.ts as string,
+      lifecycle: [],
+      leases: [],
     };
     if (event.event === "capability_decision" && occurrence.decision) {
       corrupt.push({ line, reason: "duplicate capability decision for one executionId" });
@@ -375,7 +401,8 @@ export function parseDashboardLedger(text: string, options: DashboardProjectionO
     .filter((occurrence) => !cycles.has(occurrence.executionId))
     .map((occurrence) => nodeOf(occurrence, now, graceMs));
   const nodes = [...current, ...historical].sort(
-    (left, right) => Date.parse(left.startedAt) - Date.parse(right.startedAt) || left.executionId.localeCompare(right.executionId),
+    (left, right) =>
+      Date.parse(left.startedAt) - Date.parse(right.startedAt) || left.executionId.localeCompare(right.executionId),
   );
   const active = nodes.filter((node) => ["authorised", "starting", "running"].includes(node.state)).length;
   return {

@@ -52,8 +52,10 @@ const BODY = "0000000000000000000000000000000000000000000000000000000000000000";
  * A subject lookup. Named for the ceiling because that is what most of these tests vary; the body digest
  * is held constant so a ceiling test stays a ceiling test.
  */
-const ceiling = (caps: string[] | null, body: string = BODY) => () =>
-  caps === null ? null : { ceiling: caps, bodySha256: body };
+const ceiling =
+  (caps: string[] | null, body: string = BODY) =>
+  () =>
+    caps === null ? null : { ceiling: caps, bodySha256: body };
 
 const entryFor = (cwd: string, over: Partial<ApprovalEntry> = {}): ApprovalEntry => ({
   approvedAt: "2026-08-09T00:00:00.000Z",
@@ -80,7 +82,13 @@ test("a corrupt file grants nothing and does not throw", async () => {
 
 test("round trip: a saved approval loads back", async () => {
   const cwd = await temp();
-  const ok = await saveApproval(cwd, "tool:write@docs-writer", entryFor(cwd), ceiling(["tool:read", "tool:write"]), NOW);
+  const ok = await saveApproval(
+    cwd,
+    "tool:write@docs-writer",
+    entryFor(cwd),
+    ceiling(["tool:read", "tool:write"]),
+    NOW,
+  );
   assert.equal(ok, true);
   const r = await loadApprovals({ cwd, now: NOW, snapshotOf: ceiling(["tool:read", "tool:write"]) });
   assert.deepEqual([...r.valid.keys()], ["tool:write@docs-writer"]);
@@ -97,7 +105,10 @@ test("the file records version 1 and is human-readable", async () => {
 
 test("R-27: an entry from another checkout is dropped with a reason", async () => {
   const cwd = await temp();
-  await stage(cwd, JSON.stringify({ version: 1, approvals: { "tool:write@docs-writer": entryFor("/somewhere/else") } }));
+  await stage(
+    cwd,
+    JSON.stringify({ version: 1, approvals: { "tool:write@docs-writer": entryFor("/somewhere/else") } }),
+  );
   const r = await loadApprovals({ cwd, now: NOW, snapshotOf: ceiling(["tool:read", "tool:write"]) });
   assert.equal(r.valid.size, 0);
   assert.equal(r.dropped[0].verdict, "foreign-cwd");
@@ -130,10 +141,13 @@ test("ADR-0019: an entry with no body pin is dropped — unverifiable is not unc
   // Entries written before 0.10.0 carry no `bodyAtApproval`. Failing closed costs one re-approval;
   // failing open would silently honour a yes given about text nobody can now identify.
   const cwd = await temp();
-  await stage(cwd, JSON.stringify({
+  await stage(
+    cwd,
+    JSON.stringify({
       version: 1,
       approvals: { "tool:write@docs-writer": entryFor(cwd, { bodyAtApproval: undefined }) },
-    }));
+    }),
+  );
   const r = await loadApprovals({ cwd, now: NOW, snapshotOf: ceiling(["tool:read", "tool:write"]) });
   assert.equal(r.valid.size, 0);
   assert.equal(r.dropped[0].verdict, "instructions-changed");
@@ -238,10 +252,13 @@ test("saving prunes entries that are DEAD, and only those", async () => {
   // project, so pruning it deleted a live approval belonging to a different checkout. An entry this session
   // can see is dead (expired) is a different thing, and is what pruning is for.
   const cwd = await temp();
-  await stage(cwd, JSON.stringify({
+  await stage(
+    cwd,
+    JSON.stringify({
       version: 1,
       approvals: { "tool:write@expired": entryFor(cwd, { expiresAt: "2026-01-01T00:00:00.000Z" }) },
-    }));
+    }),
+  );
   await saveApproval(cwd, "tool:write@fresh", entryFor(cwd), ceiling(["tool:read", "tool:write"]), NOW);
   const parsed = JSON.parse(await readFile(approvalsPath(cwd), "utf8"));
   assert.deepEqual(Object.keys(parsed.approvals), ["tool:write@fresh"], "the expired entry was pruned on write");
@@ -253,7 +270,7 @@ test("two projects' approvals live in separate files and cannot affect each othe
   // no project component at all, so two checkouts with a same-named definition could never both hold one.
   // Per-project files make both inexpressible. This test used to assert the carry-through that 0.10.2 needed
   // and 0.11.0 deletes; the property it pins is the same one, now enforced by the layout.
-  const api = await temp();          // also fixes PI_CODING_AGENT_DIR for both halves
+  const api = await temp(); // also fixes PI_CODING_AGENT_DIR for both halves
   const web = "/work/web";
   const c = ceiling(["tool:read", "tool:write"]);
 
@@ -313,14 +330,14 @@ test("an unwritable location reports failure rather than throwing", async () => 
   const previous = process.env.PI_CODING_AGENT_DIR;
   process.env.PI_CODING_AGENT_DIR = "/dev/null/nope";
   try {
-  const ok = await saveApproval(
-    "/dev/null",
-    "tool:write@x",
-    entryFor("/dev/null"),
-    ceiling(["tool:read", "tool:write"]),
-    NOW,
-  );
-  assert.equal(ok, false, "the caller downgrades to session scope rather than failing the work");
+    const ok = await saveApproval(
+      "/dev/null",
+      "tool:write@x",
+      entryFor("/dev/null"),
+      ceiling(["tool:read", "tool:write"]),
+      NOW,
+    );
+    assert.equal(ok, false, "the caller downgrades to session scope rather than failing the work");
   } finally {
     if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
     else process.env.PI_CODING_AGENT_DIR = previous;
@@ -329,7 +346,10 @@ test("an unwritable location reports failure rather than throwing", async () => 
 
 test("a null entry drops without taking valid entries with it", async () => {
   const cwd = await temp();
-  await stage(cwd, JSON.stringify({ version: 1, approvals: { "tool:write@good": entryFor(cwd), "tool:write@bad": null } }));
+  await stage(
+    cwd,
+    JSON.stringify({ version: 1, approvals: { "tool:write@good": entryFor(cwd), "tool:write@bad": null } }),
+  );
   const r = await loadApprovals({ cwd, now: NOW, snapshotOf: ceiling(["tool:read", "tool:write"]) });
   assert.equal(r.valid.size, 1, "the valid entry loads");
   assert.deepEqual([...r.valid.keys()], ["tool:write@good"]);
@@ -339,7 +359,10 @@ test("a null entry drops without taking valid entries with it", async () => {
 
 test("a non-object entry (string) drops without taking valid entries with it", async () => {
   const cwd = await temp();
-  await stage(cwd, JSON.stringify({ version: 1, approvals: { "tool:write@good": entryFor(cwd), "tool:write@bad": "not an object" } }));
+  await stage(
+    cwd,
+    JSON.stringify({ version: 1, approvals: { "tool:write@good": entryFor(cwd), "tool:write@bad": "not an object" } }),
+  );
   const r = await loadApprovals({ cwd, now: NOW, snapshotOf: ceiling(["tool:read", "tool:write"]) });
   assert.equal(r.valid.size, 1, "the valid entry loads");
   assert.deepEqual([...r.valid.keys()], ["tool:write@good"]);

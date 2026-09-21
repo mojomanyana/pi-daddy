@@ -46,13 +46,10 @@ test("a delegation refused AFTER the gate gives back the authority it banked", a
   );
 
   await assert.rejects(
-    () => tools.get("delegate")!.execute(
-      "c",
-      { task: "read one file and report", tools: ["read", "bash"] },
-      undefined,
-      undefined,
-      ctx,
-    ),
+    () =>
+      tools
+        .get("delegate")!
+        .execute("c", { task: "read one file and report", tools: ["read", "bash"] }, undefined, undefined, ctx),
     /ledger write failed/,
     "an unrecorded provisioning decision must fail closed",
   );
@@ -89,19 +86,17 @@ test("unbanking leaves alone the authority another delegation banked", async () 
     sessionApprovals,
     sessionApprovalBindings,
     definitions: new Map(),
-    publishChildEnv: () => { republished += 1; },
+    publishChildEnv: () => {
+      republished += 1;
+    },
   };
 
-  await unbankApprovals(
-    session as never,
-    { ui: { notify: (message: string) => notes.push(message) } },
-    [
-      // Ours: created by this call, so it comes back.
-      { key: "tool:bash@reviewer", capability: "tool:bash", subject: "reviewer", persisted: false, owned: true },
-      // Not ours: a joined dialog, or a key that was already standing. Must survive.
-      { key: "tool:write@reviewer", capability: "tool:write", subject: "reviewer", persisted: false, owned: false },
-    ],
-  );
+  await unbankApprovals(session as never, { ui: { notify: (message: string) => notes.push(message) } }, [
+    // Ours: created by this call, so it comes back.
+    { key: "tool:bash@reviewer", capability: "tool:bash", subject: "reviewer", persisted: false, owned: true },
+    // Not ours: a joined dialog, or a key that was already standing. Must survive.
+    { key: "tool:write@reviewer", capability: "tool:write", subject: "reviewer", persisted: false, owned: false },
+  ]);
 
   assert.equal(sessionApprovals.has("tool:bash@reviewer"), false, "authority this call banked is taken back");
   assert.equal(

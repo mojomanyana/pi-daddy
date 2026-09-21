@@ -6,7 +6,12 @@ import {
   ENV_DASHBOARD_KEY,
   ENV_DASHBOARD_LEDGER,
   ENV_DASHBOARD_PROTOCOL,
-  DASHBOARD_PROTOCOL_VERSION, ENV_DAILY_ARCHIVE, ENV_DAILY_WORK, ENV_DAILY_SELECTION, ENV_DEBRIEF_FIXTURE, ENV_DASHBOARD_HOST_SOCKET,
+  DASHBOARD_PROTOCOL_VERSION,
+  ENV_DAILY_ARCHIVE,
+  ENV_DAILY_WORK,
+  ENV_DAILY_SELECTION,
+  ENV_DEBRIEF_FIXTURE,
+  ENV_DASHBOARD_HOST_SOCKET,
 } from "./dashboard-cli.ts";
 import { parseReply, type HerdrExec } from "../executors/herdr-cli.ts";
 import { withFileLock } from "../governance/file-lock.ts";
@@ -16,14 +21,20 @@ export const DASHBOARD_PLUGIN_ENTRYPOINT = "dashboard";
 export const DASHBOARD_HERDR_TIMEOUT_MS = 3_000;
 
 /** Dashboard control calls are UI operations and must never hang pi session start. */
-export const dashboardHerdrExec: HerdrExec = (args) => new Promise((settle) => {
-  execFile("herdr", args, { timeout: DASHBOARD_HERDR_TIMEOUT_MS, maxBuffer: 4 * 1024 * 1024 }, (error, stdout, stderr) => {
-    const raw = (error as { code?: unknown } | null)?.code;
-    const code = typeof raw === "number" ? raw : error ? 1 : 0;
-    const failure = error ? `${typeof raw === "string" ? `${raw}: ` : ""}${error.message}` : "";
-    settle({ code, stdout: String(stdout), stderr: String(stderr) || failure });
+export const dashboardHerdrExec: HerdrExec = (args) =>
+  new Promise((settle) => {
+    execFile(
+      "herdr",
+      args,
+      { timeout: DASHBOARD_HERDR_TIMEOUT_MS, maxBuffer: 4 * 1024 * 1024 },
+      (error, stdout, stderr) => {
+        const raw = (error as { code?: unknown } | null)?.code;
+        const code = typeof raw === "number" ? raw : error ? 1 : 0;
+        const failure = error ? `${typeof raw === "string" ? `${raw}: ` : ""}${error.message}` : "";
+        settle({ code, stdout: String(stdout), stderr: String(stderr) || failure });
+      },
+    );
   });
-});
 
 export interface HerdrHost {
   paneId: string;
@@ -32,21 +43,22 @@ export interface HerdrHost {
 }
 
 export type HerdrHostResult =
-  | { ok: true; host: HerdrHost; diagnostic: string }
-  | { ok: false; diagnostic: string; host?: undefined };
+  { ok: true; host: HerdrHost; diagnostic: string } | { ok: false; diagnostic: string; host?: undefined };
 
 function nested(record: Record<string, unknown> | undefined, key: string): Record<string, unknown> | undefined {
   const value = record?.[key];
   return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
+    ? (value as Record<string, unknown>)
     : undefined;
 }
 
-export async function verifyHerdrHost(options: {
-  env?: NodeJS.ProcessEnv | Record<string, string | undefined>;
-  pid?: number;
-  exec?: HerdrExec;
-} = {}): Promise<HerdrHostResult> {
+export async function verifyHerdrHost(
+  options: {
+    env?: NodeJS.ProcessEnv | Record<string, string | undefined>;
+    pid?: number;
+    exec?: HerdrExec;
+  } = {},
+): Promise<HerdrHostResult> {
   const env = options.env ?? process.env;
   const pid = options.pid ?? process.pid;
   const exec = options.exec ?? dashboardHerdrExec;
@@ -71,7 +83,8 @@ export async function verifyHerdrHost(options: {
     }
 
     const processReply = parseReply(await exec(["pane", "process-info", "--pane", paneId]));
-    if (processReply.error) return { ok: false, diagnostic: `Herdr could not inspect this pane process: ${processReply.error}` };
+    if (processReply.error)
+      return { ok: false, diagnostic: `Herdr could not inspect this pane process: ${processReply.error}` };
     const info = nested(processReply.result, "process_info");
     if (info?.pane_id !== paneId) {
       return { ok: false, diagnostic: "Herdr returned process information for another pane." };
@@ -89,7 +102,10 @@ export async function verifyHerdrHost(options: {
     }
     return { ok: true, host: { paneId, tabId, workspaceId }, diagnostic: `hosted in Herdr pane ${paneId}` };
   } catch (error) {
-    return { ok: false, diagnostic: `Herdr host verification failed: ${error instanceof Error ? error.message : String(error)}` };
+    return {
+      ok: false,
+      diagnostic: `Herdr host verification failed: ${error instanceof Error ? error.message : String(error)}`,
+    };
   }
 }
 
@@ -114,7 +130,7 @@ export async function inspectDashboardPlugin(
   try {
     const parsed = parseReply(await exec(["plugin", "list", "--json"]));
     if (parsed.error) return { state: "unavailable", diagnostic: `Herdr plugin registry unavailable: ${parsed.error}` };
-    const plugins = Array.isArray(parsed.result?.plugins) ? parsed.result.plugins as Record<string, unknown>[] : [];
+    const plugins = Array.isArray(parsed.result?.plugins) ? (parsed.result.plugins as Record<string, unknown>[]) : [];
     const plugin = plugins.find((candidate) => candidate.plugin_id === DASHBOARD_PLUGIN_ID);
     if (!plugin) return { state: "absent", diagnostic: `Herdr plugin ${DASHBOARD_PLUGIN_ID} is not installed.` };
     // Protocol and provenance both precede enabled state. A root-only repair is offered only when the
@@ -130,7 +146,10 @@ export async function inspectDashboardPlugin(
         plugin,
       };
     }
-    if (expectedPluginRoot && (typeof plugin.plugin_root !== "string" || resolve(plugin.plugin_root) !== resolve(expectedPluginRoot))) {
+    if (
+      expectedPluginRoot &&
+      (typeof plugin.plugin_root !== "string" || resolve(plugin.plugin_root) !== resolve(expectedPluginRoot))
+    ) {
       return {
         state: "incompatible",
         diagnostic: `Herdr plugin ${DASHBOARD_PLUGIN_ID} is linked from a different package; relink the bundled copy.`,
@@ -139,18 +158,26 @@ export async function inspectDashboardPlugin(
       };
     }
     if (plugin.enabled !== true) {
-      return { state: "disabled", diagnostic: `Herdr plugin ${DASHBOARD_PLUGIN_ID} is installed but disabled.`, plugin };
+      return {
+        state: "disabled",
+        diagnostic: `Herdr plugin ${DASHBOARD_PLUGIN_ID} is installed but disabled.`,
+        plugin,
+      };
     }
     const warnings = Array.isArray(plugin.warnings) ? plugin.warnings.filter((value) => typeof value === "string") : [];
     return {
       state: "compatible",
-      diagnostic: warnings.length > 0
-        ? `Herdr plugin ${DASHBOARD_PLUGIN_ID} is installed with warnings: ${warnings.join("; ")}`
-        : `Herdr plugin ${DASHBOARD_PLUGIN_ID} is ready.`,
+      diagnostic:
+        warnings.length > 0
+          ? `Herdr plugin ${DASHBOARD_PLUGIN_ID} is installed with warnings: ${warnings.join("; ")}`
+          : `Herdr plugin ${DASHBOARD_PLUGIN_ID} is ready.`,
       plugin,
     };
   } catch (error) {
-    return { state: "unavailable", diagnostic: `Herdr plugin discovery failed: ${error instanceof Error ? error.message : String(error)}` };
+    return {
+      state: "unavailable",
+      diagnostic: `Herdr plugin discovery failed: ${error instanceof Error ? error.message : String(error)}`,
+    };
   }
 }
 
@@ -167,27 +194,37 @@ interface StoredPane {
   ledgerPath: string;
   updatedAt: string;
 }
-interface PaneStore { version: 1; panes: Record<string, StoredPane> }
+interface PaneStore {
+  version: 1;
+  panes: Record<string, StoredPane>;
+}
 
 function isStoredPane(value: unknown): value is StoredPane {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const pane = value as Record<string, unknown>;
-  return Object.keys(pane).every((key) => [
-    "paneId", "terminalId", "tabId", "workspaceId", "ledgerPath", "updatedAt",
-  ].includes(key)) &&
+  return (
+    Object.keys(pane).every((key) =>
+      ["paneId", "terminalId", "tabId", "workspaceId", "ledgerPath", "updatedAt"].includes(key),
+    ) &&
     ["paneId", "terminalId", "tabId", "workspaceId", "updatedAt"].every(
       (field) => typeof pane[field] === "string" && pane[field] !== "",
-    ) && typeof pane.ledgerPath === "string" && Number.isFinite(Date.parse(String(pane.updatedAt)));
+    ) &&
+    typeof pane.ledgerPath === "string" &&
+    Number.isFinite(Date.parse(String(pane.updatedAt)))
+  );
 }
 
 function isPaneStore(value: unknown): value is PaneStore {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const store = value as Record<string, unknown>;
-  if (store.version !== 1 || !store.panes || typeof store.panes !== "object" || Array.isArray(store.panes)) return false;
-  return Object.keys(store).every((key) => ["version", "panes"].includes(key)) &&
+  if (store.version !== 1 || !store.panes || typeof store.panes !== "object" || Array.isArray(store.panes))
+    return false;
+  return (
+    Object.keys(store).every((key) => ["version", "panes"].includes(key)) &&
     Object.entries(store.panes as Record<string, unknown>).every(
       ([key, pane]) => /^[a-f0-9]{64}$/.test(key) && isStoredPane(pane),
-    );
+    )
+  );
 }
 
 async function loadStore(path: string): Promise<PaneStore> {
@@ -197,7 +234,9 @@ async function loadStore(path: string): Promise<PaneStore> {
     return parsed;
   } catch (error) {
     if ((error as { code?: string }).code === "ENOENT") return { version: 1, panes: {} };
-    throw new Error(`dashboard pane state ${path} is corrupt or unreadable: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(
+      `dashboard pane state ${path} is corrupt or unreadable: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 }
 
@@ -219,7 +258,9 @@ async function locateStoredPane(stored: StoredPane, exec: HerdrExec): Promise<Re
   // A moved pane receives a new public id, possibly in another workspace; terminal_id is the stable handle.
   const listed = parseReply(await exec(["pane", "list"]));
   if (listed.error || !Array.isArray(listed.result?.panes)) return undefined;
-  return (listed.result.panes as Record<string, unknown>[]).find((candidate) => candidate.terminal_id === stored.terminalId);
+  return (listed.result.panes as Record<string, unknown>[]).find(
+    (candidate) => candidate.terminal_id === stored.terminalId,
+  );
 }
 
 async function dashboardProcessIsLive(paneId: string, exec: HerdrExec): Promise<boolean> {
@@ -227,11 +268,16 @@ async function dashboardProcessIsLive(paneId: string, exec: HerdrExec): Promise<
   if (parsed.error) throw new Error(`could not verify existing dashboard process: ${parsed.error}`);
   const info = nested(parsed.result, "process_info");
   if (info?.pane_id !== paneId) throw new Error("Herdr returned process information for another dashboard pane");
-  const processes = Array.isArray(info.foreground_processes) ? info.foreground_processes as Record<string, unknown>[] : [];
+  const processes = Array.isArray(info.foreground_processes)
+    ? (info.foreground_processes as Record<string, unknown>[])
+    : [];
   return processes.some((process) => {
     const argv = Array.isArray(process.argv) ? process.argv.filter((value) => typeof value === "string").join(" ") : "";
-    return String(process.name ?? "").startsWith("pi-daddy-dashboard") ||
-      String(process.cmdline ?? "").includes("dashboard-cli.js") || argv.includes("dashboard-cli.js");
+    return (
+      String(process.name ?? "").startsWith("pi-daddy-dashboard") ||
+      String(process.cmdline ?? "").includes("dashboard-cli.js") ||
+      argv.includes("dashboard-cli.js")
+    );
   });
 }
 
@@ -268,10 +314,18 @@ export async function openOrReuseDashboard(input: DashboardOpenInput): Promise<D
   const cwd = resolve(input.cwd);
   // Explicit operator inputs/owned host endpoint only, never an authority file or ambient snapshot.
   // The endpoint keeps original controller handles in its owning process; it is not TUI attachment.
-  const dailyEnv = [ENV_DAILY_ARCHIVE, ENV_DAILY_WORK, ENV_DAILY_SELECTION, ENV_DEBRIEF_FIXTURE, ENV_DASHBOARD_HOST_SOCKET]
-    .flatMap(name => process.env[name] ? ["--env", `${name}=${process.env[name]}`] : []);
+  const dailyEnv = [
+    ENV_DAILY_ARCHIVE,
+    ENV_DAILY_WORK,
+    ENV_DAILY_SELECTION,
+    ENV_DEBRIEF_FIXTURE,
+    ENV_DASHBOARD_HOST_SOCKET,
+  ].flatMap((name) => (process.env[name] ? ["--env", `${name}=${process.env[name]}`] : []));
   const key = createHash("sha256")
-    .update(`${input.host.workspaceId}\0${input.host.tabId}\0${ledgerPath}${dailyEnv.length ? JSON.stringify([cwd, ...dailyEnv]) : ""}`, "utf8")
+    .update(
+      `${input.host.workspaceId}\0${input.host.tabId}\0${ledgerPath}${dailyEnv.length ? JSON.stringify([cwd, ...dailyEnv]) : ""}`,
+      "utf8",
+    )
     .digest("hex");
   await mkdir(dirname(input.statePath), { recursive: true });
 
@@ -281,15 +335,23 @@ export async function openOrReuseDashboard(input: DashboardOpenInput): Promise<D
     const store = await loadStore(input.statePath);
     const stored = store.panes[key];
     if (stored) {
-      if (stored.workspaceId !== input.host.workspaceId || stored.tabId !== input.host.tabId ||
-          stored.ledgerPath !== ledgerPath) {
+      if (
+        stored.workspaceId !== input.host.workspaceId ||
+        stored.tabId !== input.host.tabId ||
+        stored.ledgerPath !== ledgerPath
+      ) {
         throw new Error(
           `dashboard pane state ${input.statePath} is corrupt: stored workspace/tab/ledger identity mismatch`,
         );
       }
       const pane = await locateStoredPane(stored, exec);
-      if (pane && typeof pane.pane_id === "string" && pane.tab_id === input.host.tabId &&
-          pane.workspace_id === input.host.workspaceId && await dashboardProcessIsLive(pane.pane_id, exec)) {
+      if (
+        pane &&
+        typeof pane.pane_id === "string" &&
+        pane.tab_id === input.host.tabId &&
+        pane.workspace_id === input.host.workspaceId &&
+        (await dashboardProcessIsLive(pane.pane_id, exec))
+      ) {
         stored.paneId = pane.pane_id;
         stored.tabId = pane.tab_id;
         stored.workspaceId = pane.workspace_id;
@@ -307,28 +369,48 @@ export async function openOrReuseDashboard(input: DashboardOpenInput): Promise<D
     }
 
     const args = [
-      "plugin", "pane", "open", "--plugin", DASHBOARD_PLUGIN_ID,
-      "--entrypoint", DASHBOARD_PLUGIN_ENTRYPOINT, "--placement", "split",
-      "--target-pane", input.host.paneId,
-      "--direction", "right", "--cwd", cwd,
+      "plugin",
+      "pane",
+      "open",
+      "--plugin",
+      DASHBOARD_PLUGIN_ID,
+      "--entrypoint",
+      DASHBOARD_PLUGIN_ENTRYPOINT,
+      "--placement",
+      "split",
+      "--target-pane",
+      input.host.paneId,
+      "--direction",
+      "right",
+      "--cwd",
+      cwd,
       ...(ledgerPath ? ["--env", `${ENV_DASHBOARD_LEDGER}=${ledgerPath}`] : []),
-      "--env", `${ENV_DASHBOARD_PROTOCOL}=${DASHBOARD_PROTOCOL_VERSION}`,
-      "--env", `${ENV_DASHBOARD_KEY}=${key}`,
+      "--env",
+      `${ENV_DASHBOARD_PROTOCOL}=${DASHBOARD_PROTOCOL_VERSION}`,
+      "--env",
+      `${ENV_DASHBOARD_KEY}=${key}`,
       ...dailyEnv,
       "--no-focus",
     ];
     const opened = parseReply(await exec(args));
     if (opened.error) throw new Error(`Herdr could not open the pi-daddy dashboard: ${opened.error}`);
     const pane = paneFrom(opened.result);
-    if (!pane || typeof pane.pane_id !== "string" || typeof pane.terminal_id !== "string" ||
-        typeof pane.tab_id !== "string" || typeof pane.workspace_id !== "string") {
+    if (
+      !pane ||
+      typeof pane.pane_id !== "string" ||
+      typeof pane.terminal_id !== "string" ||
+      typeof pane.tab_id !== "string" ||
+      typeof pane.workspace_id !== "string"
+    ) {
       throw new Error("Herdr opened the plugin but returned no complete pane identity");
     }
     if (pane.workspace_id !== input.host.workspaceId || pane.tab_id !== input.host.tabId) {
       const closeError = await closeUntrackedPane(pane.pane_id, exec);
       throw new Error(
         `Herdr returned the dashboard pane in another workspace or tab; ` +
-        (closeError ? `the wrong-host pane also could not be closed (${closeError})` : "the wrong-host pane was closed"),
+          (closeError
+            ? `the wrong-host pane also could not be closed (${closeError})`
+            : "the wrong-host pane was closed"),
       );
     }
     store.panes[key] = {
@@ -345,7 +427,7 @@ export async function openOrReuseDashboard(input: DashboardOpenInput): Promise<D
       const closeError = await closeUntrackedPane(pane.pane_id, exec);
       throw new Error(
         `dashboard pane identity could not be persisted (${String(error)}); ` +
-        (closeError ? `the new pane also could not be closed (${closeError})` : "the untracked pane was closed"),
+          (closeError ? `the new pane also could not be closed (${closeError})` : "the untracked pane was closed"),
       );
     }
     return {

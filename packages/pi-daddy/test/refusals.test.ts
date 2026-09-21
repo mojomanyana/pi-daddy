@@ -87,10 +87,29 @@ test("structured refusals retain actionable human text", () => {
 
 test("planner refusals expose stable codes without changing their human reasons", () => {
   const cases = [
-    [planDelegation({ task: "x", tools: ["write"] }, { ...ctx(), ownGrant: ["tool:read"] }), "CAPABILITY_ESCALATION", /escalation blocked/],
-    [planDelegation({ task: "x", agent: "worker" }, { ...ctx(), ownGrant: ["tool:read"] }), "DEFINITION_NOT_AUTHORIZED", /agent:worker/],
-    [planDelegation({ task: "x", agent: "worker" }, ctx({ definitions: new Map([["worker", definition({ allowedTools: undefined })]]) })), "UNDECLARED_TOOLS", /allowed-tools/],
-    [planDelegation({ task: "x", agent: "worker" }, ctx({ gated: ["tool:read"] })), "GATED_UNAPPROVED", /requires explicit approval/],
+    [
+      planDelegation({ task: "x", tools: ["write"] }, { ...ctx(), ownGrant: ["tool:read"] }),
+      "CAPABILITY_ESCALATION",
+      /escalation blocked/,
+    ],
+    [
+      planDelegation({ task: "x", agent: "worker" }, { ...ctx(), ownGrant: ["tool:read"] }),
+      "DEFINITION_NOT_AUTHORIZED",
+      /agent:worker/,
+    ],
+    [
+      planDelegation(
+        { task: "x", agent: "worker" },
+        ctx({ definitions: new Map([["worker", definition({ allowedTools: undefined })]]) }),
+      ),
+      "UNDECLARED_TOOLS",
+      /allowed-tools/,
+    ],
+    [
+      planDelegation({ task: "x", agent: "worker" }, ctx({ gated: ["tool:read"] })),
+      "GATED_UNAPPROVED",
+      /requires explicit approval/,
+    ],
     [planDelegation({ task: "x", tools: [] }, ctx({ depth: 2 })), "DEPTH_EXCEEDED", /depth limit/],
   ] as const;
 

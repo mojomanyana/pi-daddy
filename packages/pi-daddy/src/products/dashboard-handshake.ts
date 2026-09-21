@@ -30,14 +30,15 @@ export function dashboardPreferencePath(agentDir: string): string {
 async function loadPreference(path: string): Promise<DashboardPreference | null> {
   try {
     const parsed = JSON.parse(await readFile(path, "utf8")) as DashboardPreference;
-    if (parsed?.version !== 1 || !Number.isInteger(parsed.protocol) ||
-        !["not-now", "never"].includes(parsed.choice)) {
+    if (parsed?.version !== 1 || !Number.isInteger(parsed.protocol) || !["not-now", "never"].includes(parsed.choice)) {
       throw new Error("unsupported preference shape");
     }
     return parsed;
   } catch (error) {
     if ((error as { code?: string }).code === "ENOENT") return null;
-    throw new Error(`dashboard preference ${path} is corrupt or unreadable: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(
+      `dashboard preference ${path} is corrupt or unreadable: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 }
 
@@ -76,7 +77,8 @@ export interface DashboardHandshakeInput {
   ui: DashboardHandshakeUI;
 }
 
-export type DashboardHandshakeOutcome = "not-applicable" | "suppressed" | "already-installed" | "installed" | "deferred" | "failed";
+export type DashboardHandshakeOutcome =
+  "not-applicable" | "suppressed" | "already-installed" | "installed" | "deferred" | "failed";
 
 export async function offerDashboardHandshake(input: DashboardHandshakeInput): Promise<DashboardHandshakeOutcome> {
   if (input.mode !== "tui") return "not-applicable";
@@ -91,7 +93,15 @@ export async function offerDashboardHandshake(input: DashboardHandshakeInput): P
     // A compatible bundled panel is local software already chosen by the operator. Present it by default;
     // pane identity makes this one panel per caller tab/session and --no-focus avoids focus theft.
     if (plugin.state === "compatible") {
-      const opened = await openOrReuseDashboard({ exec, host: host.host, ledgerPath: input.ledgerPath ?? "", cwd: input.cwd, statePath: input.paneStatePath, pluginRoot: input.pluginRoot, allowInactive: true });
+      const opened = await openOrReuseDashboard({
+        exec,
+        host: host.host,
+        ledgerPath: input.ledgerPath ?? "",
+        cwd: input.cwd,
+        statePath: input.paneStatePath,
+        pluginRoot: input.pluginRoot,
+        allowInactive: true,
+      });
       input.ui.notify(`pi-daddy dashboard ${opened.kind} in pane ${opened.paneId} without changing focus.`, "info");
       return "already-installed";
     }
@@ -143,13 +153,13 @@ export async function offerDashboardHandshake(input: DashboardHandshakeInput): P
       pluginRoot: input.pluginRoot,
       allowInactive: true,
     });
-    input.ui.notify(
-      `pi-daddy dashboard ${opened.kind} in pane ${opened.paneId} without changing focus.`,
-      "info",
-    );
+    input.ui.notify(`pi-daddy dashboard ${opened.kind} in pane ${opened.paneId} without changing focus.`, "info");
     return "installed";
   } catch (error) {
-    input.ui.notify(`pi-daddy dashboard setup failed: ${error instanceof Error ? error.message : String(error)}`, "error");
+    input.ui.notify(
+      `pi-daddy dashboard setup failed: ${error instanceof Error ? error.message : String(error)}`,
+      "error",
+    );
     return "failed";
   }
 }
@@ -164,19 +174,32 @@ export interface DashboardCommandInput {
   paneStatePath: string;
 }
 
-export type DashboardCommandResult = DashboardOpenResult | { kind: "fallback"; frame: string; visibleBesideCaller: false };
+export type DashboardCommandResult =
+  DashboardOpenResult | { kind: "fallback"; frame: string; visibleBesideCaller: false };
 async function piFallback(cwd: string, reason: string): Promise<Extract<DashboardCommandResult, { kind: "fallback" }>> {
-  try { return { kind: "fallback", visibleBesideCaller: false, frame: `${reason}\n\n${renderActivityTimeline(parseActivityTimeline(await readFile(defaultActivityTimelinePath(cwd), "utf8")))}` }; }
-  catch { return { kind: "fallback", visibleBesideCaller: false, frame: `${reason}\n\nNo local activity recorded yet.` }; }
+  try {
+    return {
+      kind: "fallback",
+      visibleBesideCaller: false,
+      frame: `${reason}\n\n${renderActivityTimeline(parseActivityTimeline(await readFile(defaultActivityTimelinePath(cwd), "utf8")))}`,
+    };
+  } catch {
+    return { kind: "fallback", visibleBesideCaller: false, frame: `${reason}\n\nNo local activity recorded yet.` };
+  }
 }
 export async function openDashboardCommand(input: DashboardCommandInput): Promise<DashboardCommandResult> {
   const exec = input.exec ?? dashboardHerdrExec;
   // A panel can only target this verified process; otherwise /grants dashboard renders the local Pi fallback.
   const host = await verifyHerdrHost({ env: input.env, pid: input.pid, exec });
   if (!host.ok) return piFallback(input.cwd, `Herdr panel unavailable: ${host.diagnostic}`);
-  if (!input.ledgerPath?.trim()) return piFallback(input.cwd, "Herdr panel has no governance ledger; showing the local activity timeline.");
+  if (!input.ledgerPath?.trim())
+    return piFallback(input.cwd, "Herdr panel has no governance ledger; showing the local activity timeline.");
   const plugin = await inspectDashboardPlugin(exec, input.pluginRoot);
-  if (plugin.state === "absent") return piFallback(input.cwd, `Herdr panel is not linked. Run: herdr plugin link ${quote(resolve(input.pluginRoot))} --enabled`);
+  if (plugin.state === "absent")
+    return piFallback(
+      input.cwd,
+      `Herdr panel is not linked. Run: herdr plugin link ${quote(resolve(input.pluginRoot))} --enabled`,
+    );
   if (plugin.state === "disabled") {
     throw new Error(`the pi-daddy Herdr plugin is disabled. Run: herdr plugin enable ${DASHBOARD_PLUGIN_ID}`);
   }

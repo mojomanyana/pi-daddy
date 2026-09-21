@@ -51,11 +51,16 @@ No allowed-tools key, so this cannot be spawned.
 
 describe("governance decisions in a real pi process", { skip: piAvailable() ? false : "pi is not on PATH" }, () => {
   let project: string;
-  const projectOnce = async () => (project ??= await fixture({ "docs-writer": DOCS_WRITER, "fabric-agent": FABRIC, undeclared: UNDECLARED }));
+  const projectOnce = async () =>
+    (project ??= await fixture({ "docs-writer": DOCS_WRITER, "fabric-agent": FABRIC, undeclared: UNDECLARED }));
 
   test("an enumerated grant allows a type it covers and blocks one it does not", async () => {
     const cwd = await projectOnce();
-    const r = await runCommand({ cwd, command: "/grants", env: { PI_GRANTS_GRANT: "agent:docs-writer,agent:undeclared,tool:read,tool:write" } });
+    const r = await runCommand({
+      cwd,
+      command: "/grants",
+      env: { PI_GRANTS_GRANT: "agent:docs-writer,agent:undeclared,tool:read,tool:write" },
+    });
 
     assert.match(verdictFor(r, "docs-writer") ?? "", /^allow/);
     assert.match(
@@ -233,15 +238,33 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     const cwd = await projectOnce();
     const ledger = join(await tempDir("grants-it-sources-"), "ledger.jsonl");
     const base = {
-      ts: new Date().toISOString(), parentId: "d0", depth: 1, requested: [], parentGrant: [],
-      effective: [], denied: [], clipped: [], gatedBlocked: [], blocked: false,
+      ts: new Date().toISOString(),
+      parentId: "d0",
+      depth: 1,
+      requested: [],
+      parentGrant: [],
+      effective: [],
+      denied: [],
+      clipped: [],
+      gatedBlocked: [],
+      blocked: false,
     };
     await writeFile(
       ledger,
       [
         // A mixed record — two capabilities, two sources — plus a legacy line that must not be believed.
-        JSON.stringify({ ...base, childId: "d0.1", approved: ["tool:bash", "tool:write"], approvalSources: { "tool:bash": "persisted", "tool:write": "prompt" } }),
-        JSON.stringify({ ...base, childId: "d0.2", approved: ["tool:bash"], approvalSources: { "tool:bash": "persisted" } }),
+        JSON.stringify({
+          ...base,
+          childId: "d0.1",
+          approved: ["tool:bash", "tool:write"],
+          approvalSources: { "tool:bash": "persisted", "tool:write": "prompt" },
+        }),
+        JSON.stringify({
+          ...base,
+          childId: "d0.2",
+          approved: ["tool:bash"],
+          approvalSources: { "tool:bash": "persisted" },
+        }),
         JSON.stringify({ ...base, childId: "d0.3", approved: ["tool:bash"], approvalSource: "prompt" }),
       ].join("\n") + "\n",
       "utf8",
@@ -307,7 +330,11 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
 
     const text = r.notifies.map((n) => n.message).join("\n");
     assert.match(text, /instructions 2 distinct version\(s\)/, "two bodies ran under one name");
-    assert.match(text, new RegExp(`${real.slice(0, 12)}\\s+2 spawn\\(s\\)\\s+— current`), "the live one is counted and matched");
+    assert.match(
+      text,
+      new RegExp(`${real.slice(0, 12)}\\s+2 spawn\\(s\\)\\s+— current`),
+      "the live one is counted and matched",
+    );
     assert.match(text, /0{12}\s+1 spawn\(s\)\s+— CHANGED since/, "and the stale one is named as changed");
     assert.match(text, /NOTE docs-writer ran under more than one version/);
   });
@@ -343,10 +370,14 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     const cwd = await projectOnce();
     const registry = join(await tempDir("grants-it-registry-"), "registry.json");
     await mkdir(dirname(registry), { recursive: true });
-    await writeFile(registry, JSON.stringify({
-      version: 1,
-      workspaces: { "prod-1": { path: cwd }, sandbox: { path: cwd } },
-    }), "utf8");
+    await writeFile(
+      registry,
+      JSON.stringify({
+        version: 1,
+        workspaces: { "prod-1": { path: cwd }, sandbox: { path: cwd } },
+      }),
+      "utf8",
+    );
 
     const r = await runCommand({
       cwd,
@@ -396,9 +427,18 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     const cwd = await projectOnce();
     const ledger = join(await tempDir("grants-it-declined-"), "ledger.jsonl");
     const base = {
-      ts: "2026-08-14T00:00:00.000Z", parentId: "d0", depth: 1, requested: ["tool:bash"],
-      parentGrant: ["tool:bash"], effective: [], denied: [], clipped: [],
-      gatedBlocked: ["tool:bash"], blocked: true, humanDenied: true, gateOutcome: "declined",
+      ts: "2026-08-14T00:00:00.000Z",
+      parentId: "d0",
+      depth: 1,
+      requested: ["tool:bash"],
+      parentGrant: ["tool:bash"],
+      effective: [],
+      denied: [],
+      clipped: [],
+      gatedBlocked: ["tool:bash"],
+      blocked: true,
+      humanDenied: true,
+      gateOutcome: "declined",
     };
     await writeFile(
       ledger,
@@ -435,7 +475,11 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     const text = r.notifies.map((n) => n.message).join("\n");
 
     assert.match(text, /unknown subcommand "ledgr" — did nothing/, "it must say it did nothing");
-    assert.match(text, /Known: work, learning, init, host, variants, dashboard, ledger, approvals, revoke/, "and what it does know");
+    assert.match(
+      text,
+      /Known: work, learning, init, host, variants, dashboard, ledger, approvals, revoke/,
+      "and what it does know",
+    );
     assert.ok(!/holding    /.test(text), "and must NOT print the status screen, which is what made it look fine");
   });
 
@@ -493,7 +537,10 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     assert.match(text, /stored grant.*unsupported-version.*refused/i);
     assert.match(text, /grants: ACTIVE/);
     assert.match(text, /holding\s+\(nothing\)/, "the invalid store never becomes the ungoverned wildcard");
-    const lines = (await readFile(projectLedgerPath(cwd), "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+    const lines = (await readFile(projectLedgerPath(cwd), "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
     assert.equal(lines.at(-1)?.refusal?.code, "GRANT_STORE_INVALID");
     assert.equal(lines.at(-1)?.refusal?.details?.reason, "unsupported-version");
   });
@@ -504,12 +551,20 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     process.env.PI_CODING_AGENT_DIR = agentDir;
     const pkg = join(cwd, "node_modules", "read-pkg");
     await mkdir(join(pkg, "review"), { recursive: true });
-    await writeFile(join(pkg, "package.json"), JSON.stringify({
-      name: "read-pkg",
-      version: "1.0.0",
-      pi: { skills: ["./review"] },
-    }), "utf8");
-    await writeFile(join(pkg, "review", "SKILL.md"), `---\nname: review\ndescription: Reads only.\nallowed-tools: Read\n---\nReview.\n`, "utf8");
+    await writeFile(
+      join(pkg, "package.json"),
+      JSON.stringify({
+        name: "read-pkg",
+        version: "1.0.0",
+        pi: { skills: ["./review"] },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      join(pkg, "review", "SKILL.md"),
+      `---\nname: review\ndescription: Reads only.\nallowed-tools: Read\n---\nReview.\n`,
+      "utf8",
+    );
 
     const { grantStorePath, projectLedgerPath } = await import("../src/governance/grant-store.ts");
     const first = await runCommand({ cwd, command: "/grants init", env: { PI_CODING_AGENT_DIR: agentDir } });
@@ -590,11 +645,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     const storePath = grantStorePath(cwd);
     await mkdir(dirname(storePath), { recursive: true });
     // A deliberately WIDE store beside a deliberately NARROW environment.
-    await writeFile(
-      storePath,
-      JSON.stringify({ version: 1, cwd, grant: ["tool:*"], writtenAt: "x" }),
-      "utf8",
-    );
+    await writeFile(storePath, JSON.stringify({ version: 1, cwd, grant: ["tool:*"], writtenAt: "x" }), "utf8");
 
     const r = await runCommand({
       cwd,
@@ -758,7 +809,10 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     });
 
     const line = r.notifies.map((n) => n.message).find((m) => m.includes("definitions spawnable"));
-    assert.ok(line, `no spawnable summary at session start — notifies were:\n${r.notifies.map((n) => n.message).join("\n")}`);
+    assert.ok(
+      line,
+      `no spawnable summary at session start — notifies were:\n${r.notifies.map((n) => n.message).join("\n")}`,
+    );
     assert.match(line, /^grants: 1 of 3 definitions spawnable — docs-writer$/m);
     // The withheld half is the point of the line, and each definition names ITS OWN fix (R-82):
     // `fabric-agent` needs an id this grant does not hold; `undeclared` is authorised and declares no
@@ -804,5 +858,4 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     assert.match(text, /holding\s+tool:\*/);
     assert.doesNotMatch(text, /grants: inactive/);
   });
-
 });

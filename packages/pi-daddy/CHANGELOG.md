@@ -14,6 +14,11 @@ the record of how the package got here and are worth keeping; they are not worth
 
 ## Unreleased — source layered under `src/{kernel,governance,executors,products}` (ADR-0076 PR 2)
 
+**PR 3a (same unreleased line):** the source is formatted with Prettier at width 120 and CI checks it; the
+module-size guard counts statements and caps lines at 200 characters; two tests that asserted the wording of
+repository documents were deleted. No runtime behaviour changed; seventeen long message and embedded-script
+strings were split with identical bytes.
+
 Internal restructure with no wire change. Export keys in `package.json` are unchanged and every subpath
 still resolves; the compiled files moved from `dist/<name>.js` to `dist/<layer>/<name>.js`, so anything that
 deep-imported a `dist/` file by path must use the export map instead. `pi-daddy/workspace` still exports the

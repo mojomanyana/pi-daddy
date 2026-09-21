@@ -46,7 +46,10 @@ test("a file without frontmatter is not a definition", () => {
 });
 
 test("allowed-tools is space separated, per the spec", () => {
-  const def = parseSkillDefinition("/skills/review/SKILL.md", skill("name: review\ndescription: x\nallowed-tools: Read Grep"));
+  const def = parseSkillDefinition(
+    "/skills/review/SKILL.md",
+    skill("name: review\ndescription: x\nallowed-tools: Read Grep"),
+  );
   const ceiling = ceilingForDefinition(def!);
   assert.deepEqual(ceiling.capabilities, ["tool:grep", "tool:read"]);
   assert.equal(ceiling.undeclared, false);
@@ -133,7 +136,7 @@ test("metadata is read as the spec's extension point", () => {
   // the file valid for the other tools that read it.
   const def = parseSkillDefinition(
     "/skills/r/SKILL.md",
-    skill("name: r\ndescription: x\nallowed-tools: Read\nmetadata:\n  pi-daddy-spawnable: \"true\"\n  author: nemanja"),
+    skill('name: r\ndescription: x\nallowed-tools: Read\nmetadata:\n  pi-daddy-spawnable: "true"\n  author: nemanja'),
   );
   assert.equal(def?.metadata?.["pi-daddy-spawnable"], "true");
   assert.equal(def?.metadata?.author, "nemanja");

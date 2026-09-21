@@ -32,11 +32,7 @@ export function maySpawnDefinition(ownGrant: Capability[], name: string): boolea
   // ADR-0023 adds the middle case. `tool:*` is authority to grant every tool and satisfies this too;
   // `agent:*` is authority to spawn any definition and grants no tools at all, which is the configuration
   // an operator wanting "any of our definitions, narrow tools" previously had to fake with `tool:*`.
-  return (
-    ownGrant.includes(WILDCARD) ||
-    ownGrant.includes(AGENT_WILDCARD) ||
-    ownGrant.includes(agentCapability(name))
-  );
+  return ownGrant.includes(WILDCARD) || ownGrant.includes(AGENT_WILDCARD) || ownGrant.includes(agentCapability(name));
 }
 
 /** The tool name that confers the ability to delegate further. */
@@ -92,9 +88,7 @@ export function workspaceCapability(workspaceId: string): Capability {
  */
 export function mayRouteToWorkspace(ownGrant: readonly Capability[], workspaceId: string): boolean {
   const held = new Set(ownGrant);
-  return held.has(WILDCARD)
-    || held.has(WORKSPACE_WILDCARD)
-    || held.has(workspaceCapability(workspaceId));
+  return held.has(WILDCARD) || held.has(WORKSPACE_WILDCARD) || held.has(workspaceCapability(workspaceId));
 }
 
 /**
@@ -209,12 +203,14 @@ export function isSafeCapability(id: Capability): boolean {
 export function assertCapabilitiesArePropagatable(grant: readonly Capability[]): void {
   const malformed = grant.filter((c) => !isWellFormedCapability(c));
   if (malformed.length === 0) return;
-  throw new GovernanceRefusal(refusal(
-    "GRANT_ID_MALFORMED",
-    `refusing to build a child environment: ${JSON.stringify(malformed)} contain characters that are not ` +
-    `part of a capability id. The grant is comma-separated, so a child would read these as several ` +
-    `capabilities — including ones nothing granted. Report this: a malformed id reached propagation, ` +
-    `which means a guard upstream admitted it.`,
-    { malformed: malformed.join(" ") },
-  ));
+  throw new GovernanceRefusal(
+    refusal(
+      "GRANT_ID_MALFORMED",
+      `refusing to build a child environment: ${JSON.stringify(malformed)} contain characters that are not ` +
+        `part of a capability id. The grant is comma-separated, so a child would read these as several ` +
+        `capabilities — including ones nothing granted. Report this: a malformed id reached propagation, ` +
+        `which means a guard upstream admitted it.`,
+      { malformed: malformed.join(" ") },
+    ),
+  );
 }

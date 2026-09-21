@@ -97,7 +97,11 @@ export function definitionEntries(definitions: Map<string, SkillDefinition>): Ca
 export function workspaceEntries(registry: WorkspaceRegistryFile, source?: string): CatalogEntry[] {
   return Object.keys(registry.workspaces)
     .sort()
-    .map((id) => ({ capability: `workspace:${id}` as Capability, kind: "workspace" as const, ...(source ? { source } : {}) }));
+    .map((id) => ({
+      capability: `workspace:${id}` as Capability,
+      kind: "workspace" as const,
+      ...(source ? { source } : {}),
+    }));
 }
 
 /** Assemble a catalog from parts. Pure, so it is testable without a filesystem. */
@@ -191,8 +195,10 @@ export function unknownCapabilities(requested: Capability[], catalog: Catalog): 
   // wildcards by design — so folding it into the namespace test below un-exempts it. Caught by the tests for
   // the previous two fixes, which is the checklist paying for itself.
   const exempt = (c: Capability) =>
-    c === WILDCARD || c === AGENT_WILDCARD || c === WORKSPACE_WILDCARD
-    || (c.startsWith("workspace:") && isSafeWorkspaceId(c.slice("workspace:".length)));
+    c === WILDCARD ||
+    c === AGENT_WILDCARD ||
+    c === WORKSPACE_WILDCARD ||
+    (c.startsWith("workspace:") && isSafeWorkspaceId(c.slice("workspace:".length)));
   return requested.filter((c) => !exempt(c) && !catalog.has(c)).sort();
 }
 

@@ -108,7 +108,10 @@ test("an escalation is reported ahead of a gate, because approval cannot conjure
     ABLE,
   );
 
-  assert.deepEqual(summary.withheld.map((w) => [w.name, w.reason]), [["deploy", "capability"]]);
+  assert.deepEqual(
+    summary.withheld.map((w) => [w.name, w.reason]),
+    [["deploy", "capability"]],
+  );
 });
 
 test("R-81: a session that cannot delegate says so, and previews nothing", async () => {

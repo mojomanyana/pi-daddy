@@ -54,9 +54,7 @@ export interface StoredGrant {
 
 export type GrantStoreRefusalReason = "malformed" | "unsupported-version" | "unreadable" | "wrong-cwd";
 export type StoredGrantState =
-  | { state: "absent" }
-  | { state: "valid"; stored: StoredGrant }
-  | { state: "refuse"; reason: GrantStoreRefusalReason };
+  { state: "absent" } | { state: "valid"; stored: StoredGrant } | { state: "refuse"; reason: GrantStoreRefusalReason };
 
 export interface SaveGrantOptions {
   projectLedger?: boolean;

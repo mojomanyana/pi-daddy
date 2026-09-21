@@ -79,19 +79,35 @@ export { ENV_HERDR } from "../src/executors/executor.ts";
  * to it a workspace hop (ADR-0032). This name is the operator's explicit override.
  */
 export { ENV_HERDR_WORKSPACE } from "../src/executors/herdr-cli.ts";
-import { ENV_ACTIVITY_PARENT_TASK, ENV_ACTIVITY_PATH, ENV_ACTIVITY_ROOT, ENV_ACTIVITY_TASK } from "../src/products/activity-timeline.ts";
+import {
+  ENV_ACTIVITY_PARENT_TASK,
+  ENV_ACTIVITY_PATH,
+  ENV_ACTIVITY_ROOT,
+  ENV_ACTIVITY_TASK,
+} from "../src/products/activity-timeline.ts";
 
 /** The activity timeline's per-child observation identity, handed to the kernel through `childEnv` (ADR-0076). */
 export function activityChildEnv(activity: { rootId: string; path: string; taskId?: string } | undefined) {
   return (child: { childExecutionId?: string }): Readonly<Record<string, string>> =>
     activity?.taskId && child.childExecutionId
-      ? { [ENV_ACTIVITY_PATH]: activity.path, [ENV_ACTIVITY_ROOT]: activity.rootId, [ENV_ACTIVITY_TASK]: child.childExecutionId, [ENV_ACTIVITY_PARENT_TASK]: activity.taskId }
+      ? {
+          [ENV_ACTIVITY_PATH]: activity.path,
+          [ENV_ACTIVITY_ROOT]: activity.rootId,
+          [ENV_ACTIVITY_TASK]: child.childExecutionId,
+          [ENV_ACTIVITY_PARENT_TASK]: activity.taskId,
+        }
       : {};
 }
 /** Keep each child's pane after it finishes, for inspection. Off by default: fan-out would flood it. */
 export const ENV_HERDR_KEEP_PANE = "PI_GRANTS_HERDR_KEEP_PANE";
 export const ENV_GOVERNANCE = "PI_DADDY_GOVERNANCE";
-export interface VariantRunAccounting {runId:string;primaryExecutionId:string;shadowExecutionIds:string[];state:"running"|"settled";outcomes:null|{executionId:string;role:"primary"|"shadow";ok:boolean;reason:string|null}[]}
+export interface VariantRunAccounting {
+  runId: string;
+  primaryExecutionId: string;
+  shadowExecutionIds: string[];
+  state: "running" | "settled";
+  outcomes: null | { executionId: string; role: "primary" | "shadow"; ok: boolean; reason: string | null }[];
+}
 export interface GrantsSession extends NativeSessionHost {
   /** False only for the explicit PI_DADDY_GOVERNANCE opt-out; otherwise roots are observed-bound. */
   governed: boolean;
@@ -246,7 +262,11 @@ export async function loadProjectDefinitions(session: GrantsSession, cwd: string
   });
   session.catalog = await session.catalogReady;
 }
-export function createGrantsSession(extensionPath: string | undefined, lifecycle?: ReloadLifecycle, observerExtensionPath?: string): GrantsSession {
+export function createGrantsSession(
+  extensionPath: string | undefined,
+  lifecycle?: ReloadLifecycle,
+  observerExtensionPath?: string,
+): GrantsSession {
   const started = lifecycle ? undefined : beginExtensionLifecycle();
   const activeLifecycle = lifecycle ?? started!.lifecycle;
   const environment = lifecycle ? process.env : started!.environment;

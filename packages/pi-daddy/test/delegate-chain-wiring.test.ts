@@ -50,7 +50,6 @@ test("the three tool descriptions do not contradict each other about shape", asy
   assert.doesNotMatch(all, /ONE AFTER ANOTHER/);
 });
 
-
 test("ADR-0033: a chain refused at the gate spawns NOTHING", async () => {
   // Fail closed as a unit. Running only the ungated steps would return a partial result that reads like a complete
   // one — the failure indistinguishable from success.
@@ -60,15 +59,28 @@ test("ADR-0033: a chain refused at the gate spawns NOTHING", async () => {
   const ledger = join(dir, "ledger.jsonl");
 
   const { tools, ctx } = await harness(
-    { [ENV_GRANT]: "agent:digger,agent:reader,tool:read,tool:bash,tool:delegate", [ENV_LEDGER]: ledger, [ENV_FANOUT]: "12" },
+    {
+      [ENV_GRANT]: "agent:digger,agent:reader,tool:read,tool:bash,tool:delegate",
+      [ENV_LEDGER]: ledger,
+      [ENV_FANOUT]: "12",
+    },
     dir,
   );
 
   await assert.rejects(
     () =>
-      tools
-        .get("delegate_chain")!
-        .execute("c", { steps: [{ task: "read this", agent: "reader" }, { task: "dig {previous}", agent: "digger" }] }, undefined, undefined, ctx),
+      tools.get("delegate_chain")!.execute(
+        "c",
+        {
+          steps: [
+            { task: "read this", agent: "reader" },
+            { task: "dig {previous}", agent: "digger" },
+          ],
+        },
+        undefined,
+        undefined,
+        ctx,
+      ),
     (error: Error) => {
       assert.match(error.message, /chain refused/);
       assert.match(error.message, /no \n?step ran|no step ran/, "it must say nothing ran");
@@ -78,21 +90,41 @@ test("ADR-0033: a chain refused at the gate spawns NOTHING", async () => {
 
   // The `reader` step was ungated and would have succeeded on its own. Nothing may have been recorded as spawned.
   const lines = (await readFile(ledger, "utf8").catch(() => "")).trim();
-  const spawned = lines ? lines.split("\n").map((l) => JSON.parse(l)).filter((r) => r.blocked === false) : [];
+  const spawned = lines
+    ? lines
+        .split("\n")
+        .map((l) => JSON.parse(l))
+        .filter((r) => r.blocked === false)
+    : [];
   assert.deepEqual(spawned, [], "a chain declined at the gate must not have provisioned any child");
 });
 
 test("delegate_chain exposes and forwards the same bounded thinking levels as delegate", async () => {
   const { tools } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate" });
   const step = (tools.get("delegate_chain")!.parameters as any).properties.steps.items;
-  assert.deepEqual(step.properties.thinking.anyOf.map((value: any) => value.const), ["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
+  assert.deepEqual(
+    step.properties.thinking.anyOf.map((value: any) => value.const),
+    ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
+  );
 });
 
 test("delegate_chain preserves each requested thinking level through planning into that child's argv", async () => {
-  const step = chainStepSpec({ task: "inspect {previous}", tools: ["read"], model: "known/model", thinking: "high" }, "prior output");
-  const planned = planDelegation(step, { ownGrant: ["tool:read"], depth: 0, maxDepth: 2, gated: [], definitions: new Map() });
+  const step = chainStepSpec(
+    { task: "inspect {previous}", tools: ["read"], model: "known/model", thinking: "high" },
+    "prior output",
+  );
+  const planned = planDelegation(step, {
+    ownGrant: ["tool:read"],
+    depth: 0,
+    maxDepth: 2,
+    gated: [],
+    definitions: new Map(),
+  });
   assert.equal(planned.ok, true);
-  assert.deepEqual(planned.args.slice(planned.args.indexOf("--thinking"), planned.args.indexOf("--thinking") + 2), ["--thinking", "high"]);
+  assert.deepEqual(planned.args.slice(planned.args.indexOf("--thinking"), planned.args.indexOf("--thinking") + 2), [
+    "--thinking",
+    "high",
+  ]);
 });
 
 test("ADR-0033: a chain longer than the budget is refused BEFORE any dialog", async () => {
@@ -109,7 +141,13 @@ test("ADR-0033: a chain longer than the budget is refused BEFORE any dialog", as
     () =>
       tools
         .get("delegate_chain")!
-        .execute("c", { steps: Array.from({ length: 5 }, () => ({ task: "dig", agent: "digger" })) }, undefined, undefined, ctx),
+        .execute(
+          "c",
+          { steps: Array.from({ length: 5 }, () => ({ task: "dig", agent: "digger" })) },
+          undefined,
+          undefined,
+          ctx,
+        ),
     /chain refused[\s\S]*budget exhausted/,
   );
   assert.equal(selects.length, 0, "no human may be asked about a chain that cannot run");
@@ -126,13 +164,17 @@ test("an unresolved chain model is ledgered before any approval dialog", async (
   );
 
   await assert.rejects(
-    () => tools.get("delegate_chain")!.execute(
-      "c", { steps: [{ task: "dig", agent: "digger", model: "missing/model" }] }, undefined, undefined, ctx,
-    ),
+    () =>
+      tools
+        .get("delegate_chain")!
+        .execute("c", { steps: [{ task: "dig", agent: "digger", model: "missing/model" }] }, undefined, undefined, ctx),
     (error: Error & { code?: string }) => error.code === "MODEL_UNRESOLVED",
   );
   assert.equal(selects.length, 0, "an unresolved step must not open or bank an approval");
-  const events = (await readFile(ledger, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+  const events = (await readFile(ledger, "utf8"))
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
   assert.equal(events.at(-1)?.refusal?.code, "MODEL_UNRESOLVED");
   assert.equal(events.at(-1)?.blocked, true);
 });
@@ -155,9 +197,6 @@ test("ADR-0033: the step template tells the model about the placeholder", async 
   assert.match(described, /appended/, "and it must say what happens if the placeholder is omitted");
 });
 
-
-
-
 test("ADR-0033: a step that can NEVER run refuses the chain before anyone is asked", async () => {
   // **Rewritten: this used to assert the chain got as far as running step 1 and failing.** It now refuses during
   // planning, which is stronger — a step refused for something no approval can lift (here `tool:write`, which the
@@ -173,20 +212,25 @@ test("ADR-0033: a step that can NEVER run refuses the chain before anyone is ask
   // write. A capability that looks unheld is not necessarily denied.)
   const ledger = join(await tempDir("chain-doomed-ledger-"), "ledger.jsonl");
   const { tools, ctx, selects } = await harness({
-    [ENV_GRANT]: "tool:read,tool:bash,tool:delegate", [ENV_GATED]: "tool:bash",
-    [ENV_FANOUT]: "12", [ENV_LEDGER]: ledger,
+    [ENV_GRANT]: "tool:read,tool:bash,tool:delegate",
+    [ENV_GATED]: "tool:bash",
+    [ENV_FANOUT]: "12",
+    [ENV_LEDGER]: ledger,
   });
   await assert.rejects(
     () =>
-      tools
-        .get("delegate_chain")!
-        .execute(
-          "c",
-          { steps: [{ task: "nope", tools: ["bash", "agent:ghost"] }, { task: "never {previous}", tools: ["read"] }] },
-          undefined,
-          undefined,
-          ctx,
-        ),
+      tools.get("delegate_chain")!.execute(
+        "c",
+        {
+          steps: [
+            { task: "nope", tools: ["bash", "agent:ghost"] },
+            { task: "never {previous}", tools: ["read"] },
+          ],
+        },
+        undefined,
+        undefined,
+        ctx,
+      ),
     (error: Error & { code?: string }) => {
       assert.equal(error.code, "UNKNOWN_TOOL");
       assert.match(error.message, /chain refused at step 1/);
@@ -194,14 +238,16 @@ test("ADR-0033: a step that can NEVER run refuses the chain before anyone is ask
       return true;
     },
   );
-  assert.equal(selects.length, 0, "a doomed step must not raise a dialog — `tool:bash` was gated and never asked about");
+  assert.equal(
+    selects.length,
+    0,
+    "a doomed step must not raise a dialog — `tool:bash` was gated and never asked about",
+  );
   const record = JSON.parse((await readFile(ledger, "utf8")).trim());
   assert.equal(record.refusal.code, "UNKNOWN_TOOL");
   assert.match(record.taskDigest, /^[a-f0-9]{64}$/);
   assert.ok(record.requested.includes("agent:ghost"));
 });
-
-
 
 test("ADR-0033: every gate is raised UPFRONT, one per capability@subject", async () => {
   // **The corrected guarantee.** ADR-0033 promised one dialog for the whole chain; that is not implementable,
@@ -232,7 +278,13 @@ test("ADR-0033: every gate is raised UPFRONT, one per capability@subject", async
     .get("delegate_chain")!
     .execute(
       "c",
-      { steps: [{ task: "dig", agent: "digger" }, { task: "shape {previous}", agent: "shaper" }, { task: "read {previous}", agent: "reader" }] },
+      {
+        steps: [
+          { task: "dig", agent: "digger" },
+          { task: "shape {previous}", agent: "shaper" },
+          { task: "read {previous}", agent: "reader" },
+        ],
+      },
       undefined,
       undefined,
       ctx,
@@ -242,9 +294,19 @@ test("ADR-0033: every gate is raised UPFRONT, one per capability@subject", async
   // Not a plain decline: the gate loop now STOPS at the first refusal, because every dialog after the outcome is
   // fixed banks authority for a chain that will not run. So a declining fixture would see one dialog and prove
   // nothing about the second subject — approve the first, refuse the second.
-  assert.equal(selects.length, 2, `expected one dialog per gated subject, got ${selects.length}: ${JSON.stringify(selects)}`);
-  assert.ok(selects.some((t) => t.includes("digger")), "digger must be named to the operator");
-  assert.ok(selects.some((t) => t.includes("shaper")), "and so must shaper — that is the whole point");
+  assert.equal(
+    selects.length,
+    2,
+    `expected one dialog per gated subject, got ${selects.length}: ${JSON.stringify(selects)}`,
+  );
+  assert.ok(
+    selects.some((t) => t.includes("digger")),
+    "digger must be named to the operator",
+  );
+  assert.ok(
+    selects.some((t) => t.includes("shaper")),
+    "and so must shaper — that is the whole point",
+  );
 });
 
 test("ADR-0033: the dialog NAMES the step's task, as a single delegate does", async () => {
@@ -265,7 +327,6 @@ test("ADR-0033: the dialog NAMES the step's task, as a single delegate does", as
   assert.ok(selects.length >= 1);
   assert.match(selects[0], /excavate the north field/, "the operator must see what the step will do");
 });
-
 
 test("ADR-0033: A-S6 holds across a chain — one definition's yes cannot satisfy another", async () => {
   // **The critical defect, pinned.** Three reviewers found that the chain's single-subject union let a yes given for
@@ -294,9 +355,18 @@ test("ADR-0033: A-S6 holds across a chain — one definition's yes cannot satisf
 
   await assert.rejects(
     () =>
-      tools
-        .get("delegate_chain")!
-        .execute("c", { steps: [{ task: "dig", agent: "digger" }, { task: "shape {previous}", agent: "shaper" }] }, undefined, undefined, ctx),
+      tools.get("delegate_chain")!.execute(
+        "c",
+        {
+          steps: [
+            { task: "dig", agent: "digger" },
+            { task: "shape {previous}", agent: "shaper" },
+          ],
+        },
+        undefined,
+        undefined,
+        ctx,
+      ),
     /chain refused/,
   );
 
@@ -330,8 +400,6 @@ test("ADR-0033: a `tools:`-only step is never offered a 30-day project-wide appr
   );
 });
 
-
-
 test("ADR-0033: a demanded-but-unreachable herdr refuses the chain BEFORE any dialog", async () => {
   // **Shipped with no test, so re-breaking it cost nothing.** The executor check was hoisted above the gate for the
   // reason recorded on the `delegate` path a day earlier — with `PI_GRANTS_HERDR=1` and herdr down, an operator was
@@ -349,7 +417,10 @@ test("ADR-0033: a demanded-but-unreachable herdr refuses the chain BEFORE any di
       dir,
     );
     await assert.rejects(
-      () => tools.get("delegate_chain")!.execute("c", { steps: [{ task: "dig", agent: "digger" }] }, undefined, undefined, ctx),
+      () =>
+        tools
+          .get("delegate_chain")!
+          .execute("c", { steps: [{ task: "dig", agent: "digger" }] }, undefined, undefined, ctx),
       /PI_GRANTS_HERDR/,
     );
     assert.equal(selects.length, 0, "nobody may be asked to approve a capability for a child that cannot be started");
@@ -371,17 +442,36 @@ test("ADR-0033: a gate-refused chain WRITES a ledger line naming the refused sub
   const ledger = join(dir, "ledger.jsonl");
 
   const { tools, ctx } = await harness(
-    { [ENV_GRANT]: "agent:digger,agent:shaper,tool:read,tool:bash,tool:delegate", [ENV_LEDGER]: ledger, [ENV_FANOUT]: "12" },
+    {
+      [ENV_GRANT]: "agent:digger,agent:shaper,tool:read,tool:bash,tool:delegate",
+      [ENV_LEDGER]: ledger,
+      [ENV_FANOUT]: "12",
+    },
     dir,
     "allow-then-decline",
   );
 
   await tools
     .get("delegate_chain")!
-    .execute("c", { steps: [{ task: "dig", agent: "digger" }, { task: "shape {previous}", agent: "shaper" }] }, undefined, undefined, ctx)
+    .execute(
+      "c",
+      {
+        steps: [
+          { task: "dig", agent: "digger" },
+          { task: "shape {previous}", agent: "shaper" },
+        ],
+      },
+      undefined,
+      undefined,
+      ctx,
+    )
     .catch(() => undefined);
 
-  const lines = (await readFile(ledger, "utf8")).trim().split("\n").filter(Boolean).map((l) => JSON.parse(l));
+  const lines = (await readFile(ledger, "utf8"))
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((l) => JSON.parse(l));
   const refusal = lines.find((record) => record.humanDenied === true);
   assert.ok(refusal, `a refused chain must leave a record; got ${JSON.stringify(lines)}`);
   assert.equal(refusal.agentType, "shaper", "the record must name the subject that was DENIED, not the first step");
@@ -412,7 +502,11 @@ test("ledger v3: mixed gate outcomes on ONE chain step remain one execution deci
     .catch(() => undefined);
 
   const text = await readFile(ledger, "utf8");
-  const decisions = text.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
+  const decisions = text
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
   assert.equal(decisions.length, 1, "one execution occurrence must have one capability decision");
   assert.deepEqual(decisions[0].approved, ["tool:read"]);
   assert.equal(decisions[0].humanDenied, true);

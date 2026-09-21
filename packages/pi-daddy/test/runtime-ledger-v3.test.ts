@@ -40,14 +40,31 @@ test("a v3 capability decision requires unique and explicit parent execution ide
 });
 
 test("public v3 builders refuse free text in fields classified as display identifiers", () => {
-  assert.throws(() => buildRecord({
-    ...base, executionId, parentExecutionId: null, agentType: "SECRET TASK TEXT",
-  }), /invalid ledger v3 event/i);
-  assert.throws(() => buildChildLifecycleEvent({
-    executionId, parentExecutionId, childId: "d0.1", state: "running", executor: "herdr",
-    deadlineAt: "2026-08-28T12:10:00.000Z", herdrPaneId: "SECRET OUTPUT TEXT",
-    herdrAgentName: "review-d0-1", now: base.now,
-  }), /invalid ledger v3 event/i);
+  assert.throws(
+    () =>
+      buildRecord({
+        ...base,
+        executionId,
+        parentExecutionId: null,
+        agentType: "SECRET TASK TEXT",
+      }),
+    /invalid ledger v3 event/i,
+  );
+  assert.throws(
+    () =>
+      buildChildLifecycleEvent({
+        executionId,
+        parentExecutionId,
+        childId: "d0.1",
+        state: "running",
+        executor: "herdr",
+        deadlineAt: "2026-08-28T12:10:00.000Z",
+        herdrPaneId: "SECRET OUTPUT TEXT",
+        herdrAgentName: "review-d0-1",
+        now: base.now,
+      }),
+    /invalid ledger v3 event/i,
+  );
 });
 
 test("a root delegation records parentExecutionId null explicitly", () => {
@@ -57,26 +74,61 @@ test("a root delegation records parentExecutionId null explicitly", () => {
 });
 
 test("a non-terminal lifecycle must carry one contract-valid RFC 3339 deadline", () => {
-  assert.throws(() => buildChildLifecycleEvent({
-    executionId, parentExecutionId, childId: "d0.1", state: "starting", executor: "process", now: base.now,
-  }), /deadlineAt/);
-  assert.throws(() => buildChildLifecycleEvent({
-    executionId, parentExecutionId, childId: "d0.1", state: "starting", executor: "process",
-    deadlineAt: "1", now: base.now,
-  }), /RFC 3339/);
+  assert.throws(
+    () =>
+      buildChildLifecycleEvent({
+        executionId,
+        parentExecutionId,
+        childId: "d0.1",
+        state: "starting",
+        executor: "process",
+        now: base.now,
+      }),
+    /deadlineAt/,
+  );
+  assert.throws(
+    () =>
+      buildChildLifecycleEvent({
+        executionId,
+        parentExecutionId,
+        childId: "d0.1",
+        state: "starting",
+        executor: "process",
+        deadlineAt: "1",
+        now: base.now,
+      }),
+    /RFC 3339/,
+  );
 });
 
 test("Herdr runtime identity is paired and cannot be attached to a process executor", () => {
   const identity = {
-    executionId, parentExecutionId, childId: "d0.1", state: "running" as const,
-    deadlineAt: "2026-08-28T12:10:00.000Z", now: base.now,
+    executionId,
+    parentExecutionId,
+    childId: "d0.1",
+    state: "running" as const,
+    deadlineAt: "2026-08-28T12:10:00.000Z",
+    now: base.now,
   };
-  assert.throws(() => buildChildLifecycleEvent({
-    ...identity, executor: "process", herdrPaneId: "w1:p2", herdrAgentName: "review-d0-1",
-  }), /Herdr runtime identity/);
-  assert.throws(() => buildChildLifecycleEvent({
-    ...identity, executor: "herdr", herdrPaneId: "w1:p2",
-  }), /paired/);
+  assert.throws(
+    () =>
+      buildChildLifecycleEvent({
+        ...identity,
+        executor: "process",
+        herdrPaneId: "w1:p2",
+        herdrAgentName: "review-d0-1",
+      }),
+    /Herdr runtime identity/,
+  );
+  assert.throws(
+    () =>
+      buildChildLifecycleEvent({
+        ...identity,
+        executor: "herdr",
+        herdrPaneId: "w1:p2",
+      }),
+    /paired/,
+  );
 });
 
 test("lifecycle events join by execution id and may carry a Herdr focus identity", () => {
@@ -99,16 +151,19 @@ test("lifecycle events join by execution id and may carry a Herdr focus identity
 test("the reader accepts v3 beside historical v2 while rejecting malformed v3 identity", async () => {
   const path = join(await tempDir("ledger-v3-"), "ledger.jsonl");
   await appendRecord({ path }, buildRecord({ ...base, executionId, parentExecutionId: null }));
-  await appendLedgerEvent({ path }, buildChildLifecycleEvent({
-    executionId,
-    parentExecutionId: null,
-    childId: "d0.1",
-    state: "completed",
-    executor: "process",
-    exitCode: 0,
-    signal: null,
-    now: new Date("2026-08-28T12:00:02.000Z"),
-  }));
+  await appendLedgerEvent(
+    { path },
+    buildChildLifecycleEvent({
+      executionId,
+      parentExecutionId: null,
+      childId: "d0.1",
+      state: "completed",
+      executor: "process",
+      exitCode: 0,
+      signal: null,
+      now: new Date("2026-08-28T12:00:02.000Z"),
+    }),
+  );
   const report = await verifyLedger(path);
   assert.equal(report.ok, true);
   assert.equal(report.records, 1);
@@ -128,24 +183,31 @@ test("the integrity reader never retains raw corrupt ledger content", async () =
 
 test("the integrity reader rejects lookalike v3 and malformed nested fields", async () => {
   const path = join(await tempDir("ledger-v3-invalid-"), "ledger.jsonl");
-  await writeFile(path, [
-    JSON.stringify({
-      ledgerVersion: "3",
-      event: "child_lifecycle",
-      ts: "not-rfc3339",
-      childId: "d0.1",
-      state: "starting",
-      executor: "process",
-    }),
-    JSON.stringify({
-      ...buildRecord({ ...base, executionId, parentExecutionId: null }),
-      correlation: { run_id: "run-1", phase: 42 },
-    }),
-  ].join("\n") + "\n", "utf8");
+  await writeFile(
+    path,
+    [
+      JSON.stringify({
+        ledgerVersion: "3",
+        event: "child_lifecycle",
+        ts: "not-rfc3339",
+        childId: "d0.1",
+        state: "starting",
+        executor: "process",
+      }),
+      JSON.stringify({
+        ...buildRecord({ ...base, executionId, parentExecutionId: null }),
+        correlation: { run_id: "run-1", phase: 42 },
+      }),
+    ].join("\n") + "\n",
+    "utf8",
+  );
 
   const report = await verifyLedger(path);
   assert.equal(report.ok, false);
-  assert.deepEqual(report.corrupt.map((entry) => entry.line), [1, 2]);
+  assert.deepEqual(
+    report.corrupt.map((entry) => entry.line),
+    [1, 2],
+  );
   assert.equal(report.records, 0);
   assert.deepEqual(report.lifecycle, { starting: 0, running: 0, completed: 0, failed: 0 });
 });

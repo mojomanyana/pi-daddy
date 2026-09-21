@@ -48,11 +48,7 @@ export interface StructuredRefusal {
   details?: Record<string, string | number | boolean | null>;
 }
 
-export function refusal(
-  code: RefusalCode,
-  message: string,
-  details?: StructuredRefusal["details"],
-): StructuredRefusal {
+export function refusal(code: RefusalCode, message: string, details?: StructuredRefusal["details"]): StructuredRefusal {
   return { code, message, ...(details && Object.keys(details).length > 0 ? { details: { ...details } } : {}) };
 }
 

@@ -85,7 +85,11 @@ export async function reportSessionStart(session: GrantsSession, ctx: SessionRep
   // file" is not true of everything it covers. Paired with a shell that is every body on disk running
   // with `bash`. `docs/SPEC.md` calls the combination poor and nothing detected it, which is R-47's
   // shape in a control shipped one day later.
-  if (session.ownGrant.includes(AGENT_WILDCARD) && session.gated.length === 0 && session.ownGrant.includes("tool:bash")) {
+  if (
+    session.ownGrant.includes(AGENT_WILDCARD) &&
+    session.gated.length === 0 &&
+    session.ownGrant.includes("tool:bash")
+  ) {
     ctx.ui.notify(
       `grants: PI_GRANTS_GRANT pairs agent:* with tool:bash and gates nothing — every SKILL.md in ` +
         `this project AND in ~/.pi/agent/skills (which other tools install into) may run with a shell. ` +
@@ -183,7 +187,8 @@ export async function reportSessionStart(session: GrantsSession, ctx: SessionRep
     ctx.ui.notify(`grants: executor — ${session.executor.disclosure}`, "error");
   }
 
-  if (!session.governed) info.push("grants: governance off by PI_DADDY_GOVERNANCE; observation and the local timeline remain independent.");
+  if (!session.governed)
+    info.push("grants: governance off by PI_DADDY_GOVERNANCE; observation and the local timeline remain independent.");
   if (session.governed) {
     info.push(
       `grants: depth ${session.depth}/${session.maxDepth}, holding [${session.ownGrant.join(", ") || "nothing"}]`,

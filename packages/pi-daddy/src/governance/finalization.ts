@@ -53,7 +53,10 @@ export function hasFinalizerError(error: unknown, predicate: (value: unknown) =>
   return error instanceof Error && (error as ErrorWithFinalizers)[FINALIZER_ERRORS]?.some(predicate) === true;
 }
 
-function appendFinalizerFailures(primary: unknown, failures: ReadonlyArray<{ label: string; error: unknown }>): unknown {
+function appendFinalizerFailures(
+  primary: unknown,
+  failures: ReadonlyArray<{ label: string; error: unknown }>,
+): unknown {
   if (primary instanceof Error) {
     const target = primary as ErrorWithFinalizers;
     try {

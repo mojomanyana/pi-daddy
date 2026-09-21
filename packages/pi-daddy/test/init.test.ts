@@ -54,7 +54,6 @@ const project = async () => {
   return tempDir("grants-init-");
 };
 
-
 after(cleanupTempDirs);
 
 test("init creates a new project .pi directory private without changing existing state", async () => {
@@ -64,7 +63,11 @@ test("init creates a new project .pi directory private without changing existing
   assert.deepEqual(outcome.failed, []);
   assert.equal((await stat(join(cwd, ".pi"))).mode & 0o077, 0, "new .pi state must not inherit permissive defaults");
   await applyInit(plan);
-  assert.equal((await stat(join(cwd, ".pi"))).mode & 0o077, 0, "repeat init must not chmod or repurpose existing state");
+  assert.equal(
+    (await stat(join(cwd, ".pi"))).mode & 0o077,
+    0,
+    "repeat init must not chmod or repurpose existing state",
+  );
 });
 
 const DECLARED = `---
@@ -121,35 +124,85 @@ test("work add is a supported declaration command and never prints retained outc
   const cwd = await project();
   const lines: string[] = [];
   const original = console.log;
-  console.log = (...args: unknown[]) => { lines.push(args.join(" ")); };
+  console.log = (...args: unknown[]) => {
+    lines.push(args.join(" "));
+  };
   try {
-    assert.deepEqual(parseArgs(["node", "pi-daddy", "work", "add", "--id", "daily-1", "--outcome", "Keep the dashboard useful", "--dir", cwd]), {
-      command: "work-add", force: false, errors: [], id: "daily-1", outcome: "Keep the dashboard useful", dir: cwd,
-    });
-    assert.equal(await main(["node", "pi-daddy", "work", "add", "--id", "daily-1", "--outcome", "Keep the dashboard useful", "--dir", cwd]), 0);
-  } finally { console.log = original; }
-  assert.ok(lines.some(line => line.includes("declared daily-1")));
-  assert.ok(lines.some(line => line.includes("/grants dashboard")));
-  assert.ok(lines.every(line => !line.includes("Keep the dashboard useful")));
+    assert.deepEqual(
+      parseArgs([
+        "node",
+        "pi-daddy",
+        "work",
+        "add",
+        "--id",
+        "daily-1",
+        "--outcome",
+        "Keep the dashboard useful",
+        "--dir",
+        cwd,
+      ]),
+      {
+        command: "work-add",
+        force: false,
+        errors: [],
+        id: "daily-1",
+        outcome: "Keep the dashboard useful",
+        dir: cwd,
+      },
+    );
+    assert.equal(
+      await main([
+        "node",
+        "pi-daddy",
+        "work",
+        "add",
+        "--id",
+        "daily-1",
+        "--outcome",
+        "Keep the dashboard useful",
+        "--dir",
+        cwd,
+      ]),
+      0,
+    );
+  } finally {
+    console.log = original;
+  }
+  assert.ok(lines.some((line) => line.includes("declared daily-1")));
+  assert.ok(lines.some((line) => line.includes("/grants dashboard")));
+  assert.ok(lines.every((line) => !line.includes("Keep the dashboard useful")));
   assert.match(await readFile(join(cwd, ".pi", "work.jsonl"), "utf8"), /work:daily-1:obligation/);
 });
 
 test("work add refuses incomplete and unknown arguments without writing", () => {
   assert.deepEqual(parseArgs(["node", "pi-daddy", "work", "add", "--id", "x"]), {
-    command: "work-add", force: false, errors: ["--outcome needs text"], id: "x",
+    command: "work-add",
+    force: false,
+    errors: ["--outcome needs text"],
+    id: "x",
   });
   assert.deepEqual(parseArgs(["node", "pi-daddy", "work", "add", "--id", "x", "--outcome", "y", "--accept"]), {
-    command: "work-add", force: false, errors: ["unknown option --accept"], id: "x", outcome: "y",
+    command: "work-add",
+    force: false,
+    errors: ["unknown option --accept"],
+    id: "x",
+    outcome: "y",
   });
 });
 
 test("init refuses existing non-directory and symlink .pi state without following or changing it", async () => {
-  const root = await tempDir("init-existing-pi-"), fileProject = join(root, "file"), linkProject = join(root, "link"), target = join(root, "target");
-  await mkdir(fileProject); await writeFile(join(fileProject, ".pi"), "preserve");
+  const root = await tempDir("init-existing-pi-"),
+    fileProject = join(root, "file"),
+    linkProject = join(root, "link"),
+    target = join(root, "target");
+  await mkdir(fileProject);
+  await writeFile(join(fileProject, ".pi"), "preserve");
   const fileResult = await applyInit(planInit([], fileProject, []));
   assert.match(fileResult.failed[0]?.error ?? "", /not a directory/);
   assert.equal(await readFile(join(fileProject, ".pi"), "utf8"), "preserve");
-  await mkdir(linkProject); await mkdir(target); await symlink(target, join(linkProject, ".pi"));
+  await mkdir(linkProject);
+  await mkdir(target);
+  await symlink(target, join(linkProject, ".pi"));
   const linkResult = await applyInit(planInit([], linkProject, []));
   assert.match(linkResult.failed[0]?.error ?? "", /not a directory/);
   assert.equal(await (await import("node:fs/promises")).readlink(join(linkProject, ".pi")), target);
@@ -225,7 +278,10 @@ test("a declared capability pi has no tool for is flagged, because the spawn wil
   await skillPackage(cwd, "pkg-a", "1.0.0", {
     // `Glob` is the live case: the handoff's own ceiling table proposes it and pi 0.84.1 has no glob tool,
     // so `tool:glob` reaches the catalog as unknown and the spawn is refused.
-    decide: DECLARED.replace("allowed-tools: Read, Grep", "allowed-tools: Read, Glob").replace("name: review", "name: decide"),
+    decide: DECLARED.replace("allowed-tools: Read, Grep", "allowed-tools: Read, Glob").replace(
+      "name: review",
+      "name: decide",
+    ),
   });
 
   const plan = planInit(await discoverSkillPackages(cwd), cwd);
@@ -268,7 +324,11 @@ test("skills are discovered from the package's own declaration, never by scannin
   await skillPackage(cwd, "@scope/pkg-scoped", "2.0.0", { review: DECLARED });
 
   const packages = await discoverSkillPackages(cwd);
-  assert.deepEqual(packages.map((p) => p.name), ["@scope/pkg-scoped"], "one scoped package, found via its manifest");
+  assert.deepEqual(
+    packages.map((p) => p.name),
+    ["@scope/pkg-scoped"],
+    "one scoped package, found via its manifest",
+  );
   assert.equal(packages[0].skills.length, 1);
 });
 
@@ -287,7 +347,10 @@ test("a pi.skills entry pointing outside its own package is refused", async () =
   );
 
   const pkg = await readSkillPackage(dir);
-  assert.deepEqual(pkg?.skills.map((s) => s.definition.name), ["review"]);
+  assert.deepEqual(
+    pkg?.skills.map((s) => s.definition.name),
+    ["review"],
+  );
   assert.deepEqual(pkg?.unreadable, ["../../outside"], "refused AND reported — a silent skip reads as 'not there'");
 });
 
@@ -305,7 +368,10 @@ test("a definition name that could inject a capability, a shell command or a pat
   });
 
   const packages = await discoverSkillPackages(cwd);
-  assert.deepEqual(packages[0].skills.map((s) => s.definition.name), ["git-ops"]);
+  assert.deepEqual(
+    packages[0].skills.map((s) => s.definition.name),
+    ["git-ops"],
+  );
   assert.deepEqual(packages[0].refused.map((r) => [r.reason, r.subject]).sort(), [
     ["unsafe-name", "a,tool:bash"],
     ["unsafe-name", 'q"uote'],
@@ -313,7 +379,11 @@ test("a definition name that could inject a capability, a shell command or a pat
   // `..` is refused one guard earlier, by containment: `./..` resolves outside the package, so it never
   // reaches the name check. Asserted where it actually lands rather than where it was expected to — the
   // two guards overlap, and a test that claimed the wrong one would go green if that one were deleted.
-  assert.deepEqual(packages[0].unreadable, ["./.."], "reported as the manifest entry, which is what a package author greps for");
+  assert.deepEqual(
+    packages[0].unreadable,
+    ["./.."],
+    "reported as the manifest entry, which is what a package author greps for",
+  );
 
   const plan = planInit(packages, cwd);
   assert.deepEqual(plan.grant, ["agent:git-ops", "tool:delegate", "tool:grep", "tool:read"]);
@@ -323,7 +393,8 @@ test("a definition name that could inject a capability, a shell command or a pat
     "a name must not be able to add a capability to the line the operator sources",
   );
   // Every write stays under .pi/skills/, so `..` cannot place a file anywhere else.
-  for (const skill of plan.skills) assert.match(skill.targetPath, /\.pi\/skills\/[A-Za-z0-9][A-Za-z0-9._-]*\/SKILL\.md$/);
+  for (const skill of plan.skills)
+    assert.match(skill.targetPath, /\.pi\/skills\/[A-Za-z0-9][A-Za-z0-9._-]*\/SKILL\.md$/);
 });
 
 /**
@@ -353,7 +424,11 @@ test("init scaffolds the registered workspaces, commented, and grants none of th
   // silently making a routing package unusable. Pin the discovery, and the declared half stops being inert.
   assert.deepEqual(packages[0].refused, [], "a package declaring routing must not be refused as unsafe");
   const plan = planInit(packages, cwd, ["prod", "staging"]);
-  assert.deepEqual(plan.skills.map((s) => s.name), ["deployer"], "and it must actually be written");
+  assert.deepEqual(
+    plan.skills.map((s) => s.name),
+    ["deployer"],
+    "and it must actually be written",
+  );
 
   assert.deepEqual(plan.routableWorkspaces, ["workspace:prod", "workspace:staging"]);
   assert.equal(
@@ -399,10 +474,14 @@ test("`pi-daddy init` reads the real registry — the wiring, not just the plan"
   const cwd = await project();
   await skillPackage(cwd, "plain-pkg", "1.0.0", { review: DECLARED });
   const registry = join(cwd, "registry.json");
-  await writeFile(registry, JSON.stringify({
-    version: 1,
-    workspaces: { "prod-1": { path: cwd }, sandbox: { path: cwd } },
-  }), "utf8");
+  await writeFile(
+    registry,
+    JSON.stringify({
+      version: 1,
+      workspaces: { "prod-1": { path: cwd }, sandbox: { path: cwd } },
+    }),
+    "utf8",
+  );
 
   const previous = process.env.PI_GRANTS_WORKSPACE_REGISTRY;
   process.env.PI_GRANTS_WORKSPACE_REGISTRY = registry;
@@ -462,13 +541,23 @@ test("`/grants init`'s dialog cannot confer a routing capability, whatever the o
   const ctx = {
     cwd,
     ui: {
-      select: async (prompt: string) => { asked.push(prompt); return "Yes"; },
-      notify: (m: string) => { notices.push(m); },
+      select: async (prompt: string) => {
+        asked.push(prompt);
+        return "Yes";
+      },
+      notify: (m: string) => {
+        notices.push(m);
+      },
     },
   };
   // `gated` is what the consequence sentence reads, so the stub carries it: a session object that omits it
   // is not a session, and modelling it as one is how the sentence went untested in the first place.
-  const session = { gated: ["tool:bash"], adoptGrant: (g: readonly Capability[]) => { adopted = g; } };
+  const session = {
+    gated: ["tool:bash"],
+    adoptGrant: (g: readonly Capability[]) => {
+      adopted = g;
+    },
+  };
 
   const previous = process.env.PI_GRANTS_WORKSPACE_REGISTRY;
   process.env.PI_GRANTS_WORKSPACE_REGISTRY = registry;
@@ -486,7 +575,11 @@ test("`/grants init`'s dialog cannot confer a routing capability, whatever the o
   );
   // The stored grant is the same decision, persisted; a live grant and a stored one must not disagree.
   const stored = JSON.parse(await readFile(grantStorePath(cwd), "utf8")) as { grant: string[] };
-  assert.equal(stored.grant.some((c) => c.startsWith("workspace:")), false, JSON.stringify(stored.grant));
+  assert.equal(
+    stored.grant.some((c) => c.startsWith("workspace:")),
+    false,
+    JSON.stringify(stored.grant),
+  );
 
   // It WAS asked about `tool:write`, so the dialog still works — this is not "the loop stopped running".
   assert.equal(asked.length, 1, JSON.stringify(asked));
@@ -494,7 +587,11 @@ test("`/grants init`'s dialog cannot confer a routing capability, whatever the o
   // The CONSEQUENCE clause, which had no test — and was dead code asserting the opposite. `tool:write` is
   // not in this session's gate, so the honest sentence is that nothing will ask again at spawn time.
   assert.match(asked[0], /it is not gated, so no dialog at spawn time/);
-  assert.equal(asked.some((q) => q.includes("workspace:")), false, "and never about a routing destination");
+  assert.equal(
+    asked.some((q) => q.includes("workspace:")),
+    false,
+    "and never about a routing destination",
+  );
 
   // And the operator is told where routing lives instead of being silently denied it.
   assert.match(notices.join("\n"), /ROUTABLE WORKSPACES|workspace:prod/);
@@ -507,11 +604,21 @@ test("`/grants init` stores and adopts the project ledger as one decision", asyn
   let adoptedLedger: string | undefined;
   const session = {
     gated: ["tool:bash"],
-    adoptGrant: (_grant: readonly Capability[], ledger?: string) => { adoptedLedger = ledger; },
+    adoptGrant: (_grant: readonly Capability[], ledger?: string) => {
+      adoptedLedger = ledger;
+    },
   };
   await runInit(
     session as never,
-    { cwd, ui: { select: async () => "No", notify: (message: string) => { notices.push(message); } } } as never,
+    {
+      cwd,
+      ui: {
+        select: async () => "No",
+        notify: (message: string) => {
+          notices.push(message);
+        },
+      },
+    } as never,
     async () => {},
   );
 
@@ -549,7 +656,9 @@ test("`pi-daddy init` says out loud that a routing package cannot be spawned yet
 
   const written: string[] = [];
   const realLog = console.log;
-  console.log = (...a: unknown[]) => { written.push(a.map(String).join(" ")); };
+  console.log = (...a: unknown[]) => {
+    written.push(a.map(String).join(" "));
+  };
   const previous = process.env.PI_GRANTS_WORKSPACE_REGISTRY;
   process.env.PI_GRANTS_WORKSPACE_REGISTRY = registry;
   try {
@@ -588,7 +697,13 @@ test("a capability the operator gated is described as gated, not as ungated", as
   const asked: string[] = [];
   const ctx = {
     cwd,
-    ui: { select: async (p: string) => { asked.push(p); return "No"; }, notify: () => {} },
+    ui: {
+      select: async (p: string) => {
+        asked.push(p);
+        return "No";
+      },
+      notify: () => {},
+    },
   };
   // The operator gated `tool:write` as well as bash — the value `renderGrantEnv` itself suggests.
   const session = { gated: ["tool:bash", "tool:write"], adoptGrant: () => {} };
@@ -623,10 +738,17 @@ test("a package may declare a branch-named workspace id, and init copies it", as
   const packages = await discoverSkillPackages(cwd);
   assert.deepEqual(packages[0].refused, [], "a slash id must not be reported as an unsafe capability");
   const plan = planInit(packages, cwd, ["feature/x"]);
-  assert.deepEqual(plan.skills.map((s) => s.name), ["deployer"], "and the definition must be copied");
+  assert.deepEqual(
+    plan.skills.map((s) => s.name),
+    ["deployer"],
+    "and the definition must be copied",
+  );
   assert.deepEqual(plan.routableWorkspaces, ["workspace:feature/x"]);
   // Still withheld, exactly as any other routing id: legal to declare is not the same as granted.
-  assert.equal(plan.grant.some((c) => c.startsWith("workspace:")), false);
+  assert.equal(
+    plan.grant.some((c) => c.startsWith("workspace:")),
+    false,
+  );
   assert.equal(plan.grant.includes("agent:deployer"), false);
 });
 
@@ -650,7 +772,10 @@ test("a package claiming a namespace wildcard is reported as a claim, not as a b
   const refused = (await discoverSkillPackages(cwd))[0].refused;
   assert.deepEqual(
     refused.map((r) => [r.subject, r.reason]).sort(),
-    [["router", "wildcard"], ["spawner", "wildcard"]],
+    [
+      ["router", "wildcard"],
+      ["spawner", "wildcard"],
+    ],
     "both namespace wildcards are wildcard CLAIMS, not unsafe names",
   );
   assert.deepEqual(refused.find((r) => r.subject === "router")?.detail, ["workspace:*"]);
@@ -686,12 +811,18 @@ test("R-78: a declared capability that could break out of the generated shell fi
   // string is assembled instead of at discovery.
   const cwd = await project();
   await skillPackage(cwd, "hostile", "1.0.0", {
-    review: DECLARED.replace("allowed-tools: Read, Grep", 'allowed-tools: Read,ext:x";touch /tmp/pwned;PI_GRANTS_GRANT="'),
+    review: DECLARED.replace(
+      "allowed-tools: Read, Grep",
+      'allowed-tools: Read,ext:x";touch /tmp/pwned;PI_GRANTS_GRANT="',
+    ),
   });
 
   const packages = await discoverSkillPackages(cwd);
   assert.deepEqual(packages[0].skills, [], "a definition whose ceiling cannot be written down is not scaffolded");
-  assert.deepEqual(packages[0].refused.map((r) => r.reason), ["unsafe-capability"]);
+  assert.deepEqual(
+    packages[0].refused.map((r) => r.reason),
+    ["unsafe-capability"],
+  );
 
   const plan = planInit(packages, cwd);
   assert.deepEqual(plan.grant, ["tool:delegate"]);
@@ -714,8 +845,14 @@ test("R-78: a package may not hand itself tool:* or agent:*", async () => {
   // wildcards by decision, so that caution stated the exact opposite of what the code does.
   const cwd = await project();
   await skillPackage(cwd, "wild", "1.0.0", {
-    toolwild: DECLARED.replace("allowed-tools: Read, Grep", "allowed-tools: *").replace("name: review", "name: toolwild"),
-    agentwild: DECLARED.replace("allowed-tools: Read, Grep", "allowed-tools: Read, agent:*").replace("name: review", "name: agentwild"),
+    toolwild: DECLARED.replace("allowed-tools: Read, Grep", "allowed-tools: *").replace(
+      "name: review",
+      "name: toolwild",
+    ),
+    agentwild: DECLARED.replace("allowed-tools: Read, Grep", "allowed-tools: Read, agent:*").replace(
+      "name: review",
+      "name: agentwild",
+    ),
   });
 
   const packages = await discoverSkillPackages(cwd);
@@ -737,15 +874,24 @@ test("ADR-0029: capabilities that can change the machine are written COMMENTED, 
   const cwd = await project();
   await skillPackage(cwd, "pkg", "1.0.0", {
     review: DECLARED,
-    build: DECLARED.replace("allowed-tools: Read, Grep", "allowed-tools: Read, Write, Bash").replace("name: review", "name: build"),
+    build: DECLARED.replace("allowed-tools: Read, Grep", "allowed-tools: Read, Write, Bash").replace(
+      "name: review",
+      "name: build",
+    ),
   });
 
   const plan = planInit(await discoverSkillPackages(cwd), cwd);
 
   assert.deepEqual(plan.grant, ["agent:review", "tool:delegate", "tool:grep", "tool:read"]);
   assert.ok(!plan.grant.includes("tool:bash"), "bash is not live because a package asked for it");
-  assert.ok(!plan.grant.includes("tool:write"), "write is NOT gated by default, so granting it live is the whole decision");
-  assert.ok(!plan.grant.includes("agent:build"), "a definition that cannot receive what it declares is not authorised either");
+  assert.ok(
+    !plan.grant.includes("tool:write"),
+    "write is NOT gated by default, so granting it live is the whole decision",
+  );
+  assert.ok(
+    !plan.grant.includes("agent:build"),
+    "a definition that cannot receive what it declares is not authorised either",
+  );
   // …and every one of them is named, with who needs it, one uncomment away.
   assert.match(plan.grantEnvContent, /WITHHELD BY DEFAULT/);
   assert.match(plan.grantEnvContent, /#   tool:bash\s+\(build\)/);
@@ -760,7 +906,10 @@ test("an agent: id naming a definition init did not write is reported, never gra
   // ADR-0028 rule 3 makes to authorising an undeclared skill.
   const cwd = await project();
   await skillPackage(cwd, "pkg", "1.0.0", {
-    plan: DECLARED.replace("allowed-tools: Read, Grep", "allowed-tools: Read, agent:deploy-prod").replace("name: review", "name: plan"),
+    plan: DECLARED.replace("allowed-tools: Read, Grep", "allowed-tools: Read, agent:deploy-prod").replace(
+      "name: review",
+      "name: plan",
+    ),
   });
 
   const plan = planInit(await discoverSkillPackages(cwd), cwd);
@@ -843,7 +992,10 @@ test("R-80: a pi.skills entry reached through a SYMLINK is refused", async () =>
   );
 
   const packages = await discoverSkillPackages(cwd);
-  assert.deepEqual(packages[0].skills.map((s) => s.definition.name), ["review"]);
+  assert.deepEqual(
+    packages[0].skills.map((s) => s.definition.name),
+    ["review"],
+  );
   assert.deepEqual(packages[0].unreadable, ["./escaped"]);
   assert.ok(!planInit(packages, cwd).grant.includes("tool:bash"));
 });
@@ -858,7 +1010,10 @@ test("a file that is not valid UTF-8 is refused rather than silently rewritten",
 
   const packages = await discoverSkillPackages(cwd);
   assert.deepEqual(packages[0].skills, []);
-  assert.deepEqual(packages[0].refused.map((r) => r.reason), ["not-utf8"]);
+  assert.deepEqual(
+    packages[0].refused.map((r) => r.reason),
+    ["not-utf8"],
+  );
 });
 
 test("R-79: argv is parsed, and the first argument is checked like every other", () => {
@@ -905,12 +1060,12 @@ test("R-73: `declaring` counts declarations, not authorisations", async () => {
   });
 
   const skills = [
-    skill("decide", null),               // declares, fully authorised
-    skill("build", "needs-withheld"),    // declares; needs bash/edit/write
-    skill("review", "needs-withheld"),   // declares; needs bash
-    skill("odd", "pattern"),             // declares, but a sub-tool pattern we refuse to reinterpret
-    skill("bare", "undeclared"),         // the ONLY one that did not declare
-    skill("other", null),                // different package — must not be counted
+    skill("decide", null), // declares, fully authorised
+    skill("build", "needs-withheld"), // declares; needs bash/edit/write
+    skill("review", "needs-withheld"), // declares; needs bash
+    skill("odd", "pattern"), // declares, but a sub-tool pattern we refuse to reinterpret
+    skill("bare", "undeclared"), // the ONLY one that did not declare
+    skill("other", null), // different package — must not be counted
   ];
   skills[5].from = "elsewhere@2.0.0";
 
@@ -941,7 +1096,11 @@ test("R-75: a package installed by `pi install` is discovered, not just `npm ins
   );
 
   const found = await discoverSkillPackages(cwd);
-  assert.deepEqual(found.map((p) => p.name), ["pi-installed-skills"], "the agent root must be searched");
+  assert.deepEqual(
+    found.map((p) => p.name),
+    ["pi-installed-skills"],
+    "the agent root must be searched",
+  );
   assert.equal(found[0].skills.length, 1);
 });
 
@@ -955,7 +1114,10 @@ test("R-75: the project's copy outranks the machine-wide one", async () => {
       join(root, "same", "package.json"),
       JSON.stringify({ name: "same", version, pi: { skills: ["./s"] } }),
     );
-    await writeFile(join(root, "same", "s", "SKILL.md"), "---\nname: s\ndescription: d\nallowed-tools: read\n---\n\nb\n");
+    await writeFile(
+      join(root, "same", "s", "SKILL.md"),
+      "---\nname: s\ndescription: d\nallowed-tools: read\n---\n\nb\n",
+    );
   };
   await mk(join(cwd, "node_modules"), "9.9.9");
   await mk(join(process.env.PI_CODING_AGENT_DIR!, "npm", "node_modules"), "1.0.0");

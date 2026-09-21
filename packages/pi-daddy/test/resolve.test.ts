@@ -13,8 +13,7 @@ import { WORKSPACE_WILDCARD } from "../src/kernel/resolve.ts";
 import { normaliseCapability, workspaceCapability } from "../src/kernel/capabilities.ts";
 import { childEnv, ENV_GRANT } from "../src/kernel/propagation.ts";
 
-const R = (over: Partial<Parameters<typeof resolve>[0]> = {}) =>
-  resolve({ requested: [], parentGrant: [], ...over });
+const R = (over: Partial<Parameters<typeof resolve>[0]> = {}) => resolve({ requested: [], parentGrant: [], ...over });
 
 test("grants only what the parent holds", () => {
   const r = R({ requested: ["tool:read", "tool:write"], parentGrant: ["tool:read"] });
@@ -360,8 +359,8 @@ test("defined-but-falsy approval fields do not leak into the audit record", () =
     parentGrant: ["tool:read"],
     result,
     blocked: false,
-    approved: [],  // explicitly defined but empty
-    humanDenied: false,  // explicitly defined but false
+    approved: [], // explicitly defined but empty
+    humanDenied: false, // explicitly defined but false
     executor: "process",
     now: new Date("2026-08-09T00:00:00.000Z"),
   });
@@ -423,10 +422,9 @@ test("a workspace capability is a capability, and resolves like one", () => {
   assert.equal(workspaceCapability("prod"), "workspace:prod");
 
   // Held exactly: granted.
-  assert.deepEqual(
-    resolve({ requested: ["workspace:prod"], parentGrant: ["workspace:prod"], gated: [] }).effective,
-    ["workspace:prod"],
-  );
+  assert.deepEqual(resolve({ requested: ["workspace:prod"], parentGrant: ["workspace:prod"], gated: [] }).effective, [
+    "workspace:prod",
+  ]);
   // Not held: denied, and visible as an escalation rather than silently dropped.
   const escalation = resolve({ requested: ["workspace:prod"], parentGrant: ["workspace:staging"], gated: [] });
   assert.deepEqual(escalation.effective, []);
@@ -434,20 +432,17 @@ test("a workspace capability is a capability, and resolves like one", () => {
 });
 
 test("`workspace:*` covers any workspace, and `tool:*` still covers everything", () => {
-  assert.deepEqual(
-    resolve({ requested: ["workspace:prod"], parentGrant: [WORKSPACE_WILDCARD], gated: [] }).effective,
-    ["workspace:prod"],
-  );
+  assert.deepEqual(resolve({ requested: ["workspace:prod"], parentGrant: [WORKSPACE_WILDCARD], gated: [] }).effective, [
+    "workspace:prod",
+  ]);
   // Governance is opt-in: an ungoverned session holds `tool:*` and must keep routing anywhere.
-  assert.deepEqual(
-    resolve({ requested: ["workspace:prod"], parentGrant: ["tool:*"], gated: [] }).effective,
-    ["workspace:prod"],
-  );
+  assert.deepEqual(resolve({ requested: ["workspace:prod"], parentGrant: ["tool:*"], gated: [] }).effective, [
+    "workspace:prod",
+  ]);
   // But `agent:*` does not leak across namespaces — there is no generalised `<ns>:*` rule.
-  assert.deepEqual(
-    resolve({ requested: ["workspace:prod"], parentGrant: ["agent:*"], gated: [] }).denied,
-    ["workspace:prod"],
-  );
+  assert.deepEqual(resolve({ requested: ["workspace:prod"], parentGrant: ["agent:*"], gated: [] }).denied, [
+    "workspace:prod",
+  ]);
 });
 
 test("a workspace capability never reaches pi's --tools", () => {
@@ -463,7 +458,10 @@ test("`workspace:*` is held but never inherited, while `agent:*` is", () => {
   // ADR-0023 decided a session authorised for any definition passes that on.
   const env = childEnv({
     ownGrant: ["tool:read", WORKSPACE_WILDCARD, "workspace:prod", "agent:*"],
-    depth: 0, maxDepth: 2, gated: [], approved: [],
+    depth: 0,
+    maxDepth: 2,
+    gated: [],
+    approved: [],
   });
   const inherited = env[ENV_GRANT].split(",");
   assert.equal(inherited.includes(WORKSPACE_WILDCARD), false, "the workspace wildcard must not descend");

@@ -63,7 +63,10 @@ export interface GrantsCommandContext {
    */
   runInit: () => Promise<void>;
   /** Open or reuse the read-only Herdr dashboard; injected so this diagnostic never becomes enforcement. */
-  openDashboard: () => Promise<{ kind: "opened" | "reused"; paneId: string; visibleBesideCaller: boolean } | { kind: "fallback"; frame: string; visibleBesideCaller: false }>;
+  openDashboard: () => Promise<
+    | { kind: "opened" | "reused"; paneId: string; visibleBesideCaller: boolean }
+    | { kind: "fallback"; frame: string; visibleBesideCaller: false }
+  >;
   /** Explicit same-process production host lifecycle; owns no model call and never cancels a child on stop. */
   runHost: (target: string) => Promise<string>;
   variantRuns: Map<string, VariantRunAccounting>;
@@ -76,18 +79,41 @@ export interface GrantsCommandContext {
 const PREVIEW_LIMIT = 12;
 
 /** The verbs `/grants` answers to. Anything else is refused rather than silently treated as no verb. */
-const KNOWN_SUBCOMMANDS: readonly string[] = ["work", "learning", "init", "host", "variants", "dashboard", "ledger", "approvals", "revoke"];
+const KNOWN_SUBCOMMANDS: readonly string[] = [
+  "work",
+  "learning",
+  "init",
+  "host",
+  "variants",
+  "dashboard",
+  "ledger",
+  "approvals",
+  "revoke",
+];
 
 export const grantsCommand = {
   description:
     "Show this session's capability grant, delegation depth, and known agent-type ceilings; " +
     "/grants work (setup/run/results) | /grants learning | /grants host [fresh-id]|stop | /grants dashboard | /grants approvals | /grants ledger",
-handler: async (args: string, ctx: any) => {
+  handler: async (args: string, ctx: any) => {
     // Everything this command may see, named in one place. Previously these were whatever happened to be in
     // the enclosing closure — which is how a diagnostic came to disagree with the enforcer (R-28).
     const {
-      cwd, governed, ownGrant, executor, observed, depth, maxDepth, ledgerPath,
-      catalog, definitions, sessionApprovals, inheritedApprovals, snapshotOf, previewDelegation, variantRuns,
+      cwd,
+      governed,
+      ownGrant,
+      executor,
+      observed,
+      depth,
+      maxDepth,
+      ledgerPath,
+      catalog,
+      definitions,
+      sessionApprovals,
+      inheritedApprovals,
+      snapshotOf,
+      previewDelegation,
+      variantRuns,
     } = ctx.grants as GrantsCommandContext;
 
     const [sub, target] = args.trim().split(/\s+/).filter(Boolean);
@@ -97,14 +123,32 @@ handler: async (args: string, ctx: any) => {
       return;
     }
 
-    if(await handleConnectedCommand(sub,target,{runHost:ctx.grants.runHost,openDashboard:ctx.grants.openDashboard,ui:ctx.ui}))return;
+    if (
+      await handleConnectedCommand(sub, target, {
+        runHost: ctx.grants.runHost,
+        openDashboard: ctx.grants.openDashboard,
+        ui: ctx.ui,
+      })
+    )
+      return;
 
     if (sub === "variants") {
-      const lines=[`grants: ${variantRuns.size} retained primary/shadow run(s)`];
-      for(const run of variantRuns.values())lines.push(`  ${run.runId} ${run.state} — primary ${run.primaryExecutionId}; ${run.shadowExecutionIds.length} shadow(s)`+(!run.outcomes?"":` — ${run.outcomes.map(x=>`${x.role}:${x.ok?"completed":"failed"}`).join(", ")}`));
-      lines.push("  provider usage unavailable on the default child print transport; fan-out, output bytes and wall time remain controller-bounded");
-      lines.push("  opt-in measured no-tool sessions can retain Pi Usage for exact Sol/Terra attempts; this is not ordinary-child or subscription-billing coverage");
-      ctx.ui.notify(lines.join("\n"),"info");return;
+      const lines = [`grants: ${variantRuns.size} retained primary/shadow run(s)`];
+      for (const run of variantRuns.values())
+        lines.push(
+          `  ${run.runId} ${run.state} — primary ${run.primaryExecutionId}; ${run.shadowExecutionIds.length} shadow(s)` +
+            (!run.outcomes
+              ? ""
+              : ` — ${run.outcomes.map((x) => `${x.role}:${x.ok ? "completed" : "failed"}`).join(", ")}`),
+        );
+      lines.push(
+        "  provider usage unavailable on the default child print transport; fan-out, output bytes and wall time remain controller-bounded",
+      );
+      lines.push(
+        "  opt-in measured no-tool sessions can retain Pi Usage for exact Sol/Terra attempts; this is not ordinary-child or subscription-billing coverage",
+      );
+      ctx.ui.notify(lines.join("\n"), "info");
+      return;
     }
 
     if (sub === "ledger") {
@@ -139,7 +183,9 @@ handler: async (args: string, ctx: any) => {
             : ""),
       );
       if (report.workflowFacts > 0) {
-        lines.push(`  workflow   ${report.workflowFacts} provenance-labelled fact(s) — not counted as enforced children`);
+        lines.push(
+          `  workflow   ${report.workflowFacts} provenance-labelled fact(s) — not counted as enforced children`,
+        );
       }
       // R-51. ADR-0018 advertises that the ledger answers "did these four children run the same
       // instructions?" and "has this definition changed since?" — and nothing read `definitionDigest`, so

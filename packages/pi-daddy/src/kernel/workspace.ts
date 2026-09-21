@@ -13,7 +13,6 @@ import { isSafeWorkspaceId, workspaceCapability } from "./capabilities.ts";
 const execFileAsync = promisify(execFile);
 export const ENV_WORKSPACE_REGISTRY = "PI_GRANTS_WORKSPACE_REGISTRY";
 
-
 export type WorkspaceAccess = "read" | "write";
 
 export interface WorkspaceRegistryFile {
@@ -76,31 +75,35 @@ export async function loadWorkspaceRegistry(path: string): Promise<WorkspaceRegi
   try {
     handle = await open(path, constants.O_RDONLY | constants.O_NONBLOCK);
   } catch (error) {
-    throw new GovernanceRefusal(refusal(
-      "WORKSPACE_NOT_REGISTERED",
-      `workspace registry ${path} could not be opened (${String(error)})`,
-      { registry_path: path },
-    ));
+    throw new GovernanceRefusal(
+      refusal("WORKSPACE_NOT_REGISTERED", `workspace registry ${path} could not be opened (${String(error)})`, {
+        registry_path: path,
+      }),
+    );
   }
   let raw: string;
   try {
     const info = await handle.stat();
     if (!info.isFile()) {
-      throw new GovernanceRefusal(refusal(
-        "WORKSPACE_NOT_REGISTERED",
-        `workspace registry ${path} is not a regular file — refusing to read it. A FIFO, device or socket ` +
-          `at ${ENV_WORKSPACE_REGISTRY} would block session start rather than fail, because opening one ` +
-          `waits for a writer that may never come.`,
-        { registry_path: path },
-      ));
+      throw new GovernanceRefusal(
+        refusal(
+          "WORKSPACE_NOT_REGISTERED",
+          `workspace registry ${path} is not a regular file — refusing to read it. A FIFO, device or socket ` +
+            `at ${ENV_WORKSPACE_REGISTRY} would block session start rather than fail, because opening one ` +
+            `waits for a writer that may never come.`,
+          { registry_path: path },
+        ),
+      );
     }
     if (info.size > REGISTRY_MAX_BYTES) {
-      throw new GovernanceRefusal(refusal(
-        "WORKSPACE_NOT_REGISTERED",
-        `workspace registry ${path} is ${info.size} bytes, over the ${REGISTRY_MAX_BYTES} limit — refusing ` +
-          `rather than reading it into memory at session start.`,
-        { registry_path: path },
-      ));
+      throw new GovernanceRefusal(
+        refusal(
+          "WORKSPACE_NOT_REGISTERED",
+          `workspace registry ${path} is ${info.size} bytes, over the ${REGISTRY_MAX_BYTES} limit — refusing ` +
+            `rather than reading it into memory at session start.`,
+          { registry_path: path },
+        ),
+      );
     }
     // **Ownership and mode are NOT checked here, and that is a scope decision (R-137, ADR-0036).** A
     // previous revision refused a registry not owned by this user or writable by others. Those guards are
@@ -121,37 +124,43 @@ export async function loadWorkspaceRegistry(path: string): Promise<WorkspaceRegi
     let filled = 0;
     while (filled < buffer.length) {
       if (Date.now() > deadline) {
-        throw new GovernanceRefusal(refusal(
-          "WORKSPACE_NOT_REGISTERED",
-          `workspace registry ${path} did not finish reading within ${REGISTRY_READ_TIMEOUT_MS}ms — ` +
-            `refusing rather than waiting, because session start awaits this read.`,
-          { registry_path: path },
-        ));
+        throw new GovernanceRefusal(
+          refusal(
+            "WORKSPACE_NOT_REGISTERED",
+            `workspace registry ${path} did not finish reading within ${REGISTRY_READ_TIMEOUT_MS}ms — ` +
+              `refusing rather than waiting, because session start awaits this read.`,
+            { registry_path: path },
+          ),
+        );
       }
       const { bytesRead } = await handle.read(buffer, filled, buffer.length - filled, filled);
       if (bytesRead === 0) break;
       filled += bytesRead;
     }
     if (filled > REGISTRY_MAX_BYTES) {
-      throw new GovernanceRefusal(refusal(
-        "WORKSPACE_NOT_REGISTERED",
-        `workspace registry ${path} exceeded the ${REGISTRY_MAX_BYTES} limit while being read — it grew ` +
-          `after its size was checked. Refusing rather than allocating it.`,
-        { registry_path: path },
-      ));
+      throw new GovernanceRefusal(
+        refusal(
+          "WORKSPACE_NOT_REGISTERED",
+          `workspace registry ${path} exceeded the ${REGISTRY_MAX_BYTES} limit while being read — it grew ` +
+            `after its size was checked. Refusing rather than allocating it.`,
+          { registry_path: path },
+        ),
+      );
     }
     raw = buffer.subarray(0, filled).toString("utf8");
   } catch (error) {
     if (error instanceof GovernanceRefusal) throw error;
     const timedOut = error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError");
-    throw new GovernanceRefusal(refusal(
-      "WORKSPACE_NOT_REGISTERED",
-      timedOut
-        ? `workspace registry ${path} did not return within ${REGISTRY_READ_TIMEOUT_MS}ms — refusing rather ` +
-          `than waiting, because session start awaits this read.`
-        : `workspace registry ${path} could not be read (${String(error)})`,
-      { registry_path: path },
-    ));
+    throw new GovernanceRefusal(
+      refusal(
+        "WORKSPACE_NOT_REGISTERED",
+        timedOut
+          ? `workspace registry ${path} did not return within ${REGISTRY_READ_TIMEOUT_MS}ms — refusing rather ` +
+              `than waiting, because session start awaits this read.`
+          : `workspace registry ${path} could not be read (${String(error)})`,
+        { registry_path: path },
+      ),
+    );
   } finally {
     await handle.close().catch(() => {});
   }
@@ -159,27 +168,36 @@ export async function loadWorkspaceRegistry(path: string): Promise<WorkspaceRegi
   try {
     parsed = JSON.parse(raw);
   } catch (error) {
-    throw new GovernanceRefusal(refusal(
-      "WORKSPACE_NOT_REGISTERED",
-      `workspace registry ${path} is not valid JSON (${String(error)})`,
-      { registry_path: path },
-    ));
+    throw new GovernanceRefusal(
+      refusal("WORKSPACE_NOT_REGISTERED", `workspace registry ${path} is not valid JSON (${String(error)})`, {
+        registry_path: path,
+      }),
+    );
   }
   const file = parsed as Partial<WorkspaceRegistryFile>;
-  if (file?.version !== 1 || !file.workspaces || typeof file.workspaces !== "object" || Array.isArray(file.workspaces)) {
-    throw new GovernanceRefusal(refusal(
-      "WORKSPACE_NOT_REGISTERED",
-      `workspace registry ${path} must contain {version:1, workspaces:{id:{path}}}`,
-      { registry_path: path },
-    ));
+  if (
+    file?.version !== 1 ||
+    !file.workspaces ||
+    typeof file.workspaces !== "object" ||
+    Array.isArray(file.workspaces)
+  ) {
+    throw new GovernanceRefusal(
+      refusal(
+        "WORKSPACE_NOT_REGISTERED",
+        `workspace registry ${path} must contain {version:1, workspaces:{id:{path}}}`,
+        { registry_path: path },
+      ),
+    );
   }
   for (const [id, value] of Object.entries(file.workspaces)) {
     if (!id || !value || typeof value.path !== "string" || !isAbsolute(value.path)) {
-      throw new GovernanceRefusal(refusal(
-        "WORKSPACE_NOT_REGISTERED",
-        `workspace registry entry ${JSON.stringify(id)} must name an absolute path`,
-        { registry_path: path, workspace_id: id },
-      ));
+      throw new GovernanceRefusal(
+        refusal(
+          "WORKSPACE_NOT_REGISTERED",
+          `workspace registry entry ${JSON.stringify(id)} must name an absolute path`,
+          { registry_path: path, workspace_id: id },
+        ),
+      );
     }
     // ADR-0035 made a registry id the tail of a CAPABILITY id (`workspace:<id>`), so this file is an input
     // to the grant grammar and has to obey it — the STRICT one. This shipped with the loose
@@ -189,16 +207,18 @@ export async function loadWorkspaceRegistry(path: string): Promise<WorkspaceRegi
     // reached a generated file whose own instructions say to paste them into `PI_GRANTS_GRANT`. See
     // `isSafeCapability`, which is now the one grammar for both channels into that file.
     if (!isSafeWorkspaceId(id)) {
-      throw new GovernanceRefusal(refusal(
-        "GRANT_ID_MALFORMED",
-        `workspace registry id ${JSON.stringify(id)} cannot be used: since ADR-0035 an id becomes the ` +
-          `capability ${JSON.stringify(workspaceCapability(id))}, and an id must match ` +
-          `[A-Za-z0-9][A-Za-z0-9._/-]* — slashes and dots are fine (a worktree named after its branch ` +
-          `works), but not spaces, quotes, commas, wildcards, shell metacharacters or non-ASCII, each of ` +
-          `which either splits into several capabilities or reaches a file you are told to source. ` +
-          `Rename it in ${path}.`,
-        { registry_path: path, workspace_id: id },
-      ));
+      throw new GovernanceRefusal(
+        refusal(
+          "GRANT_ID_MALFORMED",
+          `workspace registry id ${JSON.stringify(id)} cannot be used: since ADR-0035 an id becomes the ` +
+            `capability ${JSON.stringify(workspaceCapability(id))}, and an id must match ` +
+            `[A-Za-z0-9][A-Za-z0-9._/-]* — slashes and dots are fine (a worktree named after its branch ` +
+            `works), but not spaces, quotes, commas, wildcards, shell metacharacters or non-ASCII, each of ` +
+            `which either splits into several capabilities or reaches a file you are told to source. ` +
+            `Rename it in ${path}.`,
+          { registry_path: path, workspace_id: id },
+        ),
+      );
     }
   }
   return { version: 1, workspaces: structuredClone(file.workspaces), source: path };
@@ -226,17 +246,22 @@ export async function registeredWorkspaceIds(registryPath = process.env[ENV_WORK
   }
 }
 
-export async function resolveWorkspace(registry: WorkspaceRegistryFile, workspaceId: string): Promise<ValidatedWorkspace> {
+export async function resolveWorkspace(
+  registry: WorkspaceRegistryFile,
+  workspaceId: string,
+): Promise<ValidatedWorkspace> {
   const registered = Object.hasOwn(registry.workspaces, workspaceId) ? registry.workspaces[workspaceId] : undefined;
   const known = Object.keys(registry.workspaces).sort();
   if (!registered) {
-    throw new GovernanceRefusal(refusal(
-      "WORKSPACE_NOT_REGISTERED",
-      `workspace ${JSON.stringify(workspaceId)} is not present in the operator-owned registry` +
-        (registry.source ? ` ${registry.source}` : "") +
-        (known.length > 0 ? ` — it lists: ${known.join(", ")}` : " — it lists nothing"),
-      { workspace_id: workspaceId, ...(registry.source ? { registry_path: registry.source } : {}) },
-    ));
+    throw new GovernanceRefusal(
+      refusal(
+        "WORKSPACE_NOT_REGISTERED",
+        `workspace ${JSON.stringify(workspaceId)} is not present in the operator-owned registry` +
+          (registry.source ? ` ${registry.source}` : "") +
+          (known.length > 0 ? ` — it lists: ${known.join(", ")}` : " — it lists nothing"),
+        { workspace_id: workspaceId, ...(registry.source ? { registry_path: registry.source } : {}) },
+      ),
+    );
   }
   return validateRegisteredWorkspace({ workspaceId, registeredRoot: registered.path });
 }
@@ -257,38 +282,54 @@ export async function validateRegisteredWorkspace(input: {
     supplied = await realpath(input.suppliedRoot ?? input.registeredRoot);
     if (!(await stat(registered)).isDirectory()) throw new Error("registered root is not a directory");
   } catch (error) {
-    throw new GovernanceRefusal(refusal(
-      "WORKSPACE_NOT_REGISTERED",
-      `workspace ${input.workspaceId} root could not be canonicalized (${String(error)})`,
-      { workspace_id: input.workspaceId },
-    ));
+    throw new GovernanceRefusal(
+      refusal(
+        "WORKSPACE_NOT_REGISTERED",
+        `workspace ${input.workspaceId} root could not be canonicalized (${String(error)})`,
+        { workspace_id: input.workspaceId },
+      ),
+    );
   }
   if (registered !== supplied) {
-    throw new GovernanceRefusal(refusal(
-      "WORKSPACE_NOT_REGISTERED",
-      `workspace ${input.workspaceId} resolved to ${supplied}, not its registered worktree ${registered}`,
-      { workspace_id: input.workspaceId, supplied_root: supplied, registered_root: registered },
-    ));
+    throw new GovernanceRefusal(
+      refusal(
+        "WORKSPACE_NOT_REGISTERED",
+        `workspace ${input.workspaceId} resolved to ${supplied}, not its registered worktree ${registered}`,
+        { workspace_id: input.workspaceId, supplied_root: supplied, registered_root: registered },
+      ),
+    );
   }
 
   try {
-    const top = (await execFileAsync("git", ["-C", registered, "rev-parse", "--show-toplevel"], { encoding: "utf8" })).stdout.trim();
+    const top = (
+      await execFileAsync("git", ["-C", registered, "rev-parse", "--show-toplevel"], { encoding: "utf8" })
+    ).stdout.trim();
     const canonicalTop = await realpath(top);
     if (canonicalTop !== registered) throw new Error(`path is inside worktree ${canonicalTop}, not its root`);
-    const commonRaw = (await execFileAsync("git", ["-C", registered, "rev-parse", "--path-format=absolute", "--git-common-dir"], { encoding: "utf8" })).stdout.trim();
+    const commonRaw = (
+      await execFileAsync("git", ["-C", registered, "rev-parse", "--path-format=absolute", "--git-common-dir"], {
+        encoding: "utf8",
+      })
+    ).stdout.trim();
     const gitCommonDir = await realpath(commonRaw);
-    const list = (await execFileAsync("git", ["-C", registered, "worktree", "list", "--porcelain"], { encoding: "utf8" })).stdout;
+    const list = (
+      await execFileAsync("git", ["-C", registered, "worktree", "list", "--porcelain"], { encoding: "utf8" })
+    ).stdout;
     const registeredWorktrees = await Promise.all(
-      list.split("\n").filter((line) => line.startsWith("worktree ")).map((line) => realpath(line.slice(9))),
+      list
+        .split("\n")
+        .filter((line) => line.startsWith("worktree "))
+        .map((line) => realpath(line.slice(9))),
     );
     if (!registeredWorktrees.includes(registered)) throw new Error("Git does not list this path as a worktree");
     return { workspaceId: input.workspaceId, root: registered, gitCommonDir };
   } catch (error) {
-    throw new GovernanceRefusal(refusal(
-      "WORKSPACE_NOT_REGISTERED",
-      `workspace ${input.workspaceId} is not the registered Git worktree it claims to be (${String(error)})`,
-      { workspace_id: input.workspaceId, registered_root: registered },
-    ));
+    throw new GovernanceRefusal(
+      refusal(
+        "WORKSPACE_NOT_REGISTERED",
+        `workspace ${input.workspaceId} is not the registered Git worktree it claims to be (${String(error)})`,
+        { workspace_id: input.workspaceId, registered_root: registered },
+      ),
+    );
   }
 }
-

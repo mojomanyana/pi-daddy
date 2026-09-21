@@ -1,6 +1,10 @@
 import { withOrdinaryChild } from "./ordinary-runtime.ts";
 import type { Delegation } from "../src/kernel/delegate.ts";
-import { beginExecutionRetention, retentionConfigurationDigest, type RetentionStatus } from "../src/governance/execution-retention.ts";
+import {
+  beginExecutionRetention,
+  retentionConfigurationDigest,
+  type RetentionStatus,
+} from "../src/governance/execution-retention.ts";
 import { appendLedgerEvent, buildChildLifecycleEvent } from "../src/governance/ledger.ts";
 import { hasFinalizerError } from "../src/governance/finalization.ts";
 import { mergeChildEnv } from "../src/kernel/propagation.ts";
@@ -61,8 +65,10 @@ export async function appendAfterRuntimeRecord<T>(
 
 /** A failed writer-tab close may be secondary to the executor error that triggered cleanup. */
 export function isHerdrWriterCloseFailure(error: unknown): boolean {
-  return error instanceof HerdrWriterCloseError ||
-    hasFinalizerError(error, (value) => value instanceof HerdrWriterCloseError);
+  return (
+    error instanceof HerdrWriterCloseError ||
+    hasFinalizerError(error, (value) => value instanceof HerdrWriterCloseError)
+  );
 }
 export interface ChildProgressUpdate {
   chunk?: string;
@@ -82,7 +88,7 @@ export interface ChildProgressUpdate {
  * blaming "ledger" (R-99). The failure is reported alongside the outcome instead of replacing it.
  */
 export function executePlannedChild(input: Parameters<typeof executeChildBody>[0]): Promise<DelegationOutcome> {
-  return withOrdinaryChild(input, signal => executeChildBody({ ...input, signal }));
+  return withOrdinaryChild(input, (signal) => executeChildBody({ ...input, signal }));
 }
 async function executeChildBody(input: {
   session: GrantsSession;
@@ -91,7 +97,8 @@ async function executeChildBody(input: {
   childId: string;
   executionId: string;
   parentExecutionId: string | null;
-  toolCallId?: string; declaredWork?: GrantsSession["declaredWork"];
+  toolCallId?: string;
+  declaredWork?: GrantsSession["declaredWork"];
   cwd: string;
   preparedWorkspace?: PreparedWorkspace;
   signal?: AbortSignal;
@@ -99,9 +106,33 @@ async function executeChildBody(input: {
 }): Promise<DelegationOutcome> {
   const { session, plan, childId, executionId, parentExecutionId, preparedWorkspace, signal, onProgress } = input;
   const ledgerPath = session.ledgerPath;
-  let activityParent: string | undefined, activity = new ActivityTimelineRecorder(input.cwd), activityStarted = false, activityFinished = false;
-  try { const env = { ...process.env }; for (const name of ["PI_DADDY_ACTIVITY_PATH", "PI_DADDY_ACTIVITY_ROOT", "PI_DADDY_ACTIVITY_TASK", ENV_ACTIVITY_PARENT_TASK]) { const value = plan.env[name]; if (value) env[name] = value; } activity = new ActivityTimelineRecorder(input.cwd, env); activityParent = plan.env[ENV_ACTIVITY_PARENT_TASK]; } catch {}
-  try { await activity.childStarted(executionId, activityParent, input.agent ?? "governed child", (plan.args.at(-1) ?? "").trimStart()); activityStarted = true; } catch {}
+  let activityParent: string | undefined,
+    activity = new ActivityTimelineRecorder(input.cwd),
+    activityStarted = false,
+    activityFinished = false;
+  try {
+    const env = { ...process.env };
+    for (const name of [
+      "PI_DADDY_ACTIVITY_PATH",
+      "PI_DADDY_ACTIVITY_ROOT",
+      "PI_DADDY_ACTIVITY_TASK",
+      ENV_ACTIVITY_PARENT_TASK,
+    ]) {
+      const value = plan.env[name];
+      if (value) env[name] = value;
+    }
+    activity = new ActivityTimelineRecorder(input.cwd, env);
+    activityParent = plan.env[ENV_ACTIVITY_PARENT_TASK];
+  } catch {}
+  try {
+    await activity.childStarted(
+      executionId,
+      activityParent,
+      input.agent ?? "governed child",
+      (plan.args.at(-1) ?? "").trimStart(),
+    );
+    activityStarted = true;
+  } catch {}
   const configuredTimeoutMs = timeoutFromEnv(process.env[ENV_CHILD_TIMEOUT]);
   const startedAt = new Date();
   const deadlineAt = new Date(startedAt.getTime() + configuredTimeoutMs).toISOString();
@@ -122,14 +153,26 @@ async function executeChildBody(input: {
       );
     } catch (error) {
       await releaseDelegationWorkspace({
-        prepared: preparedWorkspace, childId, executionId, parentExecutionId, reason: "ledger-failed",
+        prepared: preparedWorkspace,
+        childId,
+        executionId,
+        parentExecutionId,
+        reason: "ledger-failed",
       });
       throw error;
     }
   }
   const workAttempt = await beginDeclaredWorkAttempt({
-    session, plan, childId, executionId, parentExecutionId, toolCallId: input.toolCallId, declaredWork: input.declaredWork,
-    preparedWorkspace, configuredTimeoutMs, startedAt,
+    session,
+    plan,
+    childId,
+    executionId,
+    parentExecutionId,
+    toolCallId: input.toolCallId,
+    declaredWork: input.declaredWork,
+    preparedWorkspace,
+    configuredTimeoutMs,
+    startedAt,
   });
 
   // The recorded deadline and executor timer are one fact. Waiting for the strict starting append consumes
@@ -144,20 +187,36 @@ async function executeChildBody(input: {
   // a live governed writer" and "the operator pressed stop" produced byte-identical reasons before, and a
   // count of lost leases is exactly the number an operator auditing this feature needs (R-103).
   let leaseLost = false;
-  writerLease?.lost.then(() => { leaseLost = true; leaseAbort.abort(); });
+  writerLease?.lost.then(() => {
+    leaseLost = true;
+    leaseAbort.abort();
+  });
   const executionSignal = signal
     ? AbortSignal.any([signal, leaseAbort.signal])
-    : writerLease ? leaseAbort.signal : undefined;
-  const retention = beginExecutionRetention({ executionId, parentExecutionId, childId,
-    toolCallId: input.toolCallId ?? null, executor: session.executor.kind, taskDigest: plan.taskDigest,
+    : writerLease
+      ? leaseAbort.signal
+      : undefined;
+  const retention = beginExecutionRetention({
+    executionId,
+    parentExecutionId,
+    childId,
+    toolCallId: input.toolCallId ?? null,
+    executor: session.executor.kind,
+    taskDigest: plan.taskDigest,
     definitionDigest: plan.definitionDigest?.sha256 ?? null,
-    configurationDigest: retentionConfigurationDigest({ args: plan.args, effective: plan.effective, timeoutMs: configuredTimeoutMs }),
-    workspaceId: preparedWorkspace?.workspace.workspaceId ?? null });
+    configurationDigest: retentionConfigurationDigest({
+      args: plan.args,
+      effective: plan.effective,
+      timeoutMs: configuredTimeoutMs,
+    }),
+    workspaceId: preparedWorkspace?.workspace.workspaceId ?? null,
+  });
   const sessionFlag = plan.args.indexOf("--session");
   if (sessionFlag >= 0) retention.observeSession({ source: "pi-session-file", value: plan.args[sessionFlag + 1] });
   let releaseReason = "failed";
   let retainWriterLease = false;
-  let terminalAttempted = false, workTerminalAttempted = false;
+  let terminalAttempted = false,
+    workTerminalAttempted = false;
   const teardownFailures: string[] = [];
   let runtimeRecord: Promise<void> | undefined;
   const recordRunning = (executor: "process" | "herdr", pane?: { id: string; agentName: string }): void => {
@@ -170,9 +229,15 @@ async function executeChildBody(input: {
           onFailure: (cause) => teardownFailures.push(`child runtime identity record failed: ${String(cause)}`),
         },
         buildChildLifecycleEvent({
-          executionId, parentExecutionId, childId, state: "running", executor, deadlineAt,
+          executionId,
+          parentExecutionId,
+          childId,
+          state: "running",
+          executor,
+          deadlineAt,
           ...(pane ? { herdrPaneId: pane.id, herdrAgentName: pane.agentName } : {}),
-          correlation: plan.correlation, now: new Date(),
+          correlation: plan.correlation,
+          now: new Date(),
         }),
       );
     } catch (error) {
@@ -180,95 +245,121 @@ async function executeChildBody(input: {
     }
   };
   try {
-    const output = session.executor.kind === "herdr"
-      ? await runHerdrPane({
-          args: plan.args.slice(0, -1),
-          prompt: plan.args[plan.args.length - 1].trimStart(),
-          env: plan.env,
-          cwd,
-          name: `${input.agent ?? "delegate"}-${childId}`,
-          workspace: resolveWorkspace(process.env),
-          signal: executionSignal,
-          timeoutMs: remainingTimeoutMs,
-          keepPane: writerLease ? false : process.env[ENV_HERDR_KEEP_PANE] === "1",
-          closeOnSettle: Boolean(writerLease),
-          onPane: (paneId, agentName) => {
-            retention.native({ paneId, agentName });
-            onProgress?.({ paneId, agentName, state: "starting" });
-          },
-          onObservation: (bytes) => retention.capture("paneSnapshot", bytes, true),
-          onSessionReference: (reference) => retention.observeSession(reference),
-          onRunning: (paneId, agentName) => {
-            // Record first: runHerdrPane isolates this display callback, so a renderer exception after the
-            // observation cannot suppress the authoritative running event.
-            recordRunning("herdr", { id: paneId, agentName });
-            onProgress?.({ paneId, agentName, state: "running" });
-          },
-          onTab: preparedWorkspace ? (tabId) => preparedWorkspace.lease.attachHerdrTab(tabId) : undefined,
-          onNativeTab: (tabId) => retention.native({ tabId }),
-          onSnapshot: onProgress ? (snapshot) => onProgress({ snapshot }) : undefined,
-        })
-      : await runChild({
-          command: writerLease ? "setpriv" : "pi",
-          args: writerLease ? ["--pdeathsig", "KILL", "--", "pi", ...plan.args] : plan.args,
-          env: mergeChildEnv(process.env, plan.env),
-          cwd,
-          signal: executionSignal,
-          // SIGTERM gets only grace that fits INSIDE the recorded deadline. The independent hard timer
-          // prevents a delayed soft-timeout callback from starting a fresh grace period beyond that bound.
-          timeoutMs: Math.max(1, remainingTimeoutMs - terminationGraceMs),
-          hardDeadlineAt: Date.parse(deadlineAt),
-          onOutput: onProgress ? (chunk) => onProgress({ chunk }) : undefined,
-          onObservation: (stream, bytes) => retention.capture(stream, bytes),
-          onSpawn: (pid) => {
-            // Lease attachment is a security hook and may fail the spawn. The shared reporters isolate
-            // display exceptions before they reach this callback; runChild deliberately kills on any error
-            // here, so presentation must never be added directly without that reporter boundary.
-            preparedWorkspace?.lease.attachProcess(pid);
-            retention.native({ pid });
-            recordRunning("process");
-            onProgress?.({ state: "running" });
-          },
-        });
+    const output =
+      session.executor.kind === "herdr"
+        ? await runHerdrPane({
+            args: plan.args.slice(0, -1),
+            prompt: plan.args[plan.args.length - 1].trimStart(),
+            env: plan.env,
+            cwd,
+            name: `${input.agent ?? "delegate"}-${childId}`,
+            workspace: resolveWorkspace(process.env),
+            signal: executionSignal,
+            timeoutMs: remainingTimeoutMs,
+            keepPane: writerLease ? false : process.env[ENV_HERDR_KEEP_PANE] === "1",
+            closeOnSettle: Boolean(writerLease),
+            onPane: (paneId, agentName) => {
+              retention.native({ paneId, agentName });
+              onProgress?.({ paneId, agentName, state: "starting" });
+            },
+            onObservation: (bytes) => retention.capture("paneSnapshot", bytes, true),
+            onSessionReference: (reference) => retention.observeSession(reference),
+            onRunning: (paneId, agentName) => {
+              // Record first: runHerdrPane isolates this display callback, so a renderer exception after the
+              // observation cannot suppress the authoritative running event.
+              recordRunning("herdr", { id: paneId, agentName });
+              onProgress?.({ paneId, agentName, state: "running" });
+            },
+            onTab: preparedWorkspace ? (tabId) => preparedWorkspace.lease.attachHerdrTab(tabId) : undefined,
+            onNativeTab: (tabId) => retention.native({ tabId }),
+            onSnapshot: onProgress ? (snapshot) => onProgress({ snapshot }) : undefined,
+          })
+        : await runChild({
+            command: writerLease ? "setpriv" : "pi",
+            args: writerLease ? ["--pdeathsig", "KILL", "--", "pi", ...plan.args] : plan.args,
+            env: mergeChildEnv(process.env, plan.env),
+            cwd,
+            signal: executionSignal,
+            // SIGTERM gets only grace that fits INSIDE the recorded deadline. The independent hard timer
+            // prevents a delayed soft-timeout callback from starting a fresh grace period beyond that bound.
+            timeoutMs: Math.max(1, remainingTimeoutMs - terminationGraceMs),
+            hardDeadlineAt: Date.parse(deadlineAt),
+            onOutput: onProgress ? (chunk) => onProgress({ chunk }) : undefined,
+            onObservation: (stream, bytes) => retention.capture(stream, bytes),
+            onSpawn: (pid) => {
+              // Lease attachment is a security hook and may fail the spawn. The shared reporters isolate
+              // display exceptions before they reach this callback; runChild deliberately kills on any error
+              // here, so presentation must never be added directly without that reporter boundary.
+              preparedWorkspace?.lease.attachProcess(pid);
+              retention.native({ pid });
+              recordRunning("process");
+              onProgress?.({ state: "running" });
+            },
+          });
 
     if (sessionFlag >= 0) retention.observeSession({ source: "pi-session-file", value: plan.args[sessionFlag + 1] });
     retention.capture("result", Buffer.from(output.text), true);
     const childFailed = Boolean(output.spawnError || output.aborted || output.timedOut || output.code !== 0);
-    retention.finish({ code: output.code, signal: output.signal ?? null, timedOut: output.timedOut,
-      aborted: output.aborted, truncated: output.truncated, failed: childFailed });
+    retention.finish({
+      code: output.code,
+      signal: output.signal ?? null,
+      timedOut: output.timedOut,
+      aborted: output.aborted,
+      truncated: output.truncated,
+      failed: childFailed,
+    });
     releaseReason = output.timedOut ? "timeout" : output.aborted ? "cancelled" : childFailed ? "failed" : "completed";
-    if (activityStarted) try { await activity.childFinished(executionId, activityParent, input.agent ?? "governed child", output.text, childFailed ? output.aborted ? "cancelled" : "failed" : "completed"); activityFinished = true; } catch { /* observation does not control execution */ }
-    if (workAttempt) try { workTerminalAttempted = true; await workAttempt.finish(childFailed ? "failed" : "completed"); }
-    catch (error) { teardownFailures.push(`declared work terminal record failed: ${String(error)}`); }
+    if (activityStarted)
+      try {
+        await activity.childFinished(
+          executionId,
+          activityParent,
+          input.agent ?? "governed child",
+          output.text,
+          childFailed ? (output.aborted ? "cancelled" : "failed") : "completed",
+        );
+        activityFinished = true;
+      } catch {
+        /* observation does not control execution */
+      }
+    if (workAttempt)
+      try {
+        workTerminalAttempted = true;
+        await workAttempt.finish(childFailed ? "failed" : "completed");
+      } catch (error) {
+        teardownFailures.push(`declared work terminal record failed: ${String(error)}`);
+      }
     if (ledgerPath) {
       terminalAttempted = true;
-      await appendAfterRuntimeRecord(runtimeRecord, () => appendLedgerEvent(
-        {
-          path: ledgerPath,
-          // NOT strict, and this line is the whole point of R-99. The child has already run: failing
-          // closed here prevents nothing and used to discard a completed child's entire output while
-          // blaming "ledger" — under `delegate_all` it discarded every sibling's work too. The docstring
-          // above, `docs/SPEC.md` and the ADR-0034 amendment all promised this; only the comment changed.
-          // `capability_decision`, which PROVISIONS, still fails closed.
-          strict: false,
-          onFailure: (cause) => teardownFailures.push(`child lifecycle record failed: ${String(cause)}`),
-        },
-        buildChildLifecycleEvent({
-          executionId,
-          parentExecutionId,
-          childId,
-          state: childFailed ? "failed" : "completed",
-          executor: session.executor.kind,
-          exitCode: output.code,
-          signal: output.signal ?? null,
-          timedOut: output.timedOut,
-          aborted: output.aborted,
-          truncated: output.truncated,
-          reason: output.spawnError,
-          correlation: plan.correlation,
-          now: new Date(),
-        }),
-      ));
+      await appendAfterRuntimeRecord(runtimeRecord, () =>
+        appendLedgerEvent(
+          {
+            path: ledgerPath,
+            // NOT strict, and this line is the whole point of R-99. The child has already run: failing
+            // closed here prevents nothing and used to discard a completed child's entire output while
+            // blaming "ledger" — under `delegate_all` it discarded every sibling's work too. The docstring
+            // above, `docs/SPEC.md` and the ADR-0034 amendment all promised this; only the comment changed.
+            // `capability_decision`, which PROVISIONS, still fails closed.
+            strict: false,
+            onFailure: (cause) => teardownFailures.push(`child lifecycle record failed: ${String(cause)}`),
+          },
+          buildChildLifecycleEvent({
+            executionId,
+            parentExecutionId,
+            childId,
+            state: childFailed ? "failed" : "completed",
+            executor: session.executor.kind,
+            exitCode: output.code,
+            signal: output.signal ?? null,
+            timedOut: output.timedOut,
+            aborted: output.aborted,
+            truncated: output.truncated,
+            reason: output.spawnError,
+            correlation: plan.correlation,
+            now: new Date(),
+          }),
+        ),
+      );
     }
 
     const leaseWasLost = writerLease ? leaseLost : false;
@@ -322,29 +413,62 @@ async function executeChildBody(input: {
     await teardown();
     return withTeardownNotes(succeeded);
   } catch (error) {
-    if (activityStarted && !activityFinished) try { await activity.childFinished(executionId, activityParent, input.agent ?? "governed child", "", signal?.aborted ? "cancelled" : "failed"); } catch { /* observation does not control execution */ }
-    retention.finish({ code: null, signal: null, timedOut: false, aborted: Boolean(signal?.aborted), truncated: false, failed: true });
-    if (workAttempt && !workTerminalAttempted) try { workTerminalAttempted = true; await workAttempt.finish("failed"); }
-    catch (cause) { teardownFailures.push(`declared work terminal record failed: ${String(cause)}`); }
+    if (activityStarted && !activityFinished)
+      try {
+        await activity.childFinished(
+          executionId,
+          activityParent,
+          input.agent ?? "governed child",
+          "",
+          signal?.aborted ? "cancelled" : "failed",
+        );
+      } catch {
+        /* observation does not control execution */
+      }
+    retention.finish({
+      code: null,
+      signal: null,
+      timedOut: false,
+      aborted: Boolean(signal?.aborted),
+      truncated: false,
+      failed: true,
+    });
+    if (workAttempt && !workTerminalAttempted)
+      try {
+        workTerminalAttempted = true;
+        await workAttempt.finish("failed");
+      } catch (cause) {
+        teardownFailures.push(`declared work terminal record failed: ${String(cause)}`);
+      }
     retainWriterLease = Boolean(writerLease && isHerdrWriterCloseFailure(error));
     if (ledgerPath && !terminalAttempted) {
       // Best-effort: this records the failure, so it must not REPLACE the failure. A strict append that
       // throws here would discard the original error — including HerdrWriterCloseError, whose whole
       // meaning is "a lease is deliberately retained" (R-108).
-      await appendAfterRuntimeRecord(runtimeRecord, () => appendLedgerEvent(
-        {
-          path: ledgerPath,
-          strict: false,
-          onFailure: (cause) => teardownFailures.push(`child lifecycle record failed: ${String(cause)}`),
-        },
-        buildChildLifecycleEvent({
-          executionId, parentExecutionId, childId, state: "failed", executor: session.executor.kind,
-          reason: error instanceof GovernanceRefusal
-            ? error.code
-            : error instanceof Error ? error.name : "unknown executor error",
-          correlation: plan.correlation, now: new Date(),
-        }),
-      ));
+      await appendAfterRuntimeRecord(runtimeRecord, () =>
+        appendLedgerEvent(
+          {
+            path: ledgerPath,
+            strict: false,
+            onFailure: (cause) => teardownFailures.push(`child lifecycle record failed: ${String(cause)}`),
+          },
+          buildChildLifecycleEvent({
+            executionId,
+            parentExecutionId,
+            childId,
+            state: "failed",
+            executor: session.executor.kind,
+            reason:
+              error instanceof GovernanceRefusal
+                ? error.code
+                : error instanceof Error
+                  ? error.name
+                  : "unknown executor error",
+            correlation: plan.correlation,
+            now: new Date(),
+          }),
+        ),
+      );
     }
     await teardown();
     // Attached, not dropped. `withTeardownNotes` was applied on both return paths and neither throw path,
@@ -357,24 +481,24 @@ async function executeChildBody(input: {
    * orchestrator "ledger write failed" and nothing else made a completed delegation indistinguishable
    * from one that never happened, which is the one confusion this package must never create (R-99).
    */
-/**
- * Surfaces a failed best-effort RECORD without displacing the failure it was recording. A
- * `GovernanceRefusal` keeps its `code`, so a controller switching on it still sees the real refusal
- * rather than a ledger complaint. pi renders only `error.message` (its `createErrorToolResult` drops
- * everything else), so the notes go INTO the message — an `AggregateError.errors` array would be invisible.
- */
-function errorWithTeardownNotes(error: unknown, notes: readonly string[]): unknown {
-  if (notes.length === 0) return error;
-  if (error instanceof GovernanceRefusal) {
-    return new GovernanceRefusal({
-      code: error.code,
-      message: [error.message, ...notes].join("; "),
-      ...(error.details ? { details: error.details } : {}),
-    });
+  /**
+   * Surfaces a failed best-effort RECORD without displacing the failure it was recording. A
+   * `GovernanceRefusal` keeps its `code`, so a controller switching on it still sees the real refusal
+   * rather than a ledger complaint. pi renders only `error.message` (its `createErrorToolResult` drops
+   * everything else), so the notes go INTO the message — an `AggregateError.errors` array would be invisible.
+   */
+  function errorWithTeardownNotes(error: unknown, notes: readonly string[]): unknown {
+    if (notes.length === 0) return error;
+    if (error instanceof GovernanceRefusal) {
+      return new GovernanceRefusal({
+        code: error.code,
+        message: [error.message, ...notes].join("; "),
+        ...(error.details ? { details: error.details } : {}),
+      });
+    }
+    if (error instanceof Error) return new Error([error.message, ...notes].join("; "), { cause: error });
+    return error;
   }
-  if (error instanceof Error) return new Error([error.message, ...notes].join("; "), { cause: error });
-  return error;
-}
   function withTeardownNotes(outcome: DelegationOutcome): DelegationOutcome {
     const observed = { ...outcome, retention: retention.status() };
     if (teardownFailures.length === 0) return observed;

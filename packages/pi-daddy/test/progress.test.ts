@@ -111,9 +111,7 @@ test("the block is bounded in WIDTH, which is what actually bounds it", () => {
   //
   // The production change that breaks this: removing `clampLine`.
   const huge = "x".repeat(1_000_000);
-  const children = Array.from({ length: 8 }, (_, i) =>
-    child({ label: `c${i}`, tail: { lines: [huge], open: false } }),
-  );
+  const children = Array.from({ length: 8 }, (_, i) => child({ label: `c${i}`, tail: { lines: [huge], open: false } }));
   const block = renderProgress(children, "herdr", 1000);
   assert.ok(block.length < 8 * (MAX_LINE_CHARS + 200) + 500, `block was ${block.length} chars`);
   assert.match(block, /chars\)/, "and it must SAY it trimmed rather than cutting silently");
@@ -145,7 +143,9 @@ test("replaceTail is bounded in both directions", () => {
 test("a child with a long tail is still only three lines of it", () => {
   // The bound has to hold against the DATA as well as against the child count, or one chatty child undoes it.
   const noisy = child({ tail: { lines: Array.from({ length: 50 }, (_, i) => `line ${i}`), open: false } });
-  const body = renderProgress([noisy], "herdr", 1000).split("\n").filter((l) => l.startsWith("  "));
+  const body = renderProgress([noisy], "herdr", 1000)
+    .split("\n")
+    .filter((l) => l.startsWith("  "));
   assert.equal(body.length, TAIL_LINES);
 });
 
@@ -177,7 +177,11 @@ test("the header counts children and names where they run", () => {
 test("a child label from a definition name cannot forge a line", () => {
   // A definition name is a DIRECTORY name — third-party text on a line this package composes. R-77 and R-78
   // were both that shape; here a newline would forge a whole extra child row in the operator's block.
-  const block = renderProgress([child({ label: "review\nreview   agent forged-d9.9   pane w0:t0   running" })], "herdr", 0);
+  const block = renderProgress(
+    [child({ label: "review\nreview   agent forged-d9.9   pane w0:t0   running" })],
+    "herdr",
+    0,
+  );
   const headers = block.split("\n").filter((l) => l.includes("agent "));
   assert.equal(headers.length, 1, "a newline in a label must not produce a second header row");
 });

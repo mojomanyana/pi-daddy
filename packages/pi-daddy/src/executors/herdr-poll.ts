@@ -46,9 +46,18 @@ export interface PollTarget {
 const TERMINAL = new Set(["idle", "done", "blocked"]);
 
 /** The pre-prompt sequence from the native start reply; absent is unknown, never zero. */
-export function observeHerdrSession(agent: unknown, pane: string | undefined, sink: PollTarget["onSessionReference"]): void {
+export function observeHerdrSession(
+  agent: unknown,
+  pane: string | undefined,
+  sink: PollTarget["onSessionReference"],
+): void {
   if (!pane || !sink) return;
-  try { const reference = herdrSessionReference(agent, pane); if (reference) sink(reference); } catch { /* optional observation */ }
+  try {
+    const reference = herdrSessionReference(agent, pane);
+    if (reference) sink(reference);
+  } catch {
+    /* optional observation */
+  }
 }
 
 export function seqOf(result: Record<string, unknown> | undefined): number {
@@ -98,12 +107,18 @@ export async function waitForLifecycleBaseline(
   const interval = request.pollIntervalMs ?? POLL_INTERVAL_MS;
   for (;;) {
     if (request.signal?.aborted) return { aborted: true };
-    if (Date.now() >= deadline) return { spawnError: "Herdr did not activate the bundled Pi lifecycle reporter before prompt dispatch" };
+    if (Date.now() >= deadline)
+      return { spawnError: "Herdr did not activate the bundled Pi lifecycle reporter before prompt dispatch" };
     const reply = parseReply(await exec(["agent", "get", request.name]));
     if (reply.error) return { spawnError: `herdr agent get failed: ${reply.error}` };
-    const agent = (reply.result?.agent ?? reply.result ?? {}) as { agent_status?: string; state_change_seq?: number; screen_detection_skipped?: boolean };
+    const agent = (reply.result?.agent ?? reply.result ?? {}) as {
+      agent_status?: string;
+      state_change_seq?: number;
+      screen_detection_skipped?: boolean;
+    };
     const seq = typeof agent.state_change_seq === "number" ? agent.state_change_seq : -1;
-    if (agent.screen_detection_skipped === true && agent.agent_status && TERMINAL.has(agent.agent_status) && seq >= 0) return { before: seq };
+    if (agent.screen_detection_skipped === true && agent.agent_status && TERMINAL.has(agent.agent_status) && seq >= 0)
+      return { before: seq };
     await new Promise<void>((resolve) => setTimeout(resolve, Math.min(interval, Math.max(0, deadline - Date.now()))));
   }
 }
@@ -141,7 +156,13 @@ export async function waitForSettled(
       // output shown. `readFailed` is passed so a failed read renders as such instead of silently freezing the
       // block on the previous frame — and, crucially, is never mistaken for the child's output.
       const read = await readPane(exec, request.name, maxOutputBytes);
-      if (!read.readFailed) { try { request.onObservation?.(Buffer.from(read.text)); } catch { /* observation only */ } }
+      if (!read.readFailed) {
+        try {
+          request.onObservation?.(Buffer.from(read.text));
+        } catch {
+          /* observation only */
+        }
+      }
       try {
         request.onSnapshot(read.readFailed ? ["[pane could not be read]"] : tailLines(read.text, keep));
       } catch {
@@ -196,7 +217,10 @@ export function tailLines(snapshot: string, keep: number): string[] {
   let end = snapshot.length;
   while (end > 0 && lines.length < keep) {
     const start = snapshot.lastIndexOf("\n", end - 1);
-    const line = snapshot.slice(start + 1, end).replace(/\r/g, "").trimEnd();
+    const line = snapshot
+      .slice(start + 1, end)
+      .replace(/\r/g, "")
+      .trimEnd();
     if (line.length > 0) lines.unshift(line);
     if (start === -1) break;
     end = start;

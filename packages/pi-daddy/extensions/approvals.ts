@@ -254,7 +254,11 @@ export async function obtainApprovals(
 
   for (const capability of pre.needsPrompt) {
     const outcome = await gate.request({
-      capability, subject, path, task, signal,
+      capability,
+      subject,
+      path,
+      task,
+      signal,
       ...(expectedBinding ? { bindingKey: approvalBindingDigest(expectedBinding) } : {}),
     });
     if (outcome.scope === null) {
@@ -292,8 +296,9 @@ export async function obtainApprovals(
       // Whether THIS call created the authority, decided before we add it. `joined` means a human answer
       // opened by another delegation was shared with us; an existing key means it was already standing.
       // Either way it is not ours to take back if we are refused — see `BankedApproval.owned`.
-      const owned = !outcome.joined
-        && !(expectedBinding ? session.sessionApprovalBindings.has(key) : session.sessionApprovals.has(key));
+      const owned =
+        !outcome.joined &&
+        !(expectedBinding ? session.sessionApprovalBindings.has(key) : session.sessionApprovals.has(key));
       if (expectedBinding) session.sessionApprovalBindings.set(key, expectedBinding);
       else session.sessionApprovals.add(key);
       banked.push({ key, capability, subject, persisted: false, owned });

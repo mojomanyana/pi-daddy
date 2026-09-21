@@ -28,7 +28,11 @@ const skip = !piAvailable()
 const ledgerLines = async (path: string): Promise<Record<string, unknown>[]> => {
   if (!existsSync(path)) return [];
   const text = await readFile(path, "utf8");
-  return text.trim().split("\n").filter(Boolean).map((l) => JSON.parse(l));
+  return text
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((l) => JSON.parse(l));
 };
 
 describe("end-to-end delegation", { skip }, () => {
@@ -46,7 +50,10 @@ describe("end-to-end delegation", { skip }, () => {
         `Then report verbatim what the tool returned.`,
     });
 
-    assert.ok(r.toolCalls.some((c) => c.name === "delegate"), "precondition: the model called delegate");
+    assert.ok(
+      r.toolCalls.some((c) => c.name === "delegate"),
+      "precondition: the model called delegate",
+    );
     // The security property, observed rather than inferred: the child was granted read only, so the file
     // it was told to write does not exist. `--tools` is the enforcement point and this is what it buys.
     assert.equal(existsSync(target), false, "a child granted only read must not be able to write");
@@ -98,10 +105,7 @@ describe("end-to-end delegation", { skip }, () => {
     });
 
     const failed = r.toolResults.find((x) => x.isError === true);
-    assert.ok(
-      failed,
-      "asking for an audit trail makes it a precondition: an unrecordable delegation must not proceed",
-    );
+    assert.ok(failed, "asking for an audit trail makes it a precondition: an unrecordable delegation must not proceed");
     assert.match(JSON.stringify(failed), /ledger write failed/);
   });
 });

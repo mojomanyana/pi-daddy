@@ -53,9 +53,12 @@ const INERT_PI_ARGV = [
  */
 const reachable = (await probeHerdr()).ok;
 const workspace: string | undefined = reachable
-  ? ((parseReply(await defaultExec(["workspace", "create", "--label", "pi-daddy-it", "--no-focus"])).result?.workspace ?? {}) as {
-      workspace_id?: string;
-    }).workspace_id
+  ? (
+      (parseReply(await defaultExec(["workspace", "create", "--label", "pi-daddy-it", "--no-focus"])).result
+        ?.workspace ?? {}) as {
+        workspace_id?: string;
+      }
+    ).workspace_id
   : undefined;
 
 after(async () => {
@@ -75,7 +78,9 @@ function suiteAgentName(base: string): string {
 
 /** A pane in this suite's own workspace. */
 async function pane(): Promise<string> {
-  const reply = parseReply(await defaultExec(["tab", "create", "--label", "it", "--workspace", workspace!, "--cwd", process.cwd()]));
+  const reply = parseReply(
+    await defaultExec(["tab", "create", "--label", "it", "--workspace", workspace!, "--cwd", process.cwd()]),
+  );
   assert.ok(!reply.error, `tab create failed: ${reply.error}`);
   const root = (reply.result?.root_pane ?? {}) as { pane_id?: string };
   assert.ok(root.pane_id, "tab create returned no pane id");
@@ -90,7 +95,9 @@ async function pane(): Promise<string> {
  */
 async function startAgent(name: string, paneId: string): Promise<{ ok: boolean; error?: string }> {
   for (let attempt = 0; attempt < 30; attempt += 1) {
-    const reply = parseReply(await defaultExec(["agent", "start", name, "--kind", "pi", "--pane", paneId, "--", ...INERT_PI_ARGV]));
+    const reply = parseReply(
+      await defaultExec(["agent", "start", name, "--kind", "pi", "--pane", paneId, "--", ...INERT_PI_ARGV]),
+    );
     if (!reply.error) return { ok: true };
     if (!/not an available shell|agent_pane_busy/.test(reply.error)) return { ok: false, error: reply.error };
     await new Promise((r) => setTimeout(r, 300));
@@ -108,7 +115,11 @@ describe("herdr assumptions, against a real server", () => {
     // gaining the command, at which point ADR-0032's original design becomes available again and should be
     // reconsidered rather than the test deleted.
     const reply = await defaultExec(["agent", "stop", "whatever"]);
-    assert.match(reply.stdout + reply.stderr, /herdr agent commands/, "if this stops being a usage banner, herdr changed");
+    assert.match(
+      reply.stdout + reply.stderr,
+      /herdr agent commands/,
+      "if this stops being a usage banner, herdr changed",
+    );
     assert.doesNotMatch(reply.stdout, /"result"/, "and it must not be answering as a real command");
   });
 
@@ -150,7 +161,9 @@ describe("herdr assumptions, against a real server", () => {
     const name = suiteAgentName("collide-d0.1");
     assert.ok((await startAgent(name, await pane())).ok);
 
-    const again = parseReply(await defaultExec(["agent", "start", name, "--kind", "pi", "--pane", await pane(), "--", ...INERT_PI_ARGV]));
+    const again = parseReply(
+      await defaultExec(["agent", "start", name, "--kind", "pi", "--pane", await pane(), "--", ...INERT_PI_ARGV]),
+    );
     assert.ok(again.error, "herdr accepted a duplicate name — uniqueAgentName may no longer be needed");
     assert.match(again.error, /already used|name_taken/i);
   });
@@ -158,7 +171,9 @@ describe("herdr assumptions, against a real server", () => {
   test("`tab create` returns the reply shape run-herdr.ts parses", { skip: skipIf() }, async () => {
     // The fake hands back `{result:{root_pane:{pane_id,tab_id}}}`. If herdr renames either field, every spawn
     // fails with "returned no pane id" and this says why.
-    const reply = parseReply(await defaultExec(["tab", "create", "--label", "it", "--workspace", workspace!, "--cwd", process.cwd()]));
+    const reply = parseReply(
+      await defaultExec(["tab", "create", "--label", "it", "--workspace", workspace!, "--cwd", process.cwd()]),
+    );
     const root = (reply.result?.root_pane ?? {}) as { pane_id?: string; tab_id?: string };
     assert.ok(root.pane_id, "root_pane.pane_id is what the executor reads");
     assert.ok(root.tab_id, "root_pane.tab_id is what the reaper closes");
@@ -170,9 +185,18 @@ describe("herdr assumptions, against a real server", () => {
     // available failure and would otherwise be silent.
     const reply = parseReply(
       await defaultExec([
-        "tab", "create", "--label", "env", "--workspace", workspace!, "--cwd", process.cwd(),
-        "--env", "PI_GRANTS_GRANT=tool:read",
-        "--env", "PI_GRANTS_DEPTH=1",
+        "tab",
+        "create",
+        "--label",
+        "env",
+        "--workspace",
+        workspace!,
+        "--cwd",
+        process.cwd(),
+        "--env",
+        "PI_GRANTS_GRANT=tool:read",
+        "--env",
+        "PI_GRANTS_DEPTH=1",
       ]),
     );
     const root = (reply.result?.root_pane ?? {}) as { pane_id?: string };
@@ -211,13 +235,19 @@ describe("herdr assumptions, against a real server", () => {
     assert.ok(seen.trim().length > 0, "a started agent's pane must read back as something");
     // The load-bearing half: it is NOT herdr's `{id,result}` envelope. Running this through `parseReply` once
     // reported every successful read as "unparseable herdr reply" — a child's real answer as a failure to read it.
-    assert.doesNotMatch(seen.trimStart().slice(0, 1), /\{/, "a JSON envelope here would make readPane's fallback wrong");
+    assert.doesNotMatch(
+      seen.trimStart().slice(0, 1),
+      /\{/,
+      "a JSON envelope here would make readPane's fallback wrong",
+    );
   });
 
   test("a child's pane lands in the workspace we ask for", { skip: skipIf() }, async () => {
     // ADR-0032's usability claim: a child is a tab away, not a workspace away. `resolveWorkspace` inherits the
     // parent's `HERDR_WORKSPACE_ID`; here we assert the mechanism it depends on.
-    const reply = parseReply(await defaultExec(["tab", "create", "--label", "ws", "--workspace", workspace!, "--cwd", process.cwd()]));
+    const reply = parseReply(
+      await defaultExec(["tab", "create", "--label", "ws", "--workspace", workspace!, "--cwd", process.cwd()]),
+    );
     const root = (reply.result?.root_pane ?? {}) as { tab_id?: string; workspace_id?: string };
     assert.equal(root.workspace_id, workspace, "`--workspace` must be honoured, or children scatter");
     assert.ok(root.tab_id?.startsWith(`${workspace}:`), "and the tab id must carry it");
@@ -231,7 +261,9 @@ describe("herdr assumptions, against a real server", () => {
     //
     // This asserts the fact `resolveWorkspace` actually depends on, and which no unit test can know: that herdr
     // exports `HERDR_WORKSPACE_ID` into a pane, matching the workspace it was created in.
-    const created = parseReply(await defaultExec(["tab", "create", "--label", "wsvar", "--workspace", workspace!, "--cwd", process.cwd()]));
+    const created = parseReply(
+      await defaultExec(["tab", "create", "--label", "wsvar", "--workspace", workspace!, "--cwd", process.cwd()]),
+    );
     const root = (created.result?.root_pane ?? {}) as { pane_id?: string };
     assert.ok(root.pane_id);
 
@@ -251,7 +283,9 @@ describe("herdr assumptions, against a real server", () => {
   test("`tab close` is the kill: after it, herdr no longer knows the agent", { skip: skipIf() }, async () => {
     // The replacement for the phantom `agent stop`. ADR-0032 now depends on this being a real kill for any child
     // that did not settle, so it is asserted rather than assumed.
-    const created = parseReply(await defaultExec(["tab", "create", "--label", "kill", "--workspace", workspace!, "--cwd", process.cwd()]));
+    const created = parseReply(
+      await defaultExec(["tab", "create", "--label", "kill", "--workspace", workspace!, "--cwd", process.cwd()]),
+    );
     const root = (created.result?.root_pane ?? {}) as { pane_id?: string; tab_id?: string };
     const name = suiteAgentName("kill-d0.1");
     assert.ok((await startAgent(name, root.pane_id!)).ok);

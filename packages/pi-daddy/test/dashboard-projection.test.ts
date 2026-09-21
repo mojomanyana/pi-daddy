@@ -1,9 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import {
-  parseDashboardLedger,
-  type DashboardNode,
-} from "../src/products/dashboard-projection.ts";
+import { parseDashboardLedger, type DashboardNode } from "../src/products/dashboard-projection.ts";
 import { renderDashboard } from "../src/products/dashboard-render.ts";
 
 const digest = "a".repeat(64);
@@ -58,26 +55,37 @@ const byExecution = (nodes: DashboardNode[], id: string): DashboardNode => {
 test("two occurrences at the same logical child position remain separate nodes", () => {
   const first = "exec:00000000-0000-4000-8000-000000000001";
   const second = "exec:00000000-0000-4000-8000-000000000002";
-  const projection = parseDashboardLedger(lines(
-    decision({ executionId: first }),
-    decision({ executionId: second, ts: "2026-08-28T12:01:00.000Z" }),
-    lifecycle({ executionId: first, state: "completed", exitCode: 0, signal: null }),
-    lifecycle({ executionId: second, ts: "2026-08-28T12:01:01.000Z" }),
-  ), { now });
+  const projection = parseDashboardLedger(
+    lines(
+      decision({ executionId: first }),
+      decision({ executionId: second, ts: "2026-08-28T12:01:00.000Z" }),
+      lifecycle({ executionId: first, state: "completed", exitCode: 0, signal: null }),
+      lifecycle({ executionId: second, ts: "2026-08-28T12:01:01.000Z" }),
+    ),
+    { now },
+  );
 
   assert.equal(projection.nodes.length, 2);
   assert.equal(byExecution(projection.nodes, first).state, "completed");
   assert.equal(byExecution(projection.nodes, second).state, "starting");
-  assert.deepEqual(projection.nodes.map((node) => node.logicalChildId), ["d0.1", "d0.1"]);
+  assert.deepEqual(
+    projection.nodes.map((node) => node.logicalChildId),
+    ["d0.1", "d0.1"],
+  );
 });
 
 test("a refusal that never starts a process is still a red-state node", () => {
-  const projection = parseDashboardLedger(lines(decision({
-    blocked: true,
-    denied: ["tool:write"],
-    effective: [],
-    refusal: { code: "CAPABILITY_ESCALATION", message: "blocked" },
-  })), { now });
+  const projection = parseDashboardLedger(
+    lines(
+      decision({
+        blocked: true,
+        denied: ["tool:write"],
+        effective: [],
+        refusal: { code: "CAPABILITY_ESCALATION", message: "blocked" },
+      }),
+    ),
+    { now },
+  );
 
   assert.equal(projection.nodes[0]?.state, "refused");
   assert.equal(projection.nodes[0]?.durationMs, 0, "a refusal that never ran must not accrue runtime");
@@ -91,24 +99,26 @@ test("an authorised decision that never starts freezes at the start grace bound"
 });
 
 test("a start with no terminal event expires to incomplete instead of running forever", () => {
-  const projection = parseDashboardLedger(lines(
-    decision(),
-    lifecycle({ deadlineAt: "2026-08-28T12:05:00.000Z" }),
-  ), { now });
+  const projection = parseDashboardLedger(lines(decision(), lifecycle({ deadlineAt: "2026-08-28T12:05:00.000Z" })), {
+    now,
+  });
 
   assert.equal(projection.nodes[0]?.state, "incomplete");
 });
 
 test("a running event cannot replace the lifecycle's recorded deadline", () => {
-  const projection = parseDashboardLedger(lines(
-    decision(),
-    lifecycle({ deadlineAt: "2026-08-28T12:05:00.000Z" }),
-    lifecycle({
-      state: "running",
-      ts: "2026-08-28T12:00:02.000Z",
-      deadlineAt: "2026-08-28T13:00:00.000Z",
-    }),
-  ), { now });
+  const projection = parseDashboardLedger(
+    lines(
+      decision(),
+      lifecycle({ deadlineAt: "2026-08-28T12:05:00.000Z" }),
+      lifecycle({
+        state: "running",
+        ts: "2026-08-28T12:00:02.000Z",
+        deadlineAt: "2026-08-28T13:00:00.000Z",
+      }),
+    ),
+    { now },
+  );
 
   assert.equal(projection.nodes[0]?.state, "incomplete", "the starting deadline remains the occurrence bound");
   assert.equal(projection.nodes[0]?.durationMs, 299_000);
@@ -128,20 +138,33 @@ test("restarting reconstructs the same state and retained Herdr identity from le
 });
 
 test("corrupt and unsupported lines are reported by number and never repaired or ignored", () => {
-  const projection = parseDashboardLedger([
-    JSON.stringify(decision()),
-    "{not-json",
-    JSON.stringify({ ...decision(), ledgerVersion: 4 }),
-    JSON.stringify({ ...lifecycle(), executionId: undefined }),
-    JSON.stringify({
-      ledgerVersion: 3, event: "workspace_lease", ts: now.toISOString(),
-      executionId: "exec:00000000-0000-4000-8000-000000000009", parentExecutionId: null,
-      childId: "d0.9", workspaceId: "w", root: "/w", access: "read", outcome: "teleported",
-    }),
-  ].join("\n"), { now });
+  const projection = parseDashboardLedger(
+    [
+      JSON.stringify(decision()),
+      "{not-json",
+      JSON.stringify({ ...decision(), ledgerVersion: 4 }),
+      JSON.stringify({ ...lifecycle(), executionId: undefined }),
+      JSON.stringify({
+        ledgerVersion: 3,
+        event: "workspace_lease",
+        ts: now.toISOString(),
+        executionId: "exec:00000000-0000-4000-8000-000000000009",
+        parentExecutionId: null,
+        childId: "d0.9",
+        workspaceId: "w",
+        root: "/w",
+        access: "read",
+        outcome: "teleported",
+      }),
+    ].join("\n"),
+    { now },
+  );
 
   assert.equal(projection.nodes.length, 1);
-  assert.deepEqual(projection.corrupt.map((entry) => entry.line), [2, 3, 4, 5]);
+  assert.deepEqual(
+    projection.corrupt.map((entry) => entry.line),
+    [2, 3, 4, 5],
+  );
   assert.match(projection.corrupt[0]?.reason ?? "", /JSON/i);
 });
 
@@ -173,9 +196,14 @@ test("schema-shaped free text cannot become dashboard task or output text", () =
 });
 
 test("malformed nested v3 fields are corruption, not renderer crashes", () => {
-  const projection = parseDashboardLedger(lines(decision({
-    correlation: { run_id: "run-1", phase: 42 },
-  })), { now });
+  const projection = parseDashboardLedger(
+    lines(
+      decision({
+        correlation: { run_id: "run-1", phase: 42 },
+      }),
+    ),
+    { now },
+  );
   assert.equal(projection.nodes.length, 0);
   assert.equal(projection.corrupt.length, 1);
   assert.doesNotThrow(() => renderDashboard(projection, { color: false }));
@@ -216,11 +244,14 @@ test("malformed explicit v2 events are corruption, not historical or orphan rows
 });
 
 test("a lifecycle event after terminal state is corrupt and cannot resurrect a child", () => {
-  const projection = parseDashboardLedger(lines(
-    decision(),
-    lifecycle({ state: "completed", exitCode: 0, signal: null }),
-    lifecycle({ state: "running", ts: "2026-08-28T12:02:00.000Z" }),
-  ), { now });
+  const projection = parseDashboardLedger(
+    lines(
+      decision(),
+      lifecycle({ state: "completed", exitCode: 0, signal: null }),
+      lifecycle({ state: "running", ts: "2026-08-28T12:02:00.000Z" }),
+    ),
+    { now },
+  );
   assert.equal(projection.nodes[0]?.state, "completed");
   assert.equal(projection.corrupt.length, 1);
   assert.match(projection.corrupt[0]?.reason ?? "", /after terminal lifecycle/);
@@ -244,10 +275,13 @@ test("a self-parent execution is corrupt rather than a node that disappears from
 test("a multi-node parent cycle is reported rather than hidden", () => {
   const first = "exec:00000000-0000-4000-8000-000000000001";
   const second = "exec:00000000-0000-4000-8000-000000000002";
-  const projection = parseDashboardLedger(lines(
-    decision({ executionId: first, parentExecutionId: second }),
-    decision({ executionId: second, parentExecutionId: first, childId: "d0.2" }),
-  ), { now });
+  const projection = parseDashboardLedger(
+    lines(
+      decision({ executionId: first, parentExecutionId: second }),
+      decision({ executionId: second, parentExecutionId: first, childId: "d0.2" }),
+    ),
+    { now },
+  );
   assert.equal(projection.nodes.length, 0);
   assert.equal(projection.corrupt.length, 2);
   assert.ok(projection.corrupt.every((entry) => /parent cycle/.test(entry.reason)));
@@ -262,27 +296,38 @@ test("parent execution identity, runtime identity and caller-declared workflow l
     phase: "plan",
     assurance_effective: "critical",
   };
-  const projection = parseDashboardLedger(lines(
-    decision({ executionId: parent, correlation }),
-    lifecycle({ executionId: parent, state: "running", executor: "herdr", herdrPaneId: "w1:p2", herdrAgentName: "review-d0-1" }),
-    decision({
-      executionId: child,
-      parentExecutionId: parent,
-      parentId: "d0.1",
-      childId: "d0.1.1",
-      depth: 2,
-      agentType: "debug",
-      correlation: { ...correlation, phase: "review:quality" },
-    }),
-  ), { now });
+  const projection = parseDashboardLedger(
+    lines(
+      decision({ executionId: parent, correlation }),
+      lifecycle({
+        executionId: parent,
+        state: "running",
+        executor: "herdr",
+        herdrPaneId: "w1:p2",
+        herdrAgentName: "review-d0-1",
+      }),
+      decision({
+        executionId: child,
+        parentExecutionId: parent,
+        parentId: "d0.1",
+        childId: "d0.1.1",
+        depth: 2,
+        agentType: "debug",
+        correlation: { ...correlation, phase: "review:quality" },
+      }),
+    ),
+    { now },
+  );
 
   assert.equal(byExecution(projection.nodes, child).parentExecutionId, parent);
   assert.equal(byExecution(projection.nodes, parent).runtime?.herdrPaneId, "w1:p2");
-  assert.deepEqual(projection.workflows, [{
-    runId: "run-principal-1",
-    label: "principal-feature",
-    assurance: "critical",
-    phases: ["plan", "review:quality"],
-    provenance: "caller-declared",
-  }]);
+  assert.deepEqual(projection.workflows, [
+    {
+      runId: "run-principal-1",
+      label: "principal-feature",
+      assurance: "critical",
+      phases: ["plan", "review:quality"],
+      provenance: "caller-declared",
+    },
+  ]);
 });

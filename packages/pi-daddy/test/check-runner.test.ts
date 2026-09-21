@@ -86,11 +86,16 @@ test("receipt captures exit, signal, timeout, output digest, and exact candidate
   const ws = await workspace();
   const base = {
     checkId: "fails",
-    registry: { version: 1 as const, checks: { fails: {
-      executable: process.execPath,
-      argv: ["-e", "process.stderr.write('bad'); process.exit(7)"],
-      workspace_access: "read" as const,
-    } } },
+    registry: {
+      version: 1 as const,
+      checks: {
+        fails: {
+          executable: process.execPath,
+          argv: ["-e", "process.stderr.write('bad'); process.exit(7)"],
+          workspace_access: "read" as const,
+        },
+      },
+    },
     workspace: ws,
     correlation: { run_id: "run-1", task_id: "task-1" },
   };
@@ -104,7 +109,11 @@ test("receipt captures exit, signal, timeout, output digest, and exact candidate
   assert.match(first.receipt.output_sha256, /^[a-f0-9]{64}$/);
   await writeFile(join(ws.root, "README.md"), "changed\n");
   const changed = await runNamedCheck(base);
-  assert.notEqual(changed.receipt.tree_sha, first.receipt.tree_sha, "an uncommitted-tree change must produce a new identity");
+  assert.notEqual(
+    changed.receipt.tree_sha,
+    first.receipt.tree_sha,
+    "an uncommitted-tree change must produce a new identity",
+  );
 });
 
 test("receipt executable digest names the staged bytes that actually ran", async () => {
@@ -127,12 +136,13 @@ test("receipt executable digest names the staged bytes that actually ran", async
 test("caller-supplied head/tree values cannot override validated Git identity", async () => {
   const ws = await workspace();
   await assert.rejects(
-    () => runNamedCheck({
-      checkId: "identity",
-      registry: { version: 1, checks: { identity: { executable: process.execPath, argv: ["-e", ""] } } },
-      workspace: ws,
-      correlation: { head_sha: "a".repeat(40), tree_sha: "b".repeat(40) },
-    }),
+    () =>
+      runNamedCheck({
+        checkId: "identity",
+        registry: { version: 1, checks: { identity: { executable: process.execPath, argv: ["-e", ""] } } },
+        workspace: ws,
+        correlation: { head_sha: "a".repeat(40), tree_sha: "b".repeat(40) },
+      }),
     (error: Error & { code?: string }) => error.code === "CHECK_IDENTITY_MISMATCH",
   );
 });
@@ -146,24 +156,34 @@ test("named-check lease and receipt events are joinable", async () => {
     workspace: ws,
     ledgerPath,
   });
-  const events = (await readFile(ledgerPath, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
-  assert.deepEqual(events.map((event) => `${event.event}:${event.outcome ?? "receipt"}`), [
-    "workspace_lease:acquired", "workspace_lease:released", "check_receipt:receipt",
-  ]);
+  const events = (await readFile(ledgerPath, "utf8"))
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  assert.deepEqual(
+    events.map((event) => `${event.event}:${event.outcome ?? "receipt"}`),
+    ["workspace_lease:acquired", "workspace_lease:released", "check_receipt:receipt"],
+  );
   assert.ok(events.every((event) => event.childId === events[0].childId));
 });
 
 test("a check that changes candidate content cannot issue a stale receipt", async () => {
   const ws = await workspace();
   await assert.rejects(
-    () => runNamedCheck({
-      checkId: "mutates",
-      registry: { version: 1, checks: { mutates: {
-        executable: process.execPath,
-        argv: ["-e", "require('fs').writeFileSync('README.md','mutated\\n')"],
-      } } },
-      workspace: ws,
-    }),
+    () =>
+      runNamedCheck({
+        checkId: "mutates",
+        registry: {
+          version: 1,
+          checks: {
+            mutates: {
+              executable: process.execPath,
+              argv: ["-e", "require('fs').writeFileSync('README.md','mutated\\n')"],
+            },
+          },
+        },
+        workspace: ws,
+      }),
     (error: Error & { code?: string }) => error.code === "CHECK_IDENTITY_MISMATCH",
   );
 });
@@ -175,20 +195,34 @@ test("a check that loses its kernel lease emits no receipt", async () => {
   const ready = join(await tempDir("check-lost-ready-"), "READY");
   const running = runNamedCheck({
     checkId: "lost",
-    registry: { version: 1, checks: { lost: {
-      executable: process.execPath,
-      argv: ["-e", `require('fs').writeFileSync(${JSON.stringify(ready)},'ready');setInterval(()=>{},1000)`],
-    } } },
+    registry: {
+      version: 1,
+      checks: {
+        lost: {
+          executable: process.execPath,
+          argv: ["-e", `require('fs').writeFileSync(${JSON.stringify(ready)},'ready');setInterval(()=>{},1000)`],
+        },
+      },
+    },
     workspace: ws,
     leaseDir,
     ledgerPath,
   });
   for (let i = 0; i < 100 && !existsSync(ready); i += 1) await new Promise((r) => setTimeout(r, 20));
-  const metadataPath = join(leaseDir, (await readdir(leaseDir)).find((name) => name.endsWith(".json"))!);
+  const metadataPath = join(
+    leaseDir,
+    (await readdir(leaseDir)).find((name) => name.endsWith(".json"))!,
+  );
   process.kill(JSON.parse(await readFile(metadataPath, "utf8")).pid, "SIGKILL");
   await assert.rejects(running, (error: Error & { code?: string }) => error.code === "WORKSPACE_LEASE_STALE");
-  const events = (await readFile(ledgerPath, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
-  assert.equal(events.some((event) => event.event === "check_receipt"), false);
+  const events = (await readFile(ledgerPath, "utf8"))
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  assert.equal(
+    events.some((event) => event.event === "check_receipt"),
+    false,
+  );
 });
 
 test("parent SIGKILL stops a named check before releasing its workspace lease", async () => {
@@ -211,8 +245,12 @@ test("parent SIGKILL stops a named check before releasing its workspace lease", 
   await once(parent, "close");
   let next;
   for (let i = 0; i < 100; i += 1) {
-    try { next = await acquireWorkspaceLease({ workspace: ws, access: "write", leaseDir, ownerId: "next" }); break; }
-    catch { await new Promise((r) => setTimeout(r, 25)); }
+    try {
+      next = await acquireWorkspaceLease({ workspace: ws, access: "write", leaseDir, ownerId: "next" });
+      break;
+    } catch {
+      await new Promise((r) => setTimeout(r, 25));
+    }
   }
   assert.ok(next);
   await new Promise((r) => setTimeout(r, 1100));
@@ -225,7 +263,10 @@ test("timeout and output cap remain hard bounds, and timeout releases the writer
   const leaseDir = await tempDir("check-leases-");
   const timed = await runNamedCheck({
     checkId: "hang",
-    registry: { version: 1, checks: { hang: { executable: process.execPath, argv: ["-e", "setInterval(()=>{},1000)"], timeout_ms: 50 } } },
+    registry: {
+      version: 1,
+      checks: { hang: { executable: process.execPath, argv: ["-e", "setInterval(()=>{},1000)"], timeout_ms: 50 } },
+    },
     workspace: ws,
     leaseDir,
   });
@@ -234,7 +275,16 @@ test("timeout and output cap remain hard bounds, and timeout releases the writer
   // Same root and same lease directory: success proves timeout cleanup, not merely a second lock key.
   const flood = await runNamedCheck({
     checkId: "flood",
-    registry: { version: 1, checks: { flood: { executable: process.execPath, argv: ["-e", "process.stdout.write('x'.repeat(10000))"], max_output_bytes: 128 } } },
+    registry: {
+      version: 1,
+      checks: {
+        flood: {
+          executable: process.execPath,
+          argv: ["-e", "process.stdout.write('x'.repeat(10000))"],
+          max_output_bytes: 128,
+        },
+      },
+    },
     workspace: ws,
     leaseDir,
   });
@@ -272,11 +322,12 @@ test("a malformed check definition is refused rather than normalised", async () 
   };
   for (const [checkId, definition] of Object.entries(cases)) {
     await assert.rejects(
-      () => runNamedCheck({
-        checkId,
-        registry: { version: 1, checks: { [checkId]: definition } } as never,
-        workspace: ws,
-      }),
+      () =>
+        runNamedCheck({
+          checkId,
+          registry: { version: 1, checks: { [checkId]: definition } } as never,
+          workspace: ws,
+        }),
       (error: Error & { code?: string }) => {
         assert.equal(error.code, "CHECK_CONFIGURATION_INVALID", checkId);
         return true;
@@ -304,15 +355,16 @@ test("an evidence check declared `read` still takes the exclusive writer lease",
   const held = await acquireWorkspaceLease({ workspace: ws, access: "write", leaseDir, ownerId: "other-writer" });
   try {
     await assert.rejects(
-      () => runNamedCheck({
-        checkId: "declared-read",
-        registry: {
-          version: 1,
-          checks: { "declared-read": { executable: process.execPath, argv: ["-e", "1"], workspace_access: "read" } },
-        },
-        workspace: ws,
-        leaseDir,
-      }),
+      () =>
+        runNamedCheck({
+          checkId: "declared-read",
+          registry: {
+            version: 1,
+            checks: { "declared-read": { executable: process.execPath, argv: ["-e", "1"], workspace_access: "read" } },
+          },
+          workspace: ws,
+          leaseDir,
+        }),
       (error: Error & { code?: string }) => {
         assert.equal(error.code, "WORKSPACE_WRITE_CONFLICT");
         return true;

@@ -34,10 +34,15 @@ function node(overrides: Partial<DashboardNode> = {}): DashboardNode {
 function projection(nodes: DashboardNode[], overrides: Partial<DashboardProjection> = {}): DashboardProjection {
   return {
     nodes,
-    workflows: [{
-      runId: "run-1", label: "principal-feature", assurance: "critical", phases: ["plan"],
-      provenance: "caller-declared",
-    }],
+    workflows: [
+      {
+        runId: "run-1",
+        label: "principal-feature",
+        assurance: "critical",
+        phases: ["plan"],
+        provenance: "caller-declared",
+      },
+    ],
     workflowFacts: [],
     corrupt: [],
     orphanEvents: 0,
@@ -93,7 +98,9 @@ test("active descendants keep their ancestry while old completed siblings collap
     state: "running",
   });
   const rendered = renderDashboard(projection([parent, old, active]), {
-    color: false, width: 100, completedChildren: 0,
+    color: false,
+    width: 100,
+    completedChildren: 0,
   });
   assert.match(rendered, /review/);
   assert.match(rendered, /debug/);
@@ -103,7 +110,8 @@ test("active descendants keep their ancestry while old completed siblings collap
 
 test("width truncation counts terminal cells and never leaves ANSI color open", () => {
   const rendered = renderDashboard(projection([node({ agentName: "review".repeat(20), state: "refused" })]), {
-    color: true, width: 30,
+    color: true,
+    width: 30,
   });
   for (const line of rendered.split("\n")) {
     let activeSgr = false;
@@ -112,29 +120,46 @@ test("width truncation counts terminal cells and never leaves ANSI color open", 
     }
     assert.equal(activeSgr, false, `unterminated ANSI style in ${JSON.stringify(line)}`);
     const plain = line.replace(/\u001b\[[0-9;]*m/g, "");
-    const cells = [...plain].reduce((sum, char) => sum + (/\p{Extended_Pictographic}|[\u2E80-\u9FFF\uF900-\uFAFF]/u.test(char) ? 2 : 1), 0);
+    const cells = [...plain].reduce(
+      (sum, char) => sum + (/\p{Extended_Pictographic}|[\u2E80-\u9FFF\uF900-\uFAFF]/u.test(char) ? 2 : 1),
+      0,
+    );
     assert.ok(cells <= 30, `${cells} cells exceeds width: ${JSON.stringify(plain)}`);
   }
   const narrow = renderDashboard(projection([node()]), { color: false, width: 10 });
-  assert.ok(narrow.split("\n").every((line) => [...line].length <= 10), "a narrow split must not be forced to 30 columns");
+  assert.ok(
+    narrow.split("\n").every((line) => [...line].length <= 10),
+    "a narrow split must not be forced to 30 columns",
+  );
 });
 
 test("C1 terminal controls and Unicode format controls never survive rendering", () => {
   const controls = "bad\u009b31m\u009dtitle\u009c\u202ereversed\u2066isolate\u2069";
-  const rendered = renderDashboard(projection([], {
-    corrupt: [{ line: 1, reason: controls }],
-  }), { color: false, width: 100 });
+  const rendered = renderDashboard(
+    projection([], {
+      corrupt: [{ line: 1, reason: controls }],
+    }),
+    { color: false, width: 100 },
+  );
 
   assert.doesNotMatch(rendered.replaceAll("\n", ""), /[\p{Cc}\p{Cf}]/u);
   assert.match(rendered, /bad/);
 });
 
 test("expanded details show governance identifiers but never task text or child output", () => {
-  const rendered = renderDashboard(projection([node({
-    workspace: { id: "staging", access: "read", root: "/work/staging" },
-  })], {
-    corrupt: [{ line: 9, reason: "field task is forbidden" }],
-  }), { color: false, width: 100, details: true });
+  const rendered = renderDashboard(
+    projection(
+      [
+        node({
+          workspace: { id: "staging", access: "read", root: "/work/staging" },
+        }),
+      ],
+      {
+        corrupt: [{ line: 9, reason: "field task is forbidden" }],
+      },
+    ),
+    { color: false, width: 100, details: true },
+  );
 
   assert.match(rendered, /grant tool:read/);
   assert.match(rendered, /workspace staging · read/);
@@ -146,10 +171,14 @@ test("expanded details show governance identifiers but never task text or child 
 
 // Removing the root summary, ignoring history, or letting limits hide important branches breaks these.
 test("six completed roots report three hidden and history restores all independently of details", () => {
-  const nodes = Array.from({ length: 6 }, (_, i) => node({
-    executionId: `exec:${i}`, agentName: `review-${i}`, state: "completed",
-    startedAt: new Date(Date.parse(at) + i * 1000).toISOString(),
-  }));
+  const nodes = Array.from({ length: 6 }, (_, i) =>
+    node({
+      executionId: `exec:${i}`,
+      agentName: `review-${i}`,
+      state: "completed",
+      startedAt: new Date(Date.parse(at) + i * 1000).toISOString(),
+    }),
+  );
   for (const workflows of [projection(nodes).workflows, []]) {
     const view = projection(nodes, { workflows });
     const compact = renderDashboard(view, { color: false, details: true });
@@ -164,13 +193,22 @@ test("six completed roots report three hidden and history restores all independe
 });
 
 test("hidden root counts are local to each workflow and the ungrouped tree", () => {
-  const nodes = [4, 5, 6].flatMap((count, group) => Array.from({ length: count }, (_, i) => node({
-    executionId: `exec:${group}-${i}`, agentName: `group-${group}-${i}`, state: "completed",
-    correlation: group < 2 ? { run_id: `run-${group}` } : undefined,
-  })));
-  const workflows = [0, 1].map(i => ({ ...projection([]).workflows[0], runId: `run-${i}`, label: `workflow-${i}` }));
+  const nodes = [4, 5, 6].flatMap((count, group) =>
+    Array.from({ length: count }, (_, i) =>
+      node({
+        executionId: `exec:${group}-${i}`,
+        agentName: `group-${group}-${i}`,
+        state: "completed",
+        correlation: group < 2 ? { run_id: `run-${group}` } : undefined,
+      }),
+    ),
+  );
+  const workflows = [0, 1].map((i) => ({ ...projection([]).workflows[0], runId: `run-${i}`, label: `workflow-${i}` }));
   const compact = renderDashboard(projection(nodes, { workflows }), { color: false });
-  assert.match(compact, /workflow-0[^]*1 completed root hidden[^]*workflow-1[^]*2 completed roots hidden[^]*3 completed roots hidden/);
+  assert.match(
+    compact,
+    /workflow-0[^]*1 completed root hidden[^]*workflow-1[^]*2 completed roots hidden[^]*3 completed roots hidden/,
+  );
   assert.equal((compact.match(/group-\d-\d/g) ?? []).length, 9);
   const expanded = renderDashboard(projection(nodes, { workflows }), { color: false, history: true });
   assert.equal((expanded.match(/group-\d-\d/g) ?? []).length, 15);
@@ -181,9 +219,19 @@ test("zero history limits preserve every active and attention branch with its an
   const states = ["authorised", "starting", "running", "failed", "refused", "incomplete"] as const;
   const nodes = states.flatMap((state, i) => [
     node({ executionId: `parent-${i}`, agentName: `ancestor-${i}`, state: "completed" }),
-    node({ executionId: `middle-${i}`, parentExecutionId: `parent-${i}`, agentName: `middle-${i}`, state: "completed" }),
+    node({
+      executionId: `middle-${i}`,
+      parentExecutionId: `parent-${i}`,
+      agentName: `middle-${i}`,
+      state: "completed",
+    }),
     node({ executionId: `child-${i}`, parentExecutionId: `middle-${i}`, agentName: `important-${i}`, state }),
-    node({ executionId: `sibling-${i}`, parentExecutionId: `parent-${i}`, agentName: `quiet-${i}`, state: "completed" }),
+    node({
+      executionId: `sibling-${i}`,
+      parentExecutionId: `parent-${i}`,
+      agentName: `quiet-${i}`,
+      state: "completed",
+    }),
   ]);
   const view = projection(nodes);
   const compact = renderDashboard(view, { color: false, completedRoots: 0, completedChildren: 0 });

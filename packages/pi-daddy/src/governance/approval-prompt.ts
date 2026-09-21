@@ -52,7 +52,7 @@ export interface PromptRequest {
  * no; the other three are absence-of-signal, not a signal.
  */
 export const PROMPT_OUTCOME_KINDS = ["granted", "declined", "dismissed", "no-ui", "error"] as const;
-export type PromptOutcomeKind = typeof PROMPT_OUTCOME_KINDS[number];
+export type PromptOutcomeKind = (typeof PROMPT_OUTCOME_KINDS)[number];
 
 export interface PromptOutcome {
   /** The scope the human chose, or null for any form of no. */

@@ -11,7 +11,8 @@ export async function beginDeclaredWorkAttempt(input: {
   childId: string;
   executionId: string;
   parentExecutionId: string | null;
-  toolCallId?: string; declaredWork?: GrantsSession["declaredWork"];
+  toolCallId?: string;
+  declaredWork?: GrantsSession["declaredWork"];
   preparedWorkspace?: PreparedWorkspace;
   configuredTimeoutMs: number;
   startedAt: Date;
@@ -20,7 +21,7 @@ export async function beginDeclaredWorkAttempt(input: {
   if (!state) return null;
   const argument = (flag: string): string | null => {
     const index = input.plan.args.indexOf(flag);
-    return index >= 0 ? input.plan.args[index + 1] ?? null : null;
+    return index >= 0 ? (input.plan.args[index + 1] ?? null) : null;
   };
   const identity = {
     executionId: input.executionId,

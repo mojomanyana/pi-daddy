@@ -36,11 +36,15 @@ import { assertLedgerV3Wire } from "./ledger-v3-validation.ts";
 
 export const LEDGER_VERSION = 3 as const;
 export const LEDGER_EVENT_KINDS = [
-  "capability_decision", "workspace_lease", "child_lifecycle", "check_receipt", "workflow_fact",
+  "capability_decision",
+  "workspace_lease",
+  "child_lifecycle",
+  "check_receipt",
+  "workflow_fact",
 ] as const;
-export type LedgerEventKind = typeof LEDGER_EVENT_KINDS[number];
+export type LedgerEventKind = (typeof LEDGER_EVENT_KINDS)[number];
 export const LEDGER_GATE_OUTCOMES = ["declined", "dismissed", "no-ui", "error"] as const;
-export type LedgerGateOutcome = typeof LEDGER_GATE_OUTCOMES[number];
+export type LedgerGateOutcome = (typeof LEDGER_GATE_OUTCOMES)[number];
 
 export interface LedgerEventBase {
   /** Optional only on the legacy-compatible `GrantRecord` public type; every v3 event builder writes it. */
@@ -313,7 +317,10 @@ export { verifyLedger, type LedgerReport } from "./ledger-report.ts";
  * — because a child running with granted capabilities and no audit line is what the ledger exists to
  * prevent. That is the opposite of what the approvals store does with the same lock, and deliberately so.
  */
-export async function appendLedgerEvent(options: LedgerOptions, event: RuntimeLedgerEvent | GrantRecord): Promise<void> {
+export async function appendLedgerEvent(
+  options: LedgerOptions,
+  event: RuntimeLedgerEvent | GrantRecord,
+): Promise<void> {
   const line = `${JSON.stringify(event)}\n`;
   try {
     await appendLedgerLine(options, line);
