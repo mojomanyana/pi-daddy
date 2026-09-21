@@ -174,3 +174,7 @@ and passes its `--session` target into the recorded plan; model tool parameters 
 Invalid/reused/nonprivate targets refuse. Default children remain ephemeral. Existing asynchronous retention
 captures available native bytes at the same execution seam; it does not create observer session entries,
 claim final-source completeness, or infer an active TUI branch from a file tail.
+
+**Note 2026-09-21 (cleanup).** The `cancel` operation, the `openExperiment` controller and experiment quiescence
+described above were deleted with the fixed-digest lab; a `cancel` request now refuses as unsupported. Ordinary
+child cancellation is `ordinary-cancel`.

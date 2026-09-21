@@ -1,4 +1,4 @@
-# Current producer requirement register
+# Current requirement register
 
 **Release candidate:** pi-daddy **0.28.0**, paired with planned skill-harness **0.17.0**, implementing the
 2026-09-14 proposal. This is current product scope, not an npm/release receipt or a replacement for dated

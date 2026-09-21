@@ -478,7 +478,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     assert.match(text, /unknown subcommand "ledgr" — did nothing/, "it must say it did nothing");
     assert.match(
       text,
-      /Known: work, learning, init, host, variants, dashboard, ledger, approvals, revoke/,
+      /Known: work, learning, init, host, dashboard, ledger, approvals, revoke/,
       "and what it does know",
     );
     assert.ok(!/holding    /.test(text), "and must NOT print the status screen, which is what made it look fine");

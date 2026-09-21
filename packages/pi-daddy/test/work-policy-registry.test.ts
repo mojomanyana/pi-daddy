@@ -11,7 +11,7 @@ import {
   type WorkPolicyActivation,
 } from "../src/products/work-policy-registry.ts";
 import { buildAdoptionBinding, buildRollbackRequest, authorizeAdoption } from "../src/products/vendor/adoption.ts";
-import type { FactoryAuthority } from "../src/products/factory-contract.ts";
+import type { FactoryAuthority } from "../src/products/work-policy-registry.ts";
 after(cleanupTempDirs);
 const d = (c: string) => c.repeat(64);
 const baseline = () =>

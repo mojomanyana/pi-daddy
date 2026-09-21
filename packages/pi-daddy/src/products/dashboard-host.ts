@@ -14,12 +14,6 @@ import { debriefAction } from "./debrief-render.ts";
 import { openResourceBudget, resourceBindingDigest, type GovernedBudgetBinding } from "./resource-budget.ts";
 import { dispatchRequest, dispatchRequestDigest, controlShape, type DispatchRequest } from "./dispatch-control.ts";
 import { intentRequest, intentRequestDigest, type IntentRequest } from "./intent-control.ts";
-import {
-  experimentBindingDigest,
-  isExperimentController,
-  type ExperimentCancellation,
-  type openExperiment,
-} from "./experiment.ts";
 import { dashboardObservations } from "./dashboard-observation.ts";
 import {
   dashboardHostDigest,
@@ -44,7 +38,6 @@ export interface DashboardHostOptions {
   harness: DashboardHarness;
   config: DashboardHostConfig;
   budget: GovernedBudgetBinding;
-  experiment?: ReturnType<typeof openExperiment>;
   authority: () => DashboardHostAuthority | null;
   /** Exact actions constructed and authorized by the owner; the dashboard exposes only human labels/keys. */
   humanActions?: (context: {
@@ -142,16 +135,10 @@ export function openDashboardHost(options: DashboardHostOptions) {
   if (loadedDashboardHarnessDigest(h) !== c.harnessArtifactDigest)
     throw Error("verified loaded harness artifact required");
   const budget = openResourceBudget(options.budget),
-    experiment = options.experiment,
     ordinary = options.ordinary;
   if (ordinary && (!isOrdinaryChildren(ordinary) || ordinary.bindingDigest !== c.ordinaryDigest))
     throw Error("original ordinary controller binding required");
-  if (
-    resourceBindingDigest(budget.binding) !== c.budgetDigest ||
-    (experiment &&
-      (!isExperimentController(experiment) || experimentBindingDigest(experiment.binding) !== c.experimentDigest))
-  )
-    throw Error("original controller binding required");
+  if (resourceBindingDigest(budget.binding) !== c.budgetDigest) throw Error("original controller binding required");
   const trust = h.openTrustLifecycle(c.trustDirectory),
     journal = h.learningJournal(c.journalDirectory ?? join(c.trustDirectory, "producer-host"));
   const initial = journal.read()[0].value;
@@ -244,11 +231,6 @@ export function openDashboardHost(options: DashboardHostOptions) {
   const paused = async (revision: number) => {
     const b = await boundary();
     if (ordinary && !ordinary.quiescent()) throw Error("original ordinary children not quiescent");
-    if (experiment) {
-      const view = await experiment.inspect();
-      if (view.budget?.active !== 0 || view.control !== "not-assessed")
-        throw Error("original experiment not quiescent");
-    }
     if (!b.dispatch.paused || b.dispatch.admission !== "paused" || b.dispatch.revision !== revision || b.active !== 0)
       throw Error("safe paused selection unavailable");
   };
@@ -257,7 +239,7 @@ export function openDashboardHost(options: DashboardHostOptions) {
   const nativeRead = async () => ({
     dispatch: await budget.controls(null).inspect(),
     intent: budget.binding.intent ? await budget.intentControls(null).inspect() : null,
-    experiment: experiment ? await experiment.inspect() : null,
+    experiment: null,
     ordinary: ordinary ? ordinary.inspect() : null,
   });
   const availableHumanActions = async () => {
@@ -765,30 +747,6 @@ export function openDashboardHost(options: DashboardHostOptions) {
               if (!ordinary || !isOrdinaryChildren(ordinary))
                 throw Error("original ordinary child handles unavailable; no recovery");
               result = ordinary.cancel(request.payload as OrdinaryCancellation, a!.ordinary ?? null);
-            } else if (request.operation === "cancel") {
-              const p = detached(request.payload) as {
-                dispatch: DispatchRequest;
-                cancellation: ExperimentCancellation;
-              };
-              controlShape(p, ["dispatch", "cancellation"]);
-              const legacy = dispatchRequest(p.dispatch);
-              const current = await budget.controls(null).inspect();
-              if (
-                !experiment ||
-                !isExperimentController(experiment) ||
-                legacy.action !== "cancel-execution" ||
-                legacy.bindingDigest !== c.budgetDigest ||
-                legacy.expectedRevision !== current.revision ||
-                legacy.targetExecutionId !== p.cancellation.executionId ||
-                legacy.requestId !== p.cancellation.requestId
-              )
-                throw Error("exact original cancellation target/revision required");
-              if (
-                a!.dispatch?.authorityDigest !== budget.binding.authorityDigest ||
-                !a!.dispatch.requestDigests.includes(dispatchRequestDigest(legacy))
-              )
-                throw Error("independent legacy cancellation authority required");
-              result = await experiment.cancel(p.cancellation, a!.experiment);
             } else throw Error("unsupported dashboard operation");
           }
         } catch (error) {

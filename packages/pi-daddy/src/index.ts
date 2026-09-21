@@ -125,40 +125,6 @@ export {
   type DispatchSnapshot,
 } from "./products/dispatch-control.ts";
 export {
-  createFactoryRegistry,
-  openFactoryRegistry,
-  createFactoryOrder,
-  openFactoryOrder,
-  migrateFactoryOrder,
-  factoryOrderDigest,
-  parseFactoryOrder,
-  fixedPolicyDigest,
-  factoryDecisionDigest,
-  activationRequestDigest,
-  factoryMigrationDigest,
-  type FactoryRegistryBinding,
-  type FactoryOrderCharter,
-  type FactoryAuthority,
-  type FactoryOrderView,
-  type FixedPolicy,
-  type ActivationRequest,
-  type FactoryMigration,
-} from "./products/factory-order.ts";
-export {
-  createExperiment,
-  openExperiment,
-  experimentCharterDigest,
-  experimentBindingDigest,
-  experimentCancellationDigest,
-  parseExperimentCharter,
-  type ExperimentBinding,
-  type ExperimentCharter,
-  type ExperimentAuthority,
-  type ExperimentCancellation,
-  type ExperimentRun,
-  type ExperimentView,
-} from "./products/experiment.ts";
-export {
   createResourceBudget,
   createDispatchBudget,
   createIntentBudget,
@@ -176,28 +142,6 @@ export {
   type ResourcePermit,
   type BudgetSnapshot,
 } from "./products/resource-budget.ts";
-export {
-  createProducerIpcHost,
-  startProducerIpc,
-  producerIpcBinding,
-  producerIpcBindingDigest,
-  producerIpcDemand,
-  PRODUCER_IPC_LIMITS,
-  type ProducerIpcBinding,
-  type ProducerIpcReferences,
-  type ProducerIpcContext,
-  type ProducerIpcHost,
-  type ProducerIpcSnapshot,
-  type ProducerIpcRun,
-} from "./products/producer-ipc.ts";
-export {
-  prepareDigestProfile,
-  runDigestProfile,
-  DIGEST_PROFILE,
-  EffectProfileUnavailableError,
-  type DigestProfile,
-  type DigestAttempt,
-} from "./products/effect-profile.ts";
 export { planSpawn, type SpawnPlan, type SpawnPlanInput } from "./kernel/spawn.ts";
 export {
   beginExecutionRetention,
@@ -340,34 +284,6 @@ export {
   type LearningConnection,
   type LearningWorkspace,
 } from "./products/learning-connection.ts";
-
-export {
-  runMeasuredAgentSession,
-  piSdkMeasuredSessionHost,
-  verifyMeasuredSubscription,
-  MeasuredSessionFailure,
-  MeasuredSessionUnknownError,
-  type MeasuredSessionInput,
-  type MeasuredSessionHost,
-  type MeasuredSessionHostInput,
-  type MeasuredSessionHostResult,
-  type ProviderUsage,
-} from "./products/measured-session.ts";
-export {
-  createMeasuredOrder,
-  openMeasuredOrder,
-  measuredOrderDigest,
-  measuredOrderAcknowledgementDigest,
-  qualifyMeasuredOutput,
-  type MeasuredOrder,
-  type MeasuredOrderNode,
-  type MeasuredOrderAttempt,
-  type MeasuredOutputContract,
-  type MeasuredOrderBinding,
-  type MeasuredOrderAuthority,
-  type MeasuredOrderAcknowledgement,
-  type MeasuredOrderNodeView,
-} from "./products/measured-order.ts";
 
 export {
   createApprovalGate,

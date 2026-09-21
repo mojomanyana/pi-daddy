@@ -25,7 +25,7 @@ import {
 import type { DeclaredWorkState } from "../src/products/work-command.ts";
 import { privateDirectory, readProductJson, writeProductJson } from "../src/products/product-files.ts";
 import type { AdoptionBinding, AdoptionFacts } from "../src/products/vendor/adoption.ts";
-import type { FactoryAuthority } from "../src/products/factory-contract.ts";
+import type { FactoryAuthority } from "../src/products/work-policy-registry.ts";
 import { experimentHash } from "../src/products/experiment-contract.ts";
 import { workPolicyRegistryPath, workPoliciesDir, workRegistryBindingsDir } from "../src/kernel/project-paths.ts";
 

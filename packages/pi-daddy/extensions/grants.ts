@@ -398,7 +398,6 @@ export default function (pi: ExtensionAPI) {
                 definitions: session.definitions,
                 sessionApprovals: session.sessionApprovals,
                 inheritedApprovals: session.inheritedApprovals,
-                variantRuns: session.variantRuns,
                 snapshotOf: (subject: string) => snapshotOf(session, subject),
                 // The REAL delegation path, minus the one thing a diagnostic must never do. `ctx: null` is what
                 // says so: stored approvals count exactly as they would for a spawn, and no human is asked

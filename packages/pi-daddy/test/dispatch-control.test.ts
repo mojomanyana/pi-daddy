@@ -16,7 +16,6 @@ import {
 import { Compile } from "typebox/compile";
 import type { TSchema } from "typebox";
 import { dispatchRequestDigest, parseDispatchRequest, type DispatchRequest } from "../src/products/dispatch-control.ts";
-import { prepareDigestProfile, runDigestProfile } from "../src/products/effect-profile.ts";
 const authorityDigest = "a".repeat(64);
 async function fixture() {
   const root = await tempDir("dispatch-controls-");
@@ -263,27 +262,4 @@ test("independent authority is detached; v1 journals cannot silently opt into co
   const compatibleOpenedVersion: "1.0" = openResourceBudget(old).binding.version;
   assert.equal(compatibleVersion, compatibleOpenedVersion);
   assert.throws(() => openResourceBudget(old).controls(null), /v2/);
-});
-
-test("actual probed fixed-digest execution obeys the same durable future-dispatch gate", async () => {
-  const b = await fixture(),
-    profile = await prepareDigestProfile(b),
-    pause = request(b),
-    resume = request(b, "resume", 1, "resume-dispatch");
-  const c = openResourceBudget(b).controls(grant(b));
-  await c.request(pause);
-  const attempt = {
-    attemptId: "fixed",
-    orderId: "order",
-    experimentId: "experiment",
-    kind: "primary" as const,
-    parentAttemptId: null,
-  };
-  await assert.rejects(runDigestProfile(profile, { attempt, bytes: Buffer.from("x") }), { code: "DISPATCH_BLOCKED" });
-  assert.equal((await openResourceBudget(b).inspect()).attempts, 0);
-  await c.request(resume);
-  const result = await runDigestProfile(profile, { attempt, bytes: Buffer.from("x") });
-  assert.equal(result.output.code, 0);
-  assert.ok(result.digest);
-  assert.equal((await openResourceBudget(b).inspect()).active, 0);
 });

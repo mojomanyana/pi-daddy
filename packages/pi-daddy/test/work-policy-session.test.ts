@@ -21,7 +21,7 @@ import {
   type RollbackRequest,
 } from "../src/products/vendor/adoption.ts";
 import type { LearningHarness, LearningWorkspace } from "../src/products/learning-connection.ts";
-import type { FactoryAuthority } from "../src/products/factory-contract.ts";
+import type { FactoryAuthority } from "../src/products/work-policy-registry.ts";
 import { experimentHash } from "../src/products/experiment-contract.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 import { workPoliciesDir, workPolicyRegistryPath } from "../src/kernel/project-paths.ts";

@@ -10,12 +10,6 @@ import { openDashboardHost } from "../src/products/dashboard-host.ts";
 import { dispatchRequestDigest, type DispatchRequest } from "../src/products/dispatch-control.ts";
 import { openResourceBudget } from "../src/products/resource-budget.ts";
 import { loadDashboardHarness } from "../src/products/dashboard-harness.ts";
-import { prepareDigestProfile } from "../src/products/effect-profile.ts";
-import {
-  experimentBindingDigest,
-  experimentCancellationDigest,
-  type ExperimentCancellation,
-} from "../src/products/experiment.ts";
 after(cleanupTempDirs);
 async function present(w: Awaited<ReturnType<typeof hostWorld>>, host = w.host) {
   return host.action(
@@ -86,48 +80,6 @@ test("busy reservation yields pending pause, status cannot reconcile; explicit s
   w.authority!.dispatch!.requestDigests = [...w.authority!.dispatch!.requestDigests, dispatchRequestDigest(resume)];
   await w.host.action(await w.request("dispatch", resume));
   assert.equal((await b.controls(null).inspect()).paused, false);
-});
-test("actual dashboard legacy cancellation reaches only original experiment handles and never retries a delivery", async () => {
-  const w = await hostWorld(false, "experiment"),
-    original = w.experiment!,
-    run = await original.controller.start(await prepareDigestProfile(original.budget));
-  try {
-    assert.deepEqual(await Promise.all(run.started), ["spawned", "spawned"]);
-    const cancellation: ExperimentCancellation = {
-      version: "experiment-cancel-v1",
-      requestId: "cancel:one",
-      bindingDigest: experimentBindingDigest(original.controller.binding),
-      executionId: "exec:1",
-    };
-    const legacy: DispatchRequest = {
-      version: "1.0",
-      requestId: cancellation.requestId,
-      bindingDigest: w.config.budgetDigest,
-      expectedRevision: 0,
-      action: "cancel-execution",
-      targetExecutionId: cancellation.executionId,
-    };
-    w.authority!.dispatch!.requestDigests = [dispatchRequestDigest(legacy)];
-    w.authority!.experiment!.cancellationDigests = [experimentCancellationDigest(cancellation)];
-    const request = await w.request("cancel", { dispatch: legacy, cancellation });
-    await w.host.action(request);
-    const result = await run.completion;
-    assert.equal(result.variants[1].state, "cancelled");
-    assert.equal(result.budget!.active, 0);
-    assert.equal(result.budget!.attempts, 2);
-    assert.equal((await run.primary).state, "completed");
-    const path = join(original.controller.binding.directory, "experiment.jsonl"),
-      bytes = await readFile(path);
-    await w.host.action(request);
-    await w.reopen().frame();
-    assert.deepEqual(await readFile(path), bytes);
-    assert.throws(
-      () => openDashboardHost({ ...w.options, experiment: { ...original.controller } as never }),
-      /original controller/,
-    );
-  } finally {
-    await run.completion;
-  }
 });
 test("actual case writer effect followed by lost acknowledgement does not become dashboard success", async () => {
   const w = await hostWorld(false);
