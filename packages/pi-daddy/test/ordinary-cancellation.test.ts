@@ -25,11 +25,11 @@ test("ordinary delegate retains original cancellation handles and preserves sibl
   );
   const env = {
       PATH: bin,
-      PI_GRANTS_HERDR: "0",
-      PI_GRANTS_GRANT: "tool:delegate",
-      PI_GRANTS_MAX_DEPTH: "2",
-      PI_GRANTS_DEPTH: "0",
-      PI_GRANTS_CHILD_TIMEOUT: "10",
+      PI_DADDY_HERDR: "0",
+      PI_DADDY_GRANT: "tool:delegate",
+      PI_DADDY_MAX_DEPTH: "2",
+      PI_DADDY_DEPTH: "0",
+      PI_DADDY_CHILD_TIMEOUT: "10",
     },
     old = Object.fromEntries([...new Set([...Object.keys(env), ...GRANT_ENV_KEYS])].map((k) => [k, process.env[k]]));
   for (const k of GRANT_ENV_KEYS) delete process.env[k];
@@ -144,8 +144,8 @@ test("ordinary fanout cancellation preserves the completed sibling's result", as
 test("ordinary worker success reports failed terminal observation without poisoning its settled boundary", async () => {
   const root = await tempDir("ordinary-terminal-"),
     ledger = join(root, "ledger.jsonl"),
-    old = process.env.PI_GRANTS_LEDGER;
-  process.env.PI_GRANTS_LEDGER = ledger;
+    old = process.env.PI_DADDY_LEDGER;
+  process.env.PI_DADDY_LEDGER = ledger;
   const original = promises.appendFile;
   let child: Awaited<ReturnType<typeof ordinaryHostFixture>> | undefined,
     hit = false;
@@ -174,7 +174,7 @@ test("ordinary worker success reports failed terminal observation without poison
     promises.appendFile = original;
     syncBuiltinESMExports();
     await child?.close();
-    old === undefined ? delete process.env.PI_GRANTS_LEDGER : (process.env.PI_GRANTS_LEDGER = old);
+    old === undefined ? delete process.env.PI_DADDY_LEDGER : (process.env.PI_DADDY_LEDGER = old);
   }
 });
 test("late ordinary opt-in cannot certify an empty registry as complete original quiescence", async () => {
@@ -184,15 +184,15 @@ test("late ordinary opt-in cannot certify an empty registry as complete original
   await writeFile(join(bin, "pi"), `#!${process.execPath}\nprocess.stdout.write('untracked default worker');`, {
     mode: 0o700,
   });
-  const keys = [...GRANT_ENV_KEYS, "PATH", "PI_GRANTS_HERDR"],
+  const keys = [...GRANT_ENV_KEYS, "PATH", "PI_DADDY_HERDR"],
     old = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
   for (const k of GRANT_ENV_KEYS) delete process.env[k];
   Object.assign(process.env, {
     PATH: bin,
-    PI_GRANTS_HERDR: "0",
-    PI_GRANTS_GRANT: "tool:delegate",
-    PI_GRANTS_DEPTH: "0",
-    PI_GRANTS_MAX_DEPTH: "2",
+    PI_DADDY_HERDR: "0",
+    PI_DADDY_GRANT: "tool:delegate",
+    PI_DADDY_DEPTH: "0",
+    PI_DADDY_MAX_DEPTH: "2",
   });
   try {
     const tools = new Map<string, any>(),

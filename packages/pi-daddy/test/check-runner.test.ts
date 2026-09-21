@@ -65,20 +65,20 @@ test("check environment is allowlisted and sensitive inherited names are strippe
         env: {
           executable: process.execPath,
           argv: ["-e", "process.stdout.write(JSON.stringify(process.env))"],
-          inherit_env: ["LANG", "SECRET_TOKEN", "PI_GRANTS_GRANT"],
+          inherit_env: ["LANG", "SECRET_TOKEN", "PI_DADDY_GRANT"],
           env: { FIXED: "yes" },
           workspace_access: "read",
         },
       },
     },
     workspace: ws,
-    inheritedEnv: { LANG: "C", SECRET_TOKEN: "secret", PI_GRANTS_GRANT: "tool:*", UNLISTED: "no" },
+    inheritedEnv: { LANG: "C", SECRET_TOKEN: "secret", PI_DADDY_GRANT: "tool:*", UNLISTED: "no" },
   });
   const env = JSON.parse(result.output);
   assert.equal(env.LANG, "C");
   assert.equal(env.FIXED, "yes");
   assert.equal(env.SECRET_TOKEN, undefined);
-  assert.equal(env.PI_GRANTS_GRANT, undefined);
+  assert.equal(env.PI_DADDY_GRANT, undefined);
   assert.equal(env.UNLISTED, undefined);
 });
 

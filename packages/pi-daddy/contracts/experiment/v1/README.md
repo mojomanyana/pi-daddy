@@ -1,7 +1,7 @@
 # P11 fixed-profile experiment controller — partial, local implementation
 
 Existing pi-daddy API, not a service, delegate_all replacement, evaluation engine or P11 completion.
-P15 entry point: `pi-daddy/experiment`; types and pure digest/parser functions also exported at package root.
+P15 entry point: `pi-daddy/work`; types and pure digest/parser functions also exported at package root.
 
 ## Actual boundary
 

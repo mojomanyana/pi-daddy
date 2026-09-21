@@ -1,12 +1,12 @@
 # Execution retention 1.0 — producer contract for P03
 
-Opt-in candidate API: `pi-daddy/execution-retention` (also the root export). This is a new archive
+Opt-in candidate API: `pi-daddy/ledger` (also the root export). This is a new archive
 manifest, **not** ledger v3/v4, a check-receipt schema revision, or acceptance authority. The TypeScript
 wire definition is `src/governance/execution-retention.ts::ExecutionRetentionManifest`.
 
 ## Activation and actual wiring
 
-The operator sets `PI_GRANTS_EXECUTION_ARCHIVE` to an absolute, private, operator-owned archive directory.
+The operator sets `PI_DADDY_EXECUTION_ARCHIVE` to an absolute, private, operator-owned archive directory.
 No model-facing parameter is added. `delegate`, `delegate_all` and `delegate_chain` carry the actual
 public execute call ID into their shared governed executor. Each launch has its existing unique
 execution ID and parent execution ID; logical child names are NOT join keys. `runNamedCheck` uses the
@@ -89,7 +89,7 @@ After a fresh build (the owner's historical dist is NOT current compiled proof):
 ```js
 import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { verifyRetainedBytes } from 'pi-daddy/execution-retention';
+import { verifyRetainedBytes } from 'pi-daddy/ledger';
 
 const m = JSON.parse(await readFile(manifestPath, 'utf8'));
 if (m.version !== '1.0') throw Error('unsupported retention version');

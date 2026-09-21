@@ -1,6 +1,6 @@
 # P15 — bounded fixed-profile factory orders and applied policy changes
 
-Local supported slice, not full factory/model qualification. Public API: `pi-daddy/factory-order` and root
+Local supported slice, not full factory/model qualification. Public API: `pi-daddy/work` and root
 exports. This compiles into the ACTUAL existing P11 controller, not a scheduler service or model planner.
 
 ## Charter, intent and resource boundary

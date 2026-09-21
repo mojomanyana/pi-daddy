@@ -127,7 +127,7 @@ export interface InheritableApproval {
  * one hop down:
  *
  *  - **`once` is dropped** (A-S1). The scope chosen was not carried, so a `once` approval was written
- *    into the child's `PI_GRANTS_APPROVED` and republished onward — the most conservative answer a human
+ *    into the child's `PI_DADDY_APPROVED` and republished onward — the most conservative answer a human
  *    can give produced the least conservative outcome, across an entire descendant subtree.
  *  - **The subject is kept** (A-S6). Bare capabilities were published, so a `<delegate>`-subject approval
  *    matched *any* subject below. `approvalKey`'s own doc argues at length that a model-controlled name

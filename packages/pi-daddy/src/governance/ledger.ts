@@ -128,7 +128,7 @@ export interface GrantRecord extends LedgerEventBase {
    * — `gatedBlocked` non-empty, no `approvalSource`, `blocked: true` — and the only thing separating them
    * was free-text `reason`, written for a human at the call site. Given a failed run, *"was there an
    * operator who timed out, or was there nobody to ask?"* was not answerable from any field, and the fix
-   * for each is different: one is a queue or a longer `PI_GRANTS_APPROVAL_TIMEOUT`, the other is an
+   * for each is different: one is a queue or a longer `PI_DADDY_APPROVAL_TIMEOUT`, the other is an
    * operator pre-approving.
    *
    * The discriminant was already computed and thrown away. ADR-0026 leans on this vocabulary being able to

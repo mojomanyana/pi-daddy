@@ -94,7 +94,7 @@ export function mayRouteToWorkspace(ownGrant: readonly Capability[], workspaceId
 /**
  * Characters that make a capability id mean something OTHER than one capability.
  *
- * A capability id is never a list. `PI_GRANTS_GRANT` is comma-separated and `parseList` trims and splits
+ * A capability id is never a list. `PI_DADDY_GRANT` is comma-separated and `parseList` trims and splits
  * it, so a comma inside a single id means the child reads it as several — including ones nothing granted.
  * Newlines are here for the same reason one level out: the grant travels through an environment variable
  * and, via `assertGrantIsWritable`, a shell-sourced file.
@@ -125,7 +125,7 @@ export function isWellFormedCapability(id: string): boolean {
  * either of them because it shipped in one and was needed by both:
  *
  *  1. `skill-packages.ts` — the boundary that GENERATES a grant. R-77/R-78: a package declaring
- *     `allowed-tools: Read,ext:x";touch /tmp/pwned;PI_GRANTS_GRANT="` produced a `.pi/grants.env` that ran
+ *     `allowed-tools: Read,ext:x";touch /tmp/pwned;PI_DADDY_GRANT="` produced a `.pi/grants.env` that ran
  *     arbitrary code the moment an operator sourced the line `init` prints.
  *  2. `workspace.ts` — the operator registry, since ADR-0035 made a registry id the tail of a capability id
  *     (`workspace:<id>`). That made the registry an input to this grammar, and it got the LOOSE
@@ -137,7 +137,7 @@ export function isWellFormedCapability(id: string): boolean {
  *     `['tool:bash','tool:read','workspace:prod']`, i.e. routing over production plus a shell, neither typed
  *     by anyone (0.18.1's comma, one namespace over);
  *     and quote/`$()`/backtick ids reached the `ROUTABLE WORKSPACES` block of the generated file, whose own
- *     instructions tell the operator to paste them into `PI_GRANTS_GRANT`.
+ *     instructions tell the operator to paste them into `PI_DADDY_GRANT`.
  *
  * **A blocklist was the wrong shape for this and the comment on `isWellFormedCapability` says why it is the
  * right shape THERE**: that one guards the enforcement path, which must keep accepting whatever ids operators
@@ -162,7 +162,7 @@ export function isWellFormedCapability(id: string): boolean {
  *    `workspace:*` believing it named that one root minted routing authority over the whole registry.
  *  - **quotes, `$`, backticks, `;`, `&`, `|`, `<`, `>`, `(`, `)`, `\`, `#`** — reach the ROUTABLE WORKSPACES
  *    block of a generated `.pi/grants.env`, whose own instructions tell the operator to paste the id into
- *    `PI_GRANTS_GRANT`. Sourcing the file was safe; following its instructions executed. R-77/R-78.
+ *    `PI_DADDY_GRANT`. Sourcing the file was safe; following its instructions executed. R-77/R-78.
  *  - **control characters and non-ASCII** — the generated file is reviewed in an editor and `/grants` prints
  *    these; backspace and ANSI escapes let one id render as another. This is the one refusal that costs a
  *    legitimate user something (a non-English worktree name), and it is a deliberate trade recorded as

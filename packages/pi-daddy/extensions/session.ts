@@ -64,7 +64,7 @@ import { reconcileSessionEnvironment } from "./session-environment.ts";
  * differs.
  *
  * The table itself is a pure function in `src/executors/executor.ts`; re-exported here because this is where every
- * other `PI_GRANTS_*` name lives and a reader looking for it will look here.
+ * other `PI_DADDY_*` name lives and a reader looking for it will look here.
  */
 export { ENV_HERDR } from "../src/executors/executor.ts";
 /**
@@ -72,7 +72,7 @@ export { ENV_HERDR } from "../src/executors/executor.ts";
  *
  * It was declared here and read nowhere: `resolveWorkspace` reads the string literal, so the constant and the
  * literal could drift with nothing binding them. Re-exporting the single definition keeps this the place a reader
- * looks for a `PI_GRANTS_*` name without letting two spellings exist.
+ * looks for a `PI_DADDY_*` name without letting two spellings exist.
  *
  * Omitting the variable no longer means "let herdr choose": it falls back to the parent's own
  * `HERDR_WORKSPACE_ID`, because a child in a different workspace from the session that spawned it makes switching
@@ -85,6 +85,9 @@ import {
   ENV_ACTIVITY_ROOT,
   ENV_ACTIVITY_TASK,
 } from "../src/products/activity-timeline.ts";
+import { ENV_HERDR_KEEP_PANE, ENV_GOVERNANCE } from "../src/kernel/env-names.ts";
+export { ENV_HERDR_KEEP_PANE, ENV_GOVERNANCE } from "../src/kernel/env-names.ts";
+import { adoptLegacyEnvironment } from "../src/kernel/env-names.ts";
 
 /** The activity timeline's per-child observation identity, handed to the kernel through `childEnv` (ADR-0076). */
 export function activityChildEnv(activity: { rootId: string; path: string; taskId?: string } | undefined) {
@@ -99,8 +102,6 @@ export function activityChildEnv(activity: { rootId: string; path: string; taskI
       : {};
 }
 /** Keep each child's pane after it finishes, for inspection. Off by default: fan-out would flood it. */
-export const ENV_HERDR_KEEP_PANE = "PI_GRANTS_HERDR_KEEP_PANE";
-export const ENV_GOVERNANCE = "PI_DADDY_GOVERNANCE";
 export interface VariantRunAccounting {
   runId: string;
   primaryExecutionId: string;
@@ -109,6 +110,8 @@ export interface VariantRunAccounting {
   outcomes: null | { executionId: string; role: "primary" | "shadow"; ok: boolean; reason: string | null }[];
 }
 export interface GrantsSession extends NativeSessionHost {
+  /** Legacy PI_GRANTS_* names adopted at construction (ADR-0076 PR 3b); the session-start warning names them. */
+  readonly adoptedLegacyEnv: readonly string[];
   /** False only for the explicit PI_DADDY_GOVERNANCE opt-out; otherwise roots are observed-bound. */
   governed: boolean;
   /** The upper bound handed down by the delegator, before this session's own tools are observed. */
@@ -267,6 +270,9 @@ export function createGrantsSession(
   lifecycle?: ReloadLifecycle,
   observerExtensionPath?: string,
 ): GrantsSession {
+  // ADR-0076 PR 3b: legacy PI_GRANTS_* names are adopted BEFORE the first environment read and before the
+  // reload snapshot, or an operator on the old names would get an ungoverned wildcard root (review finding).
+  const adoptedLegacyEnv = adoptLegacyEnvironment(process.env);
   const started = lifecycle ? undefined : beginExtensionLifecycle();
   const activeLifecycle = lifecycle ?? started!.lifecycle;
   const environment = lifecycle ? process.env : started!.environment;
@@ -294,16 +300,17 @@ export function createGrantsSession(
   const { depth, maxDepth } = bounds;
   const emptyCatalog = makeCatalog([]);
   const session: GrantsSession = {
+    adoptedLegacyEnv,
     governed,
     inherited,
     depth,
     maxDepth,
     malformedBounds: bounds.malformed,
     // ADR-0012: `bash` is gated by DEFAULT — but only in a governed session. An ungoverned one
-    // (no PI_GRANTS_GRANT) still blocks nothing, so "governance is opt-in" holds exactly where it always
+    // (no PI_DADDY_GRANT) still blocks nothing, so "governance is opt-in" holds exactly where it always
     // did. Inside a session the operator already chose to govern, handing a child `bash` hands it an
     // ungoverned-descendant escape hatch, and doing that silently is what changes here.
-    // `PI_GRANTS_GATED=""` turns the default off; absent and empty are deliberately distinguishable.
+    // `PI_DADDY_GATED=""` turns the default off; absent and empty are deliberately distinguishable.
     gated: governed ? gatedFromEnv(environment[ENV_GATED]) : parseList(environment[ENV_GATED]),
     // Presence wins, including an explicitly empty value for a one-run opt-out. The store is eligible only
     // when ENV_GRANT was absent above, preserving the environment as the child's single authority channel.

@@ -527,7 +527,7 @@ test("ADR-0024: a gated agent: id blocks the spawn and names itself", () => {
   // half-worked when another definition passed the id down in its own allowed-tools, which is worse.
   const plan = gateFixture(["agent:deploy"]);
 
-  assert.equal(plan.ok, false, "naming a definition in PI_GRANTS_GATED must ask before it runs");
+  assert.equal(plan.ok, false, "naming a definition in PI_DADDY_GATED must ask before it runs");
   assert.deepEqual(plan.result?.gatedBlocked, ["agent:deploy"]);
   assert.match(plan.reason ?? "", /agent:deploy requires explicit approval/);
 });
@@ -546,7 +546,7 @@ test("ADR-0024: the authorising id never reaches the child's grant", () => {
   const plan = gateFixture(["agent:deploy"], ["agent:deploy"]);
 
   assert.deepEqual(plan.effective, ["tool:read"], "the child gets the definition's tools and nothing else");
-  assert.ok(!plan.env?.PI_GRANTS_GRANT?.includes("agent:deploy"), "and cannot re-spawn it unasked");
+  assert.ok(!plan.env?.PI_DADDY_GRANT?.includes("agent:deploy"), "and cannot re-spawn it unasked");
 });
 
 test("ADR-0024: agent:* in the gate covers every definition", () => {
@@ -566,10 +566,10 @@ test("ADR-0024: the tools: form has no authorising id to gate", () => {
 });
 
 test("childEnv cannot reach the governance namespace or overwrite a kernel-set key (ADR-0076)", () => {
-  // Production change that breaks this: deleting the `PI_GRANTS_` / `key in env` guard in planDelegation.
+  // Production change that breaks this: deleting the `PI_DADDY_` / `key in env` guard in planDelegation.
   assert.throws(
-    () => planDelegation({ task: "x", tools: ["read"] }, ctx({ childEnv: () => ({ PI_GRANTS_GRANT: "tool:*" }) })),
-    /childEnv may not set governance key PI_GRANTS_GRANT/,
+    () => planDelegation({ task: "x", tools: ["read"] }, ctx({ childEnv: () => ({ PI_DADDY_GRANT: "tool:*" }) })),
+    /childEnv may not set governance key PI_DADDY_GRANT/,
   );
   assert.throws(
     () => planDelegation({ task: "x", tools: ["read"] }, ctx({ childEnv: () => ({ [ENV_GRANT]: "tool:*" }) })),

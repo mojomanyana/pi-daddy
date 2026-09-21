@@ -156,7 +156,7 @@ export const grantsCommand = {
       // a ledger back, so a torn line was indistinguishable from a spawn that never happened — and a
       // check an operator cannot run is not a control.
       if (!ledgerPath) {
-        ctx.ui.notify("grants: no ledger — set PI_GRANTS_LEDGER to record grants and refusals.", "warning");
+        ctx.ui.notify("grants: no ledger — set PI_DADDY_LEDGER to record grants and refusals.", "warning");
         return;
       }
       const report = await verifyLedger(ledgerPath);
@@ -198,7 +198,7 @@ export const grantsCommand = {
           const here = definitions.get(d.name);
           const current = snapshotOf(d.name);
           // F4: compare the SOURCE too. A ledger path exported once in a shell profile is shared by every
-          // project — nothing scopes `PI_GRANTS_LEDGER` per project — so two different `deploy` definitions
+          // project — nothing scopes `PI_DADDY_LEDGER` per project — so two different `deploy` definitions
           // in two checkouts were reported as one definition that had CHANGED, and the NOTE below called it
           // a finding. `verifyLedger` has carried `source` all along; the listing simply never read it.
           const state =
@@ -383,7 +383,7 @@ export const grantsCommand = {
 
     const { valid } = await loadApprovals({ cwd, now: new Date(), snapshotOf });
     const lines = [
-      governed ? "grants: ACTIVE" : "grants: inactive (set PI_GRANTS_GRANT to govern this session)",
+      governed ? "grants: ACTIVE" : "grants: inactive (set PI_DADDY_GRANT to govern this session)",
       `  holding    ${ownGrant.join(", ") || "(nothing)"}${observed ? " (observed)" : " (inherited, not yet observed)"}`,
       // ADR-0031/0032. This screen named the grant, the depth, the ledger, the approvals and the catalog, and
       // never said WHERE children run — so an operator on a machine where herdr hosts their whole workspace
@@ -392,7 +392,7 @@ export const grantsCommand = {
       // two facts about what a spawn will be sit together.
       `  executor   ${executor.disclosure}`,
       `  depth      ${depth} of max ${maxDepth}${maxDepth <= 0 ? " (spawning disabled)" : ""}`,
-      `  ledger     ${ledgerPath || "(not recording — set PI_GRANTS_LEDGER)"}`,
+      `  ledger     ${ledgerPath || "(not recording — set PI_DADDY_LEDGER)"}`,
       `  approvals  ${sessionApprovals.size} this session, ${valid.size} persisted` +
         `${inheritedApprovals.size > 0 ? `, ${inheritedApprovals.size} inherited` : ""}` +
         ` — /grants approvals`,

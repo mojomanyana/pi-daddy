@@ -1,7 +1,7 @@
 /**
  * Which executor runs a governed child — ADR-0031.
  *
- * `PI_GRANTS_HERDR` is three-state, and **absent means probe**. That reverses ADR-0016 point 6's opt-in, and
+ * `PI_DADDY_HERDR` is three-state, and **absent means probe**. That reverses ADR-0016 point 6's opt-in, and
  * the reversal is narrower than it sounds: nothing is detected from `herdr` being on `PATH` (option C, rejected
  * by name), only from a server that *answered*. The grant, the depth bound, the gate and `--tools` enforcement
  * are identical either way — `planSpawn` produces one plan and both executors enforce it.
@@ -16,14 +16,14 @@
 
 import type { HerdrProbe } from "./herdr-cli.ts";
 
-export const ENV_HERDR = "PI_GRANTS_HERDR";
-
 export { EXECUTOR_KINDS, type ExecutorKind } from "../kernel/delegate-types.ts";
 import type { ExecutorKind } from "../kernel/delegate-types.ts";
+import { ENV_HERDR } from "../kernel/env-names.ts";
+export { ENV_HERDR } from "../kernel/env-names.ts";
 
 export interface ExecutorChoice {
   kind: ExecutorKind;
-  /** The operator named it: `PI_GRANTS_HERDR` was exactly `0` or `1`. */
+  /** The operator named it: `PI_DADDY_HERDR` was exactly `0` or `1`. */
   forced: boolean;
   /** Whether a probe was needed at all — false only for `0`. */
   probed: boolean;
@@ -49,13 +49,13 @@ export function chooseExecutor(raw: string | undefined, probe: HerdrProbe | null
       kind: "process",
       forced: true,
       probed: false,
-      disclosure: "captured subprocess (PI_GRANTS_HERDR=0) — children have no terminal",
+      disclosure: "captured subprocess (PI_DADDY_HERDR=0) — children have no terminal",
     };
   }
 
   if (raw === "1") {
     if (probe?.ok) {
-      return { kind: "herdr", forced: true, probed: true, disclosure: "herdr panes (PI_GRANTS_HERDR=1)" };
+      return { kind: "herdr", forced: true, probed: true, disclosure: "herdr panes (PI_DADDY_HERDR=1)" };
     }
     // Refusal, not fallback — the operator's decision of 2026-08-17, against the alternative of falling back
     // loudly. A fallback nobody reads is R-25's shape; refusing keeps the ledger unable to name a child that
@@ -67,10 +67,10 @@ export function chooseExecutor(raw: string | undefined, probe: HerdrProbe | null
       forced: true,
       probed: true,
       refusal:
-        `PI_GRANTS_HERDR=1 demands the herdr executor and herdr is not answering (${why}). ` +
+        `PI_DADDY_HERDR=1 demands the herdr executor and herdr is not answering (${why}). ` +
         `Delegation is refused rather than quietly relocated to a captured subprocess, so this session's ` +
         `ledger can never contain a child that ran somewhere nobody chose. Start herdr, or unset ` +
-        `PI_GRANTS_HERDR to let this session probe, or set PI_GRANTS_HERDR=0 to choose subprocesses.`,
+        `PI_DADDY_HERDR to let this session probe, or set PI_DADDY_HERDR=0 to choose subprocesses.`,
       disclosure: `herdr panes DEMANDED but unreachable (${why}) — every delegation will refuse`,
     };
   }
@@ -79,13 +79,13 @@ export function chooseExecutor(raw: string | undefined, probe: HerdrProbe | null
     // Rule 8: fail closed and be loud. An unrecognised value must not relocate a run, and must not break
     // delegation either — the operator meant *something*, and the dependency-free executor is the safe read.
     // The empty string lands here rather than with `undefined`, which keeps absent-versus-empty
-    // distinguishable exactly as `PI_GRANTS_GATED` does.
+    // distinguishable exactly as `PI_DADDY_GATED` does.
     return {
       kind: "process",
       forced: false,
       probed: probe !== null,
       disclosure:
-        `captured subprocess — PI_GRANTS_HERDR is set to an unrecognised value and was ignored. ` +
+        `captured subprocess — PI_DADDY_HERDR is set to an unrecognised value and was ignored. ` +
         `Use 1 (demand herdr panes), 0 (demand subprocesses), or unset it to probe.`,
     };
   }
@@ -118,6 +118,6 @@ export function chooseExecutor(raw: string | undefined, probe: HerdrProbe | null
     // operator could not see which executor ran — it was that seeing it would not have told them what to do.
     disclosure:
       `captured subprocess (probed — no herdr answering${probe?.error ? `: ${probe.error}` : ""}). ` +
-      `Set PI_GRANTS_HERDR=1 to demand panes.`,
+      `Set PI_DADDY_HERDR=1 to demand panes.`,
   };
 }

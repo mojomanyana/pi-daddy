@@ -57,7 +57,7 @@ test("a fan-out wider than its budget is refused, and the message says how to fi
   const split = splitBudget(2, 5);
   assert.equal(split.ok, false);
   assert.match(String(split.reason), /budget exhausted/);
-  assert.match(String(split.reason), /PI_GRANTS_FANOUT/, "an operator-facing refusal must name the remedy");
+  assert.match(String(split.reason), /PI_DADDY_FANOUT/, "an operator-facing refusal must name the remedy");
   assert.equal(split.perChild, 0);
 });
 

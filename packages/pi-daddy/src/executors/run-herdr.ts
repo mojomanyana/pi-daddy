@@ -13,7 +13,7 @@
  *  - `herdr agent start … -- <args>` delivers argv **verbatim**, echoed back in the reply.
  *  - `--tools` is enforced inside a pane exactly as it is for a direct spawn; `--no-tools` yields none.
  *  - `herdr agent start` has **no `--env`**, but `tab create` / `pane split` do, and a pane's environment
- *    reaches the shell that launches the agent — verified by reading `$PI_GRANTS_GRANT` back out of a
+ *    reaches the shell that launches the agent — verified by reading `$PI_DADDY_GRANT` back out of a
  *    pane created with it. That is how the grant, depth and ledger path propagate on this path.
  *
  * **What a pane is not: a boundary.** It is a terminal. `--tools` remains the enforcement point, ADR-0012's

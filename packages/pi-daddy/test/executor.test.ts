@@ -2,7 +2,7 @@
  * ADR-0031's decision table, as a pure function.
  *
  * **The production changes that break these:** making an unset variable mean `runChild` again (that is the
- * reversal itself), or making `PI_GRANTS_HERDR=1` fall back to the process executor when herdr is down. The
+ * reversal itself), or making `PI_DADDY_HERDR=1` fall back to the process executor when herdr is down. The
  * operator chose refusal over fallback on 2026-08-17, and the reason is the audit story: with a fallback, a
  * ledger can contain a child that ran somewhere nobody chose.
  */
@@ -49,7 +49,7 @@ test("`1` + herdr down REFUSES rather than falling back, naming the variable and
   assert.equal(choice.kind, "herdr", "kind must not flip to process — nothing may mistake this for a working session");
   assert.equal(choice.forced, true);
   assert.ok(choice.refusal, "a forced-and-unreachable executor must set a refusal");
-  assert.match(choice.refusal, /PI_GRANTS_HERDR/);
+  assert.match(choice.refusal, /PI_DADDY_HERDR/);
   assert.match(choice.refusal, /could not connect to herdr/);
 });
 
@@ -70,7 +70,7 @@ test("an unrecognised value fails CLOSED to the dependency-free executor, loudly
   for (const raw of ["yes", "true", "on", "2", ""]) {
     const choice = chooseExecutor(raw, reachable);
     assert.equal(choice.kind, "process", `${JSON.stringify(raw)} should not select herdr`);
-    assert.match(choice.disclosure, /PI_GRANTS_HERDR/);
+    assert.match(choice.disclosure, /PI_DADDY_HERDR/);
     assert.equal(choice.refusal, undefined, "a malformed value must not break delegation outright");
   }
 });
@@ -93,5 +93,5 @@ test("every outcome carries a disclosure line, because ADR-0031 rests on not bei
 test("the disclosure says what to set, not merely what happened", () => {
   // An operator on a herdr machine who sees "captured subprocess" needs the next action on the same line.
   // This is the gap that produced ADR-0031: the state was discoverable and the remedy was not.
-  assert.match(chooseExecutor(undefined, down).disclosure, /PI_GRANTS_HERDR=1/);
+  assert.match(chooseExecutor(undefined, down).disclosure, /PI_DADDY_HERDR=1/);
 });

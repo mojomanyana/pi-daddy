@@ -24,5 +24,5 @@ test("only the operator bypass permits an unresolved model", () => {
   assert.equal(preflightModel("custom/model", catalogue, new Map(), true), undefined);
   const refusal = preflightModel("custom/model", catalogue, new Map(), false);
   assert.equal(refusal?.code, "MODEL_UNRESOLVED");
-  assert.match(refusal?.message ?? "", /PI_GRANTS_ALLOW_UNRESOLVED_MODELS=1/);
+  assert.match(refusal?.message ?? "", /PI_DADDY_ALLOW_UNRESOLVED_MODELS=1/);
 });

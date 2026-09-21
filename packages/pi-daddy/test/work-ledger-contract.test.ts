@@ -671,9 +671,9 @@ test("published work-v4 fixtures come from real builders and the closed schema",
       assert.equal(validator.Check({ ...(event as object), event: discriminator }), false);
   }
   const manifest = await json(join(packageRoot, "package.json"));
-  for (const target of ["ledger-event.schema.json", "fixtures/*.json"]) {
-    assert.equal(manifest.exports[`./contracts/ledger/v4/${target}`], `./contracts/ledger/v4/${target}`);
-  }
+  // ADR-0076 PR 3b: one wildcard export covers every contract artifact; the schema file must still exist.
+  assert.equal(manifest.exports["./contracts/*"], "./contracts/*");
+  assert.ok(existsSync(join(contractRoot, "ledger-event.schema.json")));
   assert.equal(
     manifest.scripts["contracts:generate:v4"],
     "node scripts/generate-ledger-v4-contract.ts contracts/ledger/v4",

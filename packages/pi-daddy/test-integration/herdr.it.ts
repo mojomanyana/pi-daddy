@@ -194,16 +194,16 @@ describe("herdr assumptions, against a real server", () => {
         "--cwd",
         process.cwd(),
         "--env",
-        "PI_GRANTS_GRANT=tool:read",
+        "PI_DADDY_GRANT=tool:read",
         "--env",
-        "PI_GRANTS_DEPTH=1",
+        "PI_DADDY_DEPTH=1",
       ]),
     );
     const root = (reply.result?.root_pane ?? {}) as { pane_id?: string };
     assert.ok(root.pane_id);
 
     // Ask the pane's own shell to print it, then read the pane back.
-    await defaultExec(["pane", "send-text", root.pane_id!, "echo GRANT=$PI_GRANTS_GRANT DEPTH=$PI_GRANTS_DEPTH\n"]);
+    await defaultExec(["pane", "send-text", root.pane_id!, "echo GRANT=$PI_DADDY_GRANT DEPTH=$PI_DADDY_DEPTH\n"]);
     let seen = "";
     for (let attempt = 0; attempt < 25; attempt += 1) {
       await new Promise((r) => setTimeout(r, 300));

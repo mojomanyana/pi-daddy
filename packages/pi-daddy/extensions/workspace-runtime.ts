@@ -26,7 +26,7 @@ export interface DelegationWorkspaceSpec {
  * Tools that cannot change a worktree.
  *
  * **`tool:delegate` is deliberately NOT here, and that is a scope decision.** It was added, and it was true of
- * the capability and false of the code: a routed child's cwd IS the leased root, `PI_GRANTS_LEDGER` was
+ * the capability and false of the code: a routed child's cwd IS the leased root, `PI_DADDY_LEDGER` was
  * passed through relative (`init` scaffolds `.pi/grants.jsonl`), and a `read` lease takes no kernel lock — so
  * two delegating children classified `read` both created `.pi/` in one worktree and neither excluded the
  * other. Making `tool:delegate` non-writing requires first making every child-inherited path absolute, and

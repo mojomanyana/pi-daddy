@@ -241,7 +241,7 @@ test("the governed process seam retains actual private SessionManager bytes from
     `#!${process.execPath}\n(async()=>{const {SessionManager}=await import(${JSON.stringify(module)});const args=process.argv.slice(2);const file=args[args.indexOf('--session')+1];const sm=SessionManager.open(file);sm.appendMessage(${JSON.stringify(assistant())});process.stdout.write('fixture finished');})().catch(()=>process.exit(91));\n`,
   );
   await chmod(join(bin, "pi"), 0o700);
-  const values = { PATH: bin, PI_GRANTS_EXECUTION_ARCHIVE: archive, PI_GRANTS_NATIVE_SESSION_ROOT: f.root };
+  const values = { PATH: bin, PI_DADDY_EXECUTION_ARCHIVE: archive, PI_DADDY_NATIVE_SESSION_ROOT: f.root };
   const prior = Object.fromEntries(Object.keys(values).map((k) => [k, process.env[k]]));
   Object.assign(process.env, values);
   try {

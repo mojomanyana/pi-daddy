@@ -49,7 +49,7 @@ and `.pi/grants.env` stay intact. Only legacy npm packages never registered with
 (measured). A child granted `read` has no write tool, and no prompt can talk it into having one.
 
 **It does not contain an agent that holds an execution primitive.** A child granted `bash` can run
-`env -u PI_GRANTS_GRANT pi …` and obtain a completely ungoverned descendant — no ledger entry, no depth
+`env -u PI_DADDY_GRANT pi …` and obtain a completely ungoverned descendant — no ledger entry, no depth
 increment, no grant. Measured, not theorised: `docs/probes/g5-bash-escape`. `env -u` is incidental; the
 mechanism is *"the child can execute programs"*, and governance state lives in that program's environment.
 Containing **that** is the operating system's job, and is out of scope here (**ADR-0012**).
@@ -73,7 +73,7 @@ a leaf — it receives neither `delegate` nor `delegate_all`.
 
 **Cardinality is bounded separately** (ADR-0008, amended 2026-08-12). The invariant above says what a child
 may *hold* and nothing about how many children exist; a blocking `delegate` bounded that to one by accident,
-and fan-out removes the accident. `PI_GRANTS_FANOUT` is a **subtree budget**: a call
+and fan-out removes the accident. `PI_DADDY_FANOUT` is a **subtree budget**: a call
 spends from `B` before dividing the remainder among the children, so no *subtree* can exceed what its root
 held. A per-call cap of K with depth D would still permit K^D — the same exponential wearing a smaller
 number — so the bound is subtractive instead, and composes across processes with no shared state.
@@ -81,7 +81,7 @@ number — so the bound is subtractive instead, and composes across processes wi
 **It is not a session total, and the distinction is measurable:** the value is read once from the
 environment and never decremented, so one session may issue successive `delegate_all` calls at the full
 width. What is bounded is the shape of any *one* tree, not how many trees a turn builds. Bound depth with
-`PI_GRANTS_MAX_DEPTH`; nothing bounds the number of turns.
+`PI_DADDY_MAX_DEPTH`; nothing bounds the number of turns.
 
 ## Why pi's `--tools` is the enforcement point
 
@@ -176,14 +176,14 @@ delegate_all({ children: [ {…}, {…}, {…} ] })                  // several 
 - **You cannot grant what you do not hold.** Refusals name the capability and are recorded.
 - **Spawning is itself a capability.** Grant `delegate` and the child can sub-delegate; withhold it and the
   child is a leaf — the extension is only passed to children that hold it, so the machinery isn't even
-  present. `PI_GRANTS_MAX_DEPTH` remains a backstop.
+  present. `PI_DADDY_MAX_DEPTH` remains a backstop.
 - **A refusal is a tool *error*, not an answer.** All three tools throw, because `AgentToolResult` has **no
   `isError` field** — pi sets it only when `execute` throws, and a normal return is hardcoded
   `isError: false`. Until 0.5.0 the tool returned `isError: true`, which was silently discarded, so every
   refusal this package made was recorded by pi as a **successful** tool call. Found by the integration suite
   on its first run.
 - **A child cannot outlive or overwhelm you.** Output is capped (1 MiB), there is a wall-clock timeout
-  (`PI_GRANTS_CHILD_TIMEOUT`, default 1200s) with `SIGTERM` → `SIGKILL` escalation so a child cannot ignore
+  (`PI_DADDY_CHILD_TIMEOUT`, default 1200s) with `SIGTERM` → `SIGKILL` escalation so a child cannot ignore
   its way past it, an abort is honoured even if it arrived before the spawn, and a child that exits
   non-zero, times out or is cancelled comes back as a **tool error naming which** — not as an answer.
 - **Fan-out stays bounded and waits for all by default.** At most 8 children per call, and the subtree budget
@@ -202,7 +202,7 @@ delegate_all({ children: [ {…}, {…}, {…} ] })                  // several 
 | :--- | :--- |
 | Holds `read,write,delegate`; delegates `tools:["read"]`; child told to write a file | **No file exists.** `--tools` is the enforcement point and this is what it buys |
 | Holds `read,delegate`; tries `tools:["read","write"]` | Tool **error**: `cannot grant tool:write — this session does not hold it (capability escalation blocked)`; ledger `denied:["tool:write"]`, `blocked:true` |
-| `PI_GRANTS_LEDGER` pointed somewhere unwritable | Delegation **refused** — asking for an audit trail makes it a precondition |
+| `PI_DADDY_LEDGER` pointed somewhere unwritable | Delegation **refused** — asking for an audit trail makes it a precondition |
 
 ### Three ways to delegate
 
@@ -229,7 +229,7 @@ remains a failed tool call. Each step spends one unit of the fan-out budget.
 Either a captured child process, or a visible, attachable **herdr** pane — the same governed argv, the same
 `--tools` enforcement, somewhere you can watch it.
 
-**Which one runs is decided by a probe (ADR-0031).** `PI_GRANTS_HERDR` is three-state: **unset** probes once at
+**Which one runs is decided by a probe (ADR-0031).** `PI_DADDY_HERDR` is three-state: **unset** probes once at
 session start (`herdr tab list`, 2s bound) and uses panes if a server *answers*; **`1`** demands herdr and
 **refuses every delegation** if it is unreachable, rather than quietly relocating; **`0`** demands subprocesses and
 skips the probe. Which one was chosen is printed at session start, shown by `/grants`, and recorded per child in
@@ -263,9 +263,9 @@ explicit **Relink and open** repair. **Not now** or dismissal leaves both the ex
 unchanged; protocol mismatches are not replaced by guesswork.
 A connected host can publish exact pre-authorized actions as short commands such as `pause-new-dispatch` or `defer-weekly`; the dashboard lists their human labels and accepts the key followed by Enter. The host resolves the key to its current CAS-bound request, so a person does not type JSON or tokens. Unknown/stale keys refuse before effects; raw JSON remains compatibility-only.
 
-For the planned pi-daddy 0.27.0 / skill-harness 0.16.0 pair, start a fresh Pi session after installing the qualified releases (the immutable harness bridge survives `/reload`), declare work, then run `/grants host <fresh-id>`. Library hosts can use the explicit `pi-daddy/daily-dashboard-host` export. This creates one process-owned daily host, captures the current work/facts sources, publishes its private socket to `/grants dashboard`, and lists `pause-new-dispatch` or `resume-dispatch` plus `refresh-current-work`. Compatible recorded P01 snapshots and selected obligations also become labelled scope-successor, alternative, and put-first actions; choosing one still passes exact intent authority and host/selection/tip CAS, then atomically rebinds both persisted and current-session declared work before new ordinary dispatch is released. Refresh is a deliberate action that atomically mirrors the current declared ledger and advances the existing source checkpoint; periodic dashboard redraw remains read-only. Pausing blocks only new governed ordinary children; a child already running keeps its original caller/result. An active retained child also gets an exact `cancel-exec-…` action (up to the ordinary eight-child width); choosing it requests abort through the original handle without cancelling siblings or implying acceptance/rejection. `/grants host closing` declares two minutes of explicit closing presence; only a paused, reservation-free, ordinary-quiescent host offers case-card preparation, and absent trust qualification defers without spending the five-card budget. `/grants host stop` refuses while paused, busy, pending or acknowledgement-unknown: resume new work in the original dashboard first, and reconcile pending controls explicitly. Refusal preserves the original host/socket; unknown effects are never silently released. A successful stop closes the host and never cancels a child. Restart uses a fresh id; no PID, user-entered JSON/CAS envelope or prior controller is recovered.
+For the planned pi-daddy 0.27.0 / skill-harness 0.16.0 pair, start a fresh Pi session after installing the qualified releases (the immutable harness bridge survives `/reload`), declare work, then run `/grants host <fresh-id>`. Library hosts can use the explicit `pi-daddy/dashboard` export. This creates one process-owned daily host, captures the current work/facts sources, publishes its private socket to `/grants dashboard`, and lists `pause-new-dispatch` or `resume-dispatch` plus `refresh-current-work`. Compatible recorded P01 snapshots and selected obligations also become labelled scope-successor, alternative, and put-first actions; choosing one still passes exact intent authority and host/selection/tip CAS, then atomically rebinds both persisted and current-session declared work before new ordinary dispatch is released. Refresh is a deliberate action that atomically mirrors the current declared ledger and advances the existing source checkpoint; periodic dashboard redraw remains read-only. Pausing blocks only new governed ordinary children; a child already running keeps its original caller/result. An active retained child also gets an exact `cancel-exec-…` action (up to the ordinary eight-child width); choosing it requests abort through the original handle without cancelling siblings or implying acceptance/rejection. `/grants host closing` declares two minutes of explicit closing presence; only a paused, reservation-free, ordinary-quiescent host offers case-card preparation, and absent trust qualification defers without spending the five-card budget. `/grants host stop` refuses while paused, busy, pending or acknowledgement-unknown: resume new work in the original dashboard first, and reconcile pending controls explicitly. Refusal preserves the original host/socket; unknown effects are never silently released. A successful stop closes the host and never cancels a child. Restart uses a fresh id; no PID, user-entered JSON/CAS envelope or prior controller is recovered.
 
-The separate `pi-daddy/measured-order` export composes no-tool measured Sol/Terra sessions into a bounded dependent order. Every retry and deterministic output contract is predeclared; bounded JSON projection contracts admit free-form prose without pre-knowing the whole artifact hash, and dependent prompts consume the actual retained predecessor output with its observed seal. A reopened controller treats another owner's unfinished claim as unknown and cannot replay it; an independently authorized exact acknowledgement can consume that schedule position, but never refunds or settles the original resource reservation. See ADR-0072.
+The separate `pi-daddy/work` export composes no-tool measured Sol/Terra sessions into a bounded dependent order. Every retry and deterministic output contract is predeclared; bounded JSON projection contracts admit free-form prose without pre-knowing the whole artifact hash, and dependent prompts consume the actual retained predecessor output with its observed seal. A reopened controller treats another owner's unfinished claim as unknown and cannot replay it; an independently authorized exact acknowledgement can consume that schedule position, but never refunds or settles the original resource reservation. See ADR-0072.
 
 The final candidate requirement/code/evidence index and exact unresolved human actions are in [`docs/FINAL-READINESS-INDEX.md`](../../docs/FINAL-READINESS-INDEX.md).
 
@@ -323,7 +323,7 @@ silently showing fewer rows:
 
 **The store lives outside the governed workspace**, one file per governed directory under
 `$PI_CODING_AGENT_DIR/grants-approvals/` (default `~/.pi/agent/`). It used to sit at `<cwd>/.pi/grants-approvals.json`, which was self-defeating in
-this package's own recommended configuration: `PI_GRANTS_GATED=tool:write` means *"may use write, may not
+this package's own recommended configuration: `PI_DADDY_GATED=tool:write` means *"may use write, may not
 pass it down without a human"* — and **a session that may use `write` can write the approvals file.** A
 reviewer forged an entry end to end, including a matching definition so the ceiling compared equal, and got
 a ledger line reading `approvalSource: "persisted"` that was indistinguishable from a real approval. A
@@ -393,17 +393,17 @@ All fields are optional; existing callers behave unchanged.
 
 - `correlation` carries join-only run/task/workspace/context IDs, opaque policy metadata, base/head/tree SHAs
   and sequence floors. Supplied IDs/digests never authorize; trusted digests are computed separately.
-- `workspace: {workspace_id, access}` resolves through `PI_GRANTS_WORKSPACE_REGISTRY`, validates a canonical
+- `workspace: {workspace_id, access}` resolves through `PI_DADDY_WORKSPACE_REGISTRY`, validates a canonical
   Git worktree root, and sets initial CWD. A caller cannot label a write-capable grant read-only. Kernel
   util-linux `flock` allows one **pi-daddy-governed** writer per canonical root; `setpriv --pdeathsig` plus
   helper attachment stops the writer process or herdr tab on parent death before release. This does not confine paths or exclude unrelated writers; `bash` remains an escape.
 
   **BREAKING in 0.19.0 — routing now requires a capability.** A delegation naming `workspace_id: W` needs
   `workspace:W` in the caller's grant, or it is refused `WORKSPACE_NOT_AUTHORIZED`. Every grant that routes
-  must add it: `PI_GRANTS_GRANT="tool:read,tool:delegate,workspace:W"`. `pi-daddy init` lists the registered
+  must add it: `PI_DADDY_GRANT="tool:read,tool:delegate,workspace:W"`. `pi-daddy init` lists the registered
   ids commented in `.pi/grants.env`. A child can only route on to ids it was granted itself, so this is also
   the list of what any descendant could reach; `workspace:*` exists but is held and never inherited, which
-  makes it the wrong answer for anything but a single-worktree setup. `PI_GRANTS_GATED=workspace:W` asks a
+  makes it the wrong answer for anything but a single-worktree setup. `PI_DADDY_GATED=workspace:W` asks a
   human first. Enforced by pi-daddy before the spawn, not by pi's `--tools` — see `docs/SPEC.md` on the
   enforcement classes.
 
@@ -424,15 +424,15 @@ All fields are optional; existing callers behave unchanged.
   `GATED_UNAPPROVED`, `APPROVAL_SCOPE_MISMATCH`, and `WORKSPACE_WRITE_CONFLICT`.
 - Ledger v3 adds unique execution/parent identity, joinable capability/lease/lifecycle/check events, and
   provenance-labelled workflow facts while retaining frozen v2 and legacy readers.
-- `pi-daddy/check-runner` selects an operator-named absolute executable+argv definition, never a shell
+- `pi-daddy/ledger` selects an operator-named absolute executable+argv definition, never a shell
   command string. Check IDs use the v3 ASCII identifier alphabet and are refused before execution if they do
   not fit their generated receipt identity. It strips sensitive inherited environment, enforces timeout/output caps, executes a
   private copy of the exact executable bytes it hashed, and pre/post-verifies Git head/candidate-tree
   identity under an exclusive coordination lease. The executable remains arbitrary code; no filesystem or
   network sandbox is claimed.
 
-Public subpaths: `pi-daddy/correlation`, `pi-daddy/refusals`, `pi-daddy/workspace`,
-`pi-daddy/check-runner`.
+Public subpaths: `pi-daddy/kernel`, `pi-daddy/kernel`, `pi-daddy/approvals`,
+`pi-daddy/ledger`.
 
 ### Canonical ledger v3 contract
 
@@ -454,9 +454,9 @@ historical; malformed v2 never becomes a grey row or orphan count. A field/event
 
 ```bash
 # `agent:` ids say WHICH definitions this session may spawn (0.8.0); `tool:` ids say what it may grant them.
-PI_GRANTS_GRANT="agent:review,tool:read,tool:grep,tool:find,tool:ls,tool:delegate" \
-PI_GRANTS_LEDGER=.pi/grants.jsonl \
-PI_GRANTS_MAX_DEPTH=2 \
+PI_DADDY_GRANT="agent:review,tool:read,tool:grep,tool:find,tool:ls,tool:delegate" \
+PI_DADDY_LEDGER=.pi/grants.jsonl \
+PI_DADDY_MAX_DEPTH=2 \
 pi
 # The relative ledger is resolved once at session start and inherited as one absolute path,
 # so routed descendants changing cwd still append to this tree.
@@ -551,10 +551,10 @@ the ceiling is the one `principal-pi-skills` PR #30 settled on by re-deriving it
   ---
 ```
 
-and in `.pi/grants.env`, whose `PI_GRANTS_GRANT` line `init` wrote as `"tool:delegate"` — you add the rest:
+and in `.pi/grants.env`, whose `PI_DADDY_GRANT` line `init` wrote as `"tool:delegate"` — you add the rest:
 
 ```sh
-export PI_GRANTS_GRANT="agent:decide,tool:read,tool:grep,tool:find,tool:ls,tool:delegate"
+export PI_DADDY_GRANT="agent:decide,tool:read,tool:grep,tool:find,tool:ls,tool:delegate"
 ```
 
 ```bash
@@ -585,7 +585,7 @@ and `plan`.
 declare their ceilings, `init` puts `tool:read`, `tool:grep` and friends in the live grant and writes
 `tool:bash`, `tool:write` and `tool:edit` — plus the `agent:` ids of the definitions that need them — as
 commented lines naming who asked for what. `init` + `source` gives you a working read-only setup; the wide
-half costs one deliberate uncomment. The reason is that `PI_GRANTS_GRANT` is what *bounds* a declared
+half costs one deliberate uncomment. The reason is that `PI_DADDY_GRANT` is what *bounds* a declared
 ceiling, so generating it from those same ceilings would give the bound and the bounded one author, and it
 would not be you.
 
@@ -606,7 +606,7 @@ so refusing is cheap and silence is not.
 `manager.spawn()` over the event bus and never produces a `tool_call` at all (ADR-0013 Finding 6), so a
 tool-name check cannot see it. It catches the ordinary case loudly. It is not containment.
 
-**Governance defaults on.** With `PI_GRANTS_GRANT` unset, a root starts with the wildcard only as an
+**Governance defaults on.** With `PI_DADDY_GRANT` unset, a root starts with the wildcard only as an
 upper bound and is tightened to Pi's observed tool surface before it can delegate. Descendants still receive
 only their parent-computed narrowing grant. Set `PI_DADDY_GOVERNANCE=off` for the visible local opt-out;
 observation and the activity timeline remain independent.
@@ -615,36 +615,36 @@ observation and the activity timeline remain independent.
 
 | Variable | Default | Notes |
 | :--- | :--- | :--- |
-| `PI_GRANTS_GRANT` | unset → observed-root ceiling, or this directory's stored init choice | Presence supplies an explicit ceiling and bypasses the whole cwd store; children receive their parent-computed value. |
-| `PI_GRANTS_MAX_DEPTH` | `2` | Child-depth bound. `0` disables spawning. |
-| `PI_GRANTS_DEPTH` | `0` | This session's own depth; set by the parent, not by hand. |
-| `PI_GRANTS_GATED` | **`tool:bash`** when governance is on | Capabilities needing human approval. Set to `""` to gate nothing. Gating is closed under subsumption, so this also covers `write`/`edit`/`read`/`grep`/`find`/`ls` (ADR-0012). |
-| `PI_GRANTS_APPROVED` | unset | Inherited `capability@subject#sha256` entries; set by the parent, clamped to the child's own grant, and honoured only against the definition body the child itself loaded (ADR-0022). |
-| `PI_GRANTS_APPROVAL_TIMEOUT` | `120` (seconds) | How long a dialog waits. `0` or an unreadable value means **no timeout**: waiting forever denies nothing, so it is the safe reading of a value we do not understand. |
-| `PI_GRANTS_LEDGER` | unset → a v2 `/grants init` choice uses `<cwd>/.pi/grants.jsonl`; otherwise not recording | Presence overrides the project default; `""` disables it for one run. Any effective path is load-bearing. |
-| `PI_GRANTS_WORKSPACE_REGISTRY` | unset | Operator-owned `{version:1, workspaces:{id:{path}}}` file, required only for workspace-routed spawns. |
-| `PI_GRANTS_WORKSPACE_LEASE_DIR` | under `$PI_CODING_AGENT_DIR/pi-daddy/` | Kernel writer locks and ownership metadata. |
-| `PI_GRANTS_CHILD_TIMEOUT` | `1200` (seconds) | Wall-clock limit for a child. Inherited by descendants — an operator preference, deliberately *not* attenuating state. |
-| `PI_GRANTS_ALLOW_UNRESOLVED_MODELS` | unset | Exact `1` lets pi attempt custom model resolution; otherwise an explicit provider/id missing from pi's session catalogue refuses before lease, approval or spawn. |
-| `PI_GRANTS_FANOUT` | `8` | Per-call width and downward subtree budget; not a session-total counter. Malformed or `0` falls back to the default. |
-| `PI_GRANTS_PARENT_ID` | `d0` | Readable logical tree position; set by the parent and allowed to repeat across calls. |
-| `PI_GRANTS_EXECUTION_ID` | unset at a root | Unique governed execution occurrence; set by the parent. Lifecycle/lease joins use this, never `PI_GRANTS_PARENT_ID`. |
-| `PI_GRANTS_HERDR` | unset ⇒ **probe** | Three-state. Unset probes for a reachable herdr and uses panes if one answers; `1` demands panes and refuses every delegation if herdr is unreachable; `0` demands captured subprocesses. Never detected from `herdr` merely being on `PATH`. |
-| `PI_GRANTS_HERDR_WORKSPACE` | the parent's `HERDR_WORKSPACE_ID` | herdr workspace for spawned panes. Defaults to the workspace this session is in, so a child is a tab away rather than a workspace away. |
-| `PI_GRANTS_HERDR_KEEP_PANE` | unset | `1` keeps each child's pane for inspection, and no sweep closes it. Off by default: a fan-out would flood the workspace. |
+| `PI_DADDY_GRANT` | unset → observed-root ceiling, or this directory's stored init choice | Presence supplies an explicit ceiling and bypasses the whole cwd store; children receive their parent-computed value. |
+| `PI_DADDY_MAX_DEPTH` | `2` | Child-depth bound. `0` disables spawning. |
+| `PI_DADDY_DEPTH` | `0` | This session's own depth; set by the parent, not by hand. |
+| `PI_DADDY_GATED` | **`tool:bash`** when governance is on | Capabilities needing human approval. Set to `""` to gate nothing. Gating is closed under subsumption, so this also covers `write`/`edit`/`read`/`grep`/`find`/`ls` (ADR-0012). |
+| `PI_DADDY_APPROVED` | unset | Inherited `capability@subject#sha256` entries; set by the parent, clamped to the child's own grant, and honoured only against the definition body the child itself loaded (ADR-0022). |
+| `PI_DADDY_APPROVAL_TIMEOUT` | `120` (seconds) | How long a dialog waits. `0` or an unreadable value means **no timeout**: waiting forever denies nothing, so it is the safe reading of a value we do not understand. |
+| `PI_DADDY_LEDGER` | unset → a v2 `/grants init` choice uses `<cwd>/.pi/grants.jsonl`; otherwise not recording | Presence overrides the project default; `""` disables it for one run. Any effective path is load-bearing. |
+| `PI_DADDY_WORKSPACE_REGISTRY` | unset | Operator-owned `{version:1, workspaces:{id:{path}}}` file, required only for workspace-routed spawns. |
+| `PI_DADDY_WORKSPACE_LEASE_DIR` | under `$PI_CODING_AGENT_DIR/pi-daddy/` | Kernel writer locks and ownership metadata. |
+| `PI_DADDY_CHILD_TIMEOUT` | `1200` (seconds) | Wall-clock limit for a child. Inherited by descendants — an operator preference, deliberately *not* attenuating state. |
+| `PI_DADDY_ALLOW_UNRESOLVED_MODELS` | unset | Exact `1` lets pi attempt custom model resolution; otherwise an explicit provider/id missing from pi's session catalogue refuses before lease, approval or spawn. |
+| `PI_DADDY_FANOUT` | `8` | Per-call width and downward subtree budget; not a session-total counter. Malformed or `0` falls back to the default. |
+| `PI_DADDY_PARENT_ID` | `d0` | Readable logical tree position; set by the parent and allowed to repeat across calls. |
+| `PI_DADDY_EXECUTION_ID` | unset at a root | Unique governed execution occurrence; set by the parent. Lifecycle/lease joins use this, never `PI_DADDY_PARENT_ID`. |
+| `PI_DADDY_HERDR` | unset ⇒ **probe** | Three-state. Unset probes for a reachable herdr and uses panes if one answers; `1` demands panes and refuses every delegation if herdr is unreachable; `0` demands captured subprocesses. Never detected from `herdr` merely being on `PATH`. |
+| `PI_DADDY_HERDR_WORKSPACE` | the parent's `HERDR_WORKSPACE_ID` | herdr workspace for spawned panes. Defaults to the workspace this session is in, so a child is a tab away rather than a workspace away. |
+| `PI_DADDY_HERDR_KEEP_PANE` | unset | `1` keeps each child's pane for inspection, and no sweep closes it. Off by default: a fan-out would flood the workspace. |
 | `PI_DADDY_GOVERNANCE` | on | `off` or `0` explicitly opts this local session out of governance. |
 | `PI_CODING_AGENT_DIR` | `~/.pi/agent` | pi's own variable, not ours — but it decides where stored project grants/ledger consent and persisted approvals live. |
 
 **A malformed value disables spawning; it never falls back to a default.** Stored grants are likewise
 tri-state: only a missing file is opt-out; malformed, unsupported-version, unreadable or wrong-cwd state is a
 loud empty-grant session with a `GRANT_STORE_INVALID` ledger line. An unreadable
-`PI_GRANTS_MAX_DEPTH` or `PI_GRANTS_DEPTH` yields `maxDepth: 0` and a startup warning naming the
+`PI_DADDY_MAX_DEPTH` or `PI_DADDY_DEPTH` yields `maxDepth: 0` and a startup warning naming the
 variable. Before 0.5.0 these were read with `parseInt`, which accepts numeric prefixes (`"2abc"` → `2`)
 and otherwise gives `NaN` — and since every comparison against `NaN` is false, a typo did not tighten the
 depth limit, it **removed** it.
 
 **Configuring a ledger makes it a precondition, not a log.** This applies equally to an explicit
-`PI_GRANTS_LEDGER` and to the project default accepted through `/grants init`: if the write fails, delegation
+`PI_DADDY_LEDGER` and to the project default accepted through `/grants init`: if the write fails, delegation
 is **refused**. Asking for an audit trail is an explicit act, and `ledger.ts` has always documented that an
 unrecorded grant should fail closed; until 0.5.0 both call sites silently swallowed the error. Legacy v1 grant
 stores and sessions with no ledger configured are unaffected. Concurrent appends are serialised by a lock file
@@ -693,7 +693,7 @@ channel rather than building one:
    sibling, so there is nothing to race on. It is written once at session start and republished only when
    this session's own approvals change, never per spawn.
 2. **Each child is spawned with its own explicit `env` object.** It is built by stripping every
-   `PI_GRANTS_*` variable from this process's environment and then applying the plan, so the plan is the
+   `PI_DADDY_*` variable from this process's environment and then applying the plan, so the plan is the
    only source of all of them — a key the plan does not set cannot let the parent's value through.
 3. **Each child derives its own grant on arrival**: `inheritedGrant ∩ ownObservedTools`, where the observed
    set comes from the `tools` array of its first provider request — authoritative, because it is exactly
@@ -778,7 +778,7 @@ await appendRecord({ path: ".pi/grants.jsonl" }, buildRecord({
 }));
 ```
 
-Subpaths are exported individually (`pi-daddy/resolve`, `/ledger`, `/spawn`, `/delegate`, `/catalog`,
+Subpaths are exported individually (`pi-daddy/kernel`, `/ledger`, `/spawn`, `/delegate`, `/catalog`,
 `/propagation`, `/definitions`, `/fanout`, `/pi-tools`, `/approval`, `/approval-store`, `/approval-prompt`,
 `/run-child`, `/run-herdr`, `/dashboard-projection`, `/dashboard-render`).
 
@@ -829,7 +829,7 @@ npm run typecheck          # src + extensions + tests + integration tests
 npm run test:integration   # 48 tests against a REAL pi process/Herdr server, no model tokens.
 npm run test:smoke         # pack/install; exercise library exports, both bins, the v2/v3 contracts,
                            # bundled Herdr plugin, dashboard, and `pi-daddy init`
-PI_GRANTS_IT_MODEL=1 npm run test:integration   # + 10 end-to-end tests with a real model. Costs money.
+PI_DADDY_IT_MODEL=1 npm run test:integration   # + 10 end-to-end tests with a real model. Costs money.
 ```
 
 The resolver is a pure function, which is deliberate: it is the only place an escalation could be

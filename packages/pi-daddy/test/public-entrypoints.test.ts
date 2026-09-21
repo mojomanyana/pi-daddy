@@ -8,12 +8,13 @@ test("daily steering and measured orders have explicit package entrypoints", asy
   assert.equal(typeof root.startDailyDashboardHost, "function");
   assert.equal(typeof root.discoverDailyIntentActions, "function");
   assert.equal(typeof root.createMeasuredOrder, "function");
-  assert.deepEqual(manifest.exports["./daily-dashboard-host"], {
-    types: "./dist/products/daily-dashboard-host.d.ts",
-    default: "./dist/products/daily-dashboard-host.js",
+  assert.deepEqual(manifest.exports["./dashboard"], {
+    types: "./dist/products/dashboard-public.d.ts",
+    default: "./dist/products/dashboard-public.js",
   });
-  assert.deepEqual(manifest.exports["./measured-order"], {
-    types: "./dist/products/measured-order.d.ts",
-    default: "./dist/products/measured-order.js",
+  assert.deepEqual(manifest.exports["./work"], {
+    types: "./dist/products/work-public.d.ts",
+    default: "./dist/products/work-public.js",
   });
+  assert.equal(Object.keys(manifest.exports).length, 9, "ADR-0076 PR 3b: the export map names layers, under ten keys");
 });

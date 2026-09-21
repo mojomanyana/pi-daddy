@@ -7,7 +7,7 @@
  * of `npm test` leaves tens of thousands of entries that every `readdir` of `/tmp` then walks.
  *
  * This is hygiene, not correctness: nothing here governs anything. The only property worth protecting is
- * that a *failing* test's fixtures can still be inspected, so `PI_GRANTS_KEEP_TMP=1` skips removal entirely.
+ * that a *failing* test's fixtures can still be inspected, so `PI_DADDY_KEEP_TMP=1` skips removal entirely.
  *
  * **Not a `.test.ts` file on purpose** — `npm test` runs `test/*.test.ts`, so this is a helper the suites
  * import, not a suite. `test/temp-hygiene.test.ts` is what holds it to its contract.
@@ -18,7 +18,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 /** Set to any non-empty value to leave every fixture directory on disk for inspection. */
-export const KEEP_ENV = "PI_GRANTS_KEEP_TMP";
+export const KEEP_ENV = "PI_DADDY_KEEP_TMP";
 
 const created: string[] = [];
 

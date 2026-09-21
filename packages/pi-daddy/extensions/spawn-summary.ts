@@ -11,7 +11,7 @@
  * **Decided by the real planner, and — since a reviewer caught it — no longer re-classified afterwards.**
  * The first version read two fields of `plan.result` and invented a category from them, which is the very
  * thing this header claimed to have made inexpressible: `planDelegation` has six refusals that leave both
- * fields empty, so a session at its depth limit, or one with a malformed `PI_GRANTS_MAX_DEPTH`, was told its
+ * fields empty, so a session at its depth limit, or one with a malformed `PI_DADDY_MAX_DEPTH`, was told its
  * **files** were written wrong while `/grants` in the same session said "delegation is disabled (maxDepth
  * 0)". That is R-28's shape inside the fix for R-28's shape. The planner's own `reason` is now printed for
  * anything the two designated signals do not explain.
@@ -28,7 +28,7 @@ import type { GatedPlan } from "./run-delegation.ts";
 
 /** Why a definition is not spawnable right now. Three causes, three different fixes. */
 export type WithheldReason =
-  /** The grant lacks `agent:<name>`, or lacks a tool the ceiling declares. Fix: widen `PI_GRANTS_GRANT`. */
+  /** The grant lacks `agent:<name>`, or lacks a tool the ceiling declares. Fix: widen `PI_DADDY_GRANT`. */
   | "capability"
   /** Everything is held, but a gated capability needs a human yes first. Fix: spawn it and answer. */
   | "approval"
@@ -108,7 +108,7 @@ export async function summariseSpawnable(
       notChecked: 0,
       sessionBlocked:
         `this session holds no tool:delegate, so it has no delegate tool at all — nothing can be spawned, ` +
-        `whatever any definition declares. Add tool:delegate to PI_GRANTS_GRANT to make this session a ` +
+        `whatever any definition declares. Add tool:delegate to PI_DADDY_GRANT to make this session a ` +
         `delegator rather than a leaf.`,
     };
   }
@@ -120,7 +120,7 @@ export async function summariseSpawnable(
       sessionBlocked:
         session.maxDepth <= 0
           ? `spawning is disabled for this session (max depth ${session.maxDepth}), so no definition can ` +
-            `run whatever its file says. If you did not set PI_GRANTS_MAX_DEPTH to 0, check the warning ` +
+            `run whatever its file says. If you did not set PI_DADDY_MAX_DEPTH to 0, check the warning ` +
             `above: a malformed value disables spawning deliberately.`
           : `this session is at its depth limit (${session.depth} of ${session.maxDepth}), so it may not ` +
             `spawn — a definition refused here is not a problem with its file.`,

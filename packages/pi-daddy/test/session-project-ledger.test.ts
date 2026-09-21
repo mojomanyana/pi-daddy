@@ -15,20 +15,20 @@ after(cleanupTempDirs);
  * `/grants init` changes the running session as well as the next one.
  *
  * Breaks by: dropping the project-ledger argument in `runInit`, ignoring it in `adoptGrant`, or letting the
- * stored default replace an explicit PI_GRANTS_LEDGER value.
+ * stored default replace an explicit PI_DADDY_LEDGER value.
  */
 test("an invalid project store creates a refused governed session instead of a wildcard session", async () => {
   const cwd = await tempDir("grants-invalid-session-");
   const agentDir = await tempDir("grants-invalid-agent-");
   const originalCwd = process.cwd();
   const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
-  const originalGrant = process.env.PI_GRANTS_GRANT;
-  const originalLedger = process.env.PI_GRANTS_LEDGER;
+  const originalGrant = process.env.PI_DADDY_GRANT;
+  const originalLedger = process.env.PI_DADDY_LEDGER;
   try {
     process.chdir(cwd);
     process.env.PI_CODING_AGENT_DIR = agentDir;
-    delete process.env.PI_GRANTS_GRANT;
-    delete process.env.PI_GRANTS_LEDGER;
+    delete process.env.PI_DADDY_GRANT;
+    delete process.env.PI_DADDY_LEDGER;
     const path = grantStorePath(cwd);
     await mkdir(dirname(path), { recursive: true });
     await writeFile(path, JSON.stringify({ version: 99, cwd, grant: ["tool:read"] }));
@@ -43,10 +43,8 @@ test("an invalid project store creates a refused governed session instead of a w
     originalAgentDir === undefined
       ? delete process.env.PI_CODING_AGENT_DIR
       : (process.env.PI_CODING_AGENT_DIR = originalAgentDir);
-    originalGrant === undefined ? delete process.env.PI_GRANTS_GRANT : (process.env.PI_GRANTS_GRANT = originalGrant);
-    originalLedger === undefined
-      ? delete process.env.PI_GRANTS_LEDGER
-      : (process.env.PI_GRANTS_LEDGER = originalLedger);
+    originalGrant === undefined ? delete process.env.PI_DADDY_GRANT : (process.env.PI_DADDY_GRANT = originalGrant);
+    originalLedger === undefined ? delete process.env.PI_DADDY_LEDGER : (process.env.PI_DADDY_LEDGER = originalLedger);
   }
 });
 
@@ -66,7 +64,7 @@ test("owner-bound reload restores its root while a distinct owner keeps inherite
     let bound = bindReloadLifecycle(owner, first.reloadLifecycle);
     first.reconcileEnvironment(bound.environment, bound.lifecycle);
     first.publishChildEnv();
-    assert.equal(process.env.PI_GRANTS_DEPTH, "1", "the first owner publishes child-only state");
+    assert.equal(process.env.PI_DADDY_DEPTH, "1", "the first owner publishes child-only state");
 
     const reloaded = createGrantsSession(undefined);
     bound = bindReloadLifecycle(owner, reloaded.reloadLifecycle);
@@ -75,10 +73,10 @@ test("owner-bound reload restores its root while a distinct owner keeps inherite
     assert.equal(reloaded.maxDepth, 2);
 
     // A root replacement is accepted only when it is not a package publication from any owner.
-    process.env.PI_GRANTS_GRANT = "tool:read";
-    delete process.env.PI_GRANTS_DEPTH;
-    process.env.PI_GRANTS_MAX_DEPTH = "1";
-    process.env.PI_GRANTS_APPROVED = "tool:read@<delegate>";
+    process.env.PI_DADDY_GRANT = "tool:read";
+    delete process.env.PI_DADDY_DEPTH;
+    process.env.PI_DADDY_MAX_DEPTH = "1";
+    process.env.PI_DADDY_APPROVED = "tool:read@<delegate>";
     const narrowed = createGrantsSession(undefined);
     bound = bindReloadLifecycle(owner, narrowed.reloadLifecycle);
     narrowed.reconcileEnvironment(bound.environment, bound.lifecycle);
@@ -112,7 +110,7 @@ test("actual extension reload is owned by its Pi API, not a same-process SDK chi
   const cwd = await tempDir("grants-reload-lifecycle-"),
     agentDir = await tempDir("grants-reload-lifecycle-agent-");
   const originalCwd = process.cwd(),
-    keys = [...GRANT_ENV_KEYS, "PI_CODING_AGENT_DIR", "PI_GRANTS_HERDR"] as const;
+    keys = [...GRANT_ENV_KEYS, "PI_CODING_AGENT_DIR", "PI_DADDY_HERDR"] as const;
   const original = new Map(keys.map((key) => [key, process.env[key]]));
   const makePi = (sessionManager: object) => {
     const hooks = new Map<string, any>(),
@@ -152,7 +150,7 @@ test("actual extension reload is owned by its Pi API, not a same-process SDK chi
     process.chdir(cwd);
     for (const key of keys) delete process.env[key];
     process.env.PI_CODING_AGENT_DIR = agentDir;
-    process.env.PI_GRANTS_HERDR = "0";
+    process.env.PI_DADDY_HERDR = "0";
     await saveGrant(cwd, ["tool:read", "tool:delegate"]);
     const manager = {},
       root = makePi(manager);
@@ -189,7 +187,7 @@ test("adopting init's project ledger is live now, while an explicit environment 
     const ledger = projectLedgerPath(cwd);
     session.adoptGrant(["tool:read"], ledger);
     assert.equal(session.ledgerPath, ledger);
-    assert.equal(process.env.PI_GRANTS_LEDGER, ledger, "the next child inherits the same absolute ledger");
+    assert.equal(process.env.PI_DADDY_LEDGER, ledger, "the next child inherits the same absolute ledger");
 
     const movedCwd = await tempDir("grants-session-moved-");
     const movedLedger = projectLedgerPath(movedCwd);
@@ -199,22 +197,22 @@ test("adopting init's project ledger is live now, while an explicit environment 
       movedLedger,
       "a default this session published itself is not an explicit env override when init chooses the new cwd",
     );
-    assert.equal(process.env.PI_GRANTS_LEDGER, movedLedger);
+    assert.equal(process.env.PI_DADDY_LEDGER, movedLedger);
 
     for (const key of GRANT_ENV_KEYS) delete process.env[key];
     const explicit = `${cwd}/operator.jsonl`;
-    process.env.PI_GRANTS_LEDGER = explicit;
+    process.env.PI_DADDY_LEDGER = explicit;
     const overridden = createGrantsSession(undefined);
     overridden.adoptGrant(["tool:read"], ledger);
     assert.equal(overridden.ledgerPath, explicit, "init cannot replace an explicit current-session choice");
-    assert.equal(process.env.PI_GRANTS_LEDGER, explicit);
+    assert.equal(process.env.PI_DADDY_LEDGER, explicit);
 
     for (const key of GRANT_ENV_KEYS) delete process.env[key];
-    process.env.PI_GRANTS_LEDGER = "";
+    process.env.PI_DADDY_LEDGER = "";
     const disabled = createGrantsSession(undefined);
     disabled.adoptGrant(["tool:read"], ledger);
     assert.equal(disabled.ledgerPath, "", "an explicit empty value remains a one-run opt-out through init");
-    assert.equal(process.env.PI_GRANTS_LEDGER, "");
+    assert.equal(process.env.PI_DADDY_LEDGER, "");
   } finally {
     process.chdir(originalCwd);
     for (const key of keys) {

@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 import * as routing from "../src/kernel/workspace.ts";
 import * as lease from "../src/governance/workspace-lease.ts";
-import * as subpath from "../src/governance/workspace-public.ts";
+import * as subpath from "../src/governance/approvals-public.ts";
 
 // ADR-0076 PR 2 split routing (kernel) from the governed-writer lease (governance). The `pi-daddy/workspace`
 // subpath must still expose both, exactly as `src/kernel/workspace.ts` did before the split. The review of that PR
@@ -17,7 +17,7 @@ const LEASE_NAMES = [
   "leaseReleaseLedgerOutcome",
 ];
 
-test("pi-daddy/workspace exposes every routing export and the lease surface it had before the split", async () => {
+test("pi-daddy/approvals exposes every routing export and the lease surface pi-daddy/workspace had before the split", async () => {
   const exported = new Set(Object.keys(subpath));
   for (const name of Object.keys(routing))
     assert.ok(exported.has(name), `routing export missing from subpath: ${name}`);
@@ -26,8 +26,8 @@ test("pi-daddy/workspace exposes every routing export and the lease surface it h
     assert.ok(exported.has(name), `lease export missing from subpath: ${name}`);
   }
   const manifest = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
-  assert.deepEqual(manifest.exports["./workspace"], {
-    types: "./dist/governance/workspace-public.d.ts",
-    default: "./dist/governance/workspace-public.js",
+  assert.deepEqual(manifest.exports["./approvals"], {
+    types: "./dist/governance/approvals-public.d.ts",
+    default: "./dist/governance/approvals-public.js",
   });
 });

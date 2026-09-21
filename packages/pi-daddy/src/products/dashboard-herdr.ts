@@ -307,7 +307,7 @@ export interface DashboardOpenResult {
 
 export async function openOrReuseDashboard(input: DashboardOpenInput): Promise<DashboardOpenResult> {
   if (!input.ledgerPath.trim() && !input.allowInactive) {
-    throw new Error("no pi-daddy ledger is configured; set PI_GRANTS_LEDGER first");
+    throw new Error("no pi-daddy ledger is configured; set PI_DADDY_LEDGER first");
   }
   const exec = input.exec ?? dashboardHerdrExec;
   const ledgerPath = input.ledgerPath.trim() ? resolve(input.cwd, input.ledgerPath) : "";

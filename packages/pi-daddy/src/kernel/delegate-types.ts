@@ -69,7 +69,7 @@ export interface DelegationContext {
   /**
    * Extra per-child environment supplied by the composition layer (today: the activity timeline's local
    * observation identity). Evaluated once the child's execution id is known. The kernel refuses any key in
-   * the `PI_GRANTS_` namespace, so nothing supplied here can widen a grant, a depth or an approval
+   * the `PI_DADDY_` namespace, so nothing supplied here can widen a grant, a depth or an approval
    * (ADR-0076: the kernel imports no product; products contribute through this hook).
    */
   childEnv?: (child: { childExecutionId?: string }) => Readonly<Record<string, string>>;

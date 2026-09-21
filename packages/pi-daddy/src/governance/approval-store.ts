@@ -61,7 +61,7 @@ export type SubjectLookup = (subject: string) => SubjectSnapshot | null;
  * Where persisted approvals live — **outside the governed workspace** (ADR-0014).
  *
  * It used to be `<cwd>/.pi/grants-approvals.json`, which was self-defeating in this package's own
- * recommended configuration: `PI_GRANTS_GATED=tool:write` means *"may use write, may not pass it down
+ * recommended configuration: `PI_DADDY_GATED=tool:write` means *"may use write, may not pass it down
  * without a human"*, and **a session that may use `write` can write the approvals file**. A reviewer
  * demonstrated it end to end, including authoring a matching agent-type file so `grantAtApproval`
  * compared equal — no dialog, and a ledger line reading `approvalSource: "persisted"`, indistinguishable

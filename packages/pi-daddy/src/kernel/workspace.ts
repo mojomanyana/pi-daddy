@@ -9,9 +9,10 @@ import { isAbsolute, join } from "node:path";
 import { promisify } from "node:util";
 import { GovernanceRefusal, refusal } from "./refusals.ts";
 import { isSafeWorkspaceId, workspaceCapability } from "./capabilities.ts";
+import { ENV_WORKSPACE_REGISTRY } from "./env-names.ts";
+export { ENV_WORKSPACE_REGISTRY } from "./env-names.ts";
 
 const execFileAsync = promisify(execFile);
-export const ENV_WORKSPACE_REGISTRY = "PI_GRANTS_WORKSPACE_REGISTRY";
 
 export type WorkspaceAccess = "read" | "write";
 
@@ -45,7 +46,7 @@ export interface ValidatedWorkspace {
  * a FIFO with "no timeout anywhere in the path". This function used a bare `readFile`, which was survivable
  * while it ran only at spawn time — and stopped being survivable when 0.19.0 began reading the registry from
  * `buildCatalog` and `registeredWorkspaceIds`, both awaited inside `session_start`. Measured on `52135ca`:
- * `PI_GRANTS_WORKSPACE_REGISTRY` pointing at a FIFO blocked session start indefinitely, so the session never
+ * `PI_DADDY_WORKSPACE_REGISTRY` pointing at a FIFO blocked session start indefinitely, so the session never
  * reached the `holding [...]` line, the executor probe, or any control after it — and `delegate` awaits the
  * same promise, so delegation hung too. A blocking special file, an unresponsive network mount or a hostile
  * `mkfifo` all reach it.
@@ -204,7 +205,7 @@ export async function loadWorkspaceRegistry(path: string): Promise<WorkspaceRegi
     // `isWellFormedCapability` blocklist, and review measured what that let through: an id of `*` minted
     // `WORKSPACE_WILDCARD` (an operator naming one worktree held routing over all of them), an id with a
     // space became two capabilities because `ceilingForDefinition` splits on `[\s,]+`, and quote/`$()` ids
-    // reached a generated file whose own instructions say to paste them into `PI_GRANTS_GRANT`. See
+    // reached a generated file whose own instructions say to paste them into `PI_DADDY_GRANT`. See
     // `isSafeCapability`, which is now the one grammar for both channels into that file.
     if (!isSafeWorkspaceId(id)) {
       throw new GovernanceRefusal(

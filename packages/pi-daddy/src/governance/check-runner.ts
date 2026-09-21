@@ -66,7 +66,7 @@ export interface CheckReceipt {
 
 const SAFE_ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const SENSITIVE_ENV_NAME =
-  /(?:^|_)(?:TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH|COOKIE|PRIVATE_KEY|API_KEY)(?:_|$)|^PI_GRANTS_|^(?:AWS|GITHUB|GITLAB|AZURE|GOOGLE)_/i;
+  /(?:^|_)(?:TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH|COOKIE|PRIVATE_KEY|API_KEY)(?:_|$)|^PI_DADDY_|^(?:AWS|GITHUB|GITLAB|AZURE|GOOGLE)_/i;
 
 export function buildCheckEnvironment(
   definition: CheckDefinition,
@@ -140,7 +140,7 @@ export async function runNamedCheck(input: {
   signal?: AbortSignal;
   leaseDir?: string;
   ledgerPath?: string;
-  /** Explicit host archive boundary; defaults to PI_GRANTS_EXECUTION_ARCHIVE, never correlation. */
+  /** Explicit host archive boundary; defaults to PI_DADDY_EXECUTION_ARCHIVE, never correlation. */
   retentionDirectory?: string;
   toolCallId?: string;
 }): Promise<{

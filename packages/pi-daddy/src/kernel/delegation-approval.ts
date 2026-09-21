@@ -50,7 +50,7 @@ export function resolveDelegationApproval(input: {
    * ADR-0024 established the shape for `agent:<name>`: the id is gated as the parent's authority to run
    * that definition *now*, and never joins requested/effective, because that would hand the child authority
    * to recursively spawn itself. ADR-0035 added a second member of the category — `workspace:<id>`, the
-   * authority to route this child somewhere — and shipped without it, so `PI_GRANTS_GATED=workspace:prod`
+   * authority to route this child somewhere — and shipped without it, so `PI_DADDY_GATED=workspace:prod`
    * was accepted, recorded, and silently inert: no human was ever asked. The ADR claimed the opposite in
    * three places.
    *

@@ -346,7 +346,7 @@ test("mergeChildEnv does not mutate the environment it was handed", () => {
  *
  * **Measured on the published 0.18.0 before this fix.** A root holding `agent:*` (or `tool:*`) that
  * requested `agent:x,tool:bash` had it admitted by the wildcard's PREFIX rule — `"agent:x,tool:bash"`
- * starts with `agent:` — written verbatim into the child's `PI_GRANTS_GRANT`, and split by the child's
+ * starts with `agent:` — written verbatim into the child's `PI_DADDY_GRANT`, and split by the child's
  * own `parseList` into two capabilities. The child received a real `tool:bash` from a tree whose root
  * never held it, `denied` was empty, and the ledger line looked clean. That is minting authority, in the
  * package whose entire purpose is to prevent it.

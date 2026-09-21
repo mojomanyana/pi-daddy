@@ -4,12 +4,12 @@
  * Both defects share a shape: a configuration value that is *wrong* is treated as a value that is
  * *absent*, and absence is the permissive case.
  *
- *  - **A-S4/B-I4** — `Number.parseInt(process.env.PI_GRANTS_MAX_DEPTH ?? "2", 10)` with no guard.
- *    `??` catches only `undefined`, so `PI_GRANTS_MAX_DEPTH=""` or `=abc` yields `NaN`, and **every**
+ *  - **A-S4/B-I4** — `Number.parseInt(process.env.PI_DADDY_MAX_DEPTH ?? "2", 10)` with no guard.
+ *    `??` catches only `undefined`, so `PI_DADDY_MAX_DEPTH=""` or `=abc` yields `NaN`, and **every**
  *    comparison against `NaN` is false: `maxDepth <= 0` false, `childDepth > maxDepth` false. Depth
  *    limiting is disabled outright. The adjacent `depth` parse has a `|| 0` guard, which fails open in
  *    the other direction — a malformed depth makes a deep session look like a root.
- *  - **B-I8** — with `PI_GRANTS_GRANT` unset the extension still published grant/depth variables to
+ *  - **B-I8** — with `PI_DADDY_GRANT` unset the extension still published grant/depth variables to
  *    children, so "inactive" governance still governed descendants, contradicting the README.
  */
 
@@ -45,21 +45,21 @@ test("absent depth configuration keeps the documented defaults", () => {
 test("a malformed maxDepth disables spawning instead of disabling the limit", () => {
   const c = depthConfig("0", "");
   assert.equal(c.maxDepth, 0, "maxDepth 0 is refused by decideSpawn; NaN was silently permissive");
-  assert.deepEqual(c.malformed, ["PI_GRANTS_MAX_DEPTH"]);
+  assert.deepEqual(c.malformed, ["PI_DADDY_MAX_DEPTH"]);
 });
 
 test("a malformed depth does not reset a deep session to root", () => {
   const c = depthConfig("abc", "5");
   assert.equal(c.maxDepth, 0, "we cannot know how deep we are, so we must not spawn");
-  assert.deepEqual(c.malformed, ["PI_GRANTS_DEPTH"]);
+  assert.deepEqual(c.malformed, ["PI_DADDY_DEPTH"]);
 });
 
 test("both malformed are both reported", () => {
-  assert.deepEqual(depthConfig("x", "y").malformed, ["PI_GRANTS_DEPTH", "PI_GRANTS_MAX_DEPTH"]);
+  assert.deepEqual(depthConfig("x", "y").malformed, ["PI_DADDY_DEPTH", "PI_DADDY_MAX_DEPTH"]);
 });
 
 test("an ungoverned session publishes nothing to its children", () => {
-  // B-I8. `governed` is false when PI_GRANTS_GRANT is unset; the README promises nothing is blocked,
+  // B-I8. `governed` is false when PI_DADDY_GRANT is unset; the README promises nothing is blocked,
   // but the extension still exported grant/depth/maxDepth, so a child started governing itself.
   const env = childEnv({
     ownGrant: ["tool:read"],
@@ -81,6 +81,6 @@ test("a governed session still publishes what children inherit", () => {
     approved: [],
     governed: true,
   });
-  assert.equal(env.PI_GRANTS_GRANT, "tool:read");
-  assert.equal(env.PI_GRANTS_DEPTH, "1");
+  assert.equal(env.PI_DADDY_GRANT, "tool:read");
+  assert.equal(env.PI_DADDY_DEPTH, "1");
 });

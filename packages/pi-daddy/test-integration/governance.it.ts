@@ -59,7 +59,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     const r = await runCommand({
       cwd,
       command: "/grants",
-      env: { PI_GRANTS_GRANT: "agent:docs-writer,agent:undeclared,tool:read,tool:write" },
+      env: { PI_DADDY_GRANT: "agent:docs-writer,agent:undeclared,tool:read,tool:write" },
     });
 
     assert.match(verdictFor(r, "docs-writer") ?? "", /^allow/);
@@ -72,7 +72,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
 
   test("a capability the session does not hold is refused as escalation", async () => {
     const cwd = await projectOnce();
-    const r = await runCommand({ cwd, command: "/grants", env: { PI_GRANTS_GRANT: "agent:docs-writer,tool:read" } });
+    const r = await runCommand({ cwd, command: "/grants", env: { PI_DADDY_GRANT: "agent:docs-writer,tool:read" } });
 
     const verdict = verdictFor(r, "docs-writer") ?? "";
     assert.match(verdict, /^BLOCK/);
@@ -86,7 +86,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     // above had to gain `agent:` ids for this reason — proof the prerequisite bites on the real path and
     // not merely in a pure function.
     const cwd = await projectOnce();
-    const r = await runCommand({ cwd, command: "/grants", env: { PI_GRANTS_GRANT: "tool:read,tool:write" } });
+    const r = await runCommand({ cwd, command: "/grants", env: { PI_DADDY_GRANT: "tool:read,tool:write" } });
 
     const verdict = verdictFor(r, "docs-writer") ?? "";
     assert.match(verdict, /^BLOCK/, "holding every tool the definition needs is no longer sufficient");
@@ -98,7 +98,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     const r = await runCommand({
       cwd,
       command: "/grants",
-      env: { PI_GRANTS_GRANT: "agent:docs-writer,tool:read,tool:write", PI_GRANTS_GATED: "tool:write" },
+      env: { PI_DADDY_GRANT: "agent:docs-writer,tool:read,tool:write", PI_DADDY_GATED: "tool:write" },
     });
 
     // Wording differs from the deleted interceptor's ("requires approval for X"); the property — a gated
@@ -110,7 +110,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     // NARROWED by ADR-0016, and the narrowing is the honest part. ADR-0011 Finding 1 described a defect
     // in `decideSpawn`'s wildcard SHORTCUT: it refused while claiming approval was required, on a path
     // where no dialog could ever be offered. That shortcut is deleted with the interceptor, so the
-    // specific message it produced — and the assertions about naming `PI_GRANTS_GRANT` and offering no
+    // specific message it produced — and the assertions about naming `PI_DADDY_GRANT` and offering no
     // dialog — are testing code that no longer exists.
     //
     // What survives is the property that mattered: **holding the wildcard is authority to grant widely,
@@ -121,7 +121,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     const r = await runCommand({
       cwd,
       command: "/grants",
-      env: { PI_GRANTS_GRANT: "tool:*", PI_GRANTS_GATED: "tool:write" },
+      env: { PI_DADDY_GRANT: "tool:*", PI_DADDY_GATED: "tool:write" },
     });
 
     assert.match(verdictFor(r, "docs-writer") ?? "", /^BLOCK/);
@@ -137,14 +137,14 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     // "does not exist here" and "confers everything" are different problems with different fixes, and
     // the 2026-08-10 log already recorded that reaching the universal branch end-to-end needs
     // `npm:pi-fabric` present. The universal rule itself stays covered by `test/resolve.test.ts`.
-    const wildcard = await runCommand({ cwd, command: "/grants", env: { PI_GRANTS_GRANT: "tool:*" } });
+    const wildcard = await runCommand({ cwd, command: "/grants", env: { PI_DADDY_GRANT: "tool:*" } });
     assert.match(verdictFor(wildcard, "fabric-agent") ?? "", /^BLOCK/);
     assert.match(verdictFor(wildcard, "fabric-agent") ?? "", /fabric_exec/, "the message must name the culprit");
 
     const enumerated = await runCommand({
       cwd,
       command: "/grants",
-      env: { PI_GRANTS_GRANT: "agent:fabric-agent,tool:read,tool:fabric_exec" },
+      env: { PI_DADDY_GRANT: "agent:fabric-agent,tool:read,tool:fabric_exec" },
     });
     assert.match(verdictFor(enumerated, "fabric-agent") ?? "", /fabric_exec/);
   });
@@ -157,12 +157,12 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     const r = await runCommand({
       cwd,
       command: "/grants",
-      env: { PI_GRANTS_GRANT: "tool:read,tool:write", PI_GRANTS_MAX_DEPTH: "not-a-number" },
+      env: { PI_DADDY_GRANT: "tool:read,tool:write", PI_DADDY_MAX_DEPTH: "not-a-number" },
     });
 
     const warning = r.notifies.find((n) => n.message.includes("could not be read"));
     assert.ok(warning, "the operator set the variable, so they must be told it did not take effect");
-    assert.match(warning.message, /PI_GRANTS_MAX_DEPTH/);
+    assert.match(warning.message, /PI_DADDY_MAX_DEPTH/);
     assert.match(warning.message, /failing closed/);
     assert.match(
       verdictFor(r, "docs-writer") ?? "",
@@ -176,7 +176,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     const r = await runCommand({
       cwd,
       command: "/grants",
-      env: { PI_GRANTS_GRANT: "tool:read,tool:write", PI_GRANTS_MAX_DEPTH: "2abc" },
+      env: { PI_DADDY_GRANT: "tool:read,tool:write", PI_DADDY_MAX_DEPTH: "2abc" },
     });
     assert.ok(
       r.notifies.some((n) => n.message.includes("could not be read")),
@@ -215,7 +215,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     const r = await runCommand({
       cwd,
       command: "/grants ledger",
-      env: { PI_GRANTS_GRANT: "tool:read", PI_GRANTS_LEDGER: ledger },
+      env: { PI_DADDY_GRANT: "tool:read", PI_DADDY_LEDGER: ledger },
     });
 
     const text = r.notifies.map((n) => n.message).join("\n");
@@ -273,7 +273,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     const r = await runCommand({
       cwd,
       command: "/grants ledger",
-      env: { PI_GRANTS_GRANT: "tool:read", PI_GRANTS_LEDGER: ledger },
+      env: { PI_DADDY_GRANT: "tool:read", PI_DADDY_LEDGER: ledger },
     });
 
     const text = r.notifies.map((n) => n.message).join("\n");
@@ -325,7 +325,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     const r = await runCommand({
       cwd,
       command: "/grants ledger",
-      env: { PI_GRANTS_GRANT: "agent:docs-writer,tool:read,tool:write", PI_GRANTS_LEDGER: ledger },
+      env: { PI_DADDY_GRANT: "agent:docs-writer,tool:read,tool:write", PI_DADDY_LEDGER: ledger },
     });
 
     const text = r.notifies.map((n) => n.message).join("\n");
@@ -383,8 +383,8 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
       cwd,
       command: "/grants",
       env: {
-        PI_GRANTS_GRANT: "tool:read,tool:delegate,workspace:sandbox",
-        PI_GRANTS_WORKSPACE_REGISTRY: registry,
+        PI_DADDY_GRANT: "tool:read,tool:delegate,workspace:sandbox",
+        PI_DADDY_WORKSPACE_REGISTRY: registry,
       },
     });
     const text = r.notifies.map((n) => n.message).join("\n");
@@ -401,7 +401,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     const r = await runCommand({
       cwd,
       command: "/grants",
-      env: { PI_GRANTS_GRANT: "agent:docs-writer,tool:read,tool:write", PI_GRANTS_GATED: "agent:docs-writer" },
+      env: { PI_DADDY_GRANT: "agent:docs-writer,tool:read,tool:write", PI_DADDY_GATED: "agent:docs-writer" },
     });
 
     assert.match(
@@ -453,7 +453,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     const r = await runCommand({
       cwd,
       command: "/grants ledger",
-      env: { PI_GRANTS_GRANT: "tool:read", PI_GRANTS_LEDGER: ledger },
+      env: { PI_DADDY_GRANT: "tool:read", PI_DADDY_LEDGER: ledger },
     });
 
     const text = r.notifies.map((n) => n.message).join("\n");
@@ -471,7 +471,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     // `ledgr` rather than `init`: this test USED to use `init`, and ADR-0030 then made init a real
     // subcommand — so the test failed, correctly, on the change that invalidated its fixture. A typo of a
     // real verb is the better example anyway, because it is what actually happens.
-    const r = await runCommand({ cwd, command: "/grants ledgr", env: { PI_GRANTS_GRANT: "tool:read" } });
+    const r = await runCommand({ cwd, command: "/grants ledgr", env: { PI_DADDY_GRANT: "tool:read" } });
     const text = r.notifies.map((n) => n.message).join("\n");
 
     assert.match(text, /unknown subcommand "ledgr" — did nothing/, "it must say it did nothing");
@@ -487,10 +487,10 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     // The other half. Refusing the unknown must not refuse the known — and bare `/grants`, whose `sub` is
     // undefined rather than a wrong word, is the case a naive `sub !== known` check would break.
     const cwd = await projectOnce();
-    const bare = await runCommand({ cwd, command: "/grants", env: { PI_GRANTS_GRANT: "tool:read" } });
+    const bare = await runCommand({ cwd, command: "/grants", env: { PI_DADDY_GRANT: "tool:read" } });
     assert.match(bare.notifies.map((n) => n.message).join("\n"), /holding    /, "bare /grants still reports");
 
-    const approvals = await runCommand({ cwd, command: "/grants approvals", env: { PI_GRANTS_GRANT: "tool:read" } });
+    const approvals = await runCommand({ cwd, command: "/grants approvals", env: { PI_DADDY_GRANT: "tool:read" } });
     assert.ok(
       !/unknown subcommand/.test(approvals.notifies.map((n) => n.message).join("\n")),
       "a known verb must not be refused",
@@ -513,14 +513,14 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
       "utf8",
     );
 
-    // No PI_GRANTS_GRANT anywhere in this run.
+    // No PI_DADDY_GRANT anywhere in this run.
     const r = await runCommand({ cwd, command: "/grants", env: { PI_CODING_AGENT_DIR: agentDir } });
     const text = r.notifies.map((n) => n.message).join("\n");
 
     assert.match(text, /grants: ACTIVE/, "a stored grant makes the session governed");
     assert.match(text, /agent:docs-writer/, "and it is the STORED grant that is held");
     assert.match(verdictFor(r, "docs-writer") ?? "", /^allow/, "and the planner uses it for real");
-    assert.match(text, /not recording — set PI_GRANTS_LEDGER/, "a legacy v1 store is not retroactive ledger consent");
+    assert.match(text, /not recording — set PI_DADDY_LEDGER/, "a legacy v1 store is not retroactive ledger consent");
   });
 
   test("an unsupported project store loudly refuses and records the fail-closed session", async () => {
@@ -607,17 +607,17 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     const bypassed = await runCommand({
       cwd,
       command: "/grants",
-      env: { PI_CODING_AGENT_DIR: agentDir, PI_GRANTS_GRANT: "tool:read" },
+      env: { PI_CODING_AGENT_DIR: agentDir, PI_DADDY_GRANT: "tool:read" },
     });
     const bypassedText = bypassed.notifies.map((n) => n.message).join("\n");
     assert.match(bypassedText, /holding    tool:read/);
-    assert.match(bypassedText, /not recording — set PI_GRANTS_LEDGER/, "a child grant cannot activate a cwd store");
+    assert.match(bypassedText, /not recording — set PI_DADDY_LEDGER/, "a child grant cannot activate a cwd store");
 
     const explicitLedger = join(cwd, "operator-ledger.jsonl");
     const overridden = await runCommand({
       cwd,
       command: "/grants",
-      env: { PI_CODING_AGENT_DIR: agentDir, PI_GRANTS_LEDGER: explicitLedger },
+      env: { PI_CODING_AGENT_DIR: agentDir, PI_DADDY_LEDGER: explicitLedger },
     });
     const overriddenText = overridden.notifies.map((n) => n.message).join("\n");
     assert.ok(overriddenText.includes(`ledger     ${explicitLedger}`), overriddenText);
@@ -626,16 +626,16 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     const disabled = await runCommand({
       cwd,
       command: "/grants",
-      env: { PI_CODING_AGENT_DIR: agentDir, PI_GRANTS_LEDGER: "" },
+      env: { PI_CODING_AGENT_DIR: agentDir, PI_DADDY_LEDGER: "" },
     });
     assert.match(
       disabled.notifies.map((n) => n.message).join("\n"),
-      /not recording — set PI_GRANTS_LEDGER/,
+      /not recording — set PI_DADDY_LEDGER/,
       "presence with an empty value is an explicit one-run opt-out, not absence",
     );
   });
 
-  test("ADR-0030: PI_GRANTS_GRANT always beats the store", async () => {
+  test("ADR-0030: PI_DADDY_GRANT always beats the store", async () => {
     // The precedence that keeps children and CI correct. The variable is how a CHILD is governed; a store
     // that could override it would let a directory quietly re-widen a child its parent had bounded.
     const cwd = await fixture({ "docs-writer": DOCS_WRITER });
@@ -650,7 +650,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     const r = await runCommand({
       cwd,
       command: "/grants",
-      env: { PI_CODING_AGENT_DIR: agentDir, PI_GRANTS_GRANT: "tool:read" },
+      env: { PI_CODING_AGENT_DIR: agentDir, PI_DADDY_GRANT: "tool:read" },
     });
     const text = r.notifies.map((n) => n.message).join("\n");
 
@@ -670,7 +670,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     const r = await runCommand({
       cwd,
       command: "/grants",
-      env: { PI_GRANTS_GRANT: "agent:docs-writer,tool:read,tool:write", PI_GRANTS_LEDGER: ledger },
+      env: { PI_DADDY_GRANT: "agent:docs-writer,tool:read,tool:write", PI_DADDY_LEDGER: ledger },
     });
 
     const alarm = r.notifies.find((n) => n.message.includes("unparseable line"));
@@ -707,7 +707,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     const r = await runCommand({
       cwd,
       command: "/grants",
-      env: { PI_GRANTS_GRANT: "agent:docs-writer,tool:read,tool:write", PI_GRANTS_LEDGER: ledger },
+      env: { PI_DADDY_GRANT: "agent:docs-writer,tool:read,tool:write", PI_DADDY_LEDGER: ledger },
     });
 
     assert.ok(
@@ -725,7 +725,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     // sat inside `session_start`'s blanket catch, and the catch was empty — so the WORSE damage produced
     // NOTHING: no alarm, and not even the `holding [...]` line. Found by asking where else the R-34 shape
     // appears ("a check nobody runs") and confirmed by execution before it was written down: a governed
-    // session with PI_GRANTS_LEDGER naming a directory emitted zero notifications.
+    // session with PI_DADDY_LEDGER naming a directory emitted zero notifications.
     //
     // A directory is the cheap way to make the read fail deterministically without depending on file modes,
     // which behave differently under root and on some filesystems. The failure under test is the CLASS —
@@ -737,14 +737,14 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     const r = await runCommand({
       cwd,
       command: "/grants",
-      env: { PI_GRANTS_GRANT: "agent:docs-writer,tool:read,tool:write", PI_GRANTS_LEDGER: ledger },
+      env: { PI_DADDY_GRANT: "agent:docs-writer,tool:read,tool:write", PI_DADDY_LEDGER: ledger },
     });
 
     const alarm = r.notifies.find((n) => n.message.includes("could not be read"));
     assert.ok(alarm, "an audit trail nothing can verify must say so");
     assert.equal(alarm.type, "error");
     assert.match(alarm.message, new RegExp(ledger.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), "naming the path");
-    assert.match(alarm.message, /PI_GRANTS_LEDGER names a writable FILE/, "and what to do about it");
+    assert.match(alarm.message, /PI_DADDY_LEDGER names a writable FILE/, "and what to do about it");
 
     // The half that pins the actual defect: the throw used to discard every control after it. This line is
     // the last thing `session_start` emits, so its presence proves the rest of the hook still ran.
@@ -765,13 +765,13 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     const r = await runCommand({
       cwd,
       command: "/grants",
-      env: { PI_GRANTS_GRANT: "agent:*,tool:read,tool:bash,tool:delegate", PI_GRANTS_GATED: "" },
+      env: { PI_DADDY_GRANT: "agent:*,tool:read,tool:bash,tool:delegate", PI_DADDY_GATED: "" },
     });
 
     const warning = r.notifies.find((n) => n.message.includes("may run with a shell"));
     assert.ok(warning, "granting every definition a shell with no gate must not be silent");
     assert.match(warning.message, /agent:\*/);
-    assert.match(warning.message, /PI_GRANTS_GATED/, "and name the variable that fixes it");
+    assert.match(warning.message, /PI_DADDY_GATED/, "and name the variable that fixes it");
   });
 
   test("ADR-0023: agent:* with bash GATED is not warned about", async () => {
@@ -782,7 +782,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     const r = await runCommand({
       cwd,
       command: "/grants",
-      env: { PI_GRANTS_GRANT: "agent:*,tool:read,tool:bash,tool:delegate" },
+      env: { PI_DADDY_GRANT: "agent:*,tool:read,tool:bash,tool:delegate" },
     });
 
     assert.ok(
@@ -805,7 +805,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
       // `tool:delegate` is load-bearing in this fixture and was MISSING from the first version of this
       // test, which asserted `1 of 3 spawnable` in a session that had no delegate tool at all (R-81). The
       // test encoded the defect; the case it should have covered is below.
-      env: { PI_GRANTS_GRANT: "agent:docs-writer,agent:undeclared,tool:read,tool:write,tool:delegate" },
+      env: { PI_DADDY_GRANT: "agent:docs-writer,agent:undeclared,tool:read,tool:write,tool:delegate" },
     });
 
     const line = r.notifies.map((n) => n.message).find((m) => m.includes("definitions spawnable"));
@@ -832,7 +832,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     const r = await runCommand({
       cwd,
       command: "/grants",
-      env: { PI_GRANTS_GRANT: "agent:docs-writer,tool:read,tool:write" },
+      env: { PI_DADDY_GRANT: "agent:docs-writer,tool:read,tool:write" },
     });
 
     const line = r.notifies.map((n) => n.message).find((m) => m.includes("none spawnable"));

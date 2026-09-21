@@ -120,7 +120,7 @@ async function approvalsListing(s: Seeded, env: Record<string, string> = {}): Pr
   const r = await runCommand({
     cwd: s.cwd,
     command: "/grants approvals",
-    env: { PI_GRANTS_GRANT: GRANT, PI_CODING_AGENT_DIR: s.agentDir, ...env },
+    env: { PI_DADDY_GRANT: GRANT, PI_CODING_AGENT_DIR: s.agentDir, ...env },
   });
   assert.equal(r.selects.length, 0, "a read-only listing must never raise a dialog");
   return r.notifies.map((n) => n.message).join("\n");
@@ -191,7 +191,7 @@ describe(
       const revoked = await runCommand({
         cwd: s.cwd,
         command: "/grants revoke tool:bash@bash-user",
-        env: { PI_GRANTS_GRANT: GRANT, PI_CODING_AGENT_DIR: s.agentDir },
+        env: { PI_DADDY_GRANT: GRANT, PI_CODING_AGENT_DIR: s.agentDir },
       });
       assert.match(revoked.notifies.map((n) => n.message).join("\n"), /revoked tool:bash@bash-user/);
       assert.match(await approvalsListing(s), /0 persisted approvals/, "and it is gone from the file, not just hidden");
@@ -199,7 +199,7 @@ describe(
       const missing = await runCommand({
         cwd: s.cwd,
         command: "/grants revoke tool:write@bash-user",
-        env: { PI_GRANTS_GRANT: GRANT, PI_CODING_AGENT_DIR: s.agentDir },
+        env: { PI_DADDY_GRANT: GRANT, PI_CODING_AGENT_DIR: s.agentDir },
       });
       assert.match(missing.notifies.map((n) => n.message).join("\n"), /no persisted approval named/);
     });
@@ -213,7 +213,7 @@ describe(
       const withEntry = await runCommand({
         cwd: s.cwd,
         command: "/grants",
-        env: { PI_GRANTS_GRANT: GRANT, PI_CODING_AGENT_DIR: s.agentDir },
+        env: { PI_DADDY_GRANT: GRANT, PI_CODING_AGENT_DIR: s.agentDir },
       });
       assert.match(
         verdictFor(withEntry, "bash-user") ?? "",
@@ -231,7 +231,7 @@ describe(
       const voided = await runCommand({
         cwd: s.cwd,
         command: "/grants",
-        env: { PI_GRANTS_GRANT: GRANT, PI_CODING_AGENT_DIR: s.agentDir },
+        env: { PI_DADDY_GRANT: GRANT, PI_CODING_AGENT_DIR: s.agentDir },
       });
       assert.match(verdictFor(voided, "bash-user") ?? "", /^BLOCK/);
       assert.match(verdictFor(voided, "bash-user") ?? "", /tool:bash requires explicit approval/);
@@ -253,14 +253,14 @@ describe(
     skip: !piAvailable()
       ? "pi is not on PATH"
       : !modelTestsEnabled
-        ? "model-driven tests are opt-in: set PI_GRANTS_IT_MODEL=1"
+        ? "model-driven tests are opt-in: set PI_DADDY_IT_MODEL=1"
         : false,
   },
   () => {
     test("it is offered, written, honoured without re-prompting, and voided by a body edit", async () => {
       const s = await seeded();
       const ledger = join(s.cwd, "ledger.jsonl");
-      const env = { PI_GRANTS_GRANT: GRANT, PI_CODING_AGENT_DIR: s.agentDir, PI_GRANTS_LEDGER: ledger };
+      const env = { PI_DADDY_GRANT: GRANT, PI_CODING_AGENT_DIR: s.agentDir, PI_DADDY_LEDGER: ledger };
       const message =
         `Use the delegate tool exactly once with agent "bash-user" and task ` +
         `"Reply with exactly the word READY and nothing else." Then report verbatim what the tool returned.`;

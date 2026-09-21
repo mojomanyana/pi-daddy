@@ -6,7 +6,7 @@ import { cleanupTempDirs, fixture, piAvailable, runCommand } from "./harness.ts"
 after(cleanupTempDirs);
 describe("real Pi activity extension", { skip: piAvailable() ? false : "pi is not on PATH" }, () => {
   test("a normal slash-command session visibly defaults observation on without a model call", async () => {
-    const result = await runCommand({ cwd: await fixture(), command: "/grants", env: { PI_GRANTS_HERDR: "0" } });
+    const result = await runCommand({ cwd: await fixture(), command: "/grants", env: { PI_DADDY_HERDR: "0" } });
     assert.ok(result.notifies.some((value) => /activity: local observation on/i.test(value.message)));
   });
 });

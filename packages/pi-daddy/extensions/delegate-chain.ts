@@ -116,7 +116,7 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
       const steps = args.steps ?? [];
 
       // **Every cheap refusal happens before any human is asked.** Yesterday's lesson on the `delegate` path: with
-      // `PI_GRANTS_HERDR=1` and herdr down, the gate ran first, an operator approved `bash`, a 30-day entry was
+      // `PI_DADDY_HERDR=1` and herdr down, the gate ran first, an operator approved `bash`, a 30-day entry was
       // written, and the delegation was then refused anyway. `runOneDelegation` checks the executor before its own
       // gate; a chain hoists its gate above `runOneDelegation`, so the check has to be repeated here or that
       // ordering is simply bypassed.

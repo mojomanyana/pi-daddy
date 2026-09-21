@@ -220,9 +220,9 @@ test("opt-in root and subpath exports expose the same original bridge, without a
     root = await import("../src/index.ts"),
     pkg = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
   assert.equal("createProducerIpcHost" in root, true);
-  assert.deepEqual(pkg.exports["./producer-ipc"], {
-    types: "./dist/products/producer-ipc.d.ts",
-    default: "./dist/products/producer-ipc.js",
+  assert.deepEqual(pkg.exports["./work"], {
+    types: "./dist/products/work-public.d.ts",
+    default: "./dist/products/work-public.js",
   });
   const host = w.ipc.createProducerIpcHost({ owner: w.owner, binding: w.binding, exchange: async () => ipcReferences });
   await assert.rejects(

@@ -76,7 +76,7 @@ async function harness(env: Record<string, string>, existingDir?: string) {
   const dir = existingDir ?? (await tempDir("grants-fanout-"));
   for (const k of KEYS) if (!saved.has(k)) saved.set(k, process.env[k]);
   for (const k of KEYS) delete process.env[k];
-  // `PI_GRANTS_HERDR=0` by DEFAULT, and this line is load-bearing rather than tidy-up.
+  // `PI_DADDY_HERDR=0` by DEFAULT, and this line is load-bearing rather than tidy-up.
   //
   // ADR-0031 made an unset variable mean *probe*, and `resolveExecutor` runs inside `session_start` — which
   // this harness calls. Leaving it unset would run a real `herdr tab list` against whatever is on the
@@ -228,7 +228,7 @@ test("a fan-out wider than the remaining budget is refused, naming the remedy", 
   const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate", [ENV_FANOUT]: "2" });
   await assert.rejects(
     () => tools.get("delegate_all")!.execute("t", { children: refusedChildren(4) }, undefined, undefined, ctx),
-    /budget exhausted[\s\S]*PI_GRANTS_FANOUT/,
+    /budget exhausted[\s\S]*PI_DADDY_FANOUT/,
   );
 });
 
@@ -529,7 +529,7 @@ test("ADR-0031: a session that DEMANDED herdr and cannot reach it refuses every 
           hasUI: false,
         }),
       (error: Error) => {
-        assert.match(error.message, /PI_GRANTS_HERDR/, "the refusal must name the variable that caused it");
+        assert.match(error.message, /PI_DADDY_HERDR/, "the refusal must name the variable that caused it");
         assert.match(error.message, /refused/);
         return true;
       },
@@ -539,7 +539,7 @@ test("ADR-0031: a session that DEMANDED herdr and cannot reach it refuses every 
   }
 });
 
-test("ADR-0031: PI_GRANTS_HERDR=0 spawns nothing through herdr and does not refuse", async () => {
+test("ADR-0031: PI_DADDY_HERDR=0 spawns nothing through herdr and does not refuse", async () => {
   // The other side of the same switch: an operator who ruled herdr out must be unaffected by whether herdr is
   // running. This is also the configuration every other test in this file runs under, asserted once so the
   // harness default above is not merely assumed.
@@ -554,7 +554,7 @@ test("ADR-0031: PI_GRANTS_HERDR=0 spawns nothing through herdr and does not refu
         hasUI: false,
       }),
     (error: Error) => {
-      assert.doesNotMatch(error.message, /PI_GRANTS_HERDR/, "a PI_GRANTS_HERDR=0 session must never blame herdr");
+      assert.doesNotMatch(error.message, /PI_DADDY_HERDR/, "a PI_DADDY_HERDR=0 session must never blame herdr");
       return true;
     },
   );
@@ -803,9 +803,9 @@ test("ADR-0031: the ledger records the executor a REAL spawn ran under, not a co
       .split("\n")
       .filter(Boolean)
       .map((l) => JSON.parse(l));
-    assert.ok(lines.length >= 1, `no record written for PI_GRANTS_HERDR=${herdr}`);
+    assert.ok(lines.length >= 1, `no record written for PI_DADDY_HERDR=${herdr}`);
     for (const record of lines) {
-      assert.equal(record.executor, expected, `PI_GRANTS_HERDR=${herdr} must record executor ${expected}`);
+      assert.equal(record.executor, expected, `PI_DADDY_HERDR=${herdr} must record executor ${expected}`);
     }
   }
 });

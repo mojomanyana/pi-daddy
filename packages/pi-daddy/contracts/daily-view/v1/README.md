@@ -45,7 +45,7 @@ behavior is unchanged when no daily input is configured. Existing core/plugin pr
 Without a programmatic host-authority context the CLI intentionally cannot show authoritative acceptance.
 
 ```ts
-import { readDailyView, createDailyViewReader } from 'pi-daddy/daily-view';
+import { readDailyView, createDailyViewReader } from 'pi-daddy/dashboard';
 const read = createDailyViewReader(); // session-local gap metadata, not an authority store
 const view = await read({ archiveProjectionPath, workLedgerPath, workContext: independentlyVerifiedP01Context,
   sourceManifestFiles: policyAuthorizedManifestPathsBySha256 });

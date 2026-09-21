@@ -39,6 +39,6 @@ export function tripwireReason(toolName: string): string {
     `hold whatever that extension decided, with no grant, no depth bound and no ledger entry. ` +
     `Use \`delegate\` for a single sub-agent, or \`delegate_all\` to run several CONCURRENTLY — that is the ` +
     `governed equivalent of a parallel or chained spawn, and it is what to reach for when independent tasks ` +
-    `can proceed at the same time. If you meant to run ungoverned, unset PI_GRANTS_GRANT.`
+    `can proceed at the same time. If you meant to run ungoverned, unset PI_DADDY_GRANT.`
   );
 }

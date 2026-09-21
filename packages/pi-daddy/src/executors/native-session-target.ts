@@ -2,12 +2,13 @@ import { lstat, realpath, mkdir } from "node:fs/promises";
 import { dirname, isAbsolute, join, parse, resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { ENV_NATIVE_SESSION_ROOT } from "../governance/native-session.ts";
+import { ENV_RETAIN_NATIVE_SESSIONS } from "../kernel/env-names.ts";
+export { ENV_RETAIN_NATIVE_SESSIONS } from "../kernel/env-names.ts";
 export interface NativeSessionHost {
   /** Explicit host opt-in captured once, not model-supplied. */ readonly nativeSessionRoot?: string;
 }
 export const nativeSessionRootFromEnv = (env: NodeJS.ProcessEnv) =>
   env[ENV_RETAIN_NATIVE_SESSIONS] === "1" ? (env[ENV_NATIVE_SESSION_ROOT] ?? "") : undefined;
-export const ENV_RETAIN_NATIVE_SESSIONS = "PI_GRANTS_RETAIN_NATIVE_SESSIONS";
 /** Explicit ordinary-host opt-in only. Never read a destination from tool/model parameters.
  * Allocate a fresh per-occurrence directory; no scan, existing-session takeover or transcript creation. */
 export async function allocateNativeSessionTarget(root: string, executionId: string): Promise<string> {

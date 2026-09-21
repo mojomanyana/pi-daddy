@@ -89,7 +89,7 @@ jobs:
         run: npm test
 
       # Model-free and Herdr-free. The devDependency supplies the real pi process; these are not fakes and
-      # spend no model tokens. The live-Herdr and PI_GRANTS_IT_MODEL tiers remain local-only below.
+      # spend no model tokens. The live-Herdr and PI_DADDY_IT_MODEL tiers remain local-only below.
       - name: real-pi integration tests
         working-directory: packages/pi-daddy
         run: npm run test:integration:ci
@@ -110,5 +110,5 @@ jobs:
 #
 #  - `npm run test:integration` additionally exercises a real Herdr server. CI runs the real-pi subset above;
 #    the Herdr tier stays a local gate because no daemon is provisioned here.
-#  - `PI_GRANTS_IT_MODEL=1` costs money and is never run unattended.
+#  - `PI_DADDY_IT_MODEL=1` costs money and is never run unattended.
 #  - Protected `main` requires both matrix legs, with `enforce_admins` on (verified 2026-08-22).

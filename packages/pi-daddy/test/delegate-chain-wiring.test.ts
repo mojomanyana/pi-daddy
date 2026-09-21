@@ -5,7 +5,7 @@
  * network, model and credentials. The tests that let a step actually run live in
  * `test-integration/delegate-chain.it.ts`, because a real `pi` child always calls a model.
  *
- * **`PI_GRANTS_HERDR=0` throughout** — an unset variable means *probe*, and `session_start` probes, so leaving it
+ * **`PI_DADDY_HERDR=0` throughout** — an unset variable means *probe*, and `session_start` probes, so leaving it
  * would shell out to whatever herdr happens to be running on the machine under test.
  */
 
@@ -402,7 +402,7 @@ test("ADR-0033: a `tools:`-only step is never offered a 30-day project-wide appr
 
 test("ADR-0033: a demanded-but-unreachable herdr refuses the chain BEFORE any dialog", async () => {
   // **Shipped with no test, so re-breaking it cost nothing.** The executor check was hoisted above the gate for the
-  // reason recorded on the `delegate` path a day earlier — with `PI_GRANTS_HERDR=1` and herdr down, an operator was
+  // reason recorded on the `delegate` path a day earlier — with `PI_DADDY_HERDR=1` and herdr down, an operator was
   // asked to approve `bash` for a child that could never exist, and the yes was banked for 30 days. A reviewer moved
   // the check back below `planChain` and all 496 tests stayed green.
   //
@@ -421,7 +421,7 @@ test("ADR-0033: a demanded-but-unreachable herdr refuses the chain BEFORE any di
         tools
           .get("delegate_chain")!
           .execute("c", { steps: [{ task: "dig", agent: "digger" }] }, undefined, undefined, ctx),
-      /PI_GRANTS_HERDR/,
+      /PI_DADDY_HERDR/,
     );
     assert.equal(selects.length, 0, "nobody may be asked to approve a capability for a child that cannot be started");
   } finally {

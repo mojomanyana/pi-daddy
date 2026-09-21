@@ -89,7 +89,7 @@ export interface ApprovalGate {
 const DEFAULT_TIMEOUT_MS = 120_000;
 
 /**
- * Read `PI_GRANTS_APPROVAL_TIMEOUT`, in SECONDS, into the milliseconds pi expects.
+ * Read `PI_DADDY_APPROVAL_TIMEOUT`, in SECONDS, into the milliseconds pi expects.
  *
  * `0` or an unparseable value means no timeout: waiting forever denies nothing, so it is the safe
  * interpretation of a value we do not understand.

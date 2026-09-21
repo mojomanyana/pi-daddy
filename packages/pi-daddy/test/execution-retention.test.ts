@@ -75,16 +75,16 @@ test("public concurrent delegation calls retain distinct native attempts and exa
   await mkdir(bin);
   await writeFile(
     join(bin, "pi"),
-    `#!${process.execPath}\nprocess.stdout.write(JSON.stringify({type:'fixture',execution:process.env.PI_GRANTS_EXECUTION_ID,toolCallId:'forged'})+'\\n');process.stderr.write('diagnostic');\n`,
+    `#!${process.execPath}\nprocess.stdout.write(JSON.stringify({type:'fixture',execution:process.env.PI_DADDY_EXECUTION_ID,toolCallId:'forged'})+'\\n');process.stderr.write('diagnostic');\n`,
   );
   await chmod(join(bin, "pi"), 0o700);
   const values = {
     PATH: bin,
-    PI_GRANTS_HERDR: "0",
-    PI_GRANTS_GRANT: "tool:delegate",
-    PI_GRANTS_MAX_DEPTH: "2",
-    PI_GRANTS_EXECUTION_ID: newExecutionId(),
-    PI_GRANTS_EXECUTION_ARCHIVE: join(dir, "archive"),
+    PI_DADDY_HERDR: "0",
+    PI_DADDY_GRANT: "tool:delegate",
+    PI_DADDY_MAX_DEPTH: "2",
+    PI_DADDY_EXECUTION_ID: newExecutionId(),
+    PI_DADDY_EXECUTION_ARCHIVE: join(dir, "archive"),
   };
   const prior = Object.fromEntries(Object.keys(values).map((k) => [k, process.env[k]]));
   Object.assign(process.env, values);
@@ -123,7 +123,7 @@ test("public concurrent delegation calls retain distinct native attempts and exa
       assert.equal(m?.outcome?.code, 0, "fixture must really spawn, not pass on refusal");
       assert.ok(m!.native.pid! > 0);
       assert.equal(m!.native.sessionId, null);
-      assert.equal(m!.identity.parentExecutionId, values.PI_GRANTS_EXECUTION_ID);
+      assert.equal(m!.identity.parentExecutionId, values.PI_DADDY_EXECUTION_ID);
       const bytes = await readFile(join(path, "..", m!.content.stdout.path!));
       assert.equal(hash(bytes), m!.content.stdout.sha256);
       assert.equal(JSON.parse(bytes.toString()).execution, m!.identity.executionId);

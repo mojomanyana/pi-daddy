@@ -59,7 +59,7 @@ without authority is unresolved `0/1`; under the fixed fixture authority it is e
 attempts and three variants. Neither result authenticates a real designer or authorizes a model call.
 
 Declared artifact exports are `pi-daddy/contracts/ledger/v4/ledger-event.schema.json` and
-`pi-daddy/contracts/ledger/v4/fixtures/*.json`. The source API is declared at `pi-daddy/work-ledger`.
+`pi-daddy/contracts/ledger/v4/fixtures/*.json`. The source API is declared at `pi-daddy/ledger`.
 Manifest-string tests are not compiled-export or installed-smoke proof.
 
 ## Wire shape and domains

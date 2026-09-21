@@ -15,8 +15,8 @@ No installation, shared chmod, runner provisioning or host policy weakening is p
 
 ## Public API
 
-`pi-daddy/resource-budget`: `createResourceBudget`, `openResourceBudget`, `resourceBindingDigest` and types.
-`pi-daddy/effect-profile`: `prepareDigestProfile`, `runDigestProfile`, `DIGEST_PROFILE` and types.
+`pi-daddy/work`: `createResourceBudget`, `openResourceBudget`, `resourceBindingDigest` and types.
+`pi-daddy/work`: `prepareDigestProfile`, `runDigestProfile`, `DIGEST_PROFILE` and types.
 Both are also exported from the root. Historical dist is not a build of these exports.
 
 ```ts

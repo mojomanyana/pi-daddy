@@ -51,8 +51,8 @@ zero active reservations under the same non-stale-recoverable lock used by reser
 a claim that pause has already applied, or that the active worker stopped.
 
 ```ts
-import { createDispatchBudget, openResourceBudget } from 'pi-daddy/resource-budget';
-import { parseDispatchRequest } from 'pi-daddy/dispatch-control';
+import { createDispatchBudget, openResourceBudget } from 'pi-daddy/work';
+import { parseDispatchRequest } from 'pi-daddy/work';
 // One-time host creation under an explicitly owned private parent; persist binding independently.
 const binding = await createDispatchBudget({ directory, authorityDigest, limits });
 const budget = openResourceBudget(binding);

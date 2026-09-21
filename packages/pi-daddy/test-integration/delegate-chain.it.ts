@@ -1,7 +1,7 @@
 /**
  * Integration — `delegate_chain` steps that actually RUN (ADR-0033).
  *
- * **Opt-in: `PI_GRANTS_IT_MODEL=1`.** Every test here lets a step spawn a real `pi` child, and a `pi` child always
+ * **Opt-in: `PI_DADDY_IT_MODEL=1`.** Every test here lets a step spawn a real `pi` child, and a `pi` child always
  * calls a model — so these cost money and vary in duration. They were briefly in the unit suite, which took
  * `npm test` from pure and fast to 2m19s wall on 14.8s of CPU. That is exactly what the two tiers exist to prevent.
  *
@@ -24,7 +24,7 @@ afterEach(restoreEnv);
 const skip = !piAvailable()
   ? "pi is not on PATH"
   : !modelTestsEnabled
-    ? "these spawn real pi children, which call a model: set PI_GRANTS_IT_MODEL=1"
+    ? "these spawn real pi children, which call a model: set PI_DADDY_IT_MODEL=1"
     : false;
 
 describe("delegate_chain, with steps that really run", { skip }, () => {

@@ -7,7 +7,7 @@
  *
  * **ADR-0029.** `init` used to emit the union of every declared ceiling as a live grant. A critic's reading
  * killed it in one sentence: the handoff's safety argument for a third party authoring `allowed-tools` is
- * that *"the operator's `PI_GRANTS_GRANT` still bounds it"* — and a generated union makes the bound and the
+ * that *"the operator's `PI_DADDY_GRANT` still bounds it"* — and a generated union makes the bound and the
  * bounded have the same author, who is not the operator. So capabilities that can change a machine are
  * emitted **commented**, with the definitions that need them named. `init` + `source` yields a working
  * read-only setup; the wide ones cost one deliberate uncomment.
@@ -52,7 +52,7 @@ export function isLiveByDefault(capability: Capability): boolean {
 }
 
 /**
- * Every character allowed in a generated `PI_GRANTS_GRANT` value.
+ * Every character allowed in a generated `PI_DADDY_GRANT` value.
  *
  * **A structural backstop, not the main defence** (R-78). The per-entry whitelist in `skill-packages.ts` is
  * what refuses a hostile capability id; this refuses to write the FILE AT ALL if anything unexpected reached
@@ -141,7 +141,7 @@ export function renderGrantEnv(input: GrantEnvInput): string {
     lines.push(
       "# WITHHELD BY DEFAULT — these can change your machine, so `pi-daddy init` does not grant them.",
       "# Uncomment a capability to authorise it for every child, then add the definitions that need it to",
-      "# PI_GRANTS_GRANT below. `tool:bash` is asked about at spawn time as well; `tool:write` and",
+      "# PI_DADDY_GRANT below. `tool:bash` is asked about at spawn time as well; `tool:write` and",
       "# `tool:edit` are NOT, so granting them here is the whole decision.",
     );
     const width = Math.max(...[...input.withheld.keys()].map((c) => c.length));
@@ -172,7 +172,7 @@ export function renderGrantEnv(input: GrantEnvInput): string {
   // a package asked for it" rule that `WITHHELD_BY_DEFAULT` above states.
   if (input.routableWorkspaces && input.routableWorkspaces.length > 0) {
     lines.push(
-      "# ROUTABLE WORKSPACES — routing a child to a registered worktree needs the id in PI_GRANTS_GRANT",
+      "# ROUTABLE WORKSPACES — routing a child to a registered worktree needs the id in PI_DADDY_GRANT",
       "# (ADR-0035, 0.19.0). Without it a delegation naming one is refused WORKSPACE_NOT_AUTHORIZED. Add the",
       "# ones this project's children may start in; a child can only pass on ids it holds itself, so this is",
       "# also the list of what any DESCENDANT could reach. Not granted for you: `workspace:*` exists but is",
@@ -202,15 +202,15 @@ export function renderGrantEnv(input: GrantEnvInput): string {
 
   lines.push(
     "# tool:delegate is what registers the delegation tools at all — withhold it and this session is a leaf.",
-    `export PI_GRANTS_GRANT="${input.live.join(",")}"`,
+    `export PI_DADDY_GRANT="${input.live.join(",")}"`,
     "",
     "# Init enables this project ledger. It is LOAD-BEARING: a spawn that cannot be recorded is refused.",
-    "# PI_GRANTS_LEDGER still overrides the stored default used by plain `pi` after `/grants init`.",
-    'export PI_GRANTS_LEDGER=".pi/grants.jsonl"',
+    "# PI_DADDY_LEDGER still overrides the stored default used by plain `pi` after `/grants init`.",
+    'export PI_DADDY_LEDGER=".pi/grants.jsonl"',
     "",
     "# Optional. tool:bash is ALREADY gated by default, so this line only matters if you widen it:",
     "# gating is closed under subsumption, so gating tool:write also gates tool:bash (bash can write).",
-    '#export PI_GRANTS_GATED="tool:bash,tool:write"',
+    '#export PI_DADDY_GATED="tool:bash,tool:write"',
     "",
   );
 

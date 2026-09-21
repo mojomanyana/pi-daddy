@@ -21,12 +21,12 @@ test("ordinary public delegation opts into per-execution native session files wi
   await chmod(join(bin, "pi"), 0o700);
   const env = {
     PATH: bin,
-    PI_GRANTS_HERDR: "0",
-    PI_GRANTS_GRANT: "tool:delegate",
-    PI_GRANTS_MAX_DEPTH: "2",
-    PI_GRANTS_RETAIN_NATIVE_SESSIONS: "1",
-    PI_GRANTS_NATIVE_SESSION_ROOT: native,
-    PI_GRANTS_EXECUTION_ARCHIVE: join(root, "archive"),
+    PI_DADDY_HERDR: "0",
+    PI_DADDY_GRANT: "tool:delegate",
+    PI_DADDY_MAX_DEPTH: "2",
+    PI_DADDY_RETAIN_NATIVE_SESSIONS: "1",
+    PI_DADDY_NATIVE_SESSION_ROOT: native,
+    PI_DADDY_EXECUTION_ARCHIVE: join(root, "archive"),
   };
   const old = Object.fromEntries(Object.keys(env).map((k) => [k, process.env[k]]));
   Object.assign(process.env, env);

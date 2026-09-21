@@ -14,14 +14,14 @@ export async function ordinaryHostFixture(root: string) {
   );
   const env = {
       PATH: bin,
-      PI_GRANTS_HERDR: "0",
-      PI_GRANTS_GRANT: "tool:delegate",
-      PI_GRANTS_MAX_DEPTH: "2",
-      PI_GRANTS_DEPTH: "0",
-      PI_GRANTS_CHILD_TIMEOUT: "10",
+      PI_DADDY_HERDR: "0",
+      PI_DADDY_GRANT: "tool:delegate",
+      PI_DADDY_MAX_DEPTH: "2",
+      PI_DADDY_DEPTH: "0",
+      PI_DADDY_CHILD_TIMEOUT: "10",
     },
     old = Object.fromEntries([...new Set([...Object.keys(env), ...GRANT_ENV_KEYS])].map((k) => [k, process.env[k]]));
-  for (const k of GRANT_ENV_KEYS) if (k !== "PI_GRANTS_LEDGER") delete process.env[k];
+  for (const k of GRANT_ENV_KEYS) if (k !== "PI_DADDY_LEDGER") delete process.env[k];
   Object.assign(process.env, env);
   const tools = new Map<string, any>(),
     hooks = new Map<string, any>(),
