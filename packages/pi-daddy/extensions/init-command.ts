@@ -84,11 +84,11 @@ export async function runInit(
       continue;
     }
     // The consequence sentence is per capability, and it reads the gate **in effect for this session** —
-    // `session.gated`, which is `PI_GRANTS_GATED` when the operator set it and `DEFAULT_GATED` otherwise.
+    // `session.gated`, which is `PI_DADDY_GATED` when the operator set it and `DEFAULT_GATED` otherwise.
     //
     // The first version read `DEFAULT_GATED` directly, which is the compile-time constant `["tool:bash"]`, and
     // `tool:bash` is consumed by the branch above — so the branch was **unreachable in every configuration**,
-    // and with `PI_GRANTS_GATED="tool:bash,tool:write"` (the value `renderGrantEnv` itself suggests) the
+    // and with `PI_DADDY_GATED="tool:bash,tool:write"` (the value `renderGrantEnv` itself suggests) the
     // dialog still printed the exact false sentence the fix claimed to remove. Dead code beside a claim that
     // it worked, which is this project's failure mode, in the commit correcting that failure mode.
     // No subsumption closure here, and the absence is deliberate. A `|| SUBSUMPTION[capability]…` disjunct was
@@ -124,7 +124,7 @@ export async function runInit(
   if (saved !== "saved") {
     lines.push(
       `  NOT STORED — ${saved === "busy" ? "another session holds the grant store" : "the store could not be written"}. ` +
-        `Nothing was changed; this session's grant is unchanged. Retry, or export PI_GRANTS_GRANT yourself.`,
+        `Nothing was changed; this session's grant is unchanged. Retry, or export PI_DADDY_GRANT yourself.`,
     );
     ctx.ui.notify(lines.join("\n"), "error");
     return;
@@ -139,7 +139,7 @@ export async function runInit(
 
   lines.push(
     `  stored at ${grantStorePath(ctx.cwd)} — outside this project, so no child can rewrite it`,
-    `  ledger ${ledger} — default for future pi sessions; PI_GRANTS_LEDGER still overrides it`,
+    `  ledger ${ledger} — default for future pi sessions; PI_DADDY_LEDGER still overrides it`,
   );
   if (granted.length > 0) lines.push(`  GRANTED: ${granted.join(", ")}`);
   if (alreadyConferred.length > 0) {

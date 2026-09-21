@@ -39,7 +39,7 @@ test("a model cannot label a write-capable grant read-only", () => {
  *
  * **`tool:delegate` is NOT in the read-only set**, and its absence is deliberate — see
  * `KNOWN_READ_ONLY_TOOLS`. Adding it was true of the capability and false of the code, because a routed
- * child's cwd is the leased root and its inherited `PI_GRANTS_LEDGER` was relative. So "route read-only and
+ * child's cwd is the leased root and its inherited `PI_DADDY_LEDGER` was relative. So "route read-only and
  * delegate onward" still takes a writer lease, exactly as it did in 0.18.1; R-141 tracks the plumbing change
  * that would make it a reader.
  *

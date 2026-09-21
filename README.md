@@ -67,7 +67,7 @@ Escalation is impossible **by construction**, not by policy. No policy engine, n
 into one.
 
 **What it does not:** an agent holding an execution primitive. A child granted `bash` can
-`env -u PI_GRANTS_GRANT pi …` and obtain a wholly ungoverned descendant — measured, not theorised
+`env -u PI_DADDY_GRANT pi …` and obtain a wholly ungoverned descendant — measured, not theorised
 (`docs/probes/g5-bash-escape`). Containing *that* is the operating system's job and is explicitly out of
 scope. So `bash` is **gated by default** in a governed session, and gating is closed under subsumption. That
 does not make the escape impossible; it stops it happening **silently**, which is what matters when the
@@ -97,7 +97,7 @@ npm test                   # unit tests — pure, no pi, no network
 npm run typecheck          # src + extensions + test + test-integration
 npm run test:integration   # 48 tests against a REAL pi process/Herdr server, no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and USE every subpath
-PI_GRANTS_IT_MODEL=1 npm run test:integration   # + 10 end-to-end with a real model (costs money)
+PI_DADDY_IT_MODEL=1 npm run test:integration   # + 10 end-to-end with a real model (costs money)
 ```
 
 ## How this project works

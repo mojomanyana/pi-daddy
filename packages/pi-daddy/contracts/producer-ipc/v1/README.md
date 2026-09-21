@@ -8,7 +8,7 @@ Historical `dist` is not this candidate: compile the exact pinned source into a 
 
 ## Callable API
 
-Exports are available from `pi-daddy` and `pi-daddy/producer-ipc`:
+Exports are available from `pi-daddy` and `pi-daddy/work`:
 
 - `producerIpcBinding(value)` validates and detaches/freezes the closed binding below.
 - `producerIpcBindingDigest(binding)` hashes its canonical UTF-8 JSON bytes.

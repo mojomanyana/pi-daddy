@@ -5,6 +5,55 @@ decisions; this file holds state and next actions. Newest entry on top.
 
 ---
 
+## 2026-09-21 — ADR-0076 PR 3b: one environment namespace, nine export keys
+
+Worktree `claude/adr-0076-pr3b-env-exports-state` from `797ffef` (PR 3a merged). `src/kernel/env-names.ts` now owns
+every environment variable name, the closed `GOVERNANCE_ENV_KEYS` list, the `LEGACY_ENV_NAMES` table and
+`adoptLegacyEnvironment`. All twenty `PI_GRANTS_*` names (plus the two test-tier switches) are `PI_DADDY_*`; the
+dashboard's `PI_DADDY_LEDGER` and the governance ledger variable were the same fact under two constants and are
+one constant now. Legacy names are adopted once per process at the three entries (extension, `pi-daddy` CLI,
+dashboard CLI) with one visible warning; the new name always wins; legacy values are left for older siblings.
+The kernel's `childEnv` guard refuses by the closed list instead of by prefix. `test/env-names.test.ts` was red
+first and forces: no `PI_GRANTS_` literal in shipped code outside the table, every key the planner writes is a
+governance key, adoption semantics.
+
+The export map went from seventy keys to nine: root, `kernel`, `ledger`, `approvals`, `executors`, `dashboard`,
+`work`, `learning` (barrel files per layer, no `export *` name conflicts) and one `contracts/*` wildcard. The
+smoke probe, four export-asserting tests, the subpath mentions in contract READMEs, the package README,
+SPEC, PUBLISHING and the readiness index were repointed (the review found the first pass had missed the
+last four documents). skill-harness imports no pi-daddy subpath (verified against the 0.17.0
+tarballs: it reads `grants.jsonl` and the bridge symbol), so no known consumer breaks; the `DelegationContext`
+type is unchanged since PR 2.
+
+Evidence at `797ffef` plus these edits: typecheck clean; `prettier --check .` clean; layering, guards and
+env-names tests green; smoke OK after two repoints; model-free integration against real pi 0.84.2 (children now
+receive `PI_DADDY_*`): 38/38; full unit failing set equals the baseline. One run showed an extra failure in a
+trust-budget test that compares against `Date.now()`; it passed in isolation and on the rerun, so it is a
+pre-existing timing flake, noted here and not repaired in this PR. Prettier must run from the repository root:
+run from the package directory it cannot see `.prettierignore` and reformats the hash-pinned vendored files, which
+the adoption-pin test caught a second time. Independent review pass (code-reviewer subagent): one critical
+finding — legacy adoption ran after `createGrantsSession` had read `PI_DADDY_GRANT`, so an operator sourcing an
+old `.pi/grants.env` would have received an ungoverned wildcard root while the warning said the rename worked,
+and the reload snapshot was taken pre-adoption. Adoption now happens as the constructor's first statement,
+the session records what it adopted, and `test/session-legacy-env.test.ts` (red first) forces the ordering.
+Also repaired: removed subpaths still advertised in five current documents; contract READMEs half-renamed;
+two undocumented surface changes now in the CHANGELOG. Accepted as-is: a simulated third-party adapter fixture
+under `test/fixtures/` still names `PI_GRANTS_NATIVE_SESSION_ROOT`; it is fixture bytes, not shipped code.
+
+### NEXT SESSION
+
+1. **PR 3c** — `.pi/pi-daddy/` as the one project state directory (ledger, work files, learning connection,
+   activity, content); user-level stores under `~/.pi/agent/pi-daddy/{grants,approvals,workspace-leases}` with
+   copy-on-first-read from the old locations; `pi-daddy init` stops writing `.pi/grants.env` and writes
+   `settings.json`; smoke and the forty ledger-path assertions follow.
+2. **PR 3d** — one record envelope and reader across the stores; private controller journals stay under
+   `~/.local/state/pi-daddy/`; importer for old `.pi/grants.jsonl`; version 0.30.0; skill-harness re-pins.
+3. PR 4 harness peer + contracts pruned; PR 5 SPEC as layer map + fresh-session probe; PR 6 advisors (ADR-0077,
+   shared package); PR 7 context handoff (ADR-0078); PR 8; PR 9.
+
+
+---
+
 ## 2026-09-21 — ADR-0076 PR 3a: Prettier, statement-count guard, prose tests deleted
 
 Worktree `claude/adr-0076-pr3a-format-guards` from `5da2dfe` (PR 2 merged on top of 0.28.1). Prettier 3 at width

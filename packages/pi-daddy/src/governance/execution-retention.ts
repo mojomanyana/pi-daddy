@@ -21,9 +21,10 @@ export {
   type NativeSessionObservation,
   type NativeSessionManager,
 } from "./native-session.ts";
+import { ENV_EXECUTION_ARCHIVE } from "../kernel/env-names.ts";
+export { ENV_EXECUTION_ARCHIVE } from "../kernel/env-names.ts";
 
 /** Operator-owned archive boundary; never a model-facing parameter or an authority source. */
-export const ENV_EXECUTION_ARCHIVE = "PI_GRANTS_EXECUTION_ARCHIVE";
 export const RETENTION_VERSION = "2.0";
 const LIMIT = 1024 * 1024;
 const MAX_ACTIVE = 32;

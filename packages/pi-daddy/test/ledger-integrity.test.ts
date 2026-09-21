@@ -262,7 +262,7 @@ test("verifyLedger reports a torn line instead of ignoring it", async () => {
 });
 
 test("verifyLedger on a missing ledger is not an error", async () => {
-  // An operator who has not set PI_GRANTS_LEDGER has no ledger, which is a configuration state rather than
+  // An operator who has not set PI_DADDY_LEDGER has no ledger, which is a configuration state rather than
   // a corruption. Reporting it as damage would train them to ignore the check.
   const dir = await tempDir("grants-absent-");
   const report = await verifyLedger(join(dir, "nope.jsonl"));
@@ -469,7 +469,7 @@ test("R-69: the four kinds of unsatisfied gate are distinguishable in the record
   // `dismissed` and `error` produced IDENTICAL records — gatedBlocked non-empty, no approvalSource,
   // blocked: true — separated only by free-text `reason` written for a human at the call site. Given a
   // failed run, "was there an operator who timed out, or was there nobody to ask?" had no answer, and the
-  // two want opposite fixes: a longer PI_GRANTS_APPROVAL_TIMEOUT versus an operator pre-approving.
+  // two want opposite fixes: a longer PI_DADDY_APPROVAL_TIMEOUT versus an operator pre-approving.
   //
   // ADR-0026 rests its decision on this vocabulary being able to say "nobody was there to ask" and be
   // believed, which is why it is recorded rather than inferred.

@@ -3,8 +3,9 @@ import { open, lstat, realpath } from "node:fs/promises";
 import { isAbsolute, relative, sep } from "node:path";
 import { createHash } from "node:crypto";
 import { parseRetentionJson } from "./retention-json.ts";
+import { ENV_NATIVE_SESSION_ROOT } from "../kernel/env-names.ts";
+export { ENV_NATIVE_SESSION_ROOT } from "../kernel/env-names.ts";
 
-export const ENV_NATIVE_SESSION_ROOT = "PI_GRANTS_NATIVE_SESSION_ROOT";
 export const MAX_NATIVE_SESSION_BYTES = 1024 * 1024;
 export type NativeSessionSource = "herdr-id" | "herdr-path" | "pi-session-file" | "pi-session-manager";
 export interface NativeSessionObservation {

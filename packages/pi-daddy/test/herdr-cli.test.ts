@@ -6,7 +6,7 @@
  * proves nothing, only a server that *answers* does, and a `which herdr` probe would turn every delegation on
  * a machine with a stopped herdr from working into failing.
  *
- * **The production change that breaks the workspace tests:** reading only `PI_GRANTS_HERDR_WORKSPACE` again.
+ * **The production change that breaks the workspace tests:** reading only `PI_DADDY_HERDR_WORKSPACE` again.
  * herdr sets `HERDR_WORKSPACE_ID` in every pane it creates (measured 2026-08-17, documented nowhere), and
  * without inheriting it a child lands in a different workspace from the pi session that spawned it — which
  * turns "switch between them" into a workspace hop, i.e. defeats the feature.
@@ -93,8 +93,8 @@ test("children default to the PARENT's workspace, so switching to one is a tab k
   assert.equal(resolveWorkspace({ HERDR_WORKSPACE_ID: "w7" }), "w7");
 });
 
-test("PI_GRANTS_HERDR_WORKSPACE overrides the parent's workspace, because it is the explicit answer", () => {
-  assert.equal(resolveWorkspace({ HERDR_WORKSPACE_ID: "w7", PI_GRANTS_HERDR_WORKSPACE: "wB" }), "wB");
+test("PI_DADDY_HERDR_WORKSPACE overrides the parent's workspace, because it is the explicit answer", () => {
+  assert.equal(resolveWorkspace({ HERDR_WORKSPACE_ID: "w7", PI_DADDY_HERDR_WORKSPACE: "wB" }), "wB");
 });
 
 test("outside a herdr pane there is no workspace to inherit, and herdr chooses", () => {
@@ -104,5 +104,5 @@ test("outside a herdr pane there is no workspace to inherit, and herdr chooses",
 test("a blank or whitespace workspace is treated as absent rather than passed through", () => {
   // `--workspace ""` is not a workspace; passing it would fail `tab create` on a path nobody chose.
   assert.equal(resolveWorkspace({ HERDR_WORKSPACE_ID: "   " }), undefined);
-  assert.equal(resolveWorkspace({ PI_GRANTS_HERDR_WORKSPACE: "", HERDR_WORKSPACE_ID: "w7" }), "w7");
+  assert.equal(resolveWorkspace({ PI_DADDY_HERDR_WORKSPACE: "", HERDR_WORKSPACE_ID: "w7" }), "w7");
 });

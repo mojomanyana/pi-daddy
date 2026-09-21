@@ -4,7 +4,7 @@
  * **Shared because the chain's tests belong in two tiers, and that split is the point.** A test that refuses or
  * aborts before spawning is pure and belongs in `test/`. A test that lets a step actually run spawns a real `pi`
  * child, and a `pi` child always calls a **model** — so it costs tokens, needs network and credentials, and varies
- * in duration. Those belong in `test-integration/`, opt-in behind `PI_GRANTS_IT_MODEL=1`, exactly as
+ * in duration. Those belong in `test-integration/`, opt-in behind `PI_DADDY_IT_MODEL=1`, exactly as
  * `delegation.it.ts` already is.
  *
  * A reviewer measured what ignoring that line costs: `npm test` became **2m19s wall on 14.8s of CPU** — two minutes

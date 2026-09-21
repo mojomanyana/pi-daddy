@@ -91,13 +91,13 @@ export async function reportSessionStart(session: GrantsSession, ctx: SessionRep
     session.ownGrant.includes("tool:bash")
   ) {
     ctx.ui.notify(
-      `grants: PI_GRANTS_GRANT pairs agent:* with tool:bash and gates nothing — every SKILL.md in ` +
+      `grants: PI_DADDY_GRANT pairs agent:* with tool:bash and gates nothing — every SKILL.md in ` +
         `this project AND in ~/.pi/agent/skills (which other tools install into) may run with a shell. ` +
-        `Enumerate the agent: ids you mean, or leave PI_GRANTS_GATED at its default so bash is asked for.`,
+        `Enumerate the agent: ids you mean, or leave PI_DADDY_GATED at its default so bash is asked for.`,
       "warning",
     );
   }
-  // REMOVED 2026-08-21. This warned that an `agent:` id in `PI_GRANTS_GATED` "does NOT gate spawning that
+  // REMOVED 2026-08-21. This warned that an `agent:` id in `PI_DADDY_GATED` "does NOT gate spawning that
   // definition — a human is never asked". It was R-47's PARTIAL fix (0.11.1) and became false one release
   // later at 0.12.0, when ADR-0024's gate landed (`4673348`, "gating a definition asks before it runs") and
   // a gated `agent:<name>` began blocking the spawn until somebody approved it. ADR-0024's own Costs section
@@ -112,7 +112,7 @@ export async function reportSessionStart(session: GrantsSession, ctx: SessionRep
   // no live case is the next stale claim. R-134.
   // R-34. `verifyLedger` existed and nothing ran it, so a torn line was detectable and undetected —
   // and a check an operator has to know to run is not a control, it is a feature. Setting
-  // `PI_GRANTS_LEDGER` already means "I want an audit trail"; noticing that the trail is damaged is
+  // `PI_DADDY_LEDGER` already means "I want an audit trail"; noticing that the trail is damaged is
   // part of keeping one.
   //
   // Corruption only, deliberately. The escalation count is a *query* — `/grants ledger` answers it —
@@ -126,7 +126,7 @@ export async function reportSessionStart(session: GrantsSession, ctx: SessionRep
   // where an operator asked a direct question and deserves the failure — and this call is the only one
   // that makes it inside the blanket catch below. So an unreadable ledger threw here and cancelled every
   // remaining control **in silence**: no alarm, and not even the `holding [...]` line that is the one
-  // sign governance is on. Confirmed by execution — `PI_GRANTS_LEDGER` naming a directory produced ZERO
+  // sign governance is on. Confirmed by execution — `PI_DADDY_LEDGER` naming a directory produced ZERO
   // notifications from a governed session. A trail that cannot be read at all is a worse failure than a
   // torn line, and it was the one case this control said nothing about.
   if (session.ledgerPath) {
@@ -146,7 +146,7 @@ export async function reportSessionStart(session: GrantsSession, ctx: SessionRep
         `grants: ledger ${session.ledgerPath} could not be read ` +
           `(${(error as { code?: string }).code ?? String(error)}) — nothing can be verified about this ` +
           `audit trail, and the first spawn will refuse rather than proceed unrecorded. Check that ` +
-          `PI_GRANTS_LEDGER names a writable FILE.`,
+          `PI_DADDY_LEDGER names a writable FILE.`,
         "error",
       );
     }

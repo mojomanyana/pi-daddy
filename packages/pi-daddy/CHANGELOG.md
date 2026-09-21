@@ -14,6 +14,17 @@ the record of how the package got here and are worth keeping; they are not worth
 
 ## Unreleased — source layered under `src/{kernel,governance,executors,products}` (ADR-0076 PR 2)
 
+**PR 3b (same unreleased line, BREAKING for operators and importers):** every `PI_GRANTS_*` environment
+variable is now `PI_DADDY_*` (same suffix; `PI_GRANTS_LEDGER` becomes `PI_DADDY_LEDGER`, which the dashboard
+already used for the same path). Legacy names are still read for one minor release with a warning; children are
+spawned with the new names only. The export map is nine keys: `pi-daddy`, `pi-daddy/kernel`, `pi-daddy/ledger`,
+`pi-daddy/approvals`, `pi-daddy/executors`, `pi-daddy/dashboard`, `pi-daddy/work`, `pi-daddy/learning` and
+`pi-daddy/contracts/*`. Every previous per-file subpath (`pi-daddy/spawn`, `pi-daddy/workspace`, …) is gone;
+import the layer barrel that holds it.
+`pi-daddy/contracts/*` deliberately exports every file under `contracts/`, READMEs included, where eighteen
+curated patterns were exported before. `PI_DADDY_GOVERNANCE` can no longer be set through the planner's
+`childEnv` hook: it is a governance key and the guard now refuses by the closed list, not by prefix.
+
 **PR 3a (same unreleased line):** the source is formatted with Prettier at width 120 and CI checks it; the
 module-size guard counts statements and caps lines at 200 characters; two tests that asserted the wording of
 repository documents were deleted. No runtime behaviour changed; seventeen long message and embedded-script

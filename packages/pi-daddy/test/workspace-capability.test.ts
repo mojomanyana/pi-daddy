@@ -146,9 +146,9 @@ test("`workspace:*` cannot be handed to a child by either route", () => {
  * *"A root may HOLD `tool:*` … but handing it down would let every descendant reacquire the full catalog,
  * which makes attenuation meaningless below the root"* is `childEnv`'s docstring, and `childEnv` is the
  * INTERCEPTOR path — the one ADR-0016 demoted to a tripwire. `delegate.ts` built the child's
- * `PI_GRANTS_GRANT` from `result.effective` with no filter, and `tool:*` is not in `UNIVERSAL_CAPABILITIES`
+ * `PI_DADDY_GRANT` from `result.effective` with no filter, and `tool:*` is not in `UNIVERSAL_CAPABILITIES`
  * (only `fabric_exec` is), so `assertNarrowing` never stopped it either. Measured on `92ccbb8`: a parent
- * holding `tool:*` and delegating `tools: ["tool:*"]` produced `PI_GRANTS_GRANT="tool:*"` in the child, so
+ * holding `tool:*` and delegating `tools: ["tool:*"]` produced `PI_DADDY_GRANT="tool:*"` in the child, so
  * that child could hand its own grandchildren anything at all. Attenuation ended at the root.
  *
  * This is the test that makes the `inheritableGrant` call site falsifiable: reverting `delegate.ts` to
@@ -218,7 +218,7 @@ test("inherited approvals are clamped to what the child actually inherits", () =
  * The control is the load-bearing half: gating an ordinary requested tool must still work through the same
  * call, so a green test here cannot be "the gate is broken for everything".
  */
-test("PI_GRANTS_GATED=workspace:<id> asks a human before routing there", () => {
+test("PI_DADDY_GATED=workspace:<id> asks a human before routing there", () => {
   const gated = planDelegation(
     { task: "t", tools: ["read"], boundWorkspaceId: "prod" },
     ctx({ gated: ["workspace:prod"] }) as never,
@@ -352,7 +352,7 @@ test("a registry id that would not survive the grant grammar is refused at load"
   await assert.rejects(loadWorkspaceRegistry(star), (e: Error & { code?: string }) => e.code === "GRANT_ID_MALFORMED");
 
   // The shell metacharacters that reached the generated file's ROUTABLE WORKSPACES block, whose own
-  // instructions tell the operator to paste the id into PI_GRANTS_GRANT (R-77/R-78's argument).
+  // instructions tell the operator to paste the id into PI_DADDY_GRANT (R-77/R-78's argument).
   for (const hostile of [
     'a";touch /tmp/pwned;x="',
     "a$(id)",

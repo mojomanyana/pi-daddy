@@ -28,7 +28,7 @@ test("a plugin opened before pi-daddy explains exact setup without modifying pi"
   const frame = await dashboardFrame({ cwd, color: false, width: 100 });
   assert.match(frame, /pi-daddy is missing or its ledger is inactive/i);
   assert.match(frame, /pi install npm:pi-daddy/);
-  assert.match(frame, /export PI_GRANTS_LEDGER=/);
+  assert.match(frame, /export PI_DADDY_LEDGER=/);
   assert.match(frame, /\/grants dashboard/);
 });
 

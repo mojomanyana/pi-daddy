@@ -71,8 +71,8 @@ npm run typecheck          # src + extensions + tests + integration tests
 npm run format:check       # from the repository root: Prettier, width 120, enforced in CI
 npm run test:integration   # against a REAL pi process and a real Herdr server, no model tokens
 npm run test:smoke         # pack, install into a scratch project, import and use it
-PI_GRANTS_IT_MODEL=1 npm run test:integration   # adds an end-to-end tier with a real model (costs money)
-PI_GRANTS_KEEP_TMP=1 npm test                   # keep fixture directories after a failure
+PI_DADDY_IT_MODEL=1 npm run test:integration   # adds an end-to-end tier with a real model (costs money)
+PI_DADDY_KEEP_TMP=1 npm test                   # keep fixture directories after a failure
 ```
 
 Mutation-testing machinery was removed by explicit user direction on 2026-09-07; historical audit records

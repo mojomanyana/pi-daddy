@@ -33,6 +33,7 @@ import { resolveDelegationApproval } from "./delegation-approval.ts";
 import type { Delegation, DelegationContext, DelegationRequest } from "./delegate-types.ts";
 import { assertCapabilitiesArePropagatable } from "./capabilities.ts";
 export type { Delegation, DelegationContext, DelegationRequest } from "./delegate-types.ts";
+import { GOVERNANCE_ENV_KEYS } from "./env-names.ts";
 
 export function planDelegation(request: DelegationRequest, ctx: DelegationContext): Delegation {
   const childDepth = ctx.depth + 1;
@@ -347,7 +348,7 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
   // Never process-global grant state: a key in the governance namespace is a programming error in the
   // caller, refused loudly rather than letting a product widen what the child inherits.
   for (const [key, value] of Object.entries(ctx.childEnv?.({ childExecutionId: ctx.childExecutionId }) ?? {})) {
-    if (key.startsWith("PI_GRANTS_") || key in env) throw new Error(`childEnv may not set governance key ${key}`);
+    if (GOVERNANCE_ENV_KEYS.includes(key) || key in env) throw new Error(`childEnv may not set governance key ${key}`);
     env[key] = value;
   }
 

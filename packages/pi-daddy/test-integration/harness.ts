@@ -14,7 +14,7 @@
  *
  * **Two tiers, deliberately.** `runCommand` drives a slash command and costs no model tokens, so it is
  * deterministic and fast; most assertions here should use it. `runPrompt` needs a model to decide to call
- * a tool, so it is slower, costs money, and can vary — those tests are opt-in via `PI_GRANTS_IT_MODEL=1`.
+ * a tool, so it is slower, costs money, and can vary — those tests are opt-in via `PI_DADDY_IT_MODEL=1`.
  */
 
 import { spawn } from "node:child_process";
@@ -25,7 +25,7 @@ import { fileURLToPath } from "node:url";
 import { tempDir } from "../test/tmp.ts";
 
 // Re-exported so an `.it.ts` file registers teardown from the harness it already imports:
-// `after(cleanupTempDirs)`. `PI_GRANTS_KEEP_TMP=1` keeps every fixture for inspection after a failure.
+// `after(cleanupTempDirs)`. `PI_DADDY_KEEP_TMP=1` keeps every fixture for inspection after a failure.
 export { cleanupTempDirs, tempDir } from "../test/tmp.ts";
 
 export const EXTENSION = resolve(dirname(fileURLToPath(import.meta.url)), "..", "extensions", "grants.ts");
@@ -85,7 +85,7 @@ export function piAvailable(): boolean {
 }
 
 /** True when model-driven tests are enabled. They cost money and are non-deterministic. */
-export const modelTestsEnabled = process.env.PI_GRANTS_IT_MODEL === "1";
+export const modelTestsEnabled = process.env.PI_DADDY_IT_MODEL === "1";
 
 export function runPi(options: RunOptions): Promise<RunResult> {
   const args = ["--no-session", "--no-extensions"];
@@ -96,7 +96,7 @@ export function runPi(options: RunOptions): Promise<RunResult> {
     const child = spawn("pi", args, {
       cwd: options.cwd,
       stdio: ["pipe", "pipe", "pipe"],
-      // The harness must control governance entirely: a stray PI_GRANTS_* in the developer's own shell
+      // The harness must control governance entirely: a stray PI_DADDY_* in the developer's own shell
       // would silently change what is under test, and the failure would look like a code defect.
       env: sanitisedEnv(options.env),
     });
@@ -223,15 +223,15 @@ export async function runPrompt(options: RunOptions): Promise<RunResult> {
 }
 
 /**
- * Every `PI_GRANTS_*` variable removed, then the test's own applied.
+ * Every `PI_DADDY_*` variable removed, then the test's own applied.
  *
- * Without this the developer's shell leaks in: a `PI_GRANTS_GRANT` exported for manual testing would make
+ * Without this the developer's shell leaks in: a `PI_DADDY_GRANT` exported for manual testing would make
  * an "ungoverned session" test silently govern, and the failure would read as a bug in `childEnv`.
  */
 function sanitisedEnv(overrides?: Record<string, string>): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries(process.env)) {
-    if (!key.startsWith("PI_GRANTS_")) env[key] = value;
+    if (!key.startsWith("PI_DADDY_")) env[key] = value;
   }
   return { ...env, ...overrides };
 }

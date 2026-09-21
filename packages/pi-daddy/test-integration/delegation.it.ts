@@ -1,7 +1,7 @@
 /**
  * Integration — end-to-end delegation, with a real model deciding to call a real tool.
  *
- * **Opt-in: `PI_GRANTS_IT_MODEL=1`.** These cost money and are not fully deterministic — a model may
+ * **Opt-in: `PI_DADDY_IT_MODEL=1`.** These cost money and are not fully deterministic — a model may
  * phrase a refusal differently or decline to call a tool at all — so they are not part of the default
  * integration run. What they buy is the only evidence that the whole chain works: model → `tool_call` →
  * decision → argv → a child process that genuinely lacks a tool.
@@ -22,7 +22,7 @@ after(cleanupTempDirs);
 const skip = !piAvailable()
   ? "pi is not on PATH"
   : !modelTestsEnabled
-    ? "model-driven tests are opt-in: set PI_GRANTS_IT_MODEL=1"
+    ? "model-driven tests are opt-in: set PI_DADDY_IT_MODEL=1"
     : false;
 
 const ledgerLines = async (path: string): Promise<Record<string, unknown>[]> => {
@@ -43,7 +43,7 @@ describe("end-to-end delegation", { skip }, () => {
 
     const r = await runPrompt({
       cwd,
-      env: { PI_GRANTS_GRANT: "tool:read,tool:write,tool:delegate", PI_GRANTS_LEDGER: ledger },
+      env: { PI_DADDY_GRANT: "tool:read,tool:write,tool:delegate", PI_DADDY_LEDGER: ledger },
       message:
         `Use the delegate tool exactly once with tools ["read"] and task ` +
         `"Write the word HELLO into the file ${target}. If you have no write tool, reply exactly NO_WRITE_TOOL." ` +
@@ -71,7 +71,7 @@ describe("end-to-end delegation", { skip }, () => {
 
     const r = await runPrompt({
       cwd,
-      env: { PI_GRANTS_GRANT: "tool:read,tool:delegate", PI_GRANTS_LEDGER: ledger },
+      env: { PI_DADDY_GRANT: "tool:read,tool:delegate", PI_DADDY_LEDGER: ledger },
       message:
         `Use the delegate tool exactly once with tools ["read","write"] and task "say hi". ` +
         `Then report verbatim what the tool returned.`,
@@ -96,8 +96,8 @@ describe("end-to-end delegation", { skip }, () => {
     const r = await runPrompt({
       cwd,
       env: {
-        PI_GRANTS_GRANT: "tool:read,tool:delegate",
-        PI_GRANTS_LEDGER: join(blocker, "grants.jsonl"),
+        PI_DADDY_GRANT: "tool:read,tool:delegate",
+        PI_DADDY_LEDGER: join(blocker, "grants.jsonl"),
       },
       message:
         `Use the delegate tool exactly once with tools ["read"] and task "say hi". ` +

@@ -142,7 +142,7 @@ test("R-81: a depth bound is a fact about the SESSION, never about the files", a
   ]);
   const grant = ["agent:a", "agent:b", "tool:read"];
 
-  // maxDepth 0 — which is also what a MALFORMED PI_GRANTS_MAX_DEPTH produces, failing closed.
+  // maxDepth 0 — which is also what a MALFORMED PI_DADDY_MAX_DEPTH produces, failing closed.
   const disabled = await summariseSpawnable(definitions, previewWith(definitions, grant), {
     mayDelegate: true,
     depth: 0,

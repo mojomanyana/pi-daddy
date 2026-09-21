@@ -11,6 +11,8 @@
  */
 
 import { execFile } from "node:child_process";
+import { ENV_HERDR_WORKSPACE } from "../kernel/env-names.ts";
+export { ENV_HERDR_WORKSPACE } from "../kernel/env-names.ts";
 
 /** One herdr CLI invocation. Injectable so every rule below is testable without herdr installed. */
 export type HerdrExec = (args: string[]) => Promise<{ code: number | null; stdout: string; stderr: string }>;
@@ -22,7 +24,7 @@ export const defaultExec: HerdrExec = (args) =>
       const code = typeof raw === "number" ? raw : error ? 1 : 0;
       // **A string `code` is a spawn failure, and it used to be thrown away.** `ENOENT` — herdr not installed —
       // arrives as `code: "ENOENT"`, so the numeric test failed, the message was dropped, and an operator with
-      // `PI_GRANTS_HERDR=1` on a machine without herdr was told *"herdr is not answering (unparseable herdr
+      // `PI_DADDY_HERDR=1` on a machine without herdr was told *"herdr is not answering (unparseable herdr
       // reply: (no output))"* rather than that the binary is missing. Rule 8 wants the loud version, and this is
       // the first diagnostic such an operator meets.
       const spawnFailure = typeof raw === "string" ? `herdr could not be run (${raw}): ${error?.message ?? ""}` : "";
@@ -107,7 +109,6 @@ export async function probeHerdr(options: { exec?: HerdrExec; timeoutMs?: number
 export const ENV_PARENT_WORKSPACE = "HERDR_WORKSPACE_ID";
 
 /** The operator's explicit override. Defined here because this is the only module that reads it. */
-export const ENV_HERDR_WORKSPACE = "PI_GRANTS_HERDR_WORKSPACE";
 
 /**
  * Which herdr workspace a governed child's pane belongs in.
@@ -118,7 +119,7 @@ export const ENV_HERDR_WORKSPACE = "PI_GRANTS_HERDR_WORKSPACE";
  * the entire feature ADR-0032 exists to deliver. The previous behaviour was "omitted lets herdr choose",
  * which is that failure by default on any machine with more than one workspace.
  *
- * `PI_GRANTS_HERDR_WORKSPACE` still wins: it is the operator saying so explicitly, and an explicit answer
+ * `PI_DADDY_HERDR_WORKSPACE` still wins: it is the operator saying so explicitly, and an explicit answer
  * beating an inference is this package's standing rule (ADR-0030 says it about the grant itself).
  *
  * Blank is treated as absent rather than passed through — `--workspace ""` is not a workspace, and it would

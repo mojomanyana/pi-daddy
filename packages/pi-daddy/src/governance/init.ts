@@ -2,7 +2,7 @@
  * `pi-daddy init` — scaffold a governed project from the skill packages already installed (B2, P3).
  *
  * Legacy unregistered npm packages can be scaffolded per skill: create a directory, copy the
- * body and declaration copies plus a starting `PI_GRANTS_GRANT`. Configured enabled Pi resources
+ * body and declaration copies plus a starting `PI_DADDY_GRANT`. Configured enabled Pi resources
  * are referenced where installed instead (ADR-0074); no competing .pi/skills copy is created.
  *
  * **The line it does not cross, and the reason this module exists at all:** `init` writes files an operator
@@ -13,7 +13,7 @@
  *
  * **What it DOES choose is the starting grant, which is a stronger act** — ADR-0029, added after a reviewer
  * pointed out that ADR-0028 drew its boundary around the wrong object. The handoff's reason a third party
- * may safely author `allowed-tools` is that *"the operator's `PI_GRANTS_GRANT` still bounds it"*; a
+ * may safely author `allowed-tools` is that *"the operator's `PI_DADDY_GRANT` still bounds it"*; a
  * generated union gives the bound and the bounded one author, and it is not the operator. So capabilities
  * that can change a machine are emitted **commented** (`./grant-env.ts`).
  *

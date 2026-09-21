@@ -29,6 +29,7 @@ import {
 import { declareWork, loadDeclaredWork } from "./products/work-command.ts";
 import { listWorkSetups, workPresentation } from "./products/work-setup.ts";
 import { panelText } from "./products/daily-panel.ts";
+import { adoptLegacyEnvironment, legacyEnvironmentWarning } from "./kernel/env-names.ts";
 
 const USAGE = `pi-daddy — capability governance for pi sub-agents
 
@@ -241,7 +242,7 @@ function reportRefusal(pkg: SkillPackage, refusal: RefusedSkill): string {
       return (
         `${head} declares ${refusal.detail.join(", ")} — that is root authority, not a description of what ` +
         `the skill needs, and a package may not hand it to itself. ${refusal.detail.includes("tool:*") ? "tool:* satisfies EVERY capability" : "agent:* authorises every definition on disk"}. ` +
-        `Add it by hand to PI_GRANTS_GRANT if you genuinely mean it.`
+        `Add it by hand to PI_DADDY_GRANT if you genuinely mean it.`
       );
     case "not-utf8":
       return `${head} is not valid UTF-8, so it cannot be copied verbatim — pi-daddy will not rewrite its bytes.`;
@@ -262,7 +263,7 @@ function report(plan: InitPlan): void {
         `${undeclared.map((s) => s.name).join(", ")}.\n` +
         `Each copy carries a commented \`allowed-tools:\` line. pi-daddy does not choose ceilings — that\n` +
         `decision is what you review and commit, so it is yours to write. Then add each \`agent:<name>\`\n` +
-        `to PI_GRANTS_GRANT in .pi/grants.env.`,
+        `to PI_DADDY_GRANT in .pi/grants.env.`,
     );
   }
 
@@ -287,7 +288,7 @@ function report(plan: InitPlan): void {
     const blocked = plan.skills.filter((s) => s.withheld === "needs-withheld").map((s) => s.name);
     console.log(
       `\nROUTABLE WORKSPACES: ${plan.routableWorkspaces.join(", ")}.\n` +
-        `Routing a child to one needs its id in PI_GRANTS_GRANT (ADR-0035); without it the delegation is\n` +
+        `Routing a child to one needs its id in PI_DADDY_GRANT (ADR-0035); without it the delegation is\n` +
         `refused WORKSPACE_NOT_AUTHORIZED. They are listed COMMENTED in .pi/grants.env and never granted for\n` +
         `you — which worktree a child starts in is not something a package can declare.` +
         (blocked.length > 0
@@ -305,6 +306,8 @@ function report(plan: InitPlan): void {
 }
 
 export async function main(argv: string[]): Promise<number> {
+  const adoptedLegacy = adoptLegacyEnvironment(process.env);
+  if (adoptedLegacy.length > 0) console.error(legacyEnvironmentWarning(adoptedLegacy));
   const parsed = parseArgs(argv);
 
   if (parsed.command === "version") {

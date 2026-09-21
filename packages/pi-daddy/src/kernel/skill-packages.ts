@@ -57,11 +57,11 @@ export interface SkillPackage {
  *
  * **Measured before it was written, and it was a defect in this module's first version (R-77).** A
  * definition's identity is its directory name, and `init` interpolates that name into three places at once:
- * `agent:<name>` inside a **comma-separated** `PI_GRANTS_GRANT`, a `.pi/grants.env` an operator **sources**,
+ * `agent:<name>` inside a **comma-separated** `PI_DADDY_GRANT`, a `.pi/grants.env` an operator **sources**,
  * and the path it writes the copy to. An installed package with a directory called `a,tool:bash` produced
  *
  * ```
- * export PI_GRANTS_GRANT="agent:a,tool:bash,tool:delegate,tool:read"
+ * export PI_DADDY_GRANT="agent:a,tool:bash,tool:delegate,tool:read"
  * ```
  *
  * — `tool:bash` in an operator's grant, declared by nobody. A quote character reaches a file that gets
@@ -82,7 +82,7 @@ export function isSafeName(name: string): boolean {
  * package declaring
  *
  * ```yaml
- * allowed-tools: Read,ext:x";touch /tmp/pwned;PI_GRANTS_GRANT="
+ * allowed-tools: Read,ext:x";touch /tmp/pwned;PI_DADDY_GRANT="
  * ```
  *
  * produced a `.pi/grants.env` that executed arbitrary code the moment the operator ran the `source` line

@@ -268,9 +268,9 @@ test("the grant authorises only what can actually be spawned, and always tool:de
   assert.match(plan.grantEnvContent, /NOT AUTHORISED/);
   assert.match(plan.grantEnvContent, /plan: declares no `allowed-tools`/);
   assert.match(plan.grantEnvContent, /git-ops: declares Bash\(git:\*\)/);
-  assert.match(plan.grantEnvContent, /export PI_GRANTS_GRANT="agent:review,tool:delegate,tool:grep,tool:read"/);
-  assert.match(plan.grantEnvContent, /^export PI_GRANTS_LEDGER="\.pi\/grants\.jsonl"$/m);
-  assert.doesNotMatch(plan.grantEnvContent, /^#export PI_GRANTS_LEDGER=/m, "explicit init enables its project ledger");
+  assert.match(plan.grantEnvContent, /export PI_DADDY_GRANT="agent:review,tool:delegate,tool:grep,tool:read"/);
+  assert.match(plan.grantEnvContent, /^export PI_DADDY_LEDGER="\.pi\/grants\.jsonl"$/m);
+  assert.doesNotMatch(plan.grantEnvContent, /^#export PI_DADDY_LEDGER=/m, "explicit init enables its project ledger");
 });
 
 test("a declared capability pi has no tool for is flagged, because the spawn will be refused", async () => {
@@ -356,7 +356,7 @@ test("a pi.skills entry pointing outside its own package is refused", async () =
 
 test("a definition name that could inject a capability, a shell command or a path is refused", async () => {
   // **Found in this module's own first version, by asking what the generated file interpolates.** A skill
-  // directory called `a,tool:bash` produced `PI_GRANTS_GRANT="agent:a,tool:bash,tool:delegate,tool:read"` —
+  // directory called `a,tool:bash` produced `PI_DADDY_GRANT="agent:a,tool:bash,tool:delegate,tool:read"` —
   // `tool:bash` in an operator's grant, declared by no definition and chosen by nobody. Reproduced against
   // the real CLI before this check existed.
   const cwd = await project();
@@ -389,7 +389,7 @@ test("a definition name that could inject a capability, a shell command or a pat
   assert.deepEqual(plan.grant, ["agent:git-ops", "tool:delegate", "tool:grep", "tool:read"]);
   assert.match(
     plan.grantEnvContent,
-    /export PI_GRANTS_GRANT="agent:git-ops,tool:delegate,tool:grep,tool:read"/,
+    /export PI_DADDY_GRANT="agent:git-ops,tool:delegate,tool:grep,tool:read"/,
     "a name must not be able to add a capability to the line the operator sources",
   );
   // Every write stays under .pi/skills/, so `..` cannot place a file anywhere else.
@@ -441,7 +441,7 @@ test("init scaffolds the registered workspaces, commented, and grants none of th
   assert.match(plan.grantEnvContent, /^#   workspace:staging$/m, "including one nothing declared");
   assert.match(plan.grantEnvContent, /WORKSPACE_NOT_AUTHORIZED/, "the refusal it explains is named");
   // The live line is the thing an operator sources: it must not contain a workspace id anywhere.
-  const live = /export PI_GRANTS_GRANT="([^"]*)"/.exec(plan.grantEnvContent)?.[1] ?? "";
+  const live = /export PI_DADDY_GRANT="([^"]*)"/.exec(plan.grantEnvContent)?.[1] ?? "";
   assert.equal(live.includes("workspace:"), false, live);
 
   // A definition needing a withheld capability is not authorised to run either — the existing rule, which
@@ -483,8 +483,8 @@ test("`pi-daddy init` reads the real registry — the wiring, not just the plan"
     "utf8",
   );
 
-  const previous = process.env.PI_GRANTS_WORKSPACE_REGISTRY;
-  process.env.PI_GRANTS_WORKSPACE_REGISTRY = registry;
+  const previous = process.env.PI_DADDY_WORKSPACE_REGISTRY;
+  process.env.PI_DADDY_WORKSPACE_REGISTRY = registry;
   try {
     // `registeredWorkspaceIds` reading a real file, positively — the FIFO case only proves it returns [].
     assert.deepEqual(await registeredWorkspaceIds(), ["prod-1", "sandbox"]);
@@ -494,19 +494,19 @@ test("`pi-daddy init` reads the real registry — the wiring, not just the plan"
     assert.match(written, /# ROUTABLE WORKSPACES/);
     assert.match(written, /^#   workspace:prod-1$/m);
     assert.match(written, /^#   workspace:sandbox$/m);
-    const live = /export PI_GRANTS_GRANT="([^"]*)"/.exec(written)?.[1] ?? "";
+    const live = /export PI_DADDY_GRANT="([^"]*)"/.exec(written)?.[1] ?? "";
     assert.equal(live.includes("workspace:"), false, live);
 
     // And the catalog wiring, which is the other consumer of the same read.
     const catalog = await buildCatalog({
       cwd,
       observedTools: null,
-      registryPath: process.env.PI_GRANTS_WORKSPACE_REGISTRY,
+      registryPath: process.env.PI_DADDY_WORKSPACE_REGISTRY,
     });
     assert.deepEqual(catalog.byKind("workspace"), ["workspace:prod-1", "workspace:sandbox"]);
   } finally {
-    if (previous === undefined) delete process.env.PI_GRANTS_WORKSPACE_REGISTRY;
-    else process.env.PI_GRANTS_WORKSPACE_REGISTRY = previous;
+    if (previous === undefined) delete process.env.PI_DADDY_WORKSPACE_REGISTRY;
+    else process.env.PI_DADDY_WORKSPACE_REGISTRY = previous;
   }
 });
 
@@ -559,13 +559,13 @@ test("`/grants init`'s dialog cannot confer a routing capability, whatever the o
     },
   };
 
-  const previous = process.env.PI_GRANTS_WORKSPACE_REGISTRY;
-  process.env.PI_GRANTS_WORKSPACE_REGISTRY = registry;
+  const previous = process.env.PI_DADDY_WORKSPACE_REGISTRY;
+  process.env.PI_DADDY_WORKSPACE_REGISTRY = registry;
   try {
     await runInit(session as never, ctx as never, async () => {});
   } finally {
-    if (previous === undefined) delete process.env.PI_GRANTS_WORKSPACE_REGISTRY;
-    else process.env.PI_GRANTS_WORKSPACE_REGISTRY = previous;
+    if (previous === undefined) delete process.env.PI_DADDY_WORKSPACE_REGISTRY;
+    else process.env.PI_DADDY_WORKSPACE_REGISTRY = previous;
   }
 
   assert.equal(
@@ -659,14 +659,14 @@ test("`pi-daddy init` says out loud that a routing package cannot be spawned yet
   console.log = (...a: unknown[]) => {
     written.push(a.map(String).join(" "));
   };
-  const previous = process.env.PI_GRANTS_WORKSPACE_REGISTRY;
-  process.env.PI_GRANTS_WORKSPACE_REGISTRY = registry;
+  const previous = process.env.PI_DADDY_WORKSPACE_REGISTRY;
+  process.env.PI_DADDY_WORKSPACE_REGISTRY = registry;
   try {
     assert.equal(await main(["node", "cli", "init", "--dir", cwd]), 0);
   } finally {
     console.log = realLog;
-    if (previous === undefined) delete process.env.PI_GRANTS_WORKSPACE_REGISTRY;
-    else process.env.PI_GRANTS_WORKSPACE_REGISTRY = previous;
+    if (previous === undefined) delete process.env.PI_DADDY_WORKSPACE_REGISTRY;
+    else process.env.PI_DADDY_WORKSPACE_REGISTRY = previous;
   }
   const out = written.join("\n");
 
@@ -685,7 +685,7 @@ test("`pi-daddy init` says out loud that a routing package cannot be spawned yet
  *
  * This is the branch that was **unreachable** until the code stopped reading the `DEFAULT_GATED` constant and
  * started reading `session.gated`: `tool:bash` is the only member of that constant and it is consumed by the
- * branch above, so with `PI_GRANTS_GATED="tool:bash,tool:write"` the dialog told the operator `tool:write`
+ * branch above, so with `PI_DADDY_GATED="tool:bash,tool:write"` the dialog told the operator `tool:write`
  * "is not gated, so no dialog at spawn time" — the exact false sentence the fix claimed to have removed.
  *
  * Breaks by: reverting `gatedAtSpawn` to read `DEFAULT_GATED`.
@@ -805,7 +805,7 @@ test("R-78: a declared capability that could break out of the generated shell fi
   // **The RCE.** R-77 whitelisted the definition NAME; the `allowed-tools` VALUE reached the identical
   // interpolation site unchecked, and `ceilingForDefinition` passes `ext:`/`skill:`/`agent:` through as
   // written. Reproduced end to end before the fix: `source .pi/grants.env` executed the payload, silently,
-  // exit 0, with PI_GRANTS_GRANT left looking plausible.
+  // exit 0, with PI_DADDY_GRANT left looking plausible.
   //
   // Production change that breaks this test: deleting `isSafeCapability`, or applying it after the grant
   // string is assembled instead of at discovery.
@@ -813,7 +813,7 @@ test("R-78: a declared capability that could break out of the generated shell fi
   await skillPackage(cwd, "hostile", "1.0.0", {
     review: DECLARED.replace(
       "allowed-tools: Read, Grep",
-      'allowed-tools: Read,ext:x";touch /tmp/pwned;PI_GRANTS_GRANT="',
+      'allowed-tools: Read,ext:x";touch /tmp/pwned;PI_DADDY_GRANT="',
     ),
   });
 
@@ -827,7 +827,7 @@ test("R-78: a declared capability that could break out of the generated shell fi
   const plan = planInit(packages, cwd);
   assert.deepEqual(plan.grant, ["tool:delegate"]);
   assert.doesNotMatch(plan.grantEnvContent, /touch/, "no fragment of the payload reaches the sourced file");
-  assert.match(plan.grantEnvContent, /^export PI_GRANTS_GRANT="tool:delegate"$/m);
+  assert.match(plan.grantEnvContent, /^export PI_DADDY_GRANT="tool:delegate"$/m);
 });
 
 test("R-78: the grant string is charset-checked before the file is written, whatever got past the whitelist", () => {
@@ -866,7 +866,7 @@ test("R-78: a package may not hand itself tool:* or agent:*", async () => {
 });
 
 test("ADR-0029: capabilities that can change the machine are written COMMENTED, not live", async () => {
-  // The decision a reviewer showed was never made: `init` sets PI_GRANTS_GRANT, and the handoff's safety
+  // The decision a reviewer showed was never made: `init` sets PI_DADDY_GRANT, and the handoff's safety
   // argument for a third party authoring `allowed-tools` is that the operator's grant independently bounds
   // it. A generated union gives bound and bounded one author, who is not the operator.
   //

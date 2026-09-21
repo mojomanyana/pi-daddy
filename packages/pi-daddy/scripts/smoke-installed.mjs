@@ -43,23 +43,23 @@ try {
     join(work, "probe.mjs"),
     [
       `import { resolve, assertNarrowing } from "pi-daddy";`,
-      `import { planSpawn } from "pi-daddy/spawn";`,
-      `import { runChild } from "pi-daddy/run-child";`,
+      `import { planSpawn } from "pi-daddy/kernel";`,
+      `import { runChild } from "pi-daddy/kernel";`,
       // The subpaths added in 0.7.0. A smoke test exists to catch a broken `exports` map, so every new
       // module belongs here — 0.7.0 deleted two subpaths and added four, and a stale map fails only on a
       // consumer's machine.
-      `import { parseSkillDefinition, ceilingForDefinition } from "pi-daddy/definitions";`,
-      `import { splitBudget, childSpawnId } from "pi-daddy/fanout";`,
-      `import { splitSystemPrompt } from "pi-daddy/run-herdr";`,
-      `import { PI_BUILTIN_TOOLS, WILDCARD } from "pi-daddy/pi-tools";`,
-      `import { planInit, withPlaceholder } from "pi-daddy/init";`,
-      `import { discoverSkillPackages } from "pi-daddy/skill-packages";`,
-      `import { digestTask, buildApprovalBinding } from "pi-daddy/correlation";`,
-      `import { refusal, GovernanceRefusal } from "pi-daddy/refusals";`,
-      `import { defaultWorkspaceLeaseDir } from "pi-daddy/workspace";`,
-      `import { buildCheckEnvironment } from "pi-daddy/check-runner";`,
-      `import { parseDashboardLedger } from "pi-daddy/dashboard-projection";`,
-      `import { renderDashboard } from "pi-daddy/dashboard-render";`,
+      `import { parseSkillDefinition, ceilingForDefinition } from "pi-daddy/kernel";`,
+      `import { splitBudget, childSpawnId } from "pi-daddy/kernel";`,
+      `import { splitSystemPrompt } from "pi-daddy/executors";`,
+      `import { PI_BUILTIN_TOOLS, WILDCARD } from "pi-daddy/kernel";`,
+      `import { planInit, withPlaceholder } from "pi-daddy/approvals";`,
+      `import { discoverSkillPackages } from "pi-daddy/kernel";`,
+      `import { digestTask, buildApprovalBinding } from "pi-daddy/kernel";`,
+      `import { refusal, GovernanceRefusal } from "pi-daddy/kernel";`,
+      `import { defaultWorkspaceLeaseDir } from "pi-daddy/approvals";`,
+      `import { buildCheckEnvironment } from "pi-daddy/ledger";`,
+      `import { parseDashboardLedger } from "pi-daddy/dashboard";`,
+      `import { renderDashboard } from "pi-daddy/dashboard";`,
       `import ledgerV3Schema from "pi-daddy/contracts/ledger/v3/ledger-event.schema.json" with { type: "json" };`,
       `import v3CapabilityFixture from "pi-daddy/contracts/ledger/v3/fixtures/capability-decision.json" with { type: "json" };`,
       `import v3LeaseFixture from "pi-daddy/contracts/ledger/v3/fixtures/workspace-lease.json" with { type: "json" };`,
@@ -119,10 +119,10 @@ try {
   const initOut = run(join(work, "node_modules", ".bin", "pi-daddy"), ["init"], work);
   if (!initOut.includes("found fake-skills@1.0.0")) throw new Error(`init did not find the package:\n${initOut}`);
   const grantEnv = readFileSync(join(work, ".pi", "grants.env"), "utf8");
-  if (!grantEnv.includes('PI_GRANTS_GRANT="agent:review,tool:delegate,tool:grep,tool:read"')) {
+  if (!grantEnv.includes('PI_DADDY_GRANT="agent:review,tool:delegate,tool:grep,tool:read"')) {
     throw new Error(`init wrote the wrong grant:\n${grantEnv}`);
   }
-  if (!grantEnv.split(/\r?\n/).includes('export PI_GRANTS_LEDGER=".pi/grants.jsonl"')) {
+  if (!grantEnv.split(/\r?\n/).includes('export PI_DADDY_LEDGER=".pi/grants.jsonl"')) {
     throw new Error(`init did not enable its project ledger:\n${grantEnv}`);
   }
   // VERBATIM means byte-for-byte, so compare the whole file. The first version asserted that
@@ -142,8 +142,8 @@ try {
   }
   writeFileSync(join(work, "configured-probe.mjs"), [
     'import assert from "node:assert/strict";',
-    'import { loadDefinitions } from "pi-daddy/definitions";',
-    'import { buildCatalog } from "pi-daddy/catalog";',
+    'import { loadDefinitions } from "pi-daddy/kernel";',
+    'import { buildCatalog } from "pi-daddy/kernel";',
     'const definitions = await loadDefinitions(process.cwd());',
     'assert.equal(definitions.get("review")?.source, ' + JSON.stringify(join(skillPkg, "review", "SKILL.md")) + ');',
     'const catalog = await buildCatalog({ cwd: process.cwd(), observedTools: null });',

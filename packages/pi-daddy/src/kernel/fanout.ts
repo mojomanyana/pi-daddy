@@ -81,7 +81,7 @@ export function splitBudget(budget: number, count: number): BudgetSplit {
       ok: false,
       reason:
         `fan-out budget exhausted: ${count} children requested, ${budget} remaining in this subtree ` +
-        `(raise PI_GRANTS_FANOUT at the root, or delegate fewer at a time)`,
+        `(raise PI_DADDY_FANOUT at the root, or delegate fewer at a time)`,
       perChild: 0,
     };
   }

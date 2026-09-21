@@ -29,228 +29,35 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
-    "./resolve": {
-      "types": "./dist/kernel/resolve.d.ts",
-      "default": "./dist/kernel/resolve.js"
+    "./kernel": {
+      "types": "./dist/kernel/index.d.ts",
+      "default": "./dist/kernel/index.js"
     },
     "./ledger": {
-      "types": "./dist/governance/ledger.d.ts",
-      "default": "./dist/governance/ledger.js"
+      "types": "./dist/governance/ledger-public.d.ts",
+      "default": "./dist/governance/ledger-public.js"
     },
-    "./work-setup": {
-      "types": "./dist/products/work-setup.d.ts",
-      "default": "./dist/products/work-setup.js"
+    "./approvals": {
+      "types": "./dist/governance/approvals-public.d.ts",
+      "default": "./dist/governance/approvals-public.js"
     },
-    "./work-command": {
-      "types": "./dist/products/work-command.d.ts",
-      "default": "./dist/products/work-command.js"
+    "./executors": {
+      "types": "./dist/executors/index.d.ts",
+      "default": "./dist/executors/index.js"
     },
-    "./work-run": {
-      "types": "./dist/products/work-run.d.ts",
-      "default": "./dist/products/work-run.js"
+    "./dashboard": {
+      "types": "./dist/products/dashboard-public.d.ts",
+      "default": "./dist/products/dashboard-public.js"
     },
-    "./work-policy-registry": {
-      "types": "./dist/products/work-policy-registry.d.ts",
-      "default": "./dist/products/work-policy-registry.js"
+    "./work": {
+      "types": "./dist/products/work-public.d.ts",
+      "default": "./dist/products/work-public.js"
     },
-    "./factory-registry": {
-      "types": "./dist/products/factory-registry.d.ts",
-      "default": "./dist/products/factory-registry.js"
+    "./learning": {
+      "types": "./dist/products/learning-public.d.ts",
+      "default": "./dist/products/learning-public.js"
     },
-    "./learning-connection": {
-      "types": "./dist/products/learning-connection.d.ts",
-      "default": "./dist/products/learning-connection.js"
-    },
-    "./work-ledger": {
-      "types": "./dist/governance/work-ledger.d.ts",
-      "default": "./dist/governance/work-ledger.js"
-    },
-    "./factory-order": {
-      "types": "./dist/products/factory-order.d.ts",
-      "default": "./dist/products/factory-order.js"
-    },
-    "./experiment": {
-      "types": "./dist/products/experiment.d.ts",
-      "default": "./dist/products/experiment.js"
-    },
-    "./dashboard-harness": {
-      "types": "./dist/products/dashboard-harness.d.ts",
-      "default": "./dist/products/dashboard-harness.js"
-    },
-    "./daily-dashboard-host": {
-      "types": "./dist/products/daily-dashboard-host.d.ts",
-      "default": "./dist/products/daily-dashboard-host.js"
-    },
-    "./dashboard-host": {
-      "types": "./dist/products/dashboard-host.d.ts",
-      "default": "./dist/products/dashboard-host.js"
-    },
-    "./dashboard-host-transport": {
-      "types": "./dist/products/dashboard-host-transport.d.ts",
-      "default": "./dist/products/dashboard-host-transport.js"
-    },
-    "./debrief-host": {
-      "types": "./dist/products/debrief-host.d.ts",
-      "default": "./dist/products/debrief-host.js"
-    },
-    "./contracts/debrief/v2/*": "./contracts/debrief/v2/*",
-    "./debrief": {
-      "types": "./dist/products/debrief.d.ts",
-      "default": "./dist/products/debrief.js"
-    },
-    "./daily-view": {
-      "types": "./dist/products/daily-view.d.ts",
-      "default": "./dist/products/daily-view.js"
-    },
-    "./intent-control": {
-      "types": "./dist/products/intent-control.d.ts",
-      "default": "./dist/products/intent-control.js"
-    },
-    "./dispatch-control": {
-      "types": "./dist/products/dispatch-control.d.ts",
-      "default": "./dist/products/dispatch-control.js"
-    },
-    "./resource-budget": {
-      "types": "./dist/products/resource-budget.d.ts",
-      "default": "./dist/products/resource-budget.js"
-    },
-    "./producer-ipc": {
-      "types": "./dist/products/producer-ipc.d.ts",
-      "default": "./dist/products/producer-ipc.js"
-    },
-    "./effect-profile": {
-      "types": "./dist/products/effect-profile.d.ts",
-      "default": "./dist/products/effect-profile.js"
-    },
-    "./measured-session": {
-      "types": "./dist/products/measured-session.d.ts",
-      "default": "./dist/products/measured-session.js"
-    },
-    "./measured-order": {
-      "types": "./dist/products/measured-order.d.ts",
-      "default": "./dist/products/measured-order.js"
-    },
-    "./execution-retention": {
-      "types": "./dist/governance/execution-retention.d.ts",
-      "default": "./dist/governance/execution-retention.js"
-    },
-    "./spawn": {
-      "types": "./dist/kernel/spawn.d.ts",
-      "default": "./dist/kernel/spawn.js"
-    },
-    "./delegate": {
-      "types": "./dist/kernel/delegate.d.ts",
-      "default": "./dist/kernel/delegate.js"
-    },
-    "./catalog": {
-      "types": "./dist/kernel/catalog.d.ts",
-      "default": "./dist/kernel/catalog.js"
-    },
-    "./propagation": {
-      "types": "./dist/kernel/propagation.d.ts",
-      "default": "./dist/kernel/propagation.js"
-    },
-    "./definitions": {
-      "types": "./dist/kernel/definitions.d.ts",
-      "default": "./dist/kernel/definitions.js"
-    },
-    "./fanout": {
-      "types": "./dist/kernel/fanout.d.ts",
-      "default": "./dist/kernel/fanout.js"
-    },
-    "./pi-tools": {
-      "types": "./dist/kernel/pi-tools.d.ts",
-      "default": "./dist/kernel/pi-tools.js"
-    },
-    "./run-herdr": {
-      "types": "./dist/executors/run-herdr.d.ts",
-      "default": "./dist/executors/run-herdr.js"
-    },
-    "./herdr-poll": {
-      "types": "./dist/executors/herdr-poll.d.ts",
-      "default": "./dist/executors/herdr-poll.js"
-    },
-    "./herdr-cli": {
-      "types": "./dist/executors/herdr-cli.d.ts",
-      "default": "./dist/executors/herdr-cli.js"
-    },
-    "./executor": {
-      "types": "./dist/executors/executor.d.ts",
-      "default": "./dist/executors/executor.js"
-    },
-    "./progress": {
-      "types": "./dist/kernel/progress.d.ts",
-      "default": "./dist/kernel/progress.js"
-    },
-    "./chain": {
-      "types": "./dist/kernel/chain.d.ts",
-      "default": "./dist/kernel/chain.js"
-    },
-    "./run-child": {
-      "types": "./dist/kernel/run-child.d.ts",
-      "default": "./dist/kernel/run-child.js"
-    },
-    "./approval": {
-      "types": "./dist/kernel/approval.d.ts",
-      "default": "./dist/kernel/approval.js"
-    },
-    "./approval-store": {
-      "types": "./dist/governance/approval-store.d.ts",
-      "default": "./dist/governance/approval-store.js"
-    },
-    "./approval-prompt": {
-      "types": "./dist/governance/approval-prompt.d.ts",
-      "default": "./dist/governance/approval-prompt.js"
-    },
-    "./init": {
-      "types": "./dist/governance/init.d.ts",
-      "default": "./dist/governance/init.js"
-    },
-    "./skill-packages": {
-      "types": "./dist/kernel/skill-packages.d.ts",
-      "default": "./dist/kernel/skill-packages.js"
-    },
-    "./correlation": {
-      "types": "./dist/kernel/correlation.d.ts",
-      "default": "./dist/kernel/correlation.js"
-    },
-    "./refusals": {
-      "types": "./dist/kernel/refusals.d.ts",
-      "default": "./dist/kernel/refusals.js"
-    },
-    "./workspace": {
-      "types": "./dist/governance/workspace-public.d.ts",
-      "default": "./dist/governance/workspace-public.js"
-    },
-    "./check-runner": {
-      "types": "./dist/governance/check-runner.d.ts",
-      "default": "./dist/governance/check-runner.js"
-    },
-    "./dashboard-projection": {
-      "types": "./dist/products/dashboard-projection.d.ts",
-      "default": "./dist/products/dashboard-projection.js"
-    },
-    "./dashboard-render": {
-      "types": "./dist/products/dashboard-render.d.ts",
-      "default": "./dist/products/dashboard-render.js"
-    },
-    "./contracts/factory-order/v1/*": "./contracts/factory-order/v1/*",
-    "./contracts/experiment/v1/*": "./contracts/experiment/v1/*",
-    "./contracts/producer-ipc/v1/*": "./contracts/producer-ipc/v1/*",
-    "./contracts/debrief/v1/*": "./contracts/debrief/v1/*",
-    "./contracts/intent-control/v2/request.schema.json": "./contracts/intent-control/v2/request.schema.json",
-    "./contracts/intent-control/v1/request.schema.json": "./contracts/intent-control/v1/request.schema.json",
-    "./contracts/dispatch-control/v1/request.schema.json": "./contracts/dispatch-control/v1/request.schema.json",
-    "./contracts/daily-view/v1/fixtures/*": "./contracts/daily-view/v1/fixtures/*",
-    "./contracts/daily-view/v1/p03/projection.schema.json": "./contracts/daily-view/v1/p03/projection.schema.json",
-    "./contracts/execution-retention/v2/manifest.schema.json": "./contracts/execution-retention/v2/manifest.schema.json",
-    "./contracts/execution-retention/v2/fixtures/*": "./contracts/execution-retention/v2/fixtures/*",
-    "./contracts/ledger/v4/ledger-event.schema.json": "./contracts/ledger/v4/ledger-event.schema.json",
-    "./contracts/ledger/v4/fixtures/*.json": "./contracts/ledger/v4/fixtures/*.json",
-    "./contracts/ledger/v3/ledger-event.schema.json": "./contracts/ledger/v3/ledger-event.schema.json",
-    "./contracts/ledger/v3/fixtures/*.json": "./contracts/ledger/v3/fixtures/*.json",
-    "./contracts/ledger/v2/ledger-event.schema.json": "./contracts/ledger/v2/ledger-event.schema.json",
-    "./contracts/ledger/v2/fixtures/*.json": "./contracts/ledger/v2/fixtures/*.json"
+    "./contracts/*": "./contracts/*"
   },
   "bin": {
     "pi-daddy": "./dist/cli.js",

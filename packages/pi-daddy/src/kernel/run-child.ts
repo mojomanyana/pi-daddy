@@ -12,6 +12,8 @@
 import { spawn } from "node:child_process";
 import { StringDecoder } from "node:string_decoder";
 import { parseBound } from "./propagation.ts";
+import { ENV_CHILD_TIMEOUT } from "./env-names.ts";
+export { ENV_CHILD_TIMEOUT } from "./env-names.ts";
 
 interface RunChildTestControl {
   hardDeadlineAtAfterSpawn(): number;
@@ -57,7 +59,6 @@ export function takeBytes(text: string, budget: number): string {
  * only by the spawn plan, which is right for capability state and wrong for an operator preference. This
  * one should simply inherit, so a bound set at the root applies all the way down.
  */
-export const ENV_CHILD_TIMEOUT = "PI_GRANTS_CHILD_TIMEOUT";
 
 /** Read the override, falling back to the default on absent *or* malformed input (G7's rule). */
 export function timeoutFromEnv(raw: string | undefined): number {

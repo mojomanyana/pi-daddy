@@ -55,6 +55,7 @@ import { createLearningSession } from "./learning-session.ts";
 import { replacePublishedDailyWork, type PublishedDailyWork } from "./daily-work-session.ts";
 import { defaultActivityTimelinePath } from "../src/products/activity-timeline.ts";
 import { registerActivityTimeline } from "./activity-timeline.ts";
+import { legacyEnvironmentWarning } from "../src/kernel/env-names.ts";
 export default function (pi: ExtensionAPI) {
   // The path pi loads as the extension, so a child granted `tool:delegate` can be started with `-e <this>`.
   const extensionPath = (() => {
@@ -91,6 +92,8 @@ export default function (pi: ExtensionAPI) {
   );
   const learningSession = createLearningSession(dailyHost);
   pi.on("session_start", async (_event, ctx) => {
+    if (session.adoptedLegacyEnv.length > 0)
+      ctx.ui.notify(legacyEnvironmentWarning(session.adoptedLegacyEnv), "warning");
     // Real SDK contexts always supply SessionManager. The fallback keeps lightweight wiring fixtures
     // isolated; it cannot carry state into another extension instance.
     const owner = (ctx as { sessionManager?: object }).sessionManager ?? session;
@@ -130,7 +133,7 @@ export default function (pi: ExtensionAPI) {
       if (session.storeCwd !== ctx.cwd && process.env[ENV_GRANT] === undefined) {
         ctx.ui.notify(
           `grants: this session's stored grant was read for ${session.storeCwd}, but pi is working in ` +
-            `${ctx.cwd}. A grant belongs to a directory, so run /grants init here, or set PI_GRANTS_GRANT ` +
+            `${ctx.cwd}. A grant belongs to a directory, so run /grants init here, or set PI_DADDY_GRANT ` +
             `explicitly — the environment always wins.`,
           "warning",
         );
@@ -169,16 +172,16 @@ export default function (pi: ExtensionAPI) {
         await resolveExecutor(session);
       } catch (error) {
         // Says what is actually true of the state left behind, which depends on the variable: with
-        // `PI_GRANTS_HERDR=1` the session holds a REFUSAL and every delegation fails, so telling the operator
+        // `PI_DADDY_HERDR=1` the session holds a REFUSAL and every delegation fails, so telling the operator
         // "using the captured subprocess" would be the opposite of what happens. The old wording asserted the
         // fallback unconditionally.
         ctx.ui.notify(
           `grants: could not settle which executor to use ` +
             `(${error instanceof Error ? error.message : String(error)}) — ` +
             (session.executor.refusal
-              ? `PI_GRANTS_HERDR=1 still demands herdr, so every delegation in this session will refuse. ` +
+              ? `PI_DADDY_HERDR=1 still demands herdr, so every delegation in this session will refuse. ` +
                 `Unset it to let this session probe, or set 0 to choose subprocesses.`
-              : `using the captured subprocess, which needs nothing installed. Set PI_GRANTS_HERDR=0 to make ` +
+              : `using the captured subprocess, which needs nothing installed. Set PI_DADDY_HERDR=0 to make ` +
                 `that explicit, or 1 to demand herdr panes.`),
           "warning",
         );

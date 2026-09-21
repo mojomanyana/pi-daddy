@@ -75,7 +75,7 @@ whose path `/grants` prints, and the directory is ungoverned again.
 
 ### The alternative: an environment variable
 
-`PI_GRANTS_GRANT` **always wins over the store**, because it is how a *child* is governed and how CI is
+`PI_DADDY_GRANT` **always wins over the store**, because it is how a *child* is governed and how CI is
 configured. `init` also writes `.pi/grants.env` — commit it: it is the reviewable record of the decision,
 diffable in a PR, even though it is no longer what the enforcer reads.
 
@@ -193,7 +193,7 @@ decide → architect → plan → build → (review ‖ debug) → git-ops
 | Output cap | 1 MiB | per child; beyond it the child is killed and the result flagged truncated |
 | Gated | `tool:bash` | a human is asked before any child receives it |
 
-After ADR-0037's `/grants init` (or with `PI_GRANTS_LEDGER` set explicitly), every spawn **and every refusal**
+After ADR-0037's `/grants init` (or with `PI_DADDY_LEDGER` set explicitly), every spawn **and every refusal**
 is recorded, and a spawn that cannot be recorded is refused. Read it back with `/grants ledger` — record
 count, escalation attempts, integrity, and which instructions ran.
 
@@ -205,7 +205,7 @@ count, escalation attempts, integrity, and which instructions ran.
 driving your session — carry each result to the next step. That is why the sequential half above is
 sequential.
 
-**A child holding `bash` is not contained.** It can run `env -u PI_GRANTS_GRANT pi …` and get an
+**A child holding `bash` is not contained.** It can run `env -u PI_DADDY_GRANT pi …` and get an
 ungoverned descendant. Out of scope by decision, and the reason `bash` is gated rather than assumed: it
 cannot happen *silently*.
 

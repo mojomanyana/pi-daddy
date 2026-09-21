@@ -15,8 +15,8 @@ import { join } from "node:path";
 import { GovernanceRefusal, refusal } from "../kernel/refusals.ts";
 import type { ValidatedWorkspace, WorkspaceAccess } from "../kernel/workspace.ts";
 import { assertCloseBounds, HELPER_SOURCE, LEASE_READY, unrefStream } from "./lease-helper.ts";
-
-export const ENV_WORKSPACE_LEASE_DIR = "PI_GRANTS_WORKSPACE_LEASE_DIR";
+import { ENV_WORKSPACE_LEASE_DIR } from "../kernel/env-names.ts";
+export { ENV_WORKSPACE_LEASE_DIR } from "../kernel/env-names.ts";
 
 export function defaultWorkspaceLeaseDir(env: NodeJS.ProcessEnv = process.env): string {
   const agentDir = env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");

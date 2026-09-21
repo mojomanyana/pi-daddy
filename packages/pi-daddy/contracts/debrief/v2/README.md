@@ -5,7 +5,7 @@ worker prompt, attention hook, Herdr control, model evaluation, routing or accep
 
 ## Actual host boundary
 
-`pi-daddy/debrief-host` (also root exports) accepts a trusted host's loaded harness modules:
+`pi-daddy/dashboard` (also root exports) accepts a trusted host's loaded harness modules:
 `createWorkCaseReviewer`, `createWorkSignalReviewer`, `retainBlindIntervention`, `openBlindIntervention`.
 The actual tested source is skill-harness638494af0a0058edf9a9b1b02e57af894ab46ed6. Exact source bodies,
 SHA256 pins and ordinary isolated compilation are in test/fixtures/debrief-durable-host; upstream

@@ -41,6 +41,7 @@ import { renderDebrief, debriefAction } from "./debrief-render.ts";
 import { createFixtureDebrief } from "./debrief-fixture.ts";
 export const ENV_DEBRIEF_FIXTURE = "PI_DADDY_DEBRIEF_FIXTURE";
 export { debriefAction as dashboardDebriefAction } from "./debrief-render.ts";
+import { adoptLegacyEnvironment, ENV_LEDGER, legacyEnvironmentWarning } from "../kernel/env-names.ts";
 
 export const ENV_DAILY_ARCHIVE = "PI_DADDY_ARCHIVE_PROJECTION";
 export const ENV_DAILY_WORK = "PI_DADDY_WORK_LEDGER";
@@ -58,7 +59,7 @@ function dailySelection(text: string | undefined): WorkProjectionContext["select
 }
 
 export const DASHBOARD_PROTOCOL_VERSION = 1 as const;
-export const ENV_DASHBOARD_LEDGER = "PI_DADDY_LEDGER";
+export const ENV_DASHBOARD_LEDGER = ENV_LEDGER; // one ledger path variable for children and the dashboard (ADR-0076 PR 3b)
 export const ENV_DASHBOARD_PROTOCOL = "PI_DADDY_DASHBOARD_PROTOCOL";
 export const ENV_DASHBOARD_KEY = "PI_DADDY_DASHBOARD_KEY";
 export const DASHBOARD_REFRESH_MS = 250;
@@ -127,7 +128,7 @@ function setupFrame(cwd: string): string {
     "",
     "Run exactly:",
     "  pi install npm:pi-daddy",
-    `  export PI_GRANTS_LEDGER=${shellQuote(ledger)}`,
+    `  export PI_DADDY_LEDGER=${shellQuote(ledger)}`,
     "  pi",
     "",
     "Then run /grants dashboard inside that Herdr-hosted pi session.",
@@ -377,6 +378,8 @@ export async function runDashboard(
   env: NodeJS.ProcessEnv = process.env,
   host: { debrief?: DebriefPresenter; connected?: DashboardConnection } = {},
 ): Promise<void> {
+  const adoptedLegacy = adoptLegacyEnvironment(env);
+  if (adoptedLegacy.length > 0) console.error(legacyEnvironmentWarning(adoptedLegacy));
   const cli = parseArgs(argv);
   const cwd = process.cwd();
   const ledgerPath = cli.ledgerPath ?? (env[ENV_DASHBOARD_LEDGER]?.trim() || undefined);

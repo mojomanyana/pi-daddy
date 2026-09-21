@@ -3,7 +3,7 @@
  *
  * `extensions/run-delegation.ts` documents this rule at length and moved the executor check *above* the
  * gate to honour it — an operator was being asked to approve `tool:bash`, answering *Always*, and then
- * refused anyway, with the answer still reaching `PI_GRANTS_APPROVED` and still writing a 30-day
+ * refused anyway, with the answer still reaching `PI_DADDY_APPROVED` and still writing a 30-day
  * project-wide entry for a child that never existed.
  *
  * The adjacent path kept the defect (R-113). The load-bearing ledger append happens AFTER the gate, and a

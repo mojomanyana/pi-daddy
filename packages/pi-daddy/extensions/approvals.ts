@@ -34,6 +34,7 @@ import type { GrantsSession } from "./session.ts";
 import type { BankedApproval } from "./approval-banking.ts";
 export { unbankApprovals } from "./approval-banking.ts";
 export type { BankedApproval } from "./approval-banking.ts";
+import { ENV_APPROVAL_TIMEOUT } from "../src/kernel/env-names.ts";
 
 /**
  * What a subject looks like right now, for the confused-deputy check in the approval store.
@@ -234,7 +235,7 @@ export async function obtainApprovals(
     ui: ctx.ui,
     hasUI: ctx.hasUI,
     mode: ctx.mode,
-    timeoutMs: timeoutMsFromEnv(process.env.PI_GRANTS_APPROVAL_TIMEOUT),
+    timeoutMs: timeoutMsFromEnv(process.env[ENV_APPROVAL_TIMEOUT]),
   });
 
   const approved = [...pre.approved];

@@ -2,7 +2,7 @@
  * The init choice for a directory, stored **outside** it: its grant and, in v2, explicit project-ledger
  * consent.
  *
- * `PI_GRANTS_GRANT` and `PI_GRANTS_LEDGER` remain the propagation channel to children — a parent writes them
+ * `PI_DADDY_GRANT` and `PI_DADDY_LEDGER` remain the propagation channel to children — a parent writes them
  * and every child inherits them. The store is a root-session source only, so an operator does not have to
  * `source` a file and restart pi after making the project choice.
  *

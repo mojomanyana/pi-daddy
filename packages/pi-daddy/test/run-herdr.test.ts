@@ -117,7 +117,7 @@ afterEach(() => void reapOpenPanes(() => {}));
 const request = (over: Partial<Parameters<typeof runHerdrPane>[0]> = {}) => ({
   args: ["--no-session", "--no-extensions", "--tools", "read"],
   prompt: "review the diff",
-  env: { PI_GRANTS_GRANT: "tool:read", PI_GRANTS_DEPTH: "1" },
+  env: { PI_DADDY_GRANT: "tool:read", PI_DADDY_DEPTH: "1" },
   cwd: "/repo",
   name: "child-1",
   ...over,
@@ -130,8 +130,8 @@ test("the grant travels on the PANE, because agent start has no --env", () => {
   return runHerdrPane(request({ exec: fake.exec })).then(() => {
     const create = fake.calls.find((c) => c[0] === "tab" && c[1] === "create")!;
     assert.ok(create.includes("--env"));
-    assert.ok(create.includes("PI_GRANTS_GRANT=tool:read"), "the grant must be set on the pane");
-    assert.ok(create.includes("PI_GRANTS_DEPTH=1"));
+    assert.ok(create.includes("PI_DADDY_GRANT=tool:read"), "the grant must be set on the pane");
+    assert.ok(create.includes("PI_DADDY_DEPTH=1"));
     const start = fake.calls.find((c) => c[0] === "agent" && c[1] === "start")!;
     assert.ok(!start.includes("--env"), "agent start does not accept it, so it must not be sent there");
   });
@@ -270,7 +270,7 @@ test("a child that did NOT settle has its tab closed at once, because that is th
 });
 
 test("keepPane leaves the pane for a human to inspect, and no sweep closes it", async () => {
-  // `PI_GRANTS_HERDR_KEEP_PANE=1` overrides the settled/unsettled question entirely: the operator asked to keep
+  // `PI_DADDY_HERDR_KEEP_PANE=1` overrides the settled/unsettled question entirely: the operator asked to keep
   // whatever is there. It IS registered — but only so `exit` can remove the staged system prompt, which was
   // otherwise unreachable by either sweep and leaked one temp dir per kept pane (measured).
   const fake = fakeHerdr();
@@ -830,7 +830,7 @@ test("ADR-0032: a pane herdr REFUSES to close stays tracked, so exit tries again
 });
 
 test("ADR-0032: keepPane still means the reaper never touches it", async () => {
-  // `PI_GRANTS_HERDR_KEEP_PANE=1` means "not even at agent_settled" — an operator who asked to keep a pane for
+  // `PI_DADDY_HERDR_KEEP_PANE=1` means "not even at agent_settled" — an operator who asked to keep a pane for
   // inspection must not have it swept when their prompt comes back.
   const fake = fakeHerdr();
   await runHerdrPane({ ...request(), exec: fake.exec, pollIntervalMs: 1, keepPane: true });

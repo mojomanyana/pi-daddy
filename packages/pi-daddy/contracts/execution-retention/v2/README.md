@@ -6,7 +6,7 @@ Formal acceptance and independent overall review remain pending; fixture validit
 
 ## Ordinary host integration (additive local candidate)
 
-`PI_GRANTS_RETAIN_NATIVE_SESSIONS=1` plus an existing private canonical `PI_GRANTS_NATIVE_SESSION_ROOT`
+`PI_DADDY_RETAIN_NATIVE_SESSIONS=1` plus an existing private canonical `PI_DADDY_NATIVE_SESSION_ROOT`
 now allocates an exclusive per-execution target through shared public delegate/all/chain planning. The
 same plan/audit/executor receives `--session`; model tool parameters never select a target. Invalid roots
 or reused occurrences refuse; unset preserves default ephemeral behavior. This does not alter wire2.0,
@@ -16,7 +16,7 @@ actual daily status; see `contracts/dashboard-host/v1/README.md`. No observer se
 
 ## Public contract and reproducibility
 
-- API: `pi-daddy/execution-retention` (also the package root).
+- API: `pi-daddy/ledger` (also the package root).
 - Strict JSON Schema: `pi-daddy/contracts/execution-retention/v2/manifest.schema.json`.
 - Six standalone manifest fixtures and their exact referenced blob bytes:
   `pi-daddy/contracts/execution-retention/v2/fixtures/*`.
@@ -41,8 +41,8 @@ different branch knowledge. Exact bytes alone cannot tell an external reader whi
 
 ## Activation and supported native routes
 
-`PI_GRANTS_EXECUTION_ARCHIVE=/private/archive` still opts in to asynchronous output/receipt retention.
-Native **file content** additionally needs `PI_GRANTS_NATIVE_SESSION_ROOT=/private/native-sessions`.
+`PI_DADDY_EXECUTION_ARCHIVE=/private/archive` still opts in to asynchronous output/receipt retention.
+Native **file content** additionally needs `PI_DADDY_NATIVE_SESSION_ROOT=/private/native-sessions`.
 That root must be an absolute, owner-private directory (0700); admitted files must be owned regular
 single-link `.jsonl` files within its canonical boundary. Symlink files/outside targets, missing headers,
 wrong expected session IDs and arbitrary non-session files are refused. No directory scan, auth read,
@@ -131,7 +131,7 @@ A public consumer must validate the manifest, enforce basename/size limits, then
 ```js
 import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { parseExecutionRetentionManifest, verifyRetainedBytes } from 'pi-daddy/execution-retention';
+import { parseExecutionRetentionManifest, verifyRetainedBytes } from 'pi-daddy/ledger';
 const manifest = parseExecutionRetentionManifest(await readFile(manifestPath, 'utf8'));
 const reference = manifest.content.session;
 let bytes;

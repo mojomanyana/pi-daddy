@@ -1,7 +1,7 @@
 /**
  * "Where do this session's children run?" — answered out loud, at session start and in `/grants`.
  *
- * ADR-0031 lets an unset `PI_GRANTS_HERDR` choose the executor by probing. That is only defensible because the
+ * ADR-0031 lets an unset `PI_DADDY_HERDR` choose the executor by probing. That is only defensible because the
  * choice is **announced**: the ADR's own rejected objection is that a run must not "silently relocate". These
  * tests are that guarantee, so **the production change that breaks them is deleting either disclosure**.
  *
@@ -10,7 +10,7 @@
  * spawns, so that version would have moved an ungoverned session's children into herdr panes in silence —
  * ADR-0031's objection reappearing inside the fix for it.
  *
- * Every case pins `PI_GRANTS_HERDR` explicitly. Leaving it unset would shell out to whatever herdr is running
+ * Every case pins `PI_DADDY_HERDR` explicitly. Leaving it unset would shell out to whatever herdr is running
  * on the machine under test, which is how a suite comes to pass here and fail in CI.
  */
 
@@ -94,8 +94,8 @@ async function harness(env: Record<string, string>, existingDir?: string) {
  *
  * **Anchored on the banner's real prefix, and split out of the JOINED notify.** Two defects shaped this helper.
  * A reviewer showed that `notices.find(n => n.includes("executor"))` also matches `grants.ts`'s fallback warning
- * ("could not settle which executor to use … using the captured subprocess … Set PI_GRANTS_HERDR=0"), which
- * satisfies both `/captured subprocess/` and `/PI_GRANTS_HERDR=0/` — so two simultaneous faults passed. And a
+ * ("could not settle which executor to use … using the captured subprocess … Set PI_DADDY_HERDR=0"), which
+ * satisfies both `/captured subprocess/` and `/PI_DADDY_HERDR=0/` — so two simultaneous faults passed. And a
  * second reviewer showed that pi's TUI OVERWRITES consecutive `info` notifies, so the lines are now delivered as
  * one joined message; a helper that searched whole notices would have missed that entirely.
  */
@@ -105,11 +105,11 @@ const executorLine = (notices: string[]) =>
 test("a governed session that can delegate names its executor at session start", async () => {
   const { notices } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate", [ENV_HERDR]: "0" });
   assert.match(executorLine(notices), /captured subprocess/);
-  assert.match(executorLine(notices), /PI_GRANTS_HERDR=0/);
+  assert.match(executorLine(notices), /PI_DADDY_HERDR=0/);
 });
 
 test("the explicit governance opt-out still names its executor", async () => {
-  // The defect this prevents. With no PI_GRANTS_GRANT the session holds the wildcard and `mayDelegate` is
+  // The defect this prevents. With no PI_DADDY_GRANT the session holds the wildcard and `mayDelegate` is
   // true, so `delegate` is registered and children are spawned — under whichever executor was chosen. Gating
   // the line on `governed` would have relocated those children into panes without a word.
   const { notices } = await harness({ [ENV_HERDR]: "0", [ENV_GOVERNANCE]: "off" });

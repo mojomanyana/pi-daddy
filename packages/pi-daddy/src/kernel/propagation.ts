@@ -30,29 +30,42 @@ import { WILDCARD } from "./pi-tools.ts";
 import { WORKSPACE_WILDCARD } from "./resolve.ts";
 import { inheritApprovals, type InheritableApproval } from "./approval.ts";
 import { assertCapabilitiesArePropagatable } from "./capabilities.ts";
+import {
+  ENV_GRANT,
+  ENV_FANOUT,
+  ENV_PARENT_ID,
+  ENV_EXECUTION_ID,
+  ENV_DEPTH,
+  ENV_MAX_DEPTH,
+  ENV_GATED,
+  ENV_LEDGER,
+  ENV_APPROVED,
+} from "./env-names.ts";
+export {
+  ENV_GRANT,
+  ENV_FANOUT,
+  ENV_PARENT_ID,
+  ENV_EXECUTION_ID,
+  ENV_DEPTH,
+  ENV_MAX_DEPTH,
+  ENV_GATED,
+  ENV_LEDGER,
+  ENV_APPROVED,
+} from "./env-names.ts";
 
-export const ENV_GRANT = "PI_GRANTS_GRANT";
 /**
  * Total descendants this session may create in its whole subtree (`src/kernel/fanout.ts`).
  *
  * In `GRANT_ENV_KEYS` and therefore stripped from a child's environment and re-supplied only by the spawn
  * plan — like depth, and for the same reason: it is capability state that must ATTENUATE downward, not an
- * operator preference that should inherit. `PI_GRANTS_CHILD_TIMEOUT` is deliberately the other kind.
+ * operator preference that should inherit. `PI_DADDY_CHILD_TIMEOUT` is deliberately the other kind.
  */
-export const ENV_FANOUT = "PI_GRANTS_FANOUT";
 /**
  * This session's ledger id, so a child's records name their real parent (review finding F8).
  *
  * Without it every level restarts at `d0` and the ledger cannot be joined into a tree across processes.
  */
-export const ENV_PARENT_ID = "PI_GRANTS_PARENT_ID";
 /** Unique identity of this governed execution occurrence; unlike ENV_PARENT_ID it is never reused. */
-export const ENV_EXECUTION_ID = "PI_GRANTS_EXECUTION_ID";
-export const ENV_DEPTH = "PI_GRANTS_DEPTH";
-export const ENV_MAX_DEPTH = "PI_GRANTS_MAX_DEPTH";
-export const ENV_GATED = "PI_GRANTS_GATED";
-export const ENV_LEDGER = "PI_GRANTS_LEDGER";
-export const ENV_APPROVED = "PI_GRANTS_APPROVED";
 
 /**
  * Every variable this package uses to push governance state at a child.
@@ -133,7 +146,7 @@ export function deriveOwnGrant(inheritedParentGrant: Capability[], observedTools
  *
  * G7 / A-S4 + B-I4. `Number.parseInt` is the wrong tool for reading configuration: it accepts a numeric
  * prefix (`parseInt("2abc")` is `2`), returns `NaN` for anything else, and `NaN` silently passes every
- * comparison as false — so a malformed `PI_GRANTS_MAX_DEPTH` did not tighten the limit, it removed it.
+ * comparison as false — so a malformed `PI_DADDY_MAX_DEPTH` did not tighten the limit, it removed it.
  *
  * The three-way return is the point. `undefined` means "not configured, use the documented default";
  * `null` means "configured wrongly", which callers must treat as a failure rather than a default,
@@ -159,7 +172,7 @@ export interface DepthConfig {
  * Resolve this session's depth bounds, failing closed on anything malformed.
  *
  * **Malformed input disables spawning entirely (`maxDepth: 0`)** rather than falling back to a default,
- * and that applies to a bad `PI_GRANTS_DEPTH` just as much as a bad `PI_GRANTS_MAX_DEPTH`. The old
+ * and that applies to a bad `PI_DADDY_DEPTH` just as much as a bad `PI_DADDY_MAX_DEPTH`. The old
  * `|| 0` guard on depth failed open in a subtler way than the missing guard on maxDepth: a session that
  * could not read its own depth was treated as a **root**, which is the most permissive answer available
  * and precisely the value an attacker would choose. If we do not know how deep we are, we must not spawn.
@@ -175,14 +188,14 @@ export function depthConfig(depthRaw: string | undefined, maxDepthRaw: string | 
   return { depth: depth ?? 0, maxDepth: maxDepth ?? DEFAULT_MAX_DEPTH, malformed };
 }
 
-/** The documented default child-depth bound when `PI_GRANTS_MAX_DEPTH` is not set. */
+/** The documented default child-depth bound when `PI_DADDY_MAX_DEPTH` is not set. */
 export const DEFAULT_MAX_DEPTH = 2;
 
 /**
  * Gated by default in a governed session (ADR-0012).
  *
  * `bash` is not one capability among others; it is an execution primitive. A child holding it can run
- * `env -u PI_GRANTS_GRANT pi …` and obtain a completely **ungoverned** descendant — measured, not
+ * `env -u PI_DADDY_GRANT pi …` and obtain a completely **ungoverned** descendant — measured, not
  * theorised (`docs/probes/g5-bash-escape`). Handing that down silently is the thing worth changing.
  *
  * Subsumption-aware gating (also ADR-0012) means this single entry covers `write`, `edit`, `read`,
@@ -223,7 +236,7 @@ export interface ChildEnvInput {
   approved?: InheritableApproval[];
   ledgerPath?: string;
   /**
-   * Whether THIS session is governed — i.e. `PI_GRANTS_GRANT` was set for it.
+   * Whether THIS session is governed — i.e. `PI_DADDY_GRANT` was set for it.
    *
    * G7 / B-I8. Governance is opt-in: with the variable unset the README promises "nothing is blocked".
    * That was true of the session itself and false of its children, because this function still exported
@@ -260,7 +273,7 @@ export interface ChildEnvInput {
  *
  * **Exported, and there is exactly one spelling of this rule on purpose.** It shipped as a filter inline in
  * `childEnv` and nowhere else, so a grant travelling the OTHER path — `delegate.ts` building a child's
- * `PI_GRANTS_GRANT` from `result.effective` — carried `workspace:*` straight down. The test written beside
+ * `PI_DADDY_GRANT` from `result.effective` — carried `workspace:*` straight down. The test written beside
  * that fix exercised `childEnv`, which is not the path a delegated child's grant travels, so it could not
  * catch it. R-28's shape: two routes for one rule, with the guard on the quieter one. Both call this now.
  */
@@ -280,7 +293,7 @@ export function childEnv(input: ChildEnvInput): Record<string, string> {
   // ALWAYS written, empty string included. This is the one value that changes during a session (a human
   // approves something, or the session's own grant narrows on observation), and the interceptor path
   // publishes it by ASSIGNING into the process-global `process.env`. Omitting it when empty would leave
-  // whatever was there before — the parent's own, unclamped `PI_GRANTS_APPROVED` — visible to every child.
+  // whatever was there before — the parent's own, unclamped `PI_DADDY_APPROVED` — visible to every child.
   // `parseList("")` is `[]`, so an empty value reads back exactly as an absent one.
   env[ENV_APPROVED] = inheritApprovals(input.approved ?? [], inheritable).join(",");
   // Empty is an explicit one-run ledger opt-out and must overwrite a prior publication too.

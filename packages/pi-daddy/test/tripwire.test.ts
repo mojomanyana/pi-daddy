@@ -12,7 +12,7 @@
  *
  * A refusal that points at the wrong replacement is a refusal that gets obeyed badly, and that is a governance
  * defect rather than a wording one: the operator's alternative to being redirected well is unsetting
- * `PI_GRANTS_GRANT`.
+ * `PI_DADDY_GRANT`.
  */
 
 import assert from "node:assert/strict";
@@ -52,14 +52,14 @@ test("the refusal names the tool that was refused, so the model knows what to st
 
 test("the refusal says what is LOST by going around governance, not merely that it is forbidden", () => {
   // A refusal an operator cannot evaluate is one they route around. Naming the three things a foreign spawner
-  // skips is what makes "unset PI_GRANTS_GRANT" an informed choice rather than the path of least resistance.
+  // skips is what makes "unset PI_DADDY_GRANT" an informed choice rather than the path of least resistance.
   const reason = tripwireReason("Agent");
   for (const missing of [/no grant/, /no depth bound/, /no ledger/]) assert.match(reason, missing);
 });
 
 test("the refusal still offers the ungoverned escape hatch by name", () => {
   // Governance is opt-in; a tripwire that hid the way out would be pretending otherwise.
-  assert.match(tripwireReason("subagent"), /PI_GRANTS_GRANT/);
+  assert.match(tripwireReason("subagent"), /PI_DADDY_GRANT/);
 });
 
 test("every tool name the tripwire watches for is one the refusal can describe", () => {

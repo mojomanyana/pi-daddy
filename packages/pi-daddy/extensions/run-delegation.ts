@@ -259,13 +259,13 @@ export async function runOneDelegation(
     boundContextId: spec.correlation?.context_id,
   };
 
-  // ADR-0031: herdr was DEMANDED (`PI_GRANTS_HERDR=1`) and is not answering. Refused rather than relocated —
+  // ADR-0031: herdr was DEMANDED (`PI_DADDY_HERDR=1`) and is not answering. Refused rather than relocated —
   // the operator chose that over falling back, so the ledger can never name a child that ran somewhere nobody
   // chose.
   //
   // **Decided BEFORE the gate, and the ordering is a fix.** This sat after `planWithApprovals`, which opens the
   // approval dialog — so with herdr down a human was asked to approve `tool:bash`, answered *Always*, and was
-  // then refused anyway. Measured: the answer still reached `process.env.PI_GRANTS_APPROVED`, still wrote a
+  // then refused anyway. Measured: the answer still reached `process.env.PI_DADDY_APPROVED`, still wrote a
   // **30-day project-wide** entry to the persisted store, and still produced a ledger line asserting a human
   // approved `bash` for a child that never existed. A refused operation must not leave authority behind, and
   // asking for permission that cannot be used is R-25's fatigue shape with nothing bought.

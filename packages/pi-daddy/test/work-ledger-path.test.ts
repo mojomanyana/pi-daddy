@@ -1971,15 +1971,11 @@ test("public projection preserves large claim/coverage collections and unsupport
   assert.equal(healthy.claims.find((c) => c.claim.eventId === unsupported.eventId)!.applicability, "unresolved");
 });
 
-test("public work-ledger subpath is additive without changing legacy export targets", () => {
+test("the work ledger ships through the pi-daddy/ledger subpath and the manifest version is current", () => {
   const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
-  assert.deepEqual(manifest.exports["./work-ledger"], {
-    types: "./dist/governance/work-ledger.d.ts",
-    default: "./dist/governance/work-ledger.js",
-  });
   assert.deepEqual(manifest.exports["./ledger"], {
-    types: "./dist/governance/ledger.d.ts",
-    default: "./dist/governance/ledger.js",
+    types: "./dist/governance/ledger-public.d.ts",
+    default: "./dist/governance/ledger-public.js",
   });
   assert.equal(manifest.version, "0.28.1");
 });

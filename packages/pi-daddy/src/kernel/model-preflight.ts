@@ -1,6 +1,6 @@
 import { refusal, type StructuredRefusal } from "./refusals.ts";
-
-export const ENV_ALLOW_UNRESOLVED_MODELS = "PI_GRANTS_ALLOW_UNRESOLVED_MODELS";
+import { ENV_ALLOW_UNRESOLVED_MODELS } from "./env-names.ts";
+export { ENV_ALLOW_UNRESOLVED_MODELS } from "./env-names.ts";
 
 /** Pi's resolved catalogue carries provider support in thinkingLevelMap. Never silently clamp a user's choice. */
 export function supportedModelEfforts(model: {

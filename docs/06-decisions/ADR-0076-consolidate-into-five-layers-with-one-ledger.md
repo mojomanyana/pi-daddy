@@ -253,10 +253,12 @@ replaced by `childEnv`; that is the one type-level change a direct `planDelegati
 
 ## Amendment 2026-09-21 — PR 3 is three pull requests, and what the store inventory changed
 
-**PR 3 lands as 3a, 3b and 3c.** The consolidation row set was one pull request in the Decision; an inventory
-of the stores (below) and the size of the formatting change made one change unreviewable. 3a: formatter,
-guards, prose-asserting tests deleted. 3b: `PI_DADDY_*` only with an explicit governance key list, exports
-under ten, one project state directory. 3c: one record format and one reader, version 0.30.0. Each takes
+**PR 3 lands as 3a, 3b, 3c and 3d.** The consolidation row set was one pull request in the Decision; an
+inventory of the stores (below) and the size of the formatting change made one change unreviewable. 3a:
+formatter, guards, prose-asserting tests deleted. 3b: `PI_DADDY_*` only with an explicit governance key list,
+exports under ten. 3c: one project state directory, `grants.env` retired, user-level stores under one
+`pi-daddy/` directory. 3d: one record format and one reader, version 0.30.0. (Amended the same day: the
+state-directory move touches init, the stores, the smoke test and forty ledger-path assertions, so it left 3b.) Each takes
 rule 10's review pass; the checklist rows stay as written with their PR column read as 3a/3b/3c.
 
 **The inventory found twenty-one stores, not ten, and the grants ledger has no hash chain at all.** The only

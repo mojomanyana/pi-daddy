@@ -62,7 +62,7 @@ export interface OpenPane {
    */
   settled?: boolean;
   /**
-   * The operator asked to keep this tab (`PI_GRANTS_HERDR_KEEP_PANE=1`), so no sweep may close it.
+   * The operator asked to keep this tab (`PI_DADDY_HERDR_KEEP_PANE=1`), so no sweep may close it.
    *
    * It is registered anyway, and only for its `promptDir`: that temp dir was otherwise unreachable by either
    * sweep and leaked one directory per kept pane, forever. So `exit` removes the staged prompt and leaves the
@@ -154,7 +154,7 @@ export function reapOpenPanes(syncExec: (args: string[]) => void = defaultSyncEx
     // No `agent stop`: it is not a herdr command (see `closePane`). Closing the tab is the kill.
     //
     // A `keepTab` pane is registered only for its staged prompt: remove that and leave the tab alone, which is
-    // the whole of what `PI_GRANTS_HERDR_KEEP_PANE=1` promises.
+    // the whole of what `PI_DADDY_HERDR_KEEP_PANE=1` promises.
     let closedThisPane = pane.keepTab === true;
     if (pane.keepTab) {
       if (pane.promptDir) {

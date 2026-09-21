@@ -35,7 +35,7 @@ Older host writers lack this guard and must not be used to resume new pending or
 
 ## Loaded artifacts and independent authority
 
-`pi-daddy/dashboard-harness` exports `loadDashboardHarness(artifactRoot, manifest, privateParent)`.
+`pi-daddy/learning` exports `loadDashboardHarness(artifactRoot, manifest, privateParent)`.
 The manifest is `DashboardHarnessArtifact`: version `dashboard-harness-artifact-v1`, exact sourceCommit
 `1c02194d4a3709d14890a5fbbad91ff5f0151f65`, relative compiled `files` SHA256 map, canonical existing
 `typeboxRoot` and its `typeboxPackageSha256`. This exact harness commit is a LOCAL dependency, not claimed
@@ -56,7 +56,7 @@ Typebox remains the actual existing peer; package metadata is bound, not its who
 loaded artifact identity, NOT human/module authentication, code confinement or hostile same-UID resistance.
 No arbitrary unreviewed module should be authorized merely because someone can compute its checksum.
 
-`pi-daddy/dashboard-host` exports `createDashboardHost` / `openDashboardHost`. Supply the loaded `api`, exact
+`pi-daddy/dashboard` exports `createDashboardHost` / `openDashboardHost`. Supply the loaded `api`, exact
 `DashboardHostConfig`, original budget binding, optional ORIGINAL `openExperiment` controller and an
 independent current `authority()` callback. The callback returns host/config and whole request digest
 allowlists, independent P01 context and native dispatch/experiment authorities. Request fields and files
@@ -168,7 +168,7 @@ arbitrary TUI targeting and real model/provider qualification remain distinct B/
 
 ## Ordinary retention opt-in
 
-Set `PI_GRANTS_RETAIN_NATIVE_SESSIONS=1` and an existing canonical private `PI_GRANTS_NATIVE_SESSION_ROOT`
+Set `PI_DADDY_RETAIN_NATIVE_SESSIONS=1` and an existing canonical private `PI_DADDY_NATIVE_SESSION_ROOT`
 in the ordinary host environment. Shared delegate/all/chain planning allocates a new per-execution directory
 and passes its `--session` target into the recorded plan; model tool parameters cannot choose the path.
 Invalid/reused/nonprivate targets refuse. Default children remain ephemeral. Existing asynchronous retention

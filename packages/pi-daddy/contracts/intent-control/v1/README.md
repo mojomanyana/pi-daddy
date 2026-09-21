@@ -39,7 +39,7 @@ lines / 2 MiB total). The separate work ledger keeps existing P01 byte/record bo
 
 ```ts
 import { bindWorkIntent, createIntentBudget, openResourceBudget, runDigestProfile } from 'pi-daddy';
-import { parseIntentRequest } from 'pi-daddy/intent-control';
+import { parseIntentRequest } from 'pi-daddy/work';
 const work = await bindWorkIntent({ path, grantLedgerPath, selection: initialSelection, priorities });
 const binding = await createIntentBudget({ directory, authorityDigest, limits }, work);
 const budget = openResourceBudget(binding);

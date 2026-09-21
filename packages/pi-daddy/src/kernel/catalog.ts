@@ -123,7 +123,7 @@ export function makeCatalog(entries: CatalogEntry[]): Catalog {
 export async function buildCatalog(input: {
   cwd: string;
   observedTools: string[] | null;
-  /** Operator workspace registry (`PI_GRANTS_WORKSPACE_REGISTRY`). Absent or unreadable yields no entries. */
+  /** Operator workspace registry (`PI_DADDY_WORKSPACE_REGISTRY`). Absent or unreadable yields no entries. */
   registryPath?: string;
 }): Promise<Catalog> {
   const [skills, definitions, workspaces] = await Promise.all([
