@@ -1,10 +1,4 @@
-import type {
-  DashboardNode,
-  DashboardProjection,
-  DashboardState,
-  DashboardWorkflow,
-  DashboardWorkflowFact,
-} from "./dashboard-projection.ts";
+import type { DashboardNode, DashboardProjection, DashboardState, DashboardWorkflow } from "./dashboard-projection.ts";
 import { isLedgerCapabilityIdentifier, isLedgerDisplayIdentifier } from "../kernel/ledger-identifiers.ts";
 
 export interface DashboardRenderOptions {
@@ -88,15 +82,6 @@ function elapsed(ms: number): string {
 function phaseLabel(node: DashboardNode): string {
   const phase = displayIdentifier(node.correlation?.phase);
   return phase ? phase.replaceAll("-", " ") : "";
-}
-
-function workflowFactLine(fact: DashboardWorkflowFact, color: boolean): string {
-  const marker = fact.provenance === "planned" ? "P" : fact.provenance === "observed" ? "O" : "V";
-  const symbol =
-    fact.provenance === "planned" ? "○" : fact.provenance === "observed" ? "◉" : fact.state === "blocked" ? "✕" : "✓";
-  const code =
-    fact.provenance === "planned" ? 90 : fact.provenance === "observed" ? 33 : fact.state === "blocked" ? 31 : 32;
-  return `${marker} ${paint(symbol, code, color)} ${displayIdentifier(fact.subject) || "unlabelled"}  ${fact.state}`;
 }
 
 function workflowHeader(workflow: DashboardWorkflow, color: boolean): string {
@@ -235,11 +220,9 @@ export function renderDashboard(projection: DashboardProjection, options: Dashbo
   const rendered = new Set<string>();
   for (const workflow of projection.workflows) {
     const roots = index.roots.filter((root) => root.correlation?.run_id === workflow.runId);
-    const facts = projection.workflowFacts.filter((fact) => fact.runId === workflow.runId);
-    if (roots.length === 0 && facts.length === 0) continue;
+    if (roots.length === 0) continue;
     for (const root of roots) rendered.add(root.executionId);
     lines.push(workflowHeader(workflow, resolved.color));
-    for (const fact of facts) lines.push(truncate(workflowFactLine(fact, resolved.color), resolved.width));
     renderRoots(roots);
     lines.push("");
   }

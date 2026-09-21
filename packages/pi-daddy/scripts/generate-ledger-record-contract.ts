@@ -2,13 +2,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import {
-  buildCheckReceiptLedgerEvent,
-  buildChildLifecycleEvent,
-  buildRecord,
-  buildWorkspaceLeaseEvent,
-  buildWorkflowFactEvent,
-} from "../src/governance/ledger.ts";
+import { buildChildLifecycleEvent, buildRecord, buildWorkspaceLeaseEvent } from "../src/governance/ledger.ts";
 import type { CorrelationMetadata } from "../src/kernel/correlation.ts";
 import { REFUSAL_CODES } from "../src/kernel/refusals.ts";
 import { RECORD_FORMAT, RECORD_KINDS, recordDigest } from "../src/governance/record.ts";
@@ -115,27 +109,6 @@ export function buildLedgerV3ContractFixtures() {
       reason: "child did not start",
       correlation,
       now: new Date("2026-08-20T12:00:03.000Z"),
-    }),
-    "check-receipt.json": buildCheckReceiptLedgerEvent({
-      executionId: "exec:00000000-0000-4000-8000-000000000002",
-      parentExecutionId: null,
-      childId: "check:spec-lint:00000000-0000-4000-8000-000000000000",
-      receiptId: "a".repeat(64),
-      workspaceId: "workspace-contract",
-      checkId: "spec-lint",
-      treeSha: "b".repeat(40),
-      correlation,
-      now: new Date("2026-08-20T12:00:04.000Z"),
-    }),
-    "workflow-fact.json": buildWorkflowFactEvent({
-      factId: "fact:00000000-0000-4000-8000-000000000003",
-      source: "principal-pi-skills",
-      provenance: "controller_validated",
-      kind: "transition",
-      subject: "build-to-review",
-      state: "completed",
-      correlation,
-      now: new Date("2026-08-20T12:00:05.000Z"),
     }),
   };
 }

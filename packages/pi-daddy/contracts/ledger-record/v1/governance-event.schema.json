@@ -12,12 +12,6 @@
     },
     {
       "$ref": "#/$defs/childLifecycle"
-    },
-    {
-      "$ref": "#/$defs/checkReceipt"
-    },
-    {
-      "$ref": "#/$defs/workflowFact"
     }
   ],
   "$defs": {
@@ -191,10 +185,6 @@
         "WORKSPACE_NOT_AUTHORIZED",
         "WORKSPACE_WRITE_CONFLICT",
         "WORKSPACE_LEASE_STALE",
-        "CHECK_NOT_CONFIGURED",
-        "CHECK_CONFIGURATION_INVALID",
-        "CHECK_IDENTITY_UNAVAILABLE",
-        "CHECK_IDENTITY_MISMATCH",
         "LEDGER_DAMAGED"
       ]
     },
@@ -744,213 +734,9 @@
         }
       ]
     },
-    "checkReceipt": {
-      "type": "object",
-      "properties": {
-        "ledgerVersion": {
-          "const": 3
-        },
-        "event": {
-          "const": "check_receipt"
-        },
-        "ts": {
-          "$ref": "#/$defs/timestamp"
-        },
-        "childId": {
-          "$ref": "#/$defs/ledgerDisplayIdentifier"
-        },
-        "receiptId": {
-          "type": "string",
-          "pattern": "^[a-fA-F0-9]{64}$"
-        },
-        "workspaceId": {
-          "$ref": "#/$defs/ledgerDisplayIdentifier"
-        },
-        "checkId": {
-          "$ref": "#/$defs/ledgerDisplayIdentifier"
-        },
-        "treeSha": {
-          "type": "string",
-          "minLength": 1
-        },
-        "correlation": {
-          "$ref": "#/$defs/correlation"
-        },
-        "executionId": {
-          "$ref": "#/$defs/executionId"
-        },
-        "parentExecutionId": {
-          "oneOf": [
-            {
-              "$ref": "#/$defs/executionId"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      },
-      "required": [
-        "ledgerVersion",
-        "event",
-        "ts",
-        "executionId",
-        "parentExecutionId",
-        "childId",
-        "receiptId",
-        "workspaceId",
-        "checkId",
-        "treeSha"
-      ],
-      "additionalProperties": false
-    },
     "executionId": {
       "type": "string",
       "pattern": "^exec:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
-    },
-    "workflowFact": {
-      "type": "object",
-      "properties": {
-        "ledgerVersion": {
-          "const": 3
-        },
-        "event": {
-          "const": "workflow_fact"
-        },
-        "ts": {
-          "$ref": "#/$defs/timestamp"
-        },
-        "factId": {
-          "type": "string",
-          "pattern": "^fact:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
-        },
-        "source": {
-          "type": "string",
-          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"
-        },
-        "provenance": {
-          "enum": [
-            "planned",
-            "observed",
-            "controller_validated"
-          ]
-        },
-        "kind": {
-          "enum": [
-            "workflow_phase",
-            "inline_skill",
-            "transition"
-          ]
-        },
-        "subject": {
-          "type": "string",
-          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"
-        },
-        "state": {
-          "enum": [
-            "pending",
-            "observed",
-            "started",
-            "completed",
-            "blocked"
-          ]
-        },
-        "correlation": {
-          "allOf": [
-            {
-              "$ref": "#/$defs/correlation"
-            },
-            {
-              "type": "object",
-              "properties": {
-                "run_id": {
-                  "type": "string",
-                  "minLength": 1
-                }
-              },
-              "required": [
-                "run_id"
-              ]
-            }
-          ]
-        }
-      },
-      "required": [
-        "ledgerVersion",
-        "event",
-        "ts",
-        "factId",
-        "source",
-        "provenance",
-        "kind",
-        "subject",
-        "state",
-        "correlation"
-      ],
-      "additionalProperties": false,
-      "allOf": [
-        {
-          "if": {
-            "properties": {
-              "provenance": {
-                "const": "planned"
-              }
-            },
-            "required": [
-              "provenance"
-            ]
-          },
-          "then": {
-            "properties": {
-              "state": {
-                "const": "pending"
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "provenance": {
-                "const": "observed"
-              }
-            },
-            "required": [
-              "provenance"
-            ]
-          },
-          "then": {
-            "properties": {
-              "state": {
-                "const": "observed"
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "provenance": {
-                "const": "controller_validated"
-              }
-            },
-            "required": [
-              "provenance"
-            ]
-          },
-          "then": {
-            "properties": {
-              "state": {
-                "enum": [
-                  "started",
-                  "completed",
-                  "blocked"
-                ]
-              }
-            }
-          }
-        }
-      ]
     }
   }
 }

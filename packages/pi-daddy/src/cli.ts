@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * `pi-daddy` — scaffolding, read-only work inspection and the installed product guide.
+ * `pi-daddy` — scaffolding and ledger maintenance.
  *
  * Thin on purpose: argv in, `discoverSkillPackages` + `planInit` + `applyInit`, report out. Every decision
  * lives in `./init.ts`, `./grant-env.ts` and `./skill-packages.ts` as functions that touch no argv and print
@@ -33,11 +33,7 @@ import {
   type RefusedSkill,
   type SkillPackage,
 } from "./kernel/skill-packages.ts";
-import { declareWork, loadDeclaredWork } from "./products/work-command.ts";
-import { listWorkSetups, workPresentation } from "./products/work-setup.ts";
-import { panelText } from "./products/daily-panel.ts";
 import { adoptLegacyEnvironment, legacyEnvironmentWarning } from "./kernel/env-names.ts";
-import { declaredWorkPath } from "./kernel/project-paths.ts";
 import { PI_PROJECT_DIR, PROJECT_FILES, PROJECT_STATE_DIRNAME } from "./kernel/project-paths.ts";
 import { repairLedger } from "./governance/record.ts";
 import { importLegacyLedger } from "./governance/ledger.ts";
@@ -50,15 +46,8 @@ const USAGE = `pi-daddy — capability governance for pi sub-agents
 Usage:
   pi-daddy init [--force] [--dir <path>]   prepare ${SETTINGS_REL} from enabled installed
                                            packages that declare skills (package.json "pi": {"skills": …})
-  pi-daddy work add --id <id> --outcome <text> [--dir <path>]
-                                           declare one current obligation for ordinary delegation
-  pi-daddy work list | work show [--dir <path>]
-                                           inspect saved setups or selected outcome (no model calls)
   pi-daddy ledger repair <path> [--yes]   show the damaged tail of a ledger; --yes truncates it (ADR-0076)
   pi-daddy ledger import <source> <target> copy a pre-format ledger into the record format; the source is untouched
-  In Pi: /grants work                     guided multi-task/model/effort/dependency setup and run
-         /grants learning                 retained review, trust, adoption and later outcomes
-  pi-daddy guide | current               installed product guide / current requirement register
   pi-daddy --help | --version
 
 init references skills already enabled in Pi at their installed or local paths. Legacy unregistered npm
@@ -70,25 +59,13 @@ stays unspawnable. Capabilities that can change your machine
             It never rewrites ${SETTINGS_REL} — delete that file if you want it regenerated.`;
 
 export interface ParsedArgs {
-  command:
-    | "init"
-    | "work-add"
-    | "work-list"
-    | "work-show"
-    | "ledger-repair"
-    | "ledger-import"
-    | "guide"
-    | "current"
-    | "help"
-    | "version";
+  command: "init" | "ledger-repair" | "ledger-import" | "help" | "version";
   importTarget?: string;
   /** `ledger repair <path>`: the ledger file; `yes` applies, otherwise preview only. */
   ledgerPath?: string;
   yes?: boolean;
   dir?: string;
   force: boolean;
-  id?: string;
-  outcome?: string;
   /** Non-empty means refuse: argv said something this program does not understand. */
   errors: string[];
 }
@@ -107,8 +84,6 @@ export function parseArgs(argv: string[]): ParsedArgs {
   if (args.includes("--version") || args.includes("-v")) return { command: "version", force: false, errors: [] };
 
   const [command, ...tail] = args;
-  if (command === "guide" || command === "current")
-    return { command, force: false, errors: tail.length ? [`${command} takes no arguments`] : [] };
   if (command === "ledger") {
     // ADR-0076 PR 3d: `ledger repair <path> [--yes]` previews, --yes truncates; `ledger import <source> <target>`.
     const [verb, target, ...flags] = tail;
@@ -128,72 +103,25 @@ export function parseArgs(argv: string[]): ParsedArgs {
     if (unknown.length) return { command: "help", force: false, errors: [`unknown option "${unknown[0]}"`] };
     return { command: "ledger-repair", force: false, errors: [], ledgerPath: target, yes: flags.includes("--yes") };
   }
-  if (command !== "init" && command !== "work")
-    return { command: "help", force: false, errors: [`unknown command "${command}"`] };
-  const work = command === "work";
-  const workVerb = tail[0];
-  const rest = work ? tail.slice(1) : tail;
-  if (work && !["add", "list", "show"].includes(workVerb))
-    return {
-      command: "work-add",
-      force: false,
-      errors: ["work needs add, list or show; /grants work opens guided setup in Pi"],
-    };
-
+  if (command !== "init") return { command: "help", force: false, errors: [`unknown command "${command}"`] };
   const errors: string[] = [];
-  let dir: string | undefined;
   let force = false;
-  let id: string | undefined, outcome: string | undefined;
-  for (let i = 0; i < rest.length; i += 1) {
-    const arg = rest[i];
-    if (arg === "--force" && !work) {
+  let dir: string | undefined;
+  for (let i = 0; i < tail.length; i += 1) {
+    const arg = tail[i];
+    if (arg === "--force") {
       force = true;
-    } else if (arg === "--id" && work && workVerb === "add") {
-      const value = rest[i + 1];
-      if (value === undefined || value.startsWith("-")) errors.push("--id needs a value");
-      else {
-        id = value;
-        i += 1;
-      }
-    } else if (arg === "--outcome" && work && workVerb === "add") {
-      const value = rest[i + 1];
-      if (value === undefined || value.startsWith("-")) errors.push("--outcome needs text");
-      else {
-        outcome = value;
-        i += 1;
-      }
     } else if (arg === "--dir") {
-      const value = rest[i + 1];
-      // A flag is not a path. Without this, `--dir --force` consumed the flag as the directory AND left
-      // force on, then reported "nothing to scaffold" and exited 0 — the outcome this CLI's own comments
-      // call the worst available failure for a scaffolding command.
+      // A flag is never a path: `init --dir --force` used to scaffold into a directory named `--force`.
+      const value = tail[i + 1];
       if (value === undefined || value.startsWith("-")) errors.push("--dir needs a path");
       else {
         dir = value;
         i += 1;
       }
     } else {
-      // Was `rest.filter((a, i) => … && i !== dirIndex + 1)`, and with `--dir` absent `dirIndex` is -1, so
-      // the exemption became `i !== 0` and the FIRST argument was never checked. `init --Force` therefore
-      // parsed as a valid no-op run: it kept every file and exited 0, which is indistinguishable from a
-      // deliberate second run. Found by a reviewer, not by a test, because this file had none.
       errors.push(`unknown option ${arg}`);
     }
-  }
-
-  if (work && workVerb !== "add")
-    return { command: workVerb === "list" ? "work-list" : "work-show", force: false, errors, ...(dir ? { dir } : {}) };
-  if (work) {
-    if (!id && !errors.some((error) => error.startsWith("--id"))) errors.push("--id needs a value");
-    if (!outcome && !errors.some((error) => error.startsWith("--outcome"))) errors.push("--outcome needs text");
-    return {
-      command: "work-add",
-      force: false,
-      errors,
-      ...(id ? { id } : {}),
-      ...(outcome ? { outcome } : {}),
-      ...(dir ? { dir } : {}),
-    };
   }
   return { command: "init", dir, force, errors };
 }
@@ -379,15 +307,6 @@ export async function main(argv: string[]): Promise<number> {
     console.log(USAGE);
     return 0;
   }
-  if (parsed.command === "guide" || parsed.command === "current") {
-    console.log(
-      await readFile(
-        new URL(parsed.command === "guide" ? "../PRODUCT-GUIDE.md" : "../REQUIREMENTS.md", import.meta.url),
-        "utf8",
-      ),
-    );
-    return 0;
-  }
   if (parsed.command === "ledger-import") {
     const source = resolvePath(process.cwd(), parsed.ledgerPath!),
       target = resolvePath(process.cwd(), parsed.importTarget!);
@@ -446,47 +365,6 @@ export async function main(argv: string[]): Promise<number> {
     console.log(`pi-daddy: dropped ${result.dropped.length} line(s); ${result.keptLines} records remain`);
     return 0;
   }
-  if (parsed.command === "work-list" || parsed.command === "work-show") {
-    const cwd = resolvePath(parsed.dir ?? process.cwd());
-    if (parsed.command === "work-list") {
-      const setups = await listWorkSetups(cwd);
-      console.log(
-        setups
-          .map(
-            (s, i) =>
-              `${i + 1}. ${panelText(s.setup.outcome)} — ${s.setup.tasks.length} tasks; up to ${s.setup.maxParallel} parallel`,
-          )
-          .join("\n") || "No saved multi-task setups. In Pi: /grants work",
-      );
-    } else {
-      const state = await loadDeclaredWork(declaredWorkPath(cwd)),
-        view = state ? await workPresentation(state) : null;
-      console.log(
-        view
-          ? [panelText(view.outcome), ...view.obligations.map((o) => `- ${panelText(o.outcome)}`)].join("\n")
-          : state
-            ? "Selected legacy work; outcome text unavailable"
-            : "No work selected. In Pi: /grants work",
-      );
-    }
-    return 0;
-  }
-  if (parsed.command === "work-add") {
-    const declared = await declareWork({
-      cwd: resolvePath(parsed.dir ?? process.cwd()),
-      id: parsed.id!,
-      outcome: parsed.outcome!,
-    });
-    console.log(
-      `pi-daddy work: declared ${declared.id}\n` +
-        `  ledger    ${declared.ledgerPath}\n` +
-        `  selection ${declared.statePath}\n\n` +
-        `Ordinary governed delegations from this project will record attempts after the Pi extension loads it.\n` +
-        `Run /reload in an existing Pi session, then /grants dashboard. Runtime success is not acceptance.`,
-    );
-    return 0;
-  }
-
   // ABSOLUTE, always. `readSkill` compares a resolved entry against the package directory, and a relative
   // `--dir` made that comparison false for every entry: every declared skill of every package was reported
   // "declared but unreadable", nothing was copied, a degenerate grants.env was written anyway, and the exit

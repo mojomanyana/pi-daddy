@@ -1,4 +1,3 @@
-import { withOrdinaryChild } from "./ordinary-runtime.ts";
 import type { Delegation } from "../src/kernel/delegate.ts";
 import {
   beginExecutionRetention,
@@ -15,7 +14,6 @@ import { HerdrWriterCloseError, runHerdrPane } from "../src/executors/run-herdr.
 import { GovernanceRefusal, refusal, type StructuredRefusal } from "../src/kernel/refusals.ts";
 import { ENV_HERDR_KEEP_PANE, type GrantsSession } from "./session.ts";
 import { releaseDelegationWorkspace, type PreparedWorkspace } from "./workspace-runtime.ts";
-import { beginDeclaredWorkAttempt } from "./work-runtime.ts";
 import { ActivityTimelineRecorder, ENV_ACTIVITY_PARENT_TASK } from "../src/products/activity-timeline.ts";
 export interface DelegationOutcome {
   ok: boolean;
@@ -87,10 +85,7 @@ export interface ChildProgressUpdate {
  * has already run, so failing closed there prevents nothing and used to discard completed work while
  * blaming "ledger" (R-99). The failure is reported alongside the outcome instead of replacing it.
  */
-export function executePlannedChild(input: Parameters<typeof executeChildBody>[0]): Promise<DelegationOutcome> {
-  return withOrdinaryChild(input, (signal) => executeChildBody({ ...input, signal }));
-}
-async function executeChildBody(input: {
+export async function executePlannedChild(input: {
   session: GrantsSession;
   plan: Delegation;
   agent?: string;
@@ -98,7 +93,6 @@ async function executeChildBody(input: {
   executionId: string;
   parentExecutionId: string | null;
   toolCallId?: string;
-  declaredWork?: GrantsSession["declaredWork"];
   cwd: string;
   preparedWorkspace?: PreparedWorkspace;
   signal?: AbortSignal;
@@ -162,19 +156,6 @@ async function executeChildBody(input: {
       throw error;
     }
   }
-  const workAttempt = await beginDeclaredWorkAttempt({
-    session,
-    plan,
-    childId,
-    executionId,
-    parentExecutionId,
-    toolCallId: input.toolCallId,
-    declaredWork: input.declaredWork,
-    preparedWorkspace,
-    configuredTimeoutMs,
-    startedAt,
-  });
-
   // The recorded deadline and executor timer are one fact. Waiting for the strict starting append consumes
   // the budget; handing the child a fresh full timeout would leave it live after the dashboard truthfully
   // marked that deadline incomplete.
@@ -215,8 +196,7 @@ async function executeChildBody(input: {
   if (sessionFlag >= 0) retention.observeSession({ source: "pi-session-file", value: plan.args[sessionFlag + 1] });
   let releaseReason = "failed";
   let retainWriterLease = false;
-  let terminalAttempted = false,
-    workTerminalAttempted = false;
+  let terminalAttempted = false;
   const teardownFailures: string[] = [];
   let runtimeRecord: Promise<void> | undefined;
   const recordRunning = (executor: "process" | "herdr", pane?: { id: string; agentName: string }): void => {
@@ -322,13 +302,6 @@ async function executeChildBody(input: {
       } catch {
         /* observation does not control execution */
       }
-    if (workAttempt)
-      try {
-        workTerminalAttempted = true;
-        await workAttempt.finish(childFailed ? "failed" : "completed");
-      } catch (error) {
-        teardownFailures.push(`declared work terminal record failed: ${String(error)}`);
-      }
     if (ledgerPath) {
       terminalAttempted = true;
       await appendAfterRuntimeRecord(runtimeRecord, () =>
@@ -433,13 +406,6 @@ async function executeChildBody(input: {
       truncated: false,
       failed: true,
     });
-    if (workAttempt && !workTerminalAttempted)
-      try {
-        workTerminalAttempted = true;
-        await workAttempt.finish("failed");
-      } catch (cause) {
-        teardownFailures.push(`declared work terminal record failed: ${String(cause)}`);
-      }
     retainWriterLease = Boolean(writerLease && isHerdrWriterCloseFailure(error));
     if (ledgerPath && !terminalAttempted) {
       // Best-effort: this records the failure, so it must not REPLACE the failure. A strict append that

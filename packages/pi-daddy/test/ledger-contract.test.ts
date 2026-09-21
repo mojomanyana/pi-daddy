@@ -17,20 +17,13 @@ import {
   WORKSPACE_ACCESSES,
   WORKSPACE_LEASE_OUTCOMES,
   WORKSPACE_RECOVERY_VALUES,
-  WORKFLOW_FACT_KINDS,
-  WORKFLOW_FACT_PROVENANCE,
-  WORKFLOW_FACT_STATES,
-  buildCheckReceiptLedgerEvent,
   buildChildLifecycleEvent,
   buildRecord,
   buildWorkspaceLeaseEvent,
-  buildWorkflowFactEvent,
   type CapabilityDecisionEvent,
-  type CheckReceiptLedgerEvent,
   type ChildLifecycleEvent,
   type GrantRecord,
   type WorkspaceLeaseEvent,
-  type WorkflowFactEvent,
 } from "../src/governance/ledger.ts";
 import type { CorrelationMetadata } from "../src/kernel/correlation.ts";
 import type { DefinitionDigest } from "../src/kernel/definitions.ts";
@@ -48,8 +41,6 @@ after(cleanupTempDirs);
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const contractRoot = join(packageRoot, "contracts", "ledger-record", "v1");
 const schemaPath = join(contractRoot, "governance-event.schema.json");
-// Ledger v2 is archived (ADR-0076 PR 3d): it is no longer shipped or read, only kept as a historical record.
-const v2Archive = join(packageRoot, "..", "..", "docs", "archive", "contracts", "ledger", "v2");
 const executionId = "exec:00000000-0000-4000-8000-000000000001";
 
 type SchemaNode = {
@@ -139,31 +130,6 @@ const LIFECYCLE_FIELDS = [
   "reason",
   "correlation",
 ] as const;
-const RECEIPT_FIELDS = [
-  "ledgerVersion",
-  "event",
-  "ts",
-  "executionId",
-  "parentExecutionId",
-  "childId",
-  "receiptId",
-  "workspaceId",
-  "checkId",
-  "treeSha",
-  "correlation",
-] as const;
-const WORKFLOW_FACT_FIELDS = [
-  "ledgerVersion",
-  "event",
-  "ts",
-  "factId",
-  "source",
-  "provenance",
-  "kind",
-  "subject",
-  "state",
-  "correlation",
-] as const;
 const CAPABILITY_REQUIRED = [
   "ledgerVersion",
   "event",
@@ -205,19 +171,6 @@ const LIFECYCLE_REQUIRED = [
   "state",
   "executor",
 ] as const;
-const RECEIPT_REQUIRED = [
-  "ledgerVersion",
-  "event",
-  "ts",
-  "executionId",
-  "parentExecutionId",
-  "childId",
-  "receiptId",
-  "workspaceId",
-  "checkId",
-  "treeSha",
-] as const;
-const WORKFLOW_FACT_REQUIRED = [...WORKFLOW_FACT_FIELDS] as const;
 const CORRELATION_FIELDS = [
   "schema_version",
   "run_id",
@@ -249,13 +202,9 @@ const APPROVAL_USE_FIELDS = ["max", "remaining"] as const;
 type _CapabilityFields = Assert<Equal<keyof GrantRecord, (typeof CAPABILITY_FIELDS)[number]>>;
 type _LeaseFields = Assert<Equal<keyof WorkspaceLeaseEvent, (typeof LEASE_FIELDS)[number]>>;
 type _LifecycleFields = Assert<Equal<keyof ChildLifecycleEvent, (typeof LIFECYCLE_FIELDS)[number]>>;
-type _ReceiptFields = Assert<Equal<keyof CheckReceiptLedgerEvent, (typeof RECEIPT_FIELDS)[number]>>;
 type _CapabilityRequired = Assert<Equal<RequiredKeys<CapabilityDecisionEvent>, (typeof CAPABILITY_REQUIRED)[number]>>;
 type _LeaseRequired = Assert<Equal<RequiredKeys<WorkspaceLeaseEvent>, (typeof LEASE_REQUIRED)[number]>>;
 type _LifecycleRequired = Assert<Equal<RequiredKeys<ChildLifecycleEvent>, (typeof LIFECYCLE_REQUIRED)[number]>>;
-type _ReceiptRequired = Assert<Equal<RequiredKeys<CheckReceiptLedgerEvent>, (typeof RECEIPT_REQUIRED)[number]>>;
-type _WorkflowFactFields = Assert<Equal<keyof WorkflowFactEvent, (typeof WORKFLOW_FACT_FIELDS)[number]>>;
-type _WorkflowFactRequired = Assert<Equal<RequiredKeys<WorkflowFactEvent>, (typeof WORKFLOW_FACT_REQUIRED)[number]>>;
 type _CorrelationFields = Assert<Equal<keyof CorrelationMetadata, (typeof CORRELATION_FIELDS)[number]>>;
 type _RefusalFields = Assert<Equal<keyof StructuredRefusal, (typeof REFUSAL_FIELDS)[number]>>;
 type _DefinitionFields = Assert<Equal<keyof DefinitionDigest, (typeof DEFINITION_FIELDS)[number]>>;
@@ -281,9 +230,7 @@ test("the published ledger v3 fixtures come from the production builders", async
   const generated = buildLedgerV3ContractFixtures();
   assert.deepEqual(Object.keys(generated).sort(), [
     "capability-decision.json",
-    "check-receipt.json",
     "child-lifecycle.json",
-    "workflow-fact.json",
     "workspace-lease.json",
   ]);
   for (const [name, event] of Object.entries(generated)) {
@@ -345,9 +292,6 @@ test("the closed v3 schema accepts fixtures and rejects v2, extra fields and mis
     false,
     "entire-run carries no selectors",
   );
-  const workflow = buildLedgerV3ContractFixtures()["workflow-fact.json"];
-  assert.equal(validator.Check({ ...workflow, provenance: "planned", state: "completed" }), false);
-  assert.equal(validator.Check({ ...workflow, correlation: { ...workflow.correlation, run_id: "" } }), false);
   const lifecycle = buildLedgerV3ContractFixtures()["child-lifecycle.json"];
   const { deadlineAt: _deadline, ...startingWithoutDeadline } = { ...lifecycle, state: "starting" };
   assert.equal(validator.Check(startingWithoutDeadline), false);
@@ -376,8 +320,6 @@ test("the v3 schema and runtime share one timestamp profile", async () => {
     { ...fixtures["workspace-lease.json"], ts: leapSecond },
     { ...fixtures["child-lifecycle.json"], ts: leapSecond },
     { ...fixtures["child-lifecycle.json"], deadlineAt: leapSecond },
-    { ...fixtures["check-receipt.json"], ts: leapSecond },
-    { ...fixtures["workflow-fact.json"], ts: leapSecond },
   ];
   for (const event of cases) {
     assert.equal(validator.Check(event), false, `${event.event} schema accepted the unsupported leap second`);
@@ -401,8 +343,6 @@ test("the v3 schema exhaustively matches production fields and finite vocabulari
     capability_decision: "capabilityDecision",
     workspace_lease: "workspaceLease",
     child_lifecycle: "childLifecycle",
-    check_receipt: "checkReceipt",
-    workflow_fact: "workflowFact",
   } as const satisfies Record<(typeof LEDGER_EVENT_KINDS)[number], string>;
   assert.deepEqual(
     schema.oneOf?.map((entry) => entry.$ref).sort(),
@@ -419,20 +359,13 @@ test("the v3 schema exhaustively matches production fields and finite vocabulari
   assert.deepEqual(sorted(values("childLifecycle", "state")), sorted(CHILD_LIFECYCLE_STATES));
   assert.deepEqual(sorted(values("childLifecycle", "signal")), sorted([...CHILD_PROCESS_SIGNALS, null]));
   assert.deepEqual(sorted(finite(defs.refusalCode)), sorted(REFUSAL_CODES));
-  assert.deepEqual(sorted(values("workflowFact", "provenance")), sorted(WORKFLOW_FACT_PROVENANCE));
-  assert.deepEqual(sorted(values("workflowFact", "kind")), sorted(WORKFLOW_FACT_KINDS));
-  assert.deepEqual(sorted(values("workflowFact", "state")), sorted(WORKFLOW_FACT_STATES));
 
   assert.deepEqual(fields("capabilityDecision"), [...CAPABILITY_FIELDS].sort());
   assert.deepEqual(fields("workspaceLease"), [...LEASE_FIELDS].sort());
   assert.deepEqual(fields("childLifecycle"), [...LIFECYCLE_FIELDS].sort());
-  assert.deepEqual(fields("checkReceipt"), [...RECEIPT_FIELDS].sort());
-  assert.deepEqual(fields("workflowFact"), [...WORKFLOW_FACT_FIELDS].sort());
   assert.deepEqual(required("capabilityDecision"), [...CAPABILITY_REQUIRED].sort());
   assert.deepEqual(required("workspaceLease"), [...LEASE_REQUIRED].sort());
   assert.deepEqual(required("childLifecycle"), [...LIFECYCLE_REQUIRED].sort());
-  assert.deepEqual(required("checkReceipt"), [...RECEIPT_REQUIRED].sort());
-  assert.deepEqual(required("workflowFact"), [...WORKFLOW_FACT_REQUIRED].sort());
   assert.deepEqual(fields("correlation"), [...CORRELATION_FIELDS].sort());
   assert.deepEqual(fields("refusal"), [...REFUSAL_FIELDS].sort());
   assert.deepEqual(fields("definitionDigest"), [...DEFINITION_FIELDS].sort());
@@ -477,32 +410,11 @@ test("every v3 builder emits explicit execution identity, including a running He
     herdrAgentName: "review-d0-1",
     now,
   });
-  const receipt = buildCheckReceiptLedgerEvent({
-    executionId,
-    parentExecutionId: null,
-    childId: "check:x",
-    receiptId: "2".repeat(64),
-    workspaceId: "w",
-    checkId: "x",
-    treeSha: "tree",
-    now,
-  });
-  const workflow = buildWorkflowFactEvent({
-    factId: "fact:00000000-0000-4000-8000-000000000003",
-    source: "principal-pi-skills",
-    provenance: "planned",
-    kind: "workflow_phase",
-    subject: "review",
-    state: "pending",
-    correlation: { run_id: "run-1" },
-    now,
-  });
-  for (const event of [decision, lease, lifecycle, receipt]) {
+  for (const event of [decision, lease, lifecycle]) {
     assert.equal(event.ledgerVersion, 3);
     assert.equal(event.executionId, executionId);
     assert.ok(Object.hasOwn(event, "parentExecutionId"));
   }
-  assert.equal(workflow.provenance, "planned");
 });
 
 test("regenerating the record contract restores the refusal enum and writes the envelope schema", async () => {
@@ -519,15 +431,4 @@ test("regenerating the record contract restores the refusal enum and writes the 
   // The envelope schema is generated from the runtime's constants; the published file must equal the builder.
   assert.deepEqual(await json(join(contractRoot, "record.schema.json")), buildRecordEnvelopeSchema());
   assert.deepEqual(buildRecordEnvelopeSchema().properties.kind.enum, [...RECORD_KINDS]);
-});
-
-test("v2 is archived, not shipped: the package has no ledger/v2 and the archive still validates itself", async () => {
-  assert.equal(existsSync(join(packageRoot, "contracts", "ledger", "v2")), false, "ADR-0076 PR 3d retired it");
-  const schema = await json(join(v2Archive, "ledger-event.schema.json"));
-  const validator = Compile(schema);
-  for (const name of ["capability-decision", "workspace-lease", "child-lifecycle", "check-receipt"]) {
-    const fixture = await json(join(v2Archive, "fixtures", `${name}.json`));
-    assert.equal(fixture.ledgerVersion, 2);
-    assert.equal(validator.Check(fixture), true, name);
-  }
 });

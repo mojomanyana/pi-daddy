@@ -47,16 +47,10 @@ import {
   offerDashboardHandshake,
   openDashboardCommand,
 } from "../src/products/dashboard-handshake.ts";
-import { associateOrdinaryHost, ordinaryChildrenFor } from "../src/products/ordinary-children.ts";
-import { loadDeclaredWork } from "../src/products/work-command.ts";
-import { createDailyDashboardSession } from "./daily-dashboard-session.ts";
-import { createWorkSession } from "./work-session.ts";
-import { createLearningSession } from "./learning-session.ts";
-import { replacePublishedDailyWork, type PublishedDailyWork } from "./daily-work-session.ts";
 import { defaultActivityTimelinePath } from "../src/products/activity-timeline.ts";
 import { registerActivityTimeline } from "./activity-timeline.ts";
 import { legacyEnvironmentWarning } from "../src/kernel/env-names.ts";
-import { agentDir, declaredWorkPath } from "../src/kernel/project-paths.ts";
+import { agentDir } from "../src/kernel/project-paths.ts";
 import { importLegacyLedger } from "../src/governance/ledger.ts";
 import { legacyProjectLedgerPath, projectLedgerPath } from "../src/kernel/project-paths.ts";
 export default function (pi: ExtensionAPI) {
@@ -70,28 +64,12 @@ export default function (pi: ExtensionAPI) {
   })();
   const observerExtensionPath = fileURLToPath(new URL("./activity-timeline.ts", import.meta.url));
   const session = createGrantsSession(extensionPath, undefined, observerExtensionPath);
-  associateOrdinaryHost(pi, session);
   registerActivityTimeline(pi, session);
-  const dailyHost = createDailyDashboardSession({
-    ordinary: () => ordinaryChildrenFor(pi),
-    declared: () => session.declaredWork,
-    rebind: (state) => {
-      session.declaredWork = state;
-    },
-    cwd: () => session.cwd,
-    env: process.env,
-    author: "local-operator",
-  });
   const dashboardPluginRoot = fileURLToPath(new URL("../herdr-plugin/", import.meta.url));
   const dashboardPaths = defaultDashboardPaths(agentDir());
   // Definitions are registered only after owner-bound session_start. Until then there is no delegation
   // dispatch surface; afterwards this callback refreshes their model-facing spawnable-definition text.
   const delegation = { refreshSpawnable: () => {} };
-  const publishedDailyWork: PublishedDailyWork = {};
-  const workSession = createWorkSession(session, dailyHost, () =>
-    replacePublishedDailyWork(process.env, publishedDailyWork, session.declaredWork),
-  );
-  const learningSession = createLearningSession(dailyHost);
   pi.on("session_start", async (_event, ctx) => {
     if (session.adoptedLegacyEnv.length > 0)
       ctx.ui.notify(legacyEnvironmentWarning(session.adoptedLegacyEnv), "warning");
@@ -128,18 +106,6 @@ export default function (pi: ExtensionAPI) {
         } catch (error) {
           ctx.ui.notify(`grants: legacy ledger import failed: ${String(error)}`, "error");
         }
-      }
-      try {
-        replacePublishedDailyWork(process.env, publishedDailyWork, undefined);
-        session.declaredWork = (await loadDeclaredWork(declaredWorkPath(ctx.cwd))) ?? undefined;
-        replacePublishedDailyWork(process.env, publishedDailyWork, session.declaredWork);
-      } catch (error) {
-        session.declaredWork = undefined;
-        ctx.ui.notify(
-          `grants: declared work is invalid (${error instanceof Error ? error.message : String(error)}); ` +
-            `delegations remain unbound and no previous selection was substituted.`,
-          "error",
-        );
       }
       // The one case the stored-grant lookup can get wrong (ADR-0030). The factory reads the store keyed by
       // `process.cwd()` because it runs before any hook and therefore before `ctx` exists — and S-5 forces
@@ -298,11 +264,6 @@ export default function (pi: ExtensionAPI) {
    * `exit` remains the backstop. SIGKILL still orphans panes, exactly as R-62 records, and no signal handler is
    * installed here for the reason R-62 gives: it would turn pi's "interrupt this turn" into "exit pi".
    */
-  pi.on("session_shutdown", async () => {
-    await workSession.close();
-    await dailyHost.close().catch(() => undefined);
-  });
-
   pi.on("agent_settled", async () => {
     try {
       if (session.executor.kind !== "herdr" || openPaneCount() === 0) return undefined;
@@ -397,52 +358,42 @@ export default function (pi: ExtensionAPI) {
     // Built per invocation and spelled out field by field, rather than passing the session whole: what a
     // read-only diagnostic may see is a decision, and `GrantsCommandContext` is where it is recorded.
     handler: (args, ctx) =>
-      /^learning(?:\s|$)/.test(args.trim())
-        ? learningSession.run(args.trim().slice(8).trim(), ctx).catch((error) => {
-            ctx.ui.notify(String(error), "error");
-          })
-        : /^work(?:\s|$)/.test(args.trim())
-          ? workSession.run(args.trim().slice(4).trim(), ctx).catch((error) => {
-              ctx.ui.notify(String(error), "error");
-            })
-          : grantsCommand.handler(args, {
-              ...ctx,
-              grants: {
-                cwd: session.cwd,
-                governed: session.governed,
-                ownGrant: session.ownGrant,
-                executor: session.executor,
-                observed: session.observed,
-                depth: session.depth,
-                maxDepth: session.maxDepth,
-                ledgerPath: session.ledgerPath,
-                catalog: session.catalog,
-                definitions: session.definitions,
-                sessionApprovals: session.sessionApprovals,
-                inheritedApprovals: session.inheritedApprovals,
-                snapshotOf: (subject: string) => snapshotOf(session, subject),
-                // The REAL delegation path, minus the one thing a diagnostic must never do. `ctx: null` is what
-                // says so: stored approvals count exactly as they would for a spawn, and no human is asked
-                // (R-38). Passing `ctx` here would let `/grants` raise a dialog, and passing `hasUI: false` would
-                // make every gated definition report "no interactive user" instead of what actually blocks it.
-                runInit: () =>
-                  runInit(session, ctx, async () => {
-                    await loadProjectDefinitions(session, ctx.cwd);
-                    delegation.refreshSpawnable();
-                  }),
-                runHost: (target: string) => dailyHost.run(target),
-                openDashboard: () =>
-                  openDashboardCommand({
-                    env: process.env,
-                    pid: process.pid,
-                    cwd: ctx.cwd,
-                    ledgerPath: session.ledgerPath ?? defaultActivityTimelinePath(ctx.cwd),
-                    pluginRoot: dashboardPluginRoot,
-                    paneStatePath: dashboardPaths.paneStatePath,
-                  }),
-                previewDelegation: (name: string) =>
-                  planWithApprovals(session, { task: "(preview)", agent: name }, {}, null),
-              },
+      grantsCommand.handler(args, {
+        ...ctx,
+        grants: {
+          cwd: session.cwd,
+          governed: session.governed,
+          ownGrant: session.ownGrant,
+          executor: session.executor,
+          observed: session.observed,
+          depth: session.depth,
+          maxDepth: session.maxDepth,
+          ledgerPath: session.ledgerPath,
+          catalog: session.catalog,
+          definitions: session.definitions,
+          sessionApprovals: session.sessionApprovals,
+          inheritedApprovals: session.inheritedApprovals,
+          snapshotOf: (subject: string) => snapshotOf(session, subject),
+          // The REAL delegation path, minus the one thing a diagnostic must never do. `ctx: null` is what
+          // says so: stored approvals count exactly as they would for a spawn, and no human is asked
+          // (R-38). Passing `ctx` here would let `/grants` raise a dialog, and passing `hasUI: false` would
+          // make every gated definition report "no interactive user" instead of what actually blocks it.
+          runInit: () =>
+            runInit(session, ctx, async () => {
+              await loadProjectDefinitions(session, ctx.cwd);
+              delegation.refreshSpawnable();
             }),
+          openDashboard: () =>
+            openDashboardCommand({
+              env: process.env,
+              pid: process.pid,
+              cwd: ctx.cwd,
+              ledgerPath: session.ledgerPath ?? defaultActivityTimelinePath(ctx.cwd),
+              pluginRoot: dashboardPluginRoot,
+              paneStatePath: dashboardPaths.paneStatePath,
+            }),
+          previewDelegation: (name: string) => planWithApprovals(session, { task: "(preview)", agent: name }, {}, null),
+        },
+      }),
   });
 }

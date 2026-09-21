@@ -17,7 +17,6 @@ import grantsExtension from "../extensions/grants.ts";
 import { newExecutionId } from "../src/kernel/execution-id.ts";
 import { runChild } from "../src/kernel/run-child.ts";
 import { runHerdrPane } from "../src/executors/run-herdr.ts";
-import { runNamedCheck } from "../src/governance/check-runner.ts";
 const identity = {
   executionId: "execution:a",
   parentExecutionId: "execution:parent",
@@ -182,64 +181,6 @@ test("raw structured bytes survive interruption and throwing observers cannot ca
   });
   assert.equal(healthy.code, 0);
   assert.equal(healthy.text, "ok");
-});
-
-test("named check producer retains its complete actual receipt with a synthetic Git identity fixture", async () => {
-  // No Git commands/commits: this fixture fixes only the candidate identity transport. Real lease,
-  // constrained executable, receipt builder and retention writer are exercised; not Git assurance.
-  const dir = await tempDir("p02-check-");
-  const bin = join(dir, "bin");
-  await mkdir(bin);
-  await writeFile(
-    join(bin, "git"),
-    `#!${process.execPath}\nconst a=process.argv.slice(2);if(a.includes('rev-parse'))console.log('${"a".repeat(40)}');else if(a.includes('write-tree'))console.log('${"b".repeat(40)}');else if(!a.includes('read-tree')&&!a.includes('add'))process.exit(91);\n`,
-  );
-  await chmod(join(bin, "git"), 0o700);
-  await symlink("/usr/bin/flock", join(bin, "flock"));
-  const check = join(dir, "check");
-  await writeFile(check, `#!${process.execPath}\nprocess.stdout.write('complete check output');\n`);
-  await chmod(check, 0o700);
-  const prior = process.env.PATH;
-  process.env.PATH = bin;
-  try {
-    const input = {
-      checkId: "fixture",
-      registry: {
-        version: 1 as const,
-        checks: { fixture: { executable: check, argv: [], workspace_access: "read" as const } },
-      },
-      workspace: { workspaceId: "fixture-workspace", root: dir } as never,
-      leaseDir: join(dir, "leases"),
-      retentionDirectory: join(dir, "archive"),
-      toolCallId: "check-call",
-    };
-    const result = await runNamedCheck(input);
-    assert.equal(result.exitCode, 0);
-    assert.equal(result.output, "complete check output");
-    const path = result.retention.manifestPath!;
-    let m: ExecutionRetentionManifest | undefined;
-    for (let i = 0; i < 100; i++) {
-      try {
-        m = await manifest(path);
-      } catch {}
-      if (m?.state === "terminal") break;
-      await new Promise((r) => setTimeout(r, 10));
-    }
-    assert.equal(m?.identity.toolCallId, "check-call");
-    assert.equal(m?.outcome?.code, 0);
-    const bytes = await readFile(join(path, "..", m!.content.checkReceipt.path!));
-    assert.equal(bytes.toString(), JSON.stringify(result.receipt) + "\n");
-    assert.equal(verifyRetainedBytes(m!.content.checkReceipt, bytes), "retained");
-    assert.equal(verifyRetainedBytes(m!.content.checkReceipt), "missing");
-    assert.equal(verifyRetainedBytes(m!.content.checkReceipt, Buffer.from("different")), "mismatch");
-    const denied = join(dir, "ledger-directory");
-    await mkdir(denied);
-    await assert.rejects(runNamedCheck({ ...input, ledgerPath: denied }), /EISDIR|directory|ledger/i);
-    const archives = await readdir(join(dir, "archive"));
-    assert.equal(archives.length, 2, "failed required receipt remains a distinct observation, not success");
-  } finally {
-    prior === undefined ? delete process.env.PATH : (process.env.PATH = prior);
-  }
 });
 
 test("herdr observations reuse existing native replies and snapshots without extra control calls", async () => {

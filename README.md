@@ -1,33 +1,30 @@
 # pi-daddy
 
-**Capability governance for pi's multi-level agent system.** An orchestrator grants each sub-agent a
-deliberate subset of what it holds and withholds the rest. Sub-agents may delegate further, but only ever a
-subset of what they themselves hold — enforced by **pi's own `--tools` allowlist**, with an append-only
-ledger of every grant and refusal whenever a ledger is configured.
+**Capability governance and coordination for [pi](https://github.com/badlogic/pi-mono)'s multi-level agent system.**
+An orchestrator grants each sub-agent a deliberate subset of what it holds and withholds the rest. A sub-agent may
+delegate further, but only ever a subset of what it holds. Enforcement is pi's own `--tools` allowlist on a separate
+child process, with an append-only, hash-chained ledger of every grant and refusal.
 
-**Earlier release-preparation snapshot (2026-09-12):** `0.25.2` repairs cancellation controls when children
-start after the dashboard opens, preserving exact targets and stale-command refusal.
-The registry baseline at preparation was `0.25.1`. For current publication status, consult
-[npm](https://www.npmjs.com/package/pi-daddy) and [GitHub Releases](https://github.com/mojomanyana/pi-daddy/releases).
-`pi-daddy` is the only public package; the workspace root is private.
+This file is the product description, present tense. If code and this file disagree, fix this file. Agents start at
+`AGENTS.md`, which carries the rules, the decisions still in force, the measured facts and the roadmap.
 
-One explicit `/grants init` now persists both the project grant and `.pi/pi-daddy/grants.jsonl`; merely installing the
-package initializes nothing, and legacy stores are not silently migrated. Malformed project state now fails
-closed with a loud `GRANT_STORE_INVALID` refusal. `docs/SESSION-LOG.md` and `docs/SPEC.md` are the current
-detailed record.
+## Install and first run
 
-**Want to run it?** Start with the concise installed [product guide](packages/pi-daddy/PRODUCT-GUIDE.md)
-and [current requirement register](packages/pi-daddy/REQUIREMENTS.md): ordinary work setup, meaningful
-side panel and retained learning/adoption. The older seven-sub-agent walkthrough is archived at `docs/archive/process/RUNNING-IT.md`. **0.27.0 is a release candidate**, paired with planned skill-harness **0.16.0**:
-an outcome-first Herdr panel, ordinary bounded work setup/runs, explicit model/effort and retained learning
-with safe scoped next-order adoption/rollback. Producer runtime is Sol-approved; feature PR #52 merged
-with green CI at `b974963a7d0ba5a74fdafe331356c348a1fba565`. Release PR CI/merge, installed qualification
-and publication remain pending. Release procedure notes are archived under `docs/archive/process/`.
+```bash
+pi install npm:pi-daddy
+pi
+```
 
-## What it actually does
+In the session, `/grants` shows the tool ceiling this session holds and the definitions it can spawn. `/grants init`
+scans the enabled installed packages that declare skills, asks which withheld capabilities to grant, and writes
+`.pi/pi-daddy/settings.json`, the one reviewable file you commit. Nothing is governed until `init` has run;
+installing alone initialises nothing.
 
-A spawnable agent is an **Agent Skills `SKILL.md`** file — the open standard, listed by 48 clients on the agentskills.io showcase as of 2026-09-21. Its
-`allowed-tools` field becomes the grant; its body becomes the child's system prompt.
+## What a definition is
+
+An [Agent Skills](https://agentskills.io/specification) `SKILL.md`. Its `allowed-tools` is the ceiling; its body is
+the child's system prompt. The standard specifies `allowed-tools` as "pre-approved" and marks it experimental: it
+declares intent and blocks nothing. Passed through `--tools` it becomes structural. That is the contribution.
 
 ```yaml
 ---
@@ -38,20 +35,20 @@ allowed-tools: Read, Grep
 Review ONLY the diff you are given, for security. Report findings; never edit.
 ```
 
+## The three tools
+
 ```
-delegate_all({ children: [
-  { agent: "review-security", task: "Review the diff." },
-  { agent: "review-perf",     task: "Review the diff." },
-  { agent: "review-api",      task: "Review the diff." },
-]})
+delegate({ agent: "review-security", task: "Review the diff." })
+delegate_all({ children: [ { agent: "review-security", task: "…" }, { agent: "review-perf", task: "…" } ] })
+delegate_chain({ steps: [ { agent: "plan", task: "…" }, { agent: "build", task: "Implement: {previous}" } ] })
 ```
 
-Three children, concurrently, each a separate OS process with its own tool allowlist, its own instructions,
-and no knowledge of the others. Optionally in visible, attachable [herdr](https://herdr.dev) panes.
-
-**The standard's `allowed-tools` is specified as "pre-approved" and marked experimental — it declares intent
-and blocks nothing.** Passed through `--tools` it becomes structural. That is the contribution: *the
-standard declares intent; pi-daddy makes it enforced.*
+Each child is a separate OS process with its own tool allowlist, its own instructions and no knowledge of its
+siblings, optionally in a visible [Herdr](https://herdr.dev) pane. `delegate_all` runs children concurrently under a
+session-wide fan-out budget. `delegate_chain` runs steps in sequence; each step's task is composed from the previous
+step's output, which crosses as a fenced, labelled, nonce-delimited block capped at 32 KiB, and the whole chain is
+planned and gated as one unit before any step runs. A child may itself hold `delegate` and spawn further, with the
+same tools, one level deeper, under the same rules.
 
 ## The guarantee, and its limit
 
@@ -59,55 +56,77 @@ standard declares intent; pi-daddy makes it enforced.*
 effective = ( requested ∩ parentGrant ∩ ceiling ) \ (gated \ approved)
 ```
 
-Escalation is impossible **by construction**, not by policy. No policy engine, no LLM on the security path.
+Escalation is impossible by construction on the tool surface: no policy engine, no model on the security path. Depth,
+fan-out budget, approvals and workspace routing attenuate the same way. Every decision is recorded, and the `denied`
+set is the signal: an agent repeatedly asking for what it does not hold is the escalation tell.
 
-**What it governs:** the tool surface. A child granted `read` has no write tool and no prompt can talk it
-into one.
+What it does not do: contain an agent holding an execution primitive. A child granted `bash` can start a wholly
+ungoverned descendant. Containing that is the operating system's job, so `bash` is **gated by default** in a
+governed session and gating is closed under subsumption (gating `write` also gates `bash`). The escape is not made
+impossible; it is made loud, which is what matters when the realistic threat is a confused or prompt-injected agent.
 
-**What it does not:** an agent holding an execution primitive. A child granted `bash` can
-`env -u PI_DADDY_GRANT pi …` and obtain a wholly ungoverned descendant — measured, not theorised
-(`docs/probes/g5-bash-escape`). Containing *that* is the operating system's job and is explicitly out of
-scope. So `bash` is **gated by default** in a governed session, and gating is closed under subsumption. That
-does not make the escape impossible; it stops it happening **silently**, which is what matters when the
-realistic threat is a confused or prompt-injected agent rather than a determined one.
+## Approvals
 
-`docs/SPEC.md` lists every other known gap, because a gap nobody wrote down is the one that surprises
-somebody.
+A gated capability needs a human's answer at the root, because every child runs `--print` with no UI. The answer is
+**once**, **for this session**, or **always** (persisted for a bounded period, offered only for a named definition,
+keyed `capability@subject`). Approvals inherit down the subtree intersected with each child's grant; a `once` never
+crosses a spawn. The task text is never stored. `/grants approvals` lists what is persisted; `/grants revoke
+<capability>@<definition>` or `--all` removes it. The store lives in pi's agent directory, not in the workspace.
 
-## Where to look
+## The ledger
 
-| Path | What it is |
-| :--- | :--- |
-| **`docs/SPEC.md`** | **What the product is, precisely. No history. Start here.** |
-| `docs/GLOSSARY.md` | Every term, one line each. |
-| `docs/SESSION-LOG.md` | Current state and what's next, newest first. |
-| `docs/03-risks.md` | Live risk register. R-25 onward are current. |
-| `docs/06-decisions/` | The ADRs. Reversals are kept and marked; **0016** is the current architecture, **0008** the invariant, **0012** why `bash` is out of scope, **0039**–**0043** the Wave 1 audit decisions, and **0076** the consolidation programme. |
-| `docs/probes/` | Measurement evidence against real software. Each states what it does **not** establish. |
-| `docs/archive/` | Superseded, kept as evidence, never edited to match today. Don't start here. |
-| `packages/pi-daddy/` | The product. |
+`.pi/pi-daddy/grants.jsonl` holds every capability decision, child lifecycle and workspace lease. Each line is a
+**record envelope** `{v, seq, prev, at, kind, id, body, digest}`: `prev` is the hash of the previous line, `digest` the
+hash of the record. A damaged file is read up to the damage; the writer then refuses with `LEDGER_DAMAGED` until
+`pi-daddy ledger repair <path> --yes` drops the damaged tail. A ledger written before the envelope existed is imported
+once at session start (`pi-daddy ledger import <source> <target>` does it by hand) and never repaired. `/grants
+ledger` reports records, escalation attempts, integrity, executors and which definition bodies ran, by digest. The
+activity timeline (`activity.jsonl`, parent turns, child lifecycles, skill-file reads) uses the same envelope. The
+contract is `packages/pi-daddy/contracts/ledger-record/v1`.
 
-## Running the tests
+## Workspaces and leases
+
+A registered worktree is named `workspace:<id>` and routing a child there is a capability that attenuates like any
+other. A writer routed to a workspace holds an exclusive lease: a kernel `flock` held by a helper process the parent
+owns, released on any death, refusing a second writer for the same root. It coordinates governed children only; it is
+not a sandbox, not path confinement and not a proof of anything a child did.
+
+## Executors and the dashboard
+
+A child runs as a captured subprocess, or in a Herdr pane when a reachable Herdr server is probed at session start
+(`PI_DADDY_HERDR=1` demands it, `0` refuses it). Panes opened by a run are reaped when the operator gets their prompt
+back. `pi-daddy-dashboard` renders a ledger or activity timeline read-only in a terminal; `/grants dashboard` opens it
+in a Herdr pane beside the session. It is a renderer in a separate process and never affects enforcement.
+
+## Bounds and configuration
+
+Every variable is `PI_DADDY_*`. The ones an operator sets: `PI_DADDY_GRANT` (overrides the stored grant; the
+environment always wins), `PI_DADDY_LEDGER`, `PI_DADDY_HERDR`, `PI_DADDY_CHILD_TIMEOUT` (seconds; the default is sixty
+minutes and a wall clock, see the roadmap in `AGENTS.md`), `PI_DADDY_WORKSPACE_REGISTRY`, `PI_DADDY_EXECUTION_ARCHIVE`
+(opt-in retention of child stdout, stderr and result bytes). The rest are written by the parent for its children and
+refused if set by hand. Refusals are thrown with stable codes (`CAPABILITY_ESCALATION`, `GATED_UNAPPROVED`,
+`DEPTH_EXCEEDED`, `FANOUT_EXCEEDED`, `WORKSPACE_NOT_AUTHORIZED`, `CHILD_TIMED_OUT`, `LEDGER_DAMAGED`, …); the full
+enumeration is `REFUSAL_CODES` and it is pinned by the contract.
+
+## The layers
+
+| Layer | Answers | Files |
+| :--- | :--- | :--- |
+| `src/kernel` | What may a child hold, and how is that carried? Pure functions, no I/O. | `resolve`, `spawn`, `propagation`, `catalog`, `definitions`, `approval`, `chain`, `fanout`, `correlation`, `refusals`, `env-names`, `project-paths` |
+| `src/governance` | What was decided, and where is it written? | `record`, `ledger`, `ledger-events`, `ledger-report`, `approval-store`, `approval-prompt`, `grant-store`, `init`, `workspace-lease`, `execution-retention` |
+| `src/executors` | How does a child process start and end? | `executor`, `run-herdr`, `herdr-*`, `pane-reaper` |
+| `src/advisors` | Reserved: advice that can select or rank but never widen a grant (ADR-0077, not yet written). | not yet created |
+| `src/products` | What does the operator see? | `activity-timeline`, `dashboard-*` |
+| `extensions/` | The pi extension and its wiring: hooks, the three tools, approvals flow, `/grants`. | `grants.ts` is the entry point |
+
+## Tests
 
 ```bash
 cd packages/pi-daddy
-npm test                   # unit tests — pure, no pi, no network
-npm run typecheck          # src + extensions + test + test-integration
-npm run test:integration   # 48 tests against a REAL pi process/Herdr server, no model tokens
-npm run test:smoke         # pack, install into a scratch project, import and USE every subpath
-PI_DADDY_IT_MODEL=1 npm run test:integration   # + 10 end-to-end with a real model (costs money)
+npm test                   # unit tests, no pi, no network
+npm run typecheck
+npm run test:integration   # against a real pi process and a real Herdr server, no model tokens
+npm run test:smoke         # pack, install into a scratch project, import and use it
 ```
 
-## How this project works
-
-Decisions live in ADRs (`/adr`), option-space exploration in `/brainstorm`, and measurements in
-`docs/probes/`. Three advisory subagents — `product-strategist`, `architecture-critic`, `research-scout` —
-never edit files.
-
-Two conventions have earned their keep, and `docs/WORKING-RULES.md` explains why:
-
-- **An answer that exists only in chat does not exist.** Every reversal here was survivable because the
-  reasoning was written down beside the decision.
-- **Measure before asserting, and say which you did.** Nearly every significant finding contradicted
-  careful reasoning — children are in-process, `isError` on a returned tool result is silently discarded,
-  `--no-extensions` does not disable skills. Each probe states what it does not establish.
+`pi-daddy` under `packages/pi-daddy` is the only published package; the workspace root is private.

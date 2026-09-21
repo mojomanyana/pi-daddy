@@ -155,7 +155,8 @@ test("actual extension reload is owned by its Pi API, not a same-process SDK chi
     const manager = {},
       root = makePi(manager);
     await start(root); // publishes child depth 1
-    await root.hooks.get("session_shutdown")({ reason: "reload" });
+    // Reload identity is keyed to pi's SessionManager, not to a shutdown hook; the extension registers no shutdown
+    // hook since 0.31.0, so a reload is exercised by starting a new API object against the same manager.
     const reloadedApi = makePi(manager);
     const reload = await start(reloadedApi);
     assert.match(reload, /depth 0\/2/, "Pi's stable SessionManager recovers root identity across a new API object");

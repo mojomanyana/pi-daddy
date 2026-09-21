@@ -59,15 +59,6 @@ test("every project path lives under <cwd>/.pi/pi-daddy and every user path unde
     paths.projectSettingsPath,
     paths.projectGitignorePath,
     paths.projectLedgerPath,
-    paths.workLedgerPath,
-    paths.declaredWorkPath,
-    paths.workSetupsDir,
-    paths.workOutcomesDir,
-    paths.workPolicyRegistryPath,
-    paths.workPoliciesDir,
-    paths.workRegistryBindingsDir,
-    paths.learningConnectionPath,
-    paths.lastWorkRunPath,
     paths.activityTimelinePath,
   ];
   const seen = new Set<string>();

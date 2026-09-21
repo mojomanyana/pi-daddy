@@ -35,30 +35,12 @@ export const PROJECT_FILES = Object.freeze({
   settings: "settings.json",
   gitignore: ".gitignore",
   ledger: "grants.jsonl",
-  workLedger: "work.jsonl",
-  declaredWork: "work-current.json",
-  workSetups: "work-setups",
-  workOutcomes: "work-outcomes",
-  workPolicyRegistry: "work-policy-registry.json",
-  workPolicies: "work-policies",
-  workRegistryBindings: "work-registry-bindings",
-  learningConnection: "learning-workspace.json",
-  lastWorkRun: "work-last-run.json",
   activityTimeline: "activity.jsonl",
 });
 
 export const projectSettingsPath = (cwd: string) => join(projectStateDir(cwd), PROJECT_FILES.settings);
 export const projectGitignorePath = (cwd: string) => join(projectStateDir(cwd), PROJECT_FILES.gitignore);
 export const projectLedgerPath = (cwd: string) => join(projectStateDir(cwd), PROJECT_FILES.ledger);
-export const workLedgerPath = (cwd: string) => join(projectStateDir(cwd), PROJECT_FILES.workLedger);
-export const declaredWorkPath = (cwd: string) => join(projectStateDir(cwd), PROJECT_FILES.declaredWork);
-export const workSetupsDir = (cwd: string) => join(projectStateDir(cwd), PROJECT_FILES.workSetups);
-export const workOutcomesDir = (cwd: string) => join(projectStateDir(cwd), PROJECT_FILES.workOutcomes);
-export const workPolicyRegistryPath = (cwd: string) => join(projectStateDir(cwd), PROJECT_FILES.workPolicyRegistry);
-export const workPoliciesDir = (cwd: string) => join(projectStateDir(cwd), PROJECT_FILES.workPolicies);
-export const workRegistryBindingsDir = (cwd: string) => join(projectStateDir(cwd), PROJECT_FILES.workRegistryBindings);
-export const learningConnectionPath = (cwd: string) => join(projectStateDir(cwd), PROJECT_FILES.learningConnection);
-export const lastWorkRunPath = (cwd: string) => join(projectStateDir(cwd), PROJECT_FILES.lastWorkRun);
 export const activityTimelinePath = (cwd: string) => join(projectStateDir(cwd), PROJECT_FILES.activityTimeline);
 
 /** The `.gitignore` init writes inside the project state directory: settings is committable, nothing else is. */

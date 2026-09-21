@@ -1,5 +1,5 @@
 /**
- * The v3 runtime-event half of the ledger: workspace leases, child lifecycle and check receipts, with
+ * The v3 runtime-event half of the ledger: workspace leases and child lifecycle, with
  * their builders. Split out of `./ledger.ts` only to stay under the 400-line module ceiling this
  * project enforces mechanically; `./ledger.ts` re-exports everything here, so "the ledger module"
  * remains one import.
@@ -9,7 +9,6 @@ import type { ExecutorKind } from "../kernel/delegate-types.ts";
 import type { CorrelationMetadata } from "../kernel/correlation.ts";
 import type { StructuredRefusal } from "../kernel/refusals.ts";
 import { assertExecutionId } from "../kernel/execution-id.ts";
-import type { WorkflowFactEvent } from "./workflow-facts.ts";
 import { assertLedgerV3Wire } from "./ledger-v3-validation.ts";
 
 export const WORKSPACE_ACCESSES = ["read", "write"] as const;
@@ -124,18 +123,6 @@ export interface ChildLifecycleEvent extends LedgerEventBase {
   reason?: string;
 }
 
-export interface CheckReceiptLedgerEvent extends LedgerEventBase {
-  ledgerVersion: typeof LEDGER_VERSION;
-  event: "check_receipt";
-  executionId: string;
-  parentExecutionId: string | null;
-  childId: string;
-  receiptId: string;
-  workspaceId: string;
-  checkId: string;
-  treeSha: string;
-}
-
 export type CapabilityDecisionEvent = GrantRecord & {
   ledgerVersion: typeof LEDGER_VERSION;
   event: "capability_decision";
@@ -144,8 +131,7 @@ export type CapabilityDecisionEvent = GrantRecord & {
   taskDigest: string;
 };
 
-export type RuntimeLedgerEvent =
-  CapabilityDecisionEvent | WorkspaceLeaseEvent | ChildLifecycleEvent | CheckReceiptLedgerEvent | WorkflowFactEvent;
+export type RuntimeLedgerEvent = CapabilityDecisionEvent | WorkspaceLeaseEvent | ChildLifecycleEvent;
 
 export function buildWorkspaceLeaseEvent(args: {
   executionId: string;
@@ -180,36 +166,6 @@ export function buildWorkspaceLeaseEvent(args: {
     ...(args.recovered !== undefined ? { recovered: args.recovered } : {}),
     ...(args.releaseReason ? { releaseReason: args.releaseReason } : {}),
     ...(args.refusal ? { refusal: structuredClone(args.refusal) } : {}),
-    ...(args.correlation ? { correlation: structuredClone(args.correlation) } : {}),
-  });
-}
-
-export function buildCheckReceiptLedgerEvent(args: {
-  executionId: string;
-  parentExecutionId: string | null;
-  childId: string;
-  receiptId: string;
-  workspaceId: string;
-  checkId: string;
-  treeSha: string;
-  correlation?: CorrelationMetadata;
-  now: Date;
-}): CheckReceiptLedgerEvent {
-  assertEventIdentity(args);
-  if (!/^[a-f0-9]{64}$/i.test(args.receiptId)) {
-    throw new TypeError("receiptId must be a SHA-256 hex digest");
-  }
-  return assertLedgerV3Wire({
-    ledgerVersion: LEDGER_VERSION,
-    event: "check_receipt",
-    ts: args.now.toISOString(),
-    executionId: args.executionId,
-    parentExecutionId: args.parentExecutionId,
-    childId: args.childId,
-    receiptId: args.receiptId,
-    workspaceId: args.workspaceId,
-    checkId: args.checkId,
-    treeSha: args.treeSha,
     ...(args.correlation ? { correlation: structuredClone(args.correlation) } : {}),
   });
 }

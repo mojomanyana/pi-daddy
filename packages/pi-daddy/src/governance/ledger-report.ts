@@ -19,7 +19,7 @@ import type { GrantRecord } from "./ledger.ts";
 import { isEscalationAttempt } from "./ledger.ts";
 import type { WorkspaceLeaseOutcome } from "./ledger-events.ts";
 import { isExecutionId } from "../kernel/execution-id.ts";
-import { validateLedgerV3Event } from "./ledger-v3-validation.ts";
+import { isRetiredLedgerEvent, validateLedgerV3Event } from "./ledger-v3-validation.ts";
 import { readRecords } from "./record.ts";
 
 export interface LedgerReport {
@@ -41,8 +41,8 @@ export interface LedgerReport {
     recovered: number;
   };
   lifecycle: { starting: number; running: number; completed: number; failed: number };
-  /** Planned/observed/controller-validated facts; never counted as enforced child executions. */
-  workflowFacts: number;
+  /** Events of a kind an earlier version wrote and this one no longer builds; valid history, not corruption. */
+  retired: number;
   /** Lines that did not, with 1-based line numbers so the report is actionable. */
   corrupt: Array<{ line: number; reason: string }>;
   /** Records where an agent asked for more than it held — ADR-0008's designated signal. */
@@ -205,7 +205,7 @@ export async function verifyLedger(path: string): Promise<LedgerReport> {
           recovered: 0,
         },
         lifecycle: { starting: 0, running: 0, completed: 0, failed: 0 },
-        workflowFacts: 0,
+        retired: 0,
         corrupt: [],
         escalationAttempts: 0,
         executors: { herdr: 0, process: 0, unknown: 0 },
@@ -240,7 +240,7 @@ export async function verifyLedger(path: string): Promise<LedgerReport> {
     recovered: 0,
   };
   const lifecycle = { starting: 0, running: 0, completed: 0, failed: 0 };
-  let workflowFacts = 0;
+  let retired = 0;
   let escalationAttempts = 0;
   const executors = { herdr: 0, process: 0, unknown: 0 };
   const bySource: Record<ApprovalSource, number> = { prompt: 0, session: 0, persisted: 0, inherited: 0 };
@@ -266,14 +266,6 @@ export async function verifyLedger(path: string): Promise<LedgerReport> {
         if (event.ledgerVersion !== 2 && event.ledgerVersion !== 3) throw new Error("unsupported ledger version");
         if (event.ledgerVersion === 3 && validateLedgerV3Event(event)) throw new Error("invalid ledger v3 event");
       }
-      if (event.event === "workflow_fact") {
-        // v2 has no workflow facts; the exact v3 validator above already checked its vocabulary,
-        // correlation and provenance/state relation.
-        if (event.ledgerVersion !== 3) throw new Error("invalid workflow fact event");
-        workflowFacts += 1;
-        events += 1;
-        return;
-      }
       if (event.event === "workspace_lease") {
         requireVersioned(event, ["childId", "workspaceId", "root", "access"]);
         const outcome = typeof event.outcome === "string" ? event.outcome : "";
@@ -296,8 +288,16 @@ export async function verifyLedger(path: string): Promise<LedgerReport> {
         events += 1;
         return;
       }
+      if (event.ledgerVersion === 3 && isRetiredLedgerEvent(event)) {
+        // Written by 0.30.0 or earlier; counted, never treated as corruption (see RETIRED_LEDGER_EVENT_KINDS).
+        retired += 1;
+        events += 1;
+        return;
+      }
       if (event.event === "check_receipt") {
+        // v2 receipts predate the retired set and keep the field check they always had.
         requireVersioned(event, ["childId", "receiptId", "workspaceId", "checkId", "treeSha"]);
+        retired += 1;
         events += 1;
         return;
       }
@@ -374,7 +374,7 @@ export async function verifyLedger(path: string): Promise<LedgerReport> {
     events,
     workspaceLeases,
     lifecycle,
-    workflowFacts,
+    retired,
     corrupt,
     escalationAttempts,
     executors,

@@ -9,6 +9,7 @@ import {
 } from "../governance/ledger-v3-validation.ts";
 import { isLedgerCapabilityIdentifier, isLedgerDisplayIdentifier } from "../kernel/ledger-identifiers.ts";
 import { readRecords } from "../governance/record.ts";
+import { isRetiredLedgerEvent } from "../governance/ledger-v3-validation.ts";
 
 export type DashboardState =
   "authorised" | "starting" | "running" | "completed" | "failed" | "refused" | "incomplete" | "historical";
@@ -40,17 +41,6 @@ export interface DashboardNode {
   refusal?: { code?: string; message?: string };
 }
 
-export interface DashboardWorkflowFact {
-  factId: string;
-  source: string;
-  provenance: "planned" | "observed" | "controller-validated";
-  kind: "workflow_phase" | "inline_skill" | "transition";
-  subject: string;
-  state: "pending" | "observed" | "started" | "completed" | "blocked";
-  runId: string;
-  correlation: CorrelationMetadata;
-}
-
 export interface DashboardWorkflow {
   runId: string;
   label: string;
@@ -69,7 +59,6 @@ export interface DashboardCorruptLine {
 export interface DashboardProjection {
   nodes: DashboardNode[];
   workflows: DashboardWorkflow[];
-  workflowFacts: DashboardWorkflowFact[];
   corrupt: DashboardCorruptLine[];
   orphanEvents: number;
   active: number;
@@ -250,12 +239,11 @@ function executionParentCycles(occurrences: Map<string, Occurrence>): Set<string
   return cyclic;
 }
 
-function workflowsOf(nodes: DashboardNode[], facts: DashboardWorkflowFact[]): DashboardWorkflow[] {
+function workflowsOf(nodes: DashboardNode[]): DashboardWorkflow[] {
   const groups = new Map<string, DashboardWorkflow>();
-  const correlations = [
-    ...nodes.map((node) => node.correlation).filter((value): value is CorrelationMetadata => Boolean(value)),
-    ...facts.map((fact) => fact.correlation),
-  ];
+  const correlations = nodes
+    .map((node) => node.correlation)
+    .filter((value): value is CorrelationMetadata => Boolean(value));
   for (const correlation of correlations) {
     const runId = correlation.run_id;
     if (!runId) continue;
@@ -286,7 +274,6 @@ export function parseDashboardLedger(text: string, options: DashboardProjectionO
   const corrupt: DashboardCorruptLine[] = [];
   const occurrences = new Map<string, Occurrence>();
   const historical: DashboardNode[] = [];
-  const workflowFacts: DashboardWorkflowFact[] = [];
   let orphanEvents = 0;
 
   // ADR-0076 PR 3d: the ledger is record envelopes. Only the failure class of a damaged line crosses to the
@@ -326,28 +313,16 @@ export function parseDashboardLedger(text: string, options: DashboardProjectionO
       corrupt.push({ line, reason: invalid });
       return;
     }
-    if (event.event === "workflow_fact") {
-      const correlation = event.correlation as CorrelationMetadata & { run_id: string };
-      workflowFacts.push({
-        factId: event.factId as string,
-        source: event.source as string,
-        provenance:
-          event.provenance === "controller_validated"
-            ? "controller-validated"
-            : (event.provenance as "planned" | "observed"),
-        kind: event.kind as DashboardWorkflowFact["kind"],
-        subject: event.subject as string,
-        state: event.state as DashboardWorkflowFact["state"],
-        runId: correlation.run_id,
-        correlation,
-      });
+    // Written by an earlier version (check receipts, workflow facts): valid history that is not a tree node.
+    if (isRetiredLedgerEvent(event)) {
+      orphanEvents += 1;
       return;
     }
     const executionId = event.executionId as string;
     const parentExecutionId = event.parentExecutionId as string | null;
     const childId = event.childId as string;
-    // Named checks have their own receipt identity and are not delegated-agent tree nodes.
-    if (event.event === "check_receipt" || childId.startsWith("check:")) return;
+    // Named checks (retired) had their own receipt identity and are not delegated-agent tree nodes.
+    if (childId.startsWith("check:")) return;
     const seen = occurrences.get(executionId);
     if (seen && (seen.parentExecutionId !== parentExecutionId || seen.childId !== childId)) {
       corrupt.push({ line, reason: "execution identity changed parent or logical child" });
@@ -405,8 +380,7 @@ export function parseDashboardLedger(text: string, options: DashboardProjectionO
   const active = nodes.filter((node) => ["authorised", "starting", "running"].includes(node.state)).length;
   return {
     nodes,
-    workflows: workflowsOf(nodes, workflowFacts),
-    workflowFacts,
+    workflows: workflowsOf(nodes),
     corrupt,
     orphanEvents,
     active,
