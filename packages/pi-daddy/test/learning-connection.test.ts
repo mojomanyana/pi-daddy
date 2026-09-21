@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { join } from "node:path";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
-import { declareWork } from "../src/work-command.ts";
-import { bindLearningConnection, loadLearningConnection, learningScopeDigest, bindLearningAdoption, type LearningHarness, type LearningWorkspace } from "../src/learning-connection.ts";
+import { declareWork } from "../src/products/work-command.ts";
+import { bindLearningConnection, loadLearningConnection, learningScopeDigest, bindLearningAdoption, type LearningHarness, type LearningWorkspace } from "../src/products/learning-connection.ts";
 after(cleanupTempDirs);
 const d=(char:string)=>char.repeat(64);
 

@@ -1,8 +1,8 @@
-import { digestTask } from "../src/correlation.ts";
-import { newExecutionId } from "../src/execution-id.ts";
-import { appendRecord, buildRecord } from "../src/ledger.ts";
-import { WILDCARD } from "../src/pi-tools.ts";
-import { refusal } from "../src/refusals.ts";
+import { digestTask } from "../src/kernel/correlation.ts";
+import { newExecutionId } from "../src/kernel/execution-id.ts";
+import { appendRecord, buildRecord } from "../src/governance/ledger.ts";
+import { WILDCARD } from "../src/kernel/pi-tools.ts";
+import { refusal } from "../src/kernel/refusals.ts";
 import type { GrantsSession } from "./session.ts";
 
 interface RefusalUI {

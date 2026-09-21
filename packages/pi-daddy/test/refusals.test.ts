@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { planDelegation } from "../src/delegate.ts";
-import { GovernanceRefusal, REFUSAL_CODES, refusal } from "../src/refusals.ts";
-import type { SkillDefinition } from "../src/definitions.ts";
+import { planDelegation } from "../src/kernel/delegate.ts";
+import { GovernanceRefusal, REFUSAL_CODES, refusal } from "../src/kernel/refusals.ts";
+import type { SkillDefinition } from "../src/kernel/definitions.ts";
 
 const definition = (over: Partial<SkillDefinition> = {}): SkillDefinition => ({
   name: "worker",

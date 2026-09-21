@@ -9,13 +9,13 @@ import { join } from "node:path";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 import { hostWorld } from "./dashboard-host-world.ts";
 import { hash } from "./debrief-durable-fixture.ts";
-import { createDashboardHost, openDashboardHost, dashboardHostRequestDigest } from "../src/dashboard-host.ts";
-import { adoptDashboardHarnessBridge, loadedDashboardHarnessDigest } from "../src/dashboard-harness.ts";
-import { openResourceBudget } from "../src/resource-budget.ts";
+import { createDashboardHost, openDashboardHost, dashboardHostRequestDigest } from "../src/products/dashboard-host.ts";
+import { adoptDashboardHarnessBridge, loadedDashboardHarnessDigest } from "../src/products/dashboard-harness.ts";
+import { openResourceBudget } from "../src/products/resource-budget.ts";
 import { fixedIntentRequests } from "./intent-control-fixture.ts";
-import { intentRequestDigest } from "../src/intent-control.ts";
-import { serveDashboardHost, connectDashboardHost } from "../src/dashboard-host-transport.ts";
-import { dashboardFrame, dashboardHostAction } from "../src/dashboard-cli.ts";
+import { intentRequestDigest } from "../src/products/intent-control.ts";
+import { serveDashboardHost, connectDashboardHost } from "../src/products/dashboard-host-transport.ts";
+import { dashboardFrame, dashboardHostAction } from "../src/products/dashboard-cli.ts";
 after(cleanupTempDirs);
 test("loaded skill-harness extension bridge is accepted only at the exact supported source",async()=>{
  const w=await hostWorld(false),record={version:"skill-harness-dashboard-bridge-v1",sourceCommit:"d123257e53d48a2cad6919708976b5371dc7590e",api:w.api};
@@ -44,7 +44,7 @@ test("real trust reservations and case/blind writers survive pause/reconnect; no
  await reopened.action(await w.request("debrief","choose none"));assert.ok(w.api.openBlindIntervention(w.archiveRoot,w.config.blind!.comparisonId,"operator").quality());
  const reconnect=await w.request("present",{userPresent:true,closing:true,evidenceDigest:w.presence.evidenceDigest,dispatchRevision:1});
  const payload={root:w.root,modules:w.modules,config:w.config,budget:w.budget,authority:w.authority,presence:w.presence,request:reconnect};
- const code=`import{readFileSync}from'node:fs';import{loadDashboardHarness}from ${JSON.stringify(new URL("../src/dashboard-harness.ts",import.meta.url).href)};import{openDashboardHost}from ${JSON.stringify(new URL("../src/dashboard-host.ts",import.meta.url).href)};const p=JSON.parse(process.argv[1]),artifact=JSON.parse(readFileSync(p.root+'/harness-artifact.json'));const loaded=await loadDashboardHarness(p.modules,artifact,p.root),host=openDashboardHost({harness:loaded.api,config:p.config,budget:p.budget,authority:()=>p.authority,presence:()=>p.presence});await host.action(p.request);const f=await host.frame();console.log(JSON.stringify({used:f.attention.attentionUsed,cards:f.debrief.cards.length,quality:f.debrief.cards.at(-1).choiceConfirmed,revealed:f.debrief.cards.at(-1).revealed}));`;
+ const code=`import{readFileSync}from'node:fs';import{loadDashboardHarness}from ${JSON.stringify(new URL("../src/products/dashboard-harness.ts",import.meta.url).href)};import{openDashboardHost}from ${JSON.stringify(new URL("../src/products/dashboard-host.ts",import.meta.url).href)};const p=JSON.parse(process.argv[1]),artifact=JSON.parse(readFileSync(p.root+'/harness-artifact.json'));const loaded=await loadDashboardHarness(p.modules,artifact,p.root),host=openDashboardHost({harness:loaded.api,config:p.config,budget:p.budget,authority:()=>p.authority,presence:()=>p.presence});await host.action(p.request);const f=await host.frame();console.log(JSON.stringify({used:f.attention.attentionUsed,cards:f.debrief.cards.length,quality:f.debrief.cards.at(-1).choiceConfirmed,revealed:f.debrief.cards.at(-1).revealed}));`;
  const env={...process.env};delete env.NODE_TEST_CONTEXT;const child=await promisify(execFile)(process.execPath,["--input-type=module","-e",code,JSON.stringify(payload)],{env,timeout:15000});assert.deepEqual(JSON.parse(child.stdout),{used:5,cards:5,quality:true,revealed:null});
  const again=w.reopen();await present(w,again);assert.equal((await again.frame() as any).debrief.cards.at(-1).revealed,null);await again.action(await w.request("debrief","reveal"));assert.ok((await again.frame() as any).debrief.cards.at(-1).revealed);
  assert.throws(()=>createDashboardHost(w.options),/EEXIST/);await assert.rejects(cp(w.config.trustDirectory,join(w.root,"copied-trust"),{recursive:true}).then(()=>openDashboardHost({...w.options,config:{...w.config,trustDirectory:join(w.root,"copied-trust")}})),/registration|binding|mismatch/);
@@ -133,7 +133,7 @@ test("private original-host socket serves actual dashboard frames and explicit a
  const request=await w.request("defer",{reason:"weekly"},"socket-command");w.authority!.requestDigests=[...w.authority!.requestDigests,dashboardHostRequestDigest(request)];
  const host=openDashboardHost({...w.options,humanActions:()=>[{key:"defer-weekly",label:"Defer until weekly review",request}]});const server=await serveDashboardHost(socket,host);
  try{const remote=connectDashboardHost(socket),before=await readFile(join(w.config.trustDirectory,"producer-host/events.jsonl"));assert.equal(JSON.parse(await dashboardFrame({cwd:w.root,connected:remote,dailyJson:true})).version,"producer-dashboard-frame-v1");assert.deepEqual(await readFile(join(w.config.trustDirectory,"producer-host/events.jsonl")),before);
-  const env={...process.env};delete env.NODE_TEST_CONTEXT;const cli=await promisify(execFile)(process.execPath,[new URL("../src/dashboard-cli.ts",import.meta.url).pathname,"--once","--daily-json","--host-socket",socket],{env,timeout:12000});assert.equal(JSON.parse(cli.stdout).version,"producer-dashboard-frame-v1");assert.deepEqual(await readFile(join(w.config.trustDirectory,"producer-host/events.jsonl")),before);
+  const env={...process.env};delete env.NODE_TEST_CONTEXT;const cli=await promisify(execFile)(process.execPath,[new URL("../src/products/dashboard-cli.ts",import.meta.url).pathname,"--once","--daily-json","--host-socket",socket],{env,timeout:12000});assert.equal(JSON.parse(cli.stdout).version,"producer-dashboard-frame-v1");assert.deepEqual(await readFile(join(w.config.trustDirectory,"producer-host/events.jsonl")),before);
   const result=await dashboardHostAction(remote,"defer-weekly");assert.equal(result.state,"acknowledged");
  }finally{await server.close();}
 });

@@ -27,17 +27,17 @@ import assert from "node:assert/strict";
 import { chmod, mkdir, readFile, stat, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { ceilingForDefinition, parseSkillDefinition } from "../src/definitions.ts";
-import { countDeclaring, type PlannedSkill, type WithholdReason } from "../src/init.ts";
+import { ceilingForDefinition, parseSkillDefinition } from "../src/kernel/definitions.ts";
+import { countDeclaring, type PlannedSkill, type WithholdReason } from "../src/governance/init.ts";
 import { main, parseArgs } from "../src/cli.ts";
-import { assertGrantIsWritable, UnsafeGrantError } from "../src/grant-env.ts";
-import { applyInit, planInit, withPlaceholder } from "../src/init.ts";
-import { registeredWorkspaceIds } from "../src/workspace.ts";
-import { buildCatalog } from "../src/catalog.ts";
+import { assertGrantIsWritable, UnsafeGrantError } from "../src/kernel/grant-env.ts";
+import { applyInit, planInit, withPlaceholder } from "../src/governance/init.ts";
+import { registeredWorkspaceIds } from "../src/kernel/workspace.ts";
+import { buildCatalog } from "../src/kernel/catalog.ts";
 import { runInit } from "../extensions/init-command.ts";
-import { grantStorePath } from "../src/grant-store.ts";
-import type { Capability } from "../src/resolve.ts";
-import { discoverSkillPackages, readSkillPackage } from "../src/skill-packages.ts";
+import { grantStorePath } from "../src/governance/grant-store.ts";
+import type { Capability } from "../src/kernel/resolve.ts";
+import { discoverSkillPackages, readSkillPackage } from "../src/kernel/skill-packages.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
 /**

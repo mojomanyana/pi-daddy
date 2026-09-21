@@ -16,7 +16,7 @@ import assert from "node:assert/strict";
 import { after, describe, test } from "node:test";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { digestDefinition, parseSkillDefinition } from "../src/definitions.ts";
+import { digestDefinition, parseSkillDefinition } from "../src/kernel/definitions.ts";
 import { cleanupTempDirs, fixture, piAvailable, runCommand, tempDir, verdictFor } from "./harness.ts";
 
 after(cleanupTempDirs);
@@ -459,7 +459,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     // by plain `pi`.
     const cwd = await fixture({ "docs-writer": DOCS_WRITER });
     const agentDir = await tempDir("grants-it-storedir-");
-    const { grantStorePath } = await import("../src/grant-store.ts");
+    const { grantStorePath } = await import("../src/governance/grant-store.ts");
     process.env.PI_CODING_AGENT_DIR = agentDir;
     const storePath = grantStorePath(cwd);
     await mkdir(dirname(storePath), { recursive: true });
@@ -482,7 +482,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
   test("an unsupported project store loudly refuses and records the fail-closed session", async () => {
     const cwd = await fixture();
     const agentDir = await tempDir("grants-it-invalid-store-");
-    const { grantStorePath, projectLedgerPath } = await import("../src/grant-store.ts");
+    const { grantStorePath, projectLedgerPath } = await import("../src/governance/grant-store.ts");
     process.env.PI_CODING_AGENT_DIR = agentDir;
     const path = grantStorePath(cwd);
     await mkdir(dirname(path), { recursive: true });
@@ -511,7 +511,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     }), "utf8");
     await writeFile(join(pkg, "review", "SKILL.md"), `---\nname: review\ndescription: Reads only.\nallowed-tools: Read\n---\nReview.\n`, "utf8");
 
-    const { grantStorePath, projectLedgerPath } = await import("../src/grant-store.ts");
+    const { grantStorePath, projectLedgerPath } = await import("../src/governance/grant-store.ts");
     const first = await runCommand({ cwd, command: "/grants init", env: { PI_CODING_AGENT_DIR: agentDir } });
     const firstText = first.notifies.map((n) => n.message).join("\n");
     assert.match(firstText, /live now/);
@@ -540,7 +540,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
   test("ADR-0037: explicit environment configuration still bypasses the stored ledger choice", async () => {
     const cwd = await fixture({ "docs-writer": DOCS_WRITER });
     const agentDir = await tempDir("grants-it-ledger-precedence-");
-    const { grantStorePath } = await import("../src/grant-store.ts");
+    const { grantStorePath } = await import("../src/governance/grant-store.ts");
     process.env.PI_CODING_AGENT_DIR = agentDir;
     await mkdir(dirname(grantStorePath(cwd)), { recursive: true });
     await writeFile(
@@ -585,7 +585,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     // that could override it would let a directory quietly re-widen a child its parent had bounded.
     const cwd = await fixture({ "docs-writer": DOCS_WRITER });
     const agentDir = await tempDir("grants-it-storedir2-");
-    const { grantStorePath } = await import("../src/grant-store.ts");
+    const { grantStorePath } = await import("../src/governance/grant-store.ts");
     process.env.PI_CODING_AGENT_DIR = agentDir;
     const storePath = grantStorePath(cwd);
     await mkdir(dirname(storePath), { recursive: true });

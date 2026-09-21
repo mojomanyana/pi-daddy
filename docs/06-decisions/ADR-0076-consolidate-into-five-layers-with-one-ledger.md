@@ -215,3 +215,38 @@ Any one of these reopens the decision:
   that needs its own record.
 - Programme cost exceeds twelve pull requests before PR 7 lands. R-08's scope-creep trigger applies to the
   cleanup itself.
+
+## Amendment 2026-09-21 — what PR 2 found when the layers were cut
+
+Recorded the same day, after the move, because the Decision above states two things the move corrected.
+
+**`extensions/` is the composition layer, together with `src/index.ts` and `src/cli.ts`.** The Decision says
+extension files are "split the same way". They are not: they are wiring, they import from every layer, and
+twenty-five of them import the `GrantsSession` type from `extensions/session.ts`. Moving them into
+subdirectories would have changed the path pi loads (`pi.extensions` in `package.json`) and the `-e` path a
+child receives, for no gain in enforcement. The layering test treats `extensions/**` and the two root files
+as composition, permitted to import anything and forbidden to be imported by any layer. A third file at the
+`src/` root is refused.
+
+**Classification refinements, all recorded in `test/layering.test.ts` by directory:** the `work-ledger-*`
+family, `execution-retention`, `retention-contract`, `retention-json`, `native-session` and `init` are
+governance (they are stores and their readers, not products); workspace routing, pure approval resolution
+(`approval`, `delegation-approval`), `correlation`, `execution-id`, `ledger-identifiers`, `skill-resources`,
+`skill-packages` and `progress` are kernel; `vendor/herdr-pi-lifecycle.ts` is under executors and
+`vendor/adoption.ts` under products. `ExecutorKind` and `EXECUTOR_KINDS` now live in `kernel/delegate-types.ts`;
+`executors/executor.ts` re-exports them.
+
+**The "eleven import edges" figure was the code map's clustering, not the layering test's.** After the move
+the test reported seven upward edges. Three were the `ExecutorKind` type (moved into the kernel); two were
+`execution-retention` importing `native-session` (resolved by classifying `native-session` as governance);
+one was `kernel/workspace.ts` re-exporting the lease functions (removed; `governance/workspace-public.ts`
+keeps the `pi-daddy/workspace` subpath whole so no consumer loses an export); one was the planner importing
+the activity timeline, replaced by the `childEnv` hook the Decision describes. The kernel refuses any hook
+key in the `PI_GRANTS_` namespace or already set, so the hook cannot widen what a child inherits, and a test
+forces that refusal. The other hooks the Decision anticipated (`execute-child`, `ledger-append`,
+`check-runner`, `session.ts`) were not needed: those edges disappeared under the classification above or
+because their importer is composition.
+
+**Public surface.** Export keys in `package.json` are unchanged; their `dist/` targets moved with the files.
+Root exports are unchanged. The `DelegationContext.activity` field is gone from the planner's public type,
+replaced by `childEnv`; that is the one type-level change a direct `planDelegation` consumer would notice.

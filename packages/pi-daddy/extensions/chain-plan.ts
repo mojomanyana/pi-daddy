@@ -1,9 +1,9 @@
-import { DELEGATE_SUBJECT, shouldSeekApproval } from "../src/approval.ts";
-import type { ChainStep } from "../src/chain.ts";
-import { planDelegation } from "../src/delegate.ts";
-import { childSpawnId } from "../src/fanout.ts";
-import type { Capability } from "../src/resolve.ts";
-import type { StructuredRefusal } from "../src/refusals.ts";
+import { DELEGATE_SUBJECT, shouldSeekApproval } from "../src/kernel/approval.ts";
+import type { ChainStep } from "../src/kernel/chain.ts";
+import { planDelegation } from "../src/kernel/delegate.ts";
+import { childSpawnId } from "../src/kernel/fanout.ts";
+import type { Capability } from "../src/kernel/resolve.ts";
+import type { StructuredRefusal } from "../src/kernel/refusals.ts";
 import type { GrantsSession } from "./session.ts";
 
 /** One upfront legacy gate: capability + subject + the exact step whose task the dialog names. */

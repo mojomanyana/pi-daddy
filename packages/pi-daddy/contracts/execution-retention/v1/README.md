@@ -2,7 +2,7 @@
 
 Opt-in candidate API: `pi-daddy/execution-retention` (also the root export). This is a new archive
 manifest, **not** ledger v3/v4, a check-receipt schema revision, or acceptance authority. The TypeScript
-wire definition is `src/execution-retention.ts::ExecutionRetentionManifest`.
+wire definition is `src/governance/execution-retention.ts::ExecutionRetentionManifest`.
 
 ## Activation and actual wiring
 

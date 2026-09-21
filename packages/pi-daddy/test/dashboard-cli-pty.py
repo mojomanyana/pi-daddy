@@ -19,7 +19,7 @@ def serve():
   c.sendall((json.dumps({"ok":True,"result":result})+"\n").encode());c.close()
 threading.Thread(target=serve,daemon=True).start()
 master,slave=pty.openpty()
-p=subprocess.Popen(["node",os.path.join(root,"src/dashboard-cli.ts"),"--host-socket",sock,"--no-color"],stdin=slave,stdout=slave,stderr=slave,close_fds=True)
+p=subprocess.Popen(["node",os.path.join(root,"src/products/dashboard-cli.ts"),"--host-socket",sock,"--no-color"],stdin=slave,stdout=slave,stderr=slave,close_fds=True)
 os.close(slave)
 def read(seconds):
  end=time.time()+seconds; out=b""

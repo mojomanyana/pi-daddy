@@ -6,12 +6,12 @@ import { readFile,appendFile,rename } from "node:fs/promises";
 import { join } from "node:path";
 import { hostWorld } from "./dashboard-host-world.ts";
 import { cleanupTempDirs } from "./tmp.ts";
-import { openDashboardHost } from "../src/dashboard-host.ts";
-import { dispatchRequestDigest,type DispatchRequest } from "../src/dispatch-control.ts";
-import { openResourceBudget } from "../src/resource-budget.ts";
-import { loadDashboardHarness } from "../src/dashboard-harness.ts";
-import { prepareDigestProfile } from "../src/effect-profile.ts";
-import { experimentBindingDigest,experimentCancellationDigest,type ExperimentCancellation } from "../src/experiment.ts";
+import { openDashboardHost } from "../src/products/dashboard-host.ts";
+import { dispatchRequestDigest,type DispatchRequest } from "../src/products/dispatch-control.ts";
+import { openResourceBudget } from "../src/products/resource-budget.ts";
+import { loadDashboardHarness } from "../src/products/dashboard-harness.ts";
+import { prepareDigestProfile } from "../src/products/effect-profile.ts";
+import { experimentBindingDigest,experimentCancellationDigest,type ExperimentCancellation } from "../src/products/experiment.ts";
 after(cleanupTempDirs);
 async function present(w:Awaited<ReturnType<typeof hostWorld>>,host=w.host){return host.action(await w.request("present",{userPresent:true,closing:true,evidenceDigest:w.presence.evidenceDigest,dispatchRevision:(await openResourceBudget(w.budget).controls(null).inspect()).revision}));}
 test("zero-card coverage issues and original v2 writer both load through owned durable host",async()=>{

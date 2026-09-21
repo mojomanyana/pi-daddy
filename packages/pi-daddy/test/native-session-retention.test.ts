@@ -5,11 +5,11 @@ import { join } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 after(cleanupTempDirs);
-import { readNativeSession, parseNativeSessionBytes, ENV_NATIVE_SESSION_ROOT, herdrSessionReference } from "../src/native-session.ts";
-import { beginExecutionRetention, drainExecutionRetention, parseExecutionRetentionManifest } from "../src/execution-retention.ts";
-import { runHerdrPane } from "../src/run-herdr.ts";
+import { readNativeSession, parseNativeSessionBytes, ENV_NATIVE_SESSION_ROOT, herdrSessionReference } from "../src/governance/native-session.ts";
+import { beginExecutionRetention, drainExecutionRetention, parseExecutionRetentionManifest } from "../src/governance/execution-retention.ts";
+import { runHerdrPane } from "../src/executors/run-herdr.ts";
 import { executePlannedChild } from "../extensions/execute-child.ts";
-import { planDelegation } from "../src/delegate.ts";
+import { planDelegation } from "../src/kernel/delegate.ts";
 import { pathToFileURL } from "node:url";
 const identity = { executionId: "exec:fixture", parentExecutionId: "exec:parent", childId: "reused", toolCallId: "call:exact",
   executor: "herdr" as const, taskDigest: "a".repeat(64), definitionDigest: null, configurationDigest: "b".repeat(64), workspaceId: null };

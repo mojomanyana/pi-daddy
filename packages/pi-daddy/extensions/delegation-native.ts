@@ -1,4 +1,4 @@
-import { allocateNativeSessionTarget } from "../src/native-session-target.ts";
+import { allocateNativeSessionTarget } from "../src/executors/native-session-target.ts";
 import type { GrantsSession } from "./session.ts";
 import type { ExecutionOccurrenceIds } from "./execution-occurrence.ts";
 /** Shared delegate/all/chain host setup, before planning/audit; no tool-schema destination parameter. */

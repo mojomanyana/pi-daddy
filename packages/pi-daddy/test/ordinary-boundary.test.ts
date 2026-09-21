@@ -8,11 +8,11 @@ import { ordinaryHostFixture } from "./ordinary-host-fixture.ts";
 import { hostWorld } from "./dashboard-host-world.ts";
 import { selectionProposal } from "./intent-selection-fixture.ts";
 import { tempDir,cleanupTempDirs } from "./tmp.ts";
-import { intentRequestDigest,type IntentRequest } from "../src/intent-control.ts";
-import { dispatchRequestDigest,type DispatchRequest } from "../src/dispatch-control.ts";
-import { openResourceBudget } from "../src/resource-budget.ts";
-import { openDashboardHost } from "../src/dashboard-host.ts";
-import { associateOrdinaryHost, holdOrdinaryDispatch, ordinaryChildrenFor, retainOrdinaryChild } from "../src/ordinary-children.ts";
+import { intentRequestDigest,type IntentRequest } from "../src/products/intent-control.ts";
+import { dispatchRequestDigest,type DispatchRequest } from "../src/products/dispatch-control.ts";
+import { openResourceBudget } from "../src/products/resource-budget.ts";
+import { openDashboardHost } from "../src/products/dashboard-host.ts";
+import { associateOrdinaryHost, holdOrdinaryDispatch, ordinaryChildrenFor, retainOrdinaryChild } from "../src/products/ordinary-children.ts";
 after(cleanupTempDirs);
 const occurrence=(executionId:string)=>({executionId:`exec:${executionId}`,parentExecutionId:null,toolCallId:null});
 test("best-effort observation failure permits quiescence while required failure and unknown ownership refuse without a hold",()=>{

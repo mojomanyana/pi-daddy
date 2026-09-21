@@ -17,13 +17,13 @@ import { realpathSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { relative, resolve as resolvePath } from "node:path";
 import { pathToFileURL } from "node:url";
-import { UnsafeGrantError } from "./grant-env.ts";
-import { applyInit, countDeclaring, planInit, type InitPlan } from "./init.ts";
-import { registeredWorkspaceIds } from "./workspace.ts";
-import { discoverSkillPackages, skillPackageRoots, type RefusedSkill, type SkillPackage } from "./skill-packages.ts";
-import { declareWork, loadDeclaredWork } from "./work-command.ts";
-import { listWorkSetups, workPresentation } from "./work-setup.ts";
-import { panelText } from "./daily-panel.ts";
+import { UnsafeGrantError } from "./kernel/grant-env.ts";
+import { applyInit, countDeclaring, planInit, type InitPlan } from "./governance/init.ts";
+import { registeredWorkspaceIds } from "./kernel/workspace.ts";
+import { discoverSkillPackages, skillPackageRoots, type RefusedSkill, type SkillPackage } from "./kernel/skill-packages.ts";
+import { declareWork, loadDeclaredWork } from "./products/work-command.ts";
+import { listWorkSetups, workPresentation } from "./products/work-setup.ts";
+import { panelText } from "./products/daily-panel.ts";
 
 const USAGE = `pi-daddy — capability governance for pi sub-agents
 

@@ -7,11 +7,11 @@ import { promisify } from "node:util";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 after(cleanupTempDirs);
 import { harnessFixture, attentionFixture } from "./debrief-host-fixture.ts";
-import { createDebriefPresenter } from "../src/debrief.ts";
-import { openOrReuseDashboard } from "../src/dashboard-herdr.ts";
-import { dashboardFrame, dashboardDebriefAction, ENV_DEBRIEF_FIXTURE } from "../src/dashboard-cli.ts";
-import { createFixtureDebrief } from "../src/debrief-fixture.ts";
-import { byteDigest, reviewPage } from "../src/debrief-contract.ts";
+import { createDebriefPresenter } from "../src/products/debrief.ts";
+import { openOrReuseDashboard } from "../src/products/dashboard-herdr.ts";
+import { dashboardFrame, dashboardDebriefAction, ENV_DEBRIEF_FIXTURE } from "../src/products/dashboard-cli.ts";
+import { createFixtureDebrief } from "../src/products/debrief-fixture.ts";
+import { byteDigest, reviewPage } from "../src/products/debrief-contract.ts";
 async function fixture() {
   const root = await tempDir("p08-debrief-"); await chmod(root, 0o700);
   const host = await harnessFixture(root), persistence = attentionFixture(host.archiveRoot);
@@ -126,7 +126,7 @@ test("snapshot/render/CLI viewing leaves owned control/session bytes and message
   await writeFile(session, '{"message":"only owned fixture message"}\n'); await writeFile(control, "owned control fixture\n");
   const before = [await readFile(session), await readFile(control)]; await open(f.presenter);
   for (let i = 0; i < 3; i++) await dashboardFrame({ cwd: f.root, debrief: f.presenter });
-  const cli = new URL("../src/dashboard-cli.ts", import.meta.url).pathname;
+  const cli = new URL("../src/products/dashboard-cli.ts", import.meta.url).pathname;
   for (let i = 0; i < 2; i++) {
     const out = await promisify(execFile)(process.execPath, [cli, "--once", "--debrief-fixture", "--debrief-json"], { cwd: f.root, env: { PATH: "", HOME: f.root, TMPDIR: f.root, PI_CODING_AGENT_DIR: f.root }, timeout: 10000 });
     const frame = JSON.parse(out.stdout); assert.equal(frame.cards.length, 5); assert.equal(frame.fixture, true);

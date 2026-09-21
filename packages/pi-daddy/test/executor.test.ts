@@ -9,7 +9,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { chooseExecutor, needsProbe } from "../src/executor.ts";
+import { chooseExecutor, needsProbe } from "../src/executors/executor.ts";
 
 const reachable = { ok: true };
 const down = { ok: false, error: "could not connect to herdr" };

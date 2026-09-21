@@ -1,14 +1,14 @@
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { inspectWorkRun, type WorkRunInitial } from "../src/work-run.ts";
-import type { ControlBinding } from "../src/control-journal.ts";
-import { readProductJson } from "../src/product-files.ts";
-import { readDailySnapshot } from "../src/daily-view-input.ts";
-import { experimentHash } from "../src/experiment-contract.ts";
-import type { LearningHarness, LearningWorkspace } from "../src/learning-connection.ts";
-import type { DeclaredWorkState } from "../src/work-command.ts";
-import type { ProductionObservation } from "../src/vendor/adoption.ts";
+import { inspectWorkRun, type WorkRunInitial } from "../src/products/work-run.ts";
+import type { ControlBinding } from "../src/products/control-journal.ts";
+import { readProductJson } from "../src/products/product-files.ts";
+import { readDailySnapshot } from "../src/products/daily-view-input.ts";
+import { experimentHash } from "../src/products/experiment-contract.ts";
+import type { LearningHarness, LearningWorkspace } from "../src/products/learning-connection.ts";
+import type { DeclaredWorkState } from "../src/products/work-command.ts";
+import type { ProductionObservation } from "../src/products/vendor/adoption.ts";
 
 /** Link actual later-run bytes/pin; only an explicit independent human supplies outcome labels. */
 export async function linkLatestWorkOutcome(ctx: ExtensionCommandContext, state: DeclaredWorkState, workspace: LearningWorkspace, harness: LearningHarness) {

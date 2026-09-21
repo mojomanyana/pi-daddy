@@ -2,12 +2,12 @@ import cp from "node:child_process";
 import { after } from "node:test";
 import { syncBuiltinESMExports } from "node:module";
 import { join } from "node:path";
-import { createExperimentBudget, openResourceBudget, resourceBindingDigest } from "../src/resource-budget.ts";
-import { newExecutionId } from "../src/execution-id.ts";
+import { createExperimentBudget, openResourceBudget, resourceBindingDigest } from "../src/products/resource-budget.ts";
+import { newExecutionId } from "../src/kernel/execution-id.ts";
 import { tempDir, cleanupTempDirs } from "./tmp.ts";
 after(cleanupTempDirs);
 export async function ipcWorld() {
-  const ipc=await import("../src/producer-ipc.ts"),root=await tempDir("producer-ipc-");
+  const ipc=await import("../src/products/producer-ipc.ts"),root=await tempDir("producer-ipc-");
   const budget=await createExperimentBudget({directory:join(root,"budget"),authorityDigest:"a".repeat(64),limits:{maxAttempts:4,maxInputBytes:4096,maxConcurrent:2}});
   const owner=openResourceBudget(budget),binding={version:"producer-ipc-v1" as const,budgetDigest:resourceBindingDigest(budget),orderId:"order-ipc",experimentId:"experiment-ipc",executionId:newExecutionId(),charterSha256:"b".repeat(64),invocationId:"subject-1"};
   const demand=ipc.producerIpcDemand(binding),[permit]=await owner.reserveBatch([demand]);return {ipc,owner,binding,permit,demand,budget};

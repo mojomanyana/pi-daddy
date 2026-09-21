@@ -21,7 +21,7 @@ import { existsSync } from "node:fs";
 import { readFile, writeFile, utimes } from "node:fs/promises";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { withFileLock, LockTimeoutError, STALE_LOCK_MS } from "../src/file-lock.ts";
+import { withFileLock, LockTimeoutError, STALE_LOCK_MS } from "../src/governance/file-lock.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
 after(cleanupTempDirs);

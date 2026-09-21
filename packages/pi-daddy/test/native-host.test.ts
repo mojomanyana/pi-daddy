@@ -3,8 +3,8 @@ import { test, after } from "node:test";
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import grantsExtension from "../extensions/grants.ts";
-import { drainExecutionRetention, parseExecutionRetentionManifest } from "../src/execution-retention.ts";
-import { allocateNativeSessionTarget } from "../src/native-session-target.ts";
+import { drainExecutionRetention, parseExecutionRetentionManifest } from "../src/governance/execution-retention.ts";
+import { allocateNativeSessionTarget } from "../src/executors/native-session-target.ts";
 import { tempDir, cleanupTempDirs } from "./tmp.ts";
 after(cleanupTempDirs);
 test("ordinary public delegation opts into per-execution native session files without model fields", async () => {

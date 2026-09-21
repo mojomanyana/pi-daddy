@@ -9,10 +9,10 @@
 
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
-import { HerdrWriterCloseError, runHerdrPane, splitSystemPrompt, uniqueAgentName, type HerdrExec } from "../src/run-herdr.ts";
-import { MAX_OPEN_PANES, markPaneSettled, openPaneCount, reapOpenPanes, reapOpenPanesAsync, trackPane, trimOpenPanes } from "../src/pane-reaper.ts";
-import { DEFAULT_SNAPSHOT_LINES } from "../src/herdr-poll.ts";
-import { MAX_CHILDREN_PER_CALL } from "../src/fanout.ts";
+import { HerdrWriterCloseError, runHerdrPane, splitSystemPrompt, uniqueAgentName, type HerdrExec } from "../src/executors/run-herdr.ts";
+import { MAX_OPEN_PANES, markPaneSettled, openPaneCount, reapOpenPanes, reapOpenPanesAsync, trackPane, trimOpenPanes } from "../src/executors/pane-reaper.ts";
+import { DEFAULT_SNAPSHOT_LINES } from "../src/executors/herdr-poll.ts";
+import { MAX_CHILDREN_PER_CALL } from "../src/kernel/fanout.ts";
 
 interface FakeOptions {
   /** `state_change_seq` reported by `agent start`, i.e. the state BEFORE prompting. */
@@ -110,7 +110,7 @@ test("argv is passed after `--`, and the task is NOT in it", async () => {
   const after = start.slice(start.indexOf("--") + 1);
   assert.deepEqual(after.slice(0, 4), ["--no-session", "--no-extensions", "--tools", "read"]);
   assert.deepEqual(after.slice(4, 5), ["-e"], "only the pinned lifecycle extension bypasses discovery");
-  assert.match(after[5]!, /src\/vendor\/herdr-pi-lifecycle\.ts$/, "the extension is package-owned, never model-chosen");
+  assert.match(after[5]!, /src\/executors\/vendor\/herdr-pi-lifecycle\.ts$/, "the extension is package-owned, never model-chosen");
   assert.equal(after.length, 6, "no unrelated extension is injected");
   assert.ok(!start.includes("review the diff"), "the task must not reach argv");
 

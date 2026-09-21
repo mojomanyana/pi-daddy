@@ -12,15 +12,15 @@
  * being whatever happened to be in scope.
  */
 
-import type { Capability } from "../src/resolve.ts";
-import type { ExecutorChoice } from "../src/executor.ts";
-import type { Catalog } from "../src/catalog.ts";
-import type { SkillDefinition } from "../src/definitions.ts";
+import type { Capability } from "../src/kernel/resolve.ts";
+import type { ExecutorChoice } from "../src/executors/executor.ts";
+import type { Catalog } from "../src/kernel/catalog.ts";
+import type { SkillDefinition } from "../src/kernel/definitions.ts";
 import type { GatedPlan } from "./run-delegation.ts";
 import type { VariantRunAccounting } from "./session.ts";
 import { handleConnectedCommand } from "./grants-connected-command.ts";
-import { loadApprovals, revokeAll, revokeApproval, type SubjectLookup } from "../src/approval-store.ts";
-import { verifyLedger } from "../src/ledger.ts";
+import { loadApprovals, revokeAll, revokeApproval, type SubjectLookup } from "../src/governance/approval-store.ts";
+import { verifyLedger } from "../src/governance/ledger.ts";
 
 export interface GrantsCommandContext {
   cwd: string;
@@ -262,7 +262,7 @@ handler: async (args: string, ctx: any) => {
       // (a deliberate simplification so it need not extend EntryVerdict); relabel those here so a
       // corrupt entry doesn't read as a timed-out one.
       //
-      // This mirrors `isValidEntryShape` in `src/approval-store.ts` (all four required fields) and
+      // This mirrors `isValidEntryShape` in `src/governance/approval-store.ts` (all four required fields) and
       // must be kept in step with it — it is a display-only relabeling of an entry the store already
       // dropped, not a second validity decision, so it stays here rather than moving into `src/`.
       for (const d of dropped) {

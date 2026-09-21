@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { WILDCARD } from "../src/pi-tools.ts";
+import { WILDCARD } from "../src/kernel/pi-tools.ts";
 import {
   childEnv,
   deriveOwnGrant,
@@ -13,9 +13,9 @@ import {
   mergeChildEnv,
   observeToolNames,
   parseList,
-} from "../src/propagation.ts";
-import { planDelegation } from "../src/delegate.ts";
-import { isWellFormedCapability } from "../src/capabilities.ts";
+} from "../src/kernel/propagation.ts";
+import { planDelegation } from "../src/kernel/delegate.ts";
+import { isWellFormedCapability } from "../src/kernel/capabilities.ts";
 
 test("the race is gone by construction: child env depends only on parent-level facts", () => {
   // Two different concurrent spawns from the same parent must inherit byte-identical environments.

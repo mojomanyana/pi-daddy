@@ -15,7 +15,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { gatedFromEnv, DEFAULT_GATED } from "../src/propagation.ts";
+import { gatedFromEnv, DEFAULT_GATED } from "../src/kernel/propagation.ts";
 
 test("an unset PI_GRANTS_GATED gates bash", () => {
   assert.deepEqual(gatedFromEnv(undefined), DEFAULT_GATED);

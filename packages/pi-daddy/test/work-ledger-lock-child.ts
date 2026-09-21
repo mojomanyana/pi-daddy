@@ -138,10 +138,10 @@ fs.open = (async (...args: Parameters<typeof fs.open>) => {
 }) as typeof fs.open;
 syncBuiltinESMExports();
 try {
-  const api = await import("../src/work-ledger.ts");
+  const api = await import("../src/governance/work-ledger.ts");
   if (operation.startsWith("lock-")) {
     if (!cleanupFault) throw new Error("lock characterization requires scoped cleanup fixture");
-    const { withFileLock } = await import("../src/file-lock.ts");
+    const { withFileLock } = await import("../src/governance/file-lock.ts");
     const work = async () => { if (operation.includes("-body")) throw bodySentinel; return "body-result"; };
     const value = operation.startsWith("lock-default") ? await withFileLock(path, "fixture", work)
       : await withFileLock(path, "fixture", work, { staleRecovery: operation.startsWith("lock-disabled") ? "disabled" : "age" });

@@ -19,8 +19,8 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { after, afterEach, test } from "node:test";
 import grantsExtension from "../extensions/grants.ts";
-import { ENV_HERDR } from "../src/executor.ts";
-import { ENV_APPROVED, ENV_DEPTH, ENV_FANOUT, ENV_GATED, ENV_GRANT, ENV_LEDGER, ENV_MAX_DEPTH, ENV_PARENT_ID } from "../src/propagation.ts";
+import { ENV_HERDR } from "../src/executors/executor.ts";
+import { ENV_APPROVED, ENV_DEPTH, ENV_FANOUT, ENV_GATED, ENV_GRANT, ENV_LEDGER, ENV_MAX_DEPTH, ENV_PARENT_ID } from "../src/kernel/propagation.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 import { ENV_GOVERNANCE } from "../extensions/session.ts";
 

@@ -6,7 +6,7 @@ export {
   type Capability,
   type ResolveInput,
   type ResolveResult,
-} from "./resolve.ts";
+} from "./kernel/resolve.ts";
 
 export {
   appendLedgerEvent,
@@ -32,43 +32,43 @@ export {
   type WorkflowFactKind,
   type WorkflowFactProvenance,
   type WorkflowFactState,
-} from "./ledger.ts";
+} from "./governance/ledger.ts";
 
-export { createDebriefPresenter, type DebriefPresenter, type DebriefHost, type DebriefFrame, type DebriefCheckpoint, type DebriefPersistence } from "./debrief.ts";
-export { ordinaryChildrenFor, ordinaryCancellation, ordinaryCancellationDigest, isOrdinaryChildren, type OrdinaryChildren, type OrdinaryCancellation, type OrdinaryAuthority, type OrdinaryTarget } from "./ordinary-children.ts";
-export { loadDashboardHarness, loadedDashboardHarnessDigest, type DashboardHarnessArtifact } from "./dashboard-harness.ts";
-export { startDailyDashboardHost, discoverDailyIntentActions, type DailyDashboardHostInput, type DailyIntentAction } from "./daily-dashboard-host.ts";
-export { createDashboardHost, openDashboardHost, dashboardHostDigest, dashboardHostRequestDigest, dashboardSelectionDigest, type DashboardHost, type DashboardHostConfig, type DashboardHostRequest, type DashboardHostAuthority, type DashboardHarness, type DashboardHostOptions } from "./dashboard-host.ts";
-export { serveDashboardHost, connectDashboardHost, ENV_DASHBOARD_HOST_SOCKET, type DashboardConnection } from "./dashboard-host-transport.ts";
-export { createRetainedDebrief, retainDebriefBlind, openDebriefBlindPreview, type DebriefHarness, type CaseSelection, type DurableBlindBinding } from "./debrief-host.ts";
-export { renderDebrief, debriefAction as dashboardDebriefAction } from "./debrief-render.ts";
-export { type ReviewPort, type ReviewRequest, type BlindPort, type BlindChoice } from "./debrief-contract.ts";
+export { createDebriefPresenter, type DebriefPresenter, type DebriefHost, type DebriefFrame, type DebriefCheckpoint, type DebriefPersistence } from "./products/debrief.ts";
+export { ordinaryChildrenFor, ordinaryCancellation, ordinaryCancellationDigest, isOrdinaryChildren, type OrdinaryChildren, type OrdinaryCancellation, type OrdinaryAuthority, type OrdinaryTarget } from "./products/ordinary-children.ts";
+export { loadDashboardHarness, loadedDashboardHarnessDigest, type DashboardHarnessArtifact } from "./products/dashboard-harness.ts";
+export { startDailyDashboardHost, discoverDailyIntentActions, type DailyDashboardHostInput, type DailyIntentAction } from "./products/daily-dashboard-host.ts";
+export { createDashboardHost, openDashboardHost, dashboardHostDigest, dashboardHostRequestDigest, dashboardSelectionDigest, type DashboardHost, type DashboardHostConfig, type DashboardHostRequest, type DashboardHostAuthority, type DashboardHarness, type DashboardHostOptions } from "./products/dashboard-host.ts";
+export { serveDashboardHost, connectDashboardHost, ENV_DASHBOARD_HOST_SOCKET, type DashboardConnection } from "./products/dashboard-host-transport.ts";
+export { createRetainedDebrief, retainDebriefBlind, openDebriefBlindPreview, type DebriefHarness, type CaseSelection, type DurableBlindBinding } from "./products/debrief-host.ts";
+export { renderDebrief, debriefAction as dashboardDebriefAction } from "./products/debrief-render.ts";
+export { type ReviewPort, type ReviewRequest, type BlindPort, type BlindChoice } from "./products/debrief-contract.ts";
 export { readDailyView, createDailyViewReader, DAILY_VIEW_VERSION, type DailyView, type DailyViewOptions,
-  type DailyAttempt, type DailyObligation } from "./daily-view.ts";
-export { renderDailyView, renderDailyDetails } from "./daily-view-render.ts";
-export { renderDailyPanel, type PanelOptions, type WorkPresentation } from "./daily-panel.ts";
-export { parseArchiveProjection, ARCHIVE_PROJECTION_VERSION } from "./daily-view-input.ts";
-export { bindWorkIntent } from "./intent-application.ts";
+  type DailyAttempt, type DailyObligation } from "./products/daily-view.ts";
+export { renderDailyView, renderDailyDetails } from "./products/daily-view-render.ts";
+export { renderDailyPanel, type PanelOptions, type WorkPresentation } from "./products/daily-panel.ts";
+export { parseArchiveProjection, ARCHIVE_PROJECTION_VERSION } from "./products/daily-view-input.ts";
+export { bindWorkIntent } from "./products/intent-application.ts";
 export { intentRequestDigest, parseIntentRequest, type IntentRequest, type IntentSelection, type IntentPriority,
-  type IntentAdmission, type IntentSnapshot, type IntentReceipt, type WorkIntentBinding } from "./intent-control.ts";
-export { dispatchRequestDigest, parseDispatchRequest, type DispatchRequest, type DispatchAuthority, type DispatchRecord, type DispatchSnapshot } from "./dispatch-control.ts";
+  type IntentAdmission, type IntentSnapshot, type IntentReceipt, type WorkIntentBinding } from "./products/intent-control.ts";
+export { dispatchRequestDigest, parseDispatchRequest, type DispatchRequest, type DispatchAuthority, type DispatchRecord, type DispatchSnapshot } from "./products/dispatch-control.ts";
 export { createFactoryRegistry, openFactoryRegistry, createFactoryOrder, openFactoryOrder, migrateFactoryOrder,
   factoryOrderDigest, parseFactoryOrder, fixedPolicyDigest, factoryDecisionDigest, activationRequestDigest, factoryMigrationDigest,
-  type FactoryRegistryBinding, type FactoryOrderCharter, type FactoryAuthority, type FactoryOrderView, type FixedPolicy, type ActivationRequest, type FactoryMigration } from "./factory-order.ts";
+  type FactoryRegistryBinding, type FactoryOrderCharter, type FactoryAuthority, type FactoryOrderView, type FixedPolicy, type ActivationRequest, type FactoryMigration } from "./products/factory-order.ts";
 export { createExperiment, openExperiment, experimentCharterDigest, experimentBindingDigest, experimentCancellationDigest, parseExperimentCharter,
-  type ExperimentBinding, type ExperimentCharter, type ExperimentAuthority, type ExperimentCancellation, type ExperimentRun, type ExperimentView } from "./experiment.ts";
+  type ExperimentBinding, type ExperimentCharter, type ExperimentAuthority, type ExperimentCancellation, type ExperimentRun, type ExperimentView } from "./products/experiment.ts";
 export { createResourceBudget, createDispatchBudget, createIntentBudget, createExperimentBudget, openResourceBudget, resourceBindingDigest, ResourceAdmissionError,
-  type BudgetBinding, type DispatchBudgetBinding, type IntentBudgetBinding, type ExperimentBudgetBinding, type GovernedBudgetBinding, type ResourceLimits, type AttemptDemand, type ResourcePermit, type BudgetSnapshot } from "./resource-budget.ts";
+  type BudgetBinding, type DispatchBudgetBinding, type IntentBudgetBinding, type ExperimentBudgetBinding, type GovernedBudgetBinding, type ResourceLimits, type AttemptDemand, type ResourcePermit, type BudgetSnapshot } from "./products/resource-budget.ts";
 export { createProducerIpcHost, startProducerIpc, producerIpcBinding, producerIpcBindingDigest, producerIpcDemand, PRODUCER_IPC_LIMITS,
-  type ProducerIpcBinding, type ProducerIpcReferences, type ProducerIpcContext, type ProducerIpcHost, type ProducerIpcSnapshot, type ProducerIpcRun } from "./producer-ipc.ts";
+  type ProducerIpcBinding, type ProducerIpcReferences, type ProducerIpcContext, type ProducerIpcHost, type ProducerIpcSnapshot, type ProducerIpcRun } from "./products/producer-ipc.ts";
 export { prepareDigestProfile, runDigestProfile, DIGEST_PROFILE, EffectProfileUnavailableError,
-  type DigestProfile, type DigestAttempt } from "./effect-profile.ts";
-export { planSpawn, type SpawnPlan, type SpawnPlanInput } from "./spawn.ts";
+  type DigestProfile, type DigestAttempt } from "./products/effect-profile.ts";
+export { planSpawn, type SpawnPlan, type SpawnPlanInput } from "./kernel/spawn.ts";
 export { beginExecutionRetention, drainExecutionRetention, ENV_EXECUTION_ARCHIVE, RETENTION_VERSION, retentionConfigurationDigest, verifyRetainedBytes,
   type ExecutionRetentionManifest, type RetainedContent, type RetentionIdentity, type RetentionStatus,
   type ExecutionRetention, buildExecutionRetentionManifest, parseExecutionRetentionManifest, RETENTION_SCHEMA,
   ENV_NATIVE_SESSION_ROOT, readNativeSession, parseNativeSessionBytes,
-  type NativeSessionObservation, type NativeSessionManager } from "./execution-retention.ts";
+  type NativeSessionObservation, type NativeSessionManager } from "./governance/execution-retention.ts";
 
 export {
   APPROVAL_TTL_DAYS,
@@ -86,7 +86,7 @@ export {
   type ApprovalSource,
   type EntryVerdict,
   type SubjectSnapshot,
-} from "./approval.ts";
+} from "./kernel/approval.ts";
 
 export {
   approvalsPath,
@@ -96,7 +96,7 @@ export {
   saveApproval,
   type DroppedApproval,
   type SubjectLookup,
-} from "./approval-store.ts";
+} from "./governance/approval-store.ts";
 
 export {
   approvalBindingDigest,
@@ -109,7 +109,7 @@ export {
   type ApprovalBinding,
   type CorrelationMetadata,
   type JsonValue,
-} from "./correlation.ts";
+} from "./kernel/correlation.ts";
 
 export {
   GovernanceRefusal,
@@ -117,19 +117,18 @@ export {
   refusal,
   type RefusalCode,
   type StructuredRefusal,
-} from "./refusals.ts";
+} from "./kernel/refusals.ts";
 
 export {
-  acquireWorkspaceLease,
-  defaultWorkspaceLeaseDir,
   loadWorkspaceRegistry,
   resolveWorkspace,
   validateRegisteredWorkspace,
   type ValidatedWorkspace,
   type WorkspaceAccess,
-  type WorkspaceLease,
   type WorkspaceRegistryFile,
-} from "./workspace.ts";
+} from "./kernel/workspace.ts";
+
+export { acquireWorkspaceLease, defaultWorkspaceLeaseDir, type WorkspaceLease } from "./governance/workspace-lease.ts";
 
 export {
   buildCheckEnvironment,
@@ -137,13 +136,13 @@ export {
   type CheckDefinition,
   type CheckReceipt,
   type CheckRegistry,
-} from "./check-runner.ts";
+} from "./governance/check-runner.ts";
 
 export {
   isExecutionId,
   newExecutionId,
   type ExecutionId,
-} from "./execution-id.ts";
+} from "./kernel/execution-id.ts";
 
 export {
   parseDashboardLedger,
@@ -152,14 +151,14 @@ export {
   type DashboardState,
   type DashboardWorkflow,
   type DashboardWorkflowFact,
-} from "./dashboard-projection.ts";
+} from "./products/dashboard-projection.ts";
 
-export { renderDashboard, type DashboardRenderOptions } from "./dashboard-render.ts";
-export { declareWork, loadDeclaredWork, type DeclaredWorkState } from "./work-command.ts";
-export { workSetup, recordWorkSetup, selectRecordedWork, loadWorkSetup, listWorkSetups, workPresentation, type WorkSetup, type WorkTaskSetup, type RecordedWorkSetup } from "./work-setup.ts";
-export { runWorkSetup, inspectWorkRun, type WorkRunResult, type WorkRunInitial, type WorkPolicyPin } from "./work-run.ts";
-export { workPolicy, workPolicyDigest, policyForSetup, createWorkPolicyRegistry, openWorkPolicyRegistry, workPolicyActivationDigest, type WorkPolicy, type WorkPolicyRegistry, type WorkPolicyActivation } from "./work-policy-registry.ts";
-export { learningHarness, bindLearningConnection, loadLearningConnection, bindLearningAdoption, learningScopeDigest, type LearningConnection, type LearningWorkspace } from "./learning-connection.ts";
+export { renderDashboard, type DashboardRenderOptions } from "./products/dashboard-render.ts";
+export { declareWork, loadDeclaredWork, type DeclaredWorkState } from "./products/work-command.ts";
+export { workSetup, recordWorkSetup, selectRecordedWork, loadWorkSetup, listWorkSetups, workPresentation, type WorkSetup, type WorkTaskSetup, type RecordedWorkSetup } from "./products/work-setup.ts";
+export { runWorkSetup, inspectWorkRun, type WorkRunResult, type WorkRunInitial, type WorkPolicyPin } from "./products/work-run.ts";
+export { workPolicy, workPolicyDigest, policyForSetup, createWorkPolicyRegistry, openWorkPolicyRegistry, workPolicyActivationDigest, type WorkPolicy, type WorkPolicyRegistry, type WorkPolicyActivation } from "./products/work-policy-registry.ts";
+export { learningHarness, bindLearningConnection, loadLearningConnection, bindLearningAdoption, learningScopeDigest, type LearningConnection, type LearningWorkspace } from "./products/learning-connection.ts";
 
 export {
   runMeasuredAgentSession,
@@ -172,10 +171,10 @@ export {
   type MeasuredSessionHostInput,
   type MeasuredSessionHostResult,
   type ProviderUsage,
-} from "./measured-session.ts";
+} from "./products/measured-session.ts";
 export { createMeasuredOrder, openMeasuredOrder, measuredOrderDigest, measuredOrderAcknowledgementDigest, qualifyMeasuredOutput,
   type MeasuredOrder, type MeasuredOrderNode, type MeasuredOrderAttempt, type MeasuredOutputContract, type MeasuredOrderBinding, type MeasuredOrderAuthority,
-  type MeasuredOrderAcknowledgement, type MeasuredOrderNodeView } from "./measured-order.ts";
+  type MeasuredOrderAcknowledgement, type MeasuredOrderNodeView } from "./products/measured-order.ts";
 
 export {
   createApprovalGate,
@@ -187,4 +186,4 @@ export {
   type PromptOutcome,
   type PromptOutcomeKind,
   type PromptRequest,
-} from "./approval-prompt.ts";
+} from "./governance/approval-prompt.ts";

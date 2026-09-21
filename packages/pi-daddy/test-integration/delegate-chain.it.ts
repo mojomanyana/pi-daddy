@@ -14,7 +14,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { after, afterEach, describe, test } from "node:test";
-import { ENV_FANOUT, ENV_GRANT, ENV_LEDGER } from "../src/propagation.ts";
+import { ENV_FANOUT, ENV_GRANT, ENV_LEDGER } from "../src/kernel/propagation.ts";
 import { definition, harness, restoreEnv } from "../test/chain-harness.ts";
 import { cleanupTempDirs, modelTestsEnabled, piAvailable, tempDir } from "./harness.ts";
 

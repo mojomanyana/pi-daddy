@@ -9,7 +9,7 @@ import {
   makeCatalog,
   suggestForUnknown,
   unknownCapabilities,
-} from "../src/catalog.ts";
+} from "../src/kernel/catalog.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
 process.env.PI_CODING_AGENT_DIR = await tempDir("grants-discovery-agent-");

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { after, test } from "node:test";
-import { ActivityTimelineRecorder, activityTaskKey, defaultActivityTimelinePath, detailForTimeline, parseActivityTimeline } from "../src/activity-timeline.ts";
+import { ActivityTimelineRecorder, activityTaskKey, defaultActivityTimelinePath, detailForTimeline, parseActivityTimeline } from "../src/products/activity-timeline.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
 after(cleanupTempDirs);

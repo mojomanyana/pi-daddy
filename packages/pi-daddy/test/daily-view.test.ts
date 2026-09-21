@@ -9,13 +9,13 @@ import { cleanupTempDirs, tempDir } from "./tmp.ts";
 after(cleanupTempDirs);
 import { dailyFixture, dailyAuthority } from "./daily-view-fixture.ts";
 import { fixtureText, fixtureEventRef, revisionRevalidationFixture, walkingFixture, fixtureAuthority } from "./work-ledger-fixtures.ts";
-import { createDailyViewReader, readDailyView } from "../src/daily-view.ts";
-import { renderDailyDetails as renderDailyView } from "../src/daily-view-render.ts";
-import { renderDailyPanel } from "../src/daily-panel.ts";
-import { parseArchiveProjection } from "../src/daily-view-input.ts";
-import { dashboardFrame, ENV_DAILY_ARCHIVE, ENV_DAILY_WORK, ENV_DAILY_SELECTION } from "../src/dashboard-cli.ts";
-import { openOrReuseDashboard } from "../src/dashboard-herdr.ts";
-import { projectWorkLedger } from "../src/work-ledger.ts";
+import { createDailyViewReader, readDailyView } from "../src/products/daily-view.ts";
+import { renderDailyDetails as renderDailyView } from "../src/products/daily-view-render.ts";
+import { renderDailyPanel } from "../src/products/daily-panel.ts";
+import { parseArchiveProjection } from "../src/products/daily-view-input.ts";
+import { dashboardFrame, ENV_DAILY_ARCHIVE, ENV_DAILY_WORK, ENV_DAILY_SELECTION } from "../src/products/dashboard-cli.ts";
+import { openOrReuseDashboard } from "../src/products/dashboard-herdr.ts";
+import { projectWorkLedger } from "../src/governance/work-ledger.ts";
 const hash = (bytes: Uint8Array | string) => createHash("sha256").update(bytes).digest("hex");
 const contract = new URL("../contracts/daily-view/v1/", import.meta.url);
 async function fixture() {
@@ -105,7 +105,7 @@ test("real existing dashboard CLI reads snapshots without changing sessions, con
   const paths = [session, control, options.workLedgerPath, options.archiveProjectionPath];
   const before = await Promise.all(paths.map(async p => hash(await readFile(p))));
   const entries = (await readdir(options.dir)).sort();
-  const command = new URL("../src/dashboard-cli.ts", import.meta.url).pathname;
+  const command = new URL("../src/products/dashboard-cli.ts", import.meta.url).pathname;
   for (let i = 0; i < 3; i++) {
     const result = await promisify(execFile)(process.execPath, [command, "--once", "--daily-json", "--archive-projection", options.archiveProjectionPath,
       "--work-ledger", options.workLedgerPath, "--work-snapshot", JSON.stringify(options.workContext.selectedSnapshot)], {

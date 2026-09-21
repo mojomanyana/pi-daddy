@@ -16,8 +16,8 @@ import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import grantsExtension from "../extensions/grants.ts";
-import { ENV_HERDR } from "../src/executor.ts";
-import { ENV_APPROVED, ENV_DEPTH, ENV_FANOUT, ENV_GATED, ENV_GRANT, ENV_LEDGER, ENV_MAX_DEPTH, ENV_PARENT_ID } from "../src/propagation.ts";
+import { ENV_HERDR } from "../src/executors/executor.ts";
+import { ENV_APPROVED, ENV_DEPTH, ENV_FANOUT, ENV_GATED, ENV_GRANT, ENV_LEDGER, ENV_MAX_DEPTH, ENV_PARENT_ID } from "../src/kernel/propagation.ts";
 import { tempDir } from "./tmp.ts";
 
 const KEYS = [ENV_GRANT, ENV_DEPTH, ENV_MAX_DEPTH, ENV_GATED, ENV_APPROVED, ENV_LEDGER, ENV_FANOUT, ENV_PARENT_ID, ENV_HERDR];
@@ -68,7 +68,7 @@ export type GateAnswer =
    * Deny, not dismiss. `"decline"` returns `undefined`, which pi treats as *dismissed* — a timeout or an escape — and
    * the ledger records `gateOutcome: "dismissed"` with `humanDenied` false. Only an explicit Deny sets
    * `humanDenied`, and the distinction is deliberate: "a person said no" and "nobody answered" call for different
-   * responses (`src/ledger.ts`). A test asserting `humanDenied` has to model the former.
+   * responses (`src/governance/ledger.ts`). A test asserting `humanDenied` has to model the former.
    */
   | "allow-then-decline";
 

@@ -1,8 +1,8 @@
 import type { ApprovalOutcome } from "./approvals.ts";
-import type { Delegation } from "../src/delegate.ts";
-import { appendRecord, buildRecord } from "../src/ledger.ts";
-import type { StructuredRefusal } from "../src/refusals.ts";
-import { childSpawnId } from "../src/fanout.ts";
+import type { Delegation } from "../src/kernel/delegate.ts";
+import { appendRecord, buildRecord } from "../src/governance/ledger.ts";
+import type { StructuredRefusal } from "../src/kernel/refusals.ts";
+import { childSpawnId } from "../src/kernel/fanout.ts";
 import type { GrantsSession } from "./session.ts";
 
 /** Audit a chain preflight/gate refusal with the same trusted planner facts as a normal delegation. */

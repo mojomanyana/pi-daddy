@@ -4,8 +4,8 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { buildWorkOccurrenceEvent, buildWorkAcceptanceEvent, parseWorkLedgerText, projectWorkLedger,
   appendWorkLedgerEvent, inspectWorkLedger, WorkInputError,
-  type WorkFrozen, type WorkLedgerEvent, type WorkOccurrenceEvent, type WorkOccurrencePayload, type WorkProjectionContext } from "../src/work-ledger.ts";
-import { workResultKey, sortWorkResults } from "../src/work-ledger-json.ts";
+  type WorkFrozen, type WorkLedgerEvent, type WorkOccurrenceEvent, type WorkOccurrencePayload, type WorkProjectionContext } from "../src/governance/work-ledger.ts";
+import { workResultKey, sortWorkResults } from "../src/governance/work-ledger-json.ts";
 import { layoutFixture, layoutAuthority, layoutAssociationFixture, layoutAssociationAuthority, layoutSuccessorFixture,
   layoutSuccessorAuthority, layoutExecutions, layoutSimulation, fixtureNow, fixtureText, fixtureEventRef, fixtureRevisionRef,
   mutableFixture, walkingFixture, type LayoutRevisionChange } from "./work-ledger-fixtures.ts";

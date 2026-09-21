@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { runChild } from "../src/run-child.ts";
+import { runChild } from "../src/kernel/run-child.ts";
 import { withRunChildTestControl } from "./run-child-test-control.ts";
 
 const request = () => ({

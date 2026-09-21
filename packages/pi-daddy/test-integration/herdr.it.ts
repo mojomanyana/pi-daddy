@@ -30,8 +30,8 @@
 
 import assert from "node:assert/strict";
 import { after, describe, test } from "node:test";
-import { defaultExec, parseReply, probeHerdr } from "../src/herdr-cli.ts";
-import { uniqueAgentName } from "../src/herdr-name.ts";
+import { defaultExec, parseReply, probeHerdr } from "../src/executors/herdr-cli.ts";
+import { uniqueAgentName } from "../src/executors/herdr-name.ts";
 
 /** Interactive pi that holds no tools and needs no model: enough to become a detectable agent. */
 const INERT_PI_ARGV = [
@@ -85,7 +85,7 @@ async function pane(): Promise<string> {
 /**
  * `agent start`, retrying only the documented busy condition.
  *
- * A freshly created pane is not yet at a shell prompt (`agent_pane_busy`), which `src/run-herdr.ts` retries for
+ * A freshly created pane is not yet at a shell prompt (`agent_pane_busy`), which `src/executors/run-herdr.ts` retries for
  * the same reason. Retrying here keeps a real-timing flake from being read as a herdr contract change.
  */
 async function startAgent(name: string, paneId: string): Promise<{ ok: boolean; error?: string }> {
@@ -116,7 +116,7 @@ describe("herdr assumptions, against a real server", () => {
     const reply = await defaultExec(["agent"]);
     const help = reply.stdout + reply.stderr;
     for (const used of ["agent get", "agent read", "agent prompt", "agent start"]) {
-      assert.ok(help.includes(used), `${used} is used by src/run-herdr.ts and must exist`);
+      assert.ok(help.includes(used), `${used} is used by src/executors/run-herdr.ts and must exist`);
     }
     assert.ok(!/herdr agent stop\b/.test(help), "a `stop` here would mean the kill story can be revisited");
   });

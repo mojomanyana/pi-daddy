@@ -17,7 +17,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { MAX_CHILDREN_PER_CALL } from "../src/fanout.ts";
+import { MAX_CHILDREN_PER_CALL } from "../src/kernel/fanout.ts";
 import { SPAWN_TOOLS, tripwireReason } from "../extensions/tripwire.ts";
 
 test("the refusal names delegate_all, not just delegate", () => {

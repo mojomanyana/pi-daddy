@@ -3,7 +3,7 @@ import { open,lstat,realpath,mkdtemp,appendFile } from "node:fs/promises";
 import { resolve,join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
-import { runWithFinalizers } from "../src/finalization.ts";
+import { runWithFinalizers } from "../src/governance/finalization.ts";
 const MAX=256*1024*1024;
 /** Explicit job-owned copy, not an installation, shared chmod or namespace qualification. */
 export async function stagePrivateRuntime(directory:string,sourceInput=process.execPath){

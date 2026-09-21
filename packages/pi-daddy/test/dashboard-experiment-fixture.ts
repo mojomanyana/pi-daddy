@@ -1,7 +1,7 @@
 import { join } from "node:path";
-import { createExperimentBudget, resourceBindingDigest } from "../src/resource-budget.ts";
-import { createExperiment, openExperiment, experimentCharterDigest, type ExperimentCharter } from "../src/experiment.ts";
-import { DIGEST_PROFILE } from "../src/effect-profile.ts";
+import { createExperimentBudget, resourceBindingDigest } from "../src/products/resource-budget.ts";
+import { createExperiment, openExperiment, experimentCharterDigest, type ExperimentCharter } from "../src/products/experiment.ts";
+import { DIGEST_PROFILE } from "../src/products/effect-profile.ts";
 import { hash } from "./debrief-durable-fixture.ts";
 export async function hostExperiment(root:string){
  const bytes=Buffer.from("common"),authorityDigest="a".repeat(64),budget=await createExperimentBudget({directory:join(root,"experiment-budget"),authorityDigest,limits:{maxAttempts:2,maxInputBytes:64,maxConcurrent:2}});

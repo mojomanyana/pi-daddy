@@ -15,7 +15,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { childEnv, depthConfig, parseBound } from "../src/propagation.ts";
+import { childEnv, depthConfig, parseBound } from "../src/kernel/propagation.ts";
 
 test("parseBound accepts a non-negative integer", () => {
   assert.equal(parseBound("0"), 0);

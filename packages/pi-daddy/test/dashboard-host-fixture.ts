@@ -2,7 +2,7 @@ import { readFile, writeFile, mkdir, symlink, realpath, readdir } from "node:fs/
 import { join, dirname, relative } from "node:path";
 import { pathToFileURL } from "node:url";
 import ts from "typescript";
-import { loadDashboardHarness, type DashboardHarnessArtifact } from "../src/dashboard-harness.ts";
+import { loadDashboardHarness, type DashboardHarnessArtifact } from "../src/products/dashboard-harness.ts";
 import { hash } from "./debrief-durable-fixture.ts";
 export async function connectedHarness(root: string) {
   const sources = new URL("fixtures/dashboard-host/", import.meta.url), modules=join(root,"harness");await mkdir(modules,{mode:0o700});await writeFile(join(modules,"package.json"),'{"type":"module"}');

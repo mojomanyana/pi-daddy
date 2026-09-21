@@ -3,8 +3,8 @@ import { after, test } from "node:test";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
-import { workSetup } from "../src/work-setup.ts";
-import { runWorkSetup, inspectWorkRun } from "../src/work-run.ts";
+import { workSetup } from "../src/products/work-setup.ts";
+import { runWorkSetup, inspectWorkRun } from "../src/products/work-run.ts";
 after(cleanupTempDirs);
 const result=(text:string,ok=true)=>({ok,text,exitCode:ok?0:1});
 async function fixture() {

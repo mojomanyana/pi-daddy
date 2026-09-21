@@ -16,11 +16,11 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { readFileSync, existsSync } from "node:fs";
 import { after, test } from "node:test";
-import { makeCatalog } from "../src/catalog.ts";
-import type { SkillDefinition } from "../src/definitions.ts";
-import { planDelegation } from "../src/delegate.ts";
-import { appendLedgerEvent, appendRecord, buildRecord, isEscalationAttempt, verifyLedger } from "../src/ledger.ts";
-import { MAX_CHAIN_STEPS, MAX_CHILDREN_PER_CALL } from "../src/fanout.ts";
+import { makeCatalog } from "../src/kernel/catalog.ts";
+import type { SkillDefinition } from "../src/kernel/definitions.ts";
+import { planDelegation } from "../src/kernel/delegate.ts";
+import { appendLedgerEvent, appendRecord, buildRecord, isEscalationAttempt, verifyLedger } from "../src/governance/ledger.ts";
+import { MAX_CHAIN_STEPS, MAX_CHILDREN_PER_CALL } from "../src/kernel/fanout.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
 after(cleanupTempDirs);
@@ -512,7 +512,7 @@ test("ADR-0033: MAX_CHAIN_STEPS is DERIVED from MAX_CHILDREN_PER_CALL, not merel
   assert.equal(MAX_CHAIN_STEPS, MAX_CHILDREN_PER_CALL, "sanity");
   // Tolerates an explicit type annotation, which is semantically identical and was rejected by the first version.
   // The captured line is reported rather than the whole file — a failure used to dump 8 KB of `fanout.ts`.
-  const source = readFileSync(new URL("../src/fanout.ts", import.meta.url), "utf8");
+  const source = readFileSync(new URL("../src/kernel/fanout.ts", import.meta.url), "utf8");
   const line = source.split("\n").find((l) => l.includes("MAX_CHAIN_STEPS") && l.includes("=")) ?? "(not found)";
   assert.match(
     line.trim(),

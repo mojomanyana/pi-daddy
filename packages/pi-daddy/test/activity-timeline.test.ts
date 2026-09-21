@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ActivityTimelineAliases, parseActivityTimeline, renderActivityTimeline } from "../src/activity-timeline.ts";
+import { ActivityTimelineAliases, parseActivityTimeline, renderActivityTimeline } from "../src/products/activity-timeline.ts";
 
 const at = "2026-09-18T12:00:00.000Z";
 const event = (kind: string, overrides: Record<string, unknown> = {}) => ({

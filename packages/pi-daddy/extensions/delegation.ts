@@ -11,13 +11,13 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { maySpawnDefinition } from "../src/delegate.ts";
-import { MAX_CHILDREN_PER_CALL, splitBudget } from "../src/fanout.ts";
+import { maySpawnDefinition } from "../src/kernel/delegate.ts";
+import { MAX_CHILDREN_PER_CALL, splitBudget } from "../src/kernel/fanout.ts";
 import {
   PAINT_INTERVAL_MS, appendTail, emptyTail, renderProgress, replaceTail, throttle, type ChildProgress,
-} from "../src/progress.ts";
+} from "../src/kernel/progress.ts";
 import { registerChainTool } from "./delegate-chain.ts";
-import { GovernanceRefusal, refusal } from "../src/refusals.ts";
+import { GovernanceRefusal, refusal } from "../src/kernel/refusals.ts";
 import { runOneDelegation } from "./run-delegation.ts";
 import {
   buildFanoutReport,

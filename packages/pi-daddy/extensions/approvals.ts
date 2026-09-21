@@ -22,14 +22,14 @@ import {
   type InheritableApproval,
   type ResolveApprovalsResult,
   type SubjectSnapshot,
-} from "../src/approval.ts";
-import { loadApprovals, saveApproval } from "../src/approval-store.ts";
-import type { createApprovalGate } from "../src/approval-prompt.ts";
-import { timeoutMsFromEnv, type PromptOutcomeKind } from "../src/approval-prompt.ts";
-import { ceilingForDefinition, digestDefinition } from "../src/definitions.ts";
-import type { Capability } from "../src/resolve.ts";
-import { approvalBindingDigest, type ApprovalBinding } from "../src/correlation.ts";
-import type { RefusalCode } from "../src/refusals.ts";
+} from "../src/kernel/approval.ts";
+import { loadApprovals, saveApproval } from "../src/governance/approval-store.ts";
+import type { createApprovalGate } from "../src/governance/approval-prompt.ts";
+import { timeoutMsFromEnv, type PromptOutcomeKind } from "../src/governance/approval-prompt.ts";
+import { ceilingForDefinition, digestDefinition } from "../src/kernel/definitions.ts";
+import type { Capability } from "../src/kernel/resolve.ts";
+import { approvalBindingDigest, type ApprovalBinding } from "../src/kernel/correlation.ts";
+import type { RefusalCode } from "../src/kernel/refusals.ts";
 import type { GrantsSession } from "./session.ts";
 import type { BankedApproval } from "./approval-banking.ts";
 export { unbankApprovals } from "./approval-banking.ts";

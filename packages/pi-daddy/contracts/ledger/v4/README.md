@@ -80,7 +80,7 @@ Every event has exactly `ledgerVersion:4`, `event`, `eventId`, `ts`, `payload`, 
 Revision kinds are `scope`, `goal`, `node`, `obligation`, `artifact`, `policy`. Ordinary IDs use
 `[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,127}`; digests are 64 lowercase hexadecimal characters. Revisions are
 integers from 1 through 9007199254740991. Execution IDs use the unchanged
-[execution-id.ts](../../../src/execution-id.ts) grammar. Timestamps are UTC
+[execution-id.ts](../../../src/kernel/execution-id.ts) grammar. Timestamps are UTC
 `YYYY-MM-DDTHH:mm:ss.sssZ`, years 0001–9999, valid calendar dates, seconds 00–59.
 
 Bounds: 64 KiB per delivered nonblank record, 16 MiB per supplied JSONL text, 10,000 nonblank records,
@@ -89,7 +89,7 @@ maximum nesting depth 16 and 256 entries per input array. Aggregate output colle
 The schema enforces closed fields, discriminator/enumerated domains, reference kinds, scalar and array
 bounds, nonempty evidence, unique full array entries, revision-specific parent/policy/effect shapes,
 and null initial/non-null successor predecessor shape. **It is not the whole validator.** Use
-[parseWorkLedgerText](../../../src/work-ledger.ts) for strict text ingestion:
+[parseWorkLedgerText](../../../src/governance/work-ledger.ts) for strict text ingestion:
 
 - Detect decoded duplicate member names before object materialization, including nested/escaped names.
 - Reject malformed JSON, lone surrogates and unsupported object values; check numeric tokens exactly
@@ -219,7 +219,7 @@ Append precedence is options → candidate → path values → proven protected 
 failure → invalid topology → persistence → existing content → resulting capacity. Existing content checks
 bounded read first, then parser diagnostics, then terminal LF. Known filesystem/lock errors are translated;
 unexpected programming exceptions remain exceptions. Full result/problem/reference types are in
-[work-ledger-types.ts](../../../src/work-ledger-types.ts).
+[work-ledger-types.ts](../../../src/governance/work-ledger-types.ts).
 
 ## Compatibility and remaining gates
 

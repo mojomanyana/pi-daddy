@@ -1,4 +1,4 @@
-import { GovernanceRefusal, refusal } from "../src/refusals.ts";
+import { GovernanceRefusal, refusal } from "../src/kernel/refusals.ts";
 import type { GrantsSession } from "./session.ts";
 
 /** Tool definitions may be inspected directly; execution still requires an owner-bound delegation grant. */

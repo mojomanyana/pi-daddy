@@ -12,6 +12,15 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## Unreleased — source layered under `src/{kernel,governance,executors,products}` (ADR-0076 PR 2)
+
+Internal restructure with no wire change. Export keys in `package.json` are unchanged and every subpath
+still resolves; the compiled files moved from `dist/<name>.js` to `dist/<layer>/<name>.js`, so anything that
+deep-imported a `dist/` file by path must use the export map instead. `pi-daddy/workspace` still exports the
+lease functions (now from `governance/workspace-public.ts`). **One type change:** the planner's
+`DelegationContext.activity` field is replaced by `childEnv?: (child) => Record<string,string>`; the kernel
+refuses any `PI_GRANTS_*` key from it. `test/layering.test.ts` enforces that no import points upward.
+
 ## 0.28.1 — activity timeline safety and clearer outcomes
 
 - Render private prompt/final detail content as safe literal text: terminal controls are escaped, deliberate

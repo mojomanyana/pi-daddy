@@ -6,7 +6,7 @@ import {
   SCOPE_LABELS,
   timeoutMsFromEnv,
   type ApprovalUI,
-} from "../src/approval-prompt.ts";
+} from "../src/governance/approval-prompt.ts";
 
 // The third argument is captured, not discarded: `opts.timeout` is the only reason an unattended dialog
 // eventually denies, and `opts.signal` is the only reason a cancelled turn does not orphan one. Dropping
@@ -352,7 +352,7 @@ test("R-29: a refusal is shared too — one 'Deny' does not become three dialogs
 test("R-66: a caller that JOINS another's answer is marked, so the ledger stops claiming it was prompted", async () => {
   // Confirmed by execution before the fix: one dialog produced eight `granted/session` outcomes, and
   // `obtainApprovals` stamped `approvalSource: "prompt"` on every one — eight ledger lines each asserting
-  // a human was asked, when exactly one was. `src/ledger.ts` calls over-claiming in this direction "the
+  // a human was asked, when exactly one was. `src/governance/ledger.ts` calls over-claiming in this direction "the
   // worst available failure", and R-46 is the same defect one level down.
   //
   // Sharing the outcome stays correct: *Allow for this session* authorises the capability for the session,

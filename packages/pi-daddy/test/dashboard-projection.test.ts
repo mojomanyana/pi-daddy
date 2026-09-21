@@ -3,8 +3,8 @@ import { test } from "node:test";
 import {
   parseDashboardLedger,
   type DashboardNode,
-} from "../src/dashboard-projection.ts";
-import { renderDashboard } from "../src/dashboard-render.ts";
+} from "../src/products/dashboard-projection.ts";
+import { renderDashboard } from "../src/products/dashboard-render.ts";
 
 const digest = "a".repeat(64);
 const now = new Date("2026-08-28T12:10:00.000Z");

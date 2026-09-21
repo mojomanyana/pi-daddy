@@ -7,9 +7,9 @@ import {
   inspectDashboardPlugin,
   openOrReuseDashboard,
   verifyHerdrHost,
-} from "../src/dashboard-herdr.ts";
-import { DASHBOARD_PROTOCOL_VERSION } from "../src/dashboard-cli.ts";
-import type { HerdrExec } from "../src/herdr-cli.ts";
+} from "../src/products/dashboard-herdr.ts";
+import { DASHBOARD_PROTOCOL_VERSION } from "../src/products/dashboard-cli.ts";
+import type { HerdrExec } from "../src/executors/herdr-cli.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
 after(cleanupTempDirs);
@@ -370,7 +370,7 @@ test("the bundled plugin manifest pins Herdr and dashboard protocol compatibilit
   assert.match(manifest, new RegExp(`id = "${DASHBOARD_PLUGIN_ID.replaceAll(".", "\\.")}"`));
   assert.match(manifest, new RegExp(`version = "${DASHBOARD_PROTOCOL_VERSION}\\.0\\.0"`));
   assert.match(manifest, /min_herdr_version = "0\.8\.0"/);
-  assert.match(manifest, /dist\/dashboard-cli\.js/);
+  assert.match(manifest, /dist\/products\/dashboard-cli\.js/);
 });
 
 test("/grants dashboard refuses before Herdr when no ledger is configured", async () => {

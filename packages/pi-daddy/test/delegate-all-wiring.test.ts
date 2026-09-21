@@ -16,20 +16,16 @@ import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { after, afterEach, test } from "node:test";
 import grantsExtension from "../extensions/grants.ts";
-import { MAX_CHILDREN_PER_CALL } from "../src/fanout.ts";
+import { MAX_CHILDREN_PER_CALL } from "../src/kernel/fanout.ts";
 import {
   ENV_APPROVED, ENV_DEPTH, ENV_EXECUTION_ID, ENV_FANOUT, ENV_GATED, ENV_GRANT, ENV_LEDGER, ENV_MAX_DEPTH,
   ENV_PARENT_ID,
-} from "../src/propagation.ts";
-import { ENV_HERDR } from "../src/executor.ts";
-import { verifyLedger } from "../src/ledger.ts";
+} from "../src/kernel/propagation.ts";
+import { ENV_HERDR } from "../src/executors/executor.ts";
+import { verifyLedger } from "../src/governance/ledger.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
-import {
-  acquireWorkspaceLease,
-  ENV_WORKSPACE_LEASE_DIR,
-  ENV_WORKSPACE_REGISTRY,
-  validateRegisteredWorkspace,
-} from "../src/workspace.ts";
+import { ENV_WORKSPACE_REGISTRY, validateRegisteredWorkspace } from "../src/kernel/workspace.ts";
+import { acquireWorkspaceLease, ENV_WORKSPACE_LEASE_DIR } from "../src/governance/workspace-lease.ts";
 import { execFileSync } from "node:child_process";
 
 after(cleanupTempDirs);

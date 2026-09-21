@@ -4,11 +4,11 @@ import { open, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { cleanupTempDirs } from "./tmp.ts";
 import { fixture } from "./factory-quality-fixture.ts";
-import { createFactoryOrder, openFactoryOrder, factoryOrderDigest, fixedPolicyDigest, activationRequestDigest, openFactoryRegistry } from "../src/factory-order.ts";
-import { factoryRegistryStore, replayRegistry, validateActivePolicy } from "../src/factory-registry.ts";
-import { prepareDigestProfile } from "../src/effect-profile.ts";
-import { byteHash } from "../src/experiment-contract.ts";
-import { buildAdoptionBinding, authorizeAdoption, buildRollbackRequest } from "../src/vendor/adoption.ts";
+import { createFactoryOrder, openFactoryOrder, factoryOrderDigest, fixedPolicyDigest, activationRequestDigest, openFactoryRegistry } from "../src/products/factory-order.ts";
+import { factoryRegistryStore, replayRegistry, validateActivePolicy } from "../src/products/factory-registry.ts";
+import { prepareDigestProfile } from "../src/products/effect-profile.ts";
+import { byteHash } from "../src/products/experiment-contract.ts";
+import { buildAdoptionBinding, authorizeAdoption, buildRollbackRequest } from "../src/products/vendor/adoption.ts";
 after(cleanupTempDirs);
 test("factory boundary and completion preserve final controller failure with real successful worker artifacts", async()=>{
   const f=await fixture(),charter={...f.charter,nodes:f.charter.nodes.map((n,i)=>({...n,attempts:n.attempts.slice(0,1),expectedDigest:byteHash("common"+i),dependencies:[],decision:null}))},authority={...f.authority,orderDigests:[factoryOrderDigest(charter)]};

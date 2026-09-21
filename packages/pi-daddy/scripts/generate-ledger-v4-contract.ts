@@ -5,7 +5,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   buildWorkRevisionEvent, buildWorkSnapshotEvent, buildWorkOccurrenceEvent, buildWorkAcceptanceEvent,
   type RevisionRef, type WorkRevision, type WorkRevisionEvent, type WorkFrozen,
-} from "../src/work-ledger.ts";
+} from "../src/governance/work-ledger.ts";
 
 /** Pure, deterministic wire examples. No authority context, input claims, loader or I/O. The four
  * standalone objects illustrate shapes, not a complete graph or an authenticated acceptance. */

@@ -5,12 +5,8 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { createHash } from "node:crypto";
 import { governedWorkspaceAccess, prepareDelegationWorkspace, releaseDelegationWorkspace } from "../extensions/workspace-runtime.ts";
-import {
-  acquireWorkspaceLease,
-  ENV_WORKSPACE_LEASE_DIR,
-  ENV_WORKSPACE_REGISTRY,
-  validateRegisteredWorkspace,
-} from "../src/workspace.ts";
+import { ENV_WORKSPACE_REGISTRY, validateRegisteredWorkspace } from "../src/kernel/workspace.ts";
+import { acquireWorkspaceLease, ENV_WORKSPACE_LEASE_DIR } from "../src/governance/workspace-lease.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
 after(cleanupTempDirs);

@@ -7,17 +7,17 @@ import {
   DASHBOARD_PROTOCOL_VERSION,
   dashboardActionFeedback,
   dashboardFrame,
-} from "../src/dashboard-cli.ts";
-import { createDashboardDisplayControls } from "../src/dashboard-display-controls.ts";
+} from "../src/products/dashboard-cli.ts";
+import { createDashboardDisplayControls } from "../src/products/dashboard-display-controls.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
-import { ActivityTimelineRecorder, activityTaskKey, defaultActivityTimelinePath, parseActivityTimeline } from "../src/activity-timeline.ts";
+import { ActivityTimelineRecorder, activityTaskKey, defaultActivityTimelinePath, parseActivityTimeline } from "../src/products/activity-timeline.ts";
 
 after(cleanupTempDirs);
 
 test("the installed-style symlink actually invokes the dashboard bin", async () => {
   const cwd = await tempDir("dashboard-bin-");
   const link = join(cwd, "pi-daddy-dashboard");
-  await symlink(join(import.meta.dirname, "..", "src", "dashboard-cli.ts"), link);
+  await symlink(join(import.meta.dirname, "..", "src", "products", "dashboard-cli.ts"), link);
   const output = execFileSync(process.execPath, [link, "--once", "--no-color"], { cwd, encoding: "utf8" });
   assert.match(output, /pi-daddy is missing or its ledger is inactive/);
 });
@@ -159,7 +159,7 @@ test("ledger CLI readline accepts h, details, and collapse without dispatching a
   const ledgerPath = join(cwd, "ledger.jsonl");
   await writeFile(ledgerPath, completedLedger());
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("PI_DADDY_")));
-  const child = spawn(process.execPath, [join(import.meta.dirname, "..", "src", "dashboard-cli.ts"), "--ledger", ledgerPath, "--no-color"], { cwd, env, stdio: ["pipe", "pipe", "pipe"] });
+  const child = spawn(process.execPath, [join(import.meta.dirname, "..", "src", "products", "dashboard-cli.ts"), "--ledger", ledgerPath, "--no-color"], { cwd, env, stdio: ["pipe", "pipe", "pipe"] });
   let output = "", errors = "";
   child.stdout.on("data", chunk => { output += chunk; });
   child.stderr.on("data", chunk => { errors += chunk; });

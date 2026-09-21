@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { DELEGATE_CAPABILITY, normaliseCapability, planDelegation } from "../src/delegate.ts";
-import { ENV_DEPTH, ENV_GRANT, ENV_MAX_DEPTH } from "../src/propagation.ts";
-import { ENV_ACTIVITY_PARENT_TASK, ENV_ACTIVITY_PATH, ENV_ACTIVITY_ROOT, ENV_ACTIVITY_TASK } from "../src/activity-timeline.ts";
-import type { SkillDefinition } from "../src/definitions.ts";
+import { DELEGATE_CAPABILITY, normaliseCapability, planDelegation } from "../src/kernel/delegate.ts";
+import { ENV_DEPTH, ENV_GRANT, ENV_MAX_DEPTH } from "../src/kernel/propagation.ts";
+import { ENV_ACTIVITY_PARENT_TASK, ENV_ACTIVITY_PATH, ENV_ACTIVITY_ROOT, ENV_ACTIVITY_TASK } from "../src/products/activity-timeline.ts";
+import type { SkillDefinition } from "../src/kernel/definitions.ts";
 
 const ctx = (over: Partial<Parameters<typeof planDelegation>[1]> = {}) => ({
   ownGrant: ["tool:read", "tool:bash", "tool:edit", "tool:write"],
@@ -82,7 +82,7 @@ test("spawning is a capability: the extension is passed only when delegate is gr
 
   const leaf = planDelegation(
     { task: "x", tools: ["read"] },
-    ctx({ ownGrant: ["tool:read", DELEGATE_CAPABILITY], extensionPath: "/x/grants.ts", observerExtensionPath: "/x/activity.ts", activity: { rootId: "root-1", path: "/private/activity.jsonl", taskId: "turn-1" }, childExecutionId: "exec-1" }),
+    ctx({ ownGrant: ["tool:read", DELEGATE_CAPABILITY], extensionPath: "/x/grants.ts", observerExtensionPath: "/x/activity.ts", childEnv: (child) => ({ [ENV_ACTIVITY_PATH]: "/private/activity.jsonl", [ENV_ACTIVITY_ROOT]: "root-1", [ENV_ACTIVITY_TASK]: child.childExecutionId ?? "", [ENV_ACTIVITY_PARENT_TASK]: "turn-1" }), childExecutionId: "exec-1" }),
   );
   assert.ok(leaf.args.includes("/x/activity.ts"), "a leaf gets only the no-tool observer, not delegation machinery");
   assert.ok(!leaf.args.includes("/x/grants.ts"));
@@ -116,7 +116,7 @@ test("a universal capability cannot be provisioned even if somehow held", () => 
 });
 
 test("unknown capabilities are refused as unknown, not as escalation", async () => {
-  const { makeCatalog } = await import("../src/catalog.ts");
+  const { makeCatalog } = await import("../src/kernel/catalog.ts");
   const catalog = makeCatalog([
     { capability: "tool:read", kind: "builtin" },
     { capability: "tool:delegate", kind: "extension" },
@@ -128,7 +128,7 @@ test("unknown capabilities are refused as unknown, not as escalation", async () 
 });
 
 test("a known capability still passes the catalog check", async () => {
-  const { makeCatalog } = await import("../src/catalog.ts");
+  const { makeCatalog } = await import("../src/kernel/catalog.ts");
   const catalog = makeCatalog([{ capability: "tool:read", kind: "builtin" }]);
   assert.equal(planDelegation({ task: "x", tools: ["read"] }, { ...ctx(), catalog }).ok, true);
 });
@@ -506,4 +506,19 @@ test("ADR-0024: the tools: form has no authorising id to gate", () => {
     { ownGrant: ["tool:read"], depth: 0, maxDepth: 2, gated: ["agent:deploy"] },
   );
   assert.equal(plan.ok, true, "a delegation naming no definition is untouched by a definition gate");
+});
+
+test("childEnv cannot reach the governance namespace or overwrite a kernel-set key (ADR-0076)", () => {
+  // Production change that breaks this: deleting the `PI_GRANTS_` / `key in env` guard in planDelegation.
+  assert.throws(
+    () => planDelegation({ task: "x", tools: ["read"] }, ctx({ childEnv: () => ({ PI_GRANTS_GRANT: "tool:*" }) })),
+    /childEnv may not set governance key PI_GRANTS_GRANT/,
+  );
+  assert.throws(
+    () => planDelegation({ task: "x", tools: ["read"] }, ctx({ childEnv: () => ({ [ENV_GRANT]: "tool:*" }) })),
+    /childEnv may not set governance key/,
+  );
+  const plain = planDelegation({ task: "x", tools: ["read"] }, ctx({ childEnv: () => ({ PI_DADDY_OBSERVED: "1" }) }));
+  assert.equal(plain.env.PI_DADDY_OBSERVED, "1");
+  assert.equal(plain.env[ENV_GRANT], "tool:read", "an extra key never widens the grant");
 });

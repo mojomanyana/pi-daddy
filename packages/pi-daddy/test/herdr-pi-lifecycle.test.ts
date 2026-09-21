@@ -33,7 +33,7 @@ test("the pinned Herdr Pi integration reports native start/settled lifecycle and
       events: { on: (event: string, handler: Function) => blocked.set(event, handler) },
       registerTool: (...args: unknown[]) => registeredTools.push(args),
     };
-    const module = await import(`${new URL("../src/vendor/herdr-pi-lifecycle.ts", import.meta.url).href}?socket=${encodeURIComponent(socket)}`);
+    const module = await import(`${new URL("../src/executors/vendor/herdr-pi-lifecycle.ts", import.meta.url).href}?socket=${encodeURIComponent(socket)}`);
     module.default(pi);
     assert.ok(handlers.has("session_start"), "the extension activates only for this Herdr child pane");
     await handlers.get("session_start")!({}, { mode: "tui", isIdle: () => true });

@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import { join } from "node:path";
 import { syncBuiltinESMExports } from "node:module";
 import type { Readable } from "node:stream";
-import { dispatchRequestDigest, type DispatchRequest } from "../src/dispatch-control.ts";
+import { dispatchRequestDigest, type DispatchRequest } from "../src/products/dispatch-control.ts";
 import { ipcWorld, withIpcChild, ipcEmitter, ipcReferences } from "./producer-ipc-fixture.ts";
 import { cleanupTempDirs } from "./tmp.ts";
 after(cleanupTempDirs);

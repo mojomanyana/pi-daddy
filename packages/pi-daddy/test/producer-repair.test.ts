@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { open, writeFile } from "node:fs/promises";
-import { createResourceBudget, openResourceBudget } from "../src/resource-budget.ts";
+import { createResourceBudget, openResourceBudget } from "../src/products/resource-budget.ts";
 import { join } from "node:path";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 after(cleanupTempDirs);

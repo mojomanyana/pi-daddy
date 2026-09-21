@@ -7,17 +7,17 @@ import { spawn, execFileSync } from "node:child_process";
 import { after, type TestContext } from "node:test";
 import { test } from "./bounded-path-test.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
-import { STALE_LOCK_MS } from "../src/file-lock.ts";
-import { verifyLedger } from "../src/ledger.ts";
+import { STALE_LOCK_MS } from "../src/governance/file-lock.ts";
+import { verifyLedger } from "../src/governance/ledger.ts";
 after(cleanupTempDirs);
 import {
   buildWorkRevisionEvent, buildWorkSnapshotEvent, buildWorkOccurrenceEvent, buildWorkAcceptanceEvent, parseWorkLedgerText, projectWorkLedger, appendWorkLedgerEvent, inspectWorkLedger, WorkInputError, WorkLedgerWriteError,
   type EventRef, type RevisionRef, type WorkFrozen, type WorkLedgerEvent, type WorkRevisionEvent,
-} from "../src/work-ledger.ts";
-import { indexWorkLedgerText } from "../src/work-ledger-projection.ts";
-import { resolveWorkSnapshotText } from "../src/work-ledger-snapshot.ts";
-import type { WorkRevision, WorkSnapshot } from "../src/work-ledger-types.ts";
-import { canonicalWorkJson, workDigest } from "../src/work-ledger-json.ts";
+} from "../src/governance/work-ledger.ts";
+import { indexWorkLedgerText } from "../src/governance/work-ledger-projection.ts";
+import { resolveWorkSnapshotText } from "../src/governance/work-ledger-snapshot.ts";
+import type { WorkRevision, WorkSnapshot } from "../src/governance/work-ledger-types.ts";
+import { canonicalWorkJson, workDigest } from "../src/governance/work-ledger-json.ts";
 import { walkingFixture, fixtureAuthority, fixtureText, fixtureEventRef, fixtureRevisionRef, fixtureExecution, mutableFixture,
   revisionRevalidationFixture, revisionRevalidationAuthority, type FixtureRevisionChange,
   supportQuarantineFixture, supportQuarantineAuthority, type FixtureSupportKind } from "./work-ledger-fixtures.ts";
@@ -1103,8 +1103,8 @@ test("public projection preserves large claim/coverage collections and unsupport
 
 test("public work-ledger subpath is additive without changing legacy export targets", () => {
   const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
-  assert.deepEqual(manifest.exports["./work-ledger"], { types: "./dist/work-ledger.d.ts", default: "./dist/work-ledger.js" });
-  assert.deepEqual(manifest.exports["./ledger"], { types: "./dist/ledger.d.ts", default: "./dist/ledger.js" });
+  assert.deepEqual(manifest.exports["./work-ledger"], { types: "./dist/governance/work-ledger.d.ts", default: "./dist/governance/work-ledger.js" });
+  assert.deepEqual(manifest.exports["./ledger"], { types: "./dist/governance/ledger.d.ts", default: "./dist/governance/ledger.js" });
   assert.equal(manifest.version, "0.28.1");
 });
 

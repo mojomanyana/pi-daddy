@@ -9,11 +9,11 @@ test("daily steering and measured orders have explicit package entrypoints", asy
   assert.equal(typeof root.discoverDailyIntentActions, "function");
   assert.equal(typeof root.createMeasuredOrder, "function");
   assert.deepEqual(manifest.exports["./daily-dashboard-host"], {
-    types: "./dist/daily-dashboard-host.d.ts",
-    default: "./dist/daily-dashboard-host.js",
+    types: "./dist/products/daily-dashboard-host.d.ts",
+    default: "./dist/products/daily-dashboard-host.js",
   });
   assert.deepEqual(manifest.exports["./measured-order"], {
-    types: "./dist/measured-order.d.ts",
-    default: "./dist/measured-order.js",
+    types: "./dist/products/measured-order.d.ts",
+    default: "./dist/products/measured-order.js",
   });
 });

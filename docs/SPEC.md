@@ -369,7 +369,7 @@ another's file.
 **Writes are serialised by a file lock; reads are not.** Every write is load → modify → write, so without
 one a save could restore an entry another session had just revoked (R-49). A read that loses the race sees
 the previous state, which is what "read on demand" already means. It is the **same lock as the ledger's**
-(`src/file-lock.ts`) with the opposite failure policy, and the difference follows from what the two files
+(`src/governance/file-lock.ts`) with the opposite failure policy, and the difference follows from what the two files
 are: no audit line means no spawn, whereas a busy approvals file **never** fails your work — the human
 already said yes, and this store is a cache of that decision.
 
@@ -770,7 +770,7 @@ deliberately because a herdr writer tab would not close, so the pane may still b
 `not-held` arm, so releasing a **read** lease on the delegation path is recorded `released` rather than
 `uncontended` — the ledger reporting a handover the kernel never performed, which is the R-100/R-103 class
 this vocabulary was added to expose. Disclosed and deliberately unfixed here (**R-141**); the comment in
-`src/workspace-lease.ts` claiming a single definition was wrong and now says this.
+`src/governance/workspace-lease.ts` claiming a single definition was wrong and now says this.
 
 **Retaining a lease does not detain the process that held it, and is terminal.** The record is written, the
 parent's references to the lock helper are dropped, and the host exits normally; a `release()` afterwards
@@ -825,7 +825,7 @@ schemas expose the same closed optional contract, and runtime normalization rema
 
 **Governance refusals** have `{code, message, details?}`. Work-v4's separate input/write/inspection
 errors are described in its candidate contract above. Human diagnostics remain the same; direct API errors
-expose `error.code`, and ledger decisions carry the same object. `src/refusals.ts` holds the complete union
+expose `error.code`, and ledger decisions carry the same object. `src/kernel/refusals.ts` holds the complete union
 and `test/refusals.test.ts` is length-checked against it, so a code cannot be added or dropped without the
 enumeration failing — it previously listed eleven of eighteen members, which made the seven `CHECK_*` codes
 the ones most likely to be deleted while the guard stayed green.

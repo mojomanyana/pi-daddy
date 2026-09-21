@@ -9,10 +9,10 @@ import { syncBuiltinESMExports } from "node:module";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 import { durableHarness, signalInputs, blindInputs, hash } from "./debrief-durable-fixture.ts";
 import { attentionFixture } from "./debrief-host-fixture.ts";
-import { createRetainedDebrief, openDebriefBlindPreview, retainDebriefBlind } from "../src/debrief-host.ts";
-import { createDebriefPresenter } from "../src/debrief.ts";
-import { reviewPage } from "../src/debrief-contract.ts";
-import { renderDebrief, debriefAction } from "../src/debrief-render.ts";
+import { createRetainedDebrief, openDebriefBlindPreview, retainDebriefBlind } from "../src/products/debrief-host.ts";
+import { createDebriefPresenter } from "../src/products/debrief.ts";
+import { reviewPage } from "../src/products/debrief-contract.ts";
+import { renderDebrief, debriefAction } from "../src/products/debrief-render.ts";
 after(cleanupTempDirs);
 async function fixture(scopeValid = true) {
   const root = await tempDir("durable-debrief-"), h = await durableHarness(root), input = signalInputs(scopeValid);

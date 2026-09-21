@@ -1,4 +1,4 @@
-import { takeBytes, type ChildRunResult } from "../src/run-child.ts";
+import { takeBytes, type ChildRunResult } from "../src/kernel/run-child.ts";
 
 export const NATIVE_DIAGNOSTIC_TEXT_BYTES = 4096;
 /** Only for the fixed model-free native fixture; not a general worker/error logger. */

@@ -3,14 +3,14 @@ import { after, test } from "node:test";
 import { readFile, stat, symlink, chmod, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
-import { recordWorkSetup, workSetup, loadWorkSetup, selectRecordedWork, workPresentation, listWorkSetups } from "../src/work-setup.ts";
-import { loadDeclaredWork, appendDeclaredWorkOccurrence } from "../src/work-command.ts";
-import { readProductJson, writeProductJson } from "../src/product-files.ts";
-import { projectWorkLedger, parseWorkLedgerText } from "../src/work-ledger.ts";
-import { readDailyView } from "../src/daily-view.ts";
+import { recordWorkSetup, workSetup, loadWorkSetup, selectRecordedWork, workPresentation, listWorkSetups } from "../src/products/work-setup.ts";
+import { loadDeclaredWork, appendDeclaredWorkOccurrence } from "../src/products/work-command.ts";
+import { readProductJson, writeProductJson } from "../src/products/product-files.ts";
+import { projectWorkLedger, parseWorkLedgerText } from "../src/governance/work-ledger.ts";
+import { readDailyView } from "../src/products/daily-view.ts";
 import { withOrdinaryChild } from "../extensions/ordinary-runtime.ts";
 import type { GrantsSession } from "../extensions/session.ts";
-import { supportedModelEfforts } from "../src/model-preflight.ts";
+import { supportedModelEfforts } from "../src/kernel/model-preflight.ts";
 after(cleanupTempDirs);
 export function setup() { return workSetup({ version: "work-setup-v1", id: "launch", outcome: "Ship a usable page", maxParallel: 2, tasks: [
   { id: "research", outcome: "Find requirements", agent: "reader", model: "provider/model-a", thinking: "low", dependencies: [] },

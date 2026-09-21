@@ -1,7 +1,7 @@
-import type { Delegation } from "../src/delegate.ts";
-import { retentionConfigurationDigest } from "../src/execution-retention.ts";
-import { appendDeclaredWorkOccurrence } from "../src/work-command.ts";
-import type { WorkOccurrencePayload } from "../src/work-ledger.ts";
+import type { Delegation } from "../src/kernel/delegate.ts";
+import { retentionConfigurationDigest } from "../src/governance/execution-retention.ts";
+import { appendDeclaredWorkOccurrence } from "../src/products/work-command.ts";
+import type { WorkOccurrencePayload } from "../src/governance/work-ledger.ts";
 import type { GrantsSession } from "./session.ts";
 import type { PreparedWorkspace } from "./workspace-runtime.ts";
 

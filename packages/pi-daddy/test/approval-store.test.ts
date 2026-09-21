@@ -9,8 +9,8 @@ import {
   revokeAll,
   revokeApproval,
   saveApproval,
-} from "../src/approval-store.ts";
-import type { ApprovalEntry } from "../src/approval.ts";
+} from "../src/governance/approval-store.ts";
+import type { ApprovalEntry } from "../src/kernel/approval.ts";
 
 const NOW = new Date("2026-08-20T00:00:00.000Z");
 

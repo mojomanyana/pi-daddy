@@ -6,12 +6,12 @@ import { appendFile, chmod, open, readFile, readdir, writeFile } from "node:fs/p
 import { join } from "node:path";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 after(cleanupTempDirs);
-import { createExperimentBudget, openResourceBudget, resourceBindingDigest } from "../src/resource-budget.ts";
-import { DIGEST_PROFILE, prepareDigestProfile } from "../src/effect-profile.ts";
-import { createExperiment, openExperiment, experimentBindingDigest, experimentCharterDigest, experimentCancellationDigest, type ExperimentCharter, type ExperimentCancellation } from "../src/experiment.ts";
-import { byteHash } from "../src/experiment-contract.ts";
-import { MAX_CHILDREN_PER_CALL } from "../src/fanout.ts";
-import { bindWorkIntent } from "../src/intent-application.ts";
+import { createExperimentBudget, openResourceBudget, resourceBindingDigest } from "../src/products/resource-budget.ts";
+import { DIGEST_PROFILE, prepareDigestProfile } from "../src/products/effect-profile.ts";
+import { createExperiment, openExperiment, experimentBindingDigest, experimentCharterDigest, experimentCancellationDigest, type ExperimentCharter, type ExperimentCancellation } from "../src/products/experiment.ts";
+import { byteHash } from "../src/products/experiment-contract.ts";
+import { MAX_CHILDREN_PER_CALL } from "../src/kernel/fanout.ts";
+import { bindWorkIntent } from "../src/products/intent-application.ts";
 import { intentWorld } from "./intent-control-fixture.ts";
 const authorityDigest = "a".repeat(64);
 async function fixture(n = 2, hold = false, deadlineMs = 15000) {
@@ -44,7 +44,7 @@ test("N=2/N=3 actual fixed workers retain distinct immutable outputs and one exp
     const again = await openExperiment(f.binding, f.authority).start(profile); assert.deepEqual((await again.completion).variants, view.variants);
     assert.deepEqual(await readFile(join(f.binding.directory, "experiment.jsonl")), before); assert.equal((await controller.start(profile)).completion, run.completion);
     if (n === 2) {
-      const module = new URL("../src/experiment.ts", import.meta.url).href, profiles = new URL("../src/effect-profile.ts", import.meta.url).href;
+      const module = new URL("../src/products/experiment.ts", import.meta.url).href, profiles = new URL("../src/products/effect-profile.ts", import.meta.url).href;
       const code = `import{openExperiment}from ${JSON.stringify(module)};import{prepareDigestProfile}from ${JSON.stringify(profiles)};const b=${JSON.stringify(f.binding)},a=${JSON.stringify(f.authority)};const run=await openExperiment(b,a).start(await prepareDigestProfile(b.budget));console.log(JSON.stringify(await run.completion));`;
       const restarted = await promisify(execFile)(process.execPath, ["--input-type=module", "-e", code], { env: process.env, timeout: 15000 });
       assert.deepEqual(JSON.parse(restarted.stdout).variants, view.variants);
@@ -109,7 +109,7 @@ test("pre-reserved retries wait for their parent and successful parents do not t
 test("cross-process batch contenders retain unknown orphan slots without exceeding total limits", async () => {
   const root = await tempDir("p11-process-race-"); await chmod(root, 0o700);
   const b = await createExperimentBudget({ directory: join(root, "budget"), authorityDigest, limits: { maxAttempts: 3, maxInputBytes: 100, maxConcurrent: 3 } });
-  const module = new URL("../src/resource-budget.ts", import.meta.url).href;
+  const module = new URL("../src/products/resource-budget.ts", import.meta.url).href;
   const results = await Promise.all([0, 1].map(n => promisify(execFile)(process.execPath, ["--input-type=module", "-e", `import{openResourceBudget}from ${JSON.stringify(module)};const b=${JSON.stringify(b)};try{await openResourceBudget(b).reserveBatch([0,1].map(i=>({attemptId:'p${n}:'+i,orderId:'order',experimentId:'e${n}',kind:i?'shadow':'primary',parentAttemptId:i?'p${n}:0':null,inputBytes:7,inputDigest:'a'.repeat(64)})));console.log('charged')}catch(e){if(e.code!=='EXHAUSTED')throw e;console.log('exhausted')}`], { env: process.env, timeout: 10000 })));
   assert.deepEqual(results.map(r => r.stdout.trim()).sort(), ["charged", "exhausted"]);
   const snapshot = await openResourceBudget(b).inspect(); assert.equal(snapshot.attempts, 2); assert.equal(snapshot.active, 2);

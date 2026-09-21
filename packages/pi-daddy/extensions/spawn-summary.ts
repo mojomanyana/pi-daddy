@@ -23,7 +23,7 @@
  * and `/grants` run after any request is the settled answer.
  */
 
-import type { SkillDefinition } from "../src/definitions.ts";
+import type { SkillDefinition } from "../src/kernel/definitions.ts";
 import type { GatedPlan } from "./run-delegation.ts";
 
 /** Why a definition is not spawnable right now. Three causes, three different fixes. */

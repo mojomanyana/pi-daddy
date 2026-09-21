@@ -7,7 +7,7 @@
  * shape — a fix applied where it was found and not where it was duplicated — so the aggregation is now one
  * testable place rather than four inline blocks.
  */
-import { GovernanceRefusal, refusal } from "../src/refusals.ts";
+import { GovernanceRefusal, refusal } from "../src/kernel/refusals.ts";
 import { isCriticalAssuranceBlock, type DelegationOutcome } from "./execute-child.ts";
 
 /**

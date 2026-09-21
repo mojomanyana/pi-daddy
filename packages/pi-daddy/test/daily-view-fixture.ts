@@ -1,5 +1,5 @@
 import { buildWorkRevisionEvent, buildWorkSnapshotEvent, buildWorkOccurrenceEvent, buildWorkAcceptanceEvent,
-  type WorkRevision, type WorkProjectionContext } from "../src/work-ledger.ts";
+  type WorkRevision, type WorkProjectionContext } from "../src/governance/work-ledger.ts";
 import { fixtureEventRef as eventRef, fixtureRevisionRef as ref, fixtureText, mutableFixture } from "./work-ledger-fixtures.ts";
 const now = new Date("2026-09-08T00:00:00.000Z"), d = "a".repeat(64);
 /** Fixed independently reconstructible simulation. No wire/claim/projection argument supplies authority. */

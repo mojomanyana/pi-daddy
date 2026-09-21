@@ -4,17 +4,17 @@ import { chmod, readFile, writeFile, appendFile, open, rename } from "node:fs/pr
 import { join } from "node:path";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 after(cleanupTempDirs);
-import { createExperimentBudget, openResourceBudget } from "../src/resource-budget.ts";
-import { experimentCancellationDigest } from "../src/experiment-contract.ts";
-import { prepareDigestProfile } from "../src/effect-profile.ts";
-import { byteHash, experimentHash } from "../src/experiment-contract.ts";
-import { buildWorkRevisionEvent, buildWorkSnapshotEvent } from "../src/work-ledger.ts";
+import { createExperimentBudget, openResourceBudget } from "../src/products/resource-budget.ts";
+import { experimentCancellationDigest } from "../src/products/experiment-contract.ts";
+import { prepareDigestProfile } from "../src/products/effect-profile.ts";
+import { byteHash, experimentHash } from "../src/products/experiment-contract.ts";
+import { buildWorkRevisionEvent, buildWorkSnapshotEvent } from "../src/governance/work-ledger.ts";
 import { fixtureRevisionRef as ref, fixtureEventRef as er, fixtureText } from "./work-ledger-fixtures.ts";
 import { intentWorld } from "./intent-control-fixture.ts";
-import { bindWorkIntent } from "../src/intent-application.ts";
+import { bindWorkIntent } from "../src/products/intent-application.ts";
 import { createFactoryRegistry, createFactoryOrder, openFactoryOrder, openFactoryRegistry, factoryOrderDigest, fixedPolicyDigest, factoryDecisionDigest, activationRequestDigest,
-  migrateFactoryOrder, factoryMigrationDigest, parseFactoryOrder, type FactoryOrderCharter, type FactoryAuthority } from "../src/factory-order.ts";
-import { buildAdoptionBinding, authorizeAdoption, buildRollbackRequest } from "../src/vendor/adoption.ts";
+  migrateFactoryOrder, factoryMigrationDigest, parseFactoryOrder, type FactoryOrderCharter, type FactoryAuthority } from "../src/products/factory-order.ts";
+import { buildAdoptionBinding, authorizeAdoption, buildRollbackRequest } from "../src/products/vendor/adoption.ts";
 const authorityId = "fixture-operator", now = Date.now();
 export async function fixture() {
   const root = await tempDir("p15-order-"); await chmod(root, 0o700); const w = intentWorld();
