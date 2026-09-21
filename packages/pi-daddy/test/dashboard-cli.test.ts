@@ -13,6 +13,7 @@ import {
   parseActivityTimeline,
 } from "../src/products/activity-timeline.ts";
 import { projectLedgerPath } from "../src/kernel/project-paths.ts";
+import { recordLines } from "./record-fixtures.ts";
 
 after(cleanupTempDirs);
 
@@ -162,8 +163,8 @@ test("a corrupt ledger is surfaced and never rewritten", async () => {
 });
 
 function completedLedger(): string {
-  return (
-    Array.from({ length: 6 }, (_, i) => {
+  return recordLines(
+    ...Array.from({ length: 6 }, (_, i) => {
       const executionId = `exec:00000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`;
       const identity = {
         ledgerVersion: 3,
@@ -190,10 +191,8 @@ function completedLedger(): string {
           taskDigest: "a".repeat(64),
         },
         { ...identity, event: "child_lifecycle", state: "completed", executor: "process", exitCode: 0, signal: null },
-      ]
-        .map((event) => JSON.stringify(event))
-        .join("\n");
-    }).join("\n") + "\n"
+      ];
+    }).flat(),
   );
 }
 

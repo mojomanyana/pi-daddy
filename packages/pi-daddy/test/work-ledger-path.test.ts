@@ -1977,7 +1977,7 @@ test("the work ledger ships through the pi-daddy/ledger subpath and the manifest
     types: "./dist/governance/ledger-public.d.ts",
     default: "./dist/governance/ledger-public.js",
   });
-  assert.equal(manifest.version, "0.28.1");
+  assert.equal(manifest.version, "0.30.0");
 });
 
 test("public shared execution joins yield one actual attempt with two bindings and no wire acceptance", () => {
@@ -2194,7 +2194,7 @@ test("real work-v4 append and inspection require out-of-band fixture authority",
   const legacy = await verifyLedger(path);
   assert.equal(legacy.events, 0);
   assert.equal(legacy.records, 0);
-  assert.equal(legacy.corrupt.length, 9);
+  assert.equal(legacy.corrupt.length, 1); // one damage marker for a non-envelope file (ADR-0076 PR 3d)
   assert.deepEqual(legacy.lifecycle, { starting: 0, running: 0, completed: 0, failed: 0 });
 });
 

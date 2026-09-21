@@ -4,6 +4,7 @@ import { constants } from "node:fs";
 import { appendFile, mkdir, open, readFile, realpath, rename, writeFile } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
 import { activityTimelinePath } from "../kernel/project-paths.ts";
+import { appendRecord, readRecords } from "../governance/record.ts";
 
 export const ACTIVITY_TIMELINE_VERSION = 1 as const;
 export const ENV_ACTIVITY_TIMELINE = "PI_DADDY_ACTIVITY_TIMELINE";
@@ -137,11 +138,13 @@ function eventOf(value: unknown): ActivityEvent | null {
 export function parseActivityTimeline(text: string): ActivityTimeline {
   const tasks = new Map<string, TimelineTask>(),
     refusals: string[] = [];
-  for (const [index, raw] of text.split("\n").entries()) {
-    if (!raw.trim()) continue;
+  // ADR-0076 PR 3d: the timeline is record envelopes of kind "activity"; bodies are the events. Everything
+  // before the first damaged line is read and the damage is one refusal naming its line, never its bytes.
+  const read = readRecords(text);
+  for (const [index, record] of read.records.entries()) {
     let event: ActivityEvent | null = null;
     try {
-      event = eventOf(JSON.parse(raw));
+      event = record.kind === "activity" ? eventOf(record.body) : null;
     } catch {
       /* reported below */
     }
@@ -213,6 +216,7 @@ export function parseActivityTimeline(text: string): ActivityTimeline {
       if (agent) agent.state = event.outcome ?? "finished";
     }
   }
+  if (read.damage) refusals.push(`line ${read.damage.line}: timeline damaged (${read.damage.reason})`);
   return {
     tasks: [...tasks.values()].sort(
       (a, b) =>
@@ -622,7 +626,7 @@ export class ActivityTimelineRecorder {
     const text = JSON.stringify(event);
     if (Buffer.byteLength(text) > MAX_EVENT_BYTES) throw Error("activity timeline event exceeds bound");
     await mkdir(dirname(this.path), { recursive: true, mode: 0o700 });
-    await appendFile(this.path, `${text}\n`, { mode: 0o600 });
+    await appendRecord(this.path, "activity", event); // ADR-0076 PR 3d: envelope, lock, damage refusal
   }
   private async content(value: string): Promise<ContentReference> {
     const digest = sha(value),

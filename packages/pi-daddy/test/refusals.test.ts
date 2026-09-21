@@ -65,6 +65,7 @@ const ENUMERATED = [
   "CHECK_CONFIGURATION_INVALID",
   "CHECK_IDENTITY_UNAVAILABLE",
   "CHECK_IDENTITY_MISMATCH",
+  "LEDGER_DAMAGED",
 ] as const;
 
 test("the refusal taxonomy is enumerated in full, so it cannot silently shrink or drift", () => {

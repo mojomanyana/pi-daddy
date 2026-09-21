@@ -34,6 +34,7 @@ import { cleanupTempDirs, tempDir } from "./tmp.ts";
 import { ENV_WORKSPACE_REGISTRY, validateRegisteredWorkspace } from "../src/kernel/workspace.ts";
 import { acquireWorkspaceLease, ENV_WORKSPACE_LEASE_DIR } from "../src/governance/workspace-lease.ts";
 import { execFileSync } from "node:child_process";
+import { recordLines } from "./record-fixtures.ts";
 
 after(cleanupTempDirs);
 
@@ -347,7 +348,7 @@ test("F8: concurrent siblings get distinct, hierarchical ledger ids", async () =
     .trim()
     .split("\n")
     .filter(Boolean)
-    .map((l) => JSON.parse(l));
+    .map((l) => JSON.parse(l).body);
   assert.equal(lines.length, 3, "each child is audited, including refusals");
   const ids = lines.map((l) => l.childId);
   assert.equal(new Set(ids).size, 3, `siblings must be distinguishable, got ${JSON.stringify(ids)}`);
@@ -369,7 +370,7 @@ test("two concurrent delegate calls reuse the logical position but never the exe
   const records = (await readFile(ledger, "utf8"))
     .trim()
     .split("\n")
-    .map((line) => JSON.parse(line));
+    .map((line) => JSON.parse(line).body);
   assert.deepEqual(
     records.map((record) => record.childId),
     ["d0.1", "d0.1"],
@@ -409,7 +410,7 @@ test("ADR-0018: the digest reaches the LEDGER FILE, not just the plan", async ()
     .trim()
     .split("\n")
     .filter(Boolean)
-    .map((l) => JSON.parse(l));
+    .map((l) => JSON.parse(l).body);
   assert.equal(line.blocked, true);
   assert.equal(line.definitionDigest?.name, "patterned");
   assert.equal(
@@ -442,7 +443,7 @@ test("a child's ledger id descends from an inherited parent id, not from depth",
     .trim()
     .split("\n")
     .filter(Boolean)
-    .map((l) => JSON.parse(l));
+    .map((l) => JSON.parse(l).body);
   assert.deepEqual(lines.map((l) => l.childId).sort(), ["d0.2.1", "d0.2.2"]);
   assert.ok(lines.every((line) => line.parentExecutionId === "exec:00000000-0000-4000-8000-000000000009"));
 });
@@ -684,7 +685,7 @@ test("ADR-0031: the ledger records the executor a REAL spawn ran under, not a co
       .trim()
       .split("\n")
       .filter(Boolean)
-      .map((l) => JSON.parse(l));
+      .map((l) => JSON.parse(l).body);
     assert.ok(lines.length >= 1, `no record written for PI_DADDY_HERDR=${herdr}`);
     for (const record of lines) {
       assert.equal(record.executor, expected, `PI_DADDY_HERDR=${herdr} must record executor ${expected}`);
@@ -731,7 +732,7 @@ test("an unresolved model is ledgered and starts no child process", async () => 
     const decisions = (await readFile(ledger, "utf8"))
       .trim()
       .split("\n")
-      .map((line) => JSON.parse(line));
+      .map((line) => JSON.parse(line).body);
     assert.equal(decisions.at(-1)?.refusal?.code, "MODEL_UNRESOLVED");
   } finally {
     process.env.PATH = oldPath;
@@ -878,7 +879,7 @@ test("chain once approvals are attributed and consumed by the step/capability th
     const decisions = (await readFile(ledger, "utf8"))
       .trim()
       .split("\n")
-      .map((line) => JSON.parse(line))
+      .map((line) => JSON.parse(line).body)
       .filter((event) => event.event === "capability_decision" && !event.blocked);
     assert.deepEqual(
       decisions.map((record) => record.approved),
@@ -960,7 +961,7 @@ test("a failed always-store write is ledgered as session-only with no fake expir
     const record = (await readFile(ledger, "utf8"))
       .trim()
       .split("\n")
-      .map((line) => JSON.parse(line))
+      .map((line) => JSON.parse(line).body)
       .find((event) => event.event === "capability_decision");
     assert.equal(record.approvalScopes["tool:bash"], "session");
     assert.equal(record.approvalExpiresAt, undefined);
@@ -1010,7 +1011,7 @@ test("a write-capable child cannot underdeclare read access to bypass a writer c
     const lines = (await readFile(ledger, "utf8"))
       .trim()
       .split("\n")
-      .map((line) => JSON.parse(line));
+      .map((line) => JSON.parse(line).body);
     const refusedLease = lines.find((line) => line.event === "workspace_lease" && line.outcome === "refused");
     assert.ok(refusedLease);
     assert.equal(refusedLease.access, "write", "trusted capabilities override the model's read label");
@@ -1088,7 +1089,7 @@ test("ADR-0031: a pre-0.16 ledger line, which has no executor field, still parse
     gatedBlocked: [],
     blocked: false,
   };
-  await writeFile(ledger, `${JSON.stringify(legacy)}\n`, "utf8");
+  await writeFile(ledger, recordLines(legacy));
 
   const report = await verifyLedger(ledger);
   assert.equal(report.ok, true, "a line without `executor` must not read as corrupt");

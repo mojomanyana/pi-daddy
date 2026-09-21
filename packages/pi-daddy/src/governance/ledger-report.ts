@@ -20,6 +20,7 @@ import { isEscalationAttempt } from "./ledger.ts";
 import type { WorkspaceLeaseOutcome } from "./ledger-events.ts";
 import { isExecutionId } from "../kernel/execution-id.ts";
 import { validateLedgerV3Event } from "./ledger-v3-validation.ts";
+import { readRecords } from "./record.ts";
 
 export interface LedgerReport {
   /** False when the file is absent — a configuration state, not damage. */
@@ -254,12 +255,12 @@ export async function verifyLedger(path: string): Promise<LedgerReport> {
   let humanDenied = 0;
   const deniedPairs = new Set<string>();
 
-  const lines = text.split("\n");
-  lines.forEach((raw, index) => {
-    // A trailing newline yields one empty final element, which is normal rather than damage.
-    if (raw.trim().length === 0) return;
+  // ADR-0076 PR 3d: lines are record envelopes; every intact record before the first damage is reported, and
+  // the damage itself is one corrupt entry. Record sequence equals line number because records are contiguous.
+  const read = readRecords<Record<string, unknown>>(text);
+  read.records.forEach((record, index) => {
     try {
-      const event = JSON.parse(raw) as Record<string, unknown>;
+      const event = record.body;
       if (event.ledgerVersion !== undefined) {
         if (event.event === undefined) throw new Error("versioned ledger line has no event discriminator");
         if (event.ledgerVersion !== 2 && event.ledgerVersion !== 3) throw new Error("unsupported ledger version");
@@ -365,6 +366,7 @@ export async function verifyLedger(path: string): Promise<LedgerReport> {
       corrupt.push({ line: index + 1, reason: "invalid ledger line" });
     }
   });
+  if (read.damage) corrupt.push({ line: read.damage.line, reason: `ledger damaged: ${read.damage.reason}` });
 
   return {
     exists: true,

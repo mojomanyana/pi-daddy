@@ -13,7 +13,7 @@ the risk register to learn what a word means. When a term is retired by the cons
 - **attenuation** — the invariant that grant, depth, fan-out budget and approvals can only shrink going down a delegation tree (ADR-0008).
 - **definition** — an Agent Skills `SKILL.md` file whose `allowed-tools` is the ceiling and whose body is the child's system prompt (ADR-0016, ADR-0017).
 - **catalog** — the list of definitions and tools the current session can name, derived from pi's own tool surface and the discovered SKILL.md files.
-- **ledger** — the append-only, hash-chained record of every capability decision and child lifecycle, `.pi/pi-daddy/grants.jsonl` since ADR-0076 PR 3c; one record format across stores arrives with PR 3d.
+- **ledger** — the append-only record of every capability decision and child lifecycle, `.pi/pi-daddy/grants.jsonl`; since ADR-0076 PR 3d each line is a **record envelope** (sequence, previous-line hash, kind, body, digest) shared with the activity timeline; a damaged file is readable up to the damage and refuses appends until `pi-daddy ledger repair`.
 - **refusal** — a thrown error with a stable code (`CAPABILITY_ESCALATION`, `GATED_UNAPPROVED`, `CHILD_TIMED_OUT`, …); thrown rather than returned because pi discards a returned `isError`.
 - **approval** — a human's answer to a gate: once, for the session, or "always" for 30 days for a named definition; the task text is never stored (ADR-0010, ADR-0014, ADR-0021).
 - **correlation** — caller-supplied metadata (schema version `1.0`, an assurance scope) recorded beside a decision and never used as authority.
@@ -54,6 +54,8 @@ the risk register to learn what a word means. When a term is retired by the cons
 ## Introduced by ADR-0076
 
 - **kernel, governance, executors, advisors, products** — the five source layers with a mechanically enforced import direction.
+- **record envelope** — the shared line shape of every append-only store: `v`, `seq`, `prev`, `at`, `kind`, `id`, `body`, `digest`; `contracts/ledger-record/v1/record.schema.json`.
+- **LEDGER_DAMAGED** — the refusal a writer raises when its ledger has a torn or tampered tail; cleared by `pi-daddy ledger repair --yes`.
 - **advisor / Decider / advice** — a non-generative classifier (`choice`, `score`, `noul`) whose output can select, rank, annotate or propose and can never widen a grant, satisfy a gate or replace a human answer; each use is an `advice` ledger event.
 - **Jev** — TypeSafe's decision model, reached through OpenRouter's decisions endpoint; the first advisor adapter.
 - **context handoff** — what a child receives beyond its definition body and task: `none`, `files`, `pruned`, `summary` or `fork`, capped by an inherited ceiling (ADR-0078, forthcoming).

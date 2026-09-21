@@ -33,7 +33,7 @@ const ledgerLines = async (path: string): Promise<Record<string, unknown>[]> => 
     .trim()
     .split("\n")
     .filter(Boolean)
-    .map((l) => JSON.parse(l));
+    .map((l) => JSON.parse(l).body);
 };
 
 describe("end-to-end delegation", { skip }, () => {

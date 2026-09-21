@@ -159,7 +159,7 @@ test("named-check lease and receipt events are joinable", async () => {
   const events = (await readFile(ledgerPath, "utf8"))
     .trim()
     .split("\n")
-    .map((line) => JSON.parse(line));
+    .map((line) => JSON.parse(line).body);
   assert.deepEqual(
     events.map((event) => `${event.event}:${event.outcome ?? "receipt"}`),
     ["workspace_lease:acquired", "workspace_lease:released", "check_receipt:receipt"],
@@ -218,7 +218,7 @@ test("a check that loses its kernel lease emits no receipt", async () => {
   const events = (await readFile(ledgerPath, "utf8"))
     .trim()
     .split("\n")
-    .map((line) => JSON.parse(line));
+    .map((line) => JSON.parse(line).body);
   assert.equal(
     events.some((event) => event.event === "check_receipt"),
     false,

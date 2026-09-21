@@ -196,7 +196,7 @@ test("a SIGTERM-ignoring child is hard-killed by the recorded lifecycle deadline
     const events = (await readFile(ledgerPath, "utf8"))
       .trim()
       .split("\n")
-      .map((line) => JSON.parse(line));
+      .map((line) => JSON.parse(line).body);
     const starting = events.find((event) => event.state === "starting");
     const terminal = events.find((event) => event.state === "failed");
     assert.ok(starting?.deadlineAt && terminal?.ts);
@@ -248,7 +248,7 @@ test("the executor receives only the time remaining on the recorded lifecycle de
     const events = (await readFile(ledgerPath, "utf8"))
       .trim()
       .split("\n")
-      .map((line) => JSON.parse(line));
+      .map((line) => JSON.parse(line).body);
     const starting = events.find((event) => event.state === "starting");
     const terminal = events.find((event) => event.state === "failed");
     assert.ok(starting?.deadlineAt && terminal?.ts);

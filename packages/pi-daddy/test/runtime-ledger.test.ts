@@ -11,6 +11,7 @@ import {
   verifyLedger,
 } from "../src/governance/ledger.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
+import { recordLines } from "./record-fixtures.ts";
 
 after(cleanupTempDirs);
 
@@ -129,7 +130,7 @@ test("invalid versioned lines and unsupported explicit versions are corrupt rath
   const { writeFile } = await import("node:fs/promises");
   await writeFile(
     path,
-    [
+    recordLines(
       { ledgerVersion: 2, event: "child_lifecycle", ts: new Date().toISOString(), state: "completed" },
       {
         ledgerVersion: 2,
@@ -167,9 +168,7 @@ test("invalid versioned lines and unsupported explicit versions are corrupt rath
         depth: 1,
         blocked: false,
       },
-    ]
-      .map((event) => JSON.stringify(event))
-      .join("\n") + "\n",
+    ),
   );
   const report = await verifyLedger(path);
   assert.equal(report.ok, false);
@@ -182,7 +181,15 @@ test("legacy grant records remain readable beside v2 events", async () => {
   const { writeFile } = await import("node:fs/promises");
   await writeFile(
     path,
-    `${JSON.stringify({ denied: [], requested: [], parentGrant: [], effective: [], clipped: [], gatedBlocked: [], blocked: false })}\n`,
+    recordLines({
+      denied: [],
+      requested: [],
+      parentGrant: [],
+      effective: [],
+      clipped: [],
+      gatedBlocked: [],
+      blocked: false,
+    }),
   );
   const report = await verifyLedger(path);
   assert.equal(report.ok, true);

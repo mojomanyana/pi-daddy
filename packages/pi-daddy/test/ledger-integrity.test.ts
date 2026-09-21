@@ -28,6 +28,7 @@ import {
 } from "../src/governance/ledger.ts";
 import { MAX_CHAIN_STEPS, MAX_CHILDREN_PER_CALL } from "../src/kernel/fanout.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
+import { recordLines } from "./record-fixtures.ts";
 
 after(cleanupTempDirs);
 
@@ -165,7 +166,7 @@ test("appendRecord writes one JSON line per record, appending", async () => {
 
   const lines = (await readFile(path, "utf8")).trim().split("\n");
   assert.equal(lines.length, 2, "appendRecord must append, never truncate");
-  assert.equal(JSON.parse(lines[0]).agentType, "docs-writer");
+  assert.equal(JSON.parse(lines[0]).body.agentType, "docs-writer");
 });
 
 test("appendRecord fails closed by default when the ledger cannot be written", async () => {
@@ -390,7 +391,7 @@ test("R-64: a malformed approvalSources cannot corrupt the tally or delete the r
   };
   const write = async (name: string, records: object[]) => {
     const p = join(dir, name);
-    await writeFile(p, records.map((r) => JSON.stringify(r)).join("\n") + "\n", "utf8");
+    await writeFile(p, recordLines(...records), "utf8");
     return (await verifyLedger(p)).approvals;
   };
 
@@ -452,7 +453,11 @@ test("R-64: the tools: form is keyed to <delegate>, the subject the approval lay
   // `agentType: "delegate"` is what run-delegation.ts writes for the tools: form — the shape that matters.
   await writeFile(
     path,
-    [rec("delegate", "tool:write"), rec(undefined, "tool:write"), rec("deploy", "tool:write")].join("\n") + "\n",
+    recordLines(
+      ...[rec("delegate", "tool:write"), rec(undefined, "tool:write"), rec("deploy", "tool:write")].map((line) =>
+        JSON.parse(line),
+      ),
+    ),
     "utf8",
   );
 
@@ -574,7 +579,7 @@ test("ADR-0031: the executor survives a round trip through the ledger file", asy
   );
 
   const [line] = (await readFile(path, "utf8")).trim().split("\n");
-  assert.equal(JSON.parse(line).executor, "herdr");
+  assert.equal(JSON.parse(line).body.executor, "herdr");
 
   const report = await verifyLedger(path);
   assert.equal(report.ok, true, "the new field must not make a line unparseable");

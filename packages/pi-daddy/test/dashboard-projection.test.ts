@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { recordLines } from "./record-fixtures.ts";
 import { parseDashboardLedger, type DashboardNode } from "../src/products/dashboard-projection.ts";
 import { renderDashboard } from "../src/products/dashboard-render.ts";
 
@@ -45,7 +46,8 @@ function lifecycle(overrides: Record<string, unknown> = {}): Record<string, unkn
   };
 }
 
-const lines = (...events: unknown[]): string => events.map((event) => JSON.stringify(event)).join("\n") + "\n";
+// ADR-0076 PR 3d: ledger text is record envelopes; bodies are the events these tests describe.
+const lines = (...events: unknown[]): string => recordLines(...events);
 const byExecution = (nodes: DashboardNode[], id: string): DashboardNode => {
   const node = nodes.find((candidate) => candidate.executionId === id);
   assert.ok(node, `missing ${id}`);
@@ -137,14 +139,13 @@ test("restarting reconstructs the same state and retained Herdr identity from le
   assert.equal(first.nodes[0]?.runtime?.herdrPaneId, "w1:p2");
 });
 
-test("corrupt and unsupported lines are reported by number and never repaired or ignored", () => {
+test("corrupt bodies are reported by line, and raw damage ends the read without repair (ADR-0076 PR 3d)", () => {
   const projection = parseDashboardLedger(
-    [
-      JSON.stringify(decision()),
-      "{not-json",
-      JSON.stringify({ ...decision(), ledgerVersion: 4 }),
-      JSON.stringify({ ...lifecycle(), executionId: undefined }),
-      JSON.stringify({
+    lines(
+      decision(),
+      { ...decision(), ledgerVersion: 4 },
+      { ...lifecycle(), executionId: undefined },
+      {
         ledgerVersion: 3,
         event: "workspace_lease",
         ts: now.toISOString(),
@@ -155,8 +156,12 @@ test("corrupt and unsupported lines are reported by number and never repaired or
         root: "/w",
         access: "read",
         outcome: "teleported",
-      }),
-    ].join("\n"),
+      },
+      "{not-json",
+      // Nothing after damage is read: a valid decision here must not become a node (operator decision:
+      // read the intact prefix, refuse to append; never skip a bad line and continue).
+      { ...decision(), executionId: "exec:00000000-0000-4000-8000-00000000aaaa", childId: "d0.77" },
+    ),
     { now },
   );
 
@@ -165,7 +170,8 @@ test("corrupt and unsupported lines are reported by number and never repaired or
     projection.corrupt.map((entry) => entry.line),
     [2, 3, 4, 5],
   );
-  assert.match(projection.corrupt[0]?.reason ?? "", /JSON/i);
+  assert.match(projection.corrupt[3]?.reason ?? "", /damaged/i);
+  assert.doesNotMatch(projection.corrupt[3]?.reason ?? "", /not-json/, "damage reasons never echo the line");
 });
 
 test("malformed JSON diagnostics never echo raw ledger content", () => {

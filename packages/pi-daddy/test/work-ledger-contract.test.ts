@@ -538,7 +538,7 @@ async function collateral(): Promise<Record<string, string>> {
         .digest("hex");
     }
   }
-  const path = join(packageRoot, "scripts/generate-ledger-v3-contract.ts");
+  const path = join(packageRoot, "scripts/generate-ledger-record-contract.ts");
   files[path] = createHash("sha256")
     .update(await readFile(path))
     .digest("hex");
@@ -678,8 +678,8 @@ test("published work-v4 fixtures come from real builders and the closed schema",
     manifest.scripts["contracts:generate:v4"],
     "node scripts/generate-ledger-v4-contract.ts contracts/ledger/v4",
   );
-  assert.equal(manifest.scripts["contracts:generate"], "node scripts/generate-ledger-v3-contract.ts");
-  assert.equal(manifest.version, "0.28.1"); // Manifest target checks are NOT compiled-export validation.
+  assert.equal(manifest.scripts["contracts:generate"], "node scripts/generate-ledger-record-contract.ts");
+  assert.equal(manifest.version, "0.30.0"); // Manifest target checks are NOT compiled-export validation.
   // ADR-0076 PR 3a removed the assertions on ADR-0044's and SPEC's prose here: a test on a document's wording
   // is a CI guard on writing, not on behaviour, and it counted toward the unit total. The contract README's
   // relative links are still checked, because a broken link in a shipped contract is a shipped defect.
@@ -977,11 +977,14 @@ test("explicit work-v4 inspection does not widen old readers", async () => {
     dashboard = parseDashboardLedger(text);
   assert.equal(legacy.events, 0);
   assert.equal(legacy.records, 0);
-  assert.equal(legacy.corrupt.length, 4);
+  // ADR-0076 PR 3d: raw v4 lines are not record envelopes, so the grants reader reports one damage marker and
+  // stops rather than four per-line corruptions (operator decision: read the intact prefix, never skip).
+  assert.equal(legacy.corrupt.length, 1);
+  assert.match(legacy.corrupt[0]!.reason, /damaged/);
   assert.deepEqual(legacy.lifecycle, { starting: 0, running: 0, completed: 0, failed: 0 });
   assert.deepEqual(dashboard.nodes, []);
   assert.deepEqual(dashboard.workflowFacts, []);
   assert.equal(dashboard.active, 0);
-  assert.equal(dashboard.corrupt.length, 4);
+  assert.equal(dashboard.corrupt.length, 1); // one damage marker, not one corruption per raw line (ADR-0076 PR 3d)
   assert.equal(await readFile(path, "utf8"), text);
 });

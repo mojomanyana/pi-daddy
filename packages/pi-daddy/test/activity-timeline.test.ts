@@ -5,6 +5,7 @@ import {
   parseActivityTimeline,
   renderActivityTimeline,
 } from "../src/products/activity-timeline.ts";
+import { recordLinesOf } from "./record-fixtures.ts";
 
 const at = "2026-09-18T12:00:00.000Z";
 const event = (kind: string, overrides: Record<string, unknown> = {}) => ({
@@ -19,25 +20,28 @@ const event = (kind: string, overrides: Record<string, unknown> = {}) => ({
 
 test("unified timeline separates skill reads from declared active use and keeps parent-child activity together", () => {
   const timeline = parseActivityTimeline(
-    [
-      event("task_started", {
-        prompt: { digest: "a".repeat(64), bytes: 5, ref: `content/${"a".repeat(64)}` },
-        model: "model-a",
-        thinking: "high",
-      }),
-      event("skill_read", { skill: { name: "review", source: ".pi/skills/review/SKILL.md", digest: "b".repeat(64) } }),
-      event("skill_active", {
-        skill: { name: "review", source: ".pi/skills/review/SKILL.md", digest: "b".repeat(64) },
-      }),
-      event("skill_finished", {
-        skill: { name: "review", source: ".pi/skills/review/SKILL.md", digest: "b".repeat(64) },
-      }),
-      event("agent_started", { agentId: "child-a", parentTaskId: "task-a", agent: "review" }),
-      event("agent_finished", { agentId: "child-a", parentTaskId: "task-a", outcome: "completed" }),
-      event("task_finished", { final: { digest: "c".repeat(64), bytes: 4, ref: `content/${"c".repeat(64)}` } }),
-    ]
-      .map((value) => JSON.stringify(value))
-      .join("\n"),
+    recordLinesOf(
+      "activity",
+      ...[
+        event("task_started", {
+          prompt: { digest: "a".repeat(64), bytes: 5, ref: `content/${"a".repeat(64)}` },
+          model: "model-a",
+          thinking: "high",
+        }),
+        event("skill_read", {
+          skill: { name: "review", source: ".pi/skills/review/SKILL.md", digest: "b".repeat(64) },
+        }),
+        event("skill_active", {
+          skill: { name: "review", source: ".pi/skills/review/SKILL.md", digest: "b".repeat(64) },
+        }),
+        event("skill_finished", {
+          skill: { name: "review", source: ".pi/skills/review/SKILL.md", digest: "b".repeat(64) },
+        }),
+        event("agent_started", { agentId: "child-a", parentTaskId: "task-a", agent: "review" }),
+        event("agent_finished", { agentId: "child-a", parentTaskId: "task-a", outcome: "completed" }),
+        event("task_finished", { final: { digest: "c".repeat(64), bytes: 4, ref: `content/${"c".repeat(64)}` } }),
+      ],
+    ),
   );
 
   assert.equal(timeline.tasks.length, 1);
@@ -56,25 +60,26 @@ test("timeline groups child outcomes under a clearly-ended parent with stable sh
   const parent = "parent-turn",
     children = ["launch-a", "launch-b", "launch-c"];
   const timeline = parseActivityTimeline(
-    [
-      event("task_started", { taskId: parent, model: "model-a" }),
-      ...children.flatMap((taskId, index) => [
-        event("task_started", { taskId, parentTaskId: parent, agent: "review" }),
-        event("task_finished", {
-          taskId,
-          parentTaskId: parent,
-          outcome: "failed",
-          at: `2026-09-18T12:00:0${index}.000Z`,
+    recordLinesOf(
+      "activity",
+      ...[
+        event("task_started", { taskId: parent, model: "model-a" }),
+        ...children.flatMap((taskId, index) => [
+          event("task_started", { taskId, parentTaskId: parent, agent: "review" }),
+          event("task_finished", {
+            taskId,
+            parentTaskId: parent,
+            outcome: "failed",
+            at: `2026-09-18T12:00:0${index}.000Z`,
+          }),
+        ]),
+        event("task_finished", { taskId: parent, outcome: "completed", at: "2026-09-18T12:00:09.000Z" }),
+        event("skill_available", {
+          taskId: parent,
+          skill: { name: "unused", source: "/skills/unused", digest: "d".repeat(64) },
         }),
-      ]),
-      event("task_finished", { taskId: parent, outcome: "completed", at: "2026-09-18T12:00:09.000Z" }),
-      event("skill_available", {
-        taskId: parent,
-        skill: { name: "unused", source: "/skills/unused", digest: "d".repeat(64) },
-      }),
-    ]
-      .map((value) => JSON.stringify(value))
-      .join("\n"),
+      ],
+    ),
   );
   const aliases = new ActivityTimelineAliases();
   const output = renderActivityTimeline(timeline, { aliases, color: false });
@@ -98,7 +103,7 @@ test("timeline groups child outcomes under a clearly-ended parent with stable sh
 
 test("detail content visualizes terminal controls, preserves newlines, and wraps without ANSI", () => {
   const metadataTimeline = parseActivityTimeline(
-    JSON.stringify(event("task_started", { model: "m\u001b]2;owned\u0007" })),
+    recordLinesOf("activity", event("task_started", { model: "m\u001b]2;owned\u0007" })),
   );
   const metadata = renderActivityTimeline(metadataTimeline, { color: false, width: 120 });
   assert.doesNotMatch(metadata, /\u001b|\u0007/, "metadata cannot write terminal controls");
@@ -114,7 +119,7 @@ test("detail content visualizes terminal controls, preserves newlines, and wraps
   } finally {
     previousNoColor === undefined ? delete process.env.NO_COLOR : (process.env.NO_COLOR = previousNoColor);
   }
-  const timeline = parseActivityTimeline(JSON.stringify(event("task_started")));
+  const timeline = parseActivityTimeline(recordLinesOf("activity", event("task_started")));
   const content = "ok\u001b]2;owned\u0007\nTHIS-LINE-IS-WAY-TOO-LONG";
   const output = renderActivityTimeline(timeline, {
     color: false,
@@ -140,7 +145,7 @@ test("quiet activity history collapses with counts but preserves failed context"
     event("task_started", { taskId: "failed", at: "2026-09-18T12:02:00.000Z" }),
     event("task_finished", { taskId: "failed", outcome: "failed", at: "2026-09-18T12:03:00.000Z" }),
   );
-  const timeline = parseActivityTimeline(events.map((value) => JSON.stringify(value)).join("\n"));
+  const timeline = parseActivityTimeline(recordLinesOf("activity", ...events));
   const compact = renderActivityTimeline(timeline, { color: false });
   assert.match(compact, /2 quiet completed root tasks hidden/);
   assert.match(compact, /FAIL PARENT TURN FAILED/);
@@ -149,9 +154,7 @@ test("quiet activity history collapses with counts but preserves failed context"
 
 test("equal task ids from separate roots never mix parent activity", () => {
   const timeline = parseActivityTimeline(
-    [event("task_started"), event("task_started", { rootId: "root-b" })]
-      .map((value) => JSON.stringify(value))
-      .join("\n"),
+    recordLinesOf("activity", ...[event("task_started"), event("task_started", { rootId: "root-b" })]),
   );
   assert.equal(timeline.tasks.length, 2);
   assert.notEqual(timeline.tasks[0]?.rootId, timeline.tasks[1]?.rootId);
@@ -159,7 +162,10 @@ test("equal task ids from separate roots never mix parent activity", () => {
 
 test("invalid, tampered and oversized private references refuse rather than exposing a path", () => {
   const timeline = parseActivityTimeline(
-    `${JSON.stringify(event("task_started", { prompt: { digest: "nope", bytes: 999999, ref: "../../secret" } }))}\n`,
+    recordLinesOf(
+      "activity",
+      event("task_started", { prompt: { digest: "nope", bytes: 999999, ref: "../../secret" } }),
+    ),
   );
   assert.equal(timeline.refusals.length, 1);
   assert.match(renderActivityTimeline(timeline, { details: true }), /timeline refusal/);

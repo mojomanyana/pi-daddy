@@ -417,18 +417,28 @@ and reported such a definition as blocked.
 ## The ledger
 
 Append-only JSONL at the effective ledger path: explicit `PI_DADDY_LEDGER`, or `<cwd>/.pi/pi-daddy/grants.jsonl`
-for a root with ADR-0037's version-2 init choice. Ledger format v3 is an event union: `capability_decision`,
-`workspace_lease`, `child_lifecycle`, `check_receipt`, and `workflow_fact`. Every governed capability
-decision is recorded — **including refusals**, which are the interesting ones. The reader also accepts the
-frozen v2 union and legacy grant lines with no version/event discriminator.
+for a root with ADR-0037's version-2 init choice. Since ADR-0076 PR 3d every line is a **record envelope**:
+format `v`, contiguous `seq`, `prev` (SHA-256 of the previous line's bytes, null first), the writer's `at`, a
+`kind` from a closed set (`capability`, `lifecycle`, `lease`, `check`, `fact`, `activity`, `work`, `advice`,
+`binding`, …), an `id`, the `body`, and a `digest` of the record without itself. A governance body is the
+event union that used to be the whole line: `capability_decision`, `workspace_lease`, `child_lifecycle`,
+`check_receipt`, `workflow_fact`. Every governed capability decision is recorded — **including refusals**.
 
-The canonical machine contracts ship with the package. v3 is at
-`pi-daddy/contracts/ledger/v3/ledger-event.schema.json`, with deterministic fixtures generated through the
-production builders by `scripts/generate-ledger-v3-contract.ts`. The published v2 path remains unchanged and
-frozen. Both are closed JSON Schema draft 2020-12 unions; adding/removing a field, event or enum member,
-changing requiredness, or changing meaning requires a new ledger version and versioned artifact path.
+**Damage policy (operator decision, 2026-09-21).** The reader returns every intact record before the first
+damaged line plus one marker naming that line and the failure class, never the bytes. The writer refuses
+`LEDGER_DAMAGED` until `pi-daddy ledger repair <path> --yes` truncates the torn tail; without `--yes` the
+command only previews what it would drop, by line number and size. Governance fails closed, history stays
+readable, repair is explicit. A pre-format `.pi/grants.jsonl` is imported once at session start, bodies verbatim
+and each record marked with its source line; the old file is never modified.
 
-Compatibility dispatch is exact. A line with neither `ledgerVersion` nor `event` is a legacy 0.17
+The canonical machine contracts ship with the package under `pi-daddy/contracts/ledger-record/v1/`:
+`record.schema.json` (the envelope, generated from the runtime's constants) and `governance-event.schema.json`
+(the body union, unchanged from what shipped as ledger v3), with fixtures generated through the production
+builders by `scripts/generate-ledger-record-contract.ts`. Ledger v2 is archived under `docs/archive/contracts/`
+and no longer read. The activity timeline uses the same envelope with kind `activity`; the work ledger keeps its
+v4 line until PR 3d-ii.
+
+Compatibility dispatch on a record's body is exact. A body with neither `ledgerVersion` nor `event` is a legacy 0.17
 `GrantRecord`. Explicit v2 or v3 must carry a discriminator valid for that version. Any unsupported explicit
 version, missing discriminator, unknown discriminator, or missing required identity fails closed and is never
 reinterpreted as legacy. One content-free runtime v3 validator is shared by `verifyLedger` and the dashboard;

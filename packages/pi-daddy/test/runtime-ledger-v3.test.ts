@@ -10,6 +10,7 @@ import {
   verifyLedger,
 } from "../src/governance/ledger.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
+import { recordLines } from "./record-fixtures.ts";
 
 after(cleanupTempDirs);
 
@@ -177,7 +178,10 @@ test("the integrity reader never retains raw corrupt ledger content", async () =
 
   const report = await verifyLedger(path);
   assert.equal(report.ok, false);
-  assert.deepEqual(report.corrupt, [{ line: 1, reason: "invalid ledger line" }]);
+  // ADR-0076 PR 3d: a non-record line is damage; the reason names the class, never the bytes.
+  assert.equal(report.corrupt.length, 1);
+  assert.equal(report.corrupt[0]?.line, 1);
+  assert.match(report.corrupt[0]?.reason ?? "", /damaged/);
   assert.doesNotMatch(JSON.stringify(report), new RegExp(secret));
 });
 
@@ -185,20 +189,20 @@ test("the integrity reader rejects lookalike v3 and malformed nested fields", as
   const path = join(await tempDir("ledger-v3-invalid-"), "ledger.jsonl");
   await writeFile(
     path,
-    [
-      JSON.stringify({
+    recordLines(
+      {
         ledgerVersion: "3",
         event: "child_lifecycle",
         ts: "not-rfc3339",
         childId: "d0.1",
         state: "starting",
         executor: "process",
-      }),
-      JSON.stringify({
+      },
+      {
         ...buildRecord({ ...base, executionId, parentExecutionId: null }),
         correlation: { run_id: "run-1", phase: 42 },
-      }),
-    ].join("\n") + "\n",
+      },
+    ),
     "utf8",
   );
 
