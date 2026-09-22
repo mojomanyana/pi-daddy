@@ -299,73 +299,63 @@ export interface GrantsSession extends NativeSessionHost {
  * absent pin refuses anything that tries. That is the same direction as every other failure in this mechanism.
  */
 async function establishRootPin(session: GrantsSession): Promise<void> {
-  // **From the ROOT SNAPSHOT, not from `process.env`, and the difference is a live defect this missed once.**
-  // `publishChildEnv` writes the CHILD's narrowed pin into `process.env`, so reading the variable back here
-  // makes a session adopt its own child's authority. `/grants init` reaches it on the ordinary path — it calls
-  // `adoptGrant` (which publishes) and then reloads definitions (which calls this) — so every init narrowed the
-  // session's pin, and a `workspace:*` root, whose published child pin is empty because `inheritableGrant`
-  // strips the wildcard, lost ALL routing until restart and was told "no destination pin was inherited" by a
-  // session that had established one and then thrown it away.
-  //
-  // The commit that introduced the pin fixed this at the ROUTING site and missed the ESTABLISH site, which is
-  // the one that overwrites `session.workspacePin`. `lifecycle.root` is the snapshot `reconcileSessionEnvironment`
-  // already uses for every other authority-bearing input, for exactly this hazard.
-  // **Settled once per session.** Minting twice is how `/grants init` re-established a root's pin over a
-  // registry a child had rewritten in between — the guard "only a session that inherited no pin may mint" was
-  // satisfied because the session's own publication had erased the evidence.
   if (session.pinSettled) return;
   session.pinSettled = true;
+  // **One assignment, at the end, on every path.** Review found the previous shape — assign at each `return`
+  // — missing two of five exits: the `catch` around an unreadable registry, which is precisely the state a
+  // child can create by truncating the file, and the no-registry return. A root that took either reached the
+  // RELOAD with the lifecycle still empty and minted over whatever the registry said by then, routing into
+  // prod. That is the checklist failing, so the checklist is gone: the body computes a value and the caller
+  // assigns both fields once.
+  session.workspacePin = await settleWorkspacePin(session);
+  session.reloadLifecycle.workspacePin = session.workspacePin;
+}
 
-  // Settled by an EARLIER SESSION OBJECT for this same owner — an extension reload. Adopting it rather than
-  // re-deriving is the whole point: a root is entitled to mint, but only once, and only from the registry as
-  // it stood before any child had a chance to rewrite it.
-  if (session.reloadLifecycle.workspacePin) {
-    session.workspacePin = session.reloadLifecycle.workspacePin;
-    return;
-  }
+/**
+ * What this session's destination pin IS (ADR-0042). Every path returns a map; none writes anything.
+ *
+ * An empty map means "settled, and you may route nowhere", which is different from never having settled and
+ * is what every failure resolves to. The distinction that matters is not empty-versus-absent but
+ * settled-versus-not, and settling happens exactly once per owner.
+ */
+async function settleWorkspacePin(session: GrantsSession): Promise<WorkspacePins> {
+  // Settled by an EARLIER SESSION OBJECT for this same owner — an extension reload. Adopting rather than
+  // re-deriving is the point: a root may mint, but only once, and only from the registry as it stood before
+  // any child had a chance to rewrite it.
+  if (session.reloadLifecycle.workspacePin) return session.reloadLifecycle.workspacePin;
 
   const raw = session.reloadLifecycle.root[ENV_WORKSPACE_PIN];
   const inherited = parseWorkspacePin(raw);
-  if ("pins" in inherited) {
-    // Inherited, so it is authority and is kept exactly as it arrived — including an empty one, which says
-    // "your parent established a pin and gave you none of it".
-    session.workspacePin = inherited.pins;
-    session.reloadLifecycle.workspacePin = inherited.pins;
-    return;
-  }
+  // Inherited, so it is authority and is kept exactly as it arrived — including an empty one, which says
+  // "your parent established a pin and gave you none of it".
+  if ("pins" in inherited) return inherited.pins;
 
-  // **A DESCENDANT NEVER MINTS, and this is the guard the whole mechanism rests on.** Review reproduced the
-  // escalation end to end across a real process boundary: `workspacePinEnv` OMITS the variable when a parent
-  // has no pin of its own — which happens whenever that parent's registry was unreadable at its start, a state
-  // any child with `tool:write` can arrange — and the child then read the absence as "I am a root", minted a
-  // pin from the registry it had just rewritten, and routed to the prod worktree with `workspace:staging`.
-  // Depth is already in the environment, is attenuated downward, and is enough on its own: anything below the
-  // root that arrives without a usable pin routes nowhere.
+  // **A DESCENDANT NEVER MINTS.** Review reproduced the escalation end to end across a real process boundary:
+  // `workspacePinEnv` OMITS the variable when a parent has no pin of its own — which happens whenever that
+  // parent's registry was unreadable at its start, a state any child with `tool:write` can arrange — and the
+  // child then read the absence as "I am a root", minted from the registry it had just rewritten, and routed
+  // to the prod worktree holding only `workspace:staging`. Depth already rides in the environment and already
+  // attenuates downward, so it is enough on its own.
   //
   // A MALFORMED value refuses for the same reason even at the root. The module header says missing, empty,
   // malformed and mismatched all refuse; that was true of the routing check and false here, where a refusal
   // fell through to minting. A tamperer who can corrupt one byte must not thereby earn a promotion.
-  if (session.depth > 0 || raw !== undefined) {
-    session.workspacePin = new Map();
-    session.reloadLifecycle.workspacePin = session.workspacePin;
-    return;
-  }
+  if (session.depth > 0 || raw !== undefined) return new Map();
 
   const registryPath = process.env[ENV_WORKSPACE_REGISTRY];
-  if (!registryPath) return;
+  if (!registryPath) return new Map();
   try {
     const registry = await loadWorkspaceRegistry(registryPath);
-    session.workspacePin = await establishWorkspacePin(registry, realpath, (id, reason) =>
+    return await establishWorkspacePin(registry, realpath, (id, reason) =>
       session.workspaceSkips.push(`${id} — ${reason}`),
     );
-    // Remembered against the OWNER, so a reload adopts it instead of minting again.
-    session.reloadLifecycle.workspacePin = session.workspacePin;
   } catch {
-    // An unreadable registry is already reported by the catalog and by session start. It does NOT follow that
+    // An unreadable registry is already reported by the catalog and at session start. It does NOT follow that
     // nothing is blocked — an earlier draft of this comment claimed that and review measured it false, because
     // a grant supplied through `PI_DADDY_GRANT` never passes the catalog and `workspace:` is exempt from the
-    // unknown check anyway. A session can genuinely hold `workspace:w1` and be refused for want of a pin. The
-    // registry message is the one an operator has; this is why the routing refusal names the pin explicitly.
+    // unknown check anyway. A session can genuinely hold `workspace:w1` and be refused for want of a pin.
+    // Returning an empty map SETTLES it, so a later reload cannot mint over a registry that has since changed.
+    return new Map();
   }
 }
 

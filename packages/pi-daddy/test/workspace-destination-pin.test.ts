@@ -64,6 +64,22 @@ async function withPinEnv(env: { registry: string; pin?: string }, body: () => P
   }
 }
 
+/**
+ * A reload of the SAME owner, the way `grants.ts` performs one: bind the lifecycle, then reconcile the
+ * session against the environment that bind returns.
+ *
+ * Written because the first draft of these tests built the session straight from `process.env`, where
+ * `publishChildEnv` had just written `PI_DADDY_DEPTH=1` — so the reloaded session looked like a DESCENDANT
+ * and refused to mint for the right reason at the wrong time. The test passed while the guard it was aiming
+ * at was removed.
+ */
+function reloadSession(owner: object): ReturnType<typeof createGrantsSession> {
+  const bound = bindReloadLifecycle(owner, beginExtensionLifecycle().lifecycle);
+  const session = createGrantsSession(undefined, bound.lifecycle);
+  session.reconcileEnvironment(bound.environment, bound.lifecycle);
+  return session;
+}
+
 test("g37 reversal: a rewritten registry cannot repoint an authorised id at another worktree", async () => {
   const staging = await gitDir("pin-staging-");
   const prod = await gitDir("pin-prod-");
@@ -432,6 +448,71 @@ test("an extension RELOAD does not re-mint a root's pin over a rewritten registr
       reloaded.workspacePin?.get("staging"),
       destinationDigest(await realpath(prod)),
       "the reloaded root must not be routable into prod",
+    );
+  });
+});
+
+test("a root whose registry was unreadable stays settled, so a RELOAD cannot mint over a rewritten one", async () => {
+  // **Attack F.** The previous shape assigned the lifecycle field at each `return`, and missed two of five
+  // exits — the `catch` around an unreadable registry, which is exactly the state a child creates by
+  // truncating the file, and the no-registry return. A root that took either reached the reload with the
+  // lifecycle still empty and minted over whatever the registry said by then, routing into prod.
+  //
+  // Breaks by: returning early from `establishRootPin` without settling, i.e. assigning per-path again.
+  const staging = await gitDir("pin-unreadable-");
+  const prod = await gitDir("pin-unreadable-prod-");
+  const registryPath = join(staging, "registry.json");
+  await writeFile(registryPath, "{ not json at all");
+  await withPinEnv({ registry: registryPath }, async () => {
+    process.env.PI_DADDY_GRANT = "tool:write,workspace:staging";
+    const owner = {};
+    const first = reloadSession(owner);
+    await loadProjectDefinitions(first, staging);
+    assert.equal(first.workspacePin?.size, 0, "an unreadable registry settles to no pin, not to no decision");
+    // Session start always publishes, so the reload below is a RELOAD of the same root rather than an
+    // explicit root replacement. Without this the lifecycle looks replaced and the pin is correctly
+    // invalidated, which is a different case (the test below).
+    first.publishChildEnv();
+
+    await writeFile(registryPath, JSON.stringify({ version: 1, workspaces: { staging: { path: prod } } }));
+    const reloaded = reloadSession(owner);
+    await loadProjectDefinitions(reloaded, staging);
+    assert.equal(reloaded.workspacePin?.size, 0, "a reload must not mint over a registry that appeared since");
+  });
+});
+
+test("an explicit root replacement re-settles the pin instead of keeping the old one", async () => {
+  // **Attack G.** `bindReloadLifecycle` replaces a lifecycle's root baseline when the environment does not
+  // match the last child publication, and that branch was not taught about the pin. So a replacement was
+  // honoured for the grant, the depth and the approvals and silently ignored for the pin, in the WIDENING
+  // direction: the session reconciled itself to depth 1 — believing it a descendant — while still holding a
+  // root-minted pin naming a workspace the replacement root never granted.
+  //
+  // Breaks by: removing `delete existing.workspacePin` from the root-replacement branch.
+  const staging = await gitDir("pin-replace-");
+  const prod = await gitDir("pin-replace-prod-");
+  const registryPath = join(staging, "registry.json");
+  await writeFile(
+    registryPath,
+    JSON.stringify({ version: 1, workspaces: { staging: { path: staging }, prod: { path: prod } } }),
+  );
+  await withPinEnv({ registry: registryPath }, async () => {
+    process.env.PI_DADDY_GRANT = "tool:write,workspace:*";
+    const owner = {};
+    const first = reloadSession(owner);
+    await loadProjectDefinitions(first, staging);
+    assert.equal(first.workspacePin?.size, 2, "the wildcard root pins both");
+
+    // An explicit root replacement: a different, narrower root environment for the same owner.
+    process.env.PI_DADDY_GRANT = "tool:read,workspace:staging";
+    process.env.PI_DADDY_DEPTH = "1";
+    process.env.PI_DADDY_WORKSPACE_PIN = `staging:${destinationDigest(await realpath(staging))}`;
+    const replaced = reloadSession(owner);
+    await loadProjectDefinitions(replaced, staging);
+    assert.deepEqual(
+      [...(replaced.workspacePin?.keys() ?? [])],
+      ["staging"],
+      "a replaced root must re-settle from its own environment, not keep the previous root's wider pin",
     );
   });
 });

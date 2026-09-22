@@ -40,8 +40,16 @@ object: a root legitimately inherits nothing and sits at depth 0, so it minted a
 security review measured a reloaded root routing into the prod worktree. Settled-ness now lives on the reload
 lifecycle, which is keyed by owner and is already what recovers a root across a reload.
 
-That is three instances in one feature of the same shape — the rule goes on the object, and another path builds a
-different object. It is the same shape as the `workspace:*` wildcard rule that lived only in `childEnv` while
+The fix for that then produced two more of itself, both reproduced: the new lifecycle field was assigned at each
+`return` and missed two of five exits — including the `catch` around an unreadable registry, which is exactly the
+state a child creates by truncating the file — and the one place that replaces a lifecycle's root baseline was
+not taught about the pin, so an explicit root replacement was honoured for the grant, the depth and the
+approvals and silently ignored for the pin, in the widening direction. `establishRootPin` now computes a value
+and assigns once, so "every path settles" is structural rather than a checklist; the checklist is what missed
+them.
+
+That is five instances in one feature of the same shape — the rule goes on one path, and another path does not
+get it. It is the same shape as the `workspace:*` wildcard rule that lived only in `childEnv` while
 `delegate.ts` handed the wildcard down.
 
 **One builder for both spawn paths.** `delegate.ts` builds a child's environment itself rather than through
