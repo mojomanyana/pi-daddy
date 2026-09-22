@@ -26,10 +26,22 @@ import { join } from "node:path";
  * direct executor passes the same text inline with no trouble, and a plan builder that pre-emptively wrote
  * temp files for everybody would be paying one executor's tax on both paths.
  */
-export function splitSystemPrompt(args: string[]): { args: string[]; systemPrompt?: string } {
-  const at = args.indexOf("--append-system-prompt");
-  if (at === -1 || at + 1 >= args.length) return { args };
-  return { args: [...args.slice(0, at), ...args.slice(at + 2)], systemPrompt: args[at + 1] };
+export function splitSystemPrompt(args: string[]): { args: string[]; systemPrompts: string[] } {
+  // EVERY occurrence, not the first. pi accumulates `--append-system-prompt`, and ADR-0078 added a second one for a
+  // granted context handoff — whose fence always contains newlines. Taking only the first left that fence inline,
+  // and `herdr agent start` refuses a multi-line argument, so every non-fork handoff failed on the Herdr executor
+  // AFTER the gate, the ledger record and the fan-out spend. Measured during review.
+  const kept: string[] = [];
+  const systemPrompts: string[] = [];
+  for (let index = 0; index < args.length; index += 1) {
+    if (args[index] === "--append-system-prompt" && index + 1 < args.length) {
+      systemPrompts.push(args[index + 1]);
+      index += 1;
+      continue;
+    }
+    kept.push(args[index]);
+  }
+  return { args: kept, systemPrompts };
 }
 
 /**
@@ -43,12 +55,18 @@ export async function stageSystemPrompt(
   args: string[],
 ): Promise<{ args: string[]; promptDir?: string; error?: string }> {
   const split = splitSystemPrompt(args);
-  if (split.systemPrompt === undefined) return { args: split.args };
+  if (split.systemPrompts.length === 0) return { args: split.args };
   try {
     const promptDir = await mkdtemp(join(tmpdir(), "grants-herdr-"));
-    const file = join(promptDir, "system-prompt.md");
-    await writeFile(file, split.systemPrompt, "utf8");
-    return { args: [...split.args, "--append-system-prompt", file], promptDir };
+    const staged: string[] = [];
+    // One file per prompt, in order: pi appends them in argv order and the definition body must still precede the
+    // context a parent chose to add to it.
+    for (const [index, prompt] of split.systemPrompts.entries()) {
+      const file = join(promptDir, `system-prompt-${index}.md`);
+      await writeFile(file, prompt, "utf8");
+      staged.push("--append-system-prompt", file);
+    }
+    return { args: [...split.args, ...staged], promptDir };
   } catch (error) {
     return { args: split.args, error: `could not stage the system prompt for herdr: ${String(error)}` };
   }

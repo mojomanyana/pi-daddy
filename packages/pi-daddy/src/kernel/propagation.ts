@@ -31,6 +31,7 @@ import { WORKSPACE_WILDCARD } from "./resolve.ts";
 import { inheritApprovals, type InheritableApproval } from "./approval.ts";
 import { assertCapabilitiesArePropagatable } from "./capabilities.ts";
 import {
+  ENV_ADVISOR_KEY,
   ENV_GRANT,
   ENV_FANOUT,
   ENV_PARENT_ID,
@@ -75,6 +76,9 @@ export {
  * to give it.
  */
 export const GRANT_ENV_KEYS = [
+  // Not governance state, but the same rule applies for a stronger reason: a credential the parent holds is not
+  // something a child inherits by being spawned (ADR-0077).
+  ENV_ADVISOR_KEY,
   ENV_GRANT,
   ENV_DEPTH,
   ENV_MAX_DEPTH,
@@ -201,7 +205,11 @@ export const DEFAULT_MAX_DEPTH = 2;
  * Subsumption-aware gating (also ADR-0012) means this single entry covers `write`, `edit`, `read`,
  * `grep`, `find` and `ls` as well, since `bash` confers all of them.
  */
-export const DEFAULT_GATED: Capability[] = ["tool:bash"];
+// ADR-0012 gates `bash` because a child holding it can escape governance entirely. ADR-0078 gates `context:fork`
+// for the neighbouring reason: it is the one handoff mode that can carry content an untrusted repository put in
+// front of the PARENT into a fresh child, and prompt injection is in scope. Neither gate makes the thing
+// impossible; both make it loud.
+export const DEFAULT_GATED: Capability[] = ["tool:bash", "context:fork"];
 
 /**
  * Read the gate list, distinguishing **absent** from **explicitly empty**.

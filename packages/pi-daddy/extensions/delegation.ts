@@ -36,6 +36,7 @@ import { type GrantsSession } from "./session.ts";
 import { newDelegationOccurrence } from "./execution-occurrence.ts";
 import { correlationShape as buildCorrelationShape } from "./correlation-shape.ts";
 import { assertDelegationAuthority } from "./delegation-authority.ts";
+import { contextShape } from "./context-shape.ts";
 
 /**
  * Wire a set of children to pi's partial-result channel — ADR-0032.
@@ -189,6 +190,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
     tools: Type.Optional(Type.Array(Type.String(), { description: "Capabilities, when no 'agent' fits." })),
     model: Type.Optional(Type.String({ description: "Model as provider/id. Defaults to this session's." })),
     thinking: thinkingShape,
+    context: Type.Optional(contextShape()),
     correlation: Type.Optional(correlationShape),
     workspace: Type.Optional(workspaceShape),
   });
@@ -221,6 +223,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       }),
     ),
     thinking: thinkingShape,
+    context: Type.Optional(contextShape()),
     correlation: Type.Optional(correlationShape),
     workspace: Type.Optional(workspaceShape),
   });
@@ -247,6 +250,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
           tools: params.tools,
           model: params.model,
           thinking: params.thinking,
+          context: params.context,
           correlation: params.correlation,
           workspace: params.workspace,
         },

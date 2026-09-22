@@ -50,6 +50,39 @@ step's output, which crosses as a fenced, labelled, nonce-delimited block capped
 planned and gated as one unit before any step runs. A child may itself hold `delegate` and spawn further, with the
 same tools, one level deeper, under the same rules.
 
+## What a child receives
+
+By default a child gets two things: its definition body as its system prompt, and the task. Anything more is a
+capability. `context:<mode>` names how much of the parent's own session crosses, and it attenuates like every other
+id, so a child can never receive a richer handoff than the definition's ceiling and the parent's grant allow.
+
+```
+delegate({ agent: "review", task: "Review the diff.",
+           context: { mode: "summary", summary: "we chose flock over mtime; the lease is a helper process" } })
+
+delegate({ agent: "build", task: "Implement it.",
+           context: { mode: "files", files: ["src/kernel/resolve.ts"] } })
+```
+
+| Mode | What crosses |
+| :--- | :--- |
+| `none` | nothing beyond the definition and the task; the default |
+| `files` | the contents of paths the parent names, confined to the working directory |
+| `pruned` | the last few turns of the parent's session, plus older turns naming those files |
+| `summary` | what the parent writes in its own words |
+| `fork` | the parent's whole session, as a fork; **gated**, so a human answers first |
+
+A `delegate_chain` step takes the same parameter, and because a chain is planned as one unit, a gate any step
+raises is answered before the first step runs.
+
+The modes are ordered, and each subsumes the weaker ones: a parent holding `context:fork` may hand a child
+`context:files`. What crosses arrives inside a labelled, nonce-delimited fence marked as data rather than
+instructions, capped at 32 KiB, with anything that did not fit said inside the fence. The capability decision record
+names the mode the child actually received and how much crossed.
+
+`pruned` keeps recent turns plus turns naming the given files. That rule is deterministic; whether it keeps what a
+reader would have kept is unmeasured, so `pruned` is not a default.
+
 ## The guarantee, and its limit
 
 ```
@@ -119,10 +152,10 @@ specification of who owns what.
 
 | Layer | Answers | Files |
 | :--- | :--- | :--- |
-| `src/kernel` | What may a child hold, and how is that carried? Pure functions, no I/O. | `resolve`, `spawn`, `propagation`, `catalog`, `definitions`, `approval`, `chain`, `fanout`, `correlation`, `refusals`, `env-names`, `project-paths` |
+| `src/kernel` | What may a child hold, and how is that carried? Pure functions, no I/O. | `resolve`, `spawn`, `propagation`, `catalog`, `definitions`, `capabilities`, `approval`, `chain`, `context-handoff`, `fanout`, `correlation`, `refusals`, `env-names`, `project-paths` |
 | `src/governance` | What was decided, and where is it written? | `record`, `ledger`, `ledger-events`, `ledger-report`, `approval-store`, `approval-prompt`, `grant-store`, `init`, `workspace-lease`, `execution-retention` |
 | `src/executors` | How does a child process start and end? | `executor`, `run-herdr`, `herdr-*`, `pane-reaper` |
-| `src/advisors` | Reserved: advice that can select or rank but never widen a grant (ADR-0077, not yet written). | not yet created |
+| `src/advisors` | Advice that can select, rank, annotate or propose, and never widen a grant, satisfy a gate or replace a human. Off by default (ADR-0077). | `decider`, `advisor`, `jev`, `settings` |
 | `src/products` | What does the operator see? | `activity-timeline`, `dashboard-*` |
 | `extensions/` | The pi extension and its wiring: hooks, the three tools, approvals flow, `/grants`. | `grants.ts` is the entry point |
 

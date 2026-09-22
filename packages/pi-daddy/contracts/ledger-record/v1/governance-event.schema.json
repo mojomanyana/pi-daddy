@@ -185,7 +185,8 @@
         "WORKSPACE_NOT_AUTHORIZED",
         "WORKSPACE_WRITE_CONFLICT",
         "WORKSPACE_LEASE_STALE",
-        "LEDGER_DAMAGED"
+        "LEDGER_DAMAGED",
+        "CONTEXT_REQUEST_INVALID"
       ]
     },
     "refusal": {
@@ -400,6 +401,50 @@
         },
         "definitionDigest": {
           "$ref": "#/$defs/definitionDigest"
+        },
+        "handoff": {
+          "type": "object",
+          "description": "the context handoff this child received (ADR-0078); absent means nothing crossed",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "sections",
+            "bytes",
+            "truncatedBytes"
+          ],
+          "properties": {
+            "mode": {
+              "enum": [
+                "files",
+                "pruned",
+                "summary",
+                "fork"
+              ]
+            },
+            "sections": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "bytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "truncatedBytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "keptTurns": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "droppedTurns": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "rule": {
+              "type": "string"
+            }
+          }
         },
         "executor": {
           "type": "string",

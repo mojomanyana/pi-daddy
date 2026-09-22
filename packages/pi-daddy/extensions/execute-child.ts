@@ -148,6 +148,14 @@ export async function executePlannedChild(input: {
     return await executeWithActivitySession();
   } finally {
     if (!keepPaneRequested) await activitySession.dispose();
+    // ADR-0078: a fork wrote a COPY of the parent's whole session to disk. PR 3e deletes its own temp session on
+    // every path and this must too, or every forked child leaves a full transcript behind for good.
+    if (!keepPaneRequested)
+      try {
+        plan.disposeHandoff?.();
+      } catch {
+        /* teardown must not replace the child's outcome */
+      }
   }
 
   async function executeWithActivitySession(): Promise<DelegationOutcome> {

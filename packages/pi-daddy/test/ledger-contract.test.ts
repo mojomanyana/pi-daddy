@@ -87,6 +87,7 @@ const CAPABILITY_FIELDS = [
   "humanDenied",
   "gateOutcome",
   "definitionDigest",
+  "handoff",
   "executor",
   "taskFrom",
   "taskFromExecutionId",

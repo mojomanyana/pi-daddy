@@ -62,6 +62,7 @@ const ENUMERATED = [
   "WORKSPACE_WRITE_CONFLICT",
   "WORKSPACE_LEASE_STALE",
   "LEDGER_DAMAGED",
+  "CONTEXT_REQUEST_INVALID",
 ] as const;
 
 test("the refusal taxonomy is enumerated in full, so it cannot silently shrink or drift", () => {

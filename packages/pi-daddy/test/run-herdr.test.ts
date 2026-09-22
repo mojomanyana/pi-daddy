@@ -13,6 +13,7 @@ import {
   HerdrWriterCloseError,
   runHerdrPane,
   splitSystemPrompt,
+  stageSystemPrompt,
   uniqueAgentName,
   type HerdrExec,
 } from "../src/executors/run-herdr.ts";
@@ -345,14 +346,52 @@ test("a multi-line system prompt is staged to a FILE, because herdr types argv i
   const at = start.indexOf("--append-system-prompt");
   assert.ok(at > 0, "the flag is still passed");
   assert.ok(!start[at + 1].includes("\n"), "but its value must be a single-line path, not the body");
-  assert.match(start[at + 1], /grants-herdr-.*system-prompt\.md$/);
+  assert.match(start[at + 1], /grants-herdr-.*system-prompt-0\.md$/);
   assert.ok(!start.some((a) => a.includes("Never edit")), "the body must not appear in argv at all");
 });
 
 test("splitSystemPrompt leaves argv alone when there is no system prompt", () => {
   const out = splitSystemPrompt(["--tools", "read"]);
   assert.deepEqual(out.args, ["--tools", "read"]);
-  assert.equal(out.systemPrompt, undefined);
+  assert.deepEqual(out.systemPrompts, []);
+});
+
+test("every --append-system-prompt is staged, not merely the first", async () => {
+  // ADR-0078 adds a second one for a granted context handoff, and its fence always contains newlines. Taking only
+  // the first left that fence inline, and `herdr agent start` refuses a multi-line argument — so every non-fork
+  // handoff failed on this executor after the gate had already been answered. Measured in review.
+  const split = splitSystemPrompt([
+    "--tools",
+    "read",
+    "--append-system-prompt",
+    "body",
+    "--append-system-prompt",
+    "ctx\nline",
+  ]);
+  assert.deepEqual(split.args, ["--tools", "read"]);
+  assert.deepEqual(split.systemPrompts, ["body", "ctx\nline"]);
+
+  const staged = await stageSystemPrompt([
+    "--tools",
+    "read",
+    "--append-system-prompt",
+    "body",
+    "--append-system-prompt",
+    "ctx\nline",
+  ]);
+  assert.equal(staged.error, undefined);
+  assert.equal(
+    staged.args.filter((a) => a.includes("\n")).length,
+    0,
+    "a multi-line argv element is what herdr refuses; none may survive staging",
+  );
+  const flags = staged.args.filter((a) => a === "--append-system-prompt");
+  assert.equal(flags.length, 2, "both prompts reach the child, in order");
+  const files = staged.args.filter((a) => a.startsWith(String(staged.promptDir)));
+  const { readFile } = await import("node:fs/promises");
+  assert.deepEqual(await Promise.all(files.map((f) => readFile(f, "utf8"))), ["body", "ctx\nline"]);
+  const { rm } = await import("node:fs/promises");
+  await rm(String(staged.promptDir), { recursive: true, force: true });
 });
 
 test("a plan carrying --print is refused, naming the flag", async () => {

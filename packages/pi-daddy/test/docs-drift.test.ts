@@ -122,7 +122,8 @@ test("a commit SHA appears only as a pointer into git history, never as a claim 
 });
 
 test("every environment variable the documents name is a current one, and no legacy name is instructed", async () => {
-  const current = new Set([...GOVERNANCE_ENV_KEYS, "PI_DADDY_IT_MODEL", "PI_DADDY_KEEP_TMP"]);
+  // The test-tier switches are not governance keys and are declared nowhere else; they are named here instead.
+  const current = new Set([...GOVERNANCE_ENV_KEYS, "PI_DADDY_IT_MODEL", "PI_DADDY_KEEP_TMP", "PI_DADDY_IT_JEV"]);
   const unknown: string[] = [];
   const legacy: string[] = [];
   for (const doc of await documents()) {

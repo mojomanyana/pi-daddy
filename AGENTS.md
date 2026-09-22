@@ -24,7 +24,7 @@ packages/pi-daddy/                — the package
   src/kernel/                     — pure functions: resolve, spawn plan, propagation, catalog, definitions, approval maths
   src/governance/                 — stores and the ledger: record envelope, ledger events, approvals, grant store, leases, retention
   src/executors/                  — how a child process is started: captured subprocess or Herdr pane
-  src/advisors/                   — not yet created; reserved for ADR-0077 (advice only, PR 6)
+  src/advisors/                   — advice only: a Decider answering typed questions, never authority (ADR-0077)
   src/products/                   — activity timeline and the read-only dashboard
   extensions/                     — composition: the pi extension pi loads (grants.ts) and its helpers
   src/index.ts, src/cli.ts        — composition: the public root export and the `pi-daddy` bin
@@ -306,6 +306,104 @@ recorded. Revisit triggers: an exemption added to the import-direction test inst
 or refusal code appearing in `advisors/`, the second fresh-session probe failing, or the programme exceeding twelve
 pull requests before context handoff lands.
 
+**ADR-0078 — context handoff is an attenuating dimension, not a parameter (2026-09-22).** Until this, a governed
+child received two things: its definition body and one task string. That floor is deliberate — everything that can
+influence a child should be something the grant names — and it is also why delegation here was cheaper to govern
+than to use, since a parent had to restate in the task anything the child needed to know. So what crosses is a
+capability. `context:<mode>` is a sixth namespace, intersected with the parent's grant and the definition's ceiling
+like any other id, visible in `/grants`, present in the ledger's effective set, gateable, and impossible for a child
+to widen. Rejected: a separate inherited bound of the shape depth and fan-out use, because ADR-0035 already refused
+to add a propagation channel for routing and the argument holds twice as hard for a second one; and a frontmatter
+field honoured at spawn, which would not attenuate at all.
+
+The five modes are ordered `none < files < pruned < summary < fork`, and each subsumes every weaker one through the
+same table that makes `tool:bash` subsume `tool:read`, so a parent holding `context:fork` may hand a child
+`context:files` without holding that id separately. The order is by how much of the parent's session can cross:
+`files` carries content the parent names, `pruned` carries turns a rule selected, `summary` carries whatever the
+parent chose to write, `fork` carries everything the parent has seen. `summary` outranks `pruned` because a sentence
+the parent composes is unbounded in what it may reveal, while a pruned selection is at least traceable to turns that
+happened. A definition's `allowed-tools` declares the CEILING; the mode on a given call is the request, so a
+definition permitting `fork` does not fork on every spawn, and a definition declaring no `context:` id receives
+nothing. That check is in the planner rather than in `resolve`, because on the `agent` path the requested set IS
+the ceiling: review measured the first version handing `context:fork` to a definition capped at `context:files`,
+and `context:files` to one that named no context at all. A chain step asks for context the same way, and its gate
+is raised in the upfront pass ADR-0033 requires, so a human answers for a fork step 3 wants before step 1 starts.
+That pass deliberately does not stage anything: its plans are thrown away and remade when each step runs, so
+staging there would read every step's files upfront and allocate a fork directory nothing would dispose.
+
+**`context:fork` is gated by default**, beside `tool:bash` and for the neighbouring reason: it is the one mode that
+can carry content an untrusted repository put in front of the parent into a fresh child, and prompt injection is in
+scope (ADR-0012). The gate does not make that impossible; it makes it loud. What crosses is fenced with its own
+delimiter, distinct from the chain handoff's, so a child can tell context from its parent apart from a prior step's
+output and weigh them differently. One 32 KiB budget governs both channels, and what did not fit is said inside the
+fence. Paths are confined to the session's working directory because they are model-supplied; that bounds the
+parameter and is not a claim of containment, since the parent process can already read what its own grant allows.
+
+`pruned` keeps the last N turns plus older turns naming one of the given files. That rule is deterministic and
+explainable, and its recall is **unmeasured**: whether it keeps what a reader would have kept is exactly what the
+handoff probe is for, and `pruned` is not a default until that probe says so. The rule names itself in the ledger so
+a later advisor can replace the selection without anything else changing. Also not established: any measurement of
+what a forked child does differently from one given a summary.
+
+Two interactions worth knowing, both found by review rather than by reasoning. pi refuses `--fork` beside
+`--session` or `--no-session`, and PR 3e gives every child a session file for the inactivity deadline; a forked
+child therefore gets `--fork` with `--session-dir` and `--session-id`, and the activity probe watches that
+directory instead of a fixed path. And the Herdr executor stages a system prompt to a file because it refuses a
+multi-line argument — it staged only the FIRST such flag, so the second one this change adds left a fence full of
+newlines inline and every non-fork handoff failed on that executor after the gate had already been answered.
+
+Path confinement resolves symlinks. Lexical resolution passed a link inside the working directory pointing
+anywhere, which made `context:files` a general read primitive in any checkout containing one; and a path that is
+not a regular file is refused outright, because a FIFO satisfies `stat` and then blocks the session forever with
+no watchdog.
+
+**ADR-0077 — an advisor is advice, and the boundary is structural (2026-09-22).** `src/advisors/` holds a `Decider`
+that answers typed questions: `noul` (a boolean), `choice` (one of the options the caller already had) and `score`
+(a level from the caller's own list), each with a probability. It may select, rank, annotate or propose. It can
+never widen an `effective` set, satisfy a gate or replace a human's answer — and that is enforced rather than
+promised: no type in the layer names a `Capability` or a refusal code, and no module in `kernel/` or `governance/`
+imports it, both checked by `test/advisors.test.ts`. Nothing on a governance path can receive what an advisor
+returns, so an advisor cannot become load-bearing by accident.
+
+Every use is an `advice` record on the one ledger envelope, **including the uses that produced nothing**, because an
+advisor that quietly stopped answering would otherwise look exactly like one nobody called. The record names the
+purpose, the decider, the question keys, the answers and the duration. It does **not** contain the state the caller
+composed: that can carry task text and file contents, the ledger has never stored a task (ADR-0021), and an advisor
+must not become the way it starts.
+
+Default off, and off is the whole configuration unless `.pi/pi-daddy/settings.json` says otherwise and
+`PI_DADDY_ADVISOR_KEY` is set. That key is stripped from every child: review measured it reaching a child granted
+`tool:bash` while the constant's own comment claimed it never did, because it had been added to the list the
+`childEnv` hook may not write and not to the list `mergeChildEnv` strips. A credential is not something a child
+inherits by being spawned. Malformed configuration disables the advisor and names the field, rule 8's shape: an
+operator who mistypes must not get silence, and must not get a third party reading their session either. A caller
+must behave identically under the null decider, which is why that is the default and why degradation is always "no
+advice" — disabled, missing key, two-second timeout, transport error, or a response we do not recognise all return
+the same nothing.
+
+**Deliberate departure from the programme's sketch:** there is no dashboard toggle. The dashboard is a read-only
+renderer that "never affects enforcement" (ADR-0036), and a control there writing to settings would be the first
+thing it ever wrote. Turning an advisor on is an operator decision in the reviewable file.
+
+**What is verified about Jev, and what is not.** The request shape is OpenRouter's documented one for
+`POST /api/alpha/decisions`: `{model, state, questions}` with `noul` carrying `criteria.true`/`criteria.false`,
+`choice` a map of option to description, and `score` an array of level descriptions; the model is
+`typesafe/jev-1.13`. The RESPONSE is described there as an `answers` object beside `id`, `model`, `provider` and
+`usage`, with probabilities and confidence mentioned and never shown, and the one public guide to this endpoint
+states it has not run paid calls either. **No response shape here has been confirmed against a live call.** The
+parser accepts what the documentation describes, tolerates the obvious variants, and treats anything else — including
+a `choice` that was never offered or a `score` outside the levels — as no advice rather than a guess. A `score` is
+read as a 0-based index into the documented `criteria` array and carries the level STRING beside the number, so a
+caller never indexes it: the first draft accepted a 0-based and a 1-based reading at once, which meant the middle of
+any scale was ambiguous and `levels[value]` could read "high" where the model meant "mid". That single reading is
+itself an assumption the unrun live tier would settle; if Jev is 1-based, its top level falls outside the array and
+the answer is refused as unrecognised, which is the loud failure rather than a silently shifted one. A dead endpoint
+is recorded as `error` and an advisor with nothing to say as `declined`, because a revoked key must not read as an
+opinion-free advisor forever; and the two-second bound is raced rather than merely signalled, since a decider that
+ignores its abort would otherwise run as long as it liked and still be recorded as a timeout. Confirming it
+is the `PI_DADDY_IT_JEV=1` tier, unrun. Until somebody runs it, this adapter's response handling is a reading of
+documentation, not a measurement.
+
 **Working rules that survive the deletion of the working-rules document.** Decisions, load-bearing claims and
 failure modes are written down or they do not exist; reversals get a dated note, never a rewrite; measure before
 asserting and say which you did, and state what the evidence does not cover; a test that cannot fail is worse than
@@ -466,7 +564,8 @@ history (`git show 9cf2904:docs/probes/<name>/README.md`).
 - **kernel, governance, executors, advisors, products** — the five source layers with a mechanically enforced import direction; `extensions/`, `src/index.ts` and `src/cli.ts` are composition (ADR-0076).
 - **advisor / Decider / advice** — a non-generative classifier (`choice`, `score`, `noul`) whose output can select, rank, annotate or propose and can never widen a grant, satisfy a gate or replace a human answer; each use is an `advice` ledger record.
 - **Jev** — TypeSafe's decision model (`typesafe/jev-1.13`), reached through OpenRouter's `POST /api/alpha/decisions`; the first advisor adapter; default off.
-- **context handoff** — what a child receives beyond its definition body and task: `none`, `files`, `pruned`, `summary` or `fork`, capped by an inherited ceiling (ADR-0078, not yet written).
+- **context handoff** — what a child receives beyond its definition body and task: `none`, `files`, `pruned`, `summary` or `fork`, each a `context:` capability that attenuates and is capped by the definition's ceiling (ADR-0078).
+- **handoff fence (parent context)** — the `<<<PARENT-CONTEXT …>>>` block a granted handoff crosses in, distinct from the chain's `<<<PRIOR-AGENT-OUTPUT …>>>` so a child can weigh the two differently.
 - **settings.json** — the one committable file under `.pi/pi-daddy/`, written by `pi-daddy init`, holding the grant, per-definition declarations, withheld capabilities, routable workspaces and the default gate.
 
 ## Roadmap
@@ -484,20 +583,19 @@ What remains of ADR-0076's sequence after this cleanup, one line each with what 
 - **PR 4 (skill-harness as optional peer; contracts pruned)** — done by deletion: the learning product and its
   harness bridge are gone and one contract remains (`contracts/ledger-record/v1`); verified 2026-09-22: `package.json`
   names no harness and `contracts/` holds that one directory.
-- **PR 5 (SPEC as the layer map, now the README)** — one section per layer answering what it does, what it
-  guarantees, what it does not do and which files hold it, present tense, with a drift test refusing any hex string of
-  seven or more characters and any `PR #` token; done means the first fresh-session probe passes: a fresh Claude or
-  Codex session ships a small delegate-path change from README and AGENTS.md alone.
-- **PR 6 (advisors layer; carries ADR-0077, not yet written)** — the `Decider` interface, a null decider, the Jev
-  adapter, a settings block, a dashboard toggle pane, `advice` records and a live tier behind `PI_DADDY_IT_JEV=1`;
-  ADR-0077 must also settle the package boundary (an in-repo layer versus a small shared package; the skill-harness
-  consumer that asked for the shared package is deleted, so an in-repo layer is the default); done means no type in
-  `advisors/` carries a `Capability` or refusal code, no kernel or governance function accepts an advisor result, and
-  every call writes an `advice` record.
-- **PR 7 (context handoff; carries ADR-0078, not yet written)** — the five modes, an inherited handoff ceiling, a
-  staged fence for what crosses, a ledger field naming the mode, and integration tests against a real pi child; done
-  means a child can never receive a richer handoff than its parent's ceiling allows, what crosses is fenced and
-  recorded, and `pruned` is not the default.
+- **PR 5 (SPEC as the layer map, now the README)** — done 2026-09-22: the README is the layer map, `docs-drift.test.ts`
+  checks both documents against the code, and the first fresh-session probe shipped its change (see the probe record
+  above). The drift guard checks what rots — paths, variables, refusal codes, verbs, scripts — rather than the hex
+  pattern the entry first proposed, because a commit SHA attributing a measurement is required by the hard rules.
+- **PR 6 (advisors layer)** — done 2026-09-22 as an in-repo layer, since the consumer that wanted a shared package
+  is deleted. The `Decider` interface, the null decider, the Jev adapter, a settings block and `advice` records, with
+  both boundary rules enforced by tests. No dashboard toggle, for the reason in ADR-0077. Not established: any live
+  call to the Decisions endpoint, so the response parsing is documentation-read; and no decision point uses an
+  advisor yet, which is PR 8.
+- **PR 7 (context handoff)** — done 2026-09-22: all five modes, `context:` as an attenuating capability with
+  `fork` gated, the parent-context fence, and `handoff` on the capability-decision record. `none` remains the
+  default. Not established: the `pruned` rule's recall, and any behavioural comparison between a forked child and a
+  summarised one; both are what PR 9's probe is for.
 - **PR 8 (output selection, routing proposal, signals)** — one to three additive PRs applying advisors at the
   remaining decision points; done means each is advice-only under ADR-0077's rule and each use is recorded.
 - **PR 9 (Jev handoff probe and second fresh-session run)** — a probe measuring `pruned` handoff precision and recall

@@ -3,6 +3,7 @@
  * 400-line module ceiling this project enforces mechanically; `./delegate.ts` re-exports all three, so
  * "the delegate module" remains one import for every caller.
  */
+import type { ContextMode, ContextRequest } from "./context-handoff.ts";
 import type { Capability, ResolveResult } from "./resolve.ts";
 import type { DefinitionDigest, SkillDefinition } from "./definitions.ts";
 import type { InheritableApproval } from "./approval.ts";
@@ -35,6 +36,14 @@ export interface DelegationRequest {
   model?: string;
   provider?: string;
   thinking?: string;
+  /**
+   * What of the parent's own session should cross to this child (ADR-0078). Model-supplied and validated.
+   *
+   * The MODE is the request; a definition's `allowed-tools` declares the ceiling. So a definition may permit
+   * `context:fork` while a given call asks only for `context:files`, and the narrower of the two wins — the same
+   * relation a definition's tools have to the tools one spawn actually asks for.
+   */
+  context?: unknown;
   /** Optional external join metadata. It never participates in capability authority. */
   correlation?: CorrelationMetadata;
   /**
@@ -73,6 +82,23 @@ export interface DelegationContext {
    * (ADR-0076: the kernel imports no product; products contribute through this hook).
    */
   childEnv?: (child: { childExecutionId?: string }) => Readonly<Record<string, string>>;
+  /**
+   * Stage what crosses for a GRANTED handoff (ADR-0078), supplied by the composition layer for `childEnv`'s
+   * reason: building it means reading files and the parent's session, and the kernel does no I/O.
+   *
+   * Called only after the mode has survived the ceiling, the parent's grant and the gate, so a refused handoff
+   * reads nothing. What it returns reaches the child as an appended system prompt or as fork arguments; it can
+   * carry no capability, so nothing here can widen a grant.
+   */
+  stageHandoff?: (granted: ContextRequest) => {
+    contextPrompt?: string;
+    forkFrom?: { sessionPath: string; sessionDir: string; sessionId: string };
+    record?: Delegation["handoffRecord"];
+    /** Why nothing could be staged; the planner turns it into a refusal rather than letting a throw escape. */
+    refusal?: string;
+    /** Remove whatever staging created. Carried on the plan so the executor can call it when the child ends. */
+    dispose?: () => void;
+  };
   /** Live capability catalog. When supplied, capabilities absent from it are refused as unknown. */
   catalog?: Catalog;
   /**
@@ -135,6 +161,31 @@ export interface Delegation {
    * read the tool parameters would record an empty request for every definition spawn.
    */
   requested: Capability[];
+  /**
+   * The handoff that survived resolution (ADR-0078): the mode whose capability is in `effective`, with the
+   * parent's inputs for it. Absent means nothing crosses.
+   *
+   * Carried on the plan for `requested`'s reason — the mode a call ASKED for and the mode a child RECEIVES are
+   * different facts, and a caller that re-derived the second from the first would record the wrong one whenever a
+   * ceiling or a gate narrowed it.
+   */
+  handoff?: { mode: ContextMode; files?: string[]; summary?: string; turns?: number };
+  /**
+   * What staging actually produced, for the ledger: the mode, how many sections crossed, how many bytes, and how
+   * many were dropped by the budget. Distinct from `handoff` because a mode that was granted and a handoff that
+   * fitted are different facts, and a record that conflated them would overstate what the child received.
+   */
+  /** Remove whatever the handoff staged (a fork's session copy). Called by the executor when the child ends. */
+  disposeHandoff?: () => void;
+  handoffRecord?: {
+    mode: string;
+    sections: number;
+    bytes: number;
+    truncatedBytes: number;
+    keptTurns?: number;
+    droppedTurns?: number;
+    rule?: string;
+  };
   /** Ledger id for this child's readable logical position, if the caller assigned one (F8). */
   childId?: string;
   /** Unique identity for this occurrence, if the caller assigned one. */
