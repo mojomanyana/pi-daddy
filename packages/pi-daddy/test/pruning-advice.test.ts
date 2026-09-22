@@ -5,6 +5,13 @@ import { nullDecider, type Decider } from "../src/advisors/decider.ts";
 import { advisePruning, MAX_JUDGED_TURNS, PRUNING_PURPOSE } from "../extensions/pruning-advice.ts";
 import { createHandoffStager } from "../extensions/context-staging.ts";
 import { createGrantsSession } from "../extensions/session.ts";
+import { handoffPlanContext } from "../extensions/run-delegation.ts";
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { cleanupTempDirs, tempDir } from "./tmp.ts";
+import { after } from "node:test";
+
+after(cleanupTempDirs);
 import { ADVISOR_KEY_ENV, ENV_ADVISOR } from "../src/advisors/settings.ts";
 
 const entriesOf = (count: number) =>
@@ -222,4 +229,84 @@ test("the workspace settings file cannot choose the advisor's destination or len
   // A key name is echoed back into the /grants panel, and this file is child-writable.
   const forged = advisorSettingsFrom({ "\u001b[31mowned\n  grant      tool:*": 1 }, on);
   assert.doesNotMatch(String(forged.refusal), /\u001b|\n/, "no control characters reach a trust surface");
+});
+
+test("an advisor is not asked for a delegation that is already refused, nor before the handoff is authorised", async () => {
+  // Both were fixed by hand and forced by nothing: reviewers restored each defective version and the whole suite
+  // stayed green. Breaks by: dropping the `blocked` guard, or asking before the preview plan carries the handoff.
+  let asked = 0;
+  const counting = createAdvisor({
+    decider: { name: "count", decide: async () => (asked++, null) },
+    record: () => {},
+    enabled: true,
+  });
+  const session = { advisorSession: { advisor: counting }, parentSession: parentSessionOf(8) };
+  const base = { fanoutBudget: 4 };
+
+  const blocked = await handoffPlanContext({
+    session,
+    base,
+    task: "t",
+    blocked: true,
+    preview: async () => {
+      throw new Error("a refused delegation must not even be planned for advice");
+    },
+  });
+  assert.deepEqual(blocked, base, "nothing added");
+  assert.equal(asked, 0, "a doomed delegation ships nothing to a third party");
+
+  const refusedHandoff = await handoffPlanContext({
+    session,
+    base,
+    task: "t",
+    blocked: false,
+    preview: async () => ({}), // the plan carries no handoff: the grant or the ceiling refused it
+  });
+  assert.deepEqual(refusedHandoff, base);
+  assert.equal(asked, 0, "a handoff the grant refuses ships nothing either");
+
+  const otherMode = await handoffPlanContext({
+    session,
+    base,
+    task: "t",
+    blocked: false,
+    preview: async () => ({ handoff: { mode: "summary" } }),
+  });
+  assert.deepEqual(otherMode, base);
+  assert.equal(asked, 0, "only `pruned` has turns to choose between");
+});
+
+test("the ids an advisor chooses reach the planner's context", async () => {
+  // The blocker that was invisible to the type system, now forced on this side of the seam too. Breaks by:
+  // dropping `handoffTurnIds` from the returned context.
+  const context = await handoffPlanContext({
+    session: { advisorSession: { advisor: judging([0]) }, parentSession: parentSessionOf(8) },
+    base: { fanoutBudget: 4 },
+    task: "t",
+    blocked: false,
+    preview: async () => ({ handoff: { mode: "pruned", turns: 4 } }),
+  });
+  assert.deepEqual(context, { fanoutBudget: 4, handoffTurnIds: ["t4"] });
+});
+
+test("a session reads its project's advisor block from disk, not from a caller's argument", async () => {
+  // Commit `5bbf20c` fixed "the settings block was never read" and a reviewer then restored `block: undefined`
+  // with the suite green, because the test for it called `createAdvisorSession` directly. This one goes through
+  // the session factory against a real file. Breaks by: passing `undefined` again in `session.ts`.
+  const cwd = await tempDir("advisor-settings-");
+  await mkdir(join(cwd, ".pi", "pi-daddy"), { recursive: true });
+  await writeFile(join(cwd, ".pi", "pi-daddy", "settings.json"), JSON.stringify({ advisor: { enabled: false } }));
+  const previous = { cwd: process.cwd(), env: { ...process.env } };
+  try {
+    process.chdir(cwd);
+    process.env[ENV_ADVISOR] = "jev";
+    process.env[ADVISOR_KEY_ENV] = "k";
+    const session = createGrantsSession(undefined);
+    assert.equal(session.advisorSession.deciderName, "none", "the project said no, and the session read it");
+    assert.match(String(session.advisorSession.settings.refusal), /not true for this project/);
+  } finally {
+    process.chdir(previous.cwd);
+    delete process.env[ENV_ADVISOR];
+    if (previous.env[ADVISOR_KEY_ENV] === undefined) delete process.env[ADVISOR_KEY_ENV];
+  }
 });

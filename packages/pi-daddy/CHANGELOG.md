@@ -12,12 +12,22 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
-## 0.35.0 — the first decision point, and only the environment can enable an advisor
+## 0.35.0 — the first two decision points, and only the environment can enable an advisor
 
-**An advisor now fills one blank.** When a `delegate` call names no `thinking` level, an enabled advisor is asked to
-choose one from the levels this session's model reports it supports. An explicit level is never overruled, and with
+**An advisor now fills two blanks.** When a `delegate` call names no `thinking` level, an enabled advisor is asked
+to choose one from the levels the CHILD's model reports it supports. An explicit level is never overruled, and with
 no advisor, no answer or a timeout the blank stays blank and the child is spawned exactly as before. The task text
 is sent to the advisor so it has something to judge; it is still never recorded.
+
+**A `pruned` context handoff can now ask which turns to carry.** The mechanical rule runs first and decides what is
+eligible; the advisor is then shown at most twelve of those turns, truncated, and may only NARROW the set — an id
+it invents or one the rule dropped is ignored, and an incomplete answer is discarded whole. The selection is asked
+only after a plan says the handoff survived the ceiling, the grant and the gate, so a delegation the grant refuses
+never ships session turns. With no advisor or no usable answer, the mechanical selection stands unchanged.
+
+**This sends more than the effort point does.** A `pruned` handoff sends the operator's own session turns, not just
+the task, to a third party. That is the sharpest egress in the package and it is why an advisor is off by default,
+enabled only from the environment, and reported by `/grants`.
 
 **Security fix over 0.34.0.**
 

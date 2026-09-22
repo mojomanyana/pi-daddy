@@ -14,7 +14,6 @@
 import { nativeDelegationContext } from "./delegation-native.ts";
 import { adviseEffort } from "./effort-advice.ts";
 import { advisePruning } from "./pruning-advice.ts";
-import { parseContextRequest } from "../src/kernel/context-handoff.ts";
 import { DELEGATE_SUBJECT, shouldSeekApproval } from "../src/kernel/approval.ts";
 import { planDelegation } from "../src/kernel/delegate.ts";
 import {
@@ -308,26 +307,14 @@ export async function runOneDelegation(
       signal,
     });
 
-  /**
-   * ADR-0077's second decision point, and it may only be asked AFTER the handoff is authorised.
-   *
-   * The first version asked straight from the model-supplied request, before the ceiling, the parent's grant and
-   * the gate — so a delegation that `planDelegation` then refused had already POSTed a dozen of the operator's own
-   * session turns to a third party. `context:` is a capability (ADR-0078) exactly so a parent's session cannot
-   * cross without a named grant; asking first shipped it with no grant at all. Review measured that.
-   *
-   * So the planner decides first, with `ctx: null` so no human is asked for a plan that exists to be inspected,
-   * and the advisor is consulted only when that plan actually carries a `pruned` handoff. Re-planning with the ids
-   * then follows the path every other plan takes. One extra plan, on `pruned` delegations only.
-   */
-  let planContext: Record<string, unknown> = { ...extra };
-  if (!executorRefusal && !modelRefusal) {
-    const authorised = await planWithApprovals(session, request, planContext, null, signal, preApproved);
-    if (authorised.plan.handoff?.mode === "pruned") {
-      const ids = await advisePruning({ session, granted: authorised.plan.handoff, task: spec.task, signal });
-      if (ids) planContext = { ...planContext, handoffTurnIds: ids };
-    }
-  }
+  const planContext = await handoffPlanContext({
+    session,
+    base: extra,
+    task: spec.task,
+    blocked: Boolean(executorRefusal || modelRefusal),
+    preview: () => planWithApprovals(session, request, extra, null, signal, preApproved).then((r) => r.plan),
+    ...(signal ? { signal } : {}),
+  });
   let preparedWorkspace: PreparedWorkspace | undefined;
   let approvalOutcome: ApprovalOutcome | undefined;
   let plan: ReturnType<typeof planDelegation>;
@@ -447,4 +434,36 @@ export async function runOneDelegation(
     signal,
     onProgress,
   });
+}
+
+/**
+ * The planner context for one delegation, including a `pruned` handoff narrowed by an advisor (ADR-0077).
+ *
+ * **Exported and taking its own `preview`, so the ordering is forced by a test rather than by a reviewer.** Three
+ * properties live here and each was, at some point in this change's history, true only because somebody had
+ * checked it by hand: an advisor is not asked for a delegation that is already refused; it is not asked until a
+ * plan says the `pruned` handoff actually survived the ceiling, the grant and the gate; and the ids it returns
+ * reach the planner. Reviewers measured all three by mutating the source and finding the suite still green. A
+ * function with a seam is the only version of this that a test can hold.
+ */
+export async function handoffPlanContext(input: {
+  session: Parameters<typeof advisePruning>[0]["session"];
+  base: Record<string, unknown>;
+  task: string;
+  /** A refusal is already certain, so nothing may be asked. */
+  blocked: boolean;
+  /** Plans with no human in the loop; its result decides whether an advisor is consulted at all. */
+  preview: () => Promise<{ handoff?: { mode: string } }>;
+  signal?: AbortSignal;
+}): Promise<Record<string, unknown>> {
+  if (input.blocked) return { ...input.base };
+  const plan = await input.preview();
+  if (plan.handoff?.mode !== "pruned") return { ...input.base };
+  const ids = await advisePruning({
+    session: input.session,
+    granted: plan.handoff as Parameters<typeof advisePruning>[0]["granted"],
+    task: input.task,
+    ...(input.signal ? { signal: input.signal } : {}),
+  });
+  return ids ? { ...input.base, handoffTurnIds: ids } : { ...input.base };
 }

@@ -399,11 +399,15 @@ and it is the reason an advisor is off by default and enabled only from the envi
 the `advice` record names the decision, the question keys, the answers and the timing. `/grants` states which
 advisor is in force and what it sends.
 
-**Both decision points are asked only for a delegation that can actually run**, and the pruning one only after a
-plan says the handoff survived the ceiling, the grant and the gate. Review measured the first version asking
-straight from the model-supplied request: a delegation the grant then refused had already shipped a dozen session
-turns. `context:` is a capability precisely so a parent's session cannot cross without a named grant, and asking
-first shipped it with no grant at all.
+**Neither decision point is asked for a delegation the executor or the model preflight has already refused, and
+the pruning one is asked only after a plan says the handoff survived the ceiling, the grant and the gate.** Review
+measured the first version of pruning asking straight from the model-supplied request: a delegation the grant then
+refused had already shipped a dozen session turns. `context:` is a capability precisely so a parent's session
+cannot cross without a named grant, and asking first shipped it with no grant at all. **The effort point is weaker
+and deliberately so:** it runs before the capability plan, so a delegation the grant goes on to refuse for
+escalation has still sent its task text. Task text crosses on any `delegate` call that names no thinking level;
+session turns cross only behind a granted `context:pruned`. That asymmetry is the one to hold in mind, and it is
+why the egress paragraph above is written in terms of a call rather than a spawn.
 
 **The first decision point (2026-09-22, roadmap PR 8): how hard a child should think.** When a `delegate` call
 names no `thinking` level, the advisor is asked to choose one from the levels this session's own model reports it
@@ -421,8 +425,8 @@ Three guards, and the third came from review. The layer names no authority; no `
 imports it; and the composition modules that may consult an advisor are an explicit list, because composition may
 import both sides and is where decision points live. A rule of the form "advice and the gate may never meet in one
 module" was tried and discarded — the delegation runner legitimately does both, and splitting it would buy nothing
-— so what is checked instead is that the set of consulting modules is written down, and that the one answer an
-advisor gives is spent on `thinking` and nothing else.
+— so what is checked instead is that the set of consulting modules is written down, and that the answers an advisor
+gives are spent on `thinking` and on narrowing a `pruned` handoff's kept turns, and on nothing else.
 
 **What the workspace settings file may and may not do.** It may switch an advisor off for one project, and shorten
 its timeout. It may not enable one, choose its model, or lengthen its bound — a model is a destination and a longer
@@ -647,11 +651,11 @@ What remains of ADR-0076's sequence after this cleanup, one line each with what 
   `fork` gated, the parent-context fence, and `handoff` on the capability-decision record. `none` remains the
   default. Not established: the `pruned` rule's recall, and any behavioural comparison between a forked child and a
   summarised one; both are what PR 9's probe is for.
-- **PR 8 (applying advisors at decision points)** — first slice done 2026-09-22: child effort, chosen from the
-  levels the model reports, filling a blank the caller left. Remaining candidates: handoff pruning (needs the
-  staging path to become async, since `planDelegation` is pure and synchronous), chain output selection, and
-  completion/failure signals. Not established: whether the advice is any good — nothing measures that, and PR 9's
-  probe is the only thing that would.
+- **PR 8 (applying advisors at decision points)** — two slices done 2026-09-22: child effort, chosen from the
+  levels the model reports, filling a blank the caller left; and `pruned` handoff selection, which may only narrow
+  the set the mechanical rule already kept and is asked after the plan authorizes the handoff. Remaining
+  candidates: chain output selection and completion/failure signals. Not established: whether the advice is any
+  good — nothing measures that, and PR 9's probe is the only thing that would.
 - **PR 9 (Jev handoff probe and second fresh-session run)** — a probe measuring `pruned` handoff precision and recall
   on the operator's own sessions, recorded under `packages/pi-daddy/test-integration/` now that `docs/probes/` is gone, and a second fresh-session
   probe; done means `pruned` may become a default only if recall meets what a reviewer needs, and the second

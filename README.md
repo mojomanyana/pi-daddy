@@ -149,8 +149,10 @@ enumeration is `REFUSAL_CODES` and it is pinned by the contract.
 ## Advisors, and what leaves the machine
 
 An advisor is a non-generative decider that answers typed questions. It may select, rank, annotate or propose, and
-it can never widen a grant, satisfy a gate or replace a human's answer. Today it fills exactly one blank: when a
-`delegate` call names no thinking level, it chooses one from the levels that model reports it supports.
+it can never widen a grant, satisfy a gate or replace a human's answer. Today it fills two blanks. When a
+`delegate` call names no thinking level, it chooses one from the levels that model reports it supports. When a
+context handoff is `pruned`, it picks which of the turns the mechanical rule already kept are worth carrying, and
+it can only narrow that set.
 
 It is **off unless you set `PI_DADDY_ADVISOR=jev` and `PI_DADDY_ADVISOR_KEY`**, both of which live in the
 environment rather than in a committed file, because a file inside the workspace is writable by any child holding

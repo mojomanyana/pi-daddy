@@ -10,8 +10,10 @@
  * the decision, not the thing the enforcer reads". A grant lives outside the workspace precisely so a child cannot
  * widen the next session's ceiling; an advisor switch a child could flip would make the operator's next session
  * ship its own description to a third party, which is the same self-defeating shape. The settings block may still
- * NARROW — a model, a timeout, or `enabled: false` to turn an advisor off for one project — and can never turn one
- * on. Malformed configuration disables the advisor and says so: a typo must not be a way to enable anything.
+ * NARROW — a shorter timeout, or `enabled: false` to turn an advisor off for one project — and can never turn one
+ * on, choose its model, or lengthen its bound. A model is a destination rather than a narrowing, so `model` in the
+ * block is refused with a message naming `PI_DADDY_ADVISOR_MODEL`, and a timeout is clamped to the default rather
+ * than trusted. Malformed configuration disables the advisor and says so: a typo must not be a way to enable anything.
  *
  * **Not a dashboard toggle**, which is what the programme originally sketched. The dashboard is a read-only
  * renderer in a separate process that "never affects enforcement" (ADR-0036), and a control there that wrote to

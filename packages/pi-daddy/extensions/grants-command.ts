@@ -362,7 +362,8 @@ export const grantsCommand = {
       // task text leaves the machine, which no other surface says.
       advisor.decider === "none"
         ? `  advisor    off${advisor.refusal ? ` — ${advisor.refusal}` : ""}`
-        : `  advisor    ${advisor.decider} — a delegation with no thinking level asks it, sending the task text`,
+        : `  advisor    ${advisor.decider} — a delegation with no thinking level sends it the task text; ` +
+          `a pruned context handoff also sends session turns`,
       `  ledger     ${ledgerPath || "(not recording — set PI_DADDY_LEDGER)"}`,
       `  approvals  ${sessionApprovals.size} this session, ${valid.size} persisted` +
         `${inheritedApprovals.size > 0 ? `, ${inheritedApprovals.size} inherited` : ""}` +

@@ -133,6 +133,20 @@ test("the options offered are exactly what the model reports, so advice cannot i
  * runner legitimately obtains approvals AND now asks for an effort) but "the set of places that consult an advisor
  * is written down". Adding a module here is a deliberate line in a diff, which is the point.
  */
+/**
+ * Derived from the list, never spelled twice. The first version hard-coded two module names in two regexes and
+ * `pruning-advice` was in neither, so a module importing it reached an advisor and the guard said nothing —
+ * measured in review. Two spellings of one rule is R-28's shape.
+ */
+const ADVISOR_WRAPPERS = ["advisor-session", "effort-advice", "pruning-advice"];
+
+function consultsAnAdvisor(text: string): boolean {
+  if (/from "[^"]*advisors\//.test(text)) return true;
+  // Only the thin wrappers around the layer count. Importing `session.ts` — which HOLDS an advisor — is not
+  // consulting one, or every module in the package would be on the list and the guard would say nothing.
+  return ADVISOR_WRAPPERS.some((wrapper) => new RegExp(`from "[^"]*${wrapper}\\.ts"`).test(text));
+}
+
 const MAY_CONSULT_AN_ADVISOR = [
   "extensions/advisor-session.ts",
   "extensions/effort-advice.ts",
@@ -148,15 +162,14 @@ test("only the modules written down here reach the advisors layer", async () => 
     for (const name of await readdir(join(packageRoot, directory))) {
       if (!name.endsWith(".ts")) continue;
       const text = await readFile(join(packageRoot, directory, name), "utf8");
-      if (/from "[^"]*advisors\/|from "\.\/(advisor-session|effort-advice)\.ts"/.test(text))
-        found.push(`${directory}/${name}`);
+      if (consultsAnAdvisor(text)) found.push(`${directory}/${name}`);
     }
   }
   // The two composition ROOTS, which `layering.test.ts` lets import anything: review measured that adding an
   // advisors import to `src/cli.ts` passed every guard there was.
   for (const root of ["index.ts", "cli.ts"]) {
     const text = await readFile(join(packageRoot, "src", root), "utf8");
-    if (/from "\.\/advisors\/|from "[^"]*\/(advisor-session|effort-advice)\.ts"/.test(text)) found.push(`src/${root}`);
+    if (consultsAnAdvisor(text)) found.push(`src/${root}`);
   }
   assert.deepEqual(found.sort(), [...MAY_CONSULT_AN_ADVISOR].sort());
 });
