@@ -49,8 +49,10 @@ import { republishable } from "./approvals.ts";
 import { storedGrantSessionState } from "./stored-grant-session.ts";
 import { nativeSessionRootFromEnv, type NativeSessionHost } from "../src/executors/native-session-target.ts";
 import { createHandoffStager, type ParentSession } from "./context-staging.ts";
+import { createAdvisorSession, type AdvisorSession } from "./advisor-session.ts";
 import { join } from "node:path";
-import { agentDir } from "../src/kernel/project-paths.ts";
+import { readFileSync, statSync } from "node:fs";
+import { agentDir, projectSettingsPath } from "../src/kernel/project-paths.ts";
 import { ENV_ALLOW_UNRESOLVED_MODELS } from "../src/kernel/model-preflight.ts";
 import { beginExtensionLifecycle, rememberChildPublication, type ReloadLifecycle } from "./reload-environment.ts";
 import { reconcileSessionEnvironment } from "./session-environment.ts";
@@ -87,7 +89,7 @@ import {
   ENV_ACTIVITY_ROOT,
   ENV_ACTIVITY_TASK,
 } from "../src/products/activity-timeline.ts";
-import { ENV_HERDR_KEEP_PANE, ENV_GOVERNANCE } from "../src/kernel/env-names.ts";
+import { ENV_HERDR_KEEP_PANE, ENV_GOVERNANCE, ENV_ADVISOR } from "../src/kernel/env-names.ts";
 export { ENV_HERDR_KEEP_PANE, ENV_GOVERNANCE } from "../src/kernel/env-names.ts";
 import { adoptLegacyEnvironment } from "../src/kernel/env-names.ts";
 
@@ -157,6 +159,8 @@ export interface GrantsSession extends NativeSessionHost {
    * context handoff (ADR-0078): its file path for `fork`, its message turns for `pruned`.
    */
   parentSession?: ParentSession;
+  /** ADR-0077: the session's advisor, off unless the environment enables one. Never consulted for authority. */
+  advisorSession: AdvisorSession;
   /** Root identity keyed to ctx.sessionManager once session_start supplies it. */
   reloadLifecycle: ReloadLifecycle;
   /** Approval keys approved for this session. In memory only — this dies with the process. */
@@ -296,7 +300,18 @@ export function createGrantsSession(
   const bounds = depthConfig(environment[ENV_DEPTH], environment[ENV_MAX_DEPTH]);
   const { depth, maxDepth } = bounds;
   const emptyCatalog = makeCatalog([]);
+  // ADR-0077. The environment decides whether there is an advisor at all; the project's settings block may only
+  // narrow it. The block IS read — the first version passed `undefined` and every narrowing the release advertised
+  // was dead code reachable only from tests, which review measured: `enabled: false` turned nothing off.
+  //
+  // Read from `storeCwd` for `loadStoredGrantStateSync`'s reason: this factory runs before any hook, so `ctx.cwd`
+  // does not exist yet. Reading a workspace-writable file here is safe precisely because it can only narrow.
+  const advisorSession = createAdvisorSession({
+    block: projectAdvisorBlock(storeCwd),
+    ...(storedLedger ? { ledgerPath: storedLedger } : {}),
+  });
   const session: GrantsSession = {
+    advisorSession,
     adoptedLegacyEnv,
     governed,
     inherited,
@@ -361,12 +376,16 @@ export function createGrantsSession(
       observerExtensionPath: session.observerExtensionPath,
       childEnv: activityChildEnv(session.activity),
       // ADR-0078: composition reads, the kernel decides. Called only for a mode that survived the gate.
-      stageHandoff: (granted) =>
+      // `options` is forwarded, and its absence is why the second decision point was dead in production: a
+      // one-parameter arrow is assignable to a two-parameter type, so the ids reached here and were discarded while
+      // the advisor had already been asked. Review measured it. `test/pruning-advice.test.ts` now goes through this
+      // function rather than calling the stager directly.
+      stageHandoff: (granted, options) =>
         createHandoffStager({
           cwd: session.cwd,
           forkRoot: join(agentDir(), "context-forks"),
           ...(session.parentSession ? { parentSession: session.parentSession } : {}),
-        })(granted),
+        })(granted, options),
       catalog: await session.catalogReady,
       // R-32: where each granted skill lives, so `planSpawn` can pass `--skill` for those and only those.
       // Derived from the catalog's own `source`, so it cannot drift from what was discovered.
@@ -419,4 +438,28 @@ export function createGrantsSession(
     },
   };
   return session;
+}
+
+/**
+ * The `advisor` block of `.pi/pi-daddy/settings.json`, or undefined.
+ *
+ * Unreadable, absent or malformed all yield undefined: this file is the reviewable record, not authority, and the
+ * only thing it can do to an advisor is turn one off. A parse failure therefore costs nothing worth reporting.
+ */
+function projectAdvisorBlock(cwd: string): unknown {
+  // Only when an advisor could exist at all. This runs in every session including every child, before any hook, and
+  // a child can never use the result because `PI_DADDY_ADVISOR` is stripped from it.
+  if (!process.env[ENV_ADVISOR]?.trim()) return undefined;
+  try {
+    const path = projectSettingsPath(cwd);
+    // Bounded and type-checked first: this is the third unbounded session-start read AGENTS.md warns about, and the
+    // only one whose path a governed child holding `tool:write` can replace with a FIFO — which would hang pi
+    // before any hook exists to report it.
+    const stats = statSync(path);
+    if (!stats.isFile() || stats.size > 1024 * 1024) return undefined;
+    const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
+    return typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>).advisor : undefined;
+  } catch {
+    return undefined;
+  }
 }

@@ -326,7 +326,9 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
     handoff.mode !== "none" && result.effective.includes(contextCapability(handoff.mode)) ? handoff : undefined;
   const canSubDelegate = result.effective.includes(DELEGATE_CAPABILITY);
   // Only for a handoff that survived, so a refused mode reads no file and forks no session.
-  const staged = grantedHandoff ? ctx.stageHandoff?.(grantedHandoff) : undefined;
+  const staged = grantedHandoff
+    ? ctx.stageHandoff?.(grantedHandoff, ctx.handoffTurnIds ? { keepTurnIds: ctx.handoffTurnIds } : {})
+    : undefined;
   if (staged?.refusal)
     return denied({ ...empty, requested, result, reason: staged.refusal }, "CONTEXT_REQUEST_INVALID");
   const plan = planSpawn({

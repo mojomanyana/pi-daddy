@@ -374,6 +374,10 @@ export default function (pi: ExtensionAPI) {
           depth: session.depth,
           maxDepth: session.maxDepth,
           ledgerPath: session.ledgerPath,
+          advisor: {
+            decider: session.advisorSession.deciderName,
+            ...(session.advisorSession.settings.refusal ? { refusal: session.advisorSession.settings.refusal } : {}),
+          },
           catalog: session.catalog,
           definitions: session.definitions,
           sessionApprovals: session.sessionApprovals,

@@ -80,8 +80,9 @@ The modes are ordered, and each subsumes the weaker ones: a parent holding `cont
 instructions, capped at 32 KiB, with anything that did not fit said inside the fence. The capability decision record
 names the mode the child actually received and how much crossed.
 
-`pruned` keeps recent turns plus turns naming the given files. That rule is deterministic; whether it keeps what a
-reader would have kept is unmeasured, so `pruned` is not a default.
+`pruned` keeps recent turns plus turns naming the given files, and an enabled advisor then judges those candidates
+against the task, keeping a subset. Whether either keeps what a reader would have kept is unmeasured, so `pruned` is
+not a default.
 
 ## The guarantee, and its limit
 
@@ -134,7 +135,8 @@ in a Herdr pane beside the session. It is a renderer in a separate process and n
 ## Bounds and configuration
 
 Every variable is `PI_DADDY_*`. The ones an operator sets: `PI_DADDY_GRANT` (overrides the stored grant; the
-environment always wins), `PI_DADDY_LEDGER`, `PI_DADDY_HERDR`, `PI_DADDY_CHILD_IDLE_TIMEOUT` (seconds with no
+environment always wins), `PI_DADDY_ADVISOR` and `PI_DADDY_ADVISOR_KEY` (see below), `PI_DADDY_LEDGER`,
+`PI_DADDY_HERDR`, `PI_DADDY_CHILD_IDLE_TIMEOUT` (seconds with no
 activity before a child is stopped; default fifteen minutes; activity is any output byte, a change to the child's pi
 session file, or CPU time in the child's process tree on Linux; every child writes a session file for the run, removed
 afterwards unless it is a retention target), `PI_DADDY_CHILD_TIMEOUT` (seconds; the runaway ceiling for a child that never goes quiet; default six
@@ -143,6 +145,28 @@ hours), `PI_DADDY_WORKSPACE_REGISTRY`, `PI_DADDY_EXECUTION_ARCHIVE`
 refused if set by hand. Refusals are thrown with stable codes (`CAPABILITY_ESCALATION`, `GATED_UNAPPROVED`,
 `DEPTH_EXCEEDED`, `FANOUT_EXCEEDED`, `WORKSPACE_NOT_AUTHORIZED`, `CHILD_TIMED_OUT`, `LEDGER_DAMAGED`, …); the full
 enumeration is `REFUSAL_CODES` and it is pinned by the contract.
+
+## Advisors, and what leaves the machine
+
+An advisor is a non-generative decider that answers typed questions. It may select, rank, annotate or propose, and
+it can never widen a grant, satisfy a gate or replace a human's answer. Today it fills two blanks. When a
+`delegate` call names no thinking level, it chooses one from the levels that model reports it supports. When a
+context handoff is `pruned`, it picks which of the turns the mechanical rule already kept are worth carrying, and
+it can only narrow that set.
+
+It is **off unless you set `PI_DADDY_ADVISOR=jev` and `PI_DADDY_ADVISOR_KEY`**, both of which live in the
+environment rather than in a committed file, because a file inside the workspace is writable by any child holding
+`tool:write`. `PI_DADDY_ADVISOR_MODEL` overrides the model, also from the environment. A project's `advisor` block
+in `settings.json` may turn one off for that project and shorten its timeout; it can never turn one on, choose its
+model, or lengthen its bound.
+
+**With an advisor on, what leaves the machine is more than you might assume.** A delegation that leaves the thinking
+level blank sends its task text to a third party, TypeSafe's Jev through OpenRouter, because it cannot judge a task
+it cannot see. A `pruned` context handoff sends the task and up to twelve of **your own session turns** for the
+advisor to judge, which is your conversation rather than just the task. It is never written to the ledger: the record names the
+decision, the answers and the timing, and the task is never stored, as it never has been. If you are not willing to
+send task text off the machine, leave the advisor off, which is the default. `/grants` states which advisor is in
+force, or why none is.
 
 ## The layers
 

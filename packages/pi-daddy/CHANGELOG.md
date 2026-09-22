@@ -12,6 +12,41 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## 0.35.0 — the first two decision points, and only the environment can enable an advisor
+
+**An advisor now fills two blanks.** When a `delegate` call names no `thinking` level, an enabled advisor is asked
+to choose one from the levels the CHILD's model reports it supports. An explicit level is never overruled, and with
+no advisor, no answer or a timeout the blank stays blank and the child is spawned exactly as before. The task text
+is sent to the advisor so it has something to judge; it is still never recorded.
+
+**A `pruned` context handoff can now ask which turns to carry.** The mechanical rule runs first and decides what is
+eligible; the advisor is then shown at most twelve of those turns, truncated, and may only NARROW the set — an id
+it invents or one the rule dropped is ignored, and an incomplete answer is discarded whole. The selection is asked
+only after a plan says the handoff survived the ceiling, the grant and the gate, so a delegation the grant refuses
+never ships session turns. With no advisor or no usable answer, the mechanical selection stands unchanged.
+
+**This sends more than the effort point does.** A `pruned` handoff sends the operator's own session turns, not just
+the task, to a third party. That is the sharpest egress in the package and it is why an advisor is off by default,
+enabled only from the environment, and reported by `/grants`.
+
+**Security fix over 0.34.0.**
+
+0.34.0 read the advisor's enable switch from `.pi/pi-daddy/settings.json`. That file is writable by any child
+holding `tool:write`, and this package keeps the grant outside the workspace for exactly that reason: a ceiling a
+governed child can rewrite is not a ceiling. The same argument applies here one step sideways — a child could have
+flipped the switch and made the operator's next session send its own description to a third party.
+
+**What to do.** Enabling an advisor is now `PI_DADDY_ADVISOR=jev` alongside `PI_DADDY_ADVISOR_KEY`, with
+`PI_DADDY_ADVISOR_MODEL` to override the model; all three are stripped from a child spawned as a subprocess. A
+Herdr pane inherits the daemon's environment, so a daemon started from a shell exporting them still hands them to
+pane children — stated rather than implied, and not yet closed.
+
+A project's `advisor` block in `settings.json` may turn an advisor off for that project and shorten its timeout. It
+can no longer turn one on, choose its model, or lengthen its bound: a model is a destination and a longer bound is
+not a narrowing, and that file is writable by any child holding `tool:write`. Anything that is not exactly `true`
+on `enabled` disables. So a settings file that relied on `enabled: true` will find the advisor off until the
+environment variable is set, and one that set `model` will be refused with a message naming the variable to use.
+
 ## 0.34.0 — an advisors layer, off by default (ADR-0077)
 
 `src/advisors/` holds a `Decider` that answers typed questions — `noul` (a boolean), `choice` (one of the options

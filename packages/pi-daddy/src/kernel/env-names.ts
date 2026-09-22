@@ -48,6 +48,20 @@ export const ENV_GOVERNANCE = "PI_DADDY_GOVERNANCE";
  * inherited a paid credential its grant never named. Measured in review.
  */
 export const ENV_ADVISOR_KEY = "PI_DADDY_ADVISOR_KEY";
+/**
+ * Which advisor is in force, or absent for none (ADR-0077).
+ *
+ * **The enable lives here rather than in the project settings file, and that is a correction.** 0.34.0 read it from
+ * `.pi/pi-daddy/settings.json`, which `grant-store.ts` is explicit about: that file is writable by any child
+ * holding `tool:write`, so it is "the reviewable record of the decision, not the thing the enforcer reads". A
+ * grant is kept outside the workspace for exactly that reason, and an advisor switch needs the same treatment for a
+ * neighbouring one — a child that could flip it on would make the operator's NEXT session ship its own description
+ * to a third party. The settings file may still narrow (a model, a timeout, or `enabled: false`); it can no longer
+ * turn one on.
+ */
+export const ENV_ADVISOR = "PI_DADDY_ADVISOR";
+/** Overrides the adapter's pinned model. In the environment, never the workspace file: a model is a destination. */
+export const ENV_ADVISOR_MODEL = "PI_DADDY_ADVISOR_MODEL";
 
 /** Every variable that shapes governance. The `childEnv` hook may set none of these. */
 export const GOVERNANCE_ENV_KEYS: readonly string[] = Object.freeze([
@@ -74,6 +88,8 @@ export const GOVERNANCE_ENV_KEYS: readonly string[] = Object.freeze([
   ENV_RETAIN_NATIVE_SESSIONS,
   ENV_GOVERNANCE,
   ENV_ADVISOR_KEY,
+  ENV_ADVISOR,
+  ENV_ADVISOR_MODEL,
 ]);
 
 /**

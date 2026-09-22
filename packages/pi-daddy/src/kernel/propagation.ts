@@ -31,7 +31,9 @@ import { WORKSPACE_WILDCARD } from "./resolve.ts";
 import { inheritApprovals, type InheritableApproval } from "./approval.ts";
 import { assertCapabilitiesArePropagatable } from "./capabilities.ts";
 import {
+  ENV_ADVISOR_MODEL,
   ENV_ADVISOR_KEY,
+  ENV_ADVISOR,
   ENV_GRANT,
   ENV_FANOUT,
   ENV_PARENT_ID,
@@ -76,9 +78,14 @@ export {
  * to give it.
  */
 export const GRANT_ENV_KEYS = [
-  // Not governance state, but the same rule applies for a stronger reason: a credential the parent holds is not
-  // something a child inherits by being spawned (ADR-0077).
+  // Not governance state, but the same rule applies for a stronger reason: neither a credential the parent holds
+  // nor the switch that points it at a third party is something a child inherits by being spawned (ADR-0077).
+  //
+  // **This strips the PROCESS executor's environment.** A Herdr pane inherits the daemon's environment, which this
+  // function never sees (R-148), so a daemon started from a shell exporting these two hands them to every pane
+  // child. Named here rather than claimed away: "stripped from every child" would be false on that path.
   ENV_ADVISOR_KEY,
+  ENV_ADVISOR,
   ENV_GRANT,
   ENV_DEPTH,
   ENV_MAX_DEPTH,

@@ -66,7 +66,7 @@ export interface StagedHandoff {
 const MAX_FILE_BYTES = 64 * 1024;
 
 export function createHandoffStager(input: StagingInput) {
-  return (granted: ContextRequest): StagedHandoff => {
+  return (granted: ContextRequest, options: { keepTurnIds?: readonly string[] } = {}): StagedHandoff => {
     if (granted.mode === "fork") return stageFork(input);
     const sections: ContextSection[] = [];
     let keptTurns: number | undefined;
@@ -78,15 +78,23 @@ export function createHandoffStager(input: StagingInput) {
     if (granted.mode === "files" || granted.mode === "pruned")
       for (const path of granted.files ?? []) sections.push(readSection(input.cwd, path));
     if (granted.mode === "pruned") {
-      const selection = selectPrunedTurns(parentTurns(input.parentSession), {
+      const all = parentTurns(input.parentSession);
+      const selection = selectPrunedTurns(all, {
         ...(granted.turns !== undefined ? { turns: granted.turns } : {}),
         ...(granted.files !== undefined ? { files: granted.files } : {}),
       });
-      keptTurns = selection.kept.length;
-      droppedTurns = selection.droppedCount;
-      rule = selection.rule;
-      for (const turn of selection.kept) sections.push({ label: `parent turn ${turn.id}`, body: turn.text });
-      if (selection.kept.length === 0)
+      // A selector may only NARROW what the rule offered. Intersecting here rather than trusting the ids is the
+      // whole safety property: whatever a selector returns — a turn the rule dropped, a turn from another session,
+      // an id it invented — it cannot put a turn in front of a child that the deterministic rule did not surface.
+      const chosen =
+        options.keepTurnIds === undefined
+          ? selection.kept
+          : selection.kept.filter((turn) => options.keepTurnIds!.includes(turn.id));
+      keptTurns = chosen.length;
+      droppedTurns = all.length - chosen.length;
+      rule = options.keepTurnIds === undefined ? selection.rule : `${selection.rule}+advice`;
+      for (const turn of chosen) sections.push({ label: `parent turn ${turn.id}`, body: turn.text });
+      if (chosen.length === 0)
         sections.push({ label: "parent turns", body: "(no turn of your parent's session matched the selection)" });
     }
 

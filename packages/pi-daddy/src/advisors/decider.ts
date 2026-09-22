@@ -32,9 +32,13 @@ export type Answer =
 
 export interface AdviceRequest {
   /**
-   * What the advisor is told about the situation. **Caller-composed and deliberately not the raw task**: the task
-   * is never stored (ADR-0021) and must not be shipped to a third party either, so a caller passes the facts it
-   * chose, and the record below names them by key without their values.
+   * What the advisor is told about the situation, composed by the caller.
+   *
+   * **Sent, never recorded.** The task is never STORED (ADR-0021) and that still holds — `createAdvisor` writes the
+   * question keys and the answers and never this object. But an advisor cannot judge a task it cannot see, so a
+   * caller that needs one judged does send it, and the operator's consent for that is the advisor being off by
+   * default. An earlier draft of this paragraph said the raw task "must not be shipped to a third party either",
+   * which the first decision point then did; the rule that survived review is the narrower and true one.
    */
   state: Readonly<Record<string, unknown>>;
   questions: Readonly<Record<string, Question>>;

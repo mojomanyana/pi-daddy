@@ -12,6 +12,8 @@
  */
 
 import { nativeDelegationContext } from "./delegation-native.ts";
+import { adviseEffort } from "./effort-advice.ts";
+import { advisePruning } from "./pruning-advice.ts";
 import { DELEGATE_SUBJECT, shouldSeekApproval } from "../src/kernel/approval.ts";
 import { planDelegation } from "../src/kernel/delegate.ts";
 import {
@@ -249,6 +251,8 @@ export async function runOneDelegation(
     agent: spec.agent,
     tools: spec.tools,
     model: spec.model ?? defaultModel,
+    // Filled below, once the refusals that doom a delegation are known: asking first shipped the task text for a
+    // child that never starts, which is the ordering this module already fixed for the approval dialog.
     thinking: spec.thinking,
     context: spec.context,
     correlation: spec.workspace
@@ -289,6 +293,28 @@ export async function runOneDelegation(
     Boolean(executorRefusal || modelRefusal),
   );
   executorRefusal ||= nativeRefusal;
+
+  // ADR-0077's first decision point, after the refusal checks for the reason above. Fills a blank from the levels
+  // the CHILD's model reports; never overrules a caller, and yields today's behaviour whenever there is no answer.
+  if (!executorRefusal && !modelRefusal)
+    request.thinking = await adviseEffort({
+      session,
+      requested: spec.thinking,
+      model: spec.model ?? defaultModel,
+      registry: ctx.modelRegistry,
+      task: spec.task,
+      agent: spec.agent,
+      signal,
+    });
+
+  const planContext = await handoffPlanContext({
+    session,
+    base: extra,
+    task: spec.task,
+    blocked: Boolean(executorRefusal || modelRefusal),
+    preview: () => planWithApprovals(session, request, extra, null, signal, preApproved).then((r) => r.plan),
+    ...(signal ? { signal } : {}),
+  });
   let preparedWorkspace: PreparedWorkspace | undefined;
   let approvalOutcome: ApprovalOutcome | undefined;
   let plan: ReturnType<typeof planDelegation>;
@@ -297,7 +323,7 @@ export async function runOneDelegation(
     // Check non-liftable refusals before taking a lease, and take the lease before asking a human. This
     // preserves both anti-race rules: a doomed spawn cannot bank approval, and a conflicting writer starts
     // no child process.
-    const preview = await planWithApprovals(session, request, extra, null, signal, preApproved);
+    const preview = await planWithApprovals(session, request, planContext, null, signal, preApproved);
     plan = preview.plan;
     if (plan.ok || shouldSeekApproval(plan.result)) {
       try {
@@ -311,7 +337,7 @@ export async function runOneDelegation(
           ledgerPath: session.ledgerPath,
         });
         request.correlation = preparedWorkspace.correlation;
-        const gated = await planWithApprovals(session, request, extra, ctx, signal, preApproved);
+        const gated = await planWithApprovals(session, request, planContext, ctx, signal, preApproved);
         plan = gated.plan;
         approvalOutcome = gated.approval;
       } catch (error) {
@@ -326,7 +352,7 @@ export async function runOneDelegation(
     const gated = await planWithApprovals(
       session,
       request,
-      extra,
+      planContext,
       executorRefusal || modelRefusal ? null : ctx,
       signal,
       preApproved,
@@ -408,4 +434,36 @@ export async function runOneDelegation(
     signal,
     onProgress,
   });
+}
+
+/**
+ * The planner context for one delegation, including a `pruned` handoff narrowed by an advisor (ADR-0077).
+ *
+ * **Exported and taking its own `preview`, so the ordering is forced by a test rather than by a reviewer.** Three
+ * properties live here and each was, at some point in this change's history, true only because somebody had
+ * checked it by hand: an advisor is not asked for a delegation that is already refused; it is not asked until a
+ * plan says the `pruned` handoff actually survived the ceiling, the grant and the gate; and the ids it returns
+ * reach the planner. Reviewers measured all three by mutating the source and finding the suite still green. A
+ * function with a seam is the only version of this that a test can hold.
+ */
+export async function handoffPlanContext(input: {
+  session: Parameters<typeof advisePruning>[0]["session"];
+  base: Record<string, unknown>;
+  task: string;
+  /** A refusal is already certain, so nothing may be asked. */
+  blocked: boolean;
+  /** Plans with no human in the loop; its result decides whether an advisor is consulted at all. */
+  preview: () => Promise<{ handoff?: { mode: string } }>;
+  signal?: AbortSignal;
+}): Promise<Record<string, unknown>> {
+  if (input.blocked) return { ...input.base };
+  const plan = await input.preview();
+  if (plan.handoff?.mode !== "pruned") return { ...input.base };
+  const ids = await advisePruning({
+    session: input.session,
+    granted: plan.handoff as Parameters<typeof advisePruning>[0]["granted"],
+    task: input.task,
+    ...(input.signal ? { signal: input.signal } : {}),
+  });
+  return ids ? { ...input.base, handoffTurnIds: ids } : { ...input.base };
 }

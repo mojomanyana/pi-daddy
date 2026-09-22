@@ -6,7 +6,7 @@ import { test } from "node:test";
 import { nullDecider, type Decider, type Question } from "../src/advisors/decider.ts";
 import { createAdvisor, type AdviceRecord } from "../src/advisors/advisor.ts";
 import { JEV_ENDPOINT, JEV_MODEL, jevDecider, parseAdvice, wireRequest } from "../src/advisors/jev.ts";
-import { ADVISOR_KEY_ENV, advisorSettingsFrom } from "../src/advisors/settings.ts";
+import { ADVISOR_KEY_ENV, ENV_ADVISOR, advisorSettingsFrom } from "../src/advisors/settings.ts";
 import { createAdvisorSession } from "../extensions/advisor-session.ts";
 import { mergeChildEnv } from "../src/kernel/propagation.ts";
 import { ENV_ADVISOR_KEY } from "../src/kernel/env-names.ts";
@@ -210,21 +210,35 @@ test("a dead endpoint reaches the caller as no advice but is RECORDED as an erro
   assert.equal((sent[0].init.headers as Record<string, string>).authorization, "Bearer secret-key");
 });
 
-test("an advisor is off unless the settings say so and a key is present, and a typo does not enable it", () => {
-  // Rule 8: malformed configuration disables the thing and NAMES the field. An operator who mistypes must not get
-  // silence (they conclude it is broken) or an advisor (a third party reads their session unasked).
-  const withKey = { [ADVISOR_KEY_ENV]: "jev_live" } as NodeJS.ProcessEnv;
-  assert.equal(advisorSettingsFrom(undefined, withKey).enabled, false);
-  assert.equal(advisorSettingsFrom({ enabled: true, decider: "jev" }, withKey).enabled, true);
-  assert.equal(advisorSettingsFrom({ enabled: true, decider: "jev" }, {}).enabled, false, "no key, no advisor");
-  assert.match(String(advisorSettingsFrom({ enabled: true, decider: "jev" }, {}).refusal), new RegExp(ADVISOR_KEY_ENV));
-  assert.match(String(advisorSettingsFrom({ enabeld: true }, withKey).refusal), /unknown field\(s\) enabeld/);
-  assert.match(String(advisorSettingsFrom({ enabled: true, decider: "gpt" }, withKey).refusal), /must be "jev"/);
-  assert.match(
-    String(advisorSettingsFrom({ enabled: true, decider: "jev", timeoutMs: 0 }, withKey).refusal),
-    /between 1 and 30000/,
+test("only the environment can enable an advisor; the workspace file can narrow but never switch one on", () => {
+  // The correction to 0.34.0. `.pi/pi-daddy/settings.json` is writable by any child holding `tool:write` —
+  // `grant-store.ts` is explicit that it is "the reviewable record of the decision, not the thing the enforcer
+  // reads", which is why a grant lives outside the workspace. An advisor switch a child could flip would make the
+  // operator's NEXT session ship its own description to a third party: the same self-defeating shape.
+  // Breaks by: reading `enabled: true` from the block again, or dropping the ENV_ADVISOR gate.
+  const on = { [ADVISOR_KEY_ENV]: "jev_live", [ENV_ADVISOR]: "jev" } as NodeJS.ProcessEnv;
+
+  assert.equal(advisorSettingsFrom({ enabled: true, decider: "jev" }, {}).enabled, false, "a file cannot enable");
+  assert.equal(
+    advisorSettingsFrom({ enabled: true }, { [ADVISOR_KEY_ENV]: "k" }).enabled,
+    false,
+    "not even with a key",
   );
-  assert.equal(advisorSettingsFrom({ enabled: false, decider: "jev" }, withKey).enabled, false);
+  assert.equal(advisorSettingsFrom(undefined, on).enabled, true, "the environment alone is enough");
+  // A model is a destination, not a narrowing, so the workspace file may not choose it (see pruning-advice.test).
+  assert.match(String(advisorSettingsFrom({ model: "typesafe/jev-latest" }, on).refusal), /not a narrowing/);
+
+  // A project may still turn it off for itself, which narrows and is therefore safe in the other direction.
+  assert.equal(advisorSettingsFrom({ enabled: false }, on).enabled, false);
+  assert.match(String(advisorSettingsFrom({ enabled: false }, on).refusal), /not true for this project/);
+
+  // And the rest of rule 8 still holds: a typo disables and names the field rather than being ignored.
+  assert.equal(advisorSettingsFrom(undefined, { [ENV_ADVISOR]: "jev" }).enabled, false, "no key, no advisor");
+  assert.match(String(advisorSettingsFrom(undefined, { [ENV_ADVISOR]: "jev" }).refusal), new RegExp(ADVISOR_KEY_ENV));
+  assert.match(String(advisorSettingsFrom(undefined, { ...on, [ENV_ADVISOR]: "gpt" }).refusal), /names no advisor/);
+  assert.match(String(advisorSettingsFrom({ enabeld: true }, on).refusal), /unknown field\(s\) enabeld/);
+  assert.match(String(advisorSettingsFrom({ decider: "gpt" }, on).refusal), /must be "jev"/);
+  assert.match(String(advisorSettingsFrom({ timeoutMs: 0 }, on).refusal), /between 1 and 30000/);
 });
 
 test("every use reaches the ledger as an advice record, including the uses that produced nothing", async () => {
@@ -249,13 +263,13 @@ test("every use reaches the ledger as an advice record, including the uses that 
 test("settings that ask for an advisor without a key produce a reported refusal, not an advisor", () => {
   // Breaks by: constructing the jev decider before checking the key, which would send an unauthenticated request
   // on every decision and report each as "no advice" forever.
-  const session = createAdvisorSession({ block: { enabled: true, decider: "jev" }, env: {} });
+  const session = createAdvisorSession({ block: undefined, env: { [ENV_ADVISOR]: "jev" } });
   assert.equal(session.settings.enabled, false);
   assert.match(String(session.settings.refusal), new RegExp(ADVISOR_KEY_ENV));
   // Asserting the settings alone could not fail: the disabled wrapper returns before touching the decider, so
   // removing this guard left every test green. The decider that was BUILT is the fact that matters.
   assert.equal(session.deciderName, "none", "no key, so no jev decider is constructed at all");
-  const live = createAdvisorSession({ block: { enabled: true, decider: "jev" }, env: { [ADVISOR_KEY_ENV]: "k" } });
+  const live = createAdvisorSession({ block: undefined, env: { [ADVISOR_KEY_ENV]: "k", [ENV_ADVISOR]: "jev" } });
   assert.equal(live.deciderName, "jev");
 });
 
@@ -265,10 +279,11 @@ test("a governed child does not inherit the advisor's API key", async () => {
   // its grant never named — while the comment above the constant claimed "it is never written for a child".
   // Breaks by: removing ENV_ADVISOR_KEY from GRANT_ENV_KEYS.
   const child = mergeChildEnv(
-    { [ENV_ADVISOR_KEY]: "sk-or-SECRET", PI_DADDY_GRANT: "tool:*", PATH: "/usr/bin" },
+    { [ENV_ADVISOR_KEY]: "sk-or-SECRET", PI_DADDY_ADVISOR: "jev", PI_DADDY_GRANT: "tool:*", PATH: "/usr/bin" },
     { PI_DADDY_GRANT: "tool:read" },
   );
   assert.equal(child[ENV_ADVISOR_KEY], undefined, "a credential is not inherited by being spawned");
+  assert.equal(child.PI_DADDY_ADVISOR, undefined, "and neither is the switch that turns an advisor on");
   assert.equal(child.PI_DADDY_GRANT, "tool:read", "and the grant still narrows as it always did");
   assert.equal(child.PATH, "/usr/bin", "while ordinary environment still passes through");
 });

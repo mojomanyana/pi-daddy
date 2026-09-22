@@ -339,7 +339,9 @@ output and weigh them differently. One 32 KiB budget governs both channels, and 
 fence. Paths are confined to the session's working directory because they are model-supplied; that bounds the
 parameter and is not a claim of containment, since the parent process can already read what its own grant allows.
 
-`pruned` keeps the last N turns plus older turns naming one of the given files. That rule is deterministic and
+`pruned` keeps the last N turns plus older turns naming one of the given files, and with an advisor enabled those
+candidates are then judged one by one against the task the child is about to be given — narrowing only, never
+adding. That rule is deterministic and
 explainable, and its recall is **unmeasured**: whether it keeps what a reader would have kept is exactly what the
 handoff probe is for, and `pruned` is not a default until that probe says so. The rule names itself in the ledger so
 a later advisor can replace the selection without anything else changing. Also not established: any measurement of
@@ -371,8 +373,17 @@ purpose, the decider, the question keys, the answers and the duration. It does *
 composed: that can carry task text and file contents, the ledger has never stored a task (ADR-0021), and an advisor
 must not become the way it starts.
 
-Default off, and off is the whole configuration unless `.pi/pi-daddy/settings.json` says otherwise and
-`PI_DADDY_ADVISOR_KEY` is set. That key is stripped from every child: review measured it reaching a child granted
+Default off. **`PI_DADDY_ADVISOR=jev` plus `PI_DADDY_ADVISOR_KEY` is the only thing that turns one on**, and
+0.34.0 got this wrong: it read the enable from `.pi/pi-daddy/settings.json`, which `grant-store.ts` is explicit
+about — that file is writable by any child holding `tool:write`, so it is "the reviewable record of the decision,
+not the thing the enforcer reads". A grant lives outside the workspace precisely so a child cannot widen the next
+session's ceiling; an advisor switch a child could flip would make the operator's next session ship its own
+description to a third party, which is the same self-defeating shape one step sideways. Corrected in 0.35.0: the
+settings block may narrow — a model, a timeout, or `enabled: false` for one project — and can never switch one on.
+Both the switch and the key are stripped from a child spawned by the PROCESS executor. A Herdr pane inherits the
+daemon's environment (R-148), which `mergeChildEnv` never sees, so a daemon started from a shell exporting them
+hands them to every pane child; that is named rather than claimed away, and closing it means stripping in the pane.
+On the process path: review measured it reaching a child granted
 `tool:bash` while the constant's own comment claimed it never did, because it had been added to the list the
 `childEnv` hook may not write and not to the list `mergeChildEnv` strips. A credential is not something a child
 inherits by being spawned. Malformed configuration disables the advisor and names the field, rule 8's shape: an
@@ -380,6 +391,50 @@ operator who mistypes must not get silence, and must not get a third party readi
 must behave identically under the null decider, which is why that is the default and why degradation is always "no
 advice" — disabled, missing key, two-second timeout, transport error, or a response we do not recognise all return
 the same nothing.
+
+**What an advisor costs in egress, said once and plainly.** With one enabled, a delegation that leaves `thinking`
+blank sends its task text to a third party, and a `pruned` context handoff sends the task plus up to twelve of the
+operator's own session turns, two thousand characters each. That is the operator's conversation, not only the task,
+and it is the reason an advisor is off by default and enabled only from the environment. Nothing of it is recorded:
+the `advice` record names the decision, the question keys, the answers and the timing. `/grants` states which
+advisor is in force and what it sends.
+
+**Neither decision point is asked for a delegation the executor or the model preflight has already refused, and
+the pruning one is asked only after a plan says the handoff survived the ceiling, the grant and the gate.** Review
+measured the first version of pruning asking straight from the model-supplied request: a delegation the grant then
+refused had already shipped a dozen session turns. `context:` is a capability precisely so a parent's session
+cannot cross without a named grant, and asking first shipped it with no grant at all. **The effort point is weaker
+and deliberately so:** it runs before the capability plan, so a delegation the grant goes on to refuse for
+escalation has still sent its task text. Task text crosses on any `delegate` call that names no thinking level;
+session turns cross only behind a granted `context:pruned`. That asymmetry is the one to hold in mind, and it is
+why the egress paragraph above is written in terms of a call rather than a spawn.
+
+**The first decision point (2026-09-22, roadmap PR 8): how hard a child should think.** When a `delegate` call
+names no `thinking` level, the advisor is asked to choose one from the levels this session's own model reports it
+supports. That is the shape the boundary was designed for: the options are not invented by the advisor, they are
+what `supportedModelEfforts` already returns, so it picks among things the caller had. It touches no capability, no
+gate and no grant — the worst an advisor can do is make a child think harder or less hard than a human would have,
+and the ledger says it did. An explicit level is never second-guessed; advice fills a blank. With no advisor, no
+key, no answer, a timeout or an unrecognised response, the blank stays blank and the child is spawned exactly as it
+was before, which is the property that keeps advisors optional rather than load-bearing.
+
+The task text IS sent to the advisor, because an advisor cannot judge a task it cannot see, and it is still never
+recorded. An operator unwilling to send task text to a third party leaves the advisor off, which is the default.
+
+Three guards, and the third came from review. The layer names no authority; no `kernel/` or `governance/` module
+imports it; and the composition modules that may consult an advisor are an explicit list, because composition may
+import both sides and is where decision points live. A rule of the form "advice and the gate may never meet in one
+module" was tried and discarded — the delegation runner legitimately does both, and splitting it would buy nothing
+— so what is checked instead is that the set of consulting modules is written down, and that the answers an advisor
+gives are spent on `thinking` and on narrowing a `pruned` handoff's kept turns, and on nothing else.
+
+**What the workspace settings file may and may not do.** It may switch an advisor off for one project, and shorten
+its timeout. It may not enable one, choose its model, or lengthen its bound — a model is a destination and a longer
+bound is not a narrowing, and this file is writable by any child holding `tool:write`. Review measured both holes
+after the enable switch had already been moved for exactly that reason; the same argument had to be applied twice
+more. Anything that is not exactly `true` on `enabled` disables, because the one control the file keeps must fail
+closed like everything else. Key names are sanitised before they reach `/grants`, which is a trust surface a
+child-writable file was able to forge lines in.
 
 **Deliberate departure from the programme's sketch:** there is no dashboard toggle. The dashboard is a read-only
 renderer that "never affects enforcement" (ADR-0036), and a control there writing to settings would be the first
@@ -596,8 +651,11 @@ What remains of ADR-0076's sequence after this cleanup, one line each with what 
   `fork` gated, the parent-context fence, and `handoff` on the capability-decision record. `none` remains the
   default. Not established: the `pruned` rule's recall, and any behavioural comparison between a forked child and a
   summarised one; both are what PR 9's probe is for.
-- **PR 8 (output selection, routing proposal, signals)** — one to three additive PRs applying advisors at the
-  remaining decision points; done means each is advice-only under ADR-0077's rule and each use is recorded.
+- **PR 8 (applying advisors at decision points)** — two slices done 2026-09-22: child effort, chosen from the
+  levels the model reports, filling a blank the caller left; and `pruned` handoff selection, which may only narrow
+  the set the mechanical rule already kept and is asked after the plan authorizes the handoff. Remaining
+  candidates: chain output selection and completion/failure signals. Not established: whether the advice is any
+  good — nothing measures that, and PR 9's probe is the only thing that would.
 - **PR 9 (Jev handoff probe and second fresh-session run)** — a probe measuring `pruned` handoff precision and recall
   on the operator's own sessions, recorded under `packages/pi-daddy/test-integration/` now that `docs/probes/` is gone, and a second fresh-session
   probe; done means `pruned` may become a default only if recall meets what a reviewer needs, and the second
