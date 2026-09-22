@@ -73,10 +73,14 @@ async function withPinEnv(env: { registry: string; pin?: string }, body: () => P
  * and refused to mint for the right reason at the wrong time. The test passed while the guard it was aiming
  * at was removed.
  */
-function reloadSession(owner: object): ReturnType<typeof createGrantsSession> {
+function reloadSession(owner: object, expectDepth = 0): ReturnType<typeof createGrantsSession> {
   const bound = bindReloadLifecycle(owner, beginExtensionLifecycle().lifecycle);
   const session = createGrantsSession(undefined, bound.lifecycle);
   session.reconcileEnvironment(bound.environment, bound.lifecycle);
+  // **Asserted here so a depth leak cannot make a test pass for the wrong reason.** That is exactly what the
+  // first draft did: `publishChildEnv` writes `PI_DADDY_DEPTH=1`, the reloaded session looked like a
+  // descendant, and it refused to mint for the descendant reason while the guard under test was removed.
+  assert.equal(session.depth, expectDepth, `a reload test must exercise depth ${expectDepth}, or it proves nothing`);
   return session;
 }
 
@@ -507,7 +511,7 @@ test("an explicit root replacement re-settles the pin instead of keeping the old
     process.env.PI_DADDY_GRANT = "tool:read,workspace:staging";
     process.env.PI_DADDY_DEPTH = "1";
     process.env.PI_DADDY_WORKSPACE_PIN = `staging:${destinationDigest(await realpath(staging))}`;
-    const replaced = reloadSession(owner);
+    const replaced = reloadSession(owner, 1);
     await loadProjectDefinitions(replaced, staging);
     assert.deepEqual(
       [...(replaced.workspacePin?.keys() ?? [])],

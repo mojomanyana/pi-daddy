@@ -48,8 +48,15 @@ approvals and silently ignored for the pin, in the widening direction. `establis
 and assigns once, so "every path settles" is structural rather than a checklist; the checklist is what missed
 them.
 
-That is five instances in one feature of the same shape — the rule goes on one path, and another path does not
-get it. It is the same shape as the `workspace:*` wildcard rule that lived only in `childEnv` while
+A sixth followed from the fix for the fifth: the deletion above fires whenever the current environment does not
+match the last child publication, and its own comment called that "an explicit change to this owner's root". True
+of the second half of that condition and false of the first, which fires when NOTHING has published yet — where
+nothing has been replaced at all. A root that settled and reloaded before publishing minted again. It is now
+deleted only when the root actually changed.
+
+That is six instances in one feature of the same shape — the rule goes on one path, and another path does not get
+it. Every one was found by a reviewer rather than by the author, and four of the six were found in the fix for the
+one before. It is the same shape as the `workspace:*` wildcard rule that lived only in `childEnv` while
 `delegate.ts` handed the wildcard down.
 
 **One builder for both spawn paths.** `delegate.ts` builds a child's environment itself rather than through

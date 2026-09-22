@@ -300,15 +300,20 @@ export interface GrantsSession extends NativeSessionHost {
  */
 async function establishRootPin(session: GrantsSession): Promise<void> {
   if (session.pinSettled) return;
-  session.pinSettled = true;
   // **One assignment, at the end, on every path.** Review found the previous shape — assign at each `return`
   // — missing two of five exits: the `catch` around an unreadable registry, which is precisely the state a
   // child can create by truncating the file, and the no-registry return. A root that took either reached the
   // RELOAD with the lifecycle still empty and minted over whatever the registry said by then, routing into
   // prod. That is the checklist failing, so the checklist is gone: the body computes a value and the caller
   // assigns both fields once.
-  session.workspacePin = await settleWorkspacePin(session);
-  session.reloadLifecycle.workspacePin = session.workspacePin;
+  // **Settled AFTER the value exists.** Setting the flag first meant a throw would leave the session marked
+  // settled with nothing settled — routing nowhere, which is safe, but with the LIFECYCLE unset, so the next
+  // reload would mint again. Review could construct no throw today; "currently unreachable" is exactly the
+  // property this feature has now been wrong about four times, and the ordering costs nothing.
+  const settled = await settleWorkspacePin(session);
+  session.pinSettled = true;
+  session.workspacePin = settled;
+  session.reloadLifecycle.workspacePin = settled;
 }
 
 /**
