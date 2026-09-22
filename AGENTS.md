@@ -684,12 +684,17 @@ Kept features only. Numbers are dropped except the two that code and rules cite.
   starting, because nothing in the catalog is an authority — so what changed is that the reason now rides on
   `Catalog.registryRefusal`, `/grants` prints it under `routable`, and both `init` paths say it. Restoring either
   swallow fails `registry-refusal-is-loud.test.ts`.
-- ~~The registry read deadline is forced by no test; deleting it leaves the suite green.~~ **Closed 2026-09-22.**
-  Measured at `7096f78` before fixing it: replacing the `Date.now() > deadline` branch with `if (false)` left all
-  876 tests passing. The reader's clock is now injectable, so a test forces the deadline without needing a slow
-  disk, and the same three-line experiment now fails `bounded-read.test.ts`. The size and file-type checks were
-  unforced by the same omission and are now forced too, each proved by deleting it and watching exactly one test
-  fail.
+- ~~The registry read deadline is forced by no test; deleting it leaves the suite green.~~ **Closed 2026-09-22,
+  after review corrected the entry twice.** Measured at `7096f78`: replacing the `Date.now() > deadline` branch
+  with `if (false)` left all 876 tests passing. That much was right, and the deadline is the ONLY guard that was
+  unforced — the first write-up claimed the size and file-type checks were unforced too, and they were not:
+  `workspace-capability.test.ts` already covered both. The reader's clock is now injectable so a test forces the
+  deadline without a slow disk. Two further guards review found unforced are forced now as well: the deadline's
+  POSITION (hoisting the check out of the chunk loop left 887 passing, and "between chunks" is the whole point of
+  the shape), and `grew-while-reading`, the second half of the "bound checked twice" — deleting it turned an
+  overrun into a silent truncation reported as success, which for a registry becomes a misleading "not valid
+  JSON". `/proc/self/maps` forces it with no race. `O_NONBLOCK` was under-claimed rather than over-claimed: it is
+  forced, by two tests.
 - ~~Two session-start reads (a definition's `SKILL.md` and the registry) have no file-type check or bound; a FIFO at
   either path blocks the session forever and pins a libuv thread so a watchdog cannot fire.~~ **Corrected and
   closed 2026-09-22, and the bullet was half wrong.** The REGISTRY already had all of it — non-blocking open, an
@@ -697,11 +702,21 @@ Kept features only. Numbers are dropped except the two that code and rules cite.
   start; this entry was stale. The `SKILL.md` read was the real one: `resolveSkillResources` filtered by
   `statSync(...).isFile()`, but the read that followed was `readFile` **by name**, which is the TOCTOU the
   registry's own comment block describes, and there was no size bound at all (measured at `7096f78`: an 8 MiB
-  `SKILL.md` read whole in 8ms). Both now go through one `readBoundedFile`, and an unreadable definition is
-  reported rather than dropped by `catch { continue }`. **Not established:** the FIFO case itself. `mkfifo` is
-  unavailable in the environment these tests run in, so what forces the file-type check is a directory, and the
-  claim that `O_NONBLOCK` keeps a blocking special file from wedging the open rests on the registry's original
-  measurement rather than on anything in this suite.
+  `SKILL.md` read whole in 8ms). It turned out there was a THIRD reader, in `skill-packages.ts`, feeding
+  `planInit` — so bounding only the first two made `init` grant `agent:<name>` for a definition the runtime
+  refused, whose only symptom was `unknown agent "x"` at delegation time. All three now go through one
+  `readBoundedBytes`, and a test asserts `init` and the runtime agree.
+
+  **The first write-up of this said `mkfifo` was unavailable here. That was wrong**, and it is worth recording
+  because it is the same defect class as the ones above: an earlier probe died on an unrelated 40 MiB
+  allocation and the environment got the blame. `mkfifo` works, the suite already created FIFOs elsewhere, and
+  the FIFO case is now measured directly — dropping `O_NONBLOCK` fails the suite.
+
+  **Still open, recorded rather than fixed:** a definitions-discovery failure suppresses the registry refusal.
+  `loadDefinitions` can throw (a malformed settings file), and `buildCatalog` calls it, so on that path the
+  catalog never exists and its `registryRefusal` never reaches the banner. Two independent faults collapse into
+  one message naming only the definitions. Fixing it means changing the catalog's error model, which is a
+  larger change than this one and does not belong bolted onto it.
 - The Herdr executor passes only the plan's environment to the pane, so a pane child receives neither the workspace
   registry nor the lease directory, and the pane inherits the daemon's environment rather than a stripped one.
 - A relative inherited ledger path resolves inside a routed child's worktree, splitting state and leaving `?? .pi/` in

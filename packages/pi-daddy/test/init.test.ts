@@ -452,6 +452,40 @@ test("`pi-daddy init` reads the real registry — the wiring, not just the plan"
 });
 
 /**
+ * `pi-daddy init` says when the registry it read gave it nothing.
+ *
+ * **Review reverted both new reporting call sites and the whole unit suite stayed green**, which is the
+ * defect this file's own neighbour at line 400 warns about: a test that exercises the mechanism and skips
+ * the wiring. `registeredWorkspaceIds(path, cb)` calling `cb` proves nothing about whether `init` supplies
+ * one. This drives the real CLI entry point and reads what it printed.
+ *
+ * **Breaks by:** dropping the callback argument at either `src/cli.ts`'s or `extensions/init-command.ts`'s
+ * `registeredWorkspaceIds` call.
+ */
+test("`pi-daddy init` reports a registry it could not read, rather than scaffolding none in silence", async () => {
+  const cwd = await project();
+  await skillPackage(cwd, "plain-pkg", "1.0.0", { review: DECLARED });
+  const registry = join(cwd, "registry.json");
+  await writeFile(registry, JSON.stringify({ version: 1, workspaces: { prod: { path: "not/absolute" } } }), "utf8");
+
+  const previous = process.env.PI_DADDY_WORKSPACE_REGISTRY;
+  process.env.PI_DADDY_WORKSPACE_REGISTRY = registry;
+  const errors: string[] = [];
+  const originalError = console.error;
+  console.error = (...args: unknown[]) => void errors.push(args.join(" "));
+  try {
+    assert.equal(await main(["node", "cli", "init", "--dir", cwd]), 0, "a bad registry must not fail init");
+    const said = errors.join("\n");
+    assert.match(said, /workspace registry unreadable/, "init must say the registry gave it nothing");
+    assert.match(said, /absolute path/, "and why");
+  } finally {
+    console.error = originalError;
+    if (previous === undefined) delete process.env.PI_DADDY_WORKSPACE_REGISTRY;
+    else process.env.PI_DADDY_WORKSPACE_REGISTRY = previous;
+  }
+});
+
+/**
  * `/grants init`'s DIALOG — the surface that had no test at all, which is why it was a shipping blocker.
  *
  * `planInit`/`renderGrantEnv` say "Not granted for you" about a routing id and list it commented.

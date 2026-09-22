@@ -24,29 +24,39 @@ TOCTOU; a deadline between chunks; a size bound checked twice. Its own comment e
 cannot happen again", and then the second session-start read went on using a bare `readFile`. Both now call
 `readBoundedFile`.
 
-**`SKILL.md` reads are bounded and no longer silent.** They had no size bound: measured at `7096f78`, an 8 MiB
-definition was read whole into memory in 8ms, once per discovered skill inside `session_start`. The bound is
-1 MiB, matching the registry's. A definition that cannot be read, or has no readable frontmatter, is now reported
-to the caller rather than dropped by `catch { continue }`.
+**`SKILL.md` reads are bounded, and a dropped definition is named at session start.** They had no size bound:
+measured at `7096f78`, an 8 MiB definition was read whole into memory in 8ms, once per discovered skill inside
+`session_start`. The bound is 1 MiB, matching the registry's, and roughly thirty times the largest real
+definition found on this machine. **This is a behaviour change**: a definition over 1 MiB used to load and now
+does not, so session start names it, the file and the bound. There were three readers of `SKILL.md`, not two —
+the third feeds `pi-daddy init`, and bounding only the other two made `init` grant `agent:<name>` for a
+definition the runtime refused, whose only symptom was `unknown agent "x"` at delegation time. All three are
+bounded now and a test asserts the two agree.
 
 **A malformed registry says so.** It still fails SOFT — one bad entry must not stop a session starting, because
 nothing in the catalog is an authority — but the reason is no longer discarded. It rides on
-`Catalog.registryRefusal`, `/grants` prints it under `routable`, and both `init` paths report it. Before this,
-one malformed entry removed every workspace from `/grants`, the catalog and `init` with no message anywhere, so
-an operator could not tell it apart from having registered none. That is rule 8's silent safe-mode.
+`Catalog.registryRefusal`, session start names it, `/grants` prints it under `routable`, and both `init` paths
+report it. Before this, one malformed entry removed every workspace from `/grants`, the catalog and `init` with
+no message anywhere, so an operator could not tell it apart from having registered none. That is rule 8's silent
+safe-mode. Session start matters most: it is where every comparable notice already lives, and the only surface
+an operator sees without asking.
 
-**Three guards that could be deleted with the suite still green.** Measured before fixing: replacing the
-registry deadline with `if (false)` left all 876 tests passing, and the size and file-type checks were unforced
-the same way. The reader's clock is injectable so a test can force the deadline without a slow disk. Each guard
-was then removed in turn and exactly one test failed.
+**Guards that could be deleted with the suite still green.** Measured before fixing: replacing the registry
+deadline with `if (false)` left all 876 tests passing. The clock is injectable so a test can force it without a
+slow disk. Three independent reviews then found three more unforced properties and all are forced now: the
+deadline's POSITION between chunks rather than merely its existence, `grew-while-reading` (deleting it turned an
+overrun into a silent truncation reported as a successful read), and the wiring of every new report — the
+definitions callback, the session-start notices, and both `init` call sites were each revertible with the whole
+suite green.
 
 **API.** `makeCatalog` takes an optional second argument and `Catalog` has an optional `registryRefusal`;
-`loadDefinitions` and `registeredWorkspaceIds` each take an optional reporting callback. All additive — existing
-callers compile and behave as before.
+`loadDefinitions` and `registeredWorkspaceIds` each take an optional reporting callback; `readBoundedBytes` is
+the byte-level reader. All additive, and the only behaviour change for an existing caller is the 1 MiB bound
+described above.
 
-**Not established.** The FIFO case itself. `mkfifo` is unavailable in the environment this suite runs in, so a
-directory is what forces the file-type check, and the claim that a non-blocking open keeps a blocking special
-file from wedging session start rests on the registry's original measurement rather than on anything here.
+**Known limitation.** A definitions-discovery failure suppresses the registry refusal: `buildCatalog` calls
+`loadDefinitions`, which can throw on a malformed settings file, so on that path no catalog exists to carry the
+reason and only the definitions fault is reported. Fixing it means changing the catalog's error model.
 
 ## 0.35.0 — the first two decision points, and only the environment can enable an advisor
 

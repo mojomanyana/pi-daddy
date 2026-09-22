@@ -190,6 +190,19 @@ test("an oversized SKILL.md is skipped, and the skip is reported rather than sil
   assert.equal(reasons.length, 1, "exactly one skip, and it is reported");
   assert.match(reasons[0], /advice/);
   assert.match(reasons[0], /over the 1048576 limit/);
+
+  // **`init` and the runtime must agree about which definitions exist**, and review measured them
+  // disagreeing: `SKILL.md` had a THIRD reader in `skill-packages.ts` that the consolidation missed, so
+  // `planInit` wrote `agent:advice` into the operator's grant for a definition the session could never
+  // load. The only symptom was `unknown agent "advice"` at the moment somebody tried to delegate to it,
+  // with nothing naming the size or the file. Breaks by unbounding either reader in `skill-packages.ts`.
+  const plan = planInit(await discoverSkillPackages(cwd), cwd);
+  assert.equal(
+    plan.grant.includes("agent:advice"),
+    false,
+    "init must not grant an agent capability for a definition the runtime refuses to load",
+  );
+  assert.equal(plan.grant.includes("agent:other"), true, "its ordinary sibling is still scaffolded");
 });
 
 test("a definition with no readable frontmatter is reported too, not dropped in silence", async () => {

@@ -6,9 +6,16 @@
  */
 
 import { readdir, readFile, realpath } from "node:fs/promises";
+import { readBoundedBytes } from "./bounded-read.ts";
 import { homedir } from "node:os";
 import { join, resolve, sep } from "node:path";
-import { ceilingForDefinition, parseSkillDefinition, type SkillDefinition } from "./definitions.ts";
+import {
+  ceilingForDefinition,
+  parseSkillDefinition,
+  type SkillDefinition,
+  DEFINITION_MAX_BYTES,
+  DEFINITION_READ_TIMEOUT_MS,
+} from "./definitions.ts";
 import { resolveSkillResources, skillResourceName } from "./skill-resources.ts";
 import { WILDCARD } from "./pi-tools.ts";
 import { AGENT_WILDCARD, WORKSPACE_WILDCARD, type Capability } from "./resolve.ts";
@@ -146,12 +153,17 @@ async function readSkill(packageDir: string, entry: string): Promise<DiscoveredS
   // smoke test one day earlier and not applied here.
   const realPackageDir = await realpath(packageDir).catch(() => packageDir);
   for (const path of [join(target, "SKILL.md"), ...(target.endsWith(".md") ? [target] : [])]) {
-    let bytes: Buffer;
-    try {
-      bytes = await readFile(path);
-    } catch {
-      continue;
-    }
+    // **Bounded with the SAME limit the runtime loader uses, because the two must agree about which
+    // definitions exist.** Review measured the divergence: a 2 MiB `SKILL.md` was refused by
+    // `loadDefinitions` and accepted here, so `pi-daddy init` wrote `agent:advice` into the operator's grant
+    // for a definition the session could never load, and the eventual `delegate` said only
+    // `unknown agent "advice"`. An unreadable entry lands in `unreadable`, which `init` already prints.
+    const read = await readBoundedBytes(path, {
+      maxBytes: DEFINITION_MAX_BYTES,
+      timeoutMs: DEFINITION_READ_TIMEOUT_MS,
+    });
+    if (!read.ok) continue;
+    const bytes = read.bytes;
     const realPath = await realpath(path).catch(() => path);
     if (!realPath.startsWith(realPackageDir + sep)) return null;
 
@@ -255,8 +267,13 @@ export async function discoverSkillPackages(cwd: string): Promise<SkillPackage[]
     }
   }
   for (const resource of resolved.skills) {
-    const bytes = await readFile(resource.path).catch(() => null);
-    if (bytes === null) continue;
+    // Same bound, same reason: this is the third `SKILL.md` reader and it feeds `planInit`.
+    const resourceRead = await readBoundedBytes(resource.path, {
+      maxBytes: DEFINITION_MAX_BYTES,
+      timeoutMs: DEFINITION_READ_TIMEOUT_MS,
+    });
+    if (!resourceRead.ok) continue;
+    const bytes = resourceRead.bytes;
     const text = bytes.toString("utf8");
     const resourceName = skillResourceName(resource.path);
     if (seenSkills.has(resourceName)) continue;

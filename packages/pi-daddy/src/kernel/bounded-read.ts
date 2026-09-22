@@ -18,7 +18,12 @@
  *  - a deadline checked BETWEEN chunks, which is all an `AbortSignal` ever managed. Its honest limit: a
  *    stalled open or a single wedged read cannot be interrupted from in-process.
  *  - a size bound checked twice, before the read from `fstat` and again after, because a file can grow
- *    between the two.
+ *    between the two. **The buffer is `maxBytes + 1` regardless of the file's size, and that is deliberate.**
+ *    Review proposed sizing it from `fstat` instead; that would be faster and would silently break the second
+ *    check, because a file whose reported size understates its content — anything under procfs, and any file
+ *    that grows — would fill its small buffer exactly and come back as a successful truncated read. The cost
+ *    was measured rather than assumed: 500 allocations of 1 MiB + 1 take 8.1ms for an RSS delta of 2.8 MB,
+ *    because `allocUnsafe` never touches the pages.
  *
  * **The clock is injected** so the deadline is forced by a test rather than by a reviewer. Before this
  * module the registry's deadline could be deleted outright and all 876 tests still passed (measured at
@@ -53,8 +58,21 @@ export type BoundedReadFailure =
   | { why: "unreadable"; detail: string };
 
 export type BoundedReadResult = { ok: true; text: string } | ({ ok: false } & BoundedReadFailure);
+export type BoundedReadBytes = { ok: true; bytes: Buffer } | ({ ok: false } & BoundedReadFailure);
 
+/**
+ * The same read, handing back raw bytes.
+ *
+ * `skill-packages.ts` needs the bytes rather than a string, because it asserts that a definition survives a
+ * UTF-8 round trip unchanged — a latin-1 byte that decodes to U+FFFD changes the file's digest, and that
+ * check is only possible against the original buffer. Decoding here and re-encoding there would defeat it.
+ */
 export async function readBoundedFile(path: string, limits: BoundedReadLimits): Promise<BoundedReadResult> {
+  const read = await readBoundedBytes(path, limits);
+  return read.ok ? { ok: true, text: read.bytes.toString("utf8") } : read;
+}
+
+export async function readBoundedBytes(path: string, limits: BoundedReadLimits): Promise<BoundedReadBytes> {
   const now = limits.now ?? Date.now;
   let handle: FileHandle;
   try {
@@ -98,7 +116,7 @@ export async function readBoundedFile(path: string, limits: BoundedReadLimits): 
         why: "grew-while-reading",
         detail: `${path} exceeded the ${limits.maxBytes} limit while being read — it grew after its size was checked`,
       };
-    return { ok: true, text: buffer.subarray(0, filled).toString("utf8") };
+    return { ok: true, bytes: buffer.subarray(0, filled) };
   } catch (error) {
     return { ok: false, why: "unreadable", detail: String(error) };
   } finally {

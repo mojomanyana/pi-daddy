@@ -195,21 +195,16 @@ export function ceilingForDefinition(definition: SkillDefinition): DefinitionCei
 }
 
 /**
- * Read definitions from Pi's enabled resources, including installed packages and local overrides.
- * Resolver precedence and filters are shared with the capability catalog; unregistered npm packages
- * are not runtime resources until legacy init explicitly scaffolds them.
- */
-/**
  * A `SKILL.md` is an operator-authored markdown file; anything approaching this is not one.
  *
  * The same order of magnitude as the registry's bound and for the same reason. Measured at `7096f78`: a
  * bare `readFile` pulled an 8 MiB `SKILL.md` into memory in 8ms without complaint, and this loop runs once
  * per discovered skill inside `session_start`.
  */
-const DEFINITION_MAX_BYTES = 1 << 20;
+export const DEFINITION_MAX_BYTES = 1 << 20;
 
 /** A definition read is a local file read; a second is three orders of magnitude of headroom. */
-const DEFINITION_READ_TIMEOUT_MS = 2_000;
+export const DEFINITION_READ_TIMEOUT_MS = 2_000;
 
 /**
  * Read definitions from Pi's enabled resources, including installed packages and local overrides.
@@ -239,11 +234,12 @@ export async function loadDefinitions(
       continue;
     }
     const parsed = parseSkillDefinition(path, read.text);
-    if (parsed) {
-      if (!definitions.has(parsed.name)) definitions.set(parsed.name, parsed);
-    } else {
-      skipped?.(path, `${path} has no readable frontmatter with a description`);
-    }
+    if (!parsed) skipped?.(path, `${path} has no readable frontmatter with a description`);
+    // Shadowing is legitimate — a project override is SUPPOSED to win over a package's copy — but review
+    // pointed out it was the one remaining drop with no word said, in the very function being made loud.
+    else if (definitions.has(parsed.name))
+      skipped?.(path, `${path} is shadowed by an earlier definition named ${parsed.name}`);
+    else definitions.set(parsed.name, parsed);
   }
   return definitions;
 }
