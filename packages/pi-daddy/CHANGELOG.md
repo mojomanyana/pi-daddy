@@ -12,6 +12,18 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## 0.35.0 — only the environment can enable an advisor (security fix over 0.34.0)
+
+0.34.0 read the advisor's enable switch from `.pi/pi-daddy/settings.json`. That file is writable by any child
+holding `tool:write`, and this package keeps the grant outside the workspace for exactly that reason: a ceiling a
+governed child can rewrite is not a ceiling. The same argument applies here one step sideways — a child could have
+flipped the switch and made the operator's next session send its own description to a third party.
+
+**What to do.** Enabling an advisor is now `PI_DADDY_ADVISOR=jev` alongside `PI_DADDY_ADVISOR_KEY`; both are
+stripped from every child. A project's `advisor` block in `settings.json` may still set a model or a timeout, and
+may set `enabled: false` to turn an advisor off for that project. It can no longer turn one on, so a settings file
+that relied on `enabled: true` will find the advisor off until the environment variable is set.
+
 ## 0.34.0 — an advisors layer, off by default (ADR-0077)
 
 `src/advisors/` holds a `Decider` that answers typed questions — `noul` (a boolean), `choice` (one of the options

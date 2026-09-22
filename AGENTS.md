@@ -371,8 +371,14 @@ purpose, the decider, the question keys, the answers and the duration. It does *
 composed: that can carry task text and file contents, the ledger has never stored a task (ADR-0021), and an advisor
 must not become the way it starts.
 
-Default off, and off is the whole configuration unless `.pi/pi-daddy/settings.json` says otherwise and
-`PI_DADDY_ADVISOR_KEY` is set. That key is stripped from every child: review measured it reaching a child granted
+Default off. **`PI_DADDY_ADVISOR=jev` plus `PI_DADDY_ADVISOR_KEY` is the only thing that turns one on**, and
+0.34.0 got this wrong: it read the enable from `.pi/pi-daddy/settings.json`, which `grant-store.ts` is explicit
+about — that file is writable by any child holding `tool:write`, so it is "the reviewable record of the decision,
+not the thing the enforcer reads". A grant lives outside the workspace precisely so a child cannot widen the next
+session's ceiling; an advisor switch a child could flip would make the operator's next session ship its own
+description to a third party, which is the same self-defeating shape one step sideways. Corrected in 0.35.0: the
+settings block may narrow — a model, a timeout, or `enabled: false` for one project — and can never switch one on.
+Both the switch and the key are stripped from every child: review measured it reaching a child granted
 `tool:bash` while the constant's own comment claimed it never did, because it had been added to the list the
 `childEnv` hook may not write and not to the list `mergeChildEnv` strips. A credential is not something a child
 inherits by being spawned. Malformed configuration disables the advisor and names the field, rule 8's shape: an
