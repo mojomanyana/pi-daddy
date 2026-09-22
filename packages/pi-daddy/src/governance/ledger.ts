@@ -2,7 +2,7 @@
  * Append-only grant ledger.
  *
  * Exists because pi-fabric's persisted execution trace records `args: {}` — it captures *that* a child
- * ran, not *what it was authorised to do* (docs/probes/pi-fabric-eval probe 5). Without this record
+ * ran, not *what it was authorised to do* (probe `pi-fabric-eval` probe 5). Without this record
  * you cannot answer "what was this sub-agent permitted to do?" after the fact, which is the whole
  * point of a governance layer.
  *

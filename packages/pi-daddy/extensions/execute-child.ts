@@ -352,7 +352,7 @@ export async function executePlannedChild(input: {
               // NOT strict, and this line is the whole point of R-99. The child has already run: failing
               // closed here prevents nothing and used to discard a completed child's entire output while
               // blaming "ledger" — under `delegate_all` it discarded every sibling's work too. The docstring
-              // above, `docs/SPEC.md` and the ADR-0034 amendment all promised this; only the comment changed.
+              // above, the README and the ADR-0034 amendment all promised this; only the comment changed.
               // `capability_decision`, which PROVISIONS, still fails closed.
               strict: false,
               onFailure: (cause) => teardownFailures.push(`child lifecycle record failed: ${String(cause)}`),

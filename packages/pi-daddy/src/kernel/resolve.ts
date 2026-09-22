@@ -20,7 +20,7 @@ export type Capability = string;
  *
  * `ext:pi-fabric/fabric_exec` is here on measured evidence, not suspicion: a child granted
  * `tools: []` (nothing at all) plus `recursive: true` still reached `pi.write` and `pi.bash` and
- * spawned a grandchild that wrote to disk. See docs/probes/pi-fabric-eval (probes 2, 4, 7, 8).
+ * spawned a grandchild that wrote to disk. See probe `pi-fabric-eval` (probes 2, 4, 7, 8).
  */
 export const UNIVERSAL_CAPABILITIES: readonly Capability[] = ["ext:pi-fabric/fabric_exec", "tool:fabric_exec"];
 
@@ -146,7 +146,7 @@ export function resolve(input: ResolveInput): ResolveResult {
    * ADR-0017 created and ADR-0023's own example uses — was refused with **"capability escalation
    * blocked"**, and recorded as an escalation attempt, in a session that had opted out.
    *
-   * `maySpawnDefinition` had always honoured `tool:*` for definition ids and `docs/SPEC.md` had always
+   * `maySpawnDefinition` had always honoured `tool:*` for definition ids and the README had always
    * claimed it "satisfies any capability". This function disagreed with both, which is R-28's shape: two
    * spellings of one rule, and the enforcing one was wrong.
    */
@@ -242,7 +242,7 @@ export function assertNarrowing(result: ResolveResult, allowUniversal = false): 
  *
  * pi core is the enforcement point — verified: `--tools` and `--no-tools` both hard-block extension
  * tools, and an explicitly `-e`-loaded extension cannot re-add its tool past them
- * (docs/probes/pi-fabric-eval probes 9–11). That is why enforcement needs no in-descendant runtime.
+ * (probe `pi-fabric-eval` probes 9–11). That is why enforcement needs no in-descendant runtime.
  *
  * Returns `null` when the grant contains no callable tools, meaning the caller should pass
  * `--no-tools` rather than an empty `--tools` (an empty list is not a valid allowlist).

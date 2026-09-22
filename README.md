@@ -113,6 +113,10 @@ enumeration is `REFUSAL_CODES` and it is pinned by the contract.
 
 ## The layers
 
+The Files column names the main modules of each layer, not all of them; the module docstrings are the
+specification of who owns what.
+
+
 | Layer | Answers | Files |
 | :--- | :--- | :--- |
 | `src/kernel` | What may a child hold, and how is that carried? Pure functions, no I/O. | `resolve`, `spawn`, `propagation`, `catalog`, `definitions`, `approval`, `chain`, `fanout`, `correlation`, `refusals`, `env-names`, `project-paths` |

@@ -33,7 +33,7 @@ import { PROJECT_FILES } from "./project-paths.ts";
  *  - `tool:write`, `tool:edit`, `tool:edit-diff` — mutate the working tree, and **are not gated by default**,
  *    so a source-and-go operator would hand them to a child with no dialog at all. That gap is exactly what
  *    made "the union is mitigated by gating" untrue (R-76).
- *  - `UNIVERSAL_CAPABILITIES` — confer the whole catalog by measurement (`docs/probes/pi-fabric-eval`).
+ *  - `UNIVERSAL_CAPABILITIES` — confer the whole catalog by measurement (probe `pi-fabric-eval`).
  *    `assertNarrowing` refuses a grant containing one anyway; leaving it out of the file keeps the operator
  *    from ever holding it by accident.
  */

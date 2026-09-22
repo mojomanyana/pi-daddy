@@ -196,7 +196,7 @@ export const DEFAULT_MAX_DEPTH = 2;
  *
  * `bash` is not one capability among others; it is an execution primitive. A child holding it can run
  * `env -u PI_DADDY_GRANT pi …` and obtain a completely **ungoverned** descendant — measured, not
- * theorised (`docs/probes/g5-bash-escape`). Handing that down silently is the thing worth changing.
+ * theorised (probe `g5-bash-escape`). Handing that down silently is the thing worth changing.
  *
  * Subsumption-aware gating (also ADR-0012) means this single entry covers `write`, `edit`, `read`,
  * `grep`, `find` and `ls` as well, since `bash` confers all of them.

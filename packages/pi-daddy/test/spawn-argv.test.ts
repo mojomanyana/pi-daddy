@@ -72,7 +72,7 @@ test("neutralisation is the last argv element, after every flag", () => {
 // ---------------------------------------------------------------------------
 // R-32 — a governed child inherited every skill the operator had, and CLAUDE.md.
 //
-// Measured in `docs/probes/g16-herdr`: a child spawned with `--tools read` printed
+// Measured in probe `g16-herdr`: a child spawned with `--tools read` printed
 //   [Context] CLAUDE.md
 //   [Skills]  architect, build, debug, decide, git-ops, plan, review, skill-harness
 // because `planSpawn` passed `--no-extensions` and nothing else. pi has SEPARATE

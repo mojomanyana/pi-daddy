@@ -524,7 +524,7 @@ test("a gated capability that is also requested is listed once", () => {
  *
  * The fourth review pass reverted each of these separately and the whole suite stayed green — four
  * independent edits with no test between them, in the commit whose message said the compensating control "is
- * as strong as the claim that leaned on it". It is load-bearing: `docs/SPEC.md` asserts the refusal names the
+ * as strong as the claim that leaned on it". It is load-bearing: the README asserts the refusal names the
  * file, and `catalog.ts` exempts the ENTIRE `workspace:` namespace from the unknown check *because* of that
  * ("a second, weaker check here can only turn that precise refusal into a misleading one").
  *

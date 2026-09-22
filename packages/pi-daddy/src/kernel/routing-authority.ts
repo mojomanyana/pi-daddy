@@ -36,7 +36,7 @@ export interface RoutingRefusal {
  * Checked before anything is said about the target, for the reason `maySpawnDefinition` is: it is a
  * governance question about the SESSION. Before ADR-0035 nothing checked it — the registry inherited into
  * every governed child and a child routed to `staging` could route its grandchild to `prod` (R-131, measured
- * in `docs/probes/g36-workspace-attenuation`).
+ * in probe `g36-workspace-attenuation`).
  *
  * **Well-formedness first, because `workspace_id` is a model-facing tool parameter** and the next step turns
  * it into a capability id. `workspace_id: "prod,tool:bash"` produced a `WORKSPACE_NOT_AUTHORIZED` whose

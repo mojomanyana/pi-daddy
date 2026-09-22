@@ -8,7 +8,7 @@
  * **Why go through herdr's CLI rather than the third-party `pi-herdr` extension.** That extension exposes
  * `agentArgs` and `env` as MODEL-facing tool parameters (R-30), which hands a model an argv array and the
  * environment variable the grant travels on. Here the model chooses a definition and a task; this package
- * builds the argv. Measured facts this relies on (`docs/probes/g16-herdr`):
+ * builds the argv. Measured facts this relies on (probe `g16-herdr`):
  *
  *  - `herdr agent start … -- <args>` delivers argv **verbatim**, echoed back in the reply.
  *  - `--tools` is enforced inside a pane exactly as it is for a direct spawn; `--no-tools` yields none.
@@ -76,7 +76,7 @@ export interface HerdrRunRequest {
    * The task, delivered with `herdr agent prompt` rather than as an argv element.
    *
    * This is strictly safer than the direct-spawn path, which has to defend a model-authored string from
-   * pi's argv parser by prefixing a space (`neutralisePrompt`, `docs/probes/g1-argv`). Here the task never
+   * pi's argv parser by prefixing a space (`neutralisePrompt`, probe `g1-argv`). Here the task never
    * reaches argv at all, so there is no parser in front of it.
    */
   prompt: string;
@@ -97,7 +97,7 @@ export interface HerdrRunRequest {
    * Leave the pane open after the run so a human can read or resume it.
    *
    * Default **false**: a fan-out that leaks a pane per child fills the operator's workspace, and
-   * `docs/probes/g16-herdr` records that panes are not trivially closable once orphaned.
+   * probe `g16-herdr` records that panes are not trivially closable once orphaned.
    */
   keepPane?: boolean;
   exec?: HerdrExec;
@@ -289,7 +289,7 @@ export async function runHerdrPane(request: HerdrRunRequest): Promise<ChildRunRe
    * running descendant."* **`herdr agent stop` does not exist.** Measured against herdr 0.7.5: the `agent`
    * subcommands are `list get read send-keys prompt rename focus wait attach start explain`, and `agent stop`
    * prints the usage banner and exits 0 — which `defaultExec` reports as a success, so nothing ever noticed.
-   * `docs/probes/g16-herdr/README.md` asserted it worked, in a *How to rerun* block that was never run.
+   * probe `g16-herdr` asserted it worked, in a *How to rerun* block that was never run.
    *
    * So there is exactly one kill available: closing the tab. That forces the distinction below.
    *

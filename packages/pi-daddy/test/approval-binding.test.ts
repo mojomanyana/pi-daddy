@@ -229,7 +229,7 @@ test("bound approval identity is deterministic and absent tree fields preserve t
 
 /**
  * ADR-0034's load-bearing approval bullet — "a bound approval cannot cross a delegation boundary" — was
- * stated in the ADR, in `docs/SPEC.md` and in the package README, asserted by two guards in the code, and
+ * stated in the ADR, in the README and in the package README, asserted by two guards in the code, and
  * pinned by nothing. Both of these mutations left the suite fully green before this test existed, which is
  * why they are here: the guards were correct and undefended.
  */
@@ -305,7 +305,7 @@ test("an internally contradictory persisted binding is not a binding at all", as
  * ADR-0035's refusal, at the planner where it is decided.
  *
  * The escalation this closes was measured before the fix existed
- * (`docs/probes/g36-workspace-attenuation`): a child routed to `staging` planned a grandchild for `prod`
+ * (probe `g36-workspace-attenuation`): a child routed to `staging` planned a grandchild for `prod`
  * with no refusal at all, took a write lease, and would have started there.
  *
  * The production change that breaks this: removing the `mayRouteToWorkspace` guard from `planDelegation`.

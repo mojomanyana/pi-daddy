@@ -6,7 +6,7 @@
  *
  * That rule survives where it matters — an **ungoverned** session (no `PI_DADDY_GRANT`) is untouched.
  * Inside a session the operator has already chosen to govern, handing a child `bash` hands it an
- * ungoverned-descendant escape hatch (measured: `docs/probes/g5-bash-escape`), and doing that silently is
+ * ungoverned-descendant escape hatch (measured: probe `g5-bash-escape`), and doing that silently is
  * the behaviour worth changing. Combined with subsumption-aware gating, one `bash` gate also covers
  * `write`, `edit`, `read`, `grep`, `find` and `ls`.
  *

@@ -92,7 +92,7 @@ export function isSafeName(name: string): boolean {
  * grants), which is right for the enforcement path — the catalog refuses what it does not know — and is
  * exactly why the check has to be here, at the boundary that *generates* rather than the one that enforces.
  *
- * The grammar is the one `docs/SPEC.md` documents: `tool:<name>`, `skill:<name>`, `agent:<name>`,
+ * The grammar is the one the README documents: `tool:<name>`, `skill:<name>`, `agent:<name>`,
  * `workspace:<id>`, and `ext:<pkg>/<tool>` where `<pkg>` may be npm-scoped. No wildcards — those are refused
  * separately and loudly, because "you tried to grant yourself everything" is a different fact from "that is
  * not a name".

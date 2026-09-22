@@ -759,7 +759,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
   });
 
   test("ADR-0023: agent:* beside an ungated bash is warned about", async () => {
-    // `docs/SPEC.md` and ADR-0023 both call this combination poor and nothing observed it — a hazard a
+    // The README and ADR-0023 both call this combination poor and nothing observed it — a hazard a
     // document declares and no code detects is R-47's shape, in a control shipped one day after R-47.
     // Shipped without a test, which by rule 7 made it decoration; this is that test.
     //

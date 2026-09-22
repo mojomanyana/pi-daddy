@@ -53,7 +53,7 @@ export interface LedgerReport {
    * **Added because the field was written and never read, which is R-51's shape exactly.** R-51 was
    * `definitionDigest`: recorded from the start, absent from every report, so the questions ADR-0018 advertised
    * needed hand-written `jq`. `executor` arrived the same way — `src/governance/ledger.ts` justifies making it *required*
-   * with "reading it back is the only reason it exists", and nothing read it back. `docs/SPEC.md` claims the
+   * with "reading it back is the only reason it exists", and nothing read it back. The README claims the
    * executor is "announced three times… per child in the ledger"; without this the third announcement was to
    * `jq` only.
    *

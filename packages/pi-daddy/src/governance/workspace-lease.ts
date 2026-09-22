@@ -145,7 +145,7 @@ export async function acquireWorkspaceLease(input: {
    * the lock file descriptor and holds the lock in its own right — killing only `flock` leaves the
    * lock HELD by an orphan, and every later acquisition then reports WORKSPACE_WRITE_CONFLICT, which
    * is the one message an operator would use to conclude another agent is writing. Measured in
-   * `docs/probes/g35-flock-fd-inheritance` (R-99).
+   * probe `g35-flock-fd-inheritance` (R-99).
    */
   const hardKill = () => {
     // The GROUP, so this works on the readiness-timeout path too — there `helperPid` is usually still

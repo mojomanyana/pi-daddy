@@ -285,7 +285,7 @@ test("an unreadable predecessor record yields `unknown` recovery, never a clean 
  * live observation BEFORE awaiting acquisition timeout. Its bounded10s lifetime exceeds the kill oracle.
  *
  * `flock` is not passed `--close`, so the helper it execs inherits the lock file descriptor and holds
- * the lock in its own right — measured in `docs/probes/g35-flock-fd-inheritance`. On the readiness
+ * the lock in its own right — measured in probe `g35-flock-fd-inheritance`. On the readiness
  * -timeout path the helper's pid is usually still unknown, so killing only the wrapper leaves a
  * half-booted helper holding the lock forever, and every later acquisition then reports a conflict that
  * no live writer explains (R-99).

@@ -411,7 +411,7 @@ test("ADR-0023: agent:* does not exempt a definition id from a gate", () => {
  *
  * Before this, routing was the ONE governance dimension that did not: the registry inherited into every
  * child and nothing checked the caller's authority, so a child routed to `staging` could route its
- * grandchild to `prod`. Measured in `docs/probes/g36-workspace-attenuation` (R-131).
+ * grandchild to `prod`. Measured in probe `g36-workspace-attenuation` (R-131).
  *
  * The production changes that break these: dropping `workspace:` from `normaliseCapability`'s prefix set;
  * removing `WORKSPACE_WILDCARD` from `covered()`; or removing it from `childEnv`'s inheritance filter.

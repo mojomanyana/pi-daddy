@@ -137,7 +137,7 @@ export const grantsCommand = {
       ];
       for (const bad of report.corrupt.slice(0, 5)) lines.push(`    line ${bad.line}: ${bad.reason}`);
       // ADR-0031, and R-51's lesson applied on the day the field was added rather than a release later: a field
-      // the writer sets and no diagnostic reads is one that needs `jq`, and `docs/SPEC.md` claims the executor is
+      // the writer sets and no diagnostic reads is one that needs `jq`, and the README claims the executor is
       // announced "per child in the ledger". `unknown` is shown only when present, because on a fresh ledger it
       // is always zero and a permanent zero is noise; on an upgraded one it is the count of pre-0.16 lines, which
       // is worth seeing.

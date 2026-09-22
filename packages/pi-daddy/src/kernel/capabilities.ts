@@ -59,7 +59,7 @@ export const DELEGATE_CAPABILITY: Capability = "tool:delegate";
  * Consolidating the sites is a separate change, and a count nobody re-derives is the defect this list exists
  * to prevent.
  *
- * `docs/SPEC.md`'s grammar section is the prose statement of the same list and is kept in step with it.
+ * The README's grammar section is the prose statement of the same list and is kept in step with it.
  */
 export const CAPABILITY_NAMESPACE_PREFIXES = ["tool:", "ext:", "skill:", "agent:", "workspace:"] as const;
 
@@ -80,7 +80,7 @@ export function workspaceCapability(workspaceId: string): Capability {
  *
  * Mirrors `maySpawnDefinition` deliberately — same shape, same wildcard handling, same reason. Routing was
  * the one governance dimension that did not attenuate (R-131, measured in
- * `docs/probes/g36-workspace-attenuation`): the registry inherited into every child and nothing checked the
+ * probe `g36-workspace-attenuation`): the registry inherited into every child and nothing checked the
  * caller's authority, so a child routed to `staging` could route its grandchild to `prod`.
  *
  * `tool:*` satisfies it because governance is opt-in — an ungoverned session holds the wildcard and must

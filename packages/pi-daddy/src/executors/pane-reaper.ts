@@ -7,7 +7,7 @@
  * `agent_settled` (async) and at process `exit` (sync backstop).
  *
  * The gap that remains is the one this module was created for. A pi session **killed outright** runs no `exit`
- * handler, so it leaves one pane per tracked child, and `docs/probes/g16-herdr` records that an orphaned pane is
+ * handler, so it leaves one pane per tracked child, and probe `g16-herdr` records that an orphaned pane is
  * not trivially closable afterwards. R-62 was re-rated L×L → M×L when ADR-0031 made panes the default path.
  *
  * **Registered on `exit` only, deliberately — not on SIGINT or SIGTERM.** That is the part worth reading,
@@ -203,7 +203,7 @@ export function reapOpenPanes(syncExec: (args: string[]) => void = defaultSyncEx
 async function closePane(exec: HerdrExec, pane: OpenPane): Promise<boolean> {
   // **No `agent stop`.** It is not a herdr command — measured against 0.7.5, where it prints the usage banner
   // and exits 0, which `defaultExec` reports as success. Two call sites here and one in `run-herdr.ts` issued it
-  // for nothing, and `docs/probes/g16-herdr` asserted it worked from a block that was never run. Closing the tab
+  // for nothing, and probe `g16-herdr` asserted it worked from a block that was never run. Closing the tab
   // is the only kill herdr offers, and it does kill the child.
   const reply = await exec(["tab", "close", pane.tab]).catch(() => undefined);
   const closed = reply !== undefined && !parseReply(reply).error;
