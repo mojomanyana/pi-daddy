@@ -729,6 +729,21 @@ What remains of ADR-0076's sequence after this cleanup, one line each with what 
 
 Kept features only. Numbers are dropped except the two that code and rules cite.
 
+- **`tool:write` is much closer to `tool:bash` than this package has been treating it, and every operator-state
+  file is writable by a child that holds it.** Measured 2026-09-22 using pi's OWN `write` tool from a real
+  depth-1 governed child: `write` resolves a path against the cwd and writes it with no check that the result
+  is under the cwd, and its schema says "relative or absolute". `PI_CODING_AGENT_DIR` is in neither
+  `GRANT_ENV_KEYS` nor `GOVERNANCE_ENV_KEYS`, so a child inherits it, and every path under it is deterministic
+  and public. Two reproductions: a child holding `tool:write` and NO workspace capability wrote the accepted-id
+  record and the next root routed into the child's own directory; and a child widened the operator's STORED
+  GRANT from `tool:read` to `tool:bash`. A malformed write to either is a denial of service that fails closed.
+  This falsifies the "lives outside the workspace, so a governed child cannot reach it" reasoning wherever it
+  appears — `grant-store.ts` makes that argument about itself and `workspace-acceptance.ts` cited it. **What
+  those stores still buy** is stated where they are: each closes the narrower attack it was built for and
+  raises the cost of the wider one. **No in-process fix exists**: location is not a boundary, and
+  authenticating a record needs a key that lives where the record does. The candidates are all outside this
+  package — a different uid, directory permissions the child cannot satisfy, or gating `tool:write` the way
+  ADR-0012 gates `tool:bash` — and the last of those is an open product decision, not a defect to fix quietly.
 - `bash` escapes governance: a child holding it can start an ungoverned descendant, and containing that is the
   operating system's job (ADR-0012, `g5-bash-escape`); a grant containing `bash` reads narrow and is not.
 - Workspace leases coordinate only cooperating pi-daddy children; they do not exclude the operator, an IDE, hooks or
@@ -740,10 +755,18 @@ Kept features only. Numbers are dropped except the two that code and rules cite.
   reads like one: the reviewer found the first four by reading and the last four only because each fix created
   the next, and the rate reached zero when they ran out of ideas rather than when the mechanism became sound.
   The honest claim is that those eight are closed, each with a test that fails if its guard is removed.
-  - The pin binds the id-to-destination mapping and **nothing about which ids exist**. The registry stays
-    child-writable, and a child with `tool:write` can add an entry; what stops it being usable is that `init`
-    scaffolds `workspace:` ids commented out. That is a policy in a scaffolder, not an enforced invariant, and
-    it is the next place to look.
+  - ~~The pin binds the id-to-destination mapping and nothing about which ids exist.~~ **Closed 2026-09-22**,
+    and it was worse than that bullet said. The reviewer's "only `init` stops it" was measured false: with a
+    `workspace:*` root no operator action is needed at all. A child holding `tool:write` appended an id; the
+    pin stopped it resolving in that session and stopped nothing afterwards, because the NEXT root minted a
+    pin from the tampered registry and the wildcard admits any id. Measured end to end — catalog, pin and a
+    real route into the child's own directory. The accepted id set now lives beside the grant store, outside
+    the workspace; an id nobody accepted is not pinned and therefore not routable, and `/grants workspaces`
+    accepts the current set. **Trust on first use**, announced rather than silent, because refusing everything
+    on upgrade would enforce a decision the operator made by writing the file. What is still not covered: an
+    id the operator accepts is accepted for every project sharing that registry, and acceptance takes effect
+    for the NEXT session, since re-settling the pin mid-session is the re-mint ADR-0042 spent four review
+    rounds closing.
   - It is a digest of the PATH, never of the contents. It pins where, not what is there; swapping what lives
     under the canonical root defeats it, which needs `symlink(2)` and so is ADR-0012's scope.
   - A child holding `bash` starts an ungoverned process and none of this applies.

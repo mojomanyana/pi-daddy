@@ -69,6 +69,15 @@ export async function reportSessionStart(session: GrantsSession, ctx: SessionRep
     ctx.ui.notify(`grants: a definition was not loaded — ${reason}`, "warning");
   // A registered workspace that could not be pinned is not routable this session, and the routing refusal an
   // operator would otherwise meet names neither the directory nor the reason.
+  // Trust on first use, announced rather than silent: a control that installs itself quietly is one nobody
+  // knows they have, and the whole value of this record is that ADDITIONS are visible afterwards.
+  if (session.workspaceAcceptance?.firstUse && session.workspaceAcceptance.accepted.length > 0)
+    ctx.ui.notify(
+      `grants: accepted ${session.workspaceAcceptance.accepted.length} workspace id(s) from this registry for ` +
+        `the first time (${session.workspaceAcceptance.accepted.join(", ")}). Ids added to the registry from ` +
+        `now on are refused until you accept them with /grants workspaces.`,
+      "info",
+    );
   for (const skipped of session.workspaceSkips)
     ctx.ui.notify(
       `grants: workspace ${skipped} — it is registered but not routable this session (ADR-0042 destination pin)`,

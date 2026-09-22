@@ -164,6 +164,10 @@ const NOT_REFUSAL_CODES = new Set([
   // The handoff rank bands. Named in the probe record because "what outranks what" is the decision a reader
   // has to be able to find, and a vaguer phrase would not lead them to it.
   "CONTEXT_RANK",
+  // The two propagation lists. Named in the register because the finding is precisely that one variable is in
+  // NEITHER of them, and "the environment lists" would leave a reader unable to check that.
+  "GRANT_ENV_KEYS",
+  "GOVERNANCE_ENV_KEYS",
 ]);
 
 test("every refusal code the documents name exists", async () => {

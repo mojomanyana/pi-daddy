@@ -65,6 +65,7 @@ import {
   ENV_WORKSPACE_PIN,
 } from "../src/kernel/workspace-pin.ts";
 import { loadWorkspaceRegistry } from "../src/kernel/workspace.ts";
+import { reconcileAcceptedWorkspaces } from "../src/governance/workspace-acceptance.ts";
 
 /**
  * Run governed children in herdr panes instead of captured child processes.
@@ -219,6 +220,8 @@ export interface GrantsSession extends NativeSessionHost {
   pinSettled: boolean;
   /** Registered workspaces this session could not pin, and why — reported at session start (rule 8). */
   workspaceSkips: string[];
+  /** Which registry ids this machine has accepted, and which it has not. Reported, and drives `/grants`. */
+  workspaceAcceptance?: { accepted: string[]; firstUse: boolean; unaccepted: string[] };
   catalog: Catalog;
   /**
    * The in-flight catalog build, so `delegate` can wait for it instead of racing it.
@@ -351,7 +354,19 @@ async function settleWorkspacePin(session: GrantsSession): Promise<WorkspacePins
   if (!registryPath) return new Map();
   try {
     const registry = await loadWorkspaceRegistry(registryPath);
-    return await establishWorkspacePin(registry, realpath, (id, reason) =>
+    // **The id SET, which the destination pin does not cover.** ADR-0042 bound what an id means; a child
+    // holding `tool:write` inherits the registry path and can append an id of its own, and the NEXT root
+    // session mints a pin for it. Measured: a child-created id reached the catalog, the pin and a real route
+    // with no operator action. So an id nobody accepted is not pinned, and therefore not routable.
+    const acceptance = await reconcileAcceptedWorkspaces(registryPath, Object.keys(registry.workspaces));
+    session.workspaceAcceptance = acceptance;
+    for (const id of acceptance.unaccepted)
+      session.workspaceSkips.push(`${id} — it is in the registry but this machine has never accepted it`);
+    const accepted = new Set(acceptance.accepted);
+    const narrowed = {
+      workspaces: Object.fromEntries(Object.entries(registry.workspaces).filter(([id]) => accepted.has(id))),
+    };
+    return await establishWorkspacePin(narrowed, realpath, (id, reason) =>
       session.workspaceSkips.push(`${id} — ${reason}`),
     );
   } catch {
@@ -435,6 +450,7 @@ export function createGrantsSession(
     workspacePin: undefined,
     pinSettled: false,
     workspaceSkips: [],
+    workspaceAcceptance: undefined,
     // ADR-0012: `bash` is gated by DEFAULT — but only in a governed session. An ungoverned one
     // (no PI_DADDY_GRANT) still blocks nothing, so "governance is opt-in" holds exactly where it always
     // did. Inside a session the operator already chose to govern, handing a child `bash` hands it an
