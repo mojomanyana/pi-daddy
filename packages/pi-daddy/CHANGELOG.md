@@ -24,18 +24,42 @@ could not help: a governed child runs as the parent's uid.
 digest. Descendants inherit only the entries their own grant names, cannot mint an entry, and routing requires an
 exact match. A rewritten registry therefore changes where an id points and not what an inherited id may mean.
 
-**Every failure refuses.** Missing, empty, malformed and mismatched all refuse, because a mechanism a child can
-switch off by clearing one variable is not a mechanism. A session that inherited a pin never establishes a new
-one, which is the rule the whole thing rests on.
+**Every failure refuses, and a DESCENDANT never mints.** Missing, empty, malformed and mismatched all refuse.
+That sentence was written before it was true: a security review reproduced the escalation end to end, across a
+real process boundary. A parent whose own registry was unreadable at start has no pin, so the variable was
+OMITTED from its children's environment, and a child read the absence as "I am a root" — minting a pin from the
+registry it had just rewritten and routing to the prod worktree while holding only `workspace:staging`. Any
+child with `tool:write` can arrange that precondition by truncating the registry. Depth already rides in the
+environment and already attenuates, so anything below the root that arrives without a usable pin now routes
+nowhere, and a malformed value refuses instead of earning a promotion.
+
+**A session settles its pin once.** `/grants init` re-established a root's pin from whatever the registry said
+at that moment, and a child had had the whole session to rewrite it. The guard "only a session that inherited no
+pin may mint" was satisfied because the session's own publication had erased the evidence.
 
 **One builder for both spawn paths.** `delegate.ts` builds a child's environment itself rather than through
 `childEnv`, and this file already records what that fork cost once before: the "never inherit `workspace:*`" rule
 lived only in `childEnv`, so the delegate path handed the wildcard down. The pin reached the same fork and is now
 written by one function both callers use.
 
-**A session's own pin lives in memory, not in its environment.** `publishChildEnv` writes the CHILD's narrowed pin
-into `process.env`, so a session that re-read the variable at routing time would check itself against its child's
-authority. `ownGrant` has lived in memory for exactly this reason; a test caught the pin falling into the same trap.
+**A session's own pin lives in memory, and is read from the reload snapshot, not from its environment.**
+`publishChildEnv` writes the CHILD's narrowed pin into `process.env`, so a session that re-read the variable
+would check itself against its child's authority. The first version of this change fixed that at the ROUTING
+site and missed the ESTABLISH site, which is the one that overwrites the session's pin — so every `/grants init`
+narrowed it, and a `workspace:*` root, whose published child pin is empty because the wildcard is never
+inherited, lost ALL routing until restart while being told "no destination pin was inherited" by a session that
+had established one. The inherited pin now comes from the lifecycle root snapshot, which is what every other
+authority-bearing input already uses.
+
+**Operator surface.** `/grants` lists the pinned ids under `routable`, and session start names any registered
+workspace that could not be pinned and why. The mechanism shipped with none of this: an operator refused for
+want of a pin could not discover that pins existed.
+
+**API.** `resolveWorkspace` takes a third parameter, a parsed pin, defaulting to the environment — so an
+external caller that worked in 0.37.0 now refuses unless one is supplied. `destinationDigest`,
+`parseWorkspacePin`, `establishWorkspacePin`, `formatWorkspacePin` and `ENV_WORKSPACE_PIN` are now exported for
+that reason. `validateRegisteredWorkspace` remains pin-free by design and now says so: it answers "is this path
+the worktree it claims to be", not "may this session route here".
 
 **What this does not cover.** The pin binds a governed descendant, because it rides in the environment of a process
 the parent starts. A child holding `bash` can still start an ungoverned process, which is ADR-0012's scope and

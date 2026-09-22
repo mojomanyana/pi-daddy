@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { realpath, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { childEnv, GRANT_ENV_KEYS } from "../src/kernel/propagation.ts";
+import { childEnv, mergeChildEnv, GRANT_ENV_KEYS } from "../src/kernel/propagation.ts";
 import { loadWorkspaceRegistry, resolveWorkspace } from "../src/kernel/workspace.ts";
 import {
   attenuateWorkspacePin,
@@ -45,9 +45,14 @@ async function gitDir(prefix: string): Promise<string> {
 
 /** Run with a registry and optional inherited pin in scope, restoring whatever was there. */
 async function withPinEnv(env: { registry: string; pin?: string }, body: () => Promise<void>): Promise<void> {
-  const keys = ["PI_DADDY_WORKSPACE_REGISTRY", "PI_DADDY_WORKSPACE_PIN", "PI_CODING_AGENT_DIR"] as const;
+  // EVERY governance key, not just the two this helper sets. `publishChildEnv` writes `PI_DADDY_DEPTH=1` into
+  // `process.env`, so a test that published left the next test's session looking like a DESCENDANT — which,
+  // correctly, never mints a pin. The first version of this helper saved three keys and the resulting failure
+  // read as a bug in the fix rather than in the harness.
+  const keys = [...GRANT_ENV_KEYS, "PI_DADDY_WORKSPACE_REGISTRY", "PI_CODING_AGENT_DIR"] as const;
   const saved = new Map(keys.map((k) => [k, process.env[k]]));
   try {
+    for (const k of keys) delete process.env[k];
     process.env.PI_DADDY_WORKSPACE_REGISTRY = env.registry;
     if (env.pin === undefined) delete process.env.PI_DADDY_WORKSPACE_PIN;
     else process.env.PI_DADDY_WORKSPACE_PIN = env.pin;
@@ -194,4 +199,187 @@ test("a root with no inherited pin establishes one from the registry", async () 
     await loadProjectDefinitions(session, dir);
     assert.equal(session.workspacePin?.get("w1"), destinationDigest(await realpath(dir)));
   });
+});
+
+test("publishing a child's environment does not narrow the SESSION's own pin", async () => {
+  // **The defect review found, and the one this whole mechanism nearly died of.** `publishChildEnv` writes the
+  // CHILD's narrowed pin into `process.env`. `establishRootPin` read that variable back, so any later reload —
+  // and `/grants init` does exactly this, `adoptGrant` then a definitions refresh — made the session adopt its
+  // own child's authority. Worst case is a `workspace:*` root: `inheritableGrant` strips the wildcard, so the
+  // published child pin is EMPTY, and the root lost all routing until restart while being told "no destination
+  // pin was inherited" by a session that had established one and thrown it away.
+  //
+  // Breaks by: reading `process.env[ENV_WORKSPACE_PIN]` in `establishRootPin` instead of the lifecycle root.
+  const dir = await gitDir("pin-reload-");
+  const other = await gitDir("pin-reload-other-");
+  const registryPath = join(dir, "registry.json");
+  await writeFile(registryPath, JSON.stringify({ version: 1, workspaces: { w1: { path: dir }, w2: { path: other } } }));
+  await withPinEnv({ registry: registryPath }, async () => {
+    process.env.PI_DADDY_GRANT = "tool:read,workspace:w1";
+    const session = createGrantsSession(undefined);
+    await loadProjectDefinitions(session, dir);
+    assert.deepEqual([...(session.workspacePin?.keys() ?? [])].sort(), ["w1", "w2"], "the root pins the registry");
+
+    // What `/grants init` does: publish a child environment, then reload definitions.
+    session.publishChildEnv();
+    await loadProjectDefinitions(session, dir);
+    assert.deepEqual(
+      [...(session.workspacePin?.keys() ?? [])].sort(),
+      ["w1", "w2"],
+      "a reload must not shrink the session's own pin to what its child was handed",
+    );
+  });
+});
+
+test("a wildcard root keeps its pin across a reload, though its children inherit none", async () => {
+  // The severe shape of the case above: `workspace:*` is held and never inherited (R-131), so the published
+  // child pin is empty. Reading it back left the root unable to route anywhere at all.
+  const dir = await gitDir("pin-wildcard-");
+  const registryPath = join(dir, "registry.json");
+  await writeFile(registryPath, JSON.stringify({ version: 1, workspaces: { w1: { path: dir } } }));
+  await withPinEnv({ registry: registryPath }, async () => {
+    process.env.PI_DADDY_GRANT = "tool:read,workspace:*";
+    const session = createGrantsSession(undefined);
+    await loadProjectDefinitions(session, dir);
+    session.publishChildEnv();
+    await loadProjectDefinitions(session, dir);
+    assert.equal(
+      session.workspacePin?.get("w1"),
+      destinationDigest(await realpath(dir)),
+      "a wildcard root must still route after a reload",
+    );
+  });
+});
+
+test("a registered workspace that cannot be canonicalised is reported, not dropped in silence", async () => {
+  // `registeredWorkspaceIds` one file over carries the long argument against `catch {}` here. An unmounted
+  // worktree used to vanish and be met later as "no destination pin was inherited", naming neither the
+  // directory nor the reason. Breaks by: removing the `onSkipped` call in `establishWorkspacePin`.
+  const dir = await gitDir("pin-missing-");
+  const skipped: string[] = [];
+  const pins = await establishWorkspacePin(
+    { workspaces: { good: { path: dir }, gone: { path: join(dir, "does-not-exist") } } },
+    realpath,
+    (id, reason) => skipped.push(`${id}: ${reason}`),
+  );
+  assert.deepEqual([...pins.keys()], ["good"]);
+  assert.equal(skipped.length, 1);
+  assert.match(skipped[0], /^gone: its destination could not be canonicalised/);
+});
+
+test("a pin naming one id twice with different destinations refuses", () => {
+  // The branch review found deletable with the whole suite green: the earlier malformed-pin case used a
+  // non-digest, so the first entry failed the format check and the duplicate branch was never reached. Its own
+  // comment calls it security-relevant — picking either digest would let a tamperer supply both.
+  const a = destinationDigest("/srv/staging");
+  const b = destinationDigest("/srv/prod");
+  assert.ok("refusal" in parseWorkspacePin(`w:${a},w:${b}`), "two destinations for one id must refuse");
+  assert.ok("pins" in parseWorkspacePin(`w:${a},w:${a}`), "the same destination twice is merely redundant");
+});
+
+test("publishChildEnv actually clears a stale pin from the environment", () => {
+  // The restatement test asserted `GRANT_ENV_KEYS.includes(...)` — a re-read of the line it guards, exercising
+  // no behaviour. This exercises the property that line exists for: a parent's unnarrowed pin must not survive
+  // into what a child inherits. Breaks by: removing ENV_WORKSPACE_PIN from GRANT_ENV_KEYS.
+  const stale = { PI_DADDY_WORKSPACE_PIN: `secret:${destinationDigest("/srv/secret")}` } as NodeJS.ProcessEnv;
+  const merged = mergeChildEnv(stale, childEnv({ ownGrant: ["tool:read"], depth: 0, maxDepth: 2, gated: [] }));
+  assert.equal(merged.PI_DADDY_WORKSPACE_PIN, undefined, "a parent's pin must not survive into a child");
+});
+
+test("a DESCENDANT that arrives with no pin mints nothing and routes nowhere", async () => {
+  // **The escalation a security review reproduced end to end, across a real process boundary.**
+  // `workspacePinEnv` OMITS the variable when a parent has no pin of its own — which happens whenever that
+  // parent's registry was unreadable at its start, a state any child holding `tool:write` can arrange by
+  // truncating the file. The child then read the ABSENCE as "I am a root", minted a pin from the registry it
+  // had just rewritten, and routed to the prod worktree while holding only `workspace:staging`. The pin was in
+  // place throughout and did not stop it, because the child was never asked to prove it had inherited one.
+  //
+  // Depth is already in the environment and already attenuates downward, so it is enough on its own.
+  // Breaks by: removing the `session.depth > 0` guard in `establishRootPin`.
+  const dir = await gitDir("pin-descendant-");
+  const registryPath = join(dir, "registry.json");
+  await writeFile(registryPath, JSON.stringify({ version: 1, workspaces: { staging: { path: dir } } }));
+  await withPinEnv({ registry: registryPath }, async () => {
+    process.env.PI_DADDY_GRANT = "tool:write,workspace:staging";
+    process.env.PI_DADDY_DEPTH = "1";
+    const session = createGrantsSession(undefined);
+    await loadProjectDefinitions(session, dir);
+    assert.equal(session.workspacePin?.size, 0, "a descendant with no inherited pin must hold none of its own");
+  });
+});
+
+test("a MALFORMED inherited pin refuses rather than promoting the session to root", async () => {
+  // The same fall-through: a refusal from `parseWorkspacePin` was treated as "no pin", so a corrupt value
+  // earned a promotion instead of a refusal. The module header says missing, empty, malformed and mismatched
+  // all refuse; that was true of the routing check and false of the function that decides what routing sees.
+  // Breaks by: letting a `{refusal}` parse fall through to the registry.
+  const dir = await gitDir("pin-malformed-");
+  const registryPath = join(dir, "registry.json");
+  await writeFile(registryPath, JSON.stringify({ version: 1, workspaces: { staging: { path: dir } } }));
+  for (const corrupt of ["staging", "staging:", "staging:XYZ", `staging:${"0".repeat(31)}`]) {
+    await withPinEnv({ registry: registryPath, pin: corrupt }, async () => {
+      process.env.PI_DADDY_GRANT = "tool:write,workspace:staging";
+      const session = createGrantsSession(undefined);
+      await loadProjectDefinitions(session, dir);
+      assert.equal(session.workspacePin?.size, 0, `${JSON.stringify(corrupt)} must refuse, not mint`);
+    });
+  }
+});
+
+test("a session settles its pin once, so a reload cannot re-mint over a rewritten registry", async () => {
+  // `/grants init` re-established a root's pin from whatever the registry said at that moment, and a child had
+  // had the whole session to rewrite it. The guard "only a session that inherited no pin may mint" was
+  // satisfied because the session's own publication had erased the evidence.
+  // Breaks by: removing the `pinSettled` early return.
+  const dir = await gitDir("pin-settle-");
+  const other = await gitDir("pin-settle-other-");
+  const registryPath = join(dir, "registry.json");
+  await writeFile(registryPath, JSON.stringify({ version: 1, workspaces: { staging: { path: dir } } }));
+  await withPinEnv({ registry: registryPath }, async () => {
+    process.env.PI_DADDY_GRANT = "tool:write,workspace:staging";
+    const session = createGrantsSession(undefined);
+    await loadProjectDefinitions(session, dir);
+    const first = session.workspacePin?.get("staging");
+
+    // The tamper a child can perform with `tool:write` alone, then the reload `/grants init` performs.
+    await writeFile(registryPath, JSON.stringify({ version: 1, workspaces: { staging: { path: other } } }));
+    session.publishChildEnv();
+    await loadProjectDefinitions(session, dir);
+    assert.equal(session.workspacePin?.get("staging"), first, "a reload must not re-mint over a rewritten registry");
+    assert.notEqual(first, destinationDigest(await realpath(other)));
+  });
+});
+
+test("/grants says which ids are pinned, so a refusal is discoverable before it happens", async () => {
+  // ADR-0042 made the pin a PRECONDITION for routing and gave it no operator surface at all — not `/grants`,
+  // not session start, not the README. An operator refused for want of a pin could not discover the mechanism
+  // existed. Breaks by: removing the `pinned` line from `grants-command.ts`.
+  const { grantsCommand } = await import("../extensions/grants-command.ts");
+  const { makeCatalog } = await import("../src/kernel/catalog.ts");
+  const render = async (workspacePin?: ReadonlyMap<string, string>): Promise<string> => {
+    let out = "";
+    await grantsCommand.handler("", {
+      ui: { notify: (text: string) => void (out = text) },
+      grants: {
+        cwd: process.cwd(),
+        governed: true,
+        ownGrant: ["workspace:w1"],
+        executor: { disclosure: "in-process (test)" },
+        advisor: { decider: "none" },
+        observed: true,
+        depth: 0,
+        maxDepth: 2,
+        catalog: makeCatalog([{ capability: "workspace:w1", kind: "workspace" }]),
+        definitions: new Map(),
+        sessionApprovals: new Set(),
+        inheritedApprovals: new Map(),
+        previewDelegation: async () => assert.fail("no definitions"),
+        ...(workspacePin ? { workspacePin } : {}),
+      },
+    } as never);
+    return out;
+  };
+  assert.match(await render(new Map([["w1", destinationDigest("/srv/w1")]])), /pinned {5}w1/);
+  assert.match(await render(new Map()), /pinned.*none inherited/);
+  assert.match(await render(undefined), /pinned.*no workspace is routable/);
 });

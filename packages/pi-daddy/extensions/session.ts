@@ -215,6 +215,10 @@ export interface GrantsSession extends NativeSessionHost {
    * lived in memory for exactly this reason; the pin reached the same trap, and a test caught it.
    */
   workspacePin?: WorkspacePins;
+  /** Whether this session has already settled its pin. Minting twice is how a reload laundered a tamper. */
+  pinSettled: boolean;
+  /** Registered workspaces this session could not pin, and why — reported at session start (rule 8). */
+  workspaceSkips: string[];
   catalog: Catalog;
   /**
    * The in-flight catalog build, so `delegate` can wait for it instead of racing it.
@@ -295,22 +299,61 @@ export interface GrantsSession extends NativeSessionHost {
  * absent pin refuses anything that tries. That is the same direction as every other failure in this mechanism.
  */
 async function establishRootPin(session: GrantsSession): Promise<void> {
-  const inherited = parseWorkspacePin(process.env[ENV_WORKSPACE_PIN]);
+  // **From the ROOT SNAPSHOT, not from `process.env`, and the difference is a live defect this missed once.**
+  // `publishChildEnv` writes the CHILD's narrowed pin into `process.env`, so reading the variable back here
+  // makes a session adopt its own child's authority. `/grants init` reaches it on the ordinary path — it calls
+  // `adoptGrant` (which publishes) and then reloads definitions (which calls this) — so every init narrowed the
+  // session's pin, and a `workspace:*` root, whose published child pin is empty because `inheritableGrant`
+  // strips the wildcard, lost ALL routing until restart and was told "no destination pin was inherited" by a
+  // session that had established one and then thrown it away.
+  //
+  // The commit that introduced the pin fixed this at the ROUTING site and missed the ESTABLISH site, which is
+  // the one that overwrites `session.workspacePin`. `lifecycle.root` is the snapshot `reconcileSessionEnvironment`
+  // already uses for every other authority-bearing input, for exactly this hazard.
+  // **Settled once per session.** Minting twice is how `/grants init` re-established a root's pin over a
+  // registry a child had rewritten in between — the guard "only a session that inherited no pin may mint" was
+  // satisfied because the session's own publication had erased the evidence.
+  if (session.pinSettled) return;
+  session.pinSettled = true;
+
+  const raw = session.reloadLifecycle.root[ENV_WORKSPACE_PIN];
+  const inherited = parseWorkspacePin(raw);
   if ("pins" in inherited) {
     // Inherited, so it is authority and is kept exactly as it arrived — including an empty one, which says
     // "your parent established a pin and gave you none of it".
     session.workspacePin = inherited.pins;
     return;
   }
+
+  // **A DESCENDANT NEVER MINTS, and this is the guard the whole mechanism rests on.** Review reproduced the
+  // escalation end to end across a real process boundary: `workspacePinEnv` OMITS the variable when a parent
+  // has no pin of its own — which happens whenever that parent's registry was unreadable at its start, a state
+  // any child with `tool:write` can arrange — and the child then read the absence as "I am a root", minted a
+  // pin from the registry it had just rewritten, and routed to the prod worktree with `workspace:staging`.
+  // Depth is already in the environment, is attenuated downward, and is enough on its own: anything below the
+  // root that arrives without a usable pin routes nowhere.
+  //
+  // A MALFORMED value refuses for the same reason even at the root. The module header says missing, empty,
+  // malformed and mismatched all refuse; that was true of the routing check and false here, where a refusal
+  // fell through to minting. A tamperer who can corrupt one byte must not thereby earn a promotion.
+  if (session.depth > 0 || raw !== undefined) {
+    session.workspacePin = new Map();
+    return;
+  }
+
   const registryPath = process.env[ENV_WORKSPACE_REGISTRY];
   if (!registryPath) return;
   try {
     const registry = await loadWorkspaceRegistry(registryPath);
-    session.workspacePin = await establishWorkspacePin(registry, realpath);
-    process.env[ENV_WORKSPACE_PIN] = formatWorkspacePin(session.workspacePin);
+    session.workspacePin = await establishWorkspacePin(registry, realpath, (id, reason) =>
+      session.workspaceSkips.push(`${id} — ${reason}`),
+    );
   } catch {
-    // An unreadable registry is already reported by the catalog and by session start; it contributes no
-    // workspace capabilities, so there is nothing a missing pin could wrongly block.
+    // An unreadable registry is already reported by the catalog and by session start. It does NOT follow that
+    // nothing is blocked — an earlier draft of this comment claimed that and review measured it false, because
+    // a grant supplied through `PI_DADDY_GRANT` never passes the catalog and `workspace:` is exempt from the
+    // unknown check anyway. A session can genuinely hold `workspace:w1` and be refused for want of a pin. The
+    // registry message is the one an operator has; this is why the routing refusal names the pin explicitly.
   }
 }
 
@@ -383,6 +426,8 @@ export function createGrantsSession(
     malformedBounds: bounds.malformed,
     definitionSkips: [],
     workspacePin: undefined,
+    pinSettled: false,
+    workspaceSkips: [],
     // ADR-0012: `bash` is gated by DEFAULT — but only in a governed session. An ungoverned one
     // (no PI_DADDY_GRANT) still blocks nothing, so "governance is opt-in" holds exactly where it always
     // did. Inside a session the operator already chose to govern, handing a child `bash` hands it an

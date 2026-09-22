@@ -135,14 +135,23 @@ export function checkPinnedDestination(input: {
 export async function establishWorkspacePin(
   registry: { workspaces: Record<string, { path: string }> },
   canonicalise: (path: string) => Promise<string>,
+  onSkipped?: (id: string, reason: string) => void,
 ): Promise<WorkspacePins> {
   const pins = new Map<string, string>();
   for (const [id, entry] of Object.entries(registry.workspaces)) {
-    if (!isSafeWorkspaceId(id)) continue;
+    if (!isSafeWorkspaceId(id)) {
+      onSkipped?.(id, "its id is malformed");
+      continue;
+    }
     try {
       pins.set(id, destinationDigest(await canonicalise(entry.path)));
-    } catch {
-      /* unresolvable today: no pin, and routing refuses rather than inventing one */
+    } catch (error) {
+      // Rule 8, and `registeredWorkspaceIds` one file over carries the long version of why: this was a bare
+      // `catch {}`, so an unmounted worktree or a directory not yet created dropped a workspace silently and
+      // the operator met it later as "no destination pin was inherited", a message that names neither the
+      // directory nor the reason. Unresolvable still means no pin — routing must not invent one — but the
+      // caller is told which id and why.
+      onSkipped?.(id, `its destination could not be canonicalised (${String(error)})`);
     }
   }
   return pins;

@@ -227,6 +227,14 @@ export async function resolveWorkspace(
  * Canonicalize and validate the initial workspace against Git's registered worktree list.
  * This prevents accidental misrouting. It does not constrain any path a child accesses after spawn.
  */
+/**
+ * Canonicalise and verify a registered root as a git worktree.
+ *
+ * **This performs NO destination-pin check (ADR-0042), deliberately and dangerously.** It answers "is this
+ * path the worktree it claims to be", not "may this session route here" — `resolveWorkspace` is the one that
+ * asks the second question, and it is the only path production takes. It is a public export, so it is said
+ * here rather than left to be discovered: an embedder calling this directly routes unpinned.
+ */
 export async function validateRegisteredWorkspace(input: {
   workspaceId: string;
   registeredRoot: string;
