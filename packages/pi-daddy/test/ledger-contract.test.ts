@@ -120,6 +120,7 @@ const LIFECYCLE_FIELDS = [
   "state",
   "executor",
   "deadlineAt",
+  "idleTimeoutMs",
   "herdrPaneId",
   "herdrAgentName",
   "exitCode",

@@ -11,7 +11,7 @@ import type { GrantsSession } from "../extensions/session.ts";
 import type { Delegation } from "../src/kernel/delegate.ts";
 import { runWithFinalizers } from "../src/governance/finalization.ts";
 import { HerdrWriterCloseError } from "../src/executors/run-herdr.ts";
-import { ENV_CHILD_TIMEOUT } from "../src/kernel/run-child.ts";
+import { ENV_CHILD_IDLE_TIMEOUT, ENV_CHILD_TIMEOUT } from "../src/kernel/run-child.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
 after(cleanupTempDirs);
@@ -116,6 +116,75 @@ test("a SIGTERM-ignoring child is hard-killed by the recorded lifecycle deadline
     if (oldTimeout === undefined) delete process.env[ENV_CHILD_TIMEOUT];
     else process.env[ENV_CHILD_TIMEOUT] = oldTimeout;
   }
+});
+
+test("PR 3e: a silent child is stopped by the inactivity bound, recorded as idle, and told why", async () => {
+  // Breaks by: not passing idleTimeoutMs/activityProbe to runChild, or dropping idleTimeoutMs from the starting event.
+  const dir = await tempDir("execute-child-idle-");
+  const bin = join(dir, "bin");
+  const { mkdir } = await import("node:fs/promises");
+  await mkdir(bin);
+  const shim = join(bin, "pi");
+  await writeFile(shim, "#!/usr/bin/env node\nsetInterval(() => {}, 1000);\n", "utf8");
+  await chmod(shim, 0o755);
+  const ledgerPath = join(dir, "ledger.jsonl");
+  const oldPath = process.env.PATH,
+    oldTimeout = process.env[ENV_CHILD_TIMEOUT],
+    oldIdle = process.env[ENV_CHILD_IDLE_TIMEOUT];
+  process.env.PATH = `${bin}${delimiter}${oldPath ?? ""}`;
+  process.env[ENV_CHILD_TIMEOUT] = "60"; // the ceiling is a minute away; idleness must fire first
+  process.env[ENV_CHILD_IDLE_TIMEOUT] = "1";
+  try {
+    const started = Date.now();
+    const outcome = await executePlannedChild({
+      session: { ledgerPath, executor: { kind: "process" } } as GrantsSession,
+      plan: plan(),
+      childId: "d0.1",
+      executionId,
+      parentExecutionId: null,
+      cwd: dir,
+    });
+    assert.equal(outcome.timedOut, true);
+    assert.ok(Date.now() - started < 20_000, "the one-minute ceiling did not do this");
+    assert.match(
+      outcome.ok ? "" : (outcome.reason ?? ""),
+      /showed no activity for 1 second\(s\) and was killed \(PI_DADDY_CHILD_IDLE_TIMEOUT/,
+    );
+    const events = (await readFile(ledgerPath, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line).body);
+    assert.equal(events.find((event) => event.state === "starting")?.idleTimeoutMs, 1000);
+    assert.equal(events.find((event) => event.state === "failed")?.reason, "idle-timeout");
+  } finally {
+    if (oldPath === undefined) delete process.env.PATH;
+    else process.env.PATH = oldPath;
+    if (oldTimeout === undefined) delete process.env[ENV_CHILD_TIMEOUT];
+    else process.env[ENV_CHILD_TIMEOUT] = oldTimeout;
+    if (oldIdle === undefined) delete process.env[ENV_CHILD_IDLE_TIMEOUT];
+    else process.env[ENV_CHILD_IDLE_TIMEOUT] = oldIdle;
+  }
+});
+
+test("PR 3e: the temporary session directory is removed even when the run throws before the child starts", async () => {
+  // Review finding 2: it leaked on every throw path. Breaks by: moving dispose() back into the success branch.
+  const { readdir } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const dir = await tempDir("execute-child-dispose-");
+  const unwritable = dir; // a directory as the ledger path: the strict starting append fails (EISDIR) and rethrows
+  const before = (await readdir(tmpdir())).filter((n) => n.startsWith("pi-daddy-exec_")).length;
+  await assert.rejects(
+    executePlannedChild({
+      session: { ledgerPath: unwritable, executor: { kind: "process" } } as GrantsSession,
+      plan: plan(),
+      childId: "d0.1",
+      executionId,
+      parentExecutionId: null,
+      cwd: dir,
+    }),
+  );
+  const after = (await readdir(tmpdir())).filter((n) => n.startsWith("pi-daddy-exec_")).length;
+  assert.equal(after, before, "a session directory allocated for this run survived its failure");
 });
 
 test("the executor receives only the time remaining on the recorded lifecycle deadline", async () => {

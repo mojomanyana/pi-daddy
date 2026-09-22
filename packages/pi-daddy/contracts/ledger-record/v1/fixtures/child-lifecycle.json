@@ -8,6 +8,7 @@
   "state": "failed",
   "executor": "process",
   "deadlineAt": "2026-08-20T12:10:00.000Z",
+  "idleTimeoutMs": 900000,
   "exitCode": null,
   "signal": null,
   "aborted": true,

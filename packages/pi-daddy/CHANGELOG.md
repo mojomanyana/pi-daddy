@@ -12,6 +12,20 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## 0.32.0 — a child is stopped for inactivity, not by a wall clock (ADR-0076 PR 3e)
+
+A governed child is now stopped when `PI_DADDY_CHILD_IDLE_TIMEOUT` seconds pass with no activity (default fifteen
+minutes; zero or malformed selects the default). Activity is a stdout or stderr byte, a change to the child's pi
+session file, or, on the process executor on Linux, CPU time in the child's process tree or a change in its
+descendants. Every child gets a session file for this: the retention target when one is configured, otherwise a
+private temporary file removed after the run on every path (kept only while an operator keeps a Herdr pane). Note the
+consequence: every child's transcript is on disk for the duration of its run, whether or not retention is on.
+`PI_DADDY_CHILD_TIMEOUT` is unchanged in meaning but is now the runaway ceiling with a six-hour default, so a build
+that runs the test suite is no longer killed at sixty minutes while a hung child is stopped in fifteen. Both executors
+apply the bound; on Herdr the signals are the session file and, when a progress display is attached, the pane text. Lifecycle events carry
+`idleTimeoutMs` beside `deadlineAt`, and a stop records `reason: "idle-timeout"` or `"wall-clock"`; the refusal text
+names the variable that sets the bound that fired. The `governance-event.schema.json` gains the optional field.
+
 ## 0.31.0 — the big cleanup: the delegate path and its record, nothing else (BREAKING)
 
 Deleted, by operator decision, everything that was not the three tools, approvals, the ledger, workspaces, executors,

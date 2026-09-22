@@ -89,6 +89,9 @@ export interface HerdrRunRequest {
   workspace?: string;
   signal?: AbortSignal;
   timeoutMs?: number;
+  /** Inactivity bound and its progress probe (PR 3e); see `PollTarget`. */
+  idleTimeoutMs?: number;
+  activityProbe?: PollTarget["activityProbe"];
   maxOutputBytes?: number;
   /**
    * Leave the pane open after the run so a human can read or resume it.
