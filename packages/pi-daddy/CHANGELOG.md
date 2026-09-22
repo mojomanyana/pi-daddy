@@ -12,6 +12,38 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## 0.40.0 — the file-writing tools are gated, and a held-back definition keeps its context modes
+
+**`tool:write`, `tool:edit` and `tool:edit-diff` join `tool:bash` and `context:fork` in `DEFAULT_GATED`**, by
+operator decision after 0.39.0's review measured why. A governed child holding `tool:write` used pi's own
+`write` to rewrite the operator's stored grant, widening it from `tool:read` to `tool:bash`, and to write the
+record that decides which workspaces are routable. `write` resolves a path against the cwd and writes it with no
+check that the result is under the cwd; its schema says "relative or absolute". So it reaches every
+operator-state file on the same account, which is where `bash` reaches, by a shorter route.
+
+`edit` and `edit-diff` are included because they share that unconfined resolution. Gating `write` alone would
+have been a control with a hole its author already knew about: `edit` needs the file to exist, which is no
+protection for a grant store that does.
+
+**What it costs, accepted deliberately.** Most useful delegations write something, so they now ask once until an
+approval is banked. R-25 is about exactly that fatigue. `PI_DADDY_GATED` remains the escape hatch, and an
+explicitly empty value gates nothing.
+
+**The unit suite barely noticed, which was the more useful finding.** Nearly every delegation test sets
+`PI_DADDY_GATED` explicitly, so adding three ids to the default failed exactly one assertion — the one that
+restates the list. Three integration tests against a real pi process caught the rest. A default nothing drives
+is a default nobody is testing, so there is now a test that plans a real delegation with the variable unset.
+
+**A definition held back for needing a withheld tool now contributes its `context:` modes to the generated
+grant.** Reported by the operator and measured: `init` built the live grant from authorised definitions alone,
+so one withheld for declaring `write` contributed nothing at all — including a `context:files` that nothing
+withholds. With `principal-pi-skills` that stayed invisible, because its two read-only definitions supply
+`context:summary` and summary subsumes files. Measured on that package: remove those two and the generated
+grant has no `context:` entry at all, while three definitions still declare one. The operator would uncomment
+`tool:write`, the definition would become spawnable, and its handoff would be refused by a capability that
+appeared neither in the grant nor in the withheld block beside it. Granting it runs nothing and changes nothing,
+which is `grant-env.ts`'s own rule; `context:fork` stays out because it is gated.
+
 ## 0.39.0 — the registry's id set is the operator's too
 
 0.38.0 bound what a workspace id MEANS. It said nothing about which ids exist, and the registry is an ordinary

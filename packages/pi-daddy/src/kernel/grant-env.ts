@@ -30,9 +30,12 @@ import { PROJECT_FILES } from "./project-paths.ts";
  *
  *  - `DEFAULT_GATED` — whatever a governed session already asks a human about. Today `tool:bash`, and taking
  *    it from there rather than restating it means the two cannot drift apart.
- *  - `tool:write`, `tool:edit`, `tool:edit-diff` — mutate the working tree, and **are not gated by default**,
- *    so a source-and-go operator would hand them to a child with no dialog at all. That gap is exactly what
- *    made "the union is mitigated by gating" untrue (R-76).
+ *  - `tool:write`, `tool:edit`, `tool:edit-diff` — mutate the working tree. They used to be named here because
+ *    they were NOT gated, so a source-and-go operator handed them to a child with no dialog at all, which is
+ *    what made "the union is mitigated by gating" untrue (R-76). They joined `DEFAULT_GATED` on 2026-09-23,
+ *    so that gap is closed and this entry is now redundant with the line above rather than load-bearing. It
+ *    is kept because the set must not silently follow a future change to the gate list: what `init` withholds
+ *    and what a session asks a human about are two decisions that happen to agree today.
  *  - `UNIVERSAL_CAPABILITIES` — confer the whole catalog by measurement (probe `pi-fabric-eval`).
  *    `assertNarrowing` refuses a grant containing one anyway; leaving it out of the file keeps the operator
  *    from ever holding it by accident.

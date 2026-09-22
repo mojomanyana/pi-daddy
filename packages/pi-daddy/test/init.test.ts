@@ -1178,3 +1178,43 @@ test("pi-daddy ledger repair parses, previews by default and truncates only with
   assert.equal((await readRecordsFile(path)).damage, null);
   assert.equal(await main(["node", "cli", "ledger", "repair", path]), 0, "an intact ledger has nothing to repair");
 });
+
+test("a definition held back for needing a tool still contributes its context: modes to the grant", async () => {
+  // **Reported by the operator, measured before fixing.** `live` was built from the AUTHORISED definitions
+  // alone, so one withheld for declaring `write` contributed nothing — including a `context:files` that
+  // nothing withholds. With `principal-pi-skills` that stayed invisible, because its two read-only definitions
+  // supply `context:summary` and summary subsumes files. Remove those two, or install a package whose only
+  // context-declaring definitions need a tool, and the generated grant has no `context:` entry at all. The
+  // operator uncomments `tool:write`, the definition becomes spawnable, and its handoff is refused by a
+  // capability that appeared neither in the grant nor in the withheld block beside it.
+  //
+  // Breaks by: dropping the `needs-withheld` context pass in `planInit`.
+  const cwd = await project();
+  await skillPackage(cwd, "writes-pkg", "1.0.0", {
+    writer: `---\nname: writer\ndescription: Edits files.\nallowed-tools: Read, write, context:files\n---\nBody.\n`,
+  });
+  const plan = planInit(await discoverSkillPackages(cwd), cwd);
+
+  assert.equal(
+    plan.skills.find((s) => s.name === "writer")?.withheld,
+    "needs-withheld",
+    "the fixture must hold it back",
+  );
+  assert.ok(
+    plan.grant.includes("context:files"),
+    `the held-back definition's context mode must be granted: ${plan.grant}`,
+  );
+  assert.ok(!plan.grant.includes("tool:write"), "the TOOL it was held back for must still be withheld");
+  assert.ok(!plan.grant.includes("agent:writer"), "and it must still not be spawnable");
+});
+
+test("a gated context mode is still withheld from a held-back definition", async () => {
+  // The pass is a namespace test, so it leans on `isLiveByDefault` to keep `context:fork` out — that is
+  // `DEFAULT_GATED`'s job and not a second list here. Breaks by: granting every `context:` id unconditionally.
+  const cwd = await project();
+  await skillPackage(cwd, "forks-pkg", "1.0.0", {
+    forker: `---\nname: forker\ndescription: Edits files.\nallowed-tools: Read, write, context:fork\n---\nBody.\n`,
+  });
+  const plan = planInit(await discoverSkillPackages(cwd), cwd);
+  assert.ok(!plan.grant.includes("context:fork"), "a gated mode must not become live because a package asked");
+});

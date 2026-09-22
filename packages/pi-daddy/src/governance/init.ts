@@ -248,6 +248,29 @@ export function planInit(
   // never granted: the same objection ADR-0028 rule 3 makes to authorising an undeclared skill.
   const crossReferences: { from: string; capability: Capability }[] = [];
   const live = new Set<Capability>([ALWAYS_LIVE]);
+  // **A skill held back for needing a withheld tool still contributes its `context:` modes.**
+  //
+  // Reported by the operator and measured: `live` was built from `authorised` alone, so a definition withheld
+  // for declaring `write` contributed nothing at all — including a `context:files` that is not withheld by
+  // anything. With `principal-pi-skills` that stayed invisible because the two read-only definitions supply
+  // `context:summary`, which subsumes `files`. Remove those two, or install a package whose only
+  // context-declaring definitions need a tool, and the generated grant has no `context:` entry at all. The
+  // operator then uncomments `tool:write`, the definition becomes spawnable, and its handoff is refused by a
+  // capability that never appeared in the file they were editing — or in the withheld block beside it.
+  //
+  // Granting it is safe in a way granting the tool is not, and this is grant-env's own rule rather than a new
+  // one: a capability that can change the machine or execute does not become live because a package asked for
+  // it, and everything else does. Holding `context:files` runs nothing and changes nothing; it permits handing
+  // context to a child that has declared it. `context:fork` is in `DEFAULT_GATED`, so `isLiveByDefault`
+  // already keeps it out, which is why this can be a namespace pass rather than a list.
+  //
+  // Only `needs-withheld`: an `undeclared` definition has no ceiling to read, and a `pattern` one had its
+  // declaration refused wholesale rather than narrowed.
+  for (const skill of skills) {
+    if (skill.withheld !== "needs-withheld") continue;
+    for (const capability of skill.ceiling)
+      if (capability.startsWith("context:") && isLiveByDefault(capability)) live.add(capability);
+  }
   for (const skill of authorised) {
     live.add(agentCapability(skill.name));
     for (const capability of skill.ceiling) {

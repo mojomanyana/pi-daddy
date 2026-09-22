@@ -221,7 +221,23 @@ export const DEFAULT_MAX_DEPTH = 2;
 // for the neighbouring reason: it is the one handoff mode that can carry content an untrusted repository put in
 // front of the PARENT into a fresh child, and prompt injection is in scope. Neither gate makes the thing
 // impossible; both make it loud.
-export const DEFAULT_GATED: Capability[] = ["tool:bash", "context:fork"];
+//
+// **The file-writing tools joined them on 2026-09-23, by operator decision, after this was measured.** A
+// security review used pi's OWN `write` from a real depth-1 child holding `tool:write` and no workspace
+// capability: it inherited `PI_CODING_AGENT_DIR`, computed the deterministic path of the accepted-workspace
+// record, wrote a well-formed one accepting its own id, and the next root session routed into the child's
+// directory. The same technique widened the operator's STORED GRANT from `tool:read` to `tool:bash`. pi's
+// `write` resolves a path against the cwd and writes it with no check that the result is under the cwd; its
+// schema says "relative or absolute". So `tool:write` reaches where `tool:bash` reaches, by a shorter route.
+//
+// **`edit` and `edit-diff` are here for the same measured reason, and gating `write` alone would have been a
+// control with a hole its author already knew about.** They use the same unconfined `resolveToCwd`. `edit`
+// needs the file to exist, which is no protection at all for the grant store — the escalation that mattered
+// was widening one that was already there.
+//
+// The cost is real and was accepted deliberately: `build`, `plan` and `git-ops` all declare a writing tool, so
+// this prompts on most useful delegations until an approval is banked. R-25 is about exactly that fatigue.
+export const DEFAULT_GATED: Capability[] = ["tool:bash", "context:fork", "tool:write", "tool:edit", "tool:edit-diff"];
 
 /**
  * Read the gate list, distinguishing **absent** from **explicitly empty**.

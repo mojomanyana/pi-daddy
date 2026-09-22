@@ -64,7 +64,12 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     const r = await runCommand({
       cwd,
       command: "/grants",
-      env: { PI_DADDY_GRANT: "agent:docs-writer,agent:undeclared,tool:read,tool:write" },
+      // **`PI_DADDY_GATED=` is deliberate and is not a workaround.** This test's subject is the GRANT — does an
+      // enumerated `agent:` id cover a definition, and does a definition with no `allowed-tools` stay refused
+      // however wide the grant. `docs-writer` declares `tool:write`, which joined `DEFAULT_GATED` on
+      // 2026-09-23, so without this the verdict is `BLOCK … requires explicit approval` and the test would be
+      // measuring the gate instead. Gating has its own coverage below.
+      env: { PI_DADDY_GRANT: "agent:docs-writer,agent:undeclared,tool:read,tool:write", PI_DADDY_GATED: "" },
     });
 
     assert.match(verdictFor(r, "docs-writer") ?? "", /^allow/);
@@ -517,8 +522,10 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
       "utf8",
     );
 
-    // No PI_DADDY_GRANT anywhere in this run.
-    const r = await runCommand({ cwd, command: "/grants", env: { PI_CODING_AGENT_DIR: agentDir } });
+    // No PI_DADDY_GRANT anywhere in this run. `PI_DADDY_GATED=` for the reason the enumerated-grant test
+    // above gives: the subject here is whether a STORED grant governs without the environment or a restart,
+    // and `docs-writer` declares `tool:write`, which is gated by default since 2026-09-23.
+    const r = await runCommand({ cwd, command: "/grants", env: { PI_CODING_AGENT_DIR: agentDir, PI_DADDY_GATED: "" } });
     const text = r.notifies.map((n) => n.message).join("\n");
 
     assert.match(text, /grants: ACTIVE/, "a stored grant makes the session governed");
@@ -809,6 +816,8 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
       // `tool:delegate` is load-bearing in this fixture and was MISSING from the first version of this
       // test, which asserted `1 of 3 spawnable` in a session that had no delegate tool at all (R-81). The
       // test encoded the defect; the case it should have covered is below.
+      // Default gating, unlike the two grant tests above: gating is part of what this line reports, so it is
+      // part of what this test covers.
       env: { PI_DADDY_GRANT: "agent:docs-writer,agent:undeclared,tool:read,tool:write,tool:delegate" },
     });
 
@@ -817,7 +826,27 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
       line,
       `no spawnable summary at session start — notifies were:\n${r.notifies.map((n) => n.message).join("\n")}`,
     );
-    assert.match(line, /^grants: 1 of 3 definitions spawnable — docs-writer$/m);
+    // **`tool:write` joined `DEFAULT_GATED` on 2026-09-23, so `docs-writer` moved from spawnable to withheld.**
+    // The line's job is unchanged and is still checked: name what can be spawned AND what cannot, with the
+    // reason. The reason here is an approval the operator has not given, which is a different thing from a
+    // capability they do not hold — and the clause says so rather than lumping them together.
+    assert.match(line, /^grants: 0 of 3 definitions spawnable$/m);
+    assert.match(line, /docs-writer \(needs your approval for tool:write\)/);
+
+    // **The other half, which the gating change would otherwise have quietly deleted.** Before 2026-09-23
+    // this test was the only place a NAMED definition was asserted as spawnable at session start; updating
+    // the count alone would have left that uncovered while the suite stayed green. Same fixture, same grant,
+    // gating off — `docs-writer` must be named.
+    const ungated = await runCommand({
+      cwd,
+      command: "/grants",
+      env: {
+        PI_DADDY_GRANT: "agent:docs-writer,agent:undeclared,tool:read,tool:write,tool:delegate",
+        PI_DADDY_GATED: "",
+      },
+    });
+    const ungatedLine = ungated.notifies.map((n) => n.message).find((m) => m.includes("definitions spawnable"));
+    assert.match(ungatedLine ?? "", /^grants: 1 of 3 definitions spawnable — docs-writer$/m);
     // The withheld half is the point of the line, and each definition names ITS OWN fix (R-82):
     // `fabric-agent` needs an id this grant does not hold; `undeclared` is authorised and declares no
     // `allowed-tools`, and that clause is the PLANNER's own wording rather than a category invented by the

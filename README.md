@@ -99,6 +99,14 @@ ungoverned descendant. Containing that is the operating system's job, so `bash` 
 governed session and gating is closed under subsumption (gating `write` also gates `bash`). The escape is not made
 impossible; it is made loud, which is what matters when the realistic threat is a confused or prompt-injected agent.
 
+**`write`, `edit` and `edit-diff` are gated too, since 0.40.0, and the reason is the same one.** A review used
+pi's own `write` from a governed child to rewrite the operator's stored grant — widening it from `tool:read` to
+`tool:bash` — and to write the record that says which workspaces are routable. `write` takes an absolute path and
+performs no confinement, so it reaches every operator-state file on the same account. It is therefore much closer
+to `bash` than a tool allowlist suggests, and it is now loud for the same reason `bash` is. The cost is real:
+most useful delegations write something, so they ask once until an approval is banked. `PI_DADDY_GATED` is the
+escape hatch for an operator who wants the old behaviour, and an explicitly empty value gates nothing.
+
 ## Approvals
 
 A gated capability needs a human's answer at the root, because every child runs `--print` with no UI. The answer is
