@@ -143,6 +143,59 @@ What the probe did **not** establish: that a session without this codebase's unu
 could do the same, which the probe said plainly and is the honest limit of the result. Its own words: the documents
 "would not have survived a codebase with ordinary comments."
 
+## Pruned-handoff probe, 2026-09-22
+
+`selectPrunedTurns` shipped saying of itself that whether it keeps what a reader would have kept "stays unmeasured
+until the handoff probe". This is that probe. It runs against the operator's own pi sessions, it found a real
+defect — and two independent reviews then found the first version of the MEASUREMENT wrong in ways large enough to
+change what it concluded. Both corrections are below, because a probe whose errors are not recorded is worth less
+than no probe.
+
+**What it measures.** For each session the last message turn stands in for a task. From its PROSE — the text a
+human or a model actually wrote, not the JSON envelope — a term set is extracted; a term is *recoverable* if some
+earlier turn's prose contains it. Recall is the share that survives into what the child receives.
+
+**The defect it found.** Turn sections are pushed oldest-first and the 32 KiB budget was spent in array order, so
+when the cap bound the turns cut were the ones NEAREST the task. The cap bound in 13% of handoffs at the old
+default of six turns and 60% at twenty. End to end, delivered recall peaked at 20 turns and then **fell** at the
+50-turn ceiling: asking for more context made the child worse off, and the parameter read as if it did the
+opposite.
+
+**What changed as a result.** `ContextSection` gained `keepRank` and the budget is spent by rank while
+presentation stays chronological. The bands are named in `CONTEXT_RANK`: what the parent chose (a summary, a named
+file) outranks what a rule chose, and within the rule's output a turn kept for NAMING a file outranks one kept for
+being recent. Only then was `DEFAULT_CONTEXT_TURNS` raised from 6 to 20.
+
+| turns | selected | delivered | mean KiB | `longest` control | `oldest` control |
+| ----- | -------- | --------- | -------- | ----------------- | ---------------- |
+| 6     | 0.545    | 0.532     | 12.6     | 0.642             | 0.413            |
+| 12    | 0.727    | 0.671     | 20.9     | 0.705             | 0.592            |
+| 20    | 0.838    | 0.737     | 25.8     | 0.723             | 0.639            |
+| 50    | 0.924    | 0.747     | 27.2     | 0.708             | 0.669            |
+
+**Correction 1: the first ground truth was measuring the file format.** It came from `JSON.stringify(message)`, and
+48.9% of the scored terms never appeared in anything anyone wrote — `timestamp` was recoverable in 78 sessions out
+of 78, `cacheRead` and `stopReason` in 75 — scoring near 1.00 because every turn carries them. The headline was
+0.870; on the task's own words it is **0.737**.
+
+**Correction 2: "a rule that kept the wrong turns would score badly here" was asserted and was false.** On the old
+metric twenty turns chosen at RANDOM scored 0.899 against recency's 0.921, and the twenty LONGEST turns beat it
+outright. Controls are now measured every run and printed beside the rule. On the corrected metric recency does
+win at 20 turns and above, but `longest` beats it at 6 — a finding about the rule, left in the table rather than
+explained away.
+
+**What it does not establish.** That term recall is task success: no child was run and no model was called. That
+these sessions resemble delegation; they are ordinary sessions from 32 projects and three are this project's own.
+Precision, which an early draft reported as 1.00 and which measured nothing, since kept turns are adjacent to the
+task. Stability better than about 0.02, because the corpus is live — identical code rerun four times in 25 minutes
+spanned 0.011, which is why the corpus fingerprint is printed and why the gap between 20 and 50 turns is not
+treated as meaningful. And **it does not support making `pruned` the default mode**: a quarter of what a task names
+is missing at the default, and the cost of being wrong is the operator's own session leaving the machine. `none`
+stays the default.
+
+Rerun: `PI_DADDY_PROBE_SESSIONS=~/.pi/agent/sessions npm run test:integration`. Without the variable the probe says
+it measured nothing rather than passing quietly.
+
 ## Decisions still in force
 
 One paragraph each: the decision, the reason, what was rejected. The ADR numbers are pointers into git history
@@ -656,10 +709,13 @@ What remains of ADR-0076's sequence after this cleanup, one line each with what 
   the set the mechanical rule already kept and is asked after the plan authorizes the handoff. Remaining
   candidates: chain output selection and completion/failure signals. Not established: whether the advice is any
   good — nothing measures that, and PR 9's probe is the only thing that would.
-- **PR 9 (Jev handoff probe and second fresh-session run)** — a probe measuring `pruned` handoff precision and recall
-  on the operator's own sessions, recorded under `packages/pi-daddy/test-integration/` now that `docs/probes/` is gone, and a second fresh-session
-  probe; done means `pruned` may become a default only if recall meets what a reviewer needs, and the second
-  fresh-session run ships a delegate-path change without opening history.
+- **PR 9 (handoff probe)** — done 2026-09-22; see the probe section above. It measured recall over 78 real pi
+  sessions, found that the byte budget was cutting the turns nearest the task, fixed the fill order and raised the
+  default turn count on the strength of the numbers. **It answered the `pruned`-as-default question with a no**:
+  0.874 delivered recall at best is not enough to start sending the operator's session by default. Precision was
+  dropped as a metric rather than reported, because as defined it was always 1.00 and meant nothing. Still to do
+  from this line: **a second fresh-session probe** shipping a delegate-path change without opening history, and
+  a Jev comparison — nothing yet measures the advisor's selection against the mechanical rule.
 - **Registry integrity (ADR-0042, decided, implementation deferred)** — routing must attenuate by destination, not
   only by id; done means `g37-registry-tamper`'s control stays green while its tamper case turns into a refusal.
 - **Record the reversal** — done: see "The big cleanup" above.

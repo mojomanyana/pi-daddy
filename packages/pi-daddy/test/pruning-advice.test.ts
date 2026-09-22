@@ -1,3 +1,4 @@
+import { DEFAULT_CONTEXT_TURNS } from "../src/kernel/context-handoff.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createAdvisor, type AdviceRecord } from "../src/advisors/advisor.ts";
@@ -112,9 +113,16 @@ test("no advisor, no answer, or an answer that drops everything leaves the rule'
   );
 });
 
-test("an unbounded number of candidates is not judged at all", async () => {
-  // One question per candidate, on a path a human is waiting on. Beyond the bound the rule stands, which is the
-  // safe direction. Breaks by: removing the MAX_JUDGED_TURNS check, which sends an unbounded request.
+test("beyond the bound the OLDEST candidates go unjudged and are kept, and the request stays bounded", async () => {
+  // **Changed 2026-09-22, and the old behaviour is the reason.** This asserted that beyond `MAX_JUDGED_TURNS`
+  // nothing was asked at all. That was fine while the rule offered six turns, and became a silent feature
+  // death the moment `DEFAULT_CONTEXT_TURNS` rose to 20: every default request would exceed the bound, so the
+  // pruning decision point would never fire again. Judging a SUBSET is still only narrowing — an unjudged turn
+  // is kept, never dropped — so nothing about attenuation changes.
+  //
+  // Breaks by: removing the slice and asking one question per candidate, which sends an unbounded request on a
+  // path a human is waiting on; or by dropping the unjudged ids from the result, which turns "not judged" into
+  // "dropped" and makes the advisor able to do more than narrow.
   const parentSession = parentSessionOf(MAX_JUDGED_TURNS + 10);
   let asked = 0;
   const counting = createAdvisor({
@@ -127,16 +135,37 @@ test("an unbounded number of candidates is not judged at all", async () => {
     granted: { mode: "pruned", turns: MAX_JUDGED_TURNS + 5 },
     task: "t",
   });
-  assert.equal(many, undefined);
-  assert.equal(asked, 0, "nothing was asked");
+  assert.equal(many, undefined, "a decider that answers nothing still leaves the rule's selection standing");
+  assert.equal(asked, 1, "exactly one bounded request, not one per candidate and not none at all");
 
-  // And one candidate is not a selection either.
+  // The bound holds: whatever the rule offered, only MAX_JUDGED_TURNS questions are ever sent.
+  let sent = 0;
+  const counted = createAdvisor({
+    decider: {
+      name: "size",
+      decide: async (request) => {
+        sent = Object.keys(request.questions).length;
+        return null;
+      },
+    },
+    record: () => {},
+    enabled: true,
+  });
+  await advisePruning({
+    session: { advisorSession: { advisor: counted }, parentSession },
+    granted: { mode: "pruned", turns: MAX_JUDGED_TURNS + 5 },
+    task: "t",
+  });
+  assert.equal(sent, MAX_JUDGED_TURNS, `the request must carry at most ${MAX_JUDGED_TURNS} questions, saw ${sent}`);
+
+  // And one candidate is not a selection either: nothing further is asked.
+  const before = asked;
   await advisePruning({
     session: { advisorSession: { advisor: counting }, parentSession },
     granted: { mode: "pruned", turns: 1 },
     task: "t",
   });
-  assert.equal(asked, 0);
+  assert.equal(asked, before, "a single candidate is not a choice, so no question is sent");
 });
 
 test("the task reaches the advisor in the question and never reaches the record", async () => {
@@ -309,4 +338,54 @@ test("a session reads its project's advisor block from disk, not from a caller's
     delete process.env[ENV_ADVISOR];
     if (previous.env[ADVISOR_KEY_ENV] === undefined) delete process.env[ADVISOR_KEY_ENV];
   }
+});
+
+test("the pruning advisor still fires at the DEFAULT turn count", async () => {
+  // **The test that would have caught this.** Raising `DEFAULT_CONTEXT_TURNS` from 6 to 20 silently killed the
+  // pruning decision point, because `advisePruning` gave up entirely above `MAX_JUDGED_TURNS` (12) and a default
+  // request now offers 20 candidates. Nothing failed: the advisor simply stopped being consulted, which is the
+  // shape three reviewers found in the previous change and is invisible to a suite that only tests the mechanism
+  // with explicit small numbers.
+  //
+  // Breaks by: restoring `candidates.length > MAX_JUDGED_TURNS → return undefined`, or raising
+  // `DEFAULT_CONTEXT_TURNS` again past what the advisor can handle without revisiting this.
+  const parentSession = parentSessionOf(DEFAULT_CONTEXT_TURNS + 5);
+  let asked = 0;
+  const counting = createAdvisor({
+    decider: { name: "count", decide: async () => (asked++, null) },
+    record: () => {},
+    enabled: true,
+  });
+  await advisePruning({
+    session: { advisorSession: { advisor: counting }, parentSession },
+    granted: { mode: "pruned" }, // no explicit `turns`, so the default applies
+    task: "t",
+  });
+  assert.equal(asked, 1, "a default pruned handoff must still reach the advisor");
+});
+
+test("an unjudged turn is KEPT, so judging a subset is still only narrowing", async () => {
+  // The safety property the subset must not break: the advisor may narrow and never widen, and a turn it was
+  // never shown must not be treated as a turn it rejected. Breaks by: returning only the judged ids.
+  const total = MAX_JUDGED_TURNS + 4;
+  const parentSession = parentSessionOf(total);
+  // Reject every question it is asked; the four oldest are never asked and must survive.
+  const rejecting = createAdvisor({
+    decider: {
+      name: "reject-all",
+      decide: async (request) => ({
+        answers: Object.fromEntries(
+          Object.keys(request.questions).map((key) => [key, { kind: "noul" as const, value: false }]),
+        ),
+      }),
+    },
+    record: () => {},
+    enabled: true,
+  });
+  const kept = await advisePruning({
+    session: { advisorSession: { advisor: rejecting }, parentSession },
+    granted: { mode: "pruned", turns: total },
+    task: "t",
+  });
+  assert.equal(kept?.length, 4, `the ${total - MAX_JUDGED_TURNS} unjudged turns must be kept, got ${kept?.length}`);
 });

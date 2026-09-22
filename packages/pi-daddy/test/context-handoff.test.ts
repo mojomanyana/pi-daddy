@@ -323,3 +323,138 @@ test("a chain step can ask for context, and its gate is raised before any step r
   );
   assert.match(String(over.doomed?.reason), /plan may not receive context:fork/);
 });
+
+/**
+ * When the budget binds, it must drop the turns FURTHEST from the task, not the nearest.
+ *
+ * **Measured, 2026-09-22 handoff probe, 78 real pi sessions.** Sections were filled in array order and
+ * pruned turns are pushed oldest-first, so the cap cut the most recent turns — the ones adjacent to the task
+ * and the most likely to matter. The cap bound in 13% of sessions at the old default and 60% at 20 turns,
+ * and the effect was visible end to end: delivered recall of task-referenced entities PEAKED at 20 turns and
+ * then FELL at 50 (0.813 → 0.762), so asking for more context made the child worse off. Filling by
+ * `keepRank` makes it monotone (0.870 → 0.874).
+ *
+ * **The production change that breaks these:** filling `fenceContext` in array order again, or dropping
+ * `keepRank` from the turn sections in `context-staging.ts`.
+ */
+test("the budget keeps the highest-ranked sections and still presents them in order", () => {
+  // Two sections, each 90% of the budget, so one survives whole and the other is cut to a remnant. Asserting
+  // on the HEADER is not enough — a truncated section still prints its header, which is how the first draft
+  // of this test passed with the defect in place. The body lengths are what tell the two fills apart.
+  const body = (marker: string) => marker.repeat(Math.floor(CONTEXT_MAX_BYTES * 0.9));
+  const fenced = fenceContext([
+    { label: "oldest", body: body("a"), keepRank: 1 },
+    { label: "newest", body: body("b"), keepRank: 2 },
+  ]);
+  assert.ok(fenced.truncatedBytes > 0, "this case is only meaningful when the budget actually binds");
+  const aCount = (fenced.text.match(/a/g) ?? []).length;
+  const bCount = (fenced.text.match(/b/g) ?? []).length;
+  assert.ok(
+    bCount > aCount,
+    `the newest section must survive the cap, not the oldest — kept ${bCount} newest bytes and ${aCount} oldest`,
+  );
+  // Rank decides what survives; the array decides what order the survivors are read in.
+  const fitting = fenceContext([
+    { label: "oldest", body: "first", keepRank: 1 },
+    { label: "newest", body: "second", keepRank: 2 },
+  ]);
+  assert.ok(
+    fitting.text.indexOf("--- oldest ---") < fitting.text.indexOf("--- newest ---"),
+    "presentation stays chronological — a child reading its parent out of order is a different defect",
+  );
+});
+
+test("sections with no rank keep array order, so nothing else changes", () => {
+  const fenced = fenceContext([
+    { label: "one", body: "a" },
+    { label: "two", body: "b" },
+    { label: "three", body: "c" },
+  ]);
+  assert.ok(fenced.text.indexOf("--- one ---") < fenced.text.indexOf("--- two ---"));
+  assert.ok(fenced.text.indexOf("--- two ---") < fenced.text.indexOf("--- three ---"));
+  assert.equal(fenced.truncatedBytes, 0);
+});
+
+test("the real stager ranks turns so the cap drops the OLDEST, end to end", async () => {
+  // The kernel test above proves `fenceContext` honours `keepRank`. This proves the stager sets it — removing
+  // `keepRank` from the turn sections left all 896 tests green, which is the wiring-without-a-guard shape
+  // three reviewers found in the previous change.
+  const cwd = await tempDir("context-rank-");
+  const big = (marker: string) => marker.repeat(Math.floor(CONTEXT_MAX_BYTES * 0.9));
+  const parentSession = {
+    getEntries: () => [
+      { type: "message", id: "old", message: big("a") },
+      { type: "message", id: "new", message: big("b") },
+    ],
+  };
+  const staged = createHandoffStager({ cwd, forkRoot: join(cwd, "forks"), parentSession: parentSession as never })({
+    mode: "pruned",
+  });
+  const text = String(staged.contextPrompt);
+  const aCount = (text.match(/a/g) ?? []).length;
+  const bCount = (text.match(/b/g) ?? []).length;
+  assert.ok((staged.record?.truncatedBytes ?? 0) > 0, "only meaningful when the cap binds");
+  assert.ok(bCount > aCount, `the newest turn must survive, kept ${bCount} newest and ${aCount} oldest bytes`);
+});
+
+test("a file the parent NAMED outlives turns a rule merely selected", async () => {
+  // Review measured the first `keepRank` losing this: turn sections were ranked and file sections defaulted to
+  // zero, so a `pruned` handoff carrying both dropped the explicitly named file FIRST — and a wholly skipped
+  // section emits no header, so the child could not tell a file had been named at all. That inverts the
+  // module's own ordering, where `files` is content the parent names and `pruned` is turns a rule guessed at.
+  // Breaks by: dropping `CONTEXT_RANK.file` from the file sections in `context-staging.ts`.
+  const cwd = await tempDir("context-band-");
+  await writeFile(join(cwd, "constraint.md"), "DECISION: the parser must stay synchronous\n");
+  const parentSession = {
+    getEntries: () =>
+      Array.from({ length: 12 }, (_, i) => ({ type: "message", id: `t${i}`, message: "z".repeat(4000) })),
+  };
+  const staged = createHandoffStager({ cwd, forkRoot: join(cwd, "forks"), parentSession: parentSession as never })({
+    mode: "pruned",
+    files: ["constraint.md"],
+  });
+  const text = String(staged.contextPrompt);
+  assert.ok((staged.record?.truncatedBytes ?? 0) > 0, "only meaningful when the cap binds");
+  assert.match(text, /DECISION: the parser must stay synchronous/, "the named file must survive the budget");
+});
+
+test("a turn kept for NAMING a file outranks a turn kept for being recent", async () => {
+  // The rule reaches back past the recency window for turns that name the caller's files, and those turns sit
+  // at the FRONT of the selection. A bare positional rank therefore evicted the rule's one non-recency signal
+  // first, while the ledger went on calling the rule `recent+files`. Breaks by: ranking every turn from its
+  // position alone, without the `fileMatchedTurn` band.
+  const cwd = await tempDir("context-band-turn-");
+  const entries = [
+    { type: "message", id: "old-but-relevant", message: "src/auth.ts must stay synchronous" },
+    ...Array.from({ length: 30 }, (_, i) => ({ type: "message", id: `t${i}`, message: "z".repeat(4000) })),
+  ];
+  const staged = createHandoffStager({
+    cwd,
+    forkRoot: join(cwd, "forks"),
+    parentSession: { getEntries: () => entries } as never,
+  })({ mode: "pruned", turns: 25, files: ["src/auth.ts"] });
+  const text = String(staged.contextPrompt);
+  assert.ok((staged.record?.truncatedBytes ?? 0) > 0, "only meaningful when the cap binds");
+  assert.match(text, /must stay synchronous/, "the file-matching turn is why the rule is called recent+files");
+});
+
+test("the record counts the turns that CROSSED, not the ones the rule selected", async () => {
+  // `context-staging.ts` says the record is "what actually crossed, never what was asked for", and it counted
+  // sections before the budget ran — so a handoff could record twenty-one kept turns having sent thirteen.
+  // Raising the default turn count moved the cap from binding in 13% of handoffs to 60%, which made the wrong
+  // number the usual one. Breaks by: counting `sections.length` or the pre-fence `keptTurns` again.
+  const cwd = await tempDir("context-record-");
+  const parentSession = {
+    getEntries: () =>
+      Array.from({ length: 30 }, (_, i) => ({ type: "message", id: `t${i}`, message: "z".repeat(4000) })),
+  };
+  const staged = createHandoffStager({ cwd, forkRoot: join(cwd, "forks"), parentSession: parentSession as never })({
+    mode: "pruned",
+    turns: 30,
+  });
+  const record = staged.record as { keptTurns: number; droppedTurns: number; truncatedBytes: number };
+  assert.ok(record.truncatedBytes > 0, "only meaningful when the cap binds");
+  const headers = (String(staged.contextPrompt).match(/--- parent turn /g) ?? []).length;
+  assert.equal(record.keptTurns, headers, `recorded ${record.keptTurns} kept, the child received ${headers}`);
+  assert.equal(record.keptTurns + record.droppedTurns, 30, "every turn is accounted for as kept or dropped");
+});

@@ -19,6 +19,7 @@ import { randomUUID } from "node:crypto";
 import { closeSync, mkdirSync, openSync, readSync, realpathSync, rmSync, statSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
 import {
+  CONTEXT_RANK,
   fenceContext,
   selectPrunedTurns,
   type ContextRequest,
@@ -69,14 +70,21 @@ export function createHandoffStager(input: StagingInput) {
   return (granted: ContextRequest, options: { keepTurnIds?: readonly string[] } = {}): StagedHandoff => {
     if (granted.mode === "fork") return stageFork(input);
     const sections: ContextSection[] = [];
+    /** Which entries of `sections` are parent turns, so the record can count the ones that survived the cap. */
+    const turnSectionIndices: number[] = [];
     let keptTurns: number | undefined;
     let droppedTurns: number | undefined;
     let rule: string | undefined;
 
     if (granted.mode === "summary")
-      sections.push({ label: "what your parent says you need to know", body: granted.summary ?? "" });
+      sections.push({
+        label: "what your parent says you need to know",
+        body: granted.summary ?? "",
+        keepRank: CONTEXT_RANK.summary,
+      });
     if (granted.mode === "files" || granted.mode === "pruned")
-      for (const path of granted.files ?? []) sections.push(readSection(input.cwd, path));
+      for (const path of granted.files ?? [])
+        sections.push({ ...readSection(input.cwd, path), keepRank: CONTEXT_RANK.file });
     if (granted.mode === "pruned") {
       const all = parentTurns(input.parentSession);
       const selection = selectPrunedTurns(all, {
@@ -93,20 +101,39 @@ export function createHandoffStager(input: StagingInput) {
       keptTurns = chosen.length;
       droppedTurns = all.length - chosen.length;
       rule = options.keepTurnIds === undefined ? selection.rule : `${selection.rule}+advice`;
-      for (const turn of chosen) sections.push({ label: `parent turn ${turn.id}`, body: turn.text });
+      // Two bands, then position within the band. The probe measured array-order filling losing exactly the
+      // turns nearest the task; review then measured the first fix losing the file-matched turns instead,
+      // because those sit at the FRONT of `chosen` and a bare positional rank made oldest mean least.
+      const matched = new Set(selection.fileMatched);
+      chosen.forEach((turn, index) => {
+        turnSectionIndices.push(sections.length);
+        sections.push({
+          label: `parent turn ${turn.id}`,
+          body: turn.text,
+          keepRank: (matched.has(turn.id) ? CONTEXT_RANK.fileMatchedTurn : CONTEXT_RANK.recentTurn) + index,
+        });
+      });
       if (chosen.length === 0)
         sections.push({ label: "parent turns", body: "(no turn of your parent's session matched the selection)" });
     }
 
     const fenced = fenceContext(sections);
+    // **The record counts what CROSSED, which is what this module says it does.** These were counted before
+    // the budget ran, so a handoff could record `keptTurns: 21` having sent thirteen. Review measured it, and
+    // raising the default turn count moved the cap from binding in 13% of handoffs to 60% — so the wrong
+    // number became the usual number.
+    const crossed = new Set(fenced.keptIndices);
+    const turnsCrossed = turnSectionIndices.filter((index) => crossed.has(index)).length;
     return {
       contextPrompt: fenced.text,
       record: {
         mode: granted.mode,
-        sections: sections.length,
+        sections: fenced.keptIndices.length,
         bytes: Buffer.byteLength(fenced.text),
         truncatedBytes: fenced.truncatedBytes,
-        ...(keptTurns !== undefined ? { keptTurns, droppedTurns, rule } : {}),
+        ...(keptTurns !== undefined
+          ? { keptTurns: turnsCrossed, droppedTurns: droppedTurns! + (keptTurns - turnsCrossed), rule }
+          : {}),
       },
     };
   };

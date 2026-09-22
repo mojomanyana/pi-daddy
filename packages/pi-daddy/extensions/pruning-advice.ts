@@ -22,7 +22,8 @@ export const PRUNING_PURPOSE = "handoff-pruning";
 
 /**
  * How many candidates may be judged. One question per turn, and a decision a human is waiting on should not carry
- * an unbounded number of them; beyond this the rule's own selection stands, which is the safe direction.
+ * an unbounded number of them. Beyond this the OLDEST candidates go unjudged and are kept, which is the safe
+ * direction: an unjudged turn is never dropped, so the advisor can still only narrow.
  */
 export const MAX_JUDGED_TURNS = 12;
 
@@ -43,11 +44,21 @@ export async function advisePruning(input: {
     ...(input.granted.turns !== undefined ? { turns: input.granted.turns } : {}),
     ...(input.granted.files !== undefined ? { files: input.granted.files } : {}),
   }).kept;
-  // Nothing to narrow, or more than a bounded number to judge: the rule stands and no call is made.
-  if (candidates.length < 2 || candidates.length > MAX_JUDGED_TURNS) return undefined;
+  if (candidates.length < 2) return undefined;
+  // **Judge the MOST RECENT candidates, and keep the rest unjudged.** This was `> MAX_JUDGED_TURNS` → give up
+  // entirely, which was fine while the rule offered six turns and became a silent feature death the moment
+  // `DEFAULT_CONTEXT_TURNS` rose to 20: every default request would have exceeded the bound, so the pruning
+  // decision point shipped in 0.35.0 would never have fired again. Found while raising the default, which is
+  // the only reason it was found at all.
+  //
+  // Judging a SUBSET is still only narrowing — an unjudged turn is kept, never dropped — so the attenuation
+  // property is untouched. The recent end is judged because that is where the rule's own recall is
+  // concentrated, and because a turn adjacent to the task is the one a wrong answer costs most.
+  const unjudged = candidates.slice(0, Math.max(0, candidates.length - MAX_JUDGED_TURNS));
+  const judged = candidates.slice(unjudged.length);
 
   const questions: Record<string, Question> = {};
-  for (const [index, turn] of candidates.entries())
+  for (const [index, turn] of judged.entries())
     questions[`turn${index}`] = {
       kind: "noul",
       // Both bounded: the task is embedded once per candidate, so an unbounded task became a request twelve times
@@ -67,10 +78,11 @@ export async function advisePruning(input: {
   if (!advice) return undefined;
   // Every candidate or none. A response missing eleven of twelve answers would otherwise read as "drop eleven",
   // which is a narrowing nobody asked for rather than the "unrecognised response means no advice" contract.
-  if (candidates.some((_, index) => advice.answers[`turn${index}`]?.kind !== "noul")) return undefined;
-  const kept = candidates
-    .filter((_, index) => (advice.answers[`turn${index}`] as { value: boolean }).value)
-    .map((turn) => turn.id);
+  if (judged.some((_, index) => advice.answers[`turn${index}`]?.kind !== "noul")) return undefined;
+  const kept = [
+    ...unjudged.map((turn) => turn.id),
+    ...judged.filter((_, index) => (advice.answers[`turn${index}`] as { value: boolean }).value).map((turn) => turn.id),
+  ];
   // An advisor that drops everything is answering a different question from the one that was asked; the rule's
   // selection stands rather than handing a child a handoff with nothing in it.
   return kept.length === 0 ? undefined : kept;

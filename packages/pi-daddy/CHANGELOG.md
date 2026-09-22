@@ -12,6 +12,58 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## 0.37.0 — the handoff probe, and the budget was cutting the wrong end
+
+**A `pruned` handoff carried the turns furthest from the task.** Turn sections are pushed oldest-first and the
+32 KiB budget was spent in array order, so when the cap bound the turns dropped were the most recent ones — the
+ones adjacent to the task and the likeliest to matter. Measured over 78 real pi sessions, the cap bound in 13% of
+them at the old default and 60% at twenty turns, and the effect was visible end to end: the share of task-referenced
+entities reaching the child **peaked at twenty turns and then fell** at the fifty-turn ceiling. Asking for more
+context made the child worse off, and the parameter read as if it did the opposite.
+
+**`ContextSection` gained `keepRank`.** The budget is spent by rank, highest first; presentation stays
+chronological, because a child reading its parent's turns out of order is a different defect. Delivered recall is
+monotone again.
+
+**`CONTEXT_RANK` names the bands.** What the parent chose — a summary, a file it named — outranks what a rule
+chose, and within the rule's output a turn kept for NAMING a file outranks one kept for being recent. The first
+version ranked turns only and let everything else default to zero, which meant a `pruned` handoff dropped the file
+the parent had explicitly named before it dropped any turn, leaving no header behind to say a file had been named.
+
+**`DEFAULT_CONTEXT_TURNS` is 20, raised from 6.** Delivered recall at 6, 20 and 50 turns is 0.532, 0.737 and 0.747.
+The jump from 6 to 20 is large and well outside the corpus's own noise of about 0.02; the last 0.010 is not, so 20
+is the conservative end of a flat region rather than an optimum. The cost, stated because recall rises with this
+number by construction: the mean payload goes from 12.6 KiB to 25.8 KiB. Raising it before the fill order was
+corrected would have made things worse, not better.
+
+**The record now counts what crossed.** `sections` and `keptTurns` were counted before the budget ran, so a handoff
+could record twenty-one kept turns having sent thirteen — tolerable while the cap bound in 13% of handoffs, not
+once the new default made it 60%.
+
+**Raising the default would have killed the pruning advisor, and nearly did.** `advisePruning` gave up entirely
+above `MAX_JUDGED_TURNS` (twelve), so with a default of twenty every default request would have exceeded the bound
+and the decision point shipped in 0.35.0 would never have fired again — silently, with nothing failing. It now
+judges the most recent twelve candidates and KEEPS the older ones unjudged, which is still only narrowing because a
+turn it was never shown is never dropped. A test now asserts the advisor fires at whatever the default happens to
+be, so the next change to that number cannot repeat this.
+
+**The probe ships as a rerunnable measurement**, `test-integration/pruned-handoff-probe.it.ts`, and it calls the
+real `fenceContext` rather than simulating the cap — a first draft simulated it and would not have caught the
+regression it exists to describe. Reverting the fill order fails it with a message naming the cause. Without
+`PI_DADDY_PROBE_SESSIONS` it reports that it measured nothing rather than passing quietly.
+
+**Two corrections review forced on the measurement itself**, recorded because a probe whose errors are not written
+down is worth less than none. Its first ground truth came from `JSON.stringify(message)`, and 48.9% of the scored
+terms never appeared in anything anyone wrote — envelope keys present in every turn, scoring near 1.00. And the
+claim that "a rule keeping the wrong turns would score badly" was false: on that metric, twenty turns chosen at
+random nearly matched the rule and the twenty longest beat it. The ground truth is now the task's own prose and
+control rules are measured every run.
+
+**What the probe does not establish, and one thing it settled.** It does not show that term recall is task success:
+no child was run and no model was called. It does not support making `pruned` the default mode, and that question
+is now answered no — about a quarter of what a task names is missing at the default, and the cost of being wrong is
+the operator's own session leaving the machine. `none` stays the default.
+
 ## 0.36.0 — one bounded reader, and a registry that fails soft without failing silent
 
 **No behaviour changes for a working setup.** Everything here is about what happens when an operator-authored
