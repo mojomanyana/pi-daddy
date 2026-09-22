@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { realpath } from "node:fs/promises";
+import { destinationDigest, ENV_WORKSPACE_PIN } from "../src/kernel/workspace-pin.ts";
 import { execFileSync } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -66,8 +68,11 @@ test("a ledger failure after lease acquisition releases the writer lock", async 
   await writeFile(registry, JSON.stringify({ version: 1, workspaces: { w1: { path: root } } }));
   const oldRegistry = process.env[ENV_WORKSPACE_REGISTRY];
   const oldLeaseDir = process.env[ENV_WORKSPACE_LEASE_DIR];
+  const oldPin = process.env[ENV_WORKSPACE_PIN];
   process.env[ENV_WORKSPACE_REGISTRY] = registry;
   process.env[ENV_WORKSPACE_LEASE_DIR] = leaseDir;
+  // ADR-0042: the routing path now requires a destination pin, which a real session establishes at start.
+  process.env[ENV_WORKSPACE_PIN] = `w1:${destinationDigest(await realpath(root))}`;
   try {
     await assert.rejects(
       () =>
@@ -88,6 +93,8 @@ test("a ledger failure after lease acquisition releases the writer lock", async 
     else process.env[ENV_WORKSPACE_REGISTRY] = oldRegistry;
     if (oldLeaseDir === undefined) delete process.env[ENV_WORKSPACE_LEASE_DIR];
     else process.env[ENV_WORKSPACE_LEASE_DIR] = oldLeaseDir;
+    if (oldPin === undefined) delete process.env[ENV_WORKSPACE_PIN];
+    else process.env[ENV_WORKSPACE_PIN] = oldPin;
   }
 });
 

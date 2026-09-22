@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { realpath } from "node:fs/promises";
+import { destinationDigest } from "../src/kernel/workspace-pin.ts";
 import { spawn, execFileSync } from "node:child_process";
 import { once } from "node:events";
 import { chmod, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
@@ -71,7 +73,12 @@ test("workspace registry resolves IDs to validated Git worktrees and rejects mis
   const registryPath = join(await tempDir("workspace-registry-"), "registry.json");
   await writeFile(registryPath, JSON.stringify({ version: 1, workspaces: { w1: { path: root } } }));
   const registry = await loadWorkspaceRegistry(registryPath);
-  const resolved = await resolveWorkspace(registry, "w1");
+  // ADR-0042: routing now asks whether the id still means what the grant meant, so it needs a pin. Supplying
+  // one here rather than reading the environment keeps this test about resolution; the pin's own behaviour has
+  // its own file.
+  const resolved = await resolveWorkspace(registry, "w1", {
+    pins: new Map([["w1", destinationDigest(await realpath(root))]]),
+  });
   assert.equal(resolved.root, root);
   await assert.rejects(
     () => validateRegisteredWorkspace({ workspaceId: "w1", registeredRoot: root, suppliedRoot: other }),

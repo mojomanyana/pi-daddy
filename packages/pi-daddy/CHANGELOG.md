@@ -12,6 +12,35 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## 0.38.0 — a rewritten registry can no longer change what an authorised id means (ADR-0042)
+
+**The escalation this closes, measured in `g37-registry-tamper`.** `workspace:<id>` attenuated the NAME, not the
+mutable id-to-path meaning. A child holding `workspace:staging` and `tool:write` — no `bash` — could rewrite the
+operator's registry so `staging` pointed at the `prod` worktree, route a grandchild there, and take an exclusive
+write lease on it. Every capability check passed, because the id it was granted was the id it used. File ownership
+could not help: a governed child runs as the parent's uid.
+
+**The inherited destination pin.** A root resolves each registered id to its canonical destination and records a
+digest. Descendants inherit only the entries their own grant names, cannot mint an entry, and routing requires an
+exact match. A rewritten registry therefore changes where an id points and not what an inherited id may mean.
+
+**Every failure refuses.** Missing, empty, malformed and mismatched all refuse, because a mechanism a child can
+switch off by clearing one variable is not a mechanism. A session that inherited a pin never establishes a new
+one, which is the rule the whole thing rests on.
+
+**One builder for both spawn paths.** `delegate.ts` builds a child's environment itself rather than through
+`childEnv`, and this file already records what that fork cost once before: the "never inherit `workspace:*`" rule
+lived only in `childEnv`, so the delegate path handed the wildcard down. The pin reached the same fork and is now
+written by one function both callers use.
+
+**A session's own pin lives in memory, not in its environment.** `publishChildEnv` writes the CHILD's narrowed pin
+into `process.env`, so a session that re-read the variable at routing time would check itself against its child's
+authority. `ownGrant` has lived in memory for exactly this reason; a test caught the pin falling into the same trap.
+
+**What this does not cover.** The pin binds a governed descendant, because it rides in the environment of a process
+the parent starts. A child holding `bash` can still start an ungoverned process, which is ADR-0012's scope and
+unchanged.
+
 ## 0.37.0 — the handoff probe, and the budget was cutting the wrong end
 
 **A `pruned` handoff carried the turns furthest from the task.** Turn sections are pushed oldest-first and the

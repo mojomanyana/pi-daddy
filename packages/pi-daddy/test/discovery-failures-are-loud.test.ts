@@ -27,7 +27,13 @@ after(cleanupTempDirs);
  * severing `registryRefusal` anywhere between the reader and the banner.
  */
 
-const KEYS = [...GRANT_ENV_KEYS, "PI_CODING_AGENT_DIR", "PI_DADDY_HERDR", "PI_DADDY_WORKSPACE_REGISTRY"] as const;
+const KEYS = [
+  ...GRANT_ENV_KEYS,
+  "PI_CODING_AGENT_DIR",
+  "PI_DADDY_HERDR",
+  "PI_DADDY_WORKSPACE_REGISTRY",
+  "PI_DADDY_WORKSPACE_PIN",
+] as const;
 
 async function sessionStartNotices(cwd: string, agentDir: string): Promise<string> {
   const hooks = new Map<string, any>();

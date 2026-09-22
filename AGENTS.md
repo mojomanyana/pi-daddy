@@ -608,10 +608,11 @@ history (`git show 9cf2904:docs/probes/<name>/README.md`).
   grandchild for `prod` with no refusal and a real write lease (`g36-workspace-attenuation`). The same probe records
   the lesson that carried a wrong "measured": it constructed its own inputs with no catalog, so it confirmed the fix on
   a path production does not take while the real path refused every `workspace:` id as unknown.
-- Routing attenuates by id, not by destination: a child holding `workspace:staging` and `tool:write` (no `bash`) can
-  repoint the `staging` registry entry at the `prod` worktree and route its grandchild there with an exclusive write
-  lease; file permissions cannot stop it because a governed child runs as the parent's uid (`g37-registry-tamper`;
-  R-137 open, ADR-0042 decided, implementation deferred).
+- Routing attenuated by id, not by destination: a child holding `workspace:staging` and `tool:write` (no `bash`)
+  could repoint the `staging` registry entry at the `prod` worktree and route its grandchild there with an
+  exclusive write lease; file permissions cannot stop it because a governed child runs as the parent's uid
+  (`g37-registry-tamper`). **Closed 2026-09-22** by the inherited destination pin (ADR-0042): the id still
+  resolves, and the destination behind it no longer matches what the grant meant, so routing refuses.
 - An initial working directory, including an empty one, is not path confinement: an unsandboxed child holding search
   and `edit` tools left it and edited a file in another checkout by absolute path, unprompted (`g38-cwd-is-not-containment`).
 
@@ -709,15 +710,19 @@ What remains of ADR-0076's sequence after this cleanup, one line each with what 
   the set the mechanical rule already kept and is asked after the plan authorizes the handoff. Remaining
   candidates: chain output selection and completion/failure signals. Not established: whether the advice is any
   good — nothing measures that, and PR 9's probe is the only thing that would.
-- **PR 9 (handoff probe)** — done 2026-09-22; see the probe section above. It measured recall over 78 real pi
-  sessions, found that the byte budget was cutting the turns nearest the task, fixed the fill order and raised the
-  default turn count on the strength of the numbers. **It answered the `pruned`-as-default question with a no**:
-  0.874 delivered recall at best is not enough to start sending the operator's session by default. Precision was
-  dropped as a metric rather than reported, because as defined it was always 1.00 and meant nothing. Still to do
-  from this line: **a second fresh-session probe** shipping a delegate-path change without opening history, and
-  a Jev comparison — nothing yet measures the advisor's selection against the mechanical rule.
-- **Registry integrity (ADR-0042, decided, implementation deferred)** — routing must attenuate by destination, not
-  only by id; done means `g37-registry-tamper`'s control stays green while its tamper case turns into a refusal.
+- **PR 9 (handoff probe)** — done 2026-09-22; see the probe section above, which is authoritative and which this
+  line contradicted for a day. It measured recall over 67 sessions, found the byte budget cutting the turns
+  nearest the task, fixed the fill order and raised the default on the strength of the numbers. **It answered the
+  `pruned`-as-default question with a no**: 0.737 delivered recall at the default is not enough to start sending
+  the operator's session by default. Precision was dropped rather than reported, because as defined it was always
+  1.00 and meant nothing. Still to do: **a second fresh-session probe** shipping a delegate-path change without
+  opening history, and a Jev comparison — nothing yet measures the advisor's selection against the rule.
+- **Registry integrity (ADR-0042)** — done 2026-09-22. Routing attenuates by destination: a root resolves each
+  registered id to a canonical-destination digest, descendants inherit only the entries their grant names, and
+  routing requires an exact match. `test/workspace-destination-pin.test.ts` is `g37-registry-tamper`'s positive
+  reversal — the control resolves, the tamper refuses. Both spawn paths write the pin through one builder,
+  because `delegate.ts` builds a child's environment itself and the first wiring reached only `childEnv`, which
+  is the fork this file already carries a scar from.
 - **Record the reversal** — done: see "The big cleanup" above.
 
 ## Known gaps / live risks
@@ -729,8 +734,10 @@ Kept features only. Numbers are dropped except the two that code and rules cite.
 - Workspace leases coordinate only cooperating pi-daddy children; they do not exclude the operator, an IDE, hooks or
   another runtime, and they do not confine paths — a child left an empty working directory and edited another checkout
   (`g38-cwd-is-not-containment`). Write leases require util-linux `flock` and refuse `WORKSPACE_LEASE_STALE` elsewhere.
-- Routing attenuates by id, not by destination: a child holding a workspace id and `tool:write` can repoint the
-  registry entry (`g37-registry-tamper`; ADR-0042 decided, not implemented).
+- ~~Routing attenuates by id, not by destination: a child holding a workspace id and `tool:write` can repoint the
+  registry entry.~~ **Closed 2026-09-22** by ADR-0042's inherited destination pin. What remains true: the pin is
+  authority carried in the environment of a process the parent starts, so it binds a governed descendant and not
+  a process that escapes governance altogether — a child holding `bash` is still ADR-0012's problem, unchanged.
 - A gated routing attempt used to take the destination's exclusive writer lease before the human was asked; ADR-0041
   moved the approval before acquisition. The approval dialog itself still has no timeout.
 - ~~A registry the reader refuses produces no message anywhere: one malformed id silently removes every workspace

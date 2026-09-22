@@ -26,6 +26,7 @@
  */
 
 import type { Capability } from "./resolve.ts";
+import { attenuateWorkspacePin, formatWorkspacePin, type WorkspacePins } from "./workspace-pin.ts";
 import { WILDCARD } from "./pi-tools.ts";
 import { WORKSPACE_WILDCARD } from "./resolve.ts";
 import { inheritApprovals, type InheritableApproval } from "./approval.ts";
@@ -43,6 +44,7 @@ import {
   ENV_GATED,
   ENV_LEDGER,
   ENV_APPROVED,
+  ENV_WORKSPACE_PIN,
 } from "./env-names.ts";
 export {
   ENV_GRANT,
@@ -95,6 +97,9 @@ export const GRANT_ENV_KEYS = [
   ENV_FANOUT,
   ENV_PARENT_ID,
   ENV_EXECUTION_ID,
+  // ADR-0042: a child must never keep its parent's unnarrowed pin, so it is stripped like every other
+  // governance value and re-supplied only by the spawn plan.
+  ENV_WORKSPACE_PIN,
 ] as const;
 
 export const parseList = (raw: string | undefined): Capability[] =>
@@ -233,6 +238,14 @@ export function gatedFromEnv(raw: string | undefined): Capability[] {
 export interface ChildEnvInput {
   /** This session's own grant — becomes the child's inherited parent grant. */
   ownGrant: Capability[];
+  /**
+   * This session's destination pins (ADR-0042), narrowed here to what the child's grant names.
+   *
+   * Passed in rather than read from the environment for the reason `inheritableGrant`'s comment records: a rule
+   * with two spellings gets the guard on the quieter one. Absent means this session established none, and the
+   * child then inherits no pin and can route nowhere — which is the fail-closed direction.
+   */
+  workspacePin?: WorkspacePins;
   /** This session's depth; children are one deeper. */
   depth: number;
   maxDepth: number;
@@ -313,7 +326,34 @@ export function childEnv(input: ChildEnvInput): Record<string, string> {
   env[ENV_APPROVED] = inheritApprovals(input.approved ?? [], inheritable).join(",");
   // Empty is an explicit one-run ledger opt-out and must overwrite a prior publication too.
   if (input.ledgerPath !== undefined) env[ENV_LEDGER] = input.ledgerPath;
+  // ADR-0042. ALWAYS written when this session has any pin at all, empty string included, for the same reason
+  // `ENV_APPROVED` is: an omitted key does not overwrite, so a child would inherit the PARENT's unnarrowed pin
+  // through the process-global publication path. An empty value parses back as "a pin was established and you
+  // got nothing from it", which refuses at routing with a different message from "no pin exists".
+  Object.assign(env, workspacePinEnv(input.workspacePin, inheritable));
   return env;
+}
+
+/**
+ * The destination-pin half of a child's environment (ADR-0042), spelled ONCE for both spawn paths.
+ *
+ * **There are two places a child's environment is built**, and this file already carries the scar: the
+ * "held but never inherited" rule for `workspace:*` lived only in `childEnv`, so `delegate.ts` — the path a
+ * delegated child's grant actually travels — handed the wildcard straight down, and the test written beside
+ * that fix exercised the wrong path. The pin reached the same fork. The ADR is explicit that "the process and
+ * Herdr paths must share one propagation builder", so this is that builder and both callers use it.
+ *
+ * Written even when it narrows to nothing, and omitted only when this session has no pin at all: an omitted
+ * key does not overwrite, so the child would inherit the parent's UNNARROWED pin through the process-global
+ * publication path. Empty parses back as "a pin exists and you got none of it", which refuses at routing.
+ */
+export function workspacePinEnv(
+  pins: WorkspacePins | undefined,
+  inheritable: readonly Capability[],
+): Record<string, string> {
+  return pins === undefined
+    ? {}
+    : { [ENV_WORKSPACE_PIN]: formatWorkspacePin(attenuateWorkspacePin(pins, inheritable)) };
 }
 
 /**
