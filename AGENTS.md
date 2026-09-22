@@ -326,9 +326,10 @@ happened. A definition's `allowed-tools` declares the CEILING; the mode on a giv
 definition permitting `fork` does not fork on every spawn, and a definition declaring no `context:` id receives
 nothing. That check is in the planner rather than in `resolve`, because on the `agent` path the requested set IS
 the ceiling: review measured the first version handing `context:fork` to a definition capped at `context:files`,
-and `context:files` to one that named no context at all. A chain step cannot ask for context at all today; each
-step is otherwise governed exactly as a `delegate` is, and closing that is a later change rather than an
-omission nobody noticed.
+and `context:files` to one that named no context at all. A chain step asks for context the same way, and its gate
+is raised in the upfront pass ADR-0033 requires, so a human answers for a fork step 3 wants before step 1 starts.
+That pass deliberately does not stage anything: its plans are thrown away and remade when each step runs, so
+staging there would read every step's files upfront and allocate a fork directory nothing would dispose.
 
 **`context:fork` is gated by default**, beside `tool:bash` and for the neighbouring reason: it is the one mode that
 can carry content an untrusted repository put in front of the parent into a fresh child, and prompt injection is in

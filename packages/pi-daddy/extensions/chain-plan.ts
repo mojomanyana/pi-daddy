@@ -41,7 +41,12 @@ export async function planChain(
   const requests: GateRequest[] = [];
   const uses = new Map<number, Set<string>>();
   const seen = new Set<string>();
-  const context = await session.delegationContext();
+  // Planning a chain is for the GATE: every step is planned before any runs, so the human answers once for the
+  // whole thing. `stageHandoff` is deliberately dropped from that pass — it reads files and copies the parent's
+  // session, and this plan is thrown away and remade by `runOneDelegation` when the step actually runs. Leaving it
+  // in would read every step's files upfront and allocate a fork directory that nothing would ever dispose, for
+  // steps a doomed chain never reaches.
+  const { stageHandoff: _stageHandoff, ...context } = await session.delegationContext();
 
   for (const [index, step] of steps.entries()) {
     const plan = planDelegation(
@@ -51,6 +56,7 @@ export async function planChain(
         tools: step.tools,
         model: step.model,
         thinking: step.thinking,
+        context: step.context,
         correlation: step.workspace
           ? { ...(step.correlation ?? {}), workspace_id: step.workspace.workspace_id }
           : step.correlation,

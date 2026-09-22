@@ -17,6 +17,7 @@ import { planSpawn } from "../src/kernel/spawn.ts";
 import { DEFAULT_GATED } from "../src/kernel/propagation.ts";
 import { createHandoffStager } from "../extensions/context-staging.ts";
 import { planDelegation } from "../src/kernel/delegate.ts";
+import { planChain } from "../extensions/chain-plan.ts";
 import { parseSkillDefinition } from "../src/kernel/definitions.ts";
 import { activitySessionFor } from "../src/executors/activity-session.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
@@ -274,4 +275,51 @@ test("a fork with no parent session refuses instead of throwing, and a real one 
   assert.equal(existsSync(staged.forkFrom!.sessionDir), true);
   staged.dispose?.();
   assert.equal(existsSync(staged.forkFrom!.sessionDir), false, "a fork's copy of the parent session is removed");
+});
+
+test("a chain step can ask for context, and its gate is raised before any step runs", async () => {
+  // ADR-0033: a chain is planned as ONE unit, so a fork wanted by step 2 must be answered before step 1 starts.
+  // ADR-0078 left chains out; this closes it. Breaks by: dropping `context: step.context` from `planChain`, which
+  // makes every step's handoff silently `none`.
+  let staged = 0;
+  const session = {
+    ownSpawnId: "d0",
+    delegationContext: async () => ({
+      ownGrant: ["agent:*", "tool:read", "context:fork"],
+      depth: 0,
+      maxDepth: 3,
+      gated: ["context:fork"],
+      definitions: new Map([
+        ["plan", definition("Read, context:files")],
+        ["build", definition("Read, context:fork")],
+      ]),
+      // Staging reads files and copies the parent's session. The gating pass throws its plans away, so running it
+      // there would read every step's files upfront and allocate a fork directory nothing would ever dispose.
+      stageHandoff: () => {
+        staged += 1;
+        return { contextPrompt: "x" };
+      },
+    }),
+  };
+  const steps = [
+    { task: "a", agent: "plan", context: { mode: "files", files: ["a.ts"] } },
+    { task: "b", agent: "build", context: { mode: "fork" } },
+  ];
+  const chain = await planChain(session as never, steps as never, ["exec:1", "exec:2"] as never);
+  assert.equal(chain.doomed, undefined);
+  assert.deepEqual(
+    chain.requests.map((r) => `${r.capability}@${r.subject}`),
+    ["context:fork@build"],
+    "the whole-session handoff a later step wants is gated upfront",
+  );
+  assert.equal(chain.requests[0]?.stepIndex, 1, "and the dialog names the step that asked");
+  assert.equal(staged, 0, "the gating pass must stage nothing");
+
+  // A step's own definition still caps it, exactly as for a single delegate.
+  const over = await planChain(
+    session as never,
+    [{ task: "a", agent: "plan", context: { mode: "fork" } }] as never,
+    ["exec:1"] as never,
+  );
+  assert.match(String(over.doomed?.reason), /plan may not receive context:fork/);
 });

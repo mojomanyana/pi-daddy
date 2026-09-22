@@ -41,6 +41,7 @@ import { GovernanceRefusal, refusal, type StructuredRefusal } from "../src/kerne
 import { chainApprovalFacts, newChainApprovalAudit, rememberChainApproval } from "./chain-approval-facts.ts";
 import { newExecutionId } from "../src/kernel/execution-id.ts";
 import { planChain, type GateRequest } from "./chain-plan.ts";
+import { contextShape } from "./context-shape.ts";
 import { preflightModel } from "../src/kernel/model-preflight.ts";
 import { assertDelegationAuthority } from "./delegation-authority.ts";
 
@@ -83,6 +84,7 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
         { description: "Requested Pi thinking level; unsupported model/level combinations fail in the child." },
       ),
     ),
+    context: Type.Optional(contextShape()),
     correlation: Type.Optional(correlationShape()),
     workspace: Type.Optional(
       Type.Object({

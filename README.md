@@ -72,6 +72,9 @@ delegate({ agent: "build", task: "Implement it.",
 | `summary` | what the parent writes in its own words |
 | `fork` | the parent's whole session, as a fork; **gated**, so a human answers first |
 
+A `delegate_chain` step takes the same parameter, and because a chain is planned as one unit, a gate any step
+raises is answered before the first step runs.
+
 The modes are ordered, and each subsumes the weaker ones: a parent holding `context:fork` may hand a child
 `context:files`. What crosses arrives inside a labelled, nonce-delimited fence marked as data rather than
 instructions, capped at 32 KiB, with anything that did not fit said inside the fence. The capability decision record

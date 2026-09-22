@@ -28,8 +28,10 @@ fence. Paths named for `files` are confined to the session's working directory. 
 and how many turns it kept.
 
 Nothing changes for a caller that passes no `context`: the default is `none`, which adds no capability and crosses
-nothing. `pruned`'s selection rule is deterministic but its recall is unmeasured, so it is not a default. A chain
-step cannot ask for context yet.
+nothing. `pruned`'s selection rule is deterministic but its recall is unmeasured, so it is not a default.
+
+A `delegate_chain` step takes the same parameter. A chain is planned as one unit, so a step's handoff is capped by
+that step's own definition and any gate it raises is answered before the first step runs.
 
 **Breaking for consumers of the package API:** `splitSystemPrompt` now returns `systemPrompts: string[]` instead of
 `systemPrompt?: string`, because a child can carry more than one appended system prompt and only the first was being

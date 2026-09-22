@@ -158,6 +158,8 @@ export interface ChainStep {
   model?: string;
   /** Requested Pi thinking level; validated by the same schema as delegate/delegate_all. */
   thinking?: string;
+  /** ADR-0078: what of the parent's session this step receives. Capped by the step's own definition, like a tool. */
+  context?: unknown;
   correlation?: import("./correlation.ts").CorrelationMetadata;
   workspace?: { workspace_id: string; access: import("./workspace.ts").WorkspaceAccess };
 }
