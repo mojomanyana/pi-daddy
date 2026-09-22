@@ -29,6 +29,13 @@ monotone again.
 so twenty is where the curve flattens, and the cost stays bounded by the byte budget rather than by this number.
 Raising it before the fill order was corrected would have made things worse, not better.
 
+**Raising the default would have killed the pruning advisor, and nearly did.** `advisePruning` gave up entirely
+above `MAX_JUDGED_TURNS` (twelve), so with a default of twenty every default request would have exceeded the bound
+and the decision point shipped in 0.35.0 would never have fired again — silently, with nothing failing. It now
+judges the most recent twelve candidates and KEEPS the older ones unjudged, which is still only narrowing because a
+turn it was never shown is never dropped. A test now asserts the advisor fires at whatever the default happens to
+be, so the next change to that number cannot repeat this.
+
 **The probe ships as a rerunnable measurement**, `test-integration/pruned-handoff-probe.it.ts`, and it calls the
 real `fenceContext` rather than simulating the cap — a first draft simulated it and would not have caught the
 regression it exists to describe. Reverting the fill order fails it with a message naming the cause. Without
