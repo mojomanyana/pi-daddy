@@ -26,11 +26,16 @@ holding `tool:write`, and this package keeps the grant outside the workspace for
 governed child can rewrite is not a ceiling. The same argument applies here one step sideways — a child could have
 flipped the switch and made the operator's next session send its own description to a third party.
 
-**What to do.** Enabling an advisor is now `PI_DADDY_ADVISOR=jev` alongside `PI_DADDY_ADVISOR_KEY`; both are
-stripped from a child spawned as a subprocess. A Herdr pane inherits the daemon's environment, so a daemon started
-from a shell exporting them still hands them to pane children — stated rather than implied, and not yet closed. A project's `advisor` block in `settings.json` may still set a model or a timeout, and
-may set `enabled: false` to turn an advisor off for that project. It can no longer turn one on, so a settings file
-that relied on `enabled: true` will find the advisor off until the environment variable is set.
+**What to do.** Enabling an advisor is now `PI_DADDY_ADVISOR=jev` alongside `PI_DADDY_ADVISOR_KEY`, with
+`PI_DADDY_ADVISOR_MODEL` to override the model; all three are stripped from a child spawned as a subprocess. A
+Herdr pane inherits the daemon's environment, so a daemon started from a shell exporting them still hands them to
+pane children — stated rather than implied, and not yet closed.
+
+A project's `advisor` block in `settings.json` may turn an advisor off for that project and shorten its timeout. It
+can no longer turn one on, choose its model, or lengthen its bound: a model is a destination and a longer bound is
+not a narrowing, and that file is writable by any child holding `tool:write`. Anything that is not exactly `true`
+on `enabled` disables. So a settings file that relied on `enabled: true` will find the advisor off until the
+environment variable is set, and one that set `model` will be refused with a message naming the variable to use.
 
 ## 0.34.0 — an advisors layer, off by default (ADR-0077)
 

@@ -31,6 +31,7 @@ import { WORKSPACE_WILDCARD } from "./resolve.ts";
 import { inheritApprovals, type InheritableApproval } from "./approval.ts";
 import { assertCapabilitiesArePropagatable } from "./capabilities.ts";
 import {
+  ENV_ADVISOR_MODEL,
   ENV_ADVISOR_KEY,
   ENV_ADVISOR,
   ENV_GRANT,

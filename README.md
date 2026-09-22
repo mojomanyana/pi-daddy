@@ -154,11 +154,14 @@ it can never widen a grant, satisfy a gate or replace a human's answer. Today it
 
 It is **off unless you set `PI_DADDY_ADVISOR=jev` and `PI_DADDY_ADVISOR_KEY`**, both of which live in the
 environment rather than in a committed file, because a file inside the workspace is writable by any child holding
-`tool:write`. A project's `advisor` block in `settings.json` may narrow what you enabled, including turning it off
-for that project; it can never turn one on.
+`tool:write`. `PI_DADDY_ADVISOR_MODEL` overrides the model, also from the environment. A project's `advisor` block
+in `settings.json` may turn one off for that project and shorten its timeout; it can never turn one on, choose its
+model, or lengthen its bound.
 
-**With an advisor on, the task text of each such delegation is sent to a third party** — TypeSafe's Jev, through
-OpenRouter — because it cannot judge a task it cannot see. It is never written to the ledger: the record names the
+**With an advisor on, what leaves the machine is more than you might assume.** A delegation that leaves the thinking
+level blank sends its task text to a third party, TypeSafe's Jev through OpenRouter, because it cannot judge a task
+it cannot see. A `pruned` context handoff sends the task and up to twelve of **your own session turns** for the
+advisor to judge, which is your conversation rather than just the task. It is never written to the ledger: the record names the
 decision, the answers and the timing, and the task is never stored, as it never has been. If you are not willing to
 send task text off the machine, leave the advisor off, which is the default. `/grants` states which advisor is in
 force, or why none is.

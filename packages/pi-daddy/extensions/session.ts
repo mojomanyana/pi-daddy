@@ -51,7 +51,7 @@ import { nativeSessionRootFromEnv, type NativeSessionHost } from "../src/executo
 import { createHandoffStager, type ParentSession } from "./context-staging.ts";
 import { createAdvisorSession, type AdvisorSession } from "./advisor-session.ts";
 import { join } from "node:path";
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { agentDir, projectSettingsPath } from "../src/kernel/project-paths.ts";
 import { ENV_ALLOW_UNRESOLVED_MODELS } from "../src/kernel/model-preflight.ts";
 import { beginExtensionLifecycle, rememberChildPublication, type ReloadLifecycle } from "./reload-environment.ts";
@@ -89,7 +89,7 @@ import {
   ENV_ACTIVITY_ROOT,
   ENV_ACTIVITY_TASK,
 } from "../src/products/activity-timeline.ts";
-import { ENV_HERDR_KEEP_PANE, ENV_GOVERNANCE } from "../src/kernel/env-names.ts";
+import { ENV_HERDR_KEEP_PANE, ENV_GOVERNANCE, ENV_ADVISOR } from "../src/kernel/env-names.ts";
 export { ENV_HERDR_KEEP_PANE, ENV_GOVERNANCE } from "../src/kernel/env-names.ts";
 import { adoptLegacyEnvironment } from "../src/kernel/env-names.ts";
 
@@ -376,12 +376,16 @@ export function createGrantsSession(
       observerExtensionPath: session.observerExtensionPath,
       childEnv: activityChildEnv(session.activity),
       // ADR-0078: composition reads, the kernel decides. Called only for a mode that survived the gate.
-      stageHandoff: (granted) =>
+      // `options` is forwarded, and its absence is why the second decision point was dead in production: a
+      // one-parameter arrow is assignable to a two-parameter type, so the ids reached here and were discarded while
+      // the advisor had already been asked. Review measured it. `test/pruning-advice.test.ts` now goes through this
+      // function rather than calling the stager directly.
+      stageHandoff: (granted, options) =>
         createHandoffStager({
           cwd: session.cwd,
           forkRoot: join(agentDir(), "context-forks"),
           ...(session.parentSession ? { parentSession: session.parentSession } : {}),
-        })(granted),
+        })(granted, options),
       catalog: await session.catalogReady,
       // R-32: where each granted skill lives, so `planSpawn` can pass `--skill` for those and only those.
       // Derived from the catalog's own `source`, so it cannot drift from what was discovered.
@@ -443,8 +447,17 @@ export function createGrantsSession(
  * only thing it can do to an advisor is turn one off. A parse failure therefore costs nothing worth reporting.
  */
 function projectAdvisorBlock(cwd: string): unknown {
+  // Only when an advisor could exist at all. This runs in every session including every child, before any hook, and
+  // a child can never use the result because `PI_DADDY_ADVISOR` is stripped from it.
+  if (!process.env[ENV_ADVISOR]?.trim()) return undefined;
   try {
-    const parsed: unknown = JSON.parse(readFileSync(projectSettingsPath(cwd), "utf8"));
+    const path = projectSettingsPath(cwd);
+    // Bounded and type-checked first: this is the third unbounded session-start read AGENTS.md warns about, and the
+    // only one whose path a governed child holding `tool:write` can replace with a FIFO — which would hang pi
+    // before any hook exists to report it.
+    const stats = statSync(path);
+    if (!stats.isFile() || stats.size > 1024 * 1024) return undefined;
+    const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
     return typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>).advisor : undefined;
   } catch {
     return undefined;

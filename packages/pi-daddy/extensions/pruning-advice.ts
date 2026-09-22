@@ -50,7 +50,9 @@ export async function advisePruning(input: {
   for (const [index, turn] of candidates.entries())
     questions[`turn${index}`] = {
       kind: "noul",
-      instructions: `Would a sub-agent doing this task be helped by seeing this part of the parent's session?\n\nTASK: ${input.task}\n\nPART:\n${turn.text.slice(0, 2000)}`,
+      // Both bounded: the task is embedded once per candidate, so an unbounded task became a request twelve times
+      // its size, on a two-second budget and the operator's key.
+      instructions: `Would a sub-agent doing this task be helped by seeing this part of the parent's session?\n\nTASK: ${input.task.slice(0, 2000)}\n\nPART:\n${turn.text.slice(0, 2000)}`,
       whenTrue: "It bears on the task: a decision, a constraint, a fact the task depends on.",
       whenFalse: "It does not: unrelated work, chatter, or something the task already states.",
     };
@@ -63,11 +65,11 @@ export async function advisePruning(input: {
     input.signal,
   );
   if (!advice) return undefined;
+  // Every candidate or none. A response missing eleven of twelve answers would otherwise read as "drop eleven",
+  // which is a narrowing nobody asked for rather than the "unrecognised response means no advice" contract.
+  if (candidates.some((_, index) => advice.answers[`turn${index}`]?.kind !== "noul")) return undefined;
   const kept = candidates
-    .filter((_, index) => {
-      const answer = advice.answers[`turn${index}`];
-      return answer?.kind === "noul" && answer.value;
-    })
+    .filter((_, index) => (advice.answers[`turn${index}`] as { value: boolean }).value)
     .map((turn) => turn.id);
   // An advisor that drops everything is answering a different question from the one that was asked; the rule's
   // selection stands rather than handing a child a handoff with nothing in it.

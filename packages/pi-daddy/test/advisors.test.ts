@@ -225,11 +225,12 @@ test("only the environment can enable an advisor; the workspace file can narrow 
     "not even with a key",
   );
   assert.equal(advisorSettingsFrom(undefined, on).enabled, true, "the environment alone is enough");
-  assert.equal(advisorSettingsFrom({ model: "typesafe/jev-latest" }, on).model, "typesafe/jev-latest");
+  // A model is a destination, not a narrowing, so the workspace file may not choose it (see pruning-advice.test).
+  assert.match(String(advisorSettingsFrom({ model: "typesafe/jev-latest" }, on).refusal), /not a narrowing/);
 
   // A project may still turn it off for itself, which narrows and is therefore safe in the other direction.
   assert.equal(advisorSettingsFrom({ enabled: false }, on).enabled, false);
-  assert.match(String(advisorSettingsFrom({ enabled: false }, on).refusal), /false for this project/);
+  assert.match(String(advisorSettingsFrom({ enabled: false }, on).refusal), /not true for this project/);
 
   // And the rest of rule 8 still holds: a typo disables and names the field rather than being ignored.
   assert.equal(advisorSettingsFrom(undefined, { [ENV_ADVISOR]: "jev" }).enabled, false, "no key, no advisor");

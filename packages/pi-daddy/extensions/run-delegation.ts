@@ -252,18 +252,9 @@ export async function runOneDelegation(
     agent: spec.agent,
     tools: spec.tools,
     model: spec.model ?? defaultModel,
-    // ADR-0077's first decision point. Fills a blank from the levels this model reports; never overrules a caller,
-    // and yields `undefined` — today's behaviour exactly — whenever there is no advisor or no answer.
-    thinking: await adviseEffort({
-      session,
-      requested: spec.thinking,
-      // The model the CHILD will run on, which is not always the session's.
-      model: spec.model ?? defaultModel,
-      registry: ctx.modelRegistry,
-      task: spec.task,
-      agent: spec.agent,
-      signal,
-    }),
+    // Filled below, once the refusals that doom a delegation are known: asking first shipped the task text for a
+    // child that never starts, which is the ordering this module already fixed for the approval dialog.
+    thinking: spec.thinking,
     context: spec.context,
     correlation: spec.workspace
       ? { ...(spec.correlation ?? {}), workspace_id: spec.workspace.workspace_id }
@@ -296,13 +287,6 @@ export async function runOneDelegation(
     session.modelResolutionCache,
     session.allowUnresolvedModels,
   );
-  // ADR-0077's second decision point, computed here because choosing may mean asking an advisor and the planner is
-  // pure. It can only narrow: staging intersects whatever comes back with the rule's own candidates.
-  const parsedForPruning = parseContextRequest(spec.context);
-  const handoffTurnIds =
-    "request" in parsedForPruning
-      ? await advisePruning({ session, granted: parsedForPruning.request, task: spec.task, signal })
-      : undefined;
   const { extra, refusal: nativeRefusal } = await nativeDelegationContext(
     session,
     ids,
@@ -310,8 +294,40 @@ export async function runOneDelegation(
     Boolean(executorRefusal || modelRefusal),
   );
   executorRefusal ||= nativeRefusal;
-  // Carried on the planner's context beside the other composition-supplied facts.
-  const planContext: Record<string, unknown> = { ...extra, ...(handoffTurnIds ? { handoffTurnIds } : {}) };
+
+  // ADR-0077's first decision point, after the refusal checks for the reason above. Fills a blank from the levels
+  // the CHILD's model reports; never overrules a caller, and yields today's behaviour whenever there is no answer.
+  if (!executorRefusal && !modelRefusal)
+    request.thinking = await adviseEffort({
+      session,
+      requested: spec.thinking,
+      model: spec.model ?? defaultModel,
+      registry: ctx.modelRegistry,
+      task: spec.task,
+      agent: spec.agent,
+      signal,
+    });
+
+  /**
+   * ADR-0077's second decision point, and it may only be asked AFTER the handoff is authorised.
+   *
+   * The first version asked straight from the model-supplied request, before the ceiling, the parent's grant and
+   * the gate — so a delegation that `planDelegation` then refused had already POSTed a dozen of the operator's own
+   * session turns to a third party. `context:` is a capability (ADR-0078) exactly so a parent's session cannot
+   * cross without a named grant; asking first shipped it with no grant at all. Review measured that.
+   *
+   * So the planner decides first, with `ctx: null` so no human is asked for a plan that exists to be inspected,
+   * and the advisor is consulted only when that plan actually carries a `pruned` handoff. Re-planning with the ids
+   * then follows the path every other plan takes. One extra plan, on `pruned` delegations only.
+   */
+  let planContext: Record<string, unknown> = { ...extra };
+  if (!executorRefusal && !modelRefusal) {
+    const authorised = await planWithApprovals(session, request, planContext, null, signal, preApproved);
+    if (authorised.plan.handoff?.mode === "pruned") {
+      const ids = await advisePruning({ session, granted: authorised.plan.handoff, task: spec.task, signal });
+      if (ids) planContext = { ...planContext, handoffTurnIds: ids };
+    }
+  }
   let preparedWorkspace: PreparedWorkspace | undefined;
   let approvalOutcome: ApprovalOutcome | undefined;
   let plan: ReturnType<typeof planDelegation>;

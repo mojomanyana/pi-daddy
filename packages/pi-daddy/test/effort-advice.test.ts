@@ -161,12 +161,15 @@ test("only the modules written down here reach the advisors layer", async () => 
   assert.deepEqual(found.sort(), [...MAY_CONSULT_AN_ADVISOR].sort());
 });
 
-test("the one answer an advisor gives is spent on effort and nothing else", async () => {
-  // The property the allowlist cannot state: what the answer is USED for. Breaks by: assigning the result of
-  // `adviseEffort` to any field other than `thinking` — a capability, a model id, a workspace.
+test("each advisor's answer is spent on one field and nothing else", async () => {
+  // The property the allowlist cannot state: what the answers are USED for. Breaks by: assigning the result of
+  // `adviseEffort` to anything but `thinking`, or `advisePruning` to anything but `handoffTurnIds`.
   const runner = await readFile(join(packageRoot, "extensions", "run-delegation.ts"), "utf8");
-  const uses = [...runner.matchAll(/(\w+):\s*await adviseEffort\(/g)].map((m) => m[1]);
-  assert.deepEqual(uses, ["thinking"], "an advisor's answer may fill exactly one blank");
+  const effort = [...runner.matchAll(/([\w.]+)\s*=\s*await adviseEffort\(/g)].map((m) => m[1]);
+  assert.deepEqual(effort, ["request.thinking"], "the effort answer fills exactly one blank");
+  const pruning = [...runner.matchAll(/(?:const\s+)?([\w.]+)\s*=\s*await advisePruning\(/g)].map((m) => m[1]);
+  assert.deepEqual(pruning, ["ids"], "the pruning answer is bound once");
+  assert.match(runner, /handoffTurnIds: ids/, "and reaches the planner only as handoffTurnIds");
 });
 
 test("the levels come from the model the CHILD will run on, not the session's", async () => {
@@ -221,6 +224,6 @@ test("a project may switch an advisor off through its settings block, and that b
   assert.equal(createAdvisorSession({ block: undefined, env: on }).deciderName, "jev");
   const off = createAdvisorSession({ block: { enabled: false }, env: on });
   assert.equal(off.deciderName, "none", "a project that says no gets no advisor");
-  assert.match(String(off.settings.refusal), /false for this project/);
+  assert.match(String(off.settings.refusal), /not true for this project/);
   assert.equal(createAdvisorSession({ block: { timeoutMs: 500 }, env: on }).settings.timeoutMs, 500);
 });

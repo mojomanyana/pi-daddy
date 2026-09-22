@@ -4,6 +4,8 @@ import { createAdvisor, type AdviceRecord } from "../src/advisors/advisor.ts";
 import { nullDecider, type Decider } from "../src/advisors/decider.ts";
 import { advisePruning, MAX_JUDGED_TURNS, PRUNING_PURPOSE } from "../extensions/pruning-advice.ts";
 import { createHandoffStager } from "../extensions/context-staging.ts";
+import { createGrantsSession } from "../extensions/session.ts";
+import { ADVISOR_KEY_ENV, ENV_ADVISOR } from "../src/advisors/settings.ts";
 
 const entriesOf = (count: number) =>
   Array.from({ length: count }, (_, i) => ({ id: `t${i}`, type: "message", message: `turn ${i}` }));
@@ -156,4 +158,68 @@ test("the task reaches the advisor in the question and never reaches the record"
   });
   assert.equal(sawTask, true, "an advisor cannot judge a task it cannot see");
   assert.doesNotMatch(JSON.stringify(records), /SECRET-TASK/, "and it is still never written down");
+});
+
+test("the ids reach staging through the session's own hook, not just through a direct call", async () => {
+  // The defect this test exists for: `stageHandoff` was declared as `(granted) => stager(granted)`, a
+  // one-parameter arrow assignable to the two-parameter type, so the ids arrived at the hook and were dropped. The
+  // advisor was still asked and the task and turns still left the machine; only the narrowing was lost. Every
+  // other test called `createHandoffStager` directly and so could not see it. TypeScript cannot either.
+  //
+  // Breaks by: dropping `options` from the arrow in `session.ts`'s `delegationContext`.
+  const session = createGrantsSession(undefined);
+  session.parentSession = parentSessionOf(8);
+  const context = await session.delegationContext();
+  assert.ok(context.stageHandoff, "the session supplies a staging hook");
+
+  const wide = context.stageHandoff!(GRANTED, {});
+  assert.equal(wide.record?.keptTurns, 4, "with no ids, the rule's own selection");
+
+  const narrowed = context.stageHandoff!(GRANTED, { keepTurnIds: ["t4"] });
+  assert.equal(narrowed.record?.keptTurns, 1, "the ids must survive the hop into the stager");
+  assert.equal(narrowed.record?.rule, "recent+files+advice");
+});
+
+test("a partial advisor response is no advice, not a narrowing nobody asked for", async () => {
+  // Eleven of twelve answers missing would otherwise read as "drop eleven". Breaks by: filtering on
+  // `answer?.kind === "noul" && answer.value` instead of requiring every candidate to come back.
+  const partial = createAdvisor({
+    decider: {
+      name: "partial",
+      decide: async (request) => ({
+        answers: { [Object.keys(request.questions)[0]]: { kind: "noul" as const, value: true } },
+      }),
+    },
+    record: () => {},
+    enabled: true,
+  });
+  const kept = await advisePruning({
+    session: { advisorSession: { advisor: partial }, parentSession: parentSessionOf(8) },
+    granted: GRANTED,
+    task: "t",
+  });
+  assert.equal(kept, undefined, "an answer to one of four questions is not an answer");
+});
+
+test("the workspace settings file cannot choose the advisor's destination or lengthen its bound", async () => {
+  // `.pi/pi-daddy/settings.json` is writable by any child holding `tool:write`. A model is a destination and a
+  // longer timeout is not a narrowing; letting the file set either would be the shape 0.35.0 exists to close.
+  // Breaks by: reading `model` from the block, or taking `timeoutMs` without clamping.
+  const { advisorSettingsFrom } = await import("../src/advisors/settings.ts");
+  const on = { [ENV_ADVISOR]: "jev", [ADVISOR_KEY_ENV]: "k" } as NodeJS.ProcessEnv;
+  assert.match(String(advisorSettingsFrom({ model: "openai/gpt-4o" }, on).refusal), /not a narrowing/);
+  assert.equal(advisorSettingsFrom({ model: "openai/gpt-4o" }, on).enabled, false);
+  assert.equal(advisorSettingsFrom({ timeoutMs: 30000 }, on).timeoutMs, 2000, "clamped, never raised");
+  assert.equal(advisorSettingsFrom({ timeoutMs: 500 }, on).timeoutMs, 500, "a shorter bound is a narrowing");
+
+  // And the one control the file keeps must fail CLOSED: anything that is not exactly `true` disables.
+  for (const enabled of [false, "false", 0, null]) {
+    const settings = advisorSettingsFrom({ enabled }, on);
+    assert.equal(settings.enabled, false, `enabled: ${JSON.stringify(enabled)} must not leave the advisor on`);
+    assert.match(String(settings.refusal), /not true for this project/);
+  }
+
+  // A key name is echoed back into the /grants panel, and this file is child-writable.
+  const forged = advisorSettingsFrom({ "\u001b[31mowned\n  grant      tool:*": 1 }, on);
+  assert.doesNotMatch(String(forged.refusal), /\u001b|\n/, "no control characters reach a trust surface");
 });

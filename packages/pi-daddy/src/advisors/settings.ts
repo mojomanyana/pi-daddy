@@ -23,7 +23,9 @@
 
 // Spelled once, in the kernel's table, so this layer cannot drift from the list `childEnv` refuses to write.
 export { ENV_ADVISOR_KEY as ADVISOR_KEY_ENV } from "../kernel/env-names.ts";
-import { ENV_ADVISOR, ENV_ADVISOR_KEY } from "../kernel/env-names.ts";
+import { ENV_ADVISOR, ENV_ADVISOR_KEY, ENV_ADVISOR_MODEL } from "../kernel/env-names.ts";
+import { DEFAULT_ADVICE_TIMEOUT_MS } from "./advisor.ts";
+export { ENV_ADVISOR_MODEL } from "../kernel/env-names.ts";
 export { ENV_ADVISOR } from "../kernel/env-names.ts";
 
 export interface AdvisorSettings {
@@ -59,22 +61,37 @@ export function advisorSettingsFrom(raw: unknown, env: NodeJS.ProcessEnv = proce
   if (typeof block !== "object" || Array.isArray(block))
     return { ...ADVISOR_OFF, refusal: "settings.advisor must be an object; no advisor is enabled" };
   const fields = block as Record<string, unknown>;
+  // `model` stays KNOWN so the refusal below can say why it is refused, rather than reporting it as a typo.
   const unknownKeys = Object.keys(fields).filter((key) => !["enabled", "decider", "model", "timeoutMs"].includes(key));
+  // Key names are echoed back, and this file is workspace-writable: a key containing an escape sequence or a
+  // newline would otherwise forge lines in the `/grants` panel, which is a trust surface. Review measured a forged
+  // `grant tool:*` line. Sanitised and truncated before it reaches any renderer.
   if (unknownKeys.length > 0)
-    return { ...ADVISOR_OFF, refusal: `settings.advisor has unknown field(s) ${unknownKeys.join(", ")}` };
-  // A project may switch it OFF; it may never switch it on, which is why `false` is honoured and `true` is not read.
-  if (fields.enabled === false)
-    return { ...ADVISOR_OFF, refusal: "settings.advisor.enabled is false for this project" };
+    return {
+      ...ADVISOR_OFF,
+      refusal: `settings.advisor has unknown field(s) ${unknownKeys
+        .map((key) => key.replace(/[^\w.-]/g, "?").slice(0, 40))
+        .join(", ")}`,
+    };
+  // A project may switch it OFF; it may never switch it on, which is why `true` is not read. Anything that is not
+  // exactly `true` disables: `"false"`, `0` and `null` used to leave the advisor ON with no word said, which is
+  // rule 8 inverted — the one control this file retains failing open.
+  if (fields.enabled !== undefined && fields.enabled !== true)
+    return { ...ADVISOR_OFF, refusal: "settings.advisor.enabled is not true for this project" };
   if (fields.decider !== undefined && fields.decider !== "jev")
     return { ...ADVISOR_OFF, refusal: `settings.advisor.decider must be "jev"; no advisor is enabled` };
-  const blockCompat = fields;
-  if (blockCompat.model !== undefined && typeof blockCompat.model !== "string")
-    return { ...ADVISOR_OFF, refusal: "settings.advisor.model must be a string" };
+  // **A model is a DESTINATION, not a narrowing.** Letting this workspace-writable file choose it would let a child
+  // holding `tool:write` point the operator's next session at a generative model of its choosing, billed to the
+  // operator's key — the same self-defeating shape this release moved the enable switch to close, one step
+  // sideways. Review measured it. The model comes from the environment or not at all.
+  if ((fields as Record<string, unknown>).model !== undefined)
+    return { ...ADVISOR_OFF, refusal: `settings.advisor.model is not a narrowing; set ${ENV_ADVISOR_MODEL} instead` };
   if (
     fields.timeoutMs !== undefined &&
     (!Number.isInteger(fields.timeoutMs) || (fields.timeoutMs as number) < 1 || (fields.timeoutMs as number) > 30_000)
   )
     return { ...ADVISOR_OFF, refusal: "settings.advisor.timeoutMs must be an integer between 1 and 30000" };
+  const model = env[ENV_ADVISOR_MODEL]?.trim();
   const key = env[ENV_ADVISOR_KEY]?.trim();
   if (!key)
     return {
@@ -84,7 +101,11 @@ export function advisorSettingsFrom(raw: unknown, env: NodeJS.ProcessEnv = proce
   return {
     enabled: true,
     decider: "jev",
-    ...(typeof fields.model === "string" ? { model: fields.model } : {}),
-    ...(fields.timeoutMs !== undefined ? { timeoutMs: fields.timeoutMs as number } : {}),
+    ...(model ? { model } : {}),
+    // Clamped, never raised: a longer bound is not a narrowing either, and a child-writable 30s would be a stall on
+    // every delegation.
+    ...(fields.timeoutMs !== undefined
+      ? { timeoutMs: Math.min(fields.timeoutMs as number, DEFAULT_ADVICE_TIMEOUT_MS) }
+      : {}),
   };
 }

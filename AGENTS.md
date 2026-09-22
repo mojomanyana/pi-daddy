@@ -392,6 +392,19 @@ must behave identically under the null decider, which is why that is the default
 advice" — disabled, missing key, two-second timeout, transport error, or a response we do not recognise all return
 the same nothing.
 
+**What an advisor costs in egress, said once and plainly.** With one enabled, a delegation that leaves `thinking`
+blank sends its task text to a third party, and a `pruned` context handoff sends the task plus up to twelve of the
+operator's own session turns, two thousand characters each. That is the operator's conversation, not only the task,
+and it is the reason an advisor is off by default and enabled only from the environment. Nothing of it is recorded:
+the `advice` record names the decision, the question keys, the answers and the timing. `/grants` states which
+advisor is in force and what it sends.
+
+**Both decision points are asked only for a delegation that can actually run**, and the pruning one only after a
+plan says the handoff survived the ceiling, the grant and the gate. Review measured the first version asking
+straight from the model-supplied request: a delegation the grant then refused had already shipped a dozen session
+turns. `context:` is a capability precisely so a parent's session cannot cross without a named grant, and asking
+first shipped it with no grant at all.
+
 **The first decision point (2026-09-22, roadmap PR 8): how hard a child should think.** When a `delegate` call
 names no `thinking` level, the advisor is asked to choose one from the levels this session's own model reports it
 supports. That is the shape the boundary was designed for: the options are not invented by the advisor, they are
@@ -410,6 +423,14 @@ import both sides and is where decision points live. A rule of the form "advice 
 module" was tried and discarded — the delegation runner legitimately does both, and splitting it would buy nothing
 — so what is checked instead is that the set of consulting modules is written down, and that the one answer an
 advisor gives is spent on `thinking` and nothing else.
+
+**What the workspace settings file may and may not do.** It may switch an advisor off for one project, and shorten
+its timeout. It may not enable one, choose its model, or lengthen its bound — a model is a destination and a longer
+bound is not a narrowing, and this file is writable by any child holding `tool:write`. Review measured both holes
+after the enable switch had already been moved for exactly that reason; the same argument had to be applied twice
+more. Anything that is not exactly `true` on `enabled` disables, because the one control the file keeps must fail
+closed like everything else. Key names are sanitised before they reach `/grants`, which is a trust surface a
+child-writable file was able to forge lines in.
 
 **Deliberate departure from the programme's sketch:** there is no dashboard toggle. The dashboard is a read-only
 renderer that "never affects enforcement" (ADR-0036), and a control there writing to settings would be the first
