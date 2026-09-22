@@ -10,6 +10,7 @@ import type { InheritableApproval } from "./approval.ts";
 import type { Catalog } from "./catalog.ts";
 import type { ApprovalBinding, CorrelationMetadata } from "./correlation.ts";
 import type { StructuredRefusal } from "./refusals.ts";
+import type { WorkspacePins } from "./workspace-pin.ts";
 
 /** The two ways a child can be started. Defined here, below the executors, so the ledger and the planner can name it without importing an executor (ADR-0076 layering). */
 export const EXECUTOR_KINDS = ["process", "herdr"] as const;
@@ -82,6 +83,14 @@ export interface DelegationContext {
    * (ADR-0076: the kernel imports no product; products contribute through this hook).
    */
   childEnv?: (child: { childExecutionId?: string }) => Readonly<Record<string, string>>;
+  /**
+   * This session's destination pins (ADR-0042), narrowed by `workspacePinEnv` to what the child holds.
+   *
+   * Supplied by the composition layer rather than read from the environment here, so the kernel keeps one
+   * source for it and a test can hand one in. Absent means this session established no pin: the child then
+   * inherits none and can route nowhere, which is the fail-closed direction.
+   */
+  workspacePin?: WorkspacePins;
   /**
    * Stage what crosses for a GRANTED handoff (ADR-0078), supplied by the composition layer for `childEnv`'s
    * reason: building it means reading files and the parent's session, and the kernel does no I/O.

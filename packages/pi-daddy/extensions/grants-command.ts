@@ -34,6 +34,8 @@ export interface GrantsCommandContext {
   executor: ExecutorChoice;
   /** ADR-0077: which advisor is in force, or why none is. Reported because an advisor sends task text out. */
   advisor: { decider: string; refusal?: string };
+  /** ADR-0042: which ids this session pinned, so a routing refusal is discoverable before it happens. */
+  workspacePin?: ReadonlyMap<string, string>;
   observed: boolean;
   depth: number;
   maxDepth: number;
@@ -92,6 +94,7 @@ export const grantsCommand = {
       ownGrant,
       executor,
       advisor,
+      workspacePin,
       observed,
       depth,
       maxDepth,
@@ -379,7 +382,19 @@ export const grantsCommand = {
         `${catalog.byKind("skill").length} skill, ${catalog.byKind("agentType").length} agent-type, ` +
         `${catalog.byKind("workspace").length} workspace`,
       ...(catalog.byKind("workspace").length > 0
-        ? [`  routable   ${catalog.byKind("workspace").join(", ")} — held ones only are usable (ADR-0035)`]
+        ? [
+            `  routable   ${catalog.byKind("workspace").join(", ")} — held ones only are usable (ADR-0035)`,
+            // ADR-0042 made a destination pin a PRECONDITION for routing, and it had no operator surface at
+            // all: not here, not at session start, not in the README. An operator refused for want of a pin
+            // could not discover that the mechanism existed, let alone which ids it covered.
+            `  pinned     ${
+              workspacePin === undefined
+                ? "(none — no workspace is routable this session)"
+                : workspacePin.size === 0
+                  ? "(none inherited — this session may route nowhere)"
+                  : `${[...workspacePin.keys()].sort().join(", ")} — routing refuses if a registry entry moves`
+            }`,
+          ]
         : []),
       // Rule 8's loud half again. The catalog fails soft on an unreadable registry, which is right, and used
       // to discard the reason with it, which was not: one malformed entry removed every workspace from this

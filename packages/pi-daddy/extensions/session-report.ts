@@ -67,6 +67,13 @@ export async function reportSessionStart(session: GrantsSession, ctx: SessionRep
   // the moment somebody tries to delegate to it.
   for (const reason of session.definitionSkips)
     ctx.ui.notify(`grants: a definition was not loaded — ${reason}`, "warning");
+  // A registered workspace that could not be pinned is not routable this session, and the routing refusal an
+  // operator would otherwise meet names neither the directory nor the reason.
+  for (const skipped of session.workspaceSkips)
+    ctx.ui.notify(
+      `grants: workspace ${skipped} — it is registered but not routable this session (ADR-0042 destination pin)`,
+      "warning",
+    );
   if (session.catalog.registryRefusal)
     ctx.ui.notify(
       `grants: workspace registry unreadable, no workspace is routable this session — ${session.catalog.registryRefusal}`,

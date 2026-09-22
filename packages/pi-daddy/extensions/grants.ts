@@ -378,6 +378,7 @@ export default function (pi: ExtensionAPI) {
             decider: session.advisorSession.deciderName,
             ...(session.advisorSession.settings.refusal ? { refusal: session.advisorSession.settings.refusal } : {}),
           },
+          ...(session.workspacePin ? { workspacePin: session.workspacePin } : {}),
           catalog: session.catalog,
           definitions: session.definitions,
           sessionApprovals: session.sessionApprovals,

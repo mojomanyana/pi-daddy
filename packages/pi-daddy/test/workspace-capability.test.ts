@@ -549,7 +549,11 @@ test("an unregistered id is refused by a message that names the file and what it
   assert.equal(registry.source, path, "the object carries where it came from, so a caller cannot forget it");
 
   await assert.rejects(
-    resolveWorkspace(registry, "nope"),
+    resolveWorkspace(
+      registry,
+      "nope",
+      { pins: new Map() } /* ADR-0042: unreachable here — the id is refused before the pin is consulted */,
+    ),
     (e: Error & { code?: string; details?: Record<string, string> }) => {
       assert.equal(e.code, "WORKSPACE_NOT_REGISTERED");
       assert.match(e.message, new RegExp(path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), "names the FILE to edit");
@@ -560,8 +564,13 @@ test("an unregistered id is refused by a message that names the file and what it
   );
 
   // A hand-built registry (tests, fixtures) has no source and must still produce a usable message.
-  await assert.rejects(resolveWorkspace({ version: 1, workspaces: {} }, "nope"), (e: Error) =>
-    /it lists nothing/.test(e.message),
+  await assert.rejects(
+    resolveWorkspace(
+      { version: 1, workspaces: {} },
+      "nope",
+      { pins: new Map() } /* ADR-0042: unreachable here — the id is refused before the pin is consulted */,
+    ),
+    (e: Error) => /it lists nothing/.test(e.message),
   );
 });
 

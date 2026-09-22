@@ -32,6 +32,7 @@ import { ENV_HERDR } from "../src/executors/executor.ts";
 import { verifyLedger } from "../src/governance/ledger.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 import { ENV_WORKSPACE_REGISTRY, validateRegisteredWorkspace } from "../src/kernel/workspace.ts";
+import { ENV_WORKSPACE_PIN } from "../src/kernel/workspace-pin.ts";
 import { acquireWorkspaceLease, ENV_WORKSPACE_LEASE_DIR } from "../src/governance/workspace-lease.ts";
 import { execFileSync } from "node:child_process";
 import { recordLines } from "./record-fixtures.ts";
@@ -50,6 +51,10 @@ const KEYS = [
   ENV_EXECUTION_ID,
   ENV_HERDR,
   ENV_WORKSPACE_REGISTRY,
+  // ADR-0042. Not cosmetic: a pin established by one test's registry survived into the next, whose workspace
+  // is a different directory, so routing refused with "the registry has been rewritten" against a registry
+  // nobody had touched. The mechanism was right and the harness was leaking state between tests.
+  ENV_WORKSPACE_PIN,
   ENV_WORKSPACE_LEASE_DIR,
 ];
 const saved = new Map<string, string | undefined>();
@@ -1063,6 +1068,60 @@ test("a governed process starts in the validated workspace with the same effecti
     assert.equal(child.cwd, dir);
     const at = child.argv.indexOf("--tools");
     assert.equal(child.argv[at + 1], "read", "workspace routing must not widen the grant");
+  } finally {
+    process.env.PATH = oldPath;
+  }
+});
+
+test("ADR-0042: a delegated child inherits a NARROWED destination pin on the spawn path", async () => {
+  // **The fork this project has already been caught by once.** `delegate.ts` builds a child's environment
+  // itself rather than through `childEnv`, and the comment there records that the "never inherit
+  // `workspace:*`" rule lived only in `childEnv` so this path handed the wildcard straight down — with the
+  // test beside that fix exercising the wrong path. The pin reached the same fork, and ADR-0042 is explicit
+  // that both paths must share one builder. This drives the real `delegate` tool and reads the child's own
+  // environment, so it cannot pass while the spawn path is unwired.
+  //
+  // Breaks by: removing the `workspacePinEnv` call from `delegate.ts`, or letting it pass the unnarrowed map.
+  const { dir, registry, leaseDir } = await registeredWorkspaceFixture();
+  const bin = await tempDir("grants-pin-shim-");
+  const shim = join(bin, "pi");
+  await writeFile(
+    shim,
+    `#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify({pin:process.env.PI_DADDY_WORKSPACE_PIN}))\n`,
+  );
+  await chmod(shim, 0o755);
+  const oldPath = process.env.PATH;
+  process.env.PATH = `${bin}:${oldPath}`;
+  try {
+    const { tools, ctx } = await harness(
+      {
+        [ENV_GRANT]: "tool:read,tool:delegate,workspace:w1",
+        [ENV_WORKSPACE_REGISTRY]: registry,
+        [ENV_WORKSPACE_LEASE_DIR]: leaseDir,
+      },
+      dir,
+    );
+    const pinned = (await tools.get("delegate")!.execute(
+      "t",
+      // `workspace:w1` in the child's OWN capabilities, not merely the routing field: a child the parent
+      // places in a workspace but does not grant the capability to cannot route onward, so its correct pin is
+      // empty. The pin follows the authority to route, not the cwd.
+      { task: "report", tools: ["read", "workspace:w1"], workspace: { workspace_id: "w1", access: "read" } },
+      undefined,
+      undefined,
+      ctx,
+    )) as { content: Array<{ text: string }> };
+    const withWorkspace = JSON.parse(pinned.content[0].text).pin as string;
+    assert.match(withWorkspace, /^w1:[0-9a-f]{32}$/, `a routed child must inherit its pin, got ${withWorkspace}`);
+
+    // And a child granted no workspace inherits an EMPTY pin rather than its parent's. Empty rather than
+    // absent matters: an omitted key does not overwrite, so absent would leave the parent's value in place.
+    const unrouted = (await tools
+      .get("delegate")!
+      .execute("t", { task: "report", tools: ["read"] }, undefined, undefined, ctx)) as {
+      content: Array<{ text: string }>;
+    };
+    assert.equal(JSON.parse(unrouted.content[0].text).pin, "", "a child holding no workspace must be pinned to none");
   } finally {
     process.env.PATH = oldPath;
   }

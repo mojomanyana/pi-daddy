@@ -328,6 +328,7 @@ export async function runOneDelegation(
     if (plan.ok || shouldSeekApproval(plan.result)) {
       try {
         preparedWorkspace = await prepareDelegationWorkspace({
+          ...(session.workspacePin ? { workspacePin: session.workspacePin } : {}),
           spec: { ...spec.workspace, access: governedWorkspaceAccess(spec.workspace.access, plan.requested) },
           correlation: spec.correlation,
           childId: ids.childId,

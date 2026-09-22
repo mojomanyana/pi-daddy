@@ -24,6 +24,7 @@ import {
   ENV_MAX_DEPTH,
   ENV_PARENT_ID,
   inheritableGrant,
+  workspacePinEnv,
 } from "./propagation.ts";
 import { inheritApprovals, type InheritableApproval } from "./approval.ts";
 import { explainDoubledNamespace, suggestForUnknown, unknownCapabilities, type Catalog } from "./catalog.ts";
@@ -399,6 +400,11 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
   // reason on the other path.
   env[ENV_APPROVED] = inheritApprovals(ctx.approved ?? [], inheritable).join(",");
   if (ctx.ledgerPath) env[ENV_LEDGER] = ctx.ledgerPath;
+  // ADR-0042, through the SAME builder `childEnv` uses. This is the fork the comment above is about: a rule
+  // spelled once in `childEnv` and not here is a rule that does not hold on the path a delegated child
+  // actually takes. Without this a routed grandchild inherits no pin and can route nowhere — fail-closed,
+  // but wrong, and silently so.
+  Object.assign(env, workspacePinEnv(ctx.workspacePin, inheritable));
   // Composition-supplied per-child environment (the activity timeline's observation identity today).
   // Never process-global grant state: a key in the governance namespace is a programming error in the
   // caller, refused loudly rather than letting a product widen what the child inherits.

@@ -1,4 +1,5 @@
 import type { CorrelationMetadata } from "../src/kernel/correlation.ts";
+import type { WorkspacePins } from "../src/kernel/workspace-pin.ts";
 import type { Capability } from "../src/kernel/resolve.ts";
 import { appendLedgerEvent, buildWorkspaceLeaseEvent } from "../src/governance/ledger.ts";
 import { GovernanceRefusal, refusal, type StructuredRefusal } from "../src/kernel/refusals.ts";
@@ -72,6 +73,8 @@ export async function prepareDelegationWorkspace(input: {
   parentExecutionId: string | null;
   signal?: AbortSignal;
   ledgerPath?: string;
+  /** The CALLING session's own destination pin (ADR-0042); the environment holds its child's, not its own. */
+  workspacePin?: WorkspacePins;
 }): Promise<PreparedWorkspace> {
   if (input.correlation?.workspace_id && input.correlation.workspace_id !== input.spec.workspace_id) {
     throw new GovernanceRefusal(
@@ -90,7 +93,19 @@ export async function prepareDelegationWorkspace(input: {
       }),
     );
   }
-  const workspace = await resolveWorkspace(await loadWorkspaceRegistry(registryPath), input.spec.workspace_id);
+  // ADR-0042. The pin comes from the caller's session, NOT from `process.env`: `publishChildEnv` writes the
+  // child's narrowed pin into the environment, so reading it back here would check this session's routing
+  // against its child's authority. `ownGrant` has always lived in memory for the same reason.
+  const workspace = await resolveWorkspace(
+    await loadWorkspaceRegistry(registryPath),
+    input.spec.workspace_id,
+    // **No environment fallback.** Review called the old `?? parseWorkspacePin(process.env[...])` a live read
+    // of a variable the session no longer owns — `publishChildEnv` writes its CHILD's pin there. No state
+    // could be constructed where it read a usable value, but "currently unreachable" is a weaker property
+    // than "cannot happen", and the whole rule here is that a session's own pin lives in memory. A caller
+    // with no pin routes nowhere, which is what a caller with no pin should do.
+    input.workspacePin ? { pins: input.workspacePin } : { pins: new Map() },
+  );
   let lease: WorkspaceLease | undefined;
   try {
     lease = await acquireWorkspaceLease({

@@ -56,6 +56,16 @@ import { agentDir, projectSettingsPath } from "../src/kernel/project-paths.ts";
 import { ENV_ALLOW_UNRESOLVED_MODELS } from "../src/kernel/model-preflight.ts";
 import { beginExtensionLifecycle, rememberChildPublication, type ReloadLifecycle } from "./reload-environment.ts";
 import { reconcileSessionEnvironment } from "./session-environment.ts";
+import { realpath } from "node:fs/promises";
+import {
+  establishWorkspacePin,
+  formatWorkspacePin,
+  parseWorkspacePin,
+  type WorkspacePins,
+  ENV_WORKSPACE_PIN,
+} from "../src/kernel/workspace-pin.ts";
+import { loadWorkspaceRegistry } from "../src/kernel/workspace.ts";
+
 /**
  * Run governed children in herdr panes instead of captured child processes.
  *
@@ -196,6 +206,19 @@ export interface GrantsSession extends NativeSessionHost {
    * capability.
    */
   definitionSkips: string[];
+  /**
+   * This session's OWN destination pin (ADR-0042), captured once at start.
+   *
+   * **In memory, not re-read from the environment, and that is not a style choice.** `publishChildEnv` writes
+   * the CHILD's narrowed pin into `process.env` — that is how a child inherits anything here — so a session
+   * that re-read the variable at routing time would read its child's pin and lose its own. `ownGrant` has
+   * lived in memory for exactly this reason; the pin reached the same trap, and a test caught it.
+   */
+  workspacePin?: WorkspacePins;
+  /** Whether this session has already settled its pin. Minting twice is how a reload laundered a tamper. */
+  pinSettled: boolean;
+  /** Registered workspaces this session could not pin, and why — reported at session start (rule 8). */
+  workspaceSkips: string[];
   catalog: Catalog;
   /**
    * The in-flight catalog build, so `delegate` can wait for it instead of racing it.
@@ -264,7 +287,85 @@ export interface GrantsSession extends NativeSessionHost {
  * selling point is "no restart"). Two copies of these three steps is how the two callers come to disagree
  * about what loading means, so there is one.
  */
+/**
+ * ADR-0042: a root records what each registered workspace id MEANT, once, before anything can rewrite it.
+ *
+ * **Only a session that inherited no pin establishes one.** A descendant that could mint its own would rewrite
+ * the registry, re-establish, and route anywhere — the mechanism would be a comment. So an inherited value is
+ * left exactly as it arrived, including an empty one, which says "your parent established a pin and gave you
+ * nothing from it" and refuses at routing with its own message.
+ *
+ * Failing to establish is not an error: a machine with no registry has no workspaces to route to, and the
+ * absent pin refuses anything that tries. That is the same direction as every other failure in this mechanism.
+ */
+async function establishRootPin(session: GrantsSession): Promise<void> {
+  if (session.pinSettled) return;
+  // **One assignment, at the end, on every path.** Review found the previous shape — assign at each `return`
+  // — missing two of five exits: the `catch` around an unreadable registry, which is precisely the state a
+  // child can create by truncating the file, and the no-registry return. A root that took either reached the
+  // RELOAD with the lifecycle still empty and minted over whatever the registry said by then, routing into
+  // prod. That is the checklist failing, so the checklist is gone: the body computes a value and the caller
+  // assigns both fields once.
+  // **Settled AFTER the value exists.** Setting the flag first meant a throw would leave the session marked
+  // settled with nothing settled — routing nowhere, which is safe, but with the LIFECYCLE unset, so the next
+  // reload would mint again. Review could construct no throw today; "currently unreachable" is exactly the
+  // property this feature has now been wrong about four times, and the ordering costs nothing.
+  const settled = await settleWorkspacePin(session);
+  session.pinSettled = true;
+  session.workspacePin = settled;
+  session.reloadLifecycle.workspacePin = settled;
+}
+
+/**
+ * What this session's destination pin IS (ADR-0042). Every path returns a map; none writes anything.
+ *
+ * An empty map means "settled, and you may route nowhere", which is different from never having settled and
+ * is what every failure resolves to. The distinction that matters is not empty-versus-absent but
+ * settled-versus-not, and settling happens exactly once per owner.
+ */
+async function settleWorkspacePin(session: GrantsSession): Promise<WorkspacePins> {
+  // Settled by an EARLIER SESSION OBJECT for this same owner — an extension reload. Adopting rather than
+  // re-deriving is the point: a root may mint, but only once, and only from the registry as it stood before
+  // any child had a chance to rewrite it.
+  if (session.reloadLifecycle.workspacePin) return session.reloadLifecycle.workspacePin;
+
+  const raw = session.reloadLifecycle.root[ENV_WORKSPACE_PIN];
+  const inherited = parseWorkspacePin(raw);
+  // Inherited, so it is authority and is kept exactly as it arrived — including an empty one, which says
+  // "your parent established a pin and gave you none of it".
+  if ("pins" in inherited) return inherited.pins;
+
+  // **A DESCENDANT NEVER MINTS.** Review reproduced the escalation end to end across a real process boundary:
+  // `workspacePinEnv` OMITS the variable when a parent has no pin of its own — which happens whenever that
+  // parent's registry was unreadable at its start, a state any child with `tool:write` can arrange — and the
+  // child then read the absence as "I am a root", minted from the registry it had just rewritten, and routed
+  // to the prod worktree holding only `workspace:staging`. Depth already rides in the environment and already
+  // attenuates downward, so it is enough on its own.
+  //
+  // A MALFORMED value refuses for the same reason even at the root. The module header says missing, empty,
+  // malformed and mismatched all refuse; that was true of the routing check and false here, where a refusal
+  // fell through to minting. A tamperer who can corrupt one byte must not thereby earn a promotion.
+  if (session.depth > 0 || raw !== undefined) return new Map();
+
+  const registryPath = process.env[ENV_WORKSPACE_REGISTRY];
+  if (!registryPath) return new Map();
+  try {
+    const registry = await loadWorkspaceRegistry(registryPath);
+    return await establishWorkspacePin(registry, realpath, (id, reason) =>
+      session.workspaceSkips.push(`${id} — ${reason}`),
+    );
+  } catch {
+    // An unreadable registry is already reported by the catalog and at session start. It does NOT follow that
+    // nothing is blocked — an earlier draft of this comment claimed that and review measured it false, because
+    // a grant supplied through `PI_DADDY_GRANT` never passes the catalog and `workspace:` is exempt from the
+    // unknown check anyway. A session can genuinely hold `workspace:w1` and be refused for want of a pin.
+    // Returning an empty map SETTLES it, so a later reload cannot mint over a registry that has since changed.
+    return new Map();
+  }
+}
+
 export async function loadProjectDefinitions(session: GrantsSession, cwd: string): Promise<void> {
+  await establishRootPin(session);
   const skips: string[] = [];
   session.definitions = await loadDefinitions(cwd, (_path, reason) => skips.push(reason));
   session.definitionSkips = skips;
@@ -331,6 +432,9 @@ export function createGrantsSession(
     maxDepth,
     malformedBounds: bounds.malformed,
     definitionSkips: [],
+    workspacePin: undefined,
+    pinSettled: false,
+    workspaceSkips: [],
     // ADR-0012: `bash` is gated by DEFAULT — but only in a governed session. An ungoverned one
     // (no PI_DADDY_GRANT) still blocks nothing, so "governance is opt-in" holds exactly where it always
     // did. Inside a session the operator already chose to govern, handing a child `bash` hands it an
@@ -388,6 +492,10 @@ export function createGrantsSession(
       extensionPath: session.extensionPath,
       observerExtensionPath: session.observerExtensionPath,
       childEnv: activityChildEnv(session.activity),
+      // ADR-0042: the pin this session holds, handed to the kernel so a delegated child inherits a narrowed
+      // one through the same builder `publishChildEnv` uses. Read here rather than in the kernel so there is
+      // one place that knows the environment is where a session's own pin lives.
+      ...(session.workspacePin ? { workspacePin: session.workspacePin } : {}),
       // ADR-0078: composition reads, the kernel decides. Called only for a mode that survived the gate.
       // `options` is forwarded, and its absence is why the second decision point was dead in production: a
       // one-parameter arrow is assignable to a two-parameter type, so the ids reached here and were discarded while
@@ -440,6 +548,9 @@ export function createGrantsSession(
         gated: session.gated,
         ledgerPath: session.ledgerPath,
         approved: republishable(session),
+        // ADR-0042. The pin this session holds, which `childEnv` narrows to what the child's grant names. A
+        // session with no pin passes none, and its children can route nowhere — the fail-closed direction.
+        ...(session.workspacePin ? { workspacePin: session.workspacePin } : {}),
         // G7 / B-I8: an ungoverned session publishes nothing, so "governance is opt-in" holds for
         // descendants too. Previously it exported its own observed tool surface as their grant.
         governed: session.governed,

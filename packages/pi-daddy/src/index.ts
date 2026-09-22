@@ -178,3 +178,16 @@ export * from "./products/dashboard-handshake.ts";
 export * from "./products/dashboard-herdr.ts";
 export * from "./products/activity-timeline.ts";
 export { runDashboard, dashboardFrame, DASHBOARD_PROTOCOL_VERSION } from "./products/dashboard-cli.ts";
+
+// ADR-0042. Exported because `resolveWorkspace` gained a destination-pin precondition in 0.38.0, and without
+// these a public consumer has no supported way to satisfy it — the parameter defaults to reading an
+// environment variable whose name and format were internal.
+export {
+  destinationDigest,
+  establishWorkspacePin,
+  formatWorkspacePin,
+  parseWorkspacePin,
+  ENV_WORKSPACE_PIN,
+  type WorkspacePins,
+  type ParsedPin,
+} from "./kernel/workspace-pin.ts";

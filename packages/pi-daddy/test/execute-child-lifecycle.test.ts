@@ -172,7 +172,13 @@ test("PR 3e: the temporary session directory is removed even when the run throws
   const { tmpdir } = await import("node:os");
   const dir = await tempDir("execute-child-dispose-");
   const unwritable = dir; // a directory as the ledger path: the strict starting append fails (EISDIR) and rethrows
-  const before = (await readdir(tmpdir())).filter((n) => n.startsWith("pi-daddy-exec_")).length;
+  // **A SET, not a count.** The count compared process-wide entries in the shared tmpdir while other test
+  // FILES run in parallel and create and remove directories of the same prefix, so a sibling's cleanup landing
+  // between the two reads failed this test with `1 !== 2` — a directory vanishing, which is the opposite of
+  // what it is looking for. Observed once on Node 22 in CI and not reproducible locally. Comparing what is NEW
+  // makes it immune to anything another file does, and still fails for the leak it exists to catch.
+  const listExec = async () => new Set((await readdir(tmpdir())).filter((name) => name.startsWith("pi-daddy-exec_")));
+  const before = await listExec();
   await assert.rejects(
     executePlannedChild({
       session: { ledgerPath: unwritable, executor: { kind: "process" } } as GrantsSession,
@@ -183,8 +189,8 @@ test("PR 3e: the temporary session directory is removed even when the run throws
       cwd: dir,
     }),
   );
-  const after = (await readdir(tmpdir())).filter((n) => n.startsWith("pi-daddy-exec_")).length;
-  assert.equal(after, before, "a session directory allocated for this run survived its failure");
+  const leaked = [...(await listExec())].filter((name) => !before.has(name));
+  assert.deepEqual(leaked, [], "a session directory allocated for this run survived its failure");
 });
 
 test("the executor receives only the time remaining on the recorded lifecycle deadline", async () => {

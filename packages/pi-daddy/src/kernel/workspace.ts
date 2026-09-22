@@ -9,6 +9,7 @@ import { promisify } from "node:util";
 import { GovernanceRefusal, refusal } from "./refusals.ts";
 import { isSafeWorkspaceId, workspaceCapability } from "./capabilities.ts";
 import { ENV_WORKSPACE_REGISTRY } from "./env-names.ts";
+import { checkPinnedDestination, type ParsedPin } from "./workspace-pin.ts";
 export { ENV_WORKSPACE_REGISTRY } from "./env-names.ts";
 
 const execFileAsync = promisify(execFile);
@@ -181,9 +182,20 @@ export async function registeredWorkspaceIds(
   }
 }
 
+/**
+ * Resolve an authorised id to a worktree, refusing if the id no longer means what the grant meant.
+ *
+ * **`pin` is REQUIRED, and it used to default to reading the environment.** That default was the last
+ * environment fallback in the routing path, and it was the wrong reassurance: after `publishChildEnv` the
+ * variable holds a session's CHILD's pin, so a two-argument call checked a session against its child's
+ * authority. It is dead in-tree — the one production caller always passes one — but this is a public export,
+ * so an embedder could reach it. Requiring the argument closes it permanently and makes "a session's own pin
+ * lives in memory" unbreakable rather than merely currently-true.
+ */
 export async function resolveWorkspace(
   registry: WorkspaceRegistryFile,
   workspaceId: string,
+  pin: ParsedPin,
 ): Promise<ValidatedWorkspace> {
   const registered = Object.hasOwn(registry.workspaces, workspaceId) ? registry.workspaces[workspaceId] : undefined;
   const known = Object.keys(registry.workspaces).sort();
@@ -198,12 +210,33 @@ export async function resolveWorkspace(
       ),
     );
   }
-  return validateRegisteredWorkspace({ workspaceId, registeredRoot: registered.path });
+  const validated = await validateRegisteredWorkspace({ workspaceId, registeredRoot: registered.path });
+  // **ADR-0042, and it is checked HERE on purpose.** The capability check upstream asks whether this session may
+  // route to this NAME. This asks whether the name still points where it pointed when the name was granted —
+  // the question `g37-registry-tamper` showed nobody was asking. It runs after canonicalisation because the
+  // digest is of the canonical root; comparing the registry's raw string would be defeated by a symlink.
+  const mismatch = checkPinnedDestination({ workspaceId, canonicalRoot: validated.root, pin });
+  if (mismatch)
+    throw new GovernanceRefusal(
+      refusal("WORKSPACE_NOT_AUTHORIZED", `workspace ${workspaceId} is not routable: ${mismatch}`, {
+        workspace_id: workspaceId,
+        resolved_root: validated.root,
+      }),
+    );
+  return validated;
 }
 
 /**
  * Canonicalize and validate the initial workspace against Git's registered worktree list.
  * This prevents accidental misrouting. It does not constrain any path a child accesses after spawn.
+ */
+/**
+ * Canonicalise and verify a registered root as a git worktree.
+ *
+ * **This performs NO destination-pin check (ADR-0042), deliberately and dangerously.** It answers "is this
+ * path the worktree it claims to be", not "may this session route here" — `resolveWorkspace` is the one that
+ * asks the second question, and it is the only path production takes. It is a public export, so it is said
+ * here rather than left to be discovered: an embedder calling this directly routes unpinned.
  */
 export async function validateRegisteredWorkspace(input: {
   workspaceId: string;

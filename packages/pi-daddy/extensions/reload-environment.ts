@@ -5,6 +5,20 @@ export interface ReloadLifecycle {
   root: Record<string, string | undefined>;
   published?: Record<string, string | undefined>;
   activityRootId?: string;
+  /**
+   * The destination pin this owner settled on (ADR-0042), which must survive an extension reload.
+   *
+   * **Here rather than on the session, because a reload builds a NEW session.** `session.pinSettled` closed
+   * the `/grants init` re-mint, which reuses one session object, and left the reload open: a fresh object has
+   * no flag, a root legitimately inherited nothing and sits at depth 0, so it minted a second time — against
+   * whatever the registry said by then, which a child with `tool:write` had had the whole session to rewrite.
+   * A security review reproduced it. That is the same rule-on-the-object, second-path-builds-another-object
+   * shape this package keeps finding, three times in this feature alone.
+   *
+   * The lifecycle is keyed by owner in a `WeakMap` and is already the thing that "recovers its root rather
+   * than its child publication", so it is where settled-ness belongs.
+   */
+  workspacePin?: ReadonlyMap<string, string>;
 }
 type SessionOwner = object;
 
@@ -57,6 +71,17 @@ export function bindReloadLifecycle(
   if (!holder.latestChildPublication || !same(current, holder.latestChildPublication.environment)) {
     // No pi-daddy lifecycle published what is currently in process.env, so this is an explicit change to
     // this owner's root rather than another bound session's child state.
+    // **An explicit root replacement is a NEW grant, so the settled pin must go with the old one — but only
+    // when the root ACTUALLY changed.** The condition above is broader than this comment used to claim: its
+    // first disjunct fires when nothing has published yet in the process, where nothing has been replaced at
+    // all. Deleting there re-opened the mint window on the next reload, which review reproduced. Comparing
+    // against the stored root is what makes "replacement" mean replacement.
+    //
+    // The widening this closes: a replacement was honoured for the grant, the depth and the approvals and
+    // silently ignored for the pin, so a session reconciled to depth 1 — believing itself a descendant —
+    // kept a root-minted pin naming a workspace the replacement root never granted. Deleting it makes the
+    // next `establishRootPin` re-settle from the new root, which for a descendant means minting nothing.
+    if (!same(current, existing.root)) delete existing.workspacePin;
     existing.root = current;
   }
   return { lifecycle: existing, environment: withRoot(existing.root) };

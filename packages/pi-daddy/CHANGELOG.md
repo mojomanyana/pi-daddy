@@ -12,6 +12,85 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## 0.38.0 — a rewritten registry can no longer change what an authorised id means (ADR-0042)
+
+**The escalation this closes, measured in `g37-registry-tamper`.** `workspace:<id>` attenuated the NAME, not the
+mutable id-to-path meaning. A child holding `workspace:staging` and `tool:write` — no `bash` — could rewrite the
+operator's registry so `staging` pointed at the `prod` worktree, route a grandchild there, and take an exclusive
+write lease on it. Every capability check passed, because the id it was granted was the id it used. File ownership
+could not help: a governed child runs as the parent's uid.
+
+**The inherited destination pin.** A root resolves each registered id to its canonical destination and records a
+digest. Descendants inherit only the entries their own grant names, cannot mint an entry, and routing requires an
+exact match. A rewritten registry therefore changes where an id points and not what an inherited id may mean.
+
+**Every failure refuses, and a DESCENDANT never mints.** Missing, empty, malformed and mismatched all refuse.
+That sentence was written before it was true: a security review reproduced the escalation end to end, across a
+real process boundary. A parent whose own registry was unreadable at start has no pin, so the variable was
+OMITTED from its children's environment, and a child read the absence as "I am a root" — minting a pin from the
+registry it had just rewritten and routing to the prod worktree while holding only `workspace:staging`. Any
+child with `tool:write` can arrange that precondition by truncating the registry. Depth already rides in the
+environment and already attenuates, so anything below the root that arrives without a usable pin now routes
+nowhere, and a malformed value refuses instead of earning a promotion.
+
+**A session settles its pin once, and settled-ness survives a reload.** `/grants init` re-established a root's
+pin from whatever the registry said at that moment, and a child had had the whole session to rewrite it. Putting
+the flag on the session closed that and left the extension RELOAD open, because a reload builds a new session
+object: a root legitimately inherits nothing and sits at depth 0, so it minted a second time. A re-run of the
+security review measured a reloaded root routing into the prod worktree. Settled-ness now lives on the reload
+lifecycle, which is keyed by owner and is already what recovers a root across a reload.
+
+The fix for that then produced two more of itself, both reproduced: the new lifecycle field was assigned at each
+`return` and missed two of five exits — including the `catch` around an unreadable registry, which is exactly the
+state a child creates by truncating the file — and the one place that replaces a lifecycle's root baseline was
+not taught about the pin, so an explicit root replacement was honoured for the grant, the depth and the
+approvals and silently ignored for the pin, in the widening direction. `establishRootPin` now computes a value
+and assigns once, so "every path settles" is structural rather than a checklist; the checklist is what missed
+them.
+
+A sixth followed from the fix for the fifth: the deletion above fires whenever the current environment does not
+match the last child publication, and its own comment called that "an explicit change to this owner's root". True
+of the second half of that condition and false of the first, which fires when NOTHING has published yet — where
+nothing has been replaced at all. A root that settled and reloaded before publishing minted again. It is now
+deleted only when the root actually changed.
+
+That is six instances in one feature of the same shape — the rule goes on one path, and another path does not get
+it. Every one was found by a reviewer rather than by the author, and four of the six were found in the fix for the
+one before. It is the same shape as the `workspace:*` wildcard rule that lived only in `childEnv` while
+`delegate.ts` handed the wildcard down.
+
+**One builder for both spawn paths.** `delegate.ts` builds a child's environment itself rather than through
+`childEnv`, and this file already records what that fork cost once before: the "never inherit `workspace:*`" rule
+lived only in `childEnv`, so the delegate path handed the wildcard down. The pin reached the same fork and is now
+written by one function both callers use.
+
+**A session's own pin lives in memory, and is read from the reload snapshot, not from its environment.**
+`publishChildEnv` writes the CHILD's narrowed pin into `process.env`, so a session that re-read the variable
+would check itself against its child's authority. The first version of this change fixed that at the ROUTING
+site and missed the ESTABLISH site, which is the one that overwrites the session's pin — so every `/grants init`
+narrowed it, and a `workspace:*` root, whose published child pin is empty because the wildcard is never
+inherited, lost ALL routing until restart while being told "no destination pin was inherited" by a session that
+had established one. The inherited pin now comes from the lifecycle root snapshot, which is what every other
+authority-bearing input already uses.
+
+**Operator surface.** `/grants` lists the pinned ids under `routable`, and session start names any registered
+workspace that could not be pinned and why. The mechanism shipped with none of this: an operator refused for
+want of a pin could not discover that pins existed.
+
+**API.** `resolveWorkspace` takes a third parameter, a parsed pin, defaulting to the environment — so an
+external caller that worked in 0.37.0 now refuses unless one is supplied. `destinationDigest`,
+`parseWorkspacePin`, `establishWorkspacePin`, `formatWorkspacePin` and `ENV_WORKSPACE_PIN` are now exported for
+that reason. `validateRegisteredWorkspace` remains pin-free by design and now says so: it answers "is this path
+the worktree it claims to be", not "may this session route here".
+
+**What this does not cover, stated because eight refuted attacks reads like a proof and is not one.** The pin binds
+a governed descendant, because it rides in the environment of a process the parent starts; a child holding `bash`
+starts an ungoverned process and none of this applies. It binds the id-to-destination mapping and says nothing
+about which ids exist — the registry stays child-writable, and what keeps a new entry unusable is that `init`
+scaffolds `workspace:` ids commented out, which is a policy in a scaffolder rather than an enforced invariant. It
+is a digest of the path, never of the contents. And the Herdr pane path depends on one measured fact with no test
+behind it, that `tab create --env VAR=` delivers a variable set-but-empty. The gap register carries the full list.
+
 ## 0.37.0 — the handoff probe, and the budget was cutting the wrong end
 
 **A `pruned` handoff carried the turns furthest from the task.** Turn sections are pushed oldest-first and the
