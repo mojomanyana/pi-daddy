@@ -396,3 +396,65 @@ test("the real stager ranks turns so the cap drops the OLDEST, end to end", asyn
   assert.ok((staged.record?.truncatedBytes ?? 0) > 0, "only meaningful when the cap binds");
   assert.ok(bCount > aCount, `the newest turn must survive, kept ${bCount} newest and ${aCount} oldest bytes`);
 });
+
+test("a file the parent NAMED outlives turns a rule merely selected", async () => {
+  // Review measured the first `keepRank` losing this: turn sections were ranked and file sections defaulted to
+  // zero, so a `pruned` handoff carrying both dropped the explicitly named file FIRST — and a wholly skipped
+  // section emits no header, so the child could not tell a file had been named at all. That inverts the
+  // module's own ordering, where `files` is content the parent names and `pruned` is turns a rule guessed at.
+  // Breaks by: dropping `CONTEXT_RANK.file` from the file sections in `context-staging.ts`.
+  const cwd = await tempDir("context-band-");
+  await writeFile(join(cwd, "constraint.md"), "DECISION: the parser must stay synchronous\n");
+  const parentSession = {
+    getEntries: () =>
+      Array.from({ length: 12 }, (_, i) => ({ type: "message", id: `t${i}`, message: "z".repeat(4000) })),
+  };
+  const staged = createHandoffStager({ cwd, forkRoot: join(cwd, "forks"), parentSession: parentSession as never })({
+    mode: "pruned",
+    files: ["constraint.md"],
+  });
+  const text = String(staged.contextPrompt);
+  assert.ok((staged.record?.truncatedBytes ?? 0) > 0, "only meaningful when the cap binds");
+  assert.match(text, /DECISION: the parser must stay synchronous/, "the named file must survive the budget");
+});
+
+test("a turn kept for NAMING a file outranks a turn kept for being recent", async () => {
+  // The rule reaches back past the recency window for turns that name the caller's files, and those turns sit
+  // at the FRONT of the selection. A bare positional rank therefore evicted the rule's one non-recency signal
+  // first, while the ledger went on calling the rule `recent+files`. Breaks by: ranking every turn from its
+  // position alone, without the `fileMatchedTurn` band.
+  const cwd = await tempDir("context-band-turn-");
+  const entries = [
+    { type: "message", id: "old-but-relevant", message: "src/auth.ts must stay synchronous" },
+    ...Array.from({ length: 30 }, (_, i) => ({ type: "message", id: `t${i}`, message: "z".repeat(4000) })),
+  ];
+  const staged = createHandoffStager({
+    cwd,
+    forkRoot: join(cwd, "forks"),
+    parentSession: { getEntries: () => entries } as never,
+  })({ mode: "pruned", turns: 25, files: ["src/auth.ts"] });
+  const text = String(staged.contextPrompt);
+  assert.ok((staged.record?.truncatedBytes ?? 0) > 0, "only meaningful when the cap binds");
+  assert.match(text, /must stay synchronous/, "the file-matching turn is why the rule is called recent+files");
+});
+
+test("the record counts the turns that CROSSED, not the ones the rule selected", async () => {
+  // `context-staging.ts` says the record is "what actually crossed, never what was asked for", and it counted
+  // sections before the budget ran — so a handoff could record twenty-one kept turns having sent thirteen.
+  // Raising the default turn count moved the cap from binding in 13% of handoffs to 60%, which made the wrong
+  // number the usual one. Breaks by: counting `sections.length` or the pre-fence `keptTurns` again.
+  const cwd = await tempDir("context-record-");
+  const parentSession = {
+    getEntries: () =>
+      Array.from({ length: 30 }, (_, i) => ({ type: "message", id: `t${i}`, message: "z".repeat(4000) })),
+  };
+  const staged = createHandoffStager({ cwd, forkRoot: join(cwd, "forks"), parentSession: parentSession as never })({
+    mode: "pruned",
+    turns: 30,
+  });
+  const record = staged.record as { keptTurns: number; droppedTurns: number; truncatedBytes: number };
+  assert.ok(record.truncatedBytes > 0, "only meaningful when the cap binds");
+  const headers = (String(staged.contextPrompt).match(/--- parent turn /g) ?? []).length;
+  assert.equal(record.keptTurns, headers, `recorded ${record.keptTurns} kept, the child received ${headers}`);
+  assert.equal(record.keptTurns + record.droppedTurns, 30, "every turn is accounted for as kept or dropped");
+});

@@ -161,6 +161,9 @@ const NOT_REFUSAL_CODES = new Set([
   // An exported constant the probe record has to name, because "the default turn count" would leave a reader
   // unable to find it. Same shape as the flag above: a real identifier, not an invented refusal.
   "DEFAULT_CONTEXT_TURNS",
+  // The handoff rank bands. Named in the probe record because "what outranks what" is the decision a reader
+  // has to be able to find, and a vaguer phrase would not lead them to it.
+  "CONTEXT_RANK",
 ]);
 
 test("every refusal code the documents name exists", async () => {
