@@ -6,7 +6,7 @@
  * *observing* an agent, `run-herdr.ts` is about *starting and cleaning up after* one. Nothing here creates or
  * destroys anything.
  *
- * The two facts it is built on were measured against real herdr 0.7.5 (`docs/probes/g16-herdr`) and both are
+ * The two facts it is built on were measured against real herdr 0.7.5 (probe `g16-herdr`) and both are
  * counter-intuitive enough to be worth the module comment: `agent wait --until idle` matches the state the
  * agent was **already** in, and `agent read` is the one command that does **not** return a JSON envelope.
  */

@@ -127,7 +127,7 @@ export async function reportSessionStart(session: GrantsSession, ctx: SessionRep
   // `agent:*` grants no tools, but it authorises every definition in BOTH skill roots — including
   // `~/.pi/agent/skills/`, which other software installs into, so ADR-0017's "an operator-authored
   // file" is not true of everything it covers. Paired with a shell that is every body on disk running
-  // with `bash`. `docs/SPEC.md` calls the combination poor and nothing detected it, which is R-47's
+  // with `bash`. The README calls the combination poor and nothing detected it, which is R-47's
   // shape in a control shipped one day later.
   if (
     session.ownGrant.includes(AGENT_WILDCARD) &&

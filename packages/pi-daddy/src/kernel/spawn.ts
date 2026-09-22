@@ -3,7 +3,7 @@
  *
  * The enforcement point is pi core, not this package: `--tools` and `--no-tools` hard-block extension
  * tools, and an explicitly `-e`-loaded extension cannot re-add its tool past them (verified,
- * docs/probes/pi-fabric-eval probes 9–11). So governance reduces to "compute the allowlist correctly
+ * probe `pi-fabric-eval` probes 9–11). So governance reduces to "compute the allowlist correctly
  * and hand it to pi", with no runtime inside the descendant.
  */
 
@@ -77,7 +77,7 @@ export function planSpawn(input: SpawnPlanInput): SpawnPlan {
 
   // R-32. `--no-extensions` governs EXTENSIONS ONLY — measured, not assumed: a child spawned with
   // `--tools read` still loaded all eight of the operator's skills and `CLAUDE.md`
-  // (`docs/probes/g16-herdr` §4-5). Skills are injected into the system prompt rather than passed as
+  // (probe `g16-herdr` §4-5). Skills are injected into the system prompt rather than passed as
   // tools, so `--tools` cannot reach them and the `skill:` namespace enforced nothing at all.
   //
   // `--no-skills` is unconditional and `--skill` is added on top, because that is exactly how pi
@@ -133,7 +133,7 @@ export function planSpawn(input: SpawnPlanInput): SpawnPlan {
  *  - `@…` is resolved as a file and its contents injected into the child's prompt — absolute paths, `~`
  *    expansion, no sandbox. This happens in `main.js` before any tool is constructed, so `--tools` and
  *    `--no-tools` never apply to it. A child granted nothing at all still reads the file. Verified
- *    against pi 0.83.0 (review finding A-C1 / B-C7, and `docs/probes/g1-argv`).
+ *    against pi 0.83.0 (review finding A-C1 / B-C7, and probe `g1-argv`).
  *  - `-…` is parsed as a flag, and pi ships `--approve` ("trust project-local files for this run").
  *
  * The task comes from the model, so this is the one place in the package where a model-authored string

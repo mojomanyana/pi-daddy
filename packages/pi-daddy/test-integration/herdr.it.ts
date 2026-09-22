@@ -6,7 +6,7 @@
  * unit tests green and 32 integration tests green:
  *
  *  1. `herdr agent stop` **does not exist** — it prints the usage banner and exits 0, which reads as success.
- *     `docs/probes/g16-herdr` asserted it worked, from a *How to rerun* block that was never run. Three call
+ *     probe `g16-herdr` asserted it worked, from a *How to rerun* block that was never run. Three call
  *     sites were built on it, and ADR-0032 built a governance claim on top: that a pane could outlive its call
  *     while the child was stopped.
  *  2. herdr **binds an agent name to its tab** and frees it only on close, so a second spawn reusing a name is
@@ -314,7 +314,7 @@ describe("herdr assumptions, against a real server", () => {
  *   with a model remains the largest untested gap, and it costs tokens.
  * - **Nothing here exercises `runHerdrPane` itself.** These are the substrate's contracts, deliberately: the
  *   executor's own logic is unit-tested, and mixing the two would make a herdr outage look like a logic bug.
- * - **The `--tools` enforcement inside a pane is not re-verified here** (`docs/probes/g16-herdr` measured it).
+ * - **The `--tools` enforcement inside a pane is not re-verified here** (probe `g16-herdr` measured it).
  *   That is a pi property, not a herdr one, and `governance.it.ts` covers it against a real pi.
  * - **Timing is real.** `agent start` is retried for the documented busy condition only; a machine under heavy
  *   load could still exhaust the retries, which would show as a failure rather than a flake with a clear message.

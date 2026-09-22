@@ -7,7 +7,7 @@
  * herdr executor would mean the session imported the thing it was deciding whether to use.
  *
  * Every rule here is tested against an injected `exec`, so the suite stays fast, pi-free and herdr-free. The
- * facts the fakes reproduce were measured against real herdr 0.7.5 (`docs/probes/g16-herdr`).
+ * facts the fakes reproduce were measured against real herdr 0.7.5 (probe `g16-herdr`).
  */
 
 import { execFile } from "node:child_process";

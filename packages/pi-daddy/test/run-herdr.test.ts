@@ -2,7 +2,7 @@
  * `runHerdrPane` — the herdr executor (ADR-0016 point 6).
  *
  * Every rule here is tested against an INJECTED `exec`, so the suite stays fast, pi-free and herdr-free.
- * The facts the fake reproduces were measured against real herdr 0.7.5 in `docs/probes/g16-herdr` — argv
+ * The facts the fake reproduces were measured against real herdr 0.7.5 in probe `g16-herdr` — argv
  * delivered verbatim, env carried on the pane rather than the agent, and `wait --until idle` matching the
  * pre-existing state.
  */
@@ -741,7 +741,7 @@ test("a finalizer failure cannot mask the primary Herdr failure", async () => {
 test("ADR-0032: a settled pane is marked reclaimable and closed by the sweep, WITHOUT `agent stop`", async () => {
   // **Rewritten: `herdr agent stop` does not exist.** Measured against herdr 0.7.5 — the `agent` subcommands are
   // `list get read send-keys prompt rename focus wait attach start explain`, and `agent stop` prints the usage
-  // banner and exits 0, which `defaultExec` reports as success. `docs/probes/g16-herdr` asserted it worked, from a
+  // banner and exits 0, which `defaultExec` reports as success. probe `g16-herdr` asserted it worked, from a
   // *How to rerun* block that was never executed. Three call sites issued it for nothing.
   //
   // Closing the tab is the only kill herdr offers, so that is what the sweep does. The production change that

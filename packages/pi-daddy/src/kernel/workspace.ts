@@ -22,7 +22,7 @@ export interface WorkspaceRegistryFile {
   /**
    * Where this was loaded from, carried so a refusal can NAME it.
    *
-   * `docs/SPEC.md` claimed an unregistered id is refused "with `WORKSPACE_NOT_REGISTERED`, which names the
+   * The README claimed an unregistered id is refused "with `WORKSPACE_NOT_REGISTERED`, which names the
    * file", and `catalog.ts` justified exempting the whole namespace from the unknown check on the strength of
    * that — *"a second, weaker check here can only turn that precise refusal into a misleading one"*. The
    * refusal named no file: the registry object had no idea where it came from. Carried on the object rather

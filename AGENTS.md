@@ -61,13 +61,13 @@ is imported by nothing.
 
 ```bash
 cd packages/pi-daddy
-npm test                   # unit tests, fast, no pi, no network
+npm test                   # unit tests: no pi, no network, about 40s (it spawns real lock helpers)
 npm run typecheck          # src + extensions + tests + integration tests
 npm run test:integration   # against a REAL pi process and a real Herdr server, no model tokens
 npm run test:integration:ci# the model-free, Herdr-free subset CI runs
 npm run test:smoke         # pack, install into a scratch project, import and use it
 npm run contracts:generate # regenerate contracts/ledger-record/v1 from the runtime builders
-PI_GRANTS_IT_MODEL=1 npm run test:integration   # adds an end-to-end tier with a real model (costs money)
+PI_DADDY_IT_MODEL=1 npm run test:integration    # adds an end-to-end tier with a real model (costs money)
 ```
 
 The clone may be shared with other sessions, which can switch the checked-out branch under you. Print
@@ -75,6 +75,33 @@ The clone may be shared with other sessions, which can switch the checked-out br
 GitHub repository use the repository owner's token per command, never a global account switch.
 
 `.claude/` is gitignored, so everything in it is local-only and nothing there is required.
+
+## Making a change here
+
+Measured by the fresh-session probe below: the rest of this file tells you where code lives and what good looks like,
+and every one of these was something a fresh session had to guess.
+
+- **Where a change goes.** The layer tables in `README.md` name the main modules, not all of them. The module
+  docstrings are the real specification of who owns what, and they are unusually complete; read the one at the top of
+  the file you are about to change before deciding it is the right file.
+- **Test files.** A unit test is `packages/pi-daddy/test/<kebab-case>.test.ts`. The name must match
+  `^test/[a-zA-Z0-9-]+\.test\.ts$`: `scripts/unit-tests.ts` throws `exact ordinary file inventory required` for
+  anything else, which fails the whole suite with a message that does not mention file names. Tests that need a real
+  pi process go in `test-integration/` as `<name>.it.ts`.
+- **Module size.** `test/file-size.test.ts` caps a module at 400 statements and any line at 200 characters. Split the
+  module rather than raising the cap; several modules here exist because of that rule.
+- **Formatting.** `npm run format` and `npm run format:check`, from the repository root so `.prettierignore` applies.
+  CI runs the check.
+- **Contracts.** `npm run contracts:generate` rewrites `contracts/ledger-record/v1` from the runtime builders. A new
+  refusal code or a new ledger field needs it, and the regenerated files are committed with the change.
+- **The changelog.** `packages/pi-daddy/CHANGELOG.md` is part of the published package, newest first, and a behaviour
+  change adds an entry that says what to do about it. A change that is only comments, tests or documents does not.
+- **What CI gates on**, on Node 22.19.0 and 24.x: `format:check`, `typecheck`, `npm test`, `test:integration:ci`, an
+  assertion that the suite left the tree clean, and `test:smoke`. The full `test:integration` tier needs a live Herdr
+  daemon and stays local, as does `PI_DADDY_IT_MODEL=1`.
+- **The record.** A decision gets a dated paragraph under "Decisions still in force"; a reversal gets a dated sentence
+  beside the original, never an edit of it. A gap in the list below is closed by rewriting its bullet with what was
+  measured and when, keeping what the bullet used to claim if that claim turned out to be false.
 
 ## The big cleanup of 2026-09-22 (what became untrue)
 
@@ -96,6 +123,25 @@ mode. The second (2026-09-22, version 0.31.0) deleted everything that was not th
 ADR-0076 PR 3d-ii (work ledger onto the envelope) and PR 4 (skill-harness as optional peer) were done by deletion.
 Anything a historical document says about the features above describes something that no longer exists; the text
 is at `git show 9cf2904:docs/...`.
+
+## Fresh-session probe, 2026-09-22
+
+The acceptance test for this file and `README.md`: a fresh agent session, given only those two documents and the code,
+with git history and every other document withheld, was asked to close one bullet from the gap list below.
+
+**It shipped the change.** It found the right module, wrote a test in the house style, verified the test by reverting
+its own fix, and ran typecheck, the unit suite, the real-pi tier and the smoke test. So the documents are sufficient to
+locate code and to know what good looks like.
+
+**Three things they were not sufficient for**, all now addressed above: process (test-file naming, module size caps,
+the format command, the changelog's existence, what CI gates on, what closing a gap in the record looks like), the
+file lists in the layer tables being partial while reading as complete, and one gap bullet that was simply false. The
+probe's most expensive step was measuring that the bullet it had been asked to close described behaviour that no
+longer happens; had it trusted the document it would have changed a path that already worked.
+
+What the probe did **not** establish: that a session without this codebase's unusually complete module docstrings
+could do the same, which the probe said plainly and is the honest limit of the result. Its own words: the documents
+"would not have survived a codebase with ordinary comments."
 
 ## Decisions still in force
 
@@ -260,7 +306,7 @@ recorded. Revisit triggers: an exemption added to the import-direction test inst
 or refusal code appearing in `advisors/`, the second fresh-session probe failing, or the programme exceeding twelve
 pull requests before context handoff lands.
 
-**Working rules that survive the deletion of `docs/WORKING-RULES.md`.** Decisions, load-bearing claims and
+**Working rules that survive the deletion of the working-rules document.** Decisions, load-bearing claims and
 failure modes are written down or they do not exist; reversals get a dated note, never a rewrite; measure before
 asserting and say which you did, and state what the evidence does not cover; a test that cannot fail is worse than
 none, so name the production change that would break it; prefer failing closed and being loud about it; "workflow
@@ -503,8 +549,13 @@ Kept features only. Numbers are dropped except the two that code and rules cite.
   global skill directory.
 - The startup spawnable count is an upper bound classified before the tool surface is observed; it over-reports and
   authorises nothing.
-- An `allowed-tools` entry written as `tool:read` becomes `tool:tool:read` and is refused as unknown; loud, but the
-  message names the mangled id rather than the mistake.
+- An `allowed-tools` entry that already carries a namespace prefix is prefixed again, and the refusal names the
+  mangled id rather than the mistake. **This bullet said `tool:read` doubles; measured 2026-09-22 at `5bccb76`, it
+  does not** — a lower-case prefix passes through, and the doubling needs a capitalised one, because the prefix test
+  is case-sensitive: `Tool:Read` and `TOOL:read` both become `tool:tool:read`, `Workspace:prod` becomes
+  `tool:workspace:prod`. That matters more than the original claim, because the README's own example writes
+  `allowed-tools: Read, Grep` in the capitalised style the standard uses. The stale wording is left above this
+  sentence rather than deleted: it is the evidence that a gap register goes stale exactly like any other document.
 - The pinned built-in tool list is an observation of one pi release; drift misfiles a capability in the catalog and
   cannot grant one.
 - The default project ledger under `.pi/pi-daddy/` makes repository writability a delegation precondition after
