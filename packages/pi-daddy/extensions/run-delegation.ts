@@ -253,9 +253,10 @@ export async function runOneDelegation(
     // ADR-0077's first decision point. Fills a blank from the levels this model reports; never overrules a caller,
     // and yields `undefined` — today's behaviour exactly — whenever there is no advisor or no answer.
     thinking: await adviseEffort({
-      advisor: session.advisorSession.advisor,
+      session,
       requested: spec.thinking,
-      model: ctx.model,
+      // The model the CHILD will run on, which is not always the session's.
+      model: spec.model ?? defaultModel,
       registry: ctx.modelRegistry,
       task: spec.task,
       agent: spec.agent,

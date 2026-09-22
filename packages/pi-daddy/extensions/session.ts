@@ -51,7 +51,8 @@ import { nativeSessionRootFromEnv, type NativeSessionHost } from "../src/executo
 import { createHandoffStager, type ParentSession } from "./context-staging.ts";
 import { createAdvisorSession, type AdvisorSession } from "./advisor-session.ts";
 import { join } from "node:path";
-import { agentDir } from "../src/kernel/project-paths.ts";
+import { readFileSync } from "node:fs";
+import { agentDir, projectSettingsPath } from "../src/kernel/project-paths.ts";
 import { ENV_ALLOW_UNRESOLVED_MODELS } from "../src/kernel/model-preflight.ts";
 import { beginExtensionLifecycle, rememberChildPublication, type ReloadLifecycle } from "./reload-environment.ts";
 import { reconcileSessionEnvironment } from "./session-environment.ts";
@@ -300,9 +301,13 @@ export function createGrantsSession(
   const { depth, maxDepth } = bounds;
   const emptyCatalog = makeCatalog([]);
   // ADR-0077. The environment decides whether there is an advisor at all; the project's settings block may only
-  // narrow it, and is read lazily by `/grants` rather than here, because this factory runs before `ctx.cwd` exists.
+  // narrow it. The block IS read — the first version passed `undefined` and every narrowing the release advertised
+  // was dead code reachable only from tests, which review measured: `enabled: false` turned nothing off.
+  //
+  // Read from `storeCwd` for `loadStoredGrantStateSync`'s reason: this factory runs before any hook, so `ctx.cwd`
+  // does not exist yet. Reading a workspace-writable file here is safe precisely because it can only narrow.
   const advisorSession = createAdvisorSession({
-    block: undefined,
+    block: projectAdvisorBlock(storeCwd),
     ...(storedLedger ? { ledgerPath: storedLedger } : {}),
   });
   const session: GrantsSession = {
@@ -429,4 +434,19 @@ export function createGrantsSession(
     },
   };
   return session;
+}
+
+/**
+ * The `advisor` block of `.pi/pi-daddy/settings.json`, or undefined.
+ *
+ * Unreadable, absent or malformed all yield undefined: this file is the reviewable record, not authority, and the
+ * only thing it can do to an advisor is turn one off. A parse failure therefore costs nothing worth reporting.
+ */
+function projectAdvisorBlock(cwd: string): unknown {
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(projectSettingsPath(cwd), "utf8"));
+    return typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>).advisor : undefined;
+  } catch {
+    return undefined;
+  }
 }

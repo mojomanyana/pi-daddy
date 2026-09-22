@@ -27,7 +27,8 @@ governed child can rewrite is not a ceiling. The same argument applies here one 
 flipped the switch and made the operator's next session send its own description to a third party.
 
 **What to do.** Enabling an advisor is now `PI_DADDY_ADVISOR=jev` alongside `PI_DADDY_ADVISOR_KEY`; both are
-stripped from every child. A project's `advisor` block in `settings.json` may still set a model or a timeout, and
+stripped from a child spawned as a subprocess. A Herdr pane inherits the daemon's environment, so a daemon started
+from a shell exporting them still hands them to pane children — stated rather than implied, and not yet closed. A project's `advisor` block in `settings.json` may still set a model or a timeout, and
 may set `enabled: false` to turn an advisor off for that project. It can no longer turn one on, so a settings file
 that relied on `enabled: true` will find the advisor off until the environment variable is set.
 

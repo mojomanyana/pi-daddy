@@ -6,13 +6,15 @@ import { test } from "node:test";
 import { createAdvisor, type AdviceRecord } from "../src/advisors/advisor.ts";
 import { nullDecider, type Decider } from "../src/advisors/decider.ts";
 import { adviseEffort, EFFORT_PURPOSE } from "../extensions/effort-advice.ts";
+import { createAdvisorSession } from "../extensions/advisor-session.ts";
+import { ADVISOR_KEY_ENV, ENV_ADVISOR } from "../src/advisors/settings.ts";
 
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
 /** A reasoning model that supports every level, and one that supports none. */
 const REASONING = { reasoning: true, thinkingLevelMap: { off: "off", low: "low", medium: "medium", high: "high" } };
 const registryFor = (model: unknown) => ({ find: () => model });
-const MODEL = { provider: "openai-codex", id: "gpt-5.6-sol" };
+const MODEL = "openai-codex/gpt-5.6-sol";
 
 function advisorAnswering(value: string | undefined, records: AdviceRecord[] = []) {
   const decider: Decider =
@@ -31,7 +33,7 @@ test("advice fills a blank effort with a level the model actually supports", asy
   // Breaks by: not consulting the advisor, or not passing its answer through as `thinking`.
   const records: AdviceRecord[] = [];
   const chosen = await adviseEffort({
-    advisor: advisorAnswering("low", records),
+    session: { advisorSession: { advisor: advisorAnswering("low", records) } },
     model: MODEL,
     registry: registryFor(REASONING),
     task: "rename a variable",
@@ -46,7 +48,7 @@ test("a caller's own choice is never second-guessed, and nothing is asked", asyn
   // Advice fills a blank; it does not overrule. Breaks by: asking when `requested` is set, or preferring the answer.
   const records: AdviceRecord[] = [];
   const kept = await adviseEffort({
-    advisor: advisorAnswering("high", records),
+    session: { advisorSession: { advisor: advisorAnswering("high", records) } },
     requested: "minimal",
     model: MODEL,
     registry: registryFor(REASONING),
@@ -60,16 +62,36 @@ test("no advisor, no answer, or an unsupported level all leave the blank blank",
   // The property that keeps an advisor optional: without one, the child is spawned exactly as it is today.
   // Breaks by: defaulting to some effort when there is no advice, which would make advice load-bearing.
   const base = { model: MODEL, registry: registryFor(REASONING), task: "t" };
-  assert.equal(await adviseEffort({ ...base }), undefined, "no advisor at all");
-  assert.equal(await adviseEffort({ ...base, advisor: advisorAnswering(undefined) }), undefined, "no answer");
-  assert.equal(await adviseEffort({ ...base, advisor: advisorAnswering("xhigh") }), undefined, "level unsupported");
   assert.equal(
-    await adviseEffort({ ...base, registry: { find: () => undefined }, advisor: advisorAnswering("low") }),
+    await adviseEffort({ ...base, session: { advisorSession: { advisor: advisorAnswering(undefined) } } }),
+    undefined,
+    "no advisor at all",
+  );
+  assert.equal(
+    await adviseEffort({ ...base, session: { advisorSession: { advisor: advisorAnswering(undefined) } } }),
+    undefined,
+    "no answer",
+  );
+  assert.equal(
+    await adviseEffort({ ...base, session: { advisorSession: { advisor: advisorAnswering("xhigh") } } }),
+    undefined,
+    "level unsupported",
+  );
+  assert.equal(
+    await adviseEffort({
+      ...base,
+      registry: { find: () => undefined },
+      session: { advisorSession: { advisor: advisorAnswering("low") } },
+    }),
     undefined,
     "a model pi cannot resolve is not a model to reason about",
   );
   assert.equal(
-    await adviseEffort({ ...base, registry: registryFor({ reasoning: false }), advisor: advisorAnswering("off") }),
+    await adviseEffort({
+      ...base,
+      registry: registryFor({ reasoning: false }),
+      session: { advisorSession: { advisor: advisorAnswering("off") } },
+    }),
     undefined,
     "one option is not a choice; asking would spend a call to be told the only thing sayable",
   );
@@ -91,7 +113,12 @@ test("the options offered are exactly what the model reports, so advice cannot i
     record: () => {},
     enabled: true,
   });
-  await adviseEffort({ advisor, model: MODEL, registry: registryFor(REASONING), task: "t" });
+  await adviseEffort({
+    session: { advisorSession: { advisor } },
+    model: MODEL,
+    registry: registryFor(REASONING),
+    task: "t",
+  });
   // `supportedModelEfforts` keeps a level whose map entry is absent, so this model supports `minimal` too. The
   // point is that the list came from the model, not from a constant in this file.
   assert.deepEqual(offered, ["off", "minimal", "low", "medium", "high"], "the model's own levels, and only those");
@@ -124,6 +151,12 @@ test("only the modules written down here reach the advisors layer", async () => 
         found.push(`${directory}/${name}`);
     }
   }
+  // The two composition ROOTS, which `layering.test.ts` lets import anything: review measured that adding an
+  // advisors import to `src/cli.ts` passed every guard there was.
+  for (const root of ["index.ts", "cli.ts"]) {
+    const text = await readFile(join(packageRoot, "src", root), "utf8");
+    if (/from "\.\/advisors\/|from "[^"]*\/(advisor-session|effort-advice)\.ts"/.test(text)) found.push(`src/${root}`);
+  }
   assert.deepEqual(found.sort(), [...MAY_CONSULT_AN_ADVISOR].sort());
 });
 
@@ -133,4 +166,60 @@ test("the one answer an advisor gives is spent on effort and nothing else", asyn
   const runner = await readFile(join(packageRoot, "extensions", "run-delegation.ts"), "utf8");
   const uses = [...runner.matchAll(/(\w+):\s*await adviseEffort\(/g)].map((m) => m[1]);
   assert.deepEqual(uses, ["thinking"], "an advisor's answer may fill exactly one blank");
+});
+
+test("the levels come from the model the CHILD will run on, not the session's", async () => {
+  // Review measured the first version reading the session's model while the child was spawned on `spec.model`, so
+  // the levels offered came from a model the child would never use — and pi clamps rather than refusing, so the
+  // effect was a silently shifted effort. Breaks by: passing the session's model to `adviseEffort` again.
+  const models: Record<string, unknown> = {
+    "openai-codex/gpt-5.6-sol": REASONING,
+    // An ABSENT entry means supported; only an explicit null excludes a level, which is how this model differs.
+    "anthropic/claude-x": {
+      reasoning: true,
+      thinkingLevelMap: { off: "off", minimal: null, low: null, medium: null, high: "high" },
+    },
+  };
+  let offered: string[] = [];
+  const advisor = createAdvisor({
+    decider: {
+      name: "spy",
+      decide: async (request) => {
+        const question = request.questions.effort;
+        offered = question.kind === "choice" ? Object.keys(question.options) : [];
+        return null;
+      },
+    },
+    record: () => {},
+    enabled: true,
+  });
+  await adviseEffort({
+    session: { advisorSession: { advisor } },
+    model: "anthropic/claude-x",
+    registry: { find: (provider, id) => models[`${provider}/${id}`] },
+    task: "t",
+  });
+  assert.deepEqual(offered, ["off", "high"], "the child's model decides which levels exist");
+});
+
+test("the advisor comes off the session, so the wiring cannot be severed without a test noticing", async () => {
+  // Review measured that replacing `advisor: session.advisorSession.advisor` at the call site with `undefined` left
+  // all 860 tests green: the whole decision point could be cut out silently. There is no such argument now — the
+  // helper reads the session — so breaking it means editing this path, which this test covers.
+  const records: AdviceRecord[] = [];
+  const session = { advisorSession: { advisor: advisorAnswering("medium", records) } };
+  const chosen = await adviseEffort({ session, model: MODEL, registry: registryFor(REASONING), task: "t" });
+  assert.equal(chosen, "medium");
+  assert.equal(records.length, 1, "and the use is recorded, as every use is");
+});
+
+test("a project may switch an advisor off through its settings block, and that block is actually read", async () => {
+  // The narrowing the release advertised in four places. Review measured it was dead code: the session passed
+  // `block: undefined`, so `enabled: false` turned nothing off. Breaks by: passing undefined again.
+  const on = { [ENV_ADVISOR]: "jev", [ADVISOR_KEY_ENV]: "k" } as NodeJS.ProcessEnv;
+  assert.equal(createAdvisorSession({ block: undefined, env: on }).deciderName, "jev");
+  const off = createAdvisorSession({ block: { enabled: false }, env: on });
+  assert.equal(off.deciderName, "none", "a project that says no gets no advisor");
+  assert.match(String(off.settings.refusal), /false for this project/);
+  assert.equal(createAdvisorSession({ block: { timeoutMs: 500 }, env: on }).settings.timeoutMs, 500);
 });

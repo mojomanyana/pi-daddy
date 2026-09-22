@@ -24,24 +24,35 @@ interface ResolvedModel {
 export const EFFORT_PURPOSE = "child-effort";
 
 export async function adviseEffort(input: {
-  advisor?: Advisor;
+  /** The session, read here rather than passed as an advisor: an argument can be severed and nothing notices. */
+  session: { advisorSession: { advisor: Advisor } };
   /** Absent means the caller chose one; nothing is asked and nothing is recorded. */
   requested?: string;
-  model?: { provider: string; id: string };
+  /**
+   * The model the CHILD will run on, `provider/id`, not the session's.
+   *
+   * Review measured the first version reading the parent session's model while the child was spawned on
+   * `spec.model`: the levels offered then came from a model the child would never use, and pi clamps rather than
+   * refuses, so the effect was a silently shifted effort rather than a loud failure.
+   */
+  model?: string;
   registry: { find(provider: string, modelId: string): unknown };
   task: string;
   agent?: string;
   signal?: AbortSignal;
 }): Promise<string | undefined> {
-  if (input.requested !== undefined || !input.advisor || !input.model) return input.requested;
-  const resolved = input.registry.find(input.model.provider, input.model.id) as ResolvedModel | undefined;
+  const advisor = input.session.advisorSession.advisor;
+  const slash = input.model === undefined ? -1 : input.model.indexOf("/");
+  if (input.requested !== undefined || slash <= 0) return input.requested;
+  const resolved = input.registry.find(input.model!.slice(0, slash), input.model!.slice(slash + 1)) as
+    ResolvedModel | undefined;
   if (!resolved) return undefined;
   const levels = supportedModelEfforts(resolved);
   // One option is not a choice, and a model with no reasoning has exactly one. Asking would spend a call and a
   // ledger line to be told the only thing that could be said.
   if (levels.length < 2) return undefined;
 
-  const advice = await input.advisor.ask(
+  const advice = await advisor.ask(
     EFFORT_PURPOSE,
     {
       // The task text is what the decision is actually about, and it is the one thing this package has never

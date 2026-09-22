@@ -378,7 +378,10 @@ not the thing the enforcer reads". A grant lives outside the workspace precisely
 session's ceiling; an advisor switch a child could flip would make the operator's next session ship its own
 description to a third party, which is the same self-defeating shape one step sideways. Corrected in 0.35.0: the
 settings block may narrow — a model, a timeout, or `enabled: false` for one project — and can never switch one on.
-Both the switch and the key are stripped from every child: review measured it reaching a child granted
+Both the switch and the key are stripped from a child spawned by the PROCESS executor. A Herdr pane inherits the
+daemon's environment (R-148), which `mergeChildEnv` never sees, so a daemon started from a shell exporting them
+hands them to every pane child; that is named rather than claimed away, and closing it means stripping in the pane.
+On the process path: review measured it reaching a child granted
 `tool:bash` while the constant's own comment claimed it never did, because it had been added to the list the
 `childEnv` hook may not write and not to the list `mergeChildEnv` strips. A credential is not something a child
 inherits by being spawned. Malformed configuration disables the advisor and names the field, rule 8's shape: an

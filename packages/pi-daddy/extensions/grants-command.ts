@@ -32,6 +32,8 @@ export interface GrantsCommandContext {
    * sentence from the one the session banner printed. Two spellings of one fact is R-28.
    */
   executor: ExecutorChoice;
+  /** ADR-0077: which advisor is in force, or why none is. Reported because an advisor sends task text out. */
+  advisor: { decider: string; refusal?: string };
   observed: boolean;
   depth: number;
   maxDepth: number;
@@ -89,6 +91,7 @@ export const grantsCommand = {
       governed,
       ownGrant,
       executor,
+      advisor,
       observed,
       depth,
       maxDepth,
@@ -354,6 +357,12 @@ export const grantsCommand = {
       // two facts about what a spawn will be sit together.
       `  executor   ${executor.disclosure}`,
       `  depth      ${depth} of max ${maxDepth}${maxDepth <= 0 ? " (spawning disabled)" : ""}`,
+      // Rule 8's loud half, which review found missing: an operator who upgraded from 0.34.0, or who mistyped the
+      // variable, saw an advisor silently absent and nothing saying why. This is also where an operator sees that
+      // task text leaves the machine, which no other surface says.
+      advisor.decider === "none"
+        ? `  advisor    off${advisor.refusal ? ` — ${advisor.refusal}` : ""}`
+        : `  advisor    ${advisor.decider} — a delegation with no thinking level asks it, sending the task text`,
       `  ledger     ${ledgerPath || "(not recording — set PI_DADDY_LEDGER)"}`,
       `  approvals  ${sessionApprovals.size} this session, ${valid.size} persisted` +
         `${inheritedApprovals.size > 0 ? `, ${inheritedApprovals.size} inherited` : ""}` +

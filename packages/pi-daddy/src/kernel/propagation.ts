@@ -79,6 +79,10 @@ export {
 export const GRANT_ENV_KEYS = [
   // Not governance state, but the same rule applies for a stronger reason: neither a credential the parent holds
   // nor the switch that points it at a third party is something a child inherits by being spawned (ADR-0077).
+  //
+  // **This strips the PROCESS executor's environment.** A Herdr pane inherits the daemon's environment, which this
+  // function never sees (R-148), so a daemon started from a shell exporting these two hands them to every pane
+  // child. Named here rather than claimed away: "stripped from every child" would be false on that path.
   ENV_ADVISOR_KEY,
   ENV_ADVISOR,
   ENV_GRANT,
