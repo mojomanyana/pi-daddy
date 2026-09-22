@@ -213,9 +213,27 @@ or a malformed value selects the default rather than disabling it. It was raised
 2026-09-02 after repeated `CHILD_TIMED_OUT` outcomes, and to sixty on 2026-09-21 when the operator saw a build
 running the test suite killed at twenty; keeping the shorter value was rejected each time because it preserved the
 observed cutoff. The dated note records why the number cannot be right: a `pi --print` child gives its parent no
-activity signal until it exits, so no wall-clock value distinguishes working from hung. The planned replacement is
-an inactivity deadline on pi's JSON event stream (children run in event mode, the parent kills only after a period
-with no event, and the dashboard shows live progress), scheduled as ADR-0076 PR 3e.
+activity signal until it exits, so no wall-clock value distinguishes working from hung.
+
+**2026-09-22 (PR 3e, 0.32.0): the working bound is inactivity; the wall clock is a runaway ceiling.** A child is
+stopped when `PI_DADDY_CHILD_IDLE_TIMEOUT` seconds (default fifteen minutes; zero or malformed selects the default)
+pass with no activity. Activity is any stdout or stderr byte, a change to the child's pi session file, or, on the
+process executor on Linux, CPU time consumed by the child's process tree or a change in its descendants (read from
+`/proc`). Every child now gets a session file: the plan's `--session` when native retention asked for one, otherwise a
+private temporary file removed on every path after the run, except when the operator keeps a Herdr pane, where the
+interactive pi inside is still writing to it. That means every child's transcript is on disk for the duration of its
+run, under a 0o700 directory in the temp dir, whether or not retention is on. The session file alone is not enough,
+and the review of this PR is where that was learned: pi persists an entry only when a message or a tool result ends,
+and writes nothing before the first assistant message completes, so one long tool call is silent on the file; the
+process-tree signal covers that case. Not covered: a child whose very first model response takes longer than the
+bound while the model is rate-limited, and a tool call that waits on a remote consuming no CPU; both are stopped as
+idle, and that is the bound's meaning. On the Herdr executor, whose child is started by the daemon, the signals are
+the session file and, when a progress display is attached, the pane text. `PI_DADDY_CHILD_TIMEOUT` keeps its semantics (seconds, inherited, zero or malformed selects the default) but
+its default is six hours and its role is the ceiling for a child that never goes quiet, recorded as `deadlineAt`; the
+inactivity bound is recorded as `idleTimeoutMs` on the starting and running lifecycle events, and a stop is recorded
+with reason `idle-timeout` or `wall-clock`. Rejected: pi's `--mode json` event stream, because it would have moved the
+child's answer into a JSON envelope and put every tool result under the output cap; the session file gives the same
+signal with no change to the answer path and is also the substrate context handoff will fork from.
 
 **ADR-0076 — five layers, one ledger, one state directory, one environment prefix, then context handoff.** The
 source is `kernel/`, `governance/`, `executors/`, `advisors/`, `products/` with a test that fails on any upward
@@ -259,6 +277,12 @@ Each line names the probe directory that measured it; the probe text is gone, an
 history (`git show 9cf2904:docs/probes/<name>/README.md`).
 
 *About pi:*
+
+- pi persists one JSON line to the `--session` file per entry, synchronously, when a message or a tool result ENDS
+  (`dist/core/agent-session.js` on `message_end`; `dist/core/session-manager.js` `_appendEntry`/`_persist`,
+  `appendFileSync`). Nothing is written before the first assistant message completes (entries are buffered until then)
+  and nothing is written while a tool is executing. Read from source 2026-09-22, not measured live. This is why the
+  inactivity deadline also watches the child's process tree.
 
 - `--tools` and `--no-tools` hard-enforce, including against tools an `-e`-loaded extension tries to add; this is the
   enforcement point and why no runtime is needed inside a descendant (`pi-fabric-eval`, probes 9–11; confirmed inside a
@@ -407,10 +431,10 @@ What remains of ADR-0076's sequence after this cleanup, one line each with what 
   ledger and the private controller journals no longer exist, so the only append-only writers are the grants ledger
   and the activity timeline, both on `governance/record.ts` (verified 2026-09-22: no other writer appends to a
   `.jsonl` path).
-- **PR 3e (inactivity deadline)** — children run in pi's JSON event mode, the parent kills only after a configured
-  period with no event, the dashboard shows live progress, and the wall clock ADR-0038 left in place is replaced; done
-  means an integration test against a real pi child kills a silent child at the inactivity bound and does not kill a
-  chatty child that outlives the old wall clock, with ADR-0038's note superseded.
+- **PR 3e (inactivity deadline)** — done 2026-09-22 (0.32.0) on the session-file signal rather than JSON event mode;
+  see the ADR-0038 paragraph. Not established: a live measurement that pi appends to the session file mid-run under a
+  real model (source-read only), and live dashboard progress from that file, which is left for the context-handoff
+  work that will read the same file.
 - **PR 4 (skill-harness as optional peer; contracts pruned)** — done by deletion: the learning product and its
   harness bridge are gone and one contract remains (`contracts/ledger-record/v1`); verified 2026-09-22: `package.json`
   names no harness and `contracts/` holds that one directory.

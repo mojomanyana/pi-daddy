@@ -16,14 +16,18 @@ import { once } from "node:events";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { pathToFileURL } from "node:url";
-import { runChild, takeBytes, timeoutFromEnv } from "../src/kernel/run-child.ts";
+import { runChild, takeBytes, timeoutFromEnv, idleTimeoutFromEnv } from "../src/kernel/run-child.ts";
 import { withRunChildTestControl } from "./run-child-test-control.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
 after(cleanupTempDirs);
 
-test("an unset child timeout defaults to sixty minutes (ADR-0038 note, 2026-09-21)", () => {
-  assert.equal(timeoutFromEnv(undefined), 60 * 60 * 1000);
+test("PR 3e: the unset ceiling is six hours and the unset inactivity bound is fifteen minutes", () => {
+  assert.equal(timeoutFromEnv(undefined), 6 * 60 * 60 * 1000);
+  assert.equal(idleTimeoutFromEnv(undefined), 15 * 60 * 1000);
+  assert.equal(idleTimeoutFromEnv("0"), 15 * 60 * 1000, "zero selects the default rather than disabling the bound");
+  assert.equal(idleTimeoutFromEnv("nope"), 15 * 60 * 1000, "malformed selects the default");
+  assert.equal(idleTimeoutFromEnv("90"), 90_000);
 });
 
 const node = (script: string, over = {}) => ({

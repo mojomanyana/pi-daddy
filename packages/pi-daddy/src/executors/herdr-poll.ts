@@ -40,6 +40,12 @@ export interface PollTarget {
   snapshotLines?: number;
   /** Poll cadence override. Exists so tests do not wait `POLL_INTERVAL_MS` per state transition. */
   pollIntervalMs?: number;
+  /**
+   * Inactivity bound (PR 3e). Activity on this executor is a change in the pane's text or in what `activityProbe`
+   * returns (the child's pi session file). Undefined means the wall-clock deadline alone applies.
+   */
+  idleTimeoutMs?: number;
+  activityProbe?: () => Promise<string | number | undefined> | string | number | undefined;
 }
 
 /** Statuses herdr reports for a settled agent. `blocked` counts: it is waiting for a human, not working. */
@@ -129,8 +135,11 @@ export async function waitForSettled(
   before: number,
   deadline: number,
   maxOutputBytes: number,
-): Promise<{ status?: string; timedOut?: boolean; aborted?: boolean; spawnError?: string }> {
+): Promise<{ status?: string; timedOut?: boolean; idle?: true; aborted?: boolean; spawnError?: string }> {
   const interval = request.pollIntervalMs ?? POLL_INTERVAL_MS;
+  let lastActivityAt = Date.now();
+  let lastPane: string | undefined;
+  let lastMarker: string | number | undefined;
   // ADR-0032. The pane is read on every poll so the parent can show what the child is doing, rather than the
   // one word `delegate` for up to sixty minutes by default.
   //
@@ -142,11 +151,26 @@ export async function waitForSettled(
   for (;;) {
     if (request.signal?.aborted) return { aborted: true };
     if (Date.now() >= deadline) return { timedOut: true };
+    if (request.idleTimeoutMs !== undefined && Date.now() - lastActivityAt >= request.idleTimeoutMs)
+      return { timedOut: true, idle: true };
 
     const reply = parseReply(await exec(["agent", "get", request.name]));
     if (reply.error) return { spawnError: `herdr agent get failed: ${reply.error}` };
 
     const agent = (reply.result?.agent ?? reply.result ?? {}) as { agent_status?: string; state_change_seq?: number };
+    if (request.idleTimeoutMs !== undefined) {
+      // The pane is read below only when a display wants it; the probe is the executor-independent signal.
+      let marker: string | number | undefined;
+      try {
+        marker = await request.activityProbe?.();
+      } catch {
+        marker = undefined; // unreadable is "no activity seen", never a control decision
+      }
+      if (marker !== undefined && marker !== lastMarker) {
+        lastMarker = marker;
+        lastActivityAt = Date.now();
+      }
+    }
     observeHerdrSession(agent, request.nativePaneId, request.onSessionReference);
     const status = agent.agent_status;
     const seq = typeof agent.state_change_seq === "number" ? agent.state_change_seq : -1;
@@ -156,6 +180,10 @@ export async function waitForSettled(
       // output shown. `readFailed` is passed so a failed read renders as such instead of silently freezing the
       // block on the previous frame — and, crucially, is never mistaken for the child's output.
       const read = await readPane(exec, request.name, maxOutputBytes);
+      if (!read.readFailed && read.text !== lastPane) {
+        lastPane = read.text;
+        lastActivityAt = Date.now();
+      }
       if (!read.readFailed) {
         try {
           request.onObservation?.(Buffer.from(read.text));

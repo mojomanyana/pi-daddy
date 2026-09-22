@@ -103,6 +103,7 @@ export function buildLedgerV3ContractFixtures() {
       state: "failed",
       executor: "process",
       deadlineAt: "2026-08-20T12:10:00.000Z",
+      idleTimeoutMs: 15 * 60 * 1000,
       exitCode: null,
       signal: null,
       aborted: true,

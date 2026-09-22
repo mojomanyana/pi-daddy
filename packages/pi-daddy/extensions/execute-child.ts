@@ -8,7 +8,16 @@ import { appendLedgerEvent, buildChildLifecycleEvent } from "../src/governance/l
 import { hasFinalizerError } from "../src/governance/finalization.ts";
 import { mergeChildEnv } from "../src/kernel/propagation.ts";
 import type { Capability } from "../src/kernel/resolve.ts";
-import { DEFAULT_KILL_GRACE_MS, ENV_CHILD_TIMEOUT, runChild, timeoutFromEnv } from "../src/kernel/run-child.ts";
+import {
+  DEFAULT_KILL_GRACE_MS,
+  ENV_CHILD_IDLE_TIMEOUT,
+  ENV_CHILD_TIMEOUT,
+  idleTimeoutFromEnv,
+  runChild,
+  timeoutFromEnv,
+} from "../src/kernel/run-child.ts";
+import { activitySessionFor } from "../src/executors/activity-session.ts";
+import { processTreeActivity } from "../src/executors/process-activity.ts";
 import { resolveWorkspace } from "../src/executors/herdr-cli.ts";
 import { HerdrWriterCloseError, runHerdrPane } from "../src/executors/run-herdr.ts";
 import { GovernanceRefusal, refusal, type StructuredRefusal } from "../src/kernel/refusals.ts";
@@ -128,362 +137,410 @@ export async function executePlannedChild(input: {
     activityStarted = true;
   } catch {}
   const configuredTimeoutMs = timeoutFromEnv(process.env[ENV_CHILD_TIMEOUT]);
-  const startedAt = new Date();
-  const deadlineAt = new Date(startedAt.getTime() + configuredTimeoutMs).toISOString();
-  if (ledgerPath) {
-    try {
-      await appendLedgerEvent(
-        { path: ledgerPath, strict: true },
-        buildChildLifecycleEvent({
-          executionId,
-          parentExecutionId,
-          childId,
-          state: "starting",
-          executor: session.executor.kind,
-          deadlineAt,
-          correlation: plan.correlation,
-          now: startedAt,
-        }),
-      );
-    } catch (error) {
-      await releaseDelegationWorkspace({
-        prepared: preparedWorkspace,
-        childId,
-        executionId,
-        parentExecutionId,
-        reason: "ledger-failed",
-      });
-      throw error;
-    }
-  }
-  // The recorded deadline and executor timer are one fact. Waiting for the strict starting append consumes
-  // the budget; handing the child a fresh full timeout would leave it live after the dashboard truthfully
-  // marked that deadline incomplete.
-  const remainingTimeoutMs = Math.max(1, Date.parse(deadlineAt) - Date.now());
-  const terminationGraceMs = Math.min(DEFAULT_KILL_GRACE_MS, Math.max(1, Math.floor(remainingTimeoutMs / 10)));
-  const cwd = preparedWorkspace?.workspace.root ?? input.cwd;
-  const leaseAbort = new AbortController();
-  const writerLease = preparedWorkspace?.lease.access === "write" ? preparedWorkspace.lease : undefined;
-  // Tracked as a FACT, not only as an abort: "the kernel lock protecting this workspace evaporated under
-  // a live governed writer" and "the operator pressed stop" produced byte-identical reasons before, and a
-  // count of lost leases is exactly the number an operator auditing this feature needs (R-103).
-  let leaseLost = false;
-  writerLease?.lost.then(() => {
-    leaseLost = true;
-    leaseAbort.abort();
-  });
-  const executionSignal = signal
-    ? AbortSignal.any([signal, leaseAbort.signal])
-    : writerLease
-      ? leaseAbort.signal
-      : undefined;
-  const retention = beginExecutionRetention({
-    executionId,
-    parentExecutionId,
-    childId,
-    toolCallId: input.toolCallId ?? null,
-    executor: session.executor.kind,
-    taskDigest: plan.taskDigest,
-    definitionDigest: plan.definitionDigest?.sha256 ?? null,
-    configurationDigest: retentionConfigurationDigest({
-      args: plan.args,
-      effective: plan.effective,
-      timeoutMs: configuredTimeoutMs,
-    }),
-    workspaceId: preparedWorkspace?.workspace.workspaceId ?? null,
-  });
-  const sessionFlag = plan.args.indexOf("--session");
-  if (sessionFlag >= 0) retention.observeSession({ source: "pi-session-file", value: plan.args[sessionFlag + 1] });
-  let releaseReason = "failed";
-  let retainWriterLease = false;
-  let terminalAttempted = false;
-  const teardownFailures: string[] = [];
-  let runtimeRecord: Promise<void> | undefined;
-  const recordRunning = (executor: "process" | "herdr", pane?: { id: string; agentName: string }): void => {
-    if (!ledgerPath) return;
-    try {
-      runtimeRecord = appendLedgerEvent(
-        {
-          path: ledgerPath,
-          strict: false,
-          onFailure: (cause) => teardownFailures.push(`child runtime identity record failed: ${String(cause)}`),
-        },
-        buildChildLifecycleEvent({
-          executionId,
-          parentExecutionId,
-          childId,
-          state: "running",
-          executor,
-          deadlineAt,
-          ...(pane ? { herdrPaneId: pane.id, herdrAgentName: pane.agentName } : {}),
-          correlation: plan.correlation,
-          now: new Date(),
-        }),
-      );
-    } catch (error) {
-      teardownFailures.push(`child runtime identity record failed: ${String(error)}`);
-    }
-  };
+  // PR 3e: the working bound is inactivity; `deadlineAt` below is the runaway ceiling. Every child gets a pi session
+  // file so the parent can see it working when its stdout is quiet (pi appends each message and tool result to it).
+  const configuredIdleMs = idleTimeoutFromEnv(process.env[ENV_CHILD_IDLE_TIMEOUT]);
+  const activitySession = await activitySessionFor(plan.args, executionId);
+  // Disposed on every path (review finding: it leaked on every throw), except when the operator keeps a Herdr pane,
+  // where the interactive pi in that pane is still alive and still appending to this file.
+  const keepPaneRequested = session.executor.kind === "herdr" && process.env[ENV_HERDR_KEEP_PANE] === "1";
   try {
-    const output =
-      session.executor.kind === "herdr"
-        ? await runHerdrPane({
-            args: plan.args.slice(0, -1),
-            prompt: plan.args[plan.args.length - 1].trimStart(),
-            env: plan.env,
-            cwd,
-            name: `${input.agent ?? "delegate"}-${childId}`,
-            workspace: resolveWorkspace(process.env),
-            signal: executionSignal,
-            timeoutMs: remainingTimeoutMs,
-            keepPane: writerLease ? false : process.env[ENV_HERDR_KEEP_PANE] === "1",
-            closeOnSettle: Boolean(writerLease),
-            onPane: (paneId, agentName) => {
-              retention.native({ paneId, agentName });
-              onProgress?.({ paneId, agentName, state: "starting" });
-            },
-            onObservation: (bytes) => retention.capture("paneSnapshot", bytes, true),
-            onSessionReference: (reference) => retention.observeSession(reference),
-            onRunning: (paneId, agentName) => {
-              // Record first: runHerdrPane isolates this display callback, so a renderer exception after the
-              // observation cannot suppress the authoritative running event.
-              recordRunning("herdr", { id: paneId, agentName });
-              onProgress?.({ paneId, agentName, state: "running" });
-            },
-            onTab: preparedWorkspace ? (tabId) => preparedWorkspace.lease.attachHerdrTab(tabId) : undefined,
-            onNativeTab: (tabId) => retention.native({ tabId }),
-            onSnapshot: onProgress ? (snapshot) => onProgress({ snapshot }) : undefined,
-          })
-        : await runChild({
-            command: writerLease ? "setpriv" : "pi",
-            args: writerLease ? ["--pdeathsig", "KILL", "--", "pi", ...plan.args] : plan.args,
-            env: mergeChildEnv(process.env, plan.env),
-            cwd,
-            signal: executionSignal,
-            // SIGTERM gets only grace that fits INSIDE the recorded deadline. The independent hard timer
-            // prevents a delayed soft-timeout callback from starting a fresh grace period beyond that bound.
-            timeoutMs: Math.max(1, remainingTimeoutMs - terminationGraceMs),
-            hardDeadlineAt: Date.parse(deadlineAt),
-            onOutput: onProgress ? (chunk) => onProgress({ chunk }) : undefined,
-            onObservation: (stream, bytes) => retention.capture(stream, bytes),
-            onSpawn: (pid) => {
-              // Lease attachment is a security hook and may fail the spawn. The shared reporters isolate
-              // display exceptions before they reach this callback; runChild deliberately kills on any error
-              // here, so presentation must never be added directly without that reporter boundary.
-              preparedWorkspace?.lease.attachProcess(pid);
-              retention.native({ pid });
-              recordRunning("process");
-              onProgress?.({ state: "running" });
-            },
-          });
+    return await executeWithActivitySession();
+  } finally {
+    if (!keepPaneRequested) await activitySession.dispose();
+  }
 
-    if (sessionFlag >= 0) retention.observeSession({ source: "pi-session-file", value: plan.args[sessionFlag + 1] });
-    retention.capture("result", Buffer.from(output.text), true);
-    const childFailed = Boolean(output.spawnError || output.aborted || output.timedOut || output.code !== 0);
-    retention.finish({
-      code: output.code,
-      signal: output.signal ?? null,
-      timedOut: output.timedOut,
-      aborted: output.aborted,
-      truncated: output.truncated,
-      failed: childFailed,
-    });
-    releaseReason = output.timedOut ? "timeout" : output.aborted ? "cancelled" : childFailed ? "failed" : "completed";
-    if (activityStarted)
-      try {
-        await activity.childFinished(
-          executionId,
-          activityParent,
-          input.agent ?? "governed child",
-          output.text,
-          childFailed ? (output.aborted ? "cancelled" : "failed") : "completed",
-        );
-        activityFinished = true;
-      } catch {
-        /* observation does not control execution */
-      }
+  async function executeWithActivitySession(): Promise<DelegationOutcome> {
+    const args = activitySession.args;
+    // The process executor adds a second signal that is live during a tool call: the child tree's CPU time and
+    // descendants (`process-activity.ts`). Herdr children are started by the daemon, so their pid is not known here.
+    let childPid: number | undefined;
+    const probe = async () => {
+      const [file, tree] = await Promise.all([
+        activitySession.probe(),
+        childPid === undefined ? undefined : processTreeActivity(childPid),
+      ]);
+      return file === undefined && tree === undefined ? undefined : `${file ?? "-"}|${tree ?? "-"}`;
+    };
+    const startedAt = new Date();
+    const deadlineAt = new Date(startedAt.getTime() + configuredTimeoutMs).toISOString();
     if (ledgerPath) {
-      terminalAttempted = true;
-      await appendAfterRuntimeRecord(runtimeRecord, () =>
-        appendLedgerEvent(
+      try {
+        await appendLedgerEvent(
+          { path: ledgerPath, strict: true },
+          buildChildLifecycleEvent({
+            executionId,
+            parentExecutionId,
+            childId,
+            state: "starting",
+            executor: session.executor.kind,
+            deadlineAt,
+            idleTimeoutMs: configuredIdleMs,
+            correlation: plan.correlation,
+            now: startedAt,
+          }),
+        );
+      } catch (error) {
+        await releaseDelegationWorkspace({
+          prepared: preparedWorkspace,
+          childId,
+          executionId,
+          parentExecutionId,
+          reason: "ledger-failed",
+        });
+        throw error;
+      }
+    }
+    // The recorded deadline and executor timer are one fact. Waiting for the strict starting append consumes
+    // the budget; handing the child a fresh full timeout would leave it live after the dashboard truthfully
+    // marked that deadline incomplete.
+    const remainingTimeoutMs = Math.max(1, Date.parse(deadlineAt) - Date.now());
+    const terminationGraceMs = Math.min(DEFAULT_KILL_GRACE_MS, Math.max(1, Math.floor(remainingTimeoutMs / 10)));
+    const cwd = preparedWorkspace?.workspace.root ?? input.cwd;
+    const leaseAbort = new AbortController();
+    const writerLease = preparedWorkspace?.lease.access === "write" ? preparedWorkspace.lease : undefined;
+    // Tracked as a FACT, not only as an abort: "the kernel lock protecting this workspace evaporated under
+    // a live governed writer" and "the operator pressed stop" produced byte-identical reasons before, and a
+    // count of lost leases is exactly the number an operator auditing this feature needs (R-103).
+    let leaseLost = false;
+    writerLease?.lost.then(() => {
+      leaseLost = true;
+      leaseAbort.abort();
+    });
+    const executionSignal = signal
+      ? AbortSignal.any([signal, leaseAbort.signal])
+      : writerLease
+        ? leaseAbort.signal
+        : undefined;
+    const retention = beginExecutionRetention({
+      executionId,
+      parentExecutionId,
+      childId,
+      toolCallId: input.toolCallId ?? null,
+      executor: session.executor.kind,
+      taskDigest: plan.taskDigest,
+      definitionDigest: plan.definitionDigest?.sha256 ?? null,
+      configurationDigest: retentionConfigurationDigest({
+        args: plan.args,
+        effective: plan.effective,
+        timeoutMs: configuredTimeoutMs,
+      }),
+      workspaceId: preparedWorkspace?.workspace.workspaceId ?? null,
+    });
+    const sessionFlag = plan.args.indexOf("--session");
+    if (sessionFlag >= 0) retention.observeSession({ source: "pi-session-file", value: plan.args[sessionFlag + 1] });
+    let releaseReason = "failed";
+    let retainWriterLease = false;
+    let terminalAttempted = false;
+    const teardownFailures: string[] = [];
+    let runtimeRecord: Promise<void> | undefined;
+    const recordRunning = (executor: "process" | "herdr", pane?: { id: string; agentName: string }): void => {
+      if (!ledgerPath) return;
+      try {
+        runtimeRecord = appendLedgerEvent(
           {
             path: ledgerPath,
-            // NOT strict, and this line is the whole point of R-99. The child has already run: failing
-            // closed here prevents nothing and used to discard a completed child's entire output while
-            // blaming "ledger" — under `delegate_all` it discarded every sibling's work too. The docstring
-            // above, `docs/SPEC.md` and the ADR-0034 amendment all promised this; only the comment changed.
-            // `capability_decision`, which PROVISIONS, still fails closed.
             strict: false,
-            onFailure: (cause) => teardownFailures.push(`child lifecycle record failed: ${String(cause)}`),
+            onFailure: (cause) => teardownFailures.push(`child runtime identity record failed: ${String(cause)}`),
           },
           buildChildLifecycleEvent({
             executionId,
             parentExecutionId,
             childId,
-            state: childFailed ? "failed" : "completed",
-            executor: session.executor.kind,
-            exitCode: output.code,
-            signal: output.signal ?? null,
-            timedOut: output.timedOut,
-            aborted: output.aborted,
-            truncated: output.truncated,
-            reason: output.spawnError,
+            state: "running",
+            executor,
+            deadlineAt,
+            idleTimeoutMs: configuredIdleMs,
+            ...(pane ? { herdrPaneId: pane.id, herdrAgentName: pane.agentName } : {}),
             correlation: plan.correlation,
             now: new Date(),
           }),
-        ),
-      );
-    }
+        );
+      } catch (error) {
+        teardownFailures.push(`child runtime identity record failed: ${String(error)}`);
+      }
+    };
+    try {
+      const output =
+        session.executor.kind === "herdr"
+          ? await runHerdrPane({
+              args: args.slice(0, -1),
+              prompt: args[args.length - 1].trimStart(),
+              env: plan.env,
+              cwd,
+              name: `${input.agent ?? "delegate"}-${childId}`,
+              workspace: resolveWorkspace(process.env),
+              signal: executionSignal,
+              timeoutMs: remainingTimeoutMs,
+              idleTimeoutMs: configuredIdleMs,
+              activityProbe: activitySession.probe, // Herdr: session file plus pane text when a display is attached
+              keepPane: writerLease ? false : process.env[ENV_HERDR_KEEP_PANE] === "1",
+              closeOnSettle: Boolean(writerLease),
+              onPane: (paneId, agentName) => {
+                retention.native({ paneId, agentName });
+                onProgress?.({ paneId, agentName, state: "starting" });
+              },
+              onObservation: (bytes) => retention.capture("paneSnapshot", bytes, true),
+              onSessionReference: (reference) => retention.observeSession(reference),
+              onRunning: (paneId, agentName) => {
+                // Record first: runHerdrPane isolates this display callback, so a renderer exception after the
+                // observation cannot suppress the authoritative running event.
+                recordRunning("herdr", { id: paneId, agentName });
+                onProgress?.({ paneId, agentName, state: "running" });
+              },
+              onTab: preparedWorkspace ? (tabId) => preparedWorkspace.lease.attachHerdrTab(tabId) : undefined,
+              onNativeTab: (tabId) => retention.native({ tabId }),
+              onSnapshot: onProgress ? (snapshot) => onProgress({ snapshot }) : undefined,
+            })
+          : await runChild({
+              command: writerLease ? "setpriv" : "pi",
+              args: writerLease ? ["--pdeathsig", "KILL", "--", "pi", ...args] : args,
+              env: mergeChildEnv(process.env, plan.env),
+              cwd,
+              signal: executionSignal,
+              // SIGTERM gets only grace that fits INSIDE the recorded deadline. The independent hard timer
+              // prevents a delayed soft-timeout callback from starting a fresh grace period beyond that bound.
+              timeoutMs: Math.max(1, remainingTimeoutMs - terminationGraceMs),
+              hardDeadlineAt: Date.parse(deadlineAt),
+              idleTimeoutMs: configuredIdleMs,
+              activityProbe: probe,
+              onOutput: onProgress ? (chunk) => onProgress({ chunk }) : undefined,
+              onObservation: (stream, bytes) => retention.capture(stream, bytes),
+              onSpawn: (pid) => {
+                childPid = pid;
+                // Lease attachment is a security hook and may fail the spawn. The shared reporters isolate
+                // display exceptions before they reach this callback; runChild deliberately kills on any error
+                // here, so presentation must never be added directly without that reporter boundary.
+                preparedWorkspace?.lease.attachProcess(pid);
+                retention.native({ pid });
+                recordRunning("process");
+                onProgress?.({ state: "running" });
+              },
+            });
 
-    const leaseWasLost = writerLease ? leaseLost : false;
-    if (childFailed) {
-      const why = output.spawnError
-        ? `could not be started: ${output.spawnError}`
-        : output.aborted
-          ? leaseWasLost
-            ? "lost the exclusive writer lease protecting its workspace and was stopped"
-            : "was cancelled"
-          : output.timedOut
-            ? "exceeded its time limit and was killed"
-            : `exited with code ${output.code}`;
-      // A stable code for every execution failure. Without these an external controller could tell a
-      // policy refusal from an internal error, but not a lost writer lease from a user pressing stop
-      // (R-103), and not a missing `setpriv` from an ordinary crash (R-107).
-      const code = output.spawnError
-        ? "EXECUTOR_UNAVAILABLE"
-        : leaseWasLost
-          ? "WORKSPACE_LEASE_STALE"
-          : output.timedOut
-            ? "CHILD_TIMED_OUT"
-            : output.aborted
-              ? "CHILD_CANCELLED"
-              : "CHILD_EXIT_NONZERO";
-      const failed: DelegationOutcome = {
-        ok: false,
-        text: output.text.trim(),
-        reason: `the sub-agent ${why}`,
-        granted: plan.effective,
-        depth: plan.childDepth,
-        exitCode: output.code,
-        refusal: refusal(code, `the sub-agent ${why}`, { child_id: childId }),
+      if (sessionFlag >= 0) retention.observeSession({ source: "pi-session-file", value: plan.args[sessionFlag + 1] });
+      retention.capture("result", Buffer.from(output.text), true);
+      const childFailed = Boolean(output.spawnError || output.aborted || output.timedOut || output.code !== 0);
+      retention.finish({
+        code: output.code,
+        signal: output.signal ?? null,
         timedOut: output.timedOut,
         aborted: output.aborted,
         truncated: output.truncated,
-        spawnFailed: Boolean(output.spawnError),
+        failed: childFailed,
+      });
+      releaseReason = output.timedOut ? "timeout" : output.aborted ? "cancelled" : childFailed ? "failed" : "completed";
+      if (activityStarted)
+        try {
+          await activity.childFinished(
+            executionId,
+            activityParent,
+            input.agent ?? "governed child",
+            output.text,
+            childFailed ? (output.aborted ? "cancelled" : "failed") : "completed",
+          );
+          activityFinished = true;
+        } catch {
+          /* observation does not control execution */
+        }
+      if (ledgerPath) {
+        terminalAttempted = true;
+        await appendAfterRuntimeRecord(runtimeRecord, () =>
+          appendLedgerEvent(
+            {
+              path: ledgerPath,
+              // NOT strict, and this line is the whole point of R-99. The child has already run: failing
+              // closed here prevents nothing and used to discard a completed child's entire output while
+              // blaming "ledger" — under `delegate_all` it discarded every sibling's work too. The docstring
+              // above, `docs/SPEC.md` and the ADR-0034 amendment all promised this; only the comment changed.
+              // `capability_decision`, which PROVISIONS, still fails closed.
+              strict: false,
+              onFailure: (cause) => teardownFailures.push(`child lifecycle record failed: ${String(cause)}`),
+            },
+            buildChildLifecycleEvent({
+              executionId,
+              parentExecutionId,
+              childId,
+              state: childFailed ? "failed" : "completed",
+              executor: session.executor.kind,
+              exitCode: output.code,
+              signal: output.signal ?? null,
+              timedOut: output.timedOut,
+              aborted: output.aborted,
+              truncated: output.truncated,
+              idleTimeoutMs: configuredIdleMs,
+              reason:
+                output.spawnError ?? (output.timedOut ? (output.idle ? "idle-timeout" : "wall-clock") : undefined),
+              correlation: plan.correlation,
+              now: new Date(),
+            }),
+          ),
+        );
+      }
+
+      const leaseWasLost = writerLease ? leaseLost : false;
+      if (childFailed) {
+        const why = output.spawnError
+          ? `could not be started: ${output.spawnError}`
+          : output.aborted
+            ? leaseWasLost
+              ? "lost the exclusive writer lease protecting its workspace and was stopped"
+              : "was cancelled"
+            : output.timedOut
+              ? output.idle
+                ? `showed no activity for ${describeBound(configuredIdleMs)} and was killed ` +
+                  `(${ENV_CHILD_IDLE_TIMEOUT} sets the bound in seconds)`
+                : `ran past its ${describeBound(configuredTimeoutMs)} ceiling and was killed ` +
+                  `(${ENV_CHILD_TIMEOUT} sets it in seconds)`
+              : `exited with code ${output.code}`;
+        // A stable code for every execution failure. Without these an external controller could tell a
+        // policy refusal from an internal error, but not a lost writer lease from a user pressing stop
+        // (R-103), and not a missing `setpriv` from an ordinary crash (R-107).
+        const code = output.spawnError
+          ? "EXECUTOR_UNAVAILABLE"
+          : leaseWasLost
+            ? "WORKSPACE_LEASE_STALE"
+            : output.timedOut
+              ? "CHILD_TIMED_OUT"
+              : output.aborted
+                ? "CHILD_CANCELLED"
+                : "CHILD_EXIT_NONZERO";
+        const failed: DelegationOutcome = {
+          ok: false,
+          text: output.text.trim(),
+          reason: `the sub-agent ${why}`,
+          granted: plan.effective,
+          depth: plan.childDepth,
+          exitCode: output.code,
+          refusal: refusal(code, `the sub-agent ${why}`, { child_id: childId }),
+          timedOut: output.timedOut,
+          aborted: output.aborted,
+          truncated: output.truncated,
+          spawnFailed: Boolean(output.spawnError),
+        };
+        await teardown();
+        return withTeardownNotes(failed);
+      }
+
+      const succeeded: DelegationOutcome = {
+        ok: true,
+        text: output.text.trim(),
+        granted: plan.effective,
+        depth: plan.childDepth,
+        exitCode: output.code,
+        truncated: output.truncated,
       };
       await teardown();
-      return withTeardownNotes(failed);
-    }
-
-    const succeeded: DelegationOutcome = {
-      ok: true,
-      text: output.text.trim(),
-      granted: plan.effective,
-      depth: plan.childDepth,
-      exitCode: output.code,
-      truncated: output.truncated,
-    };
-    await teardown();
-    return withTeardownNotes(succeeded);
-  } catch (error) {
-    if (activityStarted && !activityFinished)
-      try {
-        await activity.childFinished(
-          executionId,
-          activityParent,
-          input.agent ?? "governed child",
-          "",
-          signal?.aborted ? "cancelled" : "failed",
-        );
-      } catch {
-        /* observation does not control execution */
-      }
-    retention.finish({
-      code: null,
-      signal: null,
-      timedOut: false,
-      aborted: Boolean(signal?.aborted),
-      truncated: false,
-      failed: true,
-    });
-    retainWriterLease = Boolean(writerLease && isHerdrWriterCloseFailure(error));
-    if (ledgerPath && !terminalAttempted) {
-      // Best-effort: this records the failure, so it must not REPLACE the failure. A strict append that
-      // throws here would discard the original error — including HerdrWriterCloseError, whose whole
-      // meaning is "a lease is deliberately retained" (R-108).
-      await appendAfterRuntimeRecord(runtimeRecord, () =>
-        appendLedgerEvent(
-          {
-            path: ledgerPath,
-            strict: false,
-            onFailure: (cause) => teardownFailures.push(`child lifecycle record failed: ${String(cause)}`),
-          },
-          buildChildLifecycleEvent({
-            executionId,
-            parentExecutionId,
-            childId,
-            state: "failed",
-            executor: session.executor.kind,
-            reason:
-              error instanceof GovernanceRefusal
-                ? error.code
-                : error instanceof Error
-                  ? error.name
-                  : "unknown executor error",
-            correlation: plan.correlation,
-            now: new Date(),
-          }),
-        ),
-      );
-    }
-    await teardown();
-    // Attached, not dropped. `withTeardownNotes` was applied on both return paths and neither throw path,
-    // so a failed lease-release record — the thing that makes the NEXT owner report a phantom crash — was
-    // collected into an array nothing read.
-    throw errorWithTeardownNotes(error, teardownFailures);
-  }
-  /**
-   * Surfaces a teardown failure WITHOUT discarding the result. The child already ran; telling the
-   * orchestrator "ledger write failed" and nothing else made a completed delegation indistinguishable
-   * from one that never happened, which is the one confusion this package must never create (R-99).
-   */
-  /**
-   * Surfaces a failed best-effort RECORD without displacing the failure it was recording. A
-   * `GovernanceRefusal` keeps its `code`, so a controller switching on it still sees the real refusal
-   * rather than a ledger complaint. pi renders only `error.message` (its `createErrorToolResult` drops
-   * everything else), so the notes go INTO the message — an `AggregateError.errors` array would be invisible.
-   */
-  function errorWithTeardownNotes(error: unknown, notes: readonly string[]): unknown {
-    if (notes.length === 0) return error;
-    if (error instanceof GovernanceRefusal) {
-      return new GovernanceRefusal({
-        code: error.code,
-        message: [error.message, ...notes].join("; "),
-        ...(error.details ? { details: error.details } : {}),
-      });
-    }
-    if (error instanceof Error) return new Error([error.message, ...notes].join("; "), { cause: error });
-    return error;
-  }
-  function withTeardownNotes(outcome: DelegationOutcome): DelegationOutcome {
-    const observed = { ...outcome, retention: retention.status() };
-    if (teardownFailures.length === 0) return observed;
-    return { ...observed, control: "failed", reason: [outcome.reason, ...teardownFailures].filter(Boolean).join("; ") };
-  }
-
-  async function teardown(): Promise<void> {
-    try {
-      await releaseDelegationWorkspace({
-        prepared: preparedWorkspace,
-        childId,
-        executionId,
-        parentExecutionId,
-        ledgerPath,
-        reason: releaseReason,
-        retain: retainWriterLease,
-      });
+      return withTeardownNotes(succeeded);
     } catch (error) {
-      teardownFailures.push(`workspace lease record failed: ${String(error)}`);
+      if (activityStarted && !activityFinished)
+        try {
+          await activity.childFinished(
+            executionId,
+            activityParent,
+            input.agent ?? "governed child",
+            "",
+            signal?.aborted ? "cancelled" : "failed",
+          );
+        } catch {
+          /* observation does not control execution */
+        }
+      retention.finish({
+        code: null,
+        signal: null,
+        timedOut: false,
+        aborted: Boolean(signal?.aborted),
+        truncated: false,
+        failed: true,
+      });
+      retainWriterLease = Boolean(writerLease && isHerdrWriterCloseFailure(error));
+      if (ledgerPath && !terminalAttempted) {
+        // Best-effort: this records the failure, so it must not REPLACE the failure. A strict append that
+        // throws here would discard the original error — including HerdrWriterCloseError, whose whole
+        // meaning is "a lease is deliberately retained" (R-108).
+        await appendAfterRuntimeRecord(runtimeRecord, () =>
+          appendLedgerEvent(
+            {
+              path: ledgerPath,
+              strict: false,
+              onFailure: (cause) => teardownFailures.push(`child lifecycle record failed: ${String(cause)}`),
+            },
+            buildChildLifecycleEvent({
+              executionId,
+              parentExecutionId,
+              childId,
+              state: "failed",
+              executor: session.executor.kind,
+              idleTimeoutMs: configuredIdleMs,
+              reason:
+                error instanceof GovernanceRefusal
+                  ? error.code
+                  : error instanceof Error
+                    ? error.name
+                    : "unknown executor error",
+              correlation: plan.correlation,
+              now: new Date(),
+            }),
+          ),
+        );
+      }
+      await teardown();
+      // Attached, not dropped. `withTeardownNotes` was applied on both return paths and neither throw path,
+      // so a failed lease-release record — the thing that makes the NEXT owner report a phantom crash — was
+      // collected into an array nothing read.
+      throw errorWithTeardownNotes(error, teardownFailures);
+    }
+    /**
+     * Surfaces a teardown failure WITHOUT discarding the result. The child already ran; telling the
+     * orchestrator "ledger write failed" and nothing else made a completed delegation indistinguishable
+     * from one that never happened, which is the one confusion this package must never create (R-99).
+     */
+    /**
+     * Surfaces a failed best-effort RECORD without displacing the failure it was recording. A
+     * `GovernanceRefusal` keeps its `code`, so a controller switching on it still sees the real refusal
+     * rather than a ledger complaint. pi renders only `error.message` (its `createErrorToolResult` drops
+     * everything else), so the notes go INTO the message — an `AggregateError.errors` array would be invisible.
+     */
+    function errorWithTeardownNotes(error: unknown, notes: readonly string[]): unknown {
+      if (notes.length === 0) return error;
+      if (error instanceof GovernanceRefusal) {
+        return new GovernanceRefusal({
+          code: error.code,
+          message: [error.message, ...notes].join("; "),
+          ...(error.details ? { details: error.details } : {}),
+        });
+      }
+      if (error instanceof Error) return new Error([error.message, ...notes].join("; "), { cause: error });
+      return error;
+    }
+    function withTeardownNotes(outcome: DelegationOutcome): DelegationOutcome {
+      const observed = { ...outcome, retention: retention.status() };
+      if (teardownFailures.length === 0) return observed;
+      return {
+        ...observed,
+        control: "failed",
+        reason: [outcome.reason, ...teardownFailures].filter(Boolean).join("; "),
+      };
+    }
+
+    async function teardown(): Promise<void> {
+      try {
+        await releaseDelegationWorkspace({
+          prepared: preparedWorkspace,
+          childId,
+          executionId,
+          parentExecutionId,
+          ledgerPath,
+          reason: releaseReason,
+          retain: retainWriterLease,
+        });
+      } catch (error) {
+        teardownFailures.push(`workspace lease record failed: ${String(error)}`);
+      }
     }
   }
+}
+
+function describeBound(ms: number): string {
+  return ms < 60_000 ? `${Math.round(ms / 1000)} second(s)` : `${Math.round(ms / 60_000)} minute(s)`;
 }

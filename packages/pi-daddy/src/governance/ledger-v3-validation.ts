@@ -140,6 +140,7 @@ const FIELDS = {
     "truncated",
     "reason",
     "deadlineAt",
+    "idleTimeoutMs",
     "herdrPaneId",
     "herdrAgentName",
     "correlation",
@@ -327,6 +328,7 @@ function validateChildLifecycle(event: LedgerV3Object): string | null {
   }
   if (
     !optional(event, "deadlineAt", isTimestamp) ||
+    !optional(event, "idleTimeoutMs", (value) => Number.isInteger(value) && (value as number) > 0) ||
     !optional(event, "exitCode", (value) => value === null || Number.isInteger(value)) ||
     !optional(event, "signal", (value) => value === null || PROCESS_SIGNALS.has(String(value))) ||
     !optional(event, "timedOut", (value) => value === true) ||

@@ -121,6 +121,8 @@ export interface ChildLifecycleEvent extends LedgerEventBase {
   aborted?: true;
   truncated?: true;
   reason?: string;
+  /** The inactivity bound (ms) that governed this child beside the `deadlineAt` ceiling (PR 3e). */
+  idleTimeoutMs?: number;
 }
 
 export type CapabilityDecisionEvent = GrantRecord & {
@@ -177,6 +179,7 @@ export function buildChildLifecycleEvent(args: {
   state: ChildLifecycleState;
   executor: ExecutorKind;
   deadlineAt?: string;
+  idleTimeoutMs?: number;
   herdrPaneId?: string;
   herdrAgentName?: string;
   exitCode?: number | null;
@@ -199,6 +202,7 @@ export function buildChildLifecycleEvent(args: {
     state: args.state,
     executor: args.executor,
     ...(args.deadlineAt ? { deadlineAt: args.deadlineAt } : {}),
+    ...(args.idleTimeoutMs !== undefined ? { idleTimeoutMs: args.idleTimeoutMs } : {}),
     ...(args.herdrPaneId ? { herdrPaneId: args.herdrPaneId } : {}),
     ...(args.herdrAgentName ? { herdrAgentName: args.herdrAgentName } : {}),
     ...(args.exitCode !== undefined ? { exitCode: args.exitCode } : {}),

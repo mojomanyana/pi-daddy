@@ -12,8 +12,8 @@
 import { spawn } from "node:child_process";
 import { StringDecoder } from "node:string_decoder";
 import { parseBound } from "./propagation.ts";
-import { ENV_CHILD_TIMEOUT } from "./env-names.ts";
-export { ENV_CHILD_TIMEOUT } from "./env-names.ts";
+import { ENV_CHILD_IDLE_TIMEOUT, ENV_CHILD_TIMEOUT } from "./env-names.ts";
+export { ENV_CHILD_IDLE_TIMEOUT, ENV_CHILD_TIMEOUT } from "./env-names.ts";
 
 interface RunChildTestControl {
   hardDeadlineAtAfterSpawn(): number;
@@ -68,6 +68,12 @@ export function timeoutFromEnv(raw: string | undefined): number {
   return seconds === undefined || seconds === null || seconds === 0 ? DEFAULT_TIMEOUT_MS : seconds * 1000;
 }
 
+/** The inactivity bound, same rule: absent, malformed and zero all select the default rather than disabling it. */
+export function idleTimeoutFromEnv(raw: string | undefined): number {
+  const seconds = parseBound(raw);
+  return seconds === undefined || seconds === null || seconds === 0 ? DEFAULT_IDLE_TIMEOUT_MS : seconds * 1000;
+}
+
 export interface ChildRunRequest {
   command: string;
   args: string[];
@@ -76,9 +82,21 @@ export interface ChildRunRequest {
   signal?: AbortSignal;
   /** Hard cap on captured output. Beyond it the child is killed and the result flagged. */
   maxOutputBytes?: number;
-  /** Soft wall-clock cap. On expiry: SIGTERM, then SIGKILL after `killGraceMs`. */
+  /** Wall-clock ceiling. On expiry: SIGTERM, then SIGKILL after `killGraceMs`. A runaway bound, not the working bound. */
   timeoutMs?: number;
   killGraceMs?: number;
+  /**
+   * Inactivity bound (ADR-0038 note, PR 3e): the child is stopped when this long passes with no activity. Activity
+   * is any stdout/stderr byte, or a change in what `activityProbe` returns. Undefined means no inactivity bound.
+   */
+  idleTimeoutMs?: number;
+  /**
+   * A cheap marker of the child's progress that is not on its stdout, polled every `activityProbeIntervalMs`: the
+   * size and mtime of its pi session file, which pi appends to on every message and tool result. A change resets
+   * the inactivity clock; `undefined` (file not there yet) counts as no change. Never awaited on the control path.
+   */
+  activityProbe?: () => Promise<string | number | undefined> | string | number | undefined;
+  activityProbeIntervalMs?: number;
   /** Absolute epoch-millisecond hard cap: SIGKILL fires here even when the SIGTERM grace has not elapsed. */
   hardDeadlineAt?: number;
   /**
@@ -109,6 +127,8 @@ export interface ChildRunResult {
   text: string;
   truncated: boolean;
   timedOut: boolean;
+  /** Set with `timedOut` when it was the inactivity bound, not the wall-clock ceiling, that stopped the child. */
+  idle?: true;
   aborted: boolean;
   /** Signal that ended the process, separate from the nullable numeric exit code. */
   signal?: NodeJS.Signals | null;
@@ -118,9 +138,16 @@ export interface ChildRunResult {
 
 /** 1 MiB. A delegation returns a summary; anything larger is a runaway, not an answer. */
 export const DEFAULT_MAX_OUTPUT_BYTES = 1024 * 1024;
-/** 60 minutes since 2026-09-21 (ADR-0038 note): a wall clock still, so a working child is killed at the cap; the
- * activity-based deadline is the next PR. Twenty minutes cut builds mid-run. */
-export const DEFAULT_TIMEOUT_MS = 60 * 60 * 1000;
+/**
+ * Six hours (PR 3e, 2026-09-22). No longer the working bound: `DEFAULT_IDLE_TIMEOUT_MS` is what stops a hung child.
+ * This is the runaway ceiling for a child that keeps producing events forever, and it exists so that no typo in the
+ * inactivity variable can make a child unbounded. The history: ten minutes, twenty (ADR-0038), sixty (its note), each
+ * time because a working child was cut off by a wall clock that cannot tell working from hung.
+ */
+export const DEFAULT_TIMEOUT_MS = 6 * 60 * 60 * 1000;
+/** Fifteen minutes with no stdout byte and no session-file change. A hung child is a silent one; a build is not. */
+export const DEFAULT_IDLE_TIMEOUT_MS = 15 * 60 * 1000;
+export const DEFAULT_ACTIVITY_PROBE_INTERVAL_MS = 2000;
 /** Grace between SIGTERM and SIGKILL. A child that ignores SIGTERM must not make the timeout advisory. */
 export const DEFAULT_KILL_GRACE_MS = 5000;
 
@@ -176,6 +203,7 @@ export function runChild(request: ChildRunRequest): Promise<ChildRunResult> {
     let bytes = 0;
     let truncated = false;
     let timedOut = false;
+    let idle = false;
     let aborted = false;
     let done = false;
 
@@ -260,6 +288,7 @@ export function runChild(request: ChildRunRequest): Promise<ChildRunResult> {
     };
 
     const observe = (stream: "stdout" | "stderr", chunk: Buffer) => {
+      armIdle();
       capture(chunk);
       try {
         request.onObservation?.(stream, chunk);
@@ -288,6 +317,45 @@ export function runChild(request: ChildRunRequest): Promise<ChildRunResult> {
         timeoutMs,
       ),
     );
+
+    // The inactivity bound. Re-armed by every output byte and by every probe change; a child that is working but
+    // quiet on stdout (a build, a long tool call) keeps its session file growing, and that is enough.
+    let idleTimer: NodeJS.Timeout | undefined;
+    function armIdle(): void {
+      if (request.idleTimeoutMs === undefined || done) return;
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(
+        () =>
+          controlIfRunning(() => {
+            timedOut = true;
+            idle = true;
+            stop();
+          }),
+        request.idleTimeoutMs,
+      );
+    }
+    armIdle();
+    let probeTimer: NodeJS.Timeout | undefined;
+    if (request.idleTimeoutMs !== undefined && request.activityProbe) {
+      let lastMarker: string | number | undefined;
+      let probing = false;
+      probeTimer = setInterval(() => {
+        if (probing || done) return;
+        probing = true;
+        void Promise.resolve()
+          .then(() => request.activityProbe?.())
+          .then((marker) => {
+            if (marker !== undefined && marker !== lastMarker) {
+              lastMarker = marker;
+              armIdle();
+            }
+          })
+          .catch(() => undefined) // an unreadable probe is "no activity seen", never a control decision
+          .finally(() => {
+            probing = false;
+          });
+      }, request.activityProbeIntervalMs ?? DEFAULT_ACTIVITY_PROBE_INTERVAL_MS);
+    }
     const activeHardDeadlineAt = testControl?.hardDeadlineAtAfterSpawn() ?? hardDeadlineAt;
     if (activeHardDeadlineAt !== undefined) {
       // Independent of the soft timer and measured from the recorded epoch, not from `spawn`: neither a
@@ -314,18 +382,37 @@ export function runChild(request: ChildRunRequest): Promise<ChildRunResult> {
       if (done) return;
       done = true;
       clearTimers();
+      if (idleTimer) clearTimeout(idleTimer);
+      if (probeTimer) clearInterval(probeTimer);
       request.signal?.removeEventListener("abort", onAbort);
       child.stdout?.destroy();
       child.stderr?.destroy();
       settle(result);
     };
 
-    child.on("error", (error) => finish({ code: null, text, truncated, timedOut, aborted, spawnError: String(error) }));
+    child.on("error", (error) =>
+      finish({
+        code: null,
+        text,
+        truncated,
+        timedOut,
+        ...(idle ? { idle: true } : {}),
+        aborted,
+        spawnError: String(error),
+      }),
+    );
     // `close` waits for every inherited pipe, including one retained by a detached grandchild. Once the
     // governed PID exits, allow a short drain and settle anyway so timeout/output bounds remain bounds.
     child.on("exit", (code, signal) => {
-      timers.push(setTimeout(() => finish({ code, signal, text, truncated, timedOut, aborted }), 100));
+      timers.push(
+        setTimeout(
+          () => finish({ code, signal, text, truncated, timedOut, ...(idle ? { idle: true } : {}), aborted }),
+          100,
+        ),
+      );
     });
-    child.on("close", (code, signal) => finish({ code, signal, text, truncated, timedOut, aborted }));
+    child.on("close", (code, signal) =>
+      finish({ code, signal, text, truncated, timedOut, ...(idle ? { idle: true } : {}), aborted }),
+    );
   });
 }

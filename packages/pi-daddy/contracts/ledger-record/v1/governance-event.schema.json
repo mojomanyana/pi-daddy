@@ -666,6 +666,11 @@
         "deadlineAt": {
           "$ref": "#/$defs/timestamp"
         },
+        "idleTimeoutMs": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "the inactivity bound in milliseconds that governed this child beside the deadlineAt ceiling"
+        },
         "herdrPaneId": {
           "$ref": "#/$defs/ledgerDisplayIdentifier"
         },

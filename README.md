@@ -101,8 +101,11 @@ in a Herdr pane beside the session. It is a renderer in a separate process and n
 ## Bounds and configuration
 
 Every variable is `PI_DADDY_*`. The ones an operator sets: `PI_DADDY_GRANT` (overrides the stored grant; the
-environment always wins), `PI_DADDY_LEDGER`, `PI_DADDY_HERDR`, `PI_DADDY_CHILD_TIMEOUT` (seconds; the default is sixty
-minutes and a wall clock, see the roadmap in `AGENTS.md`), `PI_DADDY_WORKSPACE_REGISTRY`, `PI_DADDY_EXECUTION_ARCHIVE`
+environment always wins), `PI_DADDY_LEDGER`, `PI_DADDY_HERDR`, `PI_DADDY_CHILD_IDLE_TIMEOUT` (seconds with no
+activity before a child is stopped; default fifteen minutes; activity is any output byte, a change to the child's pi
+session file, or CPU time in the child's process tree on Linux; every child writes a session file for the run, removed
+afterwards unless it is a retention target), `PI_DADDY_CHILD_TIMEOUT` (seconds; the runaway ceiling for a child that never goes quiet; default six
+hours), `PI_DADDY_WORKSPACE_REGISTRY`, `PI_DADDY_EXECUTION_ARCHIVE`
 (opt-in retention of child stdout, stderr and result bytes). The rest are written by the parent for its children and
 refused if set by hand. Refusals are thrown with stable codes (`CAPABILITY_ESCALATION`, `GATED_UNAPPROVED`,
 `DEPTH_EXCEEDED`, `FANOUT_EXCEEDED`, `WORKSPACE_NOT_AUTHORIZED`, `CHILD_TIMED_OUT`, `LEDGER_DAMAGED`, …); the full
