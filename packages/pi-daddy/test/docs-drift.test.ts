@@ -137,12 +137,32 @@ test("every environment variable the documents name is a current one, and no leg
   assert.deepEqual(unknown, [], "the documents name a variable the package does not define");
 });
 
+/**
+ * Backticked SHOUTING_CASE the documents use that is NOT a refusal code.
+ *
+ * The check below is a heuristic — anything in backticks shaped like a refusal code must be one — and that is
+ * the right trade, because a made-up code is exactly the drift it catches. It has one cost: a document may
+ * legitimately name a system constant in the same shape. Each entry here is written down rather than the
+ * pattern being loosened, so adding one is a visible decision and an invented refusal code still fails.
+ */
+const NOT_REFUSAL_CODES = new Set([
+  "REFUSAL_CODES",
+  // POSIX open(2) flag. Named in the bounded-reader entry because it is the specific thing that keeps a FIFO
+  // from wedging session start, and no vaguer wording would let a reader check the claim.
+  "O_NONBLOCK",
+]);
+
 test("every refusal code the documents name exists", async () => {
   const codes = new Set<string>(REFUSAL_CODES);
   const unknown: string[] = [];
   for (const doc of await documents())
     for (const token of ticked(doc.checked))
-      if (/^[A-Z][A-Z_]{5,}$/.test(token) && !token.startsWith("PI_") && !codes.has(token) && token !== "REFUSAL_CODES")
+      if (
+        /^[A-Z][A-Z_]{5,}$/.test(token) &&
+        !token.startsWith("PI_") &&
+        !codes.has(token) &&
+        !NOT_REFUSAL_CODES.has(token)
+      )
         unknown.push(`${doc.name}: ${token}`);
   assert.deepEqual(unknown, [], "the documents name a refusal code the package does not throw");
 });

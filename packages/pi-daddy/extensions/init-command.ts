@@ -52,7 +52,13 @@ export async function runInit(
     return;
   }
 
-  const plan = planInit(packages, ctx.cwd, await registeredWorkspaceIds());
+  const plan = planInit(
+    packages,
+    ctx.cwd,
+    await registeredWorkspaceIds(undefined, (reason) =>
+      ctx.ui.notify(`grants: workspace registry unreadable, scaffolding no workspaces — ${reason}`, "warning"),
+    ),
+  );
   const outcome = await applyInit(plan);
   const lines = [
     `grants: ${plan.skills.length} definition(s) from ${packages.map((p) => `${p.name}@${p.version}`).join(", ")}`,

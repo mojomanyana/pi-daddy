@@ -12,6 +12,42 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## 0.36.0 — one bounded reader, and a registry that fails soft without failing silent
+
+**No behaviour changes for a working setup.** Everything here is about what happens when an operator-authored
+file is malformed, oversized or hostile, and about making three guards fail a test instead of a reviewer.
+
+**One reader for both session-start reads.** `loadWorkspaceRegistry` had worked out the correct shape the
+expensive way — a non-blocking open, because a FIFO blocks inside `open(2)` before any read starts and no signal
+can rescue it; every check against the held descriptor, because `stat`-by-name followed by read-by-name is a
+TOCTOU; a deadline between chunks; a size bound checked twice. Its own comment ended "One reader is why that
+cannot happen again", and then the second session-start read went on using a bare `readFile`. Both now call
+`readBoundedFile`.
+
+**`SKILL.md` reads are bounded and no longer silent.** They had no size bound: measured at `7096f78`, an 8 MiB
+definition was read whole into memory in 8ms, once per discovered skill inside `session_start`. The bound is
+1 MiB, matching the registry's. A definition that cannot be read, or has no readable frontmatter, is now reported
+to the caller rather than dropped by `catch { continue }`.
+
+**A malformed registry says so.** It still fails SOFT — one bad entry must not stop a session starting, because
+nothing in the catalog is an authority — but the reason is no longer discarded. It rides on
+`Catalog.registryRefusal`, `/grants` prints it under `routable`, and both `init` paths report it. Before this,
+one malformed entry removed every workspace from `/grants`, the catalog and `init` with no message anywhere, so
+an operator could not tell it apart from having registered none. That is rule 8's silent safe-mode.
+
+**Three guards that could be deleted with the suite still green.** Measured before fixing: replacing the
+registry deadline with `if (false)` left all 876 tests passing, and the size and file-type checks were unforced
+the same way. The reader's clock is injectable so a test can force the deadline without a slow disk. Each guard
+was then removed in turn and exactly one test failed.
+
+**API.** `makeCatalog` takes an optional second argument and `Catalog` has an optional `registryRefusal`;
+`loadDefinitions` and `registeredWorkspaceIds` each take an optional reporting callback. All additive — existing
+callers compile and behave as before.
+
+**Not established.** The FIFO case itself. `mkfifo` is unavailable in the environment this suite runs in, so a
+directory is what forces the file-type check, and the claim that a non-blocking open keeps a blocking special
+file from wedging session start rests on the registry's original measurement rather than on anything here.
+
 ## 0.35.0 — the first two decision points, and only the environment can enable an advisor
 
 **An advisor now fills two blanks.** When a `delegate` call names no `thinking` level, an enabled advisor is asked

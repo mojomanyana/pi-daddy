@@ -20,7 +20,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readBoundedFile } from "./bounded-read.ts";
 import { resolveSkillResources, skillResourceName } from "./skill-resources.ts";
 import { CAPABILITY_NAMESPACE_PREFIXES } from "./capabilities.ts";
 import type { Capability } from "./resolve.ts";
@@ -199,17 +199,51 @@ export function ceilingForDefinition(definition: SkillDefinition): DefinitionCei
  * Resolver precedence and filters are shared with the capability catalog; unregistered npm packages
  * are not runtime resources until legacy init explicitly scaffolds them.
  */
-export async function loadDefinitions(cwd: string): Promise<Map<string, SkillDefinition>> {
+/**
+ * A `SKILL.md` is an operator-authored markdown file; anything approaching this is not one.
+ *
+ * The same order of magnitude as the registry's bound and for the same reason. Measured at `7096f78`: a
+ * bare `readFile` pulled an 8 MiB `SKILL.md` into memory in 8ms without complaint, and this loop runs once
+ * per discovered skill inside `session_start`.
+ */
+const DEFINITION_MAX_BYTES = 1 << 20;
+
+/** A definition read is a local file read; a second is three orders of magnitude of headroom. */
+const DEFINITION_READ_TIMEOUT_MS = 2_000;
+
+/**
+ * Read definitions from Pi's enabled resources, including installed packages and local overrides.
+ * Resolver precedence and filters are shared with the capability catalog; unregistered npm packages
+ * are not runtime resources until legacy init explicitly scaffolds them.
+ *
+ * **Bounded, and loud about what it dropped.** This used a bare `readFile` with `catch { continue }`, which
+ * is both halves of what rule 8 forbids: unbounded, and silent. `resolveSkillResources` filters by
+ * `statSync(...).isFile()`, so a FIFO *named* in the resource list is already dropped — but that check is by
+ * NAME and the read that followed was by name too, which is the TOCTOU the registry's own comment block
+ * describes swapping a regular file for a FIFO through. `readBoundedFile` makes every check against the held
+ * descriptor. `skipped` exists so a caller can say which paths were dropped and why, rather than an operator
+ * finding a definition absent from `/grants` with nothing anywhere explaining it.
+ */
+export async function loadDefinitions(
+  cwd: string,
+  skipped?: (path: string, reason: string) => void,
+): Promise<Map<string, SkillDefinition>> {
   const definitions = new Map<string, SkillDefinition>();
   for (const { path } of (await resolveSkillResources(cwd)).skills) {
-    let text: string;
-    try {
-      text = await readFile(path, "utf8");
-    } catch {
+    const read = await readBoundedFile(path, {
+      maxBytes: DEFINITION_MAX_BYTES,
+      timeoutMs: DEFINITION_READ_TIMEOUT_MS,
+    });
+    if (!read.ok) {
+      skipped?.(path, read.detail);
       continue;
     }
-    const parsed = parseSkillDefinition(path, text);
-    if (parsed && !definitions.has(parsed.name)) definitions.set(parsed.name, parsed);
+    const parsed = parseSkillDefinition(path, read.text);
+    if (parsed) {
+      if (!definitions.has(parsed.name)) definitions.set(parsed.name, parsed);
+    } else {
+      skipped?.(path, `${path} has no readable frontmatter with a description`);
+    }
   }
   return definitions;
 }

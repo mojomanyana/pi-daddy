@@ -164,3 +164,39 @@ test("invalid UTF-8 is reported even when it prevents configured frontmatter par
   assert.equal((await loadDefinitions(cwd)).has("advice"), false);
   assert.equal(planInit(packages, cwd).grant.includes("agent:advice"), false);
 });
+
+/**
+ * The session-start `SKILL.md` read is bounded, and says what it dropped.
+ *
+ * Before this it was a bare `readFile` with `catch { continue }`: unbounded, and silent. Measured at
+ * `7096f78`, an 8 MiB `SKILL.md` was pulled whole into memory in 8ms without complaint, and this loop runs
+ * once per discovered skill inside `session_start`. **The production change that breaks these:** raising or
+ * deleting `DEFINITION_MAX_BYTES`, or dropping the `skipped` callback so an unreadable definition disappears
+ * with no reason attached.
+ */
+test("an oversized SKILL.md is skipped, and the skip is reported rather than silent", async () => {
+  const { cwd, pkg } = await fixture();
+  const path = join(pkg, "skills", "advice", "SKILL.md");
+  await writeFile(
+    path,
+    `---\nname: advice\ndescription: Test advice\nallowed-tools: Read\n---\n${"z".repeat(1 << 21)}`,
+  );
+
+  const reasons: string[] = [];
+  const definitions = await loadDefinitions(cwd, (p, reason) => reasons.push(`${p}::${reason}`));
+
+  assert.equal(definitions.has("advice"), false, "a 2MiB definition is over the 1MiB bound and must be dropped");
+  assert.equal(definitions.has("other"), true, "its sibling is ordinary and must still load");
+  assert.equal(reasons.length, 1, "exactly one skip, and it is reported");
+  assert.match(reasons[0], /advice/);
+  assert.match(reasons[0], /over the 1048576 limit/);
+});
+
+test("a definition with no readable frontmatter is reported too, not dropped in silence", async () => {
+  const { cwd, pkg } = await fixture();
+  await writeFile(join(pkg, "skills", "advice", "SKILL.md"), "no frontmatter at all\n");
+  const reasons: string[] = [];
+  assert.equal((await loadDefinitions(cwd, (p, r) => reasons.push(`${p}::${r}`))).has("advice"), false);
+  assert.equal(reasons.length, 1);
+  assert.match(reasons[0], /no readable frontmatter/);
+});

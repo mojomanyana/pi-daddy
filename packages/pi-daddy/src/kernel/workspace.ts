@@ -1,9 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { once } from "node:events";
-import { mkdir, open, readFile, realpath, rename, stat, writeFile } from "node:fs/promises";
-import type { FileHandle } from "node:fs/promises";
-import { constants } from "node:fs";
+import { mkdir, readFile, realpath, rename, stat, writeFile } from "node:fs/promises";
+import { readBoundedFile } from "./bounded-read.ts";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { promisify } from "node:util";
@@ -60,111 +59,36 @@ const REGISTRY_READ_TIMEOUT_MS = 2_000;
 const REGISTRY_MAX_BYTES = 1 << 20;
 
 export async function loadWorkspaceRegistry(path: string): Promise<WorkspaceRegistryFile> {
-  // **One handle, opened non-blocking, and every check made against THAT handle.** Three defects made this
-  // the shape rather than `stat`-then-`readFile`:
-  //
-  //  - `AbortSignal.timeout` cannot rescue a FIFO: a signal is observed between chunks, while a FIFO blocks
-  //    inside `open(2)` before any read begins. `O_NONBLOCK` makes the open itself return instead (measured:
-  //    1ms), which is what actually bounds this path. R-79's defect class, and R-136's.
-  //  - `stat` by name followed by `readFile` by name is a TOCTOU: swapping a regular file for a FIFO between
-  //    the two hung the loader indefinitely, and the attacker is any process at the same uid — precisely the
-  //    actor the mode check below cannot exclude. Measured, 5 of 6 iterations completing in ~1ms and the
-  //    sixth never returning. `fstat` on a held descriptor has no name to re-resolve.
-  //  - a second reader (the ADR-0035 registry pin, since reverted to its own PR) reimplemented the guards and
-  //    got them wrong. One reader is why that cannot happen again.
-  let handle: FileHandle;
-  try {
-    handle = await open(path, constants.O_RDONLY | constants.O_NONBLOCK);
-  } catch (error) {
-    throw new GovernanceRefusal(
-      refusal("WORKSPACE_NOT_REGISTERED", `workspace registry ${path} could not be opened (${String(error)})`, {
-        registry_path: path,
-      }),
-    );
+  // The guards this call carries — non-blocking open, every check on the held descriptor, a deadline between
+  // chunks, the size bound checked twice — were worked out HERE and now live in `bounded-read.ts`, because a
+  // second session-start reader went on using a bare `readFile` rather than copying them. The mapping from a
+  // reason to a refusal stays here: only this caller knows that an unreadable registry is a governance
+  // refusal naming the file, and its messages are unchanged.
+  const read = await readBoundedFile(path, {
+    maxBytes: REGISTRY_MAX_BYTES,
+    timeoutMs: REGISTRY_READ_TIMEOUT_MS,
+  });
+  if (!read.ok) {
+    const message =
+      read.why === "not-a-regular-file"
+        ? `workspace registry ${path} is not a regular file — refusing to read it. A FIFO, device or socket ` +
+          `at ${ENV_WORKSPACE_REGISTRY} would block session start rather than fail, because opening one ` +
+          `waits for a writer that may never come.`
+        : read.why === "too-large"
+          ? `workspace registry ${path} is ${read.size} bytes, over the ${REGISTRY_MAX_BYTES} limit — ` +
+            `refusing rather than reading it into memory at session start.`
+          : read.why === "grew-while-reading"
+            ? `workspace registry ${path} exceeded the ${REGISTRY_MAX_BYTES} limit while being read — it ` +
+              `grew after its size was checked. Refusing rather than allocating it.`
+            : read.why === "timed-out"
+              ? `workspace registry ${path} did not finish reading within ${REGISTRY_READ_TIMEOUT_MS}ms — ` +
+                `refusing rather than waiting, because session start awaits this read.`
+              : read.why === "unopenable"
+                ? `workspace registry ${path} could not be opened (${read.detail})`
+                : `workspace registry ${path} could not be read (${read.detail})`;
+    throw new GovernanceRefusal(refusal("WORKSPACE_NOT_REGISTERED", message, { registry_path: path }));
   }
-  let raw: string;
-  try {
-    const info = await handle.stat();
-    if (!info.isFile()) {
-      throw new GovernanceRefusal(
-        refusal(
-          "WORKSPACE_NOT_REGISTERED",
-          `workspace registry ${path} is not a regular file — refusing to read it. A FIFO, device or socket ` +
-            `at ${ENV_WORKSPACE_REGISTRY} would block session start rather than fail, because opening one ` +
-            `waits for a writer that may never come.`,
-          { registry_path: path },
-        ),
-      );
-    }
-    if (info.size > REGISTRY_MAX_BYTES) {
-      throw new GovernanceRefusal(
-        refusal(
-          "WORKSPACE_NOT_REGISTERED",
-          `workspace registry ${path} is ${info.size} bytes, over the ${REGISTRY_MAX_BYTES} limit — refusing ` +
-            `rather than reading it into memory at session start.`,
-          { registry_path: path },
-        ),
-      );
-    }
-    // **Ownership and mode are NOT checked here, and that is a scope decision (R-137, ADR-0036).** A
-    // previous revision refused a registry not owned by this user or writable by others. Those guards are
-    // about *tamper resistance*, which is a different question from the one ADR-0035 raised, and they went in
-    // mid-review without an ADR — where they promptly acquired a false claim ("nobody ELSE may rewrite it":
-    // it inspects the file and never its parent directory, and `rename(2)` needs only directory write) and a
-    // false-positive refusal of `0664`, which `umask 002` produces for every file an operator creates.
-    //
-    // What IS checked above is what ADR-0035 made this reader's problem: it began reading the registry at
-    // SESSION START, so the read must be bounded and must not block. Integrity is R-137, open and measured.
-    // The deadline is checked BETWEEN chunks, which is all `AbortSignal.timeout` ever did on the previous
-    // implementation — review measured 74 of 200 one-MiB reads completing in full with `signal.aborted`
-    // already true, because a signal is never observed *inside* a libuv read request. An explicit check makes
-    // the bound as real as it can be in-process, and its limit is the same one honestly stated below: a
-    // stalled `open` or a single wedged read cannot be interrupted from here.
-    const deadline = Date.now() + REGISTRY_READ_TIMEOUT_MS;
-    const buffer = Buffer.allocUnsafe(REGISTRY_MAX_BYTES + 1);
-    let filled = 0;
-    while (filled < buffer.length) {
-      if (Date.now() > deadline) {
-        throw new GovernanceRefusal(
-          refusal(
-            "WORKSPACE_NOT_REGISTERED",
-            `workspace registry ${path} did not finish reading within ${REGISTRY_READ_TIMEOUT_MS}ms — ` +
-              `refusing rather than waiting, because session start awaits this read.`,
-            { registry_path: path },
-          ),
-        );
-      }
-      const { bytesRead } = await handle.read(buffer, filled, buffer.length - filled, filled);
-      if (bytesRead === 0) break;
-      filled += bytesRead;
-    }
-    if (filled > REGISTRY_MAX_BYTES) {
-      throw new GovernanceRefusal(
-        refusal(
-          "WORKSPACE_NOT_REGISTERED",
-          `workspace registry ${path} exceeded the ${REGISTRY_MAX_BYTES} limit while being read — it grew ` +
-            `after its size was checked. Refusing rather than allocating it.`,
-          { registry_path: path },
-        ),
-      );
-    }
-    raw = buffer.subarray(0, filled).toString("utf8");
-  } catch (error) {
-    if (error instanceof GovernanceRefusal) throw error;
-    const timedOut = error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError");
-    throw new GovernanceRefusal(
-      refusal(
-        "WORKSPACE_NOT_REGISTERED",
-        timedOut
-          ? `workspace registry ${path} did not return within ${REGISTRY_READ_TIMEOUT_MS}ms — refusing rather ` +
-              `than waiting, because session start awaits this read.`
-          : `workspace registry ${path} could not be read (${String(error)})`,
-        { registry_path: path },
-      ),
-    );
-  } finally {
-    await handle.close().catch(() => {});
-  }
+  const raw = read.text;
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -237,12 +161,22 @@ export async function loadWorkspaceRegistry(path: string): Promise<WorkspaceRegi
  * that module — documents itself as "Pure: no filesystem". It is a registry concern; this is where the
  * registry lives. Moved when `init.ts` crossed the 400-line ceiling, which this project splits for rather
  * than raising (`delegate.ts` at 413, `grants.ts` at 398).
+ *
+ * **`onRefusal` exists because `catch { return [] }` was rule 8's silent safe-mode.** A malformed registry
+ * made `pi-daddy init` scaffold with no workspace capabilities at all and say nothing about why, which an
+ * operator cannot tell apart from having registered none. Failing soft stays — `init` must work without a
+ * registry — but the reason is handed to the caller instead of discarded. A caller that passes nothing keeps
+ * the old behaviour, which is why this is an optional parameter and not a changed return type.
  */
-export async function registeredWorkspaceIds(registryPath = process.env[ENV_WORKSPACE_REGISTRY]): Promise<string[]> {
+export async function registeredWorkspaceIds(
+  registryPath = process.env[ENV_WORKSPACE_REGISTRY],
+  onRefusal?: (reason: string) => void,
+): Promise<string[]> {
   if (!registryPath) return [];
   try {
     return Object.keys((await loadWorkspaceRegistry(registryPath)).workspaces).sort();
-  } catch {
+  } catch (error) {
+    onRefusal?.(error instanceof Error ? error.message : String(error));
     return [];
   }
 }

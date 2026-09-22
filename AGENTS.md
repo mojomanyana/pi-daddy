@@ -677,11 +677,31 @@ Kept features only. Numbers are dropped except the two that code and rules cite.
   registry entry (`g37-registry-tamper`; ADR-0042 decided, not implemented).
 - A gated routing attempt used to take the destination's exclusive writer lease before the human was asked; ADR-0041
   moved the approval before acquisition. The approval dialog itself still has no timeout.
-- A registry the reader refuses produces no message anywhere: one malformed id silently removes every workspace from
-  `/grants`, the catalog and `init`.
-- The registry read deadline is forced by no test; deleting it leaves the suite green.
-- Two session-start reads (a definition's `SKILL.md` and the registry) have no file-type check or bound; a FIFO at
-  either path blocks the session forever and pins a libuv thread so a watchdog cannot fire.
+- ~~A registry the reader refuses produces no message anywhere: one malformed id silently removes every workspace
+  from `/grants`, the catalog and `init`.~~ **Closed 2026-09-22.** Verified first: `buildCatalog` caught with
+  `() => []` and `registeredWorkspaceIds` with `catch { return [] }`, so the reason was discarded at both sites and
+  no surface held it. Failing SOFT was right and is unchanged — a malformed registry must not stop a session
+  starting, because nothing in the catalog is an authority — so what changed is that the reason now rides on
+  `Catalog.registryRefusal`, `/grants` prints it under `routable`, and both `init` paths say it. Restoring either
+  swallow fails `registry-refusal-is-loud.test.ts`.
+- ~~The registry read deadline is forced by no test; deleting it leaves the suite green.~~ **Closed 2026-09-22.**
+  Measured at `7096f78` before fixing it: replacing the `Date.now() > deadline` branch with `if (false)` left all
+  876 tests passing. The reader's clock is now injectable, so a test forces the deadline without needing a slow
+  disk, and the same three-line experiment now fails `bounded-read.test.ts`. The size and file-type checks were
+  unforced by the same omission and are now forced too, each proved by deleting it and watching exactly one test
+  fail.
+- ~~Two session-start reads (a definition's `SKILL.md` and the registry) have no file-type check or bound; a FIFO at
+  either path blocks the session forever and pins a libuv thread so a watchdog cannot fire.~~ **Corrected and
+  closed 2026-09-22, and the bullet was half wrong.** The REGISTRY already had all of it — non-blocking open, an
+  `fstat` on the held descriptor, a 1 MiB bound and a deadline — added when ADR-0035 moved that read to session
+  start; this entry was stale. The `SKILL.md` read was the real one: `resolveSkillResources` filtered by
+  `statSync(...).isFile()`, but the read that followed was `readFile` **by name**, which is the TOCTOU the
+  registry's own comment block describes, and there was no size bound at all (measured at `7096f78`: an 8 MiB
+  `SKILL.md` read whole in 8ms). Both now go through one `readBoundedFile`, and an unreadable definition is
+  reported rather than dropped by `catch { continue }`. **Not established:** the FIFO case itself. `mkfifo` is
+  unavailable in the environment these tests run in, so what forces the file-type check is a directory, and the
+  claim that `O_NONBLOCK` keeps a blocking special file from wedging the open rests on the registry's original
+  measurement rather than on anything in this suite.
 - The Herdr executor passes only the plan's environment to the pane, so a pane child receives neither the workspace
   registry nor the lease directory, and the pane inherits the daemon's environment rather than a stripped one.
 - A relative inherited ledger path resolves inside a routed child's worktree, splitting state and leaving `?? .pi/` in
