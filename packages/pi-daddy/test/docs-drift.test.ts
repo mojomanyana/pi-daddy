@@ -123,7 +123,15 @@ test("a commit SHA appears only as a pointer into git history, never as a claim 
 
 test("every environment variable the documents name is a current one, and no legacy name is instructed", async () => {
   // The test-tier switches are not governance keys and are declared nowhere else; they are named here instead.
-  const current = new Set([...GOVERNANCE_ENV_KEYS, "PI_DADDY_IT_MODEL", "PI_DADDY_KEEP_TMP", "PI_DADDY_IT_JEV"]);
+  const current = new Set([
+    ...GOVERNANCE_ENV_KEYS,
+    "PI_DADDY_IT_MODEL",
+    "PI_DADDY_KEEP_TMP",
+    "PI_DADDY_IT_JEV",
+    // The handoff probe's corpus. A test-tier switch like the others: it governs no behaviour and is read
+    // only by `test-integration/pruned-handoff-probe.it.ts`.
+    "PI_DADDY_PROBE_SESSIONS",
+  ]);
   const unknown: string[] = [];
   const legacy: string[] = [];
   for (const doc of await documents()) {
@@ -150,6 +158,9 @@ const NOT_REFUSAL_CODES = new Set([
   // POSIX open(2) flag. Named in the bounded-reader entry because it is the specific thing that keeps a FIFO
   // from wedging session start, and no vaguer wording would let a reader check the claim.
   "O_NONBLOCK",
+  // An exported constant the probe record has to name, because "the default turn count" would leave a reader
+  // unable to find it. Same shape as the flag above: a real identifier, not an invented refusal.
+  "DEFAULT_CONTEXT_TURNS",
 ]);
 
 test("every refusal code the documents name exists", async () => {

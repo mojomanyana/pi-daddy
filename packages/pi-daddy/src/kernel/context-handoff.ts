@@ -74,7 +74,19 @@ export interface ContextRequest {
 /** Bounds on a model-supplied request. Generous enough to be useful, small enough to stay reviewable. */
 export const MAX_CONTEXT_FILES = 16;
 export const MAX_CONTEXT_TURNS = 50;
-export const DEFAULT_CONTEXT_TURNS = 6;
+/**
+ * How many recent turns a `pruned` handoff keeps when the caller names no number.
+ *
+ * **Raised from 6 to 20 on 2026-09-22, by measurement rather than taste.** The handoff probe measured, over
+ * 78 real pi sessions, the share of the entities a task refers to that survive into what the child actually
+ * receives. At 6 turns it was 0.763; at 12, 0.838; at 20, 0.870; at the 50 ceiling, 0.874. Twenty is where
+ * the curve flattens, and the cost is bounded by `CONTEXT_MAX_BYTES` rather than by this number.
+ *
+ * It was only safe to raise AFTER `keepRank` landed. With the old array-order fill, delivered recall peaked
+ * at 20 and then FELL at 50, because the budget was spent on the oldest turns and the cap cut the newest —
+ * so raising this number used to make a child worse off, which is the opposite of what it reads as doing.
+ */
+export const DEFAULT_CONTEXT_TURNS = 20;
 /** Total budget for everything that crosses, matching the chain handoff so one cap governs both channels. */
 export const CONTEXT_MAX_BYTES = 32 * 1024;
 
@@ -124,6 +136,17 @@ export function parseContextRequest(raw: unknown): { request: ContextRequest } |
 export interface ContextSection {
   label: string;
   body: string;
+  /**
+   * Which sections survive when the budget binds. Higher is kept first; equal ranks keep array order.
+   *
+   * **Measured, not assumed (the 2026-09-22 handoff probe).** Sections used to be filled in array order, and
+   * pruned turns are pushed oldest-first, so the turns dropped when the cap bound were the ones NEAREST the
+   * task — the most relevant ones. Across 78 real pi sessions the cap bound in 13% of them at the default
+   * and 60% at 20 turns, and delivered recall PEAKED at 20 turns and then fell: asking for more context made
+   * the child worse off. Filling newest-first makes it monotone. Presentation order is unchanged, because a
+   * child reading its parent's turns out of order is a different defect.
+   */
+  keepRank?: number;
 }
 
 export interface FencedContext {
@@ -146,10 +169,16 @@ export interface FencedContext {
  */
 export function fenceContext(sections: readonly ContextSection[]): FencedContext {
   const nonce = randomBytes(16).toString("hex");
-  const kept: string[] = [];
   let used = 0;
   let truncatedBytes = 0;
-  for (const section of sections) {
+  // **Two orders, deliberately different.** The budget is spent in `keepRank` order so the most relevant
+  // sections survive the cap; the result is emitted in array order so the child reads its parent's turns
+  // chronologically. Collapsing them was the defect the handoff probe found.
+  const fillOrder = sections
+    .map((section, index) => ({ section, index }))
+    .sort((a, b) => (b.section.keepRank ?? 0) - (a.section.keepRank ?? 0) || a.index - b.index);
+  const rendered = new Map<number, string>();
+  for (const { section, index } of fillOrder) {
     const header = `--- ${section.label} ---\n`;
     const remaining = CONTEXT_MAX_BYTES - used - Buffer.byteLength(header);
     if (remaining <= 0) {
@@ -159,8 +188,9 @@ export function fenceContext(sections: readonly ContextSection[]): FencedContext
     const body = headBytes(section.body, remaining);
     truncatedBytes += Buffer.byteLength(section.body) - Buffer.byteLength(body);
     used += Buffer.byteLength(header) + Buffer.byteLength(body);
-    kept.push(header + body);
+    rendered.set(index, header + body);
   }
+  const kept = sections.map((_, index) => rendered.get(index)).filter((text): text is string => text !== undefined);
   const notice =
     truncatedBytes > 0
       ? `\n[grants ${nonce}] ${truncatedBytes} byte(s) of this context did not fit the ${CONTEXT_MAX_BYTES}-byte ` +

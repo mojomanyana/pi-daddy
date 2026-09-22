@@ -93,7 +93,11 @@ export function createHandoffStager(input: StagingInput) {
       keptTurns = chosen.length;
       droppedTurns = all.length - chosen.length;
       rule = options.keepTurnIds === undefined ? selection.rule : `${selection.rule}+advice`;
-      for (const turn of chosen) sections.push({ label: `parent turn ${turn.id}`, body: turn.text });
+      // `keepRank` ascending with position, so the NEWEST turn has the highest rank and survives the cap.
+      // The probe measured the opposite ordering losing exactly the turns nearest the task.
+      chosen.forEach((turn, index) =>
+        sections.push({ label: `parent turn ${turn.id}`, body: turn.text, keepRank: index + 1 }),
+      );
       if (chosen.length === 0)
         sections.push({ label: "parent turns", body: "(no turn of your parent's session matched the selection)" });
     }

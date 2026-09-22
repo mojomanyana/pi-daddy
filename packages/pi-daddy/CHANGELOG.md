@@ -12,6 +12,33 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## 0.37.0 — the handoff probe, and the budget was cutting the wrong end
+
+**A `pruned` handoff carried the turns furthest from the task.** Turn sections are pushed oldest-first and the
+32 KiB budget was spent in array order, so when the cap bound the turns dropped were the most recent ones — the
+ones adjacent to the task and the likeliest to matter. Measured over 78 real pi sessions, the cap bound in 13% of
+them at the old default and 60% at twenty turns, and the effect was visible end to end: the share of task-referenced
+entities reaching the child **peaked at twenty turns and then fell** at the fifty-turn ceiling. Asking for more
+context made the child worse off, and the parameter read as if it did the opposite.
+
+**`ContextSection` gained `keepRank`.** The budget is spent by rank, highest first; presentation stays
+chronological, because a child reading its parent's turns out of order is a different defect. Delivered recall is
+monotone again.
+
+**`DEFAULT_CONTEXT_TURNS` is 20, raised from 6.** Delivered recall at 6, 20 and 50 turns is 0.763, 0.870 and 0.874,
+so twenty is where the curve flattens, and the cost stays bounded by the byte budget rather than by this number.
+Raising it before the fill order was corrected would have made things worse, not better.
+
+**The probe ships as a rerunnable measurement**, `test-integration/pruned-handoff-probe.it.ts`, and it calls the
+real `fenceContext` rather than simulating the cap — a first draft simulated it and would not have caught the
+regression it exists to describe. Reverting the fill order fails it with a message naming the cause. Without
+`PI_DADDY_PROBE_SESSIONS` it reports that it measured nothing rather than passing quietly.
+
+**What the probe did not establish, and one thing it settled.** It does not show that entity recall is task
+success: no child was run and no model was called. It does not support making `pruned` the default mode, and that
+question is now answered no — roughly an eighth of what a task names is missing even at the ceiling, and the cost
+of being wrong is the operator's own session leaving the machine. `none` stays the default.
+
 ## 0.36.0 — one bounded reader, and a registry that fails soft without failing silent
 
 **No behaviour changes for a working setup.** Everything here is about what happens when an operator-authored

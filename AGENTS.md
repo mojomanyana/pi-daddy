@@ -143,6 +143,37 @@ What the probe did **not** establish: that a session without this codebase's unu
 could do the same, which the probe said plainly and is the honest limit of the result. Its own words: the documents
 "would not have survived a codebase with ordinary comments."
 
+## Pruned-handoff probe, 2026-09-22
+
+`selectPrunedTurns` shipped saying of itself that whether it keeps what a reader would have kept "stays unmeasured
+until the handoff probe". This is that probe, it runs against the operator's own pi sessions, and it found a defect.
+
+**What it measures.** For each session the last message turn stands in for a task. Path-like tokens and long
+identifiers in that turn are the entities it refers to; an entity is *recoverable* if some earlier turn contains it.
+Recall is the share of recoverable entities that survive. It is not circular: the rule selects by recency, and the
+ground truth is built from entity references, which the rule never looks at.
+
+**The finding is the gap between two recalls.** *Selected* recall is of the turns the rule chose. *Delivered* recall
+is of what fits the 32 KiB budget, which is what a child actually reads. The cap bound in 13% of sessions at the old
+default of six turns and 60% at twenty. Turn sections were pushed oldest-first and the budget was spent in array
+order, so the turns cut were the ones NEAREST the task. End to end, over 78 sessions, delivered recall peaked at 20
+turns and then **fell** at the 50-turn ceiling, 0.813 → 0.762: asking for more context made the child worse off, and
+the parameter read as if it did the opposite.
+
+**What changed as a result.** `ContextSection` gained `keepRank`; the budget is now spent by rank while presentation
+stays chronological, and delivered recall became monotone. Only then was `DEFAULT_CONTEXT_TURNS` raised from 6 to 20,
+where the curve flattens (0.763 → 0.870 → 0.874 at 6, 20 and 50).
+
+**What it does not establish.** That entity recall is task success — no child was run and no model was called. That
+these sessions resemble delegation; they are ordinary sessions from other projects. Precision: an early draft
+reported 1.00, which was worthless because kept turns are adjacent to the task and almost always share an entity
+with it, so it is omitted rather than reported flatteringly. And **it does not support making `pruned` the default
+mode.** The best delivered recall measured is 0.874, so about an eighth of what a task names is missing even at the
+ceiling, and the cost of being wrong is the operator's own session leaving the machine. `none` stays the default.
+
+Rerun: `PI_DADDY_PROBE_SESSIONS=~/.pi/agent/sessions npm run test:integration`. Without the variable the probe says
+it measured nothing rather than passing quietly.
+
 ## Decisions still in force
 
 One paragraph each: the decision, the reason, what was rejected. The ADR numbers are pointers into git history
@@ -656,10 +687,13 @@ What remains of ADR-0076's sequence after this cleanup, one line each with what 
   the set the mechanical rule already kept and is asked after the plan authorizes the handoff. Remaining
   candidates: chain output selection and completion/failure signals. Not established: whether the advice is any
   good — nothing measures that, and PR 9's probe is the only thing that would.
-- **PR 9 (Jev handoff probe and second fresh-session run)** — a probe measuring `pruned` handoff precision and recall
-  on the operator's own sessions, recorded under `packages/pi-daddy/test-integration/` now that `docs/probes/` is gone, and a second fresh-session
-  probe; done means `pruned` may become a default only if recall meets what a reviewer needs, and the second
-  fresh-session run ships a delegate-path change without opening history.
+- **PR 9 (handoff probe)** — done 2026-09-22; see the probe section above. It measured recall over 78 real pi
+  sessions, found that the byte budget was cutting the turns nearest the task, fixed the fill order and raised the
+  default turn count on the strength of the numbers. **It answered the `pruned`-as-default question with a no**:
+  0.874 delivered recall at best is not enough to start sending the operator's session by default. Precision was
+  dropped as a metric rather than reported, because as defined it was always 1.00 and meant nothing. Still to do
+  from this line: **a second fresh-session probe** shipping a delegate-path change without opening history, and
+  a Jev comparison — nothing yet measures the advisor's selection against the mechanical rule.
 - **Registry integrity (ADR-0042, decided, implementation deferred)** — routing must attenuate by destination, not
   only by id; done means `g37-registry-tamper`'s control stays green while its tamper case turns into a refusal.
 - **Record the reversal** — done: see "The big cleanup" above.
