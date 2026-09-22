@@ -155,7 +155,7 @@ specification of who owns what.
 | `src/kernel` | What may a child hold, and how is that carried? Pure functions, no I/O. | `resolve`, `spawn`, `propagation`, `catalog`, `definitions`, `capabilities`, `approval`, `chain`, `context-handoff`, `fanout`, `correlation`, `refusals`, `env-names`, `project-paths` |
 | `src/governance` | What was decided, and where is it written? | `record`, `ledger`, `ledger-events`, `ledger-report`, `approval-store`, `approval-prompt`, `grant-store`, `init`, `workspace-lease`, `execution-retention` |
 | `src/executors` | How does a child process start and end? | `executor`, `run-herdr`, `herdr-*`, `pane-reaper` |
-| `src/advisors` | Reserved: advice that can select or rank but never widen a grant (ADR-0077, not yet written). | not yet created |
+| `src/advisors` | Advice that can select, rank, annotate or propose, and never widen a grant, satisfy a gate or replace a human. Off by default (ADR-0077). | `decider`, `advisor`, `jev`, `settings` |
 | `src/products` | What does the operator see? | `activity-timeline`, `dashboard-*` |
 | `extensions/` | The pi extension and its wiring: hooks, the three tools, approvals flow, `/grants`. | `grants.ts` is the entry point |
 

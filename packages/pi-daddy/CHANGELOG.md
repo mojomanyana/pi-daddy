@@ -12,6 +12,29 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## 0.34.0 — an advisors layer, off by default (ADR-0077)
+
+`src/advisors/` holds a `Decider` that answers typed questions — `noul` (a boolean), `choice` (one of the options
+the caller already had) and `score` (a level from the caller's own list) — each with a probability. It may select,
+rank, annotate or propose, and it can never widen a grant, satisfy a gate or replace a human's answer. That is
+enforced rather than promised: no type in the layer names a capability or a refusal code, and no kernel or
+governance module imports it, both checked by tests.
+
+Off by default. An advisor runs only when `.pi/pi-daddy/settings.json` has an `advisor` block saying so and
+`PI_DADDY_ADVISOR_KEY` is set; malformed configuration disables it and names the field rather than failing either
+silently or open. Every use writes an `advice` record to the ledger, including the uses that produced nothing, and
+that record never contains the state the caller composed. Degradation is always "no advice": disabled, no key, a
+two-second timeout, a transport error or an unrecognised response all return the same nothing, so a caller written
+against the null decider behaves identically with an advisor present.
+
+The first adapter is TypeSafe's Jev through OpenRouter's Decisions endpoint (`typesafe/jev-1.13`). The request shape
+is the documented one. The response shape is **not confirmed against a live call** — OpenRouter describes the
+`answers` object without showing it — so the parser accepts what the documentation describes and treats anything
+else, including a choice that was never offered, as no advice. No decision point uses an advisor yet.
+
+There is no dashboard toggle: the dashboard is a read-only renderer that never affects enforcement, so enabling an
+advisor is an operator edit to the reviewable settings file.
+
 ## 0.33.0 — a child can be given context, and the giving attenuates (ADR-0078)
 
 `delegate`, `delegate_all` and each fan-out child accept a `context` parameter naming how much of the parent's own

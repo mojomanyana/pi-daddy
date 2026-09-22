@@ -38,6 +38,12 @@ export const ENV_EXECUTION_ARCHIVE = "PI_DADDY_EXECUTION_ARCHIVE";
 export const ENV_NATIVE_SESSION_ROOT = "PI_DADDY_NATIVE_SESSION_ROOT";
 export const ENV_RETAIN_NATIVE_SESSIONS = "PI_DADDY_RETAIN_NATIVE_SESSIONS";
 export const ENV_GOVERNANCE = "PI_DADDY_GOVERNANCE";
+/**
+ * The advisor's API key (ADR-0077). Listed with the governance keys not because it shapes a grant but because the
+ * `childEnv` hook must not be able to set it: a product that could inject a key could send a session's own
+ * description to a third party of its choosing. It is never written for a child.
+ */
+export const ENV_ADVISOR_KEY = "PI_DADDY_ADVISOR_KEY";
 
 /** Every variable that shapes governance. The `childEnv` hook may set none of these. */
 export const GOVERNANCE_ENV_KEYS: readonly string[] = Object.freeze([
@@ -63,6 +69,7 @@ export const GOVERNANCE_ENV_KEYS: readonly string[] = Object.freeze([
   ENV_NATIVE_SESSION_ROOT,
   ENV_RETAIN_NATIVE_SESSIONS,
   ENV_GOVERNANCE,
+  ENV_ADVISOR_KEY,
 ]);
 
 /**

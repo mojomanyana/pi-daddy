@@ -24,7 +24,7 @@ packages/pi-daddy/                — the package
   src/kernel/                     — pure functions: resolve, spawn plan, propagation, catalog, definitions, approval maths
   src/governance/                 — stores and the ledger: record envelope, ledger events, approvals, grant store, leases, retention
   src/executors/                  — how a child process is started: captured subprocess or Herdr pane
-  src/advisors/                   — not yet created; reserved for ADR-0077 (advice only, PR 6)
+  src/advisors/                   — advice only: a Decider answering typed questions, never authority (ADR-0077)
   src/products/                   — activity timeline and the read-only dashboard
   extensions/                     — composition: the pi extension pi loads (grants.ts) and its helpers
   src/index.ts, src/cli.ts        — composition: the public root export and the `pi-daddy` bin
@@ -357,6 +357,42 @@ anywhere, which made `context:files` a general read primitive in any checkout co
 not a regular file is refused outright, because a FIFO satisfies `stat` and then blocks the session forever with
 no watchdog.
 
+**ADR-0077 — an advisor is advice, and the boundary is structural (2026-09-22).** `src/advisors/` holds a `Decider`
+that answers typed questions: `noul` (a boolean), `choice` (one of the options the caller already had) and `score`
+(a level from the caller's own list), each with a probability. It may select, rank, annotate or propose. It can
+never widen an `effective` set, satisfy a gate or replace a human's answer — and that is enforced rather than
+promised: no type in the layer names a `Capability` or a refusal code, and no module in `kernel/` or `governance/`
+imports it, both checked by `test/advisors.test.ts`. Nothing on a governance path can receive what an advisor
+returns, so an advisor cannot become load-bearing by accident.
+
+Every use is an `advice` record on the one ledger envelope, **including the uses that produced nothing**, because an
+advisor that quietly stopped answering would otherwise look exactly like one nobody called. The record names the
+purpose, the decider, the question keys, the answers and the duration. It does **not** contain the state the caller
+composed: that can carry task text and file contents, the ledger has never stored a task (ADR-0021), and an advisor
+must not become the way it starts.
+
+Default off, and off is the whole configuration unless `.pi/pi-daddy/settings.json` says otherwise and
+`PI_DADDY_ADVISOR_KEY` is set. Malformed configuration disables the advisor and names the field, rule 8's shape: an
+operator who mistypes must not get silence, and must not get a third party reading their session either. A caller
+must behave identically under the null decider, which is why that is the default and why degradation is always "no
+advice" — disabled, missing key, two-second timeout, transport error, or a response we do not recognise all return
+the same nothing.
+
+**Deliberate departure from the programme's sketch:** there is no dashboard toggle. The dashboard is a read-only
+renderer that "never affects enforcement" (ADR-0036), and a control there writing to settings would be the first
+thing it ever wrote. Turning an advisor on is an operator decision in the reviewable file.
+
+**What is verified about Jev, and what is not.** The request shape is OpenRouter's documented one for
+`POST /api/alpha/decisions`: `{model, state, questions}` with `noul` carrying `criteria.true`/`criteria.false`,
+`choice` a map of option to description, and `score` an array of level descriptions; the model is
+`typesafe/jev-1.13`. The RESPONSE is described there as an `answers` object beside `id`, `model`, `provider` and
+`usage`, with probabilities and confidence mentioned and never shown, and the one public guide to this endpoint
+states it has not run paid calls either. **No response shape here has been confirmed against a live call.** The
+parser accepts what the documentation describes, tolerates the obvious variants, and treats anything else — including
+a `choice` that was never offered or a `score` outside the levels — as no advice rather than a guess. Confirming it
+is the `PI_DADDY_IT_JEV=1` tier, unrun. Until somebody runs it, this adapter's response handling is a reading of
+documentation, not a measurement.
+
 **Working rules that survive the deletion of the working-rules document.** Decisions, load-bearing claims and
 failure modes are written down or they do not exist; reversals get a dated note, never a rewrite; measure before
 asserting and say which you did, and state what the evidence does not cover; a test that cannot fail is worse than
@@ -540,12 +576,11 @@ What remains of ADR-0076's sequence after this cleanup, one line each with what 
   checks both documents against the code, and the first fresh-session probe shipped its change (see the probe record
   above). The drift guard checks what rots — paths, variables, refusal codes, verbs, scripts — rather than the hex
   pattern the entry first proposed, because a commit SHA attributing a measurement is required by the hard rules.
-- **PR 6 (advisors layer; carries ADR-0077, not yet written)** — the `Decider` interface, a null decider, the Jev
-  adapter, a settings block, a dashboard toggle pane, `advice` records and a live tier behind `PI_DADDY_IT_JEV=1`;
-  ADR-0077 must also settle the package boundary (an in-repo layer versus a small shared package; the skill-harness
-  consumer that asked for the shared package is deleted, so an in-repo layer is the default); done means no type in
-  `advisors/` carries a `Capability` or refusal code, no kernel or governance function accepts an advisor result, and
-  every call writes an `advice` record.
+- **PR 6 (advisors layer)** — done 2026-09-22 as an in-repo layer, since the consumer that wanted a shared package
+  is deleted. The `Decider` interface, the null decider, the Jev adapter, a settings block and `advice` records, with
+  both boundary rules enforced by tests. No dashboard toggle, for the reason in ADR-0077. Not established: any live
+  call to the Decisions endpoint, so the response parsing is documentation-read; and no decision point uses an
+  advisor yet, which is PR 8.
 - **PR 7 (context handoff)** — done 2026-09-22: all five modes, `context:` as an attenuating capability with
   `fork` gated, the parent-context fence, and `handoff` on the capability-decision record. `none` remains the
   default. Not established: the `pruned` rule's recall, and any behavioural comparison between a forked child and a
