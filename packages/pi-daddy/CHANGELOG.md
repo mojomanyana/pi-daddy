@@ -12,6 +12,31 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## 0.39.0 — the registry's id set is the operator's too
+
+0.38.0 bound what a workspace id MEANS. It said nothing about which ids exist, and the registry is an ordinary
+file whose path a governed child inherits.
+
+**Measured, and worse than the gap register claimed.** That entry said a child could add an id but that `init`
+scaffolding ids commented out kept it unusable. With a `workspace:*` root, no operator action is needed at all:
+a child holding `tool:write` appends an entry, the pin stops it resolving in that session and stops nothing
+afterwards, and the NEXT root session mints a pin from the tampered registry while the wildcard admits any id.
+End to end — the catalog listed it, the pin covered it, and it routed into the child's own directory.
+
+**The accepted id set now lives beside the grant store**, in pi's agent directory, outside the workspace where a
+governed child cannot reach it. An id nobody accepted is not pinned, and therefore not routable. `/grants
+workspaces` accepts the registry's current ids. A malformed acceptance record accepts NOTHING rather than
+falling back to the registry, so corrupting one byte is not a bypass.
+
+**Trust on first use, and said out loud.** A machine that has accepted nothing accepts what the registry holds
+the first time and writes it down, because refusing everything on upgrade would enforce a decision the operator
+already made by writing that file. What matters is that additions afterwards are visible, and session start
+announces the first acceptance rather than installing itself quietly.
+
+**What this does not cover.** Acceptance is per registry, so an id accepted once is accepted for every project
+sharing that registry. And it takes effect for the NEXT session: re-settling a live session's pin is exactly
+the re-mint that ADR-0042 spent four review rounds closing.
+
 ## 0.38.0 — a rewritten registry can no longer change what an authorised id means (ADR-0042)
 
 **The escalation this closes, measured in `g37-registry-tamper`.** `workspace:<id>` attenuated the NAME, not the

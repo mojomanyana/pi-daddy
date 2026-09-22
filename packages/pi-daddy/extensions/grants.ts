@@ -36,6 +36,8 @@ import { grantsCommand } from "./grants-command.ts";
 import { runInit } from "./init-command.ts";
 import { planWithApprovals } from "./run-delegation.ts";
 import { createGrantsSession, loadProjectDefinitions, type GrantsSession } from "./session.ts";
+import { acceptWorkspaces } from "../src/governance/workspace-acceptance.ts";
+import { loadWorkspaceRegistry } from "../src/kernel/workspace.ts";
 import { bindReloadLifecycle } from "./reload-environment.ts";
 import { reconcileActiveDelegationTools } from "./delegation-activation.ts";
 import { resolveExecutor } from "./executor-session.ts";
@@ -379,6 +381,21 @@ export default function (pi: ExtensionAPI) {
             ...(session.advisorSession.settings.refusal ? { refusal: session.advisorSession.settings.refusal } : {}),
           },
           ...(session.workspacePin ? { workspacePin: session.workspacePin } : {}),
+          ...(session.workspaceAcceptance ? { unacceptedWorkspaces: session.workspaceAcceptance.unaccepted } : {}),
+          // Injected rather than imported, so `/grants` takes its one writing ability visibly from here.
+          ...(process.env[ENV_WORKSPACE_REGISTRY]
+            ? {
+                acceptWorkspaces: async () => {
+                  const registryPath = process.env[ENV_WORKSPACE_REGISTRY]!;
+                  const registry = await loadWorkspaceRegistry(registryPath);
+                  const accepted = await acceptWorkspaces(registryPath, Object.keys(registry.workspaces));
+                  // The acceptance takes effect for the NEXT session, not this one: this session's pin is
+                  // settled and re-settling it here would be the re-mint that ADR-0042's own review spent
+                  // four rounds closing. Said plainly by the caller rather than implied.
+                  return accepted;
+                },
+              }
+            : {}),
           catalog: session.catalog,
           definitions: session.definitions,
           sessionApprovals: session.sessionApprovals,

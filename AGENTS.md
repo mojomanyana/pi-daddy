@@ -740,10 +740,18 @@ Kept features only. Numbers are dropped except the two that code and rules cite.
   reads like one: the reviewer found the first four by reading and the last four only because each fix created
   the next, and the rate reached zero when they ran out of ideas rather than when the mechanism became sound.
   The honest claim is that those eight are closed, each with a test that fails if its guard is removed.
-  - The pin binds the id-to-destination mapping and **nothing about which ids exist**. The registry stays
-    child-writable, and a child with `tool:write` can add an entry; what stops it being usable is that `init`
-    scaffolds `workspace:` ids commented out. That is a policy in a scaffolder, not an enforced invariant, and
-    it is the next place to look.
+  - ~~The pin binds the id-to-destination mapping and nothing about which ids exist.~~ **Closed 2026-09-22**,
+    and it was worse than that bullet said. The reviewer's "only `init` stops it" was measured false: with a
+    `workspace:*` root no operator action is needed at all. A child holding `tool:write` appended an id; the
+    pin stopped it resolving in that session and stopped nothing afterwards, because the NEXT root minted a
+    pin from the tampered registry and the wildcard admits any id. Measured end to end — catalog, pin and a
+    real route into the child's own directory. The accepted id set now lives beside the grant store, outside
+    the workspace; an id nobody accepted is not pinned and therefore not routable, and `/grants workspaces`
+    accepts the current set. **Trust on first use**, announced rather than silent, because refusing everything
+    on upgrade would enforce a decision the operator made by writing the file. What is still not covered: an
+    id the operator accepts is accepted for every project sharing that registry, and acceptance takes effect
+    for the NEXT session, since re-settling the pin mid-session is the re-mint ADR-0042 spent four review
+    rounds closing.
   - It is a digest of the PATH, never of the contents. It pins where, not what is there; swapping what lives
     under the canonical root defeats it, which needs `symlink(2)` and so is ADR-0012's scope.
   - A child holding `bash` starts an ungoverned process and none of this applies.

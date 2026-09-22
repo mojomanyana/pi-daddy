@@ -36,6 +36,10 @@ export interface GrantsCommandContext {
   advisor: { decider: string; refusal?: string };
   /** ADR-0042: which ids this session pinned, so a routing refusal is discoverable before it happens. */
   workspacePin?: ReadonlyMap<string, string>;
+  /** Registry ids this machine has never accepted: present, not routable, and worth naming (rule 8). */
+  unacceptedWorkspaces?: readonly string[];
+  /** Accept the registry's current ids. Injected, so this diagnostic does not become a governance path. */
+  acceptWorkspaces?: () => Promise<string[]>;
   observed: boolean;
   depth: number;
   maxDepth: number;
@@ -79,7 +83,7 @@ export interface GrantsCommandContext {
 const PREVIEW_LIMIT = 12;
 
 /** The verbs `/grants` answers to. Anything else is refused rather than silently treated as no verb. */
-const KNOWN_SUBCOMMANDS: readonly string[] = ["init", "dashboard", "ledger", "approvals", "revoke"];
+const KNOWN_SUBCOMMANDS: readonly string[] = ["init", "dashboard", "ledger", "approvals", "revoke", "workspaces"];
 
 export const grantsCommand = {
   description:
@@ -95,6 +99,7 @@ export const grantsCommand = {
       executor,
       advisor,
       workspacePin,
+      unacceptedWorkspaces,
       observed,
       depth,
       maxDepth,
@@ -121,6 +126,23 @@ export const grantsCommand = {
       })
     )
       return;
+
+    if (sub === "workspaces") {
+      // The one verb that WRITES, and it takes its ability to do so from the caller — the same shape
+      // `/grants init` uses, so this screen cannot become a governance path by accident.
+      const accept = ctx.grants.acceptWorkspaces as (() => Promise<string[]>) | undefined;
+      if (!accept) {
+        ctx.ui.notify("grants: no workspace registry is configured, so there is nothing to accept.", "warning");
+        return;
+      }
+      const accepted = await accept();
+      ctx.ui.notify(
+        `grants: accepted ${accepted.length} workspace id(s) — ${accepted.join(", ") || "(none)"}. ` +
+          `Ids added to the registry after this are refused until accepted again.`,
+        "info",
+      );
+      return;
+    }
 
     if (sub === "ledger") {
       // The detector, made reachable. `verifyLedger` exists because nothing in this package had ever read
@@ -387,6 +409,12 @@ export const grantsCommand = {
             // ADR-0042 made a destination pin a PRECONDITION for routing, and it had no operator surface at
             // all: not here, not at session start, not in the README. An operator refused for want of a pin
             // could not discover that the mechanism existed, let alone which ids it covered.
+            ...(unacceptedWorkspaces && unacceptedWorkspaces.length > 0
+              ? [
+                  `  unaccepted ${unacceptedWorkspaces.join(", ")} — in the registry, never accepted here, ` +
+                    `so not routable. /grants workspaces to review and accept.`,
+                ]
+              : []),
             `  pinned     ${
               workspacePin === undefined
                 ? "(none — no workspace is routable this session)"

@@ -70,6 +70,8 @@ export const USER_DIRS = Object.freeze({
   grants: "grants",
   approvals: "approvals",
   workspaceLeases: "workspace-leases",
+  /** ADR-0042 follow-up: which registry ids this operator has accepted. Keyed by REGISTRY, not by project. */
+  workspaces: "workspaces",
 });
 
 /**
@@ -86,6 +88,16 @@ export const grantStorePath = (cwd: string, env?: NodeJS.ProcessEnv) =>
   join(userStateDir(env), USER_DIRS.grants, projectFileName(cwd));
 export const approvalsPath = (cwd: string, env?: NodeJS.ProcessEnv) =>
   join(userStateDir(env), USER_DIRS.approvals, projectFileName(cwd));
+/**
+ * Where the accepted id set for one registry lives.
+ *
+ * Keyed by the registry path rather than by `cwd`, because accepting an id is a statement about the
+ * OPERATOR'S registry and not about a project: two checkouts sharing a registry share the decision, and
+ * re-accepting per project would be a prompt with no new information in it.
+ */
+export const acceptedWorkspacesPath = (registryPath: string, env?: NodeJS.ProcessEnv) =>
+  join(userStateDir(env), USER_DIRS.workspaces, projectFileName(registryPath));
+
 export const workspaceLeasesDir = (env?: NodeJS.ProcessEnv) => join(userStateDir(env), USER_DIRS.workspaceLeases);
 
 /** Where the same stores lived before ADR-0076 PR 3c. Reported when found, never read (ADR-0020 precedent). */
