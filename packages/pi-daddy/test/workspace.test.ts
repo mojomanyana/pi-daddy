@@ -88,7 +88,12 @@ test("workspace registry resolves IDs to validated Git worktrees and rejects mis
     },
   );
   await assert.rejects(
-    () => resolveWorkspace(registry, "missing"),
+    () =>
+      resolveWorkspace(
+        registry,
+        "missing",
+        { pins: new Map() } /* ADR-0042: unreachable here — the id is refused before the pin is consulted */,
+      ),
     (error: unknown) => {
       assert.equal((error as GovernanceRefusal).code, "WORKSPACE_NOT_REGISTERED");
       return true;

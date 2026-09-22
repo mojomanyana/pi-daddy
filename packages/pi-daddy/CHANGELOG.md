@@ -83,9 +83,13 @@ external caller that worked in 0.37.0 now refuses unless one is supplied. `desti
 that reason. `validateRegisteredWorkspace` remains pin-free by design and now says so: it answers "is this path
 the worktree it claims to be", not "may this session route here".
 
-**What this does not cover.** The pin binds a governed descendant, because it rides in the environment of a process
-the parent starts. A child holding `bash` can still start an ungoverned process, which is ADR-0012's scope and
-unchanged.
+**What this does not cover, stated because eight refuted attacks reads like a proof and is not one.** The pin binds
+a governed descendant, because it rides in the environment of a process the parent starts; a child holding `bash`
+starts an ungoverned process and none of this applies. It binds the id-to-destination mapping and says nothing
+about which ids exist — the registry stays child-writable, and what keeps a new entry unusable is that `init`
+scaffolds `workspace:` ids commented out, which is a policy in a scaffolder rather than an enforced invariant. It
+is a digest of the path, never of the contents. And the Herdr pane path depends on one measured fact with no test
+behind it, that `tab create --env VAR=` delivers a variable set-but-empty. The gap register carries the full list.
 
 ## 0.37.0 — the handoff probe, and the budget was cutting the wrong end
 

@@ -735,9 +735,27 @@ Kept features only. Numbers are dropped except the two that code and rules cite.
   another runtime, and they do not confine paths — a child left an empty working directory and edited another checkout
   (`g38-cwd-is-not-containment`). Write leases require util-linux `flock` and refuse `WORKSPACE_LEASE_STALE` elsewhere.
 - ~~Routing attenuates by id, not by destination: a child holding a workspace id and `tool:write` can repoint the
-  registry entry.~~ **Closed 2026-09-22** by ADR-0042's inherited destination pin. What remains true: the pin is
-  authority carried in the environment of a process the parent starts, so it binds a governed descendant and not
-  a process that escapes governance altogether — a child holding `bash` is still ADR-0012's problem, unchanged.
+  registry entry.~~ **Closed 2026-09-22** by ADR-0042's inherited destination pin, after eight reproduced
+  escalations. **What is NOT claimed**, written down because eight refuted attacks is not a proof and the list
+  reads like one: the reviewer found the first four by reading and the last four only because each fix created
+  the next, and the rate reached zero when they ran out of ideas rather than when the mechanism became sound.
+  The honest claim is that those eight are closed, each with a test that fails if its guard is removed.
+  - The pin binds the id-to-destination mapping and **nothing about which ids exist**. The registry stays
+    child-writable, and a child with `tool:write` can add an entry; what stops it being usable is that `init`
+    scaffolds `workspace:` ids commented out. That is a policy in a scaffolder, not an enforced invariant, and
+    it is the next place to look.
+  - It is a digest of the PATH, never of the contents. It pins where, not what is there; swapping what lives
+    under the canonical root defeats it, which needs `symlink(2)` and so is ADR-0012's scope.
+  - A child holding `bash` starts an ungoverned process and none of this applies.
+  - The Herdr pane path rests on one measured fact with no test behind it: `tab create --env VAR=` delivers the
+    variable set-but-empty, which is what makes "a pin exists and you got none of it" distinguishable from "no
+    pin exists" there. If a herdr release ever dropped empty-valued entries, the descendant-mint escalation
+    returns on that path with nothing failing.
+  - The pin is authority held in a `globalThis` symbol, readable by any co-loaded `-e` extension, and the owner
+    identity it is keyed on falls back to the session object if pi ever made `sessionManager` optional — whose
+    failure mode is silent re-minting.
+  - Not tested: a real end-to-end run with pi processes and a model, concurrency (two spawns racing the settle,
+    or a reload interleaved with a live delegation), and non-Linux filesystem semantics.
 - A gated routing attempt used to take the destination's exclusive writer lease before the human was asked; ADR-0041
   moved the approval before acquisition. The approval dialog itself still has no timeout.
 - ~~A registry the reader refuses produces no message anywhere: one malformed id silently removes every workspace

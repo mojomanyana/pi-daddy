@@ -8,8 +8,8 @@ import { isAbsolute, join } from "node:path";
 import { promisify } from "node:util";
 import { GovernanceRefusal, refusal } from "./refusals.ts";
 import { isSafeWorkspaceId, workspaceCapability } from "./capabilities.ts";
-import { ENV_WORKSPACE_PIN, ENV_WORKSPACE_REGISTRY } from "./env-names.ts";
-import { checkPinnedDestination, parseWorkspacePin, type ParsedPin } from "./workspace-pin.ts";
+import { ENV_WORKSPACE_REGISTRY } from "./env-names.ts";
+import { checkPinnedDestination, type ParsedPin } from "./workspace-pin.ts";
 export { ENV_WORKSPACE_REGISTRY } from "./env-names.ts";
 
 const execFileAsync = promisify(execFile);
@@ -185,14 +185,17 @@ export async function registeredWorkspaceIds(
 /**
  * Resolve an authorised id to a worktree, refusing if the id no longer means what the grant meant.
  *
- * `pin` is ADR-0042's destination pin, read from the inherited environment by default. It is a parameter so a
- * test can supply one, and so the one caller that already holds a parsed pin does not parse it twice — NOT so a
- * caller can opt out: omitting it reads the environment, and an environment with no pin refuses.
+ * **`pin` is REQUIRED, and it used to default to reading the environment.** That default was the last
+ * environment fallback in the routing path, and it was the wrong reassurance: after `publishChildEnv` the
+ * variable holds a session's CHILD's pin, so a two-argument call checked a session against its child's
+ * authority. It is dead in-tree — the one production caller always passes one — but this is a public export,
+ * so an embedder could reach it. Requiring the argument closes it permanently and makes "a session's own pin
+ * lives in memory" unbreakable rather than merely currently-true.
  */
 export async function resolveWorkspace(
   registry: WorkspaceRegistryFile,
   workspaceId: string,
-  pin: ParsedPin = parseWorkspacePin(process.env[ENV_WORKSPACE_PIN]),
+  pin: ParsedPin,
 ): Promise<ValidatedWorkspace> {
   const registered = Object.hasOwn(registry.workspaces, workspaceId) ? registry.workspaces[workspaceId] : undefined;
   const known = Object.keys(registry.workspaces).sort();
