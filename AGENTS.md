@@ -387,6 +387,25 @@ must behave identically under the null decider, which is why that is the default
 advice" — disabled, missing key, two-second timeout, transport error, or a response we do not recognise all return
 the same nothing.
 
+**The first decision point (2026-09-22, roadmap PR 8): how hard a child should think.** When a `delegate` call
+names no `thinking` level, the advisor is asked to choose one from the levels this session's own model reports it
+supports. That is the shape the boundary was designed for: the options are not invented by the advisor, they are
+what `supportedModelEfforts` already returns, so it picks among things the caller had. It touches no capability, no
+gate and no grant — the worst an advisor can do is make a child think harder or less hard than a human would have,
+and the ledger says it did. An explicit level is never second-guessed; advice fills a blank. With no advisor, no
+key, no answer, a timeout or an unrecognised response, the blank stays blank and the child is spawned exactly as it
+was before, which is the property that keeps advisors optional rather than load-bearing.
+
+The task text IS sent to the advisor, because an advisor cannot judge a task it cannot see, and it is still never
+recorded. An operator unwilling to send task text to a third party leaves the advisor off, which is the default.
+
+Three guards, and the third came from review. The layer names no authority; no `kernel/` or `governance/` module
+imports it; and the composition modules that may consult an advisor are an explicit list, because composition may
+import both sides and is where decision points live. A rule of the form "advice and the gate may never meet in one
+module" was tried and discarded — the delegation runner legitimately does both, and splitting it would buy nothing
+— so what is checked instead is that the set of consulting modules is written down, and that the one answer an
+advisor gives is spent on `thinking` and nothing else.
+
 **Deliberate departure from the programme's sketch:** there is no dashboard toggle. The dashboard is a read-only
 renderer that "never affects enforcement" (ADR-0036), and a control there writing to settings would be the first
 thing it ever wrote. Turning an advisor on is an operator decision in the reviewable file.
@@ -602,8 +621,11 @@ What remains of ADR-0076's sequence after this cleanup, one line each with what 
   `fork` gated, the parent-context fence, and `handoff` on the capability-decision record. `none` remains the
   default. Not established: the `pruned` rule's recall, and any behavioural comparison between a forked child and a
   summarised one; both are what PR 9's probe is for.
-- **PR 8 (output selection, routing proposal, signals)** — one to three additive PRs applying advisors at the
-  remaining decision points; done means each is advice-only under ADR-0077's rule and each use is recorded.
+- **PR 8 (applying advisors at decision points)** — first slice done 2026-09-22: child effort, chosen from the
+  levels the model reports, filling a blank the caller left. Remaining candidates: handoff pruning (needs the
+  staging path to become async, since `planDelegation` is pure and synchronous), chain output selection, and
+  completion/failure signals. Not established: whether the advice is any good — nothing measures that, and PR 9's
+  probe is the only thing that would.
 - **PR 9 (Jev handoff probe and second fresh-session run)** — a probe measuring `pruned` handoff precision and recall
   on the operator's own sessions, recorded under `packages/pi-daddy/test-integration/` now that `docs/probes/` is gone, and a second fresh-session
   probe; done means `pruned` may become a default only if recall meets what a reviewer needs, and the second

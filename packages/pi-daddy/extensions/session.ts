@@ -49,6 +49,7 @@ import { republishable } from "./approvals.ts";
 import { storedGrantSessionState } from "./stored-grant-session.ts";
 import { nativeSessionRootFromEnv, type NativeSessionHost } from "../src/executors/native-session-target.ts";
 import { createHandoffStager, type ParentSession } from "./context-staging.ts";
+import { createAdvisorSession, type AdvisorSession } from "./advisor-session.ts";
 import { join } from "node:path";
 import { agentDir } from "../src/kernel/project-paths.ts";
 import { ENV_ALLOW_UNRESOLVED_MODELS } from "../src/kernel/model-preflight.ts";
@@ -157,6 +158,8 @@ export interface GrantsSession extends NativeSessionHost {
    * context handoff (ADR-0078): its file path for `fork`, its message turns for `pruned`.
    */
   parentSession?: ParentSession;
+  /** ADR-0077: the session's advisor, off unless the environment enables one. Never consulted for authority. */
+  advisorSession: AdvisorSession;
   /** Root identity keyed to ctx.sessionManager once session_start supplies it. */
   reloadLifecycle: ReloadLifecycle;
   /** Approval keys approved for this session. In memory only — this dies with the process. */
@@ -296,7 +299,14 @@ export function createGrantsSession(
   const bounds = depthConfig(environment[ENV_DEPTH], environment[ENV_MAX_DEPTH]);
   const { depth, maxDepth } = bounds;
   const emptyCatalog = makeCatalog([]);
+  // ADR-0077. The environment decides whether there is an advisor at all; the project's settings block may only
+  // narrow it, and is read lazily by `/grants` rather than here, because this factory runs before `ctx.cwd` exists.
+  const advisorSession = createAdvisorSession({
+    block: undefined,
+    ...(storedLedger ? { ledgerPath: storedLedger } : {}),
+  });
   const session: GrantsSession = {
+    advisorSession,
     adoptedLegacyEnv,
     governed,
     inherited,

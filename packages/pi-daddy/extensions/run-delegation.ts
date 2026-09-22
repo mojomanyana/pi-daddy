@@ -12,6 +12,7 @@
  */
 
 import { nativeDelegationContext } from "./delegation-native.ts";
+import { adviseEffort } from "./effort-advice.ts";
 import { DELEGATE_SUBJECT, shouldSeekApproval } from "../src/kernel/approval.ts";
 import { planDelegation } from "../src/kernel/delegate.ts";
 import {
@@ -249,7 +250,17 @@ export async function runOneDelegation(
     agent: spec.agent,
     tools: spec.tools,
     model: spec.model ?? defaultModel,
-    thinking: spec.thinking,
+    // ADR-0077's first decision point. Fills a blank from the levels this model reports; never overrules a caller,
+    // and yields `undefined` — today's behaviour exactly — whenever there is no advisor or no answer.
+    thinking: await adviseEffort({
+      advisor: session.advisorSession.advisor,
+      requested: spec.thinking,
+      model: ctx.model,
+      registry: ctx.modelRegistry,
+      task: spec.task,
+      agent: spec.agent,
+      signal,
+    }),
     context: spec.context,
     correlation: spec.workspace
       ? { ...(spec.correlation ?? {}), workspace_id: spec.workspace.workspace_id }

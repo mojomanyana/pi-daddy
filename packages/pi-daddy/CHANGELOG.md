@@ -12,7 +12,14 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
-## 0.35.0 — only the environment can enable an advisor (security fix over 0.34.0)
+## 0.35.0 — the first decision point, and only the environment can enable an advisor
+
+**An advisor now fills one blank.** When a `delegate` call names no `thinking` level, an enabled advisor is asked to
+choose one from the levels this session's model reports it supports. An explicit level is never overruled, and with
+no advisor, no answer or a timeout the blank stays blank and the child is spawned exactly as before. The task text
+is sent to the advisor so it has something to judge; it is still never recorded.
+
+**Security fix over 0.34.0.**
 
 0.34.0 read the advisor's enable switch from `.pi/pi-daddy/settings.json`. That file is writable by any child
 holding `tool:write`, and this package keeps the grant outside the workspace for exactly that reason: a ceiling a
