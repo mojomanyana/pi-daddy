@@ -239,6 +239,37 @@ test("ADR-0016: a sub-tool pattern refuses and names the pattern", () => {
   assert.ok(!plan.effective.includes("tool:bash"), "refusing must not also have granted it");
 });
 
+/**
+ * The refusal an author actually meets when they write the namespace themselves.
+ *
+ * `allowed-tools: Tool:Read` is one entry, one capital letter away from the `Read` beside it, and the
+ * ceiling parser turns it into `tool:tool:read`: it adds `tool:` to anything that does not start with a
+ * lower-case namespace, then lowercases. The refusal was loud and unusable — it named an id nobody typed
+ * and offered no hint, because `tool:read` is five edits from `read` and the suggestion threshold is two.
+ *
+ * Production change that breaks this test: removing the `explainDoubledNamespace` branch from
+ * `planDelegation`'s hint builder, which puts the message back to "unknown capability: tool:tool:read —
+ * not present in this session's catalog (typo, or an uninstalled package?)".
+ */
+test("ADR-0016: an allowed-tools entry that carries its own prefix is refused by naming THAT", async () => {
+  const { makeCatalog } = await import("../src/kernel/catalog.ts");
+  const plan = planDelegation(
+    { task: "review the diff", agent: "review" },
+    {
+      ownGrant: ["agent:review", "tool:read"],
+      depth: 0,
+      maxDepth: 2,
+      gated: [],
+      definitions: new Map([["review", definition({ allowedTools: "Read Tool:Read" })]]),
+      catalog: makeCatalog([{ capability: "tool:read", kind: "builtin" }]),
+    },
+  );
+  assert.equal(plan.ok, false);
+  assert.match(String(plan.reason), /prefixed twice/, "the mistake, not just the mangled id");
+  assert.match(String(plan.reason), /`allowed-tools` adds `tool:`/, "and what adds the prefix it doubled");
+  assert.match(String(plan.reason), /write `tool:read`/, "and what to write instead");
+});
+
 test("ADR-0016: an unknown definition name refuses rather than falling back", () => {
   // pi-subagents resolves an unknown type to `general-purpose`, whose tool list means EVERYTHING. That
   // fallback is why a typo could grant the full toolset. There is no fallback here.

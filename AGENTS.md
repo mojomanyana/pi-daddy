@@ -549,13 +549,17 @@ Kept features only. Numbers are dropped except the two that code and rules cite.
   global skill directory.
 - The startup spawnable count is an upper bound classified before the tool surface is observed; it over-reports and
   authorises nothing.
-- An `allowed-tools` entry that already carries a namespace prefix is prefixed again, and the refusal names the
-  mangled id rather than the mistake. **This bullet said `tool:read` doubles; measured 2026-09-22 at `5bccb76`, it
-  does not** — a lower-case prefix passes through, and the doubling needs a capitalised one, because the prefix test
-  is case-sensitive: `Tool:Read` and `TOOL:read` both become `tool:tool:read`, `Workspace:prod` becomes
-  `tool:workspace:prod`. That matters more than the original claim, because the README's own example writes
-  `allowed-tools: Read, Grep` in the capitalised style the standard uses. The stale wording is left above this
-  sentence rather than deleted: it is the evidence that a gap register goes stale exactly like any other document.
+- ~~An `allowed-tools` entry that already carries a namespace prefix is prefixed again, and the refusal names the
+  mangled id rather than the mistake.~~ **Closed 2026-09-22.** Two corrections came with the fix. First, this bullet
+  said `tool:read` doubles; measured at `5bccb76`, it does not — a lower-case prefix passes through, and the doubling
+  needs a capitalised one, because the prefix test is case-sensitive: `Tool:Read` becomes `tool:tool:read` and
+  `Workspace:prod` becomes `tool:workspace:prod`. That matters more than the original claim, because the README's own
+  example writes `allowed-tools: Read, Grep` in the capitalised style the standard uses. Second, the surface is not
+  the one the bullet implied: `isSafeCapability` rejects the extra colon at discovery, so the definition is refused by
+  `pi-daddy init` and never reaches a spawn refusal or a caution. `explainDoubledNamespace` now names the mistake in
+  both the `init` refusal and the `UNKNOWN_TOOL` hint. Not established: whether the suggestion is right for a
+  workspace or definition id whose own capitalisation matters, because the bare-entry path folds it before anything
+  can see it; the message says so rather than implying the suggestion can be copied verbatim.
 - The pinned built-in tool list is an observation of one pi release; drift misfiles a capability in the catalog and
   cannot grant one.
 - The default project ledger under `.pi/pi-daddy/` makes repository writability a delegation precondition after

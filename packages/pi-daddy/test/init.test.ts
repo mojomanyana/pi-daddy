@@ -34,7 +34,7 @@ import {
   type WithholdReason,
   settingsIgnoredByGit,
 } from "../src/governance/init.ts";
-import { main, parseArgs } from "../src/cli.ts";
+import { main, parseArgs, reportRefusal } from "../src/cli.ts";
 import { assertGrantIsWritable, UnsafeGrantError } from "../src/kernel/grant-env.ts";
 import { applyInit, planInit, withPlaceholder } from "../src/governance/init.ts";
 import { registeredWorkspaceIds } from "../src/kernel/workspace.ts";
@@ -769,6 +769,29 @@ test("R-78: a declared capability that could break out of the generated shell fi
   assert.deepEqual(plan.grant, ["tool:delegate"]);
   assert.doesNotMatch(plan.settingsContent, /touch/, "no fragment of the payload reaches the recorded file");
   assert.deepEqual(JSON.parse(plan.settingsContent).grant, ["tool:delegate"]);
+});
+
+test("a capitalised namespace in allowed-tools is refused by name AND explained as the prefix mistake", async () => {
+  // The surface a doubled id actually reaches. `Tool:Read` misses `ceilingForDefinition`'s lower-case prefix test,
+  // is prefixed again as `tool:tool:read`, and then `isSafeCapability` rejects the extra colon — so the whole
+  // definition is refused at DISCOVERY and never reaches `planInit`'s cautions or a spawn refusal. Measured while
+  // reviewing this change: a first attempt put the explanation in `planInit`, where `cautions` came back empty.
+  //
+  // Production change that breaks this test: dropping `explainDoubledNamespace` from `reportRefusal`.
+  const cwd = await project();
+  await skillPackage(cwd, "capitalised", "1.0.0", {
+    review: DECLARED.replace("allowed-tools: Read, Grep", "allowed-tools: Read, Tool:Read"),
+  });
+
+  const packages = await discoverSkillPackages(cwd);
+  assert.deepEqual(packages[0].skills, [], "the definition is refused at discovery, before any caution exists");
+  const refused = packages[0].refused.find((r) => r.reason === "unsafe-capability");
+  assert.deepEqual(refused?.detail, ["tool:tool:read"]);
+  assert.deepEqual(planInit(packages, cwd).cautions, [], "nothing reaches the caution path, so nothing may claim to");
+
+  const message = reportRefusal(packages[0], refused!);
+  assert.match(message, /tool:tool:read is prefixed twice/, "the mistake, not only the mangled id");
+  assert.match(message, /write `tool:read` \(or the bare name `read`\)/);
 });
 
 test("R-78: the grant string is charset-checked before the file is written, whatever got past the whitelist", () => {
