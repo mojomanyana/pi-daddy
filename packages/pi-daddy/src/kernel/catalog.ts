@@ -44,6 +44,17 @@ export interface Catalog {
   all: Capability[];
   byKind(kind: CapabilityKind): Capability[];
   has(capability: Capability): boolean;
+  /**
+   * Why the workspace registry contributed nothing, when one was named and could not be read.
+   *
+   * The catalog fails SOFT on a bad registry — a malformed one must not stop a session starting — and the
+   * refusal used to be discarded by `() => []` at the call below. That is rule 8's silent safe-mode: one
+   * malformed entry removed every workspace from `/grants`, from the catalog and from `init`, and produced
+   * no message anywhere, so an operator saw an empty list and could not tell it apart from having
+   * registered nothing. Failing soft is still right; failing soft and SILENTLY was not. `undefined` means
+   * no registry was named, or it read cleanly.
+   */
+  registryRefusal?: string;
 }
 
 /** Split observed tool names into pi built-ins and extension-provided tools. */
@@ -107,7 +118,7 @@ export function workspaceEntries(registry: WorkspaceRegistryFile, source?: strin
 }
 
 /** Assemble a catalog from parts. Pure, so it is testable without a filesystem. */
-export function makeCatalog(entries: CatalogEntry[]): Catalog {
+export function makeCatalog(entries: CatalogEntry[], registryRefusal?: string): Catalog {
   const deduped = new Map<Capability, CatalogEntry>();
   for (const entry of entries) if (!deduped.has(entry.capability)) deduped.set(entry.capability, entry);
   const list = [...deduped.values()].sort((a, b) => a.capability.localeCompare(b.capability));
@@ -118,6 +129,7 @@ export function makeCatalog(entries: CatalogEntry[]): Catalog {
     all: ids,
     byKind: (kind) => list.filter((e) => e.kind === kind).map((e) => e.capability),
     has: (capability) => idSet.has(capability),
+    ...(registryRefusal === undefined ? {} : { registryRefusal }),
   };
 }
 
@@ -135,30 +147,39 @@ export async function buildCatalog(input: {
     // session from starting — `loadWorkspaceRegistry` throws a GovernanceRefusal naming the file, and that
     // refusal is the operator's signal at the point of USE, where routing actually depends on it. Swallowing
     // it there would be unsafe; swallowing it here costs a display list.
+    //
+    // **What the refusal is no longer allowed to do is vanish.** This handler was `() => []`, so the display
+    // list was lost AND the reason with it. The reason now rides on the catalog and `/grants` prints it.
     input.registryPath
       ? loadWorkspaceRegistry(input.registryPath).then(
-          (r) => workspaceEntries(r, input.registryPath),
-          () => [] as CatalogEntry[],
+          (r) => ({ entries: workspaceEntries(r, input.registryPath), refusal: undefined as string | undefined }),
+          (error: unknown) => ({
+            entries: [] as CatalogEntry[],
+            refusal: error instanceof Error ? error.message : String(error),
+          }),
         )
-      : Promise.resolve([] as CatalogEntry[]),
+      : Promise.resolve({ entries: [] as CatalogEntry[], refusal: undefined as string | undefined }),
   ]);
-  return makeCatalog([
-    // pi's built-ins are seeded unconditionally, because they are known statically and the catalog is
-    // consulted BEFORE any provider request has happened — `/grants` runs at that point. Without this,
-    // every capability looked "unknown" until the first model call, so the preview refused grants that
-    // enforcement would have allowed: R-28's failure shape (a diagnostic disagreeing with the enforcer)
-    // reappearing through a different door.
-    //
-    // The trade-off, stated plainly: in a session started with `--tools read`, this still lists `bash`
-    // as an existing capability, so a delegation naming it passes the *unknown* check and is refused by
-    // the *grant* check instead ("this session does not hold it"). That is the better error anyway, and
-    // the grant check — not this catalog — is the authority. Nothing here grants anything.
-    ...PI_BUILTIN_TOOLS.map((name) => ({ capability: `tool:${name}` as const, kind: "builtin" as const })),
-    ...(input.observedTools ? classifyToolNames(input.observedTools) : []),
-    ...skills,
-    ...definitionEntries(definitions),
-    ...workspaces,
-  ]);
+  return makeCatalog(
+    [
+      // pi's built-ins are seeded unconditionally, because they are known statically and the catalog is
+      // consulted BEFORE any provider request has happened — `/grants` runs at that point. Without this,
+      // every capability looked "unknown" until the first model call, so the preview refused grants that
+      // enforcement would have allowed: R-28's failure shape (a diagnostic disagreeing with the enforcer)
+      // reappearing through a different door.
+      //
+      // The trade-off, stated plainly: in a session started with `--tools read`, this still lists `bash`
+      // as an existing capability, so a delegation naming it passes the *unknown* check and is refused by
+      // the *grant* check instead ("this session does not hold it"). That is the better error anyway, and
+      // the grant check — not this catalog — is the authority. Nothing here grants anything.
+      ...PI_BUILTIN_TOOLS.map((name) => ({ capability: `tool:${name}` as const, kind: "builtin" as const })),
+      ...(input.observedTools ? classifyToolNames(input.observedTools) : []),
+      ...skills,
+      ...definitionEntries(definitions),
+      ...workspaces.entries,
+    ],
+    workspaces.refusal,
+  );
 }
 
 /**

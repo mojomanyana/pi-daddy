@@ -186,6 +186,16 @@ export interface GrantsSession extends NativeSessionHost {
   observedTools: string[] | null;
   /** ADR-0016: `SKILL.md` definitions, keyed by name. The format this package spawns from now. */
   definitions: Map<string, SkillDefinition>;
+  /**
+   * Definitions discovery dropped, and why — reported at session start (ADR-0076, rule 8).
+   *
+   * Review found the bound shipped without this: `loadDefinitions` grew a `skipped` callback and NO
+   * production caller passed one, so an oversized or unreadable `SKILL.md` still vanished with nothing
+   * anywhere explaining it. That is worse than the `catch { continue }` it replaced, because the bound is
+   * new behaviour — a 2 MiB definition used to load. A capability that only a test can observe is not a
+   * capability.
+   */
+  definitionSkips: string[];
   catalog: Catalog;
   /**
    * The in-flight catalog build, so `delegate` can wait for it instead of racing it.
@@ -255,7 +265,9 @@ export interface GrantsSession extends NativeSessionHost {
  * about what loading means, so there is one.
  */
 export async function loadProjectDefinitions(session: GrantsSession, cwd: string): Promise<void> {
-  session.definitions = await loadDefinitions(cwd);
+  const skips: string[] = [];
+  session.definitions = await loadDefinitions(cwd, (_path, reason) => skips.push(reason));
+  session.definitionSkips = skips;
   session.catalogReady = buildCatalog({
     cwd,
     observedTools: session.observedTools,
@@ -318,6 +330,7 @@ export function createGrantsSession(
     depth,
     maxDepth,
     malformedBounds: bounds.malformed,
+    definitionSkips: [],
     // ADR-0012: `bash` is gated by DEFAULT — but only in a governed session. An ungoverned one
     // (no PI_DADDY_GRANT) still blocks nothing, so "governance is opt-in" holds exactly where it always
     // did. Inside a session the operator already chose to govern, handing a child `bash` hands it an

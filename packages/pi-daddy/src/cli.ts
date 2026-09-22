@@ -150,7 +150,15 @@ async function init(cwd: string, force: boolean): Promise<number> {
 
   let plan: InitPlan;
   try {
-    plan = planInit(packages, cwd, await registeredWorkspaceIds());
+    // A registry that cannot be read scaffolds no workspace capabilities. That was silent, so the operator
+    // saw a plan with none and no way to tell it apart from having registered none (rule 8).
+    plan = planInit(
+      packages,
+      cwd,
+      await registeredWorkspaceIds(undefined, (reason) =>
+        console.error(`pi-daddy init: workspace registry unreadable, scaffolding none — ${reason}`),
+      ),
+    );
   } catch (error) {
     // R-78's backstop reaching the surface. Nothing is written: a grant that could mean something to a
     // shell is not a grant, and half-scaffolding a project would be worse than scaffolding none of it.

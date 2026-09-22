@@ -381,6 +381,13 @@ export const grantsCommand = {
       ...(catalog.byKind("workspace").length > 0
         ? [`  routable   ${catalog.byKind("workspace").join(", ")} — held ones only are usable (ADR-0035)`]
         : []),
+      // Rule 8's loud half again. The catalog fails soft on an unreadable registry, which is right, and used
+      // to discard the reason with it, which was not: one malformed entry removed every workspace from this
+      // screen, from the catalog and from `init`, and an operator saw an empty list identical to the one a
+      // machine with no registry shows. Placed under `routable` because it explains that line's absence.
+      ...(catalog.registryRefusal
+        ? [`  routable   (none — workspace registry unreadable) ${catalog.registryRefusal}`]
+        : []),
     ];
     // Runs the REAL planner AND the real approval step over each definition, so this listing cannot
     // disagree with what a spawn would do — the R-28 lesson, kept structural rather than remembered.

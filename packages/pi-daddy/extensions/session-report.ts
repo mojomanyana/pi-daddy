@@ -57,6 +57,21 @@ export async function reportSessionStart(session: GrantsSession, ctx: SessionRep
       "warning",
     );
   }
+  // **Rule 8's loud half for the two reads that discover what exists.** Both of these used to fail soft and
+  // say nothing, and review established that session start — not `/grants` — is where every other such
+  // notice lives (a malformed bound above, ledger corruption and an executor refusal below). A reason an
+  // operator has to ask for is a reason most operators never see.
+  //
+  // The definitions one matters more than it looks: the 1 MiB bound is NEW behaviour, so a definition that
+  // loaded yesterday can be absent today, and without this line the only symptom is `unknown agent "x"` at
+  // the moment somebody tries to delegate to it.
+  for (const reason of session.definitionSkips)
+    ctx.ui.notify(`grants: a definition was not loaded — ${reason}`, "warning");
+  if (session.catalog.registryRefusal)
+    ctx.ui.notify(
+      `grants: workspace registry unreadable, no workspace is routable this session — ${session.catalog.registryRefusal}`,
+      "warning",
+    );
   // ADR-0014: a pre-0.6 in-workspace approvals file is IGNORED, not migrated — importing it would
   // import exactly the entries whose trustworthiness the move exists to remove. Say so, because an
   // operator whose approvals silently stopped applying deserves to know why.
