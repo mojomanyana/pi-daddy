@@ -45,6 +45,8 @@ interface ChildSpec {
   tools?: string[];
   model?: string;
   thinking?: string;
+  /** ADR-0078: what of the parent's session crosses. Validated in the kernel, never here. */
+  context?: unknown;
   correlation?: CorrelationMetadata;
   workspace?: DelegationWorkspaceSpec;
 }
@@ -248,6 +250,7 @@ export async function runOneDelegation(
     tools: spec.tools,
     model: spec.model ?? defaultModel,
     thinking: spec.thinking,
+    context: spec.context,
     correlation: spec.workspace
       ? { ...(spec.correlation ?? {}), workspace_id: spec.workspace.workspace_id }
       : spec.correlation,

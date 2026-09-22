@@ -39,6 +39,9 @@ export const UNIVERSAL_CAPABILITIES: readonly Capability[] = ["ext:pi-fabric/fab
  */
 export const SUBSUMPTION: Readonly<Record<Capability, readonly Capability[]>> = {
   "tool:bash": ["tool:grep", "tool:find", "tool:ls", "tool:read", "tool:write", "tool:edit", "tool:edit-diff"],
+  // ADR-0078: the handoff modes are ordered, so a parent holding `context:fork` may hand a child `context:files`
+  // without holding that id separately — exactly the relation `tool:bash` has to `tool:read`.
+  ...CONTEXT_SUBSUMPTION,
 };
 
 /** Expand a grant to everything it functionally confers. */
@@ -52,6 +55,7 @@ export function expandSubsumed(grant: Capability[]): Capability[] {
 
 import { WILDCARD } from "./pi-tools.ts";
 import { isWellFormedCapability } from "./capabilities.ts";
+import { CONTEXT_SUBSUMPTION } from "./context-handoff.ts";
 
 /**
  * "Any definition" — ADR-0023, and one of two wildcards this module understands.

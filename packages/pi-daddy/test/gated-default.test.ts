@@ -17,9 +17,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { gatedFromEnv, DEFAULT_GATED } from "../src/kernel/propagation.ts";
 
-test("an unset PI_DADDY_GATED gates bash", () => {
+test("an unset PI_DADDY_GATED gates bash and the whole-session handoff", () => {
+  // ADR-0078 added `context:fork` beside `tool:bash`: both hand a child something the grant alone cannot bound —
+  // an execution primitive, or everything the parent has read. Production change that breaks this: dropping either
+  // id from DEFAULT_GATED, which makes the riskiest default silent.
   assert.deepEqual(gatedFromEnv(undefined), DEFAULT_GATED);
-  assert.deepEqual(DEFAULT_GATED, ["tool:bash"]);
+  assert.deepEqual(DEFAULT_GATED, ["tool:bash", "context:fork"]);
 });
 
 test("an explicitly empty PI_DADDY_GATED gates nothing", () => {

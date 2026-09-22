@@ -39,6 +39,8 @@ export async function recordDelegationDecision(input: {
       taskFrom: input.taskFrom,
       taskFromExecutionId: input.taskFromExecutionId,
       requested: plan.requested,
+      // ADR-0078: what crossed, recorded as a fact about this child rather than as the parent's request.
+      ...(plan.handoffRecord ? { handoff: plan.handoffRecord } : {}),
       parentGrant: session.ownGrant,
       result: plan.result,
       blocked: !plan.ok,

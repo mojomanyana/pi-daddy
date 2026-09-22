@@ -23,7 +23,35 @@ export interface ActivitySession {
   dispose(): Promise<void>;
 }
 
+/** The newest session file pi wrote into a directory we own, as a size:mtime marker. */
+function probeDirectory(directory: string) {
+  return async (): Promise<string | undefined> => {
+    try {
+      const { readdir, stat } = await import("node:fs/promises");
+      const names = (await readdir(directory)).filter((name) => name.endsWith(".jsonl"));
+      if (names.length === 0) return undefined;
+      const marks = await Promise.all(
+        names.map(async (name) => {
+          const s = await stat(join(directory, name));
+          return `${name}:${s.size}:${s.mtimeMs}`;
+        }),
+      );
+      return marks.sort().join("|");
+    } catch {
+      return undefined;
+    }
+  };
+}
+
 export async function activitySessionFor(planArgs: string[], executionId: string): Promise<ActivitySession> {
+  // A forked child (ADR-0078) has no `--session`, and adding one would make pi refuse the spawn outright: it
+  // rejects `--fork` beside `--session` or `--no-session`. The fork writes exactly one session into a directory
+  // that is ours, so the probe watches the directory and the argv is left exactly as planned.
+  const fork = planArgs.indexOf("--fork");
+  if (fork >= 0) {
+    const dir = planArgs[planArgs.indexOf("--session-dir") + 1];
+    return { args: planArgs, path: dir, probe: probeDirectory(dir), dispose: async () => undefined };
+  }
   const flag = planArgs.indexOf("--session");
   const probeFor = (path: string) => async () => {
     try {

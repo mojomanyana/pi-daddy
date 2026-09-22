@@ -101,6 +101,7 @@ const FIELDS = {
     "humanDenied",
     "gateOutcome",
     "definitionDigest",
+    "handoff",
     "executor",
     "taskFrom",
     "taskFromExecutionId",

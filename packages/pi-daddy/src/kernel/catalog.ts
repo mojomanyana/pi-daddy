@@ -26,6 +26,7 @@ import { PI_BUILTIN_TOOLS, WILDCARD } from "./pi-tools.ts";
 import { AGENT_WILDCARD, WORKSPACE_WILDCARD, type Capability } from "./resolve.ts";
 import { loadWorkspaceRegistry, type WorkspaceRegistryFile } from "./workspace.ts";
 import { CAPABILITY_NAMESPACE_PREFIXES, isSafeWorkspaceId } from "./capabilities.ts";
+import { isContextCapability } from "./context-handoff.ts";
 import { piProjectDir } from "./project-paths.ts";
 
 export type CapabilityKind = "builtin" | "extension" | "skill" | "agentType" | "workspace";
@@ -195,10 +196,15 @@ export function unknownCapabilities(requested: Capability[], catalog: Catalog): 
   // `WORKSPACE_WILDCARD` is listed with the other two because it is GRAMMAR, and `isSafeCapability` refuses
   // wildcards by design — so folding it into the namespace test below un-exempts it. Caught by the tests for
   // the previous two fixes, which is the checklist paying for itself.
+  // `context:` is exempt for the workspace reason one step further on: its vocabulary is CLOSED, so
+  // `isContextCapability` is the authority and a catalog entry could only restate it less precisely. A malformed
+  // `context:everything` is not exempted, so it still reaches the operator as an unknown capability rather than
+  // reaching a child's grant as authority over nothing (ADR-0078).
   const exempt = (c: Capability) =>
     c === WILDCARD ||
     c === AGENT_WILDCARD ||
     c === WORKSPACE_WILDCARD ||
+    isContextCapability(c) ||
     (c.startsWith("workspace:") && isSafeWorkspaceId(c.slice("workspace:".length)));
   return requested.filter((c) => !exempt(c) && !catalog.has(c)).sort();
 }

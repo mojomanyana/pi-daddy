@@ -48,6 +48,9 @@ import type { GrantStoreRefusalReason } from "../src/governance/grant-store.ts";
 import { republishable } from "./approvals.ts";
 import { storedGrantSessionState } from "./stored-grant-session.ts";
 import { nativeSessionRootFromEnv, type NativeSessionHost } from "../src/executors/native-session-target.ts";
+import { createHandoffStager, type ParentSession } from "./context-staging.ts";
+import { join } from "node:path";
+import { agentDir } from "../src/kernel/project-paths.ts";
 import { ENV_ALLOW_UNRESOLVED_MODELS } from "../src/kernel/model-preflight.ts";
 import { beginExtensionLifecycle, rememberChildPublication, type ReloadLifecycle } from "./reload-environment.ts";
 import { reconcileSessionEnvironment } from "./session-environment.ts";
@@ -149,6 +152,11 @@ export interface GrantsSession extends NativeSessionHost {
   /** Stable root identity plus current turn, used only to join local activity facts. */
   activityRootId: string;
   activity?: { rootId: string; path: string; taskId?: string };
+  /**
+   * The parent's own session, once `session_start` supplies it. Read-only and used only to stage a granted
+   * context handoff (ADR-0078): its file path for `fork`, its message turns for `pruned`.
+   */
+  parentSession?: ParentSession;
   /** Root identity keyed to ctx.sessionManager once session_start supplies it. */
   reloadLifecycle: ReloadLifecycle;
   /** Approval keys approved for this session. In memory only — this dies with the process. */
@@ -352,6 +360,13 @@ export function createGrantsSession(
       extensionPath: session.extensionPath,
       observerExtensionPath: session.observerExtensionPath,
       childEnv: activityChildEnv(session.activity),
+      // ADR-0078: composition reads, the kernel decides. Called only for a mode that survived the gate.
+      stageHandoff: (granted) =>
+        createHandoffStager({
+          cwd: session.cwd,
+          forkRoot: join(agentDir(), "context-forks"),
+          ...(session.parentSession ? { parentSession: session.parentSession } : {}),
+        })(granted),
       catalog: await session.catalogReady,
       // R-32: where each granted skill lives, so `planSpawn` can pass `--skill` for those and only those.
       // Derived from the catalog's own `source`, so it cannot drift from what was discovered.

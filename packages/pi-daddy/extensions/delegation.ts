@@ -36,6 +36,7 @@ import { type GrantsSession } from "./session.ts";
 import { newDelegationOccurrence } from "./execution-occurrence.ts";
 import { correlationShape as buildCorrelationShape } from "./correlation-shape.ts";
 import { assertDelegationAuthority } from "./delegation-authority.ts";
+import { CONTEXT_MODES } from "../src/kernel/context-handoff.ts";
 
 /**
  * Wire a set of children to pi's partial-result channel — ADR-0032.
@@ -183,12 +184,32 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       { description: "Requested Pi thinking level; unsupported model/level combinations fail in the child." },
     ),
   );
+  // ADR-0078. The MODE is the request; a definition's `allowed-tools` declares the ceiling, so asking for more
+  // than it permits is refused rather than silently narrowed.
+  const contextShape = Type.Object({
+    mode: Type.Union(
+      CONTEXT_MODES.map((mode) => Type.Literal(mode)),
+      {
+        description:
+          "What of YOUR session the sub-agent receives. none: nothing beyond its definition and the task. " +
+          "files: the contents of paths you name. pruned: recent turns of your session plus turns naming those " +
+          "files. summary: what you write in 'summary'. fork: your whole session (needs a human's approval).",
+      },
+    ),
+    files: Type.Optional(
+      Type.Array(Type.String(), { description: "Repository-relative paths, for files and pruned." }),
+    ),
+    summary: Type.Optional(Type.String({ description: "What the sub-agent needs to know, in your own words." })),
+    turns: Type.Optional(Type.Number({ description: "For pruned: how many recent turns to keep. Default 6." })),
+  });
+
   const childShape = Type.Object({
     task: Type.String({ description: "The task for this sub-agent. It receives only this." }),
     agent: Type.Optional(Type.String({ description: describeAgent(spawnable()) })),
     tools: Type.Optional(Type.Array(Type.String(), { description: "Capabilities, when no 'agent' fits." })),
     model: Type.Optional(Type.String({ description: "Model as provider/id. Defaults to this session's." })),
     thinking: thinkingShape,
+    context: Type.Optional(contextShape),
     correlation: Type.Optional(correlationShape),
     workspace: Type.Optional(workspaceShape),
   });
@@ -221,6 +242,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       }),
     ),
     thinking: thinkingShape,
+    context: Type.Optional(contextShape),
     correlation: Type.Optional(correlationShape),
     workspace: Type.Optional(workspaceShape),
   });
@@ -247,6 +269,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
           tools: params.tools,
           model: params.model,
           thinking: params.thinking,
+          context: params.context,
           correlation: params.correlation,
           workspace: params.workspace,
         },

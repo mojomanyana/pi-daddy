@@ -35,6 +35,7 @@ export const REFUSAL_CODES = [
   "WORKSPACE_LEASE_STALE",
   // ADR-0076 PR 3d: a ledger with a torn or tampered tail refuses appends until an explicit repair.
   "LEDGER_DAMAGED",
+  "CONTEXT_REQUEST_INVALID",
 ] as const;
 
 export type RefusalCode = (typeof REFUSAL_CODES)[number];

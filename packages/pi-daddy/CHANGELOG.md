@@ -12,6 +12,29 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## 0.33.0 — a child can be given context, and the giving attenuates (ADR-0078)
+
+`delegate`, `delegate_all` and each fan-out child accept a `context` parameter naming how much of the parent's own
+session crosses: `none` (the default, and what every child got before), `files`, `pruned`, `summary` or `fork`. Each
+mode is a `context:<mode>` capability in a new namespace, so it is intersected with the parent's grant and the
+definition's `allowed-tools` ceiling exactly like a tool, appears in `/grants` and in the ledger's effective set, and
+cannot be widened by a child. The modes are ordered and each subsumes the weaker ones.
+
+`context:fork` is **gated by default** beside `tool:bash`: it is the one mode that can carry content an untrusted
+repository put in front of the parent into a fresh child. What crosses arrives in a `<<<PARENT-CONTEXT …>>>` fence
+marked as data, distinct from the chain handoff's fence, capped at 32 KiB with anything dropped said inside the
+fence. Paths named for `files` are confined to the session's working directory. The capability-decision record gains
+`handoff`, naming the mode the child received, how many sections and bytes crossed, and for `pruned` which rule ran
+and how many turns it kept.
+
+Nothing changes for a caller that passes no `context`: the default is `none`, which adds no capability and crosses
+nothing. `pruned`'s selection rule is deterministic but its recall is unmeasured, so it is not a default. A chain
+step cannot ask for context yet.
+
+**Breaking for consumers of the package API:** `splitSystemPrompt` now returns `systemPrompts: string[]` instead of
+`systemPrompt?: string`, because a child can carry more than one appended system prompt and only the first was being
+staged for the Herdr executor.
+
 ## 0.32.1 — a doubled namespace in `allowed-tools` is explained, not just reported
 
 An `allowed-tools` entry written with a capitalised namespace, such as `Tool:Read`, misses the lower-case prefix test,

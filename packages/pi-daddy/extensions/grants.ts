@@ -79,6 +79,11 @@ export default function (pi: ExtensionAPI) {
     const reload = bindReloadLifecycle(owner, session.reloadLifecycle);
     session.reconcileEnvironment(reload.environment, reload.lifecycle);
     session.ownerBound = true;
+    // ADR-0078: the parent's own session, for a granted `pruned` or `fork` handoff. Read-only, and only ever
+    // read after the mode has survived the gate.
+    const manager = owner as Partial<import("./context-staging.ts").ParentSession>;
+    if (typeof manager.getSessionFile === "function" && typeof manager.getEntries === "function")
+      session.parentSession = manager as import("./context-staging.ts").ParentSession;
     delegation.refreshSpawnable = registerDelegationTools(pi, session).refreshSpawnable;
     reconcileActiveDelegationTools(pi, session);
     session.cwd = ctx.cwd;

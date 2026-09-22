@@ -142,6 +142,19 @@ export interface GrantRecord extends LedgerEventBase {
    */
   definitionDigest?: DefinitionDigest;
   /**
+   * The context handoff this child RECEIVED (ADR-0078): the mode whose capability survived, and what crossed.
+   * Absent means nothing crossed, which is the default and the overwhelming majority of records.
+   */
+  handoff?: {
+    mode: string;
+    sections: number;
+    bytes: number;
+    truncatedBytes: number;
+    keptTurns?: number;
+    droppedTurns?: number;
+    rule?: string;
+  };
+  /**
    * WHERE this child ran — ADR-0031.
    *
    * **Required rather than optional**, which is unusual in this record and deliberate. Before ADR-0031 the
@@ -214,6 +227,7 @@ export function buildRecord(args: {
   humanDenied?: boolean;
   gateOutcome?: PromptOutcomeKind;
   definitionDigest?: DefinitionDigest;
+  handoff?: GrantRecord["handoff"];
   /** Where the child ran (ADR-0031). Required: the probe's answer survives nowhere else. */
   executor: ExecutorKind;
   /** The logical child whose output composed this task (ADR-0033). */
@@ -261,6 +275,7 @@ export function buildRecord(args: {
     ...(args.taskFrom ? { taskFrom: args.taskFrom } : {}),
     ...(args.taskFromExecutionId ? { taskFromExecutionId: args.taskFromExecutionId } : {}),
     ...(args.taskDigest !== undefined ? { taskDigest: args.taskDigest } : {}),
+    ...(args.handoff ? { handoff: { ...args.handoff } } : {}),
     ...(args.correlation ? { correlation: structuredClone(args.correlation) } : {}),
     ...(args.refusal ? { refusal: structuredClone(args.refusal) } : {}),
     requested: args.requested,

@@ -5,7 +5,7 @@
 
 import { planSpawn } from "./spawn.ts";
 import { ceilingForDefinition, digestDefinition, type DefinitionDigest, type SkillDefinition } from "./definitions.ts";
-import { assertNarrowing, type Capability, type ResolveResult } from "./resolve.ts";
+import { assertNarrowing, type Capability, type ResolveResult, expandSubsumed } from "./resolve.ts";
 import { checkRoutingAuthority, checkWorkspaceWildcardRequest } from "./routing-authority.ts";
 import { DELEGATE_CAPABILITY, agentCapability, maySpawnDefinition, normaliseCapability } from "./capabilities.ts";
 
@@ -28,6 +28,7 @@ import {
 import { inheritApprovals, type InheritableApproval } from "./approval.ts";
 import { explainDoubledNamespace, suggestForUnknown, unknownCapabilities, type Catalog } from "./catalog.ts";
 import { GovernanceRefusal, refusal, type RefusalCode, type StructuredRefusal } from "./refusals.ts";
+import { contextCapability, isContextCapability, parseContextRequest, type ContextRequest } from "./context-handoff.ts";
 import { digestTask, normaliseCorrelation, type ApprovalBinding, type CorrelationMetadata } from "./correlation.ts";
 import { resolveDelegationApproval } from "./delegation-approval.ts";
 import type { Delegation, DelegationContext, DelegationRequest } from "./delegate-types.ts";
@@ -189,6 +190,45 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
     requested = (request.tools ?? []).map(normaliseCapability);
   }
 
+  // ADR-0078. A declared `context:` id is a CEILING, not a request: a definition that permits forking must not
+  // fork on every spawn. So the declared modes come out of `requested` and exactly the one this call asked for
+  // goes back in.
+  //
+  // **The ceiling is checked HERE, not by `resolve`.** On the `agent` path `requested` IS the ceiling, so simply
+  // appending the asked-for mode would replace the ceiling rather than be bounded by it — measured during review:
+  // a definition declaring `context:files` handed a child `context:fork`, and a definition naming no context at
+  // all handed one `context:files`. `resolve` would then have clamped only against the PARENT's grant, which is
+  // not what the definition, this file's own comment, the README or the ADR say. A definition that says nothing
+  // about context permits nothing, which is why the declared set is consulted even when it is empty.
+  //
+  // The `tools:` path has no definition and therefore no ceiling; the parent's grant is the only bound there, as
+  // it is for every other capability on that path.
+  const parsedContext = parseContextRequest(request.context);
+  if ("refusal" in parsedContext)
+    return denied({ ...empty, requested, reason: parsedContext.refusal }, "CONTEXT_REQUEST_INVALID");
+  const handoff: ContextRequest = parsedContext.request;
+  const declaredContext = requested.filter(isContextCapability);
+  requested = requested.filter((capability) => !isContextCapability(capability));
+  if (handoff.mode !== "none") {
+    const wanted = contextCapability(handoff.mode);
+    // Subsumed, so declaring the strongest mode permits asking for a weaker one — the same relation the grant has.
+    const permitted = new Set(expandSubsumed([...declaredContext]));
+    if (request.agent !== undefined && !permitted.has(wanted))
+      return denied(
+        {
+          ...empty,
+          requested,
+          reason:
+            `context: ${request.agent} may not receive ${wanted} — its allowed-tools ` +
+            (declaredContext.length === 0
+              ? "declares no context: capability, so it receives none"
+              : `permits ${declaredContext.join(", ")}`),
+        },
+        "CONTEXT_REQUEST_INVALID",
+      );
+    requested = [...requested, wanted];
+  }
+
   // Unknown is reported before denied, and separately: "does not exist here" and "you lack authority"
   // have different causes and different fixes. Collapsing them hides typos and stale grants.
   if (ctx.catalog) {
@@ -282,7 +322,13 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
     );
   }
 
+  const grantedHandoff =
+    handoff.mode !== "none" && result.effective.includes(contextCapability(handoff.mode)) ? handoff : undefined;
   const canSubDelegate = result.effective.includes(DELEGATE_CAPABILITY);
+  // Only for a handoff that survived, so a refused mode reads no file and forks no session.
+  const staged = grantedHandoff ? ctx.stageHandoff?.(grantedHandoff) : undefined;
+  if (staged?.refusal)
+    return denied({ ...empty, requested, result, reason: staged.refusal }, "CONTEXT_REQUEST_INVALID");
   const plan = planSpawn({
     effective: result.effective,
     prompt: request.task,
@@ -292,7 +338,9 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
     skillPaths: ctx.skillPaths,
     contextFiles: ctx.contextFiles,
     systemPrompt,
-    sessionFile: ctx.sessionFile,
+    // A fork replaces the session file rather than joining it: pi refuses `--fork` beside `--session`.
+    ...(staged?.forkFrom ? { forkFrom: staged.forkFrom } : { sessionFile: ctx.sessionFile }),
+    ...(staged?.contextPrompt ? { contextPrompt: staged.contextPrompt } : {}),
     print: ctx.interactive ? false : undefined,
   });
 
@@ -365,6 +413,10 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
     result,
     childDepth,
     requested,
+    // The mode that SURVIVED, not the one asked for: a ceiling or a gate may have narrowed it to nothing.
+    ...(grantedHandoff ? { handoff: grantedHandoff } : {}),
+    ...(staged?.record ? { handoffRecord: staged.record } : {}),
+    ...(staged?.dispose ? { disposeHandoff: staged.dispose } : {}),
     childId: ctx.childSpawnId,
     executionId: ctx.childExecutionId,
     taskDigest,

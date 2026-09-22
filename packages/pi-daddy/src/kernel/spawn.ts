@@ -17,6 +17,23 @@ export interface SpawnPlanInput {
   thinking?: string;
   /** Session file path, or omit for an ephemeral child. */
   sessionFile?: string;
+  /**
+   * `context: fork` (ADR-0078): the parent session to fork, and the private directory the fork is written to.
+   *
+   * These replace `sessionFile` rather than joining it, because pi refuses `--fork` beside `--session` or
+   * `--no-session` (measured in its own argument validation). `--session-id` is accepted beside `--fork`, and it is
+   * what makes the forked file findable afterwards: pi names it `<timestamp>_<id>.jsonl` inside the session
+   * directory, and only the id half is ours to choose.
+   */
+  forkFrom?: { sessionPath: string; sessionDir: string; sessionId: string };
+  /**
+   * Fenced context from the parent, appended to the child's system prompt after the definition body (ADR-0078).
+   *
+   * Separate from `systemPrompt` because the two have different provenance and the child is told so: a definition
+   * body is operator-authored text the grant names, this is what the parent chose to pass on. Kept as its own
+   * `--append-system-prompt`, which pi accepts more than once.
+   */
+  contextPrompt?: string;
   /** Non-interactive by default: a governed child should not prompt a human. */
   print?: boolean;
   /**
@@ -68,7 +85,17 @@ export function planSpawn(input: SpawnPlanInput): SpawnPlan {
   if (input.provider) args.push("--provider", input.provider);
   if (input.model) args.push("--model", input.model);
   if (input.thinking) args.push("--thinking", input.thinking);
-  if (input.sessionFile) args.push("--session", input.sessionFile);
+  // `--fork` is exclusive with both session flags, so the three cases are one decision rather than two.
+  if (input.forkFrom)
+    args.push(
+      "--fork",
+      input.forkFrom.sessionPath,
+      "--session-dir",
+      input.forkFrom.sessionDir,
+      "--session-id",
+      input.forkFrom.sessionId,
+    );
+  else if (input.sessionFile) args.push("--session", input.sessionFile);
   else args.push("--no-session");
 
   // Disable discovery so ambient user extensions cannot widen a governed child's surface. Explicit
@@ -116,6 +143,9 @@ export function planSpawn(input: SpawnPlanInput): SpawnPlan {
   // picks WHICH definition, never its contents. That is what keeps it out of `neutralisePrompt`'s
   // remit: the G1 hazard is a model-controlled string reaching a parser, and this is not one.
   if (input.systemPrompt) args.push("--append-system-prompt", input.systemPrompt);
+  // After the definition body, so a child reads what it IS before what it was told (ADR-0078). Operator- and
+  // parent-authored text, never a model-chosen argv position, so `neutralisePrompt` has no remit here either.
+  if (input.contextPrompt) args.push("--append-system-prompt", input.contextPrompt);
 
   if (allowlist) args.push("--tools", allowlist.join(","));
   else args.push("--no-tools");

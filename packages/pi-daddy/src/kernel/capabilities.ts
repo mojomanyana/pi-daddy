@@ -14,6 +14,7 @@
 
 import { AGENT_WILDCARD, WORKSPACE_WILDCARD, type Capability } from "./resolve.ts";
 import { WILDCARD } from "./pi-tools.ts";
+import { isContextCapability } from "./context-handoff.ts";
 import { GovernanceRefusal, refusal } from "./refusals.ts";
 
 /** The capability that authorises spawning a definition (ADR-0017). `tool:*` satisfies any of them. */
@@ -61,7 +62,7 @@ export const DELEGATE_CAPABILITY: Capability = "tool:delegate";
  *
  * The README's grammar section is the prose statement of the same list and is kept in step with it.
  */
-export const CAPABILITY_NAMESPACE_PREFIXES = ["tool:", "ext:", "skill:", "agent:", "workspace:"] as const;
+export const CAPABILITY_NAMESPACE_PREFIXES = ["tool:", "ext:", "skill:", "agent:", "workspace:", "context:"] as const;
 
 /** Accept `read` or `tool:read` or `ext:pkg/tool` and normalise to a capability id. */
 export function normaliseCapability(raw: string): Capability {
@@ -184,6 +185,9 @@ export function isSafeCapability(id: Capability): boolean {
   if (id.startsWith("workspace:")) return isSafeWorkspaceId(id.slice("workspace:".length));
   return (
     new RegExp(`^(tool|skill|agent):${segment}$`).test(id) ||
+    // ADR-0078. The tail is a closed vocabulary rather than a name, so the grammar names it exactly: an id like
+    // `context:everything` is a refusal at the boundary that GENERATES grants, not an unknown capability later.
+    (id.startsWith("context:") && isContextCapability(id)) ||
     new RegExp(`^ext:(@${segment}/)?${segment}/${segment}$`).test(id)
   );
 }

@@ -201,7 +201,11 @@ export const DEFAULT_MAX_DEPTH = 2;
  * Subsumption-aware gating (also ADR-0012) means this single entry covers `write`, `edit`, `read`,
  * `grep`, `find` and `ls` as well, since `bash` confers all of them.
  */
-export const DEFAULT_GATED: Capability[] = ["tool:bash"];
+// ADR-0012 gates `bash` because a child holding it can escape governance entirely. ADR-0078 gates `context:fork`
+// for the neighbouring reason: it is the one handoff mode that can carry content an untrusted repository put in
+// front of the PARENT into a fresh child, and prompt injection is in scope. Neither gate makes the thing
+// impossible; both make it loud.
+export const DEFAULT_GATED: Capability[] = ["tool:bash", "context:fork"];
 
 /**
  * Read the gate list, distinguishing **absent** from **explicitly empty**.
