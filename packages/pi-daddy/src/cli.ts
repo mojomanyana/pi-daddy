@@ -27,6 +27,8 @@ import {
   settingsIgnoredByGit,
 } from "./governance/init.ts";
 import { registeredWorkspaceIds } from "./kernel/workspace.ts";
+import { explainDoubledNamespace } from "./kernel/catalog.ts";
+import type { Capability } from "./kernel/resolve.ts";
 import {
   discoverSkillPackages,
   skillPackageRoots,
@@ -201,7 +203,8 @@ async function init(cwd: string, force: boolean): Promise<number> {
 }
 
 /** Say what was refused and what the fix is. Each reason has a different one. */
-function reportRefusal(pkg: SkillPackage, refusal: RefusedSkill): string {
+/** Exported so the message an operator actually reads can be tested; `init` composes it, nothing else calls it. */
+export function reportRefusal(pkg: SkillPackage, refusal: RefusedSkill): string {
   const head = `REFUSED ${pkg.name}: ${JSON.stringify(refusal.subject)}`;
   switch (refusal.reason) {
     case "unsafe-name":
@@ -209,12 +212,19 @@ function reportRefusal(pkg: SkillPackage, refusal: RefusedSkill): string {
         `${head} cannot be governed — a definition name becomes a capability id in a comma-separated ` +
         `grant, a line in a file you source, and a path. Names must match [A-Za-z0-9][A-Za-z0-9._-]*.`
       );
-    case "unsafe-capability":
+    case "unsafe-capability": {
+      // The one shape of unsafe id that has a known cause worth naming: an `allowed-tools` entry written with a
+      // capitalised namespace, which the bare-entry path prefixes a second time. `isSafeCapability` rejects the
+      // extra colon, so this refusal — not the spawn refusal and not `planInit`'s cautions — is where a doubled
+      // id actually reaches an operator. Measured: a package declaring `Tool:Read` never reaches `planInit`.
+      const doubled = refusal.detail.map((id) => explainDoubledNamespace(id as Capability)).filter(Boolean);
       return (
         `${head} declares ${refusal.detail.join(", ")}, which cannot be written into a grant file — a ` +
         `capability id is tool:/skill:/agent:<name> or ext:<pkg>/<tool>. A quote or a separator here ` +
-        `would end up in a file you are told to \`source\`.`
+        `would end up in a file you are told to \`source\`.` +
+        (doubled.length ? `\n  ${doubled.join("\n  ")}` : "")
       );
+    }
     case "wildcard":
       return (
         `${head} declares ${refusal.detail.join(", ")} — that is root authority, not a description of what ` +

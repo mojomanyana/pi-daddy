@@ -5,6 +5,7 @@ import { after, test } from "node:test";
 import {
   buildCatalog,
   classifyToolNames,
+  explainDoubledNamespace,
   loadSkills,
   makeCatalog,
   suggestForUnknown,
@@ -166,4 +167,71 @@ test("a name too short to typo-match gets no suggestion", () => {
 test("a foreign name absent from THIS catalog suggests nothing", () => {
   const noFind = makeCatalog([{ capability: "tool:read", kind: "builtin" }]);
   assert.equal(suggestForUnknown("tool:glob", noFind), null);
+});
+
+/**
+ * A doubled namespace is a mistake with a name, and the diagnostic has to say it.
+ *
+ * `ceilingForDefinition` adds `tool:` to a bare entry and matches an explicit namespace only in lower
+ * case, so `Tool:Read` — the spelling invited by frontmatter copied from a harness whose tools are
+ * `Read` and `Grep` — becomes `tool:tool:read`. Measured before this was written, on this tree:
+ * `allowed-tools: tool:read, Grep, workspace:prod, skill:foo, Tool:Read` yields
+ * `['skill:foo','tool:grep','tool:read','tool:tool:read','workspace:prod']`.
+ *
+ * Production change that breaks these: deleting the `explainDoubledNamespace` branch from
+ * `planDelegation`'s hints (the refusal then names only the mangled id again), or dropping the
+ * lower-casing of `inner` so the prefix test here repeats the case-sensitive one that causes the defect.
+ */
+test("a doubled namespace is explained as the prefix mistake it is, not as a missing capability", () => {
+  const explained = explainDoubledNamespace("tool:tool:read");
+  assert.match(String(explained), /tool:tool:read is prefixed twice/);
+  assert.match(String(explained), /`allowed-tools` adds `tool:`/, "it must name the field that adds the prefix");
+  assert.match(String(explained), /write `tool:read`/, "and the entry the author should have written");
+});
+
+test("every namespace doubles the same way, and each is explained with its own prefix", () => {
+  // `Workspace:prod` and `Agent:review` are lowercased whole, so the mangled id carries the real prefix.
+  assert.match(String(explainDoubledNamespace("tool:workspace:prod")), /`workspace:` prefix .* write `workspace:prod`/);
+  assert.match(String(explainDoubledNamespace("tool:agent:review")), /write `agent:review`/);
+});
+
+// Review of this change, measured: the bare-entry path lower-cases the whole entry before anything here sees it, so
+// a workspace or definition id has already lost its own capitalisation and copying the suggestion verbatim may not
+// work. Saying so is the difference between a hint and a wrong instruction. Breaks by: offering "or the bare name"
+// outside `tool:` (a bare `prod` becomes `tool:prod`, a second unknown capability), or dropping the caveat.
+test("the suggestion offers a bare name only where a bare name works, and admits the lost case elsewhere", () => {
+  const tool = String(explainDoubledNamespace("tool:tool:read"));
+  assert.match(tool, /\(or the bare name `read`\)/);
+  assert.doesNotMatch(tool, /capitalisation was folded/);
+  for (const id of ["tool:workspace:prod", "tool:agent:review", "tool:skill:foo"] as const) {
+    const explained = String(explainDoubledNamespace(id));
+    assert.doesNotMatch(explained, /bare name/, `${id}: a bare name is prefixed with tool: and fails again`);
+    assert.match(explained, /capitalisation was folded/, `${id}: the id's own case is already gone`);
+  }
+});
+
+// The model-chosen `tools:` path does not case-fold, so a doubled id can arrive with its capitals intact. Advising
+// the author to write back exactly what they typed would be advising the defect. Breaks by: dropping the
+// case-insensitive prefix match in `undoubleNamespace`, or re-emitting the prefix as it arrived.
+test("a doubled namespace that kept its capitals is suggested in the spelling that actually works", () => {
+  assert.match(String(explainDoubledNamespace("tool:Tool:Read")), /write `tool:read`/);
+  assert.match(String(explainDoubledNamespace("tool:TOOL:read")), /write `tool:read`/);
+});
+
+// Breaks by: making `undoubleNamespace` strip one prefix instead of recursing.
+test("an entry prefixed three times is suggested undoubled, not merely less doubled", () => {
+  const explained = String(explainDoubledNamespace("tool:tool:tool:read"));
+  assert.match(explained, /write `tool:read`/);
+  assert.doesNotMatch(explained, /write `tool:tool:/, "the suggestion must not carry the same defect");
+});
+
+test("an ordinary unknown capability is left to the typo hint", () => {
+  // The legitimate spellings must stay legitimate: neither of these is prefixed twice.
+  assert.equal(explainDoubledNamespace("tool:read"), null);
+  assert.equal(explainDoubledNamespace("workspace:prod"), null);
+  assert.equal(explainDoubledNamespace("tool:raed"), null, "a plain typo is suggestForUnknown's job");
+  // `tool:extras` starts with the letters of `ext:` and not the namespace; the colon is what separates them.
+  assert.equal(explainDoubledNamespace("tool:extras"), null);
+  // Nothing to suggest, so nothing is claimed.
+  assert.equal(explainDoubledNamespace("tool:tool:"), null);
 });

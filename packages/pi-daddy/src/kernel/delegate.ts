@@ -26,7 +26,7 @@ import {
   inheritableGrant,
 } from "./propagation.ts";
 import { inheritApprovals, type InheritableApproval } from "./approval.ts";
-import { suggestForUnknown, unknownCapabilities, type Catalog } from "./catalog.ts";
+import { explainDoubledNamespace, suggestForUnknown, unknownCapabilities, type Catalog } from "./catalog.ts";
 import { GovernanceRefusal, refusal, type RefusalCode, type StructuredRefusal } from "./refusals.ts";
 import { digestTask, normaliseCorrelation, type ApprovalBinding, type CorrelationMetadata } from "./correlation.ts";
 import { resolveDelegationApproval } from "./delegation-approval.ts";
@@ -199,8 +199,13 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
       // refusal — correct, and previously unhelpful, because pi's equivalent is `find` and no amount of
       // staring at "not present in this session's catalog" says so. The hint changes nothing about the
       // refusal; it just stops the author having to guess which of nine built-ins was meant.
+      // A doubled namespace is answered first and instead: it is not a guess about what the author meant
+      // but a statement of what the field did, and "did you mean tool:read?" beside `tool:tool:read` shows
+      // the author a correction without ever saying that `allowed-tools` supplies the `tool:` itself.
       const hints = unknown
         .map((c) => {
+          const doubled = explainDoubledNamespace(c);
+          if (doubled !== null) return doubled;
           const s = suggestForUnknown(c, ctx.catalog!);
           return s === null ? null : `${c} → did you mean ${s}?`;
         })
