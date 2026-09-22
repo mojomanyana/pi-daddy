@@ -12,6 +12,15 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## 0.32.1 — a doubled namespace in `allowed-tools` is explained, not just reported
+
+An `allowed-tools` entry written with a capitalised namespace, such as `Tool:Read`, misses the lower-case prefix test,
+is prefixed a second time on the bare-entry path and becomes `tool:tool:read`; `Workspace:prod` becomes
+`tool:workspace:prod`. That spelling is the one the Agent Skills standard and this package's own README example
+invite. `pi-daddy init` then refuses the definition and named only the mangled identifier, and a spawn refusal said
+the capability was absent from the catalog. Both messages now name the mistake and the entry that was meant. No
+behaviour beyond the wording changes: the refusal, its code and the effective grant are exactly as before.
+
 ## 0.32.0 — a child is stopped for inactivity, not by a wall clock (ADR-0076 PR 3e)
 
 A governed child is now stopped when `PI_DADDY_CHILD_IDLE_TIMEOUT` seconds pass with no activity (default fifteen
