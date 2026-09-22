@@ -372,7 +372,10 @@ composed: that can carry task text and file contents, the ledger has never store
 must not become the way it starts.
 
 Default off, and off is the whole configuration unless `.pi/pi-daddy/settings.json` says otherwise and
-`PI_DADDY_ADVISOR_KEY` is set. Malformed configuration disables the advisor and names the field, rule 8's shape: an
+`PI_DADDY_ADVISOR_KEY` is set. That key is stripped from every child: review measured it reaching a child granted
+`tool:bash` while the constant's own comment claimed it never did, because it had been added to the list the
+`childEnv` hook may not write and not to the list `mergeChildEnv` strips. A credential is not something a child
+inherits by being spawned. Malformed configuration disables the advisor and names the field, rule 8's shape: an
 operator who mistypes must not get silence, and must not get a third party reading their session either. A caller
 must behave identically under the null decider, which is why that is the default and why degradation is always "no
 advice" — disabled, missing key, two-second timeout, transport error, or a response we do not recognise all return
@@ -389,7 +392,15 @@ thing it ever wrote. Turning an advisor on is an operator decision in the review
 `usage`, with probabilities and confidence mentioned and never shown, and the one public guide to this endpoint
 states it has not run paid calls either. **No response shape here has been confirmed against a live call.** The
 parser accepts what the documentation describes, tolerates the obvious variants, and treats anything else — including
-a `choice` that was never offered or a `score` outside the levels — as no advice rather than a guess. Confirming it
+a `choice` that was never offered or a `score` outside the levels — as no advice rather than a guess. A `score` is
+read as a 0-based index into the documented `criteria` array and carries the level STRING beside the number, so a
+caller never indexes it: the first draft accepted a 0-based and a 1-based reading at once, which meant the middle of
+any scale was ambiguous and `levels[value]` could read "high" where the model meant "mid". That single reading is
+itself an assumption the unrun live tier would settle; if Jev is 1-based, its top level falls outside the array and
+the answer is refused as unrecognised, which is the loud failure rather than a silently shifted one. A dead endpoint
+is recorded as `error` and an advisor with nothing to say as `declined`, because a revoked key must not read as an
+opinion-free advisor forever; and the two-second bound is raced rather than merely signalled, since a decider that
+ignores its abort would otherwise run as long as it liked and still be recorded as a timeout. Confirming it
 is the `PI_DADDY_IT_JEV=1` tier, unrun. Until somebody runs it, this adapter's response handling is a reading of
 documentation, not a measurement.
 

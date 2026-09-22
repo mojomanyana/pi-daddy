@@ -5,7 +5,7 @@
  * `Capability` or a refusal code**, and no function in `kernel/` or `governance/` accepts an advisor's result. An
  * advisor may select among options the caller already had, rank them, annotate them, or propose one. It can never
  * widen an `effective` set, satisfy a gate, or stand in for a human's answer — not because it is asked not to, but
- * because nothing on those paths can receive what it returns. `test/advisors-boundary.test.ts` forces that.
+ * because nothing on those paths can receive what it returns. `test/advisors.test.ts` forces that.
  *
  * Non-generative on purpose. The first advisor is a classifier that returns a typed answer with a probability, not
  * prose, which is what makes an advisor auditable: "it chose `b` at 0.91" is a fact a reviewer can disagree with,
@@ -27,7 +27,8 @@ export type Question =
 export type Answer =
   | { kind: "noul"; value: boolean; confidence?: number }
   | { kind: "choice"; value: string; confidence?: number }
-  | { kind: "score"; value: number; confidence?: number };
+  // `level` is the string the value indexes, so a caller never has to know which end the scale starts at.
+  | { kind: "score"; value: number; level: string; confidence?: number };
 
 export interface AdviceRequest {
   /**

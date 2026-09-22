@@ -8,6 +8,8 @@ import { createAdvisor, type AdviceRecord } from "../src/advisors/advisor.ts";
 import { JEV_ENDPOINT, JEV_MODEL, jevDecider, parseAdvice, wireRequest } from "../src/advisors/jev.ts";
 import { ADVISOR_KEY_ENV, advisorSettingsFrom } from "../src/advisors/settings.ts";
 import { createAdvisorSession } from "../extensions/advisor-session.ts";
+import { mergeChildEnv } from "../src/kernel/propagation.ts";
+import { ENV_ADVISOR_KEY } from "../src/kernel/env-names.ts";
 import { readRecordsFile } from "../src/governance/record.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 import { after } from "node:test";
@@ -78,7 +80,7 @@ test("a record names the decision and the answers, and never the state", async (
       answers: {
         keep: { kind: "noul", value: true, confidence: 0.9 },
         which: { kind: "choice", value: "b" },
-        urgency: { kind: "score", value: 2 },
+        urgency: { kind: "score", value: 2, level: "high" },
       },
       model: "typesafe/jev-1.13-20260917",
     }),
@@ -94,17 +96,29 @@ test("a record names the decision and the answers, and never the state", async (
   assert.deepEqual(records[0].answers?.which, { value: "b" }, "a confidence that was not reported is not invented");
 });
 
-test("a slow advisor is no advice, recorded as a timeout, and the caller proceeds", async () => {
-  // An advisor sits on a path a human is waiting for. Breaks by: removing the timeout, or letting the abort throw.
+test("the timeout is a bound even for a decider that ignores its signal", async () => {
+  // Signalling an abort is not enforcing one. Measured in review: a decider that ignored its signal ran fifty times
+  // the configured bound and was then recorded as a timeout, so the advertised property was forced by nothing.
+  // Breaks by: awaiting `decide` directly instead of racing it against the abort.
   const records: AdviceRecord[] = [];
-  const decider: Decider = {
-    name: "slow",
-    decide: (_r, signal) =>
-      new Promise((_, reject) => signal?.addEventListener("abort", () => reject(new Error("aborted")))),
-  };
-  const advisor = createAdvisor({ decider, record: (r) => void records.push(r), enabled: true, timeoutMs: 20 });
+  const deaf: Decider = { name: "deaf", decide: () => new Promise((settle) => setTimeout(() => settle(null), 3000)) };
+  const advisor = createAdvisor({ decider: deaf, record: (r) => void records.push(r), enabled: true, timeoutMs: 20 });
+  const started = Date.now();
   assert.equal(await advisor.ask("routing", REQUEST), null);
+  assert.ok(Date.now() - started < 1000, `ask took ${Date.now() - started}ms against a 20ms bound`);
   assert.equal(records[0].outcome, "timeout");
+});
+
+test("a caller that goes away is recorded as cancelled, not as the advisor failing", async () => {
+  // Breaks by: collapsing the caller's abort into `error`, which blames the advisor for the caller's decision.
+  const records: AdviceRecord[] = [];
+  const deaf: Decider = { name: "deaf", decide: () => new Promise((settle) => setTimeout(() => settle(null), 3000)) };
+  const advisor = createAdvisor({ decider: deaf, record: (r) => void records.push(r), enabled: true });
+  const caller = new AbortController();
+  const asked = advisor.ask("routing", REQUEST, caller.signal);
+  caller.abort();
+  assert.equal(await asked, null);
+  assert.equal(records[0].outcome, "cancelled");
 });
 
 test("a decider that throws is no advice, not an exception the caller must handle", async () => {
@@ -150,6 +164,12 @@ test("an answer outside the question's own vocabulary is no advice, not a low-co
   // never offered, which would hand a caller an option it did not have.
   assert.equal(parseAdvice(REQUEST, { answers: { keep: true, which: "c", urgency: 1 } }), null, "c was not offered");
   assert.equal(parseAdvice(REQUEST, { answers: { keep: true, which: "a", urgency: 9 } }), null, "9 is not a level");
+  // One reading of a score, not two. Accepting both a 0-based and a 1-based index meant `levels[value]` could read
+  // "high" where the model meant "mid" — the guess an advisor exists to remove, relocated to the caller and frozen
+  // into the ledger. Breaks by: re-admitting the 1-based reading in `parseAnswer`.
+  assert.equal(parseAdvice(REQUEST, { answers: { keep: true, which: "a", urgency: 3 } }), null, "3 levels: 0..2");
+  const scored = parseAdvice(REQUEST, { answers: { keep: true, which: "a", urgency: 2 } });
+  assert.deepEqual(scored?.answers.urgency, { kind: "score", value: 2, level: "high" }, "the level, not just an index");
   assert.equal(parseAdvice(REQUEST, { answers: { keep: "yes", which: "a", urgency: 1 } }), null, "noul is boolean");
   assert.equal(parseAdvice(REQUEST, { answers: { which: "a", urgency: 1 } }), null, "every question or none");
   assert.equal(parseAdvice(REQUEST, {}), null);
@@ -159,18 +179,22 @@ test("an answer outside the question's own vocabulary is no advice, not a low-co
   assert.deepEqual(flat?.answers.which, { kind: "choice", value: "a" });
   assert.equal(flat?.model, "m");
   const nested = parseAdvice(REQUEST, {
-    answers: { keep: { value: false, p: 0.8 }, which: { answer: "b", confidence: 0.7 }, urgency: { value: 3 } },
+    answers: { keep: { value: false, p: 0.8 }, which: { answer: "b", confidence: 0.7 }, urgency: { value: 2 } },
   });
   assert.deepEqual(nested?.answers.keep, { kind: "noul", value: false, confidence: 0.8 });
   assert.deepEqual(nested?.answers.which, { kind: "choice", value: "b", confidence: 0.7 });
-  assert.deepEqual(nested?.answers.urgency, { kind: "score", value: 3 });
+  assert.deepEqual(nested?.answers.urgency, { kind: "score", value: 2, level: "high" });
 });
 
-test("a non-2xx from the endpoint is no advice, not a thrown error", async () => {
-  // The caller is mid-decision: "the advisor is unavailable" and "the advisor had nothing to say" are the same
-  // answer. Breaks by: throwing on !response.ok.
-  const decider = jevDecider({ apiKey: "k", fetch: async () => new Response("nope", { status: 500 }) });
-  assert.equal(await decider.decide(REQUEST), null);
+test("a dead endpoint reaches the caller as no advice but is RECORDED as an error, not a decline", async () => {
+  // The whole reason for recording the nothing-cases is that an advisor which quietly stopped answering must not
+  // look like one nobody called — so a revoked key must not read as "had no opinion" forever. Breaks by: returning
+  // null from `decide` on !response.ok, which records `declined`.
+  const records: AdviceRecord[] = [];
+  const dead = jevDecider({ apiKey: "k", fetch: async () => new Response("nope", { status: 401 }) });
+  const advisor = createAdvisor({ decider: dead, record: (r) => void records.push(r), enabled: true });
+  assert.equal(await advisor.ask("routing", REQUEST), null, "the caller still just gets no advice");
+  assert.equal(records[0].outcome, "error");
 
   const sent: Array<{ url: string; init: RequestInit }> = [];
   const ok = jevDecider({
@@ -228,4 +252,23 @@ test("settings that ask for an advisor without a key produce a reported refusal,
   const session = createAdvisorSession({ block: { enabled: true, decider: "jev" }, env: {} });
   assert.equal(session.settings.enabled, false);
   assert.match(String(session.settings.refusal), new RegExp(ADVISOR_KEY_ENV));
+  // Asserting the settings alone could not fail: the disabled wrapper returns before touching the decider, so
+  // removing this guard left every test green. The decider that was BUILT is the fact that matters.
+  assert.equal(session.deciderName, "none", "no key, so no jev decider is constructed at all");
+  const live = createAdvisorSession({ block: { enabled: true, decider: "jev" }, env: { [ADVISOR_KEY_ENV]: "k" } });
+  assert.equal(live.deciderName, "jev");
+});
+
+test("a governed child does not inherit the advisor's API key", async () => {
+  // Measured in review: the key was in GOVERNANCE_ENV_KEYS (a deny-list for the childEnv hook) but not in
+  // GRANT_ENV_KEYS (the list `mergeChildEnv` actually strips), so a child granted tool:bash held a paid credential
+  // its grant never named — while the comment above the constant claimed "it is never written for a child".
+  // Breaks by: removing ENV_ADVISOR_KEY from GRANT_ENV_KEYS.
+  const child = mergeChildEnv(
+    { [ENV_ADVISOR_KEY]: "sk-or-SECRET", PI_DADDY_GRANT: "tool:*", PATH: "/usr/bin" },
+    { PI_DADDY_GRANT: "tool:read" },
+  );
+  assert.equal(child[ENV_ADVISOR_KEY], undefined, "a credential is not inherited by being spawned");
+  assert.equal(child.PI_DADDY_GRANT, "tool:read", "and the grant still narrows as it always did");
+  assert.equal(child.PATH, "/usr/bin", "while ordinary environment still passes through");
 });

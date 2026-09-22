@@ -65,13 +65,19 @@ export function parseAnswer(question: Question, raw: unknown): Answer | undefine
     if (typeof value !== "string" || !Object.hasOwn(question.options, value)) return undefined;
     return withConfidence({ kind: "choice", value });
   }
-  // A score is reported against the levels that were asked about; anything outside them is not an answer to this
-  // question. Both 0-based and 1-based readings are accepted because the documentation shows neither.
+  // ONE reading: a score is a 0-based index into the `criteria` array that was asked about, and `level` carries the
+  // string so a caller never indexes the number itself.
+  //
+  // The first draft accepted both a 0-based and a 1-based reading "because the documentation shows neither", which
+  // pushed the ambiguity onto the caller and into the ledger: with three levels, 1 and 2 were valid under both, so
+  // `levels[value]` could read "high" where the model meant "mid". An advisor exists to remove that guess, not to
+  // relocate it. **The 0-based reading is an assumption** — it indexes the documented array form — and it is
+  // unverified for the same reason everything else about the response is: no live call has been made. If Jev is
+  // 1-based, its top level falls outside the array and the whole answer is refused as unrecognised, which is the
+  // loud failure rather than a silently shifted one, and the `PI_DADDY_IT_JEV=1` tier is what would show it.
   if (typeof value !== "number" || !Number.isInteger(value)) return undefined;
-  const zeroBased = value >= 0 && value < question.levels.length;
-  const oneBased = value >= 1 && value <= question.levels.length;
-  if (!zeroBased && !oneBased) return undefined;
-  return withConfidence({ kind: "score", value });
+  if (value < 0 || value >= question.levels.length) return undefined;
+  return withConfidence({ kind: "score", value, level: question.levels[value] });
 }
 
 export function parseAdvice(request: AdviceRequest, body: unknown): Advice | null {
@@ -109,9 +115,11 @@ export function jevDecider(config: JevConfig): Decider {
         body: JSON.stringify(wireRequest(request, config.model ?? JEV_MODEL)),
         ...(signal ? { signal } : {}),
       });
-      // A non-2xx is no advice, not an exception to propagate: the caller is mid-decision and the answer to "the
-      // advisor is unavailable" is the same as the answer to "the advisor had nothing to say".
-      if (!response.ok) return null;
+      // A dead endpoint and an advisor with nothing to say must not read alike in the ledger: the whole reason for
+      // recording the nothing-cases is that an advisor which quietly stopped answering should not look like one
+      // nobody called. Thrown, so `createAdvisor` records `error` rather than `declined`; it catches, so nothing
+      // reaches the caller but `null` either way.
+      if (!response.ok) throw new Error(`advisor endpoint returned ${response.status}`);
       try {
         return parseAdvice(request, await response.json());
       } catch {

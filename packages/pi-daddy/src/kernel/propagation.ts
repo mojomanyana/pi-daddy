@@ -31,6 +31,7 @@ import { WORKSPACE_WILDCARD } from "./resolve.ts";
 import { inheritApprovals, type InheritableApproval } from "./approval.ts";
 import { assertCapabilitiesArePropagatable } from "./capabilities.ts";
 import {
+  ENV_ADVISOR_KEY,
   ENV_GRANT,
   ENV_FANOUT,
   ENV_PARENT_ID,
@@ -75,6 +76,9 @@ export {
  * to give it.
  */
 export const GRANT_ENV_KEYS = [
+  // Not governance state, but the same rule applies for a stronger reason: a credential the parent holds is not
+  // something a child inherits by being spawned (ADR-0077).
+  ENV_ADVISOR_KEY,
   ENV_GRANT,
   ENV_DEPTH,
   ENV_MAX_DEPTH,

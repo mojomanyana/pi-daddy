@@ -18,6 +18,14 @@ import { appendRecord } from "../src/governance/record.ts";
 export interface AdvisorSession {
   readonly settings: AdvisorSettings;
   readonly advisor: Advisor;
+  /**
+   * Which decider was actually constructed — `"none"` or `"jev"`.
+   *
+   * Exposed because a test asserting only `settings` could not tell: review measured that removing the key check
+   * here left every test green, since the disabled wrapper returns before touching the decider. A named breaking
+   * change that does not break the test is decoration (AGENTS.md).
+   */
+  readonly deciderName: string;
 }
 
 export function createAdvisorSession(input: {
@@ -37,12 +45,15 @@ export function createAdvisorSession(input: {
   const decider =
     settings.enabled && settings.decider === "jev"
       ? jevDecider({
-          apiKey: env[ADVISOR_KEY_ENV] ?? "",
+          // Trimmed for the reason `settings` trims when validating: a key exported with a trailing newline
+          // passed validation and was then sent verbatim.
+          apiKey: env[ADVISOR_KEY_ENV]?.trim() ?? "",
           ...(settings.model ? { model: settings.model } : {}),
         })
       : nullDecider;
   return {
     settings,
+    deciderName: decider.name,
     advisor: createAdvisor({
       decider,
       record,

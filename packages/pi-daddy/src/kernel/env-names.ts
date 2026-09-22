@@ -39,9 +39,13 @@ export const ENV_NATIVE_SESSION_ROOT = "PI_DADDY_NATIVE_SESSION_ROOT";
 export const ENV_RETAIN_NATIVE_SESSIONS = "PI_DADDY_RETAIN_NATIVE_SESSIONS";
 export const ENV_GOVERNANCE = "PI_DADDY_GOVERNANCE";
 /**
- * The advisor's API key (ADR-0077). Listed with the governance keys not because it shapes a grant but because the
- * `childEnv` hook must not be able to set it: a product that could inject a key could send a session's own
- * description to a third party of its choosing. It is never written for a child.
+ * The advisor's API key (ADR-0077).
+ *
+ * In `GOVERNANCE_ENV_KEYS` so the `childEnv` hook cannot set it — a product that could inject a key could send a
+ * session's own description to a third party of its choosing — **and in `GRANT_ENV_KEYS` so it is stripped from
+ * every child.** The first draft had only the former and claimed "it is never written for a child", which was true
+ * of the planner and false in effect: `mergeChildEnv` strips only `GRANT_ENV_KEYS`, so a child granted `tool:bash`
+ * inherited a paid credential its grant never named. Measured in review.
  */
 export const ENV_ADVISOR_KEY = "PI_DADDY_ADVISOR_KEY";
 

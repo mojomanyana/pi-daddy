@@ -27,8 +27,12 @@ export interface AdviceRecord {
   /** Present only when advice came back. */
   answers?: Readonly<Record<string, { value: string | number | boolean; confidence?: number }>>;
   model?: string;
-  /** Why there is no advice: `disabled`, `timeout`, `error`, or `declined` when the advisor simply had none. */
-  outcome: "answered" | "disabled" | "timeout" | "error" | "declined";
+  /**
+   * Why there is no advice. `declined` means the advisor answered with nothing; `error` means it could not be
+   * reached or its response was unrecognised; `cancelled` means the CALLER went away, which is not the advisor's
+   * failure and must not read as one.
+   */
+  outcome: "answered" | "disabled" | "timeout" | "error" | "declined" | "cancelled";
 }
 
 export interface Advisor {
@@ -65,10 +69,16 @@ export function createAdvisor(input: {
       const cancel = setTimeout(() => timer.abort(), timeoutMs);
       const linked = signal ? AbortSignal.any([signal, timer.signal]) : timer.signal;
       try {
-        const advice = await input.decider.decide(request, linked);
+        // RACED, not merely signalled. A decider that ignores its signal would otherwise run as long as it liked
+        // and then be recorded as a timeout — measured at fifty times the configured bound. The `Decider` contract
+        // cannot make an implementation honour an abort, so the bound is enforced on this side of it.
+        const advice = await Promise.race([
+          input.decider.decide(request, linked),
+          new Promise<null>((settle) => linked.addEventListener("abort", () => settle(null), { once: true })),
+        ]);
         const durationMs = Date.now() - started;
         if (!advice) {
-          await write({ ...base, answered: false, durationMs, outcome: timer.signal.aborted ? "timeout" : "declined" });
+          await write({ ...base, answered: false, durationMs, outcome: outcomeFor(timer.signal, signal, "declined") });
           return null;
         }
         await write({
@@ -91,7 +101,7 @@ export function createAdvisor(input: {
           ...base,
           answered: false,
           durationMs: Date.now() - started,
-          outcome: timer.signal.aborted ? "timeout" : "error",
+          outcome: outcomeFor(timer.signal, signal, "error"),
         });
         return null;
       } finally {
@@ -99,4 +109,15 @@ export function createAdvisor(input: {
       }
     },
   };
+}
+
+/** The bound fired, the caller went away, or neither — three different facts a reviewer needs to tell apart. */
+function outcomeFor(
+  timer: AbortSignal,
+  caller: AbortSignal | undefined,
+  otherwise: "declined" | "error",
+): AdviceRecord["outcome"] {
+  if (timer.aborted && !caller?.aborted) return "timeout";
+  if (caller?.aborted) return "cancelled";
+  return otherwise;
 }
