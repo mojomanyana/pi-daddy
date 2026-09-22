@@ -13,6 +13,8 @@
 
 import { nativeDelegationContext } from "./delegation-native.ts";
 import { adviseEffort } from "./effort-advice.ts";
+import { advisePruning } from "./pruning-advice.ts";
+import { parseContextRequest } from "../src/kernel/context-handoff.ts";
 import { DELEGATE_SUBJECT, shouldSeekApproval } from "../src/kernel/approval.ts";
 import { planDelegation } from "../src/kernel/delegate.ts";
 import {
@@ -294,6 +296,13 @@ export async function runOneDelegation(
     session.modelResolutionCache,
     session.allowUnresolvedModels,
   );
+  // ADR-0077's second decision point, computed here because choosing may mean asking an advisor and the planner is
+  // pure. It can only narrow: staging intersects whatever comes back with the rule's own candidates.
+  const parsedForPruning = parseContextRequest(spec.context);
+  const handoffTurnIds =
+    "request" in parsedForPruning
+      ? await advisePruning({ session, granted: parsedForPruning.request, task: spec.task, signal })
+      : undefined;
   const { extra, refusal: nativeRefusal } = await nativeDelegationContext(
     session,
     ids,
@@ -301,6 +310,8 @@ export async function runOneDelegation(
     Boolean(executorRefusal || modelRefusal),
   );
   executorRefusal ||= nativeRefusal;
+  // Carried on the planner's context beside the other composition-supplied facts.
+  const planContext: Record<string, unknown> = { ...extra, ...(handoffTurnIds ? { handoffTurnIds } : {}) };
   let preparedWorkspace: PreparedWorkspace | undefined;
   let approvalOutcome: ApprovalOutcome | undefined;
   let plan: ReturnType<typeof planDelegation>;
@@ -309,7 +320,7 @@ export async function runOneDelegation(
     // Check non-liftable refusals before taking a lease, and take the lease before asking a human. This
     // preserves both anti-race rules: a doomed spawn cannot bank approval, and a conflicting writer starts
     // no child process.
-    const preview = await planWithApprovals(session, request, extra, null, signal, preApproved);
+    const preview = await planWithApprovals(session, request, planContext, null, signal, preApproved);
     plan = preview.plan;
     if (plan.ok || shouldSeekApproval(plan.result)) {
       try {
@@ -323,7 +334,7 @@ export async function runOneDelegation(
           ledgerPath: session.ledgerPath,
         });
         request.correlation = preparedWorkspace.correlation;
-        const gated = await planWithApprovals(session, request, extra, ctx, signal, preApproved);
+        const gated = await planWithApprovals(session, request, planContext, ctx, signal, preApproved);
         plan = gated.plan;
         approvalOutcome = gated.approval;
       } catch (error) {
@@ -338,7 +349,7 @@ export async function runOneDelegation(
     const gated = await planWithApprovals(
       session,
       request,
-      extra,
+      planContext,
       executorRefusal || modelRefusal ? null : ctx,
       signal,
       preApproved,

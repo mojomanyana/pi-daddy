@@ -339,7 +339,9 @@ output and weigh them differently. One 32 KiB budget governs both channels, and 
 fence. Paths are confined to the session's working directory because they are model-supplied; that bounds the
 parameter and is not a claim of containment, since the parent process can already read what its own grant allows.
 
-`pruned` keeps the last N turns plus older turns naming one of the given files. That rule is deterministic and
+`pruned` keeps the last N turns plus older turns naming one of the given files, and with an advisor enabled those
+candidates are then judged one by one against the task the child is about to be given — narrowing only, never
+adding. That rule is deterministic and
 explainable, and its recall is **unmeasured**: whether it keeps what a reader would have kept is exactly what the
 handoff probe is for, and `pruned` is not a default until that probe says so. The rule names itself in the ledger so
 a later advisor can replace the selection without anything else changing. Also not established: any measurement of

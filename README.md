@@ -80,8 +80,9 @@ The modes are ordered, and each subsumes the weaker ones: a parent holding `cont
 instructions, capped at 32 KiB, with anything that did not fit said inside the fence. The capability decision record
 names the mode the child actually received and how much crossed.
 
-`pruned` keeps recent turns plus turns naming the given files. That rule is deterministic; whether it keeps what a
-reader would have kept is unmeasured, so `pruned` is not a default.
+`pruned` keeps recent turns plus turns naming the given files, and an enabled advisor then judges those candidates
+against the task, keeping a subset. Whether either keeps what a reader would have kept is unmeasured, so `pruned` is
+not a default.
 
 ## The guarantee, and its limit
 

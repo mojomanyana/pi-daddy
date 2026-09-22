@@ -136,6 +136,7 @@ test("the options offered are exactly what the model reports, so advice cannot i
 const MAY_CONSULT_AN_ADVISOR = [
   "extensions/advisor-session.ts",
   "extensions/effort-advice.ts",
+  "extensions/pruning-advice.ts",
   "extensions/run-delegation.ts",
   "extensions/session.ts",
 ];

@@ -90,7 +90,18 @@ export interface DelegationContext {
    * reads nothing. What it returns reaches the child as an appended system prompt or as fork arguments; it can
    * carry no capability, so nothing here can widen a grant.
    */
-  stageHandoff?: (granted: ContextRequest) => {
+  /**
+   * Turn ids a composition-layer selector chose for a `pruned` handoff (ADR-0077's second decision point).
+   *
+   * Composition, because choosing may mean asking an advisor and the kernel does no I/O and knows no advisor. The
+   * ids can only NARROW: staging keeps the intersection with what the deterministic rule already surfaced, so a
+   * selector cannot introduce a turn the rule did not offer, whatever it returns.
+   */
+  handoffTurnIds?: readonly string[];
+  stageHandoff?: (
+    granted: ContextRequest,
+    options?: { keepTurnIds?: readonly string[] },
+  ) => {
     contextPrompt?: string;
     forkFrom?: { sessionPath: string; sessionDir: string; sessionId: string };
     record?: Delegation["handoffRecord"];
