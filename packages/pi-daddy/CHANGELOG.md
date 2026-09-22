@@ -23,8 +23,17 @@ a child holding `tool:write` appends an entry, the pin stops it resolving in tha
 afterwards, and the NEXT root session mints a pin from the tampered registry while the wildcard admits any id.
 End to end — the catalog listed it, the pin covered it, and it routed into the child's own directory.
 
-**The accepted id set now lives beside the grant store**, in pi's agent directory, outside the workspace where a
-governed child cannot reach it. An id nobody accepted is not pinned, and therefore not routable. `/grants
+**The accepted id set now lives beside the grant store**, in pi's agent directory. An id nobody accepted is not
+pinned, and therefore not routable.
+
+**What that does not buy, because the first draft of these notes claimed it did.** "Outside the workspace, where
+a governed child cannot reach it" is false. A security review reproduced it end to end with pi's own `write`
+tool from a real depth-1 child holding `tool:write` and no workspace capability: `write` takes an absolute path
+and performs no confinement, the agent directory is inherited, and every path under it is deterministic. The
+same technique widened the operator's STORED GRANT from `tool:read` to `tool:bash`, so the precedent this cited
+does not hold either. What this release actually buys is the narrower closure it was built for — an attacker
+who rewrites only the registry — and a raised cost for the wider one. The risk register now carries the class:
+`tool:write` is much closer to `tool:bash` than this package has been treating it. `/grants
 workspaces` accepts the registry's current ids. A malformed acceptance record accepts NOTHING rather than
 falling back to the registry, so corrupting one byte is not a bypass.
 

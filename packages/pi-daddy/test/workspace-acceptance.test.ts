@@ -139,3 +139,39 @@ test("accepting records the registry's current ids for the next session", async 
   assert.deepEqual(after.accepted, ["a", "b"]);
   assert.deepEqual(after.unaccepted, ["c"], "an id added after acceptance is still refused");
 });
+
+test("/grants marks an unaccepted id in the routable line, not only in a separate notice", async () => {
+  // The catalog loads the unnarrowed registry, so it lists ids that cannot be routed to. Session start names
+  // them, but a reader had to join two places to learn that a listed id was unusable — and review measured a
+  // clean-looking `routable` line naming a workspace the session would refuse.
+  // Breaks by: printing `catalog.byKind("workspace")` unmarked again.
+  const { grantsCommand } = await import("../extensions/grants-command.ts");
+  const { makeCatalog } = await import("../src/kernel/catalog.ts");
+  let out = "";
+  await grantsCommand.handler("", {
+    ui: { notify: (text: string) => void (out = text) },
+    grants: {
+      cwd: process.cwd(),
+      governed: true,
+      ownGrant: ["workspace:*"],
+      executor: { disclosure: "in-process (test)" },
+      advisor: { decider: "none" },
+      observed: true,
+      depth: 0,
+      maxDepth: 2,
+      catalog: makeCatalog([
+        { capability: "workspace:good", kind: "workspace" },
+        { capability: "workspace:evil", kind: "workspace" },
+      ]),
+      definitions: new Map(),
+      sessionApprovals: new Set(),
+      inheritedApprovals: new Map(),
+      previewDelegation: async () => assert.fail("no definitions"),
+      workspacePin: new Map([["good", "0".repeat(32)]]),
+      unacceptedWorkspaces: ["evil"],
+    },
+  } as never);
+  assert.match(out, /workspace:evil \(NOT ACCEPTED\)/, "an id that cannot be routed to must not read as routable");
+  assert.doesNotMatch(out, /workspace:good \(NOT ACCEPTED\)/);
+  assert.match(out, /unaccepted evil/);
+});

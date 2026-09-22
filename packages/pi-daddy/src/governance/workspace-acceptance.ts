@@ -9,9 +9,27 @@
  * `catalog ['workspace:evil','workspace:good']`, `pinned ['good','evil']`, routed into the child's own
  * directory, with no operator action anywhere.
  *
- * So the id set needs the same treatment the grant got: **recorded outside the workspace, where a governed
- * child cannot reach it.** This lives beside the grant store and the approvals, in pi's agent directory, for
- * the reason `grant-store.ts` gives about itself — a ceiling a governed child can rewrite is not a ceiling.
+ * So the id set needs the same treatment the grant got: recorded outside the workspace, beside the grant store
+ * and the approvals, in pi's agent directory.
+ *
+ * **What that does NOT buy, measured rather than assumed.** The first draft of this comment said "where a
+ * governed child cannot reach it". That is false, and a security review reproduced it end to end using pi's
+ * OWN `write` tool from a real depth-1 child holding `tool:write` and no workspace capability at all: the
+ * child inherited `PI_CODING_AGENT_DIR` (in neither `GRANT_ENV_KEYS` nor `GOVERNANCE_ENV_KEYS`), computed
+ * this file's path from the public, deterministic naming scheme, wrote a well-formed record accepting its own
+ * id, and the next root session pinned it and routed there with nothing reported.
+ *
+ * **Location is not a boundary for `tool:write`.** pi's `write` resolves a path against the cwd and writes it,
+ * with no check that the result is under the cwd — its own schema says "relative or absolute". The same review
+ * used it to widen the operator's STORED GRANT from `tool:read` to `tool:bash`, so `grant-store.ts`'s
+ * reasoning, which this module cited as precedent, does not hold either. That is pre-existing and is recorded
+ * in the risk register as a class rather than as two instances.
+ *
+ * **What this mechanism does buy, stated exactly.** It closes the escalation against an attacker who rewrites
+ * the REGISTRY only — which is the measured attack it was built for — and it raises the cost of the wider one
+ * from one write to a known path to two writes to two known paths. It is not a containment boundary and must
+ * not be read as one. A malformed record written here is a denial of service on all routing, which fails
+ * closed and is the right direction, but is worth knowing about.
  *
  * **Trust on first use, said out loud.** A machine that has never accepted anything accepts what the registry
  * holds the first time and writes it down. The alternative — refuse everything until the operator accepts —

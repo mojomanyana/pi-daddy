@@ -405,7 +405,15 @@ export const grantsCommand = {
         `${catalog.byKind("workspace").length} workspace`,
       ...(catalog.byKind("workspace").length > 0
         ? [
-            `  routable   ${catalog.byKind("workspace").join(", ")} — held ones only are usable (ADR-0035)`,
+            // **Marked here rather than left to a join.** The catalog loads the UNNARROWED registry, so it
+            // lists an id nobody accepted; session start names it separately, and review pointed out that a
+            // reader has to put the two together. An id that cannot be routed to should not read as routable.
+            `  routable   ${catalog
+              .byKind("workspace")
+              .map((id) =>
+                (unacceptedWorkspaces ?? []).includes(id.slice("workspace:".length)) ? `${id} (NOT ACCEPTED)` : id,
+              )
+              .join(", ")} — held ones only are usable (ADR-0035)`,
             // ADR-0042 made a destination pin a PRECONDITION for routing, and it had no operator surface at
             // all: not here, not at session start, not in the README. An operator refused for want of a pin
             // could not discover that the mechanism existed, let alone which ids it covered.

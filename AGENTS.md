@@ -729,6 +729,21 @@ What remains of ADR-0076's sequence after this cleanup, one line each with what 
 
 Kept features only. Numbers are dropped except the two that code and rules cite.
 
+- **`tool:write` is much closer to `tool:bash` than this package has been treating it, and every operator-state
+  file is writable by a child that holds it.** Measured 2026-09-22 using pi's OWN `write` tool from a real
+  depth-1 governed child: `write` resolves a path against the cwd and writes it with no check that the result
+  is under the cwd, and its schema says "relative or absolute". `PI_CODING_AGENT_DIR` is in neither
+  `GRANT_ENV_KEYS` nor `GOVERNANCE_ENV_KEYS`, so a child inherits it, and every path under it is deterministic
+  and public. Two reproductions: a child holding `tool:write` and NO workspace capability wrote the accepted-id
+  record and the next root routed into the child's own directory; and a child widened the operator's STORED
+  GRANT from `tool:read` to `tool:bash`. A malformed write to either is a denial of service that fails closed.
+  This falsifies the "lives outside the workspace, so a governed child cannot reach it" reasoning wherever it
+  appears — `grant-store.ts` makes that argument about itself and `workspace-acceptance.ts` cited it. **What
+  those stores still buy** is stated where they are: each closes the narrower attack it was built for and
+  raises the cost of the wider one. **No in-process fix exists**: location is not a boundary, and
+  authenticating a record needs a key that lives where the record does. The candidates are all outside this
+  package — a different uid, directory permissions the child cannot satisfy, or gating `tool:write` the way
+  ADR-0012 gates `tool:bash` — and the last of those is an open product decision, not a defect to fix quietly.
 - `bash` escapes governance: a child holding it can start an ungoverned descendant, and containing that is the
   operating system's job (ADR-0012, `g5-bash-escape`); a grant containing `bash` reads narrow and is not.
 - Workspace leases coordinate only cooperating pi-daddy children; they do not exclude the operator, an IDE, hooks or
