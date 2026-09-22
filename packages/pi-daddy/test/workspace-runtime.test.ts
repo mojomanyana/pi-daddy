@@ -71,12 +71,15 @@ test("a ledger failure after lease acquisition releases the writer lock", async 
   const oldPin = process.env[ENV_WORKSPACE_PIN];
   process.env[ENV_WORKSPACE_REGISTRY] = registry;
   process.env[ENV_WORKSPACE_LEASE_DIR] = leaseDir;
-  // ADR-0042: the routing path now requires a destination pin, which a real session establishes at start.
-  process.env[ENV_WORKSPACE_PIN] = `w1:${destinationDigest(await realpath(root))}`;
+
+  // ADR-0042: the caller supplies its OWN pin. There is deliberately no environment fallback — the variable
+  // holds a session's CHILD's pin, not its own.
+  const pin = new Map([["w1", destinationDigest(await realpath(root))]]);
   try {
     await assert.rejects(
       () =>
         prepareDelegationWorkspace({
+          workspacePin: pin,
           spec: { workspace_id: "w1", access: "write" },
           childId: "d0.1",
           executionId: "exec:00000000-0000-4000-8000-000000000001",

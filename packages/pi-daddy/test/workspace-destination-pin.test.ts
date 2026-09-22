@@ -14,6 +14,7 @@ import {
   ENV_WORKSPACE_PIN,
 } from "../src/kernel/workspace-pin.ts";
 import { createGrantsSession, loadProjectDefinitions } from "../extensions/session.ts";
+import { beginExtensionLifecycle, bindReloadLifecycle } from "../extensions/reload-environment.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 after(cleanupTempDirs);
 
@@ -382,4 +383,55 @@ test("/grants says which ids are pinned, so a refusal is discoverable before it 
   assert.match(await render(new Map([["w1", destinationDigest("/srv/w1")]])), /pinned {5}w1/);
   assert.match(await render(new Map()), /pinned.*none inherited/);
   assert.match(await render(undefined), /pinned.*no workspace is routable/);
+});
+
+test("an extension RELOAD does not re-mint a root's pin over a rewritten registry", async () => {
+  // **The fifth attack, found by re-running the security review against the fix for the first four.**
+  // `session.pinSettled` closed the `/grants init` re-mint, which reuses one session object, and left the
+  // reload open: `grants.ts` builds the session at module scope, so a reload makes a NEW object with no flag.
+  // For a genuine root neither other guard applies — it legitimately inherited nothing and sits at depth 0 —
+  // so it minted a SECOND time, from whatever the registry said by then. A child holding `workspace:staging`
+  // and `tool:write` had had the whole session to rewrite it, and the reviewer measured the reloaded root
+  // routing into the prod worktree.
+  //
+  // That is the third instance in this one feature of the same shape: the rule went on the object, and
+  // another path built a different object. Settled-ness now lives on the lifecycle, which is keyed by owner
+  // and is already the thing that recovers a root across a reload.
+  //
+  // Breaks by: dropping the `reloadLifecycle.workspacePin` adopt-or-remember in `establishRootPin`.
+  const staging = await gitDir("pin-reload-attack-");
+  const prod = await gitDir("pin-reload-attack-prod-");
+  const registryPath = join(staging, "registry.json");
+  await writeFile(registryPath, JSON.stringify({ version: 1, workspaces: { staging: { path: staging } } }));
+
+  await withPinEnv({ registry: registryPath }, async () => {
+    process.env.PI_DADDY_GRANT = "tool:write,tool:delegate,workspace:staging";
+    const owner = {};
+    const first = createGrantsSession(
+      undefined,
+      bindReloadLifecycle(owner, beginExtensionLifecycle().lifecycle).lifecycle,
+    );
+    await loadProjectDefinitions(first, staging);
+    const minted = first.workspacePin?.get("staging");
+    assert.equal(minted, destinationDigest(await realpath(staging)), "the root pins what the registry said");
+    first.publishChildEnv();
+
+    // The tamper a child can perform with `tool:write` alone, then the reload.
+    await writeFile(registryPath, JSON.stringify({ version: 1, workspaces: { staging: { path: prod } } }));
+    const reloaded = createGrantsSession(
+      undefined,
+      bindReloadLifecycle(owner, beginExtensionLifecycle().lifecycle).lifecycle,
+    );
+    await loadProjectDefinitions(reloaded, staging);
+    assert.equal(
+      reloaded.workspacePin?.get("staging"),
+      minted,
+      "a reload must adopt the settled pin, not mint a second one from a registry a child has since rewritten",
+    );
+    assert.notEqual(
+      reloaded.workspacePin?.get("staging"),
+      destinationDigest(await realpath(prod)),
+      "the reloaded root must not be routable into prod",
+    );
+  });
 });

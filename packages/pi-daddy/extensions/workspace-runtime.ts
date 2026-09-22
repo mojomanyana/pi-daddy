@@ -1,5 +1,5 @@
 import type { CorrelationMetadata } from "../src/kernel/correlation.ts";
-import { parseWorkspacePin, type WorkspacePins, ENV_WORKSPACE_PIN } from "../src/kernel/workspace-pin.ts";
+import type { WorkspacePins } from "../src/kernel/workspace-pin.ts";
 import type { Capability } from "../src/kernel/resolve.ts";
 import { appendLedgerEvent, buildWorkspaceLeaseEvent } from "../src/governance/ledger.ts";
 import { GovernanceRefusal, refusal, type StructuredRefusal } from "../src/kernel/refusals.ts";
@@ -99,7 +99,12 @@ export async function prepareDelegationWorkspace(input: {
   const workspace = await resolveWorkspace(
     await loadWorkspaceRegistry(registryPath),
     input.spec.workspace_id,
-    input.workspacePin ? { pins: input.workspacePin } : parseWorkspacePin(process.env[ENV_WORKSPACE_PIN]),
+    // **No environment fallback.** Review called the old `?? parseWorkspacePin(process.env[...])` a live read
+    // of a variable the session no longer owns — `publishChildEnv` writes its CHILD's pin there. No state
+    // could be constructed where it read a usable value, but "currently unreachable" is a weaker property
+    // than "cannot happen", and the whole rule here is that a session's own pin lives in memory. A caller
+    // with no pin routes nowhere, which is what a caller with no pin should do.
+    input.workspacePin ? { pins: input.workspacePin } : { pins: new Map() },
   );
   let lease: WorkspaceLease | undefined;
   try {

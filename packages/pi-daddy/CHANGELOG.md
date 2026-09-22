@@ -33,9 +33,16 @@ child with `tool:write` can arrange that precondition by truncating the registry
 environment and already attenuates, so anything below the root that arrives without a usable pin now routes
 nowhere, and a malformed value refuses instead of earning a promotion.
 
-**A session settles its pin once.** `/grants init` re-established a root's pin from whatever the registry said
-at that moment, and a child had had the whole session to rewrite it. The guard "only a session that inherited no
-pin may mint" was satisfied because the session's own publication had erased the evidence.
+**A session settles its pin once, and settled-ness survives a reload.** `/grants init` re-established a root's
+pin from whatever the registry said at that moment, and a child had had the whole session to rewrite it. Putting
+the flag on the session closed that and left the extension RELOAD open, because a reload builds a new session
+object: a root legitimately inherits nothing and sits at depth 0, so it minted a second time. A re-run of the
+security review measured a reloaded root routing into the prod worktree. Settled-ness now lives on the reload
+lifecycle, which is keyed by owner and is already what recovers a root across a reload.
+
+That is three instances in one feature of the same shape — the rule goes on the object, and another path builds a
+different object. It is the same shape as the `workspace:*` wildcard rule that lived only in `childEnv` while
+`delegate.ts` handed the wildcard down.
 
 **One builder for both spawn paths.** `delegate.ts` builds a child's environment itself rather than through
 `childEnv`, and this file already records what that fork cost once before: the "never inherit `workspace:*`" rule

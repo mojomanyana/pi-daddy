@@ -316,12 +316,21 @@ async function establishRootPin(session: GrantsSession): Promise<void> {
   if (session.pinSettled) return;
   session.pinSettled = true;
 
+  // Settled by an EARLIER SESSION OBJECT for this same owner — an extension reload. Adopting it rather than
+  // re-deriving is the whole point: a root is entitled to mint, but only once, and only from the registry as
+  // it stood before any child had a chance to rewrite it.
+  if (session.reloadLifecycle.workspacePin) {
+    session.workspacePin = session.reloadLifecycle.workspacePin;
+    return;
+  }
+
   const raw = session.reloadLifecycle.root[ENV_WORKSPACE_PIN];
   const inherited = parseWorkspacePin(raw);
   if ("pins" in inherited) {
     // Inherited, so it is authority and is kept exactly as it arrived — including an empty one, which says
     // "your parent established a pin and gave you none of it".
     session.workspacePin = inherited.pins;
+    session.reloadLifecycle.workspacePin = inherited.pins;
     return;
   }
 
@@ -338,6 +347,7 @@ async function establishRootPin(session: GrantsSession): Promise<void> {
   // fell through to minting. A tamperer who can corrupt one byte must not thereby earn a promotion.
   if (session.depth > 0 || raw !== undefined) {
     session.workspacePin = new Map();
+    session.reloadLifecycle.workspacePin = session.workspacePin;
     return;
   }
 
@@ -348,6 +358,8 @@ async function establishRootPin(session: GrantsSession): Promise<void> {
     session.workspacePin = await establishWorkspacePin(registry, realpath, (id, reason) =>
       session.workspaceSkips.push(`${id} — ${reason}`),
     );
+    // Remembered against the OWNER, so a reload adopts it instead of minting again.
+    session.reloadLifecycle.workspacePin = session.workspacePin;
   } catch {
     // An unreadable registry is already reported by the catalog and by session start. It does NOT follow that
     // nothing is blocked — an earlier draft of this comment claimed that and review measured it false, because
