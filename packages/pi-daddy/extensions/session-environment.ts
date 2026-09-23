@@ -1,6 +1,7 @@
 import { parseInherited } from "../src/kernel/approval.ts";
 import { DELEGATE_CAPABILITY } from "../src/kernel/delegate.ts";
 import { budgetFromEnv } from "../src/kernel/fanout.ts";
+import { isEpisodeId } from "../src/kernel/episode-id.ts";
 import { WILDCARD } from "../src/kernel/pi-tools.ts";
 import {
   depthConfig,
@@ -9,6 +10,7 @@ import {
   ENV_APPROVED,
   ENV_DEPTH,
   ENV_EXECUTION_ID,
+  ENV_EPISODE_ID,
   ENV_FANOUT,
   ENV_GATED,
   ENV_GRANT,
@@ -45,6 +47,13 @@ export function reconcileSessionEnvironment(
   session.executor = chooseExecutor(environment[ENV_HERDR], null);
   session.ownSpawnId = environment[ENV_PARENT_ID]?.trim() || `d${session.depth}`;
   session.ownExecutionId = environment[ENV_EXECUTION_ID]?.trim() || undefined;
+  const inheritedEpisodeId = environment[ENV_EPISODE_ID]?.trim();
+  session.episodeId = isEpisodeId(inheritedEpisodeId)
+    ? inheritedEpisodeId
+    : isEpisodeId(lifecycle.episodeId)
+      ? lifecycle.episodeId
+      : session.episodeId;
+  lifecycle.episodeId = session.episodeId;
   session.fanoutBudget = budgetFromEnv(environment[ENV_FANOUT]);
   session.mayDelegate =
     !session.governed || session.inherited.includes(DELEGATE_CAPABILITY) || session.inherited.includes(WILDCARD);

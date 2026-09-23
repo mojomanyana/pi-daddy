@@ -2,6 +2,7 @@
   "ledgerVersion": 3,
   "event": "child_lifecycle",
   "ts": "2026-08-20T12:00:03.000Z",
+  "episodeId": "episode:00000000-0000-4000-8000-000000000099",
   "executionId": "exec:00000000-0000-4000-8000-000000000001",
   "parentExecutionId": null,
   "childId": "d0.1",

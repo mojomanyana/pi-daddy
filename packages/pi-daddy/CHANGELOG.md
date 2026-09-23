@@ -12,6 +12,11 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## Unreleased
+
+- Every new governance ledger event and activity-timeline event carries one stable `episodeId` minted by the root
+  session and propagated to descendants. The field is additive: retained records without it remain valid.
+
 ## 0.40.1 — a `context:` capability could not be written to the ledger, so delegation was denied
 
 **A session whose grant held any `context:` id could not delegate at all.** Reported from a live session:

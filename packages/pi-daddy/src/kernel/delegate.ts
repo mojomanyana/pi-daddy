@@ -17,6 +17,7 @@ import {
   ENV_APPROVED,
   ENV_DEPTH,
   ENV_EXECUTION_ID,
+  ENV_EPISODE_ID,
   ENV_FANOUT,
   ENV_GATED,
   ENV_GRANT,
@@ -389,6 +390,7 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
   if (ctx.fanoutBudget !== undefined) env[ENV_FANOUT] = String(ctx.fanoutBudget);
   if (ctx.childSpawnId) env[ENV_PARENT_ID] = ctx.childSpawnId;
   if (ctx.childExecutionId) env[ENV_EXECUTION_ID] = ctx.childExecutionId;
+  if (ctx.episodeId) env[ENV_EPISODE_ID] = ctx.episodeId;
   if (ctx.gated.length > 0) env[ENV_GATED] = ctx.gated.join(",");
   // Approvals ride down with the grant, but only ever for what this child actually received — so
   // `approved ⊆ grant` holds at every level (ADR-0010). Written even when empty, so this object states

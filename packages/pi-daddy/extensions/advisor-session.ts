@@ -33,6 +33,7 @@ export function createAdvisorSession(input: {
   block: unknown;
   ledgerPath?: string;
   env?: NodeJS.ProcessEnv;
+  episodeId?: string;
 }): AdvisorSession {
   const env = input.env ?? process.env;
   const settings = advisorSettingsFrom(input.block, env);
@@ -58,6 +59,7 @@ export function createAdvisorSession(input: {
       decider,
       record,
       enabled: settings.enabled,
+      ...(input.episodeId ? { episodeId: input.episodeId } : {}),
       ...(settings.timeoutMs ? { timeoutMs: settings.timeoutMs } : {}),
     }),
   };

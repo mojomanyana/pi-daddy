@@ -32,6 +32,24 @@ function fixture() {
 }
 const ctx = (cwd: string) => ({ cwd, model: { id: "test-model" }, thinkingLevel: "high", ui: { notify: () => {} } });
 
+test("activity recording follows the owner-reconciled episode after hook registration", async () => {
+  const cwd = await tempDir("activity-episode-rebind-");
+  const app = fixture();
+  const state = {
+    activityRootId: "root-session",
+    episodeId: "episode:00000000-0000-4000-8000-000000000001",
+  };
+  registerActivityTimeline(app.api as never, state);
+  await app.hooks.get("session_start")!({}, ctx(cwd));
+  state.episodeId = "episode:00000000-0000-4000-8000-000000000002";
+  await app.hooks.get("before_agent_start")!({ prompt: "turn", systemPromptOptions: {} }, ctx(cwd));
+  const records = (await readFile(defaultActivityTimelinePath(cwd), "utf8"))
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line).body);
+  assert.ok(records.every((record) => record.episodeId === state.episodeId));
+});
+
 test("actual extension hooks record root turns, skill availability/read/declaration, and an injected leaf in one root", async () => {
   const cwd = await tempDir("activity-hooks-"),
     skill = join(cwd, "skills", "review", "SKILL.md");

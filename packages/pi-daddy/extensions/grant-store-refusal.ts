@@ -22,6 +22,7 @@ export async function reportGrantStoreRefusal(session: GrantsSession, ui: Refusa
     await appendRecord(
       { path: session.ledgerPath, strict: true },
       buildRecord({
+        episodeId: session.episodeId,
         executionId: newExecutionId(),
         parentExecutionId: null,
         parentId: session.ownSpawnId,

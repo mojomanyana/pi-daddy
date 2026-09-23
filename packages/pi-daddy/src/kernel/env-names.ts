@@ -23,6 +23,7 @@ export const ENV_APPROVED = "PI_DADDY_APPROVED";
 export const ENV_FANOUT = "PI_DADDY_FANOUT";
 export const ENV_PARENT_ID = "PI_DADDY_PARENT_ID";
 export const ENV_EXECUTION_ID = "PI_DADDY_EXECUTION_ID";
+export const ENV_EPISODE_ID = "PI_DADDY_EPISODE_ID";
 
 // Operator preferences a child inherits unchanged. Still governance: they decide executor, deadlines, gates.
 export const ENV_HERDR = "PI_DADDY_HERDR";
@@ -76,6 +77,7 @@ export const GOVERNANCE_ENV_KEYS: readonly string[] = Object.freeze([
   ENV_FANOUT,
   ENV_PARENT_ID,
   ENV_EXECUTION_ID,
+  ENV_EPISODE_ID,
   ENV_HERDR,
   ENV_HERDR_WORKSPACE,
   ENV_HERDR_KEEP_PANE,

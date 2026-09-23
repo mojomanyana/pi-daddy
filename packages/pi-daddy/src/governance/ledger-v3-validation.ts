@@ -1,5 +1,6 @@
 import { normaliseCorrelation, type CorrelationMetadata } from "../kernel/correlation.ts";
 import { isExecutionId } from "../kernel/execution-id.ts";
+import { isEpisodeId } from "../kernel/episode-id.ts";
 import { REFUSAL_CODES } from "../kernel/refusals.ts";
 import { isLedgerCapabilityIdentifier, isLedgerDisplayIdentifier } from "../kernel/ledger-identifiers.ts";
 
@@ -77,6 +78,7 @@ const FIELDS = {
     "ledgerVersion",
     "event",
     "ts",
+    "episodeId",
     "executionId",
     "parentExecutionId",
     "parentId",
@@ -113,6 +115,7 @@ const FIELDS = {
     "ledgerVersion",
     "event",
     "ts",
+    "episodeId",
     "executionId",
     "parentExecutionId",
     "childId",
@@ -129,6 +132,7 @@ const FIELDS = {
     "ledgerVersion",
     "event",
     "ts",
+    "episodeId",
     "executionId",
     "parentExecutionId",
     "childId",
@@ -245,6 +249,7 @@ function validApprovalUse(value: unknown): boolean {
 
 function validateBase(event: LedgerV3Object): string | null {
   if (!isTimestamp(event.ts)) return "ts must be an RFC 3339 timestamp";
+  if (!optional(event, "episodeId", isEpisodeId)) return "episodeId is invalid";
   if (!isExecutionId(event.executionId)) return "executionId is missing or invalid";
   if (event.parentExecutionId !== null && !isExecutionId(event.parentExecutionId)) {
     return "parentExecutionId must be an execution id or null";

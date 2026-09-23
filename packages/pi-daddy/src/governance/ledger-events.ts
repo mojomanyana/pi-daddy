@@ -9,6 +9,7 @@ import type { ExecutorKind } from "../kernel/delegate-types.ts";
 import type { CorrelationMetadata } from "../kernel/correlation.ts";
 import type { StructuredRefusal } from "../kernel/refusals.ts";
 import { assertExecutionId } from "../kernel/execution-id.ts";
+import { assertEpisodeId } from "../kernel/episode-id.ts";
 import { assertLedgerV3Wire } from "./ledger-v3-validation.ts";
 
 export const WORKSPACE_ACCESSES = ["read", "write"] as const;
@@ -136,6 +137,7 @@ export type CapabilityDecisionEvent = GrantRecord & {
 export type RuntimeLedgerEvent = CapabilityDecisionEvent | WorkspaceLeaseEvent | ChildLifecycleEvent;
 
 export function buildWorkspaceLeaseEvent(args: {
+  episodeId?: string;
   executionId: string;
   parentExecutionId: string | null;
   childId: string;
@@ -154,6 +156,7 @@ export function buildWorkspaceLeaseEvent(args: {
     ledgerVersion: LEDGER_VERSION,
     event: "workspace_lease",
     ts: args.now.toISOString(),
+    ...(args.episodeId ? { episodeId: args.episodeId } : {}),
     executionId: args.executionId,
     parentExecutionId: args.parentExecutionId,
     childId: args.childId,
@@ -173,6 +176,7 @@ export function buildWorkspaceLeaseEvent(args: {
 }
 
 export function buildChildLifecycleEvent(args: {
+  episodeId?: string;
   executionId: string;
   parentExecutionId: string | null;
   childId: string;
@@ -196,6 +200,7 @@ export function buildChildLifecycleEvent(args: {
     ledgerVersion: LEDGER_VERSION,
     event: "child_lifecycle",
     ts: args.now.toISOString(),
+    ...(args.episodeId ? { episodeId: args.episodeId } : {}),
     executionId: args.executionId,
     parentExecutionId: args.parentExecutionId,
     childId: args.childId,
@@ -215,7 +220,12 @@ export function buildChildLifecycleEvent(args: {
   });
 }
 
-function assertEventIdentity(args: { executionId: string; parentExecutionId: string | null }): void {
+function assertEventIdentity(args: {
+  episodeId?: string;
+  executionId: string;
+  parentExecutionId: string | null;
+}): void {
+  if (args.episodeId !== undefined) assertEpisodeId(args.episodeId);
   assertExecutionId(args.executionId);
   if (args.parentExecutionId !== null) assertExecutionId(args.parentExecutionId, "parentExecutionId");
   if (args.parentExecutionId === args.executionId) throw new TypeError("an execution cannot be its own parent");

@@ -5,6 +5,7 @@ export interface ReloadLifecycle {
   root: Record<string, string | undefined>;
   published?: Record<string, string | undefined>;
   activityRootId?: string;
+  episodeId?: string;
   /**
    * The destination pin this owner settled on (ADR-0042), which must survive an extension reload.
    *

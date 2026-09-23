@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { after, test } from "node:test";
 import grantsExtension from "../extensions/grants.ts";
-import { createGrantsSession } from "../extensions/session.ts";
+import { createGrantsSession, reconcileAdvisorSession, type GrantsSession } from "../extensions/session.ts";
 import { bindReloadLifecycle } from "../extensions/reload-environment.ts";
 import { grantStorePath, projectLedgerPath, saveGrant } from "../src/governance/grant-store.ts";
 import { GRANT_ENV_KEYS } from "../src/kernel/propagation.ts";
@@ -48,6 +48,21 @@ test("an invalid project store creates a refused governed session instead of a w
   }
 });
 
+test("advisor recording can be rebound to the owner-reconciled episode", async () => {
+  const cwd = await tempDir("advisor-episode-rebind-");
+  const ledgerPath = projectLedgerPath(cwd);
+  const session = {
+    episodeId: "episode:00000000-0000-4000-8000-000000000002",
+    storeCwd: cwd,
+    ledgerPath,
+  } as GrantsSession;
+  reconcileAdvisorSession(session, {});
+  await session.advisorSession.advisor.ask("child-effort", { state: { task: "PRIVATE" }, questions: {} });
+  const record = JSON.parse((await readFile(ledgerPath, "utf8")).trim()).body;
+  assert.equal(record.episodeId, session.episodeId);
+  assert.equal(JSON.stringify(record).includes("PRIVATE"), false);
+});
+
 test("owner-bound reload restores its root while a distinct owner keeps inherited child state", async () => {
   const cwd = await tempDir("grants-reload-root-"),
     agentDir = await tempDir("grants-reload-agent-");
@@ -65,12 +80,14 @@ test("owner-bound reload restores its root while a distinct owner keeps inherite
     first.reconcileEnvironment(bound.environment, bound.lifecycle);
     first.publishChildEnv();
     assert.equal(process.env.PI_DADDY_DEPTH, "1", "the first owner publishes child-only state");
+    assert.equal(process.env.PI_DADDY_EPISODE_ID, first.episodeId);
 
     const reloaded = createGrantsSession(undefined);
     bound = bindReloadLifecycle(owner, reloaded.reloadLifecycle);
     reloaded.reconcileEnvironment(bound.environment, bound.lifecycle);
     assert.equal(reloaded.depth, 0, "the same owner recovers its root rather than its child publication");
     assert.equal(reloaded.maxDepth, 2);
+    assert.equal(reloaded.episodeId, first.episodeId, "a reload stays in the same episode");
 
     // A root replacement is accepted only when it is not a package publication from any owner.
     process.env.PI_DADDY_GRANT = "tool:read";
@@ -92,11 +109,13 @@ test("owner-bound reload restores its root while a distinct owner keeps inherite
     assert.equal(narrowedReload.maxDepth, 1);
     assert.ok(narrowedReload.inheritedApprovals.has("tool:read@<delegate>"));
 
+    process.env.PI_DADDY_EPISODE_ID = "malformed-child-value";
     const child = createGrantsSession(undefined);
     bound = bindReloadLifecycle({}, child.reloadLifecycle);
     child.reconcileEnvironment(bound.environment, bound.lifecycle);
     assert.equal(child.depth, 1, "a distinct owner starts from the published child state");
     assert.equal(child.maxDepth, 1);
+    assert.match(child.episodeId, /^episode:[0-9a-f-]{36}$/i, "malformed inherited identity is never propagated");
   } finally {
     process.chdir(originalCwd);
     for (const key of keys) {

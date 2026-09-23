@@ -17,6 +17,8 @@ import type { Advice, AdviceRequest, Decider } from "./decider.ts";
 export const DEFAULT_ADVICE_TIMEOUT_MS = 2000;
 
 export interface AdviceRecord {
+  /** Stable root episode; absent on records written before episode identity shipped. */
+  episodeId?: string;
   /** Which decision this advice was for, from the caller's own closed list. */
   purpose: string;
   decider: string;
@@ -46,12 +48,18 @@ export function createAdvisor(input: {
   timeoutMs?: number;
   /** Absent or false means the null decider is used whatever `decider` says. */
   enabled?: boolean;
+  episodeId?: string;
 }): Advisor {
   const timeoutMs = input.timeoutMs ?? DEFAULT_ADVICE_TIMEOUT_MS;
   return {
     async ask(purpose, request, signal) {
       const started = Date.now();
-      const base = { purpose, decider: input.decider.name, questions: Object.keys(request.questions) };
+      const base = {
+        ...(input.episodeId ? { episodeId: input.episodeId } : {}),
+        purpose,
+        decider: input.decider.name,
+        questions: Object.keys(request.questions),
+      };
       const write = async (entry: AdviceRecord) => {
         try {
           await input.record(entry);

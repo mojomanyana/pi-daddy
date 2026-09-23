@@ -22,6 +22,7 @@ import { resolveWorkspace } from "../src/executors/herdr-cli.ts";
 import { HerdrWriterCloseError, runHerdrPane } from "../src/executors/run-herdr.ts";
 import { GovernanceRefusal, refusal, type StructuredRefusal } from "../src/kernel/refusals.ts";
 import { ENV_HERDR_KEEP_PANE, type GrantsSession } from "./session.ts";
+import { ENV_EPISODE_ID } from "../src/kernel/env-names.ts";
 import { releaseDelegationWorkspace, type PreparedWorkspace } from "./workspace-runtime.ts";
 import { ActivityTimelineRecorder, ENV_ACTIVITY_PARENT_TASK } from "../src/products/activity-timeline.ts";
 export interface DelegationOutcome {
@@ -120,6 +121,7 @@ export async function executePlannedChild(input: {
       "PI_DADDY_ACTIVITY_ROOT",
       "PI_DADDY_ACTIVITY_TASK",
       ENV_ACTIVITY_PARENT_TASK,
+      ENV_EPISODE_ID,
     ]) {
       const value = plan.env[name];
       if (value) env[name] = value;
@@ -177,6 +179,7 @@ export async function executePlannedChild(input: {
         await appendLedgerEvent(
           { path: ledgerPath, strict: true },
           buildChildLifecycleEvent({
+            episodeId: session.episodeId,
             executionId,
             parentExecutionId,
             childId,
@@ -192,6 +195,7 @@ export async function executePlannedChild(input: {
         await releaseDelegationWorkspace({
           prepared: preparedWorkspace,
           childId,
+          episodeId: session.episodeId,
           executionId,
           parentExecutionId,
           reason: "ledger-failed",
@@ -252,6 +256,7 @@ export async function executePlannedChild(input: {
             onFailure: (cause) => teardownFailures.push(`child runtime identity record failed: ${String(cause)}`),
           },
           buildChildLifecycleEvent({
+            episodeId: session.episodeId,
             executionId,
             parentExecutionId,
             childId,
@@ -366,6 +371,7 @@ export async function executePlannedChild(input: {
               onFailure: (cause) => teardownFailures.push(`child lifecycle record failed: ${String(cause)}`),
             },
             buildChildLifecycleEvent({
+              episodeId: session.episodeId,
               executionId,
               parentExecutionId,
               childId,
@@ -474,6 +480,7 @@ export async function executePlannedChild(input: {
               onFailure: (cause) => teardownFailures.push(`child lifecycle record failed: ${String(cause)}`),
             },
             buildChildLifecycleEvent({
+              episodeId: session.episodeId,
               executionId,
               parentExecutionId,
               childId,
@@ -536,6 +543,7 @@ export async function executePlannedChild(input: {
         await releaseDelegationWorkspace({
           prepared: preparedWorkspace,
           childId,
+          episodeId: session.episodeId,
           executionId,
           parentExecutionId,
           ledgerPath,

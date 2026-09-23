@@ -31,6 +31,7 @@ import type { StructuredRefusal } from "../kernel/refusals.ts";
 // Type-only, so the cycle with ./ledger-events.ts is erased at runtime.
 import type { RuntimeLedgerEvent } from "./ledger-events.ts";
 import { assertExecutionId } from "../kernel/execution-id.ts";
+import { assertEpisodeId } from "../kernel/episode-id.ts";
 import { assertLedgerV3Wire } from "./ledger-v3-validation.ts";
 
 export const LEDGER_VERSION = 3 as const;
@@ -44,6 +45,8 @@ export interface LedgerEventBase {
   ledgerVersion?: typeof LEDGER_VERSION;
   event?: LedgerEventKind;
   ts: string;
+  /** Stable root episode; absent only on records written before episode identity shipped. */
+  episodeId?: string;
   /** Unique execution occurrence. Optional only for legacy, unversioned GrantRecord values. */
   executionId?: string;
   /** Explicit execution parent; null means the delegating session is not itself a governed child. */
@@ -206,6 +209,8 @@ export interface LedgerOptions {
 }
 
 export function buildRecord(args: {
+  /** Stable root episode; optional only for source compatibility with historical callers. */
+  episodeId?: string;
   /** Required whenever taskDigest makes this an explicit v3 event. */
   executionId?: string;
   /** Required (including explicit null) whenever taskDigest makes this an explicit v3 event. */
@@ -239,6 +244,7 @@ export function buildRecord(args: {
   refusal?: StructuredRefusal;
   now: Date;
 }): GrantRecord {
+  if (args.episodeId !== undefined) assertEpisodeId(args.episodeId);
   if (args.taskDigest !== undefined) {
     if (!/^[a-f0-9]{64}$/i.test(args.taskDigest)) throw new TypeError("taskDigest must be a SHA-256 hex digest");
     assertExecutionId(args.executionId);
@@ -267,6 +273,7 @@ export function buildRecord(args: {
         }
       : {}),
     ts: args.now.toISOString(),
+    ...(args.episodeId ? { episodeId: args.episodeId } : {}),
     parentId: args.parentId,
     childId: args.childId,
     depth: args.depth,

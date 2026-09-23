@@ -332,6 +332,7 @@ export async function runOneDelegation(
           spec: { ...spec.workspace, access: governedWorkspaceAccess(spec.workspace.access, plan.requested) },
           correlation: spec.correlation,
           childId: ids.childId,
+          episodeId: session.episodeId,
           executionId: ids.executionId,
           parentExecutionId: ids.parentExecutionId,
           signal,
@@ -403,6 +404,7 @@ export async function runOneDelegation(
       await releaseDelegationWorkspace({
         prepared: preparedWorkspace,
         childId: ids.childId,
+        episodeId: session.episodeId,
         executionId: ids.executionId,
         parentExecutionId: ids.parentExecutionId,
         ledgerPath: session.ledgerPath,
