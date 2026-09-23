@@ -12,6 +12,31 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## 0.40.1 — a `context:` capability could not be written to the ledger, so delegation was denied
+
+**A session whose grant held any `context:` id could not delegate at all.** Reported from a live session:
+
+```
+delegation refused: grants: ledger write failed, denying — TypeError: invalid ledger v3 event:
+capability decision requested must contain capability identifiers
+```
+
+`ledger-identifiers.ts` kept its OWN copy of the capability namespaces, and ADR-0078 added `context:` to the
+kernel's list without it. Every capability-decision event validates six capability arrays with that predicate,
+and a ledger write that throws denies the delegation — so the whole namespace took delegation down wherever it
+appeared, and the message named neither the namespace nor the list.
+
+0.40.0 widened it rather than causing it: held-back definitions began contributing `context:` ids to the
+generated grant, so far more sessions carry one. Anyone whose skills declare a handoff mode was affected from
+0.33.0 onward.
+
+**The ledger now derives its namespaces from the kernel's list** instead of restating them, and a test asserts
+every namespace the kernel defines is a valid ledger identifier. Adding a namespace without the ledger following
+now fails.
+
+This is the same shape this package has spent a session finding: one rule, two spellings, the guard on the
+quieter one. A validator that restates what it validates is that shape with a ledger behind it.
+
 ## 0.40.0 — the file-writing tools are gated, and a held-back definition keeps its context modes
 
 **`tool:write`, `tool:edit` and `tool:edit-diff` join `tool:bash` and `context:fork` in `DEFAULT_GATED`**, by
