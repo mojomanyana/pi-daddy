@@ -25,9 +25,9 @@
 
 // Spelled once, in the kernel's table, so this layer cannot drift from the list `childEnv` refuses to write.
 export { ENV_ADVISOR_KEY as ADVISOR_KEY_ENV } from "../kernel/env-names.ts";
-import { ENV_ADVISOR, ENV_ADVISOR_KEY, ENV_ADVISOR_MODEL } from "../kernel/env-names.ts";
-import { DEFAULT_ADVICE_TIMEOUT_MS } from "./advisor.ts";
-export { ENV_ADVISOR_MODEL } from "../kernel/env-names.ts";
+import { ENV_ADVISOR, ENV_ADVISOR_KEY, ENV_ADVISOR_MODEL, ENV_ADVISOR_TASK_EGRESS } from "../kernel/env-names.ts";
+import { DEFAULT_ADVICE_TIMEOUT_MS, type TaskEgressMode } from "./advisor.ts";
+export { ENV_ADVISOR_MODEL, ENV_ADVISOR_TASK_EGRESS } from "../kernel/env-names.ts";
 export { ENV_ADVISOR } from "../kernel/env-names.ts";
 
 export interface AdvisorSettings {
@@ -37,11 +37,12 @@ export interface AdvisorSettings {
   /** Overrides the adapter's pinned model id; absent means the adapter's own default. */
   model?: string;
   timeoutMs?: number;
+  taskEgress: TaskEgressMode;
   /** Why an advisor is off when the settings asked for one on — reported, never silently applied. */
   refusal?: string;
 }
 
-export const ADVISOR_OFF: AdvisorSettings = Object.freeze({ enabled: false, decider: "none" });
+export const ADVISOR_OFF: AdvisorSettings = Object.freeze({ enabled: false, decider: "none", taskEgress: "digest" });
 
 /**
  * Read the `advisor` block of a project settings file. Absent is off; malformed is off WITH a reason.
@@ -103,6 +104,7 @@ export function advisorSettingsFrom(raw: unknown, env: NodeJS.ProcessEnv = proce
   return {
     enabled: true,
     decider: "jev",
+    taskEgress: env[ENV_ADVISOR_TASK_EGRESS]?.trim() === "raw" ? "raw" : "digest",
     ...(model ? { model } : {}),
     // Clamped, never raised: a longer bound is not a narrowing either, and a child-writable 30s would be a stall on
     // every delegation.

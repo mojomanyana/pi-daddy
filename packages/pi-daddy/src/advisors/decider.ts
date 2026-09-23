@@ -35,10 +35,8 @@ export interface AdviceRequest {
    * What the advisor is told about the situation, composed by the caller.
    *
    * **Sent, never recorded.** The task is never STORED (ADR-0021) and that still holds — `createAdvisor` writes the
-   * question keys and the answers and never this object. But an advisor cannot judge a task it cannot see, so a
-   * caller that needs one judged does send it, and the operator's consent for that is the advisor being off by
-   * default. An earlier draft of this paragraph said the raw task "must not be shipped to a third party either",
-   * which the first decision point then did; the rule that survived review is the narrower and true one.
+   * question keys and the answers and never this object. Raw task text crosses only when the independent egress
+   * switch permits it; otherwise callers send a structural digest. Neither representation is copied into the record.
    */
   state: Readonly<Record<string, unknown>>;
   questions: Readonly<Record<string, Question>>;

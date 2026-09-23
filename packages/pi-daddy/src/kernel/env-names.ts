@@ -65,6 +65,8 @@ export const ENV_ADVISOR_KEY = "PI_DADDY_ADVISOR_KEY";
 export const ENV_ADVISOR = "PI_DADDY_ADVISOR";
 /** Overrides the adapter's pinned model. In the environment, never the workspace file: a model is a destination. */
 export const ENV_ADVISOR_MODEL = "PI_DADDY_ADVISOR_MODEL";
+/** Exact `raw` opts into sending task text; absent or any other value uses a structural digest. */
+export const ENV_ADVISOR_TASK_EGRESS = "PI_DADDY_ADVISOR_TASK_EGRESS";
 
 /** Every variable that shapes governance. The `childEnv` hook may set none of these. */
 export const GOVERNANCE_ENV_KEYS: readonly string[] = Object.freeze([
@@ -95,6 +97,7 @@ export const GOVERNANCE_ENV_KEYS: readonly string[] = Object.freeze([
   ENV_ADVISOR_KEY,
   ENV_ADVISOR,
   ENV_ADVISOR_MODEL,
+  ENV_ADVISOR_TASK_EGRESS,
 ]);
 
 /**

@@ -380,6 +380,7 @@ export default function (pi: ExtensionAPI) {
           ledgerPath: session.ledgerPath,
           advisor: {
             decider: session.advisorSession.deciderName,
+            taskEgress: session.advisorSession.settings.taskEgress,
             ...(session.advisorSession.settings.refusal ? { refusal: session.advisorSession.settings.refusal } : {}),
           },
           ...(session.workspacePin ? { workspacePin: session.workspacePin } : {}),

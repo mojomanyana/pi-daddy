@@ -171,18 +171,18 @@ test("beyond the bound the OLDEST candidates go unjudged and are kept, and the r
   assert.equal(asked, before, "a single candidate is not a choice, so no question is sent");
 });
 
-test("the task reaches the advisor in the question and never reaches the record", async () => {
-  // The same rule the effort decision point follows: sent so it can be judged, never stored (ADR-0021).
-  // Breaks by: putting the task in `state` and then into the record, or recording the question text.
+test("pruning receives the task digest and neither task text nor paths reach the record", async () => {
+  // Breaks by: bypassing the same default-off task-egress policy as effort advice, or recording question text.
   const records: AdviceRecord[] = [];
-  let sawTask = false;
+  let instructions = "";
   const spy = createAdvisor({
     decider: {
       name: "spy",
       decide: async (request) => {
-        sawTask = Object.values(request.questions).some(
-          (q) => q.kind === "noul" && q.instructions.includes("SECRET-TASK"),
-        );
+        instructions = Object.values(request.questions)
+          .filter((q) => q.kind === "noul")
+          .map((q) => q.instructions)
+          .join("\n");
         assert.deepEqual(request.state, {}, "the state carries nothing; the questions carry it all");
         return null;
       },
@@ -193,10 +193,57 @@ test("the task reaches the advisor in the question and never reaches the record"
   await advisePruning({
     session: { advisorSession: { advisor: spy }, parentSession: parentSessionOf(8) },
     granted: GRANTED,
-    task: "SECRET-TASK",
+    task: "Change private/SECRET-TASK.ts",
   });
-  assert.equal(sawTask, true, "an advisor cannot judge a task it cannot see");
-  assert.doesNotMatch(JSON.stringify(records), /SECRET-TASK/, "and it is still never written down");
+  assert.match(instructions, /"language":"typescript"/);
+  assert.doesNotMatch(instructions, /private\/SECRET-TASK|Change /, "raw task text and paths stay local");
+  assert.doesNotMatch(JSON.stringify(records), /SECRET-TASK/, "and they are still never written down");
+  assert.equal(records[0].taskEgress, "digest");
+});
+
+test("the current delegation tool call stays local and remains unjudged", async () => {
+  // Pi persists the assistant message before executing its tool calls. Breaks by: sending that current turn as a
+  // PART, which re-exports the raw task argument despite digest mode, or by treating exclusion as rejection.
+  const current = {
+    id: "current",
+    type: "message",
+    message: {
+      role: "assistant",
+      content: [
+        {
+          type: "toolCall",
+          id: "call-current",
+          name: "delegate",
+          arguments: { task: "SECRET TASK", context: { files: ["private/secret.ts"] } },
+        },
+      ],
+    },
+  };
+  const parentSession = { getEntries: () => [...entriesOf(5), current] };
+  let sent = "";
+  const advisor = createAdvisor({
+    decider: {
+      name: "spy",
+      decide: async (request) => {
+        sent = JSON.stringify(request);
+        return {
+          answers: Object.fromEntries(
+            Object.keys(request.questions).map((key) => [key, { kind: "noul" as const, value: true }]),
+          ),
+        };
+      },
+    },
+    record: () => {},
+    enabled: true,
+  });
+  const kept = await advisePruning({
+    session: { advisorSession: { advisor }, parentSession },
+    granted: { mode: "pruned", turns: 6 },
+    task: "SECRET TASK",
+    toolCallId: "call-current",
+  });
+  assert.doesNotMatch(sent, /SECRET TASK|private\/secret\.ts|call-current/);
+  assert.ok(kept?.includes("current"), "not shown to the advisor means kept, not rejected");
 });
 
 test("the ids reach staging through the session's own hook, not just through a direct call", async () => {

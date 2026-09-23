@@ -33,6 +33,7 @@ import { inheritApprovals, type InheritableApproval } from "./approval.ts";
 import { assertCapabilitiesArePropagatable } from "./capabilities.ts";
 import {
   ENV_ADVISOR_MODEL,
+  ENV_ADVISOR_TASK_EGRESS,
   ENV_ADVISOR_KEY,
   ENV_ADVISOR,
   ENV_GRANT,
@@ -90,6 +91,7 @@ export const GRANT_ENV_KEYS = [
   // child. Named here rather than claimed away: "stripped from every child" would be false on that path.
   ENV_ADVISOR_KEY,
   ENV_ADVISOR,
+  ENV_ADVISOR_TASK_EGRESS,
   ENV_GRANT,
   ENV_DEPTH,
   ENV_MAX_DEPTH,

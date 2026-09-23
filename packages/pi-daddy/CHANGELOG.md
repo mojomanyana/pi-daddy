@@ -14,6 +14,8 @@ the record of how the package got here and are worth keeping; they are not worth
 
 ## Unreleased
 
+- Enabling and keying an advisor now sends only a structural task digest by default. Raw task text additionally
+  requires `PI_DADDY_ADVISOR_TASK_EGRESS=raw`; each advice record names the mode, and raw mode warns once per process.
 - Every new governance ledger event and activity-timeline event carries one stable `episodeId` minted by the root
   session and propagated to descendants. The field is additive: retained records without it remain valid.
 - Terminal child lifecycle records include aggregate token and cost usage read from the child's pi session file

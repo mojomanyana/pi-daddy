@@ -452,6 +452,12 @@ and it is the reason an advisor is off by default and enabled only from the envi
 the `advice` record names the decision, the question keys, the answers and the timing. `/grants` states which
 advisor is in force and what it sends.
 
+**Amended 2026-09-23: enabling an advisor no longer consents to raw task egress.** By default every decision point
+replaces the task with a structural digest containing only its length, a language detected from referenced-file
+extensions, and referenced-file count and extensions. Raw task text additionally requires
+`PI_DADDY_ADVISOR_TASK_EGRESS=raw`; the `advice` record names `taskEgress` as `digest` or `raw`, and the first raw
+use in a process emits one warning. A pruned handoff's separately disclosed session-turn egress is unchanged.
+
 **Neither decision point is asked for a delegation the executor or the model preflight has already refused, and
 the pruning one is asked only after a plan says the handoff survived the ceiling, the grant and the gate.** Review
 measured the first version of pruning asking straight from the model-supplied request: a delegation the grant then
@@ -460,7 +466,9 @@ cannot cross without a named grant, and asking first shipped it with no grant at
 and deliberately so:** it runs before the capability plan, so a delegation the grant goes on to refuse for
 escalation has still sent its task text. Task text crosses on any `delegate` call that names no thinking level;
 session turns cross only behind a granted `context:pruned`. That asymmetry is the one to hold in mind, and it is
-why the egress paragraph above is written in terms of a call rather than a spawn.
+why the egress paragraph above is written in terms of a call rather than a spawn. **Amended 2026-09-23:** the effort
+point still runs before the capability plan, but sends the digest unless raw egress was separately enabled; task
+text therefore crosses on that refused call only in raw mode.
 
 **The first decision point (2026-09-22, roadmap PR 8): how hard a child should think.** When a `delegate` call
 names no `thinking` level, the advisor is asked to choose one from the levels this session's own model reports it
@@ -473,6 +481,8 @@ was before, which is the property that keeps advisors optional rather than load-
 
 The task text IS sent to the advisor, because an advisor cannot judge a task it cannot see, and it is still never
 recorded. An operator unwilling to send task text to a third party leaves the advisor off, which is the default.
+**Amended 2026-09-23:** this is false by default; the advisor receives the structural digest, and raw text requires
+`PI_DADDY_ADVISOR_TASK_EGRESS=raw` in addition to enabling and keying the advisor.
 
 Three guards, and the third came from review. The layer names no authority; no `kernel/` or `governance/` module
 imports it; and the composition modules that may consult an advisor are an explicit list, because composition may

@@ -59,6 +59,7 @@ export function createAdvisorSession(input: {
       decider,
       record,
       enabled: settings.enabled,
+      taskEgress: settings.taskEgress,
       ...(input.episodeId ? { episodeId: input.episodeId } : {}),
       ...(settings.timeoutMs ? { timeoutMs: settings.timeoutMs } : {}),
     }),
