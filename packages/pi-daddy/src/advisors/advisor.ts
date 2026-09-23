@@ -19,6 +19,8 @@ export const DEFAULT_ADVICE_TIMEOUT_MS = 2000;
 export interface AdviceRecord {
   /** Stable root episode; absent on records written before episode identity shipped. */
   episodeId?: string;
+  /** The governed child this advice applied to; absent on records written before attribution shipped. */
+  executionId?: string;
   /** Which decision this advice was for, from the caller's own closed list. */
   purpose: string;
   decider: string;
@@ -38,7 +40,7 @@ export interface AdviceRecord {
 }
 
 export interface Advisor {
-  ask(purpose: string, request: AdviceRequest, signal?: AbortSignal): Promise<Advice | null>;
+  ask(purpose: string, request: AdviceRequest, signal?: AbortSignal, executionId?: string): Promise<Advice | null>;
 }
 
 export function createAdvisor(input: {
@@ -52,10 +54,11 @@ export function createAdvisor(input: {
 }): Advisor {
   const timeoutMs = input.timeoutMs ?? DEFAULT_ADVICE_TIMEOUT_MS;
   return {
-    async ask(purpose, request, signal) {
+    async ask(purpose, request, signal, executionId) {
       const started = Date.now();
       const base = {
         ...(input.episodeId ? { episodeId: input.episodeId } : {}),
+        ...(executionId ? { executionId } : {}),
         purpose,
         decider: input.decider.name,
         questions: Object.keys(request.questions),

@@ -303,6 +303,7 @@ export async function runOneDelegation(
       model: spec.model ?? defaultModel,
       registry: ctx.modelRegistry,
       task: spec.task,
+      executionId: ids.executionId,
       agent: spec.agent,
       signal,
     });
@@ -311,6 +312,7 @@ export async function runOneDelegation(
     session,
     base: extra,
     task: spec.task,
+    executionId: ids.executionId,
     blocked: Boolean(executorRefusal || modelRefusal),
     preview: () => planWithApprovals(session, request, extra, null, signal, preApproved).then((r) => r.plan),
     ...(signal ? { signal } : {}),
@@ -453,6 +455,7 @@ export async function handoffPlanContext(input: {
   session: Parameters<typeof advisePruning>[0]["session"];
   base: Record<string, unknown>;
   task: string;
+  executionId?: string;
   /** A refusal is already certain, so nothing may be asked. */
   blocked: boolean;
   /** Plans with no human in the loop; its result decides whether an advisor is consulted at all. */
@@ -466,6 +469,7 @@ export async function handoffPlanContext(input: {
     session: input.session,
     granted: plan.handoff as Parameters<typeof advisePruning>[0]["granted"],
     task: input.task,
+    ...(input.executionId ? { executionId: input.executionId } : {}),
     ...(input.signal ? { signal: input.signal } : {}),
   });
   return ids ? { ...input.base, handoffTurnIds: ids } : { ...input.base };

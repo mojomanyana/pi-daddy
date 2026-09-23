@@ -18,6 +18,8 @@ the record of how the package got here and are worth keeping; they are not worth
   session and propagated to descendants. The field is additive: retained records without it remain valid.
 - Terminal child lifecycle records include aggregate token and cost usage read from the child's pi session file
   before temporary session cleanup. Transcript content is not copied into the ledger.
+- Advice records carry the governed child's `executionId`, so chosen effort and pruning advice join to the child
+  they affected. Advisor input state remains excluded from the ledger.
 
 ## 0.40.1 — a `context:` capability could not be written to the ledger, so delegation was denied
 

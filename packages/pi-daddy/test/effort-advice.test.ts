@@ -15,6 +15,7 @@ const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const REASONING = { reasoning: true, thinkingLevelMap: { off: "off", low: "low", medium: "medium", high: "high" } };
 const registryFor = (model: unknown) => ({ find: () => model });
 const MODEL = "openai-codex/gpt-5.6-sol";
+const executionId = "exec:00000000-0000-4000-8000-000000000001";
 
 function advisorAnswering(value: string | undefined, records: AdviceRecord[] = []) {
   const decider: Decider =
@@ -34,12 +35,14 @@ test("advice fills a blank effort with a level the model actually supports", asy
   const records: AdviceRecord[] = [];
   const chosen = await adviseEffort({
     session: { advisorSession: { advisor: advisorAnswering("low", records) } },
+    executionId,
     model: MODEL,
     registry: registryFor(REASONING),
     task: "rename a variable",
   });
   assert.equal(chosen, "low");
   assert.equal(records[0].purpose, EFFORT_PURPOSE);
+  assert.equal(records[0].executionId, executionId);
   assert.deepEqual(records[0].questions, ["effort"]);
   assert.doesNotMatch(JSON.stringify(records[0]), /rename a variable/, "the task is sent, never recorded");
 });

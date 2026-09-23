@@ -36,6 +36,7 @@ function judging(keepIndexes: number[], records: AdviceRecord[] = []) {
 }
 
 const GRANTED = { mode: "pruned" as const, turns: 4 };
+const executionId = "exec:00000000-0000-4000-8000-000000000001";
 const stagerFor = (parentSession: ReturnType<typeof parentSessionOf>) =>
   createHandoffStager({ cwd: "/tmp", forkRoot: "/tmp/forks", parentSession });
 
@@ -52,9 +53,11 @@ test("advice narrows the rule's selection, and the record says which rule ran", 
     session: { advisorSession: { advisor: judging([0], records) }, parentSession },
     granted: GRANTED,
     task: "do the thing",
+    executionId,
   });
   assert.deepEqual(kept, ["t4"], "the first of the four candidates the rule offered");
   assert.equal(records[0].purpose, PRUNING_PURPOSE);
+  assert.equal(records[0].executionId, executionId);
 
   const stage = stagerFor(parentSession);
   assert.equal(stage(GRANTED).record?.keptTurns, 4, "the rule alone keeps four");

@@ -36,6 +36,7 @@ export async function advisePruning(input: {
   session: { advisorSession: { advisor: Advisor }; parentSession?: ParentTurnSource };
   granted: ContextRequest;
   task: string;
+  executionId?: string;
   signal?: AbortSignal;
 }): Promise<string[] | undefined> {
   if (input.granted.mode !== "pruned" || !input.session.parentSession) return undefined;
@@ -74,6 +75,7 @@ export async function advisePruning(input: {
     // task and one turn rather than the whole session. Nothing here is recorded — `createAdvisor` writes keys.
     { state: {}, questions },
     input.signal,
+    input.executionId,
   );
   if (!advice) return undefined;
   // Every candidate or none. A response missing eleven of twelve answers would otherwise read as "drop eleven",

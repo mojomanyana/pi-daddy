@@ -38,6 +38,7 @@ export async function adviseEffort(input: {
   model?: string;
   registry: { find(provider: string, modelId: string): unknown };
   task: string;
+  executionId?: string;
   agent?: string;
   signal?: AbortSignal;
 }): Promise<string | undefined> {
@@ -70,6 +71,7 @@ export async function adviseEffort(input: {
       },
     },
     input.signal,
+    input.executionId,
   );
   const chosen = advice?.answers.effort;
   // Belt and braces: `parseAnswer` already refuses a choice outside the options it was given, so this can only
