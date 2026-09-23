@@ -63,6 +63,22 @@ export const CHILD_PROCESS_SIGNALS = [
 ] as const satisfies readonly NodeJS.Signals[];
 export type ChildProcessSignal = (typeof CHILD_PROCESS_SIGNALS)[number];
 
+export interface ChildUsageTotals {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  reasoning?: number;
+  totalTokens: number;
+  cost: {
+    input: number;
+    output: number;
+    cacheRead: number;
+    cacheWrite: number;
+    total: number;
+  };
+}
+
 /**
  * `released` is a handover this owner performed. FOUR members were added by the 0.18.0 review pass, and
  * they were not all previously recorded the same way — `uncontended` was recorded as an *acquisition*, and
@@ -124,6 +140,10 @@ export interface ChildLifecycleEvent extends LedgerEventBase {
   reason?: string;
   /** The inactivity bound (ms) that governed this child beside the `deadlineAt` ceiling (PR 3e). */
   idleTimeoutMs?: number;
+  /** Aggregate model usage read from the child's pi session file after it stopped. */
+  usage?: ChildUsageTotals;
+  /** Why totals could not be read; a fixed code, never transcript content. */
+  usageUnavailable?: "session-missing" | "session-invalid" | "usage-missing";
 }
 
 export type CapabilityDecisionEvent = GrantRecord & {
@@ -192,6 +212,8 @@ export function buildChildLifecycleEvent(args: {
   aborted?: boolean;
   truncated?: boolean;
   reason?: string;
+  usage?: ChildUsageTotals;
+  usageUnavailable?: "session-missing" | "session-invalid" | "usage-missing";
   correlation?: CorrelationMetadata;
   now: Date;
 }): ChildLifecycleEvent {
@@ -216,6 +238,8 @@ export function buildChildLifecycleEvent(args: {
     ...(args.aborted ? { aborted: true } : {}),
     ...(args.truncated ? { truncated: true } : {}),
     ...(args.reason ? { reason: args.reason } : {}),
+    ...(args.usage ? { usage: structuredClone(args.usage) } : {}),
+    ...(args.usageUnavailable ? { usageUnavailable: args.usageUnavailable } : {}),
     ...(args.correlation ? { correlation: structuredClone(args.correlation) } : {}),
   });
 }

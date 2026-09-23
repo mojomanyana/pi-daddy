@@ -729,6 +729,16 @@
           "minimum": 1,
           "description": "the inactivity bound in milliseconds that governed this child beside the deadlineAt ceiling"
         },
+        "usage": {
+          "$ref": "#/$defs/childUsage"
+        },
+        "usageUnavailable": {
+          "enum": [
+            "session-missing",
+            "session-invalid",
+            "usage-missing"
+          ]
+        },
         "herdrPaneId": {
           "$ref": "#/$defs/ledgerDisplayIdentifier"
         },
@@ -747,6 +757,12 @@
         "executor"
       ],
       "additionalProperties": false,
+      "not": {
+        "required": [
+          "usage",
+          "usageUnavailable"
+        ]
+      },
       "allOf": [
         {
           "if": {
@@ -796,6 +812,77 @@
           }
         }
       ]
+    },
+    "childUsage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "input",
+        "output",
+        "cacheRead",
+        "cacheWrite",
+        "totalTokens",
+        "cost"
+      ],
+      "properties": {
+        "input": {
+          "type": "number",
+          "minimum": 0
+        },
+        "output": {
+          "type": "number",
+          "minimum": 0
+        },
+        "cacheRead": {
+          "type": "number",
+          "minimum": 0
+        },
+        "cacheWrite": {
+          "type": "number",
+          "minimum": 0
+        },
+        "reasoning": {
+          "type": "number",
+          "minimum": 0
+        },
+        "totalTokens": {
+          "type": "number",
+          "minimum": 0
+        },
+        "cost": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "input",
+            "output",
+            "cacheRead",
+            "cacheWrite",
+            "total"
+          ],
+          "properties": {
+            "input": {
+              "type": "number",
+              "minimum": 0
+            },
+            "output": {
+              "type": "number",
+              "minimum": 0
+            },
+            "cacheRead": {
+              "type": "number",
+              "minimum": 0
+            },
+            "cacheWrite": {
+              "type": "number",
+              "minimum": 0
+            },
+            "total": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        }
+      }
     },
     "executionId": {
       "type": "string",

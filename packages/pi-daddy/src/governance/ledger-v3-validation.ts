@@ -146,6 +146,8 @@ const FIELDS = {
     "reason",
     "deadlineAt",
     "idleTimeoutMs",
+    "usage",
+    "usageUnavailable",
     "herdrPaneId",
     "herdrAgentName",
     "correlation",
@@ -162,6 +164,9 @@ export function isLedgerObject(value: unknown): value is LedgerV3Object {
 export function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
 }
+
+const nonNegativeNumber = (value: unknown): value is number =>
+  typeof value === "number" && Number.isFinite(value) && value >= 0;
 
 /** Ledger timestamp profile: JSON Schema `date-time`, narrowed to seconds 00-59 for JS date arithmetic. */
 export function isTimestamp(value: unknown): value is string {
@@ -322,6 +327,33 @@ function validateWorkspaceLease(event: LedgerV3Object): string | null {
   return null;
 }
 
+function validUsage(value: unknown): boolean {
+  if (
+    !isLedgerObject(value) ||
+    Object.keys(value).some(
+      (key) => !["input", "output", "cacheRead", "cacheWrite", "reasoning", "totalTokens", "cost"].includes(key),
+    )
+  )
+    return false;
+  const tokenFields = ["input", "output", "cacheRead", "cacheWrite", "totalTokens"];
+  if (
+    !tokenFields.every(
+      (field) => typeof value[field] === "number" && Number.isFinite(value[field]) && (value[field] as number) >= 0,
+    )
+  )
+    return false;
+  if (!optional(value, "reasoning", nonNegativeNumber)) return false;
+  const cost = value.cost;
+  if (
+    !isLedgerObject(cost) ||
+    Object.keys(cost).some((key) => !["input", "output", "cacheRead", "cacheWrite", "total"].includes(key))
+  )
+    return false;
+  return ["input", "output", "cacheRead", "cacheWrite", "total"].every(
+    (field) => typeof cost[field] === "number" && Number.isFinite(cost[field]) && (cost[field] as number) >= 0,
+  );
+}
+
 function validateChildLifecycle(event: LedgerV3Object): string | null {
   if (
     !["starting", "running", "completed", "failed"].includes(String(event.state)) ||
@@ -341,9 +373,16 @@ function validateChildLifecycle(event: LedgerV3Object): string | null {
     !optional(event, "aborted", (value) => value === true) ||
     !optional(event, "truncated", (value) => value === true) ||
     !optional(event, "reason", (value) => typeof value === "string") ||
+    !optional(event, "usage", validUsage) ||
+    !optional(event, "usageUnavailable", (value) =>
+      ["session-missing", "session-invalid", "usage-missing"].includes(String(value)),
+    ) ||
     !optional(event, "correlation", validCorrelation)
   ) {
     return "child lifecycle optional fields are invalid";
+  }
+  if (Object.hasOwn(event, "usage") && Object.hasOwn(event, "usageUnavailable")) {
+    return "child lifecycle usage and usageUnavailable are mutually exclusive";
   }
   if (
     !optional(event, "herdrPaneId", isLedgerDisplayIdentifier) ||

@@ -342,6 +342,7 @@ export async function executePlannedChild(input: {
         truncated: output.truncated,
         failed: childFailed,
       });
+      const usageObservation = await activitySession.usage();
       releaseReason = output.timedOut ? "timeout" : output.aborted ? "cancelled" : childFailed ? "failed" : "completed";
       if (activityStarted)
         try {
@@ -385,6 +386,9 @@ export async function executePlannedChild(input: {
               idleTimeoutMs: configuredIdleMs,
               reason:
                 output.spawnError ?? (output.timedOut ? (output.idle ? "idle-timeout" : "wall-clock") : undefined),
+              ...(usageObservation.usage
+                ? { usage: usageObservation.usage }
+                : { usageUnavailable: usageObservation.unavailable! }),
               correlation: plan.correlation,
               now: new Date(),
             }),
@@ -468,6 +472,7 @@ export async function executePlannedChild(input: {
         failed: true,
       });
       retainWriterLease = Boolean(writerLease && isHerdrWriterCloseFailure(error));
+      const usageObservation = await activitySession.usage();
       if (ledgerPath && !terminalAttempted) {
         // Best-effort: this records the failure, so it must not REPLACE the failure. A strict append that
         // throws here would discard the original error — including HerdrWriterCloseError, whose whole
@@ -493,6 +498,9 @@ export async function executePlannedChild(input: {
                   : error instanceof Error
                     ? error.name
                     : "unknown executor error",
+              ...(usageObservation.usage
+                ? { usage: usageObservation.usage }
+                : { usageUnavailable: usageObservation.unavailable! }),
               correlation: plan.correlation,
               now: new Date(),
             }),

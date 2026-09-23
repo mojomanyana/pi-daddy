@@ -395,6 +395,7 @@ export {
   type ChildLifecycleEvent,
   type ChildLifecycleState,
   type ChildProcessSignal,
+  type ChildUsageTotals,
   type RuntimeLedgerEvent,
   type WorkspaceAccess,
   type WorkspaceLeaseEvent,

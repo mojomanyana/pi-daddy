@@ -101,6 +101,71 @@ test("an activity session gives a child without retention a private session file
   assert.equal(await readFile(target, "utf8"), "kept\n", "a retention target is never removed here");
 });
 
+test("child usage totals are read from the current turn before the temporary session is removed", async () => {
+  const plan = ["--print", "--no-session", " task"];
+  const session = await activitySessionFor(plan, "exec:00000000-0000-4000-8000-000000000002");
+  const lines = [
+    { type: "message", message: { role: "assistant", usage: usage(100, 10, 1) } },
+    { type: "message", message: { role: "user", content: "PRIVATE CURRENT TASK" } },
+    { type: "message", message: { role: "assistant", content: "PRIVATE ANSWER", usage: usage(20, 3, 0.25) } },
+    { type: "message", message: { role: "toolResult", content: "PRIVATE TOOL RESULT" } },
+    { type: "message", message: { role: "assistant", usage: usage(5, 2, 0.1) } },
+  ];
+  await writeFile(session.path, `${lines.map((line) => JSON.stringify(line)).join("\n")}\n`);
+  assert.deepEqual(await session.usage(), {
+    usage: {
+      input: 25,
+      output: 5,
+      cacheRead: 4,
+      cacheWrite: 2,
+      reasoning: 2,
+      totalTokens: 39,
+      cost: { input: 0.21000000000000002, output: 0.07, cacheRead: 0.03, cacheWrite: 0.02, total: 0.35 },
+    },
+  });
+  await session.dispose();
+  await assert.rejects(stat(session.path));
+  assert.deepEqual(await session.usage(), { unavailable: "session-missing" });
+});
+
+test("child usage failure is atomic and privacy-safe", async () => {
+  const first = await activitySessionFor(["--print", "--no-session", " task"], "exec:bad-usage-1");
+  await writeFile(first.path, '{"type":"message","message":{"role":"user"}}\nnot-json\n');
+  assert.deepEqual(await first.usage(), { unavailable: "session-invalid" });
+  await first.dispose();
+
+  const second = await activitySessionFor(["--print", "--no-session", " task"], "exec:bad-usage-2");
+  await writeFile(
+    second.path,
+    [
+      { type: "message", message: { role: "user" } },
+      { type: "message", message: { role: "assistant", usage: usage(20, 3, 0.25) } },
+      { type: "message", message: { role: "assistant", usage: { input: "PRIVATE TRANSCRIPT" } } },
+    ]
+      .map((entry) => JSON.stringify(entry))
+      .join("\n"),
+  );
+  assert.deepEqual(await second.usage(), { unavailable: "session-invalid" });
+  await second.dispose();
+});
+
+function usage(input: number, output: number, totalCost: number) {
+  return {
+    input,
+    output,
+    cacheRead: input === 100 ? 50 : input === 20 ? 3 : 1,
+    cacheWrite: input === 100 ? 20 : input === 20 ? 2 : 0,
+    ...(input === 5 ? {} : { reasoning: input === 100 ? 10 : 2 }),
+    totalTokens: input === 100 ? 190 : input === 20 ? 30 : 9,
+    cost:
+      input === 20
+        ? { input: 0.2, output: 0.05, cacheRead: 0.02, cacheWrite: 0.02, total: totalCost }
+        : input === 5
+          ? { input: 0.01, output: 0.02, cacheRead: 0.01, cacheWrite: 0, total: totalCost }
+          : { input: 1, output: 1, cacheRead: 1, cacheWrite: 1, total: totalCost },
+  };
+}
+
 test("the Herdr settle loop stops a pane whose text and session file stop changing", async () => {
   // Breaks by: dropping the idle check from waitForSettled, or resetting activity on an unchanged pane.
   let marker = 0;
