@@ -196,6 +196,74 @@ stays the default.
 Rerun: `PI_DADDY_PROBE_SESSIONS=~/.pi/agent/sessions npm run test:integration`. Without the variable the probe says
 it measured nothing rather than passing quietly.
 
+## Skill-transition probe, 2026-09-23
+
+The operator reported that work "takes too long ... with a lot of back and forth between skills" and that nothing
+notices it. That was an impression; this makes it a number. It needs no new recording: it reads the operator's own
+pi session files, which already hold every skill entry.
+
+**What it measures.** A read of `principal-pi-skills/<name>/SKILL.md` stands in for entering that skill. Reads are
+counted per skill, and consecutive reads of the same skill are collapsed so that a transition means a change of
+skill. Corpus: every session file under `~/.pi/agent/sessions` touched since 2026-09-10 — 23 files at the first
+reading below, 26 at the second.
+
+**What it found.** The corpus is live — the operator's pi sessions keep appending — so the counts move between
+runs and the section records two readings rather than one. Both measured at `4351cf6` on 2026-09-23, 34 minutes apart:
+
+| skill | reads, 09:50Z | reads, 10:24Z |
+| --- | --- | --- |
+| build | 118 | 124 |
+| review | 67 | 71 |
+| git-ops | 51 | 58 |
+| plan | 12 | 13 |
+| decide | 12 | 12 |
+| architect | 8 | 8 |
+| debug | 7 | 7 |
+
+The counts drift; the finding does not. **Roughly 31% of all skill-to-skill transitions are one cycle between two
+skills** — `build>review` plus `review>build` was 51 of 165 (30.9%) at the first reading and 55 of 176 (31.3%) at
+the second. One session alternated between the two eight consecutive times inside a sequence 53 transitions long.
+Third place is `build>git-ops`, stable near 11.5%; nothing else reaches 9%. Quote the ratio, not the table.
+
+It also corrected a claim this repository was close to adopting. SkillsBench's optimum of two to three skills per
+task suggested seven was too many, and the inference was that some should be cut. Against this corpus that does not
+hold — all seven are read. The shape is a heavy tail instead: at the first reading three skills carried 236 reads
+and four carried 39, while every turn pays for all seven.
+
+Rerun, which prints reads, transition count and the ranked pairs:
+
+```bash
+cd ~/.pi/agent/sessions
+find . -name '*.jsonl' -newermt '2026-09-10' -print0 | xargs -0 cat 2>/dev/null | node -e '
+const rl=require("readline").createInterface({input:process.stdin});
+const reads={},pairs={};let prev=null,tr=0;
+rl.on("line",l=>{let o;try{o=JSON.parse(l)}catch{return}
+ if(o.type!=="message"||o.message.role!=="assistant")return;
+ for(const p of o.message.content||[]){if(p.type!=="toolCall")continue;
+  const m=JSON.stringify(p.arguments||{}).match(/principal-pi-skills\/([a-z-]+)\/SKILL\.md/);
+  if(!m)continue;const s=m[1];reads[s]=(reads[s]||0)+1;
+  if(prev&&prev!==s){pairs[prev+">"+s]=(pairs[prev+">"+s]||0)+1;tr++;}prev=s;}});
+rl.on("close",()=>{console.log("reads",reads,"transitions",tr);
+ for(const [k,v] of Object.entries(pairs).sort((a,b)=>b[1]-a[1]).slice(0,6))
+  console.log(k,v,(100*v/tr).toFixed(1)+"%");});'
+```
+
+A session record is JSONL: tool calls are `toolCall` parts on a `role: "assistant"` message, results are
+`role: "toolResult"` messages carrying `toolName` and `isError`. The same corpus puts the bash failure rate at
+16.6% — 1025 of 6187 at the first reading and 1048 of 6311 at the second — which agrees with the 16.2% measured
+over twelve sessions on 2026-09-22.
+
+**What this does not establish.** That the cycle is waste. Repeated build-and-review rounds may be the workflow
+working correctly on hard changes, and the skills' own spine allows two repair rounds; nothing here separates a
+repair round from a wasted one. The `SKILL.md` read is a proxy, so a re-read caused by context loss is
+indistinguishable from a genuine re-entry. The window is one operator over thirteen days, and widening the
+`-newermt` date moves every number. It also says nothing about *why* a bash call failed: a failing test and a
+malformed command are the same record.
+
+The research this came from, including what it would take to close the loop rather than only measure it, is in a
+document shared with the operator; it is a pointer, not a source of record, and anything from it that survives
+belongs here with a date.
+
 ## Decisions still in force
 
 One paragraph each: the decision, the reason, what was rejected. The ADR numbers are pointers into git history
