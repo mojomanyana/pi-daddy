@@ -63,6 +63,7 @@ const CAPABILITY_FIELDS = [
   "ledgerVersion",
   "event",
   "ts",
+  "episodeId",
   "executionId",
   "parentExecutionId",
   "parentId",
@@ -99,6 +100,7 @@ const LEASE_FIELDS = [
   "ledgerVersion",
   "event",
   "ts",
+  "episodeId",
   "executionId",
   "parentExecutionId",
   "childId",
@@ -115,6 +117,7 @@ const LIFECYCLE_FIELDS = [
   "ledgerVersion",
   "event",
   "ts",
+  "episodeId",
   "executionId",
   "parentExecutionId",
   "childId",
@@ -122,6 +125,8 @@ const LIFECYCLE_FIELDS = [
   "executor",
   "deadlineAt",
   "idleTimeoutMs",
+  "usage",
+  "usageUnavailable",
   "herdrPaneId",
   "herdrAgentName",
   "exitCode",
@@ -250,6 +255,8 @@ test("the closed v3 schema accepts fixtures and rejects v2, extra fields and mis
     );
   }
   const fixture = buildLedgerV3ContractFixtures()["capability-decision.json"];
+  const { episodeId: _episodeAddedLater, ...historicalFixture } = fixture;
+  assert.equal(validator.Check(historicalFixture), true, "retained records without episodeId remain valid");
   assert.equal(validator.Check({ ...fixture, ledgerVersion: 2 }), false);
   assert.equal(validator.Check({ ...fixture, executionId: undefined }), false);
   assert.equal(validator.Check({ ...fixture, task: "forbidden ledger text" }), false);
@@ -295,6 +302,8 @@ test("the closed v3 schema accepts fixtures and rejects v2, extra fields and mis
     "entire-run carries no selectors",
   );
   const lifecycle = buildLedgerV3ContractFixtures()["child-lifecycle.json"];
+  const { usage: _usageAddedLater, ...historicalLifecycle } = lifecycle;
+  assert.equal(validator.Check(historicalLifecycle), true, "retained lifecycle records without usage remain valid");
   const { deadlineAt: _deadline, ...startingWithoutDeadline } = { ...lifecycle, state: "starting" };
   assert.equal(validator.Check(startingWithoutDeadline), false);
   assert.equal(

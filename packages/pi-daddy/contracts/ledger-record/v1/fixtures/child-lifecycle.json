@@ -2,6 +2,7 @@
   "ledgerVersion": 3,
   "event": "child_lifecycle",
   "ts": "2026-08-20T12:00:03.000Z",
+  "episodeId": "episode:00000000-0000-4000-8000-000000000099",
   "executionId": "exec:00000000-0000-4000-8000-000000000001",
   "parentExecutionId": null,
   "childId": "d0.1",
@@ -13,6 +14,21 @@
   "signal": null,
   "aborted": true,
   "reason": "child did not start",
+  "usage": {
+    "input": 120,
+    "output": 30,
+    "cacheRead": 20,
+    "cacheWrite": 10,
+    "reasoning": 5,
+    "totalTokens": 185,
+    "cost": {
+      "input": 0.12,
+      "output": 0.06,
+      "cacheRead": 0.01,
+      "cacheWrite": 0.01,
+      "total": 0.2
+    }
+  },
   "correlation": {
     "schema_version": "1.0",
     "run_id": "run-contract-001",

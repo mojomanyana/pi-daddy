@@ -156,6 +156,7 @@ test("PR 3e: a silent child is stopped by the inactivity bound, recorded as idle
       .map((line) => JSON.parse(line).body);
     assert.equal(events.find((event) => event.state === "starting")?.idleTimeoutMs, 1000);
     assert.equal(events.find((event) => event.state === "failed")?.reason, "idle-timeout");
+    assert.equal(events.find((event) => event.state === "failed")?.usageUnavailable, "session-missing");
   } finally {
     if (oldPath === undefined) delete process.env.PATH;
     else process.env.PATH = oldPath;
@@ -191,6 +192,61 @@ test("PR 3e: the temporary session directory is removed even when the run throws
   );
   const leaked = [...(await listExec())].filter((name) => !before.has(name));
   assert.deepEqual(leaked, [], "a session directory allocated for this run survived its failure");
+});
+
+test("terminal lifecycle captures child usage before disposing the private session", async () => {
+  const dir = await tempDir("execute-child-usage-");
+  const bin = join(dir, "bin");
+  const { mkdir } = await import("node:fs/promises");
+  await mkdir(bin);
+  const shim = join(bin, "pi");
+  await writeFile(
+    shim,
+    `#!/usr/bin/env node
+const fs = require("node:fs");
+const path = process.argv[process.argv.indexOf("--session") + 1];
+const usage = {input:7,output:2,cacheRead:3,cacheWrite:1,reasoning:1,totalTokens:14,cost:{input:0.07,output:0.02,cacheRead:0.01,cacheWrite:0.01,total:0.11}};
+fs.writeFileSync(path, [
+  {type:"message",message:{role:"user",content:"PRIVATE CHILD TASK"}},
+  {type:"message",message:{role:"assistant",content:"PRIVATE CHILD ANSWER",usage}}
+].map(JSON.stringify).join("\\n") + "\\n");
+console.log("done");
+`,
+    "utf8",
+  );
+  await chmod(shim, 0o755);
+  const ledgerPath = join(dir, "ledger.jsonl");
+  const oldPath = process.env.PATH;
+  process.env.PATH = `${bin}${delimiter}${oldPath ?? ""}`;
+  try {
+    const outcome = await executePlannedChild({
+      session: { ledgerPath, executor: { kind: "process" } } as GrantsSession,
+      plan: plan(),
+      childId: "d0.1",
+      executionId,
+      parentExecutionId: null,
+      cwd: dir,
+    });
+    assert.equal(outcome.ok, true);
+    const text = await readFile(ledgerPath, "utf8");
+    const events = text
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line).body);
+    assert.deepEqual(events.find((event) => event.state === "completed")?.usage, {
+      input: 7,
+      output: 2,
+      cacheRead: 3,
+      cacheWrite: 1,
+      reasoning: 1,
+      totalTokens: 14,
+      cost: { input: 0.07, output: 0.02, cacheRead: 0.01, cacheWrite: 0.01, total: 0.11 },
+    });
+    assert.doesNotMatch(text, /PRIVATE CHILD/);
+  } finally {
+    if (oldPath === undefined) delete process.env.PATH;
+    else process.env.PATH = oldPath;
+  }
 });
 
 test("the executor receives only the time remaining on the recorded lifecycle deadline", async () => {

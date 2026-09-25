@@ -69,6 +69,7 @@ export async function prepareDelegationWorkspace(input: {
   spec: DelegationWorkspaceSpec;
   correlation?: CorrelationMetadata;
   childId: string;
+  episodeId?: string;
   executionId: string;
   parentExecutionId: string | null;
   signal?: AbortSignal;
@@ -120,6 +121,7 @@ export async function prepareDelegationWorkspace(input: {
       await appendLedgerEvent(
         { path: input.ledgerPath, strict: true },
         buildWorkspaceLeaseEvent({
+          ...(input.episodeId ? { episodeId: input.episodeId } : {}),
           executionId: input.executionId,
           parentExecutionId: input.parentExecutionId,
           childId: input.childId,
@@ -146,6 +148,7 @@ export async function prepareDelegationWorkspace(input: {
       await appendLedgerEvent(
         { path: input.ledgerPath, strict: true },
         buildWorkspaceLeaseEvent({
+          ...(input.episodeId ? { episodeId: input.episodeId } : {}),
           executionId: input.executionId,
           parentExecutionId: input.parentExecutionId,
           childId: input.childId,
@@ -174,6 +177,7 @@ export async function prepareDelegationWorkspace(input: {
 export async function releaseDelegationWorkspace(input: {
   prepared: PreparedWorkspace | undefined;
   childId: string;
+  episodeId?: string;
   executionId: string;
   parentExecutionId: string | null;
   ledgerPath?: string;
@@ -195,6 +199,7 @@ export async function releaseDelegationWorkspace(input: {
     await appendLedgerEvent(
       { path: input.ledgerPath, strict: true },
       buildWorkspaceLeaseEvent({
+        ...(input.episodeId ? { episodeId: input.episodeId } : {}),
         executionId: input.executionId,
         parentExecutionId: input.parentExecutionId,
         childId: input.childId,

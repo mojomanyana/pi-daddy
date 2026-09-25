@@ -12,6 +12,17 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## Unreleased
+
+- Enabling and keying an advisor now sends only a structural task digest by default. Raw task text additionally
+  requires `PI_DADDY_ADVISOR_TASK_EGRESS=raw`; each advice record names the mode, and raw mode warns once per process.
+- Every new governance ledger event and activity-timeline event carries one stable `episodeId` minted by the root
+  session and propagated to descendants. The field is additive: retained records without it remain valid.
+- Terminal child lifecycle records include aggregate token and cost usage read from the child's pi session file
+  before temporary session cleanup. Transcript content is not copied into the ledger.
+- Advice records carry the governed child's `executionId`, so chosen effort and pruning advice join to the child
+  they affected. Advisor input state remains excluded from the ledger.
+
 ## 0.40.1 — a `context:` capability could not be written to the ledger, so delegation was denied
 
 **A session whose grant held any `context:` id could not delegate at all.** Reported from a live session:

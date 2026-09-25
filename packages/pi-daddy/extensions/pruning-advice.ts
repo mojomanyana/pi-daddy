@@ -36,6 +36,9 @@ export async function advisePruning(input: {
   session: { advisorSession: { advisor: Advisor }; parentSession?: ParentTurnSource };
   granted: ContextRequest;
   task: string;
+  executionId?: string;
+  /** The current delegation call, excluded from advisor input because its arguments contain the raw task. */
+  toolCallId?: string;
   signal?: AbortSignal;
 }): Promise<string[] | undefined> {
   if (input.granted.mode !== "pruned" || !input.session.parentSession) return undefined;
@@ -44,7 +47,12 @@ export async function advisePruning(input: {
     ...(input.granted.turns !== undefined ? { turns: input.granted.turns } : {}),
     ...(input.granted.files !== undefined ? { files: input.granted.files } : {}),
   }).kept;
-  if (candidates.length < 2) return undefined;
+  const privateIds = new Set(
+    input.toolCallId ? all.filter((turn) => turn.toolCallIds.includes(input.toolCallId!)).map((turn) => turn.id) : [],
+  );
+  const privateCandidates = candidates.filter((turn) => privateIds.has(turn.id));
+  const candidatesForAdvice = candidates.filter((turn) => !privateCandidates.includes(turn));
+  if (candidatesForAdvice.length < 2) return undefined;
   // **Judge the MOST RECENT candidates, and keep the rest unjudged.** This was `> MAX_JUDGED_TURNS` → give up
   // entirely, which was fine while the rule offered six turns and became a silent feature death the moment
   // `DEFAULT_CONTEXT_TURNS` rose to 20: every default request would have exceeded the bound, so the pruning
@@ -54,16 +62,18 @@ export async function advisePruning(input: {
   // Judging a SUBSET is still only narrowing — an unjudged turn is kept, never dropped — so the attenuation
   // property is untouched. The recent end is judged because that is where the rule's own recall is
   // concentrated, and because a turn adjacent to the task is the one a wrong answer costs most.
-  const unjudged = candidates.slice(0, Math.max(0, candidates.length - MAX_JUDGED_TURNS));
-  const judged = candidates.slice(unjudged.length);
+  const unjudged = candidatesForAdvice.slice(0, Math.max(0, candidatesForAdvice.length - MAX_JUDGED_TURNS));
+  const judged = candidatesForAdvice.slice(unjudged.length);
 
+  const task = input.session.advisorSession.advisor.task(input.task);
+  const taskDescription = typeof task === "string" ? task.slice(0, 2000) : JSON.stringify(task);
   const questions: Record<string, Question> = {};
   for (const [index, turn] of judged.entries())
     questions[`turn${index}`] = {
       kind: "noul",
       // Both bounded: the task is embedded once per candidate, so an unbounded task became a request twelve times
       // its size, on a two-second budget and the operator's key.
-      instructions: `Would a sub-agent doing this task be helped by seeing this part of the parent's session?\n\nTASK: ${input.task.slice(0, 2000)}\n\nPART:\n${turn.text.slice(0, 2000)}`,
+      instructions: `Would a sub-agent doing this task be helped by seeing this part of the parent's session?\n\nTASK: ${taskDescription}\n\nPART:\n${turn.text.slice(0, 2000)}`,
       whenTrue: "It bears on the task: a decision, a constraint, a fact the task depends on.",
       whenFalse: "It does not: unrelated work, chatter, or something the task already states.",
     };
@@ -74,12 +84,14 @@ export async function advisePruning(input: {
     // task and one turn rather than the whole session. Nothing here is recorded — `createAdvisor` writes keys.
     { state: {}, questions },
     input.signal,
+    input.executionId,
   );
   if (!advice) return undefined;
   // Every candidate or none. A response missing eleven of twelve answers would otherwise read as "drop eleven",
   // which is a narrowing nobody asked for rather than the "unrecognised response means no advice" contract.
   if (judged.some((_, index) => advice.answers[`turn${index}`]?.kind !== "noul")) return undefined;
   const kept = [
+    ...privateCandidates.map((turn) => turn.id),
     ...unjudged.map((turn) => turn.id),
     ...judged.filter((_, index) => (advice.answers[`turn${index}`] as { value: boolean }).value).map((turn) => turn.id),
   ];
@@ -88,12 +100,31 @@ export async function advisePruning(input: {
   return kept.length === 0 ? undefined : kept;
 }
 
-function turnsOf(session: ParentTurnSource): Array<{ id: string; text: string }> {
+function turnsOf(session: ParentTurnSource): Array<{ id: string; text: string; toolCallIds: string[] }> {
   try {
     return session
       .getEntries()
       .filter((entry) => entry.type === "message")
-      .map((entry) => ({ id: entry.id, text: JSON.stringify((entry as { message?: unknown }).message ?? entry) }));
+      .map((entry) => {
+        const message = (entry as { message?: unknown }).message ?? entry;
+        const content =
+          typeof message === "object" && message !== null && Array.isArray((message as { content?: unknown }).content)
+            ? (message as { content: unknown[] }).content
+            : [];
+        return {
+          id: entry.id,
+          text: JSON.stringify(message),
+          toolCallIds: content
+            .filter(
+              (part): part is { type: "toolCall"; id: string } =>
+                typeof part === "object" &&
+                part !== null &&
+                (part as { type?: unknown }).type === "toolCall" &&
+                typeof (part as { id?: unknown }).id === "string",
+            )
+            .map((part) => part.id),
+        };
+      });
   } catch {
     return [];
   }

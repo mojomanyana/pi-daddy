@@ -15,6 +15,8 @@ const fixtureDir = join(contractDir, "fixtures");
 const schemaPath = join(contractDir, "governance-event.schema.json");
 const envelopeSchemaPath = join(contractDir, "record.schema.json");
 
+const episodeId = "episode:00000000-0000-4000-8000-000000000099";
+
 const correlation: CorrelationMetadata = {
   schema_version: "1.0",
   run_id: "run-contract-001",
@@ -44,6 +46,7 @@ const correlation: CorrelationMetadata = {
 export function buildLedgerV3ContractFixtures() {
   return {
     "capability-decision.json": buildRecord({
+      episodeId,
       executionId: "exec:00000000-0000-4000-8000-000000000001",
       parentExecutionId: null,
       parentId: "d0",
@@ -85,6 +88,7 @@ export function buildLedgerV3ContractFixtures() {
       now: new Date("2026-08-20T12:00:01.000Z"),
     }),
     "workspace-lease.json": buildWorkspaceLeaseEvent({
+      episodeId,
       executionId: "exec:00000000-0000-4000-8000-000000000001",
       parentExecutionId: null,
       childId: "d0.1",
@@ -97,6 +101,7 @@ export function buildLedgerV3ContractFixtures() {
       now: new Date("2026-08-20T12:00:02.000Z"),
     }),
     "child-lifecycle.json": buildChildLifecycleEvent({
+      episodeId,
       executionId: "exec:00000000-0000-4000-8000-000000000001",
       parentExecutionId: null,
       childId: "d0.1",
@@ -108,6 +113,15 @@ export function buildLedgerV3ContractFixtures() {
       signal: null,
       aborted: true,
       reason: "child did not start",
+      usage: {
+        input: 120,
+        output: 30,
+        cacheRead: 20,
+        cacheWrite: 10,
+        reasoning: 5,
+        totalTokens: 185,
+        cost: { input: 0.12, output: 0.06, cacheRead: 0.01, cacheWrite: 0.01, total: 0.2 },
+      },
       correlation,
       now: new Date("2026-08-20T12:00:03.000Z"),
     }),

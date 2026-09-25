@@ -21,6 +21,7 @@ export async function recordChainRefusal(input: {
   await appendRecord(
     { path: input.session.ledgerPath, strict: true },
     buildRecord({
+      episodeId: input.session.episodeId,
       executionId: input.executionId,
       parentExecutionId: input.parentExecutionId,
       parentId: input.session.ownSpawnId,

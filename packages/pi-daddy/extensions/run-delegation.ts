@@ -242,7 +242,7 @@ export async function runOneDelegation(
     approvalFacts?: ApprovalLedgerFacts;
   } = {},
 ): Promise<DelegationOutcome> {
-  const { onProgress, preApproved, taskFrom, taskFromExecutionId, approvalFacts } = options;
+  const { toolCallId, onProgress, preApproved, taskFrom, taskFromExecutionId, approvalFacts } = options;
   // pi resolves a BARE model id to an unauthenticated provider and the child dies at startup — the id
   // alone is not enough, it must be qualified with its provider (`Model<Api>` carries both).
   const defaultModel = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
@@ -303,6 +303,7 @@ export async function runOneDelegation(
       model: spec.model ?? defaultModel,
       registry: ctx.modelRegistry,
       task: spec.task,
+      executionId: ids.executionId,
       agent: spec.agent,
       signal,
     });
@@ -311,6 +312,8 @@ export async function runOneDelegation(
     session,
     base: extra,
     task: spec.task,
+    executionId: ids.executionId,
+    toolCallId,
     blocked: Boolean(executorRefusal || modelRefusal),
     preview: () => planWithApprovals(session, request, extra, null, signal, preApproved).then((r) => r.plan),
     ...(signal ? { signal } : {}),
@@ -332,6 +335,7 @@ export async function runOneDelegation(
           spec: { ...spec.workspace, access: governedWorkspaceAccess(spec.workspace.access, plan.requested) },
           correlation: spec.correlation,
           childId: ids.childId,
+          episodeId: session.episodeId,
           executionId: ids.executionId,
           parentExecutionId: ids.parentExecutionId,
           signal,
@@ -403,6 +407,7 @@ export async function runOneDelegation(
       await releaseDelegationWorkspace({
         prepared: preparedWorkspace,
         childId: ids.childId,
+        episodeId: session.episodeId,
         executionId: ids.executionId,
         parentExecutionId: ids.parentExecutionId,
         ledgerPath: session.ledgerPath,
@@ -451,6 +456,8 @@ export async function handoffPlanContext(input: {
   session: Parameters<typeof advisePruning>[0]["session"];
   base: Record<string, unknown>;
   task: string;
+  executionId?: string;
+  toolCallId?: string;
   /** A refusal is already certain, so nothing may be asked. */
   blocked: boolean;
   /** Plans with no human in the loop; its result decides whether an advisor is consulted at all. */
@@ -464,6 +471,8 @@ export async function handoffPlanContext(input: {
     session: input.session,
     granted: plan.handoff as Parameters<typeof advisePruning>[0]["granted"],
     task: input.task,
+    ...(input.executionId ? { executionId: input.executionId } : {}),
+    ...(input.toolCallId ? { toolCallId: input.toolCallId } : {}),
     ...(input.signal ? { signal: input.signal } : {}),
   });
   return ids ? { ...input.base, handoffTurnIds: ids } : { ...input.base };

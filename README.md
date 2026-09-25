@@ -143,7 +143,7 @@ in a Herdr pane beside the session. It is a renderer in a separate process and n
 ## Bounds and configuration
 
 Every variable is `PI_DADDY_*`. The ones an operator sets: `PI_DADDY_GRANT` (overrides the stored grant; the
-environment always wins), `PI_DADDY_ADVISOR` and `PI_DADDY_ADVISOR_KEY` (see below), `PI_DADDY_LEDGER`,
+environment always wins), `PI_DADDY_ADVISOR`, `PI_DADDY_ADVISOR_KEY` and `PI_DADDY_ADVISOR_TASK_EGRESS` (see below), `PI_DADDY_LEDGER`,
 `PI_DADDY_HERDR`, `PI_DADDY_CHILD_IDLE_TIMEOUT` (seconds with no
 activity before a child is stopped; default fifteen minutes; activity is any output byte, a change to the child's pi
 session file, or CPU time in the child's process tree on Linux; every child writes a session file for the run, removed
@@ -168,13 +168,13 @@ environment rather than in a committed file, because a file inside the workspace
 in `settings.json` may turn one off for that project and shorten its timeout; it can never turn one on, choose its
 model, or lengthen its bound.
 
-**With an advisor on, what leaves the machine is more than you might assume.** A delegation that leaves the thinking
-level blank sends its task text to a third party, TypeSafe's Jev through OpenRouter, because it cannot judge a task
-it cannot see. A `pruned` context handoff sends the task and up to twelve of **your own session turns** for the
-advisor to judge, which is your conversation rather than just the task. It is never written to the ledger: the record names the
-decision, the answers and the timing, and the task is never stored, as it never has been. If you are not willing to
-send task text off the machine, leave the advisor off, which is the default. `/grants` states which advisor is in
-force, or why none is.
+Task text does not leave by default, even when the advisor is enabled and keyed. The advisor receives only task
+length, a language detected from referenced-file extensions, and the count and extensions of referenced files — no
+prompt text, file contents or paths. Raw task egress additionally requires `PI_DADDY_ADVISOR_TASK_EGRESS=raw`, is
+recorded as `taskEgress: "raw"` on each advice record, and prints one warning when it first occurs in a process.
+A `pruned` context handoff still sends up to twelve of **your own session turns** for the advisor to judge, which is
+your conversation rather than just the task. Advisor inputs are never written to the ledger. `/grants` states which
+advisor and task-egress mode are in force, or why none is.
 
 ## The layers
 

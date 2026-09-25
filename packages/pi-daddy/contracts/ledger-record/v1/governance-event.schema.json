@@ -20,6 +20,10 @@
       "format": "date-time",
       "pattern": ":[0-5][0-9](?:\\.[0-9]+)?(?:[Zz]|[+-][0-9]{2}:[0-9]{2})$"
     },
+    "episodeId": {
+      "type": "string",
+      "pattern": "^episode:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+    },
     "correlation": {
       "type": "object",
       "description": "Non-authoritative controller metadata under the pinned 1.0 contract. String and aggregate byte limits are additionally enforced by the runtime and cannot be represented exactly in JSON Schema.",
@@ -284,6 +288,9 @@
         "ts": {
           "$ref": "#/$defs/timestamp"
         },
+        "episodeId": {
+          "$ref": "#/$defs/episodeId"
+        },
         "parentId": {
           "$ref": "#/$defs/ledgerDisplayIdentifier"
         },
@@ -516,6 +523,9 @@
         "ts": {
           "$ref": "#/$defs/timestamp"
         },
+        "episodeId": {
+          "$ref": "#/$defs/episodeId"
+        },
         "childId": {
           "$ref": "#/$defs/ledgerDisplayIdentifier"
         },
@@ -605,6 +615,9 @@
         },
         "ts": {
           "$ref": "#/$defs/timestamp"
+        },
+        "episodeId": {
+          "$ref": "#/$defs/episodeId"
         },
         "childId": {
           "$ref": "#/$defs/ledgerDisplayIdentifier"
@@ -716,6 +729,16 @@
           "minimum": 1,
           "description": "the inactivity bound in milliseconds that governed this child beside the deadlineAt ceiling"
         },
+        "usage": {
+          "$ref": "#/$defs/childUsage"
+        },
+        "usageUnavailable": {
+          "enum": [
+            "session-missing",
+            "session-invalid",
+            "usage-missing"
+          ]
+        },
         "herdrPaneId": {
           "$ref": "#/$defs/ledgerDisplayIdentifier"
         },
@@ -734,6 +757,12 @@
         "executor"
       ],
       "additionalProperties": false,
+      "not": {
+        "required": [
+          "usage",
+          "usageUnavailable"
+        ]
+      },
       "allOf": [
         {
           "if": {
@@ -783,6 +812,77 @@
           }
         }
       ]
+    },
+    "childUsage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "input",
+        "output",
+        "cacheRead",
+        "cacheWrite",
+        "totalTokens",
+        "cost"
+      ],
+      "properties": {
+        "input": {
+          "type": "number",
+          "minimum": 0
+        },
+        "output": {
+          "type": "number",
+          "minimum": 0
+        },
+        "cacheRead": {
+          "type": "number",
+          "minimum": 0
+        },
+        "cacheWrite": {
+          "type": "number",
+          "minimum": 0
+        },
+        "reasoning": {
+          "type": "number",
+          "minimum": 0
+        },
+        "totalTokens": {
+          "type": "number",
+          "minimum": 0
+        },
+        "cost": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "input",
+            "output",
+            "cacheRead",
+            "cacheWrite",
+            "total"
+          ],
+          "properties": {
+            "input": {
+              "type": "number",
+              "minimum": 0
+            },
+            "output": {
+              "type": "number",
+              "minimum": 0
+            },
+            "cacheRead": {
+              "type": "number",
+              "minimum": 0
+            },
+            "cacheWrite": {
+              "type": "number",
+              "minimum": 0
+            },
+            "total": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        }
+      }
     },
     "executionId": {
       "type": "string",

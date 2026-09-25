@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { ENV_EPISODE_ID } from "../src/kernel/env-names.ts";
 import { Type } from "typebox";
 import {
   ActivityTimelineRecorder,
@@ -13,6 +14,7 @@ import {
 
 export interface ActivitySessionState {
   activityRootId?: string;
+  episodeId?: string;
   activity?: ActivityIdentity & { taskId?: string };
 }
 interface HookContext {
@@ -44,15 +46,19 @@ export function registerActivityTimeline(pi: ExtensionAPI, session?: ActivitySes
     }
   };
   const current = (ctx: HookContext): ActivityTimelineRecorder => {
-    const env =
-      session?.activityRootId && !process.env.PI_DADDY_ACTIVITY_ROOT
-        ? { ...process.env, PI_DADDY_ACTIVITY_ROOT: session.activityRootId }
-        : process.env;
+    const env = {
+      ...process.env,
+      ...(session?.activityRootId && !process.env.PI_DADDY_ACTIVITY_ROOT
+        ? { PI_DADDY_ACTIVITY_ROOT: session.activityRootId }
+        : {}),
+      ...(session?.episodeId ? { [ENV_EPISODE_ID]: session.episodeId } : {}),
+    };
     // session_start binds reload ownership after this hook registration; re-create before the first turn
     // if that binding recovered a prior root identity rather than the factory's provisional UUID.
     if (
       !recorder ||
-      (!process.env.PI_DADDY_ACTIVITY_ROOT && session?.activityRootId && recorder.rootId !== session.activityRootId)
+      (!process.env.PI_DADDY_ACTIVITY_ROOT && session?.activityRootId && recorder.rootId !== session.activityRootId) ||
+      (session?.episodeId !== undefined && recorder.episodeId !== session.episodeId)
     )
       recorder = new ActivityTimelineRecorder(ctx.cwd, env);
     return recorder;

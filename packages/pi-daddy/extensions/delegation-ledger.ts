@@ -29,6 +29,7 @@ export async function recordDelegationDecision(input: {
   await appendRecord(
     { path: ledgerPath, strict: true },
     buildRecord({
+      episodeId: session.episodeId,
       executionId: ids.executionId,
       parentExecutionId: ids.parentExecutionId,
       parentId: ids.parentId,

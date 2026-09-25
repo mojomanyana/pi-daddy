@@ -7,7 +7,7 @@ import { createAdvisor, type AdviceRecord } from "../src/advisors/advisor.ts";
 import { nullDecider, type Decider } from "../src/advisors/decider.ts";
 import { adviseEffort, EFFORT_PURPOSE } from "../extensions/effort-advice.ts";
 import { createAdvisorSession } from "../extensions/advisor-session.ts";
-import { ADVISOR_KEY_ENV, ENV_ADVISOR } from "../src/advisors/settings.ts";
+import { ADVISOR_KEY_ENV, ENV_ADVISOR, ENV_ADVISOR_TASK_EGRESS } from "../src/advisors/settings.ts";
 
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -15,6 +15,7 @@ const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const REASONING = { reasoning: true, thinkingLevelMap: { off: "off", low: "low", medium: "medium", high: "high" } };
 const registryFor = (model: unknown) => ({ find: () => model });
 const MODEL = "openai-codex/gpt-5.6-sol";
+const executionId = "exec:00000000-0000-4000-8000-000000000001";
 
 function advisorAnswering(value: string | undefined, records: AdviceRecord[] = []) {
   const decider: Decider =
@@ -34,14 +35,81 @@ test("advice fills a blank effort with a level the model actually supports", asy
   const records: AdviceRecord[] = [];
   const chosen = await adviseEffort({
     session: { advisorSession: { advisor: advisorAnswering("low", records) } },
+    executionId,
     model: MODEL,
     registry: registryFor(REASONING),
     task: "rename a variable",
   });
   assert.equal(chosen, "low");
   assert.equal(records[0].purpose, EFFORT_PURPOSE);
+  assert.equal(records[0].executionId, executionId);
   assert.deepEqual(records[0].questions, ["effort"]);
   assert.doesNotMatch(JSON.stringify(records[0]), /rename a variable/, "the task is sent, never recorded");
+});
+
+test("task text defaults to a structural digest and the advice record names digest mode", async () => {
+  // Breaks by: sending the task directly when no egress switch is set, including paths or prompt text in the
+  // digest, or omitting the per-call mode from the record.
+  const task = "Update src/private/secret.ts and README.md. SECRET BODY";
+  let state: Readonly<Record<string, unknown>> | undefined;
+  const records: AdviceRecord[] = [];
+  const advisor = createAdvisor({
+    decider: {
+      name: "spy",
+      decide: async (request) => {
+        state = request.state;
+        return null;
+      },
+    },
+    record: (record) => void records.push(record),
+    enabled: true,
+  });
+  await adviseEffort({
+    session: { advisorSession: { advisor } },
+    model: MODEL,
+    registry: registryFor(REASONING),
+    task,
+  });
+  assert.deepEqual(state, {
+    task: { length: task.length, language: "mixed", referencedFiles: { count: 2, extensions: [".md", ".ts"] } },
+  });
+  assert.doesNotMatch(JSON.stringify(state), /SECRET BODY|src\/private|README/);
+  assert.equal(records[0].taskEgress, "digest");
+});
+
+test("raw task egress is explicit, recorded, and warns only once", async () => {
+  // Breaks by: ignoring the raw switch, omitting the ledger mode, or warning once per delegation.
+  const task = "RAW-TASK-TEXT";
+  let state: Readonly<Record<string, unknown>> | undefined;
+  const records: AdviceRecord[] = [];
+  const warnings: string[] = [];
+  const originalWarn = console.warn;
+  console.warn = (message?: unknown) => void warnings.push(String(message));
+  try {
+    const advisor = createAdvisor({
+      decider: {
+        name: "spy",
+        decide: async (request) => {
+          state = request.state;
+          return null;
+        },
+      },
+      record: (record) => void records.push(record),
+      enabled: true,
+      taskEgress: "raw",
+    } as Parameters<typeof createAdvisor>[0] & { taskEgress: "raw" });
+    const input = { session: { advisorSession: { advisor } }, model: MODEL, registry: registryFor(REASONING), task };
+    await adviseEffort(input);
+    await adviseEffort(input);
+  } finally {
+    console.warn = originalWarn;
+  }
+  assert.deepEqual(state, { task });
+  assert.deepEqual(
+    records.map((record) => record.taskEgress),
+    ["raw", "raw"],
+  );
+  assert.deepEqual(warnings, ["pi-daddy: raw advisor task egress is enabled"]);
 });
 
 test("a caller's own choice is never second-guessed, and nothing is asked", async () => {
@@ -183,6 +251,24 @@ test("each advisor's answer is spent on one field and nothing else", async () =>
   const pruning = [...runner.matchAll(/(?:const\s+)?([\w.]+)\s*=\s*await advisePruning\(/g)].map((m) => m[1]);
   assert.deepEqual(pruning, ["ids"], "the pruning answer is bound once");
   assert.match(runner, /handoffTurnIds: ids/, "and reaches the planner only as handoffTurnIds");
+
+  // The raw task also exists inside Pi's persisted current assistant tool call. Optional parameters make every
+  // omitted hop type-correct, so pin the public tool → runner → pruning path that excludes that turn.
+  const delegation = await readFile(join(packageRoot, "extensions", "delegation.ts"), "utf8");
+  const chain = await readFile(join(packageRoot, "extensions", "delegate-chain.ts"), "utf8");
+  assert.equal(
+    [...delegation.matchAll(/toolCallId:\s*_toolCallId/g)].length,
+    2,
+    "delegate and delegate_all pass the public call id",
+  );
+  assert.match(chain, /toolCallId:\s*_toolCallId/, "delegate_chain passes the public call id");
+  assert.match(runner, /const \{ toolCallId,[^}]+\} = options;/, "the runner receives it");
+  assert.match(runner, /handoffPlanContext\(\{[^}]+toolCallId,/s, "and passes it to handoff planning");
+  assert.match(
+    runner,
+    /advisePruning\(\{[\s\S]+input\.toolCallId \? \{ toolCallId: input\.toolCallId \}/,
+    "which passes it to pruning",
+  );
 });
 
 test("the levels come from the model the CHILD will run on, not the session's", async () => {
@@ -234,7 +320,13 @@ test("a project may switch an advisor off through its settings block, and that b
   // The narrowing the release advertised in four places. Review measured it was dead code: the session passed
   // `block: undefined`, so `enabled: false` turned nothing off. Breaks by: passing undefined again.
   const on = { [ENV_ADVISOR]: "jev", [ADVISOR_KEY_ENV]: "k" } as NodeJS.ProcessEnv;
-  assert.equal(createAdvisorSession({ block: undefined, env: on }).deciderName, "jev");
+  const digest = createAdvisorSession({ block: undefined, env: on });
+  assert.equal(digest.deciderName, "jev");
+  assert.equal(digest.settings.taskEgress, "digest", "enabled and keyed still defaults task egress off");
+  assert.equal(
+    createAdvisorSession({ block: undefined, env: { ...on, [ENV_ADVISOR_TASK_EGRESS]: "raw" } }).settings.taskEgress,
+    "raw",
+  );
   const off = createAdvisorSession({ block: { enabled: false }, env: on });
   assert.equal(off.deciderName, "none", "a project that says no gets no advisor");
   assert.match(String(off.settings.refusal), /not true for this project/);

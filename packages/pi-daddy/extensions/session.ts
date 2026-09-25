@@ -14,6 +14,7 @@
  * copy of `ownGrant` before observation is exactly how a stale upper bound would become an enforced one.
  */
 import { randomUUID } from "node:crypto";
+import { isEpisodeId, newEpisodeId } from "../src/kernel/episode-id.ts";
 import { parseInherited, type InheritableApproval } from "../src/kernel/approval.ts";
 import type { ApprovalBinding } from "../src/kernel/correlation.ts";
 import { createApprovalGateProvider } from "../src/governance/approval-prompt.ts";
@@ -100,7 +101,7 @@ import {
   ENV_ACTIVITY_ROOT,
   ENV_ACTIVITY_TASK,
 } from "../src/products/activity-timeline.ts";
-import { ENV_HERDR_KEEP_PANE, ENV_GOVERNANCE, ENV_ADVISOR } from "../src/kernel/env-names.ts";
+import { ENV_HERDR_KEEP_PANE, ENV_GOVERNANCE, ENV_ADVISOR, ENV_EPISODE_ID } from "../src/kernel/env-names.ts";
 export { ENV_HERDR_KEEP_PANE, ENV_GOVERNANCE } from "../src/kernel/env-names.ts";
 import { adoptLegacyEnvironment } from "../src/kernel/env-names.ts";
 
@@ -148,6 +149,8 @@ export interface GrantsSession extends NativeSessionHost {
   ownSpawnId: string;
   /** Unique identity when this session is itself a governed child; roots have no governed parent. */
   ownExecutionId?: string;
+  /** Stable identity shared by this root session and every descendant. */
+  episodeId: string;
   /** Descendants this subtree may still create — the cardinality bound ADR-0008 never had. */
   fanoutBudget: number;
   /** Whether delegation tools are active. Reconciled against the owner-bound root at session_start. */
@@ -407,6 +410,13 @@ export function createGrantsSession(
   const environment = lifecycle ? process.env : started!.environment;
   const activityRootId = activeLifecycle.activityRootId ?? randomUUID();
   activeLifecycle.activityRootId = activityRootId;
+  const inheritedEpisodeId = environment[ENV_EPISODE_ID];
+  const episodeId = isEpisodeId(inheritedEpisodeId)
+    ? inheritedEpisodeId
+    : activeLifecycle.episodeId && isEpisodeId(activeLifecycle.episodeId)
+      ? activeLifecycle.episodeId
+      : newEpisodeId();
+  activeLifecycle.episodeId = episodeId;
   // Local governance is on unless PI_DADDY_GOVERNANCE opts out; explicit inherited grants still win.
   // The factory precedes ctx, so its cwd/store identity is reconciled at session_start.
   const grantRaw = environment[ENV_GRANT];
@@ -435,7 +445,8 @@ export function createGrantsSession(
   // Read from `storeCwd` for `loadStoredGrantStateSync`'s reason: this factory runs before any hook, so `ctx.cwd`
   // does not exist yet. Reading a workspace-writable file here is safe precisely because it can only narrow.
   const advisorSession = createAdvisorSession({
-    block: projectAdvisorBlock(storeCwd),
+    block: projectAdvisorBlock(storeCwd, environment),
+    episodeId,
     ...(storedLedger ? { ledgerPath: storedLedger } : {}),
   });
   const session: GrantsSession = {
@@ -469,6 +480,7 @@ export function createGrantsSession(
     // every level restarting at `d0` and the ledger becoming unjoinable.
     ownSpawnId: environment[ENV_PARENT_ID]?.trim() || `d${depth}`,
     ownExecutionId: environment[ENV_EXECUTION_ID]?.trim() || undefined,
+    episodeId,
     // The cardinality bound ADR-0008 never had: it attenuates downward like depth, so a subtree can never
     // create more descendants than its root was given — with no shared state, no lock and no counter file.
     fanoutBudget: budgetFromEnv(environment[ENV_FANOUT]),
@@ -501,6 +513,7 @@ export function createGrantsSession(
     catalogReady: Promise.resolve(emptyCatalog),
     delegationContext: async (approved?: InheritableApproval[]) => ({
       ownGrant: session.ownGrant,
+      episodeId: session.episodeId,
       depth: session.depth,
       maxDepth: session.maxDepth,
       gated: session.gated,
@@ -559,6 +572,7 @@ export function createGrantsSession(
     publishChildEnv: () => {
       const env = childEnv({
         ownGrant: session.ownGrant,
+        episodeId: session.episodeId,
         depth: session.depth,
         maxDepth: session.maxDepth,
         gated: session.gated,
@@ -586,10 +600,19 @@ export function createGrantsSession(
  * Unreadable, absent or malformed all yield undefined: this file is the reviewable record, not authority, and the
  * only thing it can do to an advisor is turn one off. A parse failure therefore costs nothing worth reporting.
  */
-function projectAdvisorBlock(cwd: string): unknown {
+export function reconcileAdvisorSession(session: GrantsSession, environment: NodeJS.ProcessEnv): void {
+  session.advisorSession = createAdvisorSession({
+    block: projectAdvisorBlock(session.storeCwd, environment),
+    episodeId: session.episodeId,
+    ...(session.ledgerPath ? { ledgerPath: session.ledgerPath } : {}),
+    env: environment,
+  });
+}
+
+function projectAdvisorBlock(cwd: string, env: NodeJS.ProcessEnv = process.env): unknown {
   // Only when an advisor could exist at all. This runs in every session including every child, before any hook, and
   // a child can never use the result because `PI_DADDY_ADVISOR` is stripped from it.
-  if (!process.env[ENV_ADVISOR]?.trim()) return undefined;
+  if (!env[ENV_ADVISOR]?.trim()) return undefined;
   try {
     const path = projectSettingsPath(cwd);
     // Bounded and type-checked first: this is the third unbounded session-start read AGENTS.md warns about, and the

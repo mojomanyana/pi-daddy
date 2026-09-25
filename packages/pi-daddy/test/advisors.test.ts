@@ -9,7 +9,7 @@ import { JEV_ENDPOINT, JEV_MODEL, jevDecider, parseAdvice, wireRequest } from ".
 import { ADVISOR_KEY_ENV, ENV_ADVISOR, advisorSettingsFrom } from "../src/advisors/settings.ts";
 import { createAdvisorSession } from "../extensions/advisor-session.ts";
 import { mergeChildEnv } from "../src/kernel/propagation.ts";
-import { ENV_ADVISOR_KEY } from "../src/kernel/env-names.ts";
+import { ENV_ADVISOR_KEY, ENV_ADVISOR_TASK_EGRESS } from "../src/kernel/env-names.ts";
 import { readRecordsFile } from "../src/governance/record.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 import { after } from "node:test";
@@ -279,11 +279,18 @@ test("a governed child does not inherit the advisor's API key", async () => {
   // its grant never named — while the comment above the constant claimed "it is never written for a child".
   // Breaks by: removing ENV_ADVISOR_KEY from GRANT_ENV_KEYS.
   const child = mergeChildEnv(
-    { [ENV_ADVISOR_KEY]: "sk-or-SECRET", PI_DADDY_ADVISOR: "jev", PI_DADDY_GRANT: "tool:*", PATH: "/usr/bin" },
+    {
+      [ENV_ADVISOR_KEY]: "sk-or-SECRET",
+      [ENV_ADVISOR_TASK_EGRESS]: "raw",
+      PI_DADDY_ADVISOR: "jev",
+      PI_DADDY_GRANT: "tool:*",
+      PATH: "/usr/bin",
+    },
     { PI_DADDY_GRANT: "tool:read" },
   );
   assert.equal(child[ENV_ADVISOR_KEY], undefined, "a credential is not inherited by being spawned");
   assert.equal(child.PI_DADDY_ADVISOR, undefined, "and neither is the switch that turns an advisor on");
+  assert.equal(child[ENV_ADVISOR_TASK_EGRESS], undefined, "nor the independent switch that permits raw tasks");
   assert.equal(child.PI_DADDY_GRANT, "tool:read", "and the grant still narrows as it always did");
   assert.equal(child.PATH, "/usr/bin", "while ordinary environment still passes through");
 });

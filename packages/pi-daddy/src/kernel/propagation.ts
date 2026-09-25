@@ -33,12 +33,14 @@ import { inheritApprovals, type InheritableApproval } from "./approval.ts";
 import { assertCapabilitiesArePropagatable } from "./capabilities.ts";
 import {
   ENV_ADVISOR_MODEL,
+  ENV_ADVISOR_TASK_EGRESS,
   ENV_ADVISOR_KEY,
   ENV_ADVISOR,
   ENV_GRANT,
   ENV_FANOUT,
   ENV_PARENT_ID,
   ENV_EXECUTION_ID,
+  ENV_EPISODE_ID,
   ENV_DEPTH,
   ENV_MAX_DEPTH,
   ENV_GATED,
@@ -51,6 +53,7 @@ export {
   ENV_FANOUT,
   ENV_PARENT_ID,
   ENV_EXECUTION_ID,
+  ENV_EPISODE_ID,
   ENV_DEPTH,
   ENV_MAX_DEPTH,
   ENV_GATED,
@@ -88,6 +91,7 @@ export const GRANT_ENV_KEYS = [
   // child. Named here rather than claimed away: "stripped from every child" would be false on that path.
   ENV_ADVISOR_KEY,
   ENV_ADVISOR,
+  ENV_ADVISOR_TASK_EGRESS,
   ENV_GRANT,
   ENV_DEPTH,
   ENV_MAX_DEPTH,
@@ -97,6 +101,7 @@ export const GRANT_ENV_KEYS = [
   ENV_FANOUT,
   ENV_PARENT_ID,
   ENV_EXECUTION_ID,
+  ENV_EPISODE_ID,
   // ADR-0042: a child must never keep its parent's unnarrowed pin, so it is stripped like every other
   // governance value and re-supplied only by the spawn plan.
   ENV_WORKSPACE_PIN,
@@ -262,6 +267,8 @@ export interface ChildEnvInput {
    * child then inherits no pin and can route nowhere — which is the fail-closed direction.
    */
   workspacePin?: WorkspacePins;
+  /** Stable identity shared by this root session and every descendant. */
+  episodeId?: string;
   /** This session's depth; children are one deeper. */
   depth: number;
   maxDepth: number;
@@ -342,6 +349,7 @@ export function childEnv(input: ChildEnvInput): Record<string, string> {
   env[ENV_APPROVED] = inheritApprovals(input.approved ?? [], inheritable).join(",");
   // Empty is an explicit one-run ledger opt-out and must overwrite a prior publication too.
   if (input.ledgerPath !== undefined) env[ENV_LEDGER] = input.ledgerPath;
+  if (input.episodeId !== undefined) env[ENV_EPISODE_ID] = input.episodeId;
   // ADR-0042. ALWAYS written when this session has any pin at all, empty string included, for the same reason
   // `ENV_APPROVED` is: an omitted key does not overwrite, so a child would inherit the PARENT's unnarrowed pin
   // through the process-global publication path. An empty value parses back as "a pin was established and you

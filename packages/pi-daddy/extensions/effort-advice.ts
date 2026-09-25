@@ -38,6 +38,7 @@ export async function adviseEffort(input: {
   model?: string;
   registry: { find(provider: string, modelId: string): unknown };
   task: string;
+  executionId?: string;
   agent?: string;
   signal?: AbortSignal;
 }): Promise<string | undefined> {
@@ -52,14 +53,13 @@ export async function adviseEffort(input: {
   // ledger line to be told the only thing that could be said.
   if (levels.length < 2) return undefined;
 
+  const task = advisor.task(input.task);
   const advice = await advisor.ask(
     EFFORT_PURPOSE,
     {
-      // The task text is what the decision is actually about, and it is the one thing this package has never
-      // stored (ADR-0021). It is sent to the advisor because an advisor cannot judge a task it cannot see, and it
-      // is NOT recorded: `createAdvisor` writes the question keys and the answer, never the state. An operator who
-      // is not willing to send task text to a third party leaves the advisor off, which is the default.
-      state: { task: input.task, ...(input.agent ? { definition: input.agent } : {}) },
+      // Raw text is a separate opt-in from enabling the advisor. By default `advisor.task` returns only structural
+      // facts; raw mode preserves the prior request, including the definition name.
+      state: { task, ...(typeof task === "string" && input.agent ? { definition: input.agent } : {}) },
       questions: {
         effort: {
           kind: "choice",
@@ -70,6 +70,7 @@ export async function adviseEffort(input: {
       },
     },
     input.signal,
+    input.executionId,
   );
   const chosen = advice?.answers.effort;
   // Belt and braces: `parseAnswer` already refuses a choice outside the options it was given, so this can only

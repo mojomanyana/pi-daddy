@@ -16,7 +16,21 @@ import type { Advice, AdviceRequest, Decider } from "./decider.ts";
 /** Two seconds. An advisor is on the path of a decision a human is waiting for; it is not worth more than that. */
 export const DEFAULT_ADVICE_TIMEOUT_MS = 2000;
 
+export type TaskEgressMode = "digest" | "raw";
+
+export interface TaskDigest {
+  length: number;
+  language: string;
+  referencedFiles: { count: number; extensions: string[] };
+}
+
 export interface AdviceRecord {
+  /** Stable root episode; absent on records written before episode identity shipped. */
+  episodeId?: string;
+  /** The governed child this advice applied to; absent on records written before attribution shipped. */
+  executionId?: string;
+  /** Which task representation was sent; absent on records written before the egress split shipped. */
+  taskEgress?: TaskEgressMode;
   /** Which decision this advice was for, from the caller's own closed list. */
   purpose: string;
   decider: string;
@@ -36,7 +50,8 @@ export interface AdviceRecord {
 }
 
 export interface Advisor {
-  ask(purpose: string, request: AdviceRequest, signal?: AbortSignal): Promise<Advice | null>;
+  task(task: string): string | TaskDigest;
+  ask(purpose: string, request: AdviceRequest, signal?: AbortSignal, executionId?: string): Promise<Advice | null>;
 }
 
 export function createAdvisor(input: {
@@ -46,12 +61,29 @@ export function createAdvisor(input: {
   timeoutMs?: number;
   /** Absent or false means the null decider is used whatever `decider` says. */
   enabled?: boolean;
+  episodeId?: string;
+  taskEgress?: TaskEgressMode;
 }): Advisor {
   const timeoutMs = input.timeoutMs ?? DEFAULT_ADVICE_TIMEOUT_MS;
+  const taskEgress = input.taskEgress ?? "digest";
   return {
-    async ask(purpose, request, signal) {
+    task(task) {
+      if (taskEgress === "raw") {
+        warnRawTaskEgress();
+        return task;
+      }
+      return digestTask(task);
+    },
+    async ask(purpose, request, signal, executionId) {
       const started = Date.now();
-      const base = { purpose, decider: input.decider.name, questions: Object.keys(request.questions) };
+      const base = {
+        ...(input.episodeId ? { episodeId: input.episodeId } : {}),
+        ...(executionId ? { executionId } : {}),
+        taskEgress,
+        purpose,
+        decider: input.decider.name,
+        questions: Object.keys(request.questions),
+      };
       const write = async (entry: AdviceRecord) => {
         try {
           await input.record(entry);
@@ -109,6 +141,54 @@ export function createAdvisor(input: {
       }
     },
   };
+}
+
+let rawTaskEgressWarned = false;
+
+function warnRawTaskEgress(): void {
+  if (rawTaskEgressWarned) return;
+  rawTaskEgressWarned = true;
+  console.warn("pi-daddy: raw advisor task egress is enabled");
+}
+
+function digestTask(task: string): TaskDigest {
+  const files = [...task.matchAll(/\b(?:[\w.-]+\/)*[\w-]+\.[A-Za-z0-9]{1,10}\b/g)].map((match) => match[0]);
+  const extensions = [
+    ...new Set(files.map((file) => `.${file.slice(file.lastIndexOf(".") + 1).toLowerCase()}`)),
+  ].sort();
+  const languages = new Set(extensions.map(languageForExtension).filter((language) => language !== "unknown"));
+  return {
+    length: task.length,
+    language: languages.size === 0 ? "unknown" : languages.size === 1 ? [...languages][0] : "mixed",
+    referencedFiles: { count: files.length, extensions },
+  };
+}
+
+function languageForExtension(extension: string): string {
+  const languages: Readonly<Record<string, string>> = {
+    ".c": "c",
+    ".cpp": "cpp",
+    ".css": "css",
+    ".go": "go",
+    ".html": "html",
+    ".java": "java",
+    ".js": "javascript",
+    ".jsx": "javascript",
+    ".json": "json",
+    ".md": "markdown",
+    ".php": "php",
+    ".py": "python",
+    ".rb": "ruby",
+    ".rs": "rust",
+    ".sh": "shell",
+    ".sql": "sql",
+    ".swift": "swift",
+    ".ts": "typescript",
+    ".tsx": "typescript",
+    ".yaml": "yaml",
+    ".yml": "yaml",
+  };
+  return languages[extension] ?? "unknown";
 }
 
 /** The bound fired, the caller went away, or neither — three different facts a reviewer needs to tell apart. */

@@ -4,6 +4,8 @@ import { constants } from "node:fs";
 import { appendFile, mkdir, open, readFile, realpath, rename, writeFile } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
 import { activityTimelinePath } from "../kernel/project-paths.ts";
+import { isEpisodeId, newEpisodeId } from "../kernel/episode-id.ts";
+import { ENV_EPISODE_ID } from "../kernel/env-names.ts";
 import { appendRecord, readRecords } from "../governance/record.ts";
 
 export const ACTIVITY_TIMELINE_VERSION = 1 as const;
@@ -35,6 +37,8 @@ export interface ActivityEvent {
   kind: string;
   at: string;
   rootId: string;
+  /** Added after v1 shipped; absent on retained events written before episode identity existed. */
+  episodeId?: string;
   taskId: string;
   parentTaskId?: string;
   agentId?: string;
@@ -541,6 +545,7 @@ export class ActivityTimelineRecorder {
   readonly contentEnabled: boolean;
   readonly path: string;
   readonly rootId: string;
+  readonly episodeId: string;
   private taskId?: string;
   constructor(cwd: string, env: NodeJS.ProcessEnv = process.env) {
     const configured = env[ENV_ACTIVITY_TIMELINE]?.trim();
@@ -550,6 +555,8 @@ export class ActivityTimelineRecorder {
     const identity = activityIdentity(cwd, env);
     this.path = identity.path;
     this.rootId = identity.rootId;
+    const inheritedEpisodeId = env[ENV_EPISODE_ID]?.trim();
+    this.episodeId = isEpisodeId(inheritedEpisodeId) ? inheritedEpisodeId : newEpisodeId();
     this.taskId = identity.taskId;
   }
   get task(): string | undefined {
@@ -620,6 +627,7 @@ export class ActivityTimelineRecorder {
       kind,
       at: new Date().toISOString(),
       rootId: this.rootId,
+      episodeId: this.episodeId,
       taskId: this.taskId,
       ...fields,
     };

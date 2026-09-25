@@ -9,6 +9,7 @@ import type { ExecutorKind } from "../kernel/delegate-types.ts";
 import type { CorrelationMetadata } from "../kernel/correlation.ts";
 import type { StructuredRefusal } from "../kernel/refusals.ts";
 import { assertExecutionId } from "../kernel/execution-id.ts";
+import { assertEpisodeId } from "../kernel/episode-id.ts";
 import { assertLedgerV3Wire } from "./ledger-v3-validation.ts";
 
 export const WORKSPACE_ACCESSES = ["read", "write"] as const;
@@ -61,6 +62,22 @@ export const CHILD_PROCESS_SIGNALS = [
   "SIGINFO",
 ] as const satisfies readonly NodeJS.Signals[];
 export type ChildProcessSignal = (typeof CHILD_PROCESS_SIGNALS)[number];
+
+export interface ChildUsageTotals {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  reasoning?: number;
+  totalTokens: number;
+  cost: {
+    input: number;
+    output: number;
+    cacheRead: number;
+    cacheWrite: number;
+    total: number;
+  };
+}
 
 /**
  * `released` is a handover this owner performed. FOUR members were added by the 0.18.0 review pass, and
@@ -123,6 +140,10 @@ export interface ChildLifecycleEvent extends LedgerEventBase {
   reason?: string;
   /** The inactivity bound (ms) that governed this child beside the `deadlineAt` ceiling (PR 3e). */
   idleTimeoutMs?: number;
+  /** Aggregate model usage read from the child's pi session file after it stopped. */
+  usage?: ChildUsageTotals;
+  /** Why totals could not be read; a fixed code, never transcript content. */
+  usageUnavailable?: "session-missing" | "session-invalid" | "usage-missing";
 }
 
 export type CapabilityDecisionEvent = GrantRecord & {
@@ -136,6 +157,7 @@ export type CapabilityDecisionEvent = GrantRecord & {
 export type RuntimeLedgerEvent = CapabilityDecisionEvent | WorkspaceLeaseEvent | ChildLifecycleEvent;
 
 export function buildWorkspaceLeaseEvent(args: {
+  episodeId?: string;
   executionId: string;
   parentExecutionId: string | null;
   childId: string;
@@ -154,6 +176,7 @@ export function buildWorkspaceLeaseEvent(args: {
     ledgerVersion: LEDGER_VERSION,
     event: "workspace_lease",
     ts: args.now.toISOString(),
+    ...(args.episodeId ? { episodeId: args.episodeId } : {}),
     executionId: args.executionId,
     parentExecutionId: args.parentExecutionId,
     childId: args.childId,
@@ -173,6 +196,7 @@ export function buildWorkspaceLeaseEvent(args: {
 }
 
 export function buildChildLifecycleEvent(args: {
+  episodeId?: string;
   executionId: string;
   parentExecutionId: string | null;
   childId: string;
@@ -188,6 +212,8 @@ export function buildChildLifecycleEvent(args: {
   aborted?: boolean;
   truncated?: boolean;
   reason?: string;
+  usage?: ChildUsageTotals;
+  usageUnavailable?: "session-missing" | "session-invalid" | "usage-missing";
   correlation?: CorrelationMetadata;
   now: Date;
 }): ChildLifecycleEvent {
@@ -196,6 +222,7 @@ export function buildChildLifecycleEvent(args: {
     ledgerVersion: LEDGER_VERSION,
     event: "child_lifecycle",
     ts: args.now.toISOString(),
+    ...(args.episodeId ? { episodeId: args.episodeId } : {}),
     executionId: args.executionId,
     parentExecutionId: args.parentExecutionId,
     childId: args.childId,
@@ -211,11 +238,18 @@ export function buildChildLifecycleEvent(args: {
     ...(args.aborted ? { aborted: true } : {}),
     ...(args.truncated ? { truncated: true } : {}),
     ...(args.reason ? { reason: args.reason } : {}),
+    ...(args.usage ? { usage: structuredClone(args.usage) } : {}),
+    ...(args.usageUnavailable ? { usageUnavailable: args.usageUnavailable } : {}),
     ...(args.correlation ? { correlation: structuredClone(args.correlation) } : {}),
   });
 }
 
-function assertEventIdentity(args: { executionId: string; parentExecutionId: string | null }): void {
+function assertEventIdentity(args: {
+  episodeId?: string;
+  executionId: string;
+  parentExecutionId: string | null;
+}): void {
+  if (args.episodeId !== undefined) assertEpisodeId(args.episodeId);
   assertExecutionId(args.executionId);
   if (args.parentExecutionId !== null) assertExecutionId(args.parentExecutionId, "parentExecutionId");
   if (args.parentExecutionId === args.executionId) throw new TypeError("an execution cannot be its own parent");

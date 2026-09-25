@@ -59,6 +59,8 @@ export interface DelegationRequest {
 
 export interface DelegationContext {
   ownGrant: Capability[];
+  /** Stable identity shared by the root session and every descendant. */
+  episodeId?: string;
   depth: number;
   maxDepth: number;
   gated: Capability[];
