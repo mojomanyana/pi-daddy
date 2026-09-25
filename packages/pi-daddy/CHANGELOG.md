@@ -12,7 +12,7 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
-## Unreleased
+## 0.41.0 — episode identity, child usage, and explicit advisor task egress
 
 - Enabling and keying an advisor now sends only a structural task digest by default. Raw task text additionally
   requires `PI_DADDY_ADVISOR_TASK_EGRESS=raw`; each advice record names the mode, and raw mode warns once per process.
