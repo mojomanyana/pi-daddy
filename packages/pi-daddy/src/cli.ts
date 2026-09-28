@@ -36,9 +36,16 @@ import {
   type SkillPackage,
 } from "./kernel/skill-packages.ts";
 import { adoptLegacyEnvironment, legacyEnvironmentWarning } from "./kernel/env-names.ts";
-import { PI_PROJECT_DIR, PROJECT_FILES, PROJECT_STATE_DIRNAME } from "./kernel/project-paths.ts";
+import {
+  activityTimelinePath,
+  PI_PROJECT_DIR,
+  PROJECT_FILES,
+  PROJECT_STATE_DIRNAME,
+  projectLedgerPath,
+} from "./kernel/project-paths.ts";
 import { repairLedger } from "./governance/record.ts";
 import { importLegacyLedger } from "./governance/ledger.ts";
+import { commitsForRepo, renderEpisodeReport, reportEpisodes, type EpisodeGroupBy } from "./products/episode-report.ts";
 
 /** The reviewable record, as the operator sees it relative to the project (ADR-0076 PR 3c). */
 const SETTINGS_REL = `${PI_PROJECT_DIR}/${PROJECT_STATE_DIRNAME}/${PROJECT_FILES.settings}`;
@@ -50,6 +57,8 @@ Usage:
                                            packages that declare skills (package.json "pi": {"skills": …})
   pi-daddy ledger repair <path> [--yes]   show the damaged tail of a ledger; --yes truncates it (ADR-0076)
   pi-daddy ledger import <source> <target> copy a pre-format ledger into the record format; the source is untouched
+  pi-daddy report [--since <date>] [--definition <name>] [--model <id>]
+                  [--group-by definition|model|thinking] [--json]
   pi-daddy --help | --version
 
 init references skills already enabled in Pi at their installed or local paths. Legacy unregistered npm
@@ -61,13 +70,18 @@ stays unspawnable. Capabilities that can change your machine
             It never rewrites ${SETTINGS_REL} — delete that file if you want it regenerated.`;
 
 export interface ParsedArgs {
-  command: "init" | "ledger-repair" | "ledger-import" | "help" | "version";
+  command: "init" | "ledger-repair" | "ledger-import" | "report" | "help" | "version";
   importTarget?: string;
   /** `ledger repair <path>`: the ledger file; `yes` applies, otherwise preview only. */
   ledgerPath?: string;
   yes?: boolean;
   dir?: string;
   force: boolean;
+  since?: string;
+  definition?: string;
+  model?: string;
+  groupBy?: EpisodeGroupBy;
+  json?: boolean;
   /** Non-empty means refuse: argv said something this program does not understand. */
   errors: string[];
 }
@@ -104,6 +118,34 @@ export function parseArgs(argv: string[]): ParsedArgs {
     const unknown = flags.filter((f) => f !== "--yes");
     if (unknown.length) return { command: "help", force: false, errors: [`unknown option "${unknown[0]}"`] };
     return { command: "ledger-repair", force: false, errors: [], ledgerPath: target, yes: flags.includes("--yes") };
+  }
+  if (command === "report") {
+    const parsed: ParsedArgs = { command: "report", force: false, errors: [] };
+    for (let index = 0; index < tail.length; index += 1) {
+      const flag = tail[index];
+      if (flag === "--json") {
+        parsed.json = true;
+        continue;
+      }
+      if (!["--since", "--definition", "--model", "--group-by"].includes(flag)) {
+        parsed.errors.push(`unknown option ${flag}`);
+        continue;
+      }
+      const value = tail[index + 1];
+      if (!value || value.startsWith("-")) {
+        parsed.errors.push(`${flag} needs a value`);
+        continue;
+      }
+      index += 1;
+      if (flag === "--since") {
+        if (Number.isNaN(Date.parse(value))) parsed.errors.push("--since needs a valid date");
+        else parsed.since = value;
+      } else if (flag === "--definition") parsed.definition = value;
+      else if (flag === "--model") parsed.model = value;
+      else if (["definition", "model", "thinking"].includes(value)) parsed.groupBy = value as EpisodeGroupBy;
+      else parsed.errors.push("--group-by needs definition, model, or thinking");
+    }
+    return parsed;
   }
   if (command !== "init") return { command: "help", force: false, errors: [`unknown command "${command}"`] };
   const errors: string[] = [];
@@ -323,6 +365,35 @@ export async function main(argv: string[]): Promise<number> {
   }
   if (parsed.command === "help") {
     console.log(USAGE);
+    return 0;
+  }
+  if (parsed.command === "report") {
+    const cwd = process.cwd();
+    const readOptional = async (path: string): Promise<string> => {
+      try {
+        return await readFile(path, "utf8");
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return "";
+        throw error;
+      }
+    };
+    const [ledgerText, activityText, commitByEpisode] = await Promise.all([
+      readOptional(projectLedgerPath(cwd)),
+      readOptional(activityTimelinePath(cwd)),
+      commitsForRepo(cwd),
+    ]);
+    const output = reportEpisodes({
+      ledgerText,
+      activityText,
+      commitByEpisode,
+      options: {
+        ...(parsed.since ? { since: parsed.since } : {}),
+        ...(parsed.definition ? { definition: parsed.definition } : {}),
+        ...(parsed.model ? { model: parsed.model } : {}),
+        ...(parsed.groupBy ? { groupBy: parsed.groupBy } : {}),
+      },
+    });
+    console.log(renderEpisodeReport(output, parsed.json === true).trimEnd());
     return 0;
   }
   if (parsed.command === "ledger-import") {
