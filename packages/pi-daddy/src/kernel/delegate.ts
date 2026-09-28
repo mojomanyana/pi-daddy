@@ -27,7 +27,7 @@ import {
   inheritableGrant,
   workspacePinEnv,
 } from "./propagation.ts";
-import { inheritApprovals, type InheritableApproval } from "./approval.ts";
+import { DELEGATE_SUBJECT, inheritApprovals, type InheritableApproval } from "./approval.ts";
 import { explainDoubledNamespace, suggestForUnknown, unknownCapabilities, type Catalog } from "./catalog.ts";
 import { GovernanceRefusal, refusal, type RefusalCode, type StructuredRefusal } from "./refusals.ts";
 import { contextCapability, isContextCapability, parseContextRequest, type ContextRequest } from "./context-handoff.ts";
@@ -36,7 +36,7 @@ import { resolveDelegationApproval } from "./delegation-approval.ts";
 import type { Delegation, DelegationContext, DelegationRequest } from "./delegate-types.ts";
 import { assertCapabilitiesArePropagatable } from "./capabilities.ts";
 export type { Delegation, DelegationContext, DelegationRequest } from "./delegate-types.ts";
-import { GOVERNANCE_ENV_KEYS } from "./env-names.ts";
+import { ENV_CHILD_DEFINITION, ENV_CHILD_EPISODE, ENV_CHILD_EXECUTION, GOVERNANCE_ENV_KEYS } from "./env-names.ts";
 
 export function planDelegation(request: DelegationRequest, ctx: DelegationContext): Delegation {
   const childDepth = ctx.depth + 1;
@@ -389,8 +389,15 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
   // process boundaries with no shared state.
   if (ctx.fanoutBudget !== undefined) env[ENV_FANOUT] = String(ctx.fanoutBudget);
   if (ctx.childSpawnId) env[ENV_PARENT_ID] = ctx.childSpawnId;
-  if (ctx.childExecutionId) env[ENV_EXECUTION_ID] = ctx.childExecutionId;
-  if (ctx.episodeId) env[ENV_EPISODE_ID] = ctx.episodeId;
+  if (ctx.childExecutionId) {
+    env[ENV_EXECUTION_ID] = ctx.childExecutionId;
+    env[ENV_CHILD_EXECUTION] = ctx.childExecutionId;
+  }
+  if (ctx.episodeId) {
+    env[ENV_EPISODE_ID] = ctx.episodeId;
+    env[ENV_CHILD_EPISODE] = ctx.episodeId;
+  }
+  env[ENV_CHILD_DEFINITION] = request.agent ?? DELEGATE_SUBJECT;
   if (ctx.gated.length > 0) env[ENV_GATED] = ctx.gated.join(",");
   // Approvals ride down with the grant, but only ever for what this child actually received — so
   // `approved ⊆ grant` holds at every level (ADR-0010). Written even when empty, so this object states

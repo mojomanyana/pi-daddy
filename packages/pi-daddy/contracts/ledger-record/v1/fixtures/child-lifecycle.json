@@ -45,6 +45,11 @@
     }
   },
   "compactionCount": 1,
+  "exportedEnvironment": [
+    "PI_DADDY_EPISODE",
+    "PI_DADDY_DEFINITION",
+    "PI_DADDY_EXECUTION"
+  ],
   "correlation": {
     "schema_version": "1.0",
     "run_id": "run-contract-001",

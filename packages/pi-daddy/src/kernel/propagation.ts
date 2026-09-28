@@ -32,6 +32,7 @@ import { WORKSPACE_WILDCARD } from "./resolve.ts";
 import { inheritApprovals, type InheritableApproval } from "./approval.ts";
 import { assertCapabilitiesArePropagatable } from "./capabilities.ts";
 import {
+  CHILD_ATTRIBUTION_ENV_KEYS,
   ENV_ADVISOR_MODEL,
   ENV_ADVISOR_TASK_EGRESS,
   ENV_ADVISOR_KEY,
@@ -102,6 +103,8 @@ export const GRANT_ENV_KEYS = [
   ENV_PARENT_ID,
   ENV_EXECUTION_ID,
   ENV_EPISODE_ID,
+  // Child attribution identifies this process itself, so session publication must not clear it. `mergeChildEnv`
+  // strips it separately before applying the next child's plan.
   // ADR-0042: a child must never keep its parent's unnarrowed pin, so it is stripped like every other
   // governance value and re-supplied only by the spawn plan.
   ENV_WORKSPACE_PIN,
@@ -393,6 +396,7 @@ export function workspacePinEnv(
 export function mergeChildEnv(parentEnv: NodeJS.ProcessEnv, planEnv: Record<string, string>): NodeJS.ProcessEnv {
   const merged: NodeJS.ProcessEnv = { ...parentEnv };
   for (const key of GRANT_ENV_KEYS) delete merged[key];
+  for (const key of CHILD_ATTRIBUTION_ENV_KEYS) delete merged[key];
   return { ...merged, ...planEnv };
 }
 

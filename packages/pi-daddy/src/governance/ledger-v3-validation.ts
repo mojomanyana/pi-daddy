@@ -3,6 +3,7 @@ import { isExecutionId } from "../kernel/execution-id.ts";
 import { isEpisodeId } from "../kernel/episode-id.ts";
 import { REFUSAL_CODES } from "../kernel/refusals.ts";
 import { isLedgerCapabilityIdentifier, isLedgerDisplayIdentifier } from "../kernel/ledger-identifiers.ts";
+import { CHILD_ATTRIBUTION_ENV_KEYS } from "../kernel/env-names.ts";
 
 export type LedgerV3Object = Record<string, unknown>;
 
@@ -152,6 +153,7 @@ const FIELDS = {
     "usage",
     "compactionCount",
     "usageUnavailable",
+    "exportedEnvironment",
     "herdrPaneId",
     "herdrAgentName",
     "correlation",
@@ -387,6 +389,14 @@ function validTokenDetail(value: unknown): boolean {
   );
 }
 
+function validExportedEnvironment(value: unknown): boolean {
+  return (
+    Array.isArray(value) &&
+    value.length === CHILD_ATTRIBUTION_ENV_KEYS.length &&
+    CHILD_ATTRIBUTION_ENV_KEYS.every((name) => value.filter((entry) => entry === name).length === 1)
+  );
+}
+
 function validateChildLifecycle(event: LedgerV3Object): string | null {
   if (
     !["starting", "running", "completed", "failed"].includes(String(event.state)) ||
@@ -414,6 +424,7 @@ function validateChildLifecycle(event: LedgerV3Object): string | null {
     !optional(event, "usageUnavailable", (value) =>
       ["session-missing", "session-invalid", "usage-missing"].includes(String(value)),
     ) ||
+    !optional(event, "exportedEnvironment", validExportedEnvironment) ||
     !optional(event, "correlation", validCorrelation)
   ) {
     return "child lifecycle optional fields are invalid";

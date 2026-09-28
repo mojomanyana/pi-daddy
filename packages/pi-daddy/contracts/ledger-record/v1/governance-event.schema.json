@@ -766,6 +766,19 @@
             "usage-missing"
           ]
         },
+        "exportedEnvironment": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "PI_DADDY_EPISODE",
+              "PI_DADDY_DEFINITION",
+              "PI_DADDY_EXECUTION"
+            ]
+          }
+        },
         "herdrPaneId": {
           "$ref": "#/$defs/ledgerDisplayIdentifier"
         },

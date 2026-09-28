@@ -25,6 +25,13 @@ export const ENV_PARENT_ID = "PI_DADDY_PARENT_ID";
 export const ENV_EXECUTION_ID = "PI_DADDY_EXECUTION_ID";
 export const ENV_EPISODE_ID = "PI_DADDY_EPISODE_ID";
 
+// Child-facing work attribution. These duplicate no authority: they let work produced outside pi-daddy carry the
+// same identities as the ledger records that governed it.
+export const ENV_CHILD_EPISODE = "PI_DADDY_EPISODE";
+export const ENV_CHILD_DEFINITION = "PI_DADDY_DEFINITION";
+export const ENV_CHILD_EXECUTION = "PI_DADDY_EXECUTION";
+export const CHILD_ATTRIBUTION_ENV_KEYS = [ENV_CHILD_EPISODE, ENV_CHILD_DEFINITION, ENV_CHILD_EXECUTION] as const;
+
 // Operator preferences a child inherits unchanged. Still governance: they decide executor, deadlines, gates.
 export const ENV_HERDR = "PI_DADDY_HERDR";
 export const ENV_HERDR_WORKSPACE = "PI_DADDY_HERDR_WORKSPACE";
@@ -80,6 +87,7 @@ export const GOVERNANCE_ENV_KEYS: readonly string[] = Object.freeze([
   ENV_PARENT_ID,
   ENV_EXECUTION_ID,
   ENV_EPISODE_ID,
+  ...CHILD_ATTRIBUTION_ENV_KEYS,
   ENV_HERDR,
   ENV_HERDR_WORKSPACE,
   ENV_HERDR_KEEP_PANE,

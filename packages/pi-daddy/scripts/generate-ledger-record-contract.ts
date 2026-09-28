@@ -8,6 +8,7 @@ import { REFUSAL_CODES } from "../src/kernel/refusals.ts";
 import { RECORD_FORMAT, RECORD_KINDS, recordDigest } from "../src/governance/record.ts";
 import { recordKindForEvent } from "../src/governance/ledger.ts";
 import { createHash } from "node:crypto";
+import { CHILD_ATTRIBUTION_ENV_KEYS } from "../src/kernel/env-names.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const contractDir = join(here, "..", "contracts", "ledger-record", "v1");
@@ -133,6 +134,7 @@ export function buildLedgerV3ContractFixtures() {
         cost: { input: 0.12, output: 0.06, cacheRead: 0.01, cacheWrite: 0.01, total: 0.2 },
       },
       compactionCount: 1,
+      exportedEnvironment: CHILD_ATTRIBUTION_ENV_KEYS,
       correlation,
       now: new Date("2026-08-20T12:00:03.000Z"),
     }),

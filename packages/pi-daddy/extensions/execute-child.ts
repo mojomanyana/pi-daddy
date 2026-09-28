@@ -22,7 +22,7 @@ import { resolveWorkspace } from "../src/executors/herdr-cli.ts";
 import { HerdrWriterCloseError, runHerdrPane } from "../src/executors/run-herdr.ts";
 import { GovernanceRefusal, refusal, type StructuredRefusal } from "../src/kernel/refusals.ts";
 import { ENV_HERDR_KEEP_PANE, type GrantsSession } from "./session.ts";
-import { ENV_EPISODE_ID } from "../src/kernel/env-names.ts";
+import { CHILD_ATTRIBUTION_ENV_KEYS, ENV_EPISODE_ID } from "../src/kernel/env-names.ts";
 import { releaseDelegationWorkspace, type PreparedWorkspace } from "./workspace-runtime.ts";
 import { ActivityTimelineRecorder, ENV_ACTIVITY_PARENT_TASK } from "../src/products/activity-timeline.ts";
 export interface DelegationOutcome {
@@ -188,6 +188,7 @@ export async function executePlannedChild(input: {
             executor: session.executor.kind,
             deadlineAt,
             idleTimeoutMs: configuredIdleMs,
+            exportedEnvironment: CHILD_ATTRIBUTION_ENV_KEYS,
             correlation: plan.correlation,
             now: startedAt,
           }),
@@ -266,6 +267,7 @@ export async function executePlannedChild(input: {
             deadlineAt,
             idleTimeoutMs: configuredIdleMs,
             ...(pane ? { herdrPaneId: pane.id, herdrAgentName: pane.agentName } : {}),
+            exportedEnvironment: CHILD_ATTRIBUTION_ENV_KEYS,
             correlation: plan.correlation,
             now: new Date(),
           }),
@@ -387,6 +389,7 @@ export async function executePlannedChild(input: {
               idleTimeoutMs: configuredIdleMs,
               reason:
                 output.spawnError ?? (output.timedOut ? (output.idle ? "idle-timeout" : "wall-clock") : undefined),
+              exportedEnvironment: CHILD_ATTRIBUTION_ENV_KEYS,
               ...(usageObservation.resolvedModel ? { resolvedModel: usageObservation.resolvedModel } : {}),
               ...(usageObservation.effectiveThinkingLevel
                 ? {
@@ -510,6 +513,7 @@ export async function executePlannedChild(input: {
                   : error instanceof Error
                     ? error.name
                     : "unknown executor error",
+              exportedEnvironment: CHILD_ATTRIBUTION_ENV_KEYS,
               ...(usageObservation.resolvedModel ? { resolvedModel: usageObservation.resolvedModel } : {}),
               ...(usageObservation.effectiveThinkingLevel
                 ? {

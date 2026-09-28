@@ -131,6 +131,7 @@ const LIFECYCLE_FIELDS = [
   "usage",
   "compactionCount",
   "usageUnavailable",
+  "exportedEnvironment",
   "herdrPaneId",
   "herdrAgentName",
   "exitCode",
@@ -312,6 +313,7 @@ test("the closed v3 schema accepts fixtures and rejects v2, extra fields and mis
     thinkingLevel: _thinkingAddedLater,
     tokenDetail: _tokensAddedLater,
     compactionCount: _compactionAddedLater,
+    exportedEnvironment: _environmentAddedLater,
     ...historicalLifecycle
   } = lifecycle;
   assert.equal(validator.Check(historicalLifecycle), true, "retained lifecycle records without usage remain valid");

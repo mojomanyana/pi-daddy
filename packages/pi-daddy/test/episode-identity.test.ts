@@ -4,8 +4,15 @@ import { after, test } from "node:test";
 import { ActivityTimelineRecorder, defaultActivityTimelinePath } from "../src/products/activity-timeline.ts";
 import { buildChildLifecycleEvent, buildRecord, buildWorkspaceLeaseEvent } from "../src/governance/ledger.ts";
 import { validateLedgerV3Event } from "../src/governance/ledger-v3-validation.ts";
-import { ENV_EPISODE_ID } from "../src/kernel/env-names.ts";
+import {
+  CHILD_ATTRIBUTION_ENV_KEYS,
+  ENV_CHILD_DEFINITION,
+  ENV_CHILD_EPISODE,
+  ENV_CHILD_EXECUTION,
+  ENV_EPISODE_ID,
+} from "../src/kernel/env-names.ts";
 import { planDelegation } from "../src/kernel/delegate.ts";
+import type { SkillDefinition } from "../src/kernel/definitions.ts";
 import { childEnv } from "../src/kernel/propagation.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
@@ -18,10 +25,18 @@ const result = { effective: [], denied: [], clipped: [], gatedBlocked: [], unive
 
 test("one episode id crosses the child boundary and is written on every governance event", () => {
   assert.equal(childEnv({ ownGrant: [], depth: 0, maxDepth: 2, gated: [], episodeId })[ENV_EPISODE_ID], episodeId);
+  const definition: SkillDefinition = {
+    name: "review-security",
+    description: "Reviews security",
+    allowedTools: "",
+    body: "Review security.",
+    source: "/skills/review-security/SKILL.md",
+  };
   const plan = planDelegation(
-    { task: "x", tools: [] },
+    { task: "x", agent: "review-security" },
     {
-      ownGrant: [],
+      ownGrant: ["agent:review-security"],
+      definitions: new Map([[definition.name, definition]]),
       episodeId,
       depth: 0,
       maxDepth: 2,
@@ -30,7 +45,16 @@ test("one episode id crosses the child boundary and is written on every governan
       childSpawnId: "d0.1",
     },
   );
-  assert.equal(plan.env[ENV_EPISODE_ID], episodeId, "the actual spawn plan carries the episode into the child");
+  assert.equal(plan.env[ENV_EPISODE_ID], episodeId, "the governance extension inherits the episode");
+  assert.deepEqual(
+    Object.fromEntries(CHILD_ATTRIBUTION_ENV_KEYS.map((key) => [key, plan.env[key]])),
+    {
+      [ENV_CHILD_EPISODE]: episodeId,
+      [ENV_CHILD_DEFINITION]: "review-security",
+      [ENV_CHILD_EXECUTION]: executionId,
+    },
+    "the child-facing boundary carries exactly the three work-attribution values",
+  );
   const events = [
     buildRecord({
       episodeId,

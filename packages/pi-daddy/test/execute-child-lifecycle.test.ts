@@ -12,6 +12,12 @@ import type { Delegation } from "../src/kernel/delegate.ts";
 import { runWithFinalizers } from "../src/governance/finalization.ts";
 import { HerdrWriterCloseError } from "../src/executors/run-herdr.ts";
 import { ENV_CHILD_IDLE_TIMEOUT, ENV_CHILD_TIMEOUT } from "../src/kernel/run-child.ts";
+import {
+  CHILD_ATTRIBUTION_ENV_KEYS,
+  ENV_CHILD_DEFINITION,
+  ENV_CHILD_EPISODE,
+  ENV_CHILD_EXECUTION,
+} from "../src/kernel/env-names.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
 after(cleanupTempDirs);
@@ -194,6 +200,51 @@ test("PR 3e: the temporary session directory is removed even when the run throws
   assert.deepEqual(leaked, [], "a session directory allocated for this run survived its failure");
 });
 
+test("a governed child sees exactly the three work-attribution variables", async () => {
+  const dir = await tempDir("execute-child-attribution-env-");
+  const bin = join(dir, "bin");
+  const { mkdir } = await import("node:fs/promises");
+  await mkdir(bin);
+  const shim = join(bin, "pi");
+  await writeFile(
+    shim,
+    `#!/usr/bin/env node
+const keys = ${JSON.stringify(["PI_DADDY_EPISODE", "PI_DADDY_DEFINITION", "PI_DADDY_EXECUTION"])};
+console.log(JSON.stringify(Object.fromEntries(keys.map((key) => [key, process.env[key]]))));
+`,
+    "utf8",
+  );
+  await chmod(shim, 0o755);
+  const oldPath = process.env.PATH;
+  process.env.PATH = `${bin}${delimiter}${oldPath ?? ""}`;
+  try {
+    const childPlan = plan();
+    childPlan.env = {
+      [ENV_CHILD_EPISODE]: "episode:00000000-0000-4000-8000-000000000099",
+      [ENV_CHILD_DEFINITION]: "review-security",
+      [ENV_CHILD_EXECUTION]: executionId,
+    };
+    const outcome = await executePlannedChild({
+      session: { executor: { kind: "process" } } as GrantsSession,
+      plan: childPlan,
+      childId: "d0.1",
+      executionId,
+      parentExecutionId: null,
+      cwd: dir,
+    });
+    assert.equal(outcome.ok, true);
+    assert.deepEqual(JSON.parse(outcome.text), {
+      [ENV_CHILD_EPISODE]: "episode:00000000-0000-4000-8000-000000000099",
+      [ENV_CHILD_DEFINITION]: "review-security",
+      [ENV_CHILD_EXECUTION]: executionId,
+    });
+    assert.deepEqual(CHILD_ATTRIBUTION_ENV_KEYS, [ENV_CHILD_EPISODE, ENV_CHILD_DEFINITION, ENV_CHILD_EXECUTION]);
+  } finally {
+    if (oldPath === undefined) delete process.env.PATH;
+    else process.env.PATH = oldPath;
+  }
+});
+
 test("terminal lifecycle captures child usage before disposing the private session", async () => {
   const dir = await tempDir("execute-child-usage-");
   const bin = join(dir, "bin");
@@ -257,6 +308,7 @@ console.log("done");
       reasoningTokens: 1,
     });
     assert.equal(completed?.compactionCount, 1);
+    assert.deepEqual(completed?.exportedEnvironment, [...CHILD_ATTRIBUTION_ENV_KEYS]);
     assert.doesNotMatch(text, /PRIVATE CHILD/);
   } finally {
     if (oldPath === undefined) delete process.env.PATH;

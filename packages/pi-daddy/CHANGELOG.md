@@ -14,6 +14,8 @@ the record of how the package got here and are worth keeping; they are not worth
 
 ## Unreleased — model-attributed usage records
 
+- Governed children now receive `PI_DADDY_EPISODE`, `PI_DADDY_DEFINITION`, and `PI_DADDY_EXECUTION`; lifecycle
+  records name the exported variables so work produced outside pi-daddy can be joined back to its execution.
 - Child lifecycle records now include the resolved provider/model, effective thinking level and its source, nullable
   provider-reported token dimensions, and the current turn's compaction count when the session file is readable.
 - Advice records now include the resolved advisor provider/model and nullable token dimensions reported by the

@@ -154,6 +154,11 @@ refused if set by hand. Refusals are thrown with stable codes (`CAPABILITY_ESCAL
 `DEPTH_EXCEEDED`, `FANOUT_EXCEEDED`, `WORKSPACE_NOT_AUTHORIZED`, `CHILD_TIMED_OUT`, `LEDGER_DAMAGED`, …); the full
 enumeration is `REFUSAL_CODES` and it is pinned by the contract.
 
+### Child work attribution
+
+Every governed child receives `PI_DADDY_EPISODE` (the ledger episode), `PI_DADDY_DEFINITION` (the definition name),
+and `PI_DADDY_EXECUTION` (the lifecycle execution id). These are attribution metadata, not authority.
+
 ## Advisors, and what leaves the machine
 
 An advisor is a non-generative decider that answers typed questions. It may select, rank, annotate or propose, and

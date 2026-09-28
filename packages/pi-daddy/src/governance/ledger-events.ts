@@ -160,6 +160,8 @@ export interface ChildLifecycleEvent extends LedgerEventBase {
   compactionCount?: number;
   /** Why totals could not be read; a fixed code, never transcript content. */
   usageUnavailable?: "session-missing" | "session-invalid" | "usage-missing";
+  /** Child-facing identity variables exported at the process boundary. */
+  exportedEnvironment?: string[];
 }
 
 export type CapabilityDecisionEvent = GrantRecord & {
@@ -235,6 +237,7 @@ export function buildChildLifecycleEvent(args: {
   usage?: ChildUsageTotals;
   compactionCount?: number;
   usageUnavailable?: "session-missing" | "session-invalid" | "usage-missing";
+  exportedEnvironment?: readonly string[];
   correlation?: CorrelationMetadata;
   now: Date;
 }): ChildLifecycleEvent {
@@ -276,6 +279,7 @@ export function buildChildLifecycleEvent(args: {
     ...(args.usage ? { usage: structuredClone(args.usage) } : {}),
     ...(args.compactionCount !== undefined ? { compactionCount: args.compactionCount } : {}),
     ...(args.usageUnavailable ? { usageUnavailable: args.usageUnavailable } : {}),
+    ...(args.exportedEnvironment ? { exportedEnvironment: [...args.exportedEnvironment] } : {}),
     ...(args.correlation ? { correlation: structuredClone(args.correlation) } : {}),
   });
 }
