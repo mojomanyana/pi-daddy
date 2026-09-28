@@ -19,6 +19,7 @@ import {
   ENV_CHILD_EXECUTION,
 } from "../src/kernel/env-names.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
+import { EpisodeCostGate } from "../src/governance/episode-cost-gate.ts";
 
 after(cleanupTempDirs);
 
@@ -123,6 +124,67 @@ test("a SIGTERM-ignoring child is hard-killed by the recorded lifecycle deadline
     else process.env.PATH = oldPath;
     if (oldTimeout === undefined) delete process.env[ENV_CHILD_TIMEOUT];
     else process.env[ENV_CHILD_TIMEOUT] = oldTimeout;
+  }
+});
+
+test("a live process child pauses and stops when cumulative episode cost crosses the ceiling", async () => {
+  const dir = await tempDir("execute-child-cost-gate-");
+  const bin = join(dir, "bin");
+  const { mkdir } = await import("node:fs/promises");
+  await mkdir(bin);
+  const shim = join(bin, "pi");
+  await writeFile(
+    shim,
+    `#!/usr/bin/env node
+const fs = require("node:fs");
+const path = process.argv[process.argv.indexOf("--session") + 1];
+const usage = { input: 10, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 11,
+  cost: { input: 0.8, output: 0.2, cacheRead: 0, cacheWrite: 0, total: 1 } };
+fs.appendFileSync(path, JSON.stringify({ type: "message", message: { role: "assistant", provider: "p", model: "m", usage } }) + "\\n");
+setInterval(() => {}, 1000);
+`,
+    "utf8",
+  );
+  await chmod(shim, 0o755);
+  const ledgerPath = join(dir, "ledger.jsonl");
+  const oldPath = process.env.PATH;
+  const oldTimeout = process.env[ENV_CHILD_TIMEOUT];
+  const oldIdle = process.env[ENV_CHILD_IDLE_TIMEOUT];
+  process.env.PATH = `${bin}${delimiter}${oldPath ?? ""}`;
+  process.env[ENV_CHILD_TIMEOUT] = "10";
+  process.env[ENV_CHILD_IDLE_TIMEOUT] = "10";
+  try {
+    const outcome = await executePlannedChild({
+      session: {
+        ledgerPath,
+        executor: { kind: "process" },
+        episodeId: "episode:00000000-0000-4000-8000-000000000001",
+        episodeCostGate: new EpisodeCostGate(0.5),
+      } as GrantsSession,
+      plan: { ...plan(), args: [" task"] },
+      childId: "d0.1",
+      executionId,
+      parentExecutionId: null,
+      cwd: dir,
+      costGateUI: { hasUI: true, input: async () => "", notify: () => {} },
+    });
+    assert.equal(outcome.aborted, true);
+    assert.match(outcome.reason ?? "", /cost ceiling/);
+    const events = (await readFile(ledgerPath, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line).body);
+    assert.deepEqual(
+      events.filter((event) => event.event === "cost_gate").map((event) => event.outcome),
+      ["stopped"],
+    );
+  } finally {
+    if (oldPath === undefined) delete process.env.PATH;
+    else process.env.PATH = oldPath;
+    if (oldTimeout === undefined) delete process.env[ENV_CHILD_TIMEOUT];
+    else process.env[ENV_CHILD_TIMEOUT] = oldTimeout;
+    if (oldIdle === undefined) delete process.env[ENV_CHILD_IDLE_TIMEOUT];
+    else process.env[ENV_CHILD_IDLE_TIMEOUT] = oldIdle;
   }
 });
 

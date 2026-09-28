@@ -42,6 +42,7 @@ import {
   ENV_PARENT_ID,
   ENV_EXECUTION_ID,
   ENV_EPISODE_ID,
+  ENV_EPISODE_COST_CEILING,
   ENV_DEPTH,
   ENV_MAX_DEPTH,
   ENV_GATED,
@@ -55,6 +56,7 @@ export {
   ENV_PARENT_ID,
   ENV_EXECUTION_ID,
   ENV_EPISODE_ID,
+  ENV_EPISODE_COST_CEILING,
   ENV_DEPTH,
   ENV_MAX_DEPTH,
   ENV_GATED,
@@ -103,6 +105,7 @@ export const GRANT_ENV_KEYS = [
   ENV_PARENT_ID,
   ENV_EXECUTION_ID,
   ENV_EPISODE_ID,
+  ENV_EPISODE_COST_CEILING,
   // Child attribution identifies this process itself, so session publication must not clear it. `mergeChildEnv`
   // strips it separately before applying the next child's plan.
   // ADR-0042: a child must never keep its parent's unnarrowed pin, so it is stripped like every other

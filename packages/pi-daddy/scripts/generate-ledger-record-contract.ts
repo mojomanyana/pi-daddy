@@ -2,7 +2,12 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { buildChildLifecycleEvent, buildRecord, buildWorkspaceLeaseEvent } from "../src/governance/ledger.ts";
+import {
+  buildChildLifecycleEvent,
+  buildEpisodeCostGateEvent,
+  buildRecord,
+  buildWorkspaceLeaseEvent,
+} from "../src/governance/ledger.ts";
 import type { CorrelationMetadata } from "../src/kernel/correlation.ts";
 import { REFUSAL_CODES } from "../src/kernel/refusals.ts";
 import { RECORD_FORMAT, RECORD_KINDS, recordDigest } from "../src/governance/record.ts";
@@ -103,6 +108,17 @@ export function buildLedgerV3ContractFixtures() {
       correlation,
       now: new Date("2026-08-20T12:00:02.000Z"),
     }),
+    "episode-cost-gate.json": buildEpisodeCostGateEvent({
+      episodeId,
+      executionId: "exec:00000000-0000-4000-8000-000000000001",
+      parentExecutionId: null,
+      childId: "d0.1",
+      cost: 5.2,
+      ceiling: 5,
+      outcome: "continued",
+      newCeiling: 10,
+      now: new Date("2026-08-20T12:00:02.500Z"),
+    }),
     "child-lifecycle.json": buildChildLifecycleEvent({
       episodeId,
       executionId: "exec:00000000-0000-4000-8000-000000000001",
@@ -169,8 +185,45 @@ export async function writeLedgerV3ContractFixtures(target = fixtureDir): Promis
  */
 export async function syncLedgerV3RefusalEnum(target = schemaPath): Promise<void> {
   const raw = await readFile(target, "utf8");
-  const schema = JSON.parse(raw) as { $defs: { refusalCode: { enum: string[] } } };
+  const schema = JSON.parse(raw) as {
+    oneOf: Array<{ $ref: string }>;
+    $defs: Record<string, unknown> & { refusalCode: { enum: string[] } };
+  };
   schema.$defs.refusalCode.enum = [...REFUSAL_CODES];
+  if (!schema.oneOf.some((entry) => entry.$ref === "#/$defs/costGate")) {
+    schema.oneOf.push({ $ref: "#/$defs/costGate" });
+  }
+  schema.$defs.costGate = {
+    type: "object",
+    properties: {
+      ledgerVersion: { const: 3 },
+      event: { const: "cost_gate" },
+      ts: { $ref: "#/$defs/timestamp" },
+      episodeId: { $ref: "#/$defs/episodeId" },
+      executionId: { $ref: "#/$defs/executionId" },
+      parentExecutionId: { oneOf: [{ $ref: "#/$defs/executionId" }, { type: "null" }] },
+      childId: { $ref: "#/$defs/ledgerDisplayIdentifier" },
+      gate: { const: "episode_cost" },
+      cost: { type: "number", minimum: 0 },
+      ceiling: { type: "number", exclusiveMinimum: 0 },
+      outcome: { enum: ["continued", "stopped"] },
+      newCeiling: { type: "number", exclusiveMinimum: 0 },
+    },
+    required: [
+      "ledgerVersion",
+      "event",
+      "ts",
+      "episodeId",
+      "executionId",
+      "parentExecutionId",
+      "childId",
+      "gate",
+      "cost",
+      "ceiling",
+      "outcome",
+    ],
+    additionalProperties: false,
+  };
   await writeFile(target, `${JSON.stringify(schema, null, 2)}\n`, "utf8");
 }
 

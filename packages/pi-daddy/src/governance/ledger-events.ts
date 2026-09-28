@@ -176,7 +176,50 @@ export type CapabilityDecisionEvent = GrantRecord & {
   taskDigest: string;
 };
 
-export type RuntimeLedgerEvent = CapabilityDecisionEvent | WorkspaceLeaseEvent | ChildLifecycleEvent;
+export interface EpisodeCostGateEvent extends Omit<LedgerEventBase, "episodeId" | "correlation"> {
+  ledgerVersion: typeof LEDGER_VERSION;
+  event: "cost_gate";
+  episodeId: string;
+  executionId: string;
+  parentExecutionId: string | null;
+  childId: string;
+  gate: "episode_cost";
+  cost: number;
+  ceiling: number;
+  outcome: "continued" | "stopped";
+  newCeiling?: number;
+}
+
+export type RuntimeLedgerEvent =
+  CapabilityDecisionEvent | WorkspaceLeaseEvent | ChildLifecycleEvent | EpisodeCostGateEvent;
+
+export function buildEpisodeCostGateEvent(args: {
+  episodeId: string;
+  executionId: string;
+  parentExecutionId: string | null;
+  childId: string;
+  cost: number;
+  ceiling: number;
+  outcome: "continued" | "stopped";
+  newCeiling?: number;
+  now: Date;
+}): EpisodeCostGateEvent {
+  assertEventIdentity(args);
+  return assertLedgerV3Wire({
+    ledgerVersion: LEDGER_VERSION,
+    event: "cost_gate",
+    ts: args.now.toISOString(),
+    episodeId: args.episodeId,
+    executionId: args.executionId,
+    parentExecutionId: args.parentExecutionId,
+    childId: args.childId,
+    gate: "episode_cost",
+    cost: args.cost,
+    ceiling: args.ceiling,
+    outcome: args.outcome,
+    ...(args.newCeiling !== undefined ? { newCeiling: args.newCeiling } : {}),
+  });
+}
 
 export function buildWorkspaceLeaseEvent(args: {
   episodeId?: string;

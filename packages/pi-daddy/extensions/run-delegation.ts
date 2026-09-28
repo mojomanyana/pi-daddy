@@ -32,6 +32,7 @@ import { GovernanceRefusal, refusal as structuredRefusal } from "../src/kernel/r
 import { executePlannedChild, type DelegationOutcome } from "./execute-child.ts";
 import { recordDelegationDecision, type ApprovalLedgerFacts } from "./delegation-ledger.ts";
 import type { ExecutionOccurrenceIds } from "./execution-occurrence.ts";
+import { ENV_EPISODE_COST_CEILING } from "../src/kernel/env-names.ts";
 import {
   governedWorkspaceAccess,
   prepareDelegationWorkspace,
@@ -47,6 +48,8 @@ interface ChildSpec {
   tools?: string[];
   model?: string;
   thinking?: string;
+  /** Positive USD override for the whole episode, applied only when this delegation will run. */
+  episodeCostCeiling?: number;
   /** ADR-0078: what of the parent's session crosses. Validated in the kernel, never here. */
   context?: unknown;
   correlation?: CorrelationMetadata;
@@ -427,6 +430,14 @@ export async function runOneDelegation(
     };
   }
 
+  if (spec.episodeCostCeiling !== undefined) session.episodeCostGate.setCeiling(spec.episodeCostCeiling);
+  plan = {
+    ...plan,
+    env: { ...plan.env, [ENV_EPISODE_COST_CEILING]: String(session.episodeCostGate.ceiling) },
+  };
+  const costUI = ctx.ui as typeof ctx.ui & {
+    input(title: string, placeholder?: string, opts?: { signal?: AbortSignal }): Promise<string | undefined>;
+  };
   return executePlannedChild({
     session,
     plan,
@@ -440,6 +451,11 @@ export async function runOneDelegation(
     thinkingSource: spec.thinking !== undefined ? "explicit" : request.thinking !== undefined ? "advisor" : "default",
     signal,
     onProgress,
+    costGateUI: {
+      hasUI: ctx.hasUI,
+      input: (title, placeholder, gateSignal) => costUI.input(title, placeholder, { signal: gateSignal }),
+      notify: (message) => ctx.ui.notify(message, "warning"),
+    },
   });
 }
 

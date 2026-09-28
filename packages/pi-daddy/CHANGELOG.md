@@ -14,6 +14,8 @@ the record of how the package got here and are worth keeping; they are not worth
 
 ## Unreleased — model-attributed usage records
 
+- Episodes now warn at half of their provider-reported USD cost ceiling and gate at the ceiling (default `$5`,
+  configurable as `episodeCostCeiling`); direct children pause for one operator decision, while Herdr stops.
 - `pi-daddy report` now joins the project grant and activity ledgers into episode-level Markdown or JSON, with
   date/definition/model filters, grouped usage, range totals, and `Pi-Episode` commit attribution.
 - Capability and lifecycle records now stamp the complete definition `SKILL.md` hash and, when exposed by an

@@ -35,7 +35,7 @@ import { assertEpisodeId } from "../kernel/episode-id.ts";
 import { assertLedgerV3Wire } from "./ledger-v3-validation.ts";
 
 export const LEDGER_VERSION = 3 as const;
-export const LEDGER_EVENT_KINDS = ["capability_decision", "workspace_lease", "child_lifecycle"] as const;
+export const LEDGER_EVENT_KINDS = ["capability_decision", "workspace_lease", "child_lifecycle", "cost_gate"] as const;
 export type LedgerEventKind = (typeof LEDGER_EVENT_KINDS)[number];
 export const LEDGER_GATE_OUTCOMES = ["declined", "dismissed", "no-ui", "error"] as const;
 export type LedgerGateOutcome = (typeof LEDGER_GATE_OUTCOMES)[number];
@@ -352,6 +352,8 @@ export function recordKindForEvent(event: { event?: string }): RecordKind {
       return "lifecycle";
     case "workspace_lease":
       return "lease";
+    case "cost_gate":
+      return "fact";
     case "check_receipt": // retired kind, still imported from pre-format ledgers
       return "check";
     case "workflow_fact": // retired kind, still imported from pre-format ledgers
@@ -401,8 +403,10 @@ export {
   WORKSPACE_LEASE_OUTCOMES,
   WORKSPACE_RECOVERY_VALUES,
   buildChildLifecycleEvent,
+  buildEpisodeCostGateEvent,
   buildWorkspaceLeaseEvent,
   type CapabilityDecisionEvent,
+  type EpisodeCostGateEvent,
   type ChildLifecycleEvent,
   type ChildLifecycleState,
   type ChildProcessSignal,

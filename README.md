@@ -115,6 +115,12 @@ keyed `capability@subject`). Approvals inherit down the subtree intersected with
 crosses a spawn. The task text is never stored. `/grants approvals` lists what is persisted; `/grants revoke
 <capability>@<definition>` or `--all` removes it. The store lives in pi's agent directory, not in the workspace.
 
+`episodeCostCeiling` in `.pi/pi-daddy/settings.json` sets the cumulative episode cost gate in USD (default `5`).
+A delegation may override it with `episodeCostCeiling`. At 50% pi-daddy warns once. When provider-reported cost
+crosses the ceiling, a directly executed child is paused while the operator enters a higher ceiling or stops it;
+Herdr cannot pause a pane, so it stops at the crossing. If the provider reports no usage, pi-daddy warns once for
+the episode and cannot apply the gate.
+
 ## The ledger
 
 `.pi/pi-daddy/grants.jsonl` holds every capability decision, child lifecycle and workspace lease. Each line is a

@@ -132,6 +132,20 @@ const FIELDS = {
     "refusal",
     "correlation",
   ]),
+  cost_gate: new Set([
+    "ledgerVersion",
+    "event",
+    "ts",
+    "episodeId",
+    "executionId",
+    "parentExecutionId",
+    "childId",
+    "gate",
+    "cost",
+    "ceiling",
+    "outcome",
+    "newCeiling",
+  ]),
   child_lifecycle: new Set([
     "ledgerVersion",
     "event",
@@ -404,6 +418,27 @@ function validExportedEnvironment(value: unknown): boolean {
   );
 }
 
+function validateCostGate(event: LedgerV3Object): string | null {
+  if (
+    event.gate !== "episode_cost" ||
+    !nonNegativeNumber(event.cost) ||
+    !nonNegativeNumber(event.ceiling) ||
+    (event.ceiling as number) <= 0 ||
+    !["continued", "stopped"].includes(String(event.outcome))
+  ) {
+    return "cost gate required fields are invalid";
+  }
+  if (
+    !optional(event, "newCeiling", (value) => nonNegativeNumber(value) && (value as number) > (event.cost as number))
+  ) {
+    return "cost gate new ceiling is invalid";
+  }
+  if ((event.outcome === "continued") !== Object.hasOwn(event, "newCeiling")) {
+    return "continued cost gate requires exactly one new ceiling";
+  }
+  return null;
+}
+
 function validateChildLifecycle(event: LedgerV3Object): string | null {
   if (
     !["starting", "running", "completed", "failed"].includes(String(event.state)) ||
@@ -468,6 +503,7 @@ export function validateLedgerV3Event(event: LedgerV3Object): string | null {
   if (base) return base;
   if (kind === "capability_decision") return validateCapabilityDecision(event);
   if (kind === "workspace_lease") return validateWorkspaceLease(event);
+  if (kind === "cost_gate") return validateCostGate(event);
   return validateChildLifecycle(event);
 }
 

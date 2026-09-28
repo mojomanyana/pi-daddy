@@ -100,6 +100,9 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
       maxItems: MAX_CHAIN_STEPS,
       description: "The steps to run IN ORDER. Each one sees the previous one's output.",
     }),
+    episodeCostCeiling: Type.Optional(
+      Type.Number({ exclusiveMinimum: 0, description: "Override the USD ceiling for this whole episode." }),
+    ),
   });
 
   pi.registerTool({
@@ -274,6 +277,7 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
        */
       let available = [...preApproved];
 
+      if (args.episodeCostCeiling !== undefined) session.episodeCostGate.setCeiling(args.episodeCostCeiling);
       for (const [index, step] of steps.entries()) {
         const childId = childSpawnId(session.ownSpawnId, index);
         const availableForStep = available.filter((approval) => {

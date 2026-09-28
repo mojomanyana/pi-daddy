@@ -67,6 +67,7 @@ import {
 } from "../src/kernel/workspace-pin.ts";
 import { loadWorkspaceRegistry } from "../src/kernel/workspace.ts";
 import { reconcileAcceptedWorkspaces } from "../src/governance/workspace-acceptance.ts";
+import { EpisodeCostGate, episodeCostCeilingFromSettings } from "../src/governance/episode-cost-gate.ts";
 
 /**
  * Run governed children in herdr panes instead of captured child processes.
@@ -101,7 +102,13 @@ import {
   ENV_ACTIVITY_ROOT,
   ENV_ACTIVITY_TASK,
 } from "../src/products/activity-timeline.ts";
-import { ENV_HERDR_KEEP_PANE, ENV_GOVERNANCE, ENV_ADVISOR, ENV_EPISODE_ID } from "../src/kernel/env-names.ts";
+import {
+  ENV_HERDR_KEEP_PANE,
+  ENV_GOVERNANCE,
+  ENV_ADVISOR,
+  ENV_EPISODE_ID,
+  ENV_EPISODE_COST_CEILING,
+} from "../src/kernel/env-names.ts";
 export { ENV_HERDR_KEEP_PANE, ENV_GOVERNANCE } from "../src/kernel/env-names.ts";
 import { adoptLegacyEnvironment } from "../src/kernel/env-names.ts";
 
@@ -192,6 +199,8 @@ export interface GrantsSession extends NativeSessionHost {
   inheritedApprovals: Map<string, string | undefined>;
   /** ONE single-flight queue for the whole session — see `obtainApprovals` for why it lives here. */
   readonly approvalGateFor: ReturnType<typeof createApprovalGateProvider>;
+  /** One cumulative cost threshold shared by every child in this episode. */
+  readonly episodeCostGate: EpisodeCostGate;
   /** Set at `session_start`; `process.cwd()` until then. */
   cwd: string;
   /** This session's own grant. Starts as the inherited upper bound, tightened once tools are observed. */
@@ -436,7 +445,9 @@ export function createGrantsSession(
   // G7 / A-S4 + B-I4: strict, three-way parsing that fails CLOSED. A malformed bound used to yield
   // `NaN`, and every comparison against `NaN` is false, so depth limiting switched itself off.
   const bounds = depthConfig(environment[ENV_DEPTH], environment[ENV_MAX_DEPTH]);
-  const { depth, maxDepth } = bounds;
+  const costConfig = episodeCostConfiguration(storeCwd, environment[ENV_EPISODE_COST_CEILING]);
+  const depth = bounds.depth;
+  const maxDepth = costConfig.malformed ? 0 : bounds.maxDepth;
   const emptyCatalog = makeCatalog([]);
   // ADR-0077. The environment decides whether there is an advisor at all; the project's settings block may only
   // narrow it. The block IS read — the first version passed `undefined` and every narrowing the release advertised
@@ -456,7 +467,7 @@ export function createGrantsSession(
     inherited,
     depth,
     maxDepth,
-    malformedBounds: bounds.malformed,
+    malformedBounds: [...bounds.malformed, ...(costConfig.malformed ? [costConfig.malformed] : [])],
     definitionSkips: [],
     workspacePin: undefined,
     pinSettled: false,
@@ -504,6 +515,7 @@ export function createGrantsSession(
     sessionApprovalBindings: new Map<string, ApprovalBinding>(),
     inheritedApprovals: parseInherited(environment[ENV_APPROVED]),
     approvalGateFor: createApprovalGateProvider(),
+    episodeCostGate: new EpisodeCostGate(costConfig.ceiling),
     cwd: process.cwd(),
     ownGrant: deriveOwnGrant(inherited, null),
     observed: false,
@@ -607,6 +619,35 @@ export function reconcileAdvisorSession(session: GrantsSession, environment: Nod
     ...(session.ledgerPath ? { ledgerPath: session.ledgerPath } : {}),
     env: environment,
   });
+}
+
+function episodeCostConfiguration(cwd: string, inherited: string | undefined): { ceiling: number; malformed?: string } {
+  if (inherited !== undefined) {
+    const value = Number(inherited);
+    return Number.isFinite(value) && value > 0
+      ? { ceiling: value }
+      : { ceiling: episodeCostCeilingFromSettings(undefined), malformed: ENV_EPISODE_COST_CEILING };
+  }
+  const path = projectSettingsPath(cwd);
+  try {
+    const stats = statSync(path);
+    if (!stats.isFile() || stats.size > 1024 * 1024) {
+      return { ceiling: episodeCostCeilingFromSettings(undefined), malformed: "settings.json episodeCostCeiling" };
+    }
+    const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
+    if (parsed && typeof parsed === "object" && Object.hasOwn(parsed, "episodeCostCeiling")) {
+      const value = (parsed as Record<string, unknown>).episodeCostCeiling;
+      if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+        return { ceiling: episodeCostCeilingFromSettings(undefined), malformed: "settings.json episodeCostCeiling" };
+      }
+    }
+    return { ceiling: episodeCostCeilingFromSettings(parsed) };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return { ceiling: episodeCostCeilingFromSettings(undefined) };
+    }
+    return { ceiling: episodeCostCeilingFromSettings(undefined), malformed: "settings.json episodeCostCeiling" };
+  }
 }
 
 function projectAdvisorBlock(cwd: string, env: NodeJS.ProcessEnv = process.env): unknown {

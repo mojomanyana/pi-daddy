@@ -24,6 +24,7 @@ export const ENV_FANOUT = "PI_DADDY_FANOUT";
 export const ENV_PARENT_ID = "PI_DADDY_PARENT_ID";
 export const ENV_EXECUTION_ID = "PI_DADDY_EXECUTION_ID";
 export const ENV_EPISODE_ID = "PI_DADDY_EPISODE_ID";
+export const ENV_EPISODE_COST_CEILING = "PI_DADDY_EPISODE_COST_CEILING";
 
 // Child-facing work attribution. These duplicate no authority: they let work produced outside pi-daddy carry the
 // same identities as the ledger records that governed it.
@@ -87,6 +88,7 @@ export const GOVERNANCE_ENV_KEYS: readonly string[] = Object.freeze([
   ENV_PARENT_ID,
   ENV_EXECUTION_ID,
   ENV_EPISODE_ID,
+  ENV_EPISODE_COST_CEILING,
   ...CHILD_ATTRIBUTION_ENV_KEYS,
   ENV_HERDR,
   ENV_HERDR_WORKSPACE,

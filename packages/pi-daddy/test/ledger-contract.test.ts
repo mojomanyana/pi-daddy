@@ -18,10 +18,12 @@ import {
   WORKSPACE_LEASE_OUTCOMES,
   WORKSPACE_RECOVERY_VALUES,
   buildChildLifecycleEvent,
+  buildEpisodeCostGateEvent,
   buildRecord,
   buildWorkspaceLeaseEvent,
   type CapabilityDecisionEvent,
   type ChildLifecycleEvent,
+  type EpisodeCostGateEvent,
   type GrantRecord,
   type WorkspaceLeaseEvent,
 } from "../src/governance/ledger.ts";
@@ -115,6 +117,20 @@ const LEASE_FIELDS = [
   "refusal",
   "correlation",
 ] as const;
+const COST_GATE_FIELDS = [
+  "ledgerVersion",
+  "event",
+  "ts",
+  "episodeId",
+  "executionId",
+  "parentExecutionId",
+  "childId",
+  "gate",
+  "cost",
+  "ceiling",
+  "outcome",
+  "newCeiling",
+] as const;
 const LIFECYCLE_FIELDS = [
   "ledgerVersion",
   "event",
@@ -177,6 +193,19 @@ const LEASE_REQUIRED = [
   "access",
   "outcome",
 ] as const;
+const COST_GATE_REQUIRED = [
+  "ledgerVersion",
+  "event",
+  "ts",
+  "episodeId",
+  "executionId",
+  "parentExecutionId",
+  "childId",
+  "gate",
+  "cost",
+  "ceiling",
+  "outcome",
+] as const;
 const LIFECYCLE_REQUIRED = [
   "ledgerVersion",
   "event",
@@ -217,9 +246,11 @@ const APPROVAL_USE_FIELDS = ["max", "remaining"] as const;
 
 type _CapabilityFields = Assert<Equal<keyof GrantRecord, (typeof CAPABILITY_FIELDS)[number]>>;
 type _LeaseFields = Assert<Equal<keyof WorkspaceLeaseEvent, (typeof LEASE_FIELDS)[number]>>;
+type _CostGateFields = Assert<Equal<keyof EpisodeCostGateEvent, (typeof COST_GATE_FIELDS)[number]>>;
 type _LifecycleFields = Assert<Equal<keyof ChildLifecycleEvent, (typeof LIFECYCLE_FIELDS)[number]>>;
 type _CapabilityRequired = Assert<Equal<RequiredKeys<CapabilityDecisionEvent>, (typeof CAPABILITY_REQUIRED)[number]>>;
 type _LeaseRequired = Assert<Equal<RequiredKeys<WorkspaceLeaseEvent>, (typeof LEASE_REQUIRED)[number]>>;
+type _CostGateRequired = Assert<Equal<RequiredKeys<EpisodeCostGateEvent>, (typeof COST_GATE_REQUIRED)[number]>>;
 type _LifecycleRequired = Assert<Equal<RequiredKeys<ChildLifecycleEvent>, (typeof LIFECYCLE_REQUIRED)[number]>>;
 type _CorrelationFields = Assert<Equal<keyof CorrelationMetadata, (typeof CORRELATION_FIELDS)[number]>>;
 type _RefusalFields = Assert<Equal<keyof StructuredRefusal, (typeof REFUSAL_FIELDS)[number]>>;
@@ -247,6 +278,7 @@ test("the published ledger v3 fixtures come from the production builders", async
   assert.deepEqual(Object.keys(generated).sort(), [
     "capability-decision.json",
     "child-lifecycle.json",
+    "episode-cost-gate.json",
     "workspace-lease.json",
   ]);
   for (const [name, event] of Object.entries(generated)) {
@@ -387,6 +419,7 @@ test("the v3 schema exhaustively matches production fields and finite vocabulari
     capability_decision: "capabilityDecision",
     workspace_lease: "workspaceLease",
     child_lifecycle: "childLifecycle",
+    cost_gate: "costGate",
   } as const satisfies Record<(typeof LEDGER_EVENT_KINDS)[number], string>;
   assert.deepEqual(
     schema.oneOf?.map((entry) => entry.$ref).sort(),
@@ -407,9 +440,11 @@ test("the v3 schema exhaustively matches production fields and finite vocabulari
   assert.deepEqual(fields("capabilityDecision"), [...CAPABILITY_FIELDS].sort());
   assert.deepEqual(fields("workspaceLease"), [...LEASE_FIELDS].sort());
   assert.deepEqual(fields("childLifecycle"), [...LIFECYCLE_FIELDS].sort());
+  assert.deepEqual(fields("costGate"), [...COST_GATE_FIELDS].sort());
   assert.deepEqual(required("capabilityDecision"), [...CAPABILITY_REQUIRED].sort());
   assert.deepEqual(required("workspaceLease"), [...LEASE_REQUIRED].sort());
   assert.deepEqual(required("childLifecycle"), [...LIFECYCLE_REQUIRED].sort());
+  assert.deepEqual(required("costGate"), [...COST_GATE_REQUIRED].sort());
   assert.deepEqual(fields("correlation"), [...CORRELATION_FIELDS].sort());
   assert.deepEqual(fields("refusal"), [...REFUSAL_FIELDS].sort());
   assert.deepEqual(fields("definitionDigest"), [...DEFINITION_FIELDS].sort());
@@ -443,6 +478,16 @@ test("every v3 builder emits explicit execution identity, including a running He
     outcome: "uncontended",
     now,
   });
+  const costGate = buildEpisodeCostGateEvent({
+    episodeId: "episode:00000000-0000-4000-8000-000000000099",
+    executionId,
+    parentExecutionId: null,
+    childId: "d0.1",
+    cost: 6,
+    ceiling: 5,
+    outcome: "stopped",
+    now,
+  });
   const lifecycle = buildChildLifecycleEvent({
     executionId,
     parentExecutionId: null,
@@ -454,7 +499,7 @@ test("every v3 builder emits explicit execution identity, including a running He
     herdrAgentName: "review-d0-1",
     now,
   });
-  for (const event of [decision, lease, lifecycle]) {
+  for (const event of [decision, lease, costGate, lifecycle]) {
     assert.equal(event.ledgerVersion, 3);
     assert.equal(event.executionId, executionId);
     assert.ok(Object.hasOwn(event, "parentExecutionId"));

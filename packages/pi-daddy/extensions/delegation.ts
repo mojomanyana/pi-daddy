@@ -201,6 +201,9 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       maxItems: MAX_CHILDREN_PER_CALL,
       description: "The sub-agents to run concurrently. Each is independent and unaware of the others.",
     }),
+    episodeCostCeiling: Type.Optional(
+      Type.Number({ exclusiveMinimum: 0, description: "Override the USD ceiling for this whole episode." }),
+    ),
   });
 
   const delegateParams = Type.Object({
@@ -223,6 +226,9 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       }),
     ),
     thinking: thinkingShape,
+    episodeCostCeiling: Type.Optional(
+      Type.Number({ exclusiveMinimum: 0, description: "Override the USD ceiling for this whole episode." }),
+    ),
     context: Type.Optional(contextShape()),
     correlation: Type.Optional(correlationShape),
     workspace: Type.Optional(workspaceShape),
@@ -250,6 +256,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
           tools: params.tools,
           model: params.model,
           thinking: params.thinking,
+          episodeCostCeiling: params.episodeCostCeiling,
           context: params.context,
           correlation: params.correlation,
           workspace: params.workspace,
@@ -324,6 +331,8 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
         // normal result would read to the orchestrator as a successful fan-out of zero children.
         throw new GovernanceRefusal(refusal("FANOUT_EXCEEDED", `fan-out refused: ${split.reason}`));
       }
+
+      if (params.episodeCostCeiling !== undefined) session.episodeCostGate.setCeiling(params.episodeCostCeiling);
 
       // ADR-0032: ONE status block covering every child. `onUpdate` replaces the tool's rendered result, so a
       // painter per child would have each overwriting the others.
