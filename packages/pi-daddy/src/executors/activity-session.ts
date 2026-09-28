@@ -18,6 +18,16 @@ import { join } from "node:path";
 export interface ChildUsageObservation {
   usage?: ChildUsageTotals;
   unavailable?: "session-missing" | "session-invalid" | "usage-missing";
+  resolvedModel?: { provider: string; modelId: string };
+  effectiveThinkingLevel?: string;
+  tokenDetail?: {
+    inputTokens: number | null;
+    outputTokens: number | null;
+    cacheReadTokens: number | null;
+    cacheWriteTokens: number | null;
+    reasoningTokens: number | null;
+  };
+  compactionCount?: number;
 }
 
 export interface ActivitySession {
@@ -127,6 +137,9 @@ async function readChildUsage(path: string | Promise<string | undefined>): Promi
   let found = false;
   let reasoning = 0;
   let sawReasoning = false;
+  let resolvedModel: ChildUsageObservation["resolvedModel"];
+  let effectiveThinkingLevel: string | undefined;
+  let compactionCount = 0;
   try {
     const lines = createInterface({ input: createReadStream(resolved, { encoding: "utf8" }), crlfDelay: Infinity });
     for await (const line of lines) {
@@ -136,16 +149,37 @@ async function readChildUsage(path: string | Promise<string | undefined>): Promi
       } catch {
         return { unavailable: "session-invalid" };
       }
-      const message = object(object(entry)?.message);
+      const parsed = object(entry);
+      if (
+        parsed?.type === "model_change" &&
+        typeof parsed.provider === "string" &&
+        typeof parsed.modelId === "string"
+      ) {
+        resolvedModel = { provider: parsed.provider, modelId: parsed.modelId };
+        continue;
+      }
+      if (parsed?.type === "thinking_level_change" && typeof parsed.thinkingLevel === "string") {
+        effectiveThinkingLevel = parsed.thinkingLevel;
+        continue;
+      }
+      if (parsed?.type === "compaction") {
+        compactionCount += 1;
+        continue;
+      }
+      const message = object(parsed?.message);
       if (!message) continue;
       if (message.role === "user") {
         Object.assign(totals, emptyUsage());
         found = false;
         reasoning = 0;
         sawReasoning = false;
+        compactionCount = 0;
         continue;
       }
       if (message.role !== "assistant" && message.role !== "toolResult") continue;
+      if (message.role === "assistant" && typeof message.provider === "string" && typeof message.model === "string") {
+        resolvedModel = { provider: message.provider, modelId: message.model };
+      }
       const usage = object(message.usage);
       if (message.role === "toolResult" && !usage) continue;
       const cost = object(usage?.cost);
@@ -161,7 +195,26 @@ async function readChildUsage(path: string | Promise<string | undefined>): Promi
       }
       found = true;
     }
-    return found ? { usage: { ...totals, ...(sawReasoning ? { reasoning } : {}) } } : { unavailable: "usage-missing" };
+    if (!found)
+      return {
+        unavailable: "usage-missing",
+        ...(resolvedModel ? { resolvedModel } : {}),
+        ...(effectiveThinkingLevel ? { effectiveThinkingLevel } : {}),
+        compactionCount,
+      };
+    return {
+      usage: { ...totals, ...(sawReasoning ? { reasoning } : {}) },
+      ...(resolvedModel ? { resolvedModel } : {}),
+      ...(effectiveThinkingLevel ? { effectiveThinkingLevel } : {}),
+      tokenDetail: {
+        inputTokens: positiveOrNull(totals.input),
+        outputTokens: positiveOrNull(totals.output),
+        cacheReadTokens: positiveOrNull(totals.cacheRead),
+        cacheWriteTokens: positiveOrNull(totals.cacheWrite),
+        reasoningTokens: sawReasoning ? positiveOrNull(reasoning) : null,
+      },
+      compactionCount,
+    };
   } catch {
     return { unavailable: "session-missing" };
   }
@@ -182,3 +235,4 @@ const object = (value: unknown): Record<string, unknown> | undefined =>
   value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
 const nonNegative = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value) && value >= 0;
+const positiveOrNull = (value: number): number | null => (value > 0 ? value : null);

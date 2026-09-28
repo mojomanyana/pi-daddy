@@ -437,6 +437,7 @@ export async function runOneDelegation(
     toolCallId: options.toolCallId,
     cwd: ctx.cwd,
     preparedWorkspace,
+    thinkingSource: spec.thinking !== undefined ? "explicit" : request.thinking !== undefined ? "advisor" : "default",
     signal,
     onProgress,
   });

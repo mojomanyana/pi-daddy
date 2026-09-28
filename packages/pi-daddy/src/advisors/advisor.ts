@@ -41,6 +41,16 @@ export interface AdviceRecord {
   /** Present only when advice came back. */
   answers?: Readonly<Record<string, { value: string | number | boolean; confidence?: number }>>;
   model?: string;
+  resolvedModel: { provider: string; modelId: string } | null;
+  /** The Decisions endpoint does not expose an effective thinking level, so advisor records persist null. */
+  thinkingLevel: { level: string; source: "explicit" | "advisor" | "default" } | null;
+  tokenDetail: {
+    inputTokens: number | null;
+    outputTokens: number | null;
+    cacheReadTokens: number | null;
+    cacheWriteTokens: number | null;
+    reasoningTokens: number | null;
+  };
   /**
    * Why there is no advice. `declined` means the advisor answered with nothing; `error` means it could not be
    * reached or its response was unrecognised; `cancelled` means the CALLER went away, which is not the advisor's
@@ -83,6 +93,15 @@ export function createAdvisor(input: {
         purpose,
         decider: input.decider.name,
         questions: Object.keys(request.questions),
+        resolvedModel: null,
+        thinkingLevel: null,
+        tokenDetail: {
+          inputTokens: null,
+          outputTokens: null,
+          cacheReadTokens: null,
+          cacheWriteTokens: null,
+          reasoningTokens: null,
+        },
       };
       const write = async (entry: AdviceRecord) => {
         try {
@@ -125,6 +144,8 @@ export function createAdvisor(input: {
             ]),
           ),
           ...(advice.model ? { model: advice.model } : {}),
+          ...(advice.resolvedModel ? { resolvedModel: advice.resolvedModel } : {}),
+          ...(advice.tokenDetail ? { tokenDetail: advice.tokenDetail } : {}),
         });
         return advice;
       } catch {

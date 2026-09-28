@@ -105,6 +105,7 @@ export async function executePlannedChild(input: {
   toolCallId?: string;
   cwd: string;
   preparedWorkspace?: PreparedWorkspace;
+  thinkingSource?: "explicit" | "advisor" | "default";
   signal?: AbortSignal;
   onProgress?: (update: ChildProgressUpdate) => void;
 }): Promise<DelegationOutcome> {
@@ -386,9 +387,20 @@ export async function executePlannedChild(input: {
               idleTimeoutMs: configuredIdleMs,
               reason:
                 output.spawnError ?? (output.timedOut ? (output.idle ? "idle-timeout" : "wall-clock") : undefined),
+              ...(usageObservation.resolvedModel ? { resolvedModel: usageObservation.resolvedModel } : {}),
+              ...(usageObservation.effectiveThinkingLevel
+                ? {
+                    effectiveThinkingLevel: usageObservation.effectiveThinkingLevel,
+                    thinkingSource: input.thinkingSource ?? "default",
+                  }
+                : {}),
+              ...(usageObservation.tokenDetail ? { tokenDetail: usageObservation.tokenDetail } : {}),
               ...(usageObservation.usage
                 ? { usage: usageObservation.usage }
                 : { usageUnavailable: usageObservation.unavailable! }),
+              ...(usageObservation.compactionCount !== undefined
+                ? { compactionCount: usageObservation.compactionCount }
+                : {}),
               correlation: plan.correlation,
               now: new Date(),
             }),
@@ -498,9 +510,20 @@ export async function executePlannedChild(input: {
                   : error instanceof Error
                     ? error.name
                     : "unknown executor error",
+              ...(usageObservation.resolvedModel ? { resolvedModel: usageObservation.resolvedModel } : {}),
+              ...(usageObservation.effectiveThinkingLevel
+                ? {
+                    effectiveThinkingLevel: usageObservation.effectiveThinkingLevel,
+                    thinkingSource: input.thinkingSource ?? "default",
+                  }
+                : {}),
+              ...(usageObservation.tokenDetail ? { tokenDetail: usageObservation.tokenDetail } : {}),
               ...(usageObservation.usage
                 ? { usage: usageObservation.usage }
                 : { usageUnavailable: usageObservation.unavailable! }),
+              ...(usageObservation.compactionCount !== undefined
+                ? { compactionCount: usageObservation.compactionCount }
+                : {}),
               correlation: plan.correlation,
               now: new Date(),
             }),

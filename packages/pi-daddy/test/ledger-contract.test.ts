@@ -125,7 +125,11 @@ const LIFECYCLE_FIELDS = [
   "executor",
   "deadlineAt",
   "idleTimeoutMs",
+  "resolvedModel",
+  "thinkingLevel",
+  "tokenDetail",
   "usage",
+  "compactionCount",
   "usageUnavailable",
   "herdrPaneId",
   "herdrAgentName",
@@ -302,8 +306,23 @@ test("the closed v3 schema accepts fixtures and rejects v2, extra fields and mis
     "entire-run carries no selectors",
   );
   const lifecycle = buildLedgerV3ContractFixtures()["child-lifecycle.json"];
-  const { usage: _usageAddedLater, ...historicalLifecycle } = lifecycle;
+  const {
+    usage: _usageAddedLater,
+    resolvedModel: _modelAddedLater,
+    thinkingLevel: _thinkingAddedLater,
+    tokenDetail: _tokensAddedLater,
+    compactionCount: _compactionAddedLater,
+    ...historicalLifecycle
+  } = lifecycle;
   assert.equal(validator.Check(historicalLifecycle), true, "retained lifecycle records without usage remain valid");
+  assert.equal(
+    validator.Check({
+      ...lifecycle,
+      tokenDetail: { ...lifecycle.tokenDetail, inputTokens: 0 },
+    }),
+    false,
+    "provider token detail is null when unreported, never zero",
+  );
   const { deadlineAt: _deadline, ...startingWithoutDeadline } = { ...lifecycle, state: "starting" };
   assert.equal(validator.Check(startingWithoutDeadline), false);
   assert.equal(
@@ -426,6 +445,15 @@ test("every v3 builder emits explicit execution identity, including a running He
     assert.equal(event.executionId, executionId);
     assert.ok(Object.hasOwn(event, "parentExecutionId"));
   }
+  assert.equal(lifecycle.resolvedModel, null);
+  assert.equal(lifecycle.thinkingLevel, null);
+  assert.deepEqual(lifecycle.tokenDetail, {
+    inputTokens: null,
+    outputTokens: null,
+    cacheReadTokens: null,
+    cacheWriteTokens: null,
+    reasoningTokens: null,
+  });
 });
 
 test("regenerating the record contract restores the refusal enum and writes the envelope schema", async () => {

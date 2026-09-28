@@ -12,6 +12,14 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## Unreleased — model-attributed usage records
+
+- Child lifecycle records now include the resolved provider/model, effective thinking level and its source, nullable
+  provider-reported token dimensions, and the current turn's compaction count when the session file is readable.
+- Advice records now include the resolved advisor provider/model and nullable token dimensions reported by the
+  Decisions endpoint. The endpoint does not expose an effective thinking level, so that field is recorded as null.
+- The ledger-record v1 governance schema accepts the new lifecycle fields additively; retained records remain valid.
+
 ## 0.41.1 — context handoff bounds in delegate schemas
 
 - The `delegate`, `delegate_all`, and `delegate_chain` schemas now tell models that context handoffs accept at most

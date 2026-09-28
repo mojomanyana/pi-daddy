@@ -729,8 +729,35 @@
           "minimum": 1,
           "description": "the inactivity bound in milliseconds that governed this child beside the deadlineAt ceiling"
         },
+        "resolvedModel": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/resolvedModel"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "thinkingLevel": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/thinkingLevel"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tokenDetail": {
+          "$ref": "#/$defs/tokenDetail"
+        },
         "usage": {
           "$ref": "#/$defs/childUsage"
+        },
+        "compactionCount": {
+          "type": "integer",
+          "minimum": 0
         },
         "usageUnavailable": {
           "enum": [
@@ -810,6 +837,84 @@
               }
             }
           }
+        }
+      ]
+    },
+    "resolvedModel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "modelId"
+      ],
+      "properties": {
+        "provider": {
+          "type": "string",
+          "minLength": 1
+        },
+        "modelId": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "thinkingLevel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "level",
+        "source"
+      ],
+      "properties": {
+        "level": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "enum": [
+            "explicit",
+            "advisor",
+            "default"
+          ]
+        }
+      }
+    },
+    "tokenDetail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "inputTokens",
+        "outputTokens",
+        "cacheReadTokens",
+        "cacheWriteTokens",
+        "reasoningTokens"
+      ],
+      "properties": {
+        "inputTokens": {
+          "$ref": "#/$defs/reportedTokenCount"
+        },
+        "outputTokens": {
+          "$ref": "#/$defs/reportedTokenCount"
+        },
+        "cacheReadTokens": {
+          "$ref": "#/$defs/reportedTokenCount"
+        },
+        "cacheWriteTokens": {
+          "$ref": "#/$defs/reportedTokenCount"
+        },
+        "reasoningTokens": {
+          "$ref": "#/$defs/reportedTokenCount"
+        }
+      }
+    },
+    "reportedTokenCount": {
+      "oneOf": [
+        {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        {
+          "type": "null"
         }
       ]
     },

@@ -208,7 +208,10 @@ const path = process.argv[process.argv.indexOf("--session") + 1];
 const usage = {input:7,output:2,cacheRead:3,cacheWrite:1,reasoning:1,totalTokens:14,cost:{input:0.07,output:0.02,cacheRead:0.01,cacheWrite:0.01,total:0.11}};
 fs.writeFileSync(path, [
   {type:"message",message:{role:"user",content:"PRIVATE CHILD TASK"}},
-  {type:"message",message:{role:"assistant",content:"PRIVATE CHILD ANSWER",usage}}
+  {type:"model_change",provider:"openai-codex",modelId:"gpt-5.3-codex"},
+  {type:"thinking_level_change",thinkingLevel:"high"},
+  {type:"compaction"},
+  {type:"message",message:{role:"assistant",content:"PRIVATE CHILD ANSWER",provider:"openai-codex",model:"gpt-5.3-codex",usage}}
 ].map(JSON.stringify).join("\\n") + "\\n");
 console.log("done");
 `,
@@ -226,6 +229,7 @@ console.log("done");
       executionId,
       parentExecutionId: null,
       cwd: dir,
+      thinkingSource: "explicit",
     });
     assert.equal(outcome.ok, true);
     const text = await readFile(ledgerPath, "utf8");
@@ -233,7 +237,8 @@ console.log("done");
       .trim()
       .split("\n")
       .map((line) => JSON.parse(line).body);
-    assert.deepEqual(events.find((event) => event.state === "completed")?.usage, {
+    const completed = events.find((event) => event.state === "completed");
+    assert.deepEqual(completed?.usage, {
       input: 7,
       output: 2,
       cacheRead: 3,
@@ -242,6 +247,16 @@ console.log("done");
       totalTokens: 14,
       cost: { input: 0.07, output: 0.02, cacheRead: 0.01, cacheWrite: 0.01, total: 0.11 },
     });
+    assert.deepEqual(completed?.resolvedModel, { provider: "openai-codex", modelId: "gpt-5.3-codex" });
+    assert.deepEqual(completed?.thinkingLevel, { level: "high", source: "explicit" });
+    assert.deepEqual(completed?.tokenDetail, {
+      inputTokens: 7,
+      outputTokens: 2,
+      cacheReadTokens: 3,
+      cacheWriteTokens: 1,
+      reasoningTokens: 1,
+    });
+    assert.equal(completed?.compactionCount, 1);
     assert.doesNotMatch(text, /PRIVATE CHILD/);
   } finally {
     if (oldPath === undefined) delete process.env.PATH;

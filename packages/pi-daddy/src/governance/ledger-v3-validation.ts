@@ -146,7 +146,11 @@ const FIELDS = {
     "reason",
     "deadlineAt",
     "idleTimeoutMs",
+    "resolvedModel",
+    "thinkingLevel",
+    "tokenDetail",
     "usage",
+    "compactionCount",
     "usageUnavailable",
     "herdrPaneId",
     "herdrAgentName",
@@ -354,6 +358,35 @@ function validUsage(value: unknown): boolean {
   );
 }
 
+function validResolvedModel(value: unknown): boolean {
+  return (
+    value === null ||
+    (isLedgerObject(value) &&
+      Object.keys(value).every((key) => ["provider", "modelId"].includes(key)) &&
+      isNonEmptyString(value.provider) &&
+      isNonEmptyString(value.modelId))
+  );
+}
+
+function validThinkingLevel(value: unknown): boolean {
+  return (
+    value === null ||
+    (isLedgerObject(value) &&
+      Object.keys(value).every((key) => ["level", "source"].includes(key)) &&
+      isNonEmptyString(value.level) &&
+      ["explicit", "advisor", "default"].includes(String(value.source)))
+  );
+}
+
+function validTokenDetail(value: unknown): boolean {
+  if (!isLedgerObject(value)) return false;
+  const fields = ["inputTokens", "outputTokens", "cacheReadTokens", "cacheWriteTokens", "reasoningTokens"];
+  return (
+    Object.keys(value).length === fields.length &&
+    fields.every((field) => value[field] === null || (nonNegativeNumber(value[field]) && (value[field] as number) > 0))
+  );
+}
+
 function validateChildLifecycle(event: LedgerV3Object): string | null {
   if (
     !["starting", "running", "completed", "failed"].includes(String(event.state)) ||
@@ -373,7 +406,11 @@ function validateChildLifecycle(event: LedgerV3Object): string | null {
     !optional(event, "aborted", (value) => value === true) ||
     !optional(event, "truncated", (value) => value === true) ||
     !optional(event, "reason", (value) => typeof value === "string") ||
+    !optional(event, "resolvedModel", validResolvedModel) ||
+    !optional(event, "thinkingLevel", validThinkingLevel) ||
+    !optional(event, "tokenDetail", validTokenDetail) ||
     !optional(event, "usage", validUsage) ||
+    !optional(event, "compactionCount", (value) => Number.isInteger(value) && (value as number) >= 0) ||
     !optional(event, "usageUnavailable", (value) =>
       ["session-missing", "session-invalid", "usage-missing"].includes(String(value)),
     ) ||

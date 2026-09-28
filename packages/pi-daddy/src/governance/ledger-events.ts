@@ -63,6 +63,14 @@ export const CHILD_PROCESS_SIGNALS = [
 ] as const satisfies readonly NodeJS.Signals[];
 export type ChildProcessSignal = (typeof CHILD_PROCESS_SIGNALS)[number];
 
+export interface ChildTokenDetail {
+  inputTokens: number | null;
+  outputTokens: number | null;
+  cacheReadTokens: number | null;
+  cacheWriteTokens: number | null;
+  reasoningTokens: number | null;
+}
+
 export interface ChildUsageTotals {
   input: number;
   output: number;
@@ -140,8 +148,16 @@ export interface ChildLifecycleEvent extends LedgerEventBase {
   reason?: string;
   /** The inactivity bound (ms) that governed this child beside the `deadlineAt` ceiling (PR 3e). */
   idleTimeoutMs?: number;
+  /** The provider/model reported by the child's persisted assistant message. */
+  resolvedModel?: { provider: string; modelId: string } | null;
+  /** The persisted effective level and whether the caller, advisor, or pi default selected it. */
+  thinkingLevel?: { level: string; source: "explicit" | "advisor" | "default" } | null;
+  /** Provider-reported token dimensions; zero is normalised to null rather than invented as reported usage. */
+  tokenDetail?: ChildTokenDetail;
   /** Aggregate model usage read from the child's pi session file after it stopped. */
   usage?: ChildUsageTotals;
+  /** Number of compaction entries in the child's current turn, when the session file was readable. */
+  compactionCount?: number;
   /** Why totals could not be read; a fixed code, never transcript content. */
   usageUnavailable?: "session-missing" | "session-invalid" | "usage-missing";
 }
@@ -212,7 +228,12 @@ export function buildChildLifecycleEvent(args: {
   aborted?: boolean;
   truncated?: boolean;
   reason?: string;
+  resolvedModel?: { provider: string; modelId: string };
+  effectiveThinkingLevel?: string;
+  thinkingSource?: "explicit" | "advisor" | "default";
+  tokenDetail?: ChildTokenDetail;
   usage?: ChildUsageTotals;
+  compactionCount?: number;
   usageUnavailable?: "session-missing" | "session-invalid" | "usage-missing";
   correlation?: CorrelationMetadata;
   now: Date;
@@ -238,7 +259,22 @@ export function buildChildLifecycleEvent(args: {
     ...(args.aborted ? { aborted: true } : {}),
     ...(args.truncated ? { truncated: true } : {}),
     ...(args.reason ? { reason: args.reason } : {}),
+    resolvedModel: args.resolvedModel ? structuredClone(args.resolvedModel) : null,
+    thinkingLevel:
+      args.effectiveThinkingLevel && args.thinkingSource
+        ? { level: args.effectiveThinkingLevel, source: args.thinkingSource }
+        : null,
+    tokenDetail: args.tokenDetail
+      ? structuredClone(args.tokenDetail)
+      : {
+          inputTokens: null,
+          outputTokens: null,
+          cacheReadTokens: null,
+          cacheWriteTokens: null,
+          reasoningTokens: null,
+        },
     ...(args.usage ? { usage: structuredClone(args.usage) } : {}),
+    ...(args.compactionCount !== undefined ? { compactionCount: args.compactionCount } : {}),
     ...(args.usageUnavailable ? { usageUnavailable: args.usageUnavailable } : {}),
     ...(args.correlation ? { correlation: structuredClone(args.correlation) } : {}),
   });
