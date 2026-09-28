@@ -114,7 +114,11 @@ export function parseContextRequest(raw: unknown): { request: ContextRequest } |
     if (!Array.isArray(value.files) || value.files.some((path) => typeof path !== "string" || path.length === 0))
       return { refusal: "context.files must be an array of non-empty paths" };
     if (value.files.length > MAX_CONTEXT_FILES)
-      return { refusal: `context.files may name at most ${MAX_CONTEXT_FILES} paths` };
+      return {
+        refusal:
+          `context.files may name at most ${MAX_CONTEXT_FILES} paths; choose fewer, or omit context when the child ` +
+          "can inspect the same workspace",
+      };
     request.files = value.files as string[];
   }
   if (value.summary !== undefined) {

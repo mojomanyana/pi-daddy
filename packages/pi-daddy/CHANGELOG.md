@@ -12,6 +12,12 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## 0.41.1 — context handoff bounds in delegate schemas
+
+- The `delegate`, `delegate_all`, and `delegate_chain` schemas now tell models that context handoffs accept at most
+  16 file paths and 1–50 turns, with the current 20-turn default. For agents that can inspect the same workspace,
+  the schema recommends omitting embedded file context; an oversized request now gives the same recovery explicitly.
+
 ## 0.41.0 — episode identity, child usage, and explicit advisor task egress
 
 - Enabling and keying an advisor now sends only a structural task digest by default. Raw task text additionally
