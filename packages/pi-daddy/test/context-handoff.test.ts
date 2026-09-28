@@ -6,6 +6,9 @@ import {
   CONTEXT_MAX_BYTES,
   CONTEXT_MODES,
   CONTEXT_SUBSUMPTION,
+  DEFAULT_CONTEXT_TURNS,
+  MAX_CONTEXT_FILES,
+  MAX_CONTEXT_TURNS,
   contextCapability,
   fenceContext,
   isContextCapability,
@@ -20,6 +23,7 @@ import { planDelegation } from "../src/kernel/delegate.ts";
 import { planChain } from "../extensions/chain-plan.ts";
 import { parseSkillDefinition } from "../src/kernel/definitions.ts";
 import { activitySessionFor } from "../src/executors/activity-session.ts";
+import { contextShape } from "../extensions/context-shape.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
 after(cleanupTempDirs);
@@ -75,8 +79,38 @@ test("a malformed or incomplete request is refused, never silently downgraded to
     /between 1 and/,
   );
   assert.ok("request" in parseContextRequest({ mode: "pruned" }), "pruned needs no input of its own");
+  const maximumFiles = Array.from({ length: MAX_CONTEXT_FILES }, (_, index) => `src/${index}.ts`);
+  assert.ok(
+    "request" in parseContextRequest({ mode: "files", files: maximumFiles }),
+    "the advertised maximum remains accepted",
+  );
+  const oversized = parseContextRequest({ mode: "files", files: [...maximumFiles, "src/too-many.ts"] });
+  assert.ok("refusal" in oversized);
+  assert.match(oversized.refusal, /choose fewer/);
+  assert.match(oversized.refusal, /omit context when the child can inspect the same workspace/);
   for (const mode of CONTEXT_MODES) assert.ok(isContextCapability(contextCapability(mode)));
   assert.equal(isContextCapability("context:everything"), false);
+});
+
+test("the model-facing context schema publishes the kernel's request bounds", () => {
+  // Breaks by: removing maxItems or leaving the displayed default stale when a kernel bound changes. The live
+  // failure this prevents named 18 files even though the planner accepts 16, then retried with a stronger mode the
+  // definition did not permit. The schema must make a valid first call possible; the kernel remains authoritative.
+  const schema = contextShape() as unknown as {
+    properties: {
+      mode: { description?: string };
+      files: { maxItems?: number; items?: { minLength?: number } };
+      turns: { type?: string; minimum?: number; maximum?: number; description?: string };
+    };
+  };
+
+  assert.match(schema.properties.mode.description ?? "", /prefer none.*inspect the checkout/);
+  assert.equal(schema.properties.files.maxItems, MAX_CONTEXT_FILES);
+  assert.equal(schema.properties.files.items?.minLength, 1);
+  assert.equal(schema.properties.turns.type, "integer");
+  assert.equal(schema.properties.turns.minimum, 1);
+  assert.equal(schema.properties.turns.maximum, MAX_CONTEXT_TURNS);
+  assert.match(schema.properties.turns.description ?? "", new RegExp(`Default ${DEFAULT_CONTEXT_TURNS}\\.`));
 });
 
 test("what crosses is fenced, capped, and says inside the fence what did not fit", () => {
