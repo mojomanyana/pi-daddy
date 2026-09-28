@@ -8,7 +8,7 @@ import {
   ENV_ACTIVITY_ROOT,
   ENV_ACTIVITY_TASK,
 } from "../src/products/activity-timeline.ts";
-import type { SkillDefinition } from "../src/kernel/definitions.ts";
+import { parseSkillDefinition, type SkillDefinition } from "../src/kernel/definitions.ts";
 
 const ctx = (over: Partial<Parameters<typeof planDelegation>[1]> = {}) => ({
   ownGrant: ["tool:read", "tool:bash", "tool:edit", "tool:write"],
@@ -452,6 +452,30 @@ test("ADR-0018: a definition spawn carries a digest of the body it passed to the
   // The digest must cover exactly what the child received, or it identifies the wrong thing.
   const at = plan.args.indexOf("--append-system-prompt");
   assert.equal(plan.args[at + 1], d.body);
+});
+
+test("an unchanged SKILL.md has one stable source hash across two plans", async () => {
+  const { createHash } = await import("node:crypto");
+  const text = `---\nname: review\ndescription: Reviews code\nallowed-tools: Read Grep\n---\n# Review\n\nFind what breaks.\n`;
+  const first = parseSkillDefinition("/skills/review/SKILL.md", text)!;
+  const second = parseSkillDefinition("/skills/review/SKILL.md", text)!;
+  first.packageVersion = "2.3.1";
+  second.packageVersion = "2.3.1";
+  const context = (d: SkillDefinition) => ({
+    ownGrant: ["agent:review", "tool:read", "tool:grep"],
+    depth: 0,
+    maxDepth: 2,
+    gated: [],
+    definitions: new Map([["review", d]]),
+  });
+
+  const firstPlan = planDelegation({ task: "first run", agent: "review" }, context(first));
+  const secondPlan = planDelegation({ task: "second run", agent: "review" }, context(second));
+  const expected = createHash("sha256").update(text).digest("hex");
+  assert.equal(firstPlan.definitionHash, expected);
+  assert.equal(secondPlan.definitionHash, expected);
+  assert.equal(firstPlan.definitionHash, secondPlan.definitionHash);
+  assert.equal(firstPlan.definitionPackageVersion, "2.3.1");
 });
 
 test("ADR-0018: rewriting the body changes the digest; rewording the frontmatter does not", () => {

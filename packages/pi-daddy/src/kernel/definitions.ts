@@ -20,6 +20,7 @@
  */
 
 import { createHash } from "node:crypto";
+import { join } from "node:path";
 import { readBoundedFile } from "./bounded-read.ts";
 import { resolveSkillResources, skillResourceName } from "./skill-resources.ts";
 import { CAPABILITY_NAMESPACE_PREFIXES } from "./capabilities.ts";
@@ -55,6 +56,10 @@ export function digestDefinition(definition: SkillDefinition): DefinitionDigest 
   };
 }
 
+export function isDefinitionPackageVersion(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9A-Za-z][0-9A-Za-z.+_-]{0,127}$/.test(value);
+}
+
 export interface SkillDefinition {
   /** From the path, never the frontmatter — see `parseSkillDefinition`. */
   name: string;
@@ -66,6 +71,10 @@ export interface SkillDefinition {
   /** Everything after the frontmatter — the child's system prompt. */
   body: string;
   source: string;
+  /** SHA-256 of the complete SKILL.md, matching skill-harness's raw `source_hashes["SKILL.md"]`. */
+  sourceHash?: string;
+  /** Installed package version when Pi exposes one for this definition. */
+  packageVersion?: string;
 }
 
 export interface DefinitionCeiling {
@@ -154,6 +163,7 @@ export function parseSkillDefinition(source: string, text: string): SkillDefinit
     metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
     body: text.slice(match[0].length).trim(),
     source,
+    sourceHash: createHash("sha256").update(text, "utf8").digest("hex"),
   };
 }
 
@@ -224,7 +234,8 @@ export async function loadDefinitions(
   skipped?: (path: string, reason: string) => void,
 ): Promise<Map<string, SkillDefinition>> {
   const definitions = new Map<string, SkillDefinition>();
-  for (const { path } of (await resolveSkillResources(cwd)).skills) {
+  const packageVersions = new Map<string, string | undefined>();
+  for (const { path, metadata } of (await resolveSkillResources(cwd)).skills) {
     const read = await readBoundedFile(path, {
       maxBytes: DEFINITION_MAX_BYTES,
       timeoutMs: DEFINITION_READ_TIMEOUT_MS,
@@ -234,6 +245,26 @@ export async function loadDefinitions(
       continue;
     }
     const parsed = parseSkillDefinition(path, read.text);
+    if (parsed && metadata.origin === "package" && metadata.baseDir) {
+      if (!packageVersions.has(metadata.baseDir)) {
+        const manifest = await readBoundedFile(join(metadata.baseDir, "package.json"), {
+          maxBytes: DEFINITION_MAX_BYTES,
+          timeoutMs: DEFINITION_READ_TIMEOUT_MS,
+        });
+        let version: string | undefined;
+        if (manifest.ok) {
+          try {
+            const candidate = JSON.parse(manifest.text).version;
+            if (isDefinitionPackageVersion(candidate)) version = candidate;
+          } catch {
+            // A package without readable version metadata still supplies a valid definition; omit the optional stamp.
+          }
+        }
+        packageVersions.set(metadata.baseDir, version);
+      }
+      const packageVersion = packageVersions.get(metadata.baseDir);
+      if (packageVersion) parsed.packageVersion = packageVersion;
+    }
     if (!parsed) skipped?.(path, `${path} has no readable frontmatter with a description`);
     // Shadowing is legitimate — a project override is SUPPOSED to win over a package's copy — but review
     // pointed out it was the one remaining drop with no word said, in the very function being made loud.

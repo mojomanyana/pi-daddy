@@ -33,6 +33,8 @@ function plan(): Delegation {
     result: { effective: [], denied: [], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
     childDepth: 1,
     requested: [],
+    definitionHash: "b".repeat(64),
+    definitionPackageVersion: "2.3.1",
     taskDigest: "a".repeat(64),
   };
 }
@@ -308,6 +310,8 @@ console.log("done");
       reasoningTokens: 1,
     });
     assert.equal(completed?.compactionCount, 1);
+    assert.equal(completed?.definitionHash, "b".repeat(64));
+    assert.equal(completed?.definitionPackageVersion, "2.3.1");
     assert.deepEqual(completed?.exportedEnvironment, [...CHILD_ATTRIBUTION_ENV_KEYS]);
     assert.doesNotMatch(text, /PRIVATE CHILD/);
   } finally {

@@ -4,6 +4,7 @@ import { isEpisodeId } from "../kernel/episode-id.ts";
 import { REFUSAL_CODES } from "../kernel/refusals.ts";
 import { isLedgerCapabilityIdentifier, isLedgerDisplayIdentifier } from "../kernel/ledger-identifiers.ts";
 import { CHILD_ATTRIBUTION_ENV_KEYS } from "../kernel/env-names.ts";
+import { isDefinitionPackageVersion } from "../kernel/definitions.ts";
 
 export type LedgerV3Object = Record<string, unknown>;
 
@@ -104,6 +105,8 @@ const FIELDS = {
     "humanDenied",
     "gateOutcome",
     "definitionDigest",
+    "definitionHash",
+    "definitionPackageVersion",
     "handoff",
     "executor",
     "taskFrom",
@@ -154,6 +157,8 @@ const FIELDS = {
     "compactionCount",
     "usageUnavailable",
     "exportedEnvironment",
+    "definitionHash",
+    "definitionPackageVersion",
     "herdrPaneId",
     "herdrAgentName",
     "correlation",
@@ -303,6 +308,8 @@ function validateCapabilityDecision(event: LedgerV3Object): string | null {
     !optional(event, "humanDenied", (value) => value === true) ||
     !optional(event, "gateOutcome", (value) => GATE_OUTCOMES.has(String(value))) ||
     !optional(event, "definitionDigest", validDefinitionDigest) ||
+    !optional(event, "definitionHash", (value) => SHA256_RE.test(String(value))) ||
+    !optional(event, "definitionPackageVersion", isDefinitionPackageVersion) ||
     !optional(event, "taskFrom", isLedgerDisplayIdentifier) ||
     !optional(event, "taskFromExecutionId", isExecutionId) ||
     !optional(event, "correlation", validCorrelation) ||
@@ -425,6 +432,8 @@ function validateChildLifecycle(event: LedgerV3Object): string | null {
       ["session-missing", "session-invalid", "usage-missing"].includes(String(value)),
     ) ||
     !optional(event, "exportedEnvironment", validExportedEnvironment) ||
+    !optional(event, "definitionHash", (value) => SHA256_RE.test(String(value))) ||
+    !optional(event, "definitionPackageVersion", isDefinitionPackageVersion) ||
     !optional(event, "correlation", validCorrelation)
   ) {
     return "child lifecycle optional fields are invalid";

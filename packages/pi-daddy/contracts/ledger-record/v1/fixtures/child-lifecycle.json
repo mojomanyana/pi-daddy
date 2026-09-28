@@ -50,6 +50,8 @@
     "PI_DADDY_DEFINITION",
     "PI_DADDY_EXECUTION"
   ],
+  "definitionHash": "7777777777777777777777777777777777777777777777777777777777777777",
+  "definitionPackageVersion": "2.3.1",
   "correlation": {
     "schema_version": "1.0",
     "run_id": "run-contract-001",

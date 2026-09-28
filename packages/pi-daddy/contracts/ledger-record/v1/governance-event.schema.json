@@ -409,6 +409,14 @@
         "definitionDigest": {
           "$ref": "#/$defs/definitionDigest"
         },
+        "definitionHash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "definitionPackageVersion": {
+          "type": "string",
+          "pattern": "^[0-9A-Za-z][0-9A-Za-z.+_-]{0,127}$"
+        },
         "handoff": {
           "type": "object",
           "description": "the context handoff this child received (ADR-0078); absent means nothing crossed",
@@ -778,6 +786,14 @@
               "PI_DADDY_EXECUTION"
             ]
           }
+        },
+        "definitionHash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "definitionPackageVersion": {
+          "type": "string",
+          "pattern": "^[0-9A-Za-z][0-9A-Za-z.+_-]{0,127}$"
         },
         "herdrPaneId": {
           "$ref": "#/$defs/ledgerDisplayIdentifier"

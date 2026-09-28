@@ -88,6 +88,8 @@ const CAPABILITY_FIELDS = [
   "humanDenied",
   "gateOutcome",
   "definitionDigest",
+  "definitionHash",
+  "definitionPackageVersion",
   "handoff",
   "executor",
   "taskFrom",
@@ -132,6 +134,8 @@ const LIFECYCLE_FIELDS = [
   "compactionCount",
   "usageUnavailable",
   "exportedEnvironment",
+  "definitionHash",
+  "definitionPackageVersion",
   "herdrPaneId",
   "herdrAgentName",
   "exitCode",
@@ -260,12 +264,18 @@ test("the closed v3 schema accepts fixtures and rejects v2, extra fields and mis
     );
   }
   const fixture = buildLedgerV3ContractFixtures()["capability-decision.json"];
-  const { episodeId: _episodeAddedLater, ...historicalFixture } = fixture;
-  assert.equal(validator.Check(historicalFixture), true, "retained records without episodeId remain valid");
+  const {
+    episodeId: _episodeAddedLater,
+    definitionHash: _definitionHashAddedLater,
+    definitionPackageVersion: _definitionPackageVersionAddedLater,
+    ...historicalFixture
+  } = fixture;
+  assert.equal(validator.Check(historicalFixture), true, "retained records without additive fields remain valid");
   assert.equal(validator.Check({ ...fixture, ledgerVersion: 2 }), false);
   assert.equal(validator.Check({ ...fixture, executionId: undefined }), false);
   assert.equal(validator.Check({ ...fixture, task: "forbidden ledger text" }), false);
   assert.equal(validator.Check({ ...fixture, agentType: "SECRET TASK TEXT" }), false);
+  assert.equal(validator.Check({ ...fixture, definitionPackageVersion: "SECRET TASK TEXT" }), false);
   assert.equal(validator.Check({ ...fixture, effective: ["SECRET OUTPUT TEXT"] }), false);
   assert.equal(
     validator.Check({
@@ -314,6 +324,8 @@ test("the closed v3 schema accepts fixtures and rejects v2, extra fields and mis
     tokenDetail: _tokensAddedLater,
     compactionCount: _compactionAddedLater,
     exportedEnvironment: _environmentAddedLater,
+    definitionHash: _lifecycleDefinitionHashAddedLater,
+    definitionPackageVersion: _lifecycleDefinitionPackageVersionAddedLater,
     ...historicalLifecycle
   } = lifecycle;
   assert.equal(validator.Check(historicalLifecycle), true, "retained lifecycle records without usage remain valid");

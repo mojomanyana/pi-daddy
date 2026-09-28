@@ -219,6 +219,10 @@ export interface Delegation {
    * identify — and absent on an ADR-0017 authorisation refusal, which is decided before the file is read.
    */
   definitionDigest?: DefinitionDigest;
+  /** SHA-256 of the complete SKILL.md, matching skill-harness source hashes. */
+  definitionHash?: string;
+  /** Installed package version exposed for the definition, when available. */
+  definitionPackageVersion?: string;
   /** Trusted SHA-256 of the exact model-authored task. The task text itself is never stored. */
   taskDigest: string;
   /** Non-authoritative external join metadata, snapshotted at planning time. */

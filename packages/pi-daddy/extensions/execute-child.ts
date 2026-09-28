@@ -189,6 +189,8 @@ export async function executePlannedChild(input: {
             deadlineAt,
             idleTimeoutMs: configuredIdleMs,
             exportedEnvironment: CHILD_ATTRIBUTION_ENV_KEYS,
+            definitionHash: plan.definitionHash,
+            definitionPackageVersion: plan.definitionPackageVersion,
             correlation: plan.correlation,
             now: startedAt,
           }),
@@ -268,6 +270,8 @@ export async function executePlannedChild(input: {
             idleTimeoutMs: configuredIdleMs,
             ...(pane ? { herdrPaneId: pane.id, herdrAgentName: pane.agentName } : {}),
             exportedEnvironment: CHILD_ATTRIBUTION_ENV_KEYS,
+            definitionHash: plan.definitionHash,
+            definitionPackageVersion: plan.definitionPackageVersion,
             correlation: plan.correlation,
             now: new Date(),
           }),
@@ -390,6 +394,8 @@ export async function executePlannedChild(input: {
               reason:
                 output.spawnError ?? (output.timedOut ? (output.idle ? "idle-timeout" : "wall-clock") : undefined),
               exportedEnvironment: CHILD_ATTRIBUTION_ENV_KEYS,
+              definitionHash: plan.definitionHash,
+              definitionPackageVersion: plan.definitionPackageVersion,
               ...(usageObservation.resolvedModel ? { resolvedModel: usageObservation.resolvedModel } : {}),
               ...(usageObservation.effectiveThinkingLevel
                 ? {
@@ -514,6 +520,8 @@ export async function executePlannedChild(input: {
                     ? error.name
                     : "unknown executor error",
               exportedEnvironment: CHILD_ATTRIBUTION_ENV_KEYS,
+              definitionHash: plan.definitionHash,
+              definitionPackageVersion: plan.definitionPackageVersion,
               ...(usageObservation.resolvedModel ? { resolvedModel: usageObservation.resolvedModel } : {}),
               ...(usageObservation.effectiveThinkingLevel
                 ? {

@@ -14,6 +14,8 @@ the record of how the package got here and are worth keeping; they are not worth
 
 ## Unreleased — model-attributed usage records
 
+- Capability and lifecycle records now stamp the complete definition `SKILL.md` hash and, when exposed by an
+  installed package, its version, so measurements identify the definition version they ran under.
 - Governed children now receive `PI_DADDY_EPISODE`, `PI_DADDY_DEFINITION`, and `PI_DADDY_EXECUTION`; lifecycle
   records name the exported variables so work produced outside pi-daddy can be joined back to its execution.
 - Child lifecycle records now include the resolved provider/model, effective thinking level and its source, nullable

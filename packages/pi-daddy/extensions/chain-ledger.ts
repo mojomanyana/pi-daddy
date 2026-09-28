@@ -41,6 +41,8 @@ export async function recordChainRefusal(input: {
       humanDenied: input.approval?.humanDenied,
       gateOutcome: input.approval?.gateOutcome,
       definitionDigest: input.plan.definitionDigest,
+      definitionHash: input.plan.definitionHash,
+      definitionPackageVersion: input.plan.definitionPackageVersion,
       taskDigest: input.plan.taskDigest,
       correlation: input.plan.correlation,
       // An approval banked before a later chain decline is a yes that led to no spawn, not the stale

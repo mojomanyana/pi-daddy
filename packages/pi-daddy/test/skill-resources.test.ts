@@ -48,7 +48,9 @@ for (const local of [false, true])
         ),
         false,
       );
-      assert.equal((await loadDefinitions(cwd)).get("advice")?.source, path);
+      const loaded = (await loadDefinitions(cwd)).get("advice");
+      assert.equal(loaded?.source, path);
+      assert.equal(loaded?.packageVersion, "1.0.0");
       const catalog = await buildCatalog({ cwd, observedTools: null });
       assert.equal(catalog.entries.find((e) => e.capability === "skill:advice")?.source, path);
       assert.equal(catalog.entries.find((e) => e.capability === "agent:advice")?.source, path);

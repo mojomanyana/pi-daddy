@@ -395,10 +395,8 @@ test("ADR-0018: the digest reaches the LEDGER FILE, not just the plan", async ()
   const TASK_SENTINEL = "ZZ-task-text-that-must-never-be-recorded-ZZ";
   const body = "# Patterned\n\nDo the patterned thing.";
   await mkdir(join(dir, ".pi", "skills", "patterned"), { recursive: true });
-  await writeFile(
-    join(dir, ".pi", "skills", "patterned", "SKILL.md"),
-    `---\nname: patterned\ndescription: Declares a sub-tool pattern.\nallowed-tools: Read, Bash(git:*)\n---\n${body}`,
-  );
+  const skillText = `---\nname: patterned\ndescription: Declares a sub-tool pattern.\nallowed-tools: Read, Bash(git:*)\n---\n${body}`;
+  await writeFile(join(dir, ".pi", "skills", "patterned", "SKILL.md"), skillText);
 
   const ledger = join(dir, "ledger.jsonl");
   const { tools, ctx } = await harness(
@@ -423,6 +421,12 @@ test("ADR-0018: the digest reaches the LEDGER FILE, not just the plan", async ()
     createHash("sha256").update(body, "utf8").digest("hex"),
     "the recorded digest must be of the body the child would have received",
   );
+  assert.equal(
+    line.definitionHash,
+    createHash("sha256").update(skillText, "utf8").digest("hex"),
+    "the grant record stamps the complete SKILL.md",
+  );
+  assert.equal(line.definitionPackageVersion, undefined, "a local definition has no package version");
   assert.ok(!JSON.stringify(line).includes(TASK_SENTINEL), "the TASK is never written to the ledger (ADR-0018)");
 });
 

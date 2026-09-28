@@ -102,6 +102,8 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
   let requested: Capability[];
   let systemPrompt: string | undefined;
   let definitionDigest: DefinitionDigest | undefined;
+  let definitionHash: string | undefined;
+  let definitionPackageVersion: string | undefined;
   /** The definition being spawned, hoisted so the gate below can name its authorising id (ADR-0024). */
   let spawned: SkillDefinition | undefined;
 
@@ -160,7 +162,13 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
     // ninth return could forget, there is one, and forgetting it is not expressible. The success return
     // does not spread `empty`, so it names the field explicitly.
     definitionDigest = digestDefinition(definition);
-    Object.assign(empty, { definitionDigest });
+    definitionHash = definition.sourceHash;
+    definitionPackageVersion = definition.packageVersion;
+    Object.assign(empty, {
+      definitionDigest,
+      ...(definitionHash ? { definitionHash } : {}),
+      ...(definitionPackageVersion ? { definitionPackageVersion } : {}),
+    });
 
     const ceiling = ceilingForDefinition(definition);
     if (ceiling.undeclared) {
@@ -440,5 +448,7 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
     ...(correlation ? { correlation } : {}),
     ...(approvalBinding ? { approvalBinding } : {}),
     ...(definitionDigest ? { definitionDigest } : {}),
+    ...(definitionHash ? { definitionHash } : {}),
+    ...(definitionPackageVersion ? { definitionPackageVersion } : {}),
   };
 }

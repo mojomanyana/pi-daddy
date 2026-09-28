@@ -162,6 +162,10 @@ export interface ChildLifecycleEvent extends LedgerEventBase {
   usageUnavailable?: "session-missing" | "session-invalid" | "usage-missing";
   /** Child-facing identity variables exported at the process boundary. */
   exportedEnvironment?: string[];
+  /** SHA-256 of the complete SKILL.md used by this child. */
+  definitionHash?: string;
+  /** Installed package version exposed for the definition, when available. */
+  definitionPackageVersion?: string;
 }
 
 export type CapabilityDecisionEvent = GrantRecord & {
@@ -238,10 +242,15 @@ export function buildChildLifecycleEvent(args: {
   compactionCount?: number;
   usageUnavailable?: "session-missing" | "session-invalid" | "usage-missing";
   exportedEnvironment?: readonly string[];
+  definitionHash?: string;
+  definitionPackageVersion?: string;
   correlation?: CorrelationMetadata;
   now: Date;
 }): ChildLifecycleEvent {
   assertEventIdentity(args);
+  if (args.definitionHash && !/^[a-f0-9]{64}$/i.test(args.definitionHash)) {
+    throw new TypeError("definitionHash must be a SHA-256 hex digest");
+  }
   return assertLedgerV3Wire({
     ledgerVersion: LEDGER_VERSION,
     event: "child_lifecycle",
@@ -280,6 +289,8 @@ export function buildChildLifecycleEvent(args: {
     ...(args.compactionCount !== undefined ? { compactionCount: args.compactionCount } : {}),
     ...(args.usageUnavailable ? { usageUnavailable: args.usageUnavailable } : {}),
     ...(args.exportedEnvironment ? { exportedEnvironment: [...args.exportedEnvironment] } : {}),
+    ...(args.definitionHash ? { definitionHash: args.definitionHash } : {}),
+    ...(args.definitionPackageVersion ? { definitionPackageVersion: args.definitionPackageVersion } : {}),
     ...(args.correlation ? { correlation: structuredClone(args.correlation) } : {}),
   });
 }

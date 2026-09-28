@@ -11,6 +11,7 @@
  */
 
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { test } from "node:test";
 import { ceilingForDefinition, parseSkillDefinition } from "../src/kernel/definitions.ts";
 
@@ -26,6 +27,13 @@ test("a SKILL.md parses into name, description and body", () => {
   assert.equal(def.description, "Reviews code before it lands.");
   assert.match(def.body, /Find what breaks\./);
   assert.ok(!def.body.startsWith("---"), "the frontmatter must not leak into the system prompt");
+  assert.equal(
+    def.sourceHash,
+    createHash("sha256")
+      .update(skill("name: review\ndescription: Reviews code before it lands.", "# Review\n\nFind what breaks."))
+      .digest("hex"),
+    "the source hash matches skill-harness source_hashes for the complete SKILL.md bytes",
+  );
 });
 
 test("identity comes from the DIRECTORY, not the frontmatter name", () => {

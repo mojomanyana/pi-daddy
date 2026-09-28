@@ -54,6 +54,8 @@ export async function recordDelegationDecision(input: {
       humanDenied: approval?.humanDenied ?? approvalFacts?.humanDenied,
       gateOutcome: approval?.gateOutcome,
       definitionDigest: plan.definitionDigest,
+      definitionHash: plan.definitionHash,
+      definitionPackageVersion: plan.definitionPackageVersion,
       taskDigest: plan.taskDigest,
       correlation: plan.correlation,
       refusal: plan.refusal,
