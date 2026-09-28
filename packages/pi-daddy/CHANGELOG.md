@@ -12,6 +12,11 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## Unreleased — episode outcome labeling
+
+- Add `pi-daddy outcomes`: append idempotent survival, CI, amendment, and operator-correction signals for
+  `Pi-Episode` commits, and show the latest combined label in `pi-daddy report`.
+
 ## 0.42.0 — model-attributed usage records (2026-09-29)
 
 - The first delegation now prompts once to keep or change child model and thinking defaults for the session;

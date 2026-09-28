@@ -181,6 +181,18 @@ export type CapabilityDecisionEvent = GrantRecord & {
   taskDigest: string;
 };
 
+export interface EpisodeOutcomeEvent extends Omit<LedgerEventBase, "correlation"> {
+  ledgerVersion: typeof LEDGER_VERSION;
+  event: "episode_outcome";
+  episodeId: string;
+  commit: string;
+  survived: boolean;
+  ci: "green" | "red" | "none";
+  amended: boolean;
+  corrected: boolean;
+  label: "positive" | "negative" | "unknown";
+}
+
 export interface EpisodeCostGateEvent extends Omit<LedgerEventBase, "episodeId" | "correlation"> {
   ledgerVersion: typeof LEDGER_VERSION;
   event: "cost_gate";
@@ -205,7 +217,12 @@ export interface SessionConfigEvent extends Omit<LedgerEventBase, "correlation">
 }
 
 export type RuntimeLedgerEvent =
-  CapabilityDecisionEvent | WorkspaceLeaseEvent | ChildLifecycleEvent | EpisodeCostGateEvent | SessionConfigEvent;
+  | CapabilityDecisionEvent
+  | WorkspaceLeaseEvent
+  | ChildLifecycleEvent
+  | EpisodeCostGateEvent
+  | SessionConfigEvent
+  | EpisodeOutcomeEvent;
 
 export function buildSessionConfigEvent(args: {
   episodeId: string;
@@ -224,6 +241,30 @@ export function buildSessionConfigEvent(args: {
     overrides: Object.fromEntries(
       [...args.overrides].map(([name, value]) => [name, { model: value.model!, thinking: value.thinking! }]),
     ),
+  });
+}
+
+export function buildEpisodeOutcomeEvent(args: {
+  episodeId: string;
+  commit: string;
+  survived: boolean;
+  ci: "green" | "red" | "none";
+  amended: boolean;
+  corrected: boolean;
+  label: "positive" | "negative" | "unknown";
+  now: Date;
+}): EpisodeOutcomeEvent {
+  return assertLedgerV3Wire({
+    ledgerVersion: LEDGER_VERSION,
+    event: "episode_outcome",
+    ts: args.now.toISOString(),
+    episodeId: args.episodeId,
+    commit: args.commit,
+    survived: args.survived,
+    ci: args.ci,
+    amended: args.amended,
+    corrected: args.corrected,
+    label: args.label,
   });
 }
 

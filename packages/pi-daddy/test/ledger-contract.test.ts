@@ -281,6 +281,7 @@ test("the published ledger v3 fixtures come from the production builders", async
     "capability-decision.json",
     "child-lifecycle.json",
     "episode-cost-gate.json",
+    "episode-outcome.json",
     "session-config.json",
     "workspace-lease.json",
   ]);
@@ -424,6 +425,7 @@ test("the v3 schema exhaustively matches production fields and finite vocabulari
     child_lifecycle: "childLifecycle",
     cost_gate: "costGate",
     session_config: "sessionConfig",
+    episode_outcome: "episodeOutcome",
   } as const satisfies Record<(typeof LEDGER_EVENT_KINDS)[number], string>;
   assert.deepEqual(
     schema.oneOf?.map((entry) => entry.$ref).sort(),

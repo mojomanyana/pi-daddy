@@ -41,6 +41,7 @@ export const LEDGER_EVENT_KINDS = [
   "child_lifecycle",
   "cost_gate",
   "session_config",
+  "episode_outcome",
 ] as const;
 export type LedgerEventKind = (typeof LEDGER_EVENT_KINDS)[number];
 export const LEDGER_GATE_OUTCOMES = ["declined", "dismissed", "no-ui", "error"] as const;
@@ -360,6 +361,7 @@ export function recordKindForEvent(event: { event?: string }): RecordKind {
       return "lease";
     case "cost_gate":
     case "session_config":
+    case "episode_outcome":
       return "fact";
     case "check_receipt": // retired kind, still imported from pre-format ledgers
       return "check";
@@ -411,10 +413,12 @@ export {
   WORKSPACE_RECOVERY_VALUES,
   buildChildLifecycleEvent,
   buildEpisodeCostGateEvent,
+  buildEpisodeOutcomeEvent,
   buildSessionConfigEvent,
   buildWorkspaceLeaseEvent,
   type CapabilityDecisionEvent,
   type EpisodeCostGateEvent,
+  type EpisodeOutcomeEvent,
   type SessionConfigEvent,
   type ChildLifecycleEvent,
   type ChildLifecycleState,

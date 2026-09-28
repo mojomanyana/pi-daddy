@@ -147,6 +147,18 @@ const FIELDS = {
     "newCeiling",
   ]),
   session_config: new Set(["ledgerVersion", "event", "ts", "episodeId", "outcome", "trigger", "overrides"]),
+  episode_outcome: new Set([
+    "ledgerVersion",
+    "event",
+    "ts",
+    "episodeId",
+    "commit",
+    "survived",
+    "ci",
+    "amended",
+    "corrected",
+    "label",
+  ]),
   child_lifecycle: new Set([
     "ledgerVersion",
     "event",
@@ -444,6 +456,21 @@ function validateCostGate(event: LedgerV3Object): string | null {
   return null;
 }
 
+function validateEpisodeOutcome(event: LedgerV3Object): string | null {
+  if (
+    !isTimestamp(event.ts) ||
+    !isEpisodeId(event.episodeId) ||
+    !/^[a-f0-9]{40}$/i.test(String(event.commit)) ||
+    typeof event.survived !== "boolean" ||
+    !["green", "red", "none"].includes(String(event.ci)) ||
+    typeof event.amended !== "boolean" ||
+    typeof event.corrected !== "boolean" ||
+    !["positive", "negative", "unknown"].includes(String(event.label))
+  )
+    return "episode outcome fields are invalid";
+  return null;
+}
+
 function validateChildLifecycle(event: LedgerV3Object): string | null {
   if (
     !["starting", "running", "completed", "failed"].includes(String(event.state)) ||
@@ -524,6 +551,7 @@ export function validateLedgerV3Event(event: LedgerV3Object): string | null {
       return "session config fields are invalid";
     return null;
   }
+  if (kind === "episode_outcome") return validateEpisodeOutcome(event);
   const base = validateBase(event);
   if (base) return base;
   if (kind === "capability_decision") return validateCapabilityDecision(event);
