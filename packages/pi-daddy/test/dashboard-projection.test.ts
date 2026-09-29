@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { buildLedgerV3ContractFixtures } from "../scripts/generate-ledger-record-contract.ts";
 import { recordLines } from "./record-fixtures.ts";
 import { parseDashboardLedger, type DashboardNode } from "../src/products/dashboard-projection.ts";
 import { renderDashboard } from "../src/products/dashboard-render.ts";
@@ -53,6 +54,59 @@ const byExecution = (nodes: DashboardNode[], id: string): DashboardNode => {
   assert.ok(node, `missing ${id}`);
   return node;
 };
+
+test("current and future non-dashboard event kinds are skipped while dashboard events render", () => {
+  const fixtures = Object.values(buildLedgerV3ContractFixtures());
+  const projection = parseDashboardLedger(
+    lines(
+      ...fixtures,
+      {
+        ledgerVersion: 3,
+        event: "future_fact",
+        ts: "2026-08-28T12:00:04.000Z",
+        episodeId: "episode:00000000-0000-4000-8000-000000000099",
+      },
+    ),
+    { now },
+  );
+
+  assert.equal(projection.corrupt.length, 0);
+  assert.equal(projection.orphanEvents, 4);
+  assert.equal(projection.nodes.length, 1);
+  assert.equal(projection.nodes[0]?.agentName, "build");
+  assert.equal(projection.nodes[0]?.state, "refused");
+  assert.equal(projection.nodes[0]?.endedAt, "2026-08-20T12:00:03.000Z");
+  assert.deepEqual(projection.nodes[0]?.workspace, {
+    id: "workspace-contract",
+    access: "write",
+    root: "/worktrees/contract",
+  });
+});
+
+test("malformed discriminators and unsupported versions remain corruption", () => {
+  const projection = parseDashboardLedger(
+    lines(
+      { ledgerVersion: 3, event: null, ts: "2026-08-28T12:00:04.000Z" },
+      { ledgerVersion: 4, event: "future_fact", ts: "2026-08-28T12:00:05.000Z" },
+    ),
+    { now },
+  );
+
+  assert.equal(projection.nodes.length, 0);
+  assert.equal(projection.orphanEvents, 0);
+  assert.equal(projection.corrupt.length, 2);
+});
+
+test("a malformed known non-dashboard event is corruption rather than an orphan", () => {
+  const malformed = { ...buildLedgerV3ContractFixtures()["episode-outcome.json"] };
+  delete malformed.label;
+
+  const projection = parseDashboardLedger(lines(malformed), { now });
+
+  assert.equal(projection.nodes.length, 0);
+  assert.equal(projection.orphanEvents, 0);
+  assert.equal(projection.corrupt.length, 1);
+});
 
 test("two occurrences at the same logical child position remain separate nodes", () => {
   const first = "exec:00000000-0000-4000-8000-000000000001";

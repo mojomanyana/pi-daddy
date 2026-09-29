@@ -8,8 +8,8 @@ import {
   type LedgerV3Object as ObjectRecord,
 } from "../governance/ledger-v3-validation.ts";
 import { isLedgerCapabilityIdentifier, isLedgerDisplayIdentifier } from "../kernel/ledger-identifiers.ts";
+import { LEDGER_EVENT_KINDS } from "../governance/ledger.ts";
 import { readRecords } from "../governance/record.ts";
-import { isRetiredLedgerEvent } from "../governance/ledger-v3-validation.ts";
 
 export type DashboardState =
   "authorised" | "starting" | "running" | "completed" | "failed" | "refused" | "incomplete" | "historical";
@@ -308,13 +308,20 @@ export function parseDashboardLedger(text: string, options: DashboardProjectionO
       return;
     }
 
-    const invalid = validateV3(event);
-    if (invalid) {
-      corrupt.push({ line, reason: invalid });
+    if (event.ledgerVersion !== 3 || !nonEmpty(event.event)) {
+      corrupt.push({ line, reason: validateV3(event) ?? "invalid ledger v3 event" });
       return;
     }
-    // Written by an earlier version (check receipts, workflow facts): valid history that is not a tree node.
-    if (isRetiredLedgerEvent(event) || event.event === "session_config" || event.event === "cost_gate") {
+    if (LEDGER_EVENT_KINDS.includes(event.event as (typeof LEDGER_EVENT_KINDS)[number])) {
+      const invalid = validateV3(event);
+      if (invalid) {
+        corrupt.push({ line, reason: invalid });
+        return;
+      }
+    }
+    // The dashboard renders only delegation-tree events. Other current, retired, or future additive event kinds
+    // remain valid ledger history without acquiring tree identity fields they do not have.
+    if (!["capability_decision", "child_lifecycle", "workspace_lease"].includes(event.event)) {
       orphanEvents += 1;
       return;
     }
