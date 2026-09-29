@@ -12,14 +12,23 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## 0.43.1 — Pi-only documentation refresh (2026-09-29)
+
+- Refresh `README.md`, `AGENTS.md`, the package README, and the ledger-record contract README against the shipped
+  initialization, privacy, model, outcome, workspace, executor, CLI, and compatibility behavior.
+- Remove obsolete Claude-specific formatting policy and describe Pi as this repository's only supported agent
+  workflow; retain ignore guards against accidentally committing assistant-specific scratch state.
+- Extend documentation drift checks to verify the published contract's file references and root workspace commands.
+  No runtime behavior or default changed.
+
 ## 0.43.0 — episode outcome labeling (2026-09-29)
 
 - PR #85 adds `pi-daddy outcomes`, which reads Git history for `Pi-Episode` trailers and appends `episode_outcome`
   ledger records covering survival on the default branch, reverts by name or inverse diff, CI state via `gh`,
   amendments, and operator corrections.
 - `pi-daddy report` now fills its outcome column from those records.
-- Ledger readers now validate every known record kind before skipping kinds they do not render, and skip unknown
-  future kinds instead of throwing. No default changed.
+- The dashboard ledger reader now validates every known record kind before skipping kinds it does not render, and
+  skips unknown future kinds instead of throwing. No default changed.
 
 ## 0.42.0 — model-attributed usage records (2026-09-29)
 

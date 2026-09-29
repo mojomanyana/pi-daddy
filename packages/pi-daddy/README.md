@@ -3,16 +3,18 @@
 Capability governance and coordination for [pi](https://github.com/badlogic/pi-mono)'s multi-level agent system. An
 orchestrator grants each sub-agent a deliberate subset of what it holds and withholds the rest; a sub-agent may delegate
 further, but only ever a subset of what it holds. Enforcement is pi's own `--tools` allowlist on a separate child
-process, with an append-only, hash-chained ledger of every grant and refusal.
+process, with an optional append-only, hash-chained governance ledger.
 
 ```bash
 pi install npm:pi-daddy
 pi
 ```
 
-`/grants` shows the session's ceiling and spawnable definitions; `/grants init` writes `.pi/pi-daddy/settings.json`,
-the one reviewable file you commit. A definition is an [Agent Skills](https://agentskills.io/specification) `SKILL.md`
-whose `allowed-tools` is the ceiling and whose body is the child's system prompt.
+`/grants` shows the session's ceiling and spawnable definitions. `/grants init` writes the review copy at
+`.pi/pi-daddy/settings.json`, stores the enforced grant outside the workspace, enables the project ledger, and applies
+the decisions to the running session; commit the review copy when the project's ignore rules permit it. A definition
+is an [Agent Skills](https://agentskills.io/specification) `SKILL.md` whose `allowed-tools` is the ceiling and whose
+body is the child's system prompt.
 
 ```
 delegate({ agent: "review-security", task: "Review the diff." })
@@ -26,7 +28,12 @@ effective = ( requested ∩ parentGrant ∩ ceiling ) \ (gated \ approved)
 
 Escalation is impossible by construction on the tool surface. It does not contain an agent holding an execution
 primitive: a child granted `bash` can start an ungoverned descendant, so `bash` is gated by default and every gate
-answer is recorded.
+answer is recorded when a governance ledger is configured.
+
+The package requires Node.js 22.19.0 or newer. `pi-daddy report` joins episode usage and attribution;
+`pi-daddy outcomes` adds Git, CI, amendment, and operator-correction signals for commits carrying a `Pi-Episode`
+trailer. A connected dashboard can change model/thinking defaults for its owning session without changing persistent
+settings or enforcement.
 
 The full product description is the repository [README](https://github.com/mojomanyana/pi-daddy#readme); the
 [CHANGELOG](./CHANGELOG.md) says what each release changed and what to do about breaking changes. The one shipped
