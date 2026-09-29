@@ -95,8 +95,7 @@ test("malformed discriminators and unsupported versions remain corruption", () =
 });
 
 test("a malformed known non-dashboard event is corruption rather than an orphan", () => {
-  const malformed = { ...buildLedgerV3ContractFixtures()["episode-outcome.json"] };
-  delete malformed.label;
+  const { label: _omit, ...malformed } = buildLedgerV3ContractFixtures()["episode-outcome.json"];
 
   const projection = parseDashboardLedger(lines(malformed), { now });
 
