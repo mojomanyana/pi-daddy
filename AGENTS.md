@@ -501,7 +501,10 @@ child-writable file was able to forge lines in.
 
 **Deliberate departure from the programme's sketch:** there is no dashboard toggle. The dashboard is a read-only
 renderer that "never affects enforcement" (ADR-0036), and a control there writing to settings would be the first
-thing it ever wrote. Turning an advisor on is an operator decision in the reviewable file.
+thing it ever wrote. Turning an advisor on is an operator decision in the reviewable file. **Amended 2026-09-23:**
+the dashboard may edit only the owning session's model/thinking override map over a private session-local socket,
+using the same mutation and `session_config` audit path as `/grants models`; ledger and cost views remain read-only,
+and the control still cannot affect enforcement or persistent settings.
 
 **What is verified about Jev, and what is not.** The request shape is OpenRouter's documented one for
 `POST /api/alpha/decisions`: `{model, state, questions}` with `noul` carrying `criteria.true`/`criteria.false`,
@@ -677,7 +680,7 @@ history (`git show 9cf2904:docs/probes/<name>/README.md`).
 - **retention (execution retention)** — opt-in storage of a child's stdout, stderr and result bytes with a manifest.
 - **content store** — the content-addressed blob directory `.pi/pi-daddy/content/` shared by retention and activity content, and later an artifact store.
 - **activity timeline** — the local record of parent turns, child lifecycles and skill-file reads, on the record envelope beside the ledger.
-- **dashboard** — the read-only projection of the ledger (`pi-daddy-dashboard`, `/grants dashboard` in a Herdr pane); a renderer in a separate process that never affects enforcement (ADR-0036).
+- **dashboard** — the ledger projection and session model/thinking control (`pi-daddy-dashboard`, `/grants dashboard` in a Herdr pane); it shows cost read-only and sends model edits to the owning session over a private local socket, never affecting enforcement (ADR-0036 amendment).
 - **chain** — `delegate_chain`: a straight line of steps planned as one unit, each step's task composed from the previous step's fenced output (ADR-0033).
 - **handoff fence** — the nonce-delimited, labelled block a prior step's output crosses in; the nonce is generated after the producer has finished.
 - **kernel, governance, executors, advisors, products** — the five source layers with a mechanically enforced import direction; `extensions/`, `src/index.ts` and `src/cli.ts` are composition (ADR-0076).

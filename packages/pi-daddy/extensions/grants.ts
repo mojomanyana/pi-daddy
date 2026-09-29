@@ -55,6 +55,9 @@ import { legacyEnvironmentWarning } from "../src/kernel/env-names.ts";
 import { agentDir } from "../src/kernel/project-paths.ts";
 import { importLegacyLedger } from "../src/governance/ledger.ts";
 import { legacyProjectLedgerPath, projectLedgerPath } from "../src/kernel/project-paths.ts";
+import { resolveDefinitionRuntime } from "./definition-runtime.ts";
+import { changeSessionModels, renderSessionModels } from "./session-model-prompt.ts";
+import { ensureDashboardSessionServer } from "./dashboard-session-server.ts";
 export default function (pi: ExtensionAPI) {
   // The path pi loads as the extension, so a child granted `tool:delegate` can be started with `-e <this>`.
   const extensionPath = (() => {
@@ -227,6 +230,7 @@ export default function (pi: ExtensionAPI) {
           pluginRoot: dashboardPluginRoot,
           preferencePath: dashboardPaths.preferencePath,
           paneStatePath: dashboardPaths.paneStatePath,
+          sessionEndpoint: await ensureDashboardSessionServer(session),
           ui: ctx.ui,
         });
       } catch (error) {
@@ -413,7 +417,7 @@ export default function (pi: ExtensionAPI) {
               await loadProjectDefinitions(session, ctx.cwd);
               delegation.refreshSpawnable();
             }),
-          openDashboard: () =>
+          openDashboard: async () =>
             openDashboardCommand({
               env: process.env,
               pid: process.pid,
@@ -421,8 +425,26 @@ export default function (pi: ExtensionAPI) {
               ledgerPath: session.ledgerPath ?? defaultActivityTimelinePath(ctx.cwd),
               pluginRoot: dashboardPluginRoot,
               paneStatePath: dashboardPaths.paneStatePath,
+              sessionEndpoint: await ensureDashboardSessionServer(session),
             }),
           previewDelegation: (name: string) => planWithApprovals(session, { task: "(preview)", agent: name }, {}, null),
+          modelInput: (title: string, placeholder?: string) => ctx.ui.input(title, placeholder),
+          modelNotify: (message: string, type?: "info" | "warning" | "error") => ctx.ui.notify(message, type),
+          changeModels: async (ui: {
+            input(title: string, placeholder?: string): Promise<string | undefined>;
+            notify(message: string, type?: "info" | "warning" | "error"): void;
+          }) => {
+            await changeSessionModels(session, { hasUI: ctx.hasUI, ...ui });
+            return renderSessionModels(session);
+          },
+          runtimeFor: (name: string) =>
+            resolveDefinitionRuntime({
+              definition: name,
+              explicit: {},
+              session: session.definitionRuntimeOverrides,
+              settings: session.definitionRuntimeSettings,
+              piModel: ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined,
+            }),
         },
       }),
   });

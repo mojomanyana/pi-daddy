@@ -14,6 +14,10 @@ the record of how the package got here and are worth keeping; they are not worth
 
 ## Unreleased — model-attributed usage records
 
+- The dashboard now shows the `/grants models` table and read-only episode cost/ceiling; model and thinking edits use
+  the owning session's in-memory override path and produce the same `session_config` ledger event.
+- Definitions and global defaults in `.pi/pi-daddy/settings.json` may select child model and thinking, with explicit,
+  session, definition, global, and pi fallback provenance recorded and shown by `/grants` and `pi-daddy report`.
 - Episodes now warn at half of their provider-reported USD cost ceiling and gate at the ceiling (default `$5`,
   configurable as `episodeCostCeiling`); direct children pause for one operator decision, while Herdr stops.
 - `pi-daddy report` now joins the project grant and activity ledgers into episode-level Markdown or JSON, with

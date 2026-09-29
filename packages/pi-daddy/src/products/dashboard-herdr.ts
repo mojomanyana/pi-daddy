@@ -6,6 +6,8 @@ import {
   ENV_DASHBOARD_KEY,
   ENV_DASHBOARD_LEDGER,
   ENV_DASHBOARD_PROTOCOL,
+  ENV_DASHBOARD_SESSION_SOCKET,
+  ENV_DASHBOARD_SESSION_TOKEN,
   DASHBOARD_PROTOCOL_VERSION,
 } from "./dashboard-cli.ts";
 import { parseReply, type HerdrExec } from "../executors/herdr-cli.ts";
@@ -291,6 +293,7 @@ export interface DashboardOpenInput {
   pluginRoot?: string;
   /** Installation handshake may open an explanatory pane before a ledger exists. */
   allowInactive?: boolean;
+  sessionEndpoint?: { socketPath: string; token: string };
 }
 export interface DashboardOpenResult {
   kind: "opened" | "reused";
@@ -308,7 +311,10 @@ export async function openOrReuseDashboard(input: DashboardOpenInput): Promise<D
   const ledgerPath = input.ledgerPath.trim() ? resolve(input.cwd, input.ledgerPath) : "";
   const cwd = resolve(input.cwd);
   const key = createHash("sha256")
-    .update(`${input.host.workspaceId}\0${input.host.tabId}\0${ledgerPath}`, "utf8")
+    .update(
+      `${input.host.workspaceId}\0${input.host.tabId}\0${ledgerPath}\0${input.sessionEndpoint?.socketPath ?? ""}`,
+      "utf8",
+    )
     .digest("hex");
   await mkdir(dirname(input.statePath), { recursive: true });
 
@@ -368,6 +374,14 @@ export async function openOrReuseDashboard(input: DashboardOpenInput): Promise<D
       "--cwd",
       cwd,
       ...(ledgerPath ? ["--env", `${ENV_DASHBOARD_LEDGER}=${ledgerPath}`] : []),
+      ...(input.sessionEndpoint
+        ? [
+            "--env",
+            `${ENV_DASHBOARD_SESSION_SOCKET}=${input.sessionEndpoint.socketPath}`,
+            "--env",
+            `${ENV_DASHBOARD_SESSION_TOKEN}=${input.sessionEndpoint.token}`,
+          ]
+        : []),
       "--env",
       `${ENV_DASHBOARD_PROTOCOL}=${DASHBOARD_PROTOCOL_VERSION}`,
       "--env",

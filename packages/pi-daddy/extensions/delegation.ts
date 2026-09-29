@@ -37,6 +37,7 @@ import { newDelegationOccurrence } from "./execution-occurrence.ts";
 import { correlationShape as buildCorrelationShape } from "./correlation-shape.ts";
 import { assertDelegationAuthority } from "./delegation-authority.ts";
 import { contextShape } from "./context-shape.ts";
+import { ensureSessionModelPrompt } from "./session-model-prompt.ts";
 
 /**
  * Wire a set of children to pi's partial-result channel — ADR-0032.
@@ -245,6 +246,11 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
     parameters: delegateParams,
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
       assertDelegationAuthority(session);
+      await ensureSessionModelPrompt(session, params.agent ? [params.agent] : [], {
+        hasUI: ctx.hasUI && typeof ctx.ui.input === "function",
+        input: (title, placeholder) => ctx.ui.input(title, placeholder),
+        notify: (message, type) => ctx.ui.notify(message, type),
+      });
       // ADR-0032: one child, same block. `_onUpdate` was discarded here, so a delegation showed the bare word
       // `delegate` for up to DEFAULT_TIMEOUT_MS — sixty minutes by default.
       const progress = progressReporter(session, [params.agent ?? "delegate"], onUpdate as never);
@@ -325,6 +331,15 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
       assertDelegationAuthority(session);
       const children = params.children ?? [];
+      await ensureSessionModelPrompt(
+        session,
+        children.flatMap((child) => (child.agent ? [child.agent] : [])),
+        {
+          hasUI: ctx.hasUI && typeof ctx.ui.input === "function",
+          input: (title, placeholder) => ctx.ui.input(title, placeholder),
+          notify: (message, type) => ctx.ui.notify(message, type),
+        },
+      );
       const split = splitBudget(session.fanoutBudget, children.length);
       if (!split.ok) {
         // Thrown, not returned: a returned `isError` is discarded by pi, so a refusal that came back as a

@@ -33,6 +33,7 @@ import { executePlannedChild, type DelegationOutcome } from "./execute-child.ts"
 import { recordDelegationDecision, type ApprovalLedgerFacts } from "./delegation-ledger.ts";
 import type { ExecutionOccurrenceIds } from "./execution-occurrence.ts";
 import { ENV_EPISODE_COST_CEILING } from "../src/kernel/env-names.ts";
+import { resolvedModelOf, resolveDefinitionRuntime } from "./definition-runtime.ts";
 import {
   governedWorkspaceAccess,
   prepareDelegationWorkspace,
@@ -249,14 +250,25 @@ export async function runOneDelegation(
   // pi resolves a BARE model id to an unauthenticated provider and the child dies at startup — the id
   // alone is not enough, it must be qualified with its provider (`Model<Api>` carries both).
   const defaultModel = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
+  const configured = resolveDefinitionRuntime({
+    definition: spec.agent,
+    explicit: { model: spec.model, thinking: spec.thinking },
+    session: session.definitionRuntimeOverrides,
+    settings: session.definitionRuntimeSettings,
+    piModel: defaultModel,
+  });
+  let resolvedRuntime = configured;
   const request = {
     task: spec.task,
     agent: spec.agent,
     tools: spec.tools,
-    model: spec.model ?? defaultModel,
+    model: configured.model,
     // Filled below, once the refusals that doom a delegation are known: asking first shipped the task text for a
     // child that never starts, which is the ordering this module already fixed for the approval dialog.
-    thinking: spec.thinking,
+    thinking:
+      configured.thinkingSource === "explicit" || configured.thinkingSource === "session"
+        ? configured.thinking
+        : undefined,
     context: spec.context,
     correlation: spec.workspace
       ? { ...(spec.correlation ?? {}), workspace_id: spec.workspace.workspace_id }
@@ -299,17 +311,28 @@ export async function runOneDelegation(
 
   // ADR-0077's first decision point, after the refusal checks for the reason above. Fills a blank from the levels
   // the CHILD's model reports; never overrules a caller, and yields today's behaviour whenever there is no answer.
-  if (!executorRefusal && !modelRefusal)
-    request.thinking = await adviseEffort({
+  if (!executorRefusal && !modelRefusal) {
+    const advisedThinking = await adviseEffort({
       session,
-      requested: spec.thinking,
-      model: spec.model ?? defaultModel,
+      requested: request.thinking,
+      model: configured.model,
       registry: ctx.modelRegistry,
       task: spec.task,
       executionId: ids.executionId,
       agent: spec.agent,
+      fallback: configured,
       signal,
     });
+    resolvedRuntime = resolveDefinitionRuntime({
+      definition: spec.agent,
+      explicit: { model: spec.model, thinking: spec.thinking },
+      session: session.definitionRuntimeOverrides,
+      settings: session.definitionRuntimeSettings,
+      piModel: defaultModel,
+      advisorThinking: advisedThinking,
+    });
+    request.thinking = resolvedRuntime.thinking;
+  }
 
   const planContext = await handoffPlanContext({
     session,
@@ -319,6 +342,12 @@ export async function runOneDelegation(
     toolCallId,
     blocked: Boolean(executorRefusal || modelRefusal),
     preview: () => planWithApprovals(session, request, extra, null, signal, preApproved).then((r) => r.plan),
+    attribution: {
+      resolvedModel: resolvedModelOf(resolvedRuntime.model),
+      modelSource: resolvedRuntime.modelSource,
+      thinkingLevel: resolvedRuntime.thinking ?? null,
+      thinkingSource: resolvedRuntime.thinkingSource,
+    },
     ...(signal ? { signal } : {}),
   });
   let preparedWorkspace: PreparedWorkspace | undefined;
@@ -448,7 +477,7 @@ export async function runOneDelegation(
     toolCallId: options.toolCallId,
     cwd: ctx.cwd,
     preparedWorkspace,
-    thinkingSource: spec.thinking !== undefined ? "explicit" : request.thinking !== undefined ? "advisor" : "default",
+    resolvedRuntime,
     signal,
     onProgress,
     costGateUI: {
@@ -479,6 +508,7 @@ export async function handoffPlanContext(input: {
   blocked: boolean;
   /** Plans with no human in the loop; its result decides whether an advisor is consulted at all. */
   preview: () => Promise<{ handoff?: { mode: string } }>;
+  attribution?: Parameters<typeof advisePruning>[0]["attribution"];
   signal?: AbortSignal;
 }): Promise<Record<string, unknown>> {
   if (input.blocked) return { ...input.base };
@@ -490,6 +520,7 @@ export async function handoffPlanContext(input: {
     task: input.task,
     ...(input.executionId ? { executionId: input.executionId } : {}),
     ...(input.toolCallId ? { toolCallId: input.toolCallId } : {}),
+    ...(input.attribution ? { attribution: input.attribution } : {}),
     ...(input.signal ? { signal: input.signal } : {}),
   });
   return ids ? { ...input.base, handoffTurnIds: ids } : { ...input.base };

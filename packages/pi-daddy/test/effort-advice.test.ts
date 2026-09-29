@@ -37,6 +37,12 @@ test("advice fills a blank effort with a level the model actually supports", asy
     session: { advisorSession: { advisor: advisorAnswering("low", records) } },
     executionId,
     model: MODEL,
+    fallback: {
+      model: MODEL,
+      modelSource: "definition",
+      thinking: "medium",
+      thinkingSource: "definition",
+    },
     registry: registryFor(REASONING),
     task: "rename a variable",
   });
@@ -44,6 +50,10 @@ test("advice fills a blank effort with a level the model actually supports", asy
   assert.equal(records[0].purpose, EFFORT_PURPOSE);
   assert.equal(records[0].executionId, executionId);
   assert.deepEqual(records[0].questions, ["effort"]);
+  assert.deepEqual(records[0].resolvedModel, { provider: "openai-codex", modelId: "gpt-5.6-sol" });
+  assert.equal(records[0].modelSource, "definition");
+  assert.equal(records[0].thinkingLevel, "low");
+  assert.equal(records[0].thinkingSource, "advisor");
   assert.doesNotMatch(JSON.stringify(records[0]), /rename a variable/, "the task is sent, never recorded");
 });
 
@@ -247,7 +257,8 @@ test("each advisor's answer is spent on one field and nothing else", async () =>
   // `adviseEffort` to anything but `thinking`, or `advisePruning` to anything but `handoffTurnIds`.
   const runner = await readFile(join(packageRoot, "extensions", "run-delegation.ts"), "utf8");
   const effort = [...runner.matchAll(/([\w.]+)\s*=\s*await adviseEffort\(/g)].map((m) => m[1]);
-  assert.deepEqual(effort, ["request.thinking"], "the effort answer fills exactly one blank");
+  assert.deepEqual(effort, ["advisedThinking"], "the effort answer fills exactly one blank");
+  assert.match(runner, /advisorThinking:\s*advisedThinking/, "the answer enters resolution only as advisor effort");
   const pruning = [...runner.matchAll(/(?:const\s+)?([\w.]+)\s*=\s*await advisePruning\(/g)].map((m) => m[1]);
   assert.deepEqual(pruning, ["ids"], "the pruning answer is bound once");
   assert.match(runner, /handoffTurnIds: ids/, "and reaches the planner only as handoffTurnIds");

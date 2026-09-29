@@ -18,10 +18,12 @@
     "provider": "openai-codex",
     "modelId": "gpt-5.3-codex"
   },
+  "modelSource": "definition",
   "thinkingLevel": {
     "level": "high",
     "source": "advisor"
   },
+  "thinkingSource": "advisor",
   "tokenDetail": {
     "inputTokens": 120,
     "outputTokens": 30,

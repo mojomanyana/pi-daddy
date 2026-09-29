@@ -26,6 +26,7 @@ import { CHILD_ATTRIBUTION_ENV_KEYS, ENV_EPISODE_ID } from "../src/kernel/env-na
 import { releaseDelegationWorkspace, type PreparedWorkspace } from "./workspace-runtime.ts";
 import { ActivityTimelineRecorder, ENV_ACTIVITY_PARENT_TASK } from "../src/products/activity-timeline.ts";
 import { loadEpisodeCosts } from "../src/governance/episode-cost-gate.ts";
+import { resolvedModelOf, type ResolvedDefinitionRuntime } from "./definition-runtime.ts";
 export interface DelegationOutcome {
   ok: boolean;
   text: string;
@@ -106,7 +107,7 @@ export async function executePlannedChild(input: {
   toolCallId?: string;
   cwd: string;
   preparedWorkspace?: PreparedWorkspace;
-  thinkingSource?: "explicit" | "advisor" | "default";
+  resolvedRuntime?: ResolvedDefinitionRuntime;
   signal?: AbortSignal;
   onProgress?: (update: ChildProgressUpdate) => void;
   costGateUI?: {
@@ -117,6 +118,15 @@ export async function executePlannedChild(input: {
 }): Promise<DelegationOutcome> {
   const { session, plan, childId, executionId, parentExecutionId, preparedWorkspace, signal, onProgress } = input;
   const ledgerPath = session.ledgerPath;
+  const runtimeAttribution = (observed?: {
+    resolvedModel?: { provider: string; modelId: string };
+    thinking?: string;
+  }) => ({
+    resolvedModel: observed?.resolvedModel ?? resolvedModelOf(input.resolvedRuntime?.model) ?? undefined,
+    modelSource: input.resolvedRuntime?.modelSource ?? ("pi" as const),
+    effectiveThinkingLevel: observed?.thinking ?? input.resolvedRuntime?.thinking,
+    thinkingSource: input.resolvedRuntime?.thinkingSource ?? ("pi" as const),
+  });
   let activityParent: string | undefined,
     activity = new ActivityTimelineRecorder(input.cwd),
     activityStarted = false,
@@ -274,6 +284,7 @@ export async function executePlannedChild(input: {
             deadlineAt,
             idleTimeoutMs: configuredIdleMs,
             exportedEnvironment: CHILD_ATTRIBUTION_ENV_KEYS,
+            ...runtimeAttribution(),
             definitionHash: plan.definitionHash,
             definitionPackageVersion: plan.definitionPackageVersion,
             correlation: plan.correlation,
@@ -356,6 +367,7 @@ export async function executePlannedChild(input: {
             idleTimeoutMs: configuredIdleMs,
             ...(pane ? { herdrPaneId: pane.id, herdrAgentName: pane.agentName } : {}),
             exportedEnvironment: CHILD_ATTRIBUTION_ENV_KEYS,
+            ...runtimeAttribution(),
             definitionHash: plan.definitionHash,
             definitionPackageVersion: plan.definitionPackageVersion,
             correlation: plan.correlation,
@@ -483,13 +495,12 @@ export async function executePlannedChild(input: {
               exportedEnvironment: CHILD_ATTRIBUTION_ENV_KEYS,
               definitionHash: plan.definitionHash,
               definitionPackageVersion: plan.definitionPackageVersion,
-              ...(usageObservation.resolvedModel ? { resolvedModel: usageObservation.resolvedModel } : {}),
-              ...(usageObservation.effectiveThinkingLevel
-                ? {
-                    effectiveThinkingLevel: usageObservation.effectiveThinkingLevel,
-                    thinkingSource: input.thinkingSource ?? "default",
-                  }
-                : {}),
+              ...runtimeAttribution({
+                ...(usageObservation.resolvedModel ? { resolvedModel: usageObservation.resolvedModel } : {}),
+                ...(usageObservation.effectiveThinkingLevel
+                  ? { thinking: usageObservation.effectiveThinkingLevel }
+                  : {}),
+              }),
               ...(usageObservation.tokenDetail ? { tokenDetail: usageObservation.tokenDetail } : {}),
               ...(usageObservation.usage
                 ? { usage: usageObservation.usage }
@@ -616,13 +627,12 @@ export async function executePlannedChild(input: {
               exportedEnvironment: CHILD_ATTRIBUTION_ENV_KEYS,
               definitionHash: plan.definitionHash,
               definitionPackageVersion: plan.definitionPackageVersion,
-              ...(usageObservation.resolvedModel ? { resolvedModel: usageObservation.resolvedModel } : {}),
-              ...(usageObservation.effectiveThinkingLevel
-                ? {
-                    effectiveThinkingLevel: usageObservation.effectiveThinkingLevel,
-                    thinkingSource: input.thinkingSource ?? "default",
-                  }
-                : {}),
+              ...runtimeAttribution({
+                ...(usageObservation.resolvedModel ? { resolvedModel: usageObservation.resolvedModel } : {}),
+                ...(usageObservation.effectiveThinkingLevel
+                  ? { thinking: usageObservation.effectiveThinkingLevel }
+                  : {}),
+              }),
               ...(usageObservation.tokenDetail ? { tokenDetail: usageObservation.tokenDetail } : {}),
               ...(usageObservation.usage
                 ? { usage: usageObservation.usage }

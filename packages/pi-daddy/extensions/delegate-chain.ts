@@ -43,6 +43,8 @@ import { newExecutionId } from "../src/kernel/execution-id.ts";
 import { planChain, type GateRequest } from "./chain-plan.ts";
 import { contextShape } from "./context-shape.ts";
 import { preflightModel } from "../src/kernel/model-preflight.ts";
+import { resolveDefinitionRuntime } from "./definition-runtime.ts";
+import { ensureSessionModelPrompt } from "./session-model-prompt.ts";
 import { assertDelegationAuthority } from "./delegation-authority.ts";
 
 /** One chain step is one execution occurrence, however many capability dialogs contributed to its answer. */
@@ -133,12 +135,35 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
       const split = splitBudget(session.fanoutBudget, steps.length);
       if (!split.ok) throw new GovernanceRefusal(refusal("FANOUT_EXCEEDED", `chain refused: ${split.reason}`));
 
+      await ensureSessionModelPrompt(
+        session,
+        steps.flatMap((step) => (step.agent ? [step.agent] : [])),
+        {
+          hasUI: ctx.hasUI && typeof ctx.ui.input === "function",
+          input: (title, placeholder) => ctx.ui.input(title, placeholder),
+          notify: (message, type) => ctx.ui.notify(message, type),
+        },
+      );
+
       // Plan every step first. A step that can never run refuses the chain HERE, before anyone is asked — see
       // `planChain`.
       const executionIds = steps.map(() => newExecutionId());
       const parentExecutionId = session.ownExecutionId ?? null;
-      const chainPlan = await planChain(session, steps, executionIds, (model) =>
-        preflightModel(model, ctx.modelRegistry, session.modelResolutionCache, session.allowUnresolvedModels),
+      const piModel = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
+      const chainPlan = await planChain(
+        session,
+        steps,
+        executionIds,
+        (model) =>
+          preflightModel(model, ctx.modelRegistry, session.modelResolutionCache, session.allowUnresolvedModels),
+        (step) =>
+          resolveDefinitionRuntime({
+            definition: step.agent,
+            explicit: { model: step.model, thinking: step.thinking },
+            session: session.definitionRuntimeOverrides,
+            settings: session.definitionRuntimeSettings,
+            piModel,
+          }).model,
       );
       if (chainPlan.doomed) {
         const message =

@@ -344,7 +344,7 @@ console.log("done");
       executionId,
       parentExecutionId: null,
       cwd: dir,
-      thinkingSource: "explicit",
+      resolvedRuntime: { modelSource: "pi", thinking: "high", thinkingSource: "explicit" },
     });
     assert.equal(outcome.ok, true);
     const text = await readFile(ledgerPath, "utf8");
@@ -352,6 +352,7 @@ console.log("done");
       .trim()
       .split("\n")
       .map((line) => JSON.parse(line).body);
+    assert.ok(events.every((event) => event.modelSource === "pi" && event.thinkingSource === "explicit"));
     const completed = events.find((event) => event.state === "completed");
     assert.deepEqual(completed?.usage, {
       input: 7,

@@ -76,6 +76,7 @@ async function fixture(): Promise<{ ledgerText: string; activityText: string }> 
         state: "completed",
         executor: "process",
         resolvedModel: { provider: "provider", modelId: model },
+        modelSource: "definition",
         effectiveThinkingLevel: thinking,
         thinkingSource: source,
         tokenDetail: {
@@ -127,6 +128,7 @@ test("report joins fixture ledgers into episode rows and range totals", async ()
     definition: "build",
     definitionHash: "aaaaaaaaaaaa",
     resolvedModel: "provider/gpt-a",
+    modelSource: "definition",
     thinkingLevel: "high",
     thinkingSource: "explicit",
     inputTokens: 100,

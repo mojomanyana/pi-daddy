@@ -12,7 +12,10 @@ import { grantsCommand } from "../extensions/grants-command.ts";
  * advisor line in `grants-command.ts`, or letting a refusal render without its reason.
  */
 
-function render(advisor: { decider: string; taskEgress: "digest" | "raw"; refusal?: string }): Promise<string> {
+function render(
+  advisor: { decider: string; taskEgress: "digest" | "raw"; refusal?: string },
+  definition = false,
+): Promise<string> {
   let out = "";
   const catalog = { all: [], byKind: () => [] };
   const ctx = {
@@ -27,10 +30,25 @@ function render(advisor: { decider: string; taskEgress: "digest" | "raw"; refusa
       depth: 0,
       maxDepth: 2,
       catalog,
-      definitions: new Map(),
+      definitions: definition
+        ? new Map([
+            [
+              "review",
+              { name: "review", description: "review", allowedTools: "Read", body: "review", source: "/review" },
+            ],
+          ])
+        : new Map(),
       sessionApprovals: new Set(),
       inheritedApprovals: new Map(),
-      previewDelegation: async () => assert.fail("no definitions to preview"),
+      previewDelegation: async () => ({
+        plan: { ok: true, effective: ["tool:read"] },
+      }),
+      runtimeFor: () => ({
+        model: "anthropic/claude-opus-4-6",
+        modelSource: "definition",
+        thinking: "high",
+        thinkingSource: "definition",
+      }),
     },
   };
   return grantsCommand.handler("", ctx as never).then(() => out);
@@ -43,6 +61,12 @@ test("an enabled advisor's line names its task mode and the separate session-tur
   assert.match(digest!, /jev.*task egress digest/);
   assert.match(digest!, /session turns/, "the pruned handoff's separate egress remains disclosed");
   assert.match(await render({ decider: "jev", taskEgress: "raw" }), /task egress raw/);
+});
+
+test("/grants shows each definition's model and thinking with sources", async () => {
+  const output = await render({ decider: "none", taskEgress: "digest" }, true);
+  assert.match(output, /review.*model anthropic\/claude-opus-4-6 \(definition\)/);
+  assert.match(output, /thinking high \(definition\)/);
 });
 
 test("an advisor that is off says so, and says why when there is a reason", async () => {

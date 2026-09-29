@@ -144,7 +144,9 @@ const LIFECYCLE_FIELDS = [
   "deadlineAt",
   "idleTimeoutMs",
   "resolvedModel",
+  "modelSource",
   "thinkingLevel",
+  "thinkingSource",
   "tokenDetail",
   "usage",
   "compactionCount",
@@ -279,6 +281,7 @@ test("the published ledger v3 fixtures come from the production builders", async
     "capability-decision.json",
     "child-lifecycle.json",
     "episode-cost-gate.json",
+    "session-config.json",
     "workspace-lease.json",
   ]);
   for (const [name, event] of Object.entries(generated)) {
@@ -420,6 +423,7 @@ test("the v3 schema exhaustively matches production fields and finite vocabulari
     workspace_lease: "workspaceLease",
     child_lifecycle: "childLifecycle",
     cost_gate: "costGate",
+    session_config: "sessionConfig",
   } as const satisfies Record<(typeof LEDGER_EVENT_KINDS)[number], string>;
   assert.deepEqual(
     schema.oneOf?.map((entry) => entry.$ref).sort(),

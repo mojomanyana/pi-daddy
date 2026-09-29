@@ -146,6 +146,7 @@ const FIELDS = {
     "outcome",
     "newCeiling",
   ]),
+  session_config: new Set(["ledgerVersion", "event", "ts", "episodeId", "outcome", "trigger", "overrides"]),
   child_lifecycle: new Set([
     "ledgerVersion",
     "event",
@@ -165,7 +166,9 @@ const FIELDS = {
     "deadlineAt",
     "idleTimeoutMs",
     "resolvedModel",
+    "modelSource",
     "thinkingLevel",
+    "thinkingSource",
     "tokenDetail",
     "usage",
     "compactionCount",
@@ -391,13 +394,15 @@ function validResolvedModel(value: unknown): boolean {
   );
 }
 
+const MODEL_SOURCES = ["explicit", "session", "definition", "global", "pi"];
+const THINKING_SOURCES = [...MODEL_SOURCES, "advisor"];
 function validThinkingLevel(value: unknown): boolean {
   return (
     value === null ||
     (isLedgerObject(value) &&
       Object.keys(value).every((key) => ["level", "source"].includes(key)) &&
       isNonEmptyString(value.level) &&
-      ["explicit", "advisor", "default"].includes(String(value.source)))
+      THINKING_SOURCES.includes(String(value.source)))
   );
 }
 
@@ -459,7 +464,9 @@ function validateChildLifecycle(event: LedgerV3Object): string | null {
     !optional(event, "truncated", (value) => value === true) ||
     !optional(event, "reason", (value) => typeof value === "string") ||
     !optional(event, "resolvedModel", validResolvedModel) ||
+    !optional(event, "modelSource", (value) => MODEL_SOURCES.includes(String(value))) ||
     !optional(event, "thinkingLevel", validThinkingLevel) ||
+    !optional(event, "thinkingSource", (value) => THINKING_SOURCES.includes(String(value))) ||
     !optional(event, "tokenDetail", validTokenDetail) ||
     !optional(event, "usage", validUsage) ||
     !optional(event, "compactionCount", (value) => Number.isInteger(value) && (value as number) >= 0) ||
@@ -499,6 +506,24 @@ export function validateLedgerV3Event(event: LedgerV3Object): string | null {
   if (typeof kind !== "string" || !Object.hasOwn(FIELDS, kind)) return "unknown ledger event discriminator";
   const allowed = FIELDS[kind as EventKind];
   if (Object.keys(event).some((field) => !allowed.has(field))) return "ledger v3 contains an unsupported field";
+  if (kind === "session_config") {
+    if (
+      !isEpisodeId(event.episodeId) ||
+      !["kept", "changed"].includes(String(event.outcome)) ||
+      !["first-delegation", "grants-models"].includes(String(event.trigger)) ||
+      !isLedgerObject(event.overrides) ||
+      !Object.entries(event.overrides).every(
+        ([name, value]) =>
+          isNonEmptyString(name) &&
+          isLedgerObject(value) &&
+          Object.keys(value).length === 2 &&
+          isNonEmptyString(value.model) &&
+          isNonEmptyString(value.thinking),
+      )
+    )
+      return "session config fields are invalid";
+    return null;
+  }
   const base = validateBase(event);
   if (base) return base;
   if (kind === "capability_decision") return validateCapabilityDecision(event);

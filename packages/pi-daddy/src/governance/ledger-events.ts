@@ -148,10 +148,15 @@ export interface ChildLifecycleEvent extends LedgerEventBase {
   reason?: string;
   /** The inactivity bound (ms) that governed this child beside the `deadlineAt` ceiling (PR 3e). */
   idleTimeoutMs?: number;
-  /** The provider/model reported by the child's persisted assistant message. */
+  /** The provider/model selected for the child, confirmed from its persisted assistant message when available. */
   resolvedModel?: { provider: string; modelId: string } | null;
-  /** The persisted effective level and whether the caller, advisor, or pi default selected it. */
-  thinkingLevel?: { level: string; source: "explicit" | "advisor" | "default" } | null;
+  modelSource?: "explicit" | "session" | "definition" | "global" | "pi";
+  /** The persisted effective level and its selection source, when pi reports one. */
+  thinkingLevel?: {
+    level: string;
+    source: "explicit" | "session" | "advisor" | "definition" | "global" | "pi";
+  } | null;
+  thinkingSource?: "explicit" | "session" | "advisor" | "definition" | "global" | "pi";
   /** Provider-reported token dimensions; zero is normalised to null rather than invented as reported usage. */
   tokenDetail?: ChildTokenDetail;
   /** Aggregate model usage read from the child's pi session file after it stopped. */
@@ -190,8 +195,37 @@ export interface EpisodeCostGateEvent extends Omit<LedgerEventBase, "episodeId" 
   newCeiling?: number;
 }
 
+export interface SessionConfigEvent extends Omit<LedgerEventBase, "correlation"> {
+  ledgerVersion: typeof LEDGER_VERSION;
+  event: "session_config";
+  episodeId: string;
+  outcome: "kept" | "changed";
+  trigger: "first-delegation" | "grants-models";
+  overrides: Record<string, { model: string; thinking: string }>;
+}
+
 export type RuntimeLedgerEvent =
-  CapabilityDecisionEvent | WorkspaceLeaseEvent | ChildLifecycleEvent | EpisodeCostGateEvent;
+  CapabilityDecisionEvent | WorkspaceLeaseEvent | ChildLifecycleEvent | EpisodeCostGateEvent | SessionConfigEvent;
+
+export function buildSessionConfigEvent(args: {
+  episodeId: string;
+  outcome: "kept" | "changed";
+  trigger: "first-delegation" | "grants-models";
+  overrides: ReadonlyMap<string, { model?: string; thinking?: string }>;
+  now: Date;
+}): SessionConfigEvent {
+  return assertLedgerV3Wire({
+    ledgerVersion: LEDGER_VERSION,
+    event: "session_config",
+    ts: args.now.toISOString(),
+    episodeId: args.episodeId,
+    outcome: args.outcome,
+    trigger: args.trigger,
+    overrides: Object.fromEntries(
+      [...args.overrides].map(([name, value]) => [name, { model: value.model!, thinking: value.thinking! }]),
+    ),
+  });
+}
 
 export function buildEpisodeCostGateEvent(args: {
   episodeId: string;
@@ -278,8 +312,9 @@ export function buildChildLifecycleEvent(args: {
   truncated?: boolean;
   reason?: string;
   resolvedModel?: { provider: string; modelId: string };
+  modelSource?: "explicit" | "session" | "definition" | "global" | "pi";
   effectiveThinkingLevel?: string;
-  thinkingSource?: "explicit" | "advisor" | "default";
+  thinkingSource?: "explicit" | "session" | "advisor" | "definition" | "global" | "pi";
   tokenDetail?: ChildTokenDetail;
   usage?: ChildUsageTotals;
   compactionCount?: number;
@@ -315,10 +350,12 @@ export function buildChildLifecycleEvent(args: {
     ...(args.truncated ? { truncated: true } : {}),
     ...(args.reason ? { reason: args.reason } : {}),
     resolvedModel: args.resolvedModel ? structuredClone(args.resolvedModel) : null,
+    ...(args.modelSource ? { modelSource: args.modelSource } : {}),
     thinkingLevel:
       args.effectiveThinkingLevel && args.thinkingSource
         ? { level: args.effectiveThinkingLevel, source: args.thinkingSource }
         : null,
+    ...(args.thinkingSource ? { thinkingSource: args.thinkingSource } : {}),
     tokenDetail: args.tokenDetail
       ? structuredClone(args.tokenDetail)
       : {

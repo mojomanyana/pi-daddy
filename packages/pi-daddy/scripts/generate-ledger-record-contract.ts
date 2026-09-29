@@ -6,6 +6,7 @@ import {
   buildChildLifecycleEvent,
   buildEpisodeCostGateEvent,
   buildRecord,
+  buildSessionConfigEvent,
   buildWorkspaceLeaseEvent,
 } from "../src/governance/ledger.ts";
 import type { CorrelationMetadata } from "../src/kernel/correlation.ts";
@@ -119,6 +120,13 @@ export function buildLedgerV3ContractFixtures() {
       newCeiling: 10,
       now: new Date("2026-08-20T12:00:02.500Z"),
     }),
+    "session-config.json": buildSessionConfigEvent({
+      episodeId,
+      outcome: "changed",
+      trigger: "first-delegation",
+      overrides: new Map([["review", { model: "anthropic/claude-opus-4-6", thinking: "high" }]]),
+      now: new Date("2026-08-20T12:00:02.750Z"),
+    }),
     "child-lifecycle.json": buildChildLifecycleEvent({
       episodeId,
       executionId: "exec:00000000-0000-4000-8000-000000000001",
@@ -133,6 +141,7 @@ export function buildLedgerV3ContractFixtures() {
       aborted: true,
       reason: "child did not start",
       resolvedModel: { provider: "openai-codex", modelId: "gpt-5.3-codex" },
+      modelSource: "definition",
       effectiveThinkingLevel: "high",
       thinkingSource: "advisor",
       tokenDetail: {

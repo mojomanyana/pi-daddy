@@ -8,6 +8,8 @@ export interface DashboardRenderOptions {
   history?: boolean;
   completedRoots?: number;
   completedChildren?: number;
+  modelRows?: Array<{ definition: string; model: string; thinking: string; source: string }>;
+  episodeCost?: { cost: number; ceiling: number };
 }
 
 const ACTIVE = new Set<DashboardState>(["authorised", "starting", "running"]);
@@ -209,6 +211,15 @@ export function renderDashboard(projection: DashboardProjection, options: Dashbo
   };
   const index = treeIndex(projection.nodes);
   const lines = [paint("PI-DADDY", 1, resolved.color), ""];
+  if (options.modelRows) {
+    lines.push(paint("SESSION MODELS", 1, resolved.color), "definition  model  thinking  source");
+    for (const row of options.modelRows)
+      lines.push(`${clean(row.definition)}  ${clean(row.model)}  ${clean(row.thinking)}  ${clean(row.source)}`);
+    lines.push("edit: m <definition> <provider:model> <thinking> | m all <provider:model> <thinking>");
+    if (options.episodeCost)
+      lines.push(`episode cost $${options.episodeCost.cost} / $${options.episodeCost.ceiling} ceiling`);
+    lines.push("");
+  }
 
   const renderRoots = (roots: DashboardNode[]): void => {
     const selected = selectedRoots(roots, index, resolved.completedRoots);

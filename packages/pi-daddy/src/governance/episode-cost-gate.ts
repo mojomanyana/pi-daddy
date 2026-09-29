@@ -40,6 +40,10 @@ export class EpisodeCostGate {
     return this.#ceiling;
   }
 
+  get cost(): number {
+    return [...this.#costs.values()].reduce((sum, value) => sum + value, 0);
+  }
+
   setCeiling(ceiling: number): void {
     if (Number.isFinite(ceiling) && ceiling > 0 && !this.#decision) this.#ceiling = ceiling;
   }

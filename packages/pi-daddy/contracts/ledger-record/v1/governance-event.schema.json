@@ -15,6 +15,9 @@
     },
     {
       "$ref": "#/$defs/costGate"
+    },
+    {
+      "$ref": "#/$defs/sessionConfig"
     }
   ],
   "$defs": {
@@ -750,6 +753,9 @@
             }
           ]
         },
+        "modelSource": {
+          "$ref": "#/$defs/modelSource"
+        },
         "thinkingLevel": {
           "oneOf": [
             {
@@ -759,6 +765,9 @@
               "type": "null"
             }
           ]
+        },
+        "thinkingSource": {
+          "$ref": "#/$defs/thinkingSource"
         },
         "tokenDetail": {
           "$ref": "#/$defs/tokenDetail"
@@ -905,11 +914,33 @@
         "source": {
           "enum": [
             "explicit",
+            "session",
             "advisor",
-            "default"
+            "definition",
+            "global",
+            "pi"
           ]
         }
       }
+    },
+    "modelSource": {
+      "enum": [
+        "explicit",
+        "session",
+        "definition",
+        "global",
+        "pi"
+      ]
+    },
+    "thinkingSource": {
+      "enum": [
+        "explicit",
+        "session",
+        "advisor",
+        "definition",
+        "global",
+        "pi"
+      ]
     },
     "tokenDetail": {
       "type": "object",
@@ -1090,6 +1121,66 @@
         "cost",
         "ceiling",
         "outcome"
+      ],
+      "additionalProperties": false
+    },
+    "sessionConfig": {
+      "type": "object",
+      "properties": {
+        "ledgerVersion": {
+          "const": 3
+        },
+        "event": {
+          "const": "session_config"
+        },
+        "ts": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "episodeId": {
+          "$ref": "#/$defs/episodeId"
+        },
+        "outcome": {
+          "enum": [
+            "kept",
+            "changed"
+          ]
+        },
+        "trigger": {
+          "enum": [
+            "first-delegation",
+            "grants-models"
+          ]
+        },
+        "overrides": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "model": {
+                "type": "string",
+                "minLength": 1
+              },
+              "thinking": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "model",
+              "thinking"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "ledgerVersion",
+        "event",
+        "ts",
+        "episodeId",
+        "outcome",
+        "trigger",
+        "overrides"
       ],
       "additionalProperties": false
     }

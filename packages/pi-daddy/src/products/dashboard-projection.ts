@@ -314,7 +314,7 @@ export function parseDashboardLedger(text: string, options: DashboardProjectionO
       return;
     }
     // Written by an earlier version (check receipts, workflow facts): valid history that is not a tree node.
-    if (isRetiredLedgerEvent(event)) {
+    if (isRetiredLedgerEvent(event) || event.event === "session_config" || event.event === "cost_gate") {
       orphanEvents += 1;
       return;
     }

@@ -19,6 +19,7 @@ export interface EpisodeReportRow {
   definition: string;
   definitionHash: string;
   resolvedModel: string;
+  modelSource: string;
   thinkingLevel: string;
   thinkingSource: string;
   inputTokens: number;
@@ -56,6 +57,7 @@ interface EpisodeAccumulator {
   hashes: Set<string>;
   models: Set<string>;
   modelIds: Set<string>;
+  modelSources: Set<string>;
   thinkingLevels: Set<string>;
   thinkingSources: Set<string>;
   inputTokens: number;
@@ -93,6 +95,7 @@ function episodeOf(episodes: Map<string, EpisodeAccumulator>, id: string, at: nu
     hashes: new Set(),
     models: new Set(),
     modelIds: new Set(),
+    modelSources: new Set(),
     thinkingLevels: new Set(),
     thinkingSources: new Set(),
     inputTokens: 0,
@@ -147,10 +150,12 @@ export function reportEpisodes(input: {
         episode.models.add(provider ? `${provider}/${modelId}` : modelId);
       }
     }
+    if (text(body.modelSource)) episode.modelSources.add(text(body.modelSource));
     if (object(body.thinkingLevel)) {
       if (text(body.thinkingLevel.level)) episode.thinkingLevels.add(text(body.thinkingLevel.level));
       if (text(body.thinkingLevel.source)) episode.thinkingSources.add(text(body.thinkingLevel.source));
     }
+    if (text(body.thinkingSource)) episode.thinkingSources.add(text(body.thinkingSource));
     const usage = object(body.usage) ? body.usage : undefined;
     if (object(body.tokenDetail)) {
       episode.inputTokens += number(body.tokenDetail.inputTokens);
@@ -185,6 +190,7 @@ export function reportEpisodes(input: {
       definition: joined(episode.definitions),
       definitionHash: joined(episode.hashes),
       resolvedModel: joined(episode.models),
+      modelSource: joined(episode.modelSources),
       thinkingLevel: joined(episode.thinkingLevels),
       thinkingSource: joined(episode.thinkingSources),
       inputTokens: episode.inputTokens,
@@ -298,6 +304,7 @@ export function renderEpisodeReport(report: EpisodeReport, json: boolean): strin
     "definition",
     "definitionHash",
     "resolvedModel",
+    "modelSource",
     "thinkingLevel",
     "thinkingSource",
     "inputTokens",
@@ -318,6 +325,7 @@ export function renderEpisodeReport(report: EpisodeReport, json: boolean): strin
     row.definition,
     row.definitionHash,
     row.resolvedModel,
+    row.modelSource,
     row.thinkingLevel,
     row.thinkingSource,
     row.inputTokens,

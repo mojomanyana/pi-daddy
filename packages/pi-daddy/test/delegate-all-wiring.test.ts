@@ -353,7 +353,8 @@ test("F8: concurrent siblings get distinct, hierarchical ledger ids", async () =
     .trim()
     .split("\n")
     .filter(Boolean)
-    .map((l) => JSON.parse(l).body);
+    .map((l) => JSON.parse(l).body)
+    .filter((body) => body.event === "capability_decision");
   assert.equal(lines.length, 3, "each child is audited, including refusals");
   const ids = lines.map((l) => l.childId);
   assert.equal(new Set(ids).size, 3, `siblings must be distinguishable, got ${JSON.stringify(ids)}`);
@@ -375,7 +376,8 @@ test("two concurrent delegate calls reuse the logical position but never the exe
   const records = (await readFile(ledger, "utf8"))
     .trim()
     .split("\n")
-    .map((line) => JSON.parse(line).body);
+    .map((line) => JSON.parse(line).body)
+    .filter((body) => body.event === "capability_decision");
   assert.deepEqual(
     records.map((record) => record.childId),
     ["d0.1", "d0.1"],
@@ -413,7 +415,8 @@ test("ADR-0018: the digest reaches the LEDGER FILE, not just the plan", async ()
     .trim()
     .split("\n")
     .filter(Boolean)
-    .map((l) => JSON.parse(l).body);
+    .map((l) => JSON.parse(l).body)
+    .filter((body) => body.event === "capability_decision");
   assert.equal(line.blocked, true);
   assert.equal(line.definitionDigest?.name, "patterned");
   assert.equal(
@@ -452,7 +455,8 @@ test("a child's ledger id descends from an inherited parent id, not from depth",
     .trim()
     .split("\n")
     .filter(Boolean)
-    .map((l) => JSON.parse(l).body);
+    .map((l) => JSON.parse(l).body)
+    .filter((body) => body.event === "capability_decision");
   assert.deepEqual(lines.map((l) => l.childId).sort(), ["d0.2.1", "d0.2.2"]);
   assert.ok(lines.every((line) => line.parentExecutionId === "exec:00000000-0000-4000-8000-000000000009"));
 });
@@ -694,7 +698,8 @@ test("ADR-0031: the ledger records the executor a REAL spawn ran under, not a co
       .trim()
       .split("\n")
       .filter(Boolean)
-      .map((l) => JSON.parse(l).body);
+      .map((l) => JSON.parse(l).body)
+      .filter((body) => body.event !== "session_config");
     assert.ok(lines.length >= 1, `no record written for PI_DADDY_HERDR=${herdr}`);
     for (const record of lines) {
       assert.equal(record.executor, expected, `PI_DADDY_HERDR=${herdr} must record executor ${expected}`);
