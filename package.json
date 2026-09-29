@@ -12,7 +12,7 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "build": "npm run build --workspaces --if-present",
     "format": "prettier --write .",
-    "format:check": "prettier --check . || (echo ===PRETTIER-DIFF=== && prettier packages/pi-daddy/test/dashboard-projection.test.ts | diff packages/pi-daddy/test/dashboard-projection.test.ts - ; echo ===END=== ; exit 1)"
+    "format:check": "prettier --check ."
   },
   "devDependencies": {
     "prettier": "3.9.8"
