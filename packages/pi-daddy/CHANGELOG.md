@@ -12,6 +12,26 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## Unreleased — model-attributed usage records
+
+- The dashboard now shows the `/grants models` table and read-only episode cost/ceiling; model and thinking edits use
+  the owning session's in-memory override path and produce the same `session_config` ledger event.
+- Definitions and global defaults in `.pi/pi-daddy/settings.json` may select child model and thinking, with explicit,
+  session, definition, global, and pi fallback provenance recorded and shown by `/grants` and `pi-daddy report`.
+- Episodes now warn at half of their provider-reported USD cost ceiling and gate at the ceiling (default `$5`,
+  configurable as `episodeCostCeiling`); direct children pause for one operator decision, while Herdr stops.
+- `pi-daddy report` now joins the project grant and activity ledgers into episode-level Markdown or JSON, with
+  date/definition/model filters, grouped usage, range totals, and `Pi-Episode` commit attribution.
+- Capability and lifecycle records now stamp the complete definition `SKILL.md` hash and, when exposed by an
+  installed package, its version, so measurements identify the definition version they ran under.
+- Governed children now receive `PI_DADDY_EPISODE`, `PI_DADDY_DEFINITION`, and `PI_DADDY_EXECUTION`; lifecycle
+  records name the exported variables so work produced outside pi-daddy can be joined back to its execution.
+- Child lifecycle records now include the resolved provider/model, effective thinking level and its source, nullable
+  provider-reported token dimensions, and the current turn's compaction count when the session file is readable.
+- Advice records now include the resolved advisor provider/model and nullable token dimensions reported by the
+  Decisions endpoint. The endpoint does not expose an effective thinking level, so that field is recorded as null.
+- The ledger-record v1 governance schema accepts the new lifecycle fields additively; retained records remain valid.
+
 ## 0.41.1 — context handoff bounds in delegate schemas
 
 - The `delegate`, `delegate_all`, and `delegate_chain` schemas now tell models that context handoffs accept at most

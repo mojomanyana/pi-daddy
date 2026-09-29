@@ -243,7 +243,11 @@ test("ADR-0033: a step that can NEVER run refuses the chain before anyone is ask
     0,
     "a doomed step must not raise a dialog — `tool:bash` was gated and never asked about",
   );
-  const record = JSON.parse((await readFile(ledger, "utf8")).trim()).body;
+  const record = (await readFile(ledger, "utf8"))
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line).body)
+    .find((body) => body.event === "capability_decision");
   assert.equal(record.refusal.code, "UNKNOWN_TOOL");
   assert.match(record.taskDigest, /^[a-f0-9]{64}$/);
   assert.ok(record.requested.includes("agent:ghost"));
@@ -506,7 +510,8 @@ test("ledger v3: mixed gate outcomes on ONE chain step remain one execution deci
     .trim()
     .split("\n")
     .filter(Boolean)
-    .map((line) => JSON.parse(line).body);
+    .map((line) => JSON.parse(line).body)
+    .filter((body) => body.event === "capability_decision");
   assert.equal(decisions.length, 1, "one execution occurrence must have one capability decision");
   assert.deepEqual(decisions[0].approved, ["tool:read"]);
   assert.equal(decisions[0].humanDenied, true);

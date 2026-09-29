@@ -18,8 +18,11 @@
  */
 
 import assert from "node:assert/strict";
+import { mkdir, rm } from "node:fs/promises";
+import { join } from "node:path";
 import { after, afterEach, test } from "node:test";
 import { ENV_APPROVED, ENV_GATED, ENV_GRANT, ENV_LEDGER } from "../src/kernel/propagation.ts";
+import { ENV_ACTIVITY_TIMELINE } from "../src/products/activity-timeline.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 import { harness, restoreEnv } from "./chain-harness.ts";
 
@@ -27,17 +30,26 @@ after(cleanupTempDirs);
 afterEach(restoreEnv);
 
 test("a delegation refused AFTER the gate gives back the authority it banked", async () => {
-  // Not a file: every append fails, so the decision is recorded nowhere and the delegation fails closed.
-  const ledgerDirectory = await tempDir("unbank-bad-ledger-");
+  const state = await tempDir("unbank-bad-ledger-");
+  const ledgerPath = join(state, "grants.jsonl");
   const { tools, ctx } = await harness(
     {
       [ENV_GRANT]: "tool:read,tool:bash,tool:delegate",
       [ENV_GATED]: "tool:bash",
-      [ENV_LEDGER]: ledgerDirectory,
+      [ENV_LEDGER]: ledgerPath,
+      [ENV_ACTIVITY_TIMELINE]: join(state, "activity.jsonl"),
     },
     undefined,
     "allow-session",
   );
+  const select = ctx.ui.select;
+  ctx.ui.select = async (title, options) => {
+    // The session-default audit append has completed by the time the gate opens. Replace its file so the
+    // capability-decision append fails, which is the failure this test is about.
+    await rm(ledgerPath, { force: true });
+    await mkdir(ledgerPath);
+    return select(title, options);
+  };
 
   assert.equal(
     (process.env[ENV_APPROVED] ?? "").includes("tool:bash"),

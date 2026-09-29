@@ -46,6 +46,14 @@ export interface Advice {
   answers: Readonly<Record<string, Answer>>;
   /** What actually answered, as the transport reported it — a dated model id, not the one we asked for. */
   model?: string;
+  resolvedModel?: { provider: string; modelId: string };
+  tokenDetail?: {
+    inputTokens: number | null;
+    outputTokens: number | null;
+    cacheReadTokens: number | null;
+    cacheWriteTokens: number | null;
+    reasoningTokens: number | null;
+  };
 }
 
 export interface Decider {

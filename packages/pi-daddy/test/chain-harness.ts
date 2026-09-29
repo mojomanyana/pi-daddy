@@ -17,6 +17,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import grantsExtension from "../extensions/grants.ts";
 import { ENV_HERDR } from "../src/executors/executor.ts";
+import { ENV_ACTIVITY_TIMELINE } from "../src/products/activity-timeline.ts";
 import {
   ENV_APPROVED,
   ENV_DEPTH,
@@ -39,6 +40,7 @@ const KEYS = [
   ENV_FANOUT,
   ENV_PARENT_ID,
   ENV_HERDR,
+  ENV_ACTIVITY_TIMELINE,
 ];
 const saved = new Map<string, string | undefined>();
 

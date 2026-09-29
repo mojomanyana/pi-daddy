@@ -14,6 +14,7 @@
  */
 import { supportedModelEfforts } from "../src/kernel/model-preflight.ts";
 import type { Advisor } from "../src/advisors/advisor.ts";
+import { resolvedModelOf, type ResolvedDefinitionRuntime } from "./definition-runtime.ts";
 
 /** What pi's resolved catalogue entry carries that decides which efforts exist. */
 interface ResolvedModel {
@@ -40,6 +41,7 @@ export async function adviseEffort(input: {
   task: string;
   executionId?: string;
   agent?: string;
+  fallback?: ResolvedDefinitionRuntime;
   signal?: AbortSignal;
 }): Promise<string | undefined> {
   const advisor = input.session.advisorSession.advisor;
@@ -71,6 +73,16 @@ export async function adviseEffort(input: {
     },
     input.signal,
     input.executionId,
+    (result) => {
+      const answer = result?.answers.effort;
+      const advised = answer?.kind === "choice" && (levels as readonly string[]).includes(answer.value);
+      return {
+        resolvedModel: resolvedModelOf(input.fallback?.model ?? input.model),
+        modelSource: input.fallback?.modelSource ?? "pi",
+        thinkingLevel: advised ? answer.value : (input.fallback?.thinking ?? null),
+        thinkingSource: advised ? "advisor" : (input.fallback?.thinkingSource ?? "pi"),
+      };
+    },
   );
   const chosen = advice?.answers.effort;
   // Belt and braces: `parseAnswer` already refuses a choice outside the options it was given, so this can only

@@ -3,6 +3,8 @@ import { isExecutionId } from "../kernel/execution-id.ts";
 import { isEpisodeId } from "../kernel/episode-id.ts";
 import { REFUSAL_CODES } from "../kernel/refusals.ts";
 import { isLedgerCapabilityIdentifier, isLedgerDisplayIdentifier } from "../kernel/ledger-identifiers.ts";
+import { CHILD_ATTRIBUTION_ENV_KEYS } from "../kernel/env-names.ts";
+import { isDefinitionPackageVersion } from "../kernel/definitions.ts";
 
 export type LedgerV3Object = Record<string, unknown>;
 
@@ -103,6 +105,8 @@ const FIELDS = {
     "humanDenied",
     "gateOutcome",
     "definitionDigest",
+    "definitionHash",
+    "definitionPackageVersion",
     "handoff",
     "executor",
     "taskFrom",
@@ -128,6 +132,21 @@ const FIELDS = {
     "refusal",
     "correlation",
   ]),
+  cost_gate: new Set([
+    "ledgerVersion",
+    "event",
+    "ts",
+    "episodeId",
+    "executionId",
+    "parentExecutionId",
+    "childId",
+    "gate",
+    "cost",
+    "ceiling",
+    "outcome",
+    "newCeiling",
+  ]),
+  session_config: new Set(["ledgerVersion", "event", "ts", "episodeId", "outcome", "trigger", "overrides"]),
   child_lifecycle: new Set([
     "ledgerVersion",
     "event",
@@ -146,8 +165,17 @@ const FIELDS = {
     "reason",
     "deadlineAt",
     "idleTimeoutMs",
+    "resolvedModel",
+    "modelSource",
+    "thinkingLevel",
+    "thinkingSource",
+    "tokenDetail",
     "usage",
+    "compactionCount",
     "usageUnavailable",
+    "exportedEnvironment",
+    "definitionHash",
+    "definitionPackageVersion",
     "herdrPaneId",
     "herdrAgentName",
     "correlation",
@@ -297,6 +325,8 @@ function validateCapabilityDecision(event: LedgerV3Object): string | null {
     !optional(event, "humanDenied", (value) => value === true) ||
     !optional(event, "gateOutcome", (value) => GATE_OUTCOMES.has(String(value))) ||
     !optional(event, "definitionDigest", validDefinitionDigest) ||
+    !optional(event, "definitionHash", (value) => SHA256_RE.test(String(value))) ||
+    !optional(event, "definitionPackageVersion", isDefinitionPackageVersion) ||
     !optional(event, "taskFrom", isLedgerDisplayIdentifier) ||
     !optional(event, "taskFromExecutionId", isExecutionId) ||
     !optional(event, "correlation", validCorrelation) ||
@@ -354,6 +384,66 @@ function validUsage(value: unknown): boolean {
   );
 }
 
+function validResolvedModel(value: unknown): boolean {
+  return (
+    value === null ||
+    (isLedgerObject(value) &&
+      Object.keys(value).every((key) => ["provider", "modelId"].includes(key)) &&
+      isNonEmptyString(value.provider) &&
+      isNonEmptyString(value.modelId))
+  );
+}
+
+const MODEL_SOURCES = ["explicit", "session", "definition", "global", "pi"];
+const THINKING_SOURCES = [...MODEL_SOURCES, "advisor"];
+function validThinkingLevel(value: unknown): boolean {
+  return (
+    value === null ||
+    (isLedgerObject(value) &&
+      Object.keys(value).every((key) => ["level", "source"].includes(key)) &&
+      isNonEmptyString(value.level) &&
+      THINKING_SOURCES.includes(String(value.source)))
+  );
+}
+
+function validTokenDetail(value: unknown): boolean {
+  if (!isLedgerObject(value)) return false;
+  const fields = ["inputTokens", "outputTokens", "cacheReadTokens", "cacheWriteTokens", "reasoningTokens"];
+  return (
+    Object.keys(value).length === fields.length &&
+    fields.every((field) => value[field] === null || (nonNegativeNumber(value[field]) && (value[field] as number) > 0))
+  );
+}
+
+function validExportedEnvironment(value: unknown): boolean {
+  return (
+    Array.isArray(value) &&
+    value.length === CHILD_ATTRIBUTION_ENV_KEYS.length &&
+    CHILD_ATTRIBUTION_ENV_KEYS.every((name) => value.filter((entry) => entry === name).length === 1)
+  );
+}
+
+function validateCostGate(event: LedgerV3Object): string | null {
+  if (
+    event.gate !== "episode_cost" ||
+    !nonNegativeNumber(event.cost) ||
+    !nonNegativeNumber(event.ceiling) ||
+    (event.ceiling as number) <= 0 ||
+    !["continued", "stopped"].includes(String(event.outcome))
+  ) {
+    return "cost gate required fields are invalid";
+  }
+  if (
+    !optional(event, "newCeiling", (value) => nonNegativeNumber(value) && (value as number) > (event.cost as number))
+  ) {
+    return "cost gate new ceiling is invalid";
+  }
+  if ((event.outcome === "continued") !== Object.hasOwn(event, "newCeiling")) {
+    return "continued cost gate requires exactly one new ceiling";
+  }
+  return null;
+}
+
 function validateChildLifecycle(event: LedgerV3Object): string | null {
   if (
     !["starting", "running", "completed", "failed"].includes(String(event.state)) ||
@@ -373,10 +463,19 @@ function validateChildLifecycle(event: LedgerV3Object): string | null {
     !optional(event, "aborted", (value) => value === true) ||
     !optional(event, "truncated", (value) => value === true) ||
     !optional(event, "reason", (value) => typeof value === "string") ||
+    !optional(event, "resolvedModel", validResolvedModel) ||
+    !optional(event, "modelSource", (value) => MODEL_SOURCES.includes(String(value))) ||
+    !optional(event, "thinkingLevel", validThinkingLevel) ||
+    !optional(event, "thinkingSource", (value) => THINKING_SOURCES.includes(String(value))) ||
+    !optional(event, "tokenDetail", validTokenDetail) ||
     !optional(event, "usage", validUsage) ||
+    !optional(event, "compactionCount", (value) => Number.isInteger(value) && (value as number) >= 0) ||
     !optional(event, "usageUnavailable", (value) =>
       ["session-missing", "session-invalid", "usage-missing"].includes(String(value)),
     ) ||
+    !optional(event, "exportedEnvironment", validExportedEnvironment) ||
+    !optional(event, "definitionHash", (value) => SHA256_RE.test(String(value))) ||
+    !optional(event, "definitionPackageVersion", isDefinitionPackageVersion) ||
     !optional(event, "correlation", validCorrelation)
   ) {
     return "child lifecycle optional fields are invalid";
@@ -407,10 +506,29 @@ export function validateLedgerV3Event(event: LedgerV3Object): string | null {
   if (typeof kind !== "string" || !Object.hasOwn(FIELDS, kind)) return "unknown ledger event discriminator";
   const allowed = FIELDS[kind as EventKind];
   if (Object.keys(event).some((field) => !allowed.has(field))) return "ledger v3 contains an unsupported field";
+  if (kind === "session_config") {
+    if (
+      !isEpisodeId(event.episodeId) ||
+      !["kept", "changed"].includes(String(event.outcome)) ||
+      !["first-delegation", "grants-models"].includes(String(event.trigger)) ||
+      !isLedgerObject(event.overrides) ||
+      !Object.entries(event.overrides).every(
+        ([name, value]) =>
+          isNonEmptyString(name) &&
+          isLedgerObject(value) &&
+          Object.keys(value).length === 2 &&
+          isNonEmptyString(value.model) &&
+          isNonEmptyString(value.thinking),
+      )
+    )
+      return "session config fields are invalid";
+    return null;
+  }
   const base = validateBase(event);
   if (base) return base;
   if (kind === "capability_decision") return validateCapabilityDecision(event);
   if (kind === "workspace_lease") return validateWorkspaceLease(event);
+  if (kind === "cost_gate") return validateCostGate(event);
   return validateChildLifecycle(event);
 }
 

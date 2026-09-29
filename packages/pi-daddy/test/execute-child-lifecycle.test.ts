@@ -12,7 +12,14 @@ import type { Delegation } from "../src/kernel/delegate.ts";
 import { runWithFinalizers } from "../src/governance/finalization.ts";
 import { HerdrWriterCloseError } from "../src/executors/run-herdr.ts";
 import { ENV_CHILD_IDLE_TIMEOUT, ENV_CHILD_TIMEOUT } from "../src/kernel/run-child.ts";
+import {
+  CHILD_ATTRIBUTION_ENV_KEYS,
+  ENV_CHILD_DEFINITION,
+  ENV_CHILD_EPISODE,
+  ENV_CHILD_EXECUTION,
+} from "../src/kernel/env-names.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
+import { EpisodeCostGate } from "../src/governance/episode-cost-gate.ts";
 
 after(cleanupTempDirs);
 
@@ -27,6 +34,8 @@ function plan(): Delegation {
     result: { effective: [], denied: [], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
     childDepth: 1,
     requested: [],
+    definitionHash: "b".repeat(64),
+    definitionPackageVersion: "2.3.1",
     taskDigest: "a".repeat(64),
   };
 }
@@ -118,6 +127,67 @@ test("a SIGTERM-ignoring child is hard-killed by the recorded lifecycle deadline
   }
 });
 
+test("a live process child pauses and stops when cumulative episode cost crosses the ceiling", async () => {
+  const dir = await tempDir("execute-child-cost-gate-");
+  const bin = join(dir, "bin");
+  const { mkdir } = await import("node:fs/promises");
+  await mkdir(bin);
+  const shim = join(bin, "pi");
+  await writeFile(
+    shim,
+    `#!/usr/bin/env node
+const fs = require("node:fs");
+const path = process.argv[process.argv.indexOf("--session") + 1];
+const usage = { input: 10, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 11,
+  cost: { input: 0.8, output: 0.2, cacheRead: 0, cacheWrite: 0, total: 1 } };
+fs.appendFileSync(path, JSON.stringify({ type: "message", message: { role: "assistant", provider: "p", model: "m", usage } }) + "\\n");
+setInterval(() => {}, 1000);
+`,
+    "utf8",
+  );
+  await chmod(shim, 0o755);
+  const ledgerPath = join(dir, "ledger.jsonl");
+  const oldPath = process.env.PATH;
+  const oldTimeout = process.env[ENV_CHILD_TIMEOUT];
+  const oldIdle = process.env[ENV_CHILD_IDLE_TIMEOUT];
+  process.env.PATH = `${bin}${delimiter}${oldPath ?? ""}`;
+  process.env[ENV_CHILD_TIMEOUT] = "10";
+  process.env[ENV_CHILD_IDLE_TIMEOUT] = "10";
+  try {
+    const outcome = await executePlannedChild({
+      session: {
+        ledgerPath,
+        executor: { kind: "process" },
+        episodeId: "episode:00000000-0000-4000-8000-000000000001",
+        episodeCostGate: new EpisodeCostGate(0.5),
+      } as GrantsSession,
+      plan: { ...plan(), args: [" task"] },
+      childId: "d0.1",
+      executionId,
+      parentExecutionId: null,
+      cwd: dir,
+      costGateUI: { hasUI: true, input: async () => "", notify: () => {} },
+    });
+    assert.equal(outcome.aborted, true);
+    assert.match(outcome.reason ?? "", /cost ceiling/);
+    const events = (await readFile(ledgerPath, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line).body);
+    assert.deepEqual(
+      events.filter((event) => event.event === "cost_gate").map((event) => event.outcome),
+      ["stopped"],
+    );
+  } finally {
+    if (oldPath === undefined) delete process.env.PATH;
+    else process.env.PATH = oldPath;
+    if (oldTimeout === undefined) delete process.env[ENV_CHILD_TIMEOUT];
+    else process.env[ENV_CHILD_TIMEOUT] = oldTimeout;
+    if (oldIdle === undefined) delete process.env[ENV_CHILD_IDLE_TIMEOUT];
+    else process.env[ENV_CHILD_IDLE_TIMEOUT] = oldIdle;
+  }
+});
+
 test("PR 3e: a silent child is stopped by the inactivity bound, recorded as idle, and told why", async () => {
   // Breaks by: not passing idleTimeoutMs/activityProbe to runChild, or dropping idleTimeoutMs from the starting event.
   const dir = await tempDir("execute-child-idle-");
@@ -194,6 +264,51 @@ test("PR 3e: the temporary session directory is removed even when the run throws
   assert.deepEqual(leaked, [], "a session directory allocated for this run survived its failure");
 });
 
+test("a governed child sees exactly the three work-attribution variables", async () => {
+  const dir = await tempDir("execute-child-attribution-env-");
+  const bin = join(dir, "bin");
+  const { mkdir } = await import("node:fs/promises");
+  await mkdir(bin);
+  const shim = join(bin, "pi");
+  await writeFile(
+    shim,
+    `#!/usr/bin/env node
+const keys = ${JSON.stringify(["PI_DADDY_EPISODE", "PI_DADDY_DEFINITION", "PI_DADDY_EXECUTION"])};
+console.log(JSON.stringify(Object.fromEntries(keys.map((key) => [key, process.env[key]]))));
+`,
+    "utf8",
+  );
+  await chmod(shim, 0o755);
+  const oldPath = process.env.PATH;
+  process.env.PATH = `${bin}${delimiter}${oldPath ?? ""}`;
+  try {
+    const childPlan = plan();
+    childPlan.env = {
+      [ENV_CHILD_EPISODE]: "episode:00000000-0000-4000-8000-000000000099",
+      [ENV_CHILD_DEFINITION]: "review-security",
+      [ENV_CHILD_EXECUTION]: executionId,
+    };
+    const outcome = await executePlannedChild({
+      session: { executor: { kind: "process" } } as GrantsSession,
+      plan: childPlan,
+      childId: "d0.1",
+      executionId,
+      parentExecutionId: null,
+      cwd: dir,
+    });
+    assert.equal(outcome.ok, true);
+    assert.deepEqual(JSON.parse(outcome.text), {
+      [ENV_CHILD_EPISODE]: "episode:00000000-0000-4000-8000-000000000099",
+      [ENV_CHILD_DEFINITION]: "review-security",
+      [ENV_CHILD_EXECUTION]: executionId,
+    });
+    assert.deepEqual(CHILD_ATTRIBUTION_ENV_KEYS, [ENV_CHILD_EPISODE, ENV_CHILD_DEFINITION, ENV_CHILD_EXECUTION]);
+  } finally {
+    if (oldPath === undefined) delete process.env.PATH;
+    else process.env.PATH = oldPath;
+  }
+});
+
 test("terminal lifecycle captures child usage before disposing the private session", async () => {
   const dir = await tempDir("execute-child-usage-");
   const bin = join(dir, "bin");
@@ -208,7 +323,10 @@ const path = process.argv[process.argv.indexOf("--session") + 1];
 const usage = {input:7,output:2,cacheRead:3,cacheWrite:1,reasoning:1,totalTokens:14,cost:{input:0.07,output:0.02,cacheRead:0.01,cacheWrite:0.01,total:0.11}};
 fs.writeFileSync(path, [
   {type:"message",message:{role:"user",content:"PRIVATE CHILD TASK"}},
-  {type:"message",message:{role:"assistant",content:"PRIVATE CHILD ANSWER",usage}}
+  {type:"model_change",provider:"openai-codex",modelId:"gpt-5.3-codex"},
+  {type:"thinking_level_change",thinkingLevel:"high"},
+  {type:"compaction"},
+  {type:"message",message:{role:"assistant",content:"PRIVATE CHILD ANSWER",provider:"openai-codex",model:"gpt-5.3-codex",usage}}
 ].map(JSON.stringify).join("\\n") + "\\n");
 console.log("done");
 `,
@@ -226,6 +344,7 @@ console.log("done");
       executionId,
       parentExecutionId: null,
       cwd: dir,
+      resolvedRuntime: { modelSource: "pi", thinking: "high", thinkingSource: "explicit" },
     });
     assert.equal(outcome.ok, true);
     const text = await readFile(ledgerPath, "utf8");
@@ -233,7 +352,9 @@ console.log("done");
       .trim()
       .split("\n")
       .map((line) => JSON.parse(line).body);
-    assert.deepEqual(events.find((event) => event.state === "completed")?.usage, {
+    assert.ok(events.every((event) => event.modelSource === "pi" && event.thinkingSource === "explicit"));
+    const completed = events.find((event) => event.state === "completed");
+    assert.deepEqual(completed?.usage, {
       input: 7,
       output: 2,
       cacheRead: 3,
@@ -242,6 +363,19 @@ console.log("done");
       totalTokens: 14,
       cost: { input: 0.07, output: 0.02, cacheRead: 0.01, cacheWrite: 0.01, total: 0.11 },
     });
+    assert.deepEqual(completed?.resolvedModel, { provider: "openai-codex", modelId: "gpt-5.3-codex" });
+    assert.deepEqual(completed?.thinkingLevel, { level: "high", source: "explicit" });
+    assert.deepEqual(completed?.tokenDetail, {
+      inputTokens: 7,
+      outputTokens: 2,
+      cacheReadTokens: 3,
+      cacheWriteTokens: 1,
+      reasoningTokens: 1,
+    });
+    assert.equal(completed?.compactionCount, 1);
+    assert.equal(completed?.definitionHash, "b".repeat(64));
+    assert.equal(completed?.definitionPackageVersion, "2.3.1");
+    assert.deepEqual(completed?.exportedEnvironment, [...CHILD_ATTRIBUTION_ENV_KEYS]);
     assert.doesNotMatch(text, /PRIVATE CHILD/);
   } finally {
     if (oldPath === undefined) delete process.env.PATH;

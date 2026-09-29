@@ -106,10 +106,26 @@ test("child usage totals are read from the current turn before the temporary ses
   const session = await activitySessionFor(plan, "exec:00000000-0000-4000-8000-000000000002");
   const lines = [
     { type: "message", message: { role: "assistant", usage: usage(100, 10, 1) } },
+    { type: "compaction" },
     { type: "message", message: { role: "user", content: "PRIVATE CURRENT TASK" } },
-    { type: "message", message: { role: "assistant", content: "PRIVATE ANSWER", usage: usage(20, 3, 0.25) } },
+    { type: "model_change", provider: "openai-codex", modelId: "gpt-5.3-codex" },
+    { type: "thinking_level_change", thinkingLevel: "high" },
+    {
+      type: "message",
+      message: {
+        role: "assistant",
+        content: "PRIVATE ANSWER",
+        provider: "openai-codex",
+        model: "gpt-5.3-codex",
+        usage: usage(20, 3, 0.25),
+      },
+    },
+    { type: "compaction" },
     { type: "message", message: { role: "toolResult", content: "PRIVATE TOOL RESULT" } },
-    { type: "message", message: { role: "assistant", usage: usage(5, 2, 0.1) } },
+    {
+      type: "message",
+      message: { role: "assistant", provider: "openai-codex", model: "gpt-5.3-codex", usage: usage(5, 2, 0.1) },
+    },
   ];
   await writeFile(session.path, `${lines.map((line) => JSON.stringify(line)).join("\n")}\n`);
   assert.deepEqual(await session.usage(), {
@@ -122,6 +138,16 @@ test("child usage totals are read from the current turn before the temporary ses
       totalTokens: 39,
       cost: { input: 0.21000000000000002, output: 0.07, cacheRead: 0.03, cacheWrite: 0.02, total: 0.35 },
     },
+    resolvedModel: { provider: "openai-codex", modelId: "gpt-5.3-codex" },
+    effectiveThinkingLevel: "high",
+    tokenDetail: {
+      inputTokens: 25,
+      outputTokens: 5,
+      cacheReadTokens: 4,
+      cacheWriteTokens: 2,
+      reasoningTokens: 2,
+    },
+    compactionCount: 1,
   });
   await session.dispose();
   await assert.rejects(stat(session.path));
@@ -147,6 +173,20 @@ test("child usage failure is atomic and privacy-safe", async () => {
   );
   assert.deepEqual(await second.usage(), { unavailable: "session-invalid" });
   await second.dispose();
+
+  const zeroes = await activitySessionFor(["--print", "--no-session", " task"], "exec:zero-usage");
+  await writeFile(
+    zeroes.path,
+    `${JSON.stringify({ type: "message", message: { role: "assistant", provider: "local", model: "m", usage: usage(5, 0, 0.1) } })}\n`,
+  );
+  assert.deepEqual((await zeroes.usage()).tokenDetail, {
+    inputTokens: 5,
+    outputTokens: null,
+    cacheReadTokens: 1,
+    cacheWriteTokens: null,
+    reasoningTokens: null,
+  });
+  await zeroes.dispose();
 });
 
 function usage(input: number, output: number, totalCost: number) {

@@ -15,7 +15,7 @@
  * selection stands — the same "identical to today" property the effort decision point has.
  */
 import { selectPrunedTurns, type ContextRequest } from "../src/kernel/context-handoff.ts";
-import type { Advisor } from "../src/advisors/advisor.ts";
+import type { AdviceAttribution, Advisor } from "../src/advisors/advisor.ts";
 import type { Question } from "../src/advisors/decider.ts";
 
 export const PRUNING_PURPOSE = "handoff-pruning";
@@ -39,6 +39,7 @@ export async function advisePruning(input: {
   executionId?: string;
   /** The current delegation call, excluded from advisor input because its arguments contain the raw task. */
   toolCallId?: string;
+  attribution?: AdviceAttribution;
   signal?: AbortSignal;
 }): Promise<string[] | undefined> {
   if (input.granted.mode !== "pruned" || !input.session.parentSession) return undefined;
@@ -85,6 +86,7 @@ export async function advisePruning(input: {
     { state: {}, questions },
     input.signal,
     input.executionId,
+    input.attribution,
   );
   if (!advice) return undefined;
   // Every candidate or none. A response missing eleven of twelve answers would otherwise read as "drop eleven",

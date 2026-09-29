@@ -143,12 +143,22 @@ try {
   ].join("\n"));
   run("node", [join(work, "configured-probe.mjs")], configuredProject);
 
-  const dashboardOut = run(
+  const dashboardOut = execFileSync(
     join(work, "node_modules", ".bin", "pi-daddy-dashboard"),
     ["--once", "--no-color"],
-    work,
+    {
+      cwd: work,
+      encoding: "utf8",
+      stdio: "pipe",
+      env: {
+        ...process.env,
+        PI_CODING_AGENT_DIR: join(work, ".agent-home"),
+        PI_DADDY_LEDGER: join(work, "grants.jsonl"),
+        PI_DADDY_ACTIVITY_TIMELINE: join(work, "activity.jsonl"),
+      },
+    },
   );
-  if (!dashboardOut.includes("pi-daddy is missing or its ledger is inactive")) {
+  if (!dashboardOut.includes("No governed executions recorded yet")) {
     throw new Error(`installed dashboard bin did not run:\n${dashboardOut}`);
   }
   const pluginManifest = readFileSync(

@@ -20,6 +20,7 @@ import type { GatedPlan } from "./run-delegation.ts";
 import { handleConnectedCommand } from "./grants-connected-command.ts";
 import { loadApprovals, revokeAll, revokeApproval, type SubjectLookup } from "../src/governance/approval-store.ts";
 import { verifyLedger } from "../src/governance/ledger.ts";
+import type { ResolvedDefinitionRuntime } from "./definition-runtime.ts";
 
 export interface GrantsCommandContext {
   cwd: string;
@@ -60,6 +61,13 @@ export interface GrantsCommandContext {
    * R-28 discipline where it belongs: this command asks what would happen instead of working it out.
    */
   previewDelegation: (name: string) => Promise<GatedPlan>;
+  runtimeFor: (name: string) => ResolvedDefinitionRuntime;
+  changeModels: (ui: {
+    input: GrantsCommandContext["modelInput"];
+    notify: GrantsCommandContext["modelNotify"];
+  }) => Promise<string>;
+  modelInput(title: string, placeholder?: string): Promise<string | undefined>;
+  modelNotify(message: string, type?: "info" | "warning" | "error"): void;
   /**
    * Run `/grants init`: scaffold definitions, ask about withheld capabilities, atomically store grant plus
    * project-ledger consent outside the workspace, and apply both now (ADR-0030, ADR-0037).
@@ -83,7 +91,15 @@ export interface GrantsCommandContext {
 const PREVIEW_LIMIT = 12;
 
 /** The verbs `/grants` answers to. Anything else is refused rather than silently treated as no verb. */
-const KNOWN_SUBCOMMANDS: readonly string[] = ["init", "dashboard", "ledger", "approvals", "revoke", "workspaces"];
+const KNOWN_SUBCOMMANDS: readonly string[] = [
+  "init",
+  "dashboard",
+  "ledger",
+  "approvals",
+  "revoke",
+  "workspaces",
+  "models",
+];
 
 export const grantsCommand = {
   description:
@@ -110,6 +126,7 @@ export const grantsCommand = {
       inheritedApprovals,
       snapshotOf,
       previewDelegation,
+      runtimeFor,
     } = ctx.grants as GrantsCommandContext;
 
     const [sub, target] = args.trim().split(/\s+/).filter(Boolean);
@@ -126,6 +143,15 @@ export const grantsCommand = {
       })
     )
       return;
+
+    if (sub === "models") {
+      const rendered = await ctx.grants.changeModels({
+        input: ctx.grants.modelInput,
+        notify: ctx.grants.modelNotify,
+      });
+      ctx.ui.notify(`grants: current session model overrides\n${rendered}`, "info");
+      return;
+    }
 
     if (sub === "workspaces") {
       // The one verb that WRITES, and it takes its ability to do so from the caller — the same shape
@@ -445,6 +471,10 @@ export const grantsCommand = {
     const shown = [...definitions].slice(0, PREVIEW_LIMIT);
     for (const [name] of shown) {
       const { plan, approval } = await previewDelegation(name);
+      const runtime = runtimeFor(name);
+      const runtimeText =
+        `model ${runtime.model ?? "pi default"} (${runtime.modelSource}); ` +
+        `thinking ${runtime.thinking ?? "pi default"} (${runtime.thinkingSource})`;
       // Why it is allowed, when a standing approval is the reason. An `allow` that silently depends on a
       // 30-day entry in a file elsewhere is precisely what an operator runs this command to discover, and
       // R-38 was the version of this listing that could not have told them (it said BLOCK instead).
@@ -455,7 +485,7 @@ export const grantsCommand = {
           ? `  (${approval.approved.map((c) => `${c} approved: ${approval.sources[c] ?? "?"}`).join("; ")})`
           : "";
       lines.push(
-        `    ${plan.ok ? "allow" : "BLOCK"}  ${name}` +
+        `    ${plan.ok ? "allow" : "BLOCK"}  ${name}  [${runtimeText}]` +
           (plan.ok ? `  ${plan.effective.join(", ")}${because}` : ` — ${plan.reason}`),
       );
     }

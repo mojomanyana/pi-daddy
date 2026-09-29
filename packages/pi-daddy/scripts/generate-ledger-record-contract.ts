@@ -2,12 +2,19 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { buildChildLifecycleEvent, buildRecord, buildWorkspaceLeaseEvent } from "../src/governance/ledger.ts";
+import {
+  buildChildLifecycleEvent,
+  buildEpisodeCostGateEvent,
+  buildRecord,
+  buildSessionConfigEvent,
+  buildWorkspaceLeaseEvent,
+} from "../src/governance/ledger.ts";
 import type { CorrelationMetadata } from "../src/kernel/correlation.ts";
 import { REFUSAL_CODES } from "../src/kernel/refusals.ts";
 import { RECORD_FORMAT, RECORD_KINDS, recordDigest } from "../src/governance/record.ts";
 import { recordKindForEvent } from "../src/governance/ledger.ts";
 import { createHash } from "node:crypto";
+import { CHILD_ATTRIBUTION_ENV_KEYS } from "../src/kernel/env-names.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const contractDir = join(here, "..", "contracts", "ledger-record", "v1");
@@ -75,6 +82,8 @@ export function buildLedgerV3ContractFixtures() {
         source: "/operator/skills/build/SKILL.md",
         sha256: "8".repeat(64),
       },
+      definitionHash: "7".repeat(64),
+      definitionPackageVersion: "2.3.1",
       executor: "process",
       taskFrom: "d0.0",
       taskFromExecutionId: "exec:00000000-0000-4000-8000-000000000000",
@@ -100,6 +109,24 @@ export function buildLedgerV3ContractFixtures() {
       correlation,
       now: new Date("2026-08-20T12:00:02.000Z"),
     }),
+    "episode-cost-gate.json": buildEpisodeCostGateEvent({
+      episodeId,
+      executionId: "exec:00000000-0000-4000-8000-000000000001",
+      parentExecutionId: null,
+      childId: "d0.1",
+      cost: 5.2,
+      ceiling: 5,
+      outcome: "continued",
+      newCeiling: 10,
+      now: new Date("2026-08-20T12:00:02.500Z"),
+    }),
+    "session-config.json": buildSessionConfigEvent({
+      episodeId,
+      outcome: "changed",
+      trigger: "first-delegation",
+      overrides: new Map([["review", { model: "anthropic/claude-opus-4-6", thinking: "high" }]]),
+      now: new Date("2026-08-20T12:00:02.750Z"),
+    }),
     "child-lifecycle.json": buildChildLifecycleEvent({
       episodeId,
       executionId: "exec:00000000-0000-4000-8000-000000000001",
@@ -113,6 +140,17 @@ export function buildLedgerV3ContractFixtures() {
       signal: null,
       aborted: true,
       reason: "child did not start",
+      resolvedModel: { provider: "openai-codex", modelId: "gpt-5.3-codex" },
+      modelSource: "definition",
+      effectiveThinkingLevel: "high",
+      thinkingSource: "advisor",
+      tokenDetail: {
+        inputTokens: 120,
+        outputTokens: 30,
+        cacheReadTokens: 20,
+        cacheWriteTokens: 10,
+        reasoningTokens: 5,
+      },
       usage: {
         input: 120,
         output: 30,
@@ -122,6 +160,10 @@ export function buildLedgerV3ContractFixtures() {
         totalTokens: 185,
         cost: { input: 0.12, output: 0.06, cacheRead: 0.01, cacheWrite: 0.01, total: 0.2 },
       },
+      compactionCount: 1,
+      exportedEnvironment: CHILD_ATTRIBUTION_ENV_KEYS,
+      definitionHash: "7".repeat(64),
+      definitionPackageVersion: "2.3.1",
       correlation,
       now: new Date("2026-08-20T12:00:03.000Z"),
     }),
@@ -152,8 +194,45 @@ export async function writeLedgerV3ContractFixtures(target = fixtureDir): Promis
  */
 export async function syncLedgerV3RefusalEnum(target = schemaPath): Promise<void> {
   const raw = await readFile(target, "utf8");
-  const schema = JSON.parse(raw) as { $defs: { refusalCode: { enum: string[] } } };
+  const schema = JSON.parse(raw) as {
+    oneOf: Array<{ $ref: string }>;
+    $defs: Record<string, unknown> & { refusalCode: { enum: string[] } };
+  };
   schema.$defs.refusalCode.enum = [...REFUSAL_CODES];
+  if (!schema.oneOf.some((entry) => entry.$ref === "#/$defs/costGate")) {
+    schema.oneOf.push({ $ref: "#/$defs/costGate" });
+  }
+  schema.$defs.costGate = {
+    type: "object",
+    properties: {
+      ledgerVersion: { const: 3 },
+      event: { const: "cost_gate" },
+      ts: { $ref: "#/$defs/timestamp" },
+      episodeId: { $ref: "#/$defs/episodeId" },
+      executionId: { $ref: "#/$defs/executionId" },
+      parentExecutionId: { oneOf: [{ $ref: "#/$defs/executionId" }, { type: "null" }] },
+      childId: { $ref: "#/$defs/ledgerDisplayIdentifier" },
+      gate: { const: "episode_cost" },
+      cost: { type: "number", minimum: 0 },
+      ceiling: { type: "number", exclusiveMinimum: 0 },
+      outcome: { enum: ["continued", "stopped"] },
+      newCeiling: { type: "number", exclusiveMinimum: 0 },
+    },
+    required: [
+      "ledgerVersion",
+      "event",
+      "ts",
+      "episodeId",
+      "executionId",
+      "parentExecutionId",
+      "childId",
+      "gate",
+      "cost",
+      "ceiling",
+      "outcome",
+    ],
+    additionalProperties: false,
+  };
   await writeFile(target, `${JSON.stringify(schema, null, 2)}\n`, "utf8");
 }
 

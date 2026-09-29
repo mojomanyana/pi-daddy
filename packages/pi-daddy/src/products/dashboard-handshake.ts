@@ -74,6 +74,7 @@ export interface DashboardHandshakeInput {
   pluginRoot: string;
   preferencePath: string;
   paneStatePath: string;
+  sessionEndpoint?: { socketPath: string; token: string };
   ui: DashboardHandshakeUI;
 }
 
@@ -101,6 +102,7 @@ export async function offerDashboardHandshake(input: DashboardHandshakeInput): P
         statePath: input.paneStatePath,
         pluginRoot: input.pluginRoot,
         allowInactive: true,
+        sessionEndpoint: input.sessionEndpoint,
       });
       input.ui.notify(`pi-daddy dashboard ${opened.kind} in pane ${opened.paneId} without changing focus.`, "info");
       return "already-installed";
@@ -152,6 +154,7 @@ export async function offerDashboardHandshake(input: DashboardHandshakeInput): P
       statePath: input.paneStatePath,
       pluginRoot: input.pluginRoot,
       allowInactive: true,
+      sessionEndpoint: input.sessionEndpoint,
     });
     input.ui.notify(`pi-daddy dashboard ${opened.kind} in pane ${opened.paneId} without changing focus.`, "info");
     return "installed";
@@ -172,6 +175,7 @@ export interface DashboardCommandInput {
   ledgerPath?: string;
   pluginRoot: string;
   paneStatePath: string;
+  sessionEndpoint?: { socketPath: string; token: string };
 }
 
 export type DashboardCommandResult =
@@ -211,6 +215,7 @@ export async function openDashboardCommand(input: DashboardCommandInput): Promis
     cwd: input.cwd,
     statePath: input.paneStatePath,
     pluginRoot: input.pluginRoot,
+    sessionEndpoint: input.sessionEndpoint,
   });
 }
 

@@ -18,10 +18,12 @@ import {
   WORKSPACE_LEASE_OUTCOMES,
   WORKSPACE_RECOVERY_VALUES,
   buildChildLifecycleEvent,
+  buildEpisodeCostGateEvent,
   buildRecord,
   buildWorkspaceLeaseEvent,
   type CapabilityDecisionEvent,
   type ChildLifecycleEvent,
+  type EpisodeCostGateEvent,
   type GrantRecord,
   type WorkspaceLeaseEvent,
 } from "../src/governance/ledger.ts";
@@ -88,6 +90,8 @@ const CAPABILITY_FIELDS = [
   "humanDenied",
   "gateOutcome",
   "definitionDigest",
+  "definitionHash",
+  "definitionPackageVersion",
   "handoff",
   "executor",
   "taskFrom",
@@ -113,6 +117,20 @@ const LEASE_FIELDS = [
   "refusal",
   "correlation",
 ] as const;
+const COST_GATE_FIELDS = [
+  "ledgerVersion",
+  "event",
+  "ts",
+  "episodeId",
+  "executionId",
+  "parentExecutionId",
+  "childId",
+  "gate",
+  "cost",
+  "ceiling",
+  "outcome",
+  "newCeiling",
+] as const;
 const LIFECYCLE_FIELDS = [
   "ledgerVersion",
   "event",
@@ -125,8 +143,17 @@ const LIFECYCLE_FIELDS = [
   "executor",
   "deadlineAt",
   "idleTimeoutMs",
+  "resolvedModel",
+  "modelSource",
+  "thinkingLevel",
+  "thinkingSource",
+  "tokenDetail",
   "usage",
+  "compactionCount",
   "usageUnavailable",
+  "exportedEnvironment",
+  "definitionHash",
+  "definitionPackageVersion",
   "herdrPaneId",
   "herdrAgentName",
   "exitCode",
@@ -166,6 +193,19 @@ const LEASE_REQUIRED = [
   "workspaceId",
   "root",
   "access",
+  "outcome",
+] as const;
+const COST_GATE_REQUIRED = [
+  "ledgerVersion",
+  "event",
+  "ts",
+  "episodeId",
+  "executionId",
+  "parentExecutionId",
+  "childId",
+  "gate",
+  "cost",
+  "ceiling",
   "outcome",
 ] as const;
 const LIFECYCLE_REQUIRED = [
@@ -208,9 +248,11 @@ const APPROVAL_USE_FIELDS = ["max", "remaining"] as const;
 
 type _CapabilityFields = Assert<Equal<keyof GrantRecord, (typeof CAPABILITY_FIELDS)[number]>>;
 type _LeaseFields = Assert<Equal<keyof WorkspaceLeaseEvent, (typeof LEASE_FIELDS)[number]>>;
+type _CostGateFields = Assert<Equal<keyof EpisodeCostGateEvent, (typeof COST_GATE_FIELDS)[number]>>;
 type _LifecycleFields = Assert<Equal<keyof ChildLifecycleEvent, (typeof LIFECYCLE_FIELDS)[number]>>;
 type _CapabilityRequired = Assert<Equal<RequiredKeys<CapabilityDecisionEvent>, (typeof CAPABILITY_REQUIRED)[number]>>;
 type _LeaseRequired = Assert<Equal<RequiredKeys<WorkspaceLeaseEvent>, (typeof LEASE_REQUIRED)[number]>>;
+type _CostGateRequired = Assert<Equal<RequiredKeys<EpisodeCostGateEvent>, (typeof COST_GATE_REQUIRED)[number]>>;
 type _LifecycleRequired = Assert<Equal<RequiredKeys<ChildLifecycleEvent>, (typeof LIFECYCLE_REQUIRED)[number]>>;
 type _CorrelationFields = Assert<Equal<keyof CorrelationMetadata, (typeof CORRELATION_FIELDS)[number]>>;
 type _RefusalFields = Assert<Equal<keyof StructuredRefusal, (typeof REFUSAL_FIELDS)[number]>>;
@@ -238,6 +280,8 @@ test("the published ledger v3 fixtures come from the production builders", async
   assert.deepEqual(Object.keys(generated).sort(), [
     "capability-decision.json",
     "child-lifecycle.json",
+    "episode-cost-gate.json",
+    "session-config.json",
     "workspace-lease.json",
   ]);
   for (const [name, event] of Object.entries(generated)) {
@@ -255,12 +299,18 @@ test("the closed v3 schema accepts fixtures and rejects v2, extra fields and mis
     );
   }
   const fixture = buildLedgerV3ContractFixtures()["capability-decision.json"];
-  const { episodeId: _episodeAddedLater, ...historicalFixture } = fixture;
-  assert.equal(validator.Check(historicalFixture), true, "retained records without episodeId remain valid");
+  const {
+    episodeId: _episodeAddedLater,
+    definitionHash: _definitionHashAddedLater,
+    definitionPackageVersion: _definitionPackageVersionAddedLater,
+    ...historicalFixture
+  } = fixture;
+  assert.equal(validator.Check(historicalFixture), true, "retained records without additive fields remain valid");
   assert.equal(validator.Check({ ...fixture, ledgerVersion: 2 }), false);
   assert.equal(validator.Check({ ...fixture, executionId: undefined }), false);
   assert.equal(validator.Check({ ...fixture, task: "forbidden ledger text" }), false);
   assert.equal(validator.Check({ ...fixture, agentType: "SECRET TASK TEXT" }), false);
+  assert.equal(validator.Check({ ...fixture, definitionPackageVersion: "SECRET TASK TEXT" }), false);
   assert.equal(validator.Check({ ...fixture, effective: ["SECRET OUTPUT TEXT"] }), false);
   assert.equal(
     validator.Check({
@@ -302,8 +352,26 @@ test("the closed v3 schema accepts fixtures and rejects v2, extra fields and mis
     "entire-run carries no selectors",
   );
   const lifecycle = buildLedgerV3ContractFixtures()["child-lifecycle.json"];
-  const { usage: _usageAddedLater, ...historicalLifecycle } = lifecycle;
+  const {
+    usage: _usageAddedLater,
+    resolvedModel: _modelAddedLater,
+    thinkingLevel: _thinkingAddedLater,
+    tokenDetail: _tokensAddedLater,
+    compactionCount: _compactionAddedLater,
+    exportedEnvironment: _environmentAddedLater,
+    definitionHash: _lifecycleDefinitionHashAddedLater,
+    definitionPackageVersion: _lifecycleDefinitionPackageVersionAddedLater,
+    ...historicalLifecycle
+  } = lifecycle;
   assert.equal(validator.Check(historicalLifecycle), true, "retained lifecycle records without usage remain valid");
+  assert.equal(
+    validator.Check({
+      ...lifecycle,
+      tokenDetail: { ...lifecycle.tokenDetail, inputTokens: 0 },
+    }),
+    false,
+    "provider token detail is null when unreported, never zero",
+  );
   const { deadlineAt: _deadline, ...startingWithoutDeadline } = { ...lifecycle, state: "starting" };
   assert.equal(validator.Check(startingWithoutDeadline), false);
   assert.equal(
@@ -354,6 +422,8 @@ test("the v3 schema exhaustively matches production fields and finite vocabulari
     capability_decision: "capabilityDecision",
     workspace_lease: "workspaceLease",
     child_lifecycle: "childLifecycle",
+    cost_gate: "costGate",
+    session_config: "sessionConfig",
   } as const satisfies Record<(typeof LEDGER_EVENT_KINDS)[number], string>;
   assert.deepEqual(
     schema.oneOf?.map((entry) => entry.$ref).sort(),
@@ -374,9 +444,11 @@ test("the v3 schema exhaustively matches production fields and finite vocabulari
   assert.deepEqual(fields("capabilityDecision"), [...CAPABILITY_FIELDS].sort());
   assert.deepEqual(fields("workspaceLease"), [...LEASE_FIELDS].sort());
   assert.deepEqual(fields("childLifecycle"), [...LIFECYCLE_FIELDS].sort());
+  assert.deepEqual(fields("costGate"), [...COST_GATE_FIELDS].sort());
   assert.deepEqual(required("capabilityDecision"), [...CAPABILITY_REQUIRED].sort());
   assert.deepEqual(required("workspaceLease"), [...LEASE_REQUIRED].sort());
   assert.deepEqual(required("childLifecycle"), [...LIFECYCLE_REQUIRED].sort());
+  assert.deepEqual(required("costGate"), [...COST_GATE_REQUIRED].sort());
   assert.deepEqual(fields("correlation"), [...CORRELATION_FIELDS].sort());
   assert.deepEqual(fields("refusal"), [...REFUSAL_FIELDS].sort());
   assert.deepEqual(fields("definitionDigest"), [...DEFINITION_FIELDS].sort());
@@ -410,6 +482,16 @@ test("every v3 builder emits explicit execution identity, including a running He
     outcome: "uncontended",
     now,
   });
+  const costGate = buildEpisodeCostGateEvent({
+    episodeId: "episode:00000000-0000-4000-8000-000000000099",
+    executionId,
+    parentExecutionId: null,
+    childId: "d0.1",
+    cost: 6,
+    ceiling: 5,
+    outcome: "stopped",
+    now,
+  });
   const lifecycle = buildChildLifecycleEvent({
     executionId,
     parentExecutionId: null,
@@ -421,11 +503,20 @@ test("every v3 builder emits explicit execution identity, including a running He
     herdrAgentName: "review-d0-1",
     now,
   });
-  for (const event of [decision, lease, lifecycle]) {
+  for (const event of [decision, lease, costGate, lifecycle]) {
     assert.equal(event.ledgerVersion, 3);
     assert.equal(event.executionId, executionId);
     assert.ok(Object.hasOwn(event, "parentExecutionId"));
   }
+  assert.equal(lifecycle.resolvedModel, null);
+  assert.equal(lifecycle.thinkingLevel, null);
+  assert.deepEqual(lifecycle.tokenDetail, {
+    inputTokens: null,
+    outputTokens: null,
+    cacheReadTokens: null,
+    cacheWriteTokens: null,
+    reasoningTokens: null,
+  });
 });
 
 test("regenerating the record contract restores the refusal enum and writes the envelope schema", async () => {

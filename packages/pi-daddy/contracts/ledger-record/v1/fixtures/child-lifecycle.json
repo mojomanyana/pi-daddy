@@ -14,6 +14,23 @@
   "signal": null,
   "aborted": true,
   "reason": "child did not start",
+  "resolvedModel": {
+    "provider": "openai-codex",
+    "modelId": "gpt-5.3-codex"
+  },
+  "modelSource": "definition",
+  "thinkingLevel": {
+    "level": "high",
+    "source": "advisor"
+  },
+  "thinkingSource": "advisor",
+  "tokenDetail": {
+    "inputTokens": 120,
+    "outputTokens": 30,
+    "cacheReadTokens": 20,
+    "cacheWriteTokens": 10,
+    "reasoningTokens": 5
+  },
   "usage": {
     "input": 120,
     "output": 30,
@@ -29,6 +46,14 @@
       "total": 0.2
     }
   },
+  "compactionCount": 1,
+  "exportedEnvironment": [
+    "PI_DADDY_EPISODE",
+    "PI_DADDY_DEFINITION",
+    "PI_DADDY_EXECUTION"
+  ],
+  "definitionHash": "7777777777777777777777777777777777777777777777777777777777777777",
+  "definitionPackageVersion": "2.3.1",
   "correlation": {
     "schema_version": "1.0",
     "run_id": "run-contract-001",

@@ -1,0 +1,14 @@
+{
+  "ledgerVersion": 3,
+  "event": "cost_gate",
+  "ts": "2026-08-20T12:00:02.500Z",
+  "episodeId": "episode:00000000-0000-4000-8000-000000000099",
+  "executionId": "exec:00000000-0000-4000-8000-000000000001",
+  "parentExecutionId": null,
+  "childId": "d0.1",
+  "gate": "episode_cost",
+  "cost": 5.2,
+  "ceiling": 5,
+  "outcome": "continued",
+  "newCeiling": 10
+}

@@ -35,7 +35,13 @@ import { assertEpisodeId } from "../kernel/episode-id.ts";
 import { assertLedgerV3Wire } from "./ledger-v3-validation.ts";
 
 export const LEDGER_VERSION = 3 as const;
-export const LEDGER_EVENT_KINDS = ["capability_decision", "workspace_lease", "child_lifecycle"] as const;
+export const LEDGER_EVENT_KINDS = [
+  "capability_decision",
+  "workspace_lease",
+  "child_lifecycle",
+  "cost_gate",
+  "session_config",
+] as const;
 export type LedgerEventKind = (typeof LEDGER_EVENT_KINDS)[number];
 export const LEDGER_GATE_OUTCOMES = ["declined", "dismissed", "no-ui", "error"] as const;
 export type LedgerGateOutcome = (typeof LEDGER_GATE_OUTCOMES)[number];
@@ -144,6 +150,10 @@ export interface GrantRecord extends LedgerEventBase {
    * it. Absent for a `tools:`-style delegation, which has no definition.
    */
   definitionDigest?: DefinitionDigest;
+  /** SHA-256 of the complete SKILL.md used by this child. */
+  definitionHash?: string;
+  /** Installed package version exposed for the definition, when available. */
+  definitionPackageVersion?: string;
   /**
    * The context handoff this child RECEIVED (ADR-0078): the mode whose capability survived, and what crossed.
    * Absent means nothing crossed, which is the default and the overwhelming majority of records.
@@ -232,6 +242,8 @@ export function buildRecord(args: {
   humanDenied?: boolean;
   gateOutcome?: PromptOutcomeKind;
   definitionDigest?: DefinitionDigest;
+  definitionHash?: string;
+  definitionPackageVersion?: string;
   handoff?: GrantRecord["handoff"];
   /** Where the child ran (ADR-0031). Required: the probe's answer survives nowhere else. */
   executor: ExecutorKind;
@@ -254,6 +266,9 @@ export function buildRecord(args: {
   }
   if (args.definitionDigest && !/^[a-f0-9]{64}$/i.test(args.definitionDigest.sha256)) {
     throw new TypeError("definitionDigest.sha256 must be a SHA-256 hex digest");
+  }
+  if (args.definitionHash && !/^[a-f0-9]{64}$/i.test(args.definitionHash)) {
+    throw new TypeError("definitionHash must be a SHA-256 hex digest");
   }
   // R-46: the scalar is a SUMMARY, emitted only when it cannot mislead. `buildRecord` derives it rather
   // than accepting it, so a call site cannot supply one that disagrees with the map beside it.
@@ -308,6 +323,8 @@ export function buildRecord(args: {
     // stops being a signal.
     ...(args.gateOutcome && args.gateOutcome !== "granted" ? { gateOutcome: args.gateOutcome } : {}),
     ...(args.definitionDigest ? { definitionDigest: args.definitionDigest } : {}),
+    ...(args.definitionHash ? { definitionHash: args.definitionHash } : {}),
+    ...(args.definitionPackageVersion ? { definitionPackageVersion: args.definitionPackageVersion } : {}),
   };
   if (args.taskDigest !== undefined) assertLedgerV3Wire(record);
   return record;
@@ -341,6 +358,9 @@ export function recordKindForEvent(event: { event?: string }): RecordKind {
       return "lifecycle";
     case "workspace_lease":
       return "lease";
+    case "cost_gate":
+    case "session_config":
+      return "fact";
     case "check_receipt": // retired kind, still imported from pre-format ledgers
       return "check";
     case "workflow_fact": // retired kind, still imported from pre-format ledgers
@@ -390,8 +410,12 @@ export {
   WORKSPACE_LEASE_OUTCOMES,
   WORKSPACE_RECOVERY_VALUES,
   buildChildLifecycleEvent,
+  buildEpisodeCostGateEvent,
+  buildSessionConfigEvent,
   buildWorkspaceLeaseEvent,
   type CapabilityDecisionEvent,
+  type EpisodeCostGateEvent,
+  type SessionConfigEvent,
   type ChildLifecycleEvent,
   type ChildLifecycleState,
   type ChildProcessSignal,

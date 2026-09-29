@@ -37,6 +37,7 @@ export async function planChain(
   steps: ChainStep[],
   executionIds: readonly string[],
   preflightModel?: (model: string | undefined) => StructuredRefusal | undefined,
+  resolveModel?: (step: ChainStep) => string | undefined,
 ): Promise<ChainPlan> {
   const requests: GateRequest[] = [];
   const uses = new Map<number, Set<string>>();
@@ -49,12 +50,13 @@ export async function planChain(
   const { stageHandoff: _stageHandoff, ...context } = await session.delegationContext();
 
   for (const [index, step] of steps.entries()) {
+    const model = resolveModel?.(step) ?? step.model;
     const plan = planDelegation(
       {
         task: step.task,
         agent: step.agent,
         tools: step.tools,
-        model: step.model,
+        model,
         thinking: step.thinking,
         context: step.context,
         correlation: step.workspace
@@ -71,7 +73,7 @@ export async function planChain(
       },
     );
 
-    const modelRefusal = preflightModel?.(step.model);
+    const modelRefusal = preflightModel?.(model);
     if (modelRefusal) {
       return {
         requests: [],

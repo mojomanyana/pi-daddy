@@ -115,6 +115,12 @@ keyed `capability@subject`). Approvals inherit down the subtree intersected with
 crosses a spawn. The task text is never stored. `/grants approvals` lists what is persisted; `/grants revoke
 <capability>@<definition>` or `--all` removes it. The store lives in pi's agent directory, not in the workspace.
 
+`episodeCostCeiling` in `.pi/pi-daddy/settings.json` sets the cumulative episode cost gate in USD (default `5`).
+A delegation may override it with `episodeCostCeiling`. At 50% pi-daddy warns once. When provider-reported cost
+crosses the ceiling, a directly executed child is paused while the operator enters a higher ceiling or stops it;
+Herdr cannot pause a pane, so it stops at the crossing. If the provider reports no usage, pi-daddy warns once for
+the episode and cannot apply the gate.
+
 ## The ledger
 
 `.pi/pi-daddy/grants.jsonl` holds every capability decision, child lifecycle and workspace lease. Each line is a
@@ -137,8 +143,10 @@ not a sandbox, not path confinement and not a proof of anything a child did.
 
 A child runs as a captured subprocess, or in a Herdr pane when a reachable Herdr server is probed at session start
 (`PI_DADDY_HERDR=1` demands it, `0` refuses it). Panes opened by a run are reaped when the operator gets their prompt
-back. `pi-daddy-dashboard` renders a ledger or activity timeline read-only in a terminal; `/grants dashboard` opens it
-in a Herdr pane beside the session. It is a renderer in a separate process and never affects enforcement.
+back. `pi-daddy-dashboard` renders a ledger or activity timeline in a terminal; `/grants dashboard` opens it in a
+Herdr pane beside the session. Its execution history and current episode cost are read-only. The session-model table
+accepts `m <definition> <provider:model> <thinking>` (or `m all ...`) over a private session-local socket and applies
+the same in-memory overrides and `session_config` audit event as `/grants models`; it never affects enforcement.
 
 ## Bounds and configuration
 
@@ -153,6 +161,36 @@ hours), `PI_DADDY_WORKSPACE_REGISTRY`, `PI_DADDY_EXECUTION_ARCHIVE`
 refused if set by hand. Refusals are thrown with stable codes (`CAPABILITY_ESCALATION`, `GATED_UNAPPROVED`,
 `DEPTH_EXCEEDED`, `FANOUT_EXCEEDED`, `WORKSPACE_NOT_AUTHORIZED`, `CHILD_TIMED_OUT`, `LEDGER_DAMAGED`, …); the full
 enumeration is `REFUSAL_CODES` and it is pinned by the contract.
+
+### Child work attribution
+
+Every governed child receives `PI_DADDY_EPISODE` (the ledger episode), `PI_DADDY_DEFINITION` (the definition name),
+and `PI_DADDY_EXECUTION` (the lifecycle execution id). These are attribution metadata, not authority.
+
+### Per-definition model and thinking
+
+Child runtime defaults are reviewable beside each definition in `.pi/pi-daddy/settings.json`. Explicit tool
+arguments win, followed by the in-memory session override (reserved for PD-7), the definition entry, global
+defaults, and finally pi's own selection. An enabled effort advisor fills thinking below explicit/session choices
+and above committed defaults.
+
+```json
+{
+  "defaults": { "model": "openai-codex:gpt-5.6-sol", "thinking": "medium" },
+  "definitions": [
+    {
+      "name": "review",
+      "declares": ["tool:read"],
+      "spawnable": true,
+      "model": "anthropic:claude-opus-4-6",
+      "thinking": "high"
+    }
+  ]
+}
+```
+
+Valid thinking values are `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`. `/grants` shows the
+resolved value and source for every displayed definition.
 
 ## Advisors, and what leaves the machine
 

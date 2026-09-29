@@ -12,6 +12,12 @@
     },
     {
       "$ref": "#/$defs/childLifecycle"
+    },
+    {
+      "$ref": "#/$defs/costGate"
+    },
+    {
+      "$ref": "#/$defs/sessionConfig"
     }
   ],
   "$defs": {
@@ -409,6 +415,14 @@
         "definitionDigest": {
           "$ref": "#/$defs/definitionDigest"
         },
+        "definitionHash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "definitionPackageVersion": {
+          "type": "string",
+          "pattern": "^[0-9A-Za-z][0-9A-Za-z.+_-]{0,127}$"
+        },
         "handoff": {
           "type": "object",
           "description": "the context handoff this child received (ADR-0078); absent means nothing crossed",
@@ -729,8 +743,41 @@
           "minimum": 1,
           "description": "the inactivity bound in milliseconds that governed this child beside the deadlineAt ceiling"
         },
+        "resolvedModel": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/resolvedModel"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "modelSource": {
+          "$ref": "#/$defs/modelSource"
+        },
+        "thinkingLevel": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/thinkingLevel"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "thinkingSource": {
+          "$ref": "#/$defs/thinkingSource"
+        },
+        "tokenDetail": {
+          "$ref": "#/$defs/tokenDetail"
+        },
         "usage": {
           "$ref": "#/$defs/childUsage"
+        },
+        "compactionCount": {
+          "type": "integer",
+          "minimum": 0
         },
         "usageUnavailable": {
           "enum": [
@@ -738,6 +785,27 @@
             "session-invalid",
             "usage-missing"
           ]
+        },
+        "exportedEnvironment": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "PI_DADDY_EPISODE",
+              "PI_DADDY_DEFINITION",
+              "PI_DADDY_EXECUTION"
+            ]
+          }
+        },
+        "definitionHash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "definitionPackageVersion": {
+          "type": "string",
+          "pattern": "^[0-9A-Za-z][0-9A-Za-z.+_-]{0,127}$"
         },
         "herdrPaneId": {
           "$ref": "#/$defs/ledgerDisplayIdentifier"
@@ -810,6 +878,106 @@
               }
             }
           }
+        }
+      ]
+    },
+    "resolvedModel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "modelId"
+      ],
+      "properties": {
+        "provider": {
+          "type": "string",
+          "minLength": 1
+        },
+        "modelId": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "thinkingLevel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "level",
+        "source"
+      ],
+      "properties": {
+        "level": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "enum": [
+            "explicit",
+            "session",
+            "advisor",
+            "definition",
+            "global",
+            "pi"
+          ]
+        }
+      }
+    },
+    "modelSource": {
+      "enum": [
+        "explicit",
+        "session",
+        "definition",
+        "global",
+        "pi"
+      ]
+    },
+    "thinkingSource": {
+      "enum": [
+        "explicit",
+        "session",
+        "advisor",
+        "definition",
+        "global",
+        "pi"
+      ]
+    },
+    "tokenDetail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "inputTokens",
+        "outputTokens",
+        "cacheReadTokens",
+        "cacheWriteTokens",
+        "reasoningTokens"
+      ],
+      "properties": {
+        "inputTokens": {
+          "$ref": "#/$defs/reportedTokenCount"
+        },
+        "outputTokens": {
+          "$ref": "#/$defs/reportedTokenCount"
+        },
+        "cacheReadTokens": {
+          "$ref": "#/$defs/reportedTokenCount"
+        },
+        "cacheWriteTokens": {
+          "$ref": "#/$defs/reportedTokenCount"
+        },
+        "reasoningTokens": {
+          "$ref": "#/$defs/reportedTokenCount"
+        }
+      }
+    },
+    "reportedTokenCount": {
+      "oneOf": [
+        {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        {
+          "type": "null"
         }
       ]
     },
@@ -887,6 +1055,134 @@
     "executionId": {
       "type": "string",
       "pattern": "^exec:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+    },
+    "costGate": {
+      "type": "object",
+      "properties": {
+        "ledgerVersion": {
+          "const": 3
+        },
+        "event": {
+          "const": "cost_gate"
+        },
+        "ts": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "episodeId": {
+          "$ref": "#/$defs/episodeId"
+        },
+        "executionId": {
+          "$ref": "#/$defs/executionId"
+        },
+        "parentExecutionId": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/executionId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "childId": {
+          "$ref": "#/$defs/ledgerDisplayIdentifier"
+        },
+        "gate": {
+          "const": "episode_cost"
+        },
+        "cost": {
+          "type": "number",
+          "minimum": 0
+        },
+        "ceiling": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "outcome": {
+          "enum": [
+            "continued",
+            "stopped"
+          ]
+        },
+        "newCeiling": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      },
+      "required": [
+        "ledgerVersion",
+        "event",
+        "ts",
+        "episodeId",
+        "executionId",
+        "parentExecutionId",
+        "childId",
+        "gate",
+        "cost",
+        "ceiling",
+        "outcome"
+      ],
+      "additionalProperties": false
+    },
+    "sessionConfig": {
+      "type": "object",
+      "properties": {
+        "ledgerVersion": {
+          "const": 3
+        },
+        "event": {
+          "const": "session_config"
+        },
+        "ts": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "episodeId": {
+          "$ref": "#/$defs/episodeId"
+        },
+        "outcome": {
+          "enum": [
+            "kept",
+            "changed"
+          ]
+        },
+        "trigger": {
+          "enum": [
+            "first-delegation",
+            "grants-models"
+          ]
+        },
+        "overrides": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "model": {
+                "type": "string",
+                "minLength": 1
+              },
+              "thinking": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "model",
+              "thinking"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "ledgerVersion",
+        "event",
+        "ts",
+        "episodeId",
+        "outcome",
+        "trigger",
+        "overrides"
+      ],
+      "additionalProperties": false
     }
   }
 }

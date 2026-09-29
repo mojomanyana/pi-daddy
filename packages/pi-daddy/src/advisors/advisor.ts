@@ -41,6 +41,17 @@ export interface AdviceRecord {
   /** Present only when advice came back. */
   answers?: Readonly<Record<string, { value: string | number | boolean; confidence?: number }>>;
   model?: string;
+  resolvedModel: { provider: string; modelId: string } | null;
+  modelSource: "explicit" | "session" | "definition" | "global" | "pi";
+  thinkingLevel: string | null;
+  thinkingSource: "explicit" | "session" | "advisor" | "definition" | "global" | "pi";
+  tokenDetail: {
+    inputTokens: number | null;
+    outputTokens: number | null;
+    cacheReadTokens: number | null;
+    cacheWriteTokens: number | null;
+    reasoningTokens: number | null;
+  };
   /**
    * Why there is no advice. `declined` means the advisor answered with nothing; `error` means it could not be
    * reached or its response was unrecognised; `cancelled` means the CALLER went away, which is not the advisor's
@@ -49,9 +60,22 @@ export interface AdviceRecord {
   outcome: "answered" | "disabled" | "timeout" | "error" | "declined" | "cancelled";
 }
 
+export interface AdviceAttribution {
+  resolvedModel: { provider: string; modelId: string } | null;
+  modelSource: AdviceRecord["modelSource"];
+  thinkingLevel: string | null;
+  thinkingSource: AdviceRecord["thinkingSource"];
+}
+
 export interface Advisor {
   task(task: string): string | TaskDigest;
-  ask(purpose: string, request: AdviceRequest, signal?: AbortSignal, executionId?: string): Promise<Advice | null>;
+  ask(
+    purpose: string,
+    request: AdviceRequest,
+    signal?: AbortSignal,
+    executionId?: string,
+    attribution?: AdviceAttribution | ((advice: Advice | null) => AdviceAttribution),
+  ): Promise<Advice | null>;
 }
 
 export function createAdvisor(input: {
@@ -74,8 +98,17 @@ export function createAdvisor(input: {
       }
       return digestTask(task);
     },
-    async ask(purpose, request, signal, executionId) {
+    async ask(purpose, request, signal, executionId, attribution) {
       const started = Date.now();
+      const attributionFor = (advice: Advice | null): AdviceAttribution =>
+        typeof attribution === "function"
+          ? attribution(advice)
+          : (attribution ?? {
+              resolvedModel: advice?.resolvedModel ?? null,
+              modelSource: "pi",
+              thinkingLevel: null,
+              thinkingSource: "pi",
+            });
       const base = {
         ...(input.episodeId ? { episodeId: input.episodeId } : {}),
         ...(executionId ? { executionId } : {}),
@@ -83,6 +116,14 @@ export function createAdvisor(input: {
         purpose,
         decider: input.decider.name,
         questions: Object.keys(request.questions),
+        ...attributionFor(null),
+        tokenDetail: {
+          inputTokens: null,
+          outputTokens: null,
+          cacheReadTokens: null,
+          cacheWriteTokens: null,
+          reasoningTokens: null,
+        },
       };
       const write = async (entry: AdviceRecord) => {
         try {
@@ -125,6 +166,8 @@ export function createAdvisor(input: {
             ]),
           ),
           ...(advice.model ? { model: advice.model } : {}),
+          ...attributionFor(advice),
+          ...(advice.tokenDetail ? { tokenDetail: advice.tokenDetail } : {}),
         });
         return advice;
       } catch {

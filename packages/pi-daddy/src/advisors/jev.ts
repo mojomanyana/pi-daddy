@@ -93,8 +93,41 @@ export function parseAdvice(request: AdviceRequest, body: unknown): Advice | nul
     if (!parsed) return null;
     answers[key] = parsed;
   }
-  return { answers, ...(typeof envelope.model === "string" ? { model: envelope.model } : {}) };
+  const model = typeof envelope.model === "string" ? envelope.model : undefined;
+  const provider = typeof envelope.provider === "string" ? envelope.provider : undefined;
+  const tokenDetail = parseTokenDetail(envelope.usage);
+  return {
+    answers,
+    ...(model ? { model } : {}),
+    ...(model && provider ? { resolvedModel: { provider, modelId: model } } : {}),
+    ...(tokenDetail ? { tokenDetail } : {}),
+  };
 }
+
+function parseTokenDetail(value: unknown): Advice["tokenDetail"] | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const usage = value as Record<string, unknown>;
+  const details = object(usage.input_tokens_details ?? usage.prompt_tokens_details);
+  const outputDetails = object(usage.output_tokens_details ?? usage.completion_tokens_details);
+  const read = (...keys: string[]): number | null => {
+    const reported = keys.map((key) => usage[key]).find((entry) => typeof entry === "number" && Number.isFinite(entry));
+    return typeof reported === "number" && reported > 0 ? reported : null;
+  };
+  const nested = (source: Record<string, unknown> | undefined, key: string): number | null => {
+    const reported = source?.[key];
+    return typeof reported === "number" && Number.isFinite(reported) && reported > 0 ? reported : null;
+  };
+  return {
+    inputTokens: read("input_tokens", "prompt_tokens"),
+    outputTokens: read("output_tokens", "completion_tokens"),
+    cacheReadTokens: read("cache_read_tokens") ?? nested(details, "cached_tokens"),
+    cacheWriteTokens: read("cache_write_tokens"),
+    reasoningTokens: read("reasoning_tokens") ?? nested(outputDetails, "reasoning_tokens"),
+  };
+}
+
+const object = (value: unknown): Record<string, unknown> | undefined =>
+  typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
 
 export interface JevConfig {
   apiKey: string;

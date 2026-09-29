@@ -68,6 +68,15 @@ test("the default advisor is off, and asking it still writes a record", async ()
   assert.equal(records[0].outcome, "disabled");
   assert.equal(records[0].answered, false);
   assert.deepEqual(records[0].questions, ["keep", "which", "urgency"]);
+  assert.equal(records[0].resolvedModel, null);
+  assert.equal(records[0].thinkingLevel, null);
+  assert.deepEqual(records[0].tokenDetail, {
+    inputTokens: null,
+    outputTokens: null,
+    cacheReadTokens: null,
+    cacheWriteTokens: null,
+    reasoningTokens: null,
+  });
 });
 
 test("a record names the decision and the answers, and never the state", async () => {
@@ -83,6 +92,14 @@ test("a record names the decision and the answers, and never the state", async (
         urgency: { kind: "score", value: 2, level: "high" },
       },
       model: "typesafe/jev-1.13-20260917",
+      resolvedModel: { provider: "openrouter", modelId: "typesafe/jev-1.13-20260917" },
+      tokenDetail: {
+        inputTokens: 120,
+        outputTokens: 5,
+        cacheReadTokens: null,
+        cacheWriteTokens: null,
+        reasoningTokens: null,
+      },
     }),
   };
   const advisor = createAdvisor({ decider, record: (r) => void records.push(r), enabled: true });
@@ -92,6 +109,18 @@ test("a record names the decision and the answers, and never the state", async (
   assert.doesNotMatch(serialised, /do not ship this/, "the state must never reach the record");
   assert.equal(records[0].outcome, "answered");
   assert.equal(records[0].model, "typesafe/jev-1.13-20260917");
+  assert.deepEqual(records[0].resolvedModel, {
+    provider: "openrouter",
+    modelId: "typesafe/jev-1.13-20260917",
+  });
+  assert.equal(records[0].thinkingLevel, null, "the Decisions response does not expose an effective level");
+  assert.deepEqual(records[0].tokenDetail, {
+    inputTokens: 120,
+    outputTokens: 5,
+    cacheReadTokens: null,
+    cacheWriteTokens: null,
+    reasoningTokens: null,
+  });
   assert.deepEqual(records[0].answers?.keep, { value: true, confidence: 0.9 });
   assert.deepEqual(records[0].answers?.which, { value: "b" }, "a confidence that was not reported is not invented");
 });
@@ -201,11 +230,30 @@ test("a dead endpoint reaches the caller as no advice but is RECORDED as an erro
     apiKey: "secret-key",
     fetch: async (url, init) => {
       sent.push({ url: String(url), init: init as RequestInit });
-      return new Response(JSON.stringify({ answers: { keep: true, which: "a", urgency: 1 } }), { status: 200 });
+      return new Response(
+        JSON.stringify({
+          answers: { keep: true, which: "a", urgency: 1 },
+          provider: "openrouter",
+          model: "typesafe/jev-1.13-20260917",
+          usage: { input_tokens: 40, output_tokens: 2, cache_read_tokens: 0 },
+        }),
+        { status: 200 },
+      );
     },
   });
   const advice = await ok.decide(REQUEST);
   assert.equal(advice?.answers.keep.value, true);
+  assert.deepEqual(advice?.resolvedModel, {
+    provider: "openrouter",
+    modelId: "typesafe/jev-1.13-20260917",
+  });
+  assert.deepEqual(advice?.tokenDetail, {
+    inputTokens: 40,
+    outputTokens: 2,
+    cacheReadTokens: null,
+    cacheWriteTokens: null,
+    reasoningTokens: null,
+  });
   assert.equal(sent[0].url, JEV_ENDPOINT);
   assert.equal((sent[0].init.headers as Record<string, string>).authorization, "Bearer secret-key");
 });

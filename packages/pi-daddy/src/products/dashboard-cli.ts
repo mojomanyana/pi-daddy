@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * `pi-daddy-dashboard` — the read-only view of one ledger or activity timeline.
+ * `pi-daddy-dashboard` — the view of one ledger or activity timeline plus session model controls.
  *
- * It reads a file and renders it; it holds no authority and connects to nothing. The Herdr pane opened by
- * `/grants dashboard` runs exactly this program with the ledger path in its environment.
+ * Ledger and cost views are read-only. When the owning pi session supplies its private endpoint, model edits are
+ * sent back to that process and use the same in-memory mutation and audit path as `/grants models`.
  */
 import { realpathSync } from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -22,6 +22,7 @@ import {
   type TimelineFilter,
 } from "./activity-timeline.ts";
 import { createDashboardDisplayControls } from "./dashboard-display-controls.ts";
+import { dashboardSessionRequest, type DashboardSessionSnapshot } from "./dashboard-session-client.ts";
 import { adoptLegacyEnvironment, ENV_LEDGER, legacyEnvironmentWarning } from "../kernel/env-names.ts";
 import { projectLedgerPath } from "../kernel/project-paths.ts";
 
@@ -29,6 +30,8 @@ export const DASHBOARD_PROTOCOL_VERSION = 1 as const;
 export const ENV_DASHBOARD_LEDGER = ENV_LEDGER; // one ledger path variable for children and the dashboard (ADR-0076 PR 3b)
 export const ENV_DASHBOARD_PROTOCOL = "PI_DADDY_DASHBOARD_PROTOCOL";
 export const ENV_DASHBOARD_KEY = "PI_DADDY_DASHBOARD_KEY";
+export const ENV_DASHBOARD_SESSION_SOCKET = "PI_DADDY_DASHBOARD_SESSION_SOCKET";
+export const ENV_DASHBOARD_SESSION_TOKEN = "PI_DADDY_DASHBOARD_SESSION_TOKEN";
 export const DASHBOARD_REFRESH_MS = 250;
 
 export interface DashboardFrameOptions {
@@ -43,6 +46,7 @@ export interface DashboardFrameOptions {
   activityDetail?: { taskKey: string; field: "prompt" | "final" };
   activityAliases?: ActivityTimelineAliases;
   now?: Date;
+  session?: DashboardSessionSnapshot;
 }
 
 function shellQuote(value: string): string {
@@ -139,6 +143,8 @@ export async function dashboardFrame(options: DashboardFrameOptions): Promise<st
         width: options.width,
         details: options.details,
         history: options.history,
+        modelRows: options.session?.rows,
+        episodeCost: options.session ? { cost: options.session.cost, ceiling: options.session.ceiling } : undefined,
       });
   return waiting ? `${rendered}\n\nwaiting for ledger ${ledgerPath}` : rendered;
 }
@@ -175,6 +181,8 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
   const rawProtocol = env[ENV_DASHBOARD_PROTOCOL]?.trim();
   const protocol = rawProtocol === undefined || rawProtocol === "" ? undefined : Number(rawProtocol);
   const key = env[ENV_DASHBOARD_KEY]?.trim();
+  const sessionSocket = env[ENV_DASHBOARD_SESSION_SOCKET]?.trim();
+  const sessionToken = env[ENV_DASHBOARD_SESSION_TOKEN]?.trim();
   process.title = `pi-daddy-dashboard${key ? `:${key.slice(0, 12)}` : ""}`;
 
   const display = createDashboardDisplayControls(cli.details, true);
@@ -182,6 +190,13 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
   let notice = "";
   let input: ReturnType<typeof createInterface> | null = null;
   const draw = async (clear: boolean): Promise<void> => {
+    let session: DashboardSessionSnapshot | undefined;
+    if (sessionSocket && sessionToken)
+      try {
+        session = await dashboardSessionRequest(sessionSocket, sessionToken, { action: "get" });
+      } catch (error) {
+        notice ||= `session controls unavailable: ${error instanceof Error ? error.message : String(error)}`;
+      }
     const view = await dashboardFrame({
       cwd,
       ledgerPath,
@@ -190,6 +205,7 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
       width: process.stdout.columns || 80,
       ...display.state,
       activityAliases: display.aliases,
+      session,
     });
     const frame = notice ? `${notice}\n\n${view}` : view;
     if (frame === previous && !clear) return;
@@ -217,8 +233,20 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
     });
   };
   input.on("line", (line) => {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("m ") && sessionSocket && sessionToken) {
+      void dashboardSessionRequest(sessionSocket, sessionToken, { action: "set", edits: trimmed.slice(2).trim() })
+        .then(() => {
+          notice = "session model defaults updated";
+        })
+        .catch((error) => {
+          notice = `model edit refused: ${error instanceof Error ? error.message : String(error)}`;
+        })
+        .finally(redraw);
+      return;
+    }
     // Rule 8: a line the display controls do not understand is said so, never swallowed.
-    notice = display.input(line) ? "" : `not a display command: ${JSON.stringify(line.trim())}. ${display.prompt()}`;
+    notice = display.input(line) ? "" : `not a display command: ${JSON.stringify(trimmed)}. ${display.prompt()}`;
     redraw();
   });
   const timer = setInterval(redraw, DASHBOARD_REFRESH_MS);

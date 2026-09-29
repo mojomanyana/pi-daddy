@@ -63,6 +63,14 @@ export const CHILD_PROCESS_SIGNALS = [
 ] as const satisfies readonly NodeJS.Signals[];
 export type ChildProcessSignal = (typeof CHILD_PROCESS_SIGNALS)[number];
 
+export interface ChildTokenDetail {
+  inputTokens: number | null;
+  outputTokens: number | null;
+  cacheReadTokens: number | null;
+  cacheWriteTokens: number | null;
+  reasoningTokens: number | null;
+}
+
 export interface ChildUsageTotals {
   input: number;
   output: number;
@@ -140,10 +148,29 @@ export interface ChildLifecycleEvent extends LedgerEventBase {
   reason?: string;
   /** The inactivity bound (ms) that governed this child beside the `deadlineAt` ceiling (PR 3e). */
   idleTimeoutMs?: number;
+  /** The provider/model selected for the child, confirmed from its persisted assistant message when available. */
+  resolvedModel?: { provider: string; modelId: string } | null;
+  modelSource?: "explicit" | "session" | "definition" | "global" | "pi";
+  /** The persisted effective level and its selection source, when pi reports one. */
+  thinkingLevel?: {
+    level: string;
+    source: "explicit" | "session" | "advisor" | "definition" | "global" | "pi";
+  } | null;
+  thinkingSource?: "explicit" | "session" | "advisor" | "definition" | "global" | "pi";
+  /** Provider-reported token dimensions; zero is normalised to null rather than invented as reported usage. */
+  tokenDetail?: ChildTokenDetail;
   /** Aggregate model usage read from the child's pi session file after it stopped. */
   usage?: ChildUsageTotals;
+  /** Number of compaction entries in the child's current turn, when the session file was readable. */
+  compactionCount?: number;
   /** Why totals could not be read; a fixed code, never transcript content. */
   usageUnavailable?: "session-missing" | "session-invalid" | "usage-missing";
+  /** Child-facing identity variables exported at the process boundary. */
+  exportedEnvironment?: string[];
+  /** SHA-256 of the complete SKILL.md used by this child. */
+  definitionHash?: string;
+  /** Installed package version exposed for the definition, when available. */
+  definitionPackageVersion?: string;
 }
 
 export type CapabilityDecisionEvent = GrantRecord & {
@@ -154,7 +181,79 @@ export type CapabilityDecisionEvent = GrantRecord & {
   taskDigest: string;
 };
 
-export type RuntimeLedgerEvent = CapabilityDecisionEvent | WorkspaceLeaseEvent | ChildLifecycleEvent;
+export interface EpisodeCostGateEvent extends Omit<LedgerEventBase, "episodeId" | "correlation"> {
+  ledgerVersion: typeof LEDGER_VERSION;
+  event: "cost_gate";
+  episodeId: string;
+  executionId: string;
+  parentExecutionId: string | null;
+  childId: string;
+  gate: "episode_cost";
+  cost: number;
+  ceiling: number;
+  outcome: "continued" | "stopped";
+  newCeiling?: number;
+}
+
+export interface SessionConfigEvent extends Omit<LedgerEventBase, "correlation"> {
+  ledgerVersion: typeof LEDGER_VERSION;
+  event: "session_config";
+  episodeId: string;
+  outcome: "kept" | "changed";
+  trigger: "first-delegation" | "grants-models";
+  overrides: Record<string, { model: string; thinking: string }>;
+}
+
+export type RuntimeLedgerEvent =
+  CapabilityDecisionEvent | WorkspaceLeaseEvent | ChildLifecycleEvent | EpisodeCostGateEvent | SessionConfigEvent;
+
+export function buildSessionConfigEvent(args: {
+  episodeId: string;
+  outcome: "kept" | "changed";
+  trigger: "first-delegation" | "grants-models";
+  overrides: ReadonlyMap<string, { model?: string; thinking?: string }>;
+  now: Date;
+}): SessionConfigEvent {
+  return assertLedgerV3Wire({
+    ledgerVersion: LEDGER_VERSION,
+    event: "session_config",
+    ts: args.now.toISOString(),
+    episodeId: args.episodeId,
+    outcome: args.outcome,
+    trigger: args.trigger,
+    overrides: Object.fromEntries(
+      [...args.overrides].map(([name, value]) => [name, { model: value.model!, thinking: value.thinking! }]),
+    ),
+  });
+}
+
+export function buildEpisodeCostGateEvent(args: {
+  episodeId: string;
+  executionId: string;
+  parentExecutionId: string | null;
+  childId: string;
+  cost: number;
+  ceiling: number;
+  outcome: "continued" | "stopped";
+  newCeiling?: number;
+  now: Date;
+}): EpisodeCostGateEvent {
+  assertEventIdentity(args);
+  return assertLedgerV3Wire({
+    ledgerVersion: LEDGER_VERSION,
+    event: "cost_gate",
+    ts: args.now.toISOString(),
+    episodeId: args.episodeId,
+    executionId: args.executionId,
+    parentExecutionId: args.parentExecutionId,
+    childId: args.childId,
+    gate: "episode_cost",
+    cost: args.cost,
+    ceiling: args.ceiling,
+    outcome: args.outcome,
+    ...(args.newCeiling !== undefined ? { newCeiling: args.newCeiling } : {}),
+  });
+}
 
 export function buildWorkspaceLeaseEvent(args: {
   episodeId?: string;
@@ -212,12 +311,24 @@ export function buildChildLifecycleEvent(args: {
   aborted?: boolean;
   truncated?: boolean;
   reason?: string;
+  resolvedModel?: { provider: string; modelId: string };
+  modelSource?: "explicit" | "session" | "definition" | "global" | "pi";
+  effectiveThinkingLevel?: string;
+  thinkingSource?: "explicit" | "session" | "advisor" | "definition" | "global" | "pi";
+  tokenDetail?: ChildTokenDetail;
   usage?: ChildUsageTotals;
+  compactionCount?: number;
   usageUnavailable?: "session-missing" | "session-invalid" | "usage-missing";
+  exportedEnvironment?: readonly string[];
+  definitionHash?: string;
+  definitionPackageVersion?: string;
   correlation?: CorrelationMetadata;
   now: Date;
 }): ChildLifecycleEvent {
   assertEventIdentity(args);
+  if (args.definitionHash && !/^[a-f0-9]{64}$/i.test(args.definitionHash)) {
+    throw new TypeError("definitionHash must be a SHA-256 hex digest");
+  }
   return assertLedgerV3Wire({
     ledgerVersion: LEDGER_VERSION,
     event: "child_lifecycle",
@@ -238,8 +349,28 @@ export function buildChildLifecycleEvent(args: {
     ...(args.aborted ? { aborted: true } : {}),
     ...(args.truncated ? { truncated: true } : {}),
     ...(args.reason ? { reason: args.reason } : {}),
+    resolvedModel: args.resolvedModel ? structuredClone(args.resolvedModel) : null,
+    ...(args.modelSource ? { modelSource: args.modelSource } : {}),
+    thinkingLevel:
+      args.effectiveThinkingLevel && args.thinkingSource
+        ? { level: args.effectiveThinkingLevel, source: args.thinkingSource }
+        : null,
+    ...(args.thinkingSource ? { thinkingSource: args.thinkingSource } : {}),
+    tokenDetail: args.tokenDetail
+      ? structuredClone(args.tokenDetail)
+      : {
+          inputTokens: null,
+          outputTokens: null,
+          cacheReadTokens: null,
+          cacheWriteTokens: null,
+          reasoningTokens: null,
+        },
     ...(args.usage ? { usage: structuredClone(args.usage) } : {}),
+    ...(args.compactionCount !== undefined ? { compactionCount: args.compactionCount } : {}),
     ...(args.usageUnavailable ? { usageUnavailable: args.usageUnavailable } : {}),
+    ...(args.exportedEnvironment ? { exportedEnvironment: [...args.exportedEnvironment] } : {}),
+    ...(args.definitionHash ? { definitionHash: args.definitionHash } : {}),
+    ...(args.definitionPackageVersion ? { definitionPackageVersion: args.definitionPackageVersion } : {}),
     ...(args.correlation ? { correlation: structuredClone(args.correlation) } : {}),
   });
 }

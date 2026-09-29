@@ -1,0 +1,14 @@
+{
+  "ledgerVersion": 3,
+  "event": "session_config",
+  "ts": "2026-08-20T12:00:02.750Z",
+  "episodeId": "episode:00000000-0000-4000-8000-000000000099",
+  "outcome": "changed",
+  "trigger": "first-delegation",
+  "overrides": {
+    "review": {
+      "model": "anthropic/claude-opus-4-6",
+      "thinking": "high"
+    }
+  }
+}

@@ -10,6 +10,9 @@ node_modules/
 # packages. Scratch for a single run — the git history is the durable record now.
 .superpowers/
 
+# Project-local pi runtime state.
+.pi/
+
 # Persisted capability approvals (R-27).
 #
 # This is NOT ordinary noise-filtering. `.pi/grants-approvals.json` records that a

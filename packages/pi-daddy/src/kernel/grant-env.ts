@@ -140,6 +140,8 @@ export interface ProjectSettings {
   ledger: string;
   /** Gated by default (ADR-0012): closed under subsumption, so gating tool:write also gates tool:bash. */
   gatedByDefault: Capability[];
+  /** Cumulative provider-reported USD cost at which the episode asks whether to continue. */
+  episodeCostCeiling: number;
 }
 
 export function buildProjectSettings(input: GrantEnvInput): ProjectSettings {
@@ -166,6 +168,7 @@ export function buildProjectSettings(input: GrantEnvInput): ProjectSettings {
     cautions: [...input.cautions],
     ledger: PROJECT_FILES.ledger,
     gatedByDefault: ["tool:bash"],
+    episodeCostCeiling: 5,
   };
 }
 

@@ -21,8 +21,13 @@ test("the installed-style symlink actually invokes the dashboard bin", async () 
   const cwd = await tempDir("dashboard-bin-");
   const link = join(cwd, "pi-daddy-dashboard");
   await symlink(join(import.meta.dirname, "..", "src", "products", "dashboard-cli.ts"), link);
-  const output = execFileSync(process.execPath, [link, "--once", "--no-color"], { cwd, encoding: "utf8" });
-  assert.match(output, /pi-daddy is missing or its ledger is inactive/);
+  const env = {
+    ...process.env,
+    PI_DADDY_LEDGER: join(cwd, "grants.jsonl"),
+    PI_DADDY_ACTIVITY_TIMELINE: join(cwd, "activity.jsonl"),
+  };
+  const output = execFileSync(process.execPath, [link, "--once", "--no-color"], { cwd, env, encoding: "utf8" });
+  assert.match(output, /No governed executions recorded yet/);
 });
 
 test("a plugin opened before pi-daddy explains exact setup without modifying pi", async () => {

@@ -10,12 +10,14 @@ import {
   ENV_GRANT,
   ENV_LEDGER,
   ENV_MAX_DEPTH,
+  GRANT_ENV_KEYS,
   mergeChildEnv,
   observeToolNames,
   parseList,
 } from "../src/kernel/propagation.ts";
 import { planDelegation } from "../src/kernel/delegate.ts";
 import { isWellFormedCapability } from "../src/kernel/capabilities.ts";
+import { ENV_CHILD_DEFINITION, ENV_CHILD_EPISODE, ENV_CHILD_EXECUTION } from "../src/kernel/env-names.ts";
 
 test("the race is gone by construction: child env depends only on parent-level facts", () => {
   // Two different concurrent spawns from the same parent must inherit byte-identical environments.
@@ -314,6 +316,10 @@ test("an approved capability the child was NOT granted never reaches it", () => 
 });
 
 test("mergeChildEnv lets the plan be the only source of every governance variable", () => {
+  const publishedKeys = new Set<string>(GRANT_ENV_KEYS);
+  for (const key of [ENV_CHILD_EPISODE, ENV_CHILD_DEFINITION, ENV_CHILD_EXECUTION]) {
+    assert.equal(publishedKeys.has(key), false, "session publication must preserve this process's attribution");
+  }
   const parentEnv = {
     PATH: "/usr/bin",
     HOME: "/home/someone",
@@ -323,10 +329,22 @@ test("mergeChildEnv lets the plan be the only source of every governance variabl
     [ENV_GATED]: "tool:write",
     [ENV_APPROVED]: "tool:write",
     [ENV_LEDGER]: "/parent/ledger.jsonl",
+    [ENV_CHILD_EPISODE]: "episode:parent",
+    [ENV_CHILD_DEFINITION]: "parent-definition",
+    [ENV_CHILD_EXECUTION]: "exec:parent",
   };
-  const merged = mergeChildEnv(parentEnv, { [ENV_GRANT]: "tool:read", [ENV_DEPTH]: "1" });
+  const merged = mergeChildEnv(parentEnv, {
+    [ENV_GRANT]: "tool:read",
+    [ENV_DEPTH]: "1",
+    [ENV_CHILD_EPISODE]: "episode:child",
+    [ENV_CHILD_DEFINITION]: "child-definition",
+    [ENV_CHILD_EXECUTION]: "exec:child",
+  });
 
   assert.equal(merged[ENV_GRANT], "tool:read");
+  assert.equal(merged[ENV_CHILD_EPISODE], "episode:child");
+  assert.equal(merged[ENV_CHILD_DEFINITION], "child-definition");
+  assert.equal(merged[ENV_CHILD_EXECUTION], "exec:child");
   assert.equal(merged[ENV_DEPTH], "1");
   for (const key of [ENV_MAX_DEPTH, ENV_GATED, ENV_APPROVED, ENV_LEDGER]) {
     assert.equal(key in merged, false, `${key} was not set by the plan, so the child must not see one`);

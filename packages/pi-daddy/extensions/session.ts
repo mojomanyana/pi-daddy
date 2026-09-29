@@ -67,6 +67,14 @@ import {
 } from "../src/kernel/workspace-pin.ts";
 import { loadWorkspaceRegistry } from "../src/kernel/workspace.ts";
 import { reconcileAcceptedWorkspaces } from "../src/governance/workspace-acceptance.ts";
+import { EpisodeCostGate, episodeCostCeilingFromSettings } from "../src/governance/episode-cost-gate.ts";
+import {
+  definitionRuntimeSettingsFrom,
+  parseConfiguredModel,
+  parseThinkingLevel,
+  type DefinitionRuntimeChoice,
+  type DefinitionRuntimeSettings,
+} from "./definition-runtime.ts";
 
 /**
  * Run governed children in herdr panes instead of captured child processes.
@@ -101,7 +109,13 @@ import {
   ENV_ACTIVITY_ROOT,
   ENV_ACTIVITY_TASK,
 } from "../src/products/activity-timeline.ts";
-import { ENV_HERDR_KEEP_PANE, ENV_GOVERNANCE, ENV_ADVISOR, ENV_EPISODE_ID } from "../src/kernel/env-names.ts";
+import {
+  ENV_HERDR_KEEP_PANE,
+  ENV_GOVERNANCE,
+  ENV_ADVISOR,
+  ENV_EPISODE_ID,
+  ENV_EPISODE_COST_CEILING,
+} from "../src/kernel/env-names.ts";
 export { ENV_HERDR_KEEP_PANE, ENV_GOVERNANCE } from "../src/kernel/env-names.ts";
 import { adoptLegacyEnvironment } from "../src/kernel/env-names.ts";
 
@@ -161,6 +175,13 @@ export interface GrantsSession extends NativeSessionHost {
   allowUnresolvedModels: boolean;
   /** Results from pi's synchronous model catalogue, shared by every delegation in this session. */
   readonly modelResolutionCache: Map<string, boolean>;
+  /** Committed per-definition and global child runtime defaults. */
+  readonly definitionRuntimeSettings: DefinitionRuntimeSettings;
+  /** PD-7's future session controls write here; deliberately empty in this commit. */
+  readonly definitionRuntimeOverrides: Map<string, DefinitionRuntimeChoice>;
+  readonly sessionModelPrompt: "ask" | "never";
+  sessionModelPrompted: boolean;
+  sessionModelPromptInFlight?: Promise<void>;
   /** Path to this extension, so a child granted `tool:delegate` can delegate in turn. */
   readonly extensionPath?: string;
   /** Hook-only observer path for leaf children; it exposes no tools. */
@@ -192,6 +213,8 @@ export interface GrantsSession extends NativeSessionHost {
   inheritedApprovals: Map<string, string | undefined>;
   /** ONE single-flight queue for the whole session — see `obtainApprovals` for why it lives here. */
   readonly approvalGateFor: ReturnType<typeof createApprovalGateProvider>;
+  /** One cumulative cost threshold shared by every child in this episode. */
+  readonly episodeCostGate: EpisodeCostGate;
   /** Set at `session_start`; `process.cwd()` until then. */
   cwd: string;
   /** This session's own grant. Starts as the inherited upper bound, tightened once tools are observed. */
@@ -436,7 +459,10 @@ export function createGrantsSession(
   // G7 / A-S4 + B-I4: strict, three-way parsing that fails CLOSED. A malformed bound used to yield
   // `NaN`, and every comparison against `NaN` is false, so depth limiting switched itself off.
   const bounds = depthConfig(environment[ENV_DEPTH], environment[ENV_MAX_DEPTH]);
-  const { depth, maxDepth } = bounds;
+  const costConfig = episodeCostConfiguration(storeCwd, environment[ENV_EPISODE_COST_CEILING]);
+  const runtimeConfig = projectDefinitionRuntimeConfiguration(storeCwd);
+  const depth = bounds.depth;
+  const maxDepth = costConfig.malformed || runtimeConfig.malformed ? 0 : bounds.maxDepth;
   const emptyCatalog = makeCatalog([]);
   // ADR-0077. The environment decides whether there is an advisor at all; the project's settings block may only
   // narrow it. The block IS read — the first version passed `undefined` and every narrowing the release advertised
@@ -456,7 +482,11 @@ export function createGrantsSession(
     inherited,
     depth,
     maxDepth,
-    malformedBounds: bounds.malformed,
+    malformedBounds: [
+      ...bounds.malformed,
+      ...(costConfig.malformed ? [costConfig.malformed] : []),
+      ...(runtimeConfig.malformed ? [runtimeConfig.malformed] : []),
+    ],
     definitionSkips: [],
     workspacePin: undefined,
     pinSettled: false,
@@ -496,6 +526,10 @@ export function createGrantsSession(
     allowUnresolvedModels: environment[ENV_ALLOW_UNRESOLVED_MODELS] === "1",
     nativeSessionRoot: nativeSessionRootFromEnv(process.env),
     modelResolutionCache: new Map<string, boolean>(),
+    definitionRuntimeSettings: runtimeConfig.settings,
+    definitionRuntimeOverrides: new Map<string, DefinitionRuntimeChoice>(),
+    sessionModelPrompt: runtimeConfig.prompt,
+    sessionModelPrompted: false,
     extensionPath,
     observerExtensionPath,
     activityRootId,
@@ -504,6 +538,7 @@ export function createGrantsSession(
     sessionApprovalBindings: new Map<string, ApprovalBinding>(),
     inheritedApprovals: parseInherited(environment[ENV_APPROVED]),
     approvalGateFor: createApprovalGateProvider(),
+    episodeCostGate: new EpisodeCostGate(costConfig.ceiling),
     cwd: process.cwd(),
     ownGrant: deriveOwnGrant(inherited, null),
     observed: false,
@@ -607,6 +642,72 @@ export function reconcileAdvisorSession(session: GrantsSession, environment: Nod
     ...(session.ledgerPath ? { ledgerPath: session.ledgerPath } : {}),
     env: environment,
   });
+}
+
+function episodeCostConfiguration(cwd: string, inherited: string | undefined): { ceiling: number; malformed?: string } {
+  if (inherited !== undefined) {
+    const value = Number(inherited);
+    return Number.isFinite(value) && value > 0
+      ? { ceiling: value }
+      : { ceiling: episodeCostCeilingFromSettings(undefined), malformed: ENV_EPISODE_COST_CEILING };
+  }
+  const path = projectSettingsPath(cwd);
+  try {
+    const stats = statSync(path);
+    if (!stats.isFile() || stats.size > 1024 * 1024) {
+      return { ceiling: episodeCostCeilingFromSettings(undefined), malformed: "settings.json episodeCostCeiling" };
+    }
+    const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
+    if (parsed && typeof parsed === "object" && Object.hasOwn(parsed, "episodeCostCeiling")) {
+      const value = (parsed as Record<string, unknown>).episodeCostCeiling;
+      if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+        return { ceiling: episodeCostCeilingFromSettings(undefined), malformed: "settings.json episodeCostCeiling" };
+      }
+    }
+    return { ceiling: episodeCostCeilingFromSettings(parsed) };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return { ceiling: episodeCostCeilingFromSettings(undefined) };
+    }
+    return { ceiling: episodeCostCeilingFromSettings(undefined), malformed: "settings.json episodeCostCeiling" };
+  }
+}
+
+function projectDefinitionRuntimeConfiguration(cwd: string): {
+  settings: DefinitionRuntimeSettings;
+  prompt: "ask" | "never";
+  malformed?: string;
+} {
+  const empty = { settings: definitionRuntimeSettingsFrom(undefined), prompt: "ask" as const };
+  try {
+    const path = projectSettingsPath(cwd);
+    const stats = statSync(path);
+    if (!stats.isFile() || stats.size > 1024 * 1024) return { ...empty, malformed: "settings.json model defaults" };
+    const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+      return { ...empty, malformed: "settings.json model defaults" };
+    const root = parsed as Record<string, unknown>;
+    if (root.sessionModelPrompt !== undefined && !["ask", "never"].includes(String(root.sessionModelPrompt)))
+      return { ...empty, malformed: "settings.json sessionModelPrompt" };
+    const candidates = [root.defaults, ...(Array.isArray(root.definitions) ? root.definitions : [])];
+    for (const candidate of candidates) {
+      if (candidate === undefined) continue;
+      if (!candidate || typeof candidate !== "object" || Array.isArray(candidate))
+        return { ...empty, malformed: "settings.json model defaults" };
+      const value = candidate as Record<string, unknown>;
+      if (value.model !== undefined && !parseConfiguredModel(value.model))
+        return { ...empty, malformed: "settings.json model" };
+      if (value.thinking !== undefined && !parseThinkingLevel(value.thinking))
+        return { ...empty, malformed: "settings.json thinking" };
+    }
+    return {
+      settings: definitionRuntimeSettingsFrom(root),
+      prompt: root.sessionModelPrompt === "never" ? "never" : "ask",
+    };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return empty;
+    return { ...empty, malformed: "settings.json model defaults" };
+  }
 }
 
 function projectAdvisorBlock(cwd: string, env: NodeJS.ProcessEnv = process.env): unknown {
