@@ -1,44 +1,59 @@
-# pi-daddy ledger contract — version 3
+# pi-daddy ledger-record contract — version 1
 
-Canonical machine contract for one `ledgerVersion: 3` JSONL line:
+Canonical machine contract for the append-only governance ledger:
 
-- `ledger-event.schema.json` — closed JSON Schema draft 2020-12 event union.
-- `fixtures/*.json` — deterministic examples generated through the production builders by
+- `record.schema.json` — the JSON Schema draft 2020-12 record envelope
+  `{v, seq, prev, at, kind, id, body, digest}` written as one JSON object per line.
+- `governance-event.schema.json` — the closed `ledgerVersion: 3` union carried in a governance record's `body`.
+- `fixtures/ledger-record.jsonl` — deterministic envelope examples.
+- `fixtures/*.json` — deterministic governance-body examples generated through the production builders by
   `scripts/generate-ledger-record-contract.ts`.
 
-## Dispatch and compatibility
+The current governance events are `capability_decision`, `workspace_lease`, `child_lifecycle`, `cost_gate`,
+`session_config`, and `episode_outcome`.
 
-1. No `ledgerVersion` and no `event` is a legacy 0.17 grant record.
-2. `ledgerVersion: 2` is validated against the frozen v2 contract.
-3. `ledgerVersion: 3` requires one known event and validation against this schema.
-4. Any unsupported explicit version, missing discriminator, unknown event, or malformed required identity is corrupt. It is never reinterpreted as legacy.
+## Reading and compatibility
 
-The schema is closed. Adding/removing a field, event or enum member, changing requiredness, or changing meaning requires a new ledger version and versioned path. V3 is still unreleased, so its review repairs are folded into this one initial contract rather than creating a public v4.
+The envelope reader verifies sequence, previous-record hash, digest, and known envelope kind. A torn or tampered tail
+is reported as damage; writers refuse to append until the operator explicitly repairs it. Pre-envelope ledgers are
+imported into envelopes and are never repaired in place.
+
+Within a governance body:
+
+1. No `ledgerVersion` and no `event` is a legacy grant record.
+2. Imported `ledgerVersion: 2` events are retained as historical records using their frozen identity rules.
+3. Every known `ledgerVersion: 3` event is validated against `governance-event.schema.json`, including known kinds a
+   particular reader does not render.
+4. The dashboard projection skips a non-empty unknown v3 event discriminator so a newer writer does not crash an
+   older dashboard. Missing discriminators, unsupported explicit versions, and malformed known events are corrupt.
+   `/grants ledger` is currently closed-world and reports valid event kinds it does not render, including future
+   discriminators, as corruption; that is a known compatibility gap rather than part of the contract.
+
+The governance schema is closed. Adding or removing a field, event, or enum member, changing requiredness, or changing
+meaning requires an explicit compatibility decision and regenerated fixtures. Run `npm run contracts:generate` from
+the repository root and commit the generated contract with the runtime change.
 
 ## Execution identity
 
-Every v3 **execution** event carries:
+Every v3 execution event carries:
 
 - `executionId`: globally unique identity of one execution occurrence.
 - `parentExecutionId`: the unique governed execution that delegated it, or explicit `null` at a root.
 - `childId`: the readable logical tree position, retained for operators and deterministic comparisons.
 
-`workflow_fact` is not an execution event; it carries its own `factId` and explicit provenance instead.
+Consumers join capability, lifecycle, and lease events by `executionId`, never by `childId`. Repeated or concurrent
+calls may reuse a logical position such as `d0.1`; they may never reuse an execution id.
 
-Consumers join lifecycle and lease events by `executionId`, never by `childId`. Repeated or concurrent calls may reuse a logical position such as `d0.1`; they may never reuse an execution id.
+A lifecycle `running` event may include `herdrPaneId` and `herdrAgentName` for navigation. These are runtime
+observations, not enforcement boundaries. `deadlineAt` is immutable within one occurrence and bounds how long a
+non-terminal start can be rendered as live; after it, the truthful state is incomplete.
 
-A lifecycle `running` event may include `herdrPaneId` and `herdrAgentName` for navigation. These are runtime observations, not enforcement boundaries. `deadlineAt` is immutable within one occurrence and bounds how long a non-terminal start can be rendered as live; after it, the truthful state is incomplete.
-
-All timestamp fields share one schema/runtime profile: JSON Schema `date-time` with seconds restricted to `00`–`59`. Leap-second strings are excluded because JavaScript deadline and duration arithmetic cannot represent them.
+All timestamp fields share one schema/runtime profile: JSON Schema `date-time` with seconds restricted to `00`–`59`.
+Leap-second strings are excluded because JavaScript deadline and duration arithmetic cannot represent them.
 
 ## Privacy and provenance
 
-The privacy boundary is unchanged: no task text, prompts, tool arguments, child output, or tool results. Fields displayed as identities and every capability use explicit ASCII identifier grammars in both schema and runtime; public builders assert that their serialized event passes the same exact reader. Correlation display fields use the identifier grammar rather than free-form prose, and a top-level null `assurance_scope` is omitted/rejected consistently. Trusted task/definition digests remain outside `correlation`. Correlation is caller-declared join metadata and never becomes proof that a workflow transition was validated or that an inline skill executed.
-
-## Note 2026-09-21 — this directory was `contracts/ledger/v3`
-
-Since ADR-0076 PR 3d every ledger line is a **record envelope** (`record.schema.json`: format, sequence, previous-line
-hash, writer timestamp, kind, id, body, digest). What this README calls a v3 event is now the **body** of a record of
-kind `capability`, `lifecycle`, `lease`, `check` or `fact`; the event fields are unchanged and
-`governance-event.schema.json` is the same schema under its new name. Ledger v2 is archived under
-`docs/archive/contracts/ledger/v2` and no longer read; a pre-format ledger is imported once at session start.
+Governance bodies contain no raw task text, prompts, tool arguments, child output, or tool results. Task and
+definition digests identify content without reproducing it; a digest is an identifier, not anonymisation. Correlation
+metadata is caller-declared join data and never authority. The separate local activity timeline may retain private
+prompt and final content according to `PI_DADDY_ACTIVITY_CONTENT`; it is not part of this governance contract.

@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { REFUSAL_CODES } from "../src/kernel/refusals.ts";
 import { GOVERNANCE_ENV_KEYS, LEGACY_ENV_NAMES } from "../src/kernel/env-names.ts";
+import { ENV_ACTIVITY_CONTENT, ENV_ACTIVITY_TIMELINE } from "../src/products/activity-timeline.ts";
 
 /**
  * The orientation documents must not lie, and this is the control that forces it.
@@ -32,9 +33,10 @@ import { GOVERNANCE_ENV_KEYS, LEGACY_ENV_NAMES } from "../src/kernel/env-names.t
  */
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const repoRoot = dirname(dirname(packageRoot));
+const contractRoot = join(packageRoot, "contracts", "ledger-record", "v1");
 
 /** Where a path named in prose may live. A path is repo-relative or package-relative; both are resolved. */
-const ROOTS = [repoRoot, packageRoot, join(packageRoot, "src")];
+const ROOTS = [repoRoot, packageRoot, join(packageRoot, "src"), contractRoot];
 /** First segments that mean "a path in this repository" rather than one in a user's project or a bare filename. */
 const REPO_SEGMENTS = new Set([
   // The five layers, because the documents write a source path relative to `src/` as often as from the root.
@@ -73,7 +75,12 @@ async function documents(): Promise<Array<{ name: string; text: string; checked:
     const text = await readFile(join(root, name), "utf8");
     return { name, text, checked: withoutExemptSections(text) };
   };
-  return [await load("README.md", repoRoot), await load("AGENTS.md", repoRoot), await load("README.md", packageRoot)];
+  return [
+    await load("README.md", repoRoot),
+    await load("AGENTS.md", repoRoot),
+    await load("README.md", packageRoot),
+    await load("contracts/ledger-record/v1/README.md", packageRoot),
+  ];
 }
 
 /** A line that states the thing named on it does not exist; naming it is then the point. */
@@ -108,6 +115,20 @@ test("every repository path the orientation documents name exists", async () => 
   assert.deepEqual(missing, [], "the documents name repository paths that do not exist");
 });
 
+test("the published ledger contract README names files that ship", async () => {
+  const text = await readFile(join(contractRoot, "README.md"), "utf8");
+  const references = ticked(text).filter((token) => /\.(?:json|jsonl|ts)$/.test(token));
+  assert.ok(references.length > 0, "contract README must name its machine-readable files");
+  for (const path of references) {
+    const concrete = path.includes("*") ? dirname(path) : path;
+    assert.equal(
+      [contractRoot, packageRoot].some((root) => existsSync(join(root, concrete))),
+      true,
+      `contract README dependency missing: ${path}`,
+    );
+  }
+});
+
 test("a commit SHA appears only as a pointer into git history, never as a claim about where we are", async () => {
   const stray: string[] = [];
   for (const doc of await documents()) {
@@ -125,6 +146,8 @@ test("every environment variable the documents name is a current one, and no leg
   // The test-tier switches are not governance keys and are declared nowhere else; they are named here instead.
   const current = new Set([
     ...GOVERNANCE_ENV_KEYS,
+    ENV_ACTIVITY_TIMELINE,
+    ENV_ACTIVITY_CONTENT,
     "PI_DADDY_IT_MODEL",
     "PI_DADDY_KEEP_TMP",
     "PI_DADDY_IT_JEV",
@@ -219,6 +242,23 @@ test("every npm script the documents tell a reader to run exists", async () => {
     for (const match of doc.checked.matchAll(/npm run ([a-z:]+)/g))
       if (!scripts.has(match[1])) missing.push(`${doc.name}: npm run ${match[1]}`);
   assert.deepEqual(missing, [], "the documents name an npm script that does not exist");
+});
+
+test("root README runs package-only scripts through the workspace", async () => {
+  const readme = await readFile(join(repoRoot, "README.md"), "utf8");
+  const rootManifest = JSON.parse(await readFile(join(repoRoot, "package.json"), "utf8")) as {
+    scripts?: Record<string, string>;
+  };
+  const packageManifest = JSON.parse(await readFile(join(packageRoot, "package.json"), "utf8")) as {
+    scripts?: Record<string, string>;
+  };
+  for (const line of readme.split("\n")) {
+    const script = /npm run ([a-z:]+)/.exec(line)?.[1];
+    if (!script) continue;
+    const workspace = line.includes("--workspace=pi-daddy");
+    const scripts = workspace ? packageManifest.scripts : rootManifest.scripts;
+    assert.ok(scripts?.[script], `README runs ${script} from the wrong package`);
+  }
 });
 
 test("no source comment cites a file that was deleted with the docs tree", async () => {

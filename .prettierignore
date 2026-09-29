@@ -10,7 +10,5 @@ packages/pi-daddy/test/fixtures
 *.py
 *.mjs
 
-.claude
-
 # Vendored foreign code is hash-pinned (THIRD_PARTY_NOTICES); never reformat it.
 **/vendor/**

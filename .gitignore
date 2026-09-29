@@ -6,9 +6,9 @@
 node_modules
 node_modules/
 
-# Subagent-driven-development workspace: ledgers, task briefs, reports, review
-# packages. Scratch for a single run — the git history is the durable record now.
+# Historical agent scratch remains ignored; Pi is the only supported workflow.
 .superpowers/
+.claude/
 
 # Project-local pi runtime state.
 .pi/
@@ -37,5 +37,3 @@ dist/
 # Logs and scratch
 *.log
 tmp/
-
-.claude/

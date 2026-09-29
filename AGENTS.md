@@ -9,7 +9,7 @@ recorded in this file with a date, never rewritten.
 pi-daddy governs and coordinates pi's multi-level agent system. An orchestrator holds a catalog of tools and Agent
 Skills definitions; when it delegates, each child receives a deliberate subset and nothing more, and a child may
 delegate further only a subset of what it holds. Enforcement is pi's own `--tools` allowlist on a separate child
-process, with an append-only ledger of every grant and refusal. What it governs is the **tool surface**; a child
+process, with an optional append-only ledger when the project has enabled one. What it governs is the **tool surface**; a child
 holding `bash` can still escape, and containing that is the operating system's job (ADR-0012 below).
 
 The operator's stated goal is a **session coordinator**: coordination of agents, runtime skills and context, on top
@@ -21,11 +21,11 @@ of the governance that already works. The roadmap at the end of this file is the
 AGENTS.md                         — this file: rules, decisions, measured facts, glossary, roadmap
 README.md                         — what the product is and how to use it, present tense, one section per layer
 packages/pi-daddy/                — the package
-  src/kernel/                     — pure functions: resolve, spawn plan, propagation, catalog, definitions, approval maths
+  src/kernel/                     — authority and planning; mostly pure, with bounded discovery readers
   src/governance/                 — stores and the ledger: record envelope, ledger events, approvals, grant store, leases, retention
   src/executors/                  — how a child process is started: captured subprocess or Herdr pane
   src/advisors/                   — advice only: a Decider answering typed questions, never authority (ADR-0077)
-  src/products/                   — activity timeline and the read-only dashboard
+  src/products/                   — activity timeline, dashboard, episode report and outcome derivation
   extensions/                     — composition: the pi extension pi loads (grants.ts) and its helpers
   src/index.ts, src/cli.ts        — composition: the public root export and the `pi-daddy` bin
   contracts/ledger-record/v1/     — the one shipped contract: record envelope + governance event schema + fixtures
@@ -49,8 +49,8 @@ is imported by nothing.
 - **Prefer failing closed, and be loud about it.** Malformed configuration disables spawning rather than falling back;
   every refusal names the variable or file.
 - **Counts and versions do not belong in orientation documents.** Ask the commands.
-- **Terminology:** "workflow skills" are `.claude/skills/` (local-only process tooling, gitignored). The runtime tools
-  and skills this project governs are "tools" or "runtime skills", never bare "skills" where ambiguous.
+- **Terminology:** process tooling is provided through Pi's installed runtime definitions (for example `build`,
+  `review`, and `git-ops`). The governed things are "tools" or "runtime skills", never bare "skills" where ambiguous.
 - **Review is per PR.** Anything touching behaviour gets one independent pass (a review subagent with written
   hypotheses, or the operator) recorded in the PR body before it merges. Docs-only changes may merge on the author's
   own read, said out loud in the PR.
@@ -64,7 +64,7 @@ cd packages/pi-daddy
 npm test                   # unit tests: no pi, no network, about 40s (it spawns real lock helpers)
 npm run typecheck          # src + extensions + tests + integration tests
 npm run test:integration   # against a REAL pi process and a real Herdr server, no model tokens
-npm run test:integration:ci# the model-free, Herdr-free subset CI runs
+npm run test:integration:ci # the model-free, Herdr-free subset CI runs
 npm run test:smoke         # pack, install into a scratch project, import and use it
 npm run contracts:generate # regenerate contracts/ledger-record/v1 from the runtime builders
 PI_DADDY_IT_MODEL=1 npm run test:integration    # adds an end-to-end tier with a real model (costs money)
@@ -74,7 +74,8 @@ The clone may be shared with other sessions, which can switch the checked-out br
 `git rev-parse HEAD` in the same command as any measurement you write down, or take a worktree. Pushes to the
 GitHub repository use the repository owner's token per command, never a global account switch.
 
-`.claude/` is gitignored, so everything in it is local-only and nothing there is required.
+This repository uses Pi only. Do not add `CLAUDE.md`, `.claude/`, or another assistant-specific instruction tree;
+keep shared agent instructions here and runtime definitions in Pi's configured skill roots.
 
 ## Making a change here
 
@@ -207,15 +208,17 @@ One paragraph each: the decision, the reason, what was rejected. The ADR numbers
 can confer what it does not hold, so escalation is impossible by construction rather than by policy. The root
 orchestrator holds the full catalog and grants freely; every level below can only subtract, and because the spawn
 tool is itself a capability, depth control falls out of the same rule (a numeric depth bound remains as a cheap
-backstop). Every decision is recorded and the `denied` set is the security signal, since an agent repeatedly asking
-for what it does not hold is the escalation tell. Rejected: a policy engine adjudicating each grant (a complexity
+backstop). Every decision was intended to be recorded and the `denied` set is the security signal, since an agent
+repeatedly asking for what it does not hold is the escalation tell. **Amended 2026-09-29:** recording is conditional
+on a configured governance ledger; attenuation does not depend on one. Rejected: a policy engine adjudicating each grant (a complexity
 magnet that puts model judgement on the security path), static grants only (declines what was asked for), and
 trusting the orchestrator (fails silently the moment untrusted content reaches a grant decision). Amended
 2026-08-12 to add the fan-out budget as a cardinality companion: grant, depth, budget and approvals all shrink downward.
 
 **ADR-0010, ADR-0014, ADR-0021 — approvals are once, session or always; the task is never stored.** A gate is
-answered by a human at the root, because every governed child runs `--print` with no UI and pi's non-interactive
-`confirm` resolves false; approvals are inheritable, riding down the subtree intersected with each child's grant,
+answered by a human at the root, because the original governed child ran `--print` with no UI and pi's non-interactive
+`confirm` resolves false. **Amended 2026-09-29:** captured process children still have no UI, while an interactive
+Herdr session may answer a gate for a delegation it executes; otherwise an inherited approval is required. Approvals are inheritable, riding down the subtree intersected with each child's grant,
 because a memory-only non-inheritable model (the pi-fabric shape) would confine gated work to one level below a
 human. `always` persists for a bounded period keyed `capability@subject` and is offered only when the subject is a
 human-authored definition; the model-chosen `tools:` path gets deny, once or session and never writes to disk, and a
@@ -240,8 +243,9 @@ fallible or prompt-injected agents; it becomes live if a deliberately adversaria
 revisit trigger fired 2026-09-04 when a child in an empty working directory edited a file in another checkout
 (probe `g38-cwd-is-not-containment`); that confirmed the boundary and did not select the sandbox option.
 
-**ADR-0016 — this package is the spawner, not a fence.** `delegate` is the only spawn path and can spawn a named
-definition; Agent Skills `SKILL.md` is the definition format, `allowed-tools` is the ceiling and the body is the
+**ADR-0016 — this package is the spawner, not a fence.** `delegate` was the only spawn path and can spawn a named
+definition; **amended 2026-08-17:** the governed `delegate`, `delegate_all` and `delegate_chain` family is the only
+spawn path; Agent Skills `SKILL.md` is the definition format, `allowed-tools` is the ceiling and the body is the
 child's system prompt, with anything the spec lacks placed under `metadata` with `pi-daddy-` keys rather than invented
 frontmatter. The standard declares intent and enforces nothing; passed through `--tools` it becomes structural, which
 is the product's one sentence. `allowed-tools` patterns such as `Bash(git:*)` are refused loudly because pi's
@@ -340,7 +344,7 @@ import; `extensions/`, `src/index.ts` and `src/cli.ts` are composition, allowed 
 be imported. Every append-only store shares one record envelope (`v`, `seq`, `prev`, `at`, `kind`, `id`, `body`,
 `digest`) with one reader, a writer that refuses `LEDGER_DAMAGED` on a torn or tampered tail, and a repair command that
 truncates only with explicit consent; project state lives under `.pi/pi-daddy/` with `settings.json` the only
-committable file; environment names are `PI_DADDY_*` only, with the kernel exporting the closed list of governance
+package-designated committable file (this repository deliberately ignores all `.pi/` local state); environment names are `PI_DADDY_*` only, with the kernel exporting the closed list of governance
 keys that the child-environment hook refuses to set; exports are collapsed and Prettier at width 120 plus a
 statement-count guard replace the newline-count guard. Rejected: letting the feature pull the cleanup (this is the
 process that produced the state being cleaned), a strangler copy of the kernel (two copies of one truth diverge,
@@ -349,10 +353,12 @@ The advisors boundary is fixed here: types in `advisors/` carry no `Capability` 
 governance function accepts an advisor result, and an advisor may select, rank, annotate or propose but can never
 widen `effective`, satisfy a gate or replace a human answer. The first advisor is Jev, TypeSafe's non-generative
 decision model, reached through OpenRouter's `POST /api/alpha/decisions` for model `typesafe/jev-1.13`; it is default
-off, toggled from the dashboard, usable at four decision points, degrades to "no advice" on a two-second timeout, and
-every use is an `advice` record. ADR-0077 (advisors are advice: decision points, settings block, advice event,
-privacy rule, and the package boundary) and ADR-0078 (context handoff as an attenuating dimension: `none`, `files`,
-`pruned`, `summary`, `fork` under an inherited ceiling) are deferred to their own records and are not yet written.
+off, was originally proposed as a dashboard toggle at four decision points, degrades to "no advice" on a two-second
+timeout, and every use was intended to be an `advice` record. **Amended 2026-09-29:** records exist only when a
+governance ledger is configured and the append succeeds; append failure is currently silent and is a live audit gap.
+**Amended 2026-09-22:** ADR-0077 and ADR-0078 are written below;
+there is no advisor dashboard toggle, and the shipped decision points are effort selection and narrowing a `pruned`
+handoff.
 The ADR's non-goal "no user-facing capability is deleted" was reversed by amendment for five lab features and is
 reversed further by this cleanup; since the ADR file no longer exists, AGENTS.md is where that reversal must be
 recorded. Revisit triggers: an exemption added to the import-direction test instead of a hook, a `Capability` field
@@ -395,10 +401,10 @@ parameter and is not a claim of containment, since the parent process can alread
 `pruned` keeps the last N turns plus older turns naming one of the given files, and with an advisor enabled those
 candidates are then judged one by one against the task the child is about to be given — narrowing only, never
 adding. That rule is deterministic and
-explainable, and its recall is **unmeasured**: whether it keeps what a reader would have kept is exactly what the
-handoff probe is for, and `pruned` is not a default until that probe says so. The rule names itself in the ledger so
-a later advisor can replace the selection without anything else changing. Also not established: any measurement of
-what a forked child does differently from one given a summary.
+explainable. **Amended 2026-09-22 after the handoff probe:** delivered term recall measured 0.737 at the 20-turn
+default on the operator's session corpus. That is not task-success evidence and did not justify making `pruned` the
+default. The rule names itself in the ledger so a later advisor can replace the selection without anything else
+changing. Still not established: what a forked child does differently from one given a summary.
 
 Two interactions worth knowing, both found by review rather than by reasoning. pi refuses `--fork` beside
 `--session` or `--no-session`, and PR 3e gives every child a session file for the inactivity deadline; a forked
@@ -420,8 +426,9 @@ promised: no type in the layer names a `Capability` or a refusal code, and no mo
 imports it, both checked by `test/advisors.test.ts`. Nothing on a governance path can receive what an advisor
 returns, so an advisor cannot become load-bearing by accident.
 
-Every use is an `advice` record on the one ledger envelope, **including the uses that produced nothing**, because an
-advisor that quietly stopped answering would otherwise look exactly like one nobody called. The record names the
+With a configured, writable governance ledger, every use is an `advice` record on the envelope, **including uses that
+produced nothing**, because an advisor that quietly stopped answering would otherwise look exactly like one nobody
+called. **Amended 2026-09-29:** an absent ledger produces no record, and append failure is silently ignored. The record names the
 purpose, the decider, the question keys, the answers and the duration. It does **not** contain the state the caller
 composed: that can carry task text and file contents, the ledger has never stored a task (ADR-0021), and an advisor
 must not become the way it starts.
@@ -471,13 +478,15 @@ point still runs before the capability plan, but sends the digest unless raw egr
 text therefore crosses on that refused call only in raw mode.
 
 **The first decision point (2026-09-22, roadmap PR 8): how hard a child should think.** When a `delegate` call
-names no `thinking` level, the advisor is asked to choose one from the levels this session's own model reports it
-supports. That is the shape the boundary was designed for: the options are not invented by the advisor, they are
-what `supportedModelEfforts` already returns, so it picks among things the caller had. It touches no capability, no
+names no `thinking` level, the advisor is asked to choose one from the levels the resolved child model reports it
+supports. **Amended 2026-09-29:** explicit and session choices outrank advice; without advice, definition and global
+defaults may still fill the blank before pi's fallback. The options are not invented by the advisor: they come from
+`supportedModelEfforts` for the child model. It touches no capability, no
 gate and no grant — the worst an advisor can do is make a child think harder or less hard than a human would have,
 and the ledger says it did. An explicit level is never second-guessed; advice fills a blank. With no advisor, no
 key, no answer, a timeout or an unrecognised response, the blank stays blank and the child is spawned exactly as it
-was before, which is the property that keeps advisors optional rather than load-bearing.
+was before, which is the property that keeps advisors optional rather than load-bearing. **Amended 2026-09-29:** this
+means advice contributes nothing; definition or global defaults may still resolve the blank.
 
 The task text IS sent to the advisor, because an advisor cannot judge a task it cannot see, and it is still never
 recorded. An operator unwilling to send task text to a third party leaves the advisor off, which is the default.
@@ -525,11 +534,32 @@ ignores its abort would otherwise run as long as it liked and still be recorded 
 is the `PI_DADDY_IT_JEV=1` tier, unrun. Until somebody runs it, this adapter's response handling is a reading of
 documentation, not a measurement.
 
+**2026-09-29 — child runtime selection and episode accounting are explicit, attributable session state.** Model
+precedence is explicit call → session override → definition → global default → pi; thinking inserts advisor advice
+between session and definition. The first delegation asks once to keep or edit defaults unless
+`sessionModelPrompt: never`; `/grants models` and a connected dashboard mutate the same in-memory map and append the
+same `session_config` event. Lifecycle and advice records carry provider-reported nullable usage; child lifecycle
+also carries resolved model, effective thinking and source, definition hash/package version, and compaction count
+when observable. Children receive episode, definition and execution attribution variables with no authority. Episode
+cost uses provider-reported USD totals, warns at half the configured ceiling and gates at the ceiling; Herdr stops
+rather than pauses. `pi-daddy report` joins grant and activity ledgers; its numeric totals currently map unavailable
+provider dimensions to zero.
+
+**2026-09-29 — episode outcomes are derived audit signals, not acceptance.** `pi-daddy outcomes` joins only commits
+with a valid `Pi-Episode` trailer, then derives default-branch survival, named or inverse-diff reverts, optional `gh`
+CI state, amendments and narrowly recognised operator corrections. It appends only when one of the four signals or
+the age-derived label changes; a label remains `unknown` for 48 hours, and no label proves quality. `pi-daddy report`
+shows the latest label. The dashboard ledger projection validates every known event kind before skipping known kinds
+it does not render, and skips a non-empty unknown future discriminator; malformed known events and missing
+discriminators remain corruption. `/grants ledger` still treats valid unrendered and future v3 kinds as corruption,
+which is a live compatibility gap.
+
 **Working rules that survive the deletion of the working-rules document.** Decisions, load-bearing claims and
 failure modes are written down or they do not exist; reversals get a dated note, never a rewrite; measure before
 asserting and say which you did, and state what the evidence does not cover; a test that cannot fail is worse than
-none, so name the production change that would break it; prefer failing closed and being loud about it; "workflow
-skills" are `.claude/skills/` and the governed runtime things are "tools" or "runtime skills"; `main` advances only by
+none, so name the production change that would break it; prefer failing closed and being loud about it. **Amended
+2026-09-29:** process tooling is now Pi-only; shared instructions live in `AGENTS.md`, and the governed runtime things
+are "tools" or "runtime skills". `main` advances only by
 merging a pull request, with the branch checked before the first edit (R-85), a review pass recorded in the PR for
 anything touching behaviour, and the recovery for work found on `main` being a new branch at HEAD and a reset of the
 local `main` pointer, never a force-push. The pre-commit branch guard was removed on 2026-09-22 at the operator's
@@ -661,15 +691,15 @@ history (`git show 9cf2904:docs/probes/<name>/README.md`).
 - **grant** — the set of capabilities a session holds, as `tool:<name>`, `agent:<name>`, `workspace:<id>` entries or `tool:*`; carried to children in the environment and only ever narrowed.
 - **ceiling** — a definition's `allowed-tools` field; the most a child spawned from that definition may hold.
 - **effective** — what a child actually receives: `(requested ∩ parentGrant ∩ ceiling) \ (gated \ approved)`.
-- **gated** — a capability that needs a human's approval before a child may hold it; `tool:bash` by default, closed under subsumption.
+- **gated** — a capability that needs a human's approval before a child may hold it; defaults include `tool:bash`, `tool:write`, `tool:edit`, `tool:edit-diff`, and `context:fork`, closed under subsumption.
 - **attenuation** — the invariant that grant, depth, fan-out budget and approvals can only shrink going down a delegation tree (ADR-0008).
 - **definition** — an Agent Skills `SKILL.md` file whose `allowed-tools` is the ceiling and whose body is the child's system prompt (ADR-0016, ADR-0017).
 - **catalog** — the list of definitions and tools the current session can name, derived from pi's own tool surface and the discovered SKILL.md files.
-- **ledger** — the append-only record of every capability decision and child lifecycle under `.pi/pi-daddy/`; each line is a record envelope; a damaged file is readable up to the damage and refuses appends until `pi-daddy ledger repair`.
+- **ledger** — the optional append-only governance record under `.pi/pi-daddy/`: capability, lifecycle, lease, cost, session-configuration and outcome events; each line is a record envelope; damage is readable up to the fault and refuses appends until `pi-daddy ledger repair`.
 - **record envelope** — the shared line shape of every append-only store: `v`, `seq`, `prev`, `at`, `kind`, `id`, `body`, `digest`; `contracts/ledger-record/v1/record.schema.json`; the activity timeline uses the same envelope with kind `activity`.
 - **LEDGER_DAMAGED** — the refusal a writer raises when its ledger has a torn or tampered tail; cleared by `pi-daddy ledger repair --yes`; a pre-format file is imported (`pi-daddy ledger import`), never repaired.
 - **refusal** — a thrown error with a stable code (`CAPABILITY_ESCALATION`, `GATED_UNAPPROVED`, `WORKSPACE_NOT_AUTHORIZED`, `CHILD_TIMED_OUT`, …); thrown rather than returned because pi discards a returned `isError`.
-- **approval** — a human's answer to a gate: once, for the session, or "always" for a bounded period for a named definition; keyed `capability@subject`; the task text is never stored (ADR-0010, ADR-0014, ADR-0021).
+- **approval** — a human's answer to a gate: once, for the session, or "always" for a bounded period for a named definition; keyed `capability@subject`; the approval store and governance ledger never store raw task text (ADR-0010, ADR-0014, ADR-0021).
 - **approval banking** — recording a dialog's answer so later steps or sessions with the same `capability@subject` do not re-ask; a `once` answer is never banked.
 - **correlation** — caller-supplied metadata (schema version, an assurance scope, external ids) recorded beside a decision and never used as authority.
 - **executor** — the way a child process is started: directly as a `pi` process, or inside a Herdr pane; chosen by probing for a reachable Herdr server, never by a binary on PATH (ADR-0031).
@@ -679,7 +709,7 @@ history (`git show 9cf2904:docs/probes/<name>/README.md`).
 - **workspace lease** — an exclusive writer lock on a routed workspace directory, a kernel `flock` held by a helper process; an exclusion mechanism among governed children, not shared memory and not confinement (ADR-0034, ADR-0035).
 - **retention (execution retention)** — opt-in storage of a child's stdout, stderr and result bytes with a manifest.
 - **content store** — the content-addressed blob directory `.pi/pi-daddy/content/` shared by retention and activity content, and later an artifact store.
-- **activity timeline** — the local record of parent turns, child lifecycles and skill-file reads, on the record envelope beside the ledger.
+- **activity timeline** — the default-on local record of parent turns, child lifecycles and runtime-skill reads; it may retain private prompt/final content unless configured for metadata only or disabled.
 - **dashboard** — the ledger projection and session model/thinking control (`pi-daddy-dashboard`, `/grants dashboard` in a Herdr pane); it shows cost read-only and sends model edits to the owning session over a private local socket, never affecting enforcement (ADR-0036 amendment).
 - **chain** — `delegate_chain`: a straight line of steps planned as one unit, each step's task composed from the previous step's fenced output (ADR-0033).
 - **handoff fence** — the nonce-delimited, labelled block a prior step's output crosses in; the nonce is generated after the producer has finished.
@@ -688,7 +718,9 @@ history (`git show 9cf2904:docs/probes/<name>/README.md`).
 - **Jev** — TypeSafe's decision model (`typesafe/jev-1.13`), reached through OpenRouter's `POST /api/alpha/decisions`; the first advisor adapter; default off.
 - **context handoff** — what a child receives beyond its definition body and task: `none`, `files`, `pruned`, `summary` or `fork`, each a `context:` capability that attenuates and is capped by the definition's ceiling (ADR-0078).
 - **handoff fence (parent context)** — the `<<<PARENT-CONTEXT …>>>` block a granted handoff crosses in, distinct from the chain's `<<<PRIOR-AGENT-OUTPUT …>>>` so a child can weigh the two differently.
-- **settings.json** — the one committable file under `.pi/pi-daddy/`, written by `pi-daddy init`, holding the grant, per-definition declarations, withheld capabilities, routable workspaces and the default gate.
+- **episode outcome** — four derived Git/CI/operator signals joined through a `Pi-Episode` commit trailer, plus an age-derived label; operational evidence, never quality acceptance.
+- **episode report** — `pi-daddy report`, which joins governance and activity ledgers into per-episode usage, attribution, cost and latest outcome.
+- **settings.json** — the package-designated review file under `.pi/pi-daddy/`, written by `pi-daddy init`, holding the grant, per-definition declarations and runtime defaults, withheld capabilities, routable workspaces and the default gate; this repository deliberately ignores all `.pi/` state.
 
 ## Roadmap
 
@@ -711,20 +743,20 @@ What remains of ADR-0076's sequence after this cleanup, one line each with what 
   pattern the entry first proposed, because a commit SHA attributing a measurement is required by the hard rules.
 - **PR 6 (advisors layer)** — done 2026-09-22 as an in-repo layer, since the consumer that wanted a shared package
   is deleted. The `Decider` interface, the null decider, the Jev adapter, a settings block and `advice` records, with
-  both boundary rules enforced by tests. No dashboard toggle, for the reason in ADR-0077. Not established: any live
-  call to the Decisions endpoint, so the response parsing is documentation-read; and no decision point uses an
-  advisor yet, which is PR 8.
+  both boundary rules enforced by tests. No advisor dashboard toggle, for the reason in ADR-0077. Not established:
+  any live call to the Decisions endpoint, so the response parsing is documentation-read. PR 8 subsequently wired
+  effort selection and pruned-context narrowing.
 - **PR 7 (context handoff)** — done 2026-09-22: all five modes, `context:` as an attenuating capability with
   `fork` gated, the parent-context fence, and `handoff` on the capability-decision record. `none` remains the
-  default. Not established: the `pruned` rule's recall, and any behavioural comparison between a forked child and a
-  summarised one; both are what PR 9's probe is for.
+  default. PR 9 subsequently measured the `pruned` rule's term recall; still not established is any behavioural
+  comparison between a forked child and a summarised one.
 - **PR 8 (applying advisors at decision points)** — two slices done 2026-09-22: child effort, chosen from the
   levels the model reports, filling a blank the caller left; and `pruned` handoff selection, which may only narrow
   the set the mechanical rule already kept and is asked after the plan authorizes the handoff. Remaining
-  candidates: chain output selection and completion/failure signals. Not established: whether the advice is any
-  good — nothing measures that, and PR 9's probe is the only thing that would.
+  candidates: chain output selection and completion/failure signals. Not established: whether advisor selection is
+  any good — PR 9 measured the mechanical rule, not Jev against it.
 - **PR 9 (handoff probe)** — done 2026-09-22; see the probe section above, which is authoritative and which this
-  line contradicted for a day. It measured recall over 67 sessions, found the byte budget cutting the turns
+  line contradicted for a day. Its corrected corpus measured 78 sessions, found the byte budget cutting the turns
   nearest the task, fixed the fill order and raised the default on the strength of the numbers. **It answered the
   `pruned`-as-default question with a no**: 0.737 delivered recall at the default is not enough to start sending
   the operator's session by default. Precision was dropped rather than reported, because as defined it was always
@@ -756,7 +788,8 @@ Kept features only. Numbers are dropped except the two that code and rules cite.
   raises the cost of the wider one. **No in-process fix exists**: location is not a boundary, and
   authenticating a record needs a key that lives where the record does. The candidates are all outside this
   package — a different uid, directory permissions the child cannot satisfy, or gating `tool:write` the way
-  ADR-0012 gates `tool:bash` — and the last of those is an open product decision, not a defect to fix quietly.
+  ADR-0012 gates `tool:bash`. **Closed as a product decision 2026-09-29:** `tool:write`, `tool:edit` and
+  `tool:edit-diff` are now gated by default. That makes the path loud; it does not provide confinement.
 - `bash` escapes governance: a child holding it can start an ungoverned descendant, and containing that is the
   operating system's job (ADR-0012, `g5-bash-escape`); a grant containing `bash` reads narrow and is not.
 - Workspace leases coordinate only cooperating pi-daddy children; they do not exclude the operator, an IDE, hooks or
@@ -793,7 +826,8 @@ Kept features only. Numbers are dropped except the two that code and rules cite.
   - Not tested: a real end-to-end run with pi processes and a model, concurrency (two spawns racing the settle,
     or a reload interleaved with a live delegation), and non-Linux filesystem semantics.
 - A gated routing attempt used to take the destination's exclusive writer lease before the human was asked; ADR-0041
-  moved the approval before acquisition. The approval dialog itself still has no timeout.
+  moved the approval before acquisition. **Closed 2026-09-29:** approval prompts now default to a 120-second timeout;
+  `PI_DADDY_APPROVAL_TIMEOUT` changes it; zero, a negative value, or a value with no numeric prefix means no timeout.
 - ~~A registry the reader refuses produces no message anywhere: one malformed id silently removes every workspace
   from `/grants`, the catalog and `init`.~~ **Closed 2026-09-22.** Verified first: `buildCatalog` caught with
   `() => []` and `registeredWorkspaceIds` with `catch { return [] }`, so the reason was discarded at both sites and
@@ -878,12 +912,17 @@ Kept features only. Numbers are dropped except the two that code and rules cite.
   unique occurrences without fabricating facts.
 - The dashboard rereads and reprojects the whole file on every poll; it flips to incremental replay only when the
   ledger grows large or projection time climbs.
+- `/grants ledger` still treats valid `cost_gate`, `session_config`, `episode_outcome`, and non-empty future v3 event
+  kinds as corruption instead of skipping records it does not report; the dashboard projection already handles them
+  additively.
+- Advice append failure is silently ignored, and no advice record exists when no governance ledger is configured;
+  advisor output remains non-authoritative, but the audit trail can disappear without a diagnostic.
 - A task digest is a privacy identifier, not anonymisation: a short task can be guessed from a dictionary and equality
   across runs is visible. Correlation metadata is never authority; any authorisation branch reading it is a defect.
 - `subagents:rpc:spawn` bypasses the tripwire and cannot be caught from here.
 - The first advisor rides an endpoint OpenRouter marks alpha and a model with almost no published calibration;
-  advisors stay default off and degrade to "no advice" on timeout, and `pruned` handoff cannot become a default before
-  the handoff probe measures it.
+  advisors stay default off and degrade to "no advice" on timeout. The handoff probe rejected `pruned` as a default;
+  no measurement yet compares Jev's narrowing against the mechanical rule.
 - The load-bearing `allowed-tools` field is marked experimental in the Agent Skills specification and its reference
   implementation says it does not restrict; a rename upstream leaves every ceiling undeclared, which already refuses to
   spawn rather than widening.
