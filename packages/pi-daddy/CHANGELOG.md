@@ -12,10 +12,14 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
-## Unreleased — episode outcome labeling
+## 0.43.0 — episode outcome labeling (2026-09-29)
 
-- Add `pi-daddy outcomes`: append idempotent survival, CI, amendment, and operator-correction signals for
-  `Pi-Episode` commits, and show the latest combined label in `pi-daddy report`.
+- PR #85 adds `pi-daddy outcomes`, which reads Git history for `Pi-Episode` trailers and appends `episode_outcome`
+  ledger records covering survival on the default branch, reverts by name or inverse diff, CI state via `gh`,
+  amendments, and operator corrections.
+- `pi-daddy report` now fills its outcome column from those records.
+- Ledger readers now validate every known record kind before skipping kinds they do not render, and skip unknown
+  future kinds instead of throwing. No default changed.
 
 ## 0.42.0 — model-attributed usage records (2026-09-29)
 
