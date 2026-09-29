@@ -46,6 +46,7 @@ import {
 import { repairLedger } from "./governance/record.ts";
 import { importLegacyLedger } from "./governance/ledger.ts";
 import { commitsForRepo, renderEpisodeReport, reportEpisodes, type EpisodeGroupBy } from "./products/episode-report.ts";
+import { updateEpisodeOutcomes } from "./products/episode-outcomes.ts";
 
 /** The reviewable record, as the operator sees it relative to the project (ADR-0076 PR 3c). */
 const SETTINGS_REL = `${PI_PROJECT_DIR}/${PROJECT_STATE_DIRNAME}/${PROJECT_FILES.settings}`;
@@ -59,6 +60,7 @@ Usage:
   pi-daddy ledger import <source> <target> copy a pre-format ledger into the record format; the source is untouched
   pi-daddy report [--since <date>] [--definition <name>] [--model <id>]
                   [--group-by definition|model|thinking] [--json]
+  pi-daddy outcomes                       append changed episode outcomes from Git and CI
   pi-daddy --help | --version
 
 init references skills already enabled in Pi at their installed or local paths. Legacy unregistered npm
@@ -70,7 +72,7 @@ stays unspawnable. Capabilities that can change your machine
             It never rewrites ${SETTINGS_REL} — delete that file if you want it regenerated.`;
 
 export interface ParsedArgs {
-  command: "init" | "ledger-repair" | "ledger-import" | "report" | "help" | "version";
+  command: "init" | "ledger-repair" | "ledger-import" | "report" | "outcomes" | "help" | "version";
   importTarget?: string;
   /** `ledger repair <path>`: the ledger file; `yes` applies, otherwise preview only. */
   ledgerPath?: string;
@@ -118,6 +120,11 @@ export function parseArgs(argv: string[]): ParsedArgs {
     const unknown = flags.filter((f) => f !== "--yes");
     if (unknown.length) return { command: "help", force: false, errors: [`unknown option "${unknown[0]}"`] };
     return { command: "ledger-repair", force: false, errors: [], ledgerPath: target, yes: flags.includes("--yes") };
+  }
+  if (command === "outcomes") {
+    return tail.length === 0
+      ? { command: "outcomes", force: false, errors: [] }
+      : { command: "outcomes", force: false, errors: [`unknown option ${tail[0]}`] };
   }
   if (command === "report") {
     const parsed: ParsedArgs = { command: "report", force: false, errors: [] };
@@ -365,6 +372,16 @@ export async function main(argv: string[]): Promise<number> {
   }
   if (parsed.command === "help") {
     console.log(USAGE);
+    return 0;
+  }
+  if (parsed.command === "outcomes") {
+    const cwd = process.cwd();
+    const result = await updateEpisodeOutcomes({
+      cwd,
+      ledgerPath: projectLedgerPath(cwd),
+      activityPath: activityTimelinePath(cwd),
+    });
+    console.log(`pi-daddy: ${result.appended} outcome record(s) appended for ${result.outcomes.length} episode(s)`);
     return 0;
   }
   if (parsed.command === "report") {

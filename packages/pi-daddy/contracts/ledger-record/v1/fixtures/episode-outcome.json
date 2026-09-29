@@ -1,0 +1,12 @@
+{
+  "ledgerVersion": 3,
+  "event": "episode_outcome",
+  "ts": "2026-08-20T12:00:02.750Z",
+  "episodeId": "episode:00000000-0000-4000-8000-000000000099",
+  "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "survived": true,
+  "ci": "green",
+  "amended": false,
+  "corrected": false,
+  "label": "positive"
+}

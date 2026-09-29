@@ -5,6 +5,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   buildChildLifecycleEvent,
   buildEpisodeCostGateEvent,
+  buildEpisodeOutcomeEvent,
   buildRecord,
   buildSessionConfigEvent,
   buildWorkspaceLeaseEvent,
@@ -127,6 +128,16 @@ export function buildLedgerV3ContractFixtures() {
       overrides: new Map([["review", { model: "anthropic/claude-opus-4-6", thinking: "high" }]]),
       now: new Date("2026-08-20T12:00:02.750Z"),
     }),
+    "episode-outcome.json": buildEpisodeOutcomeEvent({
+      episodeId,
+      commit: "a".repeat(40),
+      survived: true,
+      ci: "green",
+      amended: false,
+      corrected: false,
+      label: "positive",
+      now: new Date("2026-08-20T12:00:02.750Z"),
+    }),
     "child-lifecycle.json": buildChildLifecycleEvent({
       episodeId,
       executionId: "exec:00000000-0000-4000-8000-000000000001",
@@ -199,9 +210,37 @@ export async function syncLedgerV3RefusalEnum(target = schemaPath): Promise<void
     $defs: Record<string, unknown> & { refusalCode: { enum: string[] } };
   };
   schema.$defs.refusalCode.enum = [...REFUSAL_CODES];
-  if (!schema.oneOf.some((entry) => entry.$ref === "#/$defs/costGate")) {
-    schema.oneOf.push({ $ref: "#/$defs/costGate" });
-  }
+  if (!schema.oneOf.some((entry) => entry.$ref === "#/$defs/costGate")) schema.oneOf.push({ $ref: "#/$defs/costGate" });
+  if (!schema.oneOf.some((entry) => entry.$ref === "#/$defs/episodeOutcome"))
+    schema.oneOf.push({ $ref: "#/$defs/episodeOutcome" });
+  schema.$defs.episodeOutcome = {
+    type: "object",
+    properties: {
+      ledgerVersion: { const: 3 },
+      event: { const: "episode_outcome" },
+      ts: { $ref: "#/$defs/timestamp" },
+      episodeId: { $ref: "#/$defs/episodeId" },
+      commit: { type: "string", pattern: "^[0-9a-f]{40}$" },
+      survived: { type: "boolean" },
+      ci: { enum: ["green", "red", "none"] },
+      amended: { type: "boolean" },
+      corrected: { type: "boolean" },
+      label: { enum: ["positive", "negative", "unknown"] },
+    },
+    required: [
+      "ledgerVersion",
+      "event",
+      "ts",
+      "episodeId",
+      "commit",
+      "survived",
+      "ci",
+      "amended",
+      "corrected",
+      "label",
+    ],
+    additionalProperties: false,
+  };
   schema.$defs.costGate = {
     type: "object",
     properties: {

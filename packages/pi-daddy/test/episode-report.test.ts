@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { after, test } from "node:test";
 import { appendRecord } from "../src/governance/record.ts";
-import { buildChildLifecycleEvent } from "../src/governance/ledger-events.ts";
+import { buildChildLifecycleEvent, buildEpisodeOutcomeEvent } from "../src/governance/ledger-events.ts";
 import { buildRecord } from "../src/governance/ledger.ts";
 import { commitsFromGitLog, renderEpisodeReport, reportEpisodes } from "../src/products/episode-report.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
@@ -111,6 +111,20 @@ async function fixture(): Promise<{ ledgerText: string; activityText: string }> 
         taskId: `${definition}-turn-${turn}`,
       });
   }
+  await appendRecord(
+    ledger,
+    "fact",
+    buildEpisodeOutcomeEvent({
+      episodeId: EPISODE_A,
+      commit: "1234567890abcdef1234567890abcdef12345678",
+      survived: true,
+      ci: "green",
+      amended: false,
+      corrected: false,
+      label: "positive",
+      now: new Date("2026-09-23T10:00:00.000Z"),
+    }),
+  );
   return { ledgerText: await readFile(ledger, "utf8"), activityText: await readFile(activity, "utf8") };
 }
 
@@ -141,7 +155,7 @@ test("report joins fixture ledgers into episode rows and range totals", async ()
     durationMs: 120_000,
     children: 1,
     commit: "12345678",
-    outcome: "",
+    outcome: "positive",
   });
   assert.deepEqual(report.totals, { episodes: 2, cost: 1, tokens: 360, p50EpisodeCost: 0.25, p95EpisodeCost: 0.75 });
   const markdown = renderEpisodeReport(report, false);
@@ -209,6 +223,11 @@ test("report CLI parses filters, grouping and JSON without accepting unknown val
   const missing = parseArgs(["node", "cli", "report", "--definition", "--json"]);
   assert.match(missing.errors[0], /definition/);
   assert.equal(missing.json, true, "a missing value must not swallow the next flag");
+  assert.deepEqual(parseArgs(["node", "cli", "outcomes"]), {
+    command: "outcomes",
+    force: false,
+    errors: [],
+  });
 });
 
 test("Pi-Episode trailers map episodes to the newest short commit", () => {

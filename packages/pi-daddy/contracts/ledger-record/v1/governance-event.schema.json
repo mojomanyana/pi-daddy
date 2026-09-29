@@ -18,6 +18,9 @@
     },
     {
       "$ref": "#/$defs/sessionConfig"
+    },
+    {
+      "$ref": "#/$defs/episodeOutcome"
     }
   ],
   "$defs": {
@@ -1181,6 +1184,63 @@
         "outcome",
         "trigger",
         "overrides"
+      ],
+      "additionalProperties": false
+    },
+    "episodeOutcome": {
+      "type": "object",
+      "properties": {
+        "ledgerVersion": {
+          "const": 3
+        },
+        "event": {
+          "const": "episode_outcome"
+        },
+        "ts": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "episodeId": {
+          "$ref": "#/$defs/episodeId"
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "survived": {
+          "type": "boolean"
+        },
+        "ci": {
+          "enum": [
+            "green",
+            "red",
+            "none"
+          ]
+        },
+        "amended": {
+          "type": "boolean"
+        },
+        "corrected": {
+          "type": "boolean"
+        },
+        "label": {
+          "enum": [
+            "positive",
+            "negative",
+            "unknown"
+          ]
+        }
+      },
+      "required": [
+        "ledgerVersion",
+        "event",
+        "ts",
+        "episodeId",
+        "commit",
+        "survived",
+        "ci",
+        "amended",
+        "corrected",
+        "label"
       ],
       "additionalProperties": false
     }

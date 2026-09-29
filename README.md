@@ -129,7 +129,9 @@ hash of the record. A damaged file is read up to the damage; the writer then ref
 `pi-daddy ledger repair <path> --yes` drops the damaged tail. A ledger written before the envelope existed is imported
 once at session start (`pi-daddy ledger import <source> <target>` does it by hand) and never repaired. `/grants
 ledger` reports records, escalation attempts, integrity, executors and which definition bodies ran, by digest. The
-activity timeline (`activity.jsonl`, parent turns, child lifecycles, skill-file reads) uses the same envelope. The
+activity timeline (`activity.jsonl`, parent turns, child lifecycles, skill-file reads) uses the same envelope.
+`pi-daddy outcomes` reads Git history, optional GitHub Actions results from `gh`, and the next recorded operator turn,
+then appends only changed episode outcome signals. `pi-daddy report` shows the latest label beside each episode. The
 contract is `packages/pi-daddy/contracts/ledger-record/v1`.
 
 ## Workspaces and leases

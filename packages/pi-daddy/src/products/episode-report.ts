@@ -32,7 +32,7 @@ export interface EpisodeReportRow {
   durationMs: number;
   children: number;
   commit: string;
-  outcome: "";
+  outcome: "" | "positive" | "negative" | "unknown";
 }
 export interface EpisodeReportGroup {
   value: string;
@@ -124,6 +124,7 @@ export function reportEpisodes(input: {
   options: EpisodeReportOptions;
 }): EpisodeReport {
   const episodes = new Map<string, EpisodeAccumulator>();
+  const outcomes = new Map<string, "positive" | "negative" | "unknown">();
   const ledger = readRecords(input.ledgerText);
   if (ledger.damage) throw new Error(`grants ledger damaged at line ${ledger.damage.line}: ${ledger.damage.reason}`);
   for (const record of ledger.records) {
@@ -131,6 +132,11 @@ export function reportEpisodes(input: {
     const body = record.body;
     const episodeId = text(body.episodeId);
     if (!episodeId) continue;
+    if (body.event === "episode_outcome") {
+      if (["positive", "negative", "unknown"].includes(text(body.label)))
+        outcomes.set(episodeId, body.label as "positive" | "negative" | "unknown");
+      continue;
+    }
     const episode = episodeOf(episodes, episodeId, timestamp(body.ts, record.at));
     if (text(body.definitionHash)) episode.hashes.add(text(body.definitionHash).slice(0, 12));
     if (body.event === "capability_decision") {
@@ -184,7 +190,7 @@ export function reportEpisodes(input: {
   }
   const since = input.options.since ? Date.parse(input.options.since) : Number.NEGATIVE_INFINITY;
   let rows: EpisodeReportRow[] = [...episodes.values()]
-    .map((episode) => ({
+    .map((episode): EpisodeReportRow => ({
       episode: episode.episode,
       started: new Date(episode.startedMs).toISOString(),
       definition: joined(episode.definitions),
@@ -203,7 +209,7 @@ export function reportEpisodes(input: {
       durationMs: Math.max(0, episode.endedMs - episode.startedMs),
       children: episode.children.size,
       commit: input.commitByEpisode.get(episode.episode) ?? "",
-      outcome: "" as const,
+      outcome: outcomes.get(episode.episode) ?? "",
     }))
     .filter((row) => Date.parse(row.started) >= since)
     .filter((row) => !input.options.definition || row.definition.split(",").includes(input.options.definition))
