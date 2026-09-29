@@ -12,8 +12,10 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
-## Unreleased — model-attributed usage records
+## 0.42.0 — model-attributed usage records (2026-09-29)
 
+- The first delegation now prompts once to keep or change child model and thinking defaults for the session;
+  `sessionModelPrompt: never` skips the prompt.
 - The dashboard now shows the `/grants models` table and read-only episode cost/ceiling; model and thinking edits use
   the owning session's in-memory override path and produce the same `session_config` ledger event.
 - Definitions and global defaults in `.pi/pi-daddy/settings.json` may select child model and thinking, with explicit,
