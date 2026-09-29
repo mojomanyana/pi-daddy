@@ -58,15 +58,12 @@ const byExecution = (nodes: DashboardNode[], id: string): DashboardNode => {
 test("current and future non-dashboard event kinds are skipped while dashboard events render", () => {
   const fixtures = Object.values(buildLedgerV3ContractFixtures());
   const projection = parseDashboardLedger(
-    lines(
-      ...fixtures,
-      {
-        ledgerVersion: 3,
-        event: "future_fact",
-        ts: "2026-08-28T12:00:04.000Z",
-        episodeId: "episode:00000000-0000-4000-8000-000000000099",
-      },
-    ),
+    lines(...fixtures, {
+      ledgerVersion: 3,
+      event: "future_fact",
+      ts: "2026-08-28T12:00:04.000Z",
+      episodeId: "episode:00000000-0000-4000-8000-000000000099",
+    }),
     { now },
   );
 
