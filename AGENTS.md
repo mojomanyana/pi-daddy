@@ -554,6 +554,77 @@ it does not render, and skips a non-empty unknown future discriminator; malforme
 discriminators remain corruption. `/grants ledger` still treats valid unrendered and future v3 kinds as corruption,
 which is a live compatibility gap.
 
+**2026-09-30 — execution-cache qualification is fail-closed, and the foundations are not cache enablement.**
+The proposed reuse unit is a qualified complete command within one root-session lifetime, with TypeScript/Node
+policy and Watchman observation; history must never hydrate reusable state. The first internal helpers are
+`kernel/cache-owner.ts`, `executors/cache-bootstrap.ts`, `executors/cache-supervisor.ts`, and
+`executors/cache-watchman.ts`: Linux namespace PID1 supervision verifies the actual calling owner's boot/PID/start
+identity before loading work. A valid foreign PID is refused rather than pretending parent-death handling follows it.
+Real isolated fixtures in `test-integration/cache-supervision.it.ts` cover owner/coordinator death and a deterministic
+pre-namespace owner-death boundary; removing the pre-entry owner check in a disposable worktree made that boundary
+fail. Watchman warnings, transport loss and malformed UTF-8 cannot establish an observation barrier; startup
+uncertainty is not overwritten by success. Those checks are in `test/cache-watchman-health.test.ts` and
+`test/cache-watchman-protocol.test.ts`. This measures helpers on Linux/WSL2, not Pi-session integration, complete
+command observation, immutable input consistency, eligibility, cache reuse or useful performance. The helpers are
+not connected to the extension, so existing execution behavior is unchanged. A live read-only host mount is not
+an immutable input strategy; incomplete external-state coverage must bypass, not become a reuse assumption.
+
+**2026-09-30 — synchronized Watchman events are not complete byte-change evidence.** The isolated
+`test-integration/cache-input-consistency.it.ts` keeps a writable shared mapping open and dirty before observation,
+changes its bytes and restores them during validation: intermediate reads differ while the barriers report no changed
+paths and the before/after bytes and timestamps agree. Cookie freshness must not certify input consistency. The
+native qualification in `test-integration/cache-native.it.ts` observes file probes and detached-child service access,
+including failed access, but also demonstrates user-space time/randomness gaps; no profile is qualified by a trace
+alone. Neither qualification enables caching or grants system privileges. Absence of owner authority is also not
+termination evidence: `cacheProcessTerminated` accepts validated disappearance, death or identity replacement, and
+throws on malformed/unreadable observations. Changing that failure path to report success fails the owner tests.
+
+**2026-10-01 — a native lease leaf is an OS primitive, not cache policy or privilege enablement.**
+Node retains coordination, graph, scheduling and cache ownership. `executors/native/cache-lease.c` only bridges
+Linux readonly descriptor leases and lifetime; its Node adapters are `executors/cache-lease-bridge.ts` and
+`executors/cache-lease-process.ts`. The publisher builds a static Linux x64 asset and digest manifest, without
+installing it or granting capabilities. Root-owned runtime coverage requires an explicitly reviewed, root-owned,
+protected, versioned helper carrying only Linux `cap_lease=ep`; no such installation or positive privileged qualification
+has occurred. Unsupported publisher platforms record unavailability; the C arm64 branch is unqualified. Source
+hashing/pinned-descriptor execution identifies the reviewed leaf, not arbitrary mutable command inputs. A content
+lease is not namespace/metadata consistency or determinism, and a break permanently loses its incarnation's proof.
+Real `test-integration/cache-lease.it.ts` and `cache-lease-fault.it.ts` cover user-owned acquisition, existing-writer
+refusal, break/release, peer death and protocol/callback/quota failures. Review found that terminal faults originally
+left leases alive and saturated release forgot native ownership; both now initiate bounded owned termination,
+with fault/cleanup errors exposed rather than fabricated success. Removing terminal cleanup or restoring the old
+release deletion fails those real tests. Lease break timeouts are scheduling-dependent, not hard real-time bounds.
+The helper remains unconnected to Pi: no runtime profile, input acquisition contract or cache feature is accepted.
+
+**2026-10-01 — live cache deletion is not process completion or historical retention.**
+The internal `products/cache-graph.ts` and `products/cache-payloads.ts` have no history loader or IO: dirty evidence
+blocks transitive access; confirmed changes delete results/reverse edges and permanently disqualify old run tickets.
+Cache clear retains the slot for an actual running execution until the supervisor reports its outcome or verified
+abandonment. Output already acquired by a reader remains charged until release, but no new reader can acquire
+invalid output; retired handles retain identity-only weak bookkeeping, not descriptor rows. Independent review
+found and tests reproduced large-fanout argument spreading corrupting deletion, clear fabricating available run
+capacity, and retired payload descriptors surviving outside accounting; all are repaired. The maximum-fanout,
+clear and GC/retention tests fail if their respective guards are restored. Local graph-only measurements rejected
+the provisional larger edge budget for transaction latency and metadata; no actual command-performance or RSS-cap
+claim follows from them. These methods accept only trusted coordinator observations, not caller claims, and remain
+unconnected to source qualification, authority and Pi execution. This is core transition evidence, not cache-feature
+acceptance. Rejected: counting invalid runs as finished, discounting pinned invalid bytes, and resurrecting results
+when source fingerprints return to an older value.
+
+**2026-10-01 — shared execution ownership and result finalization are separate.**
+The internal `products/cache-scheduler.ts` checks current trusted authorization before each hit, join and logical
+retry and again after validation/queue delay; acknowledged opaque request handles never silently execute again.
+Force requests bypass joining and reuse. One canceled reader detaches only its interest; the last interest stops
+owned work, including a handle returned after cancellation. Process-slot occupancy is released by verified exit,
+while independently bounded result finalization may still wait for output. Unknown startup cleanup retains its
+charged ownership and faults the whole coordinator, settling queued interests and stopping known peers. Stream
+replay preserves raw bytes and chunk boundaries under byte and count limits; reader callbacks receive private
+copies. Reviews reproduced escaped stop exceptions, stranded peer/queued work, phantom ownership, unbounded lost
+results and unnecessary stop after verified exit, plus tests that failed to force their advertised guards. These
+are repaired and the last-interest integration now verifies detached-tree death BEFORE shutdown. A Bubblewrap
+wrapper's exit is not substituted for strict termination of the fixture's known descendants. Synthetic source
+validation in those fixtures is not cache eligibility. This core remains unconnected to a client protocol, actual
+source qualification and Pi execution; scope-only review approval does not authorize cache activation.
+
 **Working rules that survive the deletion of the working-rules document.** Decisions, load-bearing claims and
 failure modes are written down or they do not exist; reversals get a dated note, never a rewrite; measure before
 asserting and say which you did, and state what the evidence does not cover; a test that cannot fail is worse than
@@ -926,6 +997,21 @@ Kept features only. Numbers are dropped except the two that code and rules cite.
 - The load-bearing `allowed-tools` field is marked experimental in the Agent Skills specification and its reference
   implementation says it does not restrict; a rename upstream leaves every ceiling undeclared, which already refuses to
   spawn rather than widening.
+- **Execution-cache qualification, 2026-10-01:** the lease leaf and live graph/scheduler remain internal foundations,
+  not an active cache. Interactive sudo is still required for the exact reviewed `cap_lease=ep` helper setup.
+  Installed Pi's SDK exposes its effective tool definition, but the extension API does not; same-name replacement
+  does not preserve arbitrary overrides, and rebuilding Bash cannot infer its captured shell settings/hooks.
+  A supported final-execution interception seam is still needed; no installed runtime was patched. A PRIVATE
+  middleware compatibility prototype now exercises that seam on a disposable unbundled SDK copy: final native
+  argv/environment snapshots, original-operation continuation, override selection, reload and tool availability.
+  Independent review found native work escaping early middleware completion, timeout waiting altering the native
+  runtime bound, mutable spawn inputs, unowned continuation rejections and Node environment propagation bugs;
+  repaired probes now pass, with scope-only review approval. This is not an upstream TypeScript implementation,
+  supported API deployment or whole-runtime qualification, and synthetic hits are not source-qualified reuse. Separately,
+  descriptor content leases do not freeze namespace/metadata/mount observations. Raw notification queue draining
+  has not established a common coherent acquisition/current-validation point, so adding an inotify leaf was
+  rejected as a claim of source consistency, not proved universally useless. No image-authoritative contract,
+  cooperative-writer assumption, extra privilege or timestamp/cookie-only proof replaces the original requirement.
 - **R-60** — every `await` inside `session_start` needs its own `try`: one rethrown read error under the blanket
   catch silenced every session-start notification, including the line that shows governance is on at all.
 - **R-85** — work reaches `main` by drift, not decision: check the branch before the first edit of a task, and if work

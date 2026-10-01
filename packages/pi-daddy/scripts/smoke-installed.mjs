@@ -39,6 +39,30 @@ try {
     throw new Error("test-only run-child control leaked into the installed package");
   }
 
+  // Native leaf must ship and work WITHOUT installing/granting capabilities to npm content.
+  const leaseRoot = join(work, "node_modules", "pi-daddy", "dist", "executors", "native");
+  const leaseManifest = JSON.parse(readFileSync(join(leaseRoot, "cache-lease.json"), "utf8"));
+  if (process.platform === "linux" && process.arch === "x64") {
+    if (!leaseManifest.available || leaseManifest.arch !== process.arch || leaseManifest.protocol !== 2)
+      throw new Error("installed native lease manifest is missing or incompatible");
+    writeFileSync(join(work, "lease-probe.mjs"), [
+      'import assert from "node:assert/strict";',
+      'import {open,writeFile} from "node:fs/promises";',
+      'import {startCacheLeaseBridge} from "./node_modules/pi-daddy/dist/executors/cache-lease-bridge.js";',
+      'import {readCacheOwner} from "./node_modules/pi-daddy/dist/kernel/cache-owner.js";',
+      'await writeFile("lease-input","stable");const fd=await open("lease-input","r");',
+      'const owner=await readCacheOwner(process.pid);',
+      'const bridge=await startCacheLeaseBridge({binary:' + JSON.stringify(join(leaseRoot, "cache-lease-v2")) +
+        ',binarySha256:' + JSON.stringify(leaseManifest.sha256) + ',owner,peer:owner,onLoss:()=>{}});',
+      'try{assert.equal(bridge.privileged,false);const held=await bridge.acquire(fd.fd,await fd.stat({bigint:true}));',
+      'if(!held.ok)assert.fail(held.reason);assert.equal(await held.lease.check(),true);await held.lease.release();}',
+      'finally{await bridge.stop();await fd.close();}',
+    ].join("\n"));
+    run("node", ["lease-probe.mjs"], work);
+  } else if (leaseManifest.available || !leaseManifest.reason) {
+    throw new Error("unsupported native lease platform was not explicitly recorded");
+  }
+
   writeFileSync(
     join(work, "probe.mjs"),
     [

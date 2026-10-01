@@ -48,7 +48,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json",
+    "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json && node scripts/build-cache-lease.ts",
     "typecheck": "tsc -p tsconfig.check.json",
     "test": "node scripts/unit-tests.ts",
     "test:integration": "node --test test-integration/*.it.ts",

@@ -50,12 +50,12 @@ export interface BoundedReadLimits {
  * one definition that will not be offered — and a shared reader must not decide that for them.
  */
 export type BoundedReadFailure =
-  | { why: "unopenable"; detail: string }
+  | { why: "unopenable"; detail: string; code?: string }
   | { why: "not-a-regular-file"; detail: string }
   | { why: "too-large"; detail: string; size: number }
   | { why: "grew-while-reading"; detail: string }
   | { why: "timed-out"; detail: string }
-  | { why: "unreadable"; detail: string };
+  | { why: "unreadable"; detail: string; code?: string };
 
 export type BoundedReadResult = { ok: true; text: string } | ({ ok: false } & BoundedReadFailure);
 export type BoundedReadBytes = { ok: true; bytes: Buffer } | ({ ok: false } & BoundedReadFailure);
@@ -72,13 +72,20 @@ export async function readBoundedFile(path: string, limits: BoundedReadLimits): 
   return read.ok ? { ok: true, text: read.bytes.toString("utf8") } : read;
 }
 
+/** Preserve typed I/O evidence; a caller must not classify absence by searching diagnostic prose. */
+function ioCode(error: unknown): { code?: string } {
+  if (error && typeof error === "object" && "code" in error && typeof error.code === "string")
+    return { code: error.code };
+  return {};
+}
+
 export async function readBoundedBytes(path: string, limits: BoundedReadLimits): Promise<BoundedReadBytes> {
   const now = limits.now ?? Date.now;
   let handle: FileHandle;
   try {
     handle = await open(path, constants.O_RDONLY | constants.O_NONBLOCK);
   } catch (error) {
-    return { ok: false, why: "unopenable", detail: String(error) };
+    return { ok: false, why: "unopenable", detail: String(error), ...ioCode(error) };
   }
   try {
     const info = await handle.stat();
@@ -118,7 +125,7 @@ export async function readBoundedBytes(path: string, limits: BoundedReadLimits):
       };
     return { ok: true, bytes: buffer.subarray(0, filled) };
   } catch (error) {
-    return { ok: false, why: "unreadable", detail: String(error) };
+    return { ok: false, why: "unreadable", detail: String(error), ...ioCode(error) };
   } finally {
     await handle.close().catch(() => {});
   }

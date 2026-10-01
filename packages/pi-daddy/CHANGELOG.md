@@ -12,6 +12,31 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## Unreleased — execution-cache qualification foundations
+
+- Add internal Linux ownership/supervision and bounded Watchman observation helpers, with real namespace and
+  Watchman qualification tests. Refuse foreign owners and uncertain observation; report unresolved termination
+  rather than claiming successful cleanup.
+- Preserve typed I/O error codes in bounded-read refusals so process-termination checks distinguish validated
+  disappearance from failed observation. Unreadable or malformed process state cannot certify cleanup.
+- Add isolated native-observer and mmap/change-and-undo qualifications. Watchman synchronization and a syscall
+  trace alone do not qualify an execution for reuse; no system package or privilege is installed automatically.
+- Add a static Linux x64 descriptor-only lease leaf, strict Node protocol/lifetime adapters and real fault tests.
+  Publisher builds now require an existing C compiler on Linux x64; recipient installs neither compile the leaf
+  nor grant capabilities. Terminal evidence/callback errors stop its owned process; saturated release cannot
+  silently forget an OS lease. Root-owned runtime guarding requires a separately reviewed operator CAP_LEASE setup,
+  which has not been installed or positively qualified. No enablement action is needed for ordinary execution.
+- Add the internal Node live graph and bounded immutable output ownership: dirty evidence blocks reuse,
+  invalidation removes runtime edges/results, old completions cannot resurrect entries, and pinned delivery bytes
+  remain charged until release. Clear does not fabricate completion or free a running execution's slot.
+  These transition primitives do not qualify command inputs or authorize cached-result access.
+- Add the internal bounded shared-execution scheduler: current authorization at each access, logical retry
+  deduplication, independent force reruns, per-reader cancellation/deadlines, bounded exact stream replay and
+  retained replies. Verified process exit releases occupancy separately from bounded outcome finalization;
+  unknown cleanup faults the entire coordinator rather than silently freeing ownership.
+- These helpers are not connected to Pi execution yet. No command result is cached, no new service starts by
+  default, and existing execution behavior is unchanged. No operator migration or enablement is needed.
+
 ## 0.43.1 — Pi-only documentation refresh (2026-09-29)
 
 - Refresh `README.md`, `AGENTS.md`, the package README, and the ledger-record contract README against the shipped
