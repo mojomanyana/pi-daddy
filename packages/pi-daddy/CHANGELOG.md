@@ -12,7 +12,7 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
-## 0.44.0-rc.2 — review follow-up (2026-10-07)
+## 0.44.0 — stable release (2026-10-07)
 
 - Rebuild the native helper using a SHA-pinned Zig/static-musl toolchain, retain exact source/artifact/license
   provenance, and have CI reproduce every output byte. The loader verifies the held executable against its generated

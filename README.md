@@ -1,6 +1,6 @@
 # pi-daddy
 
-Release candidate: **0.44.0-rc.2** (tag `v0.44.0-rc.2`), prepared for PR review. This version is not published to npm.
+Stable release: **0.44.0** (tag `v0.44.0`), published to npm.
 
 **Capability governance and coordination for [pi](https://github.com/badlogic/pi-mono)'s multi-level agent system.**
 An orchestrator grants each sub-agent a deliberate subset of what it holds and withholds the rest. A sub-agent may
@@ -168,7 +168,7 @@ work, final availability, subtree cleanup and optional observation completeness 
 execution returns `isError` with its available evidence. Display, diagnostics and optional recording cannot replace
 the primary final. Unknown cleanup retains capacity and workspace exclusion.
 
-The package dependency and peer requirement both pin exact Pi **1.0.4**; later Pi versions require new qualification. Use Principal **4.8.0-rc.2** with this runtime's `delegate_describe` contract. Native phases use `plan`, `build`, `review`, `debug`, and `investigate` with their returned `definitionId`; independent parallel work uses one `delegate_all` batch.
+The package dependency and peer requirement both pin exact Pi **1.0.4**; later Pi versions require new qualification. Use Principal **4.8.0** with this runtime's `delegate_describe` contract. Native phases use `plan`, `build`, `review`, `debug`, and `investigate` with their returned `definitionId`; independent parallel work uses one `delegate_all` batch.
 
 Final capture preserves whitespace and concatenates text blocks without inserting separators. Tool-call terminals, empty visible finals and non-`stop` reasons are unavailable. Persisted message comparisons ignore object key order while preserving array order and every field value. The shared `final-conformance.json` table checks these semantics in both runtime and harness. Capture remains bounded: 4 MiB visible final, 32 MiB protocol line, 64 MiB persisted session, and a 3-second bounded session read. Exceeding a limit reports an unavailable final and blocks dependent handoffs; it does not imply the worker failed to settle.
 
