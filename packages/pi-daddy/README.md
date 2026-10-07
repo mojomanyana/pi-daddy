@@ -1,6 +1,6 @@
 # pi-daddy
 
-Stable release: **0.44.0** (tag `v0.44.0`), published to npm.
+Stable release: **0.44.1** (tag `v0.44.1`), published to npm.
 
 Capability governance and coordination for [pi](https://github.com/badlogic/pi-mono)'s multi-level agent system. An
 orchestrator grants each sub-agent a deliberate subset of what it holds and withholds the rest; a sub-agent may delegate

@@ -1,6 +1,6 @@
 {
   "name": "pi-daddy",
-  "version": "0.44.0",
+  "version": "0.44.1",
   "description": "Capability governance for pi sub-agents: spawn Agent Skills (SKILL.md) definitions whose allowed-tools becomes a grant that can only narrow going down a delegation tree, enforced by pi's own --tools allowlist, with an append-only ledger.",
   "keywords": [
     "pi-package",
@@ -67,16 +67,13 @@
     ]
   },
   "peerDependencies": {
-    "@types/node": ">=22",
-    "typebox": ">=1.0.0",
-    "@earendil-works/pi-coding-agent": "1.0.4"
-  },
-  "dependencies": {
-    "@earendil-works/pi-coding-agent": "1.0.4",
-    "typebox": ">=1.0.0"
+    "typebox": "*",
+    "@earendil-works/pi-coding-agent": "*"
   },
   "devDependencies": {
+    "@earendil-works/pi-coding-agent": "1.0.4",
     "@types/node": "^22.0.0",
+    "typebox": "^1.1.38",
     "typescript": "^5.7.0"
   },
   "os": [

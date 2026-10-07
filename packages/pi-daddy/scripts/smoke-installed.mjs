@@ -34,8 +34,17 @@ const run = (cmd, args, cwd) =>
 try {
   const packed = run("npm", ["pack", "--pack-destination", work], pkgDir).trim().split("\n").pop();
   writeFileSync(join(work, "package.json"), JSON.stringify({ name: "smoke", private: true, type: "module" }));
-  // Pi's managed npm installs omit host peers. The CLI must carry its own runtime dependencies.
-  run("npm", ["i", "--legacy-peer-deps", "--no-audit", "--no-fund", join(work, packed)], work);
+  // Pi supplies one shared copy of its SDK and TypeBox to extension packages. Install those host peers
+  // explicitly in the scratch project so this standalone consumer exercises the same module boundary.
+  run("npm", [
+    "i",
+    "--legacy-peer-deps",
+    "--no-audit",
+    "--no-fund",
+    join(work, packed),
+    "@earendil-works/pi-coding-agent@1.0.4",
+    "typebox@1.1.38",
+  ], work);
   if (existsSync(join(work, "node_modules/pi-daddy/dist/kernel/run-child-test-control.js"))) {
     throw new Error("test-only run-child control leaked into the installed package");
   }
