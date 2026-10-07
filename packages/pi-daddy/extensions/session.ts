@@ -14,11 +14,16 @@
  * copy of `ownGrant` before observation is exactly how a stale upper bound would become an enforced one.
  */
 import { randomUUID } from "node:crypto";
+import type { CacheSessionProduct } from "./cache-session-product.ts";
+import type { CacheProductReaders } from "../src/executors/cache-product-readers.ts";
+import { BoundedReadCleanupError } from "../src/kernel/bounded-read.ts";
+import type { discoverSkillPackages } from "../src/kernel/skill-packages.ts";
+import { collectBoundedReadFailures } from "../src/kernel/bounded-read-failures.ts";
 import { isEpisodeId, newEpisodeId } from "../src/kernel/episode-id.ts";
 import { parseInherited, type InheritableApproval } from "../src/kernel/approval.ts";
 import type { ApprovalBinding } from "../src/kernel/correlation.ts";
 import { createApprovalGateProvider } from "../src/governance/approval-prompt.ts";
-import { makeCatalog, skillPathsFromCatalog, type Catalog } from "../src/kernel/catalog.ts";
+import { makeCatalog, skillPathsFromCatalog, type CatalogLoaders, type Catalog } from "../src/kernel/catalog.ts";
 import type { SkillDefinition } from "../src/kernel/definitions.ts";
 import { DELEGATE_CAPABILITY, type DelegationContext } from "../src/kernel/delegate.ts";
 import { budgetFromEnv } from "../src/kernel/fanout.ts";
@@ -75,6 +80,13 @@ import {
   type DefinitionRuntimeChoice,
   type DefinitionRuntimeSettings,
 } from "./definition-runtime.ts";
+
+/** Trusted composition dependencies, not inherited or requester-supplied authority. */
+export interface SessionDiscovery extends CatalogLoaders {
+  packages?: typeof discoverSkillPackages;
+  acceptanceRead?: (path: string) => Promise<string>;
+  canonicalise?: (path: string) => Promise<string>;
+}
 
 /**
  * Run governed children in herdr panes instead of captured child processes.
@@ -133,6 +145,11 @@ export function activityChildEnv(activity: { rootId: string; path: string; taskI
 }
 /** Keep each child's pane after it finishes, for inspection. Off by default: fan-out would flood it. */
 export interface GrantsSession extends NativeSessionHost {
+  /** Explicit owned SDK binding only; never populated by child-writable settings or process-global bearer. */
+  executionCache?: CacheSessionProduct;
+  executionCacheReader?: CacheProductReaders;
+  /** Actual supported SDK active-tool query, supplied only by explicit owned native composition. */
+  executionCacheToolAvailable?: () => boolean;
   /** Legacy PI_GRANTS_* names adopted at construction (ADR-0076 PR 3b); the session-start warning names them. */
   readonly adoptedLegacyEnv: readonly string[];
   /** False only for the explicit PI_DADDY_GOVERNANCE opt-out; otherwise roots are observed-bound. */
@@ -248,6 +265,10 @@ export interface GrantsSession extends NativeSessionHost {
   workspaceSkips: string[];
   /** Which registry ids this machine has accepted, and which it has not. Reported, and drives `/grants`. */
   workspaceAcceptance?: { accepted: string[]; firstUse: boolean; unaccepted: string[] };
+  /** Trusted discovery dependencies supplied by composition, never inherited authority. */
+  readonly discovery: SessionDiscovery;
+  /** Exact unresolved discovery failure/capability; physical recovery never rewrites the failed outcome. */
+  discoveryCleanupFailure?: BoundedReadCleanupError;
   catalog: Catalog;
   /**
    * The in-flight catalog build, so `delegate` can wait for it instead of racing it.
@@ -327,7 +348,9 @@ export interface GrantsSession extends NativeSessionHost {
  * Failing to establish is not an error: a machine with no registry has no workspaces to route to, and the
  * absent pin refuses anything that tries. That is the same direction as every other failure in this mechanism.
  */
-async function establishRootPin(session: GrantsSession): Promise<void> {
+async function establishRootPin(session: GrantsSession, lifecycle: ReloadLifecycle): Promise<void> {
+  assertDiscoveryHealthy(session, lifecycle);
+  if (lifecycle.workspacePinFailure) throw lifecycle.workspacePinFailure;
   if (session.pinSettled) return;
   // **One assignment, at the end, on every path.** Review found the previous shape — assign at each `return`
   // — missing two of five exits: the `catch` around an unreadable registry, which is precisely the state a
@@ -339,26 +362,34 @@ async function establishRootPin(session: GrantsSession): Promise<void> {
   // settled with nothing settled — routing nowhere, which is safe, but with the LIFECYCLE unset, so the next
   // reload would mint again. Review could construct no throw today; "currently unreachable" is exactly the
   // property this feature has now been wrong about four times, and the ordering costs nothing.
-  const settled = await settleWorkspacePin(session);
+  // Charge/publish BEFORE invoking trusted loaders: reentrant startup/init/reload joins the same owner.
+  lifecycle.workspacePinAcquisition ??= Promise.resolve().then(async () => {
+    const settled = await settleWorkspacePin(session, lifecycle);
+    assertDiscoveryHealthy(session, lifecycle);
+    lifecycle.workspacePin = settled;
+    return settled;
+  });
+  const settled = await lifecycle.workspacePinAcquisition;
+  assertDiscoveryHealthy(session, lifecycle);
   session.pinSettled = true;
   session.workspacePin = settled;
-  session.reloadLifecycle.workspacePin = settled;
 }
 
 /**
- * What this session's destination pin IS (ADR-0042). Every path returns a map; none writes anything.
+ * What this session's destination pin IS (ADR-0042). Ordinary unavailable registries settle an empty map;
+ * physical reader cleanup failures instead retain their exact rejected outcome on the owning lifecycle.
  *
- * An empty map means "settled, and you may route nowhere", which is different from never having settled and
- * is what every failure resolves to. The distinction that matters is not empty-versus-absent but
+ * An empty map means "settled, and you may route nowhere", which is different from never having settled.
+ * The distinction that matters is not empty-versus-absent but
  * settled-versus-not, and settling happens exactly once per owner.
  */
-async function settleWorkspacePin(session: GrantsSession): Promise<WorkspacePins> {
+async function settleWorkspacePin(session: GrantsSession, lifecycle: ReloadLifecycle): Promise<WorkspacePins> {
   // Settled by an EARLIER SESSION OBJECT for this same owner — an extension reload. Adopting rather than
   // re-deriving is the point: a root may mint, but only once, and only from the registry as it stood before
   // any child had a chance to rewrite it.
-  if (session.reloadLifecycle.workspacePin) return session.reloadLifecycle.workspacePin;
+  if (lifecycle.workspacePin) return lifecycle.workspacePin;
 
-  const raw = session.reloadLifecycle.root[ENV_WORKSPACE_PIN];
+  const raw = lifecycle.root[ENV_WORKSPACE_PIN];
   const inherited = parseWorkspacePin(raw);
   // Inherited, so it is authority and is kept exactly as it arrived — including an empty one, which says
   // "your parent established a pin and gave you none of it".
@@ -379,51 +410,150 @@ async function settleWorkspacePin(session: GrantsSession): Promise<WorkspacePins
   const registryPath = process.env[ENV_WORKSPACE_REGISTRY];
   if (!registryPath) return new Map();
   try {
-    const registry = await loadWorkspaceRegistry(registryPath);
+    let registry: Awaited<ReturnType<typeof loadWorkspaceRegistry>>;
+    try {
+      registry = await (session.discovery.registry ?? loadWorkspaceRegistry)(registryPath);
+    } catch (error) {
+      if (error instanceof BoundedReadCleanupError) throw error;
+      assertDiscoveryHealthy(session, lifecycle);
+      // Only registry unavailability is soft: the catalog reports it, and settling prevents later reminting.
+      return new Map();
+    }
+    assertDiscoveryHealthy(session, lifecycle);
     // **The id SET, which the destination pin does not cover.** ADR-0042 bound what an id means; a child
     // holding `tool:write` inherits the registry path and can append an id of its own, and the NEXT root
     // session mints a pin for it. Measured: a child-created id reached the catalog, the pin and a real route
     // with no operator action. So an id nobody accepted is not pinned, and therefore not routable.
-    const acceptance = await reconcileAcceptedWorkspaces(registryPath, Object.keys(registry.workspaces));
-    session.workspaceAcceptance = acceptance;
-    for (const id of acceptance.unaccepted)
-      session.workspaceSkips.push(`${id} — it is in the registry but this machine has never accepted it`);
+    const acceptance = await reconcileAcceptedWorkspaces(
+      registryPath,
+      Object.keys(registry.workspaces),
+      process.env,
+      session.discovery.acceptanceRead,
+      () => assertDiscoveryHealthy(session, lifecycle),
+    );
+    assertDiscoveryHealthy(session, lifecycle);
+    const skips = acceptance.unaccepted.map(
+      (id) => `${id} — it is in the registry but this machine has never accepted it`,
+    );
     const accepted = new Set(acceptance.accepted);
     const narrowed = {
       workspaces: Object.fromEntries(Object.entries(registry.workspaces).filter(([id]) => accepted.has(id))),
     };
-    return await establishWorkspacePin(narrowed, realpath, (id, reason) =>
-      session.workspaceSkips.push(`${id} — ${reason}`),
+    const pins = await establishWorkspacePin(
+      narrowed,
+      async (path) => {
+        assertDiscoveryHealthy(session, lifecycle);
+        try {
+          return await (session.discovery.canonicalise ?? realpath)(path);
+        } finally {
+          assertDiscoveryHealthy(session, lifecycle);
+        }
+      },
+      (id, reason) => {
+        assertDiscoveryHealthy(session, lifecycle);
+        skips.push(`${id} — ${reason}`);
+      },
     );
-  } catch {
-    // An unreadable registry is already reported by the catalog and at session start. It does NOT follow that
-    // nothing is blocked — an earlier draft of this comment claimed that and review measured it false, because
-    // a grant supplied through `PI_DADDY_GRANT` never passes the catalog and `workspace:` is exempt from the
-    // unknown check anyway. A session can genuinely hold `workspace:w1` and be refused for want of a pin.
-    // Returning an empty map SETTLES it, so a later reload cannot mint over a registry that has since changed.
-    return new Map();
+    assertDiscoveryHealthy(session, lifecycle);
+    session.workspaceAcceptance = acceptance;
+    for (const skip of skips) session.workspaceSkips.push(skip);
+    return pins;
+  } catch (error) {
+    if (error instanceof BoundedReadCleanupError) {
+      lifecycle.workspacePinFailure = error;
+      throw error;
+    }
+    throw error;
   }
 }
 
-export async function loadProjectDefinitions(session: GrantsSession, cwd: string): Promise<void> {
-  await establishRootPin(session);
+/** Publish a safely observed rejection for delegation, never a fulfilled prior catalog. The extension reports it. */
+export function recordDiscoveryCleanupFailure(
+  session: GrantsSession,
+  error: BoundedReadCleanupError,
+  lifecycle = session.reloadLifecycle,
+): BoundedReadCleanupError {
+  const failure = collectBoundedReadFailures([lifecycle.discoveryCleanupFailure, error])!;
+  lifecycle.discoveryCleanupFailure = failure;
+  if (session.reloadLifecycle === lifecycle) session.discoveryCleanupFailure = failure;
+  return failure;
+}
+
+export function retainDiscoveryCleanupFailure(
+  session: GrantsSession,
+  error: BoundedReadCleanupError,
+  lifecycle = session.reloadLifecycle,
+): void {
+  const failure = recordDiscoveryCleanupFailure(session, error, lifecycle);
+  if (session.reloadLifecycle === lifecycle) {
+    session.catalogReady = Promise.reject(failure);
+    void session.catalogReady.then(undefined, () => undefined);
+  }
+}
+
+/** Terminal owner state, checked independently of a replaceable catalog promise and after every wait. */
+export function assertDiscoveryHealthy(session: GrantsSession, lifecycle = session.reloadLifecycle): void {
+  const failure =
+    lifecycle.discoveryCleanupFailure ??
+    lifecycle.workspacePinFailure ??
+    (session.reloadLifecycle === lifecycle ? session.discoveryCleanupFailure : undefined);
+  if (failure) throw failure;
+  if (session.reloadLifecycle !== lifecycle) throw new Error("discovery owner replaced before publication");
+}
+
+async function delegationCatalog(session: GrantsSession): Promise<Catalog> {
+  const lifecycle = session.reloadLifecycle;
+  assertDiscoveryHealthy(session, lifecycle);
+  const catalog = await session.catalogReady;
+  assertDiscoveryHealthy(session, lifecycle);
+  return catalog;
+}
+
+export async function loadProjectDefinitions(
+  session: GrantsSession,
+  cwd: string,
+  lifecycle = session.reloadLifecycle,
+): Promise<void> {
+  try {
+    assertDiscoveryHealthy(session, lifecycle);
+    await loadProjectDiscovery(session, cwd, lifecycle);
+  } catch (error) {
+    if (error instanceof BoundedReadCleanupError) retainDiscoveryCleanupFailure(session, error, lifecycle);
+    throw error;
+  }
+}
+
+async function loadProjectDiscovery(session: GrantsSession, cwd: string, lifecycle: ReloadLifecycle): Promise<void> {
+  await establishRootPin(session, lifecycle);
   const skips: string[] = [];
-  session.definitions = await loadDefinitions(cwd, (_path, reason) => skips.push(reason));
+  assertDiscoveryHealthy(session, lifecycle);
+  const definitions = await (session.discovery.definitions ?? loadDefinitions)(cwd, (_path, reason) =>
+    skips.push(reason),
+  );
+  assertDiscoveryHealthy(session, lifecycle);
+  const ready = buildCatalog(
+    {
+      cwd,
+      observedTools: session.observedTools,
+      // ADR-0035: `workspace:<id>` is a capability, so the registered ids belong in the catalog the same way
+      // discovered definitions do — for `/grants` to list what this session may route to and for `init` to
+      // scaffold them. Read live rather than cached at load, because the registry is an operator file.
+      registryPath: process.env[ENV_WORKSPACE_REGISTRY],
+    },
+    session.discovery,
+  );
+  session.catalogReady = ready;
+  const catalog = await ready;
+  assertDiscoveryHealthy(session, lifecycle);
+  session.definitions = definitions;
   session.definitionSkips = skips;
-  session.catalogReady = buildCatalog({
-    cwd,
-    observedTools: session.observedTools,
-    // ADR-0035: `workspace:<id>` is a capability, so the registered ids belong in the catalog the same way
-    // discovered definitions do — for `/grants` to list what this session may route to and for `init` to
-    // scaffold them. Read live rather than cached at load, because the registry is an operator file.
-    registryPath: process.env[ENV_WORKSPACE_REGISTRY],
-  });
-  session.catalog = await session.catalogReady;
+  session.catalog = catalog;
 }
 export function createGrantsSession(
   extensionPath: string | undefined,
   lifecycle?: ReloadLifecycle,
   observerExtensionPath?: string,
+  discovery: SessionDiscovery = {},
 ): GrantsSession {
   // ADR-0076 PR 3b: legacy PI_GRANTS_* names are adopted BEFORE the first environment read and before the
   // reload snapshot, or an operator on the old names would get an ungoverned wildcard root (review finding).
@@ -544,6 +674,7 @@ export function createGrantsSession(
     observed: false,
     observedTools: null,
     definitions: new Map<string, SkillDefinition>(),
+    discovery: Object.freeze({ ...discovery }),
     catalog: emptyCatalog,
     catalogReady: Promise.resolve(emptyCatalog),
     delegationContext: async (approved?: InheritableApproval[]) => ({
@@ -571,10 +702,10 @@ export function createGrantsSession(
           forkRoot: join(agentDir(), "context-forks"),
           ...(session.parentSession ? { parentSession: session.parentSession } : {}),
         })(granted, options),
-      catalog: await session.catalogReady,
+      catalog: await delegationCatalog(session),
       // R-32: where each granted skill lives, so `planSpawn` can pass `--skill` for those and only those.
       // Derived from the catalog's own `source`, so it cannot drift from what was discovered.
-      skillPaths: skillPathsFromCatalog(await session.catalogReady),
+      skillPaths: skillPathsFromCatalog(await delegationCatalog(session)),
       // ADR-0016: operator-authored SKILL.md definitions, so `delegate({agent})` can name one.
       definitions: session.definitions,
       // The herdr executor drives the child after starting it, so its plan must NOT carry `--print`.
@@ -603,7 +734,14 @@ export function createGrantsSession(
       }
       session.publishChildEnv();
     },
-    reconcileEnvironment: (environment, lifecycle) => reconcileSessionEnvironment(session, environment, lifecycle),
+    reconcileEnvironment: (environment, lifecycle) => {
+      if (session.reloadLifecycle !== lifecycle) {
+        session.pinSettled = false;
+        session.workspacePin = undefined;
+        session.discoveryCleanupFailure = lifecycle.discoveryCleanupFailure;
+      }
+      reconcileSessionEnvironment(session, environment, lifecycle);
+    },
     publishChildEnv: () => {
       const env = childEnv({
         ownGrant: session.ownGrant,

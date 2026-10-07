@@ -1,7 +1,14 @@
 import { GRANT_ENV_KEYS } from "../src/kernel/propagation.ts";
+import type { BoundedReadCleanupError } from "../src/kernel/bounded-read.ts";
+import type { CacheSessionProduct } from "./cache-session-product.ts";
+import type { CacheProductReaders } from "../src/executors/cache-product-readers.ts";
 
 /** The root baseline and latest child publication for one real Pi session owner. */
 export interface ReloadLifecycle {
+  /** Actual epoch owner, retained across extension reload until its original resources settle. */
+  executionCache?: CacheSessionProduct;
+  executionCacheRetained?: CacheSessionProduct[];
+  executionCacheReaders?: CacheProductReaders[];
   root: Record<string, string | undefined>;
   published?: Record<string, string | undefined>;
   activityRootId?: string;
@@ -20,6 +27,12 @@ export interface ReloadLifecycle {
    * than its child publication", so it is where settled-ness belongs.
    */
   workspacePin?: ReadonlyMap<string, string>;
+  /** Failed pin acquisition stays failed for this owner even after explicit physical cleanup or reload. */
+  workspacePinFailure?: BoundedReadCleanupError;
+  /** One charged acquisition per actual owner, published before trusted loader callbacks. */
+  workspacePinAcquisition?: Promise<ReadonlyMap<string, string>>;
+  /** Catalog failure is terminal for this lifecycle too, not merely one extension object. */
+  discoveryCleanupFailure?: BoundedReadCleanupError;
 }
 type SessionOwner = object;
 
@@ -62,7 +75,7 @@ export function bindReloadLifecycle(
   environment: NodeJS.ProcessEnv;
 } {
   const holder = state();
-  const existing = holder.owners.get(owner);
+  let existing = holder.owners.get(owner);
   if (!existing) {
     holder.owners.set(owner, provisional);
     return { lifecycle: provisional, environment: withRoot(provisional.root) };
@@ -82,7 +95,18 @@ export function bindReloadLifecycle(
     // silently ignored for the pin, so a session reconciled to depth 1 — believing itself a descendant —
     // kept a root-minted pin naming a workspace the replacement root never granted. Deleting it makes the
     // next `establishRootPin` re-settle from the new root, which for a descendant means minting nothing.
-    if (!same(current, existing.root)) delete existing.workspacePin;
+    if (!same(current, existing.root)) {
+      // Pending old-root operations keep THEIR original owner; they cannot publish/fault this replacement.
+      existing = {
+        root: current,
+        activityRootId: existing.activityRootId,
+        episodeId: existing.episodeId,
+        executionCache: existing.executionCache,
+        executionCacheRetained: existing.executionCacheRetained,
+        executionCacheReaders: existing.executionCacheReaders,
+      };
+      holder.owners.set(owner, existing);
+    }
     existing.root = current;
   }
   return { lifecycle: existing, environment: withRoot(existing.root) };

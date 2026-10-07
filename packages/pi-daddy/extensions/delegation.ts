@@ -280,10 +280,10 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
 
       if (!outcome.ok) {
         if (isCriticalAssuranceBlock(outcome)) throw new Error(outcome.text);
-        // THROW, do not return. `AgentToolResult` has no `isError` field: pi sets it only when `execute`
-        // throws (`pi-agent-core/dist/agent-loop.js` — a normal return is hardcoded `isError: false`).
-        // Returning `isError: true` was silently discarded, so every refusal this package made was
-        // recorded by pi as a SUCCESSFUL tool call. Found by the integration suite on its first run.
+        // THROW, do not return: older pi discarded returned `isError: true`, recording refusals as
+        // successful calls (found by the original integration suite). Current pi supports returned
+        // error results with data, but throwing still works on both paths and preserves our refusal
+        // contract. Do not treat the historical returned-error limitation as a current pi property.
         const detail = outcome.text ? `\n\n${outcome.text}` : "";
         const message = `delegation refused: ${outcome.reason}${detail}`;
         if (outcome.refusal) throw new GovernanceRefusal({ ...outcome.refusal, message });

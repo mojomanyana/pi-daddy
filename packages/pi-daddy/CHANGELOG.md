@@ -12,6 +12,209 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## Unreleased — execution-cache qualification foundations
+
+- Draft checkpoint (2026-10-07): document implemented SDK cache composition and the remaining Pi API,
+  child-sharing, cleanup and qualification work. Minimal Pi API changes are authorized but not implemented
+  here. The latest candidate builds but is **UNTESTED (per request)** and disabled by default; do not treat
+  this draft as a completed feature or activate it on the strength of earlier component tests.
+
+- Source continuation (2026-10-07), **UNTESTED (per request)**: owned Pi 1.0.2 gains additive structured
+  provenance without changing native output/status/timing fields; 0.84.1 retains text/details only. Ledger tails
+  are bounded held-descriptor range reads with root-owned explicit failed-close recovery; oversized tails refuse
+  append without whole-file fallback. Proxy/accessor qualification stays on ordinary native routes, intentional
+  broker stop differs from control loss, startup completions recheck epoch/admission, storage joins pending
+  allocations and named component reservations have an aggregate configuration cap (not RSS/disk measurement).
+  `installedEntry` examples, deferred package tooling and the `shutdown` command now match the API. Captured
+  child admission, native hidden accumulator ownership and legacy writer/lock cleanup remain incomplete;
+  qualification and all QA gates remain pending.
+
+- Implementation-first opt-in SDK cache composition (2026-10-07), **UNTESTED (per request)**. Adds owned native
+  factory admission before real spawn, cold lifecycle/replacement, retained resource recovery, `/grants cache`
+  controls, component limits, a narrow GNU checksum candidate, additive truthful cache history, static helper
+  packaging and deferred actual-SDK QA/measurement tooling. No cache was activated or helper installed.
+  CLI/custom/Herdr/captured-child callers are explicitly unqualified and retain their ordinary paths. SDK hosts
+  must await the supplied cache shutdown control before synchronous session disposal. Watchman/fingerprints are
+  personal best effort, not strict source freshness; authority, effect exclusions and cleanup remain mandatory.
+  Qualification, shared captured-child participation, performance budgets and release acceptance remain pending.
+
+- Acceptance composition repair (2026-10-06): unreadable acceptance decisions now reach the startup discovery
+  diagnostic unchanged instead of silently settling an empty pin. Resolve the reported acceptance-read error and
+  start a new owner; the prior accepted ids/bytes stay unchanged. Only registry loading retains ordinary soft
+  fallback. Genuine ENOENT first use, malformed narrowing and typed cleanup ownership/recovery remain unchanged;
+  whole-Root recovery and production qualification are still separate.
+
+- Only a genuine ENOENT acceptance-record read permits announced, persisted first use. Other read failures
+  propagate unchanged instead of accepting registry-added ids or overwriting the prior decision; malformed records
+  still accept nothing. Acceptance descriptor cleanup faults remain on the initiating owner, not its replacement.
+  Recover the original descriptor explicitly, then use a new owner; recovery never revives failed discovery.
+  Existing owner/grant/pin protections and unqualified production gates remain unchanged.
+
+- Retain registered init cleanup failures from the first configured/legacy package SKILL read against its initiating
+  owner, with independent diagnostics and no implicit retry. Stage root-pin acceptance/skips until the owner is
+  checked after each read/canonicalisation wait; obsolete work cannot start new first-use writes or publish into
+  a same-session replacement. Already-started I/O cannot be interrupted or rolled back. Recover the exact failed
+  descriptor explicitly, then use a new owner; ordinary fallback/grants/pin protections and production gates remain.
+
+- Registered `/grants init` now retains its initiating lifecycle across registry reads and refresh. A late failed
+  close cannot fault a replacement session owner; late clean results refuse new scaffolding/grant publication after
+  an observed owner change. Explicit recovery still cannot revive the failed old owner. Post-await guards cannot
+  interrupt already-started I/O or undo scaffolding. Normal init and malformed/missing registry fallback remain;
+  whole-Root recovery and production qualification are unchanged.
+
+- Join independent catalog discovery branches before ordinary fallback, preserving every failed reader close in
+  a typed recovery-bearing collection (single failures keep exact identity). Concurrent startup/init/provider
+  discovery cannot publish over a terminal owner failure; reentrant reloads share one pin acquisition, while an
+  explicit distinct root replacement retains separate ownership. A broken init notification is diagnosed without
+  replacing the original cleanup rejection. Explicit physical recovery still cannot revive the failed owner;
+  whole-Root cleanup/recovery and production qualification remain separate.
+
+- Preserve typed bounded-reader cleanup failures through root pin discovery, provider catalog refresh, registry
+  listings and actual CLI/UI init. Failed discovery remains rejected for delegations, with the exact recovery
+  capability retained and a diagnostic; later clean reads or explicit physical cleanup cannot settle a failed pin
+  or certify a successful refresh/init. Retry the original error's `cleanup()` explicitly, then start a new owner
+  rather than reminting this session's pin. Ordinary malformed/missing registries still fall through softly.
+  This corrects the earlier caller-integration deferral, not whole-Root teardown/recovery or production qualification.
+
+- Bounded file reads now throw `BoundedReadCleanupError` on descriptor-close failure, retaining the original
+  handle and pending operations for explicit serialized `cleanup()` retry. Do not treat this error as unreadability
+  or process absence: owner checks propagate it, and broker identity cleanup faults remain visible at shutdown.
+  Retry never changes the failed read/shutdown or revives admission. Normal read limits and I/O-code refusals remain;
+  this does not qualify integrated Root/all-reader teardown or enable caching. Internal callers must retain/report
+  cleanup errors and join explicit recovery rather than silently dropping them; ordinary successful reads need no action.
+
+- Add an inactive explicit SDK root owner that automatically starts a supervised private broker and assembles the
+  native factory, image publisher, issuer, validator and supplied backend. Wait for supervisor and protocol readiness;
+  join late startup/full native results and independent cleanup, retaining failures. Repair the shared supervisor to
+  acquire namespace ownership before bootstrap admission and await all-task death plus held-proc release, not just
+  launcher exit; failed cleanup has explicit retry. Real SDK cache fixtures exercise reuse/edit/force and teardown.
+  Cache-only failure no longer cancels already ordinary calls; fresh authorized pre-allocation calls and unsupported
+  cache-workspace cwd retain the native route. Per-call authority now also covers uncached missing-timeout and
+  unsupported-environment inputs through the actual default-native operations boundary, without fabricated defaults.
+  Current denial and issued/started-work no-retry rules remain.
+  Default CLI/delegate/grant registration, crash recovery and packaging still need
+  qualification; nothing is enabled and no operator action is required.
+
+- Add an inactive owned native-call issuer composing private images, one-use connector claims and mandatory independent
+  context validation. Preserve current denial, exact calls and pending allocation/lookup/cleanup ownership; shutdown
+  waits native consumers and failed cleanup requires explicit retry. Stock SDK sequential/parallel cache fixtures now
+  use it instead of a handwritten registry. Automatic source/grants/root/delegate lifetime still needs qualification;
+  nothing is enabled and no operator action is required.
+
+- Add an inactive independent native-context reader for connector/parent birth, image, exact argv/ordered environment,
+  cwd and readable dev-null stdin. Known mismatches refuse; uncertain observations bypass before commitment. Bound
+  reads and retain late-I/O/failed-close ownership with explicit retry, never implicit close retry into bypass.
+  Real process and native SDK/cache fixtures now
+  use it; source/grants/automatic lifetime remain unqualified. Nothing is enabled and no operator action is required.
+
+- Add an inactive private shell-image publisher with trusted byte/digest checks, bounded leases/storage and exact CF1
+  sidecars. Await partial publication and consumer retirement; failed close/path replacement retains ownership and
+  faults admission. Real native SDK/cache fixtures now use this publisher rather than handwritten copies. Root/delegate
+  registration, manifest packaging and crash cleanup remain unqualified; nothing is enabled and no operator action.
+
+- Add an inactive explicit native Pi factory adapter: capture post-prefix/hook execution inputs, preserve native
+  results/streaming/timeouts, and select independently owned per-call shell paths rather than correlate events by
+  command text. Failed allocation/lease cleanup stays charged and visible; custom operations remain untouched.
+  Stock-factory/frontend fixtures exercise parity and cache reuse. Automatic registration/grants/lifetime still
+  require qualification; nothing is installed or enabled and no operator action is required.
+
+- Preserve environment enumeration in inactive cache invocation copies, profiles, no-start receipts and native
+  roles instead of sorting bindings. Nonlexical own-string environments can retain exact execution order;
+  reordered bindings cannot reuse another profile. Arbitrary native vectors and actual Pi composition remain
+  unqualified; caching is still disabled and no operator action is required.
+
+- Add an inactive committed-shell backend: known pre-start cache uncertainty can execute normally under the same
+  scheduler limits, using a private one-use receipt; potentially started or rejected work never retries. Preserve
+  raw streams/status and private provenance, and join requester/runner cleanup before completing the bridge.
+  Failed stop cleanup now remains faulted even after tree exit proof. Production still off; no operator action.
+
+- Await asynchronous cache output consumers across replay, shared scheduling and the private Bash runner; retain
+  detached reader ownership and apply backpressure instead of buffering an unlimited stream. Native fixtures now
+  deliver fresh output beyond retention and distinguish process exit from drained terminal output. Still inactive:
+  actual Pi issuance/lifetime, general bypass/env adaptation and qualification remain required; no operator action.
+
+- Add inactive root-issued process-birth/generation roles and a Node native-shell service with current operation
+  checks, mandatory native-context validation, no execution before commitment and awaited bounded output credits.
+  A controlled frontend/broker/Watchman/GNU fixture reuses original execution provenance; automatic Pi/delegate
+  issuance and the general streaming/bypass backend adapter remain pending. No operator action or activation occurs.
+
+- Add an inactive static native shell frontend and bounded Node wire codec. Unavailable transport before commitment
+  executes the selected original Bash unchanged; explicit refusal and ambiguous post-commit loss never rerun it.
+  Raw channels and supported terminal status are forwarded without adding command environment variables. Session/grant
+  wiring, native-context qualification and packaging remain pending; no operator action or cache activation occurs.
+
+- Add an inactive Node adapter for the private Unix byte bridge: validated connector birth identity, current-authority
+  checks, bounded output credits and joined disconnect/shutdown cleanup. Ambiguous delivery is rejected without retries.
+  This is not a command endpoint or automatic session integration; issued roles and the shell frontend remain pending.
+  No operator action, installation, additional privilege or cache enablement is required.
+
+- Qualify an inactive OS-only private Unix byte broker with kernel-bound connecting-process identity, bounded
+  chunks/connections, protocol refusals and cleanup when the connector dies despite a retained socket. Node-side
+  roles/grants, shell frontend and automatic session integration are still pending; this does not activate caching,
+  add a command endpoint or require operator installation/privileges. Unsupported kernel facilities cannot grant
+  transport authority.
+
+- Connect trusted personal-use profiles to the live graph and shared scheduler, with exact shell/cwd/command/env
+  matching, current authorization and preserved original execution provenance. Add a supervised internal Bash runner;
+  unchanged successful requests can reuse without launching it, while edits, force and clear execute again. Output
+  retention overflow preserves fresh streams/status but prevents reuse; cancellation joins actual namespace members,
+  not only an exited launcher. Production Pi/delegate wiring remains pending: caching is not activated and no operator
+  action, installation or additional privilege is required.
+
+- Add bounded internal Node input snapshots for the operator-approved personal-use best-effort contract:
+  Watchman synchronization, SHA-256 bytes, path/access metadata, negative bindings and directory membership.
+  Observation errors/cancellation return explicit bypass and retain late-I/O cleanup ownership. This is not
+  an atomic-freshness guarantee; rare undetected races remain possible. No new privilege, installation or
+  cache activation is required; production session integration is still pending.
+- Add opt-in first-missing-binding observations to the internal owned pathname walker, including missing symlink
+  targets and unwalked suffixes. Only component-open ENOENT qualifies; access denial and other failures remain
+  failures. Fixed parent-event qualification now includes creation/undo through aliases. These are sampled
+  observations, not current-source certification or cache eligibility. No operator action, privilege change or
+  cache enablement is required.
+- Extend the internal fixed-inode observer to held symlinks, including dangling links and metadata changes through
+  outside hard-link aliases. Targets are not followed, and replacements still require new coverage. This adds
+  positive pre-capture observation scope, not coherent/current source certification or cache eligibility. The
+  ordinary unprivileged package helper needs no new installation, capability or operator setting; caching stays off.
+- Add bounded owned pathname observations and a static unprivileged held-symlink reader. Resolution retains each
+  lookup's descriptor/mount context, while byte capture alone shares physical guards. Runtime aliases can now feed
+  existing guarded byte capture without a by-name symlink race. These observations are not current-source/access
+  certification or an enabled cache profile. The normal package ships the helper; no recipient compilation,
+  system installation, extra capability or new setting is required.
+- Add internal bounded owned byte-vector capture using the existing approved content-lease bridge. All guards
+  precede content reads; borrowed descriptors are pinned/reopened and snapshots are copied privately. Guard loss
+  retires delivery; cleanup failure retains explicit retry ownership. This establishes past bytes only, not current
+  names/metadata or cache eligibility. No new installation, privilege, setting or enablement action is required.
+- Add a bounded internal declaration parser for a conservative checksum manifest candidate. Unsupported grammar,
+  stdin, duplicate paths and exceeded caller budgets bypass; parsed members do not qualify source freshness,
+  runtime closure or reuse. No cache is enabled and no action or utility substitution is required.
+- Add internal Linux ownership/supervision and bounded Watchman observation helpers, with real namespace and
+  Watchman qualification tests. Refuse foreign owners and uncertain observation; report unresolved termination
+  rather than claiming successful cleanup.
+- Preserve typed I/O error codes in bounded-read refusals so process-termination checks distinguish validated
+  disappearance from failed observation. Unreadable or malformed process state cannot certify cleanup.
+- Add isolated native-observer and mmap/change-and-undo qualifications. Watchman synchronization and a syscall
+  trace alone do not qualify an execution for reuse; no system package or privilege is installed automatically.
+- Add a static Linux x64 descriptor-only lease leaf, strict Node protocol/lifetime adapters and real fault tests.
+  Publisher builds now require an existing C compiler on Linux x64; recipient installs neither compile the leaf
+  nor grant capabilities. Terminal evidence/callback errors stop its owned process; saturated release cannot
+  silently forget an OS lease. Root-owned runtime guarding requires a separately reviewed operator CAP_LEASE setup,
+  locally installed and positively qualified for the exact operator-approved image. This does not qualify complete
+  runtime/source acquisition or enable caching. No enablement action is needed for ordinary execution.
+- Add the internal Node live graph and bounded immutable output ownership: dirty evidence blocks reuse,
+  invalidation removes runtime edges/results, old completions cannot resurrect entries, and pinned delivery bytes
+  remain charged until release. Clear does not fabricate completion or free a running execution's slot.
+  These transition primitives do not qualify command inputs or authorize cached-result access.
+- Add the internal bounded shared-execution scheduler: current authorization at each access, logical retry
+  deduplication, independent force reruns, per-reader cancellation/deadlines, bounded exact stream replay and
+  retained replies. Verified process exit releases occupancy separately from bounded outcome finalization;
+  unknown cleanup faults the entire coordinator rather than silently freeing ownership.
+- Add an unprivileged fixed-descriptor inode/parent observation leaf with bounded Node framing and permanent
+  loss/epoch tracking, including hardlink alias fanout. Queue-drain acknowledgments and observation tickets describe
+  only processed requested events, not current-source freshness, complete coverage or command eligibility.
+  No privileged asset update or operator migration is required; the cache remains inactive.
+- These helpers are not connected to Pi execution yet. No command result is cached, no new service starts by
+  default, and existing execution behavior is unchanged. No operator migration or enablement is needed.
+
 ## 0.43.1 — Pi-only documentation refresh (2026-09-29)
 
 - Refresh `README.md`, `AGENTS.md`, the package README, and the ledger-record contract README against the shipped

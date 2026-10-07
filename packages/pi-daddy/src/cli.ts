@@ -18,6 +18,7 @@ import { readFile } from "node:fs/promises";
 import { relative, resolve as resolvePath } from "node:path";
 import { pathToFileURL } from "node:url";
 import { UnsafeGrantError } from "./kernel/grant-env.ts";
+import { BoundedReadCleanupError } from "./kernel/bounded-read.ts";
 import {
   applyInit,
   countDeclaring,
@@ -26,7 +27,7 @@ import {
   GITIGNORE_REINCLUDE_LINES,
   settingsIgnoredByGit,
 } from "./governance/init.ts";
-import { registeredWorkspaceIds } from "./kernel/workspace.ts";
+import { registeredWorkspaceIds, loadWorkspaceRegistry } from "./kernel/workspace.ts";
 import { explainDoubledNamespace } from "./kernel/catalog.ts";
 import type { Capability } from "./kernel/resolve.ts";
 import {
@@ -178,7 +179,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
 }
 
 /** Report a plan and what came of applying it. Returns the process exit code. */
-async function init(cwd: string, force: boolean): Promise<number> {
+async function init(cwd: string, force: boolean, loadRegistry: typeof loadWorkspaceRegistry): Promise<number> {
   const packages = await discoverSkillPackages(cwd);
   if (packages.length === 0) {
     // Names BOTH roots it looked in, and offers pi's own install command first. The previous message named
@@ -204,13 +205,19 @@ async function init(cwd: string, force: boolean): Promise<number> {
     plan = planInit(
       packages,
       cwd,
-      await registeredWorkspaceIds(undefined, (reason) =>
-        console.error(`pi-daddy init: workspace registry unreadable, scaffolding none — ${reason}`),
+      await registeredWorkspaceIds(
+        undefined,
+        (reason) => console.error(`pi-daddy init: workspace registry unreadable, scaffolding none — ${reason}`),
+        loadRegistry,
       ),
     );
   } catch (error) {
     // R-78's backstop reaching the surface. Nothing is written: a grant that could mean something to a
     // shell is not a grant, and half-scaffolding a project would be worse than scaffolding none of it.
+    if (error instanceof BoundedReadCleanupError) {
+      console.error(`pi-daddy init: cleanup failed — ${error.message}; no scaffolding applied.`);
+      throw error; // The embedding caller keeps the exact recovery capability; the bin exits nonzero.
+    }
     if (error instanceof UnsafeGrantError) {
       console.error(`pi-daddy init: ${error.message}`);
       return 1;
@@ -352,7 +359,11 @@ async function report(plan: InitPlan): Promise<void> {
   );
 }
 
-export async function main(argv: string[]): Promise<number> {
+/** Optional registry loader is a trusted embedding dependency, never argv/environment input. */
+export async function main(
+  argv: string[],
+  loadRegistry: typeof loadWorkspaceRegistry = loadWorkspaceRegistry,
+): Promise<number> {
   const adoptedLegacy = adoptLegacyEnvironment(process.env);
   if (adoptedLegacy.length > 0) console.error(legacyEnvironmentWarning(adoptedLegacy));
   const parsed = parseArgs(argv);
@@ -475,7 +486,7 @@ export async function main(argv: string[]): Promise<number> {
   // `--dir` made that comparison false for every entry: every declared skill of every package was reported
   // "declared but unreadable", nothing was copied, a degenerate grants.env was written anyway, and the exit
   // code was 0 — while the message blamed the package for a defect in this line.
-  return init(resolvePath(parsed.dir ?? process.cwd()), parsed.force);
+  return init(resolvePath(parsed.dir ?? process.cwd()), parsed.force, loadRegistry);
 }
 
 /**

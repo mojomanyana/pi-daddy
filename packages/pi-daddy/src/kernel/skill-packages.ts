@@ -143,7 +143,11 @@ function refusalFor(skill: DiscoveredSkill): RefusedSkill | null {
 }
 
 /** One `pi.skills` entry: a directory holding `SKILL.md`, or a `.md` file — the same two shapes pi allows. */
-async function readSkill(packageDir: string, entry: string): Promise<DiscoveredSkill | "not-utf8" | null> {
+async function readSkill(
+  packageDir: string,
+  entry: string,
+  reader: typeof readBoundedBytes,
+): Promise<DiscoveredSkill | "not-utf8" | null> {
   const target = resolve(packageDir, entry);
   // A manifest is data from another package, so an entry escaping its own directory is refused rather than
   // followed. **`realpath`, not a lexical prefix test** (R-80): `resolve()` normalises `..` and knows
@@ -158,7 +162,7 @@ async function readSkill(packageDir: string, entry: string): Promise<DiscoveredS
     // `loadDefinitions` and accepted here, so `pi-daddy init` wrote `agent:advice` into the operator's grant
     // for a definition the session could never load, and the eventual `delegate` said only
     // `unknown agent "advice"`. An unreadable entry lands in `unreadable`, which `init` already prints.
-    const read = await readBoundedBytes(path, {
+    const read = await reader(path, {
       maxBytes: DEFINITION_MAX_BYTES,
       timeoutMs: DEFINITION_READ_TIMEOUT_MS,
     });
@@ -180,7 +184,10 @@ async function readSkill(packageDir: string, entry: string): Promise<DiscoveredS
 }
 
 /** Read one installed package, if it declares skills. `null` means "not a skill package", not an error. */
-export async function readSkillPackage(packageDir: string): Promise<SkillPackage | null> {
+export async function readSkillPackage(
+  packageDir: string,
+  reader: typeof readBoundedBytes = readBoundedBytes,
+): Promise<SkillPackage | null> {
   let manifest: { name?: string; version?: string; pi?: { skills?: unknown } };
   try {
     manifest = JSON.parse(await readFile(join(packageDir, "package.json"), "utf8"));
@@ -195,7 +202,7 @@ export async function readSkillPackage(packageDir: string): Promise<SkillPackage
   const refused: RefusedSkill[] = [];
   for (const entry of declared) {
     if (typeof entry !== "string") continue;
-    const skill = await readSkill(packageDir, entry);
+    const skill = await readSkill(packageDir, entry, reader);
     if (skill === null) {
       unreadable.push(entry);
     } else if (skill === "not-utf8") {
@@ -243,7 +250,11 @@ export function skillPackageRoots(cwd: string): string[] {
   return [join(cwd, "node_modules"), join(agentDir, "npm", "node_modules")];
 }
 
-export async function discoverSkillPackages(cwd: string): Promise<SkillPackage[]> {
+/** The optional reader is a trusted per-loader dependency, never package metadata or requester input. */
+export async function discoverSkillPackages(
+  cwd: string,
+  reader: typeof readBoundedBytes = readBoundedBytes,
+): Promise<SkillPackage[]> {
   const resolved = await resolveSkillResources(cwd);
   const packages: SkillPackage[] = [];
   const seenSkills = new Set<string>();
@@ -268,7 +279,7 @@ export async function discoverSkillPackages(cwd: string): Promise<SkillPackage[]
   }
   for (const resource of resolved.skills) {
     // Same bound, same reason: this is the third `SKILL.md` reader and it feeds `planInit`.
-    const resourceRead = await readBoundedBytes(resource.path, {
+    const resourceRead = await reader(resource.path, {
       maxBytes: DEFINITION_MAX_BYTES,
       timeoutMs: DEFINITION_READ_TIMEOUT_MS,
     });
@@ -313,7 +324,7 @@ export async function discoverSkillPackages(cwd: string): Promise<SkillPackage[]
   const seenNames = new Set(packages.map((p) => p.name));
   for (const dir of dirs) {
     if (configuredRoots.has(resolve(dir))) continue;
-    const found = await readSkillPackage(dir);
+    const found = await readSkillPackage(dir, reader);
     if (!found || configuredNames.has(found.name) || seenNames.has(found.name)) continue;
     seenNames.add(found.name);
     found.skills = found.skills.filter((skill) => !runtimeNames.has(skill.definition.name));

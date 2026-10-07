@@ -179,6 +179,16 @@ export * from "./products/dashboard-herdr.ts";
 export * from "./products/activity-timeline.ts";
 export { runDashboard, dashboardFrame, DASHBOARD_PROTOCOL_VERSION } from "./products/dashboard-cli.ts";
 
+// Explicit SDK-owned cache composition. No automatic default-tool replacement or activation.
+export {
+  createExecutionCacheExtension,
+  type CacheSessionConfiguration,
+  type CacheSessionControls,
+} from "../extensions/execution-cache.ts";
+export { CacheProductReaders } from "./executors/cache-product-readers.ts";
+export { loadCacheNativeAssets, type CacheNativeAssets } from "./executors/cache-native-loader.ts";
+export { validateCacheHistory, type CacheHistory } from "./governance/cache-history.ts";
+
 // ADR-0042. Exported because `resolveWorkspace` gained a destination-pin precondition in 0.38.0, and without
 // these a public consumer has no supported way to satisfy it — the parameter defaults to reading an
 // environment variable whose name and format were internal.

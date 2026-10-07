@@ -146,6 +146,7 @@ test("a missing file is a reason, not a throw", async () => {
   const result = await readBoundedFile(join(scratch(), "absent.json"), { maxBytes: 1024, timeoutMs: 2000 });
   assert.equal(result.ok, false);
   assert.equal(result.ok === false && result.why, "unopenable");
+  assert.equal(result.ok === false && result.why === "unopenable" && result.code, "ENOENT");
 });
 
 test("an ordinary file reads back exactly, including across several chunks", async () => {

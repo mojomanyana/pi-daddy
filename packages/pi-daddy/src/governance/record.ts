@@ -17,7 +17,8 @@
  */
 import { createHash } from "node:crypto";
 import { randomUUID } from "node:crypto";
-import { appendFile, mkdir, open, readFile, stat, truncate } from "node:fs/promises";
+import { appendFile, mkdir, readFile, truncate } from "node:fs/promises";
+import { readBoundedTailBytes, type BoundedReadBytes } from "../kernel/bounded-read.ts";
 import { dirname } from "node:path";
 import { GovernanceRefusal, refusal } from "../kernel/refusals.ts";
 import { withFileLock } from "./file-lock.ts";
@@ -154,43 +155,32 @@ export async function readRecordsFile<B = unknown>(path: string): Promise<ReadRe
 }
 
 /** The last complete line and its sequence, reading only the file's tail. Damage is reported, not skipped. */
-async function tail(path: string): Promise<{ seq: number; prevLine: string | null } | { damage: RecordDamage }> {
-  let size: number;
-  try {
-    size = (await stat(path)).size;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { seq: 0, prevLine: null };
-    throw error;
+async function tail(
+  path: string, reader: NonNullable<AppendOptions["readTail"]>,
+): Promise<{ seq: number; prevLine: string | null } | { damage: RecordDamage }> {
+  const window = 1024 * 1024;
+  const read = await reader(path, window);
+  if (!read.ok) {
+    if (read.why === "unopenable" && read.code === "ENOENT") return { seq: 0, prevLine: null };
+    throw Error(`ledger tail unavailable: ${read.why}: ${read.detail}`);
   }
-  if (size === 0) return { seq: 0, prevLine: null };
-  const window = Math.min(size, 256 * 1024);
-  const handle = await open(path, "r");
-  try {
-    const buffer = Buffer.alloc(window);
-    await handle.read(buffer, 0, window, size - window);
-    const text = buffer.toString("utf8");
-    if (!text.endsWith("\n")) return { damage: { line: -1, reason: "unterminated or unparsable line" } };
-    const body = text.slice(0, -1);
-    const cut = body.lastIndexOf("\n");
-    const lastLine = cut === -1 ? body : body.slice(cut + 1);
-    if (cut === -1 && window < size) {
-      // The last record is larger than the window: read the whole file once rather than call it damage.
-      const whole = (await readFile(path, "utf8")).slice(0, -1);
-      const wholeCut = whole.lastIndexOf("\n");
-      const wholeLast = wholeCut === -1 ? whole : whole.slice(wholeCut + 1);
-      const parsedWhole = parseLine(wholeLast);
-      if ("reason" in parsedWhole) return { damage: { line: -1, reason: parsedWhole.reason } };
-      return { seq: parsedWhole.record.seq, prevLine: wholeLast };
-    }
-    const parsed = parseLine(lastLine);
-    if ("reason" in parsed) return { damage: { line: -1, reason: parsed.reason } };
-    return { seq: parsed.record.seq, prevLine: lastLine };
-  } finally {
-    await handle.close();
-  }
+  if (!read.bytes.length) return { seq: 0, prevLine: null };
+  const text = read.bytes.toString("utf8");
+  if (!text.endsWith("\n")) return { damage: { line: -1, reason: "unterminated or unparsable line" } };
+  const body = text.slice(0, -1);
+  const cut = body.lastIndexOf("\n");
+  // A record larger than the bounded window is unsupported, not evidence of damage to repair.
+  if (cut === -1 && read.bytes.length === window) throw new RangeError("ledger last record exceeds bounded 1 MiB tail; no append or whole-file fallback");
+  const lastLine = cut === -1 ? body : body.slice(cut + 1);
+  const parsed = parseLine(lastLine);
+  if ("reason" in parsed) return { damage: { line: -1, reason: parsed.reason } };
+  return { seq: parsed.record.seq, prevLine: lastLine };
 }
 
 export interface AppendOptions {
+  /** Optional owning root reader: pending I/O and exact failed-close recovery belong to that owner.
+   * Default callers use the same bounded held-descriptor reader with typed explicit cleanup errors. */
+  readTail?(path: string, maxBytes: number): Promise<BoundedReadBytes>;
   id?: string;
   at?: string;
   imported?: { path: string; line: number };
@@ -205,7 +195,7 @@ export async function appendRecord<B>(
 ): Promise<RecordEnvelope<B>> {
   await mkdir(dirname(path), { recursive: true });
   return withFileLock(path, "ledger", async () => {
-    const last = await tail(path);
+    const last = await tail(path, options.readTail ?? ((name, maxBytes) => readBoundedTailBytes(name, { maxBytes, timeoutMs: 3000 })));
     if ("damage" in last) {
       const where = last.damage.line === -1 ? "its last line" : `line ${last.damage.line}`;
       const preFormat = PRE_FORMAT_REASONS.has(last.damage.reason);

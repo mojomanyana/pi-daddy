@@ -232,11 +232,13 @@ export const DEFINITION_READ_TIMEOUT_MS = 2_000;
 export async function loadDefinitions(
   cwd: string,
   skipped?: (path: string, reason: string) => void,
+  // Trusted per-loader reader, never a skill's metadata or environment input.
+  readFile: typeof readBoundedFile = readBoundedFile,
 ): Promise<Map<string, SkillDefinition>> {
   const definitions = new Map<string, SkillDefinition>();
   const packageVersions = new Map<string, string | undefined>();
   for (const { path, metadata } of (await resolveSkillResources(cwd)).skills) {
-    const read = await readBoundedFile(path, {
+    const read = await readFile(path, {
       maxBytes: DEFINITION_MAX_BYTES,
       timeoutMs: DEFINITION_READ_TIMEOUT_MS,
     });
@@ -247,7 +249,7 @@ export async function loadDefinitions(
     const parsed = parseSkillDefinition(path, read.text);
     if (parsed && metadata.origin === "package" && metadata.baseDir) {
       if (!packageVersions.has(metadata.baseDir)) {
-        const manifest = await readBoundedFile(join(metadata.baseDir, "package.json"), {
+        const manifest = await readFile(join(metadata.baseDir, "package.json"), {
           maxBytes: DEFINITION_MAX_BYTES,
           timeoutMs: DEFINITION_READ_TIMEOUT_MS,
         });
