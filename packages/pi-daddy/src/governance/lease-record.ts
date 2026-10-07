@@ -6,9 +6,12 @@
  * successor's token — all of which are about what the record SAYS rather than about the kernel lock.
  */
 import { createHash, randomUUID } from "node:crypto";
-import { readFile, rename, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { open, readFile, rename, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import type { ValidatedWorkspace, WorkspaceAccess } from "../kernel/workspace.ts";
+
+import type { CapturedWorkerIdentity } from "../kernel/captured-worker-contract.ts";
+import { isCapturedWorkerIdentity } from "./captured-worker-record.ts";
 
 export interface LeaseMetadata {
   version: 1;
@@ -19,6 +22,7 @@ export interface LeaseMetadata {
   root: string;
   pid: number;
   acquired_at: string;
+  captured_worker?: CapturedWorkerIdentity;
   released_at?: string;
   release_reason?: string;
 }
@@ -35,6 +39,8 @@ export interface WorkspaceLease {
   recovered: boolean | "unknown";
   /** Attach the governed resource so parent death cleans it before the kernel lock is released. */
   attachProcess(pid: number): void;
+  /** Persist exact gated-worker ownership before its command may execute. */
+  attachCapturedWorker(identity: CapturedWorkerIdentity): Promise<void>;
   attachHerdrTab(tabId: string): void;
   /** Resolves only when the kernel-lock helper exits before explicit release. */
   lost: Promise<Error>;
@@ -104,7 +110,19 @@ export function leasePaths(leaseDir: string, root: string) {
 export async function atomicMetadata(path: string, value: LeaseMetadata): Promise<void> {
   const temp = `${path}.${process.pid}.${randomUUID()}.tmp`;
   await writeFile(temp, `${JSON.stringify(value, null, 2)}\n`, { encoding: "utf8", flag: "wx", mode: 0o600 });
+  const file = await open(temp, "r+");
+  try {
+    await file.sync();
+  } finally {
+    await file.close();
+  }
   await rename(temp, path);
+  const directory = await open(dirname(path), "r");
+  try {
+    await directory.sync();
+  } finally {
+    await directory.close();
+  }
 }
 
 /**
@@ -124,6 +142,7 @@ export async function readMetadata(path: string): Promise<LeaseMetadata | null |
     if (value?.version !== 1) return "malformed";
     if (value.state !== "active" && value.state !== "released") return "malformed";
     if (typeof value.token !== "string" || !value.token) return "malformed";
+    if (value.captured_worker !== undefined && !isCapturedWorkerIdentity(value.captured_worker)) return "malformed";
     return value as LeaseMetadata;
   } catch {
     return "malformed";

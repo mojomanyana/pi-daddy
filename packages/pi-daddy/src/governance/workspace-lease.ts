@@ -1,3 +1,10 @@
+import {
+  readCapturedWorkerReceipt,
+  matchesWorkerWorkspace,
+  readWorkerRecord,
+  sameWorkerIdentity,
+  isCapturedWorkerIdentity,
+} from "./captured-worker-record.ts";
 import { createHash, randomUUID } from "node:crypto";
 import {
   atomicMetadata,
@@ -84,6 +91,7 @@ export async function acquireWorkspaceLease(input: {
       ownerId: input.ownerId,
       recovered: false,
       attachProcess: () => {},
+      attachCapturedWorker: async () => {},
       attachHerdrTab: () => {},
       // A read lease took no kernel lock, so there is nothing to keep: `not-held` is the same answer
       // `release()` gives, and it is the truth rather than a retention that never happened (R-152).
@@ -238,8 +246,25 @@ export async function acquireWorkspaceLease(input: {
   }
 
   const previous = await readMetadata(paths.metadata);
+  // A free kernel lock cannot establish settlement of an earlier captured subtree.
+  if (
+    previous === "malformed" ||
+    (previous?.captured_worker &&
+      (!(await matchesWorkerWorkspace(previous.captured_worker, input.workspace.root)) ||
+        !(await readCapturedWorkerReceipt(previous.captured_worker)))) ||
+    (previous?.state === "active" && !previous.captured_worker)
+  ) {
+    holder.stdin?.end();
+    throw new GovernanceRefusal(
+      refusal(
+        "WORKSPACE_LEASE_STALE",
+        "predecessor workspace ownership is unresolved; original matching worker settlement evidence is required",
+        { workspace_id: input.workspace.workspaceId, root: input.workspace.root },
+      ),
+    );
+  }
   // "malformed" is not "no prior owner": an unreadable record cannot prove a clean handover (R-100).
-  const recovered: boolean | "unknown" = previous === "malformed" ? "unknown" : previous?.state === "active";
+  const recovered = previous?.state === "active";
   const token = randomUUID();
   const metadata: LeaseMetadata = {
     version: 1,
@@ -295,6 +320,28 @@ export async function acquireWorkspaceLease(input: {
     access: "write",
     ownerId: input.ownerId,
     recovered,
+    async attachCapturedWorker(identity) {
+      if (releasing || holder.exitCode !== null || holder.signalCode !== null)
+        throw new Error("writer lease lost before captured ownership persistence");
+      if (!isCapturedWorkerIdentity(identity) || !(await matchesWorkerWorkspace(identity, input.workspace.root)))
+        throw new Error("captured identity does not match leased workspace");
+      const current = await readMetadata(paths.metadata);
+      if (current === "malformed" || current?.token !== token)
+        throw new Error("writer ownership record changed before captured attachment");
+      if (metadata.captured_worker && !sameWorkerIdentity(metadata.captured_worker, identity))
+        throw new Error("writer lease already owns another captured execution");
+      const record = (await readWorkerRecord(identity.ownershipPath)) as { state?: unknown; identity?: unknown };
+      if (
+        record.state !== "ready" ||
+        !isCapturedWorkerIdentity(record.identity) ||
+        !sameWorkerIdentity(identity, record.identity)
+      )
+        throw new Error("captured readiness record mismatch");
+      metadata.captured_worker = identity;
+      await atomicMetadata(paths.metadata, metadata);
+      if (holder.exitCode !== null || holder.signalCode !== null)
+        throw new Error("writer lease lost during captured ownership persistence");
+    },
     attachProcess(pid) {
       attach({ process_pid: pid });
     },
@@ -383,6 +430,17 @@ export async function acquireWorkspaceLease(input: {
     async release(reason = "completed"): Promise<LeaseReleaseOutcome> {
       // Memoized, not a boolean. A second call used to answer "released" whatever the first returned, so a
       // retry — or a `finally` after an explicit release — read a clean handover that never happened.
+      if (metadata.captured_worker) {
+        const receipt = await readCapturedWorkerReceipt(metadata.captured_worker);
+        if (!receipt) {
+          holder.unref();
+          unrefStream(holder.stdout);
+          unrefStream(holder.stderr);
+          return (settled = "retained");
+        }
+        // Only original matching receipt can reconcile a previously uncertain captured worker.
+        if (settled === "retained") settled = undefined;
+      }
       if (settled) return settled;
       releasing = true;
       // Already gone: this owner never released anything, and saying so is the caller's business to
