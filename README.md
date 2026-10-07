@@ -1,5 +1,7 @@
 # pi-daddy
 
+Release candidate: **0.44.0-rc.1** (tag `v0.44.0-rc.1`), prepared for PR review. This version is not published to npm.
+
 **Capability governance and coordination for [pi](https://github.com/badlogic/pi-mono)'s multi-level agent system.**
 An orchestrator grants each sub-agent a deliberate subset of what it holds and withholds the rest. A sub-agent may
 delegate further, but only ever a subset of what it holds. Enforcement is pi's own `--tools` allowlist on a separate

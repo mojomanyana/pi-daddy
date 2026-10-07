@@ -1,6 +1,8 @@
 # Changelog — pi-daddy
 
-## Unreleased
+## 0.44.0-rc.1 — captured delegation qualification (2026-10-07)
+
+Release candidate for review, not a stable or npm publication. Use the immutable candidate tag for source review.
 
 - **Delegation bounds:** budget now caps active descendants through disjoint subtree reservations, alongside
   depth and per-call limits. Settled children return capacity; uncertain cleanup retains it. A single child
@@ -39,13 +41,13 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
-## Unreleased — passive cost coverage (2026-10-07)
+### Passive cost coverage
 
 - **Report JSON change:** row/group/total cost and episode-cost percentiles may be null when coverage is incomplete.
   Use observedCost for the known subtotal and costCoverage for complete/partial/unavailable status. A reported zero
   remains zero. Cost coverage concerns recorded child executions only; root and unrecorded work are not measured.
 
-## Unreleased — surviving guard repairs (2026-10-07)
+### Surviving guard repairs
 
 - Treat damaged or oversized runtime/resource settings and package metadata as failures, not missing defaults.
   Bounded reads reject FIFOs and malformed UTF-8; unresolved cleanup stays attached to the operation and session owner.
