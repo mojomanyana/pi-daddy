@@ -25,7 +25,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { WILDCARD } from "../src/kernel/pi-tools.ts";
-import { buildCatalog } from "../src/kernel/catalog.ts";
+import { makeCatalog, classifyToolNames } from "../src/kernel/catalog.ts";
 import { ENV_WORKSPACE_REGISTRY } from "../src/kernel/workspace.ts";
 import { appendRecord, buildRecord } from "../src/governance/ledger.ts";
 import { openPaneCount, reapOpenPanesAsync } from "../src/executors/pane-reaper.ts";
@@ -69,12 +69,24 @@ export default function (pi: ExtensionAPI) {
   })();
   const observerExtensionPath = fileURLToPath(new URL("./activity-timeline.ts", import.meta.url));
   const session = createGrantsSession(extensionPath, undefined, observerExtensionPath);
+  session.currentThinking = typeof pi.getThinkingLevel === "function" ? () => pi.getThinkingLevel() : undefined;
   registerActivityTimeline(pi, session);
   const dashboardPluginRoot = fileURLToPath(new URL("../herdr-plugin/", import.meta.url));
   const dashboardPaths = defaultDashboardPaths(agentDir());
   // Definitions are registered only after owner-bound session_start. Until then there is no delegation
   // dispatch surface; afterwards this callback refreshes their model-facing spawnable-definition text.
   const delegation = { refreshSpawnable: () => {} };
+  // Supported public discovery is ready at the first real request/tool execution, not session_start.
+  let selectedReady: Promise<void> | undefined;
+  if (typeof pi.getCommands === "function")
+    session.ensureDefinitions = () =>
+      (selectedReady ??= (async () => {
+        await loadProjectDefinitions(session, session.cwd, pi.getCommands());
+        delegation.refreshSpawnable();
+      })());
+  pi.on("before_agent_start", async () => {
+    await session.ensureDefinitions?.();
+  });
   pi.on("session_start", async (_event, ctx) => {
     if (session.adoptedLegacyEnv.length > 0)
       ctx.ui.notify(legacyEnvironmentWarning(session.adoptedLegacyEnv), "warning");
@@ -151,7 +163,7 @@ export default function (pi: ExtensionAPI) {
       // delegate by `tools:`, and an operator whose `agent:` spawns have all started failing deserves to
       // know it was the *scan* that broke rather than the grant.
       try {
-        await loadProjectDefinitions(session, ctx.cwd);
+        await loadProjectDefinitions(session, ctx.cwd, session.ensureDefinitions ? [] : undefined);
       } catch (error) {
         ctx.ui.notify(
           `grants: could not read this project's definitions or capability catalog ` +
@@ -304,13 +316,11 @@ export default function (pi: ExtensionAPI) {
       // Keep the handle: a concurrent `delegate` awaits this rather than reading a half-built catalog.
       // The `catch` resolves to the CURRENT catalog rather than rejecting, so a failed refresh degrades
       // to the previous view instead of failing every delegation in the session.
-      session.catalogReady = buildCatalog({
-        cwd: session.cwd,
-        observedTools: names,
-        registryPath: process.env[ENV_WORKSPACE_REGISTRY],
-      })
-        .then((c) => (session.catalog = c))
-        .catch(() => session.catalog);
+      session.catalogReady = session.catalogReady.then((catalog) => {
+        const next = makeCatalog([...catalog.entries, ...classifyToolNames(names)], catalog.registryRefusal);
+        session.catalog = next;
+        return next;
+      });
     } catch {
       /* never throw into the agent loop */
     }

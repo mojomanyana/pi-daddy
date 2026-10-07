@@ -150,13 +150,13 @@ export interface ChildLifecycleEvent extends LedgerEventBase {
   idleTimeoutMs?: number;
   /** The provider/model selected for the child, confirmed from its persisted assistant message when available. */
   resolvedModel?: { provider: string; modelId: string } | null;
-  modelSource?: "explicit" | "session" | "definition" | "global" | "pi";
+  modelSource?: "explicit" | "session" | "definition" | "authored" | "global" | "pi";
   /** The persisted effective level and its selection source, when pi reports one. */
   thinkingLevel?: {
     level: string;
-    source: "explicit" | "session" | "advisor" | "definition" | "global" | "pi";
+    source: "explicit" | "session" | "advisor" | "definition" | "authored" | "global" | "pi";
   } | null;
-  thinkingSource?: "explicit" | "session" | "advisor" | "definition" | "global" | "pi";
+  thinkingSource?: "explicit" | "session" | "advisor" | "definition" | "authored" | "global" | "pi";
   /** Provider-reported token dimensions; zero is normalised to null rather than invented as reported usage. */
   tokenDetail?: ChildTokenDetail;
   /** Aggregate model usage read from the child's pi session file after it stopped. */
@@ -353,9 +353,9 @@ export function buildChildLifecycleEvent(args: {
   truncated?: boolean;
   reason?: string;
   resolvedModel?: { provider: string; modelId: string };
-  modelSource?: "explicit" | "session" | "definition" | "global" | "pi";
+  modelSource?: "explicit" | "session" | "definition" | "authored" | "global" | "pi";
   effectiveThinkingLevel?: string;
-  thinkingSource?: "explicit" | "session" | "advisor" | "definition" | "global" | "pi";
+  thinkingSource?: "explicit" | "session" | "advisor" | "definition" | "authored" | "global" | "pi";
   tokenDetail?: ChildTokenDetail;
   usage?: ChildUsageTotals;
   compactionCount?: number;

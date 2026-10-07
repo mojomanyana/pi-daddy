@@ -1,3 +1,4 @@
+import { assertDefinitionIdentity } from "./definition-describe.ts";
 /**
  * Plan, gate, audit and run ONE governed child — the whole of a delegation except its tool surface.
  *
@@ -25,7 +26,7 @@ import {
 import type { InheritableApproval } from "../src/kernel/approval.ts";
 import type { GrantsSession } from "./session.ts";
 import type { CorrelationMetadata } from "../src/kernel/correlation.ts";
-import { preflightModel, type ModelCatalogue } from "../src/kernel/model-preflight.ts";
+import { preflightModel, runtimePairUnavailable, type ModelCatalogue } from "../src/kernel/model-preflight.ts";
 import { GovernanceRefusal, refusal as structuredRefusal } from "../src/kernel/refusals.ts";
 import { executePlannedChild, type DelegationOutcome } from "./execute-child.ts";
 import { recordDelegationDecision, type ApprovalLedgerFacts } from "./delegation-ledger.ts";
@@ -41,6 +42,7 @@ import {
 
 /** What one child was asked to do. The shape both tools accept, per child. */
 interface ChildSpec {
+  definitionId?: string;
   task: string;
   agent?: string;
   tools?: string[];
@@ -204,6 +206,8 @@ export async function runOneDelegation(
    * mistake unspellable.
    */
   options: {
+    /** Exact pair selected during the chain preflight; never reselect after its approval. */
+    resolvedRuntime?: import("./definition-runtime.ts").ResolvedDefinitionRuntime;
     /** Actual public execute argument, never read from model-authored correlation or output. */
     toolCallId?: string;
     /** Progress for the parent's status block (ADR-0032). Display only. */
@@ -241,29 +245,41 @@ export async function runOneDelegation(
     approvalFacts?: ApprovalLedgerFacts;
   } = {},
 ): Promise<DelegationOutcome> {
+  await session.ensureDefinitions?.();
+  assertDefinitionIdentity(session, spec);
   const { toolCallId, onProgress, preApproved, taskFrom, taskFromExecutionId, approvalFacts } = options;
   // pi resolves a BARE model id to an unauthenticated provider and the child dies at startup — the id
   // alone is not enough, it must be qualified with its provider (`Model<Api>` carries both).
   const defaultModel = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
-  const configured = resolveDefinitionRuntime({
-    definition: spec.agent,
-    explicit: { model: spec.model, thinking: spec.thinking },
-    session: session.definitionRuntimeOverrides,
-    settings: session.definitionRuntimeSettings,
-    piModel: defaultModel,
-  });
-  let resolvedRuntime = configured;
+  let runtimeRefusal: import("../src/kernel/refusals.ts").StructuredRefusal | undefined;
+  let configured: import("./definition-runtime.ts").ResolvedDefinitionRuntime = {
+    model: spec.model ?? defaultModel,
+    modelSource: spec.model ? "explicit" : "pi",
+    thinkingSource: "pi",
+  };
+  try {
+    configured =
+      options.resolvedRuntime ??
+      resolveDefinitionRuntime({
+        definition: spec.agent,
+        explicit: { model: spec.model, thinking: spec.thinking },
+        session: session.definitionRuntimeOverrides,
+        settings: session.definitionRuntimeSettings,
+        piModel: defaultModel,
+        piThinking: session.currentThinking?.(),
+        authoredPreferences: spec.agent ? session.definitions.get(spec.agent)?.runtimePreferences : undefined,
+        unavailable: (choice) => runtimePairUnavailable(choice, ctx.modelRegistry, session.allowUnresolvedModels),
+      });
+  } catch (error) {
+    runtimeRefusal = structuredRefusal("MODEL_UNRESOLVED", `runtime selection refused: ${String(error)}`);
+  }
+  const resolvedRuntime = configured;
   const request = {
     task: spec.task,
     agent: spec.agent,
     tools: spec.tools,
     model: configured.model,
-    // Filled below, once the refusals that doom a delegation are known: asking first shipped the task text for a
-    // child that never starts, which is the ordering this module already fixed for the approval dialog.
-    thinking:
-      configured.thinkingSource === "explicit" || configured.thinkingSource === "session"
-        ? configured.thinking
-        : undefined,
+    thinking: configured.thinking,
     context: spec.context,
     correlation: spec.workspace
       ? { ...(spec.correlation ?? {}), workspace_id: spec.workspace.workspace_id }
@@ -290,12 +306,9 @@ export async function runOneDelegation(
   // requested and refused, and stored approvals still count toward it — nothing is *hidden*, only nobody is
   // *asked*. It is the same argument `/grants` uses for its preview.
   let executorRefusal = session.executor.refusal;
-  const modelRefusal = preflightModel(
-    request.model,
-    ctx.modelRegistry,
-    session.modelResolutionCache,
-    session.allowUnresolvedModels,
-  );
+  const modelRefusal =
+    runtimeRefusal ??
+    preflightModel(request.model, ctx.modelRegistry, session.modelResolutionCache, session.allowUnresolvedModels);
   const { extra, refusal: nativeRefusal } = await nativeDelegationContext(
     session,
     ids,

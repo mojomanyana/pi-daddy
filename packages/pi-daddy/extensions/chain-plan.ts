@@ -3,7 +3,7 @@ import type { ChainStep } from "../src/kernel/chain.ts";
 import { planDelegation } from "../src/kernel/delegate.ts";
 import { childSpawnId } from "../src/kernel/fanout.ts";
 import type { Capability } from "../src/kernel/resolve.ts";
-import type { StructuredRefusal } from "../src/kernel/refusals.ts";
+import { refusal, type StructuredRefusal } from "../src/kernel/refusals.ts";
 import type { GrantsSession } from "./session.ts";
 
 /** One upfront legacy gate: capability + subject + the exact step whose task the dialog names. */
@@ -50,7 +50,13 @@ export async function planChain(
   const { stageHandoff: _stageHandoff, ...context } = await session.delegationContext();
 
   for (const [index, step] of steps.entries()) {
-    const model = resolveModel?.(step) ?? step.model;
+    let model = step.model;
+    let runtimeRefusal: StructuredRefusal | undefined;
+    try {
+      model = resolveModel?.(step) ?? step.model;
+    } catch (error) {
+      runtimeRefusal = refusal("MODEL_UNRESOLVED", `runtime selection refused: ${String(error)}`);
+    }
     const plan = planDelegation(
       {
         task: step.task,
@@ -73,7 +79,7 @@ export async function planChain(
       },
     );
 
-    const modelRefusal = preflightModel?.(model);
+    const modelRefusal = runtimeRefusal ?? preflightModel?.(model);
     if (modelRefusal) {
       return {
         requests: [],

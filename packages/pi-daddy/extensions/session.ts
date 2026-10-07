@@ -42,6 +42,7 @@ import {
   parseList,
 } from "../src/kernel/propagation.ts";
 import type { Capability } from "../src/kernel/resolve.ts";
+import { selectedDefinitions, type SelectedCommand } from "../src/kernel/selected-definitions.ts";
 import { loadDefinitions } from "../src/kernel/definitions.ts";
 import { buildCatalog } from "../src/kernel/catalog.ts";
 import { ENV_WORKSPACE_REGISTRY } from "../src/kernel/workspace.ts";
@@ -170,6 +171,7 @@ export interface GrantsSession extends NativeSessionHost {
   /** Committed per-definition and global child runtime defaults. */
   readonly definitionRuntimeSettings: DefinitionRuntimeSettings;
   /** PD-7's future session controls write here; deliberately empty in this commit. */
+  currentThinking?: () => string;
   readonly definitionRuntimeOverrides: Map<string, DefinitionRuntimeChoice>;
   /** Path to this extension, so a child granted `tool:delegate` can delegate in turn. */
   readonly extensionPath?: string;
@@ -207,6 +209,7 @@ export interface GrantsSession extends NativeSessionHost {
   observed: boolean;
   observedTools: string[] | null;
   /** ADR-0016: `SKILL.md` definitions, keyed by name. The format this package spawns from now. */
+  ensureDefinitions?: () => Promise<void>;
   definitions: Map<string, SkillDefinition>;
   /**
    * Definitions discovery dropped, and why — reported at session start (ADR-0076, rule 8).
@@ -390,12 +393,19 @@ async function settleWorkspacePin(session: GrantsSession): Promise<WorkspacePins
   }
 }
 
-export async function loadProjectDefinitions(session: GrantsSession, cwd: string): Promise<void> {
+export async function loadProjectDefinitions(
+  session: GrantsSession,
+  cwd: string,
+  selected?: readonly SelectedCommand[],
+): Promise<void> {
   await establishRootPin(session);
   const skips: string[] = [];
-  session.definitions = await loadDefinitions(cwd, (_path, reason) => skips.push(reason));
+  const snapshot = selected === undefined ? undefined : await selectedDefinitions(selected);
+  session.definitions = snapshot?.definitions ?? (await loadDefinitions(cwd, (_path, reason) => skips.push(reason)));
+  if (snapshot) skips.push(...snapshot.skips);
   session.definitionSkips = skips;
   session.catalogReady = buildCatalog({
+    ...(snapshot ? { snapshot } : {}),
     cwd,
     observedTools: session.observedTools,
     // ADR-0035: `workspace:<id>` is a capability, so the registered ids belong in the catalog the same way

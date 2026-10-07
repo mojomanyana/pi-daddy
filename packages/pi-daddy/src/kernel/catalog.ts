@@ -136,13 +136,14 @@ export function makeCatalog(entries: CatalogEntry[], registryRefusal?: string): 
 /** Build the live catalog. `observedTools` comes from a provider payload; null when not yet seen. */
 export async function buildCatalog(input: {
   cwd: string;
+  snapshot?: { skills: CatalogEntry[]; definitions: Map<string, SkillDefinition> };
   observedTools: string[] | null;
   /** Operator workspace registry (`PI_DADDY_WORKSPACE_REGISTRY`). Absent or unreadable yields no entries. */
   registryPath?: string;
 }): Promise<Catalog> {
   const [skills, definitions, workspaces] = await Promise.all([
-    loadSkills(input.cwd),
-    loadDefinitions(input.cwd),
+    input.snapshot ? Promise.resolve(input.snapshot.skills) : loadSkills(input.cwd),
+    input.snapshot ? Promise.resolve(input.snapshot.definitions) : loadDefinitions(input.cwd),
     // Fails SOFT, and only because nothing here is an authority. A malformed registry must not stop a
     // session from starting — `loadWorkspaceRegistry` throws a GovernanceRefusal naming the file, and that
     // refusal is the operator's signal at the point of USE, where routing actually depends on it. Swallowing

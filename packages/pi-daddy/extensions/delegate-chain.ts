@@ -1,3 +1,4 @@
+import { assertDefinitionIdentity } from "./definition-describe.ts";
 /**
  * `delegate_chain` — a governed sequential pipeline, planned and gated as one unit (ADR-0033).
  *
@@ -42,7 +43,7 @@ import { chainApprovalFacts, newChainApprovalAudit, rememberChainApproval } from
 import { newExecutionId } from "../src/kernel/execution-id.ts";
 import { planChain, type GateRequest } from "./chain-plan.ts";
 import { contextShape } from "./context-shape.ts";
-import { preflightModel } from "../src/kernel/model-preflight.ts";
+import { preflightModel, runtimePairUnavailable } from "../src/kernel/model-preflight.ts";
 import { resolveDefinitionRuntime } from "./definition-runtime.ts";
 import { withoutRetiredDelegationArguments } from "./retired-inputs.ts";
 import { assertDelegationAuthority } from "./delegation-authority.ts";
@@ -72,6 +73,9 @@ function mergeGateOutcomes(outcomes: readonly ApprovalOutcome[]): ApprovalOutcom
 
 export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): void {
   const stepShape = Type.Object({
+    definitionId: Type.Optional(
+      Type.String({ description: "Snapshot id returned by delegate_describe; required for Principal phases." }),
+    ),
     task: Type.String({
       description:
         `What this step should do. Write ${PLACEHOLDER} where the previous step's output belongs; if you omit it, ` +
@@ -119,6 +123,8 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
     async execute(_toolCallId, args, signal, onUpdate, ctx) {
       assertDelegationAuthority(session);
       const steps = args.steps ?? [];
+      await session.ensureDefinitions?.();
+      for (const step of steps) assertDefinitionIdentity(session, step);
 
       // **Every cheap refusal happens before any human is asked.** Yesterday's lesson on the `delegate` path: with
       // `PI_DADDY_HERDR=1` and herdr down, the gate ran first, an operator approved `bash`, a 30-day entry was
@@ -138,20 +144,30 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
       const executionIds = steps.map(() => newExecutionId());
       const parentExecutionId = session.ownExecutionId ?? null;
       const piModel = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
+      const runtimeChoices = new Map<
+        import("../src/kernel/chain.ts").ChainStep,
+        import("./definition-runtime.ts").ResolvedDefinitionRuntime
+      >();
       const chainPlan = await planChain(
         session,
         steps,
         executionIds,
         (model) =>
           preflightModel(model, ctx.modelRegistry, session.modelResolutionCache, session.allowUnresolvedModels),
-        (step) =>
-          resolveDefinitionRuntime({
+        (step) => {
+          const selected = resolveDefinitionRuntime({
             definition: step.agent,
             explicit: { model: step.model, thinking: step.thinking },
             session: session.definitionRuntimeOverrides,
             settings: session.definitionRuntimeSettings,
             piModel,
-          }).model,
+            piThinking: session.currentThinking?.(),
+            authoredPreferences: step.agent ? session.definitions.get(step.agent)?.runtimePreferences : undefined,
+            unavailable: (choice) => runtimePairUnavailable(choice, ctx.modelRegistry, session.allowUnresolvedModels),
+          });
+          runtimeChoices.set(step, selected);
+          return selected.model;
+        },
       );
       if (chainPlan.doomed) {
         const message =
@@ -309,6 +325,7 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
           ctx,
           signal,
           {
+            resolvedRuntime: runtimeChoices.get(step),
             preApproved: availableForStep,
             toolCallId: _toolCallId,
             // Only approvals actually offered to this step are attributed or consumed here.

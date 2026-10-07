@@ -288,3 +288,31 @@ PI_DADDY_IT_MODEL=1 npm run test:integration --workspace=pi-daddy # opt-in real-
 ```
 
 `pi-daddy` under `packages/pi-daddy` is the only published package; the workspace root is private.
+
+
+### Exact definition runtime choices (candidate)
+
+A selected definition may author a single-line `runtime-preferences` JSON array:
+
+```yaml
+runtime-preferences: '[{"model":"provider/model-id","thinking":"high"},{"model":"provider/other-id","thinking":"medium"}]'
+```
+
+Call arguments, per-definition session controls, and per-definition project settings win per field.
+The complete needed authored list validates before any candidate is selected. A partial override filters
+intact rows; ordinary configured/current defaults may fill missing fields without being labeled an authored
+pair. Unsupported explicit effort refuses rather than clamping. Resolution checks only named local models
+and passive auth status. Unknown authentication stays unknown; there are no credential commands, remote
+health probes, provider-wide searches, or post-launch substitution. With no explicit/current model supplied,
+Pi's ordinary configured default remains in effect; this does not attest a resolved pair.
+
+On Pi 1.0.4, the first request or native delegation reads the public selected skill inventory once. Native
+`plan`, `build`, `review`, `debug`, and `investigate` binding requires the selected Principal package's
+`principal-agents.json` paths and hashes. It freezes the generated delegated body and the intersection of
+inline and delegated ceilings. An unrelated skill with the same name is never labeled Principal. Failed
+binding has no inline fallback. Reload creates a new snapshot; observing provider tools never rereads bodies.
+
+Call `delegate_describe({agent:"build"})` and carry its `definitionId` into `delegate`, a `delegate_all`
+child, or a `delegate_chain` step. Principal bindings require that precondition. Description starts no child
+and grants no authority. A stale ID refuses before approval or launch. This hash is an observation and
+precondition, not an approval record or a learned-policy authorization.

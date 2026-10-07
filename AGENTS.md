@@ -941,3 +941,13 @@ Kept features only. Numbers are dropped except the two that code and rules cite.
   catch silenced every session-start notification, including the line that shows governance is on at all.
 - **R-85** — work reaches `main` by drift, not decision: check the branch before the first edit of a task, and if work
   is already on `main`, branch at HEAD and reset the local pointer rather than rewriting history.
+
+
+## 2026-10-07 candidate: selected definition and runtime contracts
+
+The authorized ecosystem candidate replaces independent live resource rescans with Pi 1.0.4 public selected
+skill commands, acquired lazily after discovery. Generated Principal agent bodies require the package
+binding manifest and snapshot ID. Preserve the frozen body/ceiling/identity through dispatch and reload.
+Model preferences are ordered intact authored pairs, below explicit/session/project fields; no advisor,
+automatic model chooser, monetary gate, or remote preflight is restored. Unknown auth is not missing auth.
+The dedicated model-free SDK fixtures are separate from optional paid model integrations.

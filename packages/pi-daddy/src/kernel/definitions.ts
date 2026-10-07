@@ -61,6 +61,10 @@ export function isDefinitionPackageVersion(value: unknown): value is string {
 }
 
 export interface SkillDefinition {
+  /** Immutable selected-resource identity, independent of the model-authored name. */
+  definitionId?: string;
+  selectedSkillHash?: string;
+  binding?: Readonly<{ package: "principal-pi-skills"; phase: string }>;
   /** From the path, never the frontmatter — see `parseSkillDefinition`. */
   name: string;
   description: string;
@@ -68,6 +72,8 @@ export interface SkillDefinition {
   allowedTools?: string;
   /** The spec's sanctioned extension point: a map of string keys to string values. */
   metadata?: Record<string, string>;
+  /** Raw authored JSON pairs; validated only when runtime selection needs them. */
+  runtimePreferences?: string;
   /** Everything after the frontmatter — the child's system prompt. */
   body: string;
   source: string;
@@ -160,6 +166,7 @@ export function parseSkillDefinition(source: string, text: string): SkillDefinit
     name: skillResourceName(source),
     description,
     allowedTools: fields.get("allowed-tools"),
+    runtimePreferences: fields.get("runtime-preferences"),
     metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
     body: text.slice(match[0].length).trim(),
     source,

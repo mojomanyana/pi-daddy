@@ -1,3 +1,4 @@
+import { registerDefinitionDescribe } from "./definition-describe.ts";
 /**
  * Governed delegation, as pi sees it: the `delegate` and `delegate_all` tool registrations.
  *
@@ -186,6 +187,9 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
     ),
   );
   const childShape = Type.Object({
+    definitionId: Type.Optional(
+      Type.String({ description: "Snapshot id returned by delegate_describe; required for Principal phases." }),
+    ),
     task: Type.String({ description: "The task for this sub-agent. It receives only this." }),
     agent: Type.Optional(Type.String({ description: describeAgent(spawnable()) })),
     tools: Type.Optional(Type.Array(Type.String(), { description: "Capabilities, when no 'agent' fits." })),
@@ -205,6 +209,9 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
   });
 
   const delegateParams = Type.Object({
+    definitionId: Type.Optional(
+      Type.String({ description: "Snapshot id returned by delegate_describe; required for Principal phases." }),
+    ),
     task: Type.String({ description: "The task for the sub-agent. It receives only this." }),
     agent: Type.Optional(Type.String({ description: describeAgent(spawnable()) })),
     tools: Type.Optional(
@@ -247,6 +254,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       const outcome = await runOneDelegation(
         session,
         {
+          definitionId: params.definitionId,
           task: params.task,
           agent: params.agent,
           tools: params.tools,
@@ -394,6 +402,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
   // ADR-0033. Registered here so all three tools appear together and share the `mayDelegate` guard, but its logic
   // lives in its own file: `delegate` and `delegate_all` differ only in cardinality, while a chain differs in
   // composition, and this file is near the 400-line ceiling.
+  registerDefinitionDescribe(pi, session);
   registerChainTool(pi, session);
 
   return {

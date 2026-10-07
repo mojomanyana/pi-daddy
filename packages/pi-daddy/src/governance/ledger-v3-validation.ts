@@ -406,7 +406,7 @@ function validResolvedModel(value: unknown): boolean {
   );
 }
 
-const MODEL_SOURCES = ["explicit", "session", "definition", "global", "pi"];
+const MODEL_SOURCES = ["explicit", "session", "definition", "authored", "global", "pi"];
 const THINKING_SOURCES = [...MODEL_SOURCES, "advisor"];
 function validThinkingLevel(value: unknown): boolean {
   return (
