@@ -25,6 +25,7 @@
  * interceptor and pi handed the child more than the parent held, the intersection clamps it back.
  */
 
+import { ENV_PUBLIC_EVIDENCE_DIR } from "./env-names.ts";
 import type { Capability } from "./resolve.ts";
 import { attenuateWorkspacePin, formatWorkspacePin, type WorkspacePins } from "./workspace-pin.ts";
 import { WILDCARD } from "./pi-tools.ts";
@@ -86,6 +87,7 @@ export {
  * to give it.
  */
 export const GRANT_ENV_KEYS = [
+  ENV_PUBLIC_EVIDENCE_DIR,
   // Not governance state, but the same rule applies for a stronger reason: neither a credential the parent holds
   // nor the switch that points it at a third party is something a child inherits by being spawned (ADR-0077).
   //

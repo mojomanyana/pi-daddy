@@ -5,6 +5,7 @@ import { lstat, realpath } from "node:fs/promises";
 import { BoundedReadCleanupError, readBoundedBytes } from "./bounded-read.ts";
 import { ceilingForDefinition, parseSkillDefinition, type SkillDefinition } from "./definitions.ts";
 import { resolve } from "./resolve.ts";
+import type { DefinitionSource } from "./definition-sources.ts";
 import type { CatalogEntry } from "./catalog.ts";
 export interface SelectedCommand {
   source?: string;
@@ -16,13 +17,20 @@ const hash = (value: string) => createHash("sha256").update(value, "utf8").diges
 const object = (x: unknown): x is Record<string, unknown> => !!x && typeof x === "object" && !Array.isArray(x);
 const exact = (x: Record<string, unknown>, keys: string[]) =>
   Object.keys(x).sort().join(",") === [...keys].sort().join(",");
-async function read(path: string): Promise<string> {
+async function read(path: string, kind: DefinitionSource["kind"], sources?: DefinitionSource[]): Promise<string> {
   if (!(await lstat(path)).isFile()) throw Error(`nonregular selected resource: ${path}`);
   const result = await readBoundedBytes(path, { maxBytes: 1024 * 1024, timeoutMs: 3000 });
   if (!result.ok) throw Error(result.detail);
-  return new TextDecoder("utf-8", { fatal: true }).decode(result.bytes);
+  const text = new TextDecoder("utf-8", { fatal: true }).decode(result.bytes);
+  sources?.push(Object.freeze({ kind, path, base64: result.bytes.toString("base64") }));
+  return text;
 }
-async function principalBinding(path: string, inline: SkillDefinition, skillText: string): Promise<SkillDefinition> {
+async function principalBinding(
+  path: string,
+  inline: SkillDefinition,
+  skillText: string,
+  sources?: DefinitionSource[],
+): Promise<SkillDefinition> {
   const phase = inline.name;
   const marked = inline.metadata?.["principal-package"] === "principal-pi-skills";
   if (!phases.includes(phase) || path !== join(dirname(dirname(path)), phase, "SKILL.md")) {
@@ -32,7 +40,7 @@ async function principalBinding(path: string, inline: SkillDefinition, skillText
   const root = dirname(dirname(path));
   let packageText: string;
   try {
-    packageText = await read(join(root, "package.json"));
+    packageText = await read(join(root, "package.json"), "package", sources);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT" && !marked) return inline;
     throw error;
@@ -42,7 +50,7 @@ async function principalBinding(path: string, inline: SkillDefinition, skillText
     if (marked) throw Error("marked Principal skill has missing or wrong package identity");
     return inline;
   }
-  const manifest: unknown = JSON.parse(await read(join(root, "principal-agents.json")));
+  const manifest: unknown = JSON.parse(await read(join(root, "principal-agents.json"), "binding-manifest", sources));
   if (
     !object(manifest) ||
     !exact(manifest, ["version", "package", "bindings"]) ||
@@ -73,7 +81,7 @@ async function principalBinding(path: string, inline: SkillDefinition, skillText
     (await realpath(path)) !== join(await realpath(root), row.skill)
   )
     throw Error("Principal binding path escaped its selected package");
-  const agentText = await read(agentPath);
+  const agentText = await read(agentPath, "delegated-agent", sources);
   if (hash(skillText) !== row.skillSha256 || hash(agentText) !== row.agentSha256)
     throw Error("Principal binding hash mismatch");
   const agent = parseSkillDefinition(agentPath, agentText);
@@ -106,7 +114,10 @@ async function principalBinding(path: string, inline: SkillDefinition, skillText
     binding: Object.freeze({ package: "principal-pi-skills", phase }),
   };
 }
-export async function selectedDefinitions(commands: readonly SelectedCommand[]): Promise<{
+export async function selectedDefinitions(
+  commands: readonly SelectedCommand[],
+  captureSources = false,
+): Promise<{
   definitions: Map<string, SkillDefinition>;
   skills: CatalogEntry[];
   skips: string[];
@@ -127,10 +138,11 @@ export async function selectedDefinitions(commands: readonly SelectedCommand[]):
     try {
       if (!command.sourceInfo?.path) throw Error("selected resource lacks a public source path");
       const path = resolvePath(command.sourceInfo.path);
-      const text = await read(path);
+      const sources: DefinitionSource[] | undefined = captureSources ? [] : undefined;
+      const text = await read(path, "selected-skill", sources);
       const parsed = parseSkillDefinition(path, text);
       if (!parsed || parsed.name !== name) throw Error("selected name/path does not match definition");
-      const bound = await principalBinding(path, parsed, text);
+      const bound = await principalBinding(path, parsed, text, sources);
       const definitionId = hash(
         JSON.stringify({
           name,
@@ -145,7 +157,16 @@ export async function selectedDefinitions(commands: readonly SelectedCommand[]):
         }),
       );
       if (bound.metadata) Object.freeze(bound.metadata);
-      definitions.set(name, Object.freeze({ ...bound, definitionId }));
+      definitions.set(
+        name,
+        Object.freeze({
+          ...bound,
+          definitionId,
+          ...(sources
+            ? { sourceSnapshot: Object.freeze({ resources: Object.freeze(sources), body: bound.body }) }
+            : {}),
+        }),
+      );
       skills.push({ capability: `skill:${name}`, kind: "skill", source: path });
     } catch (error) {
       if (error instanceof BoundedReadCleanupError) throw error;

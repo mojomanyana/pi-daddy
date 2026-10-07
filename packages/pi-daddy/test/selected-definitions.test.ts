@@ -102,3 +102,21 @@ test("marked Principal phase rejects a noncanonical selected path", async () => 
   assert.equal(result.definitions.size, 0);
   assert.match(result.skips.join(" "), /noncanonical/);
 });
+
+test("opt-in Principal source snapshot contains exact admitted package, manifest, skill, agent and body", async () => {
+  const { root, commands } = await fixture();
+  const d = (await selectedDefinitions(commands, true)).definitions.get("build")!;
+  const snapshot = d.sourceSnapshot!;
+  assert.deepEqual(
+    snapshot.resources.map((s) => s.kind),
+    ["selected-skill", "package", "binding-manifest", "delegated-agent"],
+  );
+  for (const source of snapshot.resources) {
+    assert.deepEqual(Buffer.from(source.base64, "base64"), await readFile(source.path));
+    await writeFile(source.path, "changed after frozen selection");
+  }
+  assert.equal(snapshot.body, "  EXACT DELEGATED build  \n");
+  assert.equal(snapshot.body, d.body);
+  assert.equal(snapshot.resources.at(-1)!.path, join(root, "agents", "principal-build.md"));
+  assert.ok(Object.isFrozen(snapshot.resources[0]));
+});

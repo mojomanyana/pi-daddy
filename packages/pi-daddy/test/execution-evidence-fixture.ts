@@ -46,5 +46,6 @@ export function evidenceFromProvider(result: Parameters<typeof providerToolOutpu
     "Runtime execution evidence (process settlement; not workspace cleanup or task acceptance):\n```json\n";
   const offset = output.lastIndexOf(marker);
   assert.ok(offset >= 0, "provider-visible tool output must contain runtime evidence, not only UI details");
-  return JSON.parse(output.slice(offset + marker.length, output.lastIndexOf("\n```")));
+  const end = output.indexOf("\n```", offset + marker.length);
+  return JSON.parse(output.slice(offset + marker.length, end));
 }

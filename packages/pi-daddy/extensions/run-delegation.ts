@@ -73,6 +73,8 @@ interface DelegationToolContext extends ApprovalUIContext {
 /** A planned delegation, plus whatever approvals contributed to it. */
 export interface GatedPlan {
   plan: ReturnType<typeof planDelegation>;
+  /** Opt-in observation of the exact context used by the final planner invocation. */
+  definition?: import("../src/kernel/definitions.ts").SkillDefinition;
   /** Absent when the gate was never reached — i.e. the plan succeeded or failed for another reason. */
   approval?: ApprovalOutcome;
 }
@@ -112,8 +114,17 @@ export async function planWithApprovals(
   // the re-plan — and two spellings of one argument is the defect R-28 was.
   const approvalSubject = request.agent ?? DELEGATE_SUBJECT;
 
-  let plan = planDelegation(request, { ...(await session.delegationContext(preApproved)), ...extra });
-  if (plan.ok || !shouldSeekApproval(plan.result)) return { plan };
+  let definition: GatedPlan["definition"];
+  const observedPlan = (context: Parameters<typeof planDelegation>[1]) => {
+    const next = planDelegation(request, context);
+    definition =
+      session.publicEvidence && next.definitionDigest && request.agent
+        ? context.definitions?.get(request.agent)
+        : undefined;
+    return next;
+  };
+  let plan = observedPlan({ ...(await session.delegationContext(preApproved)), ...extra });
+  if (plan.ok || !shouldSeekApproval(plan.result)) return { plan, ...(definition ? { definition } : {}) };
 
   let approval: ApprovalOutcome | undefined;
   try {
@@ -133,7 +144,7 @@ export async function planWithApprovals(
     );
     const outcome = approval;
     if (outcome.approved.length > 0) {
-      plan = planDelegation(request, {
+      plan = observedPlan({
         // The scope is the REAL one: a `once` approval still authorises this spawn, and
         // `inheritApprovals` then keeps it from reaching the child. See ADR-0014. R-29 is what makes
         // this safe under fan-out: a `once` is consumed by exactly one concurrent caller.
@@ -170,7 +181,7 @@ export async function planWithApprovals(
     plan = { ...plan, reason: message, refusal: structuredRefusal("APPROVAL_FLOW_FAILED", message) };
   }
 
-  return { plan, approval };
+  return { plan, approval, ...(definition ? { definition } : {}) };
 }
 
 /**
@@ -211,6 +222,7 @@ export async function runOneDelegation(
     /** Trusted reservation made before a chain's upfront gate. */
     capacityReservation?: CapacityReservation;
     /** Exact pair selected during the chain preflight; never reselect after its approval. */
+    onDefinition?: (definition: import("../src/kernel/definitions.ts").SkillDefinition | undefined) => void;
     resolvedRuntime?: import("./definition-runtime.ts").ResolvedDefinitionRuntime;
     /** Actual public execute argument, never read from model-authored correlation or output. */
     toolCallId?: string;
@@ -266,6 +278,7 @@ export async function runOneDelegation(
   try {
     await session.ensureDefinitions?.();
     assertDefinitionIdentity(session, spec);
+
     const { toolCallId, onProgress, preApproved, taskFrom, taskFromExecutionId, approvalFacts } = options;
     // pi resolves a BARE model id to an unauthenticated provider and the child dies at startup — the id
     // alone is not enough, it must be qualified with its provider (`Model<Api>` carries both).
@@ -347,6 +360,7 @@ export async function runOneDelegation(
       // no child process.
       const preview = await planWithApprovals(session, request, planContext, null, signal, preApproved);
       plan = preview.plan;
+      options.onDefinition?.(preview.definition);
       if (plan.ok || shouldSeekApproval(plan.result)) {
         try {
           preparedWorkspace = await prepareDelegationWorkspace({
@@ -363,6 +377,7 @@ export async function runOneDelegation(
           request.correlation = preparedWorkspace.correlation;
           const gated = await planWithApprovals(session, request, planContext, ctx, signal, preApproved);
           plan = gated.plan;
+          options.onDefinition?.(gated.definition);
           approvalOutcome = gated.approval;
         } catch (error) {
           const value =
@@ -382,6 +397,7 @@ export async function runOneDelegation(
         preApproved,
       );
       plan = gated.plan;
+      options.onDefinition?.(gated.definition);
       approvalOutcome = gated.approval;
     }
 

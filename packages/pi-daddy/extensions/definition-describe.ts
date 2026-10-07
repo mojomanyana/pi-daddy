@@ -1,4 +1,5 @@
 /** Read-only handshake with the exact immutable definition dispatched by this extension instance. */
+import { publicEvidenceCall } from "./public-evidence.ts";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { digestDefinition } from "../src/kernel/definitions.ts";
@@ -38,7 +39,9 @@ export function registerDefinitionDescribe(pi: ExtensionAPI, session: GrantsSess
         binding: definition.binding ?? null,
         definitionId: definition.definitionId,
       };
-      return { content: [{ type: "text" as const, text: JSON.stringify(details) }], details };
+      const capture = publicEvidenceCall(session.publicEvidence, _id, "delegate_describe", [{ agent: params.agent }]);
+      capture.selected(0, definition);
+      return capture.finish({ content: [{ type: "text" as const, text: JSON.stringify(details) }], details });
     },
   });
 }

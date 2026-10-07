@@ -13,6 +13,8 @@
  * module reads them **through this object**, live, rather than capturing a copy at load time; capturing a
  * copy of `ownGrant` before observation is exactly how a stale upper bound would become an enforced one.
  */
+import { createPublicEvidenceOwner, type PublicEvidenceOwner } from "../src/products/public-evidence.ts";
+import { ENV_PUBLIC_EVIDENCE_DIR } from "../src/kernel/env-names.ts";
 import { randomUUID } from "node:crypto";
 import { BoundedReadCleanupError } from "../src/kernel/bounded-read.ts";
 import type { discoverSkillPackages } from "../src/kernel/skill-packages.ts";
@@ -139,6 +141,8 @@ export function activityChildEnv(activity: { rootId: string; path: string; taskI
 }
 /** Keep each child's pane after it finishes, for inspection. Off by default: fan-out would flood it. */
 export interface GrantsSession extends NativeSessionHost {
+  /** Reconciled from the actual owner root on reload; captured call owners stay immutable. */
+  publicEvidence?: PublicEvidenceOwner;
   /** Legacy PI_GRANTS_* names adopted at construction (ADR-0076 PR 3b); the session-start warning names them. */
   readonly adoptedLegacyEnv: readonly string[];
   /** False only for the explicit PI_DADDY_GOVERNANCE opt-out; otherwise roots are observed-bound. */
@@ -519,7 +523,8 @@ async function loadProjectDiscovery(
   await establishRootPin(session, lifecycle);
   const skips: string[] = [];
   assertDiscoveryHealthy(session, lifecycle);
-  const snapshot = selected === undefined ? undefined : await selectedDefinitions(selected);
+  const snapshot =
+    selected === undefined ? undefined : await selectedDefinitions(selected, session.publicEvidence !== undefined);
   const definitions =
     snapshot?.definitions ??
     (await (session.discovery.definitions ?? loadDefinitions)(cwd, (_path, reason) => skips.push(reason)));
@@ -632,6 +637,7 @@ export function createGrantsSession(
      */
     mayDelegate: !governed || inherited.includes(DELEGATE_CAPABILITY) || inherited.includes(WILDCARD),
     ownerBound: false,
+    publicEvidence: createPublicEvidenceOwner(environment[ENV_PUBLIC_EVIDENCE_DIR]),
     allowUnresolvedModels: environment[ENV_ALLOW_UNRESOLVED_MODELS] === "1",
     nativeSessionRoot: nativeSessionRootFromEnv(process.env),
     modelResolutionCache: new Map<string, boolean>(),
@@ -707,6 +713,9 @@ export function createGrantsSession(
       session.publishChildEnv();
     },
     reconcileEnvironment: (environment, lifecycle) => {
+      const evidenceDirectory = environment[ENV_PUBLIC_EVIDENCE_DIR];
+      if (session.reloadLifecycle !== lifecycle || session.publicEvidence?.directory !== evidenceDirectory)
+        session.publicEvidence = createPublicEvidenceOwner(evidenceDirectory);
       if (session.reloadLifecycle !== lifecycle) {
         session.pinSettled = false;
         session.workspacePin = undefined;

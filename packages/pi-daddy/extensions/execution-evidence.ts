@@ -83,7 +83,7 @@ export function executionEvidenceContent(
   outcomes: readonly DelegationOutcome[],
   requested: number,
 ) {
-  const evidence = { version: 1, tool, requested, outcomes: outcomes.map(outcomeEvidence) };
+  const evidence = executionEvidence(tool, outcomes, requested);
   return {
     type: "text" as const,
     text:
@@ -91,4 +91,13 @@ export function executionEvidenceContent(
       JSON.stringify(evidence) +
       "\n```",
   };
+}
+
+/** Shared allowlisted projection for the model-visible text and exact local capture. */
+export function executionEvidence(
+  tool: "delegate" | "delegate_all" | "delegate_chain",
+  outcomes: readonly DelegationOutcome[],
+  requested: number,
+) {
+  return { version: 1, tool, requested, outcomes: outcomes.map(outcomeEvidence) };
 }
