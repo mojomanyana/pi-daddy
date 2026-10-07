@@ -4,6 +4,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { open } from "node:fs/promises";
 import { readBoundedFile } from "../src/kernel/bounded-read.ts";
 
 /**
@@ -157,6 +158,59 @@ test("an ordinary file reads back exactly, including across several chunks", asy
     const result = await readBoundedFile(path, { maxBytes: 1 << 20, timeoutMs: 2000 });
     assert.equal(result.ok, true);
     assert.equal(result.ok === true && result.text, body);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("invalid UTF-8 cannot silently change operator-authored text", async () => {
+  const dir = scratch();
+  try {
+    const path = join(dir, "settings.json");
+    writeFileSync(path, Buffer.from([0x7b, 0x22, 0x78, 0x22, 0x3a, 0x22, 0xff, 0x22, 0x7d]));
+    const read = await readBoundedFile(path, { maxBytes: 1024, timeoutMs: 2000 });
+    assert.equal(read.ok, false);
+    assert.match(read.ok ? "" : read.detail, /UTF-8/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("descriptor-close failure stays failed with its exact retry owner", async () => {
+  const dir = scratch();
+  try {
+    const path = join(dir, "settings.json");
+    writeFileSync(path, "{}");
+    let failClose = true;
+    let held: Awaited<ReturnType<typeof open>> | undefined;
+    const ports = {
+      open: async (file: string, flags: number) => (held = await open(file, flags)),
+      read: (
+        handle: Awaited<ReturnType<typeof open>>,
+        buffer: Buffer,
+        offset: number,
+        length: number,
+        position: number,
+      ) => handle.read(buffer, offset, length, position),
+      close: async (handle: Awaited<ReturnType<typeof open>>) => {
+        assert.equal(handle, held);
+        if (failClose) throw new Error("injected close failure");
+        await handle.close();
+      },
+    };
+    let error: unknown;
+    try {
+      await readBoundedFile(path, { maxBytes: 1024, timeoutMs: 2000 }, ports);
+    } catch (failure) {
+      error = failure;
+    }
+    assert.ok(error instanceof Error, "cleanup failure must not become successful text");
+    const cleanup = (error as Error & { cleanup: () => Promise<void> }).cleanup;
+    assert.equal(typeof cleanup, "function");
+    failClose = false;
+    await cleanup();
+    await cleanup();
+    assert.equal(held?.fd, -1);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

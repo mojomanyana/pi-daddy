@@ -11,7 +11,7 @@
 Newest first. **Breaking changes are marked and say what to do about them.**
 
 This file exists because the README had grown ninety lines of stacked version banners before a reader
-reached what the package *does* — churn documentation in front of product documentation. The banners are
+reached what the package _does_ — churn documentation in front of product documentation. The banners are
 the record of how the package got here and are worth keeping; they are not worth reading first.
 
 > **0.13.0 is the first PUBLISHED release.** Every version below it was developed in this repository and
@@ -19,6 +19,15 @@ the record of how the package got here and are worth keeping; they are not worth
 > below can have affected you** — there was no earlier version to install. They are kept because they are
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
+
+## Unreleased — surviving guard repairs (2026-10-07)
+
+- Treat damaged or oversized runtime/resource settings and package metadata as failures, not missing defaults.
+  Bounded reads reject FIFOs and malformed UTF-8; unresolved cleanup stays attached to the operation and session owner.
+- Pruned handoffs carry only the active Pi branch and shared ancestry. Unavailable input is labeled incomplete.
+  Named file handoffs require Linux held-descriptor confinement proof and refuse when it is unavailable.
+- Approval timeouts accept absent (120 seconds), literal 0 (unlimited), or canonical whole seconds 1..2147483.
+  Fix malformed values before requesting a new prompt; existing authority remains usable.
 
 ## 0.43.1 — Pi-only documentation refresh (2026-09-29)
 
@@ -794,7 +803,6 @@ and test synchronization only; dependencies and runtime are unchanged.
   Rename prose/whitespace keys before calling `runNamedCheck`; invalid IDs now refuse before the executable
   or lease starts rather than failing only when a v3 receipt is appended.
 
-
 ## 0.19.0 — workspace routing is a capability (2026-08-23)
 
 **The four hang fixes below were staged for a 0.18.2 and are released here instead — a decision reversed
@@ -802,13 +810,13 @@ deliberately, so the reversal is recorded rather than the reason vanishing.** Th
 argued for cutting them as a patch so a fix for released code would not be gated on a breaking change. The
 counter-argument won: **R-131 — workspace routing does not attenuate — is a live escalation in published
 0.18.0 and 0.18.1**, a child routed to `staging` can route its grandchild to `prod` with a real lease and a
-ledger line that reads as authorised, and the fix for it *is* the breaking change. A 0.18.2 would have fixed
+ledger line that reads as authorised, and the fix for it _is_ the breaking change. A 0.18.2 would have fixed
 one defect and left that one open, on a line that then needed supporting alongside this one. Shipping once
 fixes all three.
 
 - **FIX — a retained lease no longer reports a retention that did not happen (R-152).** `markRetained`
   returned `void` and `releaseDelegationWorkspace` hardcoded the ledger word, so a `workspace_lease` event
-  said `retained` — *"the pane may still be live"* — for a helper that had already died (the fact is `lost`),
+  said `retained` — _"the pane may still be live"_ — for a helper that had already died (the fact is `lost`),
   for a lease already cleanly released, and for a retention whose record could not be written. It now answers
   in the release vocabulary and the caller ledgers what it says. **Breaking for direct library callers only:**
   `WorkspaceLease.markRetained` returns `Promise<LeaseReleaseOutcome>` instead of `Promise<void>`, and
@@ -834,7 +842,6 @@ fixes all three.
   back: the retry budget was unreachable, no marker was written, and the lock was held **forever** — R-102's
   explicitly rejected outcome. Measured with a `herdr` that sleeps: before, `LOCK=HELD` with no marker
   indefinitely; after, released with the marker written. Tunable via `herdrCloseTimeoutMs` (default 15s).
-
 
 - Ship a canonical JSON Schema draft 2020-12 contract for `ledgerVersion: 2` plus deterministic fixtures for
   all four event types, generated through the production builders. Stable package export paths let external
@@ -894,7 +901,7 @@ and a mutation battery, and are listed because ADR-0035 claimed three of them as
 amendment). **The entries under "Present in earlier releases" below DID ship**, and an earlier draft of this section put
 them under this heading, telling operators the `tool:*` attenuation escape could not affect them. (That draft
 then said "two" while three bullets sat under the heading, one of which — the v2 enum — is the single item
-here that provably did *not* ship. It has moved back.)
+here that provably did _not_ ship. It has moved back.)
 
 - **Routing terminated below the root instead of attenuating.** `unknownCapabilities` did not know the
   namespace, and a catalog is always present in a real session, so every requested `workspace:<id>` was
@@ -1016,7 +1023,7 @@ is never a force-push, and `test/branch-guard.test.ts`, which pins it against se
 
 **Why a version at all**, since nothing here changed: rule 10 says version bumps take the same path as
 everything else, and this one did — branch, PR, review, squash-merge. The rule's first draft was reviewed by
-six independent agents across two rounds that found sixteen defects, including that *"never commit to `main`"*
+six independent agents across two rounds that found sixteen defects, including that _"never commit to `main`"_
 forbids the merge the rule requires, and that the guard written to fix that had reproduced the same defect in
 shell. `docs/03-risks.md` R-85 and the 2026-08-18 session-log entry hold the details.
 
@@ -1029,11 +1036,11 @@ order is now what the sentence says it is.
 one that removes the last reason to keep an ungoverned spawner installed alongside this one.
 
 - **The handoff is fenced, labelled and nonce-delimited.** A chain makes step N's task the output of a governed
-  child, which is the highest-authority text a child receives after its own `SKILL.md`. The label is *framing* — a
+  child, which is the highest-authority text a child receives after its own `SKILL.md`. The label is _framing_ — a
   determined injection can argue with it — but the **nonce is mechanism**: minted after the producing child
   finished, so it cannot forge a closing delimiter. ADR-0033 records the stronger option (quarantine to a file the
   next step must `read`) as the prepared answer if framing proves insufficient.
-- **Gated upfront: one dialog per capability *and* definition, all before the first step runs.** Approvals arrive
+- **Gated upfront: one dialog per capability _and_ definition, all before the first step runs.** Approvals arrive
   together instead of interrupting a running pipeline. Not one dialog for everything — an approval is keyed
   `capability@subject`, so a single dialog spanning several definitions would ask about one and spend the answer on
   the rest. ADR-0033 originally specified that, three reviewers found it was a privilege path, and the ADR carries
@@ -1048,7 +1055,7 @@ one that removes the last reason to keep an ungoverned spawner installed alongsi
 `PI_GRANTS_FANOUT=12` (the default is 8). At most 8 steps.
 
 **Also:** `test-integration/herdr.it.ts` now checks herdr's own contracts against a real server in an isolated
-workspace — the gap that hid three shipping defects in 0.16.0, where the unit fake was a *claim* about herdr that
+workspace — the gap that hid three shipping defects in 0.16.0, where the unit fake was a _claim_ about herdr that
 nothing verified.
 
 ## 0.16.0 — children you can watch, in panes chosen for you
@@ -1056,17 +1063,17 @@ nothing verified.
 **If herdr is running, your sub-agents now run in herdr panes without you configuring anything — and the
 parent shows what each one is doing while it works.** Two ADRs, shipped together.
 
-### `PI_GRANTS_HERDR` is three-state, and unset now means *probe* (ADR-0031)
+### `PI_GRANTS_HERDR` is three-state, and unset now means _probe_ (ADR-0031)
 
-| Value | Behaviour |
-| :--- | :--- |
+| Value | Behaviour                                                                                                                               |
+| :---- | :-------------------------------------------------------------------------------------------------------------------------------------- |
 | unset | Probe once at session start (`herdr tab list`, 2s bound). A server that **answers** ⇒ herdr panes; anything else ⇒ captured subprocess. |
-| `1` | Demand herdr. **Every delegation refuses** if it is unreachable — no fallback. |
-| `0` | Demand the captured subprocess. No probe. |
+| `1`   | Demand herdr. **Every delegation refuses** if it is unreachable — no fallback.                                                          |
+| `0`   | Demand the captured subprocess. No probe.                                                                                               |
 
 **Not a `PATH` check.** A binary with no server behind it would make every delegation fail at `tab create`, on
-a path nobody chose — so only a *reachable* server counts. This reverses part of ADR-0016 point 6, which
-refused auto-detection on the grounds that a run must not "silently relocate"; the answer to *silently* is that
+a path nobody chose — so only a _reachable_ server counts. This reverses part of ADR-0016 point 6, which
+refused auto-detection on the grounds that a run must not "silently relocate"; the answer to _silently_ is that
 the executor is now named at session start, in `/grants`, and per child in the ledger.
 
 **What to do about it:** nothing, unless you relied on an unset variable meaning subprocesses. If you did, set
@@ -1098,7 +1105,7 @@ returned.
 
 A pane used to be destroyed the instant its child settled, so a twenty-second child's pane was gone before
 anyone could switch to it. Panes now belong to the **agent run** and are swept at `agent_settled`, capped at 8
-at once, with process `exit` as the backstop. `PI_GRANTS_HERDR_KEEP_PANE=1` still means *not even then*.
+at once, with process `exit` as the backstop. `PI_GRANTS_HERDR_KEEP_PANE=1` still means _not even then_.
 
 A child's pane also defaults to the **parent's own herdr workspace** now, so switching to one is a tab away
 rather than a workspace away.
@@ -1114,7 +1121,7 @@ shipping blockers, and they change what the herdr path guarantees:
   working with its grant after its result was reported.
 - **herdr binds an agent name to its tab.** With panes outliving their calls, the **second `delegate` of every
   turn** failed with `agent_name_taken`. Names are now unique per spawn.
-- **The 8-pane cap killed live siblings**, because pi runs tool calls in parallel by default. Only *settled* panes
+- **The 8-pane cap killed live siblings**, because pi runs tool calls in parallel by default. Only _settled_ panes
   are reclaimable now; if they are all live the cap yields rather than enforcing.
 - **The pane reader amplified output 89,000×** once a pane scrolled or passed the output cap: `agent read` returns
   a snapshot of a bounded terminal and was being diffed as an append-only stream.
@@ -1135,7 +1142,7 @@ and coverage was added where it was simply absent — including that nothing ver
 ### Also
 
 - **`/grants ledger` tallies executors**, so "which children ran in panes?" no longer needs `jq`.
-- **The tripwire names `delegate_all`.** It said only *"Use `delegate` instead"*, and a request for parallel
+- **The tripwire names `delegate_all`.** It said only _"Use `delegate` instead"_, and a request for parallel
   work was answered with a single sequential call as a result.
 - **The ledger records `executor` per child** — required, not optional. The executor is decided by a probe now,
   so nothing outside the record preserves which one ran, and the two paths do not produce the same argv.
@@ -1166,7 +1173,7 @@ pi
   **always wins**: it is how a child is governed and how CI is configured. `.pi/grants.env` is still written
   and still worth committing — it is the reviewable record, no longer what the enforcer reads. (ADR-0030)
 - **The dialog does not ask questions whose answers cannot matter.** `tool:bash` subsumes `write` and
-  `edit`, so once bash is granted those are conferred; asking anyway let an operator answer *no* to
+  `edit`, so once bash is granted those are conferred; asking anyway let an operator answer _no_ to
   `tool:write` and then watch `build` be allowed it. It now reports them as already conferred instead.
 - **An unknown `/grants` subcommand is refused rather than ignored.** `/grants init` used to print the
   ordinary status screen with the word silently dropped, so a command that did not exist looked like it had
@@ -1190,7 +1197,7 @@ resolution, enforcement, approvals or the ledger changed — this is the part be
 - **The generated grant is READ-ONLY by default** (ADR-0029). `init` grants what the copied skills declare
   minus anything that can change your machine — `bash`, `write`, `edit` and the universal capabilities are
   written **commented**, naming the definitions that need them. `init` + `source` gives a working read-only
-  setup; widening costs one deliberate uncomment. The reason: `PI_GRANTS_GRANT` is what *bounds* a declared
+  setup; widening costs one deliberate uncomment. The reason: `PI_GRANTS_GRANT` is what _bounds_ a declared
   ceiling, so generating it from those ceilings would give the bound and the bounded one author, and it
   would not be you.
 
@@ -1201,14 +1208,14 @@ resolution, enforcement, approvals or the ledger changed — this is the part be
   `PI_GRANTS_GRANT` string by hand — seven times for `principal-pi-skills`.
 
   **It chooses no ceiling, and that boundary is the whole design.** A skill that declares `allowed-tools` is
-  copied byte for byte; one that declares none is copied with a *commented* placeholder and stays
+  copied byte for byte; one that declares none is copied with a _commented_ placeholder and stays
   unspawnable until a human fills it in. The placeholder is deliberately not a working example, so
   uncommenting it unedited fails loudly instead of granting something nobody decided. An existing file is
   **kept**, never overwritten — that edit is the capability decision, and a second `init` run is exactly
   when it would be destroyed. `--force` exists and says what it costs.
 
 - **Session start says how many definitions are spawnable, and names the withheld ones.** The line reported
-  the grant and never the definitions, so *"governance is working"* and *"did the install fail?"* looked
+  the grant and never the definitions, so _"governance is working"_ and _"did the install fail?"_ looked
   identical:
 
   ```
@@ -1232,11 +1239,11 @@ resolution, enforcement, approvals or the ledger changed — this is the part be
   from a package are refused, and the assembled grant is charset-checked before the file is written at all.
 
 - **Fixed before release: `init` overwrote an operator's file and wrote through symlinks** (R-79). The
-  presence probe was `readFile`, which treats *unreadable* as *absent* — so a permissions-restricted
+  presence probe was `readFile`, which treats _unreadable_ as _absent_ — so a permissions-restricted
   `SKILL.md` was replaced and its ceiling **widened**, with no `--force`. And `writeFile` follows symlinks, so
   a dangling link at a target path created the file outside the project while reporting an in-project path.
   Both are one `open(path, "wx")`. `--force` no longer regenerates `.pi/grants.env`, and `pi-daddy init
-  --Force` is no longer accepted as a silent no-op.
+--Force` is no longer accepted as a silent no-op.
 
 - **Fixed before release: the startup line blamed your files for a session-level refusal** (R-81). A session
   at its depth limit, or with a malformed `PI_GRANTS_MAX_DEPTH`, was told its `SKILL.md` files were written
@@ -1266,17 +1273,17 @@ as a user of this package:
   the path, not the lock this process created, so a broken stale lock cascaded: the old holder freed the new
   owner's lock on the way out, and the next arrival — which raced nothing — walked in beside it. Reproduced
   across real OS processes. Every lock now carries a token and proves ownership before deleting.
-- **The ledger over-claimed human approval under concurrency.** One *Allow for this session* answered under
+- **The ledger over-claimed human approval under concurrency.** One _Allow for this session_ answered under
   a fan-out of eight wrote eight lines each recording `approvalSource: "prompt"`. Riders now record
   `session`, which is what actually happened.
 
 One breaking change, and it is a type.
 
 - **BREAKING: `revokeApproval` returns `"revoked" | "absent" | "failed" | "busy"`**, not a boolean. It had
-  two outcomes for four facts, and `/grants revoke` printed *"no persisted approval named X"* whenever the
+  two outcomes for four facts, and `/grants revoke` printed _"no persisted approval named X"_ whenever the
   write failed — telling an operator that the approval they are revoking does not exist **while it is still
   in effect**. The most alarming outcome wore the most reassuring message. `busy` is separate because a lock
-  timeout happens *before* the load, so nothing was looked at and nothing may be claimed about the entry.
+  timeout happens _before_ the load, so nothing was looked at and nothing may be claimed about the entry.
   Callers switching on the boolean must switch on the string; `"revoked"` is the only success.
 - **Approval writes hold a lock (R-49).** Every write is load → modify → write and none of them was
   serialised, so session 1 could load, session 2 could revoke, and session 1's next save would restore the
@@ -1286,10 +1293,10 @@ One breaking change, and it is a type.
 - **`/grants ledger` counts where each approval came from.** ADR-0020 keeps the persistence layer on an
   asserted fatigue argument and named the evidence that would settle it — `persisted` against `prompt` over
   real use. The data was already recorded and nothing read it. **Two numbers, both labelled**: raw records
-  are an *upper bound* on prompts avoided, because within one session only the first would have been a
+  are an _upper bound_ on prompts avoided, because within one session only the first would have been a
   prompt and the rest come from the in-memory session cache; distinct `capability@subject` pairs are the
   closer estimate. Reporting records alone overstated the layer twentyfold in the obvious case (R-63).
-  Records written before per-capability sources existed are reported as *not counted* rather than folded in,
+  Records written before per-capability sources existed are reported as _not counted_ rather than folded in,
   because that older scalar over-claimed `prompt`.
 - **A revoke is documented as taking effect at the next gate check**, not "immediately". A spawn whose gate
   check already passed is not retracted by a revoke arriving microseconds later — inherent to revoking

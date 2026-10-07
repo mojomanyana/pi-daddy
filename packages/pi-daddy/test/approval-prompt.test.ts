@@ -252,7 +252,22 @@ test("the timeout env var is read in seconds and converted to milliseconds", () 
   assert.equal(timeoutMsFromEnv("30"), 30_000);
   assert.equal(timeoutMsFromEnv(undefined), 120_000, "default is two minutes");
   assert.equal(timeoutMsFromEnv("0"), undefined, "zero means wait indefinitely");
-  assert.equal(timeoutMsFromEnv("banana"), undefined, "unparseable means wait rather than guess");
+  assert.equal(timeoutMsFromEnv("2147483"), 2_147_483_000);
+  for (const value of [
+    "",
+    " ",
+    "banana",
+    "-1",
+    "+1",
+    "01",
+    "00",
+    "1.5",
+    "1s",
+    "1 ",
+    "2147484",
+    "999999999999999999999",
+  ])
+    assert.throws(() => timeoutMsFromEnv(value), /PI_DADDY_APPROVAL_TIMEOUT/, JSON.stringify(value));
 });
 
 // ---------------------------------------------------------------------------
@@ -403,4 +418,78 @@ test("R-66: a `once` answer is never marked joined, because nobody may ride it",
     outcomes.map((o) => o.joined ?? false),
     [false, false, false],
   );
+});
+
+test("timeout parsing is lazy, and needed malformed settings cannot create a dialog", async () => {
+  const { ui, calls } = recordingUI("Allow once");
+  let reads = 0;
+  const timeoutMs = () => {
+    reads++;
+    return timeoutMsFromEnv("30seconds");
+  };
+  const gateFor = createApprovalGateProvider();
+  const absent = gateFor({ ui, hasUI: false, mode: "print", timeoutMs });
+  assert.equal(reads, 0);
+  assert.equal((await absent.request(req())).kind, "no-ui");
+  assert.equal(reads, 0);
+  const needed = gateFor({ ui, hasUI: true, mode: "tui", timeoutMs });
+  assert.equal(reads, 0);
+  const result = await needed.request(req());
+  assert.equal(result.kind, "error");
+  assert.equal(result.scope, null);
+  assert.match(result.reason ?? "", /PI_DADDY_APPROVAL_TIMEOUT/);
+  assert.equal(reads, 1);
+  assert.equal(calls.length, 0);
+});
+
+test("joining an existing session approval does not parse unused timeout settings", async () => {
+  let release!: (answer: string) => void;
+  const gateFor = createApprovalGateProvider();
+  const ui: ApprovalUI = {
+    select: () =>
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+    notify: () => {},
+  };
+  const first = gateFor({ ui, hasUI: true, mode: "tui", timeoutMs: 120_000 }).request(req());
+  const second = gateFor({ ui, hasUI: true, mode: "tui", timeoutMs: () => timeoutMsFromEnv("invalid") }).request(req());
+  release(SCOPE_LABELS.session);
+  const results = await Promise.all([first, second]);
+  assert.equal(results[1].scope, "session");
+  assert.equal(results[1].joined, true);
+});
+
+test("cancellation cannot turn a late dialog or joined answer into approval", async () => {
+  const controller = new AbortController();
+  let release!: (answer: string) => void;
+  const ui: ApprovalUI = {
+    select: () =>
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+    notify: () => {},
+  };
+  const gateFor = createApprovalGateProvider();
+  const first = gateFor({ ui, hasUI: true, mode: "tui" }).request(req());
+  const canceled = gateFor({ ui, hasUI: true, mode: "tui" }).request(req({ signal: controller.signal }));
+  controller.abort();
+  release(SCOPE_LABELS.session);
+  const results = await Promise.all([first, canceled]);
+  assert.equal(results[0].scope, "session");
+  assert.equal(results[1].scope, null);
+  assert.equal(results[1].kind, "dismissed");
+  const late = new AbortController();
+  const dialog = createApprovalGate({
+    ui: {
+      ...ui,
+      select: async () => {
+        late.abort();
+        return SCOPE_LABELS.once;
+      },
+    },
+    hasUI: true,
+    mode: "tui",
+  });
+  assert.equal((await dialog.request(req({ signal: late.signal }))).scope, null);
 });

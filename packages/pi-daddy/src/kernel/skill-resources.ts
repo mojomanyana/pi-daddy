@@ -1,5 +1,6 @@
 /** Read Pi's configured resource surface without locks, installs, extension execution or model calls. */
-import { readFileSync, statSync } from "node:fs";
+import { statSync } from "node:fs";
+import { readOptionalAuthorityText } from "./authority-text.ts";
 import { join } from "node:path";
 import { DefaultPackageManager, getAgentDir, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { piProjectDir } from "./project-paths.ts";
@@ -21,17 +22,15 @@ export function skillResourceName(path: string): string {
 
 export async function resolveSkillResources(cwd: string): Promise<SkillResources> {
   const agentDir = getAgentDir();
+  // Read before Pi's synchronous storage callback: only known absence receives its default.
+  const texts = {
+    global: await readOptionalAuthorityText(join(agentDir, "settings.json")),
+    project: await readOptionalAuthorityText(join(piProjectDir(cwd), "settings.json")),
+  };
   const settingsManager = SettingsManager.fromStorage({
     withLock(scope, read) {
-      const path = scope === "global" ? join(agentDir, "settings.json") : join(piProjectDir(cwd), "settings.json");
-      let text: string | undefined;
-      try {
-        text = readFileSync(path, "utf8");
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-      }
       // This storage is intentionally read-only: no lock files or migrated settings are persisted.
-      read(text);
+      read(texts[scope]);
     },
   });
   const errors = settingsManager.drainErrors();

@@ -152,7 +152,7 @@ change what it concluded. Both corrections are below, because a probe whose erro
 than no probe.
 
 **What it measures.** For each session the last message turn stands in for a task. From its PROSE — the text a
-human or a model actually wrote, not the JSON envelope — a term set is extracted; a term is *recoverable* if some
+human or a model actually wrote, not the JSON envelope — a term set is extracted; a term is _recoverable_ if some
 earlier turn's prose contains it. Recall is the share that survives into what the child receives.
 
 **The defect it found.** Turn sections are pushed oldest-first and the 32 KiB budget was spent in array order, so
@@ -197,6 +197,16 @@ Rerun: `PI_DADDY_PROBE_SESSIONS=~/.pi/agent/sessions npm run test:integration`. 
 it measured nothing rather than passing quietly.
 
 ## Decisions still in force
+
+**2026-10-07 — surviving read guards (P17).** Authority metadata reads are byte-bounded, nonblocking for FIFOs,
+strict UTF-8, and checked through their held descriptor. Only ENOENT means absent. Failed async closes retain the
+exact FileHandle and an explicit retry capability; retry cannot turn the original operation into success. Discovery
+failure belongs to its initiating lifecycle and cannot poison an explicit replacement owner. The synchronous
+planner seam fails terminally on close failure: a numeric fd cannot safely be retried after reuse. Named context
+files require Linux held-descriptor confinement proof and refuse when that proof is unavailable. Pruned handoffs
+use Pi's public getBranch() ancestry; unavailable input is labeled incomplete, with no full-history fallback.
+Approval timeout parsing runs only for a needed new prompt: absent is 120 seconds, literal 0 is unlimited, otherwise
+canonical positive whole seconds through 2,147,483. Unused malformed settings cannot revoke existing authority.
 
 One paragraph each: the decision, the reason, what was rejected. The ADR numbers are pointers into git history
 (`git show 9cf2904:docs/06-decisions/`).
@@ -582,7 +592,7 @@ returns 404), so nothing mechanical prevents a direct push. The rule is kept by 
 Each line names the probe directory that measured it; the probe text is gone, and the name is the pointer into git
 history (`git show 9cf2904:docs/probes/<name>/README.md`).
 
-*About pi:*
+_About pi:_
 
 - pi persists one JSON line to the `--session` file per entry, synchronously, when a message or a tool result ENDS
   (`dist/core/agent-session.js` on `message_end`; `dist/core/session-manager.js` `_appendEntry`/`_persist`,
@@ -626,7 +636,7 @@ history (`git show 9cf2904:docs/probes/<name>/README.md`).
 - pi core has no native subagent tool, only a bundled example extension, and it ships `--fork`, `--session`,
   `ctx.fork()` and `ctx.compact()`, which context handoff builds on (ADR-0016 context and ADR-0076 survey; not a probe).
 
-*About Herdr (the executor):*
+_About Herdr (the executor):_
 
 - `herdr agent start … -- <args>` delivers argv verbatim, echoed back in the reply, and `--tools` is enforced inside a
   pane exactly as for a direct spawn; a pane is a terminal, not a runtime or a security boundary (`g16-herdr`).
@@ -649,7 +659,7 @@ history (`git show 9cf2904:docs/probes/<name>/README.md`).
 - Pane cleanup runs in a `finally` and so does not cover the process being killed between `tab create` and that block;
   a fan-out that dies mid-flight can leave panes behind (`g16-herdr`, addendum).
 
-*About workspace routing and governed-writer leases:*
+_About workspace routing and governed-writer leases:_
 
 - A kernel-held `flock` lease refuses a second writer for the same canonical root, lets writers for distinct roots
   coexist, and on SIGTERM or SIGKILL of the parent the helper stops the attached writer before releasing, with the next
@@ -670,7 +680,7 @@ history (`git show 9cf2904:docs/probes/<name>/README.md`).
 - An initial working directory, including an empty one, is not path confinement: an unsandboxed child holding search
   and `edit` tools left it and edited a file in another checkout by absolute path, unprompted (`g38-cwd-is-not-containment`).
 
-*About `pi-daddy init` and the approval flow:*
+_About `pi-daddy init` and the approval flow:_
 
 - `init` reads the installed package's own manifest under `node_modules`, copies declared definitions into the project
   skill root, and generates a grant whose `agent:` ids are the union of what can be spawned, written to be edited down;
@@ -679,19 +689,19 @@ history (`git show 9cf2904:docs/probes/<name>/README.md`).
   them; a per-call gate builds a fresh empty queue, so single-flight needs a shared gate provider (`approval-ux`,
   resolution notes).
 
-*About `@tintinweb/pi-subagents` (no longer a dependency, ADR-0016):*
+_About `@tintinweb/pi-subagents` (no longer a dependency, ADR-0016):_
 
 - `SpawnOptions` has no `tools` field and the RPC is `ping`/`spawn`/`stop` with no configuration query, so an
   interceptor there can refuse or allow but never narrow (`g13-subagents-coupling`).
 - `subagents:rpc:spawn` goes over the event bus straight to the manager, never produces a `tool_call`, and its children
   are in-process sharing one `process.env`; the tripwire cannot see it and nothing here can fix that (`g13-subagents-coupling`).
 
-*About `pi-fabric` (evaluated, not installed):*
+_About `pi-fabric` (evaluated, not installed):_
 
 - `recursive: true` overrides `tools: []` and `extensions: false`, so recursion and containment are mutually exclusive
   there; `maxDepth` is a depth cliff, not attenuation (`pi-fabric-eval`).
 
-*About the field (surveyed 2026-09-21, sources in ADR-0076):*
+_About the field (surveyed 2026-09-21, sources in ADR-0076):_
 
 - No other surveyed harness enforces child ⊆ parent on the tool surface, and Claude Code's own documentation says a
   skill's `allowed-tools` does not restrict; every surveyed competitor offers a richer context channel than this
@@ -879,6 +889,7 @@ Kept features only. Numbers are dropped except the two that code and rules cite.
   catalog never exists and its `registryRefusal` never reaches the banner. Two independent faults collapse into
   one message naming only the definitions. Fixing it means changing the catalog's error model, which is a
   larger change than this one and does not belong bolted onto it.
+
 - The Herdr executor passes only the plan's environment to the pane, so a pane child receives neither the workspace
   registry nor the lease directory, and the pane inherits the daemon's environment rather than a stripped one.
 - A relative inherited ledger path resolves inside a routed child's worktree, splitting state and leaving `?? .pi/` in

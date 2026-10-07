@@ -416,7 +416,7 @@ test("the real stager ranks turns so the cap drops the OLDEST, end to end", asyn
   const cwd = await tempDir("context-rank-");
   const big = (marker: string) => marker.repeat(Math.floor(CONTEXT_MAX_BYTES * 0.9));
   const parentSession = {
-    getEntries: () => [
+    getBranch: () => [
       { type: "message", id: "old", message: big("a") },
       { type: "message", id: "new", message: big("b") },
     ],
@@ -440,7 +440,7 @@ test("a file the parent NAMED outlives turns a rule merely selected", async () =
   const cwd = await tempDir("context-band-");
   await writeFile(join(cwd, "constraint.md"), "DECISION: the parser must stay synchronous\n");
   const parentSession = {
-    getEntries: () =>
+    getBranch: () =>
       Array.from({ length: 12 }, (_, i) => ({ type: "message", id: `t${i}`, message: "z".repeat(4000) })),
   };
   const staged = createHandoffStager({ cwd, forkRoot: join(cwd, "forks"), parentSession: parentSession as never })({
@@ -465,7 +465,7 @@ test("a turn kept for NAMING a file outranks a turn kept for being recent", asyn
   const staged = createHandoffStager({
     cwd,
     forkRoot: join(cwd, "forks"),
-    parentSession: { getEntries: () => entries } as never,
+    parentSession: { getBranch: () => entries } as never,
   })({ mode: "pruned", turns: 25, files: ["src/auth.ts"] });
   const text = String(staged.contextPrompt);
   assert.ok((staged.record?.truncatedBytes ?? 0) > 0, "only meaningful when the cap binds");
@@ -479,7 +479,7 @@ test("the record counts the turns that CROSSED, not the ones the rule selected",
   // number the usual one. Breaks by: counting `sections.length` or the pre-fence `keptTurns` again.
   const cwd = await tempDir("context-record-");
   const parentSession = {
-    getEntries: () =>
+    getBranch: () =>
       Array.from({ length: 30 }, (_, i) => ({ type: "message", id: `t${i}`, message: "z".repeat(4000) })),
   };
   const staged = createHandoffStager({ cwd, forkRoot: join(cwd, "forks"), parentSession: parentSession as never })({
@@ -491,4 +491,46 @@ test("the record counts the turns that CROSSED, not the ones the rule selected",
   const headers = (String(staged.contextPrompt).match(/--- parent turn /g) ?? []).length;
   assert.equal(record.keptTurns, headers, `recorded ${record.keptTurns} kept, the child received ${headers}`);
   assert.equal(record.keptTurns + record.droppedTurns, 30, "every turn is accounted for as kept or dropped");
+});
+
+test("pruned handoff reads only the canonical active branch and shared ancestry", async () => {
+  const cwd = await tempDir("active-branch-context-");
+  const shared = { id: "shared", type: "message", message: { role: "user", content: "shared ancestor" } };
+  const active = { id: "active", type: "message", message: { role: "assistant", content: "active answer" } };
+  const alternate = {
+    id: "alternate",
+    type: "message",
+    message: { role: "assistant", content: "alternate private answer" },
+  };
+  const parentSession = { getEntries: () => [shared, alternate, active], getBranch: () => [shared, active] };
+  const staged = createHandoffStager({ cwd, forkRoot: join(cwd, "forks"), parentSession: parentSession as never })({
+    mode: "pruned",
+  });
+  assert.match(staged.contextPrompt ?? "", /shared ancestor/);
+  assert.match(staged.contextPrompt ?? "", /active answer/);
+  assert.doesNotMatch(staged.contextPrompt ?? "", /alternate private answer/);
+  assert.equal(staged.record?.bytes, Buffer.byteLength(staged.contextPrompt!));
+});
+
+test("an unavailable active branch is explicit incomplete context, never empty success or all entries", async () => {
+  const cwd = await tempDir("unavailable-branch-context-");
+  const parentSession = {
+    getEntries: () => [{ id: "wrong", type: "message", message: "all-branch secret" }],
+    getBranch: () => {
+      throw new Error("branch read failed");
+    },
+  };
+  const staged = createHandoffStager({ cwd, forkRoot: join(cwd, "forks"), parentSession: parentSession as never })({
+    mode: "pruned",
+  });
+  assert.match(staged.contextPrompt ?? staged.refusal ?? "", /unavailable|incomplete/i);
+  assert.doesNotMatch(staged.contextPrompt ?? "", /all-branch secret|no turn.*matched/);
+});
+
+test("file handoff refuses malformed UTF-8 instead of silently replacing bytes", async () => {
+  const cwd = await tempDir("invalid-context-text-");
+  await writeFile(join(cwd, "bad.txt"), Buffer.from([0x61, 0xff, 0x62]));
+  const staged = createHandoffStager({ cwd, forkRoot: join(cwd, "forks") })({ mode: "files", files: ["bad.txt"] });
+  assert.match(staged.contextPrompt ?? staged.refusal ?? "", /UTF-8/);
+  assert.doesNotMatch(staged.contextPrompt ?? "", /a�b/);
 });

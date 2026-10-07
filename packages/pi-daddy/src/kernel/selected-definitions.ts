@@ -2,7 +2,7 @@
 import { createHash } from "node:crypto";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import { lstat, realpath } from "node:fs/promises";
-import { readBoundedBytes } from "./bounded-read.ts";
+import { BoundedReadCleanupError, readBoundedBytes } from "./bounded-read.ts";
 import { ceilingForDefinition, parseSkillDefinition, type SkillDefinition } from "./definitions.ts";
 import { resolve } from "./resolve.ts";
 import type { CatalogEntry } from "./catalog.ts";
@@ -141,6 +141,7 @@ export async function selectedDefinitions(commands: readonly SelectedCommand[]):
       definitions.set(name, Object.freeze({ ...bound, definitionId }));
       skills.push({ capability: `skill:${name}`, kind: "skill", source: path });
     } catch (error) {
+      if (error instanceof BoundedReadCleanupError) throw error;
       skips.push(`${name}: ${String(error)}`);
     }
   }

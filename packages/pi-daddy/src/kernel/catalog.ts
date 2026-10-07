@@ -19,6 +19,8 @@
  */
 
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { BoundedReadCleanupError } from "./bounded-read.ts";
+import { collectBoundedReadFailures } from "./bounded-read-failures.ts";
 import { resolveSkillResources, skillResourceName } from "./skill-resources.ts";
 import { join } from "node:path";
 import { loadDefinitions, type SkillDefinition } from "./definitions.ts";
@@ -133,17 +135,26 @@ export function makeCatalog(entries: CatalogEntry[], registryRefusal?: string): 
   };
 }
 
+/** Trusted loader dependencies, not catalog/request configuration. */
+export interface CatalogLoaders {
+  definitions?: typeof loadDefinitions;
+  registry?: typeof loadWorkspaceRegistry;
+}
+
 /** Build the live catalog. `observedTools` comes from a provider payload; null when not yet seen. */
-export async function buildCatalog(input: {
-  cwd: string;
-  snapshot?: { skills: CatalogEntry[]; definitions: Map<string, SkillDefinition> };
-  observedTools: string[] | null;
-  /** Operator workspace registry (`PI_DADDY_WORKSPACE_REGISTRY`). Absent or unreadable yields no entries. */
-  registryPath?: string;
-}): Promise<Catalog> {
-  const [skills, definitions, workspaces] = await Promise.all([
-    input.snapshot ? Promise.resolve(input.snapshot.skills) : loadSkills(input.cwd),
-    input.snapshot ? Promise.resolve(input.snapshot.definitions) : loadDefinitions(input.cwd),
+export async function buildCatalog(
+  input: {
+    cwd: string;
+    snapshot?: { skills: CatalogEntry[]; definitions: Map<string, SkillDefinition> };
+    observedTools: string[] | null;
+    /** Operator workspace registry (`PI_DADDY_WORKSPACE_REGISTRY`). Absent or unreadable yields no entries. */
+    registryPath?: string;
+  },
+  loaders: CatalogLoaders = {},
+): Promise<Catalog> {
+  const outcomes = await Promise.allSettled([
+    Promise.resolve().then(() => input.snapshot?.skills ?? loadSkills(input.cwd)),
+    Promise.resolve().then(() => input.snapshot?.definitions ?? (loaders.definitions ?? loadDefinitions)(input.cwd)),
     // Fails SOFT, and only because nothing here is an authority. A malformed registry must not stop a
     // session from starting — `loadWorkspaceRegistry` throws a GovernanceRefusal naming the file, and that
     // refusal is the operator's signal at the point of USE, where routing actually depends on it. Swallowing
@@ -152,15 +163,32 @@ export async function buildCatalog(input: {
     // **What the refusal is no longer allowed to do is vanish.** This handler was `() => []`, so the display
     // list was lost AND the reason with it. The reason now rides on the catalog and `/grants` prints it.
     input.registryPath
-      ? loadWorkspaceRegistry(input.registryPath).then(
-          (r) => ({ entries: workspaceEntries(r, input.registryPath), refusal: undefined as string | undefined }),
-          (error: unknown) => ({
-            entries: [] as CatalogEntry[],
-            refusal: error instanceof Error ? error.message : String(error),
-          }),
-        )
+      ? Promise.resolve()
+          .then(() => (loaders.registry ?? loadWorkspaceRegistry)(input.registryPath!))
+          .then(
+            (r) => ({ entries: workspaceEntries(r, input.registryPath), refusal: undefined as string | undefined }),
+            (error: unknown) => {
+              if (error instanceof BoundedReadCleanupError) throw error;
+              return {
+                entries: [] as CatalogEntry[],
+                refusal: error instanceof Error ? error.message : String(error),
+              };
+            },
+          )
       : Promise.resolve({ entries: [] as CatalogEntry[], refusal: undefined as string | undefined }),
   ]);
+  // Join EVERY started branch before ordinary discovery fallback can discard a physical close failure.
+  const cleanup = collectBoundedReadFailures(
+    outcomes.flatMap((result) => (result.status === "rejected" ? [result.reason] : [])),
+  );
+  if (cleanup) throw cleanup;
+  const value = <T>(result: PromiseSettledResult<T>): T => {
+    if (result.status === "rejected") throw result.reason;
+    return result.value;
+  };
+  const skills = value(outcomes[0]);
+  const definitions = value(outcomes[1]);
+  const workspaces = value(outcomes[2]);
   return makeCatalog(
     [
       // pi's built-ins are seeded unconditionally, because they are known statically and the catalog is
