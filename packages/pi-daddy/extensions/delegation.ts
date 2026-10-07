@@ -1,3 +1,4 @@
+import { executionEvidenceContent } from "./execution-evidence.ts";
 import { reconcileDelegationCapacity, reserveDelegationCapacity } from "./session-capacity.ts";
 import { registerDefinitionDescribe } from "./definition-describe.ts";
 /**
@@ -292,6 +293,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
               ? `delegation failed: ${outcome.reason ?? "required control failed"}${outcome.text ? `\n\n${outcome.text}` : ""}`
               : outcome.text || "(no output)",
           },
+          executionEvidenceContent("delegate", [outcome], 1),
         ],
         details: outcome,
       };
@@ -385,7 +387,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
 
       return {
         isError: outcomes.some((o) => !o.ok || o.control === "failed"),
-        content: [{ type: "text", text: report }],
+        content: [{ type: "text", text: report }, executionEvidenceContent("delegate_all", outcomes, children.length)],
         details: {
           outcomes,
           children: outcomes.length,
