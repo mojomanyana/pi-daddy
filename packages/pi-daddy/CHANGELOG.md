@@ -1,5 +1,13 @@
 # Changelog — pi-daddy
 
+## Unreleased
+
+- Remove monetary execution gates, external advisors and the automatic first-delegation model chooser. Recognized
+  legacy settings and cost arguments are inert; manual model edits, permission approvals and retained historical
+  usage remain. Pi 1.0.4 argument preparation validates active arguments after removing the retired cost override.
+- Live complete episode cost is explicitly unavailable in the session dashboard; historical usage remains in reports.
+
+
 Newest first. **Breaking changes are marked and say what to do about them.**
 
 This file exists because the README had grown ninety lines of stacked version banners before a reader

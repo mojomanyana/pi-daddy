@@ -50,7 +50,6 @@ import { republishable } from "./approvals.ts";
 import { storedGrantSessionState } from "./stored-grant-session.ts";
 import { nativeSessionRootFromEnv, type NativeSessionHost } from "../src/executors/native-session-target.ts";
 import { createHandoffStager, type ParentSession } from "./context-staging.ts";
-import { createAdvisorSession, type AdvisorSession } from "./advisor-session.ts";
 import { join } from "node:path";
 import { readFileSync, statSync } from "node:fs";
 import { agentDir, projectSettingsPath } from "../src/kernel/project-paths.ts";
@@ -67,7 +66,6 @@ import {
 } from "../src/kernel/workspace-pin.ts";
 import { loadWorkspaceRegistry } from "../src/kernel/workspace.ts";
 import { reconcileAcceptedWorkspaces } from "../src/governance/workspace-acceptance.ts";
-import { EpisodeCostGate, episodeCostCeilingFromSettings } from "../src/governance/episode-cost-gate.ts";
 import {
   definitionRuntimeSettingsFrom,
   parseConfiguredModel,
@@ -109,13 +107,7 @@ import {
   ENV_ACTIVITY_ROOT,
   ENV_ACTIVITY_TASK,
 } from "../src/products/activity-timeline.ts";
-import {
-  ENV_HERDR_KEEP_PANE,
-  ENV_GOVERNANCE,
-  ENV_ADVISOR,
-  ENV_EPISODE_ID,
-  ENV_EPISODE_COST_CEILING,
-} from "../src/kernel/env-names.ts";
+import { ENV_HERDR_KEEP_PANE, ENV_GOVERNANCE, ENV_EPISODE_ID } from "../src/kernel/env-names.ts";
 export { ENV_HERDR_KEEP_PANE, ENV_GOVERNANCE } from "../src/kernel/env-names.ts";
 import { adoptLegacyEnvironment } from "../src/kernel/env-names.ts";
 
@@ -179,9 +171,6 @@ export interface GrantsSession extends NativeSessionHost {
   readonly definitionRuntimeSettings: DefinitionRuntimeSettings;
   /** PD-7's future session controls write here; deliberately empty in this commit. */
   readonly definitionRuntimeOverrides: Map<string, DefinitionRuntimeChoice>;
-  readonly sessionModelPrompt: "ask" | "never";
-  sessionModelPrompted: boolean;
-  sessionModelPromptInFlight?: Promise<void>;
   /** Path to this extension, so a child granted `tool:delegate` can delegate in turn. */
   readonly extensionPath?: string;
   /** Hook-only observer path for leaf children; it exposes no tools. */
@@ -194,8 +183,6 @@ export interface GrantsSession extends NativeSessionHost {
    * context handoff (ADR-0078): its file path for `fork`, its message turns for `pruned`.
    */
   parentSession?: ParentSession;
-  /** ADR-0077: the session's advisor, off unless the environment enables one. Never consulted for authority. */
-  advisorSession: AdvisorSession;
   /** Root identity keyed to ctx.sessionManager once session_start supplies it. */
   reloadLifecycle: ReloadLifecycle;
   /** Approval keys approved for this session. In memory only — this dies with the process. */
@@ -213,8 +200,6 @@ export interface GrantsSession extends NativeSessionHost {
   inheritedApprovals: Map<string, string | undefined>;
   /** ONE single-flight queue for the whole session — see `obtainApprovals` for why it lives here. */
   readonly approvalGateFor: ReturnType<typeof createApprovalGateProvider>;
-  /** One cumulative cost threshold shared by every child in this episode. */
-  readonly episodeCostGate: EpisodeCostGate;
   /** Set at `session_start`; `process.cwd()` until then. */
   cwd: string;
   /** This session's own grant. Starts as the inherited upper bound, tightened once tools are observed. */
@@ -459,34 +444,17 @@ export function createGrantsSession(
   // G7 / A-S4 + B-I4: strict, three-way parsing that fails CLOSED. A malformed bound used to yield
   // `NaN`, and every comparison against `NaN` is false, so depth limiting switched itself off.
   const bounds = depthConfig(environment[ENV_DEPTH], environment[ENV_MAX_DEPTH]);
-  const costConfig = episodeCostConfiguration(storeCwd, environment[ENV_EPISODE_COST_CEILING]);
   const runtimeConfig = projectDefinitionRuntimeConfiguration(storeCwd);
   const depth = bounds.depth;
-  const maxDepth = costConfig.malformed || runtimeConfig.malformed ? 0 : bounds.maxDepth;
+  const maxDepth = runtimeConfig.malformed ? 0 : bounds.maxDepth;
   const emptyCatalog = makeCatalog([]);
-  // ADR-0077. The environment decides whether there is an advisor at all; the project's settings block may only
-  // narrow it. The block IS read — the first version passed `undefined` and every narrowing the release advertised
-  // was dead code reachable only from tests, which review measured: `enabled: false` turned nothing off.
-  //
-  // Read from `storeCwd` for `loadStoredGrantStateSync`'s reason: this factory runs before any hook, so `ctx.cwd`
-  // does not exist yet. Reading a workspace-writable file here is safe precisely because it can only narrow.
-  const advisorSession = createAdvisorSession({
-    block: projectAdvisorBlock(storeCwd, environment),
-    episodeId,
-    ...(storedLedger ? { ledgerPath: storedLedger } : {}),
-  });
   const session: GrantsSession = {
-    advisorSession,
     adoptedLegacyEnv,
     governed,
     inherited,
     depth,
     maxDepth,
-    malformedBounds: [
-      ...bounds.malformed,
-      ...(costConfig.malformed ? [costConfig.malformed] : []),
-      ...(runtimeConfig.malformed ? [runtimeConfig.malformed] : []),
-    ],
+    malformedBounds: [...bounds.malformed, ...(runtimeConfig.malformed ? [runtimeConfig.malformed] : [])],
     definitionSkips: [],
     workspacePin: undefined,
     pinSettled: false,
@@ -528,8 +496,6 @@ export function createGrantsSession(
     modelResolutionCache: new Map<string, boolean>(),
     definitionRuntimeSettings: runtimeConfig.settings,
     definitionRuntimeOverrides: new Map<string, DefinitionRuntimeChoice>(),
-    sessionModelPrompt: runtimeConfig.prompt,
-    sessionModelPrompted: false,
     extensionPath,
     observerExtensionPath,
     activityRootId,
@@ -538,7 +504,6 @@ export function createGrantsSession(
     sessionApprovalBindings: new Map<string, ApprovalBinding>(),
     inheritedApprovals: parseInherited(environment[ENV_APPROVED]),
     approvalGateFor: createApprovalGateProvider(),
-    episodeCostGate: new EpisodeCostGate(costConfig.ceiling),
     cwd: process.cwd(),
     ownGrant: deriveOwnGrant(inherited, null),
     observed: false,
@@ -560,11 +525,7 @@ export function createGrantsSession(
       // one through the same builder `publishChildEnv` uses. Read here rather than in the kernel so there is
       // one place that knows the environment is where a session's own pin lives.
       ...(session.workspacePin ? { workspacePin: session.workspacePin } : {}),
-      // ADR-0078: composition reads, the kernel decides. Called only for a mode that survived the gate.
-      // `options` is forwarded, and its absence is why the second decision point was dead in production: a
-      // one-parameter arrow is assignable to a two-parameter type, so the ids reached here and were discarded while
-      // the advisor had already been asked. Review measured it. `test/pruning-advice.test.ts` now goes through this
-      // function rather than calling the stager directly.
+      // Context is staged only after its capability survives the ceiling, grant and gate.
       stageHandoff: (granted, options) =>
         createHandoffStager({
           cwd: session.cwd,
@@ -629,56 +590,11 @@ export function createGrantsSession(
   return session;
 }
 
-/**
- * The `advisor` block of `.pi/pi-daddy/settings.json`, or undefined.
- *
- * Unreadable, absent or malformed all yield undefined: this file is the reviewable record, not authority, and the
- * only thing it can do to an advisor is turn one off. A parse failure therefore costs nothing worth reporting.
- */
-export function reconcileAdvisorSession(session: GrantsSession, environment: NodeJS.ProcessEnv): void {
-  session.advisorSession = createAdvisorSession({
-    block: projectAdvisorBlock(session.storeCwd, environment),
-    episodeId: session.episodeId,
-    ...(session.ledgerPath ? { ledgerPath: session.ledgerPath } : {}),
-    env: environment,
-  });
-}
-
-function episodeCostConfiguration(cwd: string, inherited: string | undefined): { ceiling: number; malformed?: string } {
-  if (inherited !== undefined) {
-    const value = Number(inherited);
-    return Number.isFinite(value) && value > 0
-      ? { ceiling: value }
-      : { ceiling: episodeCostCeilingFromSettings(undefined), malformed: ENV_EPISODE_COST_CEILING };
-  }
-  const path = projectSettingsPath(cwd);
-  try {
-    const stats = statSync(path);
-    if (!stats.isFile() || stats.size > 1024 * 1024) {
-      return { ceiling: episodeCostCeilingFromSettings(undefined), malformed: "settings.json episodeCostCeiling" };
-    }
-    const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
-    if (parsed && typeof parsed === "object" && Object.hasOwn(parsed, "episodeCostCeiling")) {
-      const value = (parsed as Record<string, unknown>).episodeCostCeiling;
-      if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
-        return { ceiling: episodeCostCeilingFromSettings(undefined), malformed: "settings.json episodeCostCeiling" };
-      }
-    }
-    return { ceiling: episodeCostCeilingFromSettings(parsed) };
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return { ceiling: episodeCostCeilingFromSettings(undefined) };
-    }
-    return { ceiling: episodeCostCeilingFromSettings(undefined), malformed: "settings.json episodeCostCeiling" };
-  }
-}
-
 function projectDefinitionRuntimeConfiguration(cwd: string): {
   settings: DefinitionRuntimeSettings;
-  prompt: "ask" | "never";
   malformed?: string;
 } {
-  const empty = { settings: definitionRuntimeSettingsFrom(undefined), prompt: "ask" as const };
+  const empty = { settings: definitionRuntimeSettingsFrom(undefined) };
   try {
     const path = projectSettingsPath(cwd);
     const stats = statSync(path);
@@ -687,8 +603,6 @@ function projectDefinitionRuntimeConfiguration(cwd: string): {
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
       return { ...empty, malformed: "settings.json model defaults" };
     const root = parsed as Record<string, unknown>;
-    if (root.sessionModelPrompt !== undefined && !["ask", "never"].includes(String(root.sessionModelPrompt)))
-      return { ...empty, malformed: "settings.json sessionModelPrompt" };
     const candidates = [root.defaults, ...(Array.isArray(root.definitions) ? root.definitions : [])];
     for (const candidate of candidates) {
       if (candidate === undefined) continue;
@@ -702,28 +616,9 @@ function projectDefinitionRuntimeConfiguration(cwd: string): {
     }
     return {
       settings: definitionRuntimeSettingsFrom(root),
-      prompt: root.sessionModelPrompt === "never" ? "never" : "ask",
     };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return empty;
     return { ...empty, malformed: "settings.json model defaults" };
-  }
-}
-
-function projectAdvisorBlock(cwd: string, env: NodeJS.ProcessEnv = process.env): unknown {
-  // Only when an advisor could exist at all. This runs in every session including every child, before any hook, and
-  // a child can never use the result because `PI_DADDY_ADVISOR` is stripped from it.
-  if (!env[ENV_ADVISOR]?.trim()) return undefined;
-  try {
-    const path = projectSettingsPath(cwd);
-    // Bounded and type-checked first: this is the third unbounded session-start read AGENTS.md warns about, and the
-    // only one whose path a governed child holding `tool:write` can replace with a FIFO — which would hang pi
-    // before any hook exists to report it.
-    const stats = statSync(path);
-    if (!stats.isFile() || stats.size > 1024 * 1024) return undefined;
-    const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
-    return typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>).advisor : undefined;
-  } catch {
-    return undefined;
   }
 }

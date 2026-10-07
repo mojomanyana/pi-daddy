@@ -24,7 +24,6 @@ packages/pi-daddy/                — the package
   src/kernel/                     — authority and planning; mostly pure, with bounded discovery readers
   src/governance/                 — stores and the ledger: record envelope, ledger events, approvals, grant store, leases, retention
   src/executors/                  — how a child process is started: captured subprocess or Herdr pane
-  src/advisors/                   — advice only: a Decider answering typed questions, never authority (ADR-0077)
   src/products/                   — activity timeline, dashboard, episode report and outcome derivation
   extensions/                     — composition: the pi extension pi loads (grants.ts) and its helpers
   src/index.ts, src/cli.ts        — composition: the public root export and the `pi-daddy` bin
@@ -201,6 +200,18 @@ it measured nothing rather than passing quietly.
 
 One paragraph each: the decision, the reason, what was rejected. The ADR numbers are pointers into git history
 (`git show 9cf2904:docs/06-decisions/`).
+
+**2026-10-07 — retire monetary interventions, external advisors and automatic model prompting.** This supersedes
+ADR-0077 and the advisor portions of ADR-0076/0078 and the 2026-09-29 runtime/accounting entry below. The user
+explicitly approved removal: cost never controls execution, and delegation never consults an external adviser or
+opens a first-use chooser. Manual model controls, permission approvals, nonmonetary limits and passive historical
+usage remain. A closed compatibility list ignores retired inputs without rewriting user configuration; current
+argument validation remains. Historical advice and cost-gate event schemas/readers remain for retained records.
+Pi 1.0.4 is the qualified integration target for argument preparation and native error results. The production
+change that breaks the retirement tests is reconnecting an advisor, monetary stop or automatic prompt to dispatch.
+Future JEV/learned-policy experiments may consume versioned sanitized decision and outcome evidence outside the
+authority path; this does not restore automatic runtime advice or promise a trainable JEV model.
+
 
 
 **ADR-0008 — capabilities attenuate monotonically.** A child's effective grant is
@@ -423,7 +434,7 @@ that answers typed questions: `noul` (a boolean), `choice` (one of the options t
 (a level from the caller's own list), each with a probability. It may select, rank, annotate or propose. It can
 never widen an `effective` set, satisfy a gate or replace a human's answer — and that is enforced rather than
 promised: no type in the layer names a `Capability` or a refusal code, and no module in `kernel/` or `governance/`
-imports it, both checked by `test/advisors.test.ts`. Nothing on a governance path can receive what an advisor
+imports it, both checked historically by `test/advisors.test.ts` (deleted in the 2026-10-07 removal). Nothing on a governance path can receive what an advisor
 returns, so an advisor cannot become load-bearing by accident.
 
 With a configured, writable governance ledger, every use is an `advice` record on the envelope, **including uses that

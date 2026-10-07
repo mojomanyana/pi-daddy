@@ -9,7 +9,7 @@ export interface DashboardRenderOptions {
   completedRoots?: number;
   completedChildren?: number;
   modelRows?: Array<{ definition: string; model: string; thinking: string; source: string }>;
-  episodeCost?: { cost: number; ceiling: number };
+  episodeCost?: { cost: number | null };
 }
 
 const ACTIVE = new Set<DashboardState>(["authorised", "starting", "running"]);
@@ -217,7 +217,11 @@ export function renderDashboard(projection: DashboardProjection, options: Dashbo
       lines.push(`${clean(row.definition)}  ${clean(row.model)}  ${clean(row.thinking)}  ${clean(row.source)}`);
     lines.push("edit: m <definition> <provider:model> <thinking> | m all <provider:model> <thinking>");
     if (options.episodeCost)
-      lines.push(`episode cost $${options.episodeCost.cost} / $${options.episodeCost.ceiling} ceiling`);
+      lines.push(
+        options.episodeCost.cost === null
+          ? "episode cost unavailable (usage coverage partial)"
+          : `reported episode cost $${options.episodeCost.cost} (coverage partial)`,
+      );
     lines.push("");
   }
 

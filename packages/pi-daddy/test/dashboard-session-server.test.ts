@@ -4,7 +4,6 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { ensureDashboardSessionServer } from "../extensions/dashboard-session-server.ts";
 import type { GrantsSession } from "../extensions/session.ts";
-import { EpisodeCostGate } from "../src/governance/episode-cost-gate.ts";
 import { newEpisodeId } from "../src/kernel/episode-id.ts";
 import { readRecords } from "../src/governance/record.ts";
 import { dashboardSessionRequest } from "../src/products/dashboard-session-client.ts";
@@ -21,16 +20,14 @@ test("dashboard edits mutate the owning session map and write the ordinary sessi
     definitions: new Map([["review", { name: "review" }]]),
     definitionRuntimeSettings: { definitions: new Map(), defaults: {} },
     definitionRuntimeOverrides: overrides,
-    episodeCostGate: new EpisodeCostGate(5),
   } as unknown as GrantsSession;
-  session.episodeCostGate.seedCost("execution-1", 1.25);
   const endpoint = await ensureDashboardSessionServer(session);
   try {
     const before = await dashboardSessionRequest(endpoint.socketPath, endpoint.token, { action: "get" });
     assert.deepEqual(before.rows, [
       { definition: "review", model: "pi default", thinking: "pi default", source: "pi/pi" },
     ]);
-    assert.deepEqual({ cost: before.cost, ceiling: before.ceiling }, { cost: 1.25, ceiling: 5 });
+    assert.equal(before.cost, null, "complete live episode cost is not observed");
 
     const afterEdit = await dashboardSessionRequest(endpoint.socketPath, endpoint.token, {
       action: "set",
@@ -51,7 +48,6 @@ test("dashboard rejects invalid model edits without mutating the session", async
     definitions: new Map([["review", { name: "review" }]]),
     definitionRuntimeSettings: { definitions: new Map(), defaults: {} },
     definitionRuntimeOverrides: new Map(),
-    episodeCostGate: new EpisodeCostGate(5),
   } as unknown as GrantsSession;
   const endpoint = await ensureDashboardSessionServer(session);
   try {

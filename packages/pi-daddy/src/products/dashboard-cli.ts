@@ -144,7 +144,7 @@ export async function dashboardFrame(options: DashboardFrameOptions): Promise<st
         details: options.details,
         history: options.history,
         modelRows: options.session?.rows,
-        episodeCost: options.session ? { cost: options.session.cost, ceiling: options.session.ceiling } : undefined,
+        episodeCost: options.session ? { cost: options.session.cost } : undefined,
       });
   return waiting ? `${rendered}\n\nwaiting for ledger ${ledgerPath}` : rendered;
 }

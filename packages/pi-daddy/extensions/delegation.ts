@@ -37,7 +37,7 @@ import { newDelegationOccurrence } from "./execution-occurrence.ts";
 import { correlationShape as buildCorrelationShape } from "./correlation-shape.ts";
 import { assertDelegationAuthority } from "./delegation-authority.ts";
 import { contextShape } from "./context-shape.ts";
-import { ensureSessionModelPrompt } from "./session-model-prompt.ts";
+import { withoutRetiredDelegationArguments } from "./retired-inputs.ts";
 
 /**
  * Wire a set of children to pi's partial-result channel — ADR-0032.
@@ -202,9 +202,6 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       maxItems: MAX_CHILDREN_PER_CALL,
       description: "The sub-agents to run concurrently. Each is independent and unaware of the others.",
     }),
-    episodeCostCeiling: Type.Optional(
-      Type.Number({ exclusiveMinimum: 0, description: "Override the USD ceiling for this whole episode." }),
-    ),
   });
 
   const delegateParams = Type.Object({
@@ -227,9 +224,6 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       }),
     ),
     thinking: thinkingShape,
-    episodeCostCeiling: Type.Optional(
-      Type.Number({ exclusiveMinimum: 0, description: "Override the USD ceiling for this whole episode." }),
-    ),
     context: Type.Optional(contextShape()),
     correlation: Type.Optional(correlationShape),
     workspace: Type.Optional(workspaceShape),
@@ -244,13 +238,9 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       "written by the operator. Use 'tools' only when no definition fits. Grant 'delegate' if the " +
       "sub-agent must itself delegate further; withhold it to make the sub-agent a leaf.",
     parameters: delegateParams,
+    prepareArguments: withoutRetiredDelegationArguments,
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
       assertDelegationAuthority(session);
-      await ensureSessionModelPrompt(session, params.agent ? [params.agent] : [], {
-        hasUI: ctx.hasUI && typeof ctx.ui.input === "function",
-        input: (title, placeholder) => ctx.ui.input(title, placeholder),
-        notify: (message, type) => ctx.ui.notify(message, type),
-      });
       // ADR-0032: one child, same block. `_onUpdate` was discarded here, so a delegation showed the bare word
       // `delegate` for up to DEFAULT_TIMEOUT_MS — sixty minutes by default.
       const progress = progressReporter(session, [params.agent ?? "delegate"], onUpdate as never);
@@ -262,7 +252,6 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
           tools: params.tools,
           model: params.model,
           thinking: params.thinking,
-          episodeCostCeiling: params.episodeCostCeiling,
           context: params.context,
           correlation: params.correlation,
           workspace: params.workspace,
@@ -328,26 +317,16 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       "when independent tasks can proceed in parallel — several reviewers over one diff, say — and read " +
       "every child's outcome, because one can be refused while the others succeed.",
     parameters: delegateAllParams,
+    prepareArguments: withoutRetiredDelegationArguments,
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
       assertDelegationAuthority(session);
       const children = params.children ?? [];
-      await ensureSessionModelPrompt(
-        session,
-        children.flatMap((child) => (child.agent ? [child.agent] : [])),
-        {
-          hasUI: ctx.hasUI && typeof ctx.ui.input === "function",
-          input: (title, placeholder) => ctx.ui.input(title, placeholder),
-          notify: (message, type) => ctx.ui.notify(message, type),
-        },
-      );
       const split = splitBudget(session.fanoutBudget, children.length);
       if (!split.ok) {
         // Thrown, not returned: a returned `isError` is discarded by pi, so a refusal that came back as a
         // normal result would read to the orchestrator as a successful fan-out of zero children.
         throw new GovernanceRefusal(refusal("FANOUT_EXCEEDED", `fan-out refused: ${split.reason}`));
       }
-
-      if (params.episodeCostCeiling !== undefined) session.episodeCostGate.setCeiling(params.episodeCostCeiling);
 
       // ADR-0032: ONE status block covering every child. `onUpdate` replaces the tool's rendered result, so a
       // painter per child would have each overwriting the others.

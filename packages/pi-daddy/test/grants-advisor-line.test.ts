@@ -54,27 +54,13 @@ function render(
   return grantsCommand.handler("", ctx as never).then(() => out);
 }
 
-test("an enabled advisor's line names its task mode and the separate session-turn egress", async () => {
-  const digest = (await render({ decider: "jev", taskEgress: "digest" }))
-    .split("\n")
-    .find((line) => line.includes("advisor"));
-  assert.match(digest!, /jev.*task egress digest/);
-  assert.match(digest!, /session turns/, "the pruned handoff's separate egress remains disclosed");
-  assert.match(await render({ decider: "jev", taskEgress: "raw" }), /task egress raw/);
+test("retired advisor fields do not advertise or activate a runtime adviser", async () => {
+  const output = await render({ decider: "jev", taskEgress: "raw" });
+  assert.doesNotMatch(output, /advisor|task egress|session turns/);
 });
 
 test("/grants shows each definition's model and thinking with sources", async () => {
   const output = await render({ decider: "none", taskEgress: "digest" }, true);
   assert.match(output, /review.*model anthropic\/claude-opus-4-6 \(definition\)/);
   assert.match(output, /thinking high \(definition\)/);
-});
-
-test("an advisor that is off says so, and says why when there is a reason", async () => {
-  assert.match(await render({ decider: "none", taskEgress: "digest" }), /advisor {4}off/);
-  const refused = await render({
-    decider: "none",
-    taskEgress: "digest",
-    refusal: "settings set model; use PI_DADDY_ADVISOR_MODEL",
-  });
-  assert.match(refused, /advisor {4}off — settings set model; use PI_DADDY_ADVISOR_MODEL/);
 });

@@ -12,8 +12,6 @@
  */
 
 import { nativeDelegationContext } from "./delegation-native.ts";
-import { adviseEffort } from "./effort-advice.ts";
-import { advisePruning } from "./pruning-advice.ts";
 import { DELEGATE_SUBJECT, shouldSeekApproval } from "../src/kernel/approval.ts";
 import { planDelegation } from "../src/kernel/delegate.ts";
 import {
@@ -32,8 +30,7 @@ import { GovernanceRefusal, refusal as structuredRefusal } from "../src/kernel/r
 import { executePlannedChild, type DelegationOutcome } from "./execute-child.ts";
 import { recordDelegationDecision, type ApprovalLedgerFacts } from "./delegation-ledger.ts";
 import type { ExecutionOccurrenceIds } from "./execution-occurrence.ts";
-import { ENV_EPISODE_COST_CEILING } from "../src/kernel/env-names.ts";
-import { resolvedModelOf, resolveDefinitionRuntime } from "./definition-runtime.ts";
+import { resolveDefinitionRuntime } from "./definition-runtime.ts";
 import {
   governedWorkspaceAccess,
   prepareDelegationWorkspace,
@@ -49,8 +46,6 @@ interface ChildSpec {
   tools?: string[];
   model?: string;
   thinking?: string;
-  /** Positive USD override for the whole episode, applied only when this delegation will run. */
-  episodeCostCeiling?: number;
   /** ADR-0078: what of the parent's session crosses. Validated in the kernel, never here. */
   context?: unknown;
   correlation?: CorrelationMetadata;
@@ -309,47 +304,7 @@ export async function runOneDelegation(
   );
   executorRefusal ||= nativeRefusal;
 
-  // ADR-0077's first decision point, after the refusal checks for the reason above. Fills a blank from the levels
-  // the CHILD's model reports; never overrules a caller, and yields today's behaviour whenever there is no answer.
-  if (!executorRefusal && !modelRefusal) {
-    const advisedThinking = await adviseEffort({
-      session,
-      requested: request.thinking,
-      model: configured.model,
-      registry: ctx.modelRegistry,
-      task: spec.task,
-      executionId: ids.executionId,
-      agent: spec.agent,
-      fallback: configured,
-      signal,
-    });
-    resolvedRuntime = resolveDefinitionRuntime({
-      definition: spec.agent,
-      explicit: { model: spec.model, thinking: spec.thinking },
-      session: session.definitionRuntimeOverrides,
-      settings: session.definitionRuntimeSettings,
-      piModel: defaultModel,
-      advisorThinking: advisedThinking,
-    });
-    request.thinking = resolvedRuntime.thinking;
-  }
-
-  const planContext = await handoffPlanContext({
-    session,
-    base: extra,
-    task: spec.task,
-    executionId: ids.executionId,
-    toolCallId,
-    blocked: Boolean(executorRefusal || modelRefusal),
-    preview: () => planWithApprovals(session, request, extra, null, signal, preApproved).then((r) => r.plan),
-    attribution: {
-      resolvedModel: resolvedModelOf(resolvedRuntime.model),
-      modelSource: resolvedRuntime.modelSource,
-      thinkingLevel: resolvedRuntime.thinking ?? null,
-      thinkingSource: resolvedRuntime.thinkingSource,
-    },
-    ...(signal ? { signal } : {}),
-  });
+  const planContext = extra;
   let preparedWorkspace: PreparedWorkspace | undefined;
   let approvalOutcome: ApprovalOutcome | undefined;
   let plan: ReturnType<typeof planDelegation>;
@@ -459,14 +414,6 @@ export async function runOneDelegation(
     };
   }
 
-  if (spec.episodeCostCeiling !== undefined) session.episodeCostGate.setCeiling(spec.episodeCostCeiling);
-  plan = {
-    ...plan,
-    env: { ...plan.env, [ENV_EPISODE_COST_CEILING]: String(session.episodeCostGate.ceiling) },
-  };
-  const costUI = ctx.ui as typeof ctx.ui & {
-    input(title: string, placeholder?: string, opts?: { signal?: AbortSignal }): Promise<string | undefined>;
-  };
   return executePlannedChild({
     session,
     plan,
@@ -480,48 +427,5 @@ export async function runOneDelegation(
     resolvedRuntime,
     signal,
     onProgress,
-    costGateUI: {
-      hasUI: ctx.hasUI,
-      input: (title, placeholder, gateSignal) => costUI.input(title, placeholder, { signal: gateSignal }),
-      notify: (message) => ctx.ui.notify(message, "warning"),
-    },
   });
-}
-
-/**
- * The planner context for one delegation, including a `pruned` handoff narrowed by an advisor (ADR-0077).
- *
- * **Exported and taking its own `preview`, so the ordering is forced by a test rather than by a reviewer.** Three
- * properties live here and each was, at some point in this change's history, true only because somebody had
- * checked it by hand: an advisor is not asked for a delegation that is already refused; it is not asked until a
- * plan says the `pruned` handoff actually survived the ceiling, the grant and the gate; and the ids it returns
- * reach the planner. Reviewers measured all three by mutating the source and finding the suite still green. A
- * function with a seam is the only version of this that a test can hold.
- */
-export async function handoffPlanContext(input: {
-  session: Parameters<typeof advisePruning>[0]["session"];
-  base: Record<string, unknown>;
-  task: string;
-  executionId?: string;
-  toolCallId?: string;
-  /** A refusal is already certain, so nothing may be asked. */
-  blocked: boolean;
-  /** Plans with no human in the loop; its result decides whether an advisor is consulted at all. */
-  preview: () => Promise<{ handoff?: { mode: string } }>;
-  attribution?: Parameters<typeof advisePruning>[0]["attribution"];
-  signal?: AbortSignal;
-}): Promise<Record<string, unknown>> {
-  if (input.blocked) return { ...input.base };
-  const plan = await input.preview();
-  if (plan.handoff?.mode !== "pruned") return { ...input.base };
-  const ids = await advisePruning({
-    session: input.session,
-    granted: plan.handoff as Parameters<typeof advisePruning>[0]["granted"],
-    task: input.task,
-    ...(input.executionId ? { executionId: input.executionId } : {}),
-    ...(input.toolCallId ? { toolCallId: input.toolCallId } : {}),
-    ...(input.attribution ? { attribution: input.attribution } : {}),
-    ...(input.signal ? { signal: input.signal } : {}),
-  });
-  return ids ? { ...input.base, handoffTurnIds: ids } : { ...input.base };
 }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { after, test } from "node:test";
-import { ensureSessionModelPrompt, type SessionModelPromptState } from "../extensions/session-model-prompt.ts";
+import { changeSessionModels, type SessionModelPromptState } from "../extensions/session-model-prompt.ts";
 import { readRecords } from "../src/governance/record.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
@@ -22,8 +22,6 @@ async function state(mode: "ask" | "never" = "ask"): Promise<SessionModelPromptS
       definitions: new Map([["review", { model: "definition/model", thinking: "medium" }]]),
     },
     definitionRuntimeOverrides: new Map(),
-    sessionModelPrompt: mode,
-    sessionModelPrompted: false,
   };
 }
 
@@ -33,34 +31,9 @@ async function events(value: SessionModelPromptState): Promise<any[]> {
   return parsed.records.map((record) => record.body);
 }
 
-test("first delegation keeps defaults once and records the empty session map", async () => {
-  const value = await state();
-  let prompts = 0;
-  await ensureSessionModelPrompt(value, ["review"], {
-    hasUI: true,
-    input: async (title) => {
-      prompts += 1;
-      assert.match(title, /review.*definition\/model.*medium/s);
-      return "";
-    },
-    notify: () => {},
-  });
-  await ensureSessionModelPrompt(value, ["build"], {
-    hasUI: true,
-    input: async () => assert.fail("the session prompt must run once"),
-    notify: () => {},
-  });
-  assert.equal(prompts, 1);
-  assert.deepEqual([...value.definitionRuntimeOverrides], []);
-  assert.deepEqual(
-    (await events(value)).map((event) => [event.event, event.outcome, event.overrides]),
-    [["session_config", "kept", {}]],
-  );
-});
-
 test("change accepts per-definition and all edits into the session map", async () => {
   const value = await state();
-  await ensureSessionModelPrompt(value, ["review", "build"], {
+  await changeSessionModels(value, {
     hasUI: true,
     input: async () => "all openai-codex:gpt-5.6-sol high\nreview anthropic:claude-opus-4-6 xhigh",
     notify: () => {},
@@ -79,7 +52,7 @@ test("invalid edits are rejected with valid values and cannot spawn past the pro
   const value = await state();
   const answers = ["review bad-model turbo", "review anthropic:claude-opus-4-6 high"];
   const notices: string[] = [];
-  await ensureSessionModelPrompt(value, ["review"], {
+  await changeSessionModels(value, {
     hasUI: true,
     input: async () => answers.shift(),
     notify: (message) => notices.push(message),
@@ -92,11 +65,11 @@ test("invalid edits are rejected with valid values and cannot spawn past the pro
   });
 });
 
-test("sessionModelPrompt never skips UI but still records kept defaults", async () => {
-  const value = await state("never");
-  await ensureSessionModelPrompt(value, ["review"], {
-    hasUI: true,
-    input: async () => assert.fail("never must not prompt"),
+test("manual model controls skip UI when unavailable and record kept defaults", async () => {
+  const value = await state();
+  await changeSessionModels(value, {
+    hasUI: false,
+    input: async () => assert.fail("unavailable UI must not prompt"),
     notify: () => {},
   });
   assert.equal((await events(value))[0].outcome, "kept");

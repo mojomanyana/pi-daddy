@@ -16,9 +16,6 @@ export interface SessionModelPromptState {
   definitions: Map<string, { name: string }>;
   definitionRuntimeSettings: DefinitionRuntimeSettings;
   definitionRuntimeOverrides: Map<string, DefinitionRuntimeChoice>;
-  sessionModelPrompt: "ask" | "never";
-  sessionModelPrompted: boolean;
-  sessionModelPromptInFlight?: Promise<void>;
 }
 export interface SessionModelPromptUI {
   hasUI: boolean;
@@ -117,7 +114,7 @@ async function choose(
   trigger: "first-delegation" | "grants-models",
 ): Promise<void> {
   const names = [...new Set([...(await historicalDefinitions(state.ledgerPath)), ...current])].sort();
-  if (state.sessionModelPrompt === "never" || !ui.hasUI) {
+  if (!ui.hasUI) {
     await record(state, "kept", trigger);
     return;
   }
@@ -150,24 +147,6 @@ export async function saveSessionModelEdits(
   if (invalid) return invalid;
   await record(state, "changed", trigger);
   return null;
-}
-
-export async function ensureSessionModelPrompt(
-  state: SessionModelPromptState,
-  current: readonly string[],
-  ui: SessionModelPromptUI,
-): Promise<void> {
-  if (state.sessionModelPrompted) return;
-  if (!state.sessionModelPromptInFlight) {
-    state.sessionModelPromptInFlight = choose(state, current, ui, "first-delegation").then(() => {
-      state.sessionModelPrompted = true;
-    });
-  }
-  try {
-    await state.sessionModelPromptInFlight;
-  } finally {
-    state.sessionModelPromptInFlight = undefined;
-  }
 }
 
 export async function changeSessionModels(state: SessionModelPromptState, ui: SessionModelPromptUI): Promise<void> {

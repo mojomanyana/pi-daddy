@@ -4,7 +4,7 @@ import {
   retentionConfigurationDigest,
   type RetentionStatus,
 } from "../src/governance/execution-retention.ts";
-import { appendLedgerEvent, buildChildLifecycleEvent, buildEpisodeCostGateEvent } from "../src/governance/ledger.ts";
+import { appendLedgerEvent, buildChildLifecycleEvent } from "../src/governance/ledger.ts";
 import { hasFinalizerError } from "../src/governance/finalization.ts";
 import { mergeChildEnv } from "../src/kernel/propagation.ts";
 import type { Capability } from "../src/kernel/resolve.ts";
@@ -25,7 +25,6 @@ import { ENV_HERDR_KEEP_PANE, type GrantsSession } from "./session.ts";
 import { CHILD_ATTRIBUTION_ENV_KEYS, ENV_EPISODE_ID } from "../src/kernel/env-names.ts";
 import { releaseDelegationWorkspace, type PreparedWorkspace } from "./workspace-runtime.ts";
 import { ActivityTimelineRecorder, ENV_ACTIVITY_PARENT_TASK } from "../src/products/activity-timeline.ts";
-import { loadEpisodeCosts } from "../src/governance/episode-cost-gate.ts";
 import { resolvedModelOf, type ResolvedDefinitionRuntime } from "./definition-runtime.ts";
 export interface DelegationOutcome {
   ok: boolean;
@@ -110,11 +109,6 @@ export async function executePlannedChild(input: {
   resolvedRuntime?: ResolvedDefinitionRuntime;
   signal?: AbortSignal;
   onProgress?: (update: ChildProgressUpdate) => void;
-  costGateUI?: {
-    hasUI: boolean;
-    input(title: string, placeholder: string, signal?: AbortSignal): Promise<string | undefined>;
-    notify(message: string): void;
-  };
 }): Promise<DelegationOutcome> {
   const { session, plan, childId, executionId, parentExecutionId, preparedWorkspace, signal, onProgress } = input;
   const ledgerPath = session.ledgerPath;
@@ -182,90 +176,11 @@ export async function executePlannedChild(input: {
     // The process executor adds a second signal that is live during a tool call: the child tree's CPU time and
     // descendants (`process-activity.ts`). Herdr children are started by the daemon, so their pid is not known here.
     let childPid: number | undefined;
-    let costStopped = false;
-    const costUI = input.costGateUI ?? {
-      hasUI: false,
-      input: async () => undefined,
-      notify: () => undefined,
-    };
-    const costAbort = new AbortController();
-    const observeCost = async (cost: number | undefined, terminal: boolean) => {
-      if (!session.episodeCostGate) return;
-      if (ledgerPath) {
-        const recorded = await loadEpisodeCosts(ledgerPath, session.episodeId);
-        for (const [recordedExecution, recordedCost] of recorded) {
-          session.episodeCostGate.seedCost(recordedExecution, recordedCost);
-        }
-      }
-      await session.episodeCostGate.observe(executionId, cost, terminal, {
-        warn: (message) => costUI.notify(message),
-        pause: async () => {
-          if (session.executor.kind === "herdr") {
-            costUI.notify("pi-daddy: Herdr cannot pause a pane; stopping it at the episode cost ceiling");
-            return;
-          }
-          if (childPid !== undefined)
-            try {
-              process.kill(childPid, "SIGSTOP");
-            } catch {
-              /* the child may have exited between its final usage write and this observation */
-            }
-        },
-        ask: async () => {
-          if (session.executor.kind === "herdr" || !costUI.hasUI) return null;
-          const value = await costUI.input(
-            "pi-daddy: episode cost ceiling crossed",
-            "New USD ceiling above the current cost; leave blank to stop",
-            signal,
-          );
-          if (value === undefined || value.trim() === "") return null;
-          const parsed = Number(value);
-          return Number.isFinite(parsed) ? parsed : null;
-        },
-        resume: async () => {
-          if (childPid !== undefined)
-            try {
-              process.kill(childPid, "SIGCONT");
-            } catch {
-              /* already exited */
-            }
-        },
-        stop: async () => {
-          costStopped = true;
-          if (childPid !== undefined)
-            try {
-              process.kill(childPid, "SIGCONT");
-            } catch {
-              /* already exited */
-            }
-          costAbort.abort();
-        },
-        gate: async (event) => {
-          if (!ledgerPath) return;
-          await appendLedgerEvent(
-            {
-              path: ledgerPath,
-              strict: true,
-            },
-            buildEpisodeCostGateEvent({
-              episodeId: session.episodeId,
-              executionId,
-              parentExecutionId,
-              childId,
-              ...event,
-              now: new Date(),
-            }),
-          );
-        },
-      });
-    };
     const probe = async () => {
-      const [file, tree, usage] = await Promise.all([
+      const [file, tree] = await Promise.all([
         activitySession.probe(),
         childPid === undefined ? undefined : processTreeActivity(childPid),
-        activitySession.usage(),
       ]);
-      await observeCost(usage.usage?.cost.total, false);
       return file === undefined && tree === undefined ? undefined : `${file ?? "-"}|${tree ?? "-"}`;
     };
     const startedAt = new Date();
@@ -319,11 +234,7 @@ export async function executePlannedChild(input: {
       leaseLost = true;
       leaseAbort.abort();
     });
-    const executionSignals = [
-      costAbort.signal,
-      ...(signal ? [signal] : []),
-      ...(writerLease ? [leaseAbort.signal] : []),
-    ];
+    const executionSignals = [...(signal ? [signal] : []), ...(writerLease ? [leaseAbort.signal] : [])];
     const executionSignal = AbortSignal.any(executionSignals);
     const retention = beginExecutionRetention({
       executionId,
@@ -448,7 +359,7 @@ export async function executePlannedChild(input: {
         failed: childFailed,
       });
       const usageObservation = await activitySession.usage();
-      await observeCost(usageObservation.usage?.cost.total, usageObservation.usage === undefined);
+
       releaseReason = output.timedOut ? "timeout" : output.aborted ? "cancelled" : childFailed ? "failed" : "completed";
       if (activityStarted)
         try {
@@ -522,9 +433,7 @@ export async function executePlannedChild(input: {
           : output.aborted
             ? leaseWasLost
               ? "lost the exclusive writer lease protecting its workspace and was stopped"
-              : costStopped
-                ? "crossed the episode cost ceiling and was stopped"
-                : "was cancelled"
+              : "was cancelled"
             : output.timedOut
               ? output.idle
                 ? `showed no activity for ${describeBound(configuredIdleMs)} and was killed ` +
@@ -595,7 +504,6 @@ export async function executePlannedChild(input: {
       retainWriterLease = Boolean(writerLease && isHerdrWriterCloseFailure(error));
       const usageObservation = await activitySession.usage();
       try {
-        await observeCost(usageObservation.usage?.cost.total, usageObservation.usage === undefined);
       } catch {
         /* cost observation must not replace the executor's primary failure */
       }

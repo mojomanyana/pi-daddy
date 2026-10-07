@@ -3,7 +3,7 @@
 export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
 export type ModelSource = "explicit" | "session" | "definition" | "global" | "pi";
-export type ThinkingSource = ModelSource | "advisor";
+export type ThinkingSource = ModelSource;
 export interface DefinitionRuntimeChoice {
   model?: string;
   thinking?: ThinkingLevel;
@@ -64,7 +64,6 @@ export function resolveDefinitionRuntime(input: {
   session: ReadonlyMap<string, DefinitionRuntimeChoice>;
   settings: DefinitionRuntimeSettings;
   piModel?: string;
-  advisorThinking?: string;
 }): ResolvedDefinitionRuntime {
   const session = input.definition ? input.session.get(input.definition) : undefined;
   const definition = input.definition ? input.settings.definitions.get(input.definition) : undefined;
@@ -78,7 +77,6 @@ export function resolveDefinitionRuntime(input: {
   const thinkingCandidates: Array<[string | undefined, ThinkingSource]> = [
     [input.explicit.thinking, "explicit"],
     [session?.thinking, "session"],
-    [input.advisorThinking, "advisor"],
     [definition?.thinking, "definition"],
     [input.settings.defaults.thinking, "global"],
   ];

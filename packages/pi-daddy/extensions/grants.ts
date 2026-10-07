@@ -35,7 +35,7 @@ import { registerDelegationTools } from "./delegation.ts";
 import { grantsCommand } from "./grants-command.ts";
 import { runInit } from "./init-command.ts";
 import { planWithApprovals } from "./run-delegation.ts";
-import { createGrantsSession, loadProjectDefinitions, reconcileAdvisorSession, type GrantsSession } from "./session.ts";
+import { createGrantsSession, loadProjectDefinitions, type GrantsSession } from "./session.ts";
 import { acceptWorkspaces } from "../src/governance/workspace-acceptance.ts";
 import { loadWorkspaceRegistry } from "../src/kernel/workspace.ts";
 import { bindReloadLifecycle } from "./reload-environment.ts";
@@ -96,7 +96,6 @@ export default function (pi: ExtensionAPI) {
     // execution tree across workspaces. Resolve it once at the root's actual pi cwd; descendants inherit
     // this absolute identity verbatim, and resolve(abs) remains abs at every deeper session start.
     if (session.ledgerPath) session.ledgerPath = resolve(ctx.cwd, session.ledgerPath);
-    reconcileAdvisorSession(session, reload.environment);
     try {
       // ADR-0076 PR 3d: a pre-format project ledger is imported once into the record envelope, bodies verbatim, each
       // record marked with its source line; the old file is left untouched. Happens before any spawn can append.
@@ -382,11 +381,6 @@ export default function (pi: ExtensionAPI) {
           depth: session.depth,
           maxDepth: session.maxDepth,
           ledgerPath: session.ledgerPath,
-          advisor: {
-            decider: session.advisorSession.deciderName,
-            taskEgress: session.advisorSession.settings.taskEgress,
-            ...(session.advisorSession.settings.refusal ? { refusal: session.advisorSession.settings.refusal } : {}),
-          },
           ...(session.workspacePin ? { workspacePin: session.workspacePin } : {}),
           ...(session.workspaceAcceptance ? { unacceptedWorkspaces: session.workspaceAcceptance.unaccepted } : {}),
           // Injected rather than imported, so `/grants` takes its one writing ability visibly from here.

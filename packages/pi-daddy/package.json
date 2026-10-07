@@ -65,12 +65,12 @@
     ]
   },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": ">=0.83.0",
     "@types/node": ">=22",
-    "typebox": ">=1.0.0"
+    "typebox": ">=1.0.0",
+    "@earendil-works/pi-coding-agent": ">=1.0.4"
   },
   "dependencies": {
-    "@earendil-works/pi-coding-agent": ">=0.83.0",
+    "@earendil-works/pi-coding-agent": "1.0.4",
     "typebox": ">=1.0.0"
   },
   "devDependencies": {

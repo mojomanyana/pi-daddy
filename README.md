@@ -83,7 +83,7 @@ The modes are ordered, and each subsumes the weaker ones: a parent holding `cont
 instructions, capped at 32 KiB, with anything that did not fit said inside the fence. The capability decision record
 names the mode the child actually received and how much crossed.
 
-`pruned` keeps recent turns plus turns naming the given files, and an enabled advisor then judges those candidates
+`pruned` keeps recent turns plus turns naming the given files. The deterministic selector keeps those candidates
 against the task, keeping a subset. A probe over the operator's sessions measured 0.737 delivered term recall at the
 20-turn default; that is not task-success evidence and is not enough to make `pruned` the default.
 
@@ -121,11 +121,9 @@ a `once` never crosses a spawn. The approval store and governance ledger never s
 approvals` lists what is persisted; `/grants revoke <capability>@<definition>` or `--all` removes it. The store lives
 in pi's agent directory, not in the workspace.
 
-`episodeCostCeiling` in `.pi/pi-daddy/settings.json` sets the cumulative episode cost gate in USD (default `5`).
-A delegation may override it with `episodeCostCeiling`. At 50% pi-daddy warns once. When provider-reported cost
-crosses the ceiling, a directly executed child is paused while the operator enters a higher ceiling or stops it;
-Herdr cannot pause a pane, so it stops at the crossing. If the provider reports no usage, pi-daddy warns once for
-the episode and cannot apply the gate.
+Monetary usage is observational. It never pauses, stops or authorizes a child. Available usage remains in
+lifecycle records and episode reports; missing or partial coverage is not a zero-cost claim. Permission approvals,
+depth, fan-out limits and execution timeouts are separate controls.
 
 ## The ledger
 
@@ -201,9 +199,8 @@ and `PI_DADDY_EXECUTION` (the lifecycle execution id). These are attribution met
 ### Per-definition model and thinking
 
 Child runtime defaults are reviewable beside each definition in `.pi/pi-daddy/settings.json`. Model precedence is
-explicit argument → session override → definition → global default → pi. Thinking precedence is explicit → session
-→ advisor → definition → global default → pi. Session overrides come from the first-delegation prompt, `/grants
-models`, or a connected dashboard. Set `sessionModelPrompt` to `"never"` to suppress the default prompt.
+explicit argument → session override → definition → global default → pi for model and thinking. Use `/grants models`
+or a connected dashboard to edit session overrides. Delegation never opens an automatic model chooser.
 
 ```json
 {
@@ -223,28 +220,23 @@ models`, or a connected dashboard. Set `sessionModelPrompt` to `"never"` to supp
 Valid thinking values are `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`. `/grants` shows the
 resolved value and source for every displayed definition.
 
-## Advisors, and what leaves the machine
+## Retired intervention inputs
 
-An advisor is a non-generative decider that answers typed questions. It may select, rank, annotate or propose, and
-it can never widen a grant, satisfy a gate or replace a human's answer. Today it fills two blanks. When a
-`delegate` call names no thinking level, it chooses one from the levels that model reports it supports. When a
-context handoff is `pruned`, it picks which of the turns the mechanical rule already kept are worth carrying, and
-it can only narrow that set.
+External advisors, monetary cost gates and the first-delegation model chooser were removed. These recognized old
+inputs are inert, including malformed values; the package does not rewrite existing configuration or history:
 
-It is **off unless you set `PI_DADDY_ADVISOR=jev` and `PI_DADDY_ADVISOR_KEY`**, both of which live in the
-environment rather than in a committed file, because a file inside the workspace is writable by any child holding
-`tool:write`. `PI_DADDY_ADVISOR_MODEL` overrides the model, also from the environment. A project's `advisor` block
-in `settings.json` may turn one off for that project and shorten its timeout; it can never turn one on, choose its
-model, or lengthen its bound.
+| Input | Compatibility behavior |
+|---|---|
+| Tool argument `episodeCostCeiling` on single/all/chain | Removed before Pi validates the remaining arguments |
+| Settings `episodeCostCeiling`, `advisor`, `sessionModelPrompt` | Ignored; active model and authority fields still validate |
+| `PI_DADDY_EPISODE_COST_CEILING`, `PI_DADDY_ADVISOR`, `PI_DADDY_ADVISOR_KEY`, `PI_DADDY_ADVISOR_MODEL`, `PI_DADDY_ADVISOR_TASK_EGRESS` | Never select or execute an intervention; reserved environment stripping remains |
 
-Task text does not leave by default, even when the advisor is enabled and keyed. The advisor receives only task
-length, a language detected from referenced-file extensions, and the count and extensions of referenced files — no
-prompt text, file contents or paths. Raw task egress additionally requires `PI_DADDY_ADVISOR_TASK_EGRESS=raw`, is
-recorded as `taskEgress: "raw"` on each advice record when a governance ledger is available, and prints one warning
-when it first occurs in a process.
-A `pruned` context handoff still sends up to twelve of **your own session turns** for the advisor to judge, which is
-your conversation rather than just the task. Advisor inputs are never written to the ledger. `/grants` states which
-advisor and task-egress mode are in force, or why none is.
+Historical advice/cost-gate records remain readable. Manual model choices and permission approvals remain active.
+For future JEV or learned-policy experiments, existing versioned decision/lifecycle records and harness result exports
+remain the observation boundary. A separately selected experimental adviser may propose a choice for evaluation; it
+must never grant capabilities, approve work, start retries or silently change the selected model. No automatic remote
+advisor call or training pipeline is installed. Dataset consent, supported training method and comparative value need
+separate qualification.
 
 ## Command-line reference
 
@@ -279,7 +271,6 @@ specification of who owns what.
 | `src/kernel` | What may a child hold, and how is that carried? Mostly pure; the readers that discover what exists are the exception, and they are bounded. | `resolve`, `spawn`, `propagation`, `catalog`, `definitions`, `capabilities`, `approval`, `chain`, `context-handoff`, `fanout`, `correlation`, `refusals`, `env-names`, `project-paths`, `workspace`, `bounded-read` |
 | `src/governance` | What was decided, and where is it written? | `record`, `ledger`, `ledger-events`, `ledger-report`, `approval-store`, `approval-prompt`, `grant-store`, `init`, `workspace-lease`, `execution-retention` |
 | `src/executors` | How does a child process start and end? | `executor`, `run-herdr`, `herdr-*`, `pane-reaper` |
-| `src/advisors` | Advice that can select, rank, annotate or propose, and never widen a grant, satisfy a gate or replace a human. Off by default (ADR-0077). | `decider`, `advisor`, `jev`, `settings` |
 | `src/products` | What does the operator see or report? | `activity-timeline`, `dashboard-*`, `episode-report`, `episode-outcomes` |
 | `extensions/` | The pi extension and its wiring: hooks, the three tools, approvals flow, `/grants`. | `grants.ts` is the entry point |
 

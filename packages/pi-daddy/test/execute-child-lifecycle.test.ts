@@ -19,7 +19,6 @@ import {
   ENV_CHILD_EXECUTION,
 } from "../src/kernel/env-names.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
-import { EpisodeCostGate } from "../src/governance/episode-cost-gate.ts";
 
 after(cleanupTempDirs);
 
@@ -127,7 +126,7 @@ test("a SIGTERM-ignoring child is hard-killed by the recorded lifecycle deadline
   }
 });
 
-test("a live process child pauses and stops when cumulative episode cost crosses the ceiling", async () => {
+test("reported cost never pauses or stops a live child", async () => {
   const dir = await tempDir("execute-child-cost-gate-");
   const bin = join(dir, "bin");
   const { mkdir } = await import("node:fs/promises");
@@ -141,7 +140,7 @@ const path = process.argv[process.argv.indexOf("--session") + 1];
 const usage = { input: 10, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 11,
   cost: { input: 0.8, output: 0.2, cacheRead: 0, cacheWrite: 0, total: 1 } };
 fs.appendFileSync(path, JSON.stringify({ type: "message", message: { role: "assistant", provider: "p", model: "m", usage } }) + "\\n");
-setInterval(() => {}, 1000);
+setTimeout(() => { console.log("completed despite cost"); }, 1200);
 `,
     "utf8",
   );
@@ -159,24 +158,22 @@ setInterval(() => {}, 1000);
         ledgerPath,
         executor: { kind: "process" },
         episodeId: "episode:00000000-0000-4000-8000-000000000001",
-        episodeCostGate: new EpisodeCostGate(0.5),
       } as GrantsSession,
       plan: { ...plan(), args: [" task"] },
       childId: "d0.1",
       executionId,
       parentExecutionId: null,
       cwd: dir,
-      costGateUI: { hasUI: true, input: async () => "", notify: () => {} },
     });
-    assert.equal(outcome.aborted, true);
-    assert.match(outcome.reason ?? "", /cost ceiling/);
+    assert.equal(outcome.ok, true);
+    assert.match(outcome.text, /completed despite cost/);
     const events = (await readFile(ledgerPath, "utf8"))
       .trim()
       .split("\n")
       .map((line) => JSON.parse(line).body);
     assert.deepEqual(
       events.filter((event) => event.event === "cost_gate").map((event) => event.outcome),
-      ["stopped"],
+      [],
     );
   } finally {
     if (oldPath === undefined) delete process.env.PATH;

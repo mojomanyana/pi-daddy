@@ -44,7 +44,7 @@ import { planChain, type GateRequest } from "./chain-plan.ts";
 import { contextShape } from "./context-shape.ts";
 import { preflightModel } from "../src/kernel/model-preflight.ts";
 import { resolveDefinitionRuntime } from "./definition-runtime.ts";
-import { ensureSessionModelPrompt } from "./session-model-prompt.ts";
+import { withoutRetiredDelegationArguments } from "./retired-inputs.ts";
 import { assertDelegationAuthority } from "./delegation-authority.ts";
 
 /** One chain step is one execution occurrence, however many capability dialogs contributed to its answer. */
@@ -102,9 +102,6 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
       maxItems: MAX_CHAIN_STEPS,
       description: "The steps to run IN ORDER. Each one sees the previous one's output.",
     }),
-    episodeCostCeiling: Type.Optional(
-      Type.Number({ exclusiveMinimum: 0, description: "Override the USD ceiling for this whole episode." }),
-    ),
   });
 
   pi.registerTool({
@@ -118,6 +115,7 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
       "governed exactly as a single `delegate` is: it holds only what you grant it, and you cannot grant what you " +
       "do not hold. A failed step ABORTS the rest, and you still receive everything that completed.",
     parameters: params,
+    prepareArguments: withoutRetiredDelegationArguments,
     async execute(_toolCallId, args, signal, onUpdate, ctx) {
       assertDelegationAuthority(session);
       const steps = args.steps ?? [];
@@ -134,16 +132,6 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
       // fan-out cannot disagree about what the budget means.
       const split = splitBudget(session.fanoutBudget, steps.length);
       if (!split.ok) throw new GovernanceRefusal(refusal("FANOUT_EXCEEDED", `chain refused: ${split.reason}`));
-
-      await ensureSessionModelPrompt(
-        session,
-        steps.flatMap((step) => (step.agent ? [step.agent] : [])),
-        {
-          hasUI: ctx.hasUI && typeof ctx.ui.input === "function",
-          input: (title, placeholder) => ctx.ui.input(title, placeholder),
-          notify: (message, type) => ctx.ui.notify(message, type),
-        },
-      );
 
       // Plan every step first. A step that can never run refuses the chain HERE, before anyone is asked — see
       // `planChain`.
@@ -302,7 +290,6 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
        */
       let available = [...preApproved];
 
-      if (args.episodeCostCeiling !== undefined) session.episodeCostGate.setCeiling(args.episodeCostCeiling);
       for (const [index, step] of steps.entries()) {
         const childId = childSpawnId(session.ownSpawnId, index);
         const availableForStep = available.filter((approval) => {

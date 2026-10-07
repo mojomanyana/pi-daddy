@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { after, test } from "node:test";
 import grantsExtension from "../extensions/grants.ts";
-import { createGrantsSession, reconcileAdvisorSession, type GrantsSession } from "../extensions/session.ts";
+import { createGrantsSession, type GrantsSession } from "../extensions/session.ts";
 import { bindReloadLifecycle } from "../extensions/reload-environment.ts";
 import { grantStorePath, projectLedgerPath, saveGrant } from "../src/governance/grant-store.ts";
 import { GRANT_ENV_KEYS } from "../src/kernel/propagation.ts";
@@ -46,21 +46,6 @@ test("an invalid project store creates a refused governed session instead of a w
     originalGrant === undefined ? delete process.env.PI_DADDY_GRANT : (process.env.PI_DADDY_GRANT = originalGrant);
     originalLedger === undefined ? delete process.env.PI_DADDY_LEDGER : (process.env.PI_DADDY_LEDGER = originalLedger);
   }
-});
-
-test("advisor recording can be rebound to the owner-reconciled episode", async () => {
-  const cwd = await tempDir("advisor-episode-rebind-");
-  const ledgerPath = projectLedgerPath(cwd);
-  const session = {
-    episodeId: "episode:00000000-0000-4000-8000-000000000002",
-    storeCwd: cwd,
-    ledgerPath,
-  } as GrantsSession;
-  reconcileAdvisorSession(session, {});
-  await session.advisorSession.advisor.ask("child-effort", { state: { task: "PRIVATE" }, questions: {} });
-  const record = JSON.parse((await readFile(ledgerPath, "utf8")).trim()).body;
-  assert.equal(record.episodeId, session.episodeId);
-  assert.equal(JSON.stringify(record).includes("PRIVATE"), false);
 });
 
 test("owner-bound reload restores its root while a distinct owner keeps inherited child state", async () => {
