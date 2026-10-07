@@ -198,6 +198,13 @@ it measured nothing rather than passing quietly.
 
 ## Decisions still in force
 
+**Ledger contract correction, 2026-10-07:** derive the exported capability namespace pattern from the same
+CAPABILITY_NAMESPACE_PREFIXES source as runtime validation. Existing context grants were valid runtime data
+but rejected by the stale published schema. This is a schema compatibility correction, with no new authority;
+pinned consumers must explicitly adopt it. Production-builder fixtures include context grants, and regression
+checks compare every runtime namespace and identifier-tail boundary against the published schema.
+
+
 ### Captured execution and staged backend qualification — 2026-10-07
 
 The authorized Release A targets Pi 1.0.4 and captured Linux x64 execution. A complete final requires settled Pi

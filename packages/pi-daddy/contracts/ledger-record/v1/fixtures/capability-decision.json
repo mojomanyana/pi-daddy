@@ -58,7 +58,9 @@
   "parentGrant": [
     "agent:build",
     "tool:bash",
-    "tool:read"
+    "tool:read",
+    "context:files",
+    "context:summary"
   ],
   "effective": [
     "tool:bash",
