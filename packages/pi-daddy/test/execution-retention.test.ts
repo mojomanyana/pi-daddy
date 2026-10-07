@@ -82,6 +82,7 @@ test("public concurrent delegation calls retain distinct native attempts and exa
     PI_DADDY_HERDR: "0",
     PI_DADDY_GRANT: "tool:delegate",
     PI_DADDY_MAX_DEPTH: "2",
+    PI_DADDY_FANOUT: "3",
     PI_DADDY_EXECUTION_ID: newExecutionId(),
     PI_DADDY_EXECUTION_ARCHIVE: join(dir, "archive"),
   };
@@ -102,11 +103,24 @@ test("public concurrent delegation calls retain distinct native attempts and exa
       modelRegistry: { find: () => undefined },
     };
     await hooks.get("session_start")({}, ctx);
-    const results = await Promise.all(
-      ["call:first", "call:second"].map((call) =>
-        tools.get("delegate").execute(call, { task: "same task", tools: [] }, undefined, undefined, ctx),
+    // A two-child fan-out reserves two disjoint leaf slots; the overlapping single owns the third.
+    // Two B-1 single reservations intentionally cannot overlap under the conservative capacity policy.
+    const [parallel, single] = await Promise.all([
+      tools.get("delegate_all").execute(
+        "call:first",
+        {
+          children: [
+            { task: "same task", tools: [] },
+            { task: "same task", tools: [] },
+          ],
+        },
+        undefined,
+        undefined,
+        ctx,
       ),
-    );
+      tools.get("delegate").execute("call:second", { task: "same task", tools: [] }, undefined, undefined, ctx),
+    ]);
+    const results = [...parallel.details.outcomes.map((details: any) => ({ details })), single];
     const records: ExecutionRetentionManifest[] = [];
     for (const result of results) {
       const path = result.details.retention.manifestPath;
@@ -130,11 +144,11 @@ test("public concurrent delegation calls retain distinct native attempts and exa
       assert.equal((await readFile(join(path, "..", m!.content.stderr.path!))).toString(), "diagnostic");
       records.push(m!);
     }
-    assert.equal(records[0].identity.childId, records[1].identity.childId);
-    assert.notEqual(records[0].identity.executionId, records[1].identity.executionId);
+    assert.equal(records[0].identity.childId, records[2].identity.childId);
+    assert.equal(new Set(records.map((record) => record.identity.executionId)).size, 3);
     assert.deepEqual(
       records.map((m) => m.identity.toolCallId),
-      ["call:first", "call:second"],
+      ["call:first", "call:first", "call:second"],
     );
   } finally {
     for (const [k, v] of Object.entries(prior)) v === undefined ? delete process.env[k] : (process.env[k] = v);

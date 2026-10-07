@@ -265,36 +265,34 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
           workspace: params.workspace,
         },
         newDelegationOccurrence(session, 0),
-        // A single blocking delegation spends nothing from the subtree budget: cardinality is already
-        // bounded to one by the call being blocking, which is the accident fan-out removes. Passing the
-        // budget through unchanged means a child can still fan out with what this session was given.
-        session.fanoutBudget,
+        // Reserve one actual child plus the currently available disjoint subtree allowance.
+        undefined,
         ctx,
         signal,
         { onProgress: progress.sink(0), toolCallId: _toolCallId },
       );
       progress.settle([outcome]);
 
-      if (!outcome.ok) {
-        if (isCriticalAssuranceBlock(outcome)) throw new Error(outcome.text);
-        // THROW, do not return. `AgentToolResult` has no `isError` field: pi sets it only when `execute`
-        // throws (`pi-agent-core/dist/agent-loop.js` — a normal return is hardcoded `isError: false`).
-        // Returning `isError: true` was silently discarded, so every refusal this package made was
-        // recorded by pi as a SUCCESSFUL tool call. Found by the integration suite on its first run.
-        const detail = outcome.text ? `\n\n${outcome.text}` : "";
-        const message = `delegation refused: ${outcome.reason}${detail}`;
+      if (isCriticalAssuranceBlock(outcome)) throw new Error(outcome.text);
+      // A pre-launch refusal has no executed work/final to preserve; keep its established typed refusal.
+      if (!outcome.ok && !outcome.work && !outcome.final && !outcome.cleanup) {
+        const message = `delegation refused: ${outcome.reason}`;
         if (outcome.refusal) throw new GovernanceRefusal({ ...outcome.refusal, message });
         throw new Error(message);
       }
-
+      // Pi 1.0.4 preserves returned isError. Keep every outcome dimension and useful output together.
+      const failed = !outcome.ok || outcome.control === "failed";
       return {
-        content: [{ type: "text", text: outcome.text || "(no output)" }],
-        details: {
-          granted: outcome.granted,
-          depth: outcome.depth,
-          exitCode: outcome.exitCode,
-          retention: outcome.retention,
-        },
+        isError: failed,
+        content: [
+          {
+            type: "text",
+            text: failed
+              ? `delegation failed: ${outcome.reason ?? "required control failed"}${outcome.text ? `\n\n${outcome.text}` : ""}`
+              : outcome.text || "(no output)",
+          },
+        ],
+        details: outcome,
       };
     },
   });
@@ -320,7 +318,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
     description:
       "Run several sub-agents CONCURRENTLY and return all their results. Each child is governed exactly " +
       "as with `delegate`: it holds only what you grant it, and you cannot grant what you do not hold. " +
-      `At most ${MAX_CHILDREN_PER_CALL} children per call, and a session-wide budget bounds the total ` +
+      `At most ${MAX_CHILDREN_PER_CALL} children per call, and shared capacity bounds active descendants ` +
       "across the whole delegation subtree. Children cannot see each other or share context. Use this " +
       "when independent tasks can proceed in parallel — several reviewers over one diff, say — and read " +
       "every child's outcome, because one can be refused while the others succeed.",
@@ -329,7 +327,8 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
       assertDelegationAuthority(session);
       const children = params.children ?? [];
-      const split = splitBudget(session.fanoutBudget, children.length);
+      if (session.capacityRefusal) throw new GovernanceRefusal(session.capacityRefusal);
+      const split = splitBudget(session.capacity.available, children.length);
       if (!split.ok) {
         // Thrown, not returned: a returned `isError` is discarded by pi, so a refusal that came back as a
         // normal result would read to the orchestrator as a successful fan-out of zero children.
@@ -377,17 +376,14 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       // be indistinguishable from an empty one, and a fan-out that hid its refusals would let an
       // orchestrator summarise four reviews when only three happened.
       const report = buildFanoutReport(outcomes, children);
-
-      if (failed.length === children.length) {
-        // All of them failed, so there is no partial result to hand back — and a tool that returns text
-        // when nothing ran is exactly how a wrong summary gets written.
-        const message = `fan-out failed: every child was refused or failed.\n\n${report}`;
-        throw totalFanoutFailure(failed, message);
-      }
+      if (failed.length === children.length && outcomes.every((o) => !o.work && !o.final && !o.cleanup))
+        throw totalFanoutFailure(failed, `fan-out failed: every child was refused or failed.\n\n${report}`);
 
       return {
+        isError: outcomes.some((o) => !o.ok || o.control === "failed"),
         content: [{ type: "text", text: report }],
         details: {
+          outcomes,
           children: outcomes.length,
           failed: failed.length,
           budgetPerChild: split.perChild,

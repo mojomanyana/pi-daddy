@@ -112,7 +112,7 @@ async function fixture() {
 
 // Enduring requirement: a clean operation admitted before a failed refresh cannot publish over that failure.
 for (const route of ["startup", "registered-init"] as const) {
-  test(`${route} late clean discovery cannot replace provider's failed catalog`, async () => {
+  test(`${route} late clean discovery cannot replace an overlapping failed discovery`, async () => {
     const f = await fixture();
     const entered = gate();
     const release = gate();
@@ -146,8 +146,7 @@ for (const route of ["startup", "registered-init"] as const) {
     );
     try {
       await entered.promise;
-      wired.hooks.get("before_provider_request")!({ payload: { tools: [{ name: "read" }] } }, wired.ctx);
-      const failedCatalog = session.catalogReady;
+      const failedCatalog = loadProjectDefinitions(session, f.cwd);
       await assert.rejects(failedCatalog, (error) => error === f.errors[0]);
       const failure = f.errors[0];
       const failedHandle = f.handles.find((held) => held.fd !== -1 && held !== f.handles[0])!;
@@ -171,7 +170,7 @@ for (const route of ["startup", "registered-init"] as const) {
   });
 }
 
-test("delegation waiting on a real clean catalog rejects a later provider cleanup failure", async () => {
+test("delegation waiting on a real clean catalog rejects a later explicit discovery cleanup failure", async () => {
   const f = await fixture();
   const entered = gate();
   const release = gate();
@@ -213,6 +212,8 @@ test("delegation waiting on a real clean catalog rejects a later provider cleanu
       () => undefined,
       (error: unknown) => error,
     );
+    const refresh = loadProjectDefinitions(session, f.cwd);
+    await assert.rejects(refresh, (error) => error === f.errors[0]);
     wired.hooks.get("before_provider_request")!({ payload: { tools: [{ name: "read" }] } }, wired.ctx);
     await assert.rejects(session.catalogReady, (error) => error === f.errors[0]);
     release.resolve();
@@ -394,6 +395,48 @@ test("actual startup and reentrant reload join one failed pin acquisition", asyn
     release.resolve();
     await startup;
     await nestedOutcome;
+    await f.dispose();
+  }
+});
+
+test("provider observation adds tool evidence without rereading or replacing selected definition bodies", async () => {
+  const f = await fixture();
+  let definitionReads = 0;
+  let registryReads = 0;
+  const session = createGrantsSession(
+    undefined,
+    {
+      root: { PI_DADDY_GRANT: "tool:read,tool:delegate", PI_DADDY_DEPTH: "0", PI_DADDY_WORKSPACE_PIN: "" },
+    },
+    undefined,
+    {
+      definitions: (cwd, skipped) => {
+        definitionReads++;
+        return loadDefinitions(cwd, skipped);
+      },
+      registry: (path) => {
+        registryReads++;
+        return loadWorkspaceRegistry(path);
+      },
+    },
+  );
+  const wired = f.wire(session);
+  try {
+    await loadProjectDefinitions(session, f.cwd);
+    const definition = session.definitions.get("reader");
+    assert.ok(definition);
+    const before = { definitionReads, registryReads };
+    await writeFile(join(f.cwd, ".pi", "skills", "reader", "SKILL.md"), "changed after snapshot");
+    wired.hooks.get("before_provider_request")!(
+      { payload: { tools: [{ name: "read" }, { name: "custom_tool" }] } },
+      wired.ctx,
+    );
+    await session.catalogReady;
+    assert.deepEqual({ definitionReads, registryReads }, before);
+    assert.equal(session.definitions.get("reader"), definition);
+    assert.match(definition.body, /Read/);
+    assert.ok(session.catalog.has("tool:custom_tool"));
+  } finally {
     await f.dispose();
   }
 });

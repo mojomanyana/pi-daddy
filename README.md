@@ -47,10 +47,10 @@ delegate_chain({ steps: [ { agent: "plan", task: "…" }, { agent: "build", task
 ```
 
 Each child is a separate OS process with its own tool allowlist, its own instructions and no knowledge of its
-siblings, optionally in a visible [Herdr](https://herdr.dev) pane. `delegate_all` runs children concurrently under a
-session-wide fan-out budget. `delegate_chain` runs steps in sequence; each step's task is composed from the previous
-step's output, which crosses as a fenced, labelled, nonce-delimited block capped at 32 KiB, and the whole chain is
-planned and gated as one unit before any step runs. A child may itself hold `delegate` and spawn further, with the
+siblings. `delegate_all` runs children concurrently under the active descendant capacity limit.
+`delegate_chain` runs steps in sequence; each step receives its predecessor's complete verified final inside a
+fenced, labelled, nonce-delimited block. A required final exceeding the 32 KiB handoff bound stops dependent steps;
+the complete result remains available to the caller. The chain is planned and gated before any step runs. A child may itself hold `delegate` and spawn further, with the
 same tools, one level deeper, under the same rules.
 
 ## What a child receives
@@ -94,7 +94,7 @@ effective = ( requested ∩ parentGrant ∩ ceiling ) \ (gated \ approved)
 ```
 
 Escalation is impossible by construction on the tool surface: no policy engine, no model on the security path. Depth,
-fan-out budget, approvals and workspace routing attenuate the same way. When a governance ledger is configured, each
+active descendant capacity, approvals and workspace routing attenuate the same way. When a governance ledger is configured, each
 decision is recorded and the `denied` set is the signal: an agent repeatedly asking for what it does not hold is the
 escalation tell.
 
@@ -113,9 +113,8 @@ escape hatch for an operator who wants the old behaviour, and an explicitly empt
 
 ## Approvals
 
-A gated capability needs the UI of the session executing the delegation. Process children normally run `--print`
-without a UI; Herdr children are interactive, but a gate with neither an inherited approval nor an available UI is
-denied. The answer is **once**, **for this session**, or **always** (persisted for a bounded period, offered only for a
+A gated capability needs the UI of the session executing the delegation. Captured children use Pi's JSON mode
+without a UI; a gate with neither an inherited approval nor an available UI is denied. The answer is **once**, **for this session**, or **always** (persisted for a bounded period, offered only for a
 named definition, keyed `capability@subject`). Approvals inherit down the subtree intersected with each child's grant;
 a `once` never crosses a spawn. The approval store and governance ledger never store raw task text. `/grants
 approvals` lists what is persisted; `/grants revoke <capability>@<definition>` or `--all` removes it. The store lives
@@ -153,16 +152,25 @@ other. Acceptance is trust on first use: the first session accepts and announces
 Later additions are refused until `/grants workspaces` accepts the current id set, effective next session. Each session
 pins accepted ids to their resolved destinations, so a destination changed during that session is refused; the next
 session repins an already accepted id without another acceptance step. A writer routed to a workspace holds an
-exclusive lease: a kernel `flock` held by a helper process the parent owns, released on any death, refusing a second
-writer for the same root. It coordinates governed children only; it is not a sandbox, path confinement, or proof of
+exclusive lease. A kernel `flock` serializes live writers; execution-bound helper receipts separately prove that
+the previous captured subtree settled. Unknown cleanup quarantines the workspace even after the lock disappears,
+refusing a successor until the original ownership evidence proves settlement. It coordinates governed children only; it is not a sandbox, path confinement, or proof of
 anything a child did.
 
 ## Executors and the dashboard
 
-A child runs as a captured subprocess, or in a Herdr pane when a reachable Herdr server is probed at session start
-(`PI_DADDY_HERDR=1` demands it; `0` forces captured subprocesses). Non-writer panes are reaped when the owning parent
-agent settles, normally when the operator gets its prompt back; writer panes close when their child settles so the
-workspace lease can be released. `PI_DADDY_HERDR_KEEP_PANE=1` preserves non-writer panes only.
+This candidate targets captured execution on Linux x64. Qualification is limited to the measured Ubuntu WSL2 environment: kernel `6.18.33.2-microsoft-standard-WSL2`, x86_64, Node `v26.7.0`, and exact Pi 1.0.4. Other kernel/runtime combinations, native Windows, and WSL-to-Windows worker interop remain unqualified.
+A packaged native helper owns and reaps the cooperating child subtree. The final is accepted only when Pi's JSON
+protocol settles and matches the exact persisted current turn and active branch. Complete final text is preserved;
+work, final availability, subtree cleanup and optional observation completeness are separate result fields. A failed
+execution returns `isError` with its available evidence. Display, diagnostics and optional recording cannot replace
+the primary final. Unknown cleanup retains capacity and workspace exclusion.
+
+Set `PI_DADDY_HERDR=0` to select captured execution explicitly. A responding Herdr server may still be selected by
+probing, and `PI_DADDY_HERDR=1` still demands it, but governed Herdr execution **refuses as unqualified** in this
+candidate. No silent fallback occurs. Pane presence or closure does not prove a complete final or settled subtree;
+Herdr parity is a later qualification. Dashboard display remains independent of child execution qualification.
+
 `pi-daddy-dashboard` renders a ledger or activity timeline in a terminal; `/grants dashboard` opens it in a Herdr pane
 beside the session. Its execution history and current episode cost are
 read-only. A dashboard connected through `/grants dashboard` accepts
@@ -177,17 +185,26 @@ configuration where both exist.
 
 | Area | Variables |
 | :--- | :--- |
-| Governance | `PI_DADDY_GOVERNANCE`, `PI_DADDY_GRANT`, `PI_DADDY_GATED`, `PI_DADDY_MAX_DEPTH`, `PI_DADDY_FANOUT`, `PI_DADDY_LEDGER`, `PI_DADDY_EPISODE_COST_CEILING`, `PI_DADDY_APPROVAL_TIMEOUT` |
+| Governance | `PI_DADDY_GOVERNANCE`, `PI_DADDY_GRANT`, `PI_DADDY_GATED`, `PI_DADDY_MAX_DEPTH`, `PI_DADDY_FANOUT`, `PI_DADDY_LEDGER`, `PI_DADDY_APPROVAL_TIMEOUT` |
 | Child execution | `PI_DADDY_HERDR`, `PI_DADDY_HERDR_WORKSPACE`, `PI_DADDY_HERDR_KEEP_PANE`, `PI_DADDY_CHILD_IDLE_TIMEOUT`, `PI_DADDY_CHILD_TIMEOUT`, `PI_DADDY_ALLOW_UNRESOLVED_MODELS` |
 | Workspaces and retention | `PI_DADDY_WORKSPACE_REGISTRY`, `PI_DADDY_WORKSPACE_LEASE_DIR`, `PI_DADDY_EXECUTION_ARCHIVE`, `PI_DADDY_RETAIN_NATIVE_SESSIONS`, `PI_DADDY_NATIVE_SESSION_ROOT` |
-| Advisor | `PI_DADDY_ADVISOR`, `PI_DADDY_ADVISOR_KEY`, `PI_DADDY_ADVISOR_MODEL`, `PI_DADDY_ADVISOR_TASK_EGRESS` |
 | Activity | `PI_DADDY_ACTIVITY_TIMELINE`, `PI_DADDY_ACTIVITY_CONTENT` |
+
+`PI_DADDY_FANOUT` bounds active cooperating descendant sessions. Its default remains 8; literal 0 means exhausted,
+and malformed values refuse. A reservation includes the child and its disjoint descendant allowance, so concurrent
+calls can refuse while an earlier subtree holds capacity even when that subtree is not using every slot. Repeated
+settled work returns capacity; unknown cleanup does not. The same live owner retains reservations through reload.
+Changing its capacity configuration requires a new owner after the old subtree has settled. Depth and per-call
+limits still apply independently; this is not a lifetime call quota.
+
+The retired `PI_DADDY_EPISODE_COST_CEILING`, `PI_DADDY_ADVISOR`, `PI_DADDY_ADVISOR_KEY`,
+`PI_DADDY_ADVISOR_MODEL` and `PI_DADDY_ADVISOR_TASK_EGRESS` inputs are inert compatibility inputs.
 
 `PI_DADDY_CHILD_IDLE_TIMEOUT` is seconds without activity before a child is stopped (default fifteen minutes);
 activity is output, a child-session-file change, or Linux process-tree CPU/descendant activity.
 `PI_DADDY_CHILD_TIMEOUT` is the runaway ceiling for a child that never goes quiet (default six hours). The remaining
 names in the source inventory are internal propagation, attribution, workspace-pin, or dashboard-transport fields;
-do not set them manually. Refusals are thrown with stable codes (`CAPABILITY_ESCALATION`, `GATED_UNAPPROVED`,
+do not set them manually. Prelaunch refusals use stable codes (`CAPABILITY_ESCALATION`, `GATED_UNAPPROVED`,
 `DEPTH_EXCEEDED`, `FANOUT_EXCEEDED`, `WORKSPACE_NOT_AUTHORIZED`, `CHILD_TIMED_OUT`, `LEDGER_DAMAGED`, …); the full
 enumeration is `REFUSAL_CODES` and is pinned by the contract.
 
@@ -198,8 +215,10 @@ and `PI_DADDY_EXECUTION` (the lifecycle execution id). These are attribution met
 
 ### Per-definition model and thinking
 
-Child runtime defaults are reviewable beside each definition in `.pi/pi-daddy/settings.json`. Model precedence is
-explicit argument → session override → definition → global default → pi for model and thinking. Use `/grants models`
+Child runtime defaults are reviewable beside each definition in `.pi/pi-daddy/settings.json`. Selection applies
+explicit argument → session override → project definition settings → an intact authored model/thinking preference
+row → normal defaults/current Pi. Authored rows are never combined into a new model/thinking pair. Unsupported
+explicit pairs refuse; the runtime does not clamp effort or select a substitute model. Use `/grants models`
 or a connected dashboard to edit session overrides. Delegation never opens an automatic model chooser.
 
 ```json

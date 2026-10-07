@@ -4,7 +4,7 @@ import { mkdir, open, writeFile, type FileHandle } from "node:fs/promises";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import grantsExtension from "../extensions/grants.ts";
-import { createGrantsSession } from "../extensions/session.ts";
+import { createGrantsSession, loadProjectDefinitions } from "../extensions/session.ts";
 import { CollectedBoundedReadCleanupError } from "../src/kernel/bounded-read-failures.ts";
 import { buildCatalog } from "../src/kernel/catalog.ts";
 import { loadDefinitions } from "../src/kernel/definitions.ts";
@@ -19,11 +19,24 @@ function gate() {
   return { promise, resolve };
 }
 
+// Explicit discovery reads definitions before its concurrent catalog phase. Keep that first phase clean
+// so these cases measure independently owned definitions + registry closes in the actual catalog join.
+function catalogPhaseDefinitions(loader: typeof loadDefinitions): typeof loadDefinitions {
+  let initial = true;
+  return (cwd, skipped) => {
+    if (initial) {
+      initial = false;
+      return loadDefinitions(cwd, skipped);
+    }
+    return loader(cwd, skipped);
+  };
+}
+
 // Started discovery branches own independent physical closes even when another branch rejects first.
 for (const multiple of [false, true]) {
   for (const first of ["definitions", "registry"] as const) {
     for (const persistent of multiple ? [false, true] : [false]) {
-      test(`provider joins ${multiple ? "two physical failures" : "ordinary and physical failure"}, ${first} first, retry failure ${persistent}`, async () => {
+      test(`explicit discovery joins ${multiple ? "two physical failures" : "ordinary and physical failure"}, ${first} first, retry failure ${persistent}`, async () => {
         const cwd = await tempDir("catalog-cleanup-concurrent-");
         const oldAgent = process.env.PI_CODING_AGENT_DIR;
         const oldRegistry = process.env.PI_DADDY_WORKSPACE_REGISTRY;
@@ -82,9 +95,12 @@ for (const multiple of [false, true]) {
             };
         const session = createGrantsSession(
           undefined,
-          { root: { PI_DADDY_GRANT: "tool:read,tool:delegate", PI_DADDY_DEPTH: "0" } },
+          { root: { PI_DADDY_GRANT: "tool:read,tool:delegate", PI_DADDY_DEPTH: "0", PI_DADDY_WORKSPACE_PIN: "" } },
           undefined,
-          { definitions, registry: (path) => loadWorkspaceRegistry(path, reader("registry")) },
+          {
+            definitions: catalogPhaseDefinitions(definitions),
+            registry: (path) => loadWorkspaceRegistry(path, reader("registry")),
+          },
         );
         session.cwd = cwd;
         const hooks = new Map<string, Function>();
@@ -100,8 +116,7 @@ for (const multiple of [false, true]) {
           const prior = await buildCatalog({ cwd, observedTools: null });
           session.catalog = prior;
           process.env.PI_DADDY_WORKSPACE_REGISTRY = registry;
-          hooks.get("before_provider_request")!({ payload: { tools: [{ name: "read" }] } }, ctx);
-          const original = session.catalogReady;
+          const original = loadProjectDefinitions(session, cwd);
           const outcome = original.then(
             (value) => ({ value, error: undefined }),
             (error: unknown) => ({ value: undefined, error }),
@@ -128,9 +143,10 @@ for (const multiple of [false, true]) {
           assert.equal(session.discoveryCleanupFailure, failure);
           await assert.rejects(session.delegationContext(), (error) => error === failure);
           assert.equal(session.catalog, prior, "old catalog is display only");
-          assert.ok(
-            notices.some((message) => message.includes(failure.message)),
-            "actual provider diagnostic",
+          assert.equal(
+            session.reloadLifecycle.discoveryCleanupFailure,
+            failure,
+            "initiating owner retains the joined failure",
           );
           for (const [kind, error] of errors) {
             assert.equal(error.cause, causes[kind as keyof typeof causes]);
@@ -171,7 +187,7 @@ for (const multiple of [false, true]) {
 // Synchronous trusted callbacks must not escape the join or prevent another reader from starting.
 for (const schedule of ["ordinary registry", "typed registry", "ordinary definitions"] as const) {
   for (const replaced of schedule === "ordinary registry" ? [false, true] : [false]) {
-    test(`provider joins synchronous ${schedule} failure with late physical cleanup, owner replaced ${replaced}`, async () => {
+    test(`explicit discovery joins synchronous ${schedule} failure with late physical cleanup, owner replaced ${replaced}`, async () => {
       const cwd = await tempDir("catalog-sync-cleanup-");
       const oldAgent = process.env.PI_CODING_AGENT_DIR;
       const oldRegistry = process.env.PI_DADDY_WORKSPACE_REGISTRY;
@@ -242,16 +258,16 @@ for (const schedule of ["ordinary registry", "typed registry", "ordinary definit
         }
         const session = createGrantsSession(
           undefined,
-          { root: { PI_DADDY_GRANT: "tool:read,tool:delegate", PI_DADDY_DEPTH: "0" } },
+          { root: { PI_DADDY_GRANT: "tool:read,tool:delegate", PI_DADDY_DEPTH: "0", PI_DADDY_WORKSPACE_PIN: "" } },
           undefined,
           {
-            definitions: (path, skipped) => {
+            definitions: catalogPhaseDefinitions((path, skipped) => {
               calls.push("definitions");
               if (schedule === "ordinary definitions") throw ordinary;
               const branch = loadDefinitions(path, skipped, reader("definitions"));
               branches.push(branch);
               return branch;
-            },
+            }),
             registry: (path) => {
               calls.push("registry");
               if (schedule === "typed registry") throw errors.get("registry")!;
@@ -276,11 +292,7 @@ for (const schedule of ["ordinary registry", "typed registry", "ordinary definit
         session.catalog = prior;
         const initiatingOwner = session.reloadLifecycle;
         process.env.PI_DADDY_WORKSPACE_REGISTRY = registry;
-        hooks.get("before_provider_request")!(
-          { payload: { tools: [{ name: "read" }] } },
-          { cwd, ui: { notify: (message: string, type?: string) => notices.push({ message, type }) } },
-        );
-        const original = session.catalogReady;
+        const original = loadProjectDefinitions(session, cwd);
         let settled = false;
         const outcome = original.then(
           (value) => {
@@ -292,6 +304,7 @@ for (const schedule of ["ordinary registry", "typed registry", "ordinary definit
             return { value: undefined, error };
           },
         );
+        await opening.promise;
         const delegation = session.delegationContext();
         const delegationOutcome = delegation.then(
           (value) => ({ value, error: undefined }),
@@ -311,7 +324,9 @@ for (const schedule of ["ordinary registry", "typed registry", "ordinary definit
         assert.equal(settled, false, "catalog stays pending during the original physical close");
         assert.equal(settledDuringOpen, false, "catalog stays pending during actual reader acquisition");
         if (replaced) {
-          const replacement = { root: { PI_DADDY_GRANT: "tool:read", PI_DADDY_DEPTH: "0" } };
+          const replacement = {
+            root: { PI_DADDY_GRANT: "tool:read", PI_DADDY_DEPTH: "0", PI_DADDY_WORKSPACE_PIN: "" },
+          };
           session.reconcileEnvironment(replacement.root, replacement);
           session.catalogReady = Promise.resolve(prior);
           assert.equal((await session.delegationContext()).catalog, prior);
@@ -329,12 +344,11 @@ for (const schedule of ["ordinary registry", "typed registry", "ordinary definit
         assert.equal((await delegationOutcome).error, failure);
         assert.equal(initiatingOwner.discoveryCleanupFailure, failure);
         assert.equal(session.catalog, prior, "failed refresh cannot publish success");
-        assert.deepEqual(notices, [
-          {
-            message: `grants: catalog refresh cleanup failed — ${failure.message}; delegation remains failed.`,
-            type: "error",
-          },
-        ]);
+        assert.deepEqual(
+          notices,
+          [],
+          "explicit discovery propagates its error to its caller; it does not invent a provider notification",
+        );
         assert.equal(session.discoveryCleanupFailure, replaced ? undefined : failure);
         if (replaced) {
           assert.equal(session.reloadLifecycle.discoveryCleanupFailure, undefined);

@@ -88,7 +88,8 @@ export function piAvailable(): boolean {
 export const modelTestsEnabled = process.env.PI_DADDY_IT_MODEL === "1";
 
 export function runPi(options: RunOptions): Promise<RunResult> {
-  const args = ["--no-session", "--no-extensions"];
+  // These are disposable fixtures authored by this test harness; Pi 1.0.4 otherwise withholds project resources in RPC.
+  const args = ["--no-session", "--no-extensions", "--approve", "--offline", "--no-mcp", "--no-prompt-templates"];
   if (options.extension !== false) args.push("-e", EXTENSION);
   args.push("--mode", "rpc");
 

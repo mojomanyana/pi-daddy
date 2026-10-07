@@ -127,13 +127,13 @@ test("delegate_chain preserves each requested thinking level through planning in
   ]);
 });
 
-test("ADR-0033: a chain longer than the budget is refused BEFORE any dialog", async () => {
+test("an exhausted active allowance refuses a chain BEFORE any dialog", async () => {
   // Cardinality is checked first: a chain on its way to being refused must not interrupt the operator. The
-  // production change that breaks this: moving the budget check after the gate.
+  // production change that breaks this: moving the actual first-step reservation after the gate.
   const dir = await tempDir("grants-chain-");
   await definition(dir, "digger", "Read, Bash");
   const { tools, ctx, selects } = await harness(
-    { [ENV_GRANT]: "agent:digger,tool:read,tool:bash,tool:delegate", [ENV_FANOUT]: "2" },
+    { [ENV_GRANT]: "agent:digger,tool:read,tool:bash,tool:delegate", [ENV_FANOUT]: "0" },
     dir,
   );
 
@@ -148,7 +148,7 @@ test("ADR-0033: a chain longer than the budget is refused BEFORE any dialog", as
           undefined,
           ctx,
         ),
-    /chain refused[\s\S]*budget exhausted/,
+    /active descendant capacity exhausted/,
   );
   assert.equal(selects.length, 0, "no human may be asked about a chain that cannot run");
 });

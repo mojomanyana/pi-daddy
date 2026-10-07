@@ -24,17 +24,24 @@ async function read(path: string): Promise<string> {
 }
 async function principalBinding(path: string, inline: SkillDefinition, skillText: string): Promise<SkillDefinition> {
   const phase = inline.name;
-  if (!phases.includes(phase) || path !== join(dirname(dirname(path)), phase, "SKILL.md")) return inline;
+  const marked = inline.metadata?.["principal-package"] === "principal-pi-skills";
+  if (!phases.includes(phase) || path !== join(dirname(dirname(path)), phase, "SKILL.md")) {
+    if (marked) throw Error("marked Principal skill has a noncanonical phase or path");
+    return inline;
+  }
   const root = dirname(dirname(path));
   let packageText: string;
   try {
     packageText = await read(join(root, "package.json"));
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return inline;
+    if ((error as NodeJS.ErrnoException).code === "ENOENT" && !marked) return inline;
     throw error;
   }
   const pkg: unknown = JSON.parse(packageText);
-  if (!object(pkg) || pkg.name !== "principal-pi-skills") return inline;
+  if (!object(pkg) || pkg.name !== "principal-pi-skills") {
+    if (marked) throw Error("marked Principal skill has missing or wrong package identity");
+    return inline;
+  }
   const manifest: unknown = JSON.parse(await read(join(root, "principal-agents.json")));
   if (
     !object(manifest) ||

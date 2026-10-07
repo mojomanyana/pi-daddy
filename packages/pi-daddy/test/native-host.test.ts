@@ -16,7 +16,12 @@ test("ordinary public delegation opts into per-execution native session files wi
   // Actual private process fixture; native format, no claim this script is the installed pi or a model run.
   await writeFile(
     join(bin, "pi"),
-    `#!${process.execPath}\nimport fs from 'node:fs';import crypto from 'node:crypto';const a=process.argv.slice(2),i=a.indexOf('--session');if(i<0)throw Error('ordinary host did not provide retained target');const p=a[i+1];fs.writeFileSync(p,JSON.stringify({type:'session',version:3,id:crypto.randomUUID(),timestamp:new Date().toISOString(),cwd:process.cwd()})+'\\n',{flag:'wx',mode:0o600});process.stdout.write(p);\n`,
+    `#!${process.execPath}\nimport fs from 'node:fs';import crypto from 'node:crypto';
+const a=process.argv.slice(2),i=a.indexOf('--session');if(i<0)throw Error('ordinary host did not provide retained target');
+const p=a[i+1],header={type:'session',version:3,id:crypto.randomUUID(),timestamp:new Date().toISOString(),cwd:process.cwd()};
+const user={role:'user',content:a.at(-1),timestamp:1},final={role:'assistant',content:[{type:'text',text:p}],stopReason:'stop',timestamp:2};
+fs.writeFileSync(p,[header,{type:'message',id:'u',parentId:null,timestamp:header.timestamp,message:user},{type:'message',id:'a',parentId:'u',timestamp:header.timestamp,message:final}].map(e=>JSON.stringify(e)).join('\\n')+'\\n',{flag:'wx',mode:0o600});
+for(const e of [header,{type:'agent_start'},{type:'message_end',message:user},{type:'message_end',message:final},{type:'agent_end'},{type:'agent_settled'}])process.stdout.write(JSON.stringify(e)+'\\n');\n`,
   );
   await chmod(join(bin, "pi"), 0o700);
   const env = {
@@ -49,6 +54,9 @@ test("ordinary public delegation opts into per-execution native session files wi
     for (const id of ["call:1", "call:2"]) {
       const result = await tools.get("delegate").execute(id, { task: "same", tools: [] }, undefined, undefined, ctx);
       assert.equal(result.details.exitCode, 0);
+      assert.equal(result.isError, false);
+      assert.equal(result.details.final.state, "complete");
+      assert.equal(result.details.cleanup.state, "settled");
       await drainExecutionRetention(result.details.retention);
       const m = parseExecutionRetentionManifest(await readFile(result.details.retention.manifestPath, "utf8"));
       assert.equal(m.nativeSession.status, "verified");

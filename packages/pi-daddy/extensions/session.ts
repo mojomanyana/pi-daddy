@@ -24,7 +24,9 @@ import { createApprovalGateProvider } from "../src/governance/approval-prompt.ts
 import { makeCatalog, skillPathsFromCatalog, type CatalogLoaders, type Catalog } from "../src/kernel/catalog.ts";
 import type { SkillDefinition } from "../src/kernel/definitions.ts";
 import { DELEGATE_CAPABILITY, type DelegationContext } from "../src/kernel/delegate.ts";
-import { budgetFromEnv } from "../src/kernel/fanout.ts";
+import { capacityForLifecycle } from "./session-capacity.ts";
+import type { CapacityAllocator } from "../src/kernel/capacity.ts";
+import type { StructuredRefusal } from "../src/kernel/refusals.ts";
 import { chooseExecutor, ENV_HERDR, type ExecutorChoice } from "../src/executors/executor.ts";
 import { WILDCARD } from "../src/kernel/pi-tools.ts";
 import {
@@ -169,8 +171,10 @@ export interface GrantsSession extends NativeSessionHost {
   ownExecutionId?: string;
   /** Stable identity shared by this root session and every descendant. */
   episodeId: string;
-  /** Descendants this subtree may still create — the cardinality bound ADR-0008 never had. */
+  /** Configured active descendant capacity; use capacity.available for actual reservations. */
   fanoutBudget: number;
+  capacity: CapacityAllocator;
+  capacityRefusal?: StructuredRefusal;
   /** Whether delegation tools are active. Reconciled against the owner-bound root at session_start. */
   mayDelegate: boolean;
   /** True only after session_start binds this instance to ctx.sessionManager. */
@@ -506,17 +510,24 @@ export async function loadProjectDefinitions(
   }
 }
 
-async function loadProjectDiscovery(session: GrantsSession, cwd: string, lifecycle: ReloadLifecycle, selected?: readonly SelectedCommand[]): Promise<void> {
+async function loadProjectDiscovery(
+  session: GrantsSession,
+  cwd: string,
+  lifecycle: ReloadLifecycle,
+  selected?: readonly SelectedCommand[],
+): Promise<void> {
   await establishRootPin(session, lifecycle);
   const skips: string[] = [];
   assertDiscoveryHealthy(session, lifecycle);
   const snapshot = selected === undefined ? undefined : await selectedDefinitions(selected);
-  const definitions = snapshot?.definitions ?? await (session.discovery.definitions ?? loadDefinitions)(cwd, (_path, reason) => skips.push(reason));
+  const definitions =
+    snapshot?.definitions ??
+    (await (session.discovery.definitions ?? loadDefinitions)(cwd, (_path, reason) => skips.push(reason)));
   if (snapshot) skips.push(...snapshot.skips);
   assertDiscoveryHealthy(session, lifecycle);
   const ready = buildCatalog(
     {
-      ...(snapshot ? {snapshot} : {}),
+      ...(snapshot ? { snapshot } : {}),
       cwd,
       observedTools: session.observedTools,
       // ADR-0035: `workspace:<id>` is a capability, so the registered ids belong in the catalog the same way
@@ -577,6 +588,7 @@ export function createGrantsSession(
   const depth = bounds.depth;
   const maxDepth = runtimeConfig.malformed ? 0 : bounds.maxDepth;
   const emptyCatalog = makeCatalog([]);
+  const capacityState = capacityForLifecycle(activeLifecycle, environment[ENV_FANOUT]);
   const session: GrantsSession = {
     adoptedLegacyEnv,
     governed,
@@ -608,9 +620,9 @@ export function createGrantsSession(
     ownSpawnId: environment[ENV_PARENT_ID]?.trim() || `d${depth}`,
     ownExecutionId: environment[ENV_EXECUTION_ID]?.trim() || undefined,
     episodeId,
-    // The cardinality bound ADR-0008 never had: it attenuates downward like depth, so a subtree can never
-    // create more descendants than its root was given — with no shared state, no lock and no counter file.
-    fanoutBudget: budgetFromEnv(environment[ENV_FANOUT]),
+    fanoutBudget: capacityState.allocator.total,
+    capacity: capacityState.allocator,
+    capacityRefusal: capacityState.refusal,
     /**
      * Review finding S-5, fixed. The comment on the tools has always claimed conditional registration; the
      * call was unconditional, `DELEGATE_CAPABILITY` was imported and never used, and "withhold it and the

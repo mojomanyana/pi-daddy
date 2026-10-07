@@ -198,6 +198,21 @@ it measured nothing rather than passing quietly.
 
 ## Decisions still in force
 
+### Captured execution and staged backend qualification — 2026-10-07
+
+The authorized Release A targets Pi 1.0.4 and captured Linux x64 execution. A complete final requires settled Pi
+JSON protocol plus an exact current persisted branch/turn match. The native subreaper's execution-bound receipt,
+not parent death or pane closure, establishes subtree cleanup. Uncertain cleanup retains capacity and workspace
+exclusion; referenced ownership directories are durable evidence. Optional observation/display loss cannot replace
+verified primary work. Native tool results preserve separate work, final, cleanup and observation state.
+
+This reverses ADR-0031's runnable Herdr auto-selection until parity is independently qualified: selection remains
+visible but governed execution refuses with no fallback. `PI_DADDY_HERDR=0` explicitly chooses captured execution.
+It also reverses ADR-0033's partial required handoff: oversized complete output blocks the dependent step and stays
+available in the returned result. These are mechanical process/protocol guarantees, not model quality or hostile
+same-user containment claims. Source tests include actual model-free Pi CLI and native phase handoffs.
+
+
 **2026-10-07 — passive cost coverage (P03).** Episode reports preserve a missing recorded child charge as null,
 separate from an observed zero. Rows, groups and totals retain the observed subtotal with complete/partial/unavailable
 coverage. Incomplete episode costs do not become zero-valued percentile samples. Coverage is explicitly limited to

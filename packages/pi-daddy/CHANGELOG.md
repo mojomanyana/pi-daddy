@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- **Delegation bounds:** budget now caps active descendants through disjoint subtree reservations, alongside
+  depth and per-call limits. Settled children return capacity; uncertain cleanup retains it. A single child
+  conservatively reserves the available subtree, and active ownership survives extension reloads.
+- **Bounded input and approval handling:** retain cleanup failures on the original owner, guard manual history
+  reads, and time out approvals without weakening their authority. Named approval revocation uses the pinned
+  selected definition; `revoke --all` remains available without resource acquisition.
+- **Captured execution contract:** qualify Pi 1.0.4 JSON settlement against the exact persisted current turn and
+  active branch. Preserve complete final text and expose work/final/cleanup/observation states independently.
+  Failed children return native error results with available evidence; optional recording failures preserve work.
+- **Cleanup:** use the packaged Linux x64 subreaper and execution-bound durable receipts. Unknown subtree cleanup
+  retains capacity and quarantines workspace reuse; preserve the referenced ownership directory as evidence.
+- **Staged backend release:** governed Herdr execution refuses, even when its server answers, until parity is
+  qualified. Explicitly set `PI_DADDY_HERDR=0` for captured execution; there is no fallback after selection.
+- **Required handoffs:** block dependent chain steps when the complete prior final exceeds the handoff limit.
+  The completed step and its full result remain available; no tail-only handoff is promoted to complete.
+- **Selected Principal resources:** bind the native phase to selected inline and delegated bytes, hash and exact
+  package manifest, use `delegate_describe` to obtain the required definition identity, and pin it until reload.
+  Missing, moved or tampered marked Principal resources refuse rather than becoming ordinary inline definitions.
+
 - Remove monetary execution gates, external advisors and the automatic first-delegation model chooser. Recognized
   legacy settings and cost arguments are inert; manual model edits, permission approvals and retained historical
   usage remain. Pi 1.0.4 argument preparation validates active arguments after removing the retired cost override.

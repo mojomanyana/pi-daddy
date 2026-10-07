@@ -1,3 +1,4 @@
+import { piFixtureScript } from "./pi-fixture.ts";
 import assert from "node:assert/strict";
 import { chmod, readFile, rm, writeFile } from "node:fs/promises";
 import { delimiter, join } from "node:path";
@@ -134,14 +135,14 @@ test("reported cost never pauses or stops a live child", async () => {
   const shim = join(bin, "pi");
   await writeFile(
     shim,
-    `#!/usr/bin/env node
+    piFixtureScript(`#!/usr/bin/env node
 const fs = require("node:fs");
 const path = process.argv[process.argv.indexOf("--session") + 1];
 const usage = { input: 10, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 11,
   cost: { input: 0.8, output: 0.2, cacheRead: 0, cacheWrite: 0, total: 1 } };
-fs.appendFileSync(path, JSON.stringify({ type: "message", message: { role: "assistant", provider: "p", model: "m", usage } }) + "\\n");
+__piFixture.usage=usage; __piFixture.provider="p"; __piFixture.model="m"; __piFixture.persist();
 setTimeout(() => { console.log("completed despite cost"); }, 1200);
-`,
+`),
     "utf8",
   );
   await chmod(shim, 0o755);
@@ -234,31 +235,41 @@ test("PR 3e: a silent child is stopped by the inactivity bound, recorded as idle
   }
 });
 
-test("PR 3e: the temporary session directory is removed even when the run throws before the child starts", async () => {
-  // Review finding 2: it leaked on every throw path. Breaks by: moving dispose() back into the success branch.
-  const { readdir } = await import("node:fs/promises");
+test("failed lifecycle observations preserve verified output and dispose temporary session", async () => {
+  const { readdir, mkdir } = await import("node:fs/promises");
   const { tmpdir } = await import("node:os");
   const dir = await tempDir("execute-child-dispose-");
-  const unwritable = dir; // a directory as the ledger path: the strict starting append fails (EISDIR) and rethrows
-  // **A SET, not a count.** The count compared process-wide entries in the shared tmpdir while other test
-  // FILES run in parallel and create and remove directories of the same prefix, so a sibling's cleanup landing
-  // between the two reads failed this test with `1 !== 2` — a directory vanishing, which is the opposite of
-  // what it is looking for. Observed once on Node 22 in CI and not reproducible locally. Comparing what is NEW
-  // makes it immune to anything another file does, and still fails for the leak it exists to catch.
+  const bin = join(dir, "bin");
+  await mkdir(bin);
+  await writeFile(join(bin, "pi"), piFixtureScript("console.log('verified output')"));
+  await chmod(join(bin, "pi"), 0o755);
+  const oldPath = process.env.PATH;
+  process.env.PATH = `${bin}${delimiter}${oldPath ?? ""}`;
   const listExec = async () => new Set((await readdir(tmpdir())).filter((name) => name.startsWith("pi-daddy-exec_")));
   const before = await listExec();
-  await assert.rejects(
-    executePlannedChild({
-      session: { ledgerPath: unwritable, executor: { kind: "process" } } as GrantsSession,
+  try {
+    const result = await executePlannedChild({
+      session: { ledgerPath: dir, executor: { kind: "process" } } as GrantsSession,
       plan: plan(),
       childId: "d0.1",
       executionId,
       parentExecutionId: null,
       cwd: dir,
-    }),
-  );
-  const leaked = [...(await listExec())].filter((name) => !before.has(name));
-  assert.deepEqual(leaked, [], "a session directory allocated for this run survived its failure");
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.work, "succeeded");
+    assert.equal(result.final?.state, "complete");
+    assert.equal(result.cleanup?.state, "settled");
+    assert.equal(result.observation?.state, "incomplete");
+    assert.match(result.text, /verified output/);
+    assert.deepEqual(
+      [...(await listExec())].filter((name) => !before.has(name)),
+      [],
+    );
+  } finally {
+    if (oldPath === undefined) delete process.env.PATH;
+    else process.env.PATH = oldPath;
+  }
 });
 
 test("a governed child sees exactly the three work-attribution variables", async () => {
@@ -269,10 +280,10 @@ test("a governed child sees exactly the three work-attribution variables", async
   const shim = join(bin, "pi");
   await writeFile(
     shim,
-    `#!/usr/bin/env node
+    piFixtureScript(`#!/usr/bin/env node
 const keys = ${JSON.stringify(["PI_DADDY_EPISODE", "PI_DADDY_DEFINITION", "PI_DADDY_EXECUTION"])};
 console.log(JSON.stringify(Object.fromEntries(keys.map((key) => [key, process.env[key]]))));
-`,
+`),
     "utf8",
   );
   await chmod(shim, 0o755);
@@ -314,19 +325,14 @@ test("terminal lifecycle captures child usage before disposing the private sessi
   const shim = join(bin, "pi");
   await writeFile(
     shim,
-    `#!/usr/bin/env node
+    piFixtureScript(`#!/usr/bin/env node
 const fs = require("node:fs");
 const path = process.argv[process.argv.indexOf("--session") + 1];
 const usage = {input:7,output:2,cacheRead:3,cacheWrite:1,reasoning:1,totalTokens:14,cost:{input:0.07,output:0.02,cacheRead:0.01,cacheWrite:0.01,total:0.11}};
-fs.writeFileSync(path, [
-  {type:"message",message:{role:"user",content:"PRIVATE CHILD TASK"}},
-  {type:"model_change",provider:"openai-codex",modelId:"gpt-5.3-codex"},
-  {type:"thinking_level_change",thinkingLevel:"high"},
-  {type:"compaction"},
-  {type:"message",message:{role:"assistant",content:"PRIVATE CHILD ANSWER",provider:"openai-codex",model:"gpt-5.3-codex",usage}}
-].map(JSON.stringify).join("\\n") + "\\n");
+__piFixture.usage=usage; __piFixture.provider="openai-codex"; __piFixture.model="gpt-5.3-codex";
+__piFixture.entries=[{type:"model_change",provider:"openai-codex",modelId:"gpt-5.3-codex"}, {type:"thinking_level_change",thinkingLevel:"high"}, {type:"compaction",usage:{input:0,output:0,cacheRead:0,cacheWrite:0,totalTokens:0,cost:{input:0,output:0,cacheRead:0,cacheWrite:0,total:0}}}];
 console.log("done");
-`,
+`),
     "utf8",
   );
   await chmod(shim, 0o755);

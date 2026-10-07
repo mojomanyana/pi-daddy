@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { BoundedReadCleanupError, readBoundedFile } from "../src/kernel/bounded-read.ts";
 import { appendLedgerEvent, buildSessionConfigEvent } from "../src/governance/ledger.ts";
 import { readRecords } from "../src/governance/record.ts";
 import {
@@ -23,19 +23,27 @@ export interface SessionModelPromptUI {
   notify(message: string, type?: "info" | "warning" | "error"): void;
 }
 
-async function historicalDefinitions(path: string | undefined): Promise<string[]> {
+/** Trusted composition only; no requester or environment can supply these lifecycle/I/O ports. */
+export interface ManualModelControl {
+  read?: typeof readBoundedFile;
+  assertHealthy?: () => void;
+  onReadCleanup?: (error: BoundedReadCleanupError) => void;
+}
+async function historicalDefinitions(path: string | undefined, read = readBoundedFile): Promise<string[]> {
   if (!path) return [];
-  try {
-    const parsed = readRecords(await readFile(path, "utf8"));
-    return parsed.records
-      .map((record) => record.body as { event?: unknown; agentType?: unknown })
-      .filter((body) => body.event === "capability_decision" && typeof body.agentType === "string")
-      .map((body) => body.agentType as string)
-      .filter((name) => name !== "delegate");
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw error;
+  const result = await read(path, { maxBytes: 64 * 1024 * 1024, timeoutMs: 3000 });
+  if (!result.ok) {
+    if ("code" in result && result.code === "ENOENT") return [];
+    throw new Error(`manual model history unavailable: ${result.detail}`);
   }
+  const parsed = readRecords(result.text);
+  if (parsed.damage)
+    throw new Error(`manual model history damaged at line ${parsed.damage.line}: ${parsed.damage.reason}`);
+  return parsed.records
+    .map((record) => record.body as { event?: unknown; agentType?: unknown })
+    .filter((body) => body.event === "capability_decision" && typeof body.agentType === "string")
+    .map((body) => body.agentType as string)
+    .filter((name) => name !== "delegate");
 }
 
 export function sessionModelRows(state: SessionModelPromptState, names: readonly string[]) {
@@ -112,8 +120,10 @@ async function choose(
   current: readonly string[],
   ui: SessionModelPromptUI,
   trigger: "first-delegation" | "grants-models",
+  control: ManualModelControl,
 ): Promise<void> {
-  const names = [...new Set([...(await historicalDefinitions(state.ledgerPath)), ...current])].sort();
+  const names = [...new Set([...(await historicalDefinitions(state.ledgerPath, control.read)), ...current])].sort();
+  control.assertHealthy?.();
   if (!ui.hasUI) {
     await record(state, "kept", trigger);
     return;
@@ -123,6 +133,7 @@ async function choose(
       `Child model defaults\n\n${table(state, names)}\n\nPress Enter to keep, or enter edits one per line.`,
       "<definition> <provider:model> <thinking> | all <provider:model> <thinking>",
     );
+    control.assertHealthy?.();
     if (answer === undefined) throw new Error("session model selection was dismissed; no child was spawned");
     if (!answer.trim()) {
       await record(state, "kept", trigger);
@@ -149,8 +160,19 @@ export async function saveSessionModelEdits(
   return null;
 }
 
-export async function changeSessionModels(state: SessionModelPromptState, ui: SessionModelPromptUI): Promise<void> {
-  await choose(state, [...state.definitions.keys()], ui, "grants-models");
+export async function changeSessionModels(
+  state: SessionModelPromptState,
+  ui: SessionModelPromptUI,
+  control: ManualModelControl = {},
+): Promise<void> {
+  try {
+    control.assertHealthy?.();
+    await choose(state, [...state.definitions.keys()], ui, "grants-models", control);
+    control.assertHealthy?.();
+  } catch (error) {
+    if (error instanceof BoundedReadCleanupError) control.onReadCleanup?.(error);
+    throw error;
+  }
 }
 
 export function renderSessionModels(state: SessionModelPromptState): string {

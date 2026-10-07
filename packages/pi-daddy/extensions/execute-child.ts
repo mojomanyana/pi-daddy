@@ -1,3 +1,10 @@
+import { BoundedReadCleanupError } from "../src/kernel/bounded-read.ts";
+import { retainDiscoveryCleanupFailure } from "./session.ts";
+import type { CapacityReservation } from "../src/kernel/capacity.ts";
+import { HERDR_UNQUALIFIED_REASON } from "../src/executors/executor.ts";
+import { runCapturedExecution } from "../src/executors/captured-execution.ts";
+import type { ChildFinal } from "../src/executors/child-final.ts";
+import type { CapturedWorkerCleanup } from "../src/kernel/captured-worker-contract.ts";
 import type { Delegation } from "../src/kernel/delegate.ts";
 import {
   beginExecutionRetention,
@@ -42,6 +49,12 @@ export interface DelegationOutcome {
   retention?: RetentionStatus;
   /** A loud best-effort post-execution observation failure; execution ownership is still settled. */
   control?: "failed";
+  work?: "succeeded" | "failed" | "unknown";
+  final?: ChildFinal;
+  cleanup?: CapturedWorkerCleanup;
+  observation?: { state: "complete" | "incomplete"; reasons: string[] };
+  diagnostics?: string;
+  diagnosticsTruncated?: boolean;
 }
 /**
  * The upstream controller's token, honoured ONLY when the child otherwise exited cleanly non-zero.
@@ -53,14 +66,26 @@ export interface DelegationOutcome {
  * by anybody's gate, so the token cannot be taken at its word there.
  */
 export function isCriticalAssuranceBlock(
-  outcome: Pick<DelegationOutcome, "ok" | "text" | "timedOut" | "aborted" | "truncated" | "spawnFailed">,
+  outcome: Pick<
+    DelegationOutcome,
+    "ok" | "text" | "exitCode" | "timedOut" | "aborted" | "truncated" | "spawnFailed" | "control" | "cleanup"
+  >,
 ): boolean {
   // `truncated` is deliberately NOT here. The process executor keeps the HEAD of the output
   // (`run-child.ts` slices to the cap and stops appending) and the token is matched at byte 0, so a
   // genuine veto with a rationale over the output cap is still a genuine veto — rejecting it broke the
   // pass-through ADR-0034 pins, in the fix that was supposed to protect it. What must be rejected is a
   // child that never finished speaking: killed, cancelled, or never started.
-  if (outcome.ok || outcome.timedOut || outcome.aborted || outcome.spawnFailed) return false;
+  if (
+    outcome.ok ||
+    outcome.timedOut ||
+    outcome.aborted ||
+    outcome.spawnFailed ||
+    outcome.control === "failed" ||
+    outcome.cleanup?.state === "unknown" ||
+    !(outcome.exitCode !== null && outcome.exitCode > 0)
+  )
+    return false;
   return outcome.text.trimStart().startsWith("BLOCKED_CRITICAL_ASSURANCE");
 }
 
@@ -96,8 +121,9 @@ export interface ChildProgressUpdate {
  * has already run, so failing closed there prevents nothing and used to discard completed work while
  * blaming "ledger" (R-99). The failure is reported alongside the outcome instead of replacing it.
  */
-export async function executePlannedChild(input: {
+export interface ChildExecutionInput {
   session: GrantsSession;
+  capacityReservation?: CapacityReservation;
   plan: Delegation;
   agent?: string;
   childId: string;
@@ -109,9 +135,56 @@ export async function executePlannedChild(input: {
   resolvedRuntime?: ResolvedDefinitionRuntime;
   signal?: AbortSignal;
   onProgress?: (update: ChildProgressUpdate) => void;
-}): Promise<DelegationOutcome> {
+}
+export async function executePlannedChild(input: ChildExecutionInput): Promise<DelegationOutcome> {
+  let executorEntered = false;
+  try {
+    return await executePreparedChild(input, () => {
+      executorEntered = true;
+    });
+  } catch (error) {
+    if (executorEntered) throw error;
+    // Every operation above the executor-entry marker is local setup: no helper or worker exists yet.
+    input.capacityReservation?.finalize({ state: "not-started", reason: "child setup failed before executor entry" });
+    const failures: unknown[] = [error];
+    try {
+      const released = await releaseDelegationWorkspace({
+        prepared: input.preparedWorkspace,
+        childId: input.childId,
+        episodeId: input.session.episodeId,
+        executionId: input.executionId,
+        parentExecutionId: input.parentExecutionId,
+        ledgerPath: input.session.ledgerPath,
+        reason: "setup-failed",
+      });
+      if (released === "lost" || released === "retained")
+        failures.push(new Error(`workspace setup release is ${released}`));
+    } catch (releaseError) {
+      failures.push(releaseError);
+    }
+    try {
+      input.plan.disposeHandoff?.();
+    } catch (disposeError) {
+      failures.push(disposeError);
+    }
+    if (failures.length > 1) throw new AggregateError(failures, failures.map(String).join("; "));
+    throw error;
+  }
+}
+async function executePreparedChild(
+  input: ChildExecutionInput,
+  onExecutorEntry: () => void,
+): Promise<DelegationOutcome> {
   const { session, plan, childId, executionId, parentExecutionId, preparedWorkspace, signal, onProgress } = input;
   const ledgerPath = session.ledgerPath;
+  let executorEntered = false;
+  const teardownFailures: string[] = [];
+  const controlFailures: string[] = [];
+  const lifecycle = session.reloadLifecycle;
+  const onReadCleanup = (error: BoundedReadCleanupError): void => {
+    if (lifecycle) retainDiscoveryCleanupFailure(session, error, lifecycle);
+    controlFailures.push(`session read cleanup unresolved: ${error.message}`);
+  };
   const runtimeAttribution = (observed?: {
     resolvedModel?: { provider: string; modelId: string };
     thinking?: string;
@@ -171,6 +244,15 @@ export async function executePlannedChild(input: {
       }
   }
 
+  async function observeUsage(): Promise<import("../src/executors/activity-session.ts").ChildUsageObservation> {
+    try {
+      return await activitySession.usage();
+    } catch (error) {
+      if (error instanceof BoundedReadCleanupError) onReadCleanup(error);
+      teardownFailures.push(`usage observation unavailable: ${String(error)}`);
+      return { unavailable: "session-invalid" };
+    }
+  }
   async function executeWithActivitySession(): Promise<DelegationOutcome> {
     const args = activitySession.args;
     // The process executor adds a second signal that is live during a tool call: the child tree's CPU time and
@@ -188,7 +270,11 @@ export async function executePlannedChild(input: {
     if (ledgerPath) {
       try {
         await appendLedgerEvent(
-          { path: ledgerPath, strict: true },
+          {
+            path: ledgerPath,
+            strict: false,
+            onFailure: (cause) => teardownFailures.push(`starting observation failed: ${String(cause)}`),
+          },
           buildChildLifecycleEvent({
             episodeId: session.episodeId,
             executionId,
@@ -207,14 +293,6 @@ export async function executePlannedChild(input: {
           }),
         );
       } catch (error) {
-        await releaseDelegationWorkspace({
-          prepared: preparedWorkspace,
-          childId,
-          episodeId: session.episodeId,
-          executionId,
-          parentExecutionId,
-          reason: "ledger-failed",
-        });
         throw error;
       }
     }
@@ -256,7 +334,7 @@ export async function executePlannedChild(input: {
     let releaseReason = "failed";
     let retainWriterLease = false;
     let terminalAttempted = false;
-    const teardownFailures: string[] = [];
+
     let runtimeRecord: Promise<void> | undefined;
     const recordRunning = (executor: "process" | "herdr", pane?: { id: string; agentName: string }): void => {
       if (!ledgerPath) return;
@@ -290,6 +368,10 @@ export async function executePlannedChild(input: {
       }
     };
     try {
+      if (String(session.executor.kind) === "herdr")
+        throw new GovernanceRefusal(refusal("EXECUTOR_UNAVAILABLE", HERDR_UNQUALIFIED_REASON));
+      executorEntered = true;
+      onExecutorEntry();
       const output =
         session.executor.kind === "herdr"
           ? await runHerdrPane({
@@ -321,9 +403,16 @@ export async function executePlannedChild(input: {
               onNativeTab: (tabId) => retention.native({ tabId }),
               onSnapshot: onProgress ? (snapshot) => onProgress({ snapshot }) : undefined,
             })
-          : await runChild({
-              command: writerLease ? "setpriv" : "pi",
-              args: writerLease ? ["--pdeathsig", "KILL", "--", "pi", ...args] : args,
+          : await runCapturedExecution({
+              executionId,
+              sessionPath: activitySession.path,
+              onReadCleanup,
+              onOwnership: async (identity) => {
+                input.capacityReservation?.bindOwnership(identity);
+                await preparedWorkspace?.lease.attachCapturedWorker(identity);
+              },
+              command: "pi",
+              args,
               env: mergeChildEnv(process.env, plan.env),
               cwd,
               signal: executionSignal,
@@ -340,7 +429,7 @@ export async function executePlannedChild(input: {
                 // Lease attachment is a security hook and may fail the spawn. The shared reporters isolate
                 // display exceptions before they reach this callback; runChild deliberately kills on any error
                 // here, so presentation must never be added directly without that reporter boundary.
-                preparedWorkspace?.lease.attachProcess(pid);
+
                 retention.native({ pid });
                 recordRunning("process");
                 onProgress?.({ state: "running" });
@@ -349,7 +438,18 @@ export async function executePlannedChild(input: {
 
       if (sessionFlag >= 0) retention.observeSession({ source: "pi-session-file", value: plan.args[sessionFlag + 1] });
       retention.capture("result", Buffer.from(output.text), true);
-      const childFailed = Boolean(output.spawnError || output.aborted || output.timedOut || output.code !== 0);
+      if ("diagnosticsTruncated" in output && output.diagnosticsTruncated)
+        teardownFailures.push("diagnostic output truncated");
+      const final = "final" in output ? (output.final as ChildFinal) : undefined;
+      const cleanup = "cleanup" in output ? (output.cleanup as CapturedWorkerCleanup) : undefined;
+      input.capacityReservation?.finalize(
+        cleanup ?? { state: "unknown", reason: "executor supplied no qualified cleanup" },
+      );
+      const workFailed = Boolean(output.spawnError || output.aborted || output.timedOut || output.code !== 0);
+      const finalUnavailable = final?.state === "unavailable";
+      const cleanupUnknown = cleanup?.state === "unknown";
+      retainWriterLease = Boolean(writerLease && cleanupUnknown);
+      const childFailed = workFailed || finalUnavailable || cleanupUnknown;
       retention.finish({
         code: output.code,
         signal: output.signal ?? null,
@@ -358,7 +458,7 @@ export async function executePlannedChild(input: {
         truncated: output.truncated,
         failed: childFailed,
       });
-      const usageObservation = await activitySession.usage();
+      const usageObservation = await observeUsage();
 
       releaseReason = output.timedOut ? "timeout" : output.aborted ? "cancelled" : childFailed ? "failed" : "completed";
       if (activityStarted)
@@ -440,7 +540,11 @@ export async function executePlannedChild(input: {
                   `(${ENV_CHILD_IDLE_TIMEOUT} sets the bound in seconds)`
                 : `ran past its ${describeBound(configuredTimeoutMs)} ceiling and was killed ` +
                   `(${ENV_CHILD_TIMEOUT} sets it in seconds)`
-              : `exited with code ${output.code}`;
+              : finalUnavailable
+                ? `has no attributable complete final: ${final.reason}`
+                : cleanupUnknown
+                  ? `has unverified subtree cleanup: ${cleanup.reason}`
+                  : `exited with code ${output.code}`;
         // A stable code for every execution failure. Without these an external controller could tell a
         // policy refusal from an internal error, but not a lost writer lease from a user pressing stop
         // (R-103), and not a missing `setpriv` from an ordinary crash (R-107).
@@ -452,10 +556,18 @@ export async function executePlannedChild(input: {
               ? "CHILD_TIMED_OUT"
               : output.aborted
                 ? "CHILD_CANCELLED"
-                : "CHILD_EXIT_NONZERO";
+                : output.code === 0 && (finalUnavailable || cleanupUnknown)
+                  ? "EXECUTOR_UNAVAILABLE"
+                  : "CHILD_EXIT_NONZERO";
         const failed: DelegationOutcome = {
           ok: false,
-          text: output.text.trim(),
+          work: workFailed ? "failed" : final?.state === "complete" ? "succeeded" : "unknown",
+          ...(final ? { final } : {}),
+          ...(cleanup ? { cleanup } : {}),
+          ...("diagnostics" in output ? { diagnostics: String(output.diagnostics) } : {}),
+          ...("diagnosticsTruncated" in output ? { diagnosticsTruncated: Boolean(output.diagnosticsTruncated) } : {}),
+          ...(cleanupUnknown ? { control: "failed" as const } : {}),
+          text: output.text,
           reason: `the sub-agent ${why}`,
           granted: plan.effective,
           depth: plan.childDepth,
@@ -472,7 +584,12 @@ export async function executePlannedChild(input: {
 
       const succeeded: DelegationOutcome = {
         ok: true,
-        text: output.text.trim(),
+        work: "succeeded",
+        ...(final ? { final } : {}),
+        ...(cleanup ? { cleanup } : {}),
+        ...("diagnostics" in output ? { diagnostics: String(output.diagnostics) } : {}),
+        ...("diagnosticsTruncated" in output ? { diagnosticsTruncated: Boolean(output.diagnosticsTruncated) } : {}),
+        text: output.text,
         granted: plan.effective,
         depth: plan.childDepth,
         exitCode: output.code,
@@ -481,6 +598,7 @@ export async function executePlannedChild(input: {
       await teardown();
       return withTeardownNotes(succeeded);
     } catch (error) {
+      if (!executorEntered) throw error;
       if (activityStarted && !activityFinished)
         try {
           await activity.childFinished(
@@ -501,12 +619,8 @@ export async function executePlannedChild(input: {
         truncated: false,
         failed: true,
       });
-      retainWriterLease = Boolean(writerLease && isHerdrWriterCloseFailure(error));
-      const usageObservation = await activitySession.usage();
-      try {
-      } catch {
-        /* cost observation must not replace the executor's primary failure */
-      }
+      retainWriterLease ||= Boolean(writerLease && isHerdrWriterCloseFailure(error));
+      const usageObservation = await observeUsage();
       if (ledgerPath && !terminalAttempted) {
         // Best-effort: this records the failure, so it must not REPLACE the failure. A strict append that
         // throws here would discard the original error — including HerdrWriterCloseError, whose whole
@@ -558,7 +672,7 @@ export async function executePlannedChild(input: {
       // Attached, not dropped. `withTeardownNotes` was applied on both return paths and neither throw path,
       // so a failed lease-release record — the thing that makes the NEXT owner report a phantom crash — was
       // collected into an array nothing read.
-      throw errorWithTeardownNotes(error, teardownFailures);
+      throw errorWithTeardownNotes(error, [...controlFailures, ...teardownFailures]);
     }
     /**
      * Surfaces a teardown failure WITHOUT discarding the result. The child already ran; telling the
@@ -584,18 +698,25 @@ export async function executePlannedChild(input: {
       return error;
     }
     function withTeardownNotes(outcome: DelegationOutcome): DelegationOutcome {
-      const observed = { ...outcome, retention: retention.status() };
-      if (teardownFailures.length === 0) return observed;
+      const observed = {
+        ...outcome,
+        retention: retention.status(),
+        observation: {
+          state: teardownFailures.length ? ("incomplete" as const) : ("complete" as const),
+          reasons: [...teardownFailures],
+        },
+      };
+      if (teardownFailures.length === 0 && controlFailures.length === 0) return observed;
       return {
         ...observed,
-        control: "failed",
-        reason: [outcome.reason, ...teardownFailures].filter(Boolean).join("; "),
+        ...(controlFailures.length ? { control: "failed" as const } : {}),
+        reason: [outcome.reason, ...controlFailures, ...teardownFailures].filter(Boolean).join("; "),
       };
     }
 
     async function teardown(): Promise<void> {
       try {
-        await releaseDelegationWorkspace({
+        const outcome = await releaseDelegationWorkspace({
           prepared: preparedWorkspace,
           childId,
           episodeId: session.episodeId,
@@ -604,9 +725,13 @@ export async function executePlannedChild(input: {
           ledgerPath,
           reason: releaseReason,
           retain: retainWriterLease,
+          onObservationFailure: (error) =>
+            teardownFailures.push(`workspace release observation failed: ${String(error)}`),
         });
+        if (outcome === "lost" || (outcome === "retained" && !retainWriterLease))
+          controlFailures.push(`workspace release is ${outcome}`);
       } catch (error) {
-        teardownFailures.push(`workspace lease record failed: ${String(error)}`);
+        controlFailures.push(`workspace release failed: ${String(error)}`);
       }
     }
   }

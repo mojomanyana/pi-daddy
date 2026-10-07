@@ -36,6 +36,7 @@ export async function runInit(
   /**
    * Reload definitions and the catalog, and re-describe the delegation tools.
    *
+   * Refresh selected definitions for the live grant. New Pi resource references still need explicit /reload.
    * **Without this the grant goes live and the definitions do not** — `session.definitions` and the catalog
    * are read at `session_start`, which is before `init` wrote a single file, so a session would hold
    * `agent:review` while believing no definition of that name exists. `/grants` showed `0 skill,
@@ -206,7 +207,9 @@ async function runOwnedInit(
       `  NOTE: git ignores ${plan.settingsPath} (your root .gitignore covers ${PI_PROJECT_DIR}/), so the reviewable record ` +
         `cannot be committed until you add: ${GITIGNORE_REINCLUDE_LINES.join("  ")}`,
     );
-  lines.push(`  live now (${finalGrant.length} capabilities) — no restart. /grants shows the verdicts.`);
+  lines.push(`  grant live now (${finalGrant.length} capabilities). /grants shows current selected definitions.`);
+  if (session.ensureDefinitions)
+    lines.push("  Newly added skill resources require /reload before selection; the current snapshot stays pinned.");
   ctx.ui.notify(lines.join("\n"), "info");
 }
 

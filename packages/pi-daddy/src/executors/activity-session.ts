@@ -8,9 +8,9 @@
  * already carries `--session` (native-session retention), that file is the probe; otherwise a private temporary
  * file is allocated for the run and removed afterwards.
  */
-import { createReadStream } from "node:fs";
 import { mkdtemp, readdir, rm, stat } from "node:fs/promises";
-import { createInterface } from "node:readline";
+import { SessionManager, type FileEntry } from "@earendil-works/pi-coding-agent";
+import { BoundedReadCleanupError, readBoundedBytes } from "../kernel/bounded-read.ts";
 import type { ChildUsageTotals } from "../governance/ledger-events.ts";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -74,7 +74,7 @@ export async function activitySessionFor(planArgs: string[], executionId: string
       args: planArgs,
       path: dir,
       probe: probeDirectory(dir),
-      usage: () => readChildUsage(newestSessionFile(dir)),
+      usage: () => readChildUsage(exactSessionFile(dir, planArgs[planArgs.indexOf("--session-id") + 1])),
       dispose: async () => undefined,
     };
   }
@@ -114,14 +114,11 @@ export async function activitySessionFor(planArgs: string[], executionId: string
   };
 }
 
-async function newestSessionFile(directory: string): Promise<string | undefined> {
+async function exactSessionFile(directory: string, id: string | undefined): Promise<string | undefined> {
+  if (!id || !/^[a-zA-Z0-9-]+$/.test(id)) return undefined;
   try {
-    const entries = await Promise.all(
-      (await readdir(directory))
-        .filter((name) => name.endsWith(".jsonl"))
-        .map(async (name) => ({ path: join(directory, name), modified: (await stat(join(directory, name))).mtimeMs })),
-    );
-    return entries.sort((a, b) => b.modified - a.modified)[0]?.path;
+    const names = (await readdir(directory)).filter((name) => name.endsWith(`_${id}.jsonl`));
+    return names.length === 1 ? join(directory, names[0]) : undefined;
   } catch {
     return undefined;
   }
@@ -130,82 +127,138 @@ async function newestSessionFile(directory: string): Promise<string | undefined>
 const TOKEN_FIELDS = ["input", "output", "cacheRead", "cacheWrite", "totalTokens"] as const;
 const COST_FIELDS = ["input", "output", "cacheRead", "cacheWrite", "total"] as const;
 
+// Match final capture's bound; oversized or damaged accounting stays unknown, never a partial total.
+const MAX_USAGE_SESSION_BYTES = 64 * 1024 * 1024;
+const ENTRY_TYPES = new Set([
+  "message",
+  "model_change",
+  "thinking_level_change",
+  "usage",
+  "compaction",
+  "branch_summary",
+  "custom",
+  "label",
+  "session_info",
+  "custom_message",
+  "context_edit",
+]);
+function activeUsageBranch(source: string) {
+  if (!source.endsWith("\n")) throw new Error("incomplete session record");
+  const entries = source
+    .slice(0, -1)
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  const header = object(entries[0]);
+  if (
+    !header ||
+    header.type !== "session" ||
+    header.version !== 3 ||
+    typeof header.id !== "string" ||
+    !header.id ||
+    typeof header.cwd !== "string" ||
+    !header.cwd
+  )
+    throw new Error("invalid canonical session header");
+  const seen = new Set<string>();
+  for (const value of entries.slice(1)) {
+    const entry = object(value);
+    if (
+      !entry ||
+      !ENTRY_TYPES.has(String(entry.type)) ||
+      typeof entry.id !== "string" ||
+      !entry.id ||
+      seen.has(entry.id) ||
+      typeof entry.timestamp !== "string" ||
+      (entry.parentId !== null && (typeof entry.parentId !== "string" || !seen.has(entry.parentId)))
+    )
+      throw new Error("ambiguous canonical session tree");
+    if (entry.type === "message" && !object(entry.message)) throw new Error("invalid session message");
+    seen.add(entry.id);
+  }
+  // This public SDK seam reads already bounded in-memory bytes; it never reopens the path or scans other branches.
+  return SessionManager.inMemory(header.cwd, undefined, entries as FileEntry[]).getBranch();
+}
+
 async function readChildUsage(path: string | Promise<string | undefined>): Promise<ChildUsageObservation> {
   const resolved = await path;
   if (!resolved) return { unavailable: "session-missing" };
   const totals = emptyUsage();
-  let found = false;
-  let reasoning = 0;
-  let sawReasoning = false;
+  let found = false,
+    incomplete = false,
+    reasoning = 0,
+    sawReasoning = false;
   let resolvedModel: ChildUsageObservation["resolvedModel"];
   let effectiveThinkingLevel: string | undefined;
   let compactionCount = 0;
   try {
-    const lines = createInterface({ input: createReadStream(resolved, { encoding: "utf8" }), crlfDelay: Infinity });
-    for await (const line of lines) {
-      let entry: unknown;
-      try {
-        entry = JSON.parse(line);
-      } catch {
-        return { unavailable: "session-invalid" };
-      }
-      const parsed = object(entry);
-      if (
-        parsed?.type === "model_change" &&
-        typeof parsed.provider === "string" &&
-        typeof parsed.modelId === "string"
-      ) {
-        resolvedModel = { provider: parsed.provider, modelId: parsed.modelId };
+    const read = await readBoundedBytes(resolved, { maxBytes: MAX_USAGE_SESSION_BYTES, timeoutMs: 3000 });
+    if (!read.ok)
+      return { unavailable: "code" in read && read.code === "ENOENT" ? "session-missing" : "session-invalid" };
+    const source = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(read.bytes);
+    const branch = activeUsageBranch(source);
+    const userIndex = branch.findLastIndex((entry) => entry.type === "message" && entry.message.role === "user");
+    for (const [index, entry] of branch.entries()) {
+      if (entry.type === "model_change") {
+        if (typeof entry.provider !== "string" || typeof entry.modelId !== "string")
+          return { unavailable: "session-invalid" };
+        resolvedModel = { provider: entry.provider, modelId: entry.modelId };
         continue;
       }
-      if (parsed?.type === "thinking_level_change" && typeof parsed.thinkingLevel === "string") {
-        effectiveThinkingLevel = parsed.thinkingLevel;
+      if (entry.type === "thinking_level_change") {
+        if (typeof entry.thinkingLevel !== "string") return { unavailable: "session-invalid" };
+        effectiveThinkingLevel = entry.thinkingLevel;
         continue;
       }
-      if (parsed?.type === "compaction") {
-        compactionCount += 1;
-        continue;
-      }
-      const message = object(parsed?.message);
-      if (!message) continue;
-      if (message.role === "user") {
-        Object.assign(totals, emptyUsage());
-        found = false;
-        reasoning = 0;
-        sawReasoning = false;
-        compactionCount = 0;
-        continue;
-      }
-      if (message.role !== "assistant" && message.role !== "toolResult") continue;
-      if (message.role === "assistant" && typeof message.provider === "string" && typeof message.model === "string") {
-        resolvedModel = { provider: message.provider, modelId: message.model };
-      }
-      const usage = object(message.usage);
-      if (message.role === "toolResult" && !usage) continue;
+      // Current-turn accounting excludes both inherited prior turns and abandoned branch work.
+      if (userIndex < 0 || index <= userIndex) continue;
+      if (entry.type === "compaction") compactionCount += 1;
+      let usage: Record<string, unknown> | undefined;
+      if (entry.type === "message") {
+        const message = object(entry.message)!;
+        if (message.role !== "assistant" && message.role !== "toolResult") continue;
+        if (message.role === "assistant" && typeof message.provider === "string" && typeof message.model === "string")
+          resolvedModel = { provider: message.provider, modelId: message.model };
+        usage = object(message.usage);
+        if (message.role === "toolResult" && !usage) continue;
+      } else if (["usage", "compaction", "branch_summary"].includes(entry.type)) {
+        usage = object((entry as unknown as Record<string, unknown>).usage);
+        if (!usage) {
+          incomplete = true;
+          continue;
+        }
+      } else continue;
       const cost = object(usage?.cost);
-      if (!usage || !cost) return { unavailable: "session-invalid" };
-      if (!TOKEN_FIELDS.every((field) => nonNegative(usage[field]))) return { unavailable: "session-invalid" };
-      if (!COST_FIELDS.every((field) => nonNegative(cost[field]))) return { unavailable: "session-invalid" };
-      if (usage.reasoning !== undefined && !nonNegative(usage.reasoning)) return { unavailable: "session-invalid" };
+      if (
+        !usage ||
+        !cost ||
+        !TOKEN_FIELDS.every((field) => nonNegative(usage[field])) ||
+        !COST_FIELDS.every((field) => nonNegative(cost[field])) ||
+        (usage.reasoning !== undefined && !nonNegative(usage.reasoning))
+      )
+        return { unavailable: "session-invalid" };
       for (const field of TOKEN_FIELDS) totals[field] += usage[field] as number;
       for (const field of COST_FIELDS) totals.cost[field] += cost[field] as number;
       if (usage.reasoning !== undefined) {
         reasoning += usage.reasoning as number;
         sawReasoning = true;
       }
+      if (
+        !TOKEN_FIELDS.every((field) => nonNegative(totals[field])) ||
+        !COST_FIELDS.every((field) => nonNegative(totals.cost[field])) ||
+        !nonNegative(reasoning)
+      )
+        return { unavailable: "session-invalid" };
       found = true;
     }
-    if (!found)
-      return {
-        unavailable: "usage-missing",
-        ...(resolvedModel ? { resolvedModel } : {}),
-        ...(effectiveThinkingLevel ? { effectiveThinkingLevel } : {}),
-        compactionCount,
-      };
-    return {
-      usage: { ...totals, ...(sawReasoning ? { reasoning } : {}) },
+    const metadata = {
       ...(resolvedModel ? { resolvedModel } : {}),
       ...(effectiveThinkingLevel ? { effectiveThinkingLevel } : {}),
+      compactionCount,
+    };
+    if (!found || incomplete) return { unavailable: "usage-missing", ...metadata };
+    return {
+      usage: { ...totals, ...(sawReasoning ? { reasoning } : {}) },
+      ...metadata,
       tokenDetail: {
         inputTokens: positiveOrNull(totals.input),
         outputTokens: positiveOrNull(totals.output),
@@ -213,10 +266,11 @@ async function readChildUsage(path: string | Promise<string | undefined>): Promi
         cacheWriteTokens: positiveOrNull(totals.cacheWrite),
         reasoningTokens: sawReasoning ? positiveOrNull(reasoning) : null,
       },
-      compactionCount,
     };
-  } catch {
-    return { unavailable: "session-missing" };
+  } catch (error) {
+    // Preserve the exact retained descriptor capability for the initiating execution/session owner.
+    if (error instanceof BoundedReadCleanupError) throw error;
+    return { unavailable: "session-invalid" };
   }
 }
 

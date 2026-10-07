@@ -307,24 +307,20 @@ for (const cause of [undefined, null, false]) {
     }
   });
 
-  test(`wired provider refresh retains ${String(cause)} definition close failure rather than fulfilling stale catalog`, async () => {
+  test(`explicit discovery retains ${String(cause)} definition close failure rather than fulfilling stale catalog`, async () => {
     const f = await fixture(cause, "definition");
     try {
       // Establish a real prior catalog with a DIFFERENT clean descriptor, not the armed loader.
       const prior = await buildCatalog({ cwd: f.ctx.cwd, observedTools: null });
       f.session.catalog = prior;
-      f.hooks.get("before_provider_request")!({ payload: { tools: [{ name: "read" }] } }, f.ctx);
-      const original = f.session.catalogReady;
+      const original = loadProjectDefinitions(f.session, f.ctx.cwd);
       await assert.rejects(original, (value) => value === f.failure());
       const error = f.failure();
-      assert.ok(
-        f.notices.some((message) => message.includes(error.message)),
-        "actual refresh diagnostic",
-      );
+      assert.equal(f.session.reloadLifecycle.discoveryCleanupFailure, error);
       await assert.rejects(f.session.delegationContext(), (value) => value === error);
       assert.equal(f.session.catalog, prior, "prior view is display only, not successful refresh");
       await f.verifyPhysicalOwner();
-      assert.equal(f.session.catalogReady, original, "rejection observation must not replace the failed refresh");
+      await assert.rejects(f.session.catalogReady, (value) => value === error);
       await assert.rejects(original, (value) => value === error);
     } finally {
       await f.dispose();

@@ -1,9 +1,12 @@
+import type { OwnerCapacity } from "./session-capacity.ts";
 import { GRANT_ENV_KEYS } from "../src/kernel/propagation.ts";
 import type { BoundedReadCleanupError } from "../src/kernel/bounded-read.ts";
 
 /** The root baseline and latest child publication for one real Pi session owner. */
 export interface ReloadLifecycle {
   root: Record<string, string | undefined>;
+  /** Never replaced for the same owner, even when an explicit root environment changes. */
+  capacity?: OwnerCapacity;
   published?: Record<string, string | undefined>;
   activityRootId?: string;
   episodeId?: string;
@@ -91,7 +94,12 @@ export function bindReloadLifecycle(
     // next `establishRootPin` re-settle from the new root, which for a descendant means minting nothing.
     if (!same(current, existing.root)) {
       // Pending old-root operations keep THEIR original owner; they cannot publish/fault this replacement.
-      existing = { root: current, activityRootId: existing.activityRootId, episodeId: existing.episodeId };
+      existing = {
+        root: current,
+        activityRootId: existing.activityRootId,
+        episodeId: existing.episodeId,
+        capacity: existing.capacity,
+      };
       holder.owners.set(owner, existing);
     }
     existing.root = current;

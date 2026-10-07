@@ -14,11 +14,11 @@ import { chooseExecutor, needsProbe } from "../src/executors/executor.ts";
 const reachable = { ok: true };
 const down = { ok: false, error: "could not connect to herdr" };
 
-test("unset + reachable herdr means panes — this is ADR-0031's reversal", () => {
+test("unset + reachable Herdr preserves selection but refuses unqualified governed execution", () => {
   const choice = chooseExecutor(undefined, reachable);
   assert.equal(choice.kind, "herdr");
   assert.equal(choice.forced, false);
-  assert.equal(choice.refusal, undefined);
+  assert.match(choice.refusal!, /not qualified/);
 });
 
 test("unset + no herdr means the captured subprocess, and never refuses", () => {
@@ -37,11 +37,11 @@ test("`0` forces the subprocess and does not probe at all", () => {
   assert.equal(choice.refusal, undefined);
 });
 
-test("`1` + reachable herdr means panes, and records that it was demanded", () => {
+test("demanded reachable Herdr refuses until its final and cleanup contract is qualified", () => {
   const choice = chooseExecutor("1", reachable);
   assert.equal(choice.kind, "herdr");
   assert.equal(choice.forced, true);
-  assert.equal(choice.refusal, undefined);
+  assert.match(choice.refusal!, /not qualified/);
 });
 
 test("`1` + herdr down REFUSES rather than falling back, naming the variable and the reason", () => {

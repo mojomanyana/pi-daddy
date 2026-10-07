@@ -9,12 +9,13 @@
  * Packs a tarball, installs it into a scratch project, and imports it the way a consumer would.
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const pkgDir = new URL("..", import.meta.url).pathname;
 const work = mkdtempSync(join(tmpdir(), "grants-smoke-"));
+let completed = false;
 // **`PI_CODING_AGENT_DIR` is pinned into the scratch dir, and that is not tidiness.** `init` searches pi's
 // own install root as well as the project's (R-75), so without this the probe reads whatever the developer
 // happens to have installed machine-wide and asserts against it. It broke the moment discovery was widened:
@@ -169,10 +170,38 @@ try {
     throw new Error("installed package dropped or changed the bundled Herdr plugin");
   }
 
-  console.log("smoke: installed package imports, dashboard, plugin, and `pi-daddy init` — OK");
+  // Exercise the SHIPPED native helper and compiled final verifier against the SHIPPED exact Pi dependency.
+  // Fixture extension remains outside node_modules; all production imports below come from the installed tarball.
+  for (const fixture of ["scripted-provider.ts", "cli-extension.ts"])
+    copyFileSync(join(pkgDir, "test-integration", "pi-sdk", fixture), join(work, fixture));
+  mkdirSync(join(work, ".capture-agent"));
+  writeFileSync(join(work, ".capture-agent", "settings.json"), JSON.stringify({
+    defaultProjectTrust:"always",enableAnalytics:false,enableInstallTelemetry:false,compaction:{enabled:false},retry:{enabled:false},cacheWarming:"off"
+  }));
+  writeFileSync(join(work,"captured-probe.mjs"),[
+    'import assert from "node:assert/strict";',
+    'import {join} from "node:path";',
+    'import {fileURLToPath} from "node:url";',
+    'import {readFileSync} from "node:fs";',
+    'import {runCapturedExecution} from "./node_modules/pi-daddy/dist/executors/captured-execution.js";',
+    'import {FINAL,MODEL,PROVIDER} from "./scripted-provider.ts";',
+    'const cwd=process.cwd(),sessionPath=join(cwd,"captured-session.jsonl");',
+    'const cli=fileURLToPath(new URL("./cli.js",import.meta.resolve("@earendil-works/pi-coding-agent")));',
+    'assert.equal(JSON.parse(readFileSync(new URL("../package.json",new URL("./",import.meta.resolve("@earendil-works/pi-coding-agent"))))).version,"1.0.4");',
+    'const result=await runCapturedExecution({command:process.execPath,args:[cli,"--session",sessionPath,"--no-extensions","-e",join(cwd,"cli-extension.ts"),"--no-skills","--no-mcp","--offline","--provider",PROVIDER,"--model",MODEL,"--thinking","high","installed fixture"],',
+    'executionId:"installed-captured-fixture",cwd,sessionPath,env:{...process.env,PI_CODING_AGENT_DIR:join(cwd,".capture-agent"),P01_SCENARIO:"success"},timeoutMs:10000});',
+    'assert.equal(result.code,0,JSON.stringify(result));assert.equal(result.cleanup.state,"settled");',
+    'assert.equal(result.final.state,"complete",JSON.stringify(result));assert.equal(result.text,FINAL);',
+    'console.log("CAPTURED_INSTALLED_OK");',
+  ].join("\n"));
+  const capturedOut=run("node",["captured-probe.mjs"],work);
+  if(!capturedOut.includes("CAPTURED_INSTALLED_OK"))throw Error("installed captured worker/final verification failed");
+  completed = true;
+  console.log("smoke: installed imports, dashboard, init, native helper and exact Pi captured final — OK");
 } catch (error) {
   console.error("smoke FAILED:\n", error.stdout ?? "", error.stderr ?? error.message ?? error);
   process.exitCode = 1;
 } finally {
-  rmSync(work, { recursive: true, force: true });
+  if (completed) rmSync(work, { recursive: true, force: true });
+  else console.error(`smoke evidence retained at ${work}`);
 }

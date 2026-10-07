@@ -9,7 +9,12 @@ import {
   splitBudget,
 } from "../src/kernel/fanout.ts";
 import { isCriticalAssuranceBlock } from "../extensions/execute-child.ts";
-import { childFailureOutcome, throwFanoutInfrastructure, totalFanoutFailure } from "../extensions/fanout-outcome.ts";
+import {
+  buildFanoutReport,
+  childFailureOutcome,
+  throwFanoutInfrastructure,
+  totalFanoutFailure,
+} from "../extensions/fanout-outcome.ts";
 import { GovernanceRefusal, refusal } from "../src/kernel/refusals.ts";
 
 test("spawning spends from the budget before the remainder is shared", () => {
@@ -115,20 +120,15 @@ test("every sibling's infrastructure error survives, not just the first", () => 
   const second = new Error("workspace lease went stale");
   const outcomes = [childFailureOutcome(first, 1), childFailureOutcome(second, 1)];
 
-  assert.throws(
-    () => throwFanoutInfrastructure(outcomes, [first, second]),
-    (error: unknown) => {
-      assert.ok(error instanceof AggregateError, "two failures must not collapse into one");
-      assert.deepEqual((error as AggregateError).errors, [first, second]);
-      return true;
-    },
-  );
-
-  // One error is still raised as itself, so an ordinary single failure keeps its identity and its type.
-  assert.throws(
-    () => throwFanoutInfrastructure(outcomes, [first]),
-    (error: unknown) => error === first,
-  );
+  assert.doesNotThrow(() => throwFanoutInfrastructure(outcomes, [first, second]));
+  assert.equal(outcomes.length, 2);
+  assert.match(outcomes[0].reason!, /herdr writer tab would not close/);
+  assert.match(outcomes[1].reason!, /workspace lease went stale/);
+  const report = buildFanoutReport(outcomes, [{}, {}]);
+  assert.match(report, /child 1 — FAILED/);
+  assert.match(report, /child 2 — FAILED/);
+  assert.match(report, /herdr writer tab would not close/);
+  assert.match(report, /workspace lease went stale/);
 });
 
 test("a critical-assurance block outranks infrastructure noise without hiding it", () => {
@@ -213,7 +213,7 @@ test("mixed refusal codes all survive a total fan-out failure", () => {
  */
 test("a child killed mid-sentence cannot mint the controller's verdict", () => {
   const token = "BLOCKED_CRITICAL_ASSURANCE the gate was not satisfied";
-  const base = { ok: false as const, text: token };
+  const base = { ok: false as const, text: token, exitCode: 1 };
 
   // A clean non-zero exit IS the controller speaking. Everything else is a process that stopped talking.
   assert.equal(isCriticalAssuranceBlock({ ...base }), true, "the honest case must still pass through");
@@ -222,6 +222,10 @@ test("a child killed mid-sentence cannot mint the controller's verdict", () => {
     ["timed out", { timedOut: true }],
     ["cancelled", { aborted: true }],
     ["never started", { spawnFailed: true }],
+    ["exited successfully", { exitCode: 0 }],
+    ["lost its exit status", { exitCode: null }],
+    ["failed control", { control: "failed" }],
+    ["uncertain cleanup", { cleanup: { state: "unknown", reason: "missing receipt" } }],
   ] as const) {
     assert.equal(
       isCriticalAssuranceBlock({ ...base, ...extra }),

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test, after } from "node:test";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile, rm, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { selectedDefinitions } from "../src/kernel/selected-definitions.ts";
@@ -71,4 +71,34 @@ test("unrelated same-named definition is never treated as Principal", async () =
   const d = (await selectedDefinitions(commands)).definitions.get("build")!;
   assert.equal(d.binding, undefined);
   assert.equal(d.body, "INLINE");
+});
+
+// Review regression: an expected Principal phase may not become inline when identity disappears.
+test("marked Principal phase refuses missing or replaced package identity", async () => {
+  for (const missing of [true, false]) {
+    const { commands, root } = await fixture();
+    const skill = join(root, "build", "SKILL.md");
+    const bytes = (await readFile(skill, "utf8")).replace(
+      "description: inline",
+      "metadata:\n  principal-package: principal-pi-skills\ndescription: inline",
+    );
+    await writeFile(skill, bytes);
+    if (missing) await rm(join(root, "package.json"));
+    else await writeFile(join(root, "package.json"), '{"name":"other"}');
+    const result = await selectedDefinitions(commands);
+    assert.equal(result.definitions.size, 0);
+    assert.equal(result.skips.length, 1);
+  }
+});
+
+test("marked Principal phase rejects a noncanonical selected path", async () => {
+  const { root } = await fixture();
+  const path = join(root, "build.md");
+  await writeFile(
+    path,
+    "---\nname: build\ndescription: misplaced\nallowed-tools: read\nmetadata:\n  principal-package: principal-pi-skills\n---\nbody\n",
+  );
+  const result = await selectedDefinitions([{ source: "skill", name: "skill:build", sourceInfo: { path } }]);
+  assert.equal(result.definitions.size, 0);
+  assert.match(result.skips.join(" "), /noncanonical/);
 });

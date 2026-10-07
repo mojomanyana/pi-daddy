@@ -41,6 +41,7 @@ import {
   loadProjectDefinitions,
   assertDiscoveryHealthy,
   recordDiscoveryCleanupFailure,
+  retainDiscoveryCleanupFailure,
   type GrantsSession,
 } from "./session.ts";
 import { acceptWorkspaces } from "../src/governance/workspace-acceptance.ts";
@@ -48,7 +49,7 @@ import { loadWorkspaceRegistry } from "../src/kernel/workspace.ts";
 import { bindReloadLifecycle } from "./reload-environment.ts";
 import { reconcileActiveDelegationTools } from "./delegation-activation.ts";
 import { resolveExecutor } from "./executor-session.ts";
-import { reportSessionStart } from "./session-report.ts";
+import { reportSelectedDefinitions, reportSessionStart, type SessionReportContext } from "./session-report.ts";
 import { SPAWN_TOOLS, tripwireReason } from "./tripwire.ts";
 import { reportGrantStoreRefusal } from "./grant-store-refusal.ts";
 import {
@@ -86,6 +87,7 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
   const delegation = { refreshSpawnable: () => {} };
   // Supported public discovery is ready at the first real request/tool execution, not session_start.
   let selectedReady: Promise<void> | undefined;
+  let selectedReportContext: SessionReportContext | undefined;
   if (typeof pi.getCommands === "function")
     session.ensureDefinitions = () =>
       (selectedReady ??= (async () => {
@@ -93,6 +95,12 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
         await loadProjectDefinitions(session, session.cwd, lifecycle, pi.getCommands());
         assertDiscoveryHealthy(session, lifecycle);
         delegation.refreshSpawnable();
+        if (selectedReportContext)
+          try {
+            await reportSelectedDefinitions(session, selectedReportContext);
+          } catch (error) {
+            console.error("grants: selected resource report unavailable", error);
+          }
       })());
   pi.on("before_agent_start", async () => {
     await session.ensureDefinitions?.();
@@ -107,6 +115,7 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
     session.reconcileEnvironment(reload.environment, reload.lifecycle);
     session.ownerBound = true;
     selectedReady = undefined;
+    selectedReportContext = ctx;
     // ADR-0078: the parent's own session, for a granted `pruned` or `fork` handoff. Read-only, and only ever
     // read after the mode has survived the gate.
     const manager = owner as Partial<import("./context-staging.ts").ParentSession>;
@@ -420,8 +429,10 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
     ...grantsCommand,
     // Built per invocation and spelled out field by field, rather than passing the session whole: what a
     // read-only diagnostic may see is a decision, and `GrantsCommandContext` is where it is recorded.
-    handler: (args, ctx) =>
-      grantsCommand.handler(args, {
+    handler: async (args, ctx) => {
+      // Named revocation validates the current definition. Emergency revoke-all needs no resource acquisition.
+      if (args.trim() !== "revoke --all") await session.ensureDefinitions?.();
+      return grantsCommand.handler(args, {
         ...ctx,
         grants: {
           cwd: session.cwd,
@@ -460,7 +471,8 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
           runInit: () =>
             runInit(session, ctx, async (lifecycle) => {
               assertDiscoveryHealthy(session, lifecycle);
-              await loadProjectDefinitions(session, ctx.cwd, lifecycle);
+              if (session.ensureDefinitions) await session.ensureDefinitions();
+              else await loadProjectDefinitions(session, ctx.cwd, lifecycle);
               assertDiscoveryHealthy(session, lifecycle);
               delegation.refreshSpawnable();
             }),
@@ -481,7 +493,15 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
             input(title: string, placeholder?: string): Promise<string | undefined>;
             notify(message: string, type?: "info" | "warning" | "error"): void;
           }) => {
-            await changeSessionModels(session, { hasUI: ctx.hasUI, ...ui });
+            const lifecycle = session.reloadLifecycle;
+            await changeSessionModels(
+              session,
+              { hasUI: ctx.hasUI, ...ui },
+              {
+                assertHealthy: () => assertDiscoveryHealthy(session, lifecycle),
+                onReadCleanup: (error) => retainDiscoveryCleanupFailure(session, error, lifecycle),
+              },
+            );
             return renderSessionModels(session);
           },
           runtimeFor: (name: string) =>
@@ -493,6 +513,7 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
               piModel: ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined,
             }),
         },
-      }),
+      });
+    },
   });
 }

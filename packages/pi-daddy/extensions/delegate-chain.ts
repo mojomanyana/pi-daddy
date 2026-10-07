@@ -21,8 +21,9 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import type { InheritableApproval } from "../src/kernel/approval.ts";
 import { DELEGATE_SUBJECT } from "../src/kernel/approval.ts";
-import { chainStepSpec, PLACEHOLDER } from "../src/kernel/chain.ts";
-import { MAX_CHAIN_STEPS, childSpawnId, splitBudget } from "../src/kernel/fanout.ts";
+import { reserveDelegationCapacity } from "./session-capacity.ts";
+import { chainStepSpec, PLACEHOLDER, HANDOFF_MAX_BYTES } from "../src/kernel/chain.ts";
+import { MAX_CHAIN_STEPS, childSpawnId } from "../src/kernel/fanout.ts";
 import {
   PAINT_INTERVAL_MS,
   appendTail,
@@ -134,281 +135,292 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
       if (session.executor.refusal)
         throw new GovernanceRefusal(refusal("EXECUTOR_UNAVAILABLE", `chain refused: ${session.executor.refusal}`));
 
-      // Cardinality next, still before the gate. `splitBudget` is reused rather than re-derived, so a chain and a
-      // fan-out cannot disagree about what the budget means.
-      const split = splitBudget(session.fanoutBudget, steps.length);
-      if (!split.ok) throw new GovernanceRefusal(refusal("FANOUT_EXCEEDED", `chain refused: ${split.reason}`));
+      if (steps.length < 1 || steps.length > MAX_CHAIN_STEPS)
+        throw new GovernanceRefusal(refusal("FANOUT_EXCEEDED", `chain needs 1 to ${MAX_CHAIN_STEPS} steps`));
 
       // Plan every step first. A step that can never run refuses the chain HERE, before anyone is asked — see
       // `planChain`.
       const executionIds = steps.map(() => newExecutionId());
-      const parentExecutionId = session.ownExecutionId ?? null;
-      const piModel = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
-      const runtimeChoices = new Map<
-        import("../src/kernel/chain.ts").ChainStep,
-        import("./definition-runtime.ts").ResolvedDefinitionRuntime
-      >();
-      const chainPlan = await planChain(
-        session,
-        steps,
-        executionIds,
-        (model) =>
-          preflightModel(model, ctx.modelRegistry, session.modelResolutionCache, session.allowUnresolvedModels),
-        (step) => {
-          const selected = resolveDefinitionRuntime({
-            definition: step.agent,
-            explicit: { model: step.model, thinking: step.thinking },
-            session: session.definitionRuntimeOverrides,
-            settings: session.definitionRuntimeSettings,
-            piModel,
-            piThinking: session.currentThinking?.(),
-            authoredPreferences: step.agent ? session.definitions.get(step.agent)?.runtimePreferences : undefined,
-            unavailable: (choice) => runtimePairUnavailable(choice, ctx.modelRegistry, session.allowUnresolvedModels),
-          });
-          runtimeChoices.set(step, selected);
-          return selected.model;
-        },
-      );
-      if (chainPlan.doomed) {
-        const message =
-          `chain refused at step ${chainPlan.doomed.step}: ${chainPlan.doomed.reason} No step ran, and nobody was ` +
-          `asked to approve anything — a step that cannot run must not bank authority for a spawn that will never happen.`;
-        await recordChainRefusal({
-          session,
-          plan: chainPlan.doomed.plan,
-          stepIndex: chainPlan.doomed.step - 1,
-          executionId: executionIds[chainPlan.doomed.step - 1],
-          parentExecutionId,
-          agent: chainPlan.doomed.agent,
-          reason: message,
-          refusal: chainPlan.doomed.refusal,
-        });
-        if (chainPlan.doomed.refusal) throw new GovernanceRefusal({ ...chainPlan.doomed.refusal, message });
-        throw new Error(message);
-      }
-
-      // One dialog per `capability@subject`, each naming the step that needs it, all before the first step runs.
-      const preApproved: InheritableApproval[] = [];
-      const approvalAudit = newChainApprovalAudit();
-      const approvalStep = new Map<string, number>();
-      const approvedDecisions: Array<{ request: GateRequest; outcome: Awaited<ReturnType<typeof obtainApprovals>> }> =
-        [];
-      let declined: { request: GateRequest; outcome: Awaited<ReturnType<typeof obtainApprovals>> } | undefined;
-
-      for (const request of chainPlan.requests) {
-        const outcome = await obtainApprovals(
-          session,
-          [request.capability],
-          request.subject,
-          request.path,
-          ctx,
-          request.task,
-          signal,
-        );
-        if (!outcome.approved.includes(request.capability)) {
-          // **Stop asking.** The chain's outcome is already fixed, and every further dialog banks authority — a
-          // `session` yes into `sessionApprovals` and an `always` yes onto disk for 30 days — for a chain that will
-          // not run. The single-delegate path breaks on the first no for the same reason.
-          declined = { request, outcome };
-          break;
-        }
-        preApproved.push({
-          capability: request.capability,
-          subject: request.subject,
-          scope: outcome.scopes[request.capability] ?? ("once" as const),
-          // Pinned to THIS subject's body (ADR-0022). Stamped from a single shared subject, the pin was verified
-          // against one definition's instructions while the capability was spent on another's.
-          bodySha256: snapshotOf(session, request.subject)?.bodySha256,
-        });
-        rememberChainApproval(approvalAudit, request.capability, request.subject, outcome);
-        approvalStep.set(`${request.capability}@${request.subject}`, request.stepIndex);
-        approvedDecisions.push({ request, outcome });
-      }
-
-      if (declined) {
-        const { request, outcome } = declined;
-        const message =
-          `chain refused: ${request.capability} was not approved for ${request.subject}, so no step ran. A chain ` +
-          `is gated as a unit — running only its approved steps would return a partial result that reads like a complete one.`;
-        const structured = outcome.refusalCode ? refusal(outcome.refusalCode, message) : undefined;
-        const decisions = new Map<
-          number,
-          { request: GateRequest; outcomes: ApprovalOutcome[]; refusal?: typeof structured }
+      const firstReservation = reserveDelegationCapacity(session, executionIds[0]);
+      try {
+        const parentExecutionId = session.ownExecutionId ?? null;
+        const piModel = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
+        const runtimeChoices = new Map<
+          import("../src/kernel/chain.ts").ChainStep,
+          import("./definition-runtime.ts").ResolvedDefinitionRuntime
         >();
-        for (const approved of approvedDecisions) {
-          const decision = decisions.get(approved.request.stepIndex) ?? {
-            request: approved.request,
-            outcomes: [],
-          };
-          decision.outcomes.push(approved.outcome);
-          decisions.set(approved.request.stepIndex, decision);
-        }
-        const deniedDecision = decisions.get(request.stepIndex) ?? { request, outcomes: [] };
-        deniedDecision.request = request;
-        deniedDecision.outcomes.push(outcome);
-        deniedDecision.refusal = structured;
-        decisions.set(request.stepIndex, deniedDecision);
-
-        for (const [stepIndex, decision] of [...decisions].sort(([left], [right]) => left - right)) {
+        const chainPlan = await planChain(
+          session,
+          steps,
+          executionIds,
+          (model) =>
+            preflightModel(model, ctx.modelRegistry, session.modelResolutionCache, session.allowUnresolvedModels),
+          (step) => {
+            const selected = resolveDefinitionRuntime({
+              definition: step.agent,
+              explicit: { model: step.model, thinking: step.thinking },
+              session: session.definitionRuntimeOverrides,
+              settings: session.definitionRuntimeSettings,
+              piModel,
+              piThinking: session.currentThinking?.(),
+              authoredPreferences: step.agent ? session.definitions.get(step.agent)?.runtimePreferences : undefined,
+              unavailable: (choice) => runtimePairUnavailable(choice, ctx.modelRegistry, session.allowUnresolvedModels),
+            });
+            runtimeChoices.set(step, selected);
+            return selected.model;
+          },
+        );
+        if (chainPlan.doomed) {
+          const message =
+            `chain refused at step ${chainPlan.doomed.step}: ${chainPlan.doomed.reason} No step ran, and nobody was ` +
+            `asked to approve anything — a step that cannot run must not bank authority for a spawn that will never happen.`;
           await recordChainRefusal({
             session,
-            plan: decision.request.plan,
-            stepIndex,
-            executionId: executionIds[stepIndex],
+            plan: chainPlan.doomed.plan,
+            stepIndex: chainPlan.doomed.step - 1,
+            executionId: executionIds[chainPlan.doomed.step - 1],
             parentExecutionId,
-            agent: steps[stepIndex]?.agent,
+            agent: chainPlan.doomed.agent,
             reason: message,
-            refusal: decision.refusal,
-            approval: mergeGateOutcomes(decision.outcomes),
+            refusal: chainPlan.doomed.refusal,
           });
+          if (chainPlan.doomed.refusal) throw new GovernanceRefusal({ ...chainPlan.doomed.refusal, message });
+          throw new Error(message);
         }
-        if (structured) throw new GovernanceRefusal(structured);
-        throw new Error(message);
-      }
 
-      const children: ChildProgress[] = steps.map((step) => ({
-        label: step.agent ?? "delegate",
-        state: "starting",
-        startedAt: Date.now(),
-        tail: emptyTail,
-      }));
-      const paint = throttle(() => {
-        try {
-          (onUpdate as ((partial: { content: Array<{ type: "text"; text: string }> }) => void) | undefined)?.({
-            content: [{ type: "text", text: renderProgress(children, session.executor.kind, Date.now()) }],
+        // One dialog per `capability@subject`, each naming the step that needs it, all before the first step runs.
+        const preApproved: InheritableApproval[] = [];
+        const approvalAudit = newChainApprovalAudit();
+        const approvalStep = new Map<string, number>();
+        const approvedDecisions: Array<{ request: GateRequest; outcome: Awaited<ReturnType<typeof obtainApprovals>> }> =
+          [];
+        let declined: { request: GateRequest; outcome: Awaited<ReturnType<typeof obtainApprovals>> } | undefined;
+
+        for (const request of chainPlan.requests) {
+          const outcome = await obtainApprovals(
+            session,
+            [request.capability],
+            request.subject,
+            request.path,
+            ctx,
+            request.task,
+            signal,
+          );
+          if (!outcome.approved.includes(request.capability)) {
+            // **Stop asking.** The chain's outcome is already fixed, and every further dialog banks authority — a
+            // `session` yes into `sessionApprovals` and an `always` yes onto disk for 30 days — for a chain that will
+            // not run. The single-delegate path breaks on the first no for the same reason.
+            declined = { request, outcome };
+            break;
+          }
+          preApproved.push({
+            capability: request.capability,
+            subject: request.subject,
+            scope: outcome.scopes[request.capability] ?? ("once" as const),
+            // Pinned to THIS subject's body (ADR-0022). Stamped from a single shared subject, the pin was verified
+            // against one definition's instructions while the capability was spent on another's.
+            bodySha256: snapshotOf(session, request.subject)?.bodySha256,
           });
-        } catch {
-          // Display only: a broken partial-result sink must not become a child cancellation mechanism.
+          rememberChainApproval(approvalAudit, request.capability, request.subject, outcome);
+          approvalStep.set(`${request.capability}@${request.subject}`, request.stepIndex);
+          approvedDecisions.push({ request, outcome });
         }
-      }, PAINT_INTERVAL_MS);
 
-      const outcomes: Array<{
-        ok: boolean;
-        text: string;
-        reason?: string;
-        refusal?: StructuredRefusal;
-        step: number;
-        agent?: string;
-      }> = [];
-      let previous: string | undefined;
-      let aborted = false;
-      /**
-       * Approvals still available to later steps.
-       *
-       * **`once` is consumed by the first step that spends it, and not honouring that was a confused deputy.**
-       * Measured: three steps of one definition, one dialog naming step 1's task — *"survey the north field"* — and
-       * three children spawned, the last of which had been told *"…and burn the evidence"*. Steps 2 and 3 were never
-       * described to anyone. Two sequential plain `delegate` calls raise two dialogs, because a `once` answer never
-       * enters `sessionApprovals`; the chain was the outlier. R-29 exists for this exact shape one level down.
-       *
-       * A later step needing the same capability now reaches its own gate and prompts with its OWN task, which is
-       * what `once` means.
-       */
-      let available = [...preApproved];
+        if (declined) {
+          const { request, outcome } = declined;
+          const message =
+            `chain refused: ${request.capability} was not approved for ${request.subject}, so no step ran. A chain ` +
+            `is gated as a unit — running only its approved steps would return a partial result that reads like a complete one.`;
+          const structured = outcome.refusalCode ? refusal(outcome.refusalCode, message) : undefined;
+          const decisions = new Map<
+            number,
+            { request: GateRequest; outcomes: ApprovalOutcome[]; refusal?: typeof structured }
+          >();
+          for (const approved of approvedDecisions) {
+            const decision = decisions.get(approved.request.stepIndex) ?? {
+              request: approved.request,
+              outcomes: [],
+            };
+            decision.outcomes.push(approved.outcome);
+            decisions.set(approved.request.stepIndex, decision);
+          }
+          const deniedDecision = decisions.get(request.stepIndex) ?? { request, outcomes: [] };
+          deniedDecision.request = request;
+          deniedDecision.outcomes.push(outcome);
+          deniedDecision.refusal = structured;
+          decisions.set(request.stepIndex, deniedDecision);
 
-      for (const [index, step] of steps.entries()) {
-        const childId = childSpawnId(session.ownSpawnId, index);
-        const availableForStep = available.filter((approval) => {
-          const key = `${approval.capability}@${approval.subject}`;
-          return chainPlan.uses.get(index)?.has(key) && (approval.scope !== "once" || approvalStep.get(key) === index);
-        });
-        const outcome = await runOneDelegation(
-          session,
-          chainStepSpec(step, previous),
-          {
-            parentId: session.ownSpawnId,
-            childId,
-            executionId: executionIds[index],
-            parentExecutionId,
-          },
-          split.perChild,
-          ctx,
-          signal,
-          {
-            resolvedRuntime: runtimeChoices.get(step),
-            preApproved: availableForStep,
-            toolCallId: _toolCallId,
-            // Only approvals actually offered to this step are attributed or consumed here.
-            approvalFacts: chainApprovalFacts(approvalAudit, availableForStep, step.agent ?? DELEGATE_SUBJECT),
-            onProgress: (update) => {
-              const child = children[index];
-              if (!child) return;
-              if (update.paneId) child.paneId = update.paneId;
-              if (update.agentName) child.agentName = update.agentName;
-              if (update.chunk) child.tail = appendTail(child.tail, update.chunk);
-              if (update.snapshot) child.tail = replaceTail(update.snapshot);
-              if (update.state) child.state = update.state;
-              else if (child.state === "starting") child.state = "running";
-              paint.call();
+          for (const [stepIndex, decision] of [...decisions].sort(([left], [right]) => left - right)) {
+            await recordChainRefusal({
+              session,
+              plan: decision.request.plan,
+              stepIndex,
+              executionId: executionIds[stepIndex],
+              parentExecutionId,
+              agent: steps[stepIndex]?.agent,
+              reason: message,
+              refusal: decision.refusal,
+              approval: mergeGateOutcomes(decision.outcomes),
+            });
+          }
+          if (structured) throw new GovernanceRefusal(structured);
+          throw new Error(message);
+        }
+
+        const children: ChildProgress[] = steps.map((step) => ({
+          label: step.agent ?? "delegate",
+          state: "starting",
+          startedAt: Date.now(),
+          tail: emptyTail,
+        }));
+        const paint = throttle(() => {
+          try {
+            (onUpdate as ((partial: { content: Array<{ type: "text"; text: string }> }) => void) | undefined)?.({
+              content: [{ type: "text", text: renderProgress(children, session.executor.kind, Date.now()) }],
+            });
+          } catch {
+            // Display only: a broken partial-result sink must not become a child cancellation mechanism.
+          }
+        }, PAINT_INTERVAL_MS);
+
+        const outcomes: Array<import("./execute-child.ts").DelegationOutcome & { step: number; agent?: string }> = [];
+        let previous: string | undefined;
+        let aborted = false;
+        let blockedReason: "full-final-too-large-for-handoff" | undefined;
+        /**
+         * Approvals still available to later steps.
+         *
+         * **`once` is consumed by the first step that spends it, and not honouring that was a confused deputy.**
+         * Measured: three steps of one definition, one dialog naming step 1's task — *"survey the north field"* — and
+         * three children spawned, the last of which had been told *"…and burn the evidence"*. Steps 2 and 3 were never
+         * described to anyone. Two sequential plain `delegate` calls raise two dialogs, because a `once` answer never
+         * enters `sessionApprovals`; the chain was the outlier. R-29 exists for this exact shape one level down.
+         *
+         * A later step needing the same capability now reaches its own gate and prompts with its OWN task, which is
+         * what `once` means.
+         */
+        let available = [...preApproved];
+
+        for (const [index, step] of steps.entries()) {
+          const childId = childSpawnId(session.ownSpawnId, index);
+          const availableForStep = available.filter((approval) => {
+            const key = `${approval.capability}@${approval.subject}`;
+            return (
+              chainPlan.uses.get(index)?.has(key) && (approval.scope !== "once" || approvalStep.get(key) === index)
+            );
+          });
+          const outcome = await runOneDelegation(
+            session,
+            chainStepSpec(step, previous),
+            {
+              parentId: session.ownSpawnId,
+              childId,
+              executionId: executionIds[index],
+              parentExecutionId,
             },
-            // Provenance: which child's output composed THIS step's task (ADR-0033). Absent for step 1.
-            taskFrom: index === 0 ? undefined : childSpawnId(session.ownSpawnId, index - 1),
-            taskFromExecutionId: index === 0 ? undefined : executionIds[index - 1],
-          },
-        );
+            index === 0 ? firstReservation.childAllowance : undefined,
+            ctx,
+            signal,
+            {
+              ...(index === 0 ? { capacityReservation: firstReservation } : {}),
+              resolvedRuntime: runtimeChoices.get(step),
+              preApproved: availableForStep,
+              toolCallId: _toolCallId,
+              // Only approvals actually offered to this step are attributed or consumed here.
+              approvalFacts: chainApprovalFacts(approvalAudit, availableForStep, step.agent ?? DELEGATE_SUBJECT),
+              onProgress: (update) => {
+                const child = children[index];
+                if (!child) return;
+                if (update.paneId) child.paneId = update.paneId;
+                if (update.agentName) child.agentName = update.agentName;
+                if (update.chunk) child.tail = appendTail(child.tail, update.chunk);
+                if (update.snapshot) child.tail = replaceTail(update.snapshot);
+                if (update.state) child.state = update.state;
+                else if (child.state === "starting") child.state = "running";
+                paint.call();
+              },
+              // Provenance: which child's output composed THIS step's task (ADR-0033). Absent for step 1.
+              taskFrom: index === 0 ? undefined : childSpawnId(session.ownSpawnId, index - 1),
+              taskFromExecutionId: index === 0 ? undefined : executionIds[index - 1],
+            },
+          );
 
-        children[index].state = outcome.ok ? "completed" : "failed";
-        children[index].settledAt = Date.now();
-        outcomes.push({
-          ok: outcome.ok,
-          text: outcome.text,
-          reason: outcome.reason,
-          refusal: outcome.refusal,
-          step: index + 1,
-          agent: step.agent,
-        });
-        if (isCriticalAssuranceBlock(outcome)) throw new Error(outcome.text);
+          children[index].state = outcome.ok ? "completed" : "failed";
+          children[index].settledAt = Date.now();
+          outcomes.push({
+            ...outcome,
+            step: index + 1,
+            agent: step.agent,
+          });
+          if (isCriticalAssuranceBlock(outcome)) throw new Error(outcome.text);
 
-        // Spend any `once` this step was handed, before the next step sees the list.
-        available = available.filter(
-          (approval) =>
-            approval.scope !== "once" || approvalStep.get(`${approval.capability}@${approval.subject}`) !== index,
-        );
+          // Spend any `once` this step was handed, before the next step sees the list.
+          available = available.filter(
+            (approval) =>
+              approval.scope !== "once" || approvalStep.get(`${approval.capability}@${approval.subject}`) !== index,
+          );
 
-        if (!outcome.ok) {
-          // **Abort, and mark the rest.** Continuing would make the next step's task an error message, which is
-          // never what an orchestrator wants. Everything completed is still returned — R-03's rule.
-          aborted = true;
-          for (let rest = index + 1; rest < children.length; rest += 1) children[rest].state = "failed";
-          break;
+          if (!outcome.ok || outcome.control === "failed" || outcome.final?.state === "unavailable") {
+            // **Abort, and mark the rest.** Continuing would make the next step's task an error message, which is
+            // never what an orchestrator wants. Everything completed is still returned — R-03's rule.
+            aborted = true;
+            for (let rest = index + 1; rest < children.length; rest += 1) children[rest].state = "failed";
+            break;
+          }
+          if (index + 1 < steps.length && Buffer.byteLength(outcome.text, "utf8") > HANDOFF_MAX_BYTES) {
+            aborted = true;
+            blockedReason = "full-final-too-large-for-handoff";
+            for (let rest = index + 1; rest < children.length; rest += 1) children[rest].state = "failed";
+            break;
+          }
+          previous = outcome.text;
         }
-        previous = outcome.text;
+        paint.flush();
+
+        const report = outcomes
+          .map((o) => {
+            const label = `### step ${o.step}${o.agent ? ` (${o.agent})` : ""}`;
+            return o.ok && o.control !== "failed"
+              ? `${label} — completed\n\n${o.text || "(no output)"}`
+              : `${label} — FAILED: ${o.reason}${o.text ? `\n\n${o.text}` : ""}`;
+          })
+          .join("\n\n---\n\n");
+
+        const skipped = steps.length - outcomes.length;
+        const tail = aborted
+          ? `\n\n---\n\n**The chain stopped at step ${outcomes.length}.** ${skipped} later step(s) did not run, ` +
+            (blockedReason
+              ? `because the complete final exceeds the ${HANDOFF_MAX_BYTES}-byte handoff limit; it is preserved above and no partial handoff was used.`
+              : `because the previous step did not supply a qualified successful final for the next task.`)
+          : "";
+
+        if (
+          outcomes.length === 1 &&
+          !outcomes[0].ok &&
+          !outcomes[0].work &&
+          !outcomes[0].final &&
+          !outcomes[0].cleanup
+        ) {
+          const message = `chain failed at its first step.\n\n${report}`;
+          if (outcomes[0].refusal) throw new GovernanceRefusal({ ...outcomes[0].refusal, message });
+          throw new Error(message);
+        }
+        return {
+          isError: aborted || outcomes.some((o) => o.control === "failed"),
+          content: [{ type: "text", text: `${report}${tail}` }],
+          details: {
+            outcomes,
+            steps: steps.length,
+            completed: outcomes.filter((o) => o.ok).length,
+            aborted,
+            budgetPerStep: firstReservation.childAllowance,
+            ...(blockedReason ? { blockedReason } : {}),
+            refusals: outcomes.map((outcome) => outcome.refusal ?? null),
+          },
+        };
+      } finally {
+        firstReservation.finalize({ state: "not-started", reason: "chain ended before its first execution" });
       }
-      paint.flush();
-
-      const report = outcomes
-        .map((o) => {
-          const label = `### step ${o.step}${o.agent ? ` (${o.agent})` : ""}`;
-          return o.ok
-            ? `${label} — completed\n\n${o.text || "(no output)"}`
-            : `${label} — FAILED: ${o.reason}${o.text ? `\n\n${o.text}` : ""}`;
-        })
-        .join("\n\n---\n\n");
-
-      const skipped = steps.length - outcomes.length;
-      const tail = aborted
-        ? `\n\n---\n\n**The chain stopped at step ${outcomes.length}.** ${skipped} later step(s) did not run, ` +
-          `because each one's task is built from the previous step's output and there was none to pass on.`
-        : "";
-
-      if (outcomes.length === 1 && !outcomes[0].ok) {
-        // Nothing completed at all, so there is no partial result to hand back — and a tool that returns text when
-        // nothing ran is how a wrong summary gets written.
-        const message = `chain failed at its first step.\n\n${report}`;
-        if (outcomes[0].refusal) throw new GovernanceRefusal({ ...outcomes[0].refusal, message });
-        throw new Error(message);
-      }
-
-      return {
-        content: [{ type: "text", text: `${report}${tail}` }],
-        details: {
-          steps: steps.length,
-          completed: outcomes.filter((o) => o.ok).length,
-          aborted,
-          budgetPerStep: split.perChild,
-          refusals: outcomes.map((outcome) => outcome.refusal ?? null),
-        },
-      };
     },
   });
 }

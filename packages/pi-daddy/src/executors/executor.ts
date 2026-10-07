@@ -28,7 +28,7 @@ export interface ExecutorChoice {
   /** Whether a probe was needed at all — false only for `0`. */
   probed: boolean;
   /**
-   * Set ONLY when herdr was demanded and is unreachable. Every delegation must refuse with this.
+   * Unavailable or unqualified execution. Every delegation must refuse with this.
    *
    * Note that `kind` stays `"herdr"` in that case, deliberately: nothing downstream may mistake a refusing
    * session for a working process-executor one.
@@ -43,7 +43,20 @@ export function needsProbe(raw: string | undefined): boolean {
   return raw === undefined || raw === "1";
 }
 
+export const HERDR_UNQUALIFIED_REASON =
+  "Herdr governed execution is not qualified for complete current finals and subtree cleanup in this release. " +
+  "Delegation is refused; set PI_DADDY_HERDR=0 explicitly to select captured execution. No backend fallback occurs.";
+
 export function chooseExecutor(raw: string | undefined, probe: HerdrProbe | null): ExecutorChoice {
+  const choice = selectExecutor(raw, probe);
+  if (choice.kind !== "herdr") return choice;
+  return {
+    ...choice,
+    refusal: [choice.refusal, HERDR_UNQUALIFIED_REASON].filter(Boolean).join(" "),
+    disclosure: `${choice.disclosure} — unqualified; governed delegation will refuse`,
+  };
+}
+function selectExecutor(raw: string | undefined, probe: HerdrProbe | null): ExecutorChoice {
   if (raw === "0") {
     return {
       kind: "process",

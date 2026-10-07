@@ -24,6 +24,8 @@ export interface OwnedChildRunRequest extends ChildRunRequest {
   onOwnership?: (identity: CapturedWorkerIdentity) => Promise<void> | void;
   /** JSON protocol consumers observe all bytes without capturing enormous replay streams as answer text. */
   captureStdout?: boolean;
+  /** Bounded diagnostics may truncate without stopping independently captured primary output. */
+  stopOnOutputLimit?: boolean;
 }
 export interface OwnedChildRunResult extends ChildRunResult {
   cleanup: CapturedWorkerCleanup;
@@ -132,7 +134,7 @@ export async function runOwnedChild(request: OwnedChildRunRequest): Promise<Owne
       }
       if (kept.length < chunk.length) {
         truncated = true;
-        stop();
+        if (request.stopOnOutputLimit !== false) stop();
       }
     };
     const stop = (hard = false) => {

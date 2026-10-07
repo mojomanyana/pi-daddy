@@ -30,6 +30,13 @@ Escalation is impossible by construction on the tool surface. It does not contai
 primitive: a child granted `bash` can start an ungoverned descendant, so `bash` is gated by default and every gate
 answer is recorded when a governance ledger is configured.
 
+This candidate targets Pi 1.0.4 and captured Linux x64 execution. Qualification is limited to Ubuntu WSL2,
+kernel `6.18.33.2-microsoft-standard-WSL2`, x86_64 and Node `v26.7.0`; other runtime/kernel combinations, native
+Windows and WSL-to-Windows worker interop remain unqualified. Governed Herdr execution refuses until separately qualified. Select captured execution with `PI_DADDY_HERDR=0`. A final must match Pi's settled
+JSON output and persisted current branch. Unknown subtree cleanup retains capacity and workspace exclusion.
+`PI_DADDY_FANOUT` limits active descendants using conservative subtree reservations, with capacity returned only
+after verified settlement. Complete results remain separate from optional recording failures.
+
 The package requires Node.js 22.19.0 or newer. `pi-daddy report` joins episode usage and attribution;
 `pi-daddy outcomes` adds Git, CI, amendment, and operator-correction signals for commits carrying a `Pi-Episode`
 trailer. A connected dashboard can change model/thinking defaults for its owning session without changing persistent
