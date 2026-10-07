@@ -29,6 +29,12 @@ shell memoization. The existing governance/session-coordination product remains 
   Explicit SDK roots can share internally; that is not automatic root/delegated-child sharing.
 - Preserve local `byte-capture-real-gDzFP5/` and ignored `.principal/` artifacts. They were deliberately excluded
   from the commit/PR; do not stage or delete them as cleanup. Expect this untracked directory in the worktree.
+  **Cleanup amendment, 2026-10-07:** the operator subsequently requested disposal of unneeded scratch work.
+  After inspection, the reproduced byte-capture fixture above, empty registry/bounded-reader test directories,
+  clean fully merged old release worktrees, their redundant local branch and disposable session output were
+  removed. The fixture-preservation instruction above describes the earlier checkpoint: do not expect that
+  directory now. Private plans/evidence, needed Watchman/strace tools, nonempty ownership/recovery directories
+  and other unmerged or dirty worktrees remain preserved. Removing scratch data does not certify resource recovery.
 
 ### Implemented, not yet qualified as a whole
 
