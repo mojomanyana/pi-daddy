@@ -211,6 +211,21 @@ test("helper death is unknown, and a missing or wrong predecessor receipt blocks
   } finally {
     clearTimeout(lossTimeout);
   }
+  // A refused acquisition ends its temporary helper's stdin before that helper necessarily drops flock.
+  // Prove the free-lock precondition before each receipt assertion; a busy refusal proves a different fact.
+  const waitForFreeLock = () =>
+    eventually(async () => {
+      const probe = spawn(
+        "flock",
+        ["--exclusive", "--nonblock", "--conflict-exit-code", "73", leasePaths(leaseDir, root).lock, "true"],
+        { stdio: "ignore", timeout: 1000, killSignal: "SIGKILL" },
+      );
+      const [code, signal] = await once(probe, "close");
+      assert.equal(signal, null, "fixture lock probe did not finish");
+      assert.ok(code === 0 || code === 73, `fixture lock probe failed with ${code}`);
+      return code === 0;
+    }, "fixture kernel lock did not become free");
+  await waitForFreeLock();
   await assert.rejects(
     acquireWorkspaceLease({ workspace, access: "write", ownerId: "second", leaseDir }),
     /unresolved/,
@@ -227,6 +242,7 @@ test("helper death is unknown, and a missing or wrong predecessor receipt blocks
       reason: "worker-exit",
     }),
   );
+  await waitForFreeLock();
   await assert.rejects(acquireWorkspaceLease({ workspace, access: "write", ownerId: "third", leaseDir }), /unresolved/);
   assert.equal(await readFile(metadataPath, "utf8"), original);
 });
