@@ -146,7 +146,7 @@ test("an already-cancelled lease request starts no holder", async () => {
   );
 });
 
-test("parent SIGKILL stops the attached writer before releasing the lease", async () => {
+test("legacy parent SIGKILL stops its attached PID but does not prove reusable subtree settlement", async () => {
   const root = await gitWorkspace();
   const marker = join(root, "LATE_WRITE");
   const leaseDir = await tempDir("workspace-leases-");
@@ -173,20 +173,12 @@ test("parent SIGKILL stops the attached writer before releasing the lease", asyn
   parent.kill("SIGKILL");
   await once(parent, "close");
   const workspace = await validateRegisteredWorkspace({ workspaceId: "w1", registeredRoot: root });
-  let recovered;
-  for (let i = 0; i < 100; i += 1) {
-    try {
-      recovered = await trackedLease({ workspace, access: "write", leaseDir, ownerId: "next" });
-      break;
-    } catch (error) {
-      if ((error as GovernanceRefusal).code !== "WORKSPACE_WRITE_CONFLICT") throw error;
-      await new Promise((r) => setTimeout(r, 25));
-    }
-  }
-  assert.ok(recovered);
   await new Promise((r) => setTimeout(r, 1100));
-  assert.equal(existsSync(marker), false, "a writer surviving its parent must not overlap the successor");
-  await recovered.release("test-complete");
+  assert.equal(existsSync(marker), false, "the attached writer must stop");
+  await assert.rejects(
+    trackedLease({ workspace, access: "write", leaseDir, ownerId: "next" }),
+    (error: unknown) => (error as GovernanceRefusal).code === "WORKSPACE_LEASE_STALE",
+  );
 });
 
 /**
@@ -244,7 +236,7 @@ test("release reports `lost` instead of throwing when the helper is already gone
   assert.equal(await lease.release("after-loss"), "lost");
 });
 
-test("killing the recorded helper pid really does free the kernel lock", async () => {
+test("free kernel lock after helper death still refuses unproven predecessor settlement", async () => {
   const root = await gitWorkspace();
   const leaseDir = await tempDir("workspace-leases-");
   const workspace = await validateRegisteredWorkspace({ workspaceId: "w1", registeredRoot: root });
@@ -258,20 +250,13 @@ test("killing the recorded helper pid really does free the kernel lock", async (
   // later acquisition reports a conflict that no live writer explains (R-99, probe g35).
   process.kill(JSON.parse(await readFile(metadataPath, "utf8")).pid, "SIGKILL");
   await first.lost;
-  let second;
-  for (let i = 0; i < 60 && !second; i += 1) {
-    try {
-      second = await trackedLease({ workspace, access: "write", leaseDir, ownerId: "second" });
-    } catch (error) {
-      assert.equal((error as GovernanceRefusal).code, "WORKSPACE_WRITE_CONFLICT");
-      await new Promise((r) => setTimeout(r, 20));
-    }
-  }
-  assert.ok(second, "the lock must be free once the recorded helper is dead");
-  await second.release("test-complete");
+  await assert.rejects(
+    trackedLease({ workspace, access: "write", leaseDir, ownerId: "second" }),
+    (error: unknown) => (error as GovernanceRefusal).code === "WORKSPACE_LEASE_STALE",
+  );
 });
 
-test("an unreadable predecessor record yields `unknown` recovery, never a clean handover", async () => {
+test("an unreadable predecessor record blocks reuse and preserves original evidence", async () => {
   const root = await gitWorkspace();
   const leaseDir = await tempDir("workspace-leases-");
   const workspace = await validateRegisteredWorkspace({ workspaceId: "w1", registeredRoot: root });
@@ -284,9 +269,11 @@ test("an unreadable predecessor record yields `unknown` recovery, never a clean 
   // Truncated, hand-edited, or written by a future version. Reading this as `recovered: false` silently
   // downgrades "the previous writer may have died mid-write" to the reassuring answer (R-100).
   await writeFile(metadataPath, '{"version":1,"state":');
-  const next = await trackedLease({ workspace, access: "write", leaseDir, ownerId: "next" });
-  assert.equal(next.recovered, "unknown");
-  await next.release("test-complete");
+  await assert.rejects(
+    trackedLease({ workspace, access: "write", leaseDir, ownerId: "next" }),
+    (error: unknown) => (error as GovernanceRefusal).code === "WORKSPACE_LEASE_STALE",
+  );
+  assert.equal(await readFile(metadataPath, "utf8"), '{"version":1,"state":');
 });
 
 /**
@@ -359,7 +346,7 @@ test("teardown kills the whole holder group, not just the wrapper", async () => 
   }
 });
 
-test("SIGKILL releases the kernel lease and the next owner records recovery", async () => {
+test("SIGKILL without an original worker receipt cannot authorize a successor writer", async () => {
   const root = await gitWorkspace();
   const leaseDir = await tempDir("workspace-leases-");
   const moduleUrl = pathToFileURL(join(process.cwd(), "src", "kernel", "workspace.ts")).href;
@@ -383,19 +370,10 @@ test("SIGKILL releases the kernel lease and the next owner records recovery", as
   await once(holder, "close");
 
   const workspace = await validateRegisteredWorkspace({ workspaceId: "w1", registeredRoot: root });
-  let recovered;
-  for (let i = 0; i < 40; i += 1) {
-    try {
-      recovered = await trackedLease({ workspace, access: "write", leaseDir, ownerId: "recovery" });
-      break;
-    } catch (error) {
-      if ((error as GovernanceRefusal).code !== "WORKSPACE_WRITE_CONFLICT") throw error;
-      await new Promise((r) => setTimeout(r, 25));
-    }
-  }
-  assert.ok(recovered, "the helper must release when its parent pipe closes");
-  assert.equal(recovered.recovered, true);
-  await recovered.release("recovered");
+  await assert.rejects(
+    trackedLease({ workspace, access: "write", leaseDir, ownerId: "recovery" }),
+    (error: unknown) => (error as GovernanceRefusal).code === "WORKSPACE_LEASE_STALE",
+  );
 });
 
 /**

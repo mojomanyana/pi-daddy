@@ -1,3 +1,6 @@
+import { reconcileDelegationCapacity, reserveDelegationCapacity } from "./session-capacity.ts";
+import type { CapacityReservation } from "../src/kernel/capacity.ts";
+import { assertDefinitionIdentity } from "./definition-describe.ts";
 /**
  * Plan, gate, audit and run ONE governed child — the whole of a delegation except its tool surface.
  *
@@ -12,8 +15,6 @@
  */
 
 import { nativeDelegationContext } from "./delegation-native.ts";
-import { adviseEffort } from "./effort-advice.ts";
-import { advisePruning } from "./pruning-advice.ts";
 import { DELEGATE_SUBJECT, shouldSeekApproval } from "../src/kernel/approval.ts";
 import { planDelegation } from "../src/kernel/delegate.ts";
 import {
@@ -27,13 +28,12 @@ import {
 import type { InheritableApproval } from "../src/kernel/approval.ts";
 import type { GrantsSession } from "./session.ts";
 import type { CorrelationMetadata } from "../src/kernel/correlation.ts";
-import { preflightModel, type ModelCatalogue } from "../src/kernel/model-preflight.ts";
+import { preflightModel, runtimePairUnavailable, type ModelCatalogue } from "../src/kernel/model-preflight.ts";
 import { GovernanceRefusal, refusal as structuredRefusal } from "../src/kernel/refusals.ts";
 import { executePlannedChild, type DelegationOutcome } from "./execute-child.ts";
 import { recordDelegationDecision, type ApprovalLedgerFacts } from "./delegation-ledger.ts";
 import type { ExecutionOccurrenceIds } from "./execution-occurrence.ts";
-import { ENV_EPISODE_COST_CEILING } from "../src/kernel/env-names.ts";
-import { resolvedModelOf, resolveDefinitionRuntime } from "./definition-runtime.ts";
+import { resolveDefinitionRuntime } from "./definition-runtime.ts";
 import {
   governedWorkspaceAccess,
   prepareDelegationWorkspace,
@@ -44,13 +44,12 @@ import {
 
 /** What one child was asked to do. The shape both tools accept, per child. */
 interface ChildSpec {
+  definitionId?: string;
   task: string;
   agent?: string;
   tools?: string[];
   model?: string;
   thinking?: string;
-  /** Positive USD override for the whole episode, applied only when this delegation will run. */
-  episodeCostCeiling?: number;
   /** ADR-0078: what of the parent's session crosses. Validated in the kernel, never here. */
   context?: unknown;
   correlation?: CorrelationMetadata;
@@ -209,6 +208,10 @@ export async function runOneDelegation(
    * mistake unspellable.
    */
   options: {
+    /** Trusted reservation made before a chain's upfront gate. */
+    capacityReservation?: CapacityReservation;
+    /** Exact pair selected during the chain preflight; never reselect after its approval. */
+    resolvedRuntime?: import("./definition-runtime.ts").ResolvedDefinitionRuntime;
     /** Actual public execute argument, never read from model-authored correlation or output. */
     toolCallId?: string;
     /** Progress for the parent's status block (ADR-0032). Display only. */
@@ -246,282 +249,226 @@ export async function runOneDelegation(
     approvalFacts?: ApprovalLedgerFacts;
   } = {},
 ): Promise<DelegationOutcome> {
-  const { toolCallId, onProgress, preApproved, taskFrom, taskFromExecutionId, approvalFacts } = options;
-  // pi resolves a BARE model id to an unauthenticated provider and the child dies at startup — the id
-  // alone is not enough, it must be qualified with its provider (`Model<Api>` carries both).
-  const defaultModel = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
-  const configured = resolveDefinitionRuntime({
-    definition: spec.agent,
-    explicit: { model: spec.model, thinking: spec.thinking },
-    session: session.definitionRuntimeOverrides,
-    settings: session.definitionRuntimeSettings,
-    piModel: defaultModel,
-  });
-  let resolvedRuntime = configured;
-  const request = {
-    task: spec.task,
-    agent: spec.agent,
-    tools: spec.tools,
-    model: configured.model,
-    // Filled below, once the refusals that doom a delegation are known: asking first shipped the task text for a
-    // child that never starts, which is the ordering this module already fixed for the approval dialog.
-    thinking:
-      configured.thinkingSource === "explicit" || configured.thinkingSource === "session"
-        ? configured.thinking
-        : undefined,
-    context: spec.context,
-    correlation: spec.workspace
-      ? { ...(spec.correlation ?? {}), workspace_id: spec.workspace.workspace_id }
-      : spec.correlation,
-    // The binding's workspace comes from the ROUTING SPEC, which is resolved against the operator
-    // registry and leased before any human is asked — never from `correlation`, which is a model-supplied
-    // claim that nothing validates when no spec accompanies it (R-110).
-    boundWorkspaceId: spec.workspace?.workspace_id,
-    boundContextId: spec.correlation?.context_id,
-  };
-
-  // ADR-0031: herdr was DEMANDED (`PI_DADDY_HERDR=1`) and is not answering. Refused rather than relocated —
-  // the operator chose that over falling back, so the ledger can never name a child that ran somewhere nobody
-  // chose.
-  //
-  // **Decided BEFORE the gate, and the ordering is a fix.** This sat after `planWithApprovals`, which opens the
-  // approval dialog — so with herdr down a human was asked to approve `tool:bash`, answered *Always*, and was
-  // then refused anyway. Measured: the answer still reached `process.env.PI_DADDY_APPROVED`, still wrote a
-  // **30-day project-wide** entry to the persisted store, and still produced a ledger line asserting a human
-  // approved `bash` for a child that never existed. A refused operation must not leave authority behind, and
-  // asking for permission that cannot be used is R-25's fatigue shape with nothing bought.
-  //
-  // `ctx: null` rather than skipping the plan entirely: the ledger still gets a full, honest record of what was
-  // requested and refused, and stored approvals still count toward it — nothing is *hidden*, only nobody is
-  // *asked*. It is the same argument `/grants` uses for its preview.
-  let executorRefusal = session.executor.refusal;
-  const modelRefusal = preflightModel(
-    request.model,
-    ctx.modelRegistry,
-    session.modelResolutionCache,
-    session.allowUnresolvedModels,
-  );
-  const { extra, refusal: nativeRefusal } = await nativeDelegationContext(
-    session,
-    ids,
-    budget,
-    Boolean(executorRefusal || modelRefusal),
-  );
-  executorRefusal ||= nativeRefusal;
-
-  // ADR-0077's first decision point, after the refusal checks for the reason above. Fills a blank from the levels
-  // the CHILD's model reports; never overrules a caller, and yields today's behaviour whenever there is no answer.
-  if (!executorRefusal && !modelRefusal) {
-    const advisedThinking = await adviseEffort({
-      session,
-      requested: request.thinking,
-      model: configured.model,
-      registry: ctx.modelRegistry,
-      task: spec.task,
-      executionId: ids.executionId,
-      agent: spec.agent,
-      fallback: configured,
-      signal,
-    });
-    resolvedRuntime = resolveDefinitionRuntime({
-      definition: spec.agent,
-      explicit: { model: spec.model, thinking: spec.thinking },
-      session: session.definitionRuntimeOverrides,
-      settings: session.definitionRuntimeSettings,
-      piModel: defaultModel,
-      advisorThinking: advisedThinking,
-    });
-    request.thinking = resolvedRuntime.thinking;
+  let capacity: CapacityReservation | undefined;
+  let capacityRefusal: import("../src/kernel/refusals.ts").StructuredRefusal | undefined;
+  try {
+    if (!options.capacityReservation) await reconcileDelegationCapacity(session);
+    capacity = options.capacityReservation ?? reserveDelegationCapacity(session, ids.executionId, budget);
+    if (capacity.executionId !== ids.executionId || (budget !== undefined && capacity.childAllowance !== budget))
+      throw new GovernanceRefusal(
+        structuredRefusal("FANOUT_EXCEEDED", "capacity reservation does not match its execution"),
+      );
+  } catch (error) {
+    if (!(error instanceof GovernanceRefusal)) throw error;
+    capacityRefusal = structuredRefusal(error.code, error.message, error.details);
   }
+  let executorEntered = false;
+  try {
+    await session.ensureDefinitions?.();
+    assertDefinitionIdentity(session, spec);
+    const { toolCallId, onProgress, preApproved, taskFrom, taskFromExecutionId, approvalFacts } = options;
+    // pi resolves a BARE model id to an unauthenticated provider and the child dies at startup — the id
+    // alone is not enough, it must be qualified with its provider (`Model<Api>` carries both).
+    const defaultModel = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
+    let runtimeRefusal: import("../src/kernel/refusals.ts").StructuredRefusal | undefined;
+    let configured: import("./definition-runtime.ts").ResolvedDefinitionRuntime = {
+      model: spec.model ?? defaultModel,
+      modelSource: spec.model ? "explicit" : "pi",
+      thinkingSource: "pi",
+    };
+    try {
+      configured =
+        options.resolvedRuntime ??
+        resolveDefinitionRuntime({
+          definition: spec.agent,
+          explicit: { model: spec.model, thinking: spec.thinking },
+          session: session.definitionRuntimeOverrides,
+          settings: session.definitionRuntimeSettings,
+          piModel: defaultModel,
+          piThinking: session.currentThinking?.(),
+          authoredPreferences: spec.agent ? session.definitions.get(spec.agent)?.runtimePreferences : undefined,
+          unavailable: (choice) => runtimePairUnavailable(choice, ctx.modelRegistry, session.allowUnresolvedModels),
+        });
+    } catch (error) {
+      runtimeRefusal = structuredRefusal("MODEL_UNRESOLVED", `runtime selection refused: ${String(error)}`);
+    }
+    const resolvedRuntime = configured;
+    const request = {
+      task: spec.task,
+      agent: spec.agent,
+      tools: spec.tools,
+      model: configured.model,
+      thinking: configured.thinking,
+      context: spec.context,
+      correlation: spec.workspace
+        ? { ...(spec.correlation ?? {}), workspace_id: spec.workspace.workspace_id }
+        : spec.correlation,
+      // The binding's workspace comes from the ROUTING SPEC, which is resolved against the operator
+      // registry and leased before any human is asked — never from `correlation`, which is a model-supplied
+      // claim that nothing validates when no spec accompanies it (R-110).
+      boundWorkspaceId: spec.workspace?.workspace_id,
+      boundContextId: spec.correlation?.context_id,
+    };
 
-  const planContext = await handoffPlanContext({
-    session,
-    base: extra,
-    task: spec.task,
-    executionId: ids.executionId,
-    toolCallId,
-    blocked: Boolean(executorRefusal || modelRefusal),
-    preview: () => planWithApprovals(session, request, extra, null, signal, preApproved).then((r) => r.plan),
-    attribution: {
-      resolvedModel: resolvedModelOf(resolvedRuntime.model),
-      modelSource: resolvedRuntime.modelSource,
-      thinkingLevel: resolvedRuntime.thinking ?? null,
-      thinkingSource: resolvedRuntime.thinkingSource,
-    },
-    ...(signal ? { signal } : {}),
-  });
-  let preparedWorkspace: PreparedWorkspace | undefined;
-  let approvalOutcome: ApprovalOutcome | undefined;
-  let plan: ReturnType<typeof planDelegation>;
+    // ADR-0031: herdr was DEMANDED (`PI_DADDY_HERDR=1`) and is not answering. Refused rather than relocated —
+    // the operator chose that over falling back, so the ledger can never name a child that ran somewhere nobody
+    // chose.
+    //
+    // **Decided BEFORE the gate, and the ordering is a fix.** This sat after `planWithApprovals`, which opens the
+    // approval dialog — so with herdr down a human was asked to approve `tool:bash`, answered *Always*, and was
+    // then refused anyway. Measured: the answer still reached `process.env.PI_DADDY_APPROVED`, still wrote a
+    // **30-day project-wide** entry to the persisted store, and still produced a ledger line asserting a human
+    // approved `bash` for a child that never existed. A refused operation must not leave authority behind, and
+    // asking for permission that cannot be used is R-25's fatigue shape with nothing bought.
+    //
+    // `ctx: null` rather than skipping the plan entirely: the ledger still gets a full, honest record of what was
+    // requested and refused, and stored approvals still count toward it — nothing is *hidden*, only nobody is
+    // *asked*. It is the same argument `/grants` uses for its preview.
+    let executorRefusal = session.executor.refusal;
+    const modelRefusal =
+      runtimeRefusal ??
+      preflightModel(request.model, ctx.modelRegistry, session.modelResolutionCache, session.allowUnresolvedModels);
+    const { extra, refusal: nativeRefusal } = await nativeDelegationContext(
+      session,
+      ids,
+      capacity?.childAllowance ?? 0,
+      Boolean(executorRefusal || modelRefusal || capacityRefusal),
+    );
+    executorRefusal ||= nativeRefusal;
 
-  if (spec.workspace && !executorRefusal && !modelRefusal) {
-    // Check non-liftable refusals before taking a lease, and take the lease before asking a human. This
-    // preserves both anti-race rules: a doomed spawn cannot bank approval, and a conflicting writer starts
-    // no child process.
-    const preview = await planWithApprovals(session, request, planContext, null, signal, preApproved);
-    plan = preview.plan;
-    if (plan.ok || shouldSeekApproval(plan.result)) {
+    const planContext = extra;
+    let preparedWorkspace: PreparedWorkspace | undefined;
+    let approvalOutcome: ApprovalOutcome | undefined;
+    let plan: ReturnType<typeof planDelegation>;
+
+    if (spec.workspace && !executorRefusal && !modelRefusal && !capacityRefusal) {
+      // Check non-liftable refusals before taking a lease, and take the lease before asking a human. This
+      // preserves both anti-race rules: a doomed spawn cannot bank approval, and a conflicting writer starts
+      // no child process.
+      const preview = await planWithApprovals(session, request, planContext, null, signal, preApproved);
+      plan = preview.plan;
+      if (plan.ok || shouldSeekApproval(plan.result)) {
+        try {
+          preparedWorkspace = await prepareDelegationWorkspace({
+            ...(session.workspacePin ? { workspacePin: session.workspacePin } : {}),
+            spec: { ...spec.workspace, access: governedWorkspaceAccess(spec.workspace.access, plan.requested) },
+            correlation: spec.correlation,
+            childId: ids.childId,
+            episodeId: session.episodeId,
+            executionId: ids.executionId,
+            parentExecutionId: ids.parentExecutionId,
+            signal,
+            ledgerPath: session.ledgerPath,
+          });
+          request.correlation = preparedWorkspace.correlation;
+          const gated = await planWithApprovals(session, request, planContext, ctx, signal, preApproved);
+          plan = gated.plan;
+          approvalOutcome = gated.approval;
+        } catch (error) {
+          const value =
+            error instanceof GovernanceRefusal
+              ? { code: error.code, message: error.message, ...(error.details ? { details: error.details } : {}) }
+              : structuredRefusal("WORKSPACE_LEASE_STALE", `workspace setup failed (${String(error)})`);
+          plan = { ...plan, ok: false, reason: value.message, refusal: value };
+        }
+      }
+    } else {
+      const gated = await planWithApprovals(
+        session,
+        request,
+        planContext,
+        executorRefusal || modelRefusal || capacityRefusal ? null : ctx,
+        signal,
+        preApproved,
+      );
+      plan = gated.plan;
+      approvalOutcome = gated.approval;
+    }
+
+    if (capacityRefusal) {
+      plan = { ...plan, ok: false, reason: capacityRefusal.message, refusal: capacityRefusal };
+    } else if (executorRefusal) {
+      const message = `grants: ${executorRefusal}`;
+      plan = { ...plan, ok: false, reason: message, refusal: structuredRefusal("EXECUTOR_UNAVAILABLE", message) };
+    } else if (modelRefusal) {
+      // This is a routing preflight, not a grant decision: preserve the resolved capability facts and replace
+      // only the outcome. It is still recorded by the common refusal path, and no lease, dialog or child starts.
+      plan = { ...plan, ok: false, reason: modelRefusal.message, refusal: modelRefusal };
+    }
+
+    // The capability decision provisions the child, so this append remains load-bearing and fails closed.
+    try {
+      await recordDelegationDecision({
+        session,
+        plan,
+        ids,
+        agent: spec.agent,
+        taskFrom,
+        taskFromExecutionId,
+        approval: approvalOutcome,
+        approvalFacts,
+      });
+    } catch (error) {
+      plan = {
+        ...plan,
+        ok: false,
+        reason: `grants: ledger write failed, denying — ${String(error)}`,
+        refusal: structuredRefusal("LEDGER_WRITE_FAILED", `grants: ledger write failed, denying — ${String(error)}`),
+      };
+    }
+
+    if (!plan.ok) {
+      // EVERY refusal reached after the gate ran. Gating on `ledgerDenied` left three post-gate refusals
+      // stranding a 30-day approval — most reachably a human declining the SECOND of two gated capabilities,
+      // which needs no fault at all. The predicate is now the rule itself, so it cannot drift from it again.
+      if (ctx) await unbankApprovals(session, ctx, approvalOutcome?.banked);
+      // Guarded: this contains a `strict: true` append, and on the path where the ledger is already known
+      // unwritable an unguarded call replaced the governance refusal, and its code, with a ledger error.
       try {
-        preparedWorkspace = await prepareDelegationWorkspace({
-          ...(session.workspacePin ? { workspacePin: session.workspacePin } : {}),
-          spec: { ...spec.workspace, access: governedWorkspaceAccess(spec.workspace.access, plan.requested) },
-          correlation: spec.correlation,
+        await releaseDelegationWorkspace({
+          prepared: preparedWorkspace,
           childId: ids.childId,
           episodeId: session.episodeId,
           executionId: ids.executionId,
           parentExecutionId: ids.parentExecutionId,
-          signal,
           ledgerPath: session.ledgerPath,
+          reason: "refused",
         });
-        request.correlation = preparedWorkspace.correlation;
-        const gated = await planWithApprovals(session, request, planContext, ctx, signal, preApproved);
-        plan = gated.plan;
-        approvalOutcome = gated.approval;
       } catch (error) {
-        const value =
-          error instanceof GovernanceRefusal
-            ? { code: error.code, message: error.message, ...(error.details ? { details: error.details } : {}) }
-            : structuredRefusal("WORKSPACE_LEASE_STALE", `workspace setup failed (${String(error)})`);
-        plan = { ...plan, ok: false, reason: value.message, refusal: value };
+        plan = { ...plan, reason: `${plan.reason ?? "refused"}; workspace release record failed: ${String(error)}` };
       }
+      return {
+        ok: false,
+        text: "",
+        reason: plan.reason,
+        granted: [],
+        depth: plan.childDepth,
+        exitCode: null,
+        ...(plan.refusal ? { refusal: plan.refusal } : {}),
+      };
     }
-  } else {
-    const gated = await planWithApprovals(
-      session,
-      request,
-      planContext,
-      executorRefusal || modelRefusal ? null : ctx,
-      signal,
-      preApproved,
-    );
-    plan = gated.plan;
-    approvalOutcome = gated.approval;
-  }
 
-  if (executorRefusal) {
-    const message = `grants: ${executorRefusal}`;
-    plan = { ...plan, ok: false, reason: message, refusal: structuredRefusal("EXECUTOR_UNAVAILABLE", message) };
-  } else if (modelRefusal) {
-    // This is a routing preflight, not a grant decision: preserve the resolved capability facts and replace
-    // only the outcome. It is still recorded by the common refusal path, and no lease, dialog or child starts.
-    plan = { ...plan, ok: false, reason: modelRefusal.message, refusal: modelRefusal };
-  }
-
-  // The capability decision provisions the child, so this append remains load-bearing and fails closed.
-  try {
-    await recordDelegationDecision({
+    executorEntered = true;
+    return await executePlannedChild({
+      capacityReservation: capacity,
       session,
       plan,
-      ids,
       agent: spec.agent,
-      taskFrom,
-      taskFromExecutionId,
-      approval: approvalOutcome,
-      approvalFacts,
+      childId: ids.childId,
+      executionId: ids.executionId,
+      parentExecutionId: ids.parentExecutionId,
+      toolCallId: options.toolCallId,
+      cwd: ctx.cwd,
+      preparedWorkspace,
+      resolvedRuntime,
+      signal,
+      onProgress,
     });
-  } catch (error) {
-    plan = {
-      ...plan,
-      ok: false,
-      reason: `grants: ledger write failed, denying — ${String(error)}`,
-      refusal: structuredRefusal("LEDGER_WRITE_FAILED", `grants: ledger write failed, denying — ${String(error)}`),
-    };
+  } finally {
+    capacity?.finalize(
+      executorEntered
+        ? { state: "unknown", reason: "execution returned without qualified cleanup" }
+        : { state: "not-started", reason: "delegation ended before entering the executor" },
+    );
   }
-
-  if (!plan.ok) {
-    // EVERY refusal reached after the gate ran. Gating on `ledgerDenied` left three post-gate refusals
-    // stranding a 30-day approval — most reachably a human declining the SECOND of two gated capabilities,
-    // which needs no fault at all. The predicate is now the rule itself, so it cannot drift from it again.
-    if (ctx) await unbankApprovals(session, ctx, approvalOutcome?.banked);
-    // Guarded: this contains a `strict: true` append, and on the path where the ledger is already known
-    // unwritable an unguarded call replaced the governance refusal, and its code, with a ledger error.
-    try {
-      await releaseDelegationWorkspace({
-        prepared: preparedWorkspace,
-        childId: ids.childId,
-        episodeId: session.episodeId,
-        executionId: ids.executionId,
-        parentExecutionId: ids.parentExecutionId,
-        ledgerPath: session.ledgerPath,
-        reason: "refused",
-      });
-    } catch (error) {
-      plan = { ...plan, reason: `${plan.reason ?? "refused"}; workspace release record failed: ${String(error)}` };
-    }
-    return {
-      ok: false,
-      text: "",
-      reason: plan.reason,
-      granted: [],
-      depth: plan.childDepth,
-      exitCode: null,
-      ...(plan.refusal ? { refusal: plan.refusal } : {}),
-    };
-  }
-
-  if (spec.episodeCostCeiling !== undefined) session.episodeCostGate.setCeiling(spec.episodeCostCeiling);
-  plan = {
-    ...plan,
-    env: { ...plan.env, [ENV_EPISODE_COST_CEILING]: String(session.episodeCostGate.ceiling) },
-  };
-  const costUI = ctx.ui as typeof ctx.ui & {
-    input(title: string, placeholder?: string, opts?: { signal?: AbortSignal }): Promise<string | undefined>;
-  };
-  return executePlannedChild({
-    session,
-    plan,
-    agent: spec.agent,
-    childId: ids.childId,
-    executionId: ids.executionId,
-    parentExecutionId: ids.parentExecutionId,
-    toolCallId: options.toolCallId,
-    cwd: ctx.cwd,
-    preparedWorkspace,
-    resolvedRuntime,
-    signal,
-    onProgress,
-    costGateUI: {
-      hasUI: ctx.hasUI,
-      input: (title, placeholder, gateSignal) => costUI.input(title, placeholder, { signal: gateSignal }),
-      notify: (message) => ctx.ui.notify(message, "warning"),
-    },
-  });
-}
-
-/**
- * The planner context for one delegation, including a `pruned` handoff narrowed by an advisor (ADR-0077).
- *
- * **Exported and taking its own `preview`, so the ordering is forced by a test rather than by a reviewer.** Three
- * properties live here and each was, at some point in this change's history, true only because somebody had
- * checked it by hand: an advisor is not asked for a delegation that is already refused; it is not asked until a
- * plan says the `pruned` handoff actually survived the ceiling, the grant and the gate; and the ids it returns
- * reach the planner. Reviewers measured all three by mutating the source and finding the suite still green. A
- * function with a seam is the only version of this that a test can hold.
- */
-export async function handoffPlanContext(input: {
-  session: Parameters<typeof advisePruning>[0]["session"];
-  base: Record<string, unknown>;
-  task: string;
-  executionId?: string;
-  toolCallId?: string;
-  /** A refusal is already certain, so nothing may be asked. */
-  blocked: boolean;
-  /** Plans with no human in the loop; its result decides whether an advisor is consulted at all. */
-  preview: () => Promise<{ handoff?: { mode: string } }>;
-  attribution?: Parameters<typeof advisePruning>[0]["attribution"];
-  signal?: AbortSignal;
-}): Promise<Record<string, unknown>> {
-  if (input.blocked) return { ...input.base };
-  const plan = await input.preview();
-  if (plan.handoff?.mode !== "pruned") return { ...input.base };
-  const ids = await advisePruning({
-    session: input.session,
-    granted: plan.handoff as Parameters<typeof advisePruning>[0]["granted"],
-    task: input.task,
-    ...(input.executionId ? { executionId: input.executionId } : {}),
-    ...(input.toolCallId ? { toolCallId: input.toolCallId } : {}),
-    ...(input.attribution ? { attribution: input.attribution } : {}),
-    ...(input.signal ? { signal: input.signal } : {}),
-  });
-  return ids ? { ...input.base, handoffTurnIds: ids } : { ...input.base };
 }

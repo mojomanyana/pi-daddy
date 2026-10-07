@@ -16,6 +16,7 @@ export function supportedModelEfforts(model: {
 
 export interface ModelCatalogue {
   find(provider: string, modelId: string): unknown;
+  getProviderAuthStatus?(provider: string): { configured: boolean };
 }
 
 /** Resolve an explicit provider/id against pi's own session catalogue without probing credentials or network. */
@@ -41,4 +42,32 @@ export function preflightModel(
       `or set ${ENV_ALLOW_UNRESOLVED_MODELS}=1 to let pi attempt custom resolution`,
     { model: model || "(empty)" },
   );
+}
+
+/** Exact candidate only; never enumerate providers, resolve credentials, probe, or clamp effort. */
+export function runtimePairUnavailable(
+  choice: { model?: string; thinking?: string },
+  catalogue: ModelCatalogue,
+  allowUnresolved = false,
+): string | undefined {
+  if (!choice.model) return undefined; // No explicit/current choice: preserve Pi's ordinary configured default.
+  const slash = choice.model.indexOf("/");
+  const provider = choice.model.slice(0, slash),
+    id = choice.model.slice(slash + 1);
+  if (slash <= 0 || !id) return "runtime model needs provider/model";
+  const model = catalogue.find(provider, id);
+  if (!model) return allowUnresolved ? undefined : `model ${choice.model} is not in pi's session catalogue`;
+  if (
+    choice.thinking !== undefined &&
+    typeof model === "object" &&
+    model !== null &&
+    "reasoning" in model &&
+    !supportedModelEfforts(model as { reasoning: boolean }).includes(choice.thinking as never)
+  ) {
+    return `model ${choice.model} does not support thinking ${choice.thinking}`;
+  }
+  // configured:false cannot distinguish keyless, missing and unknown public provider auth semantics.
+  // Reading the passive status is permitted evidence; never turn it into an authentication attempt.
+  catalogue.getProviderAuthStatus?.(provider);
+  return undefined;
 }

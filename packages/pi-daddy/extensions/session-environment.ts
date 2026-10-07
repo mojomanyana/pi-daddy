@@ -1,6 +1,6 @@
 import { parseInherited } from "../src/kernel/approval.ts";
 import { DELEGATE_CAPABILITY } from "../src/kernel/delegate.ts";
-import { budgetFromEnv } from "../src/kernel/fanout.ts";
+import { capacityForLifecycle } from "./session-capacity.ts";
 import { isEpisodeId } from "../src/kernel/episode-id.ts";
 import { WILDCARD } from "../src/kernel/pi-tools.ts";
 import {
@@ -54,7 +54,10 @@ export function reconcileSessionEnvironment(
       ? lifecycle.episodeId
       : session.episodeId;
   lifecycle.episodeId = session.episodeId;
-  session.fanoutBudget = budgetFromEnv(environment[ENV_FANOUT]);
+  const capacityState = capacityForLifecycle(lifecycle, environment[ENV_FANOUT]);
+  session.capacity = capacityState.allocator;
+  session.capacityRefusal = capacityState.refusal;
+  session.fanoutBudget = session.capacity.total;
   session.mayDelegate =
     !session.governed || session.inherited.includes(DELEGATE_CAPABILITY) || session.inherited.includes(WILDCARD);
   session.allowUnresolvedModels = environment[ENV_ALLOW_UNRESOLVED_MODELS] === "1";

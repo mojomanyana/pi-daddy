@@ -184,6 +184,7 @@ export async function releaseDelegationWorkspace(input: {
   reason: string;
   /** Deliberately keep the lease: a herdr writer tab would not close, so the pane may still be live. */
   retain?: boolean;
+  onObservationFailure?: (error: unknown) => void;
 }): Promise<LeaseReleaseOutcome | "retained" | undefined> {
   if (!input.prepared) return undefined;
   // A retained lease writes no `state: "released"`, so the record stays `active` and the NEXT owner reads
@@ -197,7 +198,7 @@ export async function releaseDelegationWorkspace(input: {
     : await input.prepared.lease.release(input.reason);
   if (input.ledgerPath) {
     await appendLedgerEvent(
-      { path: input.ledgerPath, strict: true },
+      { path: input.ledgerPath, strict: !input.onObservationFailure, onFailure: input.onObservationFailure },
       buildWorkspaceLeaseEvent({
         ...(input.episodeId ? { episodeId: input.episodeId } : {}),
         executionId: input.executionId,

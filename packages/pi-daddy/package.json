@@ -1,6 +1,6 @@
 {
   "name": "pi-daddy",
-  "version": "0.43.1",
+  "version": "0.44.0-rc.2",
   "description": "Capability governance for pi sub-agents: spawn Agent Skills (SKILL.md) definitions whose allowed-tools becomes a grant that can only narrow going down a delegation tree, enforced by pi's own --tools allowlist, with an append-only ledger.",
   "keywords": [
     "pi-package",
@@ -45,7 +45,8 @@
     "THIRD_PARTY_NOTICES.md",
     "README.md",
     "CHANGELOG.md",
-    "LICENSE"
+    "LICENSE",
+    "native"
   ],
   "scripts": {
     "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json",
@@ -55,7 +56,8 @@
     "test:integration:ci": "node --test test-integration/approval.it.ts test-integration/governance.it.ts test-integration/activity.it.ts",
     "contracts:generate": "node scripts/generate-ledger-record-contract.ts",
     "prepack": "npm run build",
-    "test:smoke": "node scripts/smoke-installed.mjs"
+    "test:smoke": "node scripts/smoke-installed.mjs",
+    "build:worker": "node scripts/build-worker.ts"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -65,16 +67,22 @@
     ]
   },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": ">=0.83.0",
     "@types/node": ">=22",
-    "typebox": ">=1.0.0"
+    "typebox": ">=1.0.0",
+    "@earendil-works/pi-coding-agent": "1.0.4"
   },
   "dependencies": {
-    "@earendil-works/pi-coding-agent": ">=0.83.0",
+    "@earendil-works/pi-coding-agent": "1.0.4",
     "typebox": ">=1.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "typescript": "^5.7.0"
-  }
+  },
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "x64"
+  ]
 }

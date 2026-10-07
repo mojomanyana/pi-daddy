@@ -235,7 +235,7 @@ export async function obtainApprovals(
     ui: ctx.ui,
     hasUI: ctx.hasUI,
     mode: ctx.mode,
-    timeoutMs: timeoutMsFromEnv(process.env[ENV_APPROVAL_TIMEOUT]),
+    timeoutMs: () => timeoutMsFromEnv(process.env[ENV_APPROVAL_TIMEOUT]),
   });
 
   const approved = [...pre.approved];

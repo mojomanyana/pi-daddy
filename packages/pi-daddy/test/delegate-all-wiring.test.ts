@@ -1,3 +1,4 @@
+import { piFixtureScript } from "./pi-fixture.ts";
 /**
  * Wiring tests for `delegate_all` — the fan-out tool as the extension actually registers it.
  *
@@ -244,7 +245,7 @@ test("every child is reported, and an all-failed fan-out throws rather than retu
 
 test("a progress renderer failure cannot kill a process child", async () => {
   const bin = await tempDir("grants-progress-failure-shim-");
-  await writeFile(join(bin, "pi"), "#!/usr/bin/env node\nconsole.log('child completed')\n");
+  await writeFile(join(bin, "pi"), piFixtureScript("#!/usr/bin/env node\nconsole.log('child completed')\n"));
   await chmod(join(bin, "pi"), 0o755);
   const oldPath = process.env.PATH;
   process.env.PATH = `${bin}:${oldPath}`;
@@ -270,7 +271,7 @@ test("a progress renderer failure cannot kill a process child", async () => {
 
 test("a chain progress renderer failure cannot kill its process step", async () => {
   const bin = await tempDir("grants-chain-progress-failure-shim-");
-  await writeFile(join(bin, "pi"), "#!/usr/bin/env node\nconsole.log('chain child completed')\n");
+  await writeFile(join(bin, "pi"), piFixtureScript("#!/usr/bin/env node\nconsole.log('chain child completed')\n"));
   await chmod(join(bin, "pi"), 0o755);
   const oldPath = process.env.PATH;
   process.env.PATH = `${bin}:${oldPath}`;
@@ -296,41 +297,31 @@ test("a chain progress renderer failure cannot kill its process step", async () 
 
 test("mixed all-failed fan-out does not assign one child's refusal code to the aggregate", async () => {
   const bin = await tempDir("grants-mixed-failure-shim-");
-  await writeFile(join(bin, "pi"), "#!/usr/bin/env node\nprocess.exit(1)\n");
+  await writeFile(join(bin, "pi"), piFixtureScript("#!/usr/bin/env node\nprocess.exit(1)\n"));
   await chmod(join(bin, "pi"), 0o755);
   const oldPath = process.env.PATH;
   process.env.PATH = `${bin}:${oldPath}`;
   try {
     const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate" });
-    await assert.rejects(
-      () =>
-        tools.get("delegate_all")!.execute(
-          "mixed",
-          {
-            children: [
-              { task: "denied", tools: ["write"] },
-              { task: "runtime", tools: ["read"] },
-            ],
-          },
-          undefined,
-          undefined,
-          ctx,
-        ),
-      (error: Error & { code?: string; details?: Record<string, unknown> }) => {
-        // The name of this test is the invariant: no CHILD's code may become the aggregate's. It used to
-        // be checked by asserting no code at all, which also threw away the machine-readable half — on
-        // total failure `details.refusals` is not returned, so the codes existed nowhere. They are named
-        // in `details` now, under an aggregate code that is deliberately not any child's.
-        assert.equal(error.code, "FANOUT_FAILED");
-        assert.match(error.message, /every child was refused or failed/);
-        const codes = String(error.details?.codes ?? "")
-          .split(",")
-          .filter(Boolean);
-        assert.ok(codes.length > 1, `mixed codes must all survive, got ${JSON.stringify(codes)}`);
-        assert.equal(codes.includes("FANOUT_FAILED"), false, "the aggregate code is not a child's code");
-        return true;
+    const result = (await tools.get("delegate_all")!.execute(
+      "mixed",
+      {
+        children: [
+          { task: "denied", tools: ["write"] },
+          { task: "runtime", tools: ["read"] },
+        ],
       },
-    );
+      undefined,
+      undefined,
+      ctx,
+    )) as any;
+    assert.equal(result.isError, true);
+    assert.equal(result.details.outcomes.length, 2);
+    const codes = result.details.outcomes.map((outcome: any) => outcome.refusal?.code);
+    assert.ok(codes.includes("CAPABILITY_ESCALATION"));
+    assert.ok(codes.includes("CHILD_EXIT_NONZERO"));
+    assert.equal(result.details.outcomes[1].work, "failed");
+    assert.equal(result.details.outcomes[1].cleanup.state, "settled");
   } finally {
     process.env.PATH = oldPath;
   }
@@ -569,7 +560,7 @@ test("ADR-0032: delegate_all paints DURING the run, one block covering every chi
   const release = join(bin, "release");
   await writeFile(
     join(bin, "pi"),
-    `#!/usr/bin/env node
+    piFixtureScript(`#!/usr/bin/env node
 const { existsSync } = require('node:fs');
 const task = process.argv.at(-1).trim();
 if (!['one', 'two'].includes(task)) throw new Error('unexpected fixture task');
@@ -581,7 +572,7 @@ const poll = setInterval(() => {
   clearTimeout(deadline);
   process.stdout.write('child-' + task + '-done\\n');
 }, 10);
-`,
+`),
   );
   await chmod(join(bin, "pi"), 0o755);
   const oldPath = process.env.PATH;
@@ -727,7 +718,7 @@ test("an unresolved model is ledgered and starts no child process", async () => 
   const marker = join(bin, "started");
   await writeFile(
     join(bin, "pi"),
-    `#!/usr/bin/env node\nrequire('node:fs').writeFileSync(${JSON.stringify(marker)}, 'started')\n`,
+    piFixtureScript(`#!/usr/bin/env node\nrequire('node:fs').writeFileSync(${JSON.stringify(marker)}, 'started')\n`),
   );
   await chmod(join(bin, "pi"), 0o755);
   const ledger = join(bin, "ledger.jsonl");
@@ -758,7 +749,9 @@ test("BLOCKED_CRITICAL_ASSURANCE from a child remains a failed delegation and th
   const shim = join(bin, "pi");
   await writeFile(
     shim,
-    "#!/usr/bin/env node\nprocess.stdout.write('BLOCKED_CRITICAL_ASSURANCE\\nMissing controls:\\n- review');process.exit(3)\n",
+    piFixtureScript(
+      "#!/usr/bin/env node\nprocess.stdout.write('BLOCKED_CRITICAL_ASSURANCE\\nMissing controls:\\n- review');process.exit(3)\n",
+    ),
   );
   await chmod(shim, 0o755);
   const oldPath = process.env.PATH;
@@ -782,11 +775,11 @@ test("fan-out and chain cannot turn one BLOCKED_CRITICAL_ASSURANCE child into pa
   const shim = join(bin, "pi");
   await writeFile(
     shim,
-    `#!/usr/bin/env node
+    piFixtureScript(`#!/usr/bin/env node
 const blocked=process.argv.join(' ').includes('BLOCKME');
 process.stdout.write(blocked?'BLOCKED_CRITICAL_ASSURANCE\\nMissing controls:\\n- review':'OK');
 process.exit(blocked?3:0);
-`,
+`),
   );
   await chmod(shim, 0o755);
   const oldPath = process.env.PATH;
@@ -828,7 +821,7 @@ process.exit(blocked?3:0);
 
 test("partial chain results retain per-step structured refusals", async () => {
   const bin = await tempDir("grants-chain-refusal-shim-");
-  await writeFile(join(bin, "pi"), "#!/usr/bin/env node\nprocess.stdout.write('OK')\n");
+  await writeFile(join(bin, "pi"), piFixtureScript("#!/usr/bin/env node\nprocess.stdout.write('OK')\n"));
   await chmod(join(bin, "pi"), 0o755);
   const oldPath = process.env.PATH;
   process.env.PATH = `${bin}:${oldPath}`;
@@ -860,7 +853,7 @@ test("partial chain results retain per-step structured refusals", async () => {
 test("chain once approvals are attributed and consumed by the step/capability they named", async () => {
   const bin = await tempDir("grants-chain-once-shim-");
   const shim = join(bin, "pi");
-  await writeFile(shim, "#!/usr/bin/env node\nprocess.stdout.write('OK')\n");
+  await writeFile(shim, piFixtureScript("#!/usr/bin/env node\nprocess.stdout.write('OK')\n"));
   await chmod(shim, 0o755);
   const ledger = join(await tempDir("grants-chain-once-ledger-"), "ledger.jsonl");
   const oldPath = process.env.PATH;
@@ -907,7 +900,7 @@ test("chain once approvals are attributed and consumed by the step/capability th
 test("a correlated session approval cannot replay for a different task", async () => {
   const bin = await tempDir("grants-pi-binding-shim-");
   const shim = join(bin, "pi");
-  await writeFile(shim, "#!/usr/bin/env node\nprocess.stdout.write('OK')\n");
+  await writeFile(shim, piFixtureScript("#!/usr/bin/env node\nprocess.stdout.write('OK')\n"));
   await chmod(shim, 0o755);
   const oldPath = process.env.PATH;
   process.env.PATH = `${bin}:${oldPath}`;
@@ -949,7 +942,7 @@ test("a failed always-store write is ledgered as session-only with no fake expir
   );
   const ledger = join(dir, "ledger.jsonl");
   const bin = await tempDir("grants-persist-downgrade-bin-");
-  await writeFile(join(bin, "pi"), "#!/usr/bin/env node\nprocess.stdout.write('OK')\n");
+  await writeFile(join(bin, "pi"), piFixtureScript("#!/usr/bin/env node\nprocess.stdout.write('OK')\n"));
   await chmod(join(bin, "pi"), 0o755);
   const oldPath = process.env.PATH;
   const oldAgentDir = process.env.PI_CODING_AGENT_DIR;
@@ -1047,7 +1040,9 @@ test("a governed process starts in the validated workspace with the same effecti
   const shim = join(bin, "pi");
   await writeFile(
     shim,
-    `#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify({cwd:process.cwd(),argv:process.argv.slice(2)}))\n`,
+    piFixtureScript(
+      `#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify({cwd:process.cwd(),argv:process.argv.slice(2)}))\n`,
+    ),
   );
   await chmod(shim, 0o755);
   const oldPath = process.env.PATH;
@@ -1096,7 +1091,9 @@ test("ADR-0042: a delegated child inherits a NARROWED destination pin on the spa
   const shim = join(bin, "pi");
   await writeFile(
     shim,
-    `#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify({pin:process.env.PI_DADDY_WORKSPACE_PIN}))\n`,
+    piFixtureScript(
+      `#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify({pin:process.env.PI_DADDY_WORKSPACE_PIN}))\n`,
+    ),
   );
   await chmod(shim, 0o755);
   const oldPath = process.env.PATH;
@@ -1162,4 +1159,43 @@ test("ADR-0031: a pre-0.16 ledger line, which has no executor field, still parse
   const report = await verifyLedger(ledger);
   assert.equal(report.ok, true, "a line without `executor` must not read as corrupt");
   assert.equal(report.records, 1, "and it must still be counted");
+});
+
+test("a complete final too large for required handoff blocks only the dependent step", async () => {
+  const bin = await tempDir("grants-complete-handoff-");
+  const calls = join(bin, "calls");
+  const final = "BEGIN完整\n" + "🙂".repeat(9000) + "\nEND  ";
+  await writeFile(
+    join(bin, "pi"),
+    piFixtureScript(
+      `require('node:fs').appendFileSync(${JSON.stringify(calls)}, 'spawn\\n');process.stdout.write(${JSON.stringify(final)});`,
+    ),
+  );
+  await chmod(join(bin, "pi"), 0o755);
+  const oldPath = process.env.PATH;
+  process.env.PATH = `${bin}:${oldPath}`;
+  try {
+    const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate", [ENV_FANOUT]: "8" });
+    const result = (await tools.get("delegate_chain")!.execute(
+      "large-final",
+      {
+        steps: [
+          { task: "produce complete final", tools: ["read"] },
+          { task: "use {previous}", tools: ["read"] },
+        ],
+      },
+      undefined,
+      undefined,
+      ctx,
+    )) as any;
+    assert.equal(result.isError, true);
+    assert.equal(result.details.aborted, true);
+    assert.equal(result.details.outcomes.length, 1);
+    assert.equal(result.details.outcomes[0].text, final);
+    assert.equal(result.details.outcomes[0].final.state, "complete");
+    assert.match(result.details.blockedReason, /handoff/i);
+    assert.equal(await readFile(calls, "utf8"), "spawn\n");
+  } finally {
+    process.env.PATH = oldPath;
+  }
 });

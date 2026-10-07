@@ -106,7 +106,7 @@ test("child usage totals are read from the current turn before the temporary ses
   const session = await activitySessionFor(plan, "exec:00000000-0000-4000-8000-000000000002");
   const lines = [
     { type: "message", message: { role: "assistant", usage: usage(100, 10, 1) } },
-    { type: "compaction" },
+    { type: "compaction", usage: zeroUsage() },
     { type: "message", message: { role: "user", content: "PRIVATE CURRENT TASK" } },
     { type: "model_change", provider: "openai-codex", modelId: "gpt-5.3-codex" },
     { type: "thinking_level_change", thinkingLevel: "high" },
@@ -120,14 +120,14 @@ test("child usage totals are read from the current turn before the temporary ses
         usage: usage(20, 3, 0.25),
       },
     },
-    { type: "compaction" },
+    { type: "compaction", usage: zeroUsage() },
     { type: "message", message: { role: "toolResult", content: "PRIVATE TOOL RESULT" } },
     {
       type: "message",
       message: { role: "assistant", provider: "openai-codex", model: "gpt-5.3-codex", usage: usage(5, 2, 0.1) },
     },
   ];
-  await writeFile(session.path, `${lines.map((line) => JSON.stringify(line)).join("\n")}\n`);
+  await writeFile(session.path, canonicalUsageSession(lines));
   assert.deepEqual(await session.usage(), {
     usage: {
       input: 25,
@@ -163,13 +163,11 @@ test("child usage failure is atomic and privacy-safe", async () => {
   const second = await activitySessionFor(["--print", "--no-session", " task"], "exec:bad-usage-2");
   await writeFile(
     second.path,
-    [
+    canonicalUsageSession([
       { type: "message", message: { role: "user" } },
       { type: "message", message: { role: "assistant", usage: usage(20, 3, 0.25) } },
       { type: "message", message: { role: "assistant", usage: { input: "PRIVATE TRANSCRIPT" } } },
-    ]
-      .map((entry) => JSON.stringify(entry))
-      .join("\n"),
+    ]),
   );
   assert.deepEqual(await second.usage(), { unavailable: "session-invalid" });
   await second.dispose();
@@ -177,7 +175,10 @@ test("child usage failure is atomic and privacy-safe", async () => {
   const zeroes = await activitySessionFor(["--print", "--no-session", " task"], "exec:zero-usage");
   await writeFile(
     zeroes.path,
-    `${JSON.stringify({ type: "message", message: { role: "assistant", provider: "local", model: "m", usage: usage(5, 0, 0.1) } })}\n`,
+    canonicalUsageSession([
+      { type: "message", message: { role: "user" } },
+      { type: "message", message: { role: "assistant", provider: "local", model: "m", usage: usage(5, 0, 0.1) } },
+    ]),
   );
   assert.deepEqual((await zeroes.usage()).tokenDetail, {
     inputTokens: 5,
@@ -188,6 +189,33 @@ test("child usage failure is atomic and privacy-safe", async () => {
   });
   await zeroes.dispose();
 });
+
+// Canonical Pi 1.0.4 persisted tree, including explicit zero usage for the synthetic compaction.
+function canonicalUsageSession(entries: unknown[]): string {
+  return (
+    [
+      { type: "session", version: 3, id: "usage-fixture", cwd: process.cwd(), timestamp: new Date(0).toISOString() },
+      ...entries.map((entry, index) => ({
+        ...(entry as object),
+        id: `e${index}`,
+        parentId: index ? `e${index - 1}` : null,
+        timestamp: new Date(0).toISOString(),
+      })),
+    ]
+      .map((entry) => JSON.stringify(entry))
+      .join("\n") + "\n"
+  );
+}
+function zeroUsage() {
+  return {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    totalTokens: 0,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+  };
+}
 
 function usage(input: number, output: number, totalCost: number) {
   return {

@@ -40,8 +40,9 @@
  *
  * Keyed by registry path, not by project: accepting an id is a statement about the operator's registry.
  */
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { readAuthorityText } from "../kernel/authority-text.ts";
 import { acceptedWorkspacesPath } from "../kernel/project-paths.ts";
 
 export interface AcceptedWorkspaces {
@@ -84,12 +85,23 @@ export async function reconcileAcceptedWorkspaces(
   registryPath: string,
   registryIds: readonly string[],
   env: NodeJS.ProcessEnv = process.env,
+  /** Trusted physical-read dependency; never supplied by a registry or requester. */
+  read: (path: string) => Promise<string> = readAuthorityText,
+  assertHealthy?: () => void,
 ): Promise<AcceptedWorkspaces> {
+  assertHealthy?.();
   const path = acceptedWorkspacesPath(registryPath, env);
-  const text = await readFile(path, "utf8").catch(() => undefined);
+  const text = await read(path).catch((error: unknown) => {
+    // Unknown decisions are not first use; preserve physical failures and their recovery capabilities.
+    if (!(error instanceof Error) || !("code" in error) || error.code !== "ENOENT") throw error;
+    assertHealthy?.();
+    return undefined;
+  });
+  assertHealthy?.();
   if (text === undefined) {
     const accepted = [...registryIds].sort();
-    await write(path, { version: 1, registry: registryPath, accepted });
+    await write(path, { version: 1, registry: registryPath, accepted }, assertHealthy);
+    assertHealthy?.();
     return { accepted, firstUse: true, unaccepted: [] };
   }
   const stored = parse(text);
@@ -116,9 +128,13 @@ export async function acceptWorkspaces(
 }
 
 /** Atomic, for the reason every other store here is: a half-written record reads as a narrower decision. */
-async function write(path: string, body: StoredAcceptance): Promise<void> {
+async function write(path: string, body: StoredAcceptance, assertHealthy?: () => void): Promise<void> {
+  assertHealthy?.();
   await mkdir(dirname(path), { recursive: true });
+  assertHealthy?.();
   const temp = join(dirname(path), `.${Math.random().toString(36).slice(2)}.tmp`);
   await writeFile(temp, `${JSON.stringify(body, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+  assertHealthy?.();
   await rename(temp, path);
+  assertHealthy?.();
 }

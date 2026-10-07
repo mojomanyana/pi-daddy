@@ -1,3 +1,5 @@
+import { reconcileDelegationCapacity, reserveDelegationCapacity } from "./session-capacity.ts";
+import { registerDefinitionDescribe } from "./definition-describe.ts";
 /**
  * Governed delegation, as pi sees it: the `delegate` and `delegate_all` tool registrations.
  *
@@ -37,7 +39,7 @@ import { newDelegationOccurrence } from "./execution-occurrence.ts";
 import { correlationShape as buildCorrelationShape } from "./correlation-shape.ts";
 import { assertDelegationAuthority } from "./delegation-authority.ts";
 import { contextShape } from "./context-shape.ts";
-import { ensureSessionModelPrompt } from "./session-model-prompt.ts";
+import { withoutRetiredDelegationArguments } from "./retired-inputs.ts";
 
 /**
  * Wire a set of children to pi's partial-result channel — ADR-0032.
@@ -186,6 +188,9 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
     ),
   );
   const childShape = Type.Object({
+    definitionId: Type.Optional(
+      Type.String({ description: "Snapshot id returned by delegate_describe; required for Principal phases." }),
+    ),
     task: Type.String({ description: "The task for this sub-agent. It receives only this." }),
     agent: Type.Optional(Type.String({ description: describeAgent(spawnable()) })),
     tools: Type.Optional(Type.Array(Type.String(), { description: "Capabilities, when no 'agent' fits." })),
@@ -202,12 +207,12 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       maxItems: MAX_CHILDREN_PER_CALL,
       description: "The sub-agents to run concurrently. Each is independent and unaware of the others.",
     }),
-    episodeCostCeiling: Type.Optional(
-      Type.Number({ exclusiveMinimum: 0, description: "Override the USD ceiling for this whole episode." }),
-    ),
   });
 
   const delegateParams = Type.Object({
+    definitionId: Type.Optional(
+      Type.String({ description: "Snapshot id returned by delegate_describe; required for Principal phases." }),
+    ),
     task: Type.String({ description: "The task for the sub-agent. It receives only this." }),
     agent: Type.Optional(Type.String({ description: describeAgent(spawnable()) })),
     tools: Type.Optional(
@@ -227,9 +232,6 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       }),
     ),
     thinking: thinkingShape,
-    episodeCostCeiling: Type.Optional(
-      Type.Number({ exclusiveMinimum: 0, description: "Override the USD ceiling for this whole episode." }),
-    ),
     context: Type.Optional(contextShape()),
     correlation: Type.Optional(correlationShape),
     workspace: Type.Optional(workspaceShape),
@@ -244,60 +246,54 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       "written by the operator. Use 'tools' only when no definition fits. Grant 'delegate' if the " +
       "sub-agent must itself delegate further; withhold it to make the sub-agent a leaf.",
     parameters: delegateParams,
+    prepareArguments: withoutRetiredDelegationArguments,
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
       assertDelegationAuthority(session);
-      await ensureSessionModelPrompt(session, params.agent ? [params.agent] : [], {
-        hasUI: ctx.hasUI && typeof ctx.ui.input === "function",
-        input: (title, placeholder) => ctx.ui.input(title, placeholder),
-        notify: (message, type) => ctx.ui.notify(message, type),
-      });
       // ADR-0032: one child, same block. `_onUpdate` was discarded here, so a delegation showed the bare word
       // `delegate` for up to DEFAULT_TIMEOUT_MS — sixty minutes by default.
       const progress = progressReporter(session, [params.agent ?? "delegate"], onUpdate as never);
       const outcome = await runOneDelegation(
         session,
         {
+          definitionId: params.definitionId,
           task: params.task,
           agent: params.agent,
           tools: params.tools,
           model: params.model,
           thinking: params.thinking,
-          episodeCostCeiling: params.episodeCostCeiling,
           context: params.context,
           correlation: params.correlation,
           workspace: params.workspace,
         },
         newDelegationOccurrence(session, 0),
-        // A single blocking delegation spends nothing from the subtree budget: cardinality is already
-        // bounded to one by the call being blocking, which is the accident fan-out removes. Passing the
-        // budget through unchanged means a child can still fan out with what this session was given.
-        session.fanoutBudget,
+        // Reserve one actual child plus the currently available disjoint subtree allowance.
+        undefined,
         ctx,
         signal,
         { onProgress: progress.sink(0), toolCallId: _toolCallId },
       );
       progress.settle([outcome]);
 
-      if (!outcome.ok) {
-        if (isCriticalAssuranceBlock(outcome)) throw new Error(outcome.text);
-        // THROW, do not return. `AgentToolResult` has no `isError` field: pi sets it only when `execute`
-        // throws (`pi-agent-core/dist/agent-loop.js` — a normal return is hardcoded `isError: false`).
-        // Returning `isError: true` was silently discarded, so every refusal this package made was
-        // recorded by pi as a SUCCESSFUL tool call. Found by the integration suite on its first run.
-        const detail = outcome.text ? `\n\n${outcome.text}` : "";
-        const message = `delegation refused: ${outcome.reason}${detail}`;
+      if (isCriticalAssuranceBlock(outcome)) throw new Error(outcome.text);
+      // A pre-launch refusal has no executed work/final to preserve; keep its established typed refusal.
+      if (!outcome.ok && !outcome.work && !outcome.final && !outcome.cleanup) {
+        const message = `delegation refused: ${outcome.reason}`;
         if (outcome.refusal) throw new GovernanceRefusal({ ...outcome.refusal, message });
         throw new Error(message);
       }
-
+      // Pi 1.0.4 preserves returned isError. Keep every outcome dimension and useful output together.
+      const failed = !outcome.ok || outcome.control === "failed";
       return {
-        content: [{ type: "text", text: outcome.text || "(no output)" }],
-        details: {
-          granted: outcome.granted,
-          depth: outcome.depth,
-          exitCode: outcome.exitCode,
-          retention: outcome.retention,
-        },
+        isError: failed,
+        content: [
+          {
+            type: "text",
+            text: failed
+              ? `delegation failed: ${outcome.reason ?? "required control failed"}${outcome.text ? `\n\n${outcome.text}` : ""}`
+              : outcome.text || "(no output)",
+          },
+        ],
+        details: outcome,
       };
     },
   });
@@ -323,31 +319,23 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
     description:
       "Run several sub-agents CONCURRENTLY and return all their results. Each child is governed exactly " +
       "as with `delegate`: it holds only what you grant it, and you cannot grant what you do not hold. " +
-      `At most ${MAX_CHILDREN_PER_CALL} children per call, and a session-wide budget bounds the total ` +
+      `At most ${MAX_CHILDREN_PER_CALL} children per call, and shared capacity bounds active descendants ` +
       "across the whole delegation subtree. Children cannot see each other or share context. Use this " +
       "when independent tasks can proceed in parallel — several reviewers over one diff, say — and read " +
       "every child's outcome, because one can be refused while the others succeed.",
     parameters: delegateAllParams,
+    prepareArguments: withoutRetiredDelegationArguments,
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
       assertDelegationAuthority(session);
       const children = params.children ?? [];
-      await ensureSessionModelPrompt(
-        session,
-        children.flatMap((child) => (child.agent ? [child.agent] : [])),
-        {
-          hasUI: ctx.hasUI && typeof ctx.ui.input === "function",
-          input: (title, placeholder) => ctx.ui.input(title, placeholder),
-          notify: (message, type) => ctx.ui.notify(message, type),
-        },
-      );
-      const split = splitBudget(session.fanoutBudget, children.length);
+      if (session.capacityRefusal) throw new GovernanceRefusal(session.capacityRefusal);
+      await reconcileDelegationCapacity(session);
+      const split = splitBudget(session.capacity.available, children.length);
       if (!split.ok) {
         // Thrown, not returned: a returned `isError` is discarded by pi, so a refusal that came back as a
         // normal result would read to the orchestrator as a successful fan-out of zero children.
         throw new GovernanceRefusal(refusal("FANOUT_EXCEEDED", `fan-out refused: ${split.reason}`));
       }
-
-      if (params.episodeCostCeiling !== undefined) session.episodeCostGate.setCeiling(params.episodeCostCeiling);
 
       // ADR-0032: ONE status block covering every child. `onUpdate` replaces the tool's rendered result, so a
       // painter per child would have each overwriting the others.
@@ -369,6 +357,8 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       const pending = children.map(async (child, index): Promise<DelegationOutcome> => {
         try {
           return await runOneDelegation(session, child, occurrences[index], split.perChild, ctx, signal, {
+            // Reserve each batch share synchronously here, before another dispatch can interleave.
+            capacityReservation: reserveDelegationCapacity(session, occurrences[index].executionId, split.perChild),
             onProgress: progress.sink(index),
             toolCallId: _toolCallId,
           });
@@ -390,17 +380,14 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       // be indistinguishable from an empty one, and a fan-out that hid its refusals would let an
       // orchestrator summarise four reviews when only three happened.
       const report = buildFanoutReport(outcomes, children);
-
-      if (failed.length === children.length) {
-        // All of them failed, so there is no partial result to hand back — and a tool that returns text
-        // when nothing ran is exactly how a wrong summary gets written.
-        const message = `fan-out failed: every child was refused or failed.\n\n${report}`;
-        throw totalFanoutFailure(failed, message);
-      }
+      if (failed.length === children.length && outcomes.every((o) => !o.work && !o.final && !o.cleanup))
+        throw totalFanoutFailure(failed, `fan-out failed: every child was refused or failed.\n\n${report}`);
 
       return {
+        isError: outcomes.some((o) => !o.ok || o.control === "failed"),
         content: [{ type: "text", text: report }],
         details: {
+          outcomes,
           children: outcomes.length,
           failed: failed.length,
           budgetPerChild: split.perChild,
@@ -415,6 +402,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
   // ADR-0033. Registered here so all three tools appear together and share the `mayDelegate` guard, but its logic
   // lives in its own file: `delegate` and `delegate_all` differ only in cardinality, while a chain differs in
   // composition, and this file is near the 400-line ceiling.
+  registerDefinitionDescribe(pi, session);
   registerChainTool(pi, session);
 
   return {

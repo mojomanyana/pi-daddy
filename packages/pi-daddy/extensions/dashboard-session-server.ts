@@ -75,8 +75,7 @@ async function respond(session: GrantsSession, token: string, line: string): Pro
   return {
     ok: true,
     rows: sessionModelRows(session, [...session.definitions.keys()].sort()),
-    cost: session.episodeCostGate.cost,
-    ceiling: session.episodeCostGate.ceiling,
+    cost: null, // Live complete episode cost is unavailable; retained usage remains in the episode report.
   };
 }
 

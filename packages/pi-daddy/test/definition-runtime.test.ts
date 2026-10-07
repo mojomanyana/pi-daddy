@@ -58,26 +58,6 @@ test("definition runtime selection follows explicit, session, definition, global
   );
 });
 
-test("advisor effort sits below explicit and session and above definition", () => {
-  const session: DefinitionRuntimeSettings["definitions"] = new Map([["review", { thinking: "high" }]]);
-  const base = { definition: "review", settings, piModel: "pi/model" };
-  assert.equal(
-    resolveDefinitionRuntime({ ...base, session, explicit: {}, advisorThinking: "xhigh" }).thinkingSource,
-    "session",
-  );
-  assert.equal(
-    resolveDefinitionRuntime({ ...base, session: new Map(), explicit: { thinking: "off" }, advisorThinking: "xhigh" })
-      .thinkingSource,
-    "explicit",
-  );
-  assert.deepEqual(resolveDefinitionRuntime({ ...base, session: new Map(), explicit: {}, advisorThinking: "xhigh" }), {
-    model: "definition/model",
-    modelSource: "definition",
-    thinking: "xhigh",
-    thinkingSource: "advisor",
-  });
-});
-
 test("settings parse per-definition and global model/thinking values", () => {
   assert.deepEqual(
     definitionRuntimeSettingsFrom({

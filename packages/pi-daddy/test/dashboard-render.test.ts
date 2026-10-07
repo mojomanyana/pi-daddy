@@ -58,12 +58,12 @@ test("dashboard shows the editable session model table and read-only episode cos
     modelRows: [
       { definition: "review", model: "anthropic/claude-opus-4-6", thinking: "high", source: "definition/definition" },
     ],
-    episodeCost: { cost: 1.25, ceiling: 5 },
+    episodeCost: { cost: 1.25 },
   });
   assert.match(rendered, /SESSION MODELS/);
   assert.match(rendered, /review\s+anthropic\/claude-opus-4-6\s+high\s+definition\/definition/);
   assert.match(rendered, /edit: m <definition> <provider:model> <thinking>/);
-  assert.match(rendered, /episode cost \$1\.25 \/ \$5 ceiling/);
+  assert.match(rendered, /reported episode cost \$1\.25 \(coverage partial\)/);
 });
 
 test("the compact tree shows workflow label, agent, state, elapsed time, pane and provenance", () => {

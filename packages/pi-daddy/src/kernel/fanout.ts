@@ -1,35 +1,16 @@
-/**
- * Bounded synchronous fan-out — ADR-0015's option A′, and the cardinality bound ADR-0008 never had.
- *
- * **The gap this closes.** ADR-0008 bounds what each child may *hold* and says nothing about how many
- * children exist. `resolve()` is a set operation; nowhere in `src/` was there a count. Blocking `delegate`
- * bounded cardinality to one *by accident of being blocking*, so the invariant was never tested. Fan-out
- * removes that accident: with `maxDepth: 2` and five children per call, five delegators each spawning five
- * is thirty concurrent model sessions — **every ledger line individually correct and narrow, the aggregate
- * a machine DoS and an uncapped bill.** The critic's verdict on this was that silence is itself a finding.
- *
- * **Why a budget rather than a per-call limit.** A per-call cap of K with depth D still permits K^D
- * descendants, which is the same exponential wearing a smaller number. A *budget* is subtractive and
- * therefore total: a session holding budget B may create at most B descendants in its whole subtree,
- * because it spends from B to spawn and hands each child a share of what is left. That composes across
- * process boundaries with **no shared state** — the same property that makes depth work — so it needs no
- * registry, no lock and no counter file.
- *
- * It is deliberately NOT a concurrency limit. How many run at once is a resource question for the executor;
- * how many may exist at all is a governance question, and this is the governance answer.
- */
-
+/** Active descendant allocation arithmetic. Enforcement requires the shared owner allocator in capacity.ts. */
 import { parseBound } from "./propagation.ts";
+import { GovernanceRefusal, refusal } from "./refusals.ts";
 
-/** Total descendants a session may create across its entire subtree, when nothing is configured. */
+/** Active descendant allowance, excluding the owner session, when nothing is configured. */
 export const DEFAULT_FANOUT_BUDGET = 8;
 
 /**
  * Hard ceiling on children in a single call, independent of budget.
  *
  * A budget alone would let one call spend all of it at once, and a hundred simultaneous `pi` processes is
- * a different failure from a hundred spread over a session. This is the blast-radius bound; the budget is
- * the total bound. Both are needed because they answer different questions.
+ * a different failure from a hundred spread over a session. The owner allocator also conserves active
+ * capacity across overlapping calls.
  */
 export const MAX_CHILDREN_PER_CALL = 8;
 
@@ -43,15 +24,16 @@ export const MAX_CHILDREN_PER_CALL = 8;
  */
 export const MAX_CHAIN_STEPS = MAX_CHILDREN_PER_CALL;
 
-/** Read the budget from the environment, failing to the default on absent *or* malformed input. */
+/** Absent uses the existing default; explicit zero stays exhausted and malformed input refuses. */
 export function budgetFromEnv(raw: string | undefined): number {
+  if (raw === undefined) return DEFAULT_FANOUT_BUDGET;
   const parsed = parseBound(raw);
-  // Malformed and zero both fall back rather than disabling fan-out silently — G7's rule. A budget that a
-  // typo can switch off is the A-S4 defect wearing different clothes. To genuinely forbid delegation an
-  // operator sets `maxDepth: 0`, which says what it means.
-  return parsed === undefined || parsed === null || parsed === 0 ? DEFAULT_FANOUT_BUDGET : parsed;
+  if (parsed === null || parsed === undefined)
+    throw new GovernanceRefusal(
+      refusal("FANOUT_EXCEEDED", "PI_DADDY_FANOUT must be a non-negative safe decimal integer"),
+    );
+  return parsed;
 }
-
 export interface BudgetSplit {
   ok: boolean;
   reason?: string;
@@ -60,7 +42,7 @@ export interface BudgetSplit {
 }
 
 /**
- * Spend `count` from a budget and divide the remainder among the children.
+ * Propose disjoint child allowances from currently available capacity; this does not reserve anything.
  *
  * The parent pays one unit per child it creates *before* sharing what is left, so a subtree can never
  * exceed the budget it started with: spawning is itself an expenditure, not a free act that only its
@@ -68,7 +50,10 @@ export interface BudgetSplit {
  * inventing it — the safe direction, and the reason a deep tree converges to zero instead of oscillating.
  */
 export function splitBudget(budget: number, count: number): BudgetSplit {
-  if (count <= 0) return { ok: false, reason: "a fan-out needs at least one child", perChild: 0 };
+  if (!Number.isSafeInteger(budget) || budget < 0)
+    return { ok: false, reason: "capacity must be a non-negative safe integer", perChild: 0 };
+  if (!Number.isSafeInteger(count) || count <= 0)
+    return { ok: false, reason: "a fan-out needs at least one child", perChild: 0 };
   if (count > MAX_CHILDREN_PER_CALL) {
     return {
       ok: false,

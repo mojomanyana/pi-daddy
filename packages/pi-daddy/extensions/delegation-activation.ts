@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { GrantsSession } from "./session.ts";
 
-const DELEGATION_TOOL_NAMES = ["delegate", "delegate_all", "delegate_chain"];
+const DELEGATION_TOOL_NAMES = ["delegate", "delegate_all", "delegate_chain", "delegate_describe"];
 
 function setDelegationActive(pi: ExtensionAPI, enabled: boolean): void {
   const surface = pi as ExtensionAPI & { getActiveTools?: () => string[]; setActiveTools?: (names: string[]) => void };

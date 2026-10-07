@@ -1,11 +1,4 @@
-/**
- * Bounded fan-out — the cardinality bound ADR-0008 never had (review finding F5).
- *
- * The property under test is TOTAL, not per-call: a session holding budget B may create at most B
- * descendants in its whole subtree. A per-call cap of K with depth D permits K^D, which is the same
- * exponential wearing a smaller number.
- */
-
+/** Disjoint allowance arithmetic; actual concurrent reservations and lifecycle are covered by capacity suites. */
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
@@ -16,7 +9,12 @@ import {
   splitBudget,
 } from "../src/kernel/fanout.ts";
 import { isCriticalAssuranceBlock } from "../extensions/execute-child.ts";
-import { childFailureOutcome, throwFanoutInfrastructure, totalFanoutFailure } from "../extensions/fanout-outcome.ts";
+import {
+  buildFanoutReport,
+  childFailureOutcome,
+  throwFanoutInfrastructure,
+  totalFanoutFailure,
+} from "../extensions/fanout-outcome.ts";
 import { GovernanceRefusal, refusal } from "../src/kernel/refusals.ts";
 
 test("spawning spends from the budget before the remainder is shared", () => {
@@ -27,7 +25,7 @@ test("spawning spends from the budget before the remainder is shared", () => {
   assert.equal(split.perChild, 3, "8 - 2 spent = 6, shared between 2");
 });
 
-test("the budget is TOTAL: a subtree cannot exceed what its root held", () => {
+test("disjoint simultaneously held subtrees cannot exceed the root allowance", () => {
   // The property that makes this worth having. Walk the worst case and count every descendant created.
   let created = 0;
   const walk = (budget: number, count: number, depth: number) => {
@@ -76,15 +74,23 @@ test("zero or negative children is a refusal, not a no-op", () => {
   }
 });
 
-test("a malformed budget falls back to the default rather than disabling the bound", () => {
-  // G7's rule. A bound a typo can switch off is the A-S4 defect wearing different clothes — and here the
-  // dangerous direction would be *unbounded*, so absent, malformed and zero all fall back.
-  for (const raw of [undefined, "", "abc", "-1", "3.5", "0x10", " ", "0"]) {
-    assert.equal(budgetFromEnv(raw), DEFAULT_FANOUT_BUDGET, `input ${JSON.stringify(raw)}`);
+test("absent capacity keeps the existing default, zero stays exhausted, and malformed input refuses", () => {
+  assert.equal(budgetFromEnv(undefined), DEFAULT_FANOUT_BUDGET);
+  assert.equal(DEFAULT_FANOUT_BUDGET, 8);
+  assert.equal(budgetFromEnv("0"), 0);
+  assert.equal(budgetFromEnv(" 3 "), 3);
+  for (const raw of ["", "abc", "-1", "3.5", "0x10", " ", "1e3", "9007199254740992"]) {
+    assert.throws(
+      () => budgetFromEnv(raw),
+      (error: unknown) => error instanceof GovernanceRefusal && error.code === "FANOUT_EXCEEDED",
+    );
   }
-  assert.equal(budgetFromEnv("3"), 3, "a valid value is honoured");
 });
 
+test("fractional or malformed arithmetic never proposes an allowance", () => {
+  for (const count of [0.5, NaN, Infinity]) assert.equal(splitBudget(8, count).ok, false);
+  for (const budget of [-1, 2.5, NaN, Infinity]) assert.equal(splitBudget(budget, 1).ok, false);
+});
 test("F8: sibling ids are distinct, hierarchical and reproducible", () => {
   // Every child used to be recorded as `delegate@d1`, so four concurrent siblings produced four lines
   // identical except `ts` — and two in the same millisecond were indistinguishable.
@@ -114,20 +120,15 @@ test("every sibling's infrastructure error survives, not just the first", () => 
   const second = new Error("workspace lease went stale");
   const outcomes = [childFailureOutcome(first, 1), childFailureOutcome(second, 1)];
 
-  assert.throws(
-    () => throwFanoutInfrastructure(outcomes, [first, second]),
-    (error: unknown) => {
-      assert.ok(error instanceof AggregateError, "two failures must not collapse into one");
-      assert.deepEqual((error as AggregateError).errors, [first, second]);
-      return true;
-    },
-  );
-
-  // One error is still raised as itself, so an ordinary single failure keeps its identity and its type.
-  assert.throws(
-    () => throwFanoutInfrastructure(outcomes, [first]),
-    (error: unknown) => error === first,
-  );
+  assert.doesNotThrow(() => throwFanoutInfrastructure(outcomes, [first, second]));
+  assert.equal(outcomes.length, 2);
+  assert.match(outcomes[0].reason!, /herdr writer tab would not close/);
+  assert.match(outcomes[1].reason!, /workspace lease went stale/);
+  const report = buildFanoutReport(outcomes, [{}, {}]);
+  assert.match(report, /child 1 — FAILED/);
+  assert.match(report, /child 2 — FAILED/);
+  assert.match(report, /herdr writer tab would not close/);
+  assert.match(report, /workspace lease went stale/);
 });
 
 test("a critical-assurance block outranks infrastructure noise without hiding it", () => {
@@ -212,7 +213,7 @@ test("mixed refusal codes all survive a total fan-out failure", () => {
  */
 test("a child killed mid-sentence cannot mint the controller's verdict", () => {
   const token = "BLOCKED_CRITICAL_ASSURANCE the gate was not satisfied";
-  const base = { ok: false as const, text: token };
+  const base = { ok: false as const, text: token, exitCode: 1 };
 
   // A clean non-zero exit IS the controller speaking. Everything else is a process that stopped talking.
   assert.equal(isCriticalAssuranceBlock({ ...base }), true, "the honest case must still pass through");
@@ -221,6 +222,10 @@ test("a child killed mid-sentence cannot mint the controller's verdict", () => {
     ["timed out", { timedOut: true }],
     ["cancelled", { aborted: true }],
     ["never started", { spawnFailed: true }],
+    ["exited successfully", { exitCode: 0 }],
+    ["lost its exit status", { exitCode: null }],
+    ["failed control", { control: "failed" }],
+    ["uncertain cleanup", { cleanup: { state: "unknown", reason: "missing receipt" } }],
   ] as const) {
     assert.equal(
       isCriticalAssuranceBlock({ ...base, ...extra }),

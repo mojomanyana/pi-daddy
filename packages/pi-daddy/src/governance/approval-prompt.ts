@@ -79,7 +79,8 @@ export interface ApprovalGateOptions {
   hasUI: boolean;
   /** pi's `ctx.mode`, quoted back in the refusal so an operator can see why. */
   mode: string;
-  timeoutMs?: number;
+  /** Resolve only when this caller must open a new dialog; unused invalid settings cannot revoke authority. */
+  timeoutMs?: number | (() => number | undefined);
 }
 
 export interface ApprovalGate {
@@ -91,16 +92,18 @@ const DEFAULT_TIMEOUT_MS = 120_000;
 /**
  * Read `PI_DADDY_APPROVAL_TIMEOUT`, in SECONDS, into the milliseconds pi expects.
  *
- * `0` or an unparseable value means no timeout: waiting forever denies nothing, so it is the safe
- * interpretation of a value we do not understand.
+ * Only literal `0` disables the deadline. Other values must be canonical whole seconds
+ * within Node's signed 32-bit millisecond timer limit; malformed settings refuse a needed prompt.
  */
 export function timeoutMsFromEnv(raw: string | undefined): number | undefined {
   if (raw === undefined) return DEFAULT_TIMEOUT_MS;
-  const seconds = Number.parseInt(raw, 10);
-  if (!Number.isFinite(seconds) || seconds <= 0) return undefined;
-  return seconds * 1000;
+  if (raw === "0") return undefined;
+  if (!/^[1-9][0-9]*$/.test(raw) || Number(raw) > 2_147_483)
+    throw new Error(
+      "PI_DADDY_APPROVAL_TIMEOUT must be literal 0 or whole seconds 1..2147483 without signs, padding or units",
+    );
+  return Number(raw) * 1000;
 }
-
 function labelToScope(label: string, scopes: ApprovalScope[]): ApprovalScope | null {
   return scopes.find((s) => SCOPE_LABELS[s] === label) ?? null;
 }
@@ -160,7 +163,7 @@ export function createApprovalGate(
     let chosen: string | undefined;
     try {
       chosen = await options.ui.select(title, [DENY_LABEL, ...scopes.map((s) => SCOPE_LABELS[s])], {
-        timeout: options.timeoutMs,
+        timeout: typeof options.timeoutMs === "function" ? options.timeoutMs() : options.timeoutMs,
         signal: request.signal,
       });
     } catch (error) {
@@ -168,6 +171,9 @@ export function createApprovalGate(
       // person's answer — `kind: "error"` keeps it out of "declined".
       return { scope: null, kind: "error", reason: `approval dialog failed, denying (${String(error)})` };
     }
+
+    if (request.signal?.aborted)
+      return { scope: null, kind: "dismissed", reason: `approval for ${request.capability} was canceled` };
 
     // undefined covers dismissal, timeout, and abort. All are a no, but none is a person saying no.
     if (chosen === undefined) {
@@ -185,6 +191,8 @@ export function createApprovalGate(
 
   return {
     async request(request: PromptRequest): Promise<PromptOutcome> {
+      if (request.signal?.aborted)
+        return { scope: null, kind: "dismissed", reason: `approval for ${request.capability} was canceled` };
       if (!options.hasUI) {
         // Nobody was there to ask — distinct from a person declining, which is why this is its own kind
         // rather than being folded into "declined" (see PromptOutcomeKind).
@@ -208,6 +216,8 @@ export function createApprovalGate(
         const existing = inFlight.get(key);
         if (!existing) break;
         const outcome = await existing;
+        if (request.signal?.aborted)
+          return { scope: null, kind: "dismissed", reason: `approval for ${request.capability} was canceled` };
         // **`joined` marks the rider, and the ledger depends on it (R-66).** Sharing a non-`once` outcome
         // is correct — the human authorised the capability for the session, not for one child — but the
         // caller then stamped `approvalSource: "prompt"` on every one of them, so a fan-out of eight wrote

@@ -24,7 +24,6 @@ packages/pi-daddy/                — the package
   src/kernel/                     — authority and planning; mostly pure, with bounded discovery readers
   src/governance/                 — stores and the ledger: record envelope, ledger events, approvals, grant store, leases, retention
   src/executors/                  — how a child process is started: captured subprocess or Herdr pane
-  src/advisors/                   — advice only: a Decider answering typed questions, never authority (ADR-0077)
   src/products/                   — activity timeline, dashboard, episode report and outcome derivation
   extensions/                     — composition: the pi extension pi loads (grants.ts) and its helpers
   src/index.ts, src/cli.ts        — composition: the public root export and the `pi-daddy` bin
@@ -153,7 +152,7 @@ change what it concluded. Both corrections are below, because a probe whose erro
 than no probe.
 
 **What it measures.** For each session the last message turn stands in for a task. From its PROSE — the text a
-human or a model actually wrote, not the JSON envelope — a term set is extracted; a term is *recoverable* if some
+human or a model actually wrote, not the JSON envelope — a term set is extracted; a term is _recoverable_ if some
 earlier turn's prose contains it. Recall is the share that survives into what the child receives.
 
 **The defect it found.** Turn sections are pushed oldest-first and the 32 KiB budget was spent in array order, so
@@ -199,8 +198,50 @@ it measured nothing rather than passing quietly.
 
 ## Decisions still in force
 
+### Captured execution and staged backend qualification — 2026-10-07
+
+The authorized Release A targets Pi 1.0.4 and captured Linux x64 execution. A complete final requires settled Pi
+JSON protocol plus an exact current persisted branch/turn match. The native subreaper's execution-bound receipt,
+not parent death or pane closure, establishes subtree cleanup. Uncertain cleanup retains capacity and workspace
+exclusion; referenced ownership directories are durable evidence. Optional observation/display loss cannot replace
+verified primary work. Native tool results preserve separate work, final, cleanup and observation state.
+
+This reverses ADR-0031's runnable Herdr auto-selection until parity is independently qualified: selection remains
+visible but governed execution refuses with no fallback. `PI_DADDY_HERDR=0` explicitly chooses captured execution.
+It also reverses ADR-0033's partial required handoff: oversized complete output blocks the dependent step and stays
+available in the returned result. These are mechanical process/protocol guarantees, not model quality or hostile
+same-user containment claims. Source tests include actual model-free Pi CLI and native phase handoffs.
+
+
+**2026-10-07 — passive cost coverage (P03).** Episode reports preserve a missing recorded child charge as null,
+separate from an observed zero. Rows, groups and totals retain the observed subtotal with complete/partial/unavailable
+coverage. Incomplete episode costs do not become zero-valued percentile samples. Coverage is explicitly limited to
+recorded child executions, excluding unrecorded/root work. This is read-only accounting and never admission policy.
+
+**2026-10-07 — surviving read guards (P17).** Authority metadata reads are byte-bounded, nonblocking for FIFOs,
+strict UTF-8, and checked through their held descriptor. Only ENOENT means absent. Failed async closes retain the
+exact FileHandle and an explicit retry capability; retry cannot turn the original operation into success. Discovery
+failure belongs to its initiating lifecycle and cannot poison an explicit replacement owner. The synchronous
+planner seam fails terminally on close failure: a numeric fd cannot safely be retried after reuse. Named context
+files require Linux held-descriptor confinement proof and refuse when that proof is unavailable. Pruned handoffs
+use Pi's public getBranch() ancestry; unavailable input is labeled incomplete, with no full-history fallback.
+Approval timeout parsing runs only for a needed new prompt: absent is 120 seconds, literal 0 is unlimited, otherwise
+canonical positive whole seconds through 2,147,483. Unused malformed settings cannot revoke existing authority.
+
 One paragraph each: the decision, the reason, what was rejected. The ADR numbers are pointers into git history
 (`git show 9cf2904:docs/06-decisions/`).
+
+**2026-10-07 — retire monetary interventions, external advisors and automatic model prompting.** This supersedes
+ADR-0077 and the advisor portions of ADR-0076/0078 and the 2026-09-29 runtime/accounting entry below. The user
+explicitly approved removal: cost never controls execution, and delegation never consults an external adviser or
+opens a first-use chooser. Manual model controls, permission approvals, nonmonetary limits and passive historical
+usage remain. A closed compatibility list ignores retired inputs without rewriting user configuration; current
+argument validation remains. Historical advice and cost-gate event schemas/readers remain for retained records.
+Pi 1.0.4 is the qualified integration target for argument preparation and native error results. The production
+change that breaks the retirement tests is reconnecting an advisor, monetary stop or automatic prompt to dispatch.
+Future JEV/learned-policy experiments may consume versioned sanitized decision and outcome evidence outside the
+authority path; this does not restore automatic runtime advice or promise a trainable JEV model.
+
 
 
 **ADR-0008 — capabilities attenuate monotonically.** A child's effective grant is
@@ -423,7 +464,7 @@ that answers typed questions: `noul` (a boolean), `choice` (one of the options t
 (a level from the caller's own list), each with a probability. It may select, rank, annotate or propose. It can
 never widen an `effective` set, satisfy a gate or replace a human's answer — and that is enforced rather than
 promised: no type in the layer names a `Capability` or a refusal code, and no module in `kernel/` or `governance/`
-imports it, both checked by `test/advisors.test.ts`. Nothing on a governance path can receive what an advisor
+imports it, both checked historically by `test/advisors.test.ts` (deleted in the 2026-10-07 removal). Nothing on a governance path can receive what an advisor
 returns, so an advisor cannot become load-bearing by accident.
 
 With a configured, writable governance ledger, every use is an `advice` record on the envelope, **including uses that
@@ -571,7 +612,7 @@ returns 404), so nothing mechanical prevents a direct push. The rule is kept by 
 Each line names the probe directory that measured it; the probe text is gone, and the name is the pointer into git
 history (`git show 9cf2904:docs/probes/<name>/README.md`).
 
-*About pi:*
+_About pi:_
 
 - pi persists one JSON line to the `--session` file per entry, synchronously, when a message or a tool result ENDS
   (`dist/core/agent-session.js` on `message_end`; `dist/core/session-manager.js` `_appendEntry`/`_persist`,
@@ -615,7 +656,7 @@ history (`git show 9cf2904:docs/probes/<name>/README.md`).
 - pi core has no native subagent tool, only a bundled example extension, and it ships `--fork`, `--session`,
   `ctx.fork()` and `ctx.compact()`, which context handoff builds on (ADR-0016 context and ADR-0076 survey; not a probe).
 
-*About Herdr (the executor):*
+_About Herdr (the executor):_
 
 - `herdr agent start … -- <args>` delivers argv verbatim, echoed back in the reply, and `--tools` is enforced inside a
   pane exactly as for a direct spawn; a pane is a terminal, not a runtime or a security boundary (`g16-herdr`).
@@ -638,7 +679,7 @@ history (`git show 9cf2904:docs/probes/<name>/README.md`).
 - Pane cleanup runs in a `finally` and so does not cover the process being killed between `tab create` and that block;
   a fan-out that dies mid-flight can leave panes behind (`g16-herdr`, addendum).
 
-*About workspace routing and governed-writer leases:*
+_About workspace routing and governed-writer leases:_
 
 - A kernel-held `flock` lease refuses a second writer for the same canonical root, lets writers for distinct roots
   coexist, and on SIGTERM or SIGKILL of the parent the helper stops the attached writer before releasing, with the next
@@ -659,7 +700,7 @@ history (`git show 9cf2904:docs/probes/<name>/README.md`).
 - An initial working directory, including an empty one, is not path confinement: an unsandboxed child holding search
   and `edit` tools left it and edited a file in another checkout by absolute path, unprompted (`g38-cwd-is-not-containment`).
 
-*About `pi-daddy init` and the approval flow:*
+_About `pi-daddy init` and the approval flow:_
 
 - `init` reads the installed package's own manifest under `node_modules`, copies declared definitions into the project
   skill root, and generates a grant whose `agent:` ids are the union of what can be spawned, written to be edited down;
@@ -668,19 +709,19 @@ history (`git show 9cf2904:docs/probes/<name>/README.md`).
   them; a per-call gate builds a fresh empty queue, so single-flight needs a shared gate provider (`approval-ux`,
   resolution notes).
 
-*About `@tintinweb/pi-subagents` (no longer a dependency, ADR-0016):*
+_About `@tintinweb/pi-subagents` (no longer a dependency, ADR-0016):_
 
 - `SpawnOptions` has no `tools` field and the RPC is `ping`/`spawn`/`stop` with no configuration query, so an
   interceptor there can refuse or allow but never narrow (`g13-subagents-coupling`).
 - `subagents:rpc:spawn` goes over the event bus straight to the manager, never produces a `tool_call`, and its children
   are in-process sharing one `process.env`; the tripwire cannot see it and nothing here can fix that (`g13-subagents-coupling`).
 
-*About `pi-fabric` (evaluated, not installed):*
+_About `pi-fabric` (evaluated, not installed):_
 
 - `recursive: true` overrides `tools: []` and `extensions: false`, so recursion and containment are mutually exclusive
   there; `maxDepth` is a depth cliff, not attenuation (`pi-fabric-eval`).
 
-*About the field (surveyed 2026-09-21, sources in ADR-0076):*
+_About the field (surveyed 2026-09-21, sources in ADR-0076):_
 
 - No other surveyed harness enforces child ⊆ parent on the tool surface, and Claude Code's own documentation says a
   skill's `allowed-tools` does not restrict; every surveyed competitor offers a richer context channel than this
@@ -868,6 +909,7 @@ Kept features only. Numbers are dropped except the two that code and rules cite.
   catalog never exists and its `registryRefusal` never reaches the banner. Two independent faults collapse into
   one message naming only the definitions. Fixing it means changing the catalog's error model, which is a
   larger change than this one and does not belong bolted onto it.
+
 - The Herdr executor passes only the plan's environment to the pane, so a pane child receives neither the workspace
   registry nor the lease directory, and the pane inherits the daemon's environment rather than a stripped one.
 - A relative inherited ledger path resolves inside a routed child's worktree, splitting state and leaving `?? .pi/` in
@@ -930,3 +972,23 @@ Kept features only. Numbers are dropped except the two that code and rules cite.
   catch silenced every session-start notification, including the line that shows governance is on at all.
 - **R-85** — work reaches `main` by drift, not decision: check the branch before the first edit of a task, and if work
   is already on `main`, branch at HEAD and reset the local pointer rather than rewriting history.
+
+
+## 2026-10-07 candidate: selected definition and runtime contracts
+
+The authorized ecosystem candidate replaces independent live resource rescans with Pi 1.0.4 public selected
+skill commands, acquired lazily after discovery. Generated Principal agent bodies require the package
+binding manifest and snapshot ID. Preserve the frozen body/ceiling/identity through dispatch and reload.
+Model preferences are ordered intact authored pairs, below explicit/session/project fields; no advisor,
+automatic model chooser, monetary gate, or remote preflight is restored. Unknown auth is not missing auth.
+The dedicated model-free SDK fixtures are separate from optional paid model integrations.
+
+
+## 2026-10-07 review follow-up: final and capacity contracts
+
+Object property order is not final-message identity: structural equality must retain all fields and array order.
+The shared captured-final conformance table is normative for runtime/harness visible text eligibility; persistence
+and worker ownership remain additional runtime requirements. Capture size/read deadlines deliberately fail closed.
+Before admitting new work, reread receipts only for the same owner's original bound retained reservations. Exact
+settlement proof may refund capacity once without rewriting the prior outcome; absent proof never authorizes release.
+The captured package declares its Linux x64 platform restriction and exact qualified Pi dependency explicitly.

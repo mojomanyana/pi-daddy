@@ -61,6 +61,10 @@ export function isDefinitionPackageVersion(value: unknown): value is string {
 }
 
 export interface SkillDefinition {
+  /** Immutable selected-resource identity, independent of the model-authored name. */
+  definitionId?: string;
+  selectedSkillHash?: string;
+  binding?: Readonly<{ package: "principal-pi-skills"; phase: string }>;
   /** From the path, never the frontmatter — see `parseSkillDefinition`. */
   name: string;
   description: string;
@@ -68,6 +72,8 @@ export interface SkillDefinition {
   allowedTools?: string;
   /** The spec's sanctioned extension point: a map of string keys to string values. */
   metadata?: Record<string, string>;
+  /** Raw authored JSON pairs; validated only when runtime selection needs them. */
+  runtimePreferences?: string;
   /** Everything after the frontmatter — the child's system prompt. */
   body: string;
   source: string;
@@ -160,6 +166,7 @@ export function parseSkillDefinition(source: string, text: string): SkillDefinit
     name: skillResourceName(source),
     description,
     allowedTools: fields.get("allowed-tools"),
+    runtimePreferences: fields.get("runtime-preferences"),
     metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
     body: text.slice(match[0].length).trim(),
     source,
@@ -232,11 +239,13 @@ export const DEFINITION_READ_TIMEOUT_MS = 2_000;
 export async function loadDefinitions(
   cwd: string,
   skipped?: (path: string, reason: string) => void,
+  // Trusted per-loader reader, never a skill's metadata or environment input.
+  readFile: typeof readBoundedFile = readBoundedFile,
 ): Promise<Map<string, SkillDefinition>> {
   const definitions = new Map<string, SkillDefinition>();
   const packageVersions = new Map<string, string | undefined>();
   for (const { path, metadata } of (await resolveSkillResources(cwd)).skills) {
-    const read = await readBoundedFile(path, {
+    const read = await readFile(path, {
       maxBytes: DEFINITION_MAX_BYTES,
       timeoutMs: DEFINITION_READ_TIMEOUT_MS,
     });
@@ -247,7 +256,7 @@ export async function loadDefinitions(
     const parsed = parseSkillDefinition(path, read.text);
     if (parsed && metadata.origin === "package" && metadata.baseDir) {
       if (!packageVersions.has(metadata.baseDir)) {
-        const manifest = await readBoundedFile(join(metadata.baseDir, "package.json"), {
+        const manifest = await readFile(join(metadata.baseDir, "package.json"), {
           maxBytes: DEFINITION_MAX_BYTES,
           timeoutMs: DEFINITION_READ_TIMEOUT_MS,
         });

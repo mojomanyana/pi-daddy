@@ -1,5 +1,7 @@
 # pi-daddy
 
+Release candidate: **0.44.0-rc.2** (tag `v0.44.0-rc.2`), prepared for PR review. This version is not published to npm.
+
 Capability governance and coordination for [pi](https://github.com/badlogic/pi-mono)'s multi-level agent system. An
 orchestrator grants each sub-agent a deliberate subset of what it holds and withholds the rest; a sub-agent may delegate
 further, but only ever a subset of what it holds. Enforcement is pi's own `--tools` allowlist on a separate child
@@ -29,6 +31,19 @@ effective = ( requested ∩ parentGrant ∩ ceiling ) \ (gated \ approved)
 Escalation is impossible by construction on the tool surface. It does not contain an agent holding an execution
 primitive: a child granted `bash` can start an ungoverned descendant, so `bash` is gated by default and every gate
 answer is recorded when a governance ledger is configured.
+
+This candidate targets Pi 1.0.4 and captured Linux x64 execution. Qualification is limited to Ubuntu WSL2,
+kernel `6.18.33.2-microsoft-standard-WSL2`, x86_64 and Node `v26.7.0`; other runtime/kernel combinations, native
+Windows and WSL-to-Windows worker interop remain unqualified. Governed Herdr execution refuses until separately qualified. Select captured execution with `PI_DADDY_HERDR=0`. A final must match Pi's settled
+JSON output and persisted current branch. Unknown subtree cleanup retains capacity and workspace exclusion.
+`PI_DADDY_FANOUT` limits active descendants using conservative subtree reservations, with capacity returned only
+after verified settlement. Complete results remain separate from optional recording failures.
+
+The package dependency and peer requirement both pin exact Pi **1.0.4**; later Pi versions require new qualification. Use Principal **4.8.0-rc.2** with this runtime's `delegate_describe` contract. Native phases use `plan`, `build`, `review`, `debug`, and `investigate` with their returned `definitionId`; independent parallel work uses one `delegate_all` batch.
+
+Final capture preserves whitespace and concatenates text blocks without inserting separators. Tool-call terminals, empty visible finals and non-`stop` reasons are unavailable. Persisted message comparisons ignore object key order while preserving array order and every field value. The shared `final-conformance.json` table checks these semantics in both runtime and harness. Capture remains bounded: 4 MiB visible final, 32 MiB protocol line, 64 MiB persisted session, and a 3-second bounded session read. Exceeding a limit reports an unavailable final and blocks dependent handoffs; it does not imply the worker failed to settle.
+
+Retained capacity is rechecked against the original bound ownership and settlement receipt before a new single, parallel or chain dispatch. Exact later proof refunds the reservation once; missing, malformed or mismatched proof and unbound ownership remain retained. Recovery does not rewrite the original failed/unknown outcome or mint new capacity on reload. A single delegation reserves its available subtree; use `delegate_all` to allocate independent parallel children.
 
 The package requires Node.js 22.19.0 or newer. `pi-daddy report` joins episode usage and attribution;
 `pi-daddy outcomes` adds Git, CI, amendment, and operator-correction signals for commits carrying a `Pi-Episode`

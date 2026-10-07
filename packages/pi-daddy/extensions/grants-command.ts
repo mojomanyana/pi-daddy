@@ -34,7 +34,8 @@ export interface GrantsCommandContext {
    */
   executor: ExecutorChoice;
   /** ADR-0077: which advisor and task-egress mode are in force, or why none is. */
-  advisor: { decider: string; taskEgress: "digest" | "raw"; refusal?: string };
+  /** Historical callers may carry this inert field. It is never read. */
+  advisor?: unknown;
   /** ADR-0042: which ids this session pinned, so a routing refusal is discoverable before it happens. */
   workspacePin?: ReadonlyMap<string, string>;
   /** Registry ids this machine has never accepted: present, not routable, and worth naming (rule 8). */
@@ -113,7 +114,6 @@ export const grantsCommand = {
       governed,
       ownGrant,
       executor,
-      advisor,
       workspacePin,
       unacceptedWorkspaces,
       observed,
@@ -408,13 +408,6 @@ export const grantsCommand = {
       // two facts about what a spawn will be sit together.
       `  executor   ${executor.disclosure}`,
       `  depth      ${depth} of max ${maxDepth}${maxDepth <= 0 ? " (spawning disabled)" : ""}`,
-      // Rule 8's loud half, which review found missing: an operator who upgraded from 0.34.0, or who mistyped the
-      // variable, saw an advisor silently absent and nothing saying why. This is also where an operator sees that
-      // which representation of the task leaves the machine, which no other status surface says.
-      advisor.decider === "none"
-        ? `  advisor    off${advisor.refusal ? ` — ${advisor.refusal}` : ""}`
-        : `  advisor    ${advisor.decider} — task egress ${advisor.taskEgress}; ` +
-          `a pruned context handoff also sends session turns`,
       `  ledger     ${ledgerPath || "(not recording — set PI_DADDY_LEDGER)"}`,
       `  approvals  ${sessionApprovals.size} this session, ${valid.size} persisted` +
         `${inheritedApprovals.size > 0 ? `, ${inheritedApprovals.size} inherited` : ""}` +

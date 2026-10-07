@@ -43,7 +43,7 @@ export function buildFanoutReport(
   return outcomes
     .map((outcome, index) => {
       const label = `### child ${index + 1}${children[index]?.agent ? ` (${children[index].agent})` : ""}`;
-      return outcome.ok
+      return outcome.ok && outcome.control !== "failed"
         ? `${label} — completed\n\n${outcome.text || "(no output)"}`
         : `${label} — FAILED: ${outcome.reason}${outcome.text ? `\n\n${outcome.text}` : ""}`;
     })
@@ -67,14 +67,6 @@ export function throwFanoutInfrastructure(
   if (criticalBlock) {
     if (infrastructureErrors.length > 0) throw new AggregateError(infrastructureErrors, criticalBlock.text);
     throw new Error(criticalBlock.text);
-  }
-  if (infrastructureErrors.length === 1) throw infrastructureErrors[0];
-  if (infrastructureErrors.length > 1) {
-    throw new AggregateError(
-      infrastructureErrors,
-      `fan-out hit ${infrastructureErrors.length} infrastructure failures: ` +
-        infrastructureErrors.map((error) => String(error instanceof Error ? error.message : error)).join("; "),
-    );
   }
 }
 

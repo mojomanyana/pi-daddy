@@ -528,6 +528,7 @@ test("`/grants init`'s dialog cannot confer a routing capability, whatever the o
   // `gated` is what the consequence sentence reads, so the stub carries it: a session object that omits it
   // is not a session, and modelling it as one is how the sentence went untested in the first place.
   const session = {
+    reloadLifecycle: { root: {} },
     gated: ["tool:bash"],
     adoptGrant: (g: readonly Capability[]) => {
       adopted = g;
@@ -578,6 +579,7 @@ test("`/grants init` stores and adopts the project ledger as one decision", asyn
   const notices: string[] = [];
   let adoptedLedger: string | undefined;
   const session = {
+    reloadLifecycle: { root: {} },
     gated: ["tool:bash"],
     adoptGrant: (_grant: readonly Capability[], ledger?: string) => {
       adoptedLedger = ledger;
@@ -681,7 +683,7 @@ test("a capability the operator gated is described as gated, not as ungated", as
     },
   };
   // The operator gated `tool:write` as well as bash — the value `renderGrantEnv` itself suggests.
-  const session = { gated: ["tool:bash", "tool:write"], adoptGrant: () => {} };
+  const session = { reloadLifecycle: { root: {} }, gated: ["tool:bash", "tool:write"], adoptGrant: () => {} };
   await runInit(session as never, ctx as never, async () => {});
 
   const write = asked.find((q) => q.includes("grant tool:write"));

@@ -2,8 +2,7 @@ import { createConnection } from "node:net";
 
 export interface DashboardSessionSnapshot {
   rows: Array<{ definition: string; model: string; thinking: string; source: string }>;
-  cost: number;
-  ceiling: number;
+  cost: number | null;
 }
 
 export async function dashboardSessionRequest(

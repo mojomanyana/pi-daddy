@@ -47,6 +47,7 @@ export interface SessionReportContext {
 }
 
 export async function reportSessionStart(session: GrantsSession, ctx: SessionReportContext): Promise<void> {
+  if (session.capacityRefusal) ctx.ui.notify(`grants: ${session.capacityRefusal.message}`, "warning");
   // A malformed bound is now loud as well as safe. Silently disabling spawning would be just as
   // confusing as silently disabling the limit was dangerous — the operator set the variable, so
   // they need to know it did not take effect (G7 / A-S4).
@@ -277,17 +278,7 @@ export async function reportSessionStart(session: GrantsSession, ctx: SessionRep
     // exactly — one added `await` inside the blanket catch cancelling every control below it in
     // silence.
     try {
-      const line = renderSpawnableSummary(
-        await summariseSpawnable(
-          session.definitions,
-          (name) => planWithApprovals(session, { task: "(preview)", agent: name }, {}, null),
-          // The session facts that make every per-definition verdict identical. `mayDelegate` in
-          // particular: without `tool:delegate` there is no delegate tool at all, and the line used to
-          // report definitions as spawnable in the one session where nothing can ever be spawned.
-          { mayDelegate: session.mayDelegate, depth: session.depth, maxDepth: session.maxDepth },
-        ),
-        session.definitions.size,
-      );
+      const line = await selectedDefinitionsSummary(session);
       if (line) info.push(line);
     } catch (error) {
       ctx.ui.notify(
@@ -302,4 +293,30 @@ export async function reportSessionStart(session: GrantsSession, ctx: SessionRep
   // One call, so nothing can overwrite anything else. `/grants` already worked this way, which is why its
   // multi-line status screen has always survived while these separate lines did not.
   if (info.length > 0) ctx.ui.notify(info.join("\n"), "info");
+}
+
+/** Public selected resources become available after session start; report their frozen snapshot then. */
+export async function reportSelectedDefinitions(session: GrantsSession, ctx: SessionReportContext): Promise<void> {
+  for (const reason of session.definitionSkips)
+    ctx.ui.notify(`grants: a definition was not loaded — ${reason}`, "warning");
+  if (!session.governed) return;
+  try {
+    const line = await selectedDefinitionsSummary(session);
+    if (line) ctx.ui.notify(line, "info");
+  } catch (error) {
+    ctx.ui.notify(
+      `grants: selected definitions could not be summarized (${String(error)}) — run /grants for detail.`,
+      "warning",
+    );
+  }
+}
+function selectedDefinitionsSummary(session: GrantsSession): Promise<string | null> {
+  return summariseSpawnable(
+    session.definitions,
+    (name) => planWithApprovals(session, { task: "(preview)", agent: name }, {}, null),
+    // The session facts that make every per-definition verdict identical. `mayDelegate` in
+    // particular: without `tool:delegate` there is no delegate tool at all, and the line used to
+    // report definitions as spawnable in the one session where nothing can ever be spawned.
+    { mayDelegate: session.mayDelegate, depth: session.depth, maxDepth: session.maxDepth },
+  ).then((summary) => renderSpawnableSummary(summary, session.definitions.size));
 }

@@ -16,7 +16,9 @@
  * shape, a missing result indistinguishable from an empty one, and the child would have no way to know.
  */
 import { randomUUID } from "node:crypto";
-import { closeSync, mkdirSync, openSync, readSync, realpathSync, rmSync, statSync } from "node:fs";
+import { mkdirSync, realpathSync, rmSync, statSync } from "node:fs";
+import { BoundedReadCleanupError } from "../src/kernel/bounded-read.ts";
+import { readBoundedTextSync } from "../src/kernel/bounded-read-sync.ts";
 import { isAbsolute, relative, resolve } from "node:path";
 import {
   CONTEXT_RANK,
@@ -31,6 +33,8 @@ import {
 export interface ParentSession {
   getSessionFile(): string | undefined;
   getEntries(): Array<{ id: string; type: string }>;
+  /** Public Pi active leaf-to-root ancestry API; unavailable is not an empty conversation. */
+  getBranch?(): Array<{ id: string; type: string }>;
 }
 
 export interface StagingInput {
@@ -86,7 +90,10 @@ export function createHandoffStager(input: StagingInput) {
       for (const path of granted.files ?? [])
         sections.push({ ...readSection(input.cwd, path), keepRank: CONTEXT_RANK.file });
     if (granted.mode === "pruned") {
-      const all = parentTurns(input.parentSession);
+      const branch = parentTurns(input.parentSession);
+      const all = branch.turns;
+      if (branch.unavailable)
+        sections.push({ label: "parent turns — incomplete", body: branch.unavailable, keepRank: CONTEXT_RANK.summary });
       const selection = selectPrunedTurns(all, {
         ...(granted.turns !== undefined ? { turns: granted.turns } : {}),
         ...(granted.files !== undefined ? { files: granted.files } : {}),
@@ -113,7 +120,7 @@ export function createHandoffStager(input: StagingInput) {
           keepRank: (matched.has(turn.id) ? CONTEXT_RANK.fileMatchedTurn : CONTEXT_RANK.recentTurn) + index,
         });
       });
-      if (chosen.length === 0)
+      if (chosen.length === 0 && !branch.unavailable)
         sections.push({ label: "parent turns", body: "(no turn of your parent's session matched the selection)" });
     }
 
@@ -193,43 +200,31 @@ function readSection(cwd: string, path: string): ContextSection {
   if (within.startsWith("..") || within === "" || isAbsolute(within))
     return refuse("outside this session's working directory");
   try {
-    const stats = statSync(absolute);
-    // A FIFO satisfies `statSync` and then never returns from a read, which would block the whole pi session with
-    // no watchdog — and the path is model-supplied, so it is reachable rather than theoretical.
-    if (!stats.isFile()) return refuse("not a regular file");
-    const note = stats.size > MAX_FILE_BYTES ? ` (first ${MAX_FILE_BYTES} of ${stats.size} bytes)` : "";
-    return { label: `${path}${note}`, body: readBounded(absolute, MAX_FILE_BYTES) };
+    const read = readBoundedTextSync(absolute, {
+      maxBytes: MAX_FILE_BYTES,
+      prefix: true,
+      confinedRoot: root,
+    });
+    const note = read.truncated ? " (incomplete: bounded file prefix)" : "";
+    return { label: `${path}${note}`, body: read.text };
   } catch (error) {
+    if (error instanceof BoundedReadCleanupError) throw error;
     return { label: path, body: `(could not be read: ${error instanceof Error ? error.message : String(error)})` };
   }
 }
 
-/**
- * Read at most `budget` BYTES, without pulling the rest of the file into the parent first.
- *
- * `readFileSync(...).slice(budget)` reads the whole file and then slices by UTF-16 code units, so a large file in
- * the repository stalled the parent and the "(first N of M bytes)" label was wrong for any multi-byte content.
- */
-function readBounded(path: string, budget: number): string {
-  const handle = openSync(path, "r");
+/** Canonical active branch includes shared ancestry and excludes alternate descendants. */
+function parentTurns(session?: ParentSession): { turns: PrunableTurn[]; unavailable?: string } {
   try {
-    const buffer = Buffer.alloc(budget);
-    const read = readSync(handle, buffer, 0, budget, 0);
-    return new TextDecoder("utf-8", { fatal: false }).decode(buffer.subarray(0, read)).replace(/\uFFFD+$/, "");
-  } finally {
-    closeSync(handle);
-  }
-}
-
-/** The parent's message turns, reduced to what the selection rule needs. Never pi's own types past this point. */
-function parentTurns(session?: ParentSession): PrunableTurn[] {
-  if (!session) return [];
-  try {
-    return session
-      .getEntries()
-      .filter((entry) => entry.type === "message")
-      .map((entry) => ({ id: entry.id, text: JSON.stringify((entry as { message?: unknown }).message ?? entry) }));
-  } catch {
-    return [];
+    if (!session?.getBranch) throw new Error("active branch API is unavailable");
+    const entries = session.getBranch();
+    if (!Array.isArray(entries)) throw new Error("active branch did not return entries");
+    return {
+      turns: entries
+        .filter((entry) => entry.type === "message")
+        .map((entry) => ({ id: entry.id, text: JSON.stringify((entry as { message?: unknown }).message ?? entry) })),
+    };
+  } catch (error) {
+    return { turns: [], unavailable: `(active branch unavailable; context is incomplete: ${String(error)})` };
   }
 }

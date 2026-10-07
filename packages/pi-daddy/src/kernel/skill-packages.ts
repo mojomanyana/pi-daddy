@@ -5,7 +5,8 @@
  * Names, ceilings and bytes are checked before they can enter the generated shell grant.
  */
 
-import { readdir, readFile, realpath } from "node:fs/promises";
+import { readdir, realpath } from "node:fs/promises";
+import { readOptionalAuthorityText } from "./authority-text.ts";
 import { readBoundedBytes } from "./bounded-read.ts";
 import { homedir } from "node:os";
 import { join, resolve, sep } from "node:path";
@@ -143,7 +144,11 @@ function refusalFor(skill: DiscoveredSkill): RefusedSkill | null {
 }
 
 /** One `pi.skills` entry: a directory holding `SKILL.md`, or a `.md` file — the same two shapes pi allows. */
-async function readSkill(packageDir: string, entry: string): Promise<DiscoveredSkill | "not-utf8" | null> {
+async function readSkill(
+  packageDir: string,
+  entry: string,
+  reader: typeof readBoundedBytes,
+): Promise<DiscoveredSkill | "not-utf8" | null> {
   const target = resolve(packageDir, entry);
   // A manifest is data from another package, so an entry escaping its own directory is refused rather than
   // followed. **`realpath`, not a lexical prefix test** (R-80): `resolve()` normalises `..` and knows
@@ -158,7 +163,7 @@ async function readSkill(packageDir: string, entry: string): Promise<DiscoveredS
     // `loadDefinitions` and accepted here, so `pi-daddy init` wrote `agent:advice` into the operator's grant
     // for a definition the session could never load, and the eventual `delegate` said only
     // `unknown agent "advice"`. An unreadable entry lands in `unreadable`, which `init` already prints.
-    const read = await readBoundedBytes(path, {
+    const read = await reader(path, {
       maxBytes: DEFINITION_MAX_BYTES,
       timeoutMs: DEFINITION_READ_TIMEOUT_MS,
     });
@@ -180,13 +185,14 @@ async function readSkill(packageDir: string, entry: string): Promise<DiscoveredS
 }
 
 /** Read one installed package, if it declares skills. `null` means "not a skill package", not an error. */
-export async function readSkillPackage(packageDir: string): Promise<SkillPackage | null> {
+export async function readSkillPackage(
+  packageDir: string,
+  reader: typeof readBoundedBytes = readBoundedBytes,
+): Promise<SkillPackage | null> {
   let manifest: { name?: string; version?: string; pi?: { skills?: unknown } };
-  try {
-    manifest = JSON.parse(await readFile(join(packageDir, "package.json"), "utf8"));
-  } catch {
-    return null;
-  }
+  const text = await readOptionalAuthorityText(join(packageDir, "package.json"));
+  if (text === undefined) return null;
+  manifest = JSON.parse(text);
   const declared = manifest.pi?.skills;
   if (!Array.isArray(declared) || declared.length === 0) return null;
 
@@ -195,7 +201,7 @@ export async function readSkillPackage(packageDir: string): Promise<SkillPackage
   const refused: RefusedSkill[] = [];
   for (const entry of declared) {
     if (typeof entry !== "string") continue;
-    const skill = await readSkill(packageDir, entry);
+    const skill = await readSkill(packageDir, entry, reader);
     if (skill === null) {
       unreadable.push(entry);
     } else if (skill === "not-utf8") {
@@ -243,7 +249,11 @@ export function skillPackageRoots(cwd: string): string[] {
   return [join(cwd, "node_modules"), join(agentDir, "npm", "node_modules")];
 }
 
-export async function discoverSkillPackages(cwd: string): Promise<SkillPackage[]> {
+/** The optional reader is a trusted per-loader dependency, never package metadata or requester input. */
+export async function discoverSkillPackages(
+  cwd: string,
+  reader: typeof readBoundedBytes = readBoundedBytes,
+): Promise<SkillPackage[]> {
   const resolved = await resolveSkillResources(cwd);
   const packages: SkillPackage[] = [];
   const seenSkills = new Set<string>();
@@ -260,15 +270,12 @@ export async function discoverSkillPackages(cwd: string): Promise<SkillPackage[]
     }),
   );
   for (const root of configuredRoots) {
-    try {
-      configuredNames.add(JSON.parse(await readFile(join(root, "package.json"), "utf8")).name);
-    } catch {
-      /* absent */
-    }
+    const text = await readOptionalAuthorityText(join(root, "package.json"));
+    if (text !== undefined) configuredNames.add(JSON.parse(text).name);
   }
   for (const resource of resolved.skills) {
     // Same bound, same reason: this is the third `SKILL.md` reader and it feeds `planInit`.
-    const resourceRead = await readBoundedBytes(resource.path, {
+    const resourceRead = await reader(resource.path, {
       maxBytes: DEFINITION_MAX_BYTES,
       timeoutMs: DEFINITION_READ_TIMEOUT_MS,
     });
@@ -281,12 +288,11 @@ export async function discoverSkillPackages(cwd: string): Promise<SkillPackage[]
     let name = resource.metadata.source;
     let version = "local";
     if (resource.metadata.origin === "package" && resource.metadata.baseDir) {
-      try {
-        const manifest = JSON.parse(await readFile(join(resource.metadata.baseDir, "package.json"), "utf8"));
+      const text = await readOptionalAuthorityText(join(resource.metadata.baseDir, "package.json"));
+      if (text !== undefined) {
+        const manifest = JSON.parse(text);
         name = manifest.name ?? name;
         version = manifest.version ?? version;
-      } catch {
-        /* the resource can be used without optional display metadata */
       }
     } else name = `${resource.metadata.scope} skills`;
     let pkg = packages.find((p) => p.name === name && p.version === version);
@@ -313,7 +319,7 @@ export async function discoverSkillPackages(cwd: string): Promise<SkillPackage[]
   const seenNames = new Set(packages.map((p) => p.name));
   for (const dir of dirs) {
     if (configuredRoots.has(resolve(dir))) continue;
-    const found = await readSkillPackage(dir);
+    const found = await readSkillPackage(dir, reader);
     if (!found || configuredNames.has(found.name) || seenNames.has(found.name)) continue;
     seenNames.add(found.name);
     found.skills = found.skills.filter((skill) => !runtimeNames.has(skill.definition.name));
@@ -324,23 +330,19 @@ export async function discoverSkillPackages(cwd: string): Promise<SkillPackage[]
 
 /** Append every package directory under one `node_modules`, scoped packages included. */
 async function collectFrom(root: string, dirs: string[]): Promise<void> {
-  let entries: string[];
+  let entries;
   try {
-    entries = await readdir(root);
-  } catch {
-    return; // a root that does not exist is a normal state, not a failure
+    entries = await readdir(root, { withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
   }
-
-  for (const entry of entries.sort()) {
-    if (entry.startsWith(".")) continue; // .bin, .package-lock.json
-    if (entry.startsWith("@")) {
-      try {
-        for (const scoped of (await readdir(join(root, entry))).sort()) dirs.push(join(root, entry, scoped));
-      } catch {
-        continue;
-      }
-    } else {
-      dirs.push(join(root, entry));
-    }
+  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    if (entry.name.startsWith(".") || (!entry.isDirectory() && !entry.isSymbolicLink())) continue;
+    if (entry.name.startsWith("@")) {
+      const scoped = await readdir(join(root, entry.name), { withFileTypes: true });
+      for (const child of scoped.sort((a, b) => a.name.localeCompare(b.name)))
+        if (child.isDirectory() || child.isSymbolicLink()) dirs.push(join(root, entry.name, child.name));
+    } else dirs.push(join(root, entry.name));
   }
 }

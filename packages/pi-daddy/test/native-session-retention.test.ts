@@ -238,7 +238,7 @@ test("the governed process seam retains actual private SessionManager bytes from
   const module = new URL("core/session-manager.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href;
   await writeFile(
     join(bin, "pi"),
-    `#!${process.execPath}\n(async()=>{const {SessionManager}=await import(${JSON.stringify(module)});const args=process.argv.slice(2);const file=args[args.indexOf('--session')+1];const sm=SessionManager.open(file);sm.appendMessage(${JSON.stringify(assistant())});process.stdout.write('fixture finished');})().catch(()=>process.exit(91));\n`,
+    `#!${process.execPath}\n(async()=>{const {SessionManager}=await import(${JSON.stringify(module)});const args=process.argv.slice(2);const file=args[args.indexOf('--session')+1];const sm=SessionManager.open(file);const emit=e=>process.stdout.write(JSON.stringify(e)+'\\n');emit(sm.getHeader());emit({type:'agent_start'});const user={role:'user',content:args.at(-1),timestamp:Date.now()};sm.appendMessage(user);emit({type:'message_end',message:user});const final={...${JSON.stringify(assistant())},content:[{type:'text',text:'fixture finished'}]};sm.appendMessage(final);emit({type:'message_end',message:final});emit({type:'agent_end'});emit({type:'agent_settled'});})().catch(()=>process.exit(91));\n`,
   );
   await chmod(join(bin, "pi"), 0o700);
   const values = { PATH: bin, PI_DADDY_EXECUTION_ARCHIVE: archive, PI_DADDY_NATIVE_SESSION_ROOT: f.root };
@@ -262,6 +262,8 @@ test("the governed process seam retains actual private SessionManager bytes from
     });
     assert.equal(result.ok, true);
     assert.equal(result.exitCode, 0);
+    assert.equal(result.final?.state, "complete");
+    assert.equal(result.cleanup?.state, "settled");
     assert.equal(result.text, "fixture finished");
     await assert.rejects(drainExecutionRetention({ ...result.retention! }), /original live/);
     const drained = await drainExecutionRetention(result.retention!);
