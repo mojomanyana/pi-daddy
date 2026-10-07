@@ -281,3 +281,14 @@ test("no source comment cites a file that was deleted with the docs tree", async
     await walk(join(packageRoot, directory));
   assert.deepEqual(offenders, [], "a comment points at the deleted docs tree; name the probe or AGENTS.md instead");
 });
+
+test("host-provided extension packages are wildcard peers, not installed dependencies", async () => {
+  const manifest = JSON.parse(await readFile(join(packageRoot, "package.json"), "utf8")) as {
+    dependencies?: Record<string, string>;
+    peerDependencies?: Record<string, string>;
+  };
+  for (const name of ["@earendil-works/pi-coding-agent", "typebox"]) {
+    assert.equal(manifest.peerDependencies?.[name], "*", `${name} must be supplied by Pi's extension loader`);
+    assert.equal(manifest.dependencies?.[name], undefined, `${name} must not install a duplicate runtime copy`);
+  }
+});

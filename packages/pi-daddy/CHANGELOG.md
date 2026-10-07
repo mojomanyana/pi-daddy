@@ -12,6 +12,10 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## 0.44.1 — Pi 1.0.4 extension-loader compatibility (2026-10-07)
+
+- Declare Pi and TypeBox as wildcard host-provided peers and retain the qualified versions only as development dependencies. Pi 1.0.4 can now supply its single runtime copies without extension-loader warnings or duplicate modules.
+
 ## 0.44.0 — stable release (2026-10-07)
 
 - Rebuild the native helper using a SHA-pinned Zig/static-musl toolchain, retain exact source/artifact/license
