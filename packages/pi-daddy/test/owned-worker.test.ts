@@ -197,7 +197,20 @@ test("helper death is unknown, and a missing or wrong predecessor receipt blocks
   const status = await readFile(`/proc/${metadata.pid}/stat`, "utf8");
   assert.ok(status.includes(") "));
   process.kill(metadata.pid, "SIGTERM");
-  await lease.lost;
+  // Retention deliberately unrefs the helper and its streams. This explicit observation needs its own
+  // finite event-loop reference: awaiting a Promise alone can let Node exit before the close event.
+  let lossTimeout: NodeJS.Timeout | undefined;
+  try {
+    const loss = await Promise.race([
+      lease.lost,
+      new Promise<never>((_resolve, reject) => {
+        lossTimeout = setTimeout(() => reject(new Error("retained lease helper did not report loss")), 5000);
+      }),
+    ]);
+    assert.match(loss.message, /workspace writer lease helper exited/);
+  } finally {
+    clearTimeout(lossTimeout);
+  }
   await assert.rejects(
     acquireWorkspaceLease({ workspace, access: "write", ownerId: "second", leaseDir }),
     /unresolved/,
