@@ -1,6 +1,6 @@
 # pi-daddy
 
-Stable release: **0.44.1** (tag `v0.44.1`), published to npm.
+Source target: **0.44.2**. Before installation, verify that `npm view pi-daddy version` and Git tag `v0.44.2` both resolve to this release.
 
 Capability governance and coordination for [pi](https://github.com/badlogic/pi-mono)'s multi-level agent system. An
 orchestrator grants each sub-agent a deliberate subset of what it holds and withholds the rest; a sub-agent may delegate
@@ -39,7 +39,7 @@ JSON output and persisted current branch. Unknown subtree cleanup retains capaci
 `PI_DADDY_FANOUT` limits active descendants using conservative subtree reservations, with capacity returned only
 after verified settlement. Complete results remain separate from optional recording failures.
 
-The package dependency and peer requirement both pin exact Pi **1.0.4**; later Pi versions require new qualification. Use Principal **4.8.0** with this runtime's `delegate_describe` contract. Native phases use `plan`, `build`, `review`, `debug`, and `investigate` with their returned `definitionId`; independent parallel work uses one `delegate_all` batch.
+Pi and TypeBox are wildcard host-provided peers so Pi's extension loader supplies one shared runtime copy. Development and release qualification pin exact Pi **1.0.4**; later Pi versions require new qualification. Prefer a Pi-managed install under a host pinned to 1.0.4. An ordinary standalone npm install may resolve newer peer versions and is outside this qualification. In a Pi-managed no-peer install, standalone help, version and reporting remain available; run initialization inside Pi with `/grants init`. Use Principal **4.8.0** with this runtime's `delegate_describe` contract. Native phases use `plan`, `build`, `review`, `debug`, and `investigate` with their returned `definitionId`; independent parallel work uses one `delegate_all` batch.
 
 Final capture preserves whitespace and concatenates text blocks without inserting separators. Tool-call terminals, empty visible finals and non-`stop` reasons are unavailable. Persisted message comparisons ignore object key order while preserving array order and every field value. The shared `final-conformance.json` table checks these semantics in both runtime and harness. Capture remains bounded: 4 MiB visible final, 32 MiB protocol line, 64 MiB persisted session, and a 3-second bounded session read. Exceeding a limit reports an unavailable final and blocks dependent handoffs; it does not imply the worker failed to settle.
 

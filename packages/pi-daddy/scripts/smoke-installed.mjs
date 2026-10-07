@@ -8,13 +8,15 @@
  *
  * Packs a tarball, installs it into a scratch project, and imports it the way a consumer would.
  */
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const pkgDir = new URL("..", import.meta.url).pathname;
+const packageVersion = JSON.parse(readFileSync(join(pkgDir, "package.json"), "utf8")).version;
 const work = mkdtempSync(join(tmpdir(), "grants-smoke-"));
+const managed = mkdtempSync(join(tmpdir(), "grants-managed-smoke-"));
 let completed = false;
 // **`PI_CODING_AGENT_DIR` is pinned into the scratch dir, and that is not tidiness.** `init` searches pi's
 // own install root as well as the project's (R-75), so without this the probe reads whatever the developer
@@ -34,8 +36,8 @@ const run = (cmd, args, cwd) =>
 try {
   const packed = run("npm", ["pack", "--pack-destination", work], pkgDir).trim().split("\n").pop();
   writeFileSync(join(work, "package.json"), JSON.stringify({ name: "smoke", private: true, type: "module" }));
-  // Pi supplies one shared copy of its SDK and TypeBox to extension packages. Install those host peers
-  // explicitly in the scratch project so this standalone consumer exercises the same module boundary.
+  // This standalone host prefix carries the exact qualified Pi and TypeBox versions used by the loader probe
+  // and by the ordinary library/CLI checks below. The separate managed prefix intentionally carries neither.
   run("npm", [
     "i",
     "--legacy-peer-deps",
@@ -48,6 +50,82 @@ try {
   if (existsSync(join(work, "node_modules/pi-daddy/dist/kernel/run-child-test-control.js"))) {
     throw new Error("test-only run-child control leaked into the installed package");
   }
+
+  writeFileSync(join(managed, "package.json"), JSON.stringify({ name: "managed-smoke", private: true }));
+  run("npm", ["i", "--legacy-peer-deps", "--ignore-scripts", "--no-audit", "--no-fund", join(work, packed)], managed);
+  const managedPackage = join(managed, "node_modules", "pi-daddy");
+  for (const hostPackage of [
+    join(managed, "node_modules", "@earendil-works", "pi-coding-agent"),
+    join(managed, "node_modules", "typebox"),
+  ])
+    if (existsSync(hostPackage)) throw new Error(`managed pi-daddy unexpectedly installed host peer: ${hostPackage}`);
+
+  const managedBin = join(managed, "node_modules", ".bin", "pi-daddy");
+  if (!run(managedBin, ["--help"], managed).includes("pi-daddy — capability governance"))
+    throw new Error("managed no-peer CLI help failed");
+  if (run(managedBin, ["--version"], managed).trim() !== packageVersion)
+    throw new Error("managed no-peer CLI version failed");
+  run("git", ["init"], managed);
+  run("git", ["-c", "user.name=Smoke", "-c", "user.email=smoke@example.invalid", "commit", "--allow-empty", "-m", "fixture"], managed);
+  const managedReport = JSON.parse(run(managedBin, ["report", "--json"], managed));
+  if (!Array.isArray(managedReport.rows)) throw new Error("managed no-peer report did not return episode JSON");
+  const managedInit = spawnSync(managedBin, ["init"], {
+    cwd: managed,
+    encoding: "utf8",
+    env: { ...process.env, PI_CODING_AGENT_DIR: join(managed, ".agent-home") },
+  });
+  if (managedInit.status !== 1 || !managedInit.stderr.includes("Start Pi in the target project and run /grants init"))
+    throw new Error(`managed no-peer init did not give the Pi-host remedy:
+${managedInit.stderr}`);
+
+  const agentDir = join(work, ".agent-home");
+  mkdirSync(agentDir, { recursive: true });
+  writeFileSync(
+    join(agentDir, "settings.json"),
+    JSON.stringify({
+      defaultProjectTrust: "always",
+      enableAnalytics: false,
+      enableInstallTelemetry: false,
+      packages: [managedPackage],
+    }),
+  );
+  writeFileSync(
+    join(work, "loader-probe.mjs"),
+    [
+      `import assert from "node:assert/strict";`,
+      `import { readFileSync, writeFileSync } from "node:fs";`,
+      `import { join } from "node:path";`,
+      `import { DefaultResourceLoader } from "@earendil-works/pi-coding-agent";`,
+      `const cwd = process.cwd();`,
+      `const agentDir = join(cwd, ".agent-home");`,
+      `const packageRoot = ${JSON.stringify(managedPackage)};`,
+      `const load = async () => {`,
+      `  const loader = new DefaultResourceLoader({ cwd, agentDir, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true });`,
+      `  await loader.reload();`,
+      `  return loader.getExtensions();`,
+      `};`,
+      `const loaded = await load();`,
+      `assert.deepEqual(loaded.errors, [], "installed grants extension must load without errors");`,
+      `assert.deepEqual(loaded.warnings, [], "installed grants extension must load without package warnings");`,
+      `assert.equal(loaded.extensions.length, 1, "managed package must register exactly its declared extension");`,
+      `const extension = loaded.extensions[0];`,
+      `assert.deepEqual([...extension.tools.keys()], ["activity_lifecycle"]);`,
+      `assert.deepEqual([...extension.commands.keys()], ["grants"]);`,
+      `const manifestPath = join(packageRoot, "package.json");`,
+      `const original = readFileSync(manifestPath, "utf8");`,
+      `const manifest = JSON.parse(original);`,
+      `manifest.dependencies = { typebox: "*" };`,
+      `writeFileSync(manifestPath, JSON.stringify(manifest));`,
+      `try {`,
+      `  const rejected = await load();`,
+      `  assert.equal(rejected.warnings.length, 1, "negative control must trigger Pi's host-package diagnostic");`,
+      `  assert.match(rejected.warnings[0].warning, /not dependencies: typebox/);`,
+      `} finally { writeFileSync(manifestPath, original); }`,
+      `console.log("LOADER_SMOKE_OK");`,
+    ].join("\n"),
+  );
+  const loaderOut = run("node", ["loader-probe.mjs"], work);
+  if (!loaderOut.includes("LOADER_SMOKE_OK")) throw new Error(`unexpected loader output: ${loaderOut}`);
 
   writeFileSync(
     join(work, "probe.mjs"),
@@ -134,7 +212,7 @@ try {
   const copied = readFileSync(join(work, ".pi", "skills", "review", "SKILL.md"), "utf8");
   if (copied !== skillSource) throw new Error(`init did not copy the declaration verbatim:\n${copied}`);
 
-  // A fresh configured project must also work without an explicitly installed SDK peer.
+  // A fresh configured project also resolves an enabled skill package without copying it.
   const configuredProject = join(work, "configured-project");
   mkdirSync(join(configuredProject, ".pi"), { recursive: true });
   writeFileSync(join(configuredProject, ".pi", "settings.json"), JSON.stringify({ packages: [skillPkg] }));
@@ -211,6 +289,8 @@ try {
   console.error("smoke FAILED:\n", error.stdout ?? "", error.stderr ?? error.message ?? error);
   process.exitCode = 1;
 } finally {
-  if (completed) rmSync(work, { recursive: true, force: true });
-  else console.error(`smoke evidence retained at ${work}`);
+  if (completed) {
+    rmSync(work, { recursive: true, force: true });
+    rmSync(managed, { recursive: true, force: true });
+  } else console.error(`smoke evidence retained at ${work} and ${managed}`);
 }

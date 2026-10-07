@@ -12,6 +12,12 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## 0.44.2 — installed extension-loader proof (2026-10-07)
+
+- Exercise the packed `grants.ts` extension through Pi 1.0.4's real resource loader in an isolated managed-package layout. The release smoke now proves that host peers produce no diagnostics and that the initial activity tool and `/grants` command register, and moving a host package back into `dependencies` triggers Pi's warning.
+- Correct the runtime documentation: host packages are wildcard peers, while development and release qualification remains pinned to Pi 1.0.4.
+- Keep standalone help, version and report commands usable when Pi-managed installation omits host peers. Standalone `init` now refuses with the `/grants init` remedy instead of failing at module startup.
+
 ## 0.44.1 — Pi 1.0.4 extension-loader compatibility (2026-10-07)
 
 - Declare Pi and TypeBox as wildcard host-provided peers and retain the qualified versions only as development dependencies. Pi 1.0.4 can now supply its single runtime copies without extension-loader warnings or duplicate modules.
