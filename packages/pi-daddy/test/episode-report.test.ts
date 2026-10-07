@@ -150,6 +150,8 @@ test("report joins fixture ledgers into episode rows and range totals", async ()
     cacheReadTokens: 10,
     reasoningTokens: 5,
     cost: 0.25,
+    observedCost: 0.25,
+    costCoverage: "complete",
     compactions: 1,
     turns: 1,
     durationMs: 120_000,
@@ -157,7 +159,15 @@ test("report joins fixture ledgers into episode rows and range totals", async ()
     commit: "12345678",
     outcome: "positive",
   });
-  assert.deepEqual(report.totals, { episodes: 2, cost: 1, tokens: 360, p50EpisodeCost: 0.25, p95EpisodeCost: 0.75 });
+  assert.deepEqual(report.totals, {
+    episodes: 2,
+    cost: 1,
+    observedCost: 1,
+    costCoverage: "complete",
+    tokens: 360,
+    p50EpisodeCost: 0.25,
+    p95EpisodeCost: 0.75,
+  });
   const markdown = renderEpisodeReport(report, false);
   assert.match(markdown, /\| episode \| started \| definition \| definitionHash/);
   assert.match(markdown, /\| episodes \| cost \| tokens \| p50 episode cost \| p95 episode cost \|/);
@@ -235,4 +245,96 @@ test("Pi-Episode trailers map episodes to the newest short commit", () => {
     `abcdef1234567890\nsubject\n\nPi-Episode: ${EPISODE_A}\n\u001e99999999aaaaaaaa\nolder\n\nPi-Episode: ${EPISODE_A}\n\u001e`,
   );
   assert.equal(commits.get(EPISODE_A), "abcdef12");
+});
+
+async function costFixture(costs: Array<number | undefined>, running = false) {
+  const dir = await tempDir("episode-cost-coverage-");
+  const ledger = `${dir}/ledger.jsonl`;
+  for (const [index, amount] of costs.entries()) {
+    const executionId = `exec:00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`;
+    await appendRecord(
+      ledger,
+      "lifecycle",
+      buildChildLifecycleEvent({
+        now: new Date("2026-10-07T00:00:00Z"),
+        episodeId: EPISODE_A,
+        executionId,
+        parentExecutionId: null,
+        childId: `d0.${index}`,
+        state: running && index === costs.length - 1 ? "running" : "completed",
+        deadlineAt: "2026-10-07T01:00:00Z",
+        executor: "process",
+        ...(amount === undefined
+          ? {}
+          : {
+              usage: {
+                input: 0,
+                output: 0,
+                cacheRead: 0,
+                cacheWrite: 0,
+                reasoning: 0,
+                totalTokens: 0,
+                cost: { input: amount, output: 0, cacheRead: 0, cacheWrite: 0, total: amount },
+              },
+            }),
+      }),
+    );
+  }
+  return { ledgerText: await readFile(ledger, "utf8"), activityText: "", commitByEpisode: new Map() };
+}
+
+test("unknown child cost is distinct from reported zero in rows, totals, JSON and text", async () => {
+  const unknown = reportEpisodes({ ...(await costFixture([undefined])), options: {} });
+  assert.equal(unknown.rows[0].cost, null);
+  assert.equal(unknown.totals?.cost, null);
+  assert.equal(unknown.totals?.p50EpisodeCost, null);
+  assert.equal(JSON.parse(renderEpisodeReport(unknown, true)).rows[0].cost, null);
+  assert.match(renderEpisodeReport(unknown, false), /unavailable/);
+  const zero = reportEpisodes({ ...(await costFixture([0])), options: {} });
+  assert.equal(zero.rows[0].cost, 0);
+  assert.equal(zero.totals?.cost, 0);
+});
+
+test("mixed and unfinished child costs retain observed subtotal without claiming a complete sum or percentile", async () => {
+  for (const running of [false, true]) {
+    const input = await costFixture([0.5, undefined], running);
+    const report = reportEpisodes({ ...input, options: {} });
+    assert.equal(report.rows[0].cost, null);
+    assert.equal(report.rows[0].observedCost, 0.5);
+    assert.equal(report.rows[0].costCoverage, "partial");
+    assert.equal(report.totals?.cost, null);
+    assert.equal(report.totals?.observedCost, 0.5);
+    assert.equal(report.totals?.p95EpisodeCost, null);
+    const grouped = reportEpisodes({ ...input, options: { groupBy: "model" } });
+    assert.equal(grouped.groups?.[0].cost, null);
+    assert.equal(grouped.groups?.[0].observedCost, 0.5);
+    assert.match(renderEpisodeReport(grouped, false), /partial/);
+  }
+});
+
+test("an empty or activity-only report cannot claim measured zero child cost", async () => {
+  const empty = reportEpisodes({ ledgerText: "", activityText: "", commitByEpisode: new Map(), options: {} });
+  assert.equal(empty.totals?.cost, null);
+  assert.equal(empty.totals?.costCoverage, "unavailable");
+  const dir = await tempDir("root-cost-unmeasured-");
+  const activity = `${dir}/activity.jsonl`;
+  await appendRecord(activity, "activity", {
+    version: 1,
+    id: "root-only",
+    kind: "task_started",
+    at: "2026-10-07T00:00:00.000Z",
+    rootId: "root",
+    episodeId: EPISODE_A,
+    taskId: "root-turn",
+  });
+  const report = reportEpisodes({
+    ledgerText: "",
+    activityText: await readFile(activity, "utf8"),
+    commitByEpisode: new Map(),
+    options: {},
+  });
+  assert.equal(report.rows[0].cost, null);
+  assert.equal(report.rows[0].costCoverage, "unavailable");
+  assert.equal(report.costScope, "recorded-child-executions");
+  assert.match(renderEpisodeReport(report, false), /root and unrecorded work are not measured/);
 });

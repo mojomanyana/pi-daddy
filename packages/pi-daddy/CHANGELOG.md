@@ -20,6 +20,12 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## Unreleased — passive cost coverage (2026-10-07)
+
+- **Report JSON change:** row/group/total cost and episode-cost percentiles may be null when coverage is incomplete.
+  Use observedCost for the known subtotal and costCoverage for complete/partial/unavailable status. A reported zero
+  remains zero. Cost coverage concerns recorded child executions only; root and unrecorded work are not measured.
+
 ## Unreleased — surviving guard repairs (2026-10-07)
 
 - Treat damaged or oversized runtime/resource settings and package metadata as failures, not missing defaults.

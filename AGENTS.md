@@ -198,6 +198,11 @@ it measured nothing rather than passing quietly.
 
 ## Decisions still in force
 
+**2026-10-07 — passive cost coverage (P03).** Episode reports preserve a missing recorded child charge as null,
+separate from an observed zero. Rows, groups and totals retain the observed subtotal with complete/partial/unavailable
+coverage. Incomplete episode costs do not become zero-valued percentile samples. Coverage is explicitly limited to
+recorded child executions, excluding unrecorded/root work. This is read-only accounting and never admission policy.
+
 **2026-10-07 — surviving read guards (P17).** Authority metadata reads are byte-bounded, nonblocking for FIFOs,
 strict UTF-8, and checked through their held descriptor. Only ENOENT means absent. Failed async closes retain the
 exact FileHandle and an explicit retry capability; retry cannot turn the original operation into success. Discovery

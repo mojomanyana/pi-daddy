@@ -13,7 +13,13 @@ export interface EpisodeReportOptions {
   model?: string;
   groupBy?: EpisodeGroupBy;
 }
-export interface EpisodeReportRow {
+export interface CostEvidence {
+  /** Null unless every recorded child has a terminal cost observation. Scope excludes unrecorded/root work. */
+  cost: number | null;
+  observedCost: number;
+  costCoverage: "complete" | "partial" | "unavailable";
+}
+export interface EpisodeReportRow extends CostEvidence {
   episode: string;
   started: string;
   definition: string;
@@ -26,7 +32,6 @@ export interface EpisodeReportRow {
   outputTokens: number;
   cacheReadTokens: number;
   reasoningTokens: number;
-  cost: number;
   compactions: number;
   turns: number;
   durationMs: number;
@@ -34,20 +39,25 @@ export interface EpisodeReportRow {
   commit: string;
   outcome: "" | "positive" | "negative" | "unknown";
 }
-export interface EpisodeReportGroup {
+export interface EpisodeReportGroup extends CostEvidence {
   value: string;
   count: number;
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
   reasoningTokens: number;
-  cost: number;
 }
 export interface EpisodeReport {
+  costScope: "recorded-child-executions";
   rows: EpisodeReportRow[];
   groups?: EpisodeReportGroup[];
   groupBy?: EpisodeGroupBy;
-  totals?: { episodes: number; cost: number; tokens: number; p50EpisodeCost: number; p95EpisodeCost: number };
+  totals?: CostEvidence & {
+    episodes: number;
+    tokens: number;
+    p50EpisodeCost: number | null;
+    p95EpisodeCost: number | null;
+  };
 }
 interface EpisodeAccumulator {
   episode: string;
@@ -65,6 +75,7 @@ interface EpisodeAccumulator {
   cacheReadTokens: number;
   reasoningTokens: number;
   cost: number;
+  reportedCosts: number;
   compactions: number;
   turns: number;
   children: Set<string>;
@@ -103,6 +114,7 @@ function episodeOf(episodes: Map<string, EpisodeAccumulator>, id: string, at: nu
     cacheReadTokens: 0,
     reasoningTokens: 0,
     cost: 0,
+    reportedCosts: 0,
     compactions: 0,
     turns: 0,
     children: new Set(),
@@ -174,7 +186,11 @@ export function reportEpisodes(input: {
       episode.cacheReadTokens += number(usage.cacheRead);
       episode.reasoningTokens += number(usage.reasoning);
     }
-    if (usage && object(usage.cost)) episode.cost += number(usage.cost.total);
+    const charge = usage && object(usage.cost) ? usage.cost.total : undefined;
+    if (typeof charge === "number" && Number.isFinite(charge) && charge >= 0) {
+      episode.cost += charge;
+      episode.reportedCosts++;
+    }
     episode.compactions += number(body.compactionCount);
   }
   const activity = readRecords(input.activityText);
@@ -203,7 +219,14 @@ export function reportEpisodes(input: {
       outputTokens: episode.outputTokens,
       cacheReadTokens: episode.cacheReadTokens,
       reasoningTokens: episode.reasoningTokens,
-      cost: episode.cost,
+      cost: episode.children.size > 0 && episode.reportedCosts === episode.children.size ? episode.cost : null,
+      observedCost: episode.cost,
+      costCoverage:
+        episode.children.size > 0 && episode.reportedCosts === episode.children.size
+          ? "complete"
+          : episode.reportedCosts > 0
+            ? "partial"
+            : "unavailable",
       compactions: episode.compactions,
       turns: episode.turns,
       durationMs: Math.max(0, episode.endedMs - episode.startedMs),
@@ -237,36 +260,58 @@ export function reportEpisodes(input: {
         cacheReadTokens: 0,
         reasoningTokens: 0,
         cost: 0,
+        observedCost: 0,
+        costCoverage: "complete",
       };
+      const summary = summarizeCosts(group.count ? [group, row] : [row]);
       group.count += 1;
       group.inputTokens += row.inputTokens;
       group.outputTokens += row.outputTokens;
       group.cacheReadTokens += row.cacheReadTokens;
       group.reasoningTokens += row.reasoningTokens;
-      group.cost += row.cost;
+      Object.assign(group, summary);
       groups.set(value, group);
     }
     return {
+      costScope: "recorded-child-executions",
       rows: [],
       groups: [...groups.values()].sort((a, b) => a.value.localeCompare(b.value)),
       groupBy: input.options.groupBy,
     };
   }
-  const costs = rows.map((row) => row.cost);
+  const summary = summarizeCosts(rows);
+  const costs = rows.flatMap((row) => (row.cost === null ? [] : [row.cost]));
   return {
+    costScope: "recorded-child-executions",
     rows,
     totals: {
       episodes: rows.length,
-      cost: costs.reduce((sum, value) => sum + value, 0),
+      ...summary,
       tokens: rows.reduce((sum, row) => sum + row.inputTokens + row.outputTokens, 0),
-      p50EpisodeCost: percentile(costs, 0.5),
-      p95EpisodeCost: percentile(costs, 0.95),
+      p50EpisodeCost: summary.cost === null ? null : percentile(costs, 0.5),
+      p95EpisodeCost: summary.cost === null ? null : percentile(costs, 0.95),
     },
   };
 }
 
+/** Summaries never treat an unobserved charge as a measured zero. */
+function summarizeCosts(values: readonly CostEvidence[]): CostEvidence {
+  const observedCost = values.reduce((sum, row) => sum + row.observedCost, 0);
+  const complete = values.length > 0 && values.every((row) => row.costCoverage === "complete");
+  return {
+    cost: complete ? observedCost : null,
+    observedCost,
+    costCoverage: complete
+      ? "complete"
+      : values.some((row) => row.costCoverage !== "unavailable")
+        ? "partial"
+        : "unavailable",
+  };
+}
+const costScope = "Cost coverage refers only to recorded child executions; root and unrecorded work are not measured.";
 const escapeCell = (value: unknown): string => String(value).replaceAll("|", "\\|").replaceAll("\n", " ");
-const cost = (value: number): string => value.toFixed(6).replace(/\.?0+$/, "") || "0";
+const cost = (value: number | null): string =>
+  value === null ? "unavailable" : value.toFixed(6).replace(/\.?0+$/, "") || "0";
 function duration(ms: number): string {
   const seconds = Math.round(ms / 1000);
   const minutes = Math.floor(seconds / 60);
@@ -290,6 +335,8 @@ export function renderEpisodeReport(report: EpisodeReport, json: boolean): strin
       "cacheReadTokens",
       "reasoningTokens",
       "cost",
+      "observed cost",
+      "cost coverage",
     ];
     return `${table(
       headers,
@@ -301,8 +348,10 @@ export function renderEpisodeReport(report: EpisodeReport, json: boolean): strin
         group.cacheReadTokens,
         group.reasoningTokens,
         cost(group.cost),
+        cost(group.observedCost),
+        group.costCoverage,
       ]),
-    )}\n`;
+    )}\n\n${costScope}\n`;
   }
   const headers = [
     "episode",
@@ -318,6 +367,8 @@ export function renderEpisodeReport(report: EpisodeReport, json: boolean): strin
     "cacheReadTokens",
     "reasoningTokens",
     "cost",
+    "observed cost",
+    "cost coverage",
     "compactions",
     "turns",
     "duration",
@@ -339,6 +390,8 @@ export function renderEpisodeReport(report: EpisodeReport, json: boolean): strin
     row.cacheReadTokens,
     row.reasoningTokens,
     cost(row.cost),
+    cost(row.observedCost),
+    row.costCoverage,
     row.compactions,
     row.turns,
     duration(row.durationMs),
@@ -348,10 +401,20 @@ export function renderEpisodeReport(report: EpisodeReport, json: boolean): strin
   ]);
   const totals = report.totals!;
   const totalsTable = table(
-    ["episodes", "cost", "tokens", "p50 episode cost", "p95 episode cost"],
-    [[totals.episodes, cost(totals.cost), totals.tokens, cost(totals.p50EpisodeCost), cost(totals.p95EpisodeCost)]],
+    ["episodes", "cost", "tokens", "p50 episode cost", "p95 episode cost", "observed cost", "cost coverage"],
+    [
+      [
+        totals.episodes,
+        cost(totals.cost),
+        totals.tokens,
+        cost(totals.p50EpisodeCost),
+        cost(totals.p95EpisodeCost),
+        cost(totals.observedCost),
+        totals.costCoverage,
+      ],
+    ],
   );
-  return `${table(headers, rows)}\n\n${totalsTable}\n`;
+  return `${table(headers, rows)}\n\n${totalsTable}\n\n${costScope}\n`;
 }
 
 export function commitsFromGitLog(log: string): Map<string, string> {
