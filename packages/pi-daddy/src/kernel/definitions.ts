@@ -20,6 +20,8 @@
  */
 
 import { createHash } from "node:crypto";
+import { isDefinitionPackageVersion } from "./definition-package-version.ts";
+export { isDefinitionPackageVersion } from "./definition-package-version.ts";
 import { join } from "node:path";
 import { readBoundedFile } from "./bounded-read.ts";
 import { resolveSkillResources, skillResourceName } from "./skill-resources.ts";
@@ -54,10 +56,6 @@ export function digestDefinition(definition: SkillDefinition): DefinitionDigest 
     source: definition.source,
     sha256: createHash("sha256").update(definition.body, "utf8").digest("hex"),
   };
-}
-
-export function isDefinitionPackageVersion(value: unknown): value is string {
-  return typeof value === "string" && /^[0-9A-Za-z][0-9A-Za-z.+_-]{0,127}$/.test(value);
 }
 
 export interface SkillDefinition {

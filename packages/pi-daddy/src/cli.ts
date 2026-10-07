@@ -19,23 +19,11 @@ import { relative, resolve as resolvePath } from "node:path";
 import { pathToFileURL } from "node:url";
 import { BoundedReadCleanupError } from "./kernel/bounded-read.ts";
 import { UnsafeGrantError } from "./kernel/grant-env.ts";
-import {
-  applyInit,
-  countDeclaring,
-  planInit,
-  type InitPlan,
-  GITIGNORE_REINCLUDE_LINES,
-  settingsIgnoredByGit,
-} from "./governance/init.ts";
+import type { InitPlan } from "./governance/init.ts";
 import { registeredWorkspaceIds, loadWorkspaceRegistry } from "./kernel/workspace.ts";
-import { explainDoubledNamespace } from "./kernel/catalog.ts";
+import { explainDoubledNamespace } from "./kernel/capability-diagnostics.ts";
 import type { Capability } from "./kernel/resolve.ts";
-import {
-  discoverSkillPackages,
-  skillPackageRoots,
-  type RefusedSkill,
-  type SkillPackage,
-} from "./kernel/skill-packages.ts";
+import type { RefusedSkill, SkillPackage } from "./kernel/skill-packages.ts";
 import { adoptLegacyEnvironment, legacyEnvironmentWarning } from "./kernel/env-names.ts";
 import {
   activityTimelinePath,
@@ -180,6 +168,21 @@ export function parseArgs(argv: string[]): ParsedArgs {
 
 /** Report a plan and what came of applying it. Returns the process exit code. */
 async function init(cwd: string, force: boolean, loadRegistry: typeof loadWorkspaceRegistry): Promise<number> {
+  // Managed npm installs omit Pi's host peers. Only init needs the SDK; standalone report/ledger commands
+  // must still start. Resolve the direct peer before importing discovery, so unrelated module failures propagate.
+  try {
+    import.meta.resolve("@earendil-works/pi-coding-agent");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ERR_MODULE_NOT_FOUND") throw error;
+    console.error(
+      "pi-daddy init: the Pi host SDK is unavailable in this npm install. " +
+        "Start Pi in the target project and run /grants init. " +
+        "Standalone init requires an explicitly installed @earendil-works/pi-coding-agent@1.0.4 peer.",
+    );
+    return 1;
+  }
+  const { applyInit, countDeclaring, planInit } = await import("./governance/init.ts");
+  const { discoverSkillPackages, skillPackageRoots } = await import("./kernel/skill-packages.ts");
   const packages = await discoverSkillPackages(cwd);
   if (packages.length === 0) {
     // Names BOTH roots it looked in, and offers pi's own install command first. The previous message named
@@ -302,6 +305,7 @@ export function reportRefusal(pkg: SkillPackage, refusal: RefusedSkill): string 
 
 /** What the operator has to do next, and what pi-daddy deliberately did not do for them. */
 async function report(plan: InitPlan): Promise<void> {
+  const { settingsIgnoredByGit, GITIGNORE_REINCLUDE_LINES } = await import("./governance/init.ts");
   const undeclared = plan.skills.filter((s) => s.withheld === "undeclared");
   const patterned = plan.skills.filter((s) => s.withheld === "pattern");
 

@@ -4,7 +4,7 @@ import { isEpisodeId } from "../kernel/episode-id.ts";
 import { REFUSAL_CODES } from "../kernel/refusals.ts";
 import { isLedgerCapabilityIdentifier, isLedgerDisplayIdentifier } from "../kernel/ledger-identifiers.ts";
 import { CHILD_ATTRIBUTION_ENV_KEYS } from "../kernel/env-names.ts";
-import { isDefinitionPackageVersion } from "../kernel/definitions.ts";
+import { isDefinitionPackageVersion } from "../kernel/definition-package-version.ts";
 
 export type LedgerV3Object = Record<string, unknown>;
 
