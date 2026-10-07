@@ -33,6 +33,13 @@ The governance schema is closed. Adding or removing a field, event, or enum memb
 meaning requires an explicit compatibility decision and regenerated fixtures. Run `npm run contracts:generate` from
 the repository root and commit the generated contract with the runtime change.
 
+## Capability namespace correction (2026-10-07)
+
+The published schema now derives its capability namespaces from the runtime list, including `context:`.
+Earlier schema snapshots omitted `context:` even though the runtime emitted and accepted it. This corrects
+validation of existing records; it changes no grant or execution authority. Consumers pinned to older schemas
+must explicitly adopt the corrected contract. The closed field and identifier-tail rules remain unchanged.
+
 ## Execution identity
 
 Every v3 execution event carries:

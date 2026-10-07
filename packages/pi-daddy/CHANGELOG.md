@@ -12,6 +12,10 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## 0.44.3 — exported ledger capability grammar (2026-10-07)
+
+- Derive the published ledger schema capability namespaces from the runtime source, so actual `context:files` and `context:summary` grants validate. Regenerate the production-builder fixtures and hash chain. Consumers pinned to an older schema must explicitly update their pin; runtime authority and record bytes are unchanged.
+
 ## 0.44.2 — installed extension-loader proof (2026-10-07)
 
 - Exercise the packed `grants.ts` extension through Pi 1.0.4's real resource loader in an isolated managed-package layout. The release smoke now proves that host peers produce no diagnostics and that the initial activity tool and `/grants` command register, and moving a host package back into `dependencies` triggers Pi's warning.

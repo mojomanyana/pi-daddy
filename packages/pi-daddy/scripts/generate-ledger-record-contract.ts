@@ -15,6 +15,7 @@ import { REFUSAL_CODES } from "../src/kernel/refusals.ts";
 import { RECORD_FORMAT, RECORD_KINDS, recordDigest } from "../src/governance/record.ts";
 import { recordKindForEvent } from "../src/governance/ledger.ts";
 import { createHash } from "node:crypto";
+import { CAPABILITY_NAMESPACE_PREFIXES } from "../src/kernel/capabilities.ts";
 import { CHILD_ATTRIBUTION_ENV_KEYS } from "../src/kernel/env-names.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -62,7 +63,7 @@ export function buildLedgerV3ContractFixtures() {
       depth: 1,
       agentType: "build",
       requested: ["tool:bash", "tool:read"],
-      parentGrant: ["agent:build", "tool:bash", "tool:read"],
+      parentGrant: ["agent:build", "tool:bash", "tool:read", "context:files", "context:summary"],
       result: {
         effective: ["tool:bash", "tool:read"],
         denied: [],
@@ -199,7 +200,8 @@ export async function writeLedgerV3ContractFixtures(target = fixtureDir): Promis
  * ambush waiting. Derived now: the test that caught it becomes a check on this function rather than a
  * tripwire on human memory.
  *
- * Only the enum is generated. The rest of the schema stays hand-authored on purpose — it encodes decisions
+ * Finite vocabularies and the capability namespace pattern are derived from runtime constants.
+ * The remaining field shapes stay hand-authored on purpose — it encodes decisions
  * (`additionalProperties: false`, the `const: true` flags, the discriminated union) that no generator should
  * be inventing, and `contracts/ledger-record/v1/README.md` is the compatibility contract for changing them.
  */
@@ -207,9 +209,14 @@ export async function syncLedgerV3RefusalEnum(target = schemaPath): Promise<void
   const raw = await readFile(target, "utf8");
   const schema = JSON.parse(raw) as {
     oneOf: Array<{ $ref: string }>;
-    $defs: Record<string, unknown> & { refusalCode: { enum: string[] } };
+    $defs: Record<string, unknown> & {
+      refusalCode: { enum: string[] };
+      ledgerCapabilityIdentifier: { pattern: string };
+    };
   };
   schema.$defs.refusalCode.enum = [...REFUSAL_CODES];
+  const prefixes = CAPABILITY_NAMESPACE_PREFIXES.map((prefix) => prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  schema.$defs.ledgerCapabilityIdentifier.pattern = `^(?:${prefixes.join("|")})[A-Za-z0-9@*][A-Za-z0-9@*._/-]{0,255}$`;
   if (!schema.oneOf.some((entry) => entry.$ref === "#/$defs/costGate")) schema.oneOf.push({ $ref: "#/$defs/costGate" });
   if (!schema.oneOf.some((entry) => entry.$ref === "#/$defs/episodeOutcome"))
     schema.oneOf.push({ $ref: "#/$defs/episodeOutcome" });
