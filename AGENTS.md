@@ -4,6 +4,88 @@ This is the only orientation file. There is no `docs/` folder and no `CLAUDE.md`
 here, what a human needs is in `README.md`, and everything else is git history. Decisions that were reversed are
 recorded in this file with a date, never rewritten.
 
+## Next-session handoff — execution-cache work
+
+**Start the next session with a brief status report before editing:** inspect branch/HEAD/worktree, read this
+handoff and the [package implementation checkpoint](packages/pi-daddy/README.md#implementation-checkpoint),
+check the draft PR when available, then explain the goal, what is implemented, what is unverified and the next
+concrete step. Do not treat an old progress estimate or historical green run as current acceptance.
+
+### Goal and saved state
+
+We are adding a session-scoped execution cache to pi-daddy: reuse and share eligible executions across an
+authorized root/delegation tree, track dependencies, invalidate changed inputs, preserve native execution
+semantics, recheck current authority and expose truthful provenance and operator controls. This is not arbitrary
+shell memoization. The existing governance/session-coordination product remains the foundation.
+
+- Work branch: `feat/session-execution-cache`, tracking the same branch on `origin`.
+- Draft PR: <https://github.com/mojomanyana/pi-daddy/pull/91>, targeting `main`; not ready to merge/release.
+- Implementation snapshot: `b4dd0072f39ef5dd5d27d08a578517fdec6d776c`, on top of inactive foundation
+  `4d7a13b9bfa30cc56237c9b386666e7c66b568a4`. Resolve current HEAD rather than assuming this is the latest commit.
+- Latest candidate is **UNTESTED (per request)**, disabled by default and only an explicit SDK-owned path.
+  Package assembly succeeded; runtime correctness, formal qualification, performance and complete cleanup
+  remain unverified. Older component tests/approvals do not qualify this candidate or the combined reader work.
+- The ordinary CLI, captured children, unknown/custom Bash and Herdr are still ordinary/unqualified paths.
+  Explicit SDK roots can share internally; that is not automatic root/delegated-child sharing.
+- Preserve local `byte-capture-real-gDzFP5/` and ignored `.principal/` artifacts. They were deliberately excluded
+  from the commit/PR; do not stage or delete them as cleanup. Expect this untracked directory in the worktree.
+
+### Implemented, not yet qualified as a whole
+
+The explicit native SDK factory, current-authority admission, root/session epochs, private supervised broker,
+per-call images, scheduler/replay/sharing, dependency invalidation, force-rerun mechanisms, Watchman observation,
+bounded product readers/storage, retained recovery capabilities, controls, history/provenance and a conservative
+GNU checksum candidate profile are composed. Static helper assembly/manifests and SDK exports are present.
+Discovery/startup/init repairs retain failed cleanup on the initiating owner and isolate replacement sessions.
+
+Personal-best-effort freshness is approved: Watchman/fingerprints are not atomic freshness. Known uncertainty
+uses governed ordinary execution before issuance; rare undetected stale-result races remain disclosed. This does
+not relax authorization, ownership, force-rerun, bounds, no-after-commit retry or effect/service/determinism exclusions.
+Component reservations are not measured total RSS/disk/latency or whole-resource cleanup guarantees.
+
+### Resume here
+
+1. Inspect Pi's actual supported source/API boundary and implement the **minimal Pi API changes now authorized
+   by the operator**. No Pi patch is included in the saved implementation. Needed seams are actual captured-native
+   constructor/options and asynchronous admission/attachment for authorized root/child sharing, plus native
+   output-accumulator descriptor ownership and physical close/retry recovery. The synchronous, post-spawn
+   `runChild.onSpawn` callback and tool metadata are not substitutes.
+2. Wire those seams into current grants/epoch/source/options checks and automatic root/captured-child attachment.
+   Preserve tool attenuation, ordered effective environment, native outputs/errors/streaming/timeouts and custom
+   tool non-interception. Do not fabricate child credentials, constructor authority or a no-start receipt.
+3. Complete root-scoped legacy ledger writer/file-lock ownership, reload/disable/crash/recovery and resource
+   joining/accounting. Preserve ordinary work when only the optimization fails, retain unresolved original
+   resources and keep failed startup/shutdown immutable after explicit physical recovery.
+4. Once remaining implementation is finished, run the deferred basic end-to-end check and fix concrete failures.
+   Then complete regression/CI/package/platform checks, additional useful profiles, workload benchmarks, formal
+   acceptance and one independent whole-candidate review before any merge or release.
+
+**Operator preference:** implementation first, quickly; no repeated test/review/fix loops during this unfinished
+implementation phase. Basic testing follows implementation. Do not restart broad historical audit/proof-ledger
+bookkeeping. Reuse matching evidence, preserve old limitations and work on concrete integration blockers.
+
+Pi API edits are now permitted only for the necessary seams above. No installation into the live runtime,
+cache activation, new privileges, protected-helper changes, merge or publish was authorized by this checkpoint.
+Do not add global monkeypatches, command wrapping/substitution or inferred native options. Changes to source/API
+bindings must account for the loader's digest checks rather than silently bypassing them.
+
+### Where to look
+
+- Public status/configuration: `packages/pi-daddy/README.md`; unreleased record: `packages/pi-daddy/CHANGELOG.md`.
+- SDK composition: `extensions/execution-cache.ts`, `cache-session-product.ts`, `cache-installed-native.ts`,
+  `cache-native-bash.ts`, `cache-native-root.ts` and `cache-native-issuer.ts` under `packages/pi-daddy/`.
+- Captured-child boundary: `packages/pi-daddy/extensions/execute-child.ts` and `src/kernel/run-child.ts`.
+- Native ownership/loading: `src/executors/cache-native-loader.ts`, `cache-native-context.ts`,
+  `cache-native-images.ts`, `cache-product-readers.ts` and `cache-product-storage.ts` under the package.
+- Scheduler/runtime: `src/products/cache-personal-runtime.ts`, `cache-graph.ts`, `cache-scheduler.ts` and
+  `cache-shell-service.ts`; history/roles: `src/governance/cache-history.ts` and `cache-shell-roles.ts`.
+- Local normative inputs, if present: `.principal/plans/session-execution-cache-spec.md`,
+  `session-execution-cache.md`, `session-execution-cache-acceptance.md` and
+  `.principal/plans/personal-cache.981ed999fbd5/authority.md`. Preserve requirements and pending acceptance;
+  these ignored files are not delivered by a fresh clone.
+- Latest local implementation notes: `.principal/plans/cache-finish.m6m8jhvi/implementation-followup.md`
+  and `implementation-followup-status.json`. Use them for detail, not as behavioral proof.
+
 ## What this is
 
 pi-daddy governs and coordinates pi's multi-level agent system. An orchestrator holds a catalog of tools and Agent
