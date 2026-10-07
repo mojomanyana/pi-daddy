@@ -1,0 +1,42 @@
+{
+  "revision": 1,
+  "toolchain": {
+    "version": "0.14.1",
+    "url": "https://ziglang.org/download/0.14.1/zig-x86_64-linux-0.14.1.tar.xz",
+    "sha256": "24aeeec8af16c381934a6cd7d95c807a8cb2cf7df9fa40d359aa884195c4716c",
+    "directory": "zig-x86_64-linux-0.14.1",
+    "target": "x86_64-linux-musl",
+    "flags": [
+      "-std=c11",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-O2",
+      "-static",
+      "-s",
+      "-fno-ident",
+      "-Wl,--build-id=none"
+    ]
+  },
+  "source": {
+    "path": "native/worker.c",
+    "sha256": "205bacc28f9011c0603fdb95e930e901ba5dbff6f6170cd2adfd39d8ec5c2d6d"
+  },
+  "artifact": {
+    "path": "native/linux-x64/worker",
+    "sha256": "981a45591b1de790501ef531f6b0ccc8299b1e9a2d08a7970ccaeeecb9868798",
+    "bytes": 56360
+  },
+  "licenses": [
+    {
+      "path": "THIRD_PARTY_LICENSES/musl-COPYRIGHT.txt",
+      "sha256": "f9bc4423732350eb0b3f7ed7e91d530298476f8fec0c6c427a1c04ade22655af",
+      "source": "lib/libc/musl/COPYRIGHT"
+    },
+    {
+      "path": "THIRD_PARTY_LICENSES/zig-MIT.txt",
+      "sha256": "5c537d6853e005298a285d508cff9ac7192cea23576c840d485b2b586a7ff177",
+      "source": "LICENSE"
+    }
+  ]
+}

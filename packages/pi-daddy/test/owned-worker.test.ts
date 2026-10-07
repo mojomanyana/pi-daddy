@@ -48,15 +48,16 @@ function request(root: string, code: string, suffix = "") {
   };
 }
 const processRecord = `const fs=require('node:fs'); fs.appendFileSync(process.env.P07_MARKER,JSON.stringify({pid:process.pid,start:fs.readFileSync('/proc/self/stat','utf8').split(') ')[1].split(' ')[19]})+'\\n');`;
-function daemonRoot(late = false) {
-  const lateCode = processRecord + "setInterval(()=>{},1000);";
+function daemonRoot(late = false, hold = false) {
+  // Readiness is an IPC handshake, not a guess about Node startup under full-suite load.
+  const lateCode = processRecord + "process.send('ready');process.disconnect();setInterval(()=>{},1000);";
   const childCode =
     processRecord +
     (late
-      ? `let once=false; process.on('SIGTERM',()=>{if(once)return;once=true;require('node:child_process').spawn(process.execPath,['-e',${JSON.stringify(lateCode)}],{detached:true,stdio:'ignore',env:process.env}).unref();setTimeout(()=>process.exit(0),40);});`
+      ? `let once=false;process.on('SIGTERM',()=>{if(once)return;once=true;const child=require('node:child_process').spawn(process.execPath,['-e',${JSON.stringify(lateCode)}],{detached:true,stdio:['ignore','ignore','ignore','ipc'],env:process.env});child.once('message',()=>process.exit(0));});`
       : "") +
-    "setInterval(()=>{},1000);";
-  return `require('node:child_process').spawn(process.execPath,['-e',${JSON.stringify(childCode)}],{detached:true,stdio:'ignore',env:process.env}).unref();setTimeout(()=>process.exit(0),150);`;
+    "process.send('ready');process.disconnect();setInterval(()=>{},1000);";
+  return `const child=require('node:child_process').spawn(process.execPath,['-e',${JSON.stringify(childCode)}],{detached:true,stdio:['ignore','ignore','ignore','ipc'],env:process.env});child.unref();child.once('message',()=>{${hold ? "setInterval(()=>{},1000);" : "process.exit(0);"}});`;
 }
 async function assertWorkersGone(marker: string) {
   const records = (await readFile(marker, "utf8"))
@@ -122,6 +123,9 @@ for (const late of [false, true])
     });
     const result = await runOwnedChild({
       ...request(root, daemonRoot(late)),
+      // Give the late descendant time to report actual execution before the kill deadline.
+      // The helper must still reap every recorded descendant and leave the sentinel untouched.
+      ...(late ? { killGraceMs: 1500, timeoutMs: 10000 } : {}),
       env: { ...process.env, P07_MARKER: marker },
     });
     assert.equal(result.code, 0);
@@ -158,7 +162,7 @@ test("controller SIGKILL closes ownership pipe and native helper independently s
   const marker = join(root, "pids");
   const ownershipDir = join(root, "owner");
   const module = new URL("../src/executors/owned-worker.ts", import.meta.url).href;
-  const code = `import {runOwnedChild} from ${JSON.stringify(module)}; await runOwnedChild(${JSON.stringify({ ...request(root, daemonRoot()), args: ["-e", daemonRoot().replace("process.exit(0),150", "process.exit(0),100000")], env: { ...process.env, P07_MARKER: marker } })});`;
+  const code = `import {runOwnedChild} from ${JSON.stringify(module)}; await runOwnedChild(${JSON.stringify({ ...request(root, daemonRoot(false, true)), env: { ...process.env, P07_MARKER: marker } })});`;
   const controller = spawn(process.execPath, ["--input-type=module", "-e", code], { stdio: "ignore" });
   t.after(() => controller.kill("SIGKILL"));
   await eventually(() => exists(marker), "fixture worker never started");
@@ -355,4 +359,45 @@ test("unknown captured cleanup lets its controller exit naturally while preservi
   assert.equal(closed[0], 0);
   assert.deepEqual(JSON.parse(output), { cleanup: "unknown", release: "retained" });
   await assert.rejects(acquireWorkspaceLease({ workspace, access: "write", ownerId: "next", leaseDir }), /unresolved/);
+});
+
+test("caller timeout covers delayed ownership binding without opening the command gate", async (t) => {
+  const root = await fixture(t);
+  const marker = join(root, "ran");
+  let bound: CapturedWorkerIdentity | undefined;
+  const result = await runOwnedChild({
+    ...request(root, `require('node:fs').writeFileSync(${JSON.stringify(marker)},'ran')`),
+    timeoutMs: 100,
+    async onOwnership(identity) {
+      bound = identity;
+      await delay(150);
+    },
+  });
+  assert.equal(result.timedOut, true);
+  assert.equal(result.cleanup.state, "settled");
+  assert.ok(bound);
+  assert.equal(await exists(marker), false);
+  assert.ok(await readCapturedWorkerReceipt(bound));
+});
+
+test("loader rejects altered opened binary bytes using its compiled hash", async (t) => {
+  const root = await fixture(t);
+  const fs = (await import("node:fs/promises")).default;
+  const { syncBuiltinESMExports } = await import("node:module");
+  const original = fs.open;
+  const altered = t.mock.method(fs, "open", async (...args: Parameters<typeof original>) => {
+    const handle = await original(...args);
+    if (String(args[0]).endsWith("/native/linux-x64/worker"))
+      t.mock.method(handle, "readFile", async () => Buffer.from("replaced helper"));
+    return handle;
+  });
+  syncBuiltinESMExports();
+  t.after(() => {
+    altered.mock.restore();
+    syncBuiltinESMExports();
+  });
+  const result = await runOwnedChild(request(root, "process.exit(0)"));
+  assert.equal(result.cleanup.state, "not-started");
+  assert.match(result.spawnError!, /helper hash mismatch/);
+  assert.equal(await exists(join(root, "owner")), false);
 });

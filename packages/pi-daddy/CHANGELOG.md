@@ -1,34 +1,5 @@
 # Changelog — pi-daddy
 
-## 0.44.0-rc.1 — captured delegation qualification (2026-10-07)
-
-Release candidate for review, not a stable or npm publication. Use the immutable candidate tag for source review.
-
-- **Delegation bounds:** budget now caps active descendants through disjoint subtree reservations, alongside
-  depth and per-call limits. Settled children return capacity; uncertain cleanup retains it. A single child
-  conservatively reserves the available subtree, and active ownership survives extension reloads.
-- **Bounded input and approval handling:** retain cleanup failures on the original owner, guard manual history
-  reads, and time out approvals without weakening their authority. Named approval revocation uses the pinned
-  selected definition; `revoke --all` remains available without resource acquisition.
-- **Captured execution contract:** qualify Pi 1.0.4 JSON settlement against the exact persisted current turn and
-  active branch. Preserve complete final text and expose work/final/cleanup/observation states independently.
-  Failed children return native error results with available evidence; optional recording failures preserve work.
-- **Cleanup:** use the packaged Linux x64 subreaper and execution-bound durable receipts. Unknown subtree cleanup
-  retains capacity and quarantines workspace reuse; preserve the referenced ownership directory as evidence.
-- **Staged backend release:** governed Herdr execution refuses, even when its server answers, until parity is
-  qualified. Explicitly set `PI_DADDY_HERDR=0` for captured execution; there is no fallback after selection.
-- **Required handoffs:** block dependent chain steps when the complete prior final exceeds the handoff limit.
-  The completed step and its full result remain available; no tail-only handoff is promoted to complete.
-- **Selected Principal resources:** bind the native phase to selected inline and delegated bytes, hash and exact
-  package manifest, use `delegate_describe` to obtain the required definition identity, and pin it until reload.
-  Missing, moved or tampered marked Principal resources refuse rather than becoming ordinary inline definitions.
-
-- Remove monetary execution gates, external advisors and the automatic first-delegation model chooser. Recognized
-  legacy settings and cost arguments are inert; manual model edits, permission approvals and retained historical
-  usage remain. Pi 1.0.4 argument preparation validates active arguments after removing the retired cost override.
-- Live complete episode cost is explicitly unavailable in the session dashboard; historical usage remains in reports.
-
-
 Newest first. **Breaking changes are marked and say what to do about them.**
 
 This file exists because the README had grown ninety lines of stacked version banners before a reader
@@ -41,9 +12,58 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## 0.44.0-rc.2 — review follow-up (2026-10-07)
+
+- Rebuild the native helper using a SHA-pinned Zig/static-musl toolchain, retain exact source/artifact/license
+  provenance, and have CI reproduce every output byte. The loader verifies the held executable against its generated
+  JavaScript constant; the checksum sidecar is no longer runtime authority. Ship the corresponding musl and Zig notices.
+- Reject invalid native control/status descriptors and unsupported child enumeration before admitting a worker;
+  treat control-read failures as owner loss, validate numeric bounds, send TERM once per unreaped child, and preserve
+  the original stop reason during hard escalation. Startup uses the caller's timeout/deadline, retaining late valid
+  ownership evidence without reopening a cancelled worker's start gate.
+- Recheck retained reservations against their original durable receipts before single, parallel and chain dispatch.
+  Exact later settlement proof releases capacity once; missing or mismatched proof remains retained, and the original
+  failed/unknown result remains unchanged. Use `delegate_all` for independent parallel work.
+- Compare streamed/persisted messages structurally: object-key order is irrelevant, array order and every value remain
+  binding. Share a final-output conformance table with skill-harness, preserving text bytes without invented separators.
+- **Breaking — explicit package support:** require Linux x64 and exact Pi 1.0.4 in package platform and peer metadata.
+  Other platforms or Pi versions must retain their previously qualified runtime until separately qualified.
+- Clarify the original candidate's removed monetary/advisor/model automation and passive-cost JSON breaking changes,
+  with migration guidance and version-scoped changelog entries.
+
+## 0.44.0-rc.1 — captured delegation qualification (2026-10-07)
+
+Release candidate for review, not a stable or npm publication. Use the immutable candidate tag for source review.
+
+- **Breaking — delegation bounds:** budget now caps active descendants through disjoint subtree reservations, alongside
+  depth and per-call limits. Settled children return capacity; uncertain cleanup retains it. A single child
+  conservatively reserves the available subtree, and active ownership survives extension reloads.
+- **Bounded input and approval handling:** retain cleanup failures on the original owner, guard manual history
+  reads, and time out approvals without weakening their authority. Named approval revocation uses the pinned
+  selected definition; `revoke --all` remains available without resource acquisition.
+- **Captured execution contract:** qualify Pi 1.0.4 JSON settlement against the exact persisted current turn and
+  active branch. Preserve complete final text and expose work/final/cleanup/observation states independently.
+  Failed children return native error results with available evidence; optional recording failures preserve work.
+- **Cleanup:** use the packaged Linux x64 subreaper and execution-bound durable receipts. Unknown subtree cleanup
+  retains capacity and quarantines workspace reuse; preserve the referenced ownership directory as evidence.
+- **Breaking — platform/backend support:** the package now declares Linux x64 only. macOS, ARM64 and native Windows users must remain on their previous qualified release; this candidate has no qualified executor there.
+- **Breaking — staged backend release:** governed Herdr execution refuses, even when its server answers, until parity is
+  qualified. Explicitly set `PI_DADDY_HERDR=0` for captured execution; there is no fallback after selection.
+- **Required handoffs:** block dependent chain steps when the complete prior final exceeds the handoff limit.
+  The completed step and its full result remain available; no tail-only handoff is promoted to complete.
+- **Selected Principal resources:** bind the native phase to selected inline and delegated bytes, hash and exact
+  package manifest, use `delegate_describe` to obtain the required definition identity, and pin it until reload.
+  Missing, moved or tampered marked Principal resources refuse rather than becoming ordinary inline definitions.
+
+- **Breaking — removed automation:** remove monetary execution gates, external advisors and the automatic first-delegation model chooser. Configure provider-side spend controls if required, and select models/thinking manually. Recognized
+  legacy settings and cost arguments are inert; manual model edits, permission approvals and retained historical
+  usage remain. Pi 1.0.4 argument preparation validates active arguments after removing the retired cost override.
+- Live complete episode cost is explicitly unavailable in the session dashboard; historical usage remains in reports.
+
+
 ### Passive cost coverage
 
-- **Report JSON change:** row/group/total cost and episode-cost percentiles may be null when coverage is incomplete.
+- **Breaking — report JSON change:** row/group/total cost and episode-cost percentiles may be null when coverage is incomplete.
   Use observedCost for the known subtotal and costCoverage for complete/partial/unavailable status. A reported zero
   remains zero. Cost coverage concerns recorded child executions only; root and unrecorded work are not measured.
 

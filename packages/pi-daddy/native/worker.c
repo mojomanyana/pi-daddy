@@ -88,26 +88,61 @@ static int durable(const struct identity *id, int settled, int worker_status, co
   if (dir < 0) return -1;
   ok = fsync(dir) == 0; close(dir); return ok ? 0 : -1;
 }
+static int milliseconds(const char *text, long maximum, long *value) {
+  if (!*text) return -1;
+  for (const char *p = text; *p; p++) if (*p < '0' || *p > '9') return -1;
+  char *end; errno = 0; long parsed = strtol(text, &end, 10);
+  if (errno || *end || parsed < 0 || parsed > maximum) return -1;
+  *value = parsed; return 0;
+}
+static int validate_channel(int fd, int writing) {
+  struct stat info; int flags = fcntl(fd, F_GETFL);
+  if (flags < 0 || fstat(fd, &info) < 0 || (!S_ISFIFO(info.st_mode) && !S_ISSOCK(info.st_mode))) return -1;
+  if ((writing && (flags & O_ACCMODE) == O_RDONLY) || (!writing && (flags & O_ACCMODE) == O_WRONLY)) return -1;
+  return writing ? 0 : fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+}
+/* A direct child cannot reuse its PID before our waitpid. Forget its signal record only after reaping. */
+struct signalled_child { pid_t pid; int signo; };
+static struct signalled_child *signalled;
+static size_t signalled_count;
+static void forget_child(pid_t pid) {
+  for (size_t i = 0; i < signalled_count; i++) if (signalled[i].pid == pid) {
+    signalled[i] = signalled[--signalled_count]; return;
+  }
+}
 /* Signal only this helper's direct children. No process-name, cwd, PID-group or global enumeration. */
 static int signal_children(int signo) {
   char path[100]; snprintf(path, sizeof(path), "/proc/self/task/%d/children", getpid());
   FILE *children = fopen(path, "r"); if (!children) return -1;
-  int pid, ok = 0;
-  while (fscanf(children, "%d", &pid) == 1) {
+  int pid, ok = 0, scanned;
+  while ((scanned = fscanf(children, "%d", &pid)) == 1) {
+    if (pid <= 0) { ok = -1; break; }
+    size_t index = 0;
+    while (index < signalled_count && signalled[index].pid != pid) index++;
+    if (signo && index < signalled_count && signalled[index].signo == signo) continue;
     int pfd = (int)syscall(SYS_pidfd_open, pid, 0);
     if (pfd < 0) { if (errno != ESRCH) ok = -1; continue; }
     if (syscall(SYS_pidfd_send_signal, pfd, signo, NULL, 0) < 0 && errno != ESRCH) ok = -1;
     close(pfd);
+    if (signo && ok == 0) {
+      if (index == signalled_count) {
+        void *next = realloc(signalled, (signalled_count + 1) * sizeof(*signalled));
+        if (!next) { ok = -1; break; }
+        signalled = next; signalled_count++; signalled[index].pid = pid;
+      }
+      signalled[index].signo = signo;
+    }
   }
-  if (ferror(children)) ok = -1;
+  if (scanned != EOF || ferror(children)) ok = -1;
   fclose(children); return ok;
 }
 int main(int argc, char **argv) {
   /* execution nonce canonical-root helper-sha ownership-dir grace-ms cleanup-ms -- command args */
   if (argc < 10 || strcmp(argv[8], "--")) return 64;
   struct identity id = { .execution=argv[1], .nonce=argv[2], .root=argv[3], .hash=argv[4], .directory=argv[5] };
-  long grace = strtol(argv[6], NULL, 10), ceiling = strtol(argv[7], NULL, 10);
-  if (grace < 0 || grace > 60000 || ceiling < grace || ceiling > 120000) return 64;
+  long grace, ceiling;
+  if (milliseconds(argv[6], 60000, &grace) < 0 || milliseconds(argv[7], 120000, &ceiling) < 0 || ceiling < grace) return 64;
+  if (validate_channel(3, 0) < 0 || validate_channel(4, 1) < 0) return 65;
   if (stat(id.root, &id.workspace) < 0 || !S_ISDIR(id.workspace.st_mode)) return 65;
   if (read_text("/proc/sys/kernel/random/boot_id", id.boot, sizeof(id.boot)) < 0 || self_start(id.start, sizeof(id.start)) < 0) return 65;
   ssize_t n = readlink("/proc/self/ns/pid", id.ns, sizeof(id.ns)-1); if (n < 0) return 65; id.ns[n] = 0;
@@ -115,6 +150,7 @@ int main(int argc, char **argv) {
       snprintf(id.receipt, sizeof(id.receipt), "%s/receipt.json", id.directory) >= (int)sizeof(id.receipt)) return 65;
   if (prctl(PR_SET_CHILD_SUBREAPER, 1) < 0) return 65;
   int probe = (int)syscall(SYS_pidfd_open, getpid(), 0); if (probe < 0) return 65; close(probe);
+  if (signal_children(0) < 0) return 65; /* Probe /proc children support before admitting work. */
   signal(SIGPIPE, SIG_IGN); signal(SIGTERM, on_signal); signal(SIGINT, on_signal); signal(SIGHUP, on_signal);
   int gate[2]; if (pipe2(gate, O_CLOEXEC) < 0) return 65;
   id.worker = fork(); if (id.worker < 0) return 65;
@@ -127,14 +163,18 @@ int main(int argc, char **argv) {
   }
   close(gate[0]);
   int ready = durable(&id, 0, 0, "ready") == 0;
-  if (ready) { FILE *status = fdopen(dup(4), "w"); if (status) { identity_json(status, &id); fputc('\n', status); fclose(status); } else ready = 0; }
-  fcntl(3, F_SETFL, fcntl(3, F_GETFL) | O_NONBLOCK);
+  if (ready) {
+    FILE *status = fdopen(dup(4), "w");
+    if (status) { identity_json(status, &id); fputc('\n', status); if (ferror(status)) ready = 0; if (fclose(status) != 0) ready = 0; }
+    else ready = 0;
+  }
   long long stopping = ready ? 0 : monotonic_ms();
   const char *reason = ready ? "worker-exit" : "ownership-write-failed";
   int started = 0, worker_status = 0, worker_reaped = 0, control_open = 1;
   for (;;) {
     int status; pid_t reaped;
     while ((reaped = waitpid(-1, &status, WNOHANG)) > 0) {
+      forget_child(reaped);
       if (reaped == id.worker) { worker_status=status; worker_reaped=1; if (!stopping) stopping=monotonic_ms(); }
     }
     if (reaped < 0 && errno == ECHILD) {
@@ -144,9 +184,13 @@ int main(int argc, char **argv) {
     }
     if (requested_signal && !stopping) { stopping=monotonic_ms(); reason="helper-signal"; }
     char control[32]; ssize_t received = control_open ? read(3, control, sizeof(control)) : -1;
-    if (control_open && received == 0) { control_open=0; if (!stopping) { stopping=monotonic_ms(); reason="owner-loss"; } }
+    if (control_open && (received == 0 || (received < 0 && errno != EAGAIN && errno != EWOULDBLOCK))) { control_open=0; if (!stopping) { stopping=monotonic_ms(); reason="owner-loss"; } }
     if (received > 0) for (ssize_t i=0;i<received;i++) {
-      if (control[i] == 'K') { stopping=monotonic_ms()-grace; reason="cancelled"; }
+      if (control[i] == 'K') {
+        if (!stopping) { stopping=monotonic_ms(); reason="cancelled"; }
+        long long immediate = monotonic_ms()-grace;
+        if (stopping > immediate) stopping=immediate; /* Escalate without rewriting the original cause. */
+      }
       if (control[i] == 'C' && !stopping) { stopping=monotonic_ms(); reason="cancelled"; }
       if (control[i] == 'S' && ready && !started && !stopping) { started=1; if (write(gate[1], "S", 1) != 1) { stopping=monotonic_ms(); reason="start-failed"; } }
     }
@@ -156,6 +200,10 @@ int main(int argc, char **argv) {
       if (elapsed >= ceiling) return 74; /* Missing receipt preserves uncertainty. */
     }
     struct pollfd pfd = { .fd=control_open ? 3 : -1, .events=POLLIN | POLLHUP };
-    poll(&pfd, 1, 10);
+    int polled = poll(&pfd, 1, 10);
+    if ((polled < 0 && errno != EINTR) || (polled > 0 && (pfd.revents & POLLNVAL))) {
+      control_open=0;
+      if (!stopping) { stopping=monotonic_ms(); reason="owner-loss"; }
+    }
   }
 }

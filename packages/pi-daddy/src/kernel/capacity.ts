@@ -11,6 +11,7 @@ export interface CapacityReservation {
   readonly childAllowance: number;
   readonly cost: number;
   readonly state: CapacityReservationState;
+  readonly identity: CapturedWorkerIdentity | undefined;
   /** Bind actual ownership before releasing the worker gate. Throws on replacement or a different execution. */
   bindOwnership(identity: CapturedWorkerIdentity): void;
   /** Only trusted executor facts belong here; model output and ledger projections never authorize release. */
@@ -21,6 +22,8 @@ export interface CapacityAllocator {
   readonly total: number;
   readonly available: number;
   readonly reserved: number;
+  /** Still-held occurrences; released reservations are removed, execution IDs remain tombstoned. */
+  readonly retainedReservations: readonly CapacityReservation[];
   reserve(executionId: string, childAllowance: number): CapacityReservationResult;
 }
 
@@ -51,6 +54,7 @@ export function createCapacityAllocator(total: number): CapacityAllocator {
   let available = total;
   // Keep occurrence tombstones: a stale finalizer must never release a newly reused execution identifier.
   const executions = new Set<string>();
+  const held = new Map<string, CapacityReservation>();
   return Object.freeze({
     total,
     get available() {
@@ -58,6 +62,9 @@ export function createCapacityAllocator(total: number): CapacityAllocator {
     },
     get reserved() {
       return total - available;
+    },
+    get retainedReservations() {
+      return [...held.values()].filter((reservation) => reservation.state === "retained");
     },
     reserve(executionId: string, childAllowance: number): CapacityReservationResult {
       if (!executionId || executionId.length > 512 || executions.has(executionId))
@@ -81,6 +88,9 @@ export function createCapacityAllocator(total: number): CapacityAllocator {
         get state() {
           return state;
         },
+        get identity() {
+          return identity;
+        },
         bindOwnership(actual: CapturedWorkerIdentity): void {
           if (
             state === "released" ||
@@ -101,10 +111,12 @@ export function createCapacityAllocator(total: number): CapacityAllocator {
             cleanup.receipt.state === "settled" &&
             cleanup.receipt.reapedAll === true;
           if (!provenNotStarted && !settled) return (state = "retained");
+          held.delete(executionId);
           available += cost;
           return (state = "released");
         },
       });
+      held.set(executionId, reservation);
       return { ok: true, reservation };
     },
   });

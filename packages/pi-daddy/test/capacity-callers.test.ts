@@ -1,10 +1,13 @@
 /** Production regressions: single/all/chain must share reservations before gates and retain them across reloads. */
 import assert from "node:assert/strict";
-import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, writeFile, rename } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import test, { after } from "node:test";
 import grants from "../extensions/grants.ts";
+import { bindReloadLifecycle } from "../extensions/reload-environment.ts";
+import { runOwnedChild } from "../src/executors/owned-worker.ts";
+import { reconcileDelegationCapacity } from "../extensions/session-capacity.ts";
 import { piFixtureScript } from "./pi-fixture.ts";
 import { tempDir, cleanupTempDirs } from "./tmp.ts";
 after(cleanupTempDirs);
@@ -88,7 +91,17 @@ else {const timer=setInterval(()=>{if(fs.existsSync(process.env.CAPACITY_TEST_GA
     }
     assert.fail("actual child start missing");
   };
-  return { root, log, gate, load, notices, readStarts, untilStarts, ...(await load()) };
+  return {
+    root,
+    log,
+    gate,
+    load,
+    notices,
+    readStarts,
+    untilStarts,
+    ...(await load()),
+    capacity: bindReloadLifecycle(owner, { root: {} }).lifecycle.capacity!.allocator,
+  };
 }
 const task = { task: "fixture", tools: ["read"] };
 const exhausted = (error: unknown) =>
@@ -179,3 +192,42 @@ test("prelaunch planning refusals release the reservation before a later valid p
   assert.equal((await h.call("delegate", task)).isError, false);
   assert.equal((await h.readStarts()).length, 1);
 });
+
+for (const name of ["delegate", "delegate_all", "delegate_chain"] as const) {
+  test(`${name} recovers retained capacity only after an exact durable receipt arrives`, async (t) => {
+    const h = await harness(t, "1", "instant");
+    const reserved = h.capacity.reserve("late-proof", 0);
+    assert.equal(reserved.ok, true);
+    const item = reserved.reservation;
+    const completed = await runOwnedChild({
+      executionId: item.executionId,
+      ownershipDir: join(h.root, "late-proof"),
+      cwd: h.root,
+      command: process.execPath,
+      args: ["-e", "process.exit(0)"],
+      env: process.env,
+      timeoutMs: 5000,
+      onOwnership: (identity) => item.bindOwnership(identity),
+    });
+    assert.equal(completed.cleanup.state, "settled");
+    const identity = item.identity!;
+    const saved = identity.receiptPath + ".delayed";
+    await rename(identity.receiptPath, saved);
+    assert.equal(item.finalize({ state: "unknown", identity, reason: "receipt not observed" }), "retained");
+    const args = name === "delegate" ? task : name === "delegate_all" ? { children: [task] } : { steps: [task] };
+    await assert.rejects(h.call(name, args), exhausted);
+    assert.equal(h.capacity.available, 0);
+    const receipt = JSON.parse(await readFile(saved, "utf8"));
+    await writeFile(identity.receiptPath, JSON.stringify({ ...receipt, identity: { ...identity, nonce: "wrong" } }));
+    await assert.rejects(h.call(name, args), exhausted);
+    assert.equal(h.capacity.available, 0);
+    await rename(saved, identity.receiptPath);
+    assert.equal((await h.call(name, args)).isError, false);
+    assert.equal(item.state, "released");
+    await Promise.all([reconcileDelegationCapacity(h), reconcileDelegationCapacity(h)]);
+    assert.equal(h.capacity.available, 1);
+    assert.deepEqual(h.capacity.retainedReservations, []);
+    assert.equal((await h.readStarts()).length, 1, "only the call after verified proof starts");
+    assert.equal(completed.cleanup.state, "settled");
+  });
+}

@@ -1,3 +1,4 @@
+import { readCapturedWorkerReceipt } from "../src/governance/captured-worker-record.ts";
 import { createCapacityAllocator, type CapacityAllocator, type CapacityReservation } from "../src/kernel/capacity.ts";
 import { budgetFromEnv } from "../src/kernel/fanout.ts";
 import { GovernanceRefusal, refusal, type StructuredRefusal } from "../src/kernel/refusals.ts";
@@ -39,4 +40,14 @@ export function reserveDelegationCapacity(
   const result = session.capacity.reserve(executionId, childAllowance ?? Math.max(0, session.capacity.available - 1));
   if (!result.ok) throw new GovernanceRefusal(refusal("FANOUT_EXCEEDED", result.reason));
   return result.reservation;
+}
+
+/** Recheck only original bound receipt paths; later proof frees capacity, never rewrites a failed outcome. */
+export async function reconcileDelegationCapacity(session: Pick<GrantsSession, "capacity">): Promise<void> {
+  for (const reservation of session.capacity.retainedReservations) {
+    const identity = reservation.identity;
+    if (!identity) continue;
+    const receipt = await readCapturedWorkerReceipt(identity);
+    if (receipt) reservation.finalize({ state: "settled", identity, receipt });
+  }
 }

@@ -2,11 +2,12 @@
 import { constants as fsConstants } from "node:fs";
 import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { lstat, mkdir, open, readFile, realpath } from "node:fs/promises";
+import { lstat, mkdir, open, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { constants as osConstants } from "node:os";
 import { fileURLToPath } from "node:url";
 import { StringDecoder } from "node:string_decoder";
+import { WORKER_SHA256 } from "./worker-artifact.ts";
 import type { ChildRunRequest, ChildRunResult } from "../kernel/run-child.ts";
 import { takeBytes, DEFAULT_MAX_OUTPUT_BYTES, DEFAULT_TIMEOUT_MS, DEFAULT_KILL_GRACE_MS } from "../kernel/run-child.ts";
 import type { CapturedWorkerCleanup, CapturedWorkerIdentity } from "../kernel/captured-worker-contract.ts";
@@ -56,7 +57,7 @@ export async function runOwnedChild(request: OwnedChildRunRequest): Promise<Owne
     binary = await open(helper, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
     const pinned = await binary.stat();
     if (pinned.dev !== info.dev || pinned.ino !== info.ino) throw new Error("worker helper changed before pinning");
-    hash = (await readFile(helper + ".sha256", "utf8")).trim();
+    hash = WORKER_SHA256;
     if (
       !/^[a-f0-9]{64}$/.test(hash) ||
       createHash("sha256")
@@ -179,7 +180,7 @@ export async function runOwnedChild(request: OwnedChildRunRequest): Promise<Owne
       /* helper close is evaluated against independent receipt */
     });
     status.on("data", (bytes: Buffer) => {
-      if (identity || failure) return;
+      if (identity) return;
       ready += bytes.toString("utf8");
       if (ready.length > 16384) {
         failure = "oversized worker readiness";
@@ -217,14 +218,8 @@ export async function runOwnedChild(request: OwnedChildRunRequest): Promise<Owne
         }
       })();
     });
-    timers.push(
-      setTimeout(() => {
-        if (!identity) {
-          failure = "worker readiness timed out";
-          stop();
-        }
-      }, 5000),
-    );
+    // Startup is bounded by the caller's timeout/deadline too. A separate readiness cutoff can
+    // discard a valid delayed ownership record and prevent later exact receipt reconciliation.
     timers.push(
       setTimeout(() => {
         timedOut = true;

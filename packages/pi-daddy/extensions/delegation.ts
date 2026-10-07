@@ -1,3 +1,4 @@
+import { reconcileDelegationCapacity, reserveDelegationCapacity } from "./session-capacity.ts";
 import { registerDefinitionDescribe } from "./definition-describe.ts";
 /**
  * Governed delegation, as pi sees it: the `delegate` and `delegate_all` tool registrations.
@@ -328,6 +329,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       assertDelegationAuthority(session);
       const children = params.children ?? [];
       if (session.capacityRefusal) throw new GovernanceRefusal(session.capacityRefusal);
+      await reconcileDelegationCapacity(session);
       const split = splitBudget(session.capacity.available, children.length);
       if (!split.ok) {
         // Thrown, not returned: a returned `isError` is discarded by pi, so a refusal that came back as a
@@ -355,6 +357,8 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       const pending = children.map(async (child, index): Promise<DelegationOutcome> => {
         try {
           return await runOneDelegation(session, child, occurrences[index], split.perChild, ctx, signal, {
+            // Reserve each batch share synchronously here, before another dispatch can interleave.
+            capacityReservation: reserveDelegationCapacity(session, occurrences[index].executionId, split.perChild),
             onProgress: progress.sink(index),
             toolCallId: _toolCallId,
           });

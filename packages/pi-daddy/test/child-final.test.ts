@@ -178,3 +178,84 @@ test("post-final tool or message activity needs a new final and settlement", asy
   for (const tail of cases)
     assert.equal((await capture([...events, ...tail])).result.state, "unavailable", JSON.stringify(tail));
 });
+
+test("persisted message object key order is irrelevant but content order and metadata must match", async () => {
+  const reorderedUser = { timestamp: 1, content: [{ text: "current", type: "text" }], role: "user" };
+  const reorderedFinal = {
+    timestamp: 2,
+    stopReason: "stop",
+    content: [{ text: visible, type: "text" }],
+    role: "assistant",
+  };
+  assert.equal(
+    (await capture(events, [header, row("u", null, reorderedUser), row("a", "u", reorderedFinal)])).result.state,
+    "complete",
+  );
+  for (const altered of [
+    { ...assistant, timestamp: 3 },
+    { ...assistant, content: [{ type: "text", text: visible + "changed" }] },
+  ])
+    assert.equal(
+      (await capture(events, [header, row("u", null, user), row("a", "u", altered)])).result.state,
+      "unavailable",
+    );
+  const blocks = {
+    ...assistant,
+    content: [
+      { type: "text", text: "first" },
+      { type: "text", text: "second" },
+    ],
+  };
+  assert.equal(
+    (
+      await capture(
+        [
+          header,
+          { type: "message_end", message: user },
+          { type: "message_end", message: blocks },
+          { type: "agent_settled" },
+        ],
+        [header, row("u", null, user), row("a", "u", { ...blocks, content: [...blocks.content].reverse() })],
+      )
+    ).result.state,
+    "unavailable",
+  );
+});
+
+test("shared Pi 1.0.4 final conformance agrees with skill-harness", async () => {
+  const fixtureRoot = new URL("../test-integration/pi-sdk/fixtures/", import.meta.url);
+  const table = JSON.parse(await readFile(new URL("final-conformance.json", fixtureRoot), "utf8"));
+  for (const item of table.cases) {
+    const stream = item.input.fixture
+      ? await readFile(new URL(item.input.fixture, fixtureRoot), "utf8")
+      : item.input.records.map((record: unknown) => JSON.stringify(record)).join("\n") +
+        "\n" +
+        (item.input.rawSuffix ?? "");
+    const records = stream
+      .split("\n")
+      .filter(Boolean)
+      .flatMap((line: string) => {
+        try {
+          return [JSON.parse(line)];
+        } catch {
+          return [];
+        }
+      });
+    const persisted: unknown[] = [records.find((record: any) => record?.type === "session")];
+    let parentId: string | null = null;
+    for (const record of records) {
+      if (record?.type !== "message_end" || !record.message || typeof record.message !== "object") continue;
+      const id = `m${persisted.length}`;
+      persisted.push(row(id, parentId, record.message));
+      parentId = id;
+    }
+    const root = await tempDir("shared-final-");
+    const path = join(root, "session.jsonl");
+    await writeFile(path, persisted.map((record) => JSON.stringify(record)).join("\n") + "\n");
+    const reader = new ChildFinalCapture();
+    reader.observe(Buffer.from(stream));
+    const result = await reader.finish(path);
+    assert.equal(result.state === "complete", item.expected.available, `${item.id}: ${JSON.stringify(result)}`);
+    if (result.state === "complete") assert.equal(result.text, item.expected.finalText, item.id);
+  }
+});

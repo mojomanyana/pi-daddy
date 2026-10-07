@@ -1,0 +1,1094 @@
+{
+  "version": 1,
+  "piVersion": "1.0.4",
+  "scope": "Shared terminal-output eligibility and exact visible-text assembly. Captured input provenance remains in provenance.json; synthetic records are tests, not new CLI captures. Harness redaction and runtime persisted-session identity checks are separate consumer requirements. Unavailable finalText is diagnostic evidence only. Whitespace-only text remains nonempty bytes.",
+  "cases": [
+    {
+      "id": "captured-success",
+      "input": {
+        "fixture": "success.jsonl"
+      },
+      "expected": {
+        "available": true,
+        "finalText": "  final first\nfinal second final third   ",
+        "status": "complete"
+      }
+    },
+    {
+      "id": "captured-nested",
+      "input": {
+        "fixture": "nested.jsonl"
+      },
+      "expected": {
+        "available": true,
+        "finalText": "  final first\nfinal second final third   ",
+        "status": "complete"
+      }
+    },
+    {
+      "id": "captured-retry",
+      "input": {
+        "fixture": "retry.jsonl"
+      },
+      "expected": {
+        "available": true,
+        "finalText": "  final first\nfinal second final third   ",
+        "status": "complete"
+      }
+    },
+    {
+      "id": "captured-error",
+      "input": {
+        "fixture": "error.jsonl"
+      },
+      "expected": {
+        "available": false,
+        "finalText": "partial failed text",
+        "status": "error"
+      }
+    },
+    {
+      "id": "captured-stop-then-error",
+      "input": {
+        "fixture": "stop-then-error.jsonl"
+      },
+      "expected": {
+        "available": false,
+        "finalText": "partial failed text",
+        "status": "error"
+      }
+    },
+    {
+      "id": "text-blocks-concatenate",
+      "input": {
+        "records": [
+          {
+            "type": "session",
+            "version": 3,
+            "id": "conformance-session",
+            "cwd": "FIXTURE_CWD"
+          },
+          {
+            "type": "agent_start"
+          },
+          {
+            "type": "turn_start"
+          },
+          {
+            "type": "message_end",
+            "message": {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "question"
+                }
+              ],
+              "timestamp": 0
+            }
+          },
+          {
+            "type": "message_end",
+            "message": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "  first"
+                },
+                {
+                  "type": "thinking",
+                  "thinking": "private"
+                },
+                {
+                  "type": "text",
+                  "text": "second\n\n"
+                }
+              ],
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          },
+          {
+            "type": "agent_settled"
+          }
+        ]
+      },
+      "expected": {
+        "available": true,
+        "finalText": "  firstsecond\n\n",
+        "status": "complete"
+      }
+    },
+    {
+      "id": "whitespace-only-preserved",
+      "input": {
+        "records": [
+          {
+            "type": "session",
+            "version": 3,
+            "id": "conformance-session",
+            "cwd": "FIXTURE_CWD"
+          },
+          {
+            "type": "agent_start"
+          },
+          {
+            "type": "turn_start"
+          },
+          {
+            "type": "message_end",
+            "message": {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "question"
+                }
+              ],
+              "timestamp": 0
+            }
+          },
+          {
+            "type": "message_end",
+            "message": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": " \n\t"
+                }
+              ],
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          },
+          {
+            "type": "agent_settled"
+          }
+        ]
+      },
+      "expected": {
+        "available": true,
+        "finalText": " \n\t",
+        "status": "complete"
+      }
+    },
+    {
+      "id": "empty-text-unavailable",
+      "input": {
+        "records": [
+          {
+            "type": "session",
+            "version": 3,
+            "id": "conformance-session",
+            "cwd": "FIXTURE_CWD"
+          },
+          {
+            "type": "agent_start"
+          },
+          {
+            "type": "turn_start"
+          },
+          {
+            "type": "message_end",
+            "message": {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "question"
+                }
+              ],
+              "timestamp": 0
+            }
+          },
+          {
+            "type": "message_end",
+            "message": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": ""
+                }
+              ],
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          },
+          {
+            "type": "agent_settled"
+          }
+        ]
+      },
+      "expected": {
+        "available": false,
+        "finalText": "",
+        "status": "unavailable"
+      }
+    },
+    {
+      "id": "thinking-only-unavailable",
+      "input": {
+        "records": [
+          {
+            "type": "session",
+            "version": 3,
+            "id": "conformance-session",
+            "cwd": "FIXTURE_CWD"
+          },
+          {
+            "type": "agent_start"
+          },
+          {
+            "type": "turn_start"
+          },
+          {
+            "type": "message_end",
+            "message": {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "question"
+                }
+              ],
+              "timestamp": 0
+            }
+          },
+          {
+            "type": "message_end",
+            "message": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "thinking",
+                  "thinking": "private"
+                }
+              ],
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          },
+          {
+            "type": "agent_settled"
+          }
+        ]
+      },
+      "expected": {
+        "available": false,
+        "finalText": "",
+        "status": "unavailable"
+      }
+    },
+    {
+      "id": "tool-call-final-unavailable",
+      "input": {
+        "records": [
+          {
+            "type": "session",
+            "version": 3,
+            "id": "conformance-session",
+            "cwd": "FIXTURE_CWD"
+          },
+          {
+            "type": "agent_start"
+          },
+          {
+            "type": "turn_start"
+          },
+          {
+            "type": "message_end",
+            "message": {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "question"
+                }
+              ],
+              "timestamp": 0
+            }
+          },
+          {
+            "type": "message_end",
+            "message": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "diagnostic"
+                },
+                {
+                  "type": "toolCall",
+                  "id": "tool-1",
+                  "name": "read",
+                  "arguments": {}
+                }
+              ],
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          },
+          {
+            "type": "agent_settled"
+          }
+        ]
+      },
+      "expected": {
+        "available": false,
+        "finalText": "diagnostic",
+        "status": "unavailable"
+      }
+    },
+    {
+      "id": "unknown-content-block-unavailable",
+      "input": {
+        "records": [
+          {
+            "type": "session",
+            "version": 3,
+            "id": "conformance-session",
+            "cwd": "FIXTURE_CWD"
+          },
+          {
+            "type": "agent_start"
+          },
+          {
+            "type": "turn_start"
+          },
+          {
+            "type": "message_end",
+            "message": {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "question"
+                }
+              ],
+              "timestamp": 0
+            }
+          },
+          {
+            "type": "message_end",
+            "message": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "diagnostic"
+                },
+                {
+                  "type": "image",
+                  "data": "fixture"
+                }
+              ],
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          },
+          {
+            "type": "agent_settled"
+          }
+        ]
+      },
+      "expected": {
+        "available": false,
+        "finalText": "diagnostic",
+        "status": "unavailable"
+      }
+    },
+    {
+      "id": "length-is-truncated",
+      "input": {
+        "records": [
+          {
+            "type": "session",
+            "version": 3,
+            "id": "conformance-session",
+            "cwd": "FIXTURE_CWD"
+          },
+          {
+            "type": "agent_start"
+          },
+          {
+            "type": "turn_start"
+          },
+          {
+            "type": "message_end",
+            "message": {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "question"
+                }
+              ],
+              "timestamp": 0
+            }
+          },
+          {
+            "type": "message_end",
+            "message": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "partial"
+                }
+              ],
+              "stopReason": "length",
+              "timestamp": 1
+            }
+          },
+          {
+            "type": "agent_settled"
+          }
+        ]
+      },
+      "expected": {
+        "available": false,
+        "finalText": "partial",
+        "status": "truncated"
+      }
+    },
+    {
+      "id": "terminal-error",
+      "input": {
+        "records": [
+          {
+            "type": "session",
+            "version": 3,
+            "id": "conformance-session",
+            "cwd": "FIXTURE_CWD"
+          },
+          {
+            "type": "agent_start"
+          },
+          {
+            "type": "turn_start"
+          },
+          {
+            "type": "message_end",
+            "message": {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "question"
+                }
+              ],
+              "timestamp": 0
+            }
+          },
+          {
+            "type": "message_end",
+            "message": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "partial"
+                }
+              ],
+              "stopReason": "error",
+              "timestamp": 1
+            }
+          },
+          {
+            "type": "agent_settled"
+          }
+        ]
+      },
+      "expected": {
+        "available": false,
+        "finalText": "partial",
+        "status": "error"
+      }
+    },
+    {
+      "id": "terminal-abort",
+      "input": {
+        "records": [
+          {
+            "type": "session",
+            "version": 3,
+            "id": "conformance-session",
+            "cwd": "FIXTURE_CWD"
+          },
+          {
+            "type": "agent_start"
+          },
+          {
+            "type": "turn_start"
+          },
+          {
+            "type": "message_end",
+            "message": {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "question"
+                }
+              ],
+              "timestamp": 0
+            }
+          },
+          {
+            "type": "message_end",
+            "message": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "partial"
+                }
+              ],
+              "stopReason": "aborted",
+              "timestamp": 1
+            }
+          },
+          {
+            "type": "agent_settled"
+          }
+        ]
+      },
+      "expected": {
+        "available": false,
+        "finalText": "partial",
+        "status": "aborted"
+      }
+    },
+    {
+      "id": "missing-settlement",
+      "input": {
+        "records": [
+          {
+            "type": "session",
+            "version": 3,
+            "id": "conformance-session",
+            "cwd": "FIXTURE_CWD"
+          },
+          {
+            "type": "agent_start"
+          },
+          {
+            "type": "turn_start"
+          },
+          {
+            "type": "message_end",
+            "message": {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "question"
+                }
+              ],
+              "timestamp": 0
+            }
+          },
+          {
+            "type": "message_end",
+            "message": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "answer"
+                }
+              ],
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          }
+        ]
+      },
+      "expected": {
+        "available": false,
+        "finalText": "answer",
+        "status": "incomplete"
+      }
+    },
+    {
+      "id": "later-turn-invalidates-final",
+      "input": {
+        "records": [
+          {
+            "type": "session",
+            "version": 3,
+            "id": "conformance-session",
+            "cwd": "FIXTURE_CWD"
+          },
+          {
+            "type": "agent_start"
+          },
+          {
+            "type": "turn_start"
+          },
+          {
+            "type": "message_end",
+            "message": {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "question"
+                }
+              ],
+              "timestamp": 0
+            }
+          },
+          {
+            "type": "message_end",
+            "message": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "stale"
+                }
+              ],
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          },
+          {
+            "type": "agent_settled"
+          },
+          {
+            "type": "turn_start"
+          },
+          {
+            "type": "agent_settled"
+          }
+        ]
+      },
+      "expected": {
+        "available": false,
+        "finalText": "",
+        "status": "unavailable"
+      }
+    },
+    {
+      "id": "later-update-invalidates-final",
+      "input": {
+        "records": [
+          {
+            "type": "session",
+            "version": 3,
+            "id": "conformance-session",
+            "cwd": "FIXTURE_CWD"
+          },
+          {
+            "type": "agent_start"
+          },
+          {
+            "type": "turn_start"
+          },
+          {
+            "type": "message_end",
+            "message": {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "question"
+                }
+              ],
+              "timestamp": 0
+            }
+          },
+          {
+            "type": "message_end",
+            "message": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "stale"
+                }
+              ],
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          },
+          {
+            "type": "agent_settled"
+          },
+          {
+            "type": "message_update"
+          },
+          {
+            "type": "agent_settled"
+          }
+        ]
+      },
+      "expected": {
+        "available": false,
+        "finalText": "",
+        "status": "unavailable"
+      }
+    },
+    {
+      "id": "later-user-invalidates-final",
+      "input": {
+        "records": [
+          {
+            "type": "session",
+            "version": 3,
+            "id": "conformance-session",
+            "cwd": "FIXTURE_CWD"
+          },
+          {
+            "type": "agent_start"
+          },
+          {
+            "type": "turn_start"
+          },
+          {
+            "type": "message_end",
+            "message": {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "question"
+                }
+              ],
+              "timestamp": 0
+            }
+          },
+          {
+            "type": "message_end",
+            "message": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "stale"
+                }
+              ],
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          },
+          {
+            "type": "agent_settled"
+          },
+          {
+            "type": "message_end",
+            "message": {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "question"
+                }
+              ],
+              "timestamp": 0
+            }
+          },
+          {
+            "type": "agent_settled"
+          }
+        ]
+      },
+      "expected": {
+        "available": false,
+        "finalText": "",
+        "status": "unavailable"
+      }
+    },
+    {
+      "id": "late-tool-end-invalidates-settlement",
+      "input": {
+        "records": [
+          {
+            "type": "session",
+            "version": 3,
+            "id": "conformance-session",
+            "cwd": "FIXTURE_CWD"
+          },
+          {
+            "type": "agent_start"
+          },
+          {
+            "type": "turn_start"
+          },
+          {
+            "type": "message_end",
+            "message": {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "question"
+                }
+              ],
+              "timestamp": 0
+            }
+          },
+          {
+            "type": "tool_execution_start",
+            "toolCallId": "tool-1",
+            "toolName": "read",
+            "args": {}
+          },
+          {
+            "type": "message_end",
+            "message": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "answer"
+                }
+              ],
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          },
+          {
+            "type": "agent_settled"
+          },
+          {
+            "type": "tool_execution_end",
+            "toolCallId": "tool-1",
+            "result": {},
+            "isError": false
+          }
+        ]
+      },
+      "expected": {
+        "available": false,
+        "finalText": "answer",
+        "status": "incomplete"
+      }
+    },
+    {
+      "id": "malformed-message-end",
+      "input": {
+        "records": [
+          {
+            "type": "session",
+            "version": 3,
+            "id": "conformance-session",
+            "cwd": "FIXTURE_CWD"
+          },
+          {
+            "type": "agent_start"
+          },
+          {
+            "type": "turn_start"
+          },
+          {
+            "type": "message_end",
+            "message": {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "question"
+                }
+              ],
+              "timestamp": 0
+            }
+          },
+          {
+            "type": "message_end"
+          },
+          {
+            "type": "message_end",
+            "message": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "answer"
+                }
+              ],
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          },
+          {
+            "type": "agent_settled"
+          }
+        ]
+      },
+      "expected": {
+        "available": false,
+        "finalText": "answer",
+        "status": "unavailable"
+      }
+    },
+    {
+      "id": "malformed-text-block",
+      "input": {
+        "records": [
+          {
+            "type": "session",
+            "version": 3,
+            "id": "conformance-session",
+            "cwd": "FIXTURE_CWD"
+          },
+          {
+            "type": "agent_start"
+          },
+          {
+            "type": "turn_start"
+          },
+          {
+            "type": "message_end",
+            "message": {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "question"
+                }
+              ],
+              "timestamp": 0
+            }
+          },
+          {
+            "type": "message_end",
+            "message": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": 42
+                }
+              ],
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          },
+          {
+            "type": "agent_settled"
+          }
+        ]
+      },
+      "expected": {
+        "available": false,
+        "finalText": "",
+        "status": "unavailable"
+      }
+    },
+    {
+      "id": "malformed-json-line",
+      "input": {
+        "records": [
+          {
+            "type": "session",
+            "version": 3,
+            "id": "conformance-session",
+            "cwd": "FIXTURE_CWD"
+          },
+          {
+            "type": "agent_start"
+          },
+          {
+            "type": "turn_start"
+          },
+          {
+            "type": "message_end",
+            "message": {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "question"
+                }
+              ],
+              "timestamp": 0
+            }
+          },
+          {
+            "type": "message_end",
+            "message": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "answer"
+                }
+              ],
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          },
+          {
+            "type": "agent_settled"
+          }
+        ],
+        "rawSuffix": "{broken\n"
+      },
+      "expected": {
+        "available": false,
+        "finalText": "answer",
+        "status": "unavailable"
+      }
+    },
+    {
+      "id": "null-protocol-event",
+      "input": {
+        "records": [
+          {
+            "type": "session",
+            "version": 3,
+            "id": "conformance-session",
+            "cwd": "FIXTURE_CWD"
+          },
+          {
+            "type": "agent_start"
+          },
+          {
+            "type": "turn_start"
+          },
+          {
+            "type": "message_end",
+            "message": {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "question"
+                }
+              ],
+              "timestamp": 0
+            }
+          },
+          null,
+          {
+            "type": "message_end",
+            "message": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "answer"
+                }
+              ],
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          },
+          {
+            "type": "agent_settled"
+          }
+        ]
+      },
+      "expected": {
+        "available": false,
+        "finalText": "answer",
+        "status": "unavailable"
+      }
+    }
+  ]
+}

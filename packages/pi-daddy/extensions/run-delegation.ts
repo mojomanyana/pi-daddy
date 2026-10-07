@@ -1,4 +1,4 @@
-import { reserveDelegationCapacity } from "./session-capacity.ts";
+import { reconcileDelegationCapacity, reserveDelegationCapacity } from "./session-capacity.ts";
 import type { CapacityReservation } from "../src/kernel/capacity.ts";
 import { assertDefinitionIdentity } from "./definition-describe.ts";
 /**
@@ -252,6 +252,7 @@ export async function runOneDelegation(
   let capacity: CapacityReservation | undefined;
   let capacityRefusal: import("../src/kernel/refusals.ts").StructuredRefusal | undefined;
   try {
+    if (!options.capacityReservation) await reconcileDelegationCapacity(session);
     capacity = options.capacityReservation ?? reserveDelegationCapacity(session, ids.executionId, budget);
     if (capacity.executionId !== ids.executionId || (budget !== undefined && capacity.childAllowance !== budget))
       throw new GovernanceRefusal(

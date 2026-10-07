@@ -1,5 +1,6 @@
 /** Pi 1.0.4 current final: JSON settlement plus the exact persisted session active branch. */
 import { createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { join } from "node:path";
 import { readdir } from "node:fs/promises";
 import { SessionManager, type FileEntry } from "@earendil-works/pi-coding-agent";
@@ -165,9 +166,9 @@ export class ChildFinalCapture {
       if (
         !last ||
         last.message.role !== "assistant" ||
-        hash(JSON.stringify(last.message)) !== hash(JSON.stringify(final)) ||
+        !isDeepStrictEqual(last.message, final) ||
         !currentUser ||
-        hash(JSON.stringify(currentUser.message)) !== hash(JSON.stringify(this.user))
+        !isDeepStrictEqual(currentUser.message, this.user)
       )
         throw Error("stream final does not match the current persisted branch and turn");
       return {

@@ -21,7 +21,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import type { InheritableApproval } from "../src/kernel/approval.ts";
 import { DELEGATE_SUBJECT } from "../src/kernel/approval.ts";
-import { reserveDelegationCapacity } from "./session-capacity.ts";
+import { reconcileDelegationCapacity, reserveDelegationCapacity } from "./session-capacity.ts";
 import { chainStepSpec, PLACEHOLDER, HANDOFF_MAX_BYTES } from "../src/kernel/chain.ts";
 import { MAX_CHAIN_STEPS, childSpawnId } from "../src/kernel/fanout.ts";
 import {
@@ -141,6 +141,7 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
       // Plan every step first. A step that can never run refuses the chain HERE, before anyone is asked — see
       // `planChain`.
       const executionIds = steps.map(() => newExecutionId());
+      await reconcileDelegationCapacity(session);
       const firstReservation = reserveDelegationCapacity(session, executionIds[0]);
       try {
         const parentExecutionId = session.ownExecutionId ?? null;

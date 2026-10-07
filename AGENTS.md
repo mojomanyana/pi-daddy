@@ -982,3 +982,13 @@ binding manifest and snapshot ID. Preserve the frozen body/ceiling/identity thro
 Model preferences are ordered intact authored pairs, below explicit/session/project fields; no advisor,
 automatic model chooser, monetary gate, or remote preflight is restored. Unknown auth is not missing auth.
 The dedicated model-free SDK fixtures are separate from optional paid model integrations.
+
+
+## 2026-10-07 review follow-up: final and capacity contracts
+
+Object property order is not final-message identity: structural equality must retain all fields and array order.
+The shared captured-final conformance table is normative for runtime/harness visible text eligibility; persistence
+and worker ownership remain additional runtime requirements. Capture size/read deadlines deliberately fail closed.
+Before admitting new work, reread receipts only for the same owner's original bound retained reservations. Exact
+settlement proof may refund capacity once without rewriting the prior outcome; absent proof never authorizes release.
+The captured package declares its Linux x64 platform restriction and exact qualified Pi dependency explicitly.

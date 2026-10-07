@@ -1,0 +1,18 @@
+{
+  "version": "0.14.1",
+  "url": "https://ziglang.org/download/0.14.1/zig-x86_64-linux-0.14.1.tar.xz",
+  "sha256": "24aeeec8af16c381934a6cd7d95c807a8cb2cf7df9fa40d359aa884195c4716c",
+  "directory": "zig-x86_64-linux-0.14.1",
+  "target": "x86_64-linux-musl",
+  "flags": [
+    "-std=c11",
+    "-Wall",
+    "-Wextra",
+    "-Werror",
+    "-O2",
+    "-static",
+    "-s",
+    "-fno-ident",
+    "-Wl,--build-id=none"
+  ]
+}

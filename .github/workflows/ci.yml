@@ -54,6 +54,10 @@ jobs:
       - name: formatting (Prettier, width 120 — ADR-0076 PR 3a)
         run: npm run format:check
 
+      - name: reproducible static-musl worker (pinned compiler archive)
+        working-directory: packages/pi-daddy
+        run: node scripts/build-worker.ts --verify
+
       - name: typecheck
         working-directory: packages/pi-daddy
         run: npm run typecheck
