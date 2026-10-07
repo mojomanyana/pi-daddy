@@ -1,3 +1,4 @@
+import { executionEvidenceContent } from "./execution-evidence.ts";
 import { assertDefinitionIdentity } from "./definition-describe.ts";
 /**
  * `delegate_chain` — a governed sequential pipeline, planned and gated as one unit (ADR-0033).
@@ -408,7 +409,10 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
         }
         return {
           isError: aborted || outcomes.some((o) => o.control === "failed"),
-          content: [{ type: "text", text: `${report}${tail}` }],
+          content: [
+            { type: "text", text: `${report}${tail}` },
+            executionEvidenceContent("delegate_chain", outcomes, steps.length),
+          ],
           details: {
             outcomes,
             steps: steps.length,

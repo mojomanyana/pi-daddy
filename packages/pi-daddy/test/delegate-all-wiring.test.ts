@@ -1,3 +1,4 @@
+import { evidenceFromProvider } from "./execution-evidence-fixture.ts";
 import { piFixtureScript } from "./pi-fixture.ts";
 /**
  * Wiring tests for `delegate_all` — the fan-out tool as the extension actually registers it.
@@ -261,8 +262,14 @@ test("a progress renderer failure cannot kill a process child", async () => {
         throw new Error("display callback failed");
       }) as never,
       ctx,
-    )) as { content: Array<{ text: string }> };
+    )) as any;
     assert.match(result.content[0]?.text ?? "", /child completed/);
+    const evidence = evidenceFromProvider(result);
+    assert.equal(evidence.tool, "delegate");
+    assert.equal(evidence.outcomes[0].final.sha256, createHash("sha256").update(result.details.text).digest("hex"));
+    assert.deepEqual(evidence.outcomes[0].cleanup, result.details.cleanup);
+    assert.equal(evidence.outcomes[0].cleanup.receipt.reapedAll, true);
+    assert.equal(result.content[0].text, result.details.text, "authored final stays byte-identical");
     assert.ok(updates >= 2, "the final frame should still be attempted after a failed interim frame");
   } finally {
     process.env.PATH = oldPath;
@@ -287,8 +294,12 @@ test("a chain progress renderer failure cannot kill its process step", async () 
         throw new Error("chain display callback failed");
       }) as never,
       ctx,
-    )) as { content: Array<{ text: string }> };
+    )) as any;
     assert.match(result.content[0]?.text ?? "", /chain child completed/);
+    const evidence = evidenceFromProvider(result);
+    assert.equal(evidence.tool, "delegate_chain");
+    assert.deepEqual(evidence.outcomes[0].cleanup, result.details.outcomes[0].cleanup);
+    assert.equal(evidence.outcomes[0].final.messageId, result.details.outcomes[0].final.messageId);
     assert.ok(updates >= 2, "the chain final frame should still be attempted");
   } finally {
     process.env.PATH = oldPath;
@@ -322,6 +333,15 @@ test("mixed all-failed fan-out does not assign one child's refusal code to the a
     assert.ok(codes.includes("CHILD_EXIT_NONZERO"));
     assert.equal(result.details.outcomes[1].work, "failed");
     assert.equal(result.details.outcomes[1].cleanup.state, "settled");
+    const evidence = evidenceFromProvider(result);
+    assert.equal(evidence.tool, "delegate_all");
+    assert.deepEqual(
+      evidence.outcomes.map((outcome: any) => outcome.ordinal),
+      [1, 2],
+    );
+    assert.equal(evidence.outcomes[0].cleanup, null, "pre-launch refusal has no invented receipt");
+    assert.equal(evidence.outcomes[1].work, "failed");
+    assert.deepEqual(evidence.outcomes[1].cleanup, result.details.outcomes[1].cleanup);
   } finally {
     process.env.PATH = oldPath;
   }
@@ -1192,9 +1212,67 @@ test("a complete final too large for required handoff blocks only the dependent 
     assert.equal(result.details.aborted, true);
     assert.equal(result.details.outcomes.length, 1);
     assert.equal(result.details.outcomes[0].text, final);
+    const evidence = evidenceFromProvider(result);
+    assert.equal(evidence.requested, 2);
+    assert.equal(evidence.outcomes.length, 1, "the blocked dependent step must have no invented outcome");
+    assert.equal(evidence.outcomes[0].final.sha256, createHash("sha256").update(final).digest("hex"));
+    assert.deepEqual(evidence.outcomes[0].cleanup, result.details.outcomes[0].cleanup);
     assert.equal(result.details.outcomes[0].final.state, "complete");
     assert.match(result.details.blockedReason, /handoff/i);
     assert.equal(await readFile(calls, "utf8"), "spawn\n");
+  } finally {
+    process.env.PATH = oldPath;
+  }
+});
+
+test("chain composition passes exact authored text without coordinator evidence", async () => {
+  const bin = await tempDir("grants-evidence-handoff-");
+  const calls = join(bin, "calls.jsonl");
+  const final = "exact authored final\n  ";
+  await writeFile(
+    join(bin, "pi"),
+    piFixtureScript(
+      `require('node:fs').appendFileSync(${JSON.stringify(calls)}, JSON.stringify(process.argv.at(-1))+'\\n');process.stdout.write(${JSON.stringify(final)});`,
+    ),
+  );
+  await chmod(join(bin, "pi"), 0o755);
+  const oldPath = process.env.PATH;
+  process.env.PATH = `${bin}:${oldPath}`;
+  try {
+    const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate", [ENV_FANOUT]: "8" });
+    const result = (await tools.get("delegate_chain")!.execute(
+      "evidence-chain",
+      {
+        steps: [
+          { task: "first", tools: ["read"] },
+          { task: "input:{previous}:end", tools: ["read"] },
+        ],
+      },
+      undefined,
+      undefined,
+      ctx,
+    )) as any;
+    assert.equal(result.isError, false);
+    const tasks = (await readFile(calls, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    assert.equal(tasks[0], " first");
+    const handoff = /<<<PRIOR-AGENT-OUTPUT ([a-f0-9]{32})>>>\n([\s\S]*)\n<<<END \1>>>:end$/.exec(tasks[1]);
+    assert.ok(handoff, "existing data-only handoff wrapper stays intact");
+    assert.equal(handoff[2], final, "only exact authored bytes enter the next step");
+    assert.doesNotMatch(tasks[1], /Runtime execution evidence/);
+    const evidence = evidenceFromProvider(result);
+    assert.equal(evidence.requested, 2);
+    assert.equal(evidence.outcomes.length, 2);
+    assert.notEqual(
+      evidence.outcomes[0].cleanup.identity.executionId,
+      evidence.outcomes[1].cleanup.identity.executionId,
+    );
+    for (const [index, outcome] of result.details.outcomes.entries()) {
+      assert.deepEqual(evidence.outcomes[index].cleanup, outcome.cleanup);
+      assert.equal(evidence.outcomes[index].final.sha256, createHash("sha256").update(final).digest("hex"));
+    }
   } finally {
     process.env.PATH = oldPath;
   }

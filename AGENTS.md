@@ -198,6 +198,15 @@ it measured nothing rather than passing quietly.
 
 ## Decisions still in force
 
+**Model-visible execution evidence, 2026-10-07:** native delegation results append a versioned allowlisted
+projection of their actual final identity, process cleanup receipt and observation state to text content.
+Pi's provider conversion does not send tool-result details to the coordinating model. The projection preserves
+missing/unknown states; it never grants authority or asserts task acceptance or workspace cleanup. Full authored
+final text and structured details remain unchanged, and chain composition still uses only the authored final.
+Private session contents, reasoning and raw diagnostics are excluded. Existing typed pre-launch refusals and
+critical-assurance exception semantics remain unchanged. Model-free wiring and real provider-conversion tests
+protect this boundary; they are not model-compliance qualification.
+
 **Ledger contract correction, 2026-10-07:** derive the exported capability namespace pattern from the same
 CAPABILITY_NAMESPACE_PREFIXES source as runtime validation. Existing context grants were valid runtime data
 but rejected by the stale published schema. This is a schema compatibility correction, with no new authority;

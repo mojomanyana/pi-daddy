@@ -12,6 +12,11 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## 0.44.4 — model-visible execution evidence (2026-10-07)
+
+- Add a versioned runtime evidence block to the model-visible result of `delegate`, `delegate_all` and `delegate_chain`. Pi provider conversion sends tool content, not UI-only details; coordinators can now inspect the actual terminal identity, final hash, captured-process cleanup receipt, observation state and terminal flags without reading private sessions. Authored final text and structured result details remain unchanged.
+- Keep missing or unknown evidence explicit, and preserve each returned child/step separately. Process settlement does not establish task acceptance or disposable workspace cleanup. Chain tasks still receive only the previous authored final; the evidence block is returned to the coordinator. No prompts, private reasoning, raw diagnostics or retained-session contents are added to the projection.
+
 ## 0.44.3 — exported ledger capability grammar (2026-10-07)
 
 - Derive the published ledger schema capability namespaces from the runtime source, so actual `context:files` and `context:summary` grants validate. Regenerate the production-builder fixtures and hash chain. Consumers pinned to an older schema must explicitly update their pin; runtime authority and record bytes are unchanged.
