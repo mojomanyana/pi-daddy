@@ -115,6 +115,10 @@ export class CacheGraph {
     this.observations++;
     return token;
   }
+  /** An observed event invalidates in-flight evidence even if later reconciliation sees byte undo. */
+  invalidateRuns(handle: CacheObservation): void {
+    for (const user of [...this.input(handle).users]) if (user.kind === "run") this.erase(user);
+  }
   dirty(handle: CacheObservation): CacheDirtyToken {
     const input = this.input(handle),
       token = Object.freeze({}) as CacheDirtyToken;

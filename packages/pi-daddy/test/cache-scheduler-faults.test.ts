@@ -102,7 +102,8 @@ test("synchronous stop throws never escape cancellation and cannot skip other ow
   assert.equal(s.scheduler.stats().running, 1);
   assert.match(s.scheduler.failure?.message ?? "", /sync stop fault/);
   exitA.resolve();
-  await stopped;
+  await assert.rejects(stopped, /sync stop fault/);
+  assert.equal(s.scheduler.stats().failedStops, 1, "tree exit is not successful stop-resource cleanup");
 });
 test("unknown start cleanup faults the root, settles queued interests and stops active peers automatically", async () => {
   const s = setup(),

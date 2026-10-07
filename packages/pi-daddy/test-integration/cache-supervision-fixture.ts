@@ -3,6 +3,13 @@ import { spawn } from "node:child_process";
 
 export async function startCacheProcess(args: string[]): Promise<void> {
   const [marker] = args;
+  if (args[1] === "stdin-parity") {
+    const bytes: Buffer[] = [];
+    process.stdin.on("data", (chunk: Buffer) => bytes.push(chunk));
+    process.stdin.on("end", () => process.stdout.write(Buffer.concat(bytes)));
+    process.stdin.resume();
+    return;
+  }
   if (args[1] === "log-entry") process.stdout.write("entry-loaded\n");
   const grandchild = "setInterval(() => {}, 1000)";
   const child = `

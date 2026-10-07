@@ -23,6 +23,11 @@ that declare runtime skills, asks which withheld capabilities to grant, writes t
 both decisions to the running session. Commit the review copy when the project's ignore rules permit it. The
 standalone `pi-daddy init` command scaffolds files only; it cannot mutate a live pi session.
 
+An explicitly owned SDK native-Bash execution-cache composition is available as **UNTESTED (per request)**
+implementation work, disabled until deliberate opt-in. The ordinary CLI, custom Bash, Herdr and captured-child
+paths are not qualified or silently intercepted. See the [package configuration and limitations](packages/pi-daddy/README.md#execution-cache-explicit-sdk-path-untested-per-request).
+No qualification, performance or release-acceptance claim accompanies this path.
+
 ## What a definition is
 
 An [Agent Skills](https://agentskills.io/specification) `SKILL.md`. Its `allowed-tools` is the ceiling; its body is

@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { open, readFile, writeFile, mkdir } from "node:fs/promises";
+import { open, readFile, writeFile, mkdir, type FileHandle } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -17,6 +17,7 @@ async function fixture(
   injection = "",
   onLoss: (id: string | undefined, why: string) => void = () => {},
   start = startCacheLeaseBridge,
+  onSource?: (file: FileHandle) => void,
 ) {
   const dir = await tempDir("cache-lease-fault"),
     binary = join(dir, "helper");
@@ -29,21 +30,64 @@ async function fixture(
   const path = join(dir, "source");
   await writeFile(path, "stable");
   const fd = await open(path, "r");
-  const owner = await readCacheOwner(process.pid);
-  const bridge = await start({
-    binary,
-    binarySha256: createHash("sha256")
-      .update(await readFile(binary))
-      .digest("hex"),
-    owner,
-    peer: owner,
-    onLoss,
-  });
+  let bridge: Awaited<ReturnType<typeof start>>;
+  try {
+    onSource?.(fd);
+    const owner = await readCacheOwner(process.pid);
+    bridge = await start({
+      binary,
+      binarySha256: createHash("sha256")
+        .update(await readFile(binary))
+        .digest("hex"),
+      owner,
+      peer: owner,
+      onLoss,
+    });
+  } catch (error) {
+    // No acquisition command has been sent; this descriptor never crossed to the helper.
+    try {
+      await fd.close();
+    } catch (cleanupError) {
+      throw new AggregateError([error, cleanupError], "fixture startup and source cleanup failed", { cause: error });
+    }
+    throw error;
+  }
   const acquired = await bridge.acquire(fd.fd, await fd.stat({ bigint: true }));
   if (!acquired.ok) assert.fail(acquired.reason);
   return { bridge, fd, lease: acquired.lease, identity: await readCacheOwner(bridge.pid) };
 }
-async function privateAdapter(change: (text: string) => string) {
+test(
+  "startup refusal closes the fixture source descriptor while preserving the primary error",
+  { skip: !enabled },
+  async () => {
+    let source: FileHandle | undefined;
+    try {
+      await assert.rejects(
+        fixture(
+          "",
+          () => {},
+          async () => {
+            throw new Error("injected startup refusal");
+          },
+          (file) => {
+            source = file;
+          },
+        ),
+        /injected startup refusal/,
+      );
+      assert.ok(source);
+      assert.equal(source.fd, -1, "rejected startup must not strand an owned FileHandle");
+    } finally {
+      await source?.close();
+    }
+  },
+);
+
+async function privateAdapter(
+  change: (text: string) => string,
+  layer = "executors/cache-lease-process",
+  handoff?: (text: string) => string,
+) {
   const dir = await tempDir("cache-lease-adapter");
   for (const layer of ["kernel", "executors"]) await mkdir(join(dir, layer));
   for (const name of [
@@ -54,7 +98,11 @@ async function privateAdapter(change: (text: string) => string) {
     "executors/cache-lease-bridge",
   ]) {
     const text = await readFile(new URL(`../src/${name}.ts`, import.meta.url), "utf8");
-    await writeFile(join(dir, `${name}.ts`), name.endsWith("cache-lease-process") ? change(text) : text);
+    const transformed = name === layer ? change(text) : text;
+    await writeFile(
+      join(dir, `${name}.ts`),
+      name.endsWith("cache-lease-process") && handoff ? handoff(transformed) : transformed,
+    );
   }
   return (await import(pathToFileURL(join(dir, "executors/cache-lease-bridge.ts")).href))
     .startCacheLeaseBridge as typeof startCacheLeaseBridge;
@@ -160,14 +208,30 @@ test(
   { skip: !enabled },
   async () => {
     for (const stream of ["stdout", "stderr"]) {
-      const start = await privateAdapter((text) => {
-        const needle = "    return { child, stopped, stop };";
-        assert.ok(text.includes(needle));
-        const injected =
-          `    let fired=false; child.stdout!.on("data", (bytes:Buffer)=>{\n` +
-          `      if(!fired && bytes.toString().includes("ACQUIRED")){fired=true;setTimeout(()=>child.${stream}!.emit("error",new Error("injected ${stream} control error")),20);}\n    });\n`;
-        return text.replace(needle, injected + needle);
-      });
+      const start = await privateAdapter(
+        (text) => {
+          // After validated READY and real protocol/error handlers, but before caller ACQUIRE.
+          // A process-layer data listener would consume READY during the async FD-close handoff.
+          const needle = "  const command = (id: string, body: string): Promise<CacheLeaseReply> => {";
+          assert.ok(text.includes(needle));
+          const injected =
+            `  let fired=false; child.stdout!.on("data", (bytes:Buffer)=>{\n` +
+            `    if(!fired && bytes.toString().includes("ACQUIRED")){fired=true;setTimeout(()=>child.${stream}!.emit("error",new Error("injected ${stream} control error")),20);}\n  });\n`;
+          return text.replace(needle, injected + needle);
+        },
+        "executors/cache-lease-bridge",
+        (text) => {
+          // Force native startup bytes to exist BEFORE the bridge can subscribe. Never read them.
+          const needle = "    return { child, stopped, stop };";
+          assert.ok(text.includes(needle));
+          const controlled =
+            `    const handoffDeadline=performance.now()+1000;\n` +
+            `    while(child.stdout!.readableLength===0){\n` +
+            `      if(performance.now()>handoffDeadline){await stop();throw Error("fixture READY not buffered at handoff");}\n` +
+            `      await new Promise(ok=>setTimeout(ok,1));\n    }\n`;
+          return text.replace(needle, controlled + needle);
+        },
+      );
       const handle = await fixture("", () => {}, start);
       try {
         assert.match((await handle.bridge.faulted).message, /control failed/);

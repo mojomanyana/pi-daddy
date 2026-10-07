@@ -63,6 +63,64 @@ try {
     throw new Error("unsupported native lease platform was not explicitly recorded");
   }
 
+  const inodeManifest = JSON.parse(readFileSync(join(leaseRoot, "cache-inode.json"), "utf8"));
+  if (process.platform === "linux" && process.arch === "x64") {
+    if (!inodeManifest.available || inodeManifest.arch !== process.arch || inodeManifest.protocol !== 1)
+      throw new Error("installed native inode manifest is missing or incompatible");
+    writeFileSync(join(work, "inode-probe.mjs"), [
+      'import assert from "node:assert/strict";',
+      'import {open,writeFile,chmod} from "node:fs/promises";',
+      'import {startInodeObserver} from "./node_modules/pi-daddy/dist/executors/cache-inode-observer.js";',
+      'import {readCacheOwner} from "./node_modules/pi-daddy/dist/kernel/cache-owner.js";',
+      'await writeFile("inode-input","stable");const fd=await open("inode-input","r");',
+      'const observer=await startInodeObserver({binary:' + JSON.stringify(join(leaseRoot, "cache-inode-v1")) +
+        ',sha256:' + JSON.stringify(inodeManifest.sha256) + ',owner:await readCacheOwner(process.pid),objects:[{fd:fd.fd,info:await fd.stat({bigint:true})}]});',
+      'try{const ticket=observer.ticket([0]);await observer.drain();assert.equal(observer.observationsUnchanged(ticket),true);',
+      'await chmod("inode-input",0o640);await observer.drain();assert.equal(observer.observationsUnchanged(ticket),false);}',
+      'finally{await observer.stop();await fd.close();}',
+    ].join("\n"));
+    run("node", ["inode-probe.mjs"], work);
+    writeFileSync(join(work, "inode-symlink-probe.mjs"), [
+      'import assert from "node:assert/strict";',
+      'import {constants} from "node:fs";',
+      'import {open,symlink,link,lutimes} from "node:fs/promises";',
+      'import {startInodeObserver} from "./node_modules/pi-daddy/dist/executors/cache-inode-observer.js";',
+      'import {readCacheOwner,cacheProcessTerminated} from "./node_modules/pi-daddy/dist/kernel/cache-owner.js";',
+      'await symlink("missing-target","inode-link");await link("inode-link","inode-alias");',
+      'const fd=await open("inode-link",0x200000|constants.O_NOFOLLOW);',
+      'const observer=await startInodeObserver({binary:' + JSON.stringify(join(leaseRoot, "cache-inode-v1")) +
+        ',sha256:' + JSON.stringify(inodeManifest.sha256) + ',owner:await readCacheOwner(process.pid),objects:[{fd:fd.fd,info:await fd.stat({bigint:true})}]});',
+      'const owner=await readCacheOwner(observer.pid);',
+      'try{assert.equal(observer.manifest()[0].kind,"symlink");const ticket=observer.ticket([0]);',
+      'await lutimes("inode-alias",new Date(1000),new Date(2000));await observer.drain();',
+      'assert.equal(observer.observationsUnchanged(ticket),false);}',
+      'finally{await observer.stop();assert.equal(await cacheProcessTerminated(owner),true);await fd.close();}',
+    ].join("\n"));
+    run("node", ["inode-symlink-probe.mjs"], work);
+  } else if (inodeManifest.available || !inodeManifest.reason) {
+    throw new Error("unsupported native inode platform was not explicitly recorded");
+  }
+
+  const heldLinkManifest = JSON.parse(readFileSync(join(leaseRoot, "cache-held-symlink.json"), "utf8"));
+  if (process.platform === "linux" && process.arch === "x64") {
+    if (!heldLinkManifest.available || heldLinkManifest.protocol !== 1 || heldLinkManifest.arch !== process.arch)
+      throw new Error("installed native held symlink manifest is missing or incompatible");
+    writeFileSync(join(work, "held-link-probe.mjs"), [
+      'import assert from "node:assert/strict";',
+      'import {constants} from "node:fs";',
+      'import {open,symlink} from "node:fs/promises";',
+      'import {readHeldSymlink} from "./node_modules/pi-daddy/dist/executors/cache-held-symlink.js";',
+      'await symlink("target","held-link");const fd=await open("held-link",0x200000|constants.O_NOFOLLOW);',
+      'try{const st=await fd.stat({bigint:true});const target=await readHeldSymlink({binary:' +
+        JSON.stringify(join(leaseRoot, "cache-held-symlink-v1")) + ',sha256:' + JSON.stringify(heldLinkManifest.sha256) +
+        ',input:{fd:fd.fd,dev:st.dev,ino:st.ino},maxTargetBytes:64});assert.equal(target.toString(),"target");}',
+      'finally{await fd.close();}',
+    ].join("\n"));
+    run("node", ["held-link-probe.mjs"], work);
+  } else if (heldLinkManifest.available || !heldLinkManifest.reason) {
+    throw new Error("unsupported held symlink platform was not explicitly recorded");
+  }
+
   writeFileSync(
     join(work, "probe.mjs"),
     [

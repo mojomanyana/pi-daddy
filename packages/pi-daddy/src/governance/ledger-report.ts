@@ -21,6 +21,7 @@ import type { WorkspaceLeaseOutcome } from "./ledger-events.ts";
 import { isExecutionId } from "../kernel/execution-id.ts";
 import { isRetiredLedgerEvent, validateLedgerV3Event } from "./ledger-v3-validation.ts";
 import { readRecords } from "./record.ts";
+import { validateCacheHistory } from "./cache-history.ts";
 
 export interface LedgerReport {
   /** False when the file is absent — a configuration state, not damage. */
@@ -261,6 +262,11 @@ export async function verifyLedger(path: string): Promise<LedgerReport> {
   read.records.forEach((record, index) => {
     try {
       const event = record.body;
+      if (event?.event === "execution_cache") {
+        if (record.kind !== "control" || !validateCacheHistory(event)) throw new Error("invalid cache history");
+        events += 1;
+        return;
+      }
       if (event.ledgerVersion !== undefined) {
         if (event.event === undefined) throw new Error("versioned ledger line has no event discriminator");
         if (event.ledgerVersion !== 2 && event.ledgerVersion !== 3) throw new Error("unsupported ledger version");

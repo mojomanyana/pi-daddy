@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { once } from "node:events";
 import { mkdir, readFile, realpath, rename, stat, writeFile } from "node:fs/promises";
-import { readBoundedFile } from "./bounded-read.ts";
+import { readBoundedFile, BoundedReadCleanupError } from "./bounded-read.ts";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { promisify } from "node:util";
@@ -59,13 +59,17 @@ const REGISTRY_READ_TIMEOUT_MS = 2_000;
 /** A registry is an operator-authored JSON file; anything approaching this is not one. */
 const REGISTRY_MAX_BYTES = 1 << 20;
 
-export async function loadWorkspaceRegistry(path: string): Promise<WorkspaceRegistryFile> {
+/** The optional reader is a trusted loader dependency, never registry/request input. */
+export async function loadWorkspaceRegistry(
+  path: string,
+  readFile: typeof readBoundedFile = readBoundedFile,
+): Promise<WorkspaceRegistryFile> {
   // The guards this call carries — non-blocking open, every check on the held descriptor, a deadline between
   // chunks, the size bound checked twice — were worked out HERE and now live in `bounded-read.ts`, because a
   // second session-start reader went on using a bare `readFile` rather than copying them. The mapping from a
   // reason to a refusal stays here: only this caller knows that an unreadable registry is a governance
   // refusal naming the file, and its messages are unchanged.
-  const read = await readBoundedFile(path, {
+  const read = await readFile(path, {
     maxBytes: REGISTRY_MAX_BYTES,
     timeoutMs: REGISTRY_READ_TIMEOUT_MS,
   });
@@ -151,7 +155,8 @@ export async function loadWorkspaceRegistry(path: string): Promise<WorkspaceRegi
 }
 
 /**
- * The registered workspace ids, for `planInit` to scaffold and `/grants` to list. `[]` when there is no registry or it is broken.
+ * The registered workspace ids, for `planInit` to scaffold and `/grants` to list.
+ * No registry or malformed/unreadable data yields []; physical cleanup failure still rejects, with its owner.
  *
  * Fails SOFT, and only because nothing here is an authority: this decides which ids appear as COMMENTS in a
  * generated file. `loadWorkspaceRegistry` throws a GovernanceRefusal naming the file, and that refusal is
@@ -172,11 +177,13 @@ export async function loadWorkspaceRegistry(path: string): Promise<WorkspaceRegi
 export async function registeredWorkspaceIds(
   registryPath = process.env[ENV_WORKSPACE_REGISTRY],
   onRefusal?: (reason: string) => void,
+  loadRegistry: typeof loadWorkspaceRegistry = loadWorkspaceRegistry,
 ): Promise<string[]> {
   if (!registryPath) return [];
   try {
-    return Object.keys((await loadWorkspaceRegistry(registryPath)).workspaces).sort();
+    return Object.keys((await loadRegistry(registryPath)).workspaces).sort();
   } catch (error) {
+    if (error instanceof BoundedReadCleanupError) throw error;
     onRefusal?.(error instanceof Error ? error.message : String(error));
     return [];
   }

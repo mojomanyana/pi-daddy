@@ -199,6 +199,246 @@ it measured nothing rather than passing quietly.
 
 ## Decisions still in force
 
+**2026-10-06 — bounded-reader descriptor close failures retain explicit recovery ownership.**
+Every first close rejection, including a transient or falsy rejection, throws a typed cleanup error instead of
+returning data or an ordinary unreadable/absence result. Pending acquisition/read/close and the original actual
+FileHandle remain strongly owned; explicit cleanup joins pending operations and serializes retries. Successful
+retry releases that handle but never changes the original rejected read, owner check or channel shutdown, nor
+revives cache admission. Portable real-descriptor tests use trusted per-read ports, not global Node mutation.
+The reader's between-operation deadlines still cannot interrupt wedged kernel I/O. This is a reader mechanism,
+not an integrated Root stop joining all readers, all-resource certification, a quota or production activation.
+Broader session/display catch integration and personal-Bash separate observation remain qualification work.
+Rejected: swallowing close failure, implicit retry into success, or closing a recycled descriptor by number/path.
+**Propagation repair, 2026-10-06:** the original caller-integration deferral did not satisfy first-close failure
+handling: root pin discovery and provider catalog refresh could hide a transient failed close behind a different
+successful read. Sessions now retain the exact typed failure and rejected delegation catalog promise, observe it
+safely and diagnose it; a failed pin remains failed for its owner through reload, never reminted by physical retry.
+Registry-id/catalog helpers propagate cleanup errors before their ordinary malformed/missing-registry soft fallback;
+CLI and registered UI init diagnose failed cleanup and do not scaffold successfully. Trusted per-loader seams and
+real FileHandle regressions cover these wired routes, including falsy causes and explicit exact-handle recovery.
+**Concurrency repair, 2026-10-06:** catalog discovery joins every started branch before ordinary fallback;
+multiple physical close failures retain a typed collection of original errors and explicit cleanup capabilities,
+while a singleton keeps exact identity. Pin acquisition is charged once per actual lifecycle before trusted
+callbacks; discovery/delegation recheck terminal failure after waits and before publication. A distinct explicit
+root replacement has separate ownership, so pending old-root work cannot settle or fault the replacement.
+Registered init reports a broken notification independently and still rejects the original cleanup error.
+Real-descriptor gated provider/startup/init/reentrant-reload regressions exercise these local boundaries, not
+whole-Root reader joining, global recovery, production activation or additional acceptance qualification.
+**Registered-init owner repair, 2026-10-06:** init captures its initiating lifecycle before its first await;
+late registry cleanup failure stays terminal on that owner alone after same-session replacement. Clean late
+results refuse scaffolding/publication on observed owner mismatch, and refresh carries the captured owner rather
+than recapturing the replacement. Guards after waits cannot interrupt already-started I/O or undo applyInit.
+Actual registered-command/real-descriptor regressions preserve replacement discovery/delegation through old
+explicit physical recovery. This is a local ownership repair, not whole-Root recovery or production qualification.
+Independent review did NOT establish the earlier alleged personal-Bash unsafe cleanupVerified path: its memoized
+namespaceAdmission is awaited again by stopOwned and forces false on that failure. No personal-Bash patch follows
+from that allegation. Separate personal namespace physical cleanup/retry, whole-Root pending-reader joins, global
+recovery and production qualification remain unqualified; this is not all-resource certification or activation.
+
+**First-init-read and pin-publication repair, 2026-10-06:** the registered init cleanup boundary now covers
+its first configured/legacy package SKILL read as well as registry and refresh reads, always retaining the
+captured initiating owner. Pin discovery stages acceptance/skips locally and checks that owner after registry,
+acceptance and canonicalisation waits, before new first-use writes and before shared publication. Late clean old
+work cannot publish into a same-session replacement. These checks cannot interrupt already-started I/O or undo
+completed writes; explicit descriptor recovery cannot revive failed old discovery. Ordinary acceptance, pin and
+grant protections remain; whole-Root/all-reader recovery and production qualification remain separate.
+
+**Acceptance-read classification repair, 2026-10-06:** only an actual ENOENT acceptance read permits
+announced, persisted first use. Other read rejections propagate unchanged; malformed records still accept nothing.
+Real acceptance-descriptor cleanup failures remain terminal on their initiating pin/discovery owner, including
+late failures after same-session replacement. Explicit exact-handle recovery cannot revive that old owner or
+poison the healthy replacement. Existing owner-health checks and broader unqualified production gates remain.
+
+**Acceptance composition repair, 2026-10-06:** ordinary empty-pin fallback now surrounds only registry
+loading. Non-ENOENT acceptance failures propagate unchanged through project discovery to the existing startup
+error diagnostic, leaving the pin unsettled and the prior decision untouched. Wired EIO/EACCES regressions
+exercise readable registries and accepted-good records; existing exact-handle cleanup/replacement tests remain.
+Missing-registry fallback, genuine ENOENT first use, malformed narrowing and owner/grant/pin guards remain;
+this local repair does not qualify whole-Root reader joining/recovery or activate production caching.
+
+**2026-10-06 — explicit SDK cache roots assemble and join their own native components.**
+An inactive root owner starts its supervised private byte broker automatically and waits both supervisor admission
+and protocol readiness before native image allocation. Native factory, issuer, publisher, validator, service, backend
+and transport are independent joined lifetimes; shutdown closes admission before cancellation and is memoized before
+abort callbacks can reenter. Current denial after startup cannot allocate or execute. Control corruption/loss faults
+admission without retrying commands. A real stock SDK/Watchman/GNU fixture exercises this assembled path, unchanged
+reuse, edit, force and cleanup, not automatic default CLI/delegate registration. Trusted native source/options, helper
+images, profile and current grant providers remain caller prerequisites; socket pathname/parent storage remains
+caller-owned and is never removed from stale metadata. Root crash/reload/delegate attachment, recovery, packaging and
+performance remain unqualified; production stays off. Rejected: waiting only for protocol readiness, discarding late
+startup owners, or letting one cleanup failure skip independent owners. Component limits are not bounded kernel-I/O
+or whole-session teardown guarantees.
+**Dependency repair note, 2026-10-06:** full native validation reproduced an inherited supervisor defect:
+launcher exit could precede actual namespace-PID1 death. Supervisor startup now acquires an independently checked
+namespace birth and held original proc view before granting the private bootstrap admission gate. Stop joins pending
+acquisition, launcher exit, all namespace tasks and held-proc close; deadlines and close failures retain ownership
+and explicit retry, never implicit success. Original failed stop stays failed after retry. Isolated real lifecycle
+repetitions exercise this boundary; all-reader descriptor release, kernel references and whole root/delegate
+qualification remain separate unresolved gates.
+**Ordinary-route repair note, 2026-10-06:** a lasting red showed that automatic whole-root teardown on
+cache transport loss also cancelled an already ordinary native call. Cache-only teardown is now separate from
+explicit SDK-owner shutdown: it stops cache admission/owners without inventing ordinary command cancellation.
+Fresh currently authorized calls can bypass only before any image/call issuance; unsupported cache-workspace cwd
+also stays on the original native route. Issued/started calls are never retried, current denial still refuses,
+and the diagnosed cache/cleanup failure stays visible and memoized.
+**Independent-review repair note, 2026-10-06:** the initial Root put per-call authority only in cache allocation,
+so a missing timeout or unsupported environment skipped that policy. Default native operations now have a common
+per-call admission hook before cache selection and immediately before actual execution after waits. It receives
+actual command/cwd/requested shell/environment and raw native timeout (numeric milliseconds only when numeric),
+never an invented timeout or normalized unsupported environment. False or throwing current policy refuses all
+routes. Custom operations remain untouched and cannot opt into this default-operations hook. Ordinary-route
+survival and genuine native exception/result shapes remain separate from cache health.
+
+**2026-10-06 — native cache roles are issued by an owned per-call composition, not a handwritten fixture map.**
+An inactive issuer associates each independently published image with frozen native inputs and one connector birth.
+Image names select candidates only; role attachment permits refusal, not execution. Mandatory validation still
+compares the actual parent/image/invocation independently before commitment and after it. Current denial cannot
+become allocation bypass; observed revocation never revives that call. Allocation, selection and validation have
+charged owners before awaits. Retirement revokes roles before joining pending work and closing the original image
+capability; failed cleanup stays owned/faulted until explicit retry. Shutdown waits delivered native consumers rather
+than deleting their images, and the caller must independently stop/join the whole native factory, store and validator.
+Real stock SDK sequential and parallel identical-call fixtures use this composition; actual source/grant/epoch
+providers and automatic root/delegate integration remain unqualified and production stays off. Rejected: identifying
+calls by event order/command strings, treating an image pathname as authority, or skipping independent cleanup when
+one owner remains uncertain.
+**Repair note, 2026-10-06:** review found that a reentrant authority callback could consume the last call slot
+while the outer allocation still proceeded. Admission and capacity are now checked again after authorization,
+before any row charge/start; a nested-allocation fixture forces the bound independently of image-store limits.
+
+**2026-10-05 — native cache context is observed independently, not accepted from protocol claims.**
+An inactive reusable Linux reader compares connector and expected direct-parent birth, private image binding,
+exact argv, ordered environment, cwd and readable dev-null stdin against trusted native expectations. Known
+mismatches refuse immediately rather than becoming bypass when a later observation fails; unknown observations
+bypass before commitment. The service rechecks after commitment without ordinary retry. Reads have supplied byte,
+check-count and between-operation time bounds; late operations and failed descriptor closes remain owned through
+shutdown, with explicit cleanup retry and faulted admission. Real process and stock SDK/frontend fixtures exercise
+this reader instead of handwritten proc comparisons. Repeated observations are not an atomic snapshot or protection
+against same-UID mutation/undo or socket transfer. Image identity is not image-content/static-ABI qualification;
+actual factory/options selection, role issuance/current grants and automatic root/delegate lifetime stay separate
+unfinished gates. Rejected: trusting request bytes as native context, or equating read-only access bits with a readable
+path-only descriptor. Production remains off.
+**Repair note, 2026-10-05:** review found that a one-shot descriptor close failure was automatically retried
+and could become ordinary bypass without faulting admission. The first failed close now raises a typed cleanup
+error immediately and retains its actual handle until explicit retry; admission stays faulted even after that
+retry succeeds. Shutdown preserves the original failure rather than certifying release implicitly.
+
+**2026-10-05 — cache shell images have explicit temporary-storage ownership, not handwritten copies.**
+An inactive publisher uses trusted known static frontend bytes and their digest, with explicit lease/storage limits.
+Each call gets an independent executable and private CF1 sidecar; publication closes writable descriptors first,
+retaining readonly identity pins (a real SDK run rejected writable pins with an OS text-busy error). Cancellation joins partial
+writes and cleanup before resource-free bypass. Storage shutdown never unpublishes a delivered image before its
+consumer retires; failed close or observed pathname replacement stays owned and faults admission, with explicit
+cleanup retry. Removal is descriptor-anchored and identity-checked, never recursive stale-path deletion. This
+checks observed bindings, not atomic exclusion of same-UID renames or containment. Native source/manifest loading,
+actual root/delegate grants/registration, automatic lifecycle/recovery and packaging remain separate gates.
+Rejected: assuming chmod makes an already-open writer safe for exec, or deleting all files under a stale path.
+
+**2026-10-05 — cache-native context comes from an explicitly owned Pi factory, not event correlation.**
+The inactive adapter uses Pi's supported native definition and local Bash operations; it captures effective inputs
+at the operations boundary after prefix/session environment/hooks, and selects per-call private `shellPath` leases.
+Concurrent calls keep independent contexts even when their command strings match. Unknown custom operations stay
+untouched. Unsupported unbounded timeout/environment cases use the existing native route without inventing defaults;
+current denial never becomes fallback. Allocations cannot execute commands. Known input mutation retires the image
+before ordinary execution; unknown allocation or failed cleanup faults admission and retains actual lease ownership.
+Scoped stock-factory/native-frontend fixtures exercise these boundaries and original-execution reuse; they do not
+qualify automatic CLI registration, root/delegate grants/epochs, useful profiles, packaging or crash cleanup.
+Rejected: matching tool events to connector PIDs by order or treating metadata as native constructor/options proof.
+**Repair note, 2026-10-05:** operation/lease completion is not native tool completion. Execute admission and
+shutdown retain the whole native definition promise through accumulator close/read/final result settlement;
+failed physical leases remain separate retained owners. A real truncated-output SDK fixture forces the earlier
+shutdown boundary, alongside deterministic success/failure finalization gates. No process-death proof follows.
+
+**2026-10-05 — execution-cache identity preserves environment enumeration, never sorts for more hits.**
+The inactive trusted invocation copy now preserves own-string Record enumeration; worker JSON transport and role
+matching use that same order. Reordering equal bindings changes profile/no-start identity rather than obtaining a
+hit or authorizing fallback. Controlled static exec and native frontend/GNU fixtures exercise nonlexical ordering.
+This reverses the earlier backend's sorting/unsupported-nonlexical-order limitation, not arbitrary-vector support:
+Record environments still cannot represent duplicate names or arbitrary array-index order. Such native vectors
+must bypass before issuance, never be normalized; a mismatched issued role still refuses. Prototype/inherited
+bindings, Node injected environment and real Pi source/options/context remain qualification boundaries, not proven
+by these fixtures. Rejected: treating environment values as an unordered map to increase hits. Production stays off.
+
+**2026-10-05 — a committed cache shell may execute normally only with a same-invocation no-start receipt.**
+The personal runtime issues an internal one-use receipt for a bypass before any command start; actor and exact
+invocation are bound by a private weak map, not by response strings or client IDs. Its uncached path uses the
+same authorization, runner and scheduler limits, but never accesses, joins or publishes reusable results.
+The shell backend consumes that receipt only before any delivered bytes and never retries a denial, timeout,
+cancellation, malformed output or attempted launch. Late input cleanup is joined before normal admission.
+Committed adapters opt into requester cleanup settlement before acknowledgment; last-interest stop and retired
+reader callbacks are separate from process exit. Pending and failed stop owners remain charged, and shutdown
+reports a stop fault even after a separately verified tree exit. This strengthens the prior shutdown behavior
+that accepted a stop exception after exit proof; exit cannot certify a failed resource close. Rejected: an
+unbounded fallback runner, trusting a JSON no-start flag, and inferring cleanup from cancellation delivery.
+The bridge returns private original provenance separately from raw streams; it adds no telemetry callback that
+can fabricate command failure. Actual Pi issuance, native options, lifecycle, profiles and packaging stay gated.
+**Repair note, 2026-10-05:** last-interest cancellation before outcome finalization dispatches cleanup even if
+process death is already verified; a fully completed qualified outcome must still never be physically stopped
+again. Runtime actor retirement is idempotent only for handles that this scheduler actually issued, so shutdown
+and a late reader cannot turn their own detachment into a foreign-handle fault. Foreign handles still refuse.
+**Further repair, 2026-10-05:** a pending runner stop retains its final requester as an admission owner after
+acknowledgment/disconnect. Settlement timeout faults admission and raises a typed cleanup failure even if the
+requester has aborted; a cancellation response is not permission to hide unresolved ownership or admit another
+unbounded batch of cleanup. The bounded wait helper does not certify death or dispose the original owner.
+
+**2026-10-05 — cache byte delivery is awaited, and detached readers remain owners.**
+A qualified producer waits for its byte-sink promise before another frame; scheduler replay and live sharing use
+that same backpressure boundary. Cancellation releases the producer's interest, not a pending consumer callback:
+retired readers still count against admission and cleanup until they settle. Command exit releases the running
+slot but retains output finalization. The Bash adapter pauses its actual stdout pipe while a sink waits; process
+exit is not a drained output stream, so missing-terminal diagnosis waits for EOF and parser settlement. Controlled
+native fixtures exercise live output beyond retention without reconstructing it from the truncated outcome.
+Rejected: treating a promise-returning callback as void, dropping retired reader ownership, or using launcher exit
+as a terminal-output receipt. This does not qualify real Pi issuance, arbitrary environment order, post-commit
+no-start bypass, profile completeness or root/delegate crash integration; production remains disabled.
+
+**2026-10-05 — personal execution caching is explicitly best effort.** The operator approved the offered
+Watchman-plus-file-fingerprints contract, ordinary execution on uncertainty, force-rerun and no additional
+privilege, accepting that rare undetected concurrent changes can produce stale output. This supersedes strict
+atomic/coherent source certification for the personal profile only; the earlier research and its failures remain
+historical facts. Kernel-certification work is parked, not a delivery prerequisite. Grants, session isolation,
+owned-process cleanup, truthful provenance, exact invocation matching and known external/effect exclusions are
+unchanged. This approval does not itself enable caching or establish acceptance/performance. Rejected: continuing
+privileged kernel research as a prerequisite for this personal tool, or claiming fingerprints prove atomic freshness.
+
+**2026-10-05 — native cache transport binds the connecting process, never a claimed agent id.** An internal
+OS-only Unix broker uses a kernel peer pidfd and the held host-proc view because ordinary peer credentials report
+PID zero for a client outside its PID namespace (measured in an isolated unprivileged fixture). Node retains role,
+current-grant and execution policy; connecting identity alone grants nothing. Peer death releases a connection even
+when another process holds its socket. The socket capability identifies its original connector, not each writer;
+the future frontend must keep it private and close-on-exec. Rejected: trusting packet ids or namespace-relative
+peer PIDs, granting new capabilities, or treating this transport qualification as cache activation.
+
+**2026-10-05 — the Node cache byte channel rechecks current authority, and ambiguous sends are never retried.**
+The inactive CP1 adapter gives only the kernel connector's validated boot/PID/start identity to a trusted
+current-authority callback; it checks again after identity acquisition, at verification, data, send and acknowledgement.
+Private-pipe frames, peer slots, pending identity owners and output credits are bounded. Disconnect cannot discard
+late identity ownership; shutdown joins it and supervised stop, retaining a failed cleanup. Scoped unit and real
+namespace tests force revocation, protocol refusal, byte parity and late-owner joining. This is not an issued-role
+registry, native invocation qualification or production endpoint. Rejected: treating a connection id as authority,
+unbounded application/send queues, retrying possibly delivered bytes, or claiming this channel alone proves process-tree death.
+
+**2026-10-05 — native cache fallback ends before the client attempts commitment.** The inactive static
+shellPath frontend obtains the selected original shell from its actual image's private sidecar, not from command
+arguments or added environment variables. Before attempting the private protocol's `G`, unavailable/unsupported
+transport can same-PID exec that shell with original argv, cwd, environment and descriptors. An explicit coordinator
+refusal cannot fall back. After the attempt, loss is reported as uncertain and never starts a second command. Scoped
+native tests force byte/exit/signal forwarding, descriptor separation, fallback parity and no duplicate execution;
+static builds avoid running command preload constructors twice. Node still must bind issued roles/current grants,
+validate native invocation context and never execute before receiving commitment. No production session integration,
+activation or complete acceptance follows from this frontend. Rejected: interpreting a lost admitted connection as
+permission to rerun, confusing governance refusal with optimization bypass, or guessing the original shell.
+
+**2026-10-05 — the Node native-shell service binds root-issued birth/generation leases before commitment.**
+A session-local registry binds the kernel connector's boot/PID/start identity to a trusted fixed invocation and
+workspace, never a requester-supplied role id. Basic attachment permits a refusal, not execution or payload;
+current operation authority is checked separately, and an old generation cannot revive when permissions return.
+The inactive CS1 service requires independent native-context qualification and cannot invoke its run adapter before
+client commitment. Awaited output credits and late context/output tasks stay owned through disconnect and shutdown.
+A controlled native frontend/CP1/Watchman/GNU fixture measured original-execution reuse and invalidation; it is not
+Pi/delegate integration or universal profile qualification. Its adapter covers complete bounded checksum outcomes,
+not general live-stream/retention-overflow semantics. Rejected: treating packet metadata as native context, reviving
+old leases, dropping unawaited output ownership, or enabling the cache before real issuer/backend/lifecycle gates.
+
 One paragraph each: the decision, the reason, what was rejected. The ADR numbers are pointers into git history
 (`git show 9cf2904:docs/06-decisions/`).
 
@@ -625,6 +865,205 @@ wrapper's exit is not substituted for strict termination of the fixture's known 
 validation in those fixtures is not cache eligibility. This core remains unconnected to a client protocol, actual
 source qualification and Pi execution; scope-only review approval does not authorize cache activation.
 
+**2026-10-01 — explore ordinary Bash through existing shell configuration, not a Pi patch.**
+At the operator's request, `test-integration/cache-shell.it.ts` and `cache-shell-trace.it.ts` qualify the installed
+SDK and bundled CLI against a forwarding executable selected by Pi's existing `shellPath`. No installed runtime,
+operator settings, privilege or production composition changed. Native prefix/hook/context handling, bytes,
+errors, Unicode truncation and ordinary group cancellation are compared against direct Bash; override/allowlist
+checks assert that an actual command marker remains absent. RPC abort checks leave Pi alive until known command
+descendants are proved dead, before any signal handler or namespace teardown can mask cleanup. The OS experiment
+uses a private tracer with descendant following; real child write intent and failed service access are observed
+although the command succeeds, and a no-follow control misses those effects. Daemonizing the tracer preserves the
+parent relationship in its specific fixture, unlike parent tracing; that is not universal semantic transparency.
+A missing downstream shell produces a different failure from native spawn, explicitly characterized rather than
+claimed away. These are caching-disabled, synthetic-environment qualification fixtures, not an eligibility parser,
+source-consistency proof, host-credential qualification or cached hit. Trace cancellation, custom operations,
+interactive shell execution and delegated settings remain unqualified. A shell adapter still launches on a warm
+request, so the original launch-avoidance requirement is not silently redefined. Rejected for this exploration:
+changing Pi, adding a replacement check tool, or equating successful tracing with safe reuse.
+**Amended 2026-10-01 after lifetime/source follow-ups:** fixed synthetic SDK timeout/abort, CLI RPC abort and
+intentional observer death now prove the admitted daemonized tracer and known detached tracees dead before
+namespace teardown. A real no-EXITKILL control leaves the detached child alive; empty and known-live observer
+witnesses refuse certification. These are trusted namespace-local fixtures, not authenticated production adoption
+or proof about arbitrary observers/threads. A useful tiny TypeScript check actually reads a root-owned runtime
+library that unprivileged acquisition refuses, with owned-source admission as the control. A second actual check
+changes from success to a type error after pathname replacement while the old inode's content lease remains valid.
+That falsifies content-lease-only namespace validation, not a combined watcher/barrier design. No whole-observation
+linearization or source-qualified reuse follows, and the paused privilege setup remains paused.
+**Amended later 2026-10-01:** the operator explicitly resumed the reviewed narrow `cap_lease=ep` setup. Fresh digest,
+account, destination and ancestor checks match that configuration, but the trusted directory-install command
+refused with `sudo: interactive authentication is required`. No installation or capability assignment occurred;
+operator-terminal authentication is needed. This authorization does not establish source qualification or enable
+caching.
+**Amended after operator installation, 2026-10-01:** the exact reviewed asset is now installed with protected
+ancestors, root ownership, operator-group execution and only `cap_lease=ep`. Kernel status confirms the helper
+retains the operator's non-root UID and no extra effective/permitted, ambient or inheritable capabilities. Real
+read leases on the operator-created installed asset and an observed root-owned runtime library now succeed;
+no system-file contents are modified. The installed tier forces preexisting writable-descriptor/shared-mapping
+refusal, denial of additional DAC read access, irreversible break/loss, root and peer death, and stopped-holder
+fault cleanup before caller teardown. A real kernel-waiting writer remains blocked beyond the configured break
+interval when its holder is descheduled; no hard real-time writer-delay claim follows. Independent reproduction
+approves this Linux x64 primitive scope only. The runtime-byte authority blocker is removed for these measured
+objects, not for a complete command closure; namespace/mount consistency, determinism and cache integration remain
+open. Caching is still inactive. An independent
+read of the version-tagged kernel source confirms rename/setattr before notification, and fast cached pathname
+lookup without the parent inode rwsem; this is source ordering, not a measured live accepted-barrier race or exact
+running-binary attestation. Installed delegation headers exceed that source's fcntl dispatch, so their existence
+was not evidence of an available guard. Current private fixture directories are on tmpfs, while the checkout and
+runtime libraries are on ext4; earlier task prose calling the temporary delegation probe ext4-qualified was wrong.
+
+**2026-10-01 — an inode-lock barrier is a candidate, not a freshness certificate.** Further source inspection
+found ext4 FIEMAP taking the shared inode rwsem; readonly calls succeed on owned files/directories and a readable
+root-owned runtime library without installing privileges. Conditional review supports a validation point BEFORE
+an all-covered-inode barrier sweep, not at its end; the finite model's missing-barrier, late-notification, lost-event
+and late-point controls admit invalid states. This does not establish the premises in production. Actual private
+ext4 experiments found directory-only Watchman observation missing chmod through an outside hardlink: the held
+read lease and FIEMAP remain valid, a direct inode watcher sees ATTRIB, but the tree barrier says unchanged. Removing
+all permissions additionally makes fresh pathname access fail while the old descriptor still reads its bytes.
+Therefore inode-level metadata coverage is a separate obligation, not supplied by the byte guard or tree watcher.
+A delayed private daemon's real barrier waits until it resumes and reports queued in-tree changes; this is not a
+whole-protocol completeness proof. Runtime-byte authority, mounts, semantic profiles, contended-lock qualification
+and bounded native-operation cleanup remain open. These later probes deliberately put controlled inputs on
+checkout ext4 and their short private control sockets on tmpfs; this does not turn earlier temporary input probes
+into ext4 evidence. Reject treating successful ioctl or an empty tree result as source proof; no cache or privilege
+setup is enabled by these probes.
+
+**2026-10-02 — direct inode observation is processed evidence, not source certification.** An unprivileged,
+fixed-descriptor native observer adds explicit physical-file and immediate-parent coverage beside Watchman.
+Outside-hardlink chmod on checkout ext4 invalidates both declared logical aliases; the parent alone remains quiet.
+Native queue draining acknowledges only an actual nonblocking empty read, and Node applies preceding events before
+resolving that acknowledgment. A stopped observer leaves an old observation ticket unchanged while a mutation is
+already visible: that counterexample forces the ticket's meaning to stay "no processed changes", not "fresh".
+Loss, unknown evidence and exhausted epochs are irreversible; no rearm follows replaced names. Independent review
+found split physical-alias mappings, reordered acknowledgments and incompatible watch/type events accepted by the
+first adapter; regressions now force their refusal and owned cleanup. Rejected: feeding these tickets to cache
+eligibility or calling an empty queue a current-state cut. Atime, mmap completeness, recursive/dynamic coverage,
+mount view, contended-lock qualification and deterministic command closure remain separate. The protected installed
+lease asset is unchanged, no new privileges are assigned, and no command reuse is enabled.
+
+**Amended 2026-10-02 — symlink inode metadata is a separate positive observation scope.** The fixed observer
+now retains symlink O_PATH pins instead of following targets or reopening them for content. Actual dangling-link
+trials on ext4/tmpfs observe outside-hardlink timestamp changes while the covered parent stays quiet; target writes
+alone leave the symlink scope unchanged. Standalone self-move, borrowed descriptor reuse and stopped-observer loss
+controls keep the original fixed-inode semantics. A meaningful fixture arms every owned positive path object before
+repeating resolution and acquiring guarded bytes, but equality of sampled metadata and a drain still prove no
+common current cut. Negative inputs, complete ACL/security metadata, mount/task view and execution correspondence
+remain unqualified. Live checksum fixtures bind current inputs separately; historical source manifests are not
+rewritten when an input edit correctly makes their hashes fail. No privilege or cache activation change.
+
+**2026-10-02 — successful barrier admission and metadata notifications are separate premises.** A bounded
+private ext4 experiment now brackets a sleeping readonly FIEMAP ioctl with the exact extending direct-write
+syscall arguments, comparing the same inode against an equally shaped different inode. It supports contention
+conditional on the inspected source; the denied kernel stack stays unavailable, and wchan is not a lock address
+or complete running-image attestation. Review forced durable pre-release identities, stop-all/reconcile-all cleanup,
+exact entry/descriptor checks and explicit inconclusive trials. Actual outside-alias ACL changes preserve sampled
+mode/uid/gid while direct inode ATTRIB observes them. Separately, an owned NODUMP flag change/undo produces no
+file or parent event despite a healthy content lease and successful FIEMAP. GNU dependence on that flag is not
+established; generic all-metadata notification coverage is nevertheless false. Pinned source also exposes relevant
+chmod/ACL/xattr mutations preceding error returns that suppress success-only notifications; runtime fault reachability
+is not yet measured. Equal samples or multigrain timestamps are not established irreversible metadata guards.
+Rejected: declaring the current-source gate closed because the lock probe succeeds, or assuming failed mutators
+changed nothing. Next qualification must project the actual command's access decisions and address those failure
+paths without assuming cooperative writers. No caching, privilege, installation or invocation change.
+
+**2026-10-02 — namespace mount polling is not complete filesystem metadata coverage.** Actual private
+user/mount-namespace fixtures show bind/unmount and noatime/relatime undo restoring mountinfo bytes while priority
+poll remembers the change; polling again consumes that readiness. A peer's remount of a fixture-created shared
+superblock changes the first namespace's mountinfo and statvfs values without its poll or direct file/parent inode
+watches observing a change; the read lease and bytes remain valid at changed and restored observations. Both inode
+channels are forced independently before the counterexample. An old mountinfo descriptor also retains its original
+namespace/root while the same task unshares or chroots; fresh descriptors see different views. These are raw OS
+counterexamples on a private tmpfs, not a false cached compiler result, production authentication or live-kernel
+build attestation. No host mount or capability installation is changed. Rejected: presenting a namespace event
+counter or restored bytes as a general freshness endpoint. A useful profile must demonstrably exclude or separately
+guard shared-superblock metadata and task/thread view changes, alongside the other source-cut obligations. Review
+also found post-result errors hidden by a settled fixture promise, a control checking only one of two watches and
+peer identity captured after blocking setup; regressions force sticky failure, both channels and pre-work witnesses.
+Caching remains inactive.
+
+**2026-10-02 — profile the actual utility and whole runtime, not the command name or manifest alone.**
+A meaningful repository source/tool manifest was checked through the installed SDK and bundled CLI with the
+ordinary checksum utility, with native/traced output parity in the disclosed synthetic environment. Controlled
+source edits, missing-member creation, cwd, symlinks, malformed records and stdin distinguish different outcomes.
+The actual utility is uutils, not the GNU implementation its metapackage might suggest; public release source and
+Ubuntu patches are reference evidence, not live build attestation. Actual checksum-only receipts expose loader
+configuration and libraries, locale negatives, entropy, process maps and filesystem/mount proc inputs. A synthetic
+loader constructor writes an unlisted file while checking still succeeds. Thus successful checking is neither a
+complete dependency inventory nor a read-only contract. Rejected: selecting eligibility from the utility name,
+manifest members, exit zero or repeated output. This remains an unqualified candidate; volatile runtime input
+irrelevance and the source cut must be established separately. No Rust implementation was added, no installed
+utility changed, no cache activated and no original acceptance closed. Independently executed fixture review does
+not upgrade those boundaries.
+
+**Amended 2026-10-02 — narrow the candidate rather than silently rewrite an invocation.** An already-installed
+GNU checksum utility is now a separate candidate for calls explicitly naming it. Stock SDK/CLI trials measured
+matching outcomes without the uutils mount/process-map initialization probes in the target's pathname operations;
+checked source buffers themselves mention those paths, so arbitrary trace substring searches are not evidence of
+runtime access. Loader/libcrypto bytes and entropy remain separate dependencies/audit questions. A bounded internal
+parser names only conservative declared manifest members, never source eligibility, authority or runtime closure.
+Rejected: replacing requested uutils calls, installing a new checker, or making finite absent-probe receipts a
+blanket determinism claim. Read-only kernel provenance checks also matched boot build-id and exposed BTF against a
+locally installed WSL image; that is stronger than release-string agreement, not complete running-code attestation.
+Caching remains off and coherent/current source validation remains unfinished.
+
+**2026-10-02 — a guarded past byte vector is not a current-source certificate.** The internal descriptor capture
+acquires the complete physical guard set before reading, owns O_PATH pins and readonly reopens, and produces private
+copied bytes with immutable digest metadata. Under the existing irreversible content-lease premise, a successful
+capture establishes a past common byte point; it does not establish names, access metadata, runtime completeness,
+execution-vector correspondence or current freshness. Sequential guard checks are deliberately not named a current
+validation operation. Local ext4/tmpfs regular files, explicit caller budgets and a defensive component ceiling bound
+admission; a wedged kernel I/O remains an honest in-process timeout limitation. Cleanup errors retain a callable
+retry owner and fixtures are not deleted merely because the helper died. Actual installed-lease trials include a
+useful integrity check and a replacement counterexample with healthy byte guards. No additional privilege or
+installation, no cache activation. Rejected: treating frozen buffers, successful command output or healthy byte
+guards as the remaining namespace/metadata/current-cut proof.
+
+**2026-10-02 — owned path observations preserve traversal context, not only physical identity.** The internal
+path walker retains every descriptor-relative lookup pin and parent/name/child edge. An unprivileged static leaf
+reads ordinary unencrypted ext4/tmpfs symlink targets with empty-path readlinkat on its own identity-checked pin;
+there is no by-name fallback, helper installation or new capability. Observed endpoints feed existing guarded byte
+capture. The result is explicitly observations, not coherent/current name/access metadata, ACL coverage, execution
+correspondence or cache eligibility. Rejected: deduplicating traversal descriptors by device/inode. Independent
+execution found equal-inode bind mounts with different dotdot parents; all path-pin dedup was removed and the live
+regression independently passed. Physical dedup belongs in content guards, never in traversal contexts. Current-V,
+complete mutation coverage and profile closure remain unqualified; caching stays off.
+
+**2026-10-04 — absent bindings are explicit sampled observations, not negative-source certificates.** The owned
+path walker may explicitly observe the first component open returning ENOENT, retaining its directory pin, name,
+original requested spelling and unwalked suffix. A dangling held symlink keeps its positive resolution scope while
+its missing target binding is recorded separately. Search denial, nondirectory traversal, cwd loss and stat/reader
+errors never become absence. Fixed parent watches detect actual creation/undo through another pathname on ext4
+and tmpfs; restoration never revives an old observation ticket. The meaningful source-coverage fixture now includes
+the previously omitted compression/terminal libraries and missing loader-preload binding. Rejected: inferring
+absence from arbitrary errors, watching only the dangling symlink, or treating recapture equality/queue drain as a
+coherent/current negative/configuration/access vector. Metadata failure-path guards and complete command/runtime
+qualification remain open; no cache activation or new installation/capability is implied.
+
+**2026-10-07 — implementation-first SDK cache composition; QA explicitly deferred.** New work is
+**UNTESTED (per request)**. The opt-in factory owns the installed exported native Bash constructor and its actual
+options; it does not infer or replace the default CLI/custom/Herdr/captured-child implementation from metadata.
+Admission precedes issuance/real spawn. Owning-root lifecycle, current grants/tool availability, private storage,
+original failed resource capabilities, cold replacement, controls and additive history are composed for that SDK
+scope. Watchman plus fingerprints follow the operator's personal-best-effort amendment, not an atomic/current
+freshness claim. Permission, deterministic/effect closure, no after-commit retry and physical cleanup remain
+mandatory. Component ceilings are not measured process-memory/storage guarantees. Reuse/join provenance stays a
+reference to the original execution; ordinary unknown outcomes remain unknown; history never hydrates cache state.
+Static helper packaging and a deferred actual-SDK basic QA/measurement entry point are implementation deliverables,
+not evidence. No installation, new privilege, Pi patch, cache activation or acceptance/performance claim occurred.
+Historical qualifier/test counts are unchanged. Captured CLI children still lack a supported owned native-options
+and asynchronous pre-spawn attachment seam; they remain ordinary, explicitly unqualified, and not represented as
+shared-root participation. Formal qualification, basic/stress QA and performance acceptance must follow separately.
+
+**2026-10-07 — wrap the untested cache candidate in a draft PR before changing Pi.** The operator explicitly
+approved minimal Pi API changes for captured-native child admission/options and hidden output-descriptor
+ownership, then requested documentation, a commit, branch push and draft PR for the current work first.
+That approval supersedes the earlier no-Pi-patch restriction only for those necessary APIs; no such patch has
+been implemented in this checkpoint. Latest source work remains untested by explicit request, caching stays
+disabled by default, and earlier component evidence is not current whole-feature acceptance. Remaining
+implementation and deferred basic QA are recorded in `packages/pi-daddy/README.md`. A draft PR is preservation
+and coordination, not merge/release approval. Existing grant attenuation, native parity and cleanup obligations
+are unchanged; no privilege, installation, activation or main-branch push is authorized.
+
 **Working rules that survive the deletion of the working-rules document.** Decisions, load-bearing claims and
 failure modes are written down or they do not exist; reversals get a dated note, never a rewrite; measure before
 asserting and say which you did, and state what the evidence does not cover; a test that cannot fail is worse than
@@ -674,7 +1113,11 @@ history (`git show 9cf2904:docs/probes/<name>/README.md`).
   revocation were exercised live in `approval-ux`).
 - `AgentToolResult` has no `isError` field; pi sets it only when `execute` throws, and a returned `isError: true` is
   silently discarded, so every refusal here is thrown (measured live and recorded in the archived session log and in
-  the comment at the refusal site in `extensions/delegation.ts`; no probe directory).
+  the comment at the refusal site in `extensions/delegation.ts`; no probe directory). **Amended 2026-10-04:** this
+  describes the historical runtime, not current Pi. Current native Bash can return a fulfilled error result carrying
+  structured status and measured wall time. The qualification fixture now separates fulfillment from success and
+  preserves the complete result; comparison of separate executions validates rather than equates their timing.
+  Production refusals still throw, which remains compatible; no returned-error migration or cache activation follows.
 - `pi.getAllTools()` is available to an extension immediately; the first-provider-request tool array is not, so the
   startup summary classifies against the inherited grant before the tool surface is observed (archived session log and
   risk register; no probe directory).
@@ -845,6 +1288,23 @@ What remains of ADR-0076's sequence after this cleanup, one line each with what 
 
 Kept features only. Numbers are dropped except the two that code and rules cite.
 
+- **Encrypted regular-file/fscrypt key-lifetime qualification is unestablished (2026-10-02).** The byte-capture
+  component admits ext4 by filesystem type and does not exclude encrypted regular files. Retained source shows
+  key-changing ioctl dispatch but omits the key/open/read implementations; it does not establish either lease
+  evasion or that key changes alter already-open descriptors. No encrypted-file experiment was run. The separate
+  held-symlink leaf excludes encrypted/unknown ext4 targets; that does not qualify regular-file byte views. No cache
+  profile may promote this unmeasured case to eligibility.
+- **Experimental cache qualification has unresolved parallel-run reliability (2026-10-02).** Broader enabled runs
+  intermittently hit the lease helper's initialization bound or receive the inode helper's exit diagnostic instead
+  of the expected native-refusal diagnostic. Both affected cases pass in isolation; that is not a measured cause or a
+  reliability repair. Failed receipts remain retained, adapters/timeouts were not weakened, and caching stays off.
+  The byte-capture component's narrower qualification must not be presented as broader all-green acceptance.
+  **Amended 2026-10-04:** the post-ready diagnostic fixture's initializer failure was reproduced as an early
+  fixture data listener consuming READY during the process-to-bridge asynchronous handoff. Fault injection now
+  registers after validated readiness; a controlled buffered-startup check preserves the original deadline and
+  owned post-ready fault/death assertions. Rejected startup also closes its unshared fixture descriptor. This fixes
+  that fixture race, not a production timeout or an unexplained inode-refusal diagnostic; the latter remains open.
+
 - **`tool:write` is much closer to `tool:bash` than this package has been treating it, and every operator-state
   file is writable by a child that holds it.** Measured 2026-09-22 using pi's OWN `write` tool from a real
   depth-1 governed child: `write` resolves a path against the cwd and writes it with no check that the result
@@ -1012,6 +1472,13 @@ Kept features only. Numbers are dropped except the two that code and rules cite.
   has not established a common coherent acquisition/current-validation point, so adding an inotify leaf was
   rejected as a claim of source consistency, not proved universally useless. No image-authoritative contract,
   cooperative-writer assumption, extra privilege or timestamp/cookie-only proof replaces the original requirement.
+  **Amended 2026-10-01:** the existing `shellPath` candidate now has caching-disabled SDK/bundled-CLI and OS-receipt
+  qualification, without changing Pi. It narrows the integration question for the native tool, not the source-proof
+  gap or all overrides; see the dated decision above. The private middleware prototype is no longer the selected
+  exploration path. No helper installation or cache activation followed.
+  **Amended 2026-10-02:** the later operator installation above supersedes the earlier installation pause;
+  measured root-owned content leases now succeed. The new direct-inode observer provides processed-event evidence
+  only, not the missing common source cut. Caching remains inactive; no complete feature acceptance follows.
 - **R-60** — every `await` inside `session_start` needs its own `try`: one rethrown read error under the blanket
   catch silenced every session-start notification, including the line that shows governance is on at all.
 - **R-85** — work reaches `main` by drift, not decision: check the branch before the first edit of a task, and if work

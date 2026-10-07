@@ -9,7 +9,17 @@
  */
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { cacheOwnerMatches, type CacheOwnerIdentity } from "../kernel/cache-owner.ts";
+import { cacheOwnerMatches, readCacheOwner, type CacheOwnerIdentity } from "../kernel/cache-owner.ts";
+import { cacheNamespaceTerminated, type observeCacheNamespace } from "./cache-namespace-death.ts";
+import { CacheSupervisorCleanup, CacheSupervisorTerminationError } from "./cache-supervisor-cleanup.ts";
+import {
+  acquireCacheSupervisorNamespace,
+  cacheSupervisorBirthPorts,
+  parseCacheSupervisorBirth,
+  CACHE_SUPERVISOR_GO,
+  CACHE_SUPERVISOR_BIRTH_BYTES,
+  type CacheSupervisorBirthPorts,
+} from "./cache-supervisor-birth.ts";
 
 export interface CacheSupervisorOptions {
   owner: CacheOwnerIdentity;
@@ -19,6 +29,8 @@ export interface CacheSupervisorOptions {
   cwd?: string;
   bwrap?: string;
   initializationMs?: number;
+  /** Startup cancellation joins namespace termination; after admission the caller owns stop(). */
+  signal?: AbortSignal;
   /** Test synchronization and progress observation; never supplies authority. */
   onSpawn?: () => void;
   onData?: (stream: "stdout" | "stderr", bytes: Buffer) => void;
@@ -28,14 +40,24 @@ export interface CacheSupervisorHandle {
   owner: CacheOwnerIdentity;
   stopped: Promise<{ code: number | null; signal: NodeJS.Signals | null }>;
   stop(): Promise<void>;
+  /** Explicit resource retry does not change the original memoized stop failure. */
+  retryCleanup(): Promise<void>;
 }
 
-export async function startSupervisedCache(options: CacheSupervisorOptions): Promise<CacheSupervisorHandle> {
+/** The second argument is a trusted dependency port, never application/requester authority. */
+export async function startSupervisedCache(
+  options: CacheSupervisorOptions,
+  namespacePorts: CacheSupervisorBirthPorts<
+    Awaited<ReturnType<typeof observeCacheNamespace>>
+  > = cacheSupervisorBirthPorts,
+): Promise<CacheSupervisorHandle> {
+  options.signal?.throwIfAborted();
   if (process.platform !== "linux")
     throw new Error("cache supervision requires Linux PID/user namespaces and Bubblewrap");
   if (options.owner.pid !== process.pid)
     throw new Error("cache supervision owner must be the actual calling root process");
   if (!(await cacheOwnerMatches(options.owner))) throw new Error("cache supervision owner is absent or changed");
+  options.signal?.throwIfAborted();
   const initializationMs = options.initializationMs ?? 3000;
   if (!Number.isSafeInteger(initializationMs) || initializationMs <= 0 || initializationMs > 30000)
     throw new Error("cache initialization timeout must be 1..30000 milliseconds");
@@ -75,7 +97,20 @@ export async function startSupervisedCache(options: CacheSupervisorOptions): Pro
   let diagnostics = "",
     controlFault = "",
     finished = false,
-    spawned = false;
+    spawned = false,
+    spawnRefused = false,
+    birthReceived = false;
+  let birthResolve!: (owner: CacheOwnerIdentity) => void, birthReject!: (error: unknown) => void;
+  const birth = new Promise<CacheOwnerIdentity>((resolve, reject) => {
+    birthResolve = resolve;
+    birthReject = reject;
+  });
+  let launcherResolve!: (owner: CacheOwnerIdentity | PromiseLike<CacheOwnerIdentity>) => void,
+    launcherReject!: (error: unknown) => void;
+  const launcherBirth = new Promise<CacheOwnerIdentity>((resolve, reject) => {
+    launcherResolve = resolve;
+    launcherReject = reject;
+  });
   let output: Buffer = Buffer.alloc(0),
     startupBytes = 0;
   let phase: "starting" | "ready" | "failed" = "starting";
@@ -89,7 +124,13 @@ export async function startSupervisedCache(options: CacheSupervisorOptions): Pro
     child.on("error", (error) => {
       if (!spawned) {
         finished = true;
-        failed(new Error(`cache supervision could not start: ${error.message}`));
+        // Node's spawn refusal with no allocated PID independently certifies that no launcher began.
+        spawnRefused =
+          child.pid === undefined && (error as NodeJS.ErrnoException).syscall?.startsWith("spawn") === true;
+        const refusal = new Error(`cache supervision could not start: ${error.message}`);
+        birthReject(refusal);
+        launcherReject(refusal);
+        failed(refusal);
         resolve({ code: null, signal: null });
       } else {
         // A failed kill is not an exit. Only the exit event can establish cleanup of a spawned process.
@@ -120,7 +161,37 @@ export async function startSupervisedCache(options: CacheSupervisorOptions): Pro
     }
     options.onData?.("stderr", bytes);
   });
+  child.stdout.once("end", () => {
+    if (!birthReceived) birthReject(new Error("cache bootstrap birth unavailable after control EOF; retain"));
+  });
   child.stdout.on("data", (bytes: Buffer) => {
+    if (!birthReceived) {
+      output = Buffer.concat([output, bytes]);
+      const end = output.indexOf(10);
+      if (output.length > CACHE_SUPERVISOR_BIRTH_BYTES) {
+        birthReceived = true;
+        phase = "failed";
+        output = Buffer.alloc(0);
+        const error = new Error("cache bootstrap birth exceeded bound");
+        birthReject(error);
+        failed(error);
+        return;
+      }
+      if (end < 0) return;
+      birthReceived = true;
+      try {
+        birthResolve(parseCacheSupervisorBirth(output.subarray(0, end)));
+      } catch (error) {
+        birthReject(error);
+        failed(error instanceof Error ? error : new Error(String(error)));
+      }
+      output = output.subarray(end + 1);
+      if (output.length) {
+        failed(new Error("cache bootstrap emitted bytes before GO"));
+        output = Buffer.alloc(0);
+      }
+      return;
+    }
     if (phase === "failed") return;
     if (phase === "ready") {
       options.onData?.("stdout", bytes);
@@ -150,47 +221,75 @@ export async function startSupervisedCache(options: CacheSupervisorOptions): Pro
   });
   child.once("spawn", () => {
     spawned = true;
+    launcherResolve(readCacheOwner(child.pid!));
     options.onSpawn?.();
   });
-  let stopping: Promise<void> | undefined;
   const send = (signal: NodeJS.Signals) => {
+    if (finished) return; // Only signaling is skipped; observation/descriptor joins remain mandatory.
     if (!child.kill(signal)) controlFault ||= `${signal} was not delivered`;
+    if (controlFault) throw new Error(`cache supervision process control failed: ${controlFault}`);
   };
-  const stop = (): Promise<void> =>
-    (stopping ??= (async () => {
-      if (finished) return;
-      send("SIGTERM");
-      const force = setTimeout(() => send("SIGKILL"), 500);
-      let deadline: NodeJS.Timeout | undefined;
-      const expired = new Promise<never>((_, reject) => {
-        deadline = setTimeout(() => {
-          send("SIGKILL");
-          reject(new Error(`cache termination unresolved after 1500ms${controlFault ? `: ${controlFault}` : ""}`));
-        }, 1500);
-      });
-      try {
-        await Promise.race([stopped, expired]);
-      } finally {
-        clearTimeout(force);
-        clearTimeout(deadline);
-      }
-    })());
+  const cleanup = new CacheSupervisorCleanup<Awaited<ReturnType<typeof observeCacheNamespace>>>({
+    acquire: async () => {
+      const [actual, launcher] = await Promise.all([birth, launcherBirth]);
+      return acquireCacheSupervisorNamespace(actual, options.owner, launcher, namespacePorts);
+    },
+    launcherStopped: stopped.then(() => {}),
+    spawnRefused: () => spawnRefused,
+    cancelAdmission: () => {
+      phase = "failed";
+    },
+    stopLauncher: () => send("SIGTERM"),
+    forceLauncher: () => send("SIGKILL"),
+    terminated: cacheNamespaceTerminated,
+    wait: () => new Promise<void>((resolve) => setTimeout(resolve, 5)),
+    timer: (callback, ms) => {
+      const timer = setTimeout(callback, ms);
+      return () => clearTimeout(timer);
+    },
+  });
+  const stop = () => cleanup.stop();
+  child.stdin.on("error", (error) => {
+    controlFault ||= error.message;
+    failed(new Error(`cache supervision private input failed: ${error.message}`));
+  });
+  const admit = cleanup.acquired().then(async () => {
+    if (!(await cacheOwnerMatches(options.owner))) throw new Error("cache owner died before entry admission");
+    options.signal?.throwIfAborted();
+    if (cleanup.admissionCancelled || phase === "failed")
+      throw new Error("cache supervision initialization cancelled before GO");
+    child.stdin.write(CACHE_SUPERVISOR_GO);
+  });
+  void admit.catch((error) => failed(error instanceof Error ? error : new Error(String(error))));
+  const abort = () => {
+    phase = "failed";
+    failed(options.signal?.reason instanceof Error ? options.signal.reason : new Error("cache supervision initialization cancelled", { cause: options.signal?.reason }));
+  };
+  options.signal?.addEventListener("abort", abort, { once: true });
+  if (options.signal?.aborted) abort();
   const timeout = setTimeout(
     () => failed(new Error(`cache supervision initialization exceeded ${initializationMs}ms`)),
     initializationMs,
   );
   try {
     await readiness;
+    await admit;
     if (!(await cacheOwnerMatches(options.owner))) throw new Error("cache owner died before admission");
-    return { process: child, owner: options.owner, stopped, stop };
+    options.signal?.throwIfAborted();
+    return { process: child, owner: options.owner, stopped, stop, retryCleanup: () => cleanup.retryCleanup() };
   } catch (error) {
     try {
       await stop();
-    } catch (cleanup) {
-      throw new AggregateError([error, cleanup], "cache startup failed; termination unresolved");
+    } catch (termination) {
+      throw new CacheSupervisorTerminationError(
+        [error, termination],
+        () => cleanup.retryCleanup(),
+        () => cleanup.retainedOwners,
+      );
     }
     throw error;
   } finally {
     clearTimeout(timeout);
+    options.signal?.removeEventListener("abort", abort);
   }
 }

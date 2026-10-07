@@ -26,6 +26,7 @@ import { join, resolve } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { WILDCARD } from "../src/kernel/pi-tools.ts";
 import { buildCatalog } from "../src/kernel/catalog.ts";
+import { BoundedReadCleanupError } from "../src/kernel/bounded-read.ts";
 import { ENV_WORKSPACE_REGISTRY } from "../src/kernel/workspace.ts";
 import { appendRecord, buildRecord } from "../src/governance/ledger.ts";
 import { openPaneCount, reapOpenPanesAsync } from "../src/executors/pane-reaper.ts";
@@ -35,7 +36,14 @@ import { registerDelegationTools } from "./delegation.ts";
 import { grantsCommand } from "./grants-command.ts";
 import { runInit } from "./init-command.ts";
 import { planWithApprovals } from "./run-delegation.ts";
-import { createGrantsSession, loadProjectDefinitions, reconcileAdvisorSession, type GrantsSession } from "./session.ts";
+import {
+  createGrantsSession,
+  loadProjectDefinitions,
+  reconcileAdvisorSession,
+  assertDiscoveryHealthy,
+  recordDiscoveryCleanupFailure,
+  type GrantsSession,
+} from "./session.ts";
 import { acceptWorkspaces } from "../src/governance/workspace-acceptance.ts";
 import { loadWorkspaceRegistry } from "../src/kernel/workspace.ts";
 import { bindReloadLifecycle } from "./reload-environment.ts";
@@ -58,7 +66,9 @@ import { legacyProjectLedgerPath, projectLedgerPath } from "../src/kernel/projec
 import { resolveDefinitionRuntime } from "./definition-runtime.ts";
 import { changeSessionModels, renderSessionModels } from "./session-model-prompt.ts";
 import { ensureDashboardSessionServer } from "./dashboard-session-server.ts";
-export default function (pi: ExtensionAPI) {
+import { bindExecutionCache, executionCacheCommand, shutdownExecutionCache } from "./execution-cache.ts";
+/** Optional trusted session injection is composition-only, never provider payload input. */
+export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
   // The path pi loads as the extension, so a child granted `tool:delegate` can be started with `-e <this>`.
   const extensionPath = (() => {
     try {
@@ -67,9 +77,23 @@ export default function (pi: ExtensionAPI) {
       return undefined;
     }
   })();
-  const observerExtensionPath = fileURLToPath(new URL("./activity-timeline.ts", import.meta.url));
-  const session = createGrantsSession(extensionPath, undefined, observerExtensionPath);
+  const observerExtensionPath = fileURLToPath(
+    new URL(import.meta.url.endsWith(".ts") ? "./activity-timeline.ts" : "./activity-timeline.js", import.meta.url),
+  );
+  const session = trustedSession ?? createGrantsSession(extensionPath, undefined, observerExtensionPath);
   registerActivityTimeline(pi, session);
+  pi.on("session_shutdown", async (_event, ctx) => {
+    try {
+      await shutdownExecutionCache(session);
+    } catch (error) {
+      try {
+        ctx.ui.notify(`cache cleanup unresolved; retained original owners: ${String(error)}`, "error");
+      } catch (diagnostic) {
+        console.error("cache shutdown diagnostic failed", diagnostic);
+      }
+      throw error;
+    }
+  });
   const dashboardPluginRoot = fileURLToPath(new URL("../herdr-plugin/", import.meta.url));
   const dashboardPaths = defaultDashboardPaths(agentDir());
   // Definitions are registered only after owner-bound session_start. Until then there is no delegation
@@ -105,6 +129,7 @@ export default function (pi: ExtensionAPI) {
         // continues against the new ledger path (an append there still fails closed if that path is unwritable).
         try {
           const imported = await importLegacyLedger(legacyProjectLedgerPath(ctx.cwd), projectLedgerPath(ctx.cwd));
+          if (session.reloadLifecycle !== reload.lifecycle) return undefined;
           if (imported.imported > 0 || imported.stoppedAt !== null)
             ctx.ui.notify(
               `grants: imported ${imported.imported} record(s) from ${legacyProjectLedgerPath(ctx.cwd)} into ${projectLedgerPath(ctx.cwd)}` +
@@ -115,6 +140,7 @@ export default function (pi: ExtensionAPI) {
               imported.stoppedAt !== null ? "warning" : "info",
             );
         } catch (error) {
+          if (session.reloadLifecycle !== reload.lifecycle) return undefined;
           ctx.ui.notify(`grants: legacy ledger import failed: ${String(error)}`, "error");
         }
       }
@@ -139,11 +165,13 @@ export default function (pi: ExtensionAPI) {
       try {
         await reportGrantStoreRefusal(session, ctx.ui);
       } catch (error) {
+        if (session.reloadLifecycle !== reload.lifecycle) return undefined;
         ctx.ui.notify(
           `grants: stored-grant refusal reporting failed (${String(error)}); the session remains refused.`,
           "error",
         );
       }
+      if (session.reloadLifecycle !== reload.lifecycle) return undefined;
       // Guarded together, and guarded at all because of R-60 rather than because either one throws today:
       // both loaders swallow their own filesystem errors, so this catch is currently unreachable. The point
       // is that "currently" is not a property anyone can rely on — `verifyLedger` was also harmless until
@@ -152,16 +180,28 @@ export default function (pi: ExtensionAPI) {
       // delegate by `tools:`, and an operator whose `agent:` spawns have all started failing deserves to
       // know it was the *scan* that broke rather than the grant.
       try {
-        await loadProjectDefinitions(session, ctx.cwd);
+        await loadProjectDefinitions(session, ctx.cwd, reload.lifecycle);
       } catch (error) {
-        ctx.ui.notify(
-          `grants: could not read this project's definitions or capability catalog ` +
-            `(${error instanceof Error ? error.message : String(error)}) — no SKILL.md definition can be ` +
-            `spawned this session, and delegation by tools: is unaffected. Governance itself is unaffected: ` +
-            `it is enforced by --tools when a child is spawned.`,
-          "error",
-        );
+        if (session.reloadLifecycle !== reload.lifecycle) return undefined;
+        if (error instanceof BoundedReadCleanupError) {
+          try {
+            ctx.ui.notify(
+              `grants: discovery cleanup failed — ${error.message}; delegation remains failed until a new owner.`,
+              "error",
+            );
+          } catch (diagnosticError) {
+            console.error("grants: startup cleanup diagnostic failed", error, diagnosticError);
+          }
+        } else
+          ctx.ui.notify(
+            `grants: could not read this project's definitions or capability catalog ` +
+              `(${error instanceof Error ? error.message : String(error)}) — no SKILL.md definition can be ` +
+              `spawned this session, and delegation by tools: is unaffected. Governance itself is unaffected: ` +
+              `it is enforced by --tools when a child is spawned.`,
+            "error",
+          );
       }
+      if (session.reloadLifecycle !== reload.lifecycle) return undefined;
       // ADR-0031: probe once, HERE, before anything reports — so the disclosure line can name the executor,
       // and so a demanded-but-unreachable herdr is reported before the operator's first prompt rather than at
       // their first delegation. Its own try, because a failure here must not cancel the controls after it
@@ -169,6 +209,7 @@ export default function (pi: ExtensionAPI) {
       try {
         await resolveExecutor(session);
       } catch (error) {
+        if (session.reloadLifecycle !== reload.lifecycle) return undefined;
         // Says what is actually true of the state left behind, which depends on the variable: with
         // `PI_DADDY_HERDR=1` the session holds a REFUSAL and every delegation fails, so telling the operator
         // "using the captured subprocess" would be the opposite of what happens. The old wording asserted the
@@ -184,10 +225,17 @@ export default function (pi: ExtensionAPI) {
           "warning",
         );
       }
+      if (session.reloadLifecycle !== reload.lifecycle) return undefined;
       session.publishChildEnv();
+      try {
+        await bindExecutionCache(session, ctx);
+      } catch (error) {
+        ctx.ui.notify(`cache binding unavailable; ordinary native tools remain: ${String(error)}`, "warning");
+      }
       // The definitions now exist, so the `delegate` schema can finally name them (R-39). pi serialises a
       // tool's schema at REQUEST time, not at registration — measured — which is what makes this reach the
       // model at all.
+      if (session.reloadLifecycle !== reload.lifecycle) return undefined;
       delegation.refreshSpawnable();
       // Everything an operator is TOLD at session start now lives in `./session-report.ts`. Lifted because
       // this file had reached 398 of the 400-line ceiling and ADR-0032 adds a control to it; the split is the
@@ -203,6 +251,7 @@ export default function (pi: ExtensionAPI) {
       try {
         await reportSessionStart(session, ctx);
       } catch (error) {
+        if (session.reloadLifecycle !== reload.lifecycle) return undefined;
         ctx.ui.notify(
           // Names the CHECKS as well as the display lines. The first version listed only "the grant, the
           // executor and the spawnable definitions" — which understated it: a throw partway through the reporter
@@ -218,9 +267,12 @@ export default function (pi: ExtensionAPI) {
           "warning",
         );
       }
+      if (session.reloadLifecycle !== reload.lifecycle) return undefined;
       // Explicit installation handshake. It only runs in a Herdr-hosted TUI, asks once, and the only branch
       // that links software is the literal human choice "Install and open".
       try {
+        const sessionEndpoint = await ensureDashboardSessionServer(session);
+        if (session.reloadLifecycle !== reload.lifecycle) return undefined;
         await offerDashboardHandshake({
           mode: ctx.mode,
           env: process.env,
@@ -230,10 +282,12 @@ export default function (pi: ExtensionAPI) {
           pluginRoot: dashboardPluginRoot,
           preferencePath: dashboardPaths.preferencePath,
           paneStatePath: dashboardPaths.paneStatePath,
-          sessionEndpoint: await ensureDashboardSessionServer(session),
+          sessionEndpoint,
           ui: ctx.ui,
         });
+        if (session.reloadLifecycle !== reload.lifecycle) return undefined;
       } catch (error) {
+        if (session.reloadLifecycle !== reload.lifecycle) return undefined;
         ctx.ui.notify(
           `grants: dashboard installation handshake could not run (${error instanceof Error ? error.message : String(error)}). ` +
             `Nothing was installed; /grants dashboard will report manual setup.`,
@@ -241,6 +295,7 @@ export default function (pi: ExtensionAPI) {
         );
       }
     } catch (error) {
+      if (session.reloadLifecycle !== reload.lifecycle) return undefined;
       // Rule 8 — fail closed, and be LOUD about it. Swallowing is still right: a startup fault must not
       // reach the agent loop. Swallowing SILENTLY is what let R-60 exist, and would let the next one exist
       // too, because every control added above this line is cancelled by any throw before it with no trace.
@@ -252,8 +307,8 @@ export default function (pi: ExtensionAPI) {
             `may refuse. The grant itself is unaffected: it is enforced by --tools when a child is spawned.`,
           "error",
         );
-      } catch {
-        /* a UI that cannot be notified is the one failure there is nowhere to report */
+      } catch (diagnosticError) {
+        console.error("grants: session-start diagnostic failed", error, diagnosticError);
       }
     }
     return undefined;
@@ -288,7 +343,7 @@ export default function (pi: ExtensionAPI) {
 
   // Observe this session's real tool surface once, and tighten the grant to it. Authoritative because
   // it is exactly what pi sent the model.
-  pi.on("before_provider_request", (event) => {
+  pi.on("before_provider_request", (event, ctx) => {
     try {
       if (session.observed) return undefined;
       const names = observeToolNames(event.payload);
@@ -303,15 +358,42 @@ export default function (pi: ExtensionAPI) {
       // Refresh the catalog now that the real tool surface is known — this is the only moment extension
       // tools become visible, so it is the only moment `ext:`/`tool:` grants can be validated.
       // Keep the handle: a concurrent `delegate` awaits this rather than reading a half-built catalog.
-      // The `catch` resolves to the CURRENT catalog rather than rejecting, so a failed refresh degrades
-      // to the previous view instead of failing every delegation in the session.
-      session.catalogReady = buildCatalog({
-        cwd: session.cwd,
-        observedTools: names,
-        registryPath: process.env[ENV_WORKSPACE_REGISTRY],
-      })
-        .then((c) => (session.catalog = c))
-        .catch(() => session.catalog);
+      // Ordinary discovery failure may keep the prior display; physical cleanup failure may not.
+      const lifecycle = session.reloadLifecycle;
+      assertDiscoveryHealthy(session, lifecycle);
+      session.catalogReady = buildCatalog(
+        {
+          cwd: session.cwd,
+          observedTools: names,
+          registryPath: process.env[ENV_WORKSPACE_REGISTRY],
+        },
+        session.discovery,
+      )
+        .then((c) => {
+          assertDiscoveryHealthy(session, lifecycle);
+          return (session.catalog = c);
+        })
+        .catch((error: unknown) => {
+          if (error instanceof BoundedReadCleanupError) {
+            throw recordDiscoveryCleanupFailure(session, error, lifecycle);
+          }
+          assertDiscoveryHealthy(session, lifecycle);
+          return session.catalog;
+        });
+      // Safe rejection observation and actual diagnostic, NOT a replacement fulfilled catalog.
+      void session.catalogReady.catch((error: unknown) => {
+        if (error instanceof BoundedReadCleanupError) {
+          try {
+            ctx.ui.notify(
+              `grants: catalog refresh cleanup failed — ${error.message}; delegation remains failed.`,
+              "error",
+            );
+          } catch (diagnosticError) {
+            // A broken UI must not turn the rejection observer into an unhandled promise.
+            console.error("grants: catalog cleanup diagnostic failed", error, diagnosticError);
+          }
+        }
+      });
     } catch {
       /* never throw into the agent loop */
     }
@@ -375,6 +457,7 @@ export default function (pi: ExtensionAPI) {
         ...ctx,
         grants: {
           cwd: session.cwd,
+          executionCache: (args: string) => executionCacheCommand(session, args),
           governed: session.governed,
           ownGrant: session.ownGrant,
           executor: session.executor,
@@ -413,8 +496,10 @@ export default function (pi: ExtensionAPI) {
           // (R-38). Passing `ctx` here would let `/grants` raise a dialog, and passing `hasUI: false` would
           // make every gated definition report "no interactive user" instead of what actually blocks it.
           runInit: () =>
-            runInit(session, ctx, async () => {
-              await loadProjectDefinitions(session, ctx.cwd);
+            runInit(session, ctx, async (lifecycle) => {
+              assertDiscoveryHealthy(session, lifecycle);
+              await loadProjectDefinitions(session, ctx.cwd, lifecycle);
+              assertDiscoveryHealthy(session, lifecycle);
               delegation.refreshSpawnable();
             }),
           openDashboard: async () =>

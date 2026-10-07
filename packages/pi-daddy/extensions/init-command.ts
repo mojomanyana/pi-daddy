@@ -13,7 +13,9 @@ import { PI_PROJECT_DIR } from "../src/kernel/project-paths.ts";
 import { registeredWorkspaceIds } from "../src/kernel/workspace.ts";
 import { grantStorePath, projectLedgerPath, saveGrant } from "../src/governance/grant-store.ts";
 import { expandSubsumed, SUBSUMPTION, type Capability } from "../src/kernel/resolve.ts";
-import type { GrantsSession } from "./session.ts";
+import { assertDiscoveryHealthy, retainDiscoveryCleanupFailure, type GrantsSession } from "./session.ts";
+import type { ReloadLifecycle } from "./reload-environment.ts";
+import { BoundedReadCleanupError } from "../src/kernel/bounded-read.ts";
 
 /**
  * `/grants init` — scaffold, ask about what is withheld, store grant + ledger consent, apply both now.
@@ -40,9 +42,33 @@ export async function runInit(
    * 0 agent-type` and no verdicts, and the model would have been told `Available: none` — R-39 exactly,
    * reintroduced by a feature whose whole selling point is "no restart". Found by running it.
    */
-  refresh: () => Promise<void>,
+  refresh: (lifecycle: ReloadLifecycle) => Promise<void>,
 ): Promise<void> {
-  const packages = await discoverSkillPackages(ctx.cwd);
+  const lifecycle = session.reloadLifecycle;
+  try {
+    await runOwnedInit(session, ctx, refresh, lifecycle);
+  } catch (error) {
+    if (error instanceof BoundedReadCleanupError) {
+      retainDiscoveryCleanupFailure(session, error, lifecycle);
+      try {
+        ctx.ui.notify(`grants: init cleanup failed — ${error.message}; init did not complete.`, "error");
+      } catch (diagnosticError) {
+        console.error("grants: init cleanup diagnostic failed", error, diagnosticError);
+      }
+    }
+    throw error;
+  }
+}
+
+async function runOwnedInit(
+  session: GrantsSession,
+  ctx: any,
+  refresh: (lifecycle: ReloadLifecycle) => Promise<void>,
+  lifecycle: ReloadLifecycle,
+): Promise<void> {
+  assertDiscoveryHealthy(session, lifecycle);
+  const packages = await (session.discovery?.packages ?? discoverSkillPackages)(ctx.cwd);
+  assertDiscoveryHealthy(session, lifecycle);
   if (packages.length === 0) {
     ctx.ui.notify(
       "grants: no enabled configured skills or unregistered npm skill packages found. Install and enable one — e.g. " +
@@ -52,14 +78,18 @@ export async function runInit(
     return;
   }
 
-  const plan = planInit(
-    packages,
-    ctx.cwd,
-    await registeredWorkspaceIds(undefined, (reason) =>
-      ctx.ui.notify(`grants: workspace registry unreadable, scaffolding no workspaces — ${reason}`, "warning"),
-    ),
+  const workspaces = await registeredWorkspaceIds(
+    undefined,
+    (reason) => {
+      assertDiscoveryHealthy(session, lifecycle);
+      ctx.ui.notify(`grants: workspace registry unreadable, scaffolding no workspaces — ${reason}`, "warning");
+    },
+    session.discovery?.registry,
   );
+  assertDiscoveryHealthy(session, lifecycle);
+  const plan = planInit(packages, ctx.cwd, workspaces);
   const outcome = await applyInit(plan);
+  assertDiscoveryHealthy(session, lifecycle);
   const lines = [
     `grants: ${plan.skills.length} definition(s) from ${packages.map((p) => `${p.name}@${p.version}`).join(", ")}`,
     `  using ${plan.skills.filter((s) => s.referenced).length} enabled definition(s) in place; no copies`,
@@ -77,6 +107,7 @@ export async function runInit(
   const alreadyConferred: string[] = [];
 
   for (const [capability, neededBy] of plan.withheldCapabilities) {
+    assertDiscoveryHealthy(session, lifecycle);
     // **Do not ask a question whose answer cannot matter.** `tool:bash` subsumes `write`, `edit` and
     // `edit-diff` (`SUBSUMPTION`, `src/kernel/resolve.ts`), so once bash is granted those are already conferred.
     // The first version asked anyway: an operator could answer *no* to `tool:write`, watch `/grants` allow
@@ -114,6 +145,7 @@ export async function runInit(
             : "it is not gated, so no dialog at spawn time"),
       ["No", "Yes"],
     );
+    assertDiscoveryHealthy(session, lifecycle);
     if (answer === "Yes") {
       grant.add(capability);
       granted.push(capability);
@@ -125,9 +157,11 @@ export async function runInit(
     }
   }
 
+  assertDiscoveryHealthy(session, lifecycle);
   const finalGrant = [...grant].sort();
   const ledger = projectLedgerPath(ctx.cwd);
   const saved = await saveGrant(ctx.cwd, finalGrant, { projectLedger: true });
+  assertDiscoveryHealthy(session, lifecycle);
   if (saved !== "saved") {
     lines.push(
       `  NOT STORED — ${saved === "busy" ? "another session holds the grant store" : "the store could not be written"}. ` +
@@ -142,7 +176,8 @@ export async function runInit(
   session.adoptGrant(finalGrant, ledger);
   // Order matters: the grant first, then the reload, because `refreshSpawnable` filters the definitions it
   // advertises through `maySpawnDefinition` against the grant the session now holds.
-  await refresh();
+  await refresh(lifecycle);
+  assertDiscoveryHealthy(session, lifecycle);
 
   lines.push(
     `  stored at ${grantStorePath(ctx.cwd)} — outside this project, so no child can rewrite it`,
@@ -164,7 +199,9 @@ export async function runInit(
         `${plan.settingsPath}. Which worktree a child starts in is not something a package can declare for you.`,
     );
   }
-  if ((await settingsIgnoredByGit(plan.settingsPath)) === true)
+  const settingsIgnored = await settingsIgnoredByGit(plan.settingsPath);
+  assertDiscoveryHealthy(session, lifecycle);
+  if (settingsIgnored === true)
     lines.push(
       `  NOTE: git ignores ${plan.settingsPath} (your root .gitignore covers ${PI_PROJECT_DIR}/), so the reviewable record ` +
         `cannot be committed until you add: ${GITIGNORE_REINCLUDE_LINES.join("  ")}`,

@@ -7,7 +7,7 @@
  * Bubblewrap's parent-death signal alone has a measured pre-exec/reparenting startup race.
  */
 import { join } from "node:path";
-import { readBoundedFile } from "./bounded-read.ts";
+import { BoundedReadCleanupError, readBoundedFile } from "./bounded-read.ts";
 
 export interface CacheOwnerIdentity {
   pid: number;
@@ -28,8 +28,11 @@ export function isCacheOwner(value: unknown): value is CacheOwnerIdentity {
   );
 }
 
-async function procText(path: string, label: string): Promise<string> {
-  const read = await readBoundedFile(path, { maxBytes: 8192, timeoutMs: 1000 });
+/** Trusted bounded-reader dependency; never process/requester claims or environment input. */
+export type CacheOwnerRead = typeof readBoundedFile;
+
+async function procText(path: string, label: string, reader: CacheOwnerRead): Promise<string> {
+  const read = await reader(path, { maxBytes: 8192, timeoutMs: 1000 });
   if (!read.ok) throw new Error(`cache owner ${label}: ${read.why}: ${read.detail}`);
   return read.text;
 }
@@ -46,11 +49,15 @@ function processStat(pid: number, text: string): { state: string; startTicks: st
   return { state: fields[0], startTicks: fields[19] };
 }
 
-export async function readCacheOwner(pid: number, procRoot = "/proc"): Promise<CacheOwnerIdentity> {
+export async function readCacheOwner(
+  pid: number,
+  procRoot = "/proc",
+  reader: CacheOwnerRead = readBoundedFile,
+): Promise<CacheOwnerIdentity> {
   if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error("cache owner PID must be a positive safe integer");
-  const info = processStat(pid, await procText(join(procRoot, String(pid), "stat"), "stat"));
+  const info = processStat(pid, await procText(join(procRoot, String(pid), "stat"), "stat", reader));
   if (/^[ZXx]$/.test(info.state)) throw new Error("cache owner is not alive (zombie or dead)");
-  const bootId = (await procText(join(procRoot, "sys/kernel/random/boot_id"), "boot identity")).trim();
+  const bootId = (await procText(join(procRoot, "sys/kernel/random/boot_id"), "boot identity", reader)).trim();
   const identity = { pid, bootId, startTicks: info.startTicks };
   if (!isCacheOwner(identity)) throw new Error("cache owner boot identity is malformed");
   return identity;
@@ -61,12 +68,16 @@ export async function readCacheOwner(pid: number, procRoot = "/proc"): Promise<C
  * procfs MUST throw, not certify cleanup. A dead state, typed absence, or validated identity replacement
  * proves the original process is gone. Validate the proc root's boot identity even for an absent PID.
  */
-export async function cacheProcessTerminated(owner: CacheOwnerIdentity, procRoot = "/proc"): Promise<boolean> {
+export async function cacheProcessTerminated(
+  owner: CacheOwnerIdentity,
+  procRoot = "/proc",
+  reader: CacheOwnerRead = readBoundedFile,
+): Promise<boolean> {
   if (!isCacheOwner(owner)) throw new Error("cache process termination identity is malformed");
-  const bootId = (await procText(join(procRoot, "sys/kernel/random/boot_id"), "boot identity")).trim();
+  const bootId = (await procText(join(procRoot, "sys/kernel/random/boot_id"), "boot identity", reader)).trim();
   if (!isCacheOwner({ ...owner, bootId })) throw new Error("cache owner boot identity is malformed");
   if (bootId !== owner.bootId) return true;
-  const read = await readBoundedFile(join(procRoot, String(owner.pid), "stat"), { maxBytes: 8192, timeoutMs: 1000 });
+  const read = await reader(join(procRoot, String(owner.pid), "stat"), { maxBytes: 8192, timeoutMs: 1000 });
   if (!read.ok) {
     if ((read.why === "unopenable" || read.why === "unreadable") && (read.code === "ENOENT" || read.code === "ESRCH"))
       return true;
@@ -77,12 +88,17 @@ export async function cacheProcessTerminated(owner: CacheOwnerIdentity, procRoot
 }
 
 /** Any unreadable, dead or incompatible identity means no authority, never permission to adopt a process. */
-export async function cacheOwnerMatches(owner: CacheOwnerIdentity, procRoot = "/proc"): Promise<boolean> {
+export async function cacheOwnerMatches(
+  owner: CacheOwnerIdentity,
+  procRoot = "/proc",
+  reader: CacheOwnerRead = readBoundedFile,
+): Promise<boolean> {
   if (!isCacheOwner(owner)) return false;
   try {
-    const actual = await readCacheOwner(owner.pid, procRoot);
+    const actual = await readCacheOwner(owner.pid, procRoot, reader);
     return actual.bootId === owner.bootId && actual.startTicks === owner.startTicks;
   } catch (error) {
+    if (error instanceof BoundedReadCleanupError) throw error;
     if (!(error instanceof Error) || !error.message.startsWith("cache owner")) throw error;
     return false;
   }

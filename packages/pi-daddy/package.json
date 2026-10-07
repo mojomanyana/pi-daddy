@@ -43,12 +43,13 @@
     "herdr-plugin",
     "THIRD_PARTY_LICENSES",
     "THIRD_PARTY_NOTICES.md",
+    "scripts/cache-sdk-basic-qa.ts",
     "README.md",
     "CHANGELOG.md",
     "LICENSE"
   ],
   "scripts": {
-    "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json && node scripts/build-cache-lease.ts",
+    "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json && node scripts/assemble-cache-package.ts && node scripts/build-cache-lease.ts && node scripts/build-cache-inode.ts && node scripts/build-cache-held-symlink.ts && node scripts/build-cache-native.ts",
     "typecheck": "tsc -p tsconfig.check.json",
     "test": "node scripts/unit-tests.ts",
     "test:integration": "node --test test-integration/*.it.ts",

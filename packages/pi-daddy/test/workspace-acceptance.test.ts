@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { beginExtensionLifecycle, bindReloadLifecycle } from "../extensions/reload-environment.ts";
@@ -121,6 +121,61 @@ test("a malformed acceptance record accepts nothing rather than everything", asy
   assert.deepEqual(result.accepted, []);
   assert.deepEqual(result.unaccepted, ["a"]);
   assert.equal(result.firstUse, false);
+});
+
+// Unknown physical failure is not first use: never widen an existing operator decision.
+for (const failure of [
+  Object.assign(new Error("acceptance read failed"), { code: "EIO" }),
+  Object.assign(new Error("acceptance read denied"), { code: "EACCES" }),
+  new Error("ENOENT in diagnostic prose is not absence"),
+  { code: "ENOENT" },
+  undefined,
+  false,
+]) {
+  test(`acceptance read rejection preserves the accepted record (${String(failure)})`, async () => {
+    const registry = join(await tempDir("accept-read-failure-"), "registry.json");
+    const env = { PI_CODING_AGENT_DIR: await tempDir("accept-read-failure-agent-") };
+    const { acceptedWorkspacesPath } = await import("../src/kernel/project-paths.ts");
+    await acceptWorkspaces(registry, ["good"], env);
+    const path = acceptedWorkspacesPath(registry, env);
+    const before = await readFile(path);
+    let result: unknown;
+    let rejected = false;
+    try {
+      result = await reconcileAcceptedWorkspaces(registry, ["good", "evil"], env, async () => {
+        throw failure;
+      });
+    } catch (error) {
+      rejected = true;
+      assert.equal(error, failure, "retain the original rejection, including falsy values");
+    }
+    assert.deepEqual(await readFile(path), before, "read failure cannot overwrite accepted-good with added evil");
+    assert.equal(result, undefined, "unknown decision cannot accept registry-added ids");
+    assert.equal(rejected, true, "only a real typed ENOENT may authorize first use");
+    assert.deepEqual(await reconcileAcceptedWorkspaces(registry, ["good", "evil"], env), {
+      accepted: ["good"],
+      firstUse: false,
+      unaccepted: ["evil"],
+    });
+  });
+}
+
+test("genuine absent acceptance persists and announces first use once", async () => {
+  const registry = join(await tempDir("accept-real-absence-"), "registry.json");
+  const env = { PI_CODING_AGENT_DIR: await tempDir("accept-real-absence-agent-") };
+  const { acceptedWorkspacesPath } = await import("../src/kernel/project-paths.ts");
+  const first = await reconcileAcceptedWorkspaces(registry, ["good"], env);
+  assert.deepEqual(first, { accepted: ["good"], firstUse: true, unaccepted: [] });
+  assert.deepEqual(JSON.parse(await readFile(acceptedWorkspacesPath(registry, env), "utf8")), {
+    version: 1,
+    registry,
+    accepted: ["good"],
+  });
+  assert.deepEqual(await reconcileAcceptedWorkspaces(registry, ["good", "evil"], env), {
+    accepted: ["good"],
+    firstUse: false,
+    unaccepted: ["evil"],
+  });
 });
 
 test("accepting records the registry's current ids for the next session", async () => {

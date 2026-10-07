@@ -33,6 +33,97 @@
 import { constants } from "node:fs";
 import { open, type FileHandle } from "node:fs/promises";
 
+/** Explicitly trusted per-read I/O ports, never requester/environment input. */
+export interface BoundedReadPorts {
+  open(path: string, flags: number): Promise<FileHandle>;
+  read(
+    handle: FileHandle,
+    buffer: Buffer,
+    offset: number,
+    length: number,
+    position: number,
+  ): Promise<{ bytesRead: number }>;
+  close(handle: FileHandle): Promise<void>;
+}
+/** A failed read stays failed even after this explicit recovery capability succeeds. */
+export class BoundedReadCleanupError extends Error {
+  readonly cleanup: () => Promise<void>;
+  /** Latest physical failure, including falsy rejections; cause remains the original failure. */
+  lastCause: unknown;
+  constructor(cause: unknown, cleanup: () => Promise<void>) {
+    super("bounded reader descriptor cleanup unresolved; retain and explicitly retry", { cause });
+    this.name = "BoundedReadCleanupError";
+    this.lastCause = cause;
+    this.cleanup = cleanup;
+  }
+}
+
+const retained = new Set<BoundedReadCleanup>();
+/** Trusted diagnostics/recovery only; not admission, a quota, or a Root-wide shutdown join. */
+export function retainedBoundedReadCleanups(): readonly BoundedReadCleanupOwner[] {
+  return [...retained];
+}
+export interface BoundedReadCleanupOwner {
+  readonly handle: FileHandle | undefined;
+  cleanup(): Promise<void>;
+}
+class BoundedReadCleanup implements BoundedReadCleanupOwner {
+  private held: FileHandle | undefined;
+  private active?: Promise<void>;
+  private failure?: BoundedReadCleanupError;
+  private finish!: () => void;
+  private readonly reading = new Promise<void>((resolve) => (this.finish = resolve));
+  private readonly close: BoundedReadPorts["close"];
+  constructor(close: BoundedReadPorts["close"]) {
+    this.close = close;
+    retained.add(this);
+  }
+  acquired(handle: FileHandle) {
+    this.held = handle;
+  }
+  get handle() {
+    return this.held;
+  }
+  readSettled() {
+    this.finish();
+  }
+  cleanup(): Promise<void> {
+    if (this.active) return this.active;
+    // Publish before calling any trusted port: reentrant/concurrent cleanup shares this operation.
+    const operation = this.reading.then(async () => {
+      if (!this.held) {
+        retained.delete(this);
+        return;
+      }
+      try {
+        await this.close(this.held);
+      } catch (cause) {
+        this.failure ??= new BoundedReadCleanupError(cause, () => this.cleanup());
+        this.failure.lastCause = cause;
+        throw this.failure;
+      }
+      this.held = undefined;
+      retained.delete(this);
+    });
+    this.active = operation;
+    void operation.then(
+      () => {
+        this.active = undefined;
+      },
+      () => {
+        this.active = undefined;
+      },
+    );
+    return operation;
+  }
+}
+
+const boundedReadPorts: BoundedReadPorts = {
+  open,
+  read: (handle, buffer, offset, length, position) => handle.read(buffer, offset, length, position),
+  close: (handle) => handle.close(),
+};
+
 export interface BoundedReadLimits {
   /** Refuse anything at or over this, before allocating it. */
   maxBytes: number;
@@ -67,8 +158,12 @@ export type BoundedReadBytes = { ok: true; bytes: Buffer } | ({ ok: false } & Bo
  * UTF-8 round trip unchanged — a latin-1 byte that decodes to U+FFFD changes the file's digest, and that
  * check is only possible against the original buffer. Decoding here and re-encoding there would defeat it.
  */
-export async function readBoundedFile(path: string, limits: BoundedReadLimits): Promise<BoundedReadResult> {
-  const read = await readBoundedBytes(path, limits);
+export async function readBoundedFile(
+  path: string,
+  limits: BoundedReadLimits,
+  ports: BoundedReadPorts = boundedReadPorts,
+): Promise<BoundedReadResult> {
+  const read = await readBoundedBytes(path, limits, ports);
   return read.ok ? { ok: true, text: read.bytes.toString("utf8") } : read;
 }
 
@@ -79,12 +174,35 @@ function ioCode(error: unknown): { code?: string } {
   return {};
 }
 
-export async function readBoundedBytes(path: string, limits: BoundedReadLimits): Promise<BoundedReadBytes> {
+export function readBoundedBytes(
+  path: string,
+  limits: BoundedReadLimits,
+  ports: BoundedReadPorts = boundedReadPorts,
+): Promise<BoundedReadBytes> {
+  return readBoundedRange(path, limits, ports, false);
+}
+/** Bounded tail of a regular file, using the same held descriptor for size, range and serialized close.
+ * Large files are permitted; no pathname reopen or whole-file fallback. Concurrent size changes refuse.
+ * Like full reads, a wedged individual filesystem operation cannot be interrupted in-process. */
+export function readBoundedTailBytes(
+  path: string,
+  limits: BoundedReadLimits,
+  ports: BoundedReadPorts = boundedReadPorts,
+): Promise<BoundedReadBytes> {
+  return readBoundedRange(path, limits, ports, true);
+}
+async function readBoundedRange(
+  path: string, limits: BoundedReadLimits, ports: BoundedReadPorts, tail: boolean,
+): Promise<BoundedReadBytes> {
   const now = limits.now ?? Date.now;
   let handle: FileHandle;
+  const cleanup = new BoundedReadCleanup((held) => ports.close(held));
   try {
-    handle = await open(path, constants.O_RDONLY | constants.O_NONBLOCK);
+    handle = await ports.open(path, constants.O_RDONLY | constants.O_NONBLOCK);
+    cleanup.acquired(handle);
   } catch (error) {
+    cleanup.readSettled();
+    await cleanup.cleanup();
     return { ok: false, why: "unopenable", detail: String(error), ...ioCode(error) };
   }
   try {
@@ -95,7 +213,7 @@ export async function readBoundedBytes(path: string, limits: BoundedReadLimits):
         why: "not-a-regular-file",
         detail: `${path} is not a regular file — a FIFO, device or socket here would block rather than fail`,
       };
-    if (info.size > limits.maxBytes)
+    if (!tail && info.size > limits.maxBytes)
       return {
         ok: false,
         why: "too-large",
@@ -105,15 +223,17 @@ export async function readBoundedBytes(path: string, limits: BoundedReadLimits):
 
     const deadline = now() + limits.timeoutMs;
     const buffer = Buffer.allocUnsafe(limits.maxBytes + 1);
+    const start = tail ? Math.max(0, info.size - limits.maxBytes) : 0;
+    const length = tail ? Math.min(info.size, limits.maxBytes) : buffer.length;
     let filled = 0;
-    while (filled < buffer.length) {
+    while (filled < length) {
       if (now() > deadline)
         return {
           ok: false,
           why: "timed-out",
           detail: `${path} did not finish reading within ${limits.timeoutMs}ms`,
         };
-      const { bytesRead } = await handle.read(buffer, filled, buffer.length - filled, filled);
+      const { bytesRead } = await ports.read(handle, buffer, filled, length - filled, start + filled);
       if (bytesRead === 0) break;
       filled += bytesRead;
     }
@@ -123,10 +243,13 @@ export async function readBoundedBytes(path: string, limits: BoundedReadLimits):
         why: "grew-while-reading",
         detail: `${path} exceeded the ${limits.maxBytes} limit while being read — it grew after its size was checked`,
       };
+    if (tail && (filled !== length || (await handle.stat()).size !== info.size))
+      return { ok: false, why: "grew-while-reading", detail: `${path} changed size during tail read` };
     return { ok: true, bytes: buffer.subarray(0, filled) };
   } catch (error) {
     return { ok: false, why: "unreadable", detail: String(error), ...ioCode(error) };
   } finally {
-    await handle.close().catch(() => {});
+    cleanup.readSettled();
+    await cleanup.cleanup();
   }
 }

@@ -10,6 +10,7 @@ import {
 import { isLedgerCapabilityIdentifier, isLedgerDisplayIdentifier } from "../kernel/ledger-identifiers.ts";
 import { LEDGER_EVENT_KINDS } from "../governance/ledger.ts";
 import { readRecords } from "../governance/record.ts";
+import { validateCacheHistory } from "../governance/cache-history.ts";
 
 export type DashboardState =
   "authorised" | "starting" | "running" | "completed" | "failed" | "refused" | "incomplete" | "historical";
@@ -286,6 +287,11 @@ export function parseDashboardLedger(text: string, options: DashboardProjectionO
       return;
     }
     const event: ObjectRecord = record.body;
+    if (event.event === "execution_cache") {
+      if (record.kind !== "control" || !validateCacheHistory(event))
+        corrupt.push({ line, reason: "invalid cache history" });
+      return; // Request history is not a delegated-process occurrence or reusable state.
+    }
 
     if (event.ledgerVersion === undefined && event.event === undefined) {
       const node = legacyNode(event, line, now);

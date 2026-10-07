@@ -4,6 +4,7 @@
  */
 import type { CacheWorkspace, CacheObservation, CacheResultRef, CacheRunTicket } from "./cache-graph.ts";
 import type { CachePayloadToken } from "./cache-payloads.ts";
+import type { CacheDataSink } from "../kernel/cache-data-sink.ts";
 export interface CacheRequester {
   readonly cacheRequester: unique symbol;
 }
@@ -34,14 +35,20 @@ export interface CacheWorkPlan {
   inputs: readonly CacheObservation[];
   parents: readonly CacheResultRef[];
   shareable: boolean;
+  /** Trusted ordinary execution: no result access, sharing, graph ticket or publication. */
+  cacheable?: boolean;
   validate(signal: AbortSignal): Promise<boolean>;
-  start(options: { executionId: string; signal: AbortSignal; onData(bytes: Buffer): void }): Promise<OwnedCacheRun>;
+  start(options: {
+    executionId: string;
+    signal: AbortSignal;
+    onData(bytes: Buffer): void | Promise<void>;
+  }): Promise<OwnedCacheRun>;
 }
 export interface CacheRequestOptions {
   force?: boolean;
   signal?: AbortSignal;
   waitMs?: number;
-  onData?(bytes: Buffer): void;
+  onData?: CacheDataSink;
 }
 export interface CacheResolution {
   requestId: string;
@@ -50,6 +57,9 @@ export interface CacheResolution {
   outcome?: Readonly<CacheRunOutcome>;
   published?: boolean;
   reason?: string;
+  /** Trusted personal-runtime acquisition provenance, not client-supplied identity. */
+  inputFingerprint?: string;
+  profileId?: string;
 }
 export interface CacheSchedulerLimits {
   running: number;
@@ -64,11 +74,11 @@ export interface CacheSchedulerLimits {
   streamChunks: number;
   replies: { bytes: number; itemBytes: number; payloads: number; deliveries: number };
 }
-export class CacheStartFailure extends Error {
-  readonly cleanupVerified: boolean;
-  constructor(message: string, cleanupVerified: boolean) {
-    super(message);
-    this.cleanupVerified = cleanupVerified;
+export { CacheStartFailure } from "../kernel/cache-start-failure.ts";
+/** Trusted unresolved ownership, not an ordinary requester cancellation or a retry receipt. */
+export class CacheCleanupFailure extends Error {
+  constructor(cause: unknown) {
+    super("cache request cleanup unresolved; retain", { cause });
   }
 }
 export interface ActorRow {
@@ -90,13 +100,14 @@ export interface RequestRow {
   controller: AbortController;
   removeSignal?: () => void;
   timer?: ReturnType<typeof setTimeout>;
-  onData?: (bytes: Buffer) => void;
+  onData?: CacheDataSink;
   promise?: Promise<CacheResolution>;
   resolve?: (result: CacheResolution) => void;
   summary?: Omit<CacheResolution, "outcome">;
   metadata?: Omit<CacheRunOutcome, "output">;
   payload?: CachePayloadToken;
   execution?: ExecutionRow;
+  retiring?: ExecutionRow;
 }
 export interface ExecutionRow {
   id: string;
@@ -111,8 +122,13 @@ export interface ExecutionRow {
   exitVerified: boolean;
   stopping: boolean;
   task?: Promise<void>;
+  stopTask?: Promise<void>;
+  cleanupOwner?: RequestRow;
   fault?: Error;
   stream: Buffer[];
   streamBytes: number;
   replayable: boolean;
+  flow?: Promise<void>;
+  catchups: Set<Promise<void>>;
+  joinsSealed: boolean;
 }

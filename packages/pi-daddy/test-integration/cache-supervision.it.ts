@@ -11,13 +11,18 @@ import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { cleanupTempDirs, tempDir } from "../test/tmp.ts";
+import { cleanupTempDirs as removeTempDirs, tempDir } from "../test/tmp.ts";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 import { after, test } from "node:test";
 import { readCacheOwner } from "../src/kernel/cache-owner.ts";
 import { startSupervisedCache } from "../src/executors/cache-supervisor.ts";
+import { retainedCacheSupervisorCleanups } from "../src/executors/cache-supervisor-cleanup.ts";
 
+async function cleanupTempDirs() {
+  assert.deepEqual(retainedCacheSupervisorCleanups(), [], "unresolved supervisor owners; retain fixtures");
+  await removeTempDirs();
+}
 after(cleanupTempDirs);
 const optedIn = process.env.PI_DADDY_IT_CACHE === "1";
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -242,6 +247,8 @@ for (const kind of ["return-false", "later-error"])
         handle.process.kill = kill;
         kill("SIGKILL");
         await handle.stopped;
+        await handle.retryCleanup();
+        await assert.rejects(handle.stop(), /termination.*unresolved/, "retry cannot rewrite the original failure");
         await until(
           () => marked(marker),
           (ps) => ps.every((p) => p.zombie),
@@ -281,6 +288,35 @@ test(
     );
   },
 );
+
+test("private birth/GO do not leak and application stdin/stdout remain byte-exact", { skip: !optedIn }, async () => {
+  const input = Buffer.concat([
+      Buffer.from('{"piDaddyCacheSupervisor":1,"go":true}\n{"piDaddyCacheSupervisor":1,"birth":{}}\n'),
+      Buffer.from('{"piDaddyCacheSupervisor":1,"ready":true}\n'),
+      Buffer.from([0, 255, 10, 13, 128]),
+    ]),
+    received: Buffer[] = [];
+  const handle = await startSupervisedCache({
+    owner: await readCacheOwner(process.pid),
+    entry: new URL("./cache-supervision-fixture.ts", import.meta.url),
+    args: [randomUUID(), "stdin-parity"],
+    onData: (stream, bytes) => {
+      assert.equal(stream, "stdout");
+      received.push(bytes);
+    },
+  });
+  try {
+    assert.deepEqual(Buffer.concat(received), Buffer.alloc(0), "private controls must never reach the caller");
+    handle.process.stdin.end(input);
+    await until(
+      async () => Buffer.concat(received).length,
+      (length) => length >= input.length,
+    );
+    assert.deepEqual(Buffer.concat(received), input, "GO cannot consume, prefix or filter application bytes");
+  } finally {
+    await handle.stop();
+  }
+});
 
 test(
   "oversized pre-readiness output refuses startup and terminates owned descendants",

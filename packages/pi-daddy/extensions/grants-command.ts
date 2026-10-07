@@ -23,6 +23,7 @@ import { verifyLedger } from "../src/governance/ledger.ts";
 import type { ResolvedDefinitionRuntime } from "./definition-runtime.ts";
 
 export interface GrantsCommandContext {
+  executionCache?: (args: string) => Promise<string>;
   cwd: string;
   governed: boolean;
   ownGrant: Capability[];
@@ -99,6 +100,7 @@ const KNOWN_SUBCOMMANDS: readonly string[] = [
   "revoke",
   "workspaces",
   "models",
+  "cache",
 ];
 
 export const grantsCommand = {
@@ -131,6 +133,12 @@ export const grantsCommand = {
 
     const [sub, target] = args.trim().split(/\s+/).filter(Boolean);
 
+    if (sub === "cache") {
+      const control = (ctx.grants as GrantsCommandContext).executionCache;
+      if (!control) throw new Error("cache controls unavailable in this session composition");
+      ctx.ui.notify(await control(args.trim().split(/\s+/).slice(1).join(" ")), "info");
+      return;
+    }
     if (sub === "init") {
       await ctx.grants.runInit();
       return;

@@ -11,9 +11,12 @@
  */
 import { randomUUID } from "node:crypto";
 import { CachePayloads } from "./cache-payloads.ts";
-import { CacheStartFailure } from "./cache-scheduler-types.ts";
+import { CacheStreamReaders } from "./cache-stream-readers.ts";
+import { CACHE_STREAM_FRAME_BYTES } from "../kernel/cache-data-sink.ts";
+import { CacheStartFailure, CacheCleanupFailure } from "./cache-scheduler-types.ts";
 import { cacheRunOutcome, encodeCacheReplay, decodeCacheReplay } from "./cache-scheduler-replay.ts";
 import { observeCacheReport, waitCacheReport } from "./cache-scheduler-wait.ts";
+import { settleCacheRequest } from "./cache-scheduler-settle.ts";
 import type { CacheGraph } from "./cache-graph.ts";
 import type {
   CacheRequester,
@@ -29,7 +32,7 @@ import type {
   RequestRow,
   ExecutionRow,
 } from "./cache-scheduler-types.ts";
-export { CacheStartFailure } from "./cache-scheduler-types.ts";
+export { CacheStartFailure, CacheCleanupFailure } from "./cache-scheduler-types.ts";
 export type {
   CacheRequester,
   CacheWork,
@@ -46,12 +49,17 @@ export class CacheScheduler {
   private limits: CacheSchedulerLimits;
   private replies: CachePayloads;
   private actors = new Map<CacheRequester, ActorRow>();
+  private issuedActors = new WeakSet<CacheRequester>();
   private work = new Map<CacheWork, WorkRow>();
   private requests = new WeakMap<CacheRequest, RequestRow>();
   private known = new WeakSet<CacheRequest>();
   private live = new Set<RequestRow>();
   private queue: ExecutionRow[] = [];
   private executions = new Set<ExecutionRow>();
+  private readers = new CacheStreamReaders();
+  private stops = new Set<Promise<void>>();
+  private failedStops = new Set<ExecutionRow>();
+  private cleanupOwners = new Map<ExecutionRow, RequestRow>();
   private calls = 0;
   private closed = false;
   private shutdownTask?: Promise<void>;
@@ -86,10 +94,17 @@ export class CacheScheduler {
     this.replies = new CachePayloads(replies);
   }
   attach(authorize: ActorRow["authorize"]): CacheRequester {
-    if (this.closed || this.actors.size >= this.limits.requesters)
+    if (
+      this.closed ||
+      new Set([
+        ...this.actors.keys(),
+        ...[...this.readers.rows(), ...this.cleanupOwners.values()].map((row) => row.actor.token),
+      ]).size >= this.limits.requesters
+    )
       throw new Error("cache requester admission unavailable");
     const token = Object.freeze({}) as CacheRequester;
     this.actors.set(token, { token, authorize, requests: new Set() });
+    this.issuedActors.add(token);
     return token;
   }
   prepare(plan: CacheWorkPlan): CacheWork {
@@ -100,6 +115,7 @@ export class CacheScheduler {
       !Array.isArray(plan.inputs) ||
       !Array.isArray(plan.parents) ||
       typeof plan.shareable !== "boolean" ||
+      (plan.cacheable !== undefined && typeof plan.cacheable !== "boolean") ||
       typeof plan.validate !== "function" ||
       typeof plan.start !== "function"
     )
@@ -117,11 +133,24 @@ export class CacheScheduler {
     });
     return token;
   }
+  /** Release only idle preparation; requests and queued/finalizing executions retain their plan. */
+  forget(token: CacheWork): boolean {
+    if (!this.work.has(token)) return true;
+    if (
+      [...this.live, ...this.readers.rows(), ...this.cleanupOwners.values()].some((row) => row.work.token === token) ||
+      [...this.queue, ...this.executions].some((row) => row.work.token === token)
+    )
+      return false;
+    return this.work.delete(token);
+  }
   createRequest(actorToken: CacheRequester, workToken: CacheWork, options: CacheRequestOptions = {}): CacheRequest {
     const actor = this.actors.get(actorToken),
       work = this.work.get(workToken);
     if (!actor || !work) throw new Error("cache requester or work handle is foreign or unavailable");
-    if (this.closed || this.live.size >= this.limits.requests)
+    if (
+      this.closed ||
+      new Set([...this.live, ...this.readers.rows(), ...this.cleanupOwners.values()]).size >= this.limits.requests
+    )
       throw new Error("cache logical-request admission unavailable");
     if (
       (options.force !== undefined && typeof options.force !== "boolean") ||
@@ -229,7 +258,7 @@ export class CacheScheduler {
       return;
     }
     const plan = row.work.plan;
-    if (!row.force) {
+    if (!row.force && plan.cacheable !== false) {
       const hit = this.graph.acquire(plan.workspace, plan.key);
       if (hit) {
         const replay = decodeCacheReplay(hit.delivery.read(), this.limits.streamBytes, this.limits.streamChunks);
@@ -241,7 +270,7 @@ export class CacheScheduler {
         }
         for (const chunk of replay.stream) {
           if (row.controller.signal.aborted) break;
-          this.deliver(row, chunk, hit.execution.executionId);
+          await this.deliver(row, chunk, hit.execution.executionId);
         }
         this.finish(row, {
           kind: "reuse",
@@ -255,6 +284,7 @@ export class CacheScheduler {
         const match = [...this.executions, ...this.queue].find(
           (execution) =>
             execution.replayable &&
+            !execution.joinsSealed &&
             !execution.controller.signal.aborted &&
             execution.work.token === row.work.token &&
             (!execution.ticket || this.graph.canJoin(execution.ticket)),
@@ -282,6 +312,8 @@ export class CacheScheduler {
       stream: [],
       streamBytes: 0,
       replayable: true,
+      catchups: new Set(),
+      joinsSealed: false,
     };
     this.interest(execution, row, "execute");
     this.queue.push(execution);
@@ -292,9 +324,16 @@ export class CacheScheduler {
     row.execution = execution;
     execution.interests.add(row);
     execution.kinds.set(row, kind);
-    for (const chunk of execution.stream) {
-      if (row.controller.signal.aborted) break;
-      this.deliver(row, chunk, execution.id);
+    const catchup = this.sequence(row, [...execution.stream], execution.id);
+    if (catchup) {
+      execution.catchups.add(catchup);
+      void catchup.finally(() => execution.catchups.delete(catchup)).catch((error) => this.terminalFault(error));
+    }
+  }
+  private sequence(row: RequestRow, chunks: Buffer[], id: string, index = 0): Promise<void> | undefined {
+    for (; index < chunks.length && !row.controller.signal.aborted; index++) {
+      const waiting = this.deliver(row, chunks[index], id);
+      if (waiting) return waiting.then(() => this.sequence(row, chunks, id, index + 1));
     }
   }
   private pump(): void {
@@ -312,19 +351,24 @@ export class CacheScheduler {
       });
     }
   }
-  private deliver(row: RequestRow, bytes: Buffer, executionId: string): void {
-    try {
-      row.onData?.(Buffer.from(bytes));
-    } catch (error) {
-      this.finish(row, { kind: "reject", executionId, reason: `cache reader failed: ${String(error)}` });
-    }
+  private deliver(row: RequestRow, bytes: Buffer, executionId: string): Promise<void> | undefined {
+    return this.readers.deliver(
+      row,
+      bytes,
+      () => row.state !== "done" && this.authorized(row),
+      (reason) => this.finish(row, { kind: "reject", executionId, reason }),
+    );
   }
-  private stream(execution: ExecutionRow, bytes: Buffer): void {
+  private stream(execution: ExecutionRow, bytes: Buffer): void | Promise<void> {
     if (!this.executions.has(execution)) return;
-    if (!Buffer.isBuffer(bytes)) {
+    if (!Buffer.isBuffer(bytes) || bytes.length > CACHE_STREAM_FRAME_BYTES || execution.flow) {
       execution.replayable = false;
       for (const row of [...execution.interests])
-        this.finish(row, { kind: "reject", executionId: execution.id, reason: "cache stream is not byte data" });
+        this.finish(row, {
+          kind: "reject",
+          executionId: execution.id,
+          reason: "cache stream is not bounded byte data or producer did not await delivery",
+        });
       return;
     }
     if (execution.replayable) {
@@ -340,19 +384,43 @@ export class CacheScheduler {
         execution.streamBytes += bytes.length;
       }
     }
-    for (const row of [...execution.interests]) this.deliver(row, bytes, execution.id);
+    const interests = [...execution.interests];
+    const deliver = () => {
+      const pending = interests
+        .map((row) => this.deliver(row, bytes, execution.id))
+        .filter((value) => value !== undefined);
+      return pending.length ? Promise.all(pending).then(() => {}) : undefined;
+    };
+    const flowing = execution.catchups.size ? Promise.all([...execution.catchups]).then(deliver) : deliver();
+    if (flowing) {
+      const owned = flowing.finally(() => {
+        if (execution.flow === owned) execution.flow = undefined;
+      });
+      execution.flow = owned;
+      return owned;
+    }
   }
   private stop(execution: ExecutionRow): void {
     execution.controller.abort();
-    if (execution.exitVerified || !execution.handle || execution.stopping) return;
+    if (!execution.handle || execution.stopping) return;
     execution.stopping = true;
+    if (!execution.cleanupOwner) this.terminalFault(Error("cache runner cleanup owner unavailable; retain"));
+    else this.cleanupOwners.set(execution, execution.cleanupOwner);
     const handle = execution.handle;
-    void Promise.resolve()
+    const owned = Promise.resolve()
       .then(() => handle.stop())
       .catch((error) => {
+        this.failedStops.add(execution);
         execution.fault = error instanceof Error ? error : new Error(String(error));
         this.terminalFault(execution.fault);
+      })
+      .finally(() => {
+        this.stops.delete(owned);
+        if (!this.failedStops.has(execution)) this.cleanupOwners.delete(execution);
+        if (execution.exitVerified && !this.failedStops.has(execution)) execution.handle = undefined;
       });
+    execution.stopTask = owned;
+    this.stops.add(owned);
   }
   private occupancy(): number {
     return [...this.executions].filter((row) => row.active).length;
@@ -385,8 +453,9 @@ export class CacheScheduler {
       this.releaseExecution(execution);
       return;
     }
-    execution.ticket = this.graph.begin(plan.workspace, plan.key, plan.inputs, plan.parents);
-    if (!execution.ticket) {
+    if (plan.cacheable !== false)
+      execution.ticket = this.graph.begin(plan.workspace, plan.key, plan.inputs, plan.parents);
+    if (plan.cacheable !== false && !execution.ticket) {
       for (const row of [...execution.interests])
         this.finish(row, { kind: "bypass", reason: "cache graph admission unavailable before execution" });
       this.releaseExecution(execution);
@@ -422,6 +491,11 @@ export class CacheScheduler {
       return;
     }
     const result = await waitCacheReport(report, execution.controller.signal, this.limits.completionMs);
+    // No new catchup may enter between this delivery barrier and publication/final completion.
+    execution.joinsSealed = true;
+    await execution.flow;
+    await Promise.all([...execution.catchups]);
+    if (this.readers.failure) throw this.readers.failure;
     if (!result) {
       this.releaseExecution(execution);
       return;
@@ -439,6 +513,7 @@ export class CacheScheduler {
     const outcome = cacheRunOutcome(result.value);
     let published = false;
     if (
+      execution.ticket &&
       execution.replayable &&
       !execution.controller.signal.aborted &&
       outcome.exitCode === 0 &&
@@ -463,7 +538,7 @@ export class CacheScheduler {
     execution.stream = [];
     execution.streamBytes = 0;
     this.executions.delete(execution);
-    execution.handle = undefined;
+    if (!execution.stopTask && !this.failedStops.has(execution)) execution.handle = undefined;
     this.pump();
   }
   private finish(row: RequestRow, partial: Omit<CacheResolution, "requestId">): void {
@@ -488,12 +563,19 @@ export class CacheScheduler {
     resolve?.(result);
     const execution = row.execution;
     row.execution = undefined;
+    row.retiring = execution;
     if (execution) {
       execution.interests.delete(row);
       execution.kinds.delete(row);
       if (!execution.interests.size) {
-        if (this.executions.has(execution)) this.stop(execution);
-        else this.queue = this.queue.filter((item) => item !== execution);
+        if (this.executions.has(execution)) {
+          // A completed, qualified outcome already owns normal cleanup; never physically stop it again.
+          // Cancellation/rejection before terminal finalization still requires cleanup even after tree exit.
+          if (!execution.exitVerified || !outcome) {
+            execution.cleanupOwner = row;
+            this.stop(execution);
+          }
+        } else this.queue = this.queue.filter((item) => item !== execution);
       }
     }
   }
@@ -515,6 +597,24 @@ export class CacheScheduler {
     const row = this.requests.get(token);
     if (row) this.finish(row, { kind, executionId: row.execution?.id });
   }
+  /** Caller requesting cleanup parity must settle BEFORE acknowledge/disconnect drops its row.
+   * Shared work still interested by others stays live; only this reader's callbacks are joined.
+   * Last-interest startup/exit/stop are joined separately from the already-returned cancellation. */
+  async settle(token: CacheRequest): Promise<void> {
+    const row = this.requests.get(token);
+    if (!row || row.state !== "done") throw Error("cache settlement request foreign or unfinished");
+    try {
+      await settleCacheRequest(
+        row,
+        () => this.readers.rows(),
+        () => this.fault ?? this.readers.failure,
+      );
+    } catch (cause) {
+      const error = new CacheCleanupFailure(cause);
+      this.terminalFault(error);
+      throw error;
+    }
+  }
   acknowledge(token: CacheRequest): void {
     const row = this.requests.get(token);
     if (!row) {
@@ -529,7 +629,10 @@ export class CacheScheduler {
   }
   disconnect(token: CacheRequester): void {
     const actor = this.actors.get(token);
-    if (!actor) throw new Error("cache requester handle is foreign or disconnected");
+    if (!actor) {
+      if (this.issuedActors.has(token)) return; // Only this scheduler's issued handles may retire twice.
+      throw new Error("cache requester handle is foreign or disconnected");
+    }
     this.actors.delete(token);
     for (const row of [...actor.requests]) {
       this.cancel(row.token);
@@ -547,7 +650,13 @@ export class CacheScheduler {
         reject(new Error("cache scheduler shutdown unresolved after 1500ms"));
       }, 1500);
       const poll = setInterval(() => {
-        if (this.executions.size) return;
+        if (this.executions.size || this.readers.size || this.calls || this.stops.size) return;
+        if (this.fault || this.readers.failure) {
+          clearTimeout(deadline);
+          clearInterval(poll);
+          reject(this.fault ?? this.readers.failure);
+          return;
+        }
         clearTimeout(deadline);
         clearInterval(poll);
         for (const row of [...this.live]) this.acknowledge(row.token);
@@ -570,6 +679,10 @@ export class CacheScheduler {
       replies: this.replies.stats(),
       streamBytes: [...this.executions].reduce((sum, row) => sum + row.streamBytes, 0),
       faults: [...this.executions].filter((execution) => execution.fault).length,
+      pendingReaders: this.readers.size,
+      pendingStops: this.stops.size,
+      failedStops: this.failedStops.size,
+      cleanupOwners: this.cleanupOwners.size,
     };
   }
 }
