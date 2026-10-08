@@ -198,6 +198,17 @@ it measured nothing rather than passing quietly.
 
 ## Decisions still in force
 
+**2026-10-08 — current-turn observation and human-paced approvals.** Root activity binds its initial user text
+at the first model-context boundary, after all message transforms, with settlement as the cancellation fallback.
+The active branch supplies current finalized prompt/final bytes; observed hook text is a same-turn fallback.
+Steering must not overwrite the initial prompt or seed a later task. Session boundaries clear pending observation.
+This reverses the former pre-start finalized-user cache, which attached the previous turn's input to the new final.
+Interactive permission waits no longer have an implicit deadline; explicit deadline, dismissal and cancellation
+remain non-authorizing outcomes and are separately recorded. The additive `expired`/`aborted` ledger values require
+schema-pinned consumers to re-pin. Child runtime defaults are unchanged and visible through `/grants`; diagnostic
+retention remains an explicit local one-launch option independent of JEV/LoRA consent. Regression tests follow
+Pi's actual lifecycle order and force late approval, expiration, cancellation and consecutive-turn failures.
+
 **2026-10-08 — qualified pane ownership and trusted resume facts.** This reverses the staged Herdr refusal for
 exactly the measured client/server transport matrix. Governed Herdr runs a packaged launcher in an owned pane,
 with a private bounded Unix socket to the coordinator and the same pinned native subreaper as captured execution.
@@ -278,7 +289,8 @@ failure belongs to its initiating lifecycle and cannot poison an explicit replac
 planner seam fails terminally on close failure: a numeric fd cannot safely be retried after reuse. Named context
 files require Linux held-descriptor confinement proof and refuse when that proof is unavailable. Pruned handoffs
 use Pi's public getBranch() ancestry; unavailable input is labeled incomplete, with no full-history fallback.
-Approval timeout parsing runs only for a needed new prompt: absent is 120 seconds, literal 0 is unlimited, otherwise
+Approval timeout parsing runs only for a needed new prompt: absent was 120 seconds (superseded by the
+2026-10-08 human-paced approval decision above), literal 0 is unlimited, otherwise
 canonical positive whole seconds through 2,147,483. Unused malformed settings cannot revoke existing authority.
 
 One paragraph each: the decision, the reason, what was rejected. The ADR numbers are pointers into git history
@@ -922,6 +934,7 @@ Kept features only. Numbers are dropped except the two that code and rules cite.
 - A gated routing attempt used to take the destination's exclusive writer lease before the human was asked; ADR-0041
   moved the approval before acquisition. **Closed 2026-09-29:** approval prompts now default to a 120-second timeout;
   `PI_DADDY_APPROVAL_TIMEOUT` changes it; zero, a negative value, or a value with no numeric prefix means no timeout.
+  **Superseded 2026-10-08:** the default is unlimited; literal 0 is unlimited, while malformed values refuse a needed prompt. Explicit expiry and cancellation now have distinct outcomes.
 - ~~A registry the reader refuses produces no message anywhere: one malformed id silently removes every workspace
   from `/grants`, the catalog and `init`.~~ **Closed 2026-09-22.** Verified first: `buildCatalog` caught with
   `() => []` and `registeredWorkspaceIds` with `catch { return [] }`, so the reason was discarded at both sites and

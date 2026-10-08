@@ -12,6 +12,7 @@
  * being whatever happened to be in scope.
  */
 
+import { renderExecutionControls } from "./execution-controls.ts";
 import type { Capability } from "../src/kernel/resolve.ts";
 import type { ExecutorChoice } from "../src/executors/executor.ts";
 import type { Catalog } from "../src/kernel/catalog.ts";
@@ -25,6 +26,8 @@ import type { ResolvedDefinitionRuntime } from "./definition-runtime.ts";
 export interface GrantsCommandContext {
   cwd: string;
   governed: boolean;
+  /** Host opt-in captured by this session, not a later environment reread. */
+  nativeSessionRoot?: string;
   ownGrant: Capability[];
   /**
    * Which executor this session settled on, and why — ADR-0031.
@@ -407,6 +410,7 @@ export const grantsCommand = {
       // ADR-0031, and its probe is only defensible because this line exists. Placed next to `holding` so the
       // two facts about what a spawn will be sit together.
       `  executor   ${executor.disclosure}`,
+      ...renderExecutionControls(ctx.grants.nativeSessionRoot),
       `  depth      ${depth} of max ${maxDepth}${maxDepth <= 0 ? " (spawning disabled)" : ""}`,
       `  ledger     ${ledgerPath || "(not recording — set PI_DADDY_LEDGER)"}`,
       `  approvals  ${sessionApprovals.size} this session, ${valid.size} persisted` +

@@ -43,6 +43,7 @@ test("activity recording follows the owner-reconciled episode after hook registr
   await app.hooks.get("session_start")!({}, ctx(cwd));
   state.episodeId = "episode:00000000-0000-4000-8000-000000000002";
   await app.hooks.get("before_agent_start")!({ prompt: "turn", systemPromptOptions: {} }, ctx(cwd));
+  await app.hooks.get("context")!({}, ctx(cwd));
   const records = (await readFile(defaultActivityTimelinePath(cwd), "utf8"))
     .trim()
     .split("\n")
@@ -61,11 +62,12 @@ test("actual extension hooks record root turns, skill availability/read/declarat
     };
   registerActivityTimeline(root.api as never, state);
   await root.hooks.get("session_start")!({}, ctx(cwd));
-  root.hooks.get("message_end")!({ message: { role: "user", content: "finalized submitted prompt" } });
   await root.hooks.get("before_agent_start")!(
     { prompt: "pre-transform prompt", systemPromptOptions: { skills: [{ name: "review", filePath: skill }] } },
     ctx(cwd),
   );
+  root.hooks.get("message_end")!({ message: { role: "user", content: "finalized submitted prompt" } });
+  await root.hooks.get("context")!({}, ctx(cwd));
   const turn = state.activity!.taskId!;
   root.hooks.get("tool_execution_start")!({ toolCallId: "read-1", args: { path: skill } });
   await root.hooks.get("tool_execution_end")!({ toolCallId: "read-1", toolName: "read", isError: false });
@@ -125,5 +127,97 @@ test("actual extension hooks record root turns, skill availability/read/declarat
     timeline.tasks.find((value) => value.id === turn)?.skills.find((value) => value.digest === "a".repeat(64))?.active,
     true,
     "declared active remains distinct from observed read",
+  );
+});
+
+test("real Pi hook order binds consecutive finalized prompts and finals without steering leakage", async () => {
+  const cwd = await tempDir("activity-current-turn-");
+  const app = fixture();
+  const branch: Array<{ id: string; type: string; message: { role: string; content: string } }> = [];
+  const context = { ...ctx(cwd), sessionManager: { getBranch: () => branch } };
+  registerActivityTimeline(app.api as never, { activityRootId: "root-current" });
+  await app.hooks.get("session_start")!({}, context);
+  const message = (role: string, observed: string, finalized = observed) => {
+    app.hooks.get("message_end")!({ message: { role, content: observed } });
+    // Later Pi message_end handlers may transform the message after our observer ran.
+    branch.push({ id: String(branch.length), type: "message", message: { role, content: finalized } });
+  };
+  for (const prompt of ["first", "second"]) {
+    await app.hooks.get("before_agent_start")!({ prompt: `expanded ${prompt}` }, context);
+    message("user", `observed ${prompt}`, `finalized ${prompt}`);
+    await app.hooks.get("context")!({}, context);
+    message("user", `steer ${prompt}`);
+    await app.hooks.get("context")!({}, context);
+    message("assistant", `observed final ${prompt}`, `final ${prompt}`);
+    await app.hooks.get("agent_settled")!({}, context);
+    const settledBytes = await readFile(defaultActivityTimelinePath(cwd), "utf8");
+    await app.hooks.get("agent_settled")!({}, context);
+    assert.equal(
+      await readFile(defaultActivityTimelinePath(cwd), "utf8"),
+      settledBytes,
+      "settlement cannot append twice",
+    );
+  }
+  const timeline = parseActivityTimeline(await readFile(defaultActivityTimelinePath(cwd), "utf8"));
+  assert.equal(timeline.tasks.length, 2);
+  for (const [index, task] of timeline.tasks.entries()) {
+    const name = index === 0 ? "first" : "second";
+    const key = activityTaskKey(task.rootId, task.id);
+    assert.equal((await detailForTimeline(defaultActivityTimelinePath(cwd), key, "prompt")).text, `finalized ${name}`);
+    assert.equal((await detailForTimeline(defaultActivityTimelinePath(cwd), key, "final")).text, `final ${name}`);
+  }
+});
+
+test("cancellation before context and a session boundary cannot reuse a prior prompt or final", async () => {
+  const cwd = await tempDir("activity-cancel-current-");
+  const app = fixture();
+  registerActivityTimeline(app.api as never, { activityRootId: "root-cancel" });
+  const context = ctx(cwd);
+  await app.hooks.get("session_start")!({}, context);
+  await app.hooks.get("before_agent_start")!({ prompt: "cancelled request" }, context);
+  app.hooks.get("message_end")!({ message: { role: "user", content: "final cancelled request" } });
+  await app.hooks.get("agent_settled")!({ aborted: true }, context);
+  await app.hooks.get("before_agent_start")!({ prompt: "never submitted" }, context);
+  await app.hooks.get("agent_settled")!({ aborted: true }, context);
+  await app.hooks.get("before_agent_start")!({ prompt: "old pending session" }, context);
+  await app.hooks.get("session_shutdown")!({}, context);
+  await app.hooks.get("session_start")!({}, context);
+  await app.hooks.get("before_agent_start")!({ prompt: "new session input" }, context);
+  await app.hooks.get("context")!({}, context);
+  app.hooks.get("message_end")!({ message: { role: "assistant", content: "new final" } });
+  await app.hooks.get("agent_settled")!({}, context);
+  const timeline = parseActivityTimeline(await readFile(defaultActivityTimelinePath(cwd), "utf8"));
+  assert.equal(timeline.tasks.length, 3);
+  const prompts = await Promise.all(
+    timeline.tasks.map(
+      async (task) =>
+        (await detailForTimeline(defaultActivityTimelinePath(cwd), activityTaskKey(task.rootId, task.id), "prompt"))
+          .text,
+    ),
+  );
+  assert.deepEqual(prompts, ["final cancelled request", "never submitted", "new session input"]);
+  assert.deepEqual(
+    timeline.tasks.map((task) => task.status),
+    ["cancelled", "cancelled", "finished"],
+  );
+  assert.ok(timeline.tasks.slice(0, 2).every((task) => task.final === undefined));
+});
+
+test("settlement follows Pi aborted and error outcomes while length remains a finished turn", async () => {
+  const cwd = await tempDir("activity-stop-reasons-");
+  const app = fixture();
+  registerActivityTimeline(app.api as never, { activityRootId: "root-stop" });
+  const context = ctx(cwd);
+  await app.hooks.get("session_start")!({}, context);
+  for (const stopReason of ["error", "length", "aborted"]) {
+    await app.hooks.get("before_agent_start")!({ prompt: stopReason }, context);
+    await app.hooks.get("context")!({}, context);
+    app.hooks.get("message_end")!({ message: { role: "assistant", content: stopReason, stopReason } });
+    await app.hooks.get("agent_settled")!({}, context);
+  }
+  const timeline = parseActivityTimeline(await readFile(defaultActivityTimelinePath(cwd), "utf8"));
+  assert.deepEqual(
+    timeline.tasks.map((task) => task.status),
+    ["failed", "finished", "cancelled"],
   );
 });

@@ -411,6 +411,8 @@
           "enum": [
             "declined",
             "dismissed",
+            "expired",
+            "aborted",
             "no-ui",
             "error"
           ]

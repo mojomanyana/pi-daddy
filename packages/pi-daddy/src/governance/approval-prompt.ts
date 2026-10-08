@@ -43,21 +43,22 @@ export interface PromptRequest {
   signal?: AbortSignal;
 }
 
-/**
- * Which of the five outcomes a request produced.
- *
- * `scope: null` alone conflates four different kinds of no — a caller that needs to know whether a
- * PERSON actually declined (as opposed to nobody being there to ask, a dismissal, or the dialog itself
- * breaking) cannot recover that from `scope` or from parsing `reason`. Only "declined" means a human said
- * no; the other three are absence-of-signal, not a signal.
- */
-export const PROMPT_OUTCOME_KINDS = ["granted", "declined", "dismissed", "no-ui", "error"] as const;
+/** Only declined means a human chose Deny. Expiry, cancellation and dismissal grant nothing. */
+export const PROMPT_OUTCOME_KINDS = [
+  "granted",
+  "declined",
+  "dismissed",
+  "expired",
+  "aborted",
+  "no-ui",
+  "error",
+] as const;
 export type PromptOutcomeKind = (typeof PROMPT_OUTCOME_KINDS)[number];
 
 export interface PromptOutcome {
   /** The scope the human chose, or null for any form of no. */
   scope: ApprovalScope | null;
-  /** Which of the five outcomes this was. Set on every return path. */
+  /** Which outcome this was. Set on every return path. */
   kind: PromptOutcomeKind;
   /** Why, when the answer was no. */
   reason?: string;
@@ -87,17 +88,14 @@ export interface ApprovalGate {
   request(request: PromptRequest): Promise<PromptOutcome>;
 }
 
-const DEFAULT_TIMEOUT_MS = 120_000;
-
 /**
  * Read `PI_DADDY_APPROVAL_TIMEOUT`, in SECONDS, into the milliseconds pi expects.
  *
- * Only literal `0` disables the deadline. Other values must be canonical whole seconds
+ * Absent or literal `0` waits for the human without a deadline. Other values must be canonical whole seconds
  * within Node's signed 32-bit millisecond timer limit; malformed settings refuse a needed prompt.
  */
 export function timeoutMsFromEnv(raw: string | undefined): number | undefined {
-  if (raw === undefined) return DEFAULT_TIMEOUT_MS;
-  if (raw === "0") return undefined;
+  if (raw === undefined || raw === "0") return undefined;
   if (!/^[1-9][0-9]*$/.test(raw) || Number(raw) > 2_147_483)
     throw new Error(
       "PI_DADDY_APPROVAL_TIMEOUT must be literal 0 or whole seconds 1..2147483 without signs, padding or units",
@@ -106,6 +104,64 @@ export function timeoutMsFromEnv(raw: string | undefined): number | undefined {
 }
 function labelToScope(label: string, scopes: ApprovalScope[]): ApprovalScope | null {
   return scopes.find((s) => SCOPE_LABELS[s] === label) ?? null;
+}
+
+const interrupted = (request: PromptRequest, kind: "expired" | "aborted"): PromptOutcome => ({
+  scope: null,
+  kind,
+  reason:
+    `approval for ${request.capability} ${kind === "expired" ? "expired before an answer" : "was canceled"}. ` +
+    "No permission was granted. Retry the delegation to open a new approval prompt.",
+});
+
+/** Own the deadline so Pi's undefined dismissal cannot erase whether our timer or cancellation fired. */
+async function selectApproval(
+  options: ApprovalGateOptions,
+  request: PromptRequest,
+  title: string,
+  labels: string[],
+): Promise<string | undefined | PromptOutcome> {
+  const timeout = typeof options.timeoutMs === "function" ? options.timeoutMs() : options.timeoutMs;
+  const controller = new AbortController();
+  let outcome: PromptOutcome | undefined;
+  let wake!: (value: PromptOutcome) => void;
+  const stopped = new Promise<PromptOutcome>((resolve) => {
+    wake = resolve;
+  });
+  const stop = (kind: "expired" | "aborted") => {
+    if (outcome) return;
+    outcome = interrupted(request, kind);
+    // Resolve our tagged outcome before a UI reacts to abort by returning undefined.
+    wake(outcome);
+    controller.abort();
+  };
+  const abort = () => stop("aborted");
+  request.signal?.addEventListener("abort", abort, { once: true });
+  const timer = timeout === undefined ? undefined : setTimeout(() => stop("expired"), timeout);
+  try {
+    if (request.signal?.aborted) stop("aborted");
+    if (outcome) return outcome;
+    const chosen = await Promise.race([options.ui.select(title, labels, { signal: controller.signal }), stopped]);
+    return outcome ?? chosen;
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+    request.signal?.removeEventListener("abort", abort);
+  }
+}
+
+async function joinApproval(pending: Promise<PromptOutcome>, request: PromptRequest): Promise<PromptOutcome> {
+  if (!request.signal) return pending;
+  let abort!: () => void;
+  const stopped = new Promise<PromptOutcome>((resolve) => {
+    abort = () => resolve(interrupted(request, "aborted"));
+    request.signal!.addEventListener("abort", abort, { once: true });
+    if (request.signal!.aborted) abort();
+  });
+  try {
+    return await Promise.race([pending, stopped]);
+  } finally {
+    request.signal.removeEventListener("abort", abort);
+  }
 }
 
 /**
@@ -160,24 +216,27 @@ export function createApprovalGate(
       `grants: approve ${request.capability} for ${request.subject}?` +
       (request.task ? `\n  task: ${request.task}` : "");
 
-    let chosen: string | undefined;
+    let chosen: string | undefined | PromptOutcome;
     try {
-      chosen = await options.ui.select(title, [DENY_LABEL, ...scopes.map((s) => SCOPE_LABELS[s])], {
-        timeout: typeof options.timeoutMs === "function" ? options.timeoutMs() : options.timeoutMs,
-        signal: request.signal,
-      });
+      chosen = await selectApproval(options, request, title, [DENY_LABEL, ...scopes.map((s) => SCOPE_LABELS[s])]);
     } catch (error) {
       // A governance layer that errors must deny, not permit. This is a dialog malfunction, not a
       // person's answer — `kind: "error"` keeps it out of "declined".
       return { scope: null, kind: "error", reason: `approval dialog failed, denying (${String(error)})` };
     }
 
-    if (request.signal?.aborted)
-      return { scope: null, kind: "dismissed", reason: `approval for ${request.capability} was canceled` };
+    if (request.signal?.aborted) return interrupted(request, "aborted");
 
-    // undefined covers dismissal, timeout, and abort. All are a no, but none is a person saying no.
+    if (typeof chosen === "object") return chosen;
+    // Only an ordinary UI dismissal reaches undefined; our deadline and abort carry explicit outcomes.
     if (chosen === undefined) {
-      return { scope: null, kind: "dismissed", reason: `approval for ${request.capability} was dismissed` };
+      return {
+        scope: null,
+        kind: "dismissed",
+        reason:
+          `approval for ${request.capability} was dismissed. No permission was granted. ` +
+          "Retry the delegation to open a new approval prompt.",
+      };
     }
     if (chosen === DENY_LABEL) {
       return { scope: null, kind: "declined", reason: `${request.capability} was denied by a human` };
@@ -191,8 +250,7 @@ export function createApprovalGate(
 
   return {
     async request(request: PromptRequest): Promise<PromptOutcome> {
-      if (request.signal?.aborted)
-        return { scope: null, kind: "dismissed", reason: `approval for ${request.capability} was canceled` };
+      if (request.signal?.aborted) return interrupted(request, "aborted");
       if (!options.hasUI) {
         // Nobody was there to ask — distinct from a person declining, which is why this is its own kind
         // rather than being folded into "declined" (see PromptOutcomeKind).
@@ -215,9 +273,8 @@ export function createApprovalGate(
       for (;;) {
         const existing = inFlight.get(key);
         if (!existing) break;
-        const outcome = await existing;
-        if (request.signal?.aborted)
-          return { scope: null, kind: "dismissed", reason: `approval for ${request.capability} was canceled` };
+        const outcome = await joinApproval(existing, request);
+        if (request.signal?.aborted) return interrupted(request, "aborted");
         // **`joined` marks the rider, and the ledger depends on it (R-66).** Sharing a non-`once` outcome
         // is correct — the human authorised the capability for the session, not for one child — but the
         // caller then stamped `approvalSource: "prompt"` on every one of them, so a fan-out of eight wrote

@@ -44,7 +44,7 @@ export const LEDGER_EVENT_KINDS = [
   "episode_outcome",
 ] as const;
 export type LedgerEventKind = (typeof LEDGER_EVENT_KINDS)[number];
-export const LEDGER_GATE_OUTCOMES = ["declined", "dismissed", "no-ui", "error"] as const;
+export const LEDGER_GATE_OUTCOMES = ["declined", "dismissed", "expired", "aborted", "no-ui", "error"] as const;
 export type LedgerGateOutcome = (typeof LEDGER_GATE_OUTCOMES)[number];
 
 export interface LedgerEventBase {
@@ -137,9 +137,8 @@ export interface GrantRecord extends LedgerEventBase {
    * The discriminant was already computed and thrown away. ADR-0026 leans on this vocabulary being able to
    * say *"nobody was there to ask"* and be believed, so it is recorded rather than inferred.
    *
-   * **Privacy is unchanged**: this is a fixed five-member enum, not text — nothing model-authored, nothing
-   * a task could carry. The prompt has five outcomes, but `granted` is deliberately omitted from the
-   * four-member ledger enum because the approval source/scope fields already record a yes.
+   * **Privacy is unchanged**: this is a fixed enum, not task-authored text. Explicit expiry and caller
+   * cancellation have their own outcomes; `granted` is omitted because approval source/scope records a yes.
    */
   gateOutcome?: LedgerGateOutcome;
   /**

@@ -1,5 +1,11 @@
 # Changelog — pi-daddy
 
+## 0.46.1 — 2026-10-08
+
+- Correct activity prompt/final attribution across consecutive root turns using Pi's actual hook order. Finalized message transformations are observed within the current turn; steering and canceled turns cannot seed the next task.
+- Interactive approvals now wait for the human by default. Explicit `PI_DADDY_APPROVAL_TIMEOUT` deadlines still work; expiry, dismissal and caller cancellation remain refusals with distinct outcomes and retry guidance. The published ledger `gateOutcome` enum adds `expired` and `aborted`; schema-pinned consumers must update their pin.
+- Show effective child wall/idle deadlines and diagnostic retention settings in `/grants`. Existing child defaults remain unchanged. Document a single-launch private native-session/diagnostic opt-in, separate from JEV/LoRA consent.
+
 ## 0.46.0 — 2026-10-08
 
 Qualify owned Herdr execution on Linux x64 with client/server 0.8.2 and protocol 20. Native ownership gates execution and independently reaps descendants after coordinator, launcher or server loss; final answers use the same Pi 1.0.4 settled/persisted checks as captured execution. Add a durable session settlement journal and trusted runtime snapshot bridge for one-shot Principal resume. Unsupported versions refuse without backend substitution.

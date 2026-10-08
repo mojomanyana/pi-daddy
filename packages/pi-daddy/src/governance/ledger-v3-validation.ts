@@ -23,7 +23,7 @@ const SHA256_RE = /^[a-f0-9]{64}$/i;
 const EXECUTORS = new Set(["process", "herdr"]);
 const APPROVAL_SOURCES = new Set(["prompt", "session", "persisted", "inherited"]);
 const APPROVAL_SCOPES = new Set(["once", "session", "always"]);
-const GATE_OUTCOMES = new Set(["declined", "dismissed", "no-ui", "error"]);
+const GATE_OUTCOMES = new Set(["declined", "dismissed", "expired", "aborted", "no-ui", "error"]);
 const LEASE_OUTCOMES = new Set([
   "acquired",
   "uncontended",

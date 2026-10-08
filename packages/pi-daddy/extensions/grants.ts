@@ -462,6 +462,7 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
                 },
               }
             : {}),
+          nativeSessionRoot: session.nativeSessionRoot,
           catalog: session.catalog,
           definitions: session.definitions,
           sessionApprovals: session.sessionApprovals,

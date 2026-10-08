@@ -21,6 +21,13 @@ interface HookContext {
   cwd: string;
   model?: { id?: string };
   thinkingLevel?: string;
+  sessionManager?: {
+    getBranch(): Array<{
+      id: string;
+      type: string;
+      message?: { role?: string; content?: unknown; stopReason?: string };
+    }>;
+  };
   ui: { notify(message: string, level?: "info" | "warning" | "error"): void };
 }
 const digest = (text: string) => createHash("sha256").update(text).digest("hex");
@@ -32,7 +39,11 @@ const digest = (text: string) => createHash("sha256").update(text).digest("hex")
 export function registerActivityTimeline(pi: ExtensionAPI, session?: ActivitySessionState, lifecycleTool = true): void {
   let recorder: ActivityTimelineRecorder | undefined,
     pendingFinal: string | undefined,
-    finalizedUser: string | undefined;
+    pendingStopReason: string | undefined,
+    observedUser: string | undefined,
+    pendingStart: { event: unknown; prompt: string; priorIds: Set<string> } | undefined;
+  let turnPriorIds = new Set<string>();
+  let activeRoot = false;
   let paths = new Map<string, string>(),
     available = new Map<string, ActivitySkill>();
   let reported = false;
@@ -77,6 +88,44 @@ export function registerActivityTimeline(pi: ExtensionAPI, session?: ActivitySes
       await target.skill("skill_available", fact);
     }
   };
+  const messageText = (content: unknown): string =>
+    typeof content === "string"
+      ? content
+      : Array.isArray(content)
+        ? content
+            .filter((part) => part?.type === "text")
+            .map((part) => part.text ?? "")
+            .join("")
+        : "";
+  // Pi emits before_agent_start before user message_end. Read the finalized branch only after
+  // every message transformer has run; never carry a prior turn's user into the next task.
+  const startPending = async (ctx: HookContext) => {
+    const pending = pendingStart;
+    if (!pending) return;
+    const user = ctx.sessionManager
+      ?.getBranch()
+      .find((entry) => !pending.priorIds.has(entry.id) && entry.type === "message" && entry.message?.role === "user");
+    const target = current(ctx);
+    const taskId = await target.start(
+      user ? messageText(user.message?.content) : (observedUser ?? pending.prompt),
+      ctx.model?.id,
+      ctx.thinkingLevel,
+    );
+    pendingStart = undefined;
+    observedUser = undefined;
+    if (session) session.activity = { rootId: target.rootId, path: target.path, ...(taskId ? { taskId } : {}) };
+    await skills(pending.event, target);
+  };
+  const resetTurn = () => {
+    activeRoot = false;
+    pendingStart = undefined;
+    observedUser = undefined;
+    pendingFinal = undefined;
+    pendingStopReason = undefined;
+    turnPriorIds = new Set();
+    paths.clear();
+    available.clear();
+  };
   if (lifecycleTool)
     pi.registerTool({
       name: "activity_lifecycle",
@@ -101,6 +150,8 @@ export function registerActivityTimeline(pi: ExtensionAPI, session?: ActivitySes
       },
     });
   pi.on("session_start", (_event, ctx: HookContext) => {
+    resetTurn();
+    recorder = undefined;
     try {
       recorder = current(ctx);
       // A leaf observer attaches to the parent-owned child event; a root gets a stable session identity.
@@ -122,42 +173,45 @@ export function registerActivityTimeline(pi: ExtensionAPI, session?: ActivitySes
     }
     return undefined;
   });
+  pi.on("session_shutdown", () => {
+    resetTurn();
+    recorder = undefined;
+  });
   pi.on("before_agent_start", async (event, ctx: HookContext) => {
     try {
+      resetTurn();
       const target = current(ctx);
-      // An injected leaf observer must not fabricate a second child task; its parent-owned execution seam
-      // already wrote task_started. Root turns always get a fresh task id under their stable root identity.
+      // Leaves attach to the parent-owned execution. Roots bind the current finalized user at
+      // the first context boundary, or at settlement if cancelled before the first model call.
       if (!process.env[ENV_ACTIVITY_TASK]) {
-        const taskId = await target.start(
-          finalizedUser ?? (event as { prompt?: string }).prompt ?? "",
-          ctx.model?.id,
-          ctx.thinkingLevel,
-        );
-        finalizedUser = undefined;
-        if (session?.activity)
-          session.activity = { rootId: target.rootId, path: target.path, ...(taskId ? { taskId } : {}) };
-      }
-      await skills(event, target);
+        activeRoot = true;
+        turnPriorIds = new Set(ctx.sessionManager?.getBranch().map((entry) => entry.id) ?? []);
+        pendingStart = { event, prompt: (event as { prompt?: string }).prompt ?? "", priorIds: turnPriorIds };
+        if (session) session.activity = { rootId: target.rootId, path: target.path };
+      } else await skills(event, target);
+    } catch (error) {
+      report(ctx, error);
+    }
+    return undefined;
+  });
+  pi.on("context", async (_event, ctx: HookContext) => {
+    try {
+      await startPending(ctx);
     } catch (error) {
       report(ctx, error);
     }
     return undefined;
   });
   pi.on("message_end", (event) => {
-    const message = (
-      event as { message?: { role?: string; content?: string | Array<{ type?: string; text?: string }> } }
-    ).message;
-    const text =
-      typeof message?.content === "string"
-        ? message.content
-        : Array.isArray(message?.content)
-          ? message!.content
-              .filter((part) => part.type === "text")
-              .map((part) => part.text ?? "")
-              .join("")
-          : "";
-    if (message?.role === "user") finalizedUser = text;
-    if (message?.role === "assistant") pendingFinal = text;
+    const message = (event as { message?: { role?: string; content?: unknown; stopReason?: string } }).message;
+    // This fallback is scoped to this pending start. Steering within an active turn cannot
+    // overwrite its initial prompt or seed the next root task.
+    if (message?.role === "user" && pendingStart && observedUser === undefined)
+      observedUser = messageText(message.content);
+    if (message?.role === "assistant") {
+      pendingFinal = messageText(message.content);
+      pendingStopReason = message.stopReason;
+    }
     return undefined;
   });
   pi.on("tool_execution_start", (event) => {
@@ -178,19 +232,28 @@ export function registerActivityTimeline(pi: ExtensionAPI, session?: ActivitySes
     return undefined;
   });
   pi.on("agent_settled", async (event, ctx: HookContext) => {
+    if (!activeRoot) return undefined;
     try {
+      await startPending(ctx);
+      const final = ctx.sessionManager
+        ?.getBranch()
+        .findLast(
+          (entry) => !turnPriorIds.has(entry.id) && entry.type === "message" && entry.message?.role === "assistant",
+        );
+      const stopReason = final?.message?.stopReason ?? pendingStopReason;
       if (recorder && !process.env[ENV_ACTIVITY_TASK])
         await recorder.finish(
-          pendingFinal,
-          (event as { cancelled?: boolean; error?: unknown }).cancelled
+          final ? messageText(final.message?.content) : pendingFinal,
+          (event as { aborted?: boolean }).aborted || stopReason === "aborted"
             ? "cancelled"
-            : (event as { error?: unknown }).error
+            : stopReason === "error"
               ? "failed"
               : "completed",
         );
-      pendingFinal = undefined;
     } catch (error) {
       report(ctx, error);
+    } finally {
+      resetTurn();
     }
     return undefined;
   });
