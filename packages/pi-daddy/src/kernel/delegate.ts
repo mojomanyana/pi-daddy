@@ -26,6 +26,7 @@ import {
   ENV_PARENT_ID,
   inheritableGrant,
   workspacePinEnv,
+  autoModeEnv,
 } from "./propagation.ts";
 import { DELEGATE_SUBJECT, inheritApprovals, type InheritableApproval } from "./approval.ts";
 import { explainDoubledNamespace, suggestForUnknown, unknownCapabilities, type Catalog } from "./catalog.ts";
@@ -421,7 +422,7 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
   // spelled once in `childEnv` and not here is a rule that does not hold on the path a delegated child
   // actually takes. Without this a routed grandchild inherits no pin and can route nowhere — fail-closed,
   // but wrong, and silently so.
-  Object.assign(env, workspacePinEnv(ctx.workspacePin, inheritable));
+  Object.assign(env, workspacePinEnv(ctx.workspacePin, inheritable), autoModeEnv(ctx.autoModeRef));
   // Composition-supplied per-child environment (the activity timeline's observation identity today).
   // Never process-global grant state: a key in the governance namespace is a programming error in the
   // caller, refused loudly rather than letting a product widen what the child inherits.

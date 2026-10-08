@@ -211,8 +211,8 @@ export async function verifyLedger(path: string): Promise<LedgerReport> {
         executors: { herdr: 0, process: 0, unknown: 0 },
         definitions: [],
         approvals: {
-          bySource: { prompt: 0, session: 0, persisted: 0, inherited: 0 },
-          distinctBySource: { prompt: 0, session: 0, persisted: 0, inherited: 0 },
+          bySource: { prompt: 0, session: 0, persisted: 0, inherited: 0, auto: 0 },
+          distinctBySource: { prompt: 0, session: 0, persisted: 0, inherited: 0, auto: 0 },
           unattributed: 0,
           humanDenied: 0,
           humanDeniedPairs: 0,
@@ -243,13 +243,14 @@ export async function verifyLedger(path: string): Promise<LedgerReport> {
   let retired = 0;
   let escalationAttempts = 0;
   const executors = { herdr: 0, process: 0, unknown: 0 };
-  const bySource: Record<ApprovalSource, number> = { prompt: 0, session: 0, persisted: 0, inherited: 0 };
+  const bySource: Record<ApprovalSource, number> = { prompt: 0, session: 0, persisted: 0, inherited: 0, auto: 0 };
   // `capability@subject` seen per source, so the report can state a bound as well as a raw count.
   const distinct: Record<ApprovalSource, Set<string>> = {
     prompt: new Set(),
     session: new Set(),
     persisted: new Set(),
     inherited: new Set(),
+    auto: new Set(),
   };
   let unattributed = 0;
   let humanDenied = 0;
@@ -386,6 +387,7 @@ export async function verifyLedger(path: string): Promise<LedgerReport> {
         session: distinct.session.size,
         persisted: distinct.persisted.size,
         inherited: distinct.inherited.size,
+        auto: distinct.auto.size,
       },
       unattributed,
       humanDenied,

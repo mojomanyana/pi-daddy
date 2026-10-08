@@ -25,7 +25,8 @@
  * interceptor and pi handed the child more than the parent held, the intersection clamps it back.
  */
 
-import { ENV_PUBLIC_EVIDENCE_DIR } from "./env-names.ts";
+import { ENV_AUTO_MODE, ENV_AUTO_MODE_REF, ENV_PUBLIC_EVIDENCE_DIR } from "./env-names.ts";
+import type { AutoModeRef } from "./auto-mode.ts";
 import type { Capability } from "./resolve.ts";
 import { attenuateWorkspacePin, formatWorkspacePin, type WorkspacePins } from "./workspace-pin.ts";
 import { WILDCARD } from "./pi-tools.ts";
@@ -87,6 +88,8 @@ export {
  * to give it.
  */
 export const GRANT_ENV_KEYS = [
+  ENV_AUTO_MODE,
+  ENV_AUTO_MODE_REF,
   ENV_PUBLIC_EVIDENCE_DIR,
   // Not governance state, but the same rule applies for a stronger reason: neither a credential the parent holds
   // nor the switch that points it at a third party is something a child inherits by being spawned (ADR-0077).
@@ -265,6 +268,7 @@ export function gatedFromEnv(raw: string | undefined): Capability[] {
 }
 
 export interface ChildEnvInput {
+  autoModeRef?: AutoModeRef;
   /** This session's own grant — becomes the child's inherited parent grant. */
   ownGrant: Capability[];
   /**
@@ -362,7 +366,7 @@ export function childEnv(input: ChildEnvInput): Record<string, string> {
   // `ENV_APPROVED` is: an omitted key does not overwrite, so a child would inherit the PARENT's unnarrowed pin
   // through the process-global publication path. An empty value parses back as "a pin was established and you
   // got nothing from it", which refuses at routing with a different message from "no pin exists".
-  Object.assign(env, workspacePinEnv(input.workspacePin, inheritable));
+  Object.assign(env, workspacePinEnv(input.workspacePin, inheritable), autoModeEnv(input.autoModeRef));
   return env;
 }
 
@@ -426,4 +430,9 @@ export function observeToolNames(payload: unknown): string[] | null {
     return names;
   }
   return null;
+}
+
+/** A root preference is never copied; every descendant receives the same live owner reference. */
+export function autoModeEnv(ref: AutoModeRef | undefined): Record<string, string> {
+  return { [ENV_AUTO_MODE]: "0", ...(ref ? { [ENV_AUTO_MODE_REF]: JSON.stringify(ref) } : {}) };
 }

@@ -327,7 +327,7 @@ test("ADR-0020: verifyLedger tallies where each yes came from, per capability", 
   await record({ "skill:deploy": "inherited" }, true);
 
   const { bySource, unattributed, humanDenied } = (await verifyLedger(path)).approvals;
-  assert.deepEqual(bySource, { prompt: 1, session: 0, persisted: 2, inherited: 1 });
+  assert.deepEqual(bySource, { prompt: 1, session: 0, persisted: 2, inherited: 1, auto: 0 });
   assert.equal(unattributed, 0);
   assert.equal(humanDenied, 1, "a human saying no is the fatigue argument's other half");
 });
@@ -416,7 +416,7 @@ test("R-64: a malformed approvalSources cannot corrupt the tally or delete the r
     { ...base, approved: ["tool:write"], approvalSources: { "tool:write": "toString" } },
     { ...base, agentType: "deploy", approved: ["tool:write"], approvalSources: { "tool:write": "persisted" } },
   ]);
-  assert.deepEqual(proto.bySource, { prompt: 0, session: 0, persisted: 1, inherited: 0 }, "no prototype key");
+  assert.deepEqual(proto.bySource, { prompt: 0, session: 0, persisted: 1, inherited: 0, auto: 0 }, "no prototype key");
   assert.equal(proto.unattributed, 1, "the unknown source is counted as unattributed");
   assert.equal(
     typeof Object.values(proto.bySource).reduce((s, n) => s + n, 0),

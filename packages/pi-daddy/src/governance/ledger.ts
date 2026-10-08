@@ -414,6 +414,7 @@ export {
   buildEpisodeCostGateEvent,
   buildEpisodeOutcomeEvent,
   buildSessionConfigEvent,
+  buildAutoModeConfigEvent,
   buildWorkspaceLeaseEvent,
   type CapabilityDecisionEvent,
   type EpisodeCostGateEvent,

@@ -254,3 +254,35 @@ test(
     }
   },
 );
+
+test("shutdown during an awaited frame read cannot write after restoring the parent terminal", () => {
+  const entry = new URL("../src/products/dashboard-cli.ts", import.meta.url).href;
+  const script = `
+    import assert from "node:assert/strict";
+    import fs from "node:fs";
+    import { syncBuiltinESMExports } from "node:module";
+    let release, entered;
+    const reading = new Promise(resolve => { entered = resolve; });
+    fs.promises.readFile = async () => { entered(); return new Promise(resolve => { release = resolve; }); };
+    syncBuiltinESMExports();
+    const { runDashboard } = await import(${JSON.stringify(entry)});
+    Object.defineProperty(process.stdin, "isTTY", { value: true });
+    Object.defineProperty(process.stdout, "isTTY", { value: true });
+    process.stdout.columns = 42; process.stdout.rows = 16;
+    const writes = [];
+    process.stdout.write = value => { writes.push(String(value)); return true; };
+    process.stdin.setRawMode = value => { process.stdin.isRaw = value; return process.stdin; };
+    process.stdin.resume = process.stdin.pause = () => process.stdin;
+    const done = runDashboard(["--ledger", "/fixture/pending-read"], {});
+    await reading;
+    process.emit("SIGTERM");
+    await done;
+    assert.equal(process.stdin.isRaw, false);
+    assert.ok(writes.at(-1).endsWith("\\u001b[?25h\\u001b[?1049l"));
+    const restored = writes.length;
+    release("");
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(writes.length, restored, "late frame must not draw over the parent screen");
+  `;
+  execFileSync(process.execPath, ["--input-type=module", "--eval", script], { timeout: 5000 });
+});

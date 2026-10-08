@@ -1,3 +1,5 @@
+import type { EcosystemVersions } from "../src/products/ecosystem-versions.ts";
+import type { AutoModeReader } from "../src/kernel/auto-mode.ts";
 /**
  * The session object — the one place this extension's state is named.
  *
@@ -141,6 +143,9 @@ export function activityChildEnv(activity: { rootId: string; path: string; taskI
 }
 /** Keep each child's pane after it finishes, for inspection. Off by default: fan-out would flood it. */
 export interface GrantsSession extends NativeSessionHost {
+  ecosystemVersions?: () => EcosystemVersions;
+  autoMode?: AutoModeReader;
+  autoModeFailure?: string;
   /** Reconciled from the actual owner root on reload; captured call owners stay immutable. */
   publicEvidence?: PublicEvidenceOwner;
   /** Legacy PI_GRANTS_* names adopted at construction (ADR-0076 PR 3b); the session-start warning names them. */
@@ -659,43 +664,47 @@ export function createGrantsSession(
     discovery: Object.freeze({ ...discovery }),
     catalog: emptyCatalog,
     catalogReady: Promise.resolve(emptyCatalog),
-    delegationContext: async (approved?: InheritableApproval[]) => ({
-      ownGrant: session.ownGrant,
-      episodeId: session.episodeId,
-      depth: session.depth,
-      maxDepth: session.maxDepth,
-      gated: session.gated,
-      ledgerPath: session.ledgerPath,
-      extensionPath: session.extensionPath,
-      observerExtensionPath: session.observerExtensionPath,
-      childEnv: activityChildEnv(session.activity),
-      // ADR-0042: the pin this session holds, handed to the kernel so a delegated child inherits a narrowed
-      // one through the same builder `publishChildEnv` uses. Read here rather than in the kernel so there is
-      // one place that knows the environment is where a session's own pin lives.
-      ...(session.workspacePin ? { workspacePin: session.workspacePin } : {}),
-      // Context is staged only after its capability survives the ceiling, grant and gate.
-      stageHandoff: (granted, options) =>
-        createHandoffStager({
-          cwd: session.cwd,
-          forkRoot: join(agentDir(), "context-forks"),
-          ...(session.parentSession ? { parentSession: session.parentSession } : {}),
-        })(granted, options),
-      catalog: await delegationCatalog(session),
-      // R-32: where each granted skill lives, so `planSpawn` can pass `--skill` for those and only those.
-      // Derived from the catalog's own `source`, so it cannot drift from what was discovered.
-      skillPaths: skillPathsFromCatalog(await delegationCatalog(session)),
-      // ADR-0016: operator-authored SKILL.md definitions, so `delegate({agent})` can name one.
-      definitions: session.definitions,
-      // The herdr executor drives the child after starting it, so its plan must NOT carry `--print`.
-      // Threaded through the plan rather than patched afterwards: the argv is what the ledger records, and
-      // an executor quietly rewriting it would make the record describe a spawn that did not happen.
-      //
-      // Read live off `session.executor` (ADR-0031) rather than a boolean captured in the factory: the probe
-      // has not run when this session object is built, so a captured value would plan `--print` for a session
-      // that turns out to use panes — and `runHerdrPane` refuses a plan containing `--print` by design.
-      interactive: false, // Both qualified backends use the same one-shot Pi JSON protocol.
-      ...(approved ? { approved } : {}),
-    }),
+    delegationContext: async (approved?: InheritableApproval[]) => {
+      if (session.autoModeFailure) throw new Error(session.autoModeFailure);
+      return {
+        autoModeRef: session.autoMode?.reference,
+        ownGrant: session.ownGrant,
+        episodeId: session.episodeId,
+        depth: session.depth,
+        maxDepth: session.maxDepth,
+        gated: session.gated,
+        ledgerPath: session.ledgerPath,
+        extensionPath: session.extensionPath,
+        observerExtensionPath: session.observerExtensionPath,
+        childEnv: activityChildEnv(session.activity),
+        // ADR-0042: the pin this session holds, handed to the kernel so a delegated child inherits a narrowed
+        // one through the same builder `publishChildEnv` uses. Read here rather than in the kernel so there is
+        // one place that knows the environment is where a session's own pin lives.
+        ...(session.workspacePin ? { workspacePin: session.workspacePin } : {}),
+        // Context is staged only after its capability survives the ceiling, grant and gate.
+        stageHandoff: (granted, options) =>
+          createHandoffStager({
+            cwd: session.cwd,
+            forkRoot: join(agentDir(), "context-forks"),
+            ...(session.parentSession ? { parentSession: session.parentSession } : {}),
+          })(granted, options),
+        catalog: await delegationCatalog(session),
+        // R-32: where each granted skill lives, so `planSpawn` can pass `--skill` for those and only those.
+        // Derived from the catalog's own `source`, so it cannot drift from what was discovered.
+        skillPaths: skillPathsFromCatalog(await delegationCatalog(session)),
+        // ADR-0016: operator-authored SKILL.md definitions, so `delegate({agent})` can name one.
+        definitions: session.definitions,
+        // The herdr executor drives the child after starting it, so its plan must NOT carry `--print`.
+        // Threaded through the plan rather than patched afterwards: the argv is what the ledger records, and
+        // an executor quietly rewriting it would make the record describe a spawn that did not happen.
+        //
+        // Read live off `session.executor` (ADR-0031) rather than a boolean captured in the factory: the probe
+        // has not run when this session object is built, so a captured value would plan `--print` for a session
+        // that turns out to use panes — and `runHerdrPane` refuses a plan containing `--print` by design.
+        interactive: false, // Both qualified backends use the same one-shot Pi JSON protocol.
+        ...(approved ? { approved } : {}),
+      };
+    },
     storeCwd,
     ...(grantStoreRefusal ? { grantStoreRefusal } : {}),
     adoptGrant: (grant: Capability[], projectLedger?: string) => {
@@ -725,6 +734,7 @@ export function createGrantsSession(
     },
     publishChildEnv: () => {
       const env = childEnv({
+        autoModeRef: session.autoMode?.reference,
         ownGrant: session.ownGrant,
         episodeId: session.episodeId,
         depth: session.depth,

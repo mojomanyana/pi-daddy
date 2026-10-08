@@ -217,6 +217,8 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
             declined = { request, outcome };
             break;
           }
+          // Auto is provisional and belongs to an actual step admission, never the upfront union.
+          if (outcome.sources[request.capability] === "auto") continue;
           preApproved.push({
             capability: request.capability,
             subject: request.subject,

@@ -1,5 +1,13 @@
 # Changelog — pi-daddy
 
+## 0.47.0 — 2026-10-09
+
+- Add an explicit session Auto permission switch in the dashboard and `/grants auto on|off`, with `PI_DADDY_AUTO_MODE=0|1` setting the startup default. Descendants consult the live owner for every new admission; OFF prevents future automatic admissions without canceling already admitted work or revoking manual approvals. Reload retains the choice, new sessions reset it, and unavailable control refuses automatic approval.
+- Put current work and actual pending approvals first in the terminal dashboard. Add keyboard navigation, focused details, a compact model view, collapsed history, resize-aware rendering and acknowledged Auto controls.
+- Show loaded versus installed ecosystem versions, package sources and explicit native Pi update commands. Old extensions report an unknown loaded generation rather than borrowing the version on disk.
+- Bound retained stdout/stderr snapshot growth using geometric checkpoints and a final bounded snapshot. Running captures indicate a not-yet-checkpointed suffix; a crash may omit that suffix. Recovered native-session reads no longer leave a false current-content-unavailable flag. Existing archive files are not removed.
+- Record automatic admissions distinctly as once-only `approvalSources: auto`, plus session Auto changes. Schema-pinned current-record consumers must update their pin; historical ledger readers remain separate. JEV and LoRA consent are unchanged.
+
 ## 0.46.1 — 2026-10-08
 
 - Correct activity prompt/final attribution across consecutive root turns using Pi's actual hook order. Finalized message transformations are observed within the current turn; steering and canceled turns cannot seed the next task.

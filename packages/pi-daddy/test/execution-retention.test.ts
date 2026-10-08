@@ -301,3 +301,45 @@ test("observation loss and missing receipt bytes never become complete evidence"
   assert.equal(await readFile(file, "utf8"), "sentinel");
   assert.equal(beginExecutionRetention(identity, "relative").status().status, "lost");
 });
+
+test("many small stream updates retain bounded crash checkpoints and exact terminal prefixes", async () => {
+  const dir = await tempDir("retention-stream-checkpoints-");
+  const h = beginExecutionRetention(identity, dir);
+  const streams = ["stdout", "stderr"] as const;
+  const chunk = Buffer.alloc(1024, 65);
+  let path = "";
+  for (let i = 0; i < 255; i++) {
+    for (const stream of streams) h.capture(stream, chunk);
+    path = (await h.flush()).manifestPath!;
+  }
+  const running = await manifest(path);
+  assert.equal(running.state, "running");
+  for (const stream of streams) {
+    const ref = running.content[stream];
+    assert.ok(ref.bytes! > 0 && ref.bytes! < 255 * chunk.length);
+    assert.deepEqual(await readFile(join(path, "..", ref.path!)), Buffer.alloc(ref.bytes!, 65));
+    assert.ok(running.coverage.losses.includes(`${stream}-checkpoint-lagging`));
+  }
+  h.finish(terminal);
+  await h.flush();
+  const final = await manifest(path);
+  for (const stream of streams) {
+    const ref = final.content[stream];
+    assert.equal(ref.bytes, 255 * chunk.length);
+    assert.deepEqual(await readFile(join(path, "..", ref.path!)), Buffer.alloc(255 * chunk.length, 65));
+    assert.equal(final.coverage.losses.includes(`${stream}-checkpoint-lagging`), false);
+  }
+  const blobs = (await readdir(join(path, ".."))).filter((name) => /^(stdout|stderr)-/.test(name));
+  const storedBytes = (
+    await Promise.all(blobs.map(async (name) => (await readFile(join(path, "..", name))).length))
+  ).reduce((sum, size) => sum + size, 0);
+  assert.ok(
+    storedBytes < 3 * streams.length * 255 * chunk.length,
+    `unexpected cumulative archive growth: ${storedBytes}`,
+  );
+  for (const stream of streams)
+    assert.deepEqual(
+      await readFile(join(path, "..", running.content[stream].path!)),
+      Buffer.alloc(running.content[stream].bytes!, 65),
+    );
+});

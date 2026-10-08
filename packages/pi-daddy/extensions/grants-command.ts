@@ -28,6 +28,9 @@ export interface GrantsCommandContext {
   governed: boolean;
   /** Host opt-in captured by this session, not a later environment reread. */
   nativeSessionRoot?: string;
+  autoModeStatus?: string;
+  /** Explicit owner mutation; the command parser itself holds no permission authority. */
+  changeAutoMode?: (enabled: boolean) => Promise<string>;
   ownGrant: Capability[];
   /**
    * Which executor this session settled on, and why — ADR-0031.
@@ -103,12 +106,13 @@ const KNOWN_SUBCOMMANDS: readonly string[] = [
   "revoke",
   "workspaces",
   "models",
+  "auto",
 ];
 
 export const grantsCommand = {
   description:
     "Show this session's capability grant, delegation depth, and known agent-type ceilings; " +
-    "/grants init | /grants dashboard | /grants approvals | /grants revoke | /grants ledger",
+    "/grants init | /grants dashboard | /grants auto [on|off] | /grants approvals | /grants revoke | /grants ledger",
   handler: async (args: string, ctx: any) => {
     // Everything this command may see, named in one place. Previously these were whatever happened to be in
     // the enclosing closure — which is how a diagnostic came to disagree with the enforcer (R-28).
@@ -132,7 +136,32 @@ export const grantsCommand = {
       runtimeFor,
     } = ctx.grants as GrantsCommandContext;
 
-    const [sub, target] = args.trim().split(/\s+/).filter(Boolean);
+    const words = args.trim().split(/\s+/).filter(Boolean);
+    const [sub, target] = words;
+    if (sub === "auto") {
+      if (words.length > 2 || (target !== undefined && target !== "on" && target !== "off")) {
+        ctx.ui.notify("grants: use /grants auto [on|off]; no permission setting changed.", "warning");
+        return;
+      }
+      if (target === undefined) {
+        ctx.ui.notify(`grants: Daddy permission Auto ${ctx.grants.autoModeStatus ?? "unavailable"}`, "info");
+        return;
+      }
+      if (!ctx.grants.changeAutoMode) {
+        ctx.ui.notify("grants: Daddy Auto controls are unavailable for this session owner.", "warning");
+        return;
+      }
+      try {
+        const status = await ctx.grants.changeAutoMode(target === "on");
+        ctx.ui.notify(`grants: Daddy permission Auto ${status}; admitted work continues.`, "info");
+      } catch (error) {
+        ctx.ui.notify(
+          `grants: Auto change not confirmed: ${String(error)}. Read /grants auto for current state.`,
+          "error",
+        );
+      }
+      return;
+    }
 
     if (sub === "init") {
       await ctx.grants.runInit();
@@ -264,7 +293,7 @@ export const grantsCommand = {
       if (attributed > 0 || unattributed > 0) {
         lines.push(
           `  approvals  ${bySource.prompt} prompt · ${bySource.persisted} persisted · ${bySource.session} session · ` +
-            `${bySource.inherited} inherited`,
+            `${bySource.inherited} inherited · ${bySource.auto} auto`,
         );
         // **Two numbers, because one of them would lie.** Counting `persisted` RECORDS as prompts avoided
         // overstates the layer twentyfold in the obvious case: precedence is inherited → session →
@@ -411,6 +440,7 @@ export const grantsCommand = {
       // two facts about what a spawn will be sit together.
       `  executor   ${executor.disclosure}`,
       ...renderExecutionControls(ctx.grants.nativeSessionRoot),
+      `  Auto       ${ctx.grants.autoModeStatus ?? "OFF (default)"}`,
       `  depth      ${depth} of max ${maxDepth}${maxDepth <= 0 ? " (spawning disabled)" : ""}`,
       `  ledger     ${ledgerPath || "(not recording — set PI_DADDY_LEDGER)"}`,
       `  approvals  ${sessionApprovals.size} this session, ${valid.size} persisted` +

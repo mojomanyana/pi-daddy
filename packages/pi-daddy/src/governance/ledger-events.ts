@@ -212,8 +212,9 @@ export interface SessionConfigEvent extends Omit<LedgerEventBase, "correlation">
   event: "session_config";
   episodeId: string;
   outcome: "kept" | "changed";
-  trigger: "first-delegation" | "grants-models";
+  trigger: "first-delegation" | "grants-models" | "auto-mode";
   overrides: Record<string, { model: string; thinking: string }>;
+  autoMode?: { enabled: boolean; source: "default" | "environment" | "session"; revision: number };
 }
 
 export type RuntimeLedgerEvent =
@@ -241,6 +242,26 @@ export function buildSessionConfigEvent(args: {
     overrides: Object.fromEntries(
       [...args.overrides].map(([name, value]) => [name, { model: value.model!, thinking: value.thinking! }]),
     ),
+  });
+}
+
+/** Auto authorization changes are explicit session facts, never fabricated prompt approvals. */
+export function buildAutoModeConfigEvent(args: {
+  episodeId: string;
+  enabled: boolean;
+  source: "default" | "environment" | "session";
+  revision: number;
+  now: Date;
+}): SessionConfigEvent {
+  return assertLedgerV3Wire({
+    ledgerVersion: LEDGER_VERSION,
+    event: "session_config",
+    ts: args.now.toISOString(),
+    episodeId: args.episodeId,
+    outcome: "changed",
+    trigger: "auto-mode",
+    overrides: {},
+    autoMode: { enabled: args.enabled, source: args.source, revision: args.revision },
   });
 }
 

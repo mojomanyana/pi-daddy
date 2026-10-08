@@ -96,6 +96,9 @@ export const retentionConfigurationDigest = (configuration: unknown): string => 
  * A bounded, coalescing observation queue. No worker-control path awaits publication. A failed or stalled
  * archive never changes required ledger/lease semantics. `flush` is exclusively for external archival at
  * quiescence; it is NOT called by the spawner. Missing terminal publication means incomplete observation.
+ * Streams checkpoint at doubling byte milestones and once at finish: total stream blob bytes are below
+ * three times each stream's largest retained prefix, rather than one cumulative copy per chunk. A crash can lose the newest
+ * suffix since the last checkpoint; running manifests mark that lag. Existing archive files are untouched.
  */
 export function beginExecutionRetention(identity: RetentionIdentity, directory = process.env[ENV_EXECUTION_ARCHIVE]) {
   const archiveId = randomUUID();
@@ -143,6 +146,7 @@ export function beginExecutionRetention(identity: RetentionIdentity, directory =
   };
   const buffers = new Map<keyof typeof manifest.content, Buffer>();
   const written = new Set<string>();
+  const streamCheckpoints = new Map<"stdout" | "stderr", RetainedContent>();
   let total = 0;
   let dirty = false;
   let running: Promise<void> | undefined;
@@ -161,6 +165,9 @@ export function beginExecutionRetention(identity: RetentionIdentity, directory =
   const loss = (reason: string) => {
     if (!manifest.coverage.losses.includes(reason)) manifest.coverage.losses.push(reason);
   };
+  const clearLoss = (reason: string) => {
+    manifest.coverage.losses = manifest.coverage.losses.filter((value) => value !== reason);
+  };
   const release = () => {
     if (admitted && !released) {
       active--;
@@ -178,6 +185,13 @@ export function beginExecutionRetention(identity: RetentionIdentity, directory =
         const checkpoint: ExecutionRetentionManifest = JSON.parse(JSON.stringify(manifest));
         const contents = [...buffers];
         for (const [kind, bytes] of contents) {
+          const stream = kind === "stdout" || kind === "stderr" ? kind : undefined;
+          const previous = stream && streamCheckpoints.get(stream);
+          if (previous && checkpoint.state !== "terminal" && bytes.length < previous.bytes! * 2) {
+            checkpoint.content[kind] = previous;
+            if (bytes.length !== previous.bytes) checkpoint.coverage.losses.push(`${kind}-checkpoint-lagging`);
+            continue;
+          }
           const sha256 = digest(bytes);
           const name = `${kind}-${sha256}.bin`;
           if (!written.has(name)) {
@@ -185,6 +199,7 @@ export function beginExecutionRetention(identity: RetentionIdentity, directory =
             written.add(name);
           }
           checkpoint.content[kind] = { status: "retained", path: name, sha256, bytes: bytes.length };
+          if (stream) streamCheckpoints.set(stream, checkpoint.content[kind]);
         }
         await writeFile(
           join(root!, "manifest.pending"),
@@ -263,6 +278,15 @@ export function beginExecutionRetention(identity: RetentionIdentity, directory =
           manifest.native.branchLeafId = observation.branchLeafId;
           buffers.delete("session");
           if (captured.bytes && observation === captured.observation) buffers.set("session", captured.bytes);
+          if (buffers.has("session") && observation.status === "verified") {
+            clearLoss("native-session-content-unavailable");
+            if (manifest.coverage.losses.includes("native-session-read-failed")) {
+              clearLoss("native-session-read-failed");
+              loss("native-session-read-failed-earlier");
+            }
+          } else loss("native-session-content-unavailable");
+          if (observation.branchState === "observed") clearLoss("active-branch-unknown");
+          else loss("active-branch-unknown");
           if (observation.reason) loss(observation.reason);
           schedule();
         }

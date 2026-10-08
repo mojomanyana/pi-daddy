@@ -1,3 +1,4 @@
+import type { AutoModeRef } from "./auto-mode.ts";
 /**
  * The shapes `planDelegation` consumes and produces. Split out of `./delegate.ts` only to stay under the
  * 400-line module ceiling this project enforces mechanically; `./delegate.ts` re-exports all three, so
@@ -58,6 +59,7 @@ export interface DelegationRequest {
 }
 
 export interface DelegationContext {
+  autoModeRef?: AutoModeRef;
   ownGrant: Capability[];
   /** Stable identity shared by the root session and every descendant. */
   episodeId?: string;

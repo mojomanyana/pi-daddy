@@ -236,6 +236,7 @@ export async function obtainApprovals(
     hasUI: ctx.hasUI,
     mode: ctx.mode,
     timeoutMs: () => timeoutMsFromEnv(process.env[ENV_APPROVAL_TIMEOUT]),
+    autoMode: session.autoMode,
   });
 
   const approved = [...pre.approved];
@@ -286,7 +287,7 @@ export async function obtainApprovals(
     // concurrent children under one *Allow for this session* used to write eight lines each claiming a
     // prompt. Same repair as R-46, one level up: stop asserting a human was asked on a path where they
     // were not.
-    sources[capability] = outcome.joined ? "session" : "prompt";
+    sources[capability] = outcome.source === "auto" ? "auto" : outcome.joined ? "session" : "prompt";
     scopes[capability] = outcome.scope;
     recordedScopes[capability] = outcome.scope;
     if (expectedBinding) bindings[capability] = expectedBinding;
@@ -359,7 +360,7 @@ export async function obtainApprovals(
         delete expiresAt[capability];
       }
     }
-    session.publishChildEnv(); // a new session approval widens what children may inherit — republish now
+    if (outcome.source !== "auto") session.publishChildEnv(); // Auto never publishes reusable authority.
   }
 
   return {
