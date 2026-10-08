@@ -20,6 +20,7 @@
  * spawn triggered the human prompt, and `childEnv` clamps it to the grant again on the way out. Each
  * child derives its own grant from the tool array of its first provider request.
  */
+import { registerRuntimeSnapshot } from "./runtime-snapshot.ts";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
@@ -80,6 +81,7 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
   const session = trustedSession ?? createGrantsSession(extensionPath, undefined, observerExtensionPath);
   session.currentThinking = typeof pi.getThinkingLevel === "function" ? () => pi.getThinkingLevel() : undefined;
   registerActivityTimeline(pi, session);
+  const runtimeSnapshot = registerRuntimeSnapshot(pi, session);
   const dashboardPluginRoot = fileURLToPath(new URL("../herdr-plugin/", import.meta.url));
   const dashboardPaths = defaultDashboardPaths(agentDir());
   // Definitions are registered only after owner-bound session_start. Until then there is no delegation
@@ -215,6 +217,7 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
       // (R-60), and `probeHerdr` is documented as never throwing precisely so this is belt-and-braces.
       try {
         await resolveExecutor(session);
+        if (session.reloadLifecycle === reload.lifecycle) await runtimeSnapshot.bind(ctx);
       } catch (error) {
         if (session.reloadLifecycle !== reload.lifecycle) return undefined;
         // Says what is actually true of the state left behind, which depends on the variable: with

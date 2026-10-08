@@ -209,7 +209,7 @@ anything a child did.
 
 ## Executors and the dashboard
 
-This candidate targets captured execution on Linux x64. Qualification is limited to the measured Ubuntu WSL2 environment: kernel `6.18.33.2-microsoft-standard-WSL2`, x86_64, Node `v26.7.0`, and exact Pi 1.0.4. Other kernel/runtime combinations, native Windows, and WSL-to-Windows worker interop remain unqualified.
+Captured and Herdr pane execution share the native owner and current-final validator on Linux x64. Qualification is limited to the measured Ubuntu WSL2 environment: kernel `6.18.33.2-microsoft-standard-WSL2`, x86_64, Node `v26.7.0`, and exact Pi 1.0.4. Other kernel/runtime combinations, native Windows, and WSL-to-Windows worker interop remain unqualified.
 A packaged native helper owns and reaps the cooperating child subtree. The final is accepted only when Pi's JSON
 protocol settles and matches the exact persisted current turn and active branch. Complete final text is preserved;
 work, final availability, subtree cleanup and optional observation completeness are separate result fields. A failed
@@ -222,10 +222,30 @@ Final capture preserves whitespace and concatenates text blocks without insertin
 
 Retained capacity is rechecked against the original bound ownership and settlement receipt before a new single, parallel or chain dispatch. Exact later proof refunds the reservation once; missing, malformed or mismatched proof and unbound ownership remain retained. Recovery does not rewrite the original failed/unknown outcome or mint new capacity on reload. A single delegation reserves its available subtree; use `delegate_all` to allocate independent parallel children.
 
-Set `PI_DADDY_HERDR=0` to select captured execution explicitly. A responding Herdr server may still be selected by
-probing, and `PI_DADDY_HERDR=1` still demands it, but governed Herdr execution **refuses as unqualified** in this
-candidate. No silent fallback occurs. Pane presence or closure does not prove a complete final or settled subtree;
-Herdr parity is a later qualification. Dashboard display remains independent of child execution qualification.
+Set `PI_DADDY_HERDR=0` for captured execution or `PI_DADDY_HERDR=1` to demand Herdr panes. An unset value
+probes for a responding server. The qualified Herdr transport requires client/server 0.8.2 and protocol 20;
+a version mismatch refuses governed work with no backend fallback. Each owned pane starts a packaged launcher
+connected to the coordinator over a private bounded Unix socket. The launcher uses the same pinned native
+subreaper, and the coordinator binds its identity before releasing the worker gate. Child environment and
+arguments come from the governed plan, without inheriting the Herdr daemon's environment. Only public text is
+shown in the pane; raw protocol/private reasoning is not used as a display channel.
+
+Native receipts, not pane closure or idle screen state, prove subtree cleanup. Model-free qualification covers
+actual Pi CLI success, retry, nested tool and failed-final cases, cancellation, coordinator SIGKILL and loss of
+the independently owned Herdr server, including detached descendants. Retained panes have no live Pi writer.
+An unavailable pane display cannot replace a missing final or cleanup receipt. Dashboard display remains independent.
+
+The trusted extension event `pi-daddy:runtime-snapshot:v1` supports Principal's explicitly armed resume checks.
+It reports the actual Pi session/canonical working directory, a stable owner scope, current backend qualification,
+outstanding execution identities and an exact settlement digest. A private runtime journal under the operator's
+Pi agent directory records pending launches before execution and native ownership before the gate opens. An OS
+lock excludes concurrent owners; clean same-session restart rechecks original receipts and preserves the digest.
+Missing or changed receipts, interrupted unbound launches, live owners and failed control finalization refuse
+resume. The journal contains process identities and receipts, never task text or an approval. A model-authored
+list of children, successful prose or a progress flag cannot supply these facts. Principal separately verifies
+operator authorization, candidate and artifacts before consuming its checkpoint and queueing a fixed continuation.
+This bridge never grants capabilities, approves work or calls JEV/OpenAI/other models. The ledger schema is unchanged.
+Same-user hostile filesystem or co-loaded-extension authenticity is outside this cooperative ownership boundary.
 
 `pi-daddy-dashboard` renders a ledger or activity timeline in a terminal; `/grants dashboard` opens it in a Herdr pane
 beside the session. Its execution history and current episode cost are
@@ -357,7 +377,7 @@ npm run typecheck
 npm test
 npm run build --workspace=pi-daddy
 npm run test:integration:ci --workspace=pi-daddy # model-free CI subset
-npm run test:integration --workspace=pi-daddy    # real pi when available; Herdr needs a reachable server
+npm run test:integration --workspace=pi-daddy    # real Pi; Herdr creates and stops only its own named test server
 npm run test:smoke --workspace=pi-daddy          # pack, install into a scratch project, import and use it
 PI_DADDY_IT_MODEL=1 npm run test:integration --workspace=pi-daddy # opt-in real-model tier; consumes tokens
 ```

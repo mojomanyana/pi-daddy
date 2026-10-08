@@ -19,17 +19,22 @@ export type HerdrExec = (args: string[]) => Promise<{ code: number | null; stdou
 
 export const defaultExec: HerdrExec = (args) =>
   new Promise((settle) => {
-    execFile("herdr", args, { maxBuffer: 32 * 1024 * 1024 }, (error, stdout, stderr) => {
-      const raw = (error as { code?: unknown } | null)?.code;
-      const code = typeof raw === "number" ? raw : error ? 1 : 0;
-      // **A string `code` is a spawn failure, and it used to be thrown away.** `ENOENT` — herdr not installed —
-      // arrives as `code: "ENOENT"`, so the numeric test failed, the message was dropped, and an operator with
-      // `PI_DADDY_HERDR=1` on a machine without herdr was told *"herdr is not answering (unparseable herdr
-      // reply: (no output))"* rather than that the binary is missing. Rule 8 wants the loud version, and this is
-      // the first diagnostic such an operator meets.
-      const spawnFailure = typeof raw === "string" ? `herdr could not be run (${raw}): ${error?.message ?? ""}` : "";
-      settle({ code, stdout: String(stdout), stderr: spawnFailure || String(stderr) });
-    });
+    execFile(
+      "herdr",
+      args,
+      { maxBuffer: 32 * 1024 * 1024, timeout: 10000, killSignal: "SIGKILL" },
+      (error, stdout, stderr) => {
+        const raw = (error as { code?: unknown } | null)?.code;
+        const code = typeof raw === "number" ? raw : error ? 1 : 0;
+        // **A string `code` is a spawn failure, and it used to be thrown away.** `ENOENT` — herdr not installed —
+        // arrives as `code: "ENOENT"`, so the numeric test failed, the message was dropped, and an operator with
+        // `PI_DADDY_HERDR=1` on a machine without herdr was told *"herdr is not answering (unparseable herdr
+        // reply: (no output))"* rather than that the binary is missing. Rule 8 wants the loud version, and this is
+        // the first diagnostic such an operator meets.
+        const spawnFailure = typeof raw === "string" ? `herdr could not be run (${raw}): ${error?.message ?? ""}` : "";
+        settle({ code, stdout: String(stdout), stderr: spawnFailure || String(stderr) });
+      },
+    );
   });
 
 /**
@@ -44,7 +49,7 @@ export function parseReply(reply: { stdout: string; stderr: string }): {
   error?: string;
 } {
   try {
-    const parsed = JSON.parse(reply.stdout) as {
+    const parsed = JSON.parse(reply.stdout.trim() || reply.stderr.trim()) as {
       result?: Record<string, unknown>;
       error?: { message?: string; code?: string };
     };
@@ -63,6 +68,8 @@ export const PROBE_TIMEOUT_MS = 2000;
 
 export interface HerdrProbe {
   ok: boolean;
+  qualified?: boolean;
+  qualificationReason?: string;
   /** herdr's own words when it is not reachable. Carried so the disclosure line can name the reason. */
   error?: string;
 }

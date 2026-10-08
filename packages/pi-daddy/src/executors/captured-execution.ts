@@ -15,6 +15,7 @@ export async function runCapturedExecution(
     sessionPath: string;
     onReadCleanup?: (error: BoundedReadCleanupError) => void;
   },
+  runOwned: typeof runOwnedChild = runOwnedChild,
 ): Promise<CapturedExecutionResult> {
   let directory: string;
   try {
@@ -36,7 +37,7 @@ export async function runCapturedExecution(
   }
   const capture = new ChildFinalCapture(request.onOutput, request.onReadCleanup);
   const args = [...request.args.slice(0, -1), "--mode", "json", request.args.at(-1)!];
-  const output = await runOwnedChild({
+  const output = await runOwned({
     ...request,
     args,
     ownershipDir: join(directory, "ownership"),

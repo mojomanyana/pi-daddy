@@ -1,5 +1,9 @@
 # Changelog — pi-daddy
 
+## 0.46.0 — 2026-10-08
+
+Qualify owned Herdr execution on Linux x64 with client/server 0.8.2 and protocol 20. Native ownership gates execution and independently reaps descendants after coordinator, launcher or server loss; final answers use the same Pi 1.0.4 settled/persisted checks as captured execution. Add a durable session settlement journal and trusted runtime snapshot bridge for one-shot Principal resume. Unsupported versions refuse without backend substitution.
+
 Newest first. **Breaking changes are marked and say what to do about them.**
 
 This file exists because the README had grown ninety lines of stacked version banners before a reader
