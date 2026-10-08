@@ -44,15 +44,17 @@ export function needsProbe(raw: string | undefined): boolean {
 }
 
 export const HERDR_UNQUALIFIED_REASON =
-  "Herdr governed execution is not qualified for complete current finals and subtree cleanup in this release. " +
+  "Herdr governed execution is not qualified for complete current finals and subtree cleanup on the detected transport. " +
   "Delegation is refused; set PI_DADDY_HERDR=0 explicitly to select captured execution. No backend fallback occurs.";
 
 export function chooseExecutor(raw: string | undefined, probe: HerdrProbe | null): ExecutorChoice {
   const choice = selectExecutor(raw, probe);
   if (choice.kind !== "herdr") return choice;
+  if (!choice.refusal && probe?.qualified === true)
+    return { ...choice, disclosure: `${choice.disclosure} — qualified native ownership` };
   return {
     ...choice,
-    refusal: [choice.refusal, HERDR_UNQUALIFIED_REASON].filter(Boolean).join(" "),
+    refusal: [choice.refusal, HERDR_UNQUALIFIED_REASON, probe?.qualificationReason].filter(Boolean).join(" "),
     disclosure: `${choice.disclosure} — unqualified; governed delegation will refuse`,
   };
 }

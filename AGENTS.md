@@ -198,6 +198,27 @@ it measured nothing rather than passing quietly.
 
 ## Decisions still in force
 
+**2026-10-08 — qualified pane ownership and trusted resume facts.** This reverses the staged Herdr refusal for
+exactly the measured client/server transport matrix. Governed Herdr runs a packaged launcher in an owned pane,
+with a private bounded Unix socket to the coordinator and the same pinned native subreaper as captured execution.
+The parent validates and binds native ownership before releasing the execution gate; daemon environment never
+supplies a child's grant. Coordinator loss cancels through socket loss, and launcher/daemon death closes the native
+owner pipe. Actual Pi CLI scripted-provider tests preserve exact current finals; native receipts and absent worker/
+detached-descendant PIDs verify cancellation, coordinator SIGKILL and independently owned server loss. UI polling
+and pane closure remain non-authoritative. Legacy interactive polling helpers are retained for compatibility but
+are not the governed dispatch path. Both governed backends now use one-shot JSON mode; retained panes have no live
+Pi writer, so private temporary sessions are disposed as on captured execution.
+
+An operator-agent-directory runtime settlement journal is a new control-state store, separate from the unchanged
+native ledger contract. It persists no task text, grants or approvals. A held OS lock excludes concurrent session
+owners. Pending launches and exact native identities precede the gate; finish and restart verify original durable
+receipts. Unknown or missing proof and control failure cannot become idle. The versioned same-process event bridge
+reports these facts to Principal, which alone handles explicit operator arming, checkpoint consumption and fixed
+continuation. New/forked owners do not inherit checkpoint authority. Stable scope/digest survives clean restart;
+owner PID identity rotates. The journal and event bus assume cooperating same-uid code, not hostile containment.
+No advisor, automatic model choice or metered decision service is restored.
+
+
 **Opt-in public evidence capture, 2026-10-08:** the operator may configure a private local capture directory
 before starting the coordinator. Only then do selected discovery snapshots retain their admitted source bytes;
 returned definition/delegation content receives a compact reference to an exact pre-reference public capture.
@@ -235,6 +256,8 @@ JSON protocol plus an exact current persisted branch/turn match. The native subr
 not parent death or pane closure, establishes subtree cleanup. Uncertain cleanup retains capacity and workspace
 exclusion; referenced ownership directories are durable evidence. Optional observation/display loss cannot replace
 verified primary work. Native tool results preserve separate work, final, cleanup and observation state.
+
+Amended 2026-10-08: the native pane launcher above qualifies the pinned Herdr matrix; other versions still refuse.
 
 This reverses ADR-0031's runnable Herdr auto-selection until parity is independently qualified: selection remains
 visible but governed execution refuses with no fallback. `PI_DADDY_HERDR=0` explicitly chooses captured execution.
@@ -940,12 +963,14 @@ Kept features only. Numbers are dropped except the two that code and rules cite.
   one message naming only the definitions. Fixing it means changing the catalog's error model, which is a
   larger change than this one and does not belong bolted onto it.
 
-- The Herdr executor passes only the plan's environment to the pane, so a pane child receives neither the workspace
-  registry nor the lease directory, and the pane inherits the daemon's environment rather than a stripped one.
+- The former Herdr executor passed only plan additions into the daemon environment. **Closed 2026-10-08:** the
+  qualified launcher receives the exact same merged/stripped child environment as captured execution over the
+  private owner socket. The real-pane test checks explicit grant transfer without daemon pane-context inheritance.
 - A relative inherited ledger path resolves inside a routed child's worktree, splitting state and leaving `?? .pi/` in
   `git status`; a `read` lease takes no kernel lock, so a grandchild can take a write lease on a root already held.
-- Pane cleanup is not leak-proof: a killed process orphans one pane per in-flight child, and on process exit the pane
-  reaper and the lock helper race to close the same tab.
+- Pane display cleanup can still fail if Herdr disappears. **Process risk closed 2026-10-08:** native subreaper
+  receipts, rather than the pane reaper or tab-close race, establish governed subtree settlement. Real coordinator
+  SIGKILL and owned-server-stop fixtures check receipt identity and absent worker/detached-descendant PIDs.
 - The lease helper signals a recorded pid with no start-time identity check; in a narrow window it may signal a
   recycled pid. Accepted, bounded by the parent's uid.
 - One `session` yes on the model-chosen `tools:` path (fixed subject `<delegate>`) pre-authorises the whole subtree

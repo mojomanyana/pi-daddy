@@ -693,7 +693,7 @@ export function createGrantsSession(
       // Read live off `session.executor` (ADR-0031) rather than a boolean captured in the factory: the probe
       // has not run when this session object is built, so a captured value would plan `--print` for a session
       // that turns out to use panes — and `runHerdrPane` refuses a plan containing `--print` by design.
-      interactive: session.executor.kind === "herdr",
+      interactive: false, // Both qualified backends use the same one-shot Pi JSON protocol.
       ...(approved ? { approved } : {}),
     }),
     storeCwd,

@@ -1,7 +1,7 @@
 import { BoundedReadCleanupError } from "../src/kernel/bounded-read.ts";
 import { retainDiscoveryCleanupFailure } from "./session.ts";
 import type { CapacityReservation } from "../src/kernel/capacity.ts";
-import { HERDR_UNQUALIFIED_REASON } from "../src/executors/executor.ts";
+import { runHerdrOwned } from "../src/executors/herdr-owned.ts";
 import { runCapturedExecution } from "../src/executors/captured-execution.ts";
 import type { ChildFinal } from "../src/executors/child-final.ts";
 import type { CapturedWorkerCleanup } from "../src/kernel/captured-worker-contract.ts";
@@ -20,13 +20,12 @@ import {
   ENV_CHILD_IDLE_TIMEOUT,
   ENV_CHILD_TIMEOUT,
   idleTimeoutFromEnv,
-  runChild,
   timeoutFromEnv,
 } from "../src/kernel/run-child.ts";
 import { activitySessionFor } from "../src/executors/activity-session.ts";
 import { processTreeActivity } from "../src/executors/process-activity.ts";
 import { resolveWorkspace } from "../src/executors/herdr-cli.ts";
-import { HerdrWriterCloseError, runHerdrPane } from "../src/executors/run-herdr.ts";
+import { HerdrWriterCloseError } from "../src/executors/run-herdr.ts";
 import { GovernanceRefusal, refusal, type StructuredRefusal } from "../src/kernel/refusals.ts";
 import { ENV_HERDR_KEEP_PANE, type GrantsSession } from "./session.ts";
 import { CHILD_ATTRIBUTION_ENV_KEYS, ENV_EPISODE_ID } from "../src/kernel/env-names.ts";
@@ -138,15 +137,49 @@ export interface ChildExecutionInput {
 }
 export async function executePlannedChild(input: ChildExecutionInput): Promise<DelegationOutcome> {
   let executorEntered = false;
+  const runtime = input.session.reloadLifecycle?.runtimeSettlement;
+  let registered = false;
   try {
-    return await executePreparedChild(input, () => {
-      executorEntered = true;
-    });
+    runtime?.begin(input.executionId);
+    registered = Boolean(runtime);
+    const result = await executePreparedChild(
+      input,
+      () => {
+        executorEntered = true;
+      },
+      runtime,
+    );
+    try {
+      await runtime?.finish(
+        input.executionId,
+        result.cleanup ?? { state: "unknown", reason: "executor omitted cleanup" },
+        result.control === "failed" ? (result.reason ?? "runtime control failed") : undefined,
+      );
+    } catch (error) {
+      return {
+        ...result,
+        control: "failed",
+        reason: [result.reason, `runtime settlement record failed: ${String(error)}`].filter(Boolean).join("; "),
+      };
+    }
+    return result;
   } catch (error) {
-    if (executorEntered) throw error;
-    // Every operation above the executor-entry marker is local setup: no helper or worker exists yet.
-    input.capacityReservation?.finalize({ state: "not-started", reason: "child setup failed before executor entry" });
     const failures: unknown[] = [error];
+    if (registered)
+      try {
+        await runtime?.finish(input.executionId, {
+          state: executorEntered ? "unknown" : "not-started",
+          reason: String(error),
+        });
+      } catch (recordError) {
+        failures.push(recordError);
+      }
+    if (executorEntered) {
+      if (failures.length > 1) throw new AggregateError(failures, failures.map(String).join("; "));
+      throw error;
+    }
+    // Setup failures prove no worker started, even if recording that fact also failed.
+    input.capacityReservation?.finalize({ state: "not-started", reason: "child setup failed before executor entry" });
     try {
       const released = await releaseDelegationWorkspace({
         prepared: input.preparedWorkspace,
@@ -174,6 +207,7 @@ export async function executePlannedChild(input: ChildExecutionInput): Promise<D
 async function executePreparedChild(
   input: ChildExecutionInput,
   onExecutorEntry: () => void,
+  runtime?: import("../src/governance/runtime-settlement.ts").RuntimeSettlement,
 ): Promise<DelegationOutcome> {
   const { session, plan, childId, executionId, parentExecutionId, preparedWorkspace, signal, onProgress } = input;
   const ledgerPath = session.ledgerPath;
@@ -229,7 +263,7 @@ async function executePreparedChild(
   const activitySession = await activitySessionFor(plan.args, executionId);
   // Disposed on every path (review finding: it leaked on every throw), except when the operator keeps a Herdr pane,
   // where the interactive pi in that pane is still alive and still appending to this file.
-  const keepPaneRequested = session.executor.kind === "herdr" && process.env[ENV_HERDR_KEEP_PANE] === "1";
+  const keepPaneRequested = false; // The qualified pane launcher exits; retained panes contain no live Pi writer.
   try {
     return await executeWithActivitySession();
   } finally {
@@ -368,73 +402,63 @@ async function executePreparedChild(
       }
     };
     try {
-      if (String(session.executor.kind) === "herdr")
-        throw new GovernanceRefusal(refusal("EXECUTOR_UNAVAILABLE", HERDR_UNQUALIFIED_REASON));
+      if (session.executor.refusal)
+        throw new GovernanceRefusal(refusal("EXECUTOR_UNAVAILABLE", session.executor.refusal));
       executorEntered = true;
       onExecutorEntry();
-      const output =
-        session.executor.kind === "herdr"
-          ? await runHerdrPane({
-              args: args.slice(0, -1),
-              prompt: args[args.length - 1].trimStart(),
-              env: plan.env,
-              cwd,
-              name: `${input.agent ?? "delegate"}-${childId}`,
-              workspace: resolveWorkspace(process.env),
-              signal: executionSignal,
-              timeoutMs: remainingTimeoutMs,
-              idleTimeoutMs: configuredIdleMs,
-              activityProbe: activitySession.probe, // Herdr: session file plus pane text when a display is attached
-              keepPane: writerLease ? false : process.env[ENV_HERDR_KEEP_PANE] === "1",
-              closeOnSettle: Boolean(writerLease),
-              onPane: (paneId, agentName) => {
-                retention.native({ paneId, agentName });
-                onProgress?.({ paneId, agentName, state: "starting" });
-              },
-              onObservation: (bytes) => retention.capture("paneSnapshot", bytes, true),
-              onSessionReference: (reference) => retention.observeSession(reference),
-              onRunning: (paneId, agentName) => {
-                // Record first: runHerdrPane isolates this display callback, so a renderer exception after the
-                // observation cannot suppress the authoritative running event.
-                recordRunning("herdr", { id: paneId, agentName });
-                onProgress?.({ paneId, agentName, state: "running" });
-              },
-              onTab: preparedWorkspace ? (tabId) => preparedWorkspace.lease.attachHerdrTab(tabId) : undefined,
-              onNativeTab: (tabId) => retention.native({ tabId }),
-              onSnapshot: onProgress ? (snapshot) => onProgress({ snapshot }) : undefined,
-            })
-          : await runCapturedExecution({
-              executionId,
-              sessionPath: activitySession.path,
-              onReadCleanup,
-              onOwnership: async (identity) => {
-                input.capacityReservation?.bindOwnership(identity);
-                await preparedWorkspace?.lease.attachCapturedWorker(identity);
-              },
-              command: "pi",
-              args,
-              env: mergeChildEnv(process.env, plan.env),
-              cwd,
-              signal: executionSignal,
-              // SIGTERM gets only grace that fits INSIDE the recorded deadline. The independent hard timer
-              // prevents a delayed soft-timeout callback from starting a fresh grace period beyond that bound.
-              timeoutMs: Math.max(1, remainingTimeoutMs - terminationGraceMs),
-              hardDeadlineAt: Date.parse(deadlineAt),
-              idleTimeoutMs: configuredIdleMs,
-              activityProbe: probe,
-              onOutput: onProgress ? (chunk) => onProgress({ chunk }) : undefined,
-              onObservation: (stream, bytes) => retention.capture(stream, bytes),
-              onSpawn: (pid) => {
-                childPid = pid;
-                // Lease attachment is a security hook and may fail the spawn. The shared reporters isolate
-                // display exceptions before they reach this callback; runChild deliberately kills on any error
-                // here, so presentation must never be added directly without that reporter boundary.
+      let displayHerdr: ((text: string) => void) | undefined;
+      const output = await runCapturedExecution(
+        {
+          executionId,
+          sessionPath: activitySession.path,
+          onReadCleanup,
+          onOwnership: async (identity) => {
+            runtime?.bind(identity);
+            input.capacityReservation?.bindOwnership(identity);
+            await preparedWorkspace?.lease.attachCapturedWorker(identity);
+          },
+          command: "pi",
+          args,
+          env: mergeChildEnv(process.env, plan.env),
+          cwd,
+          signal: executionSignal,
+          // SIGTERM gets only grace that fits INSIDE the recorded deadline. The independent hard timer
+          // prevents a delayed soft-timeout callback from starting a fresh grace period beyond that bound.
+          timeoutMs: Math.max(1, remainingTimeoutMs - terminationGraceMs),
+          hardDeadlineAt: Date.parse(deadlineAt),
+          idleTimeoutMs: configuredIdleMs,
+          activityProbe: probe,
+          onOutput: (chunk) => {
+            displayHerdr?.(chunk);
+            onProgress?.({ chunk });
+          },
+          onObservation: (stream, bytes) => retention.capture(stream, bytes),
+          onSpawn: (pid) => {
+            childPid = pid;
+            // Lease attachment is a security hook and may fail the spawn. The shared reporters isolate
+            // display exceptions before they reach this callback; runChild deliberately kills on any error
+            // here, so presentation must never be added directly without that reporter boundary.
 
-                retention.native({ pid });
-                recordRunning("process");
-                onProgress?.({ state: "running" });
-              },
-            });
+            retention.native({ pid });
+            recordRunning(session.executor.kind);
+            onProgress?.({ state: "running" });
+          },
+        },
+        session.executor.kind === "herdr"
+          ? (request) =>
+              runHerdrOwned(request, {
+                onDisplay: (display) => {
+                  displayHerdr = display;
+                },
+                workspace: resolveWorkspace(process.env),
+                keepPane: process.env[ENV_HERDR_KEEP_PANE] === "1",
+                onPane: (paneId, tabId) => {
+                  retention.native({ paneId, tabId });
+                  onProgress?.({ paneId, state: "starting" });
+                },
+              })
+          : undefined,
+      );
 
       if (sessionFlag >= 0) retention.observeSession({ source: "pi-session-file", value: plan.args[sessionFlag + 1] });
       retention.capture("result", Buffer.from(output.text), true);

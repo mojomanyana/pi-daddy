@@ -4,6 +4,10 @@ import type { BoundedReadCleanupError } from "../src/kernel/bounded-read.ts";
 
 /** The root baseline and latest child publication for one real Pi session owner. */
 export interface ReloadLifecycle {
+  runtimeSnapshotUnsubscribe?: () => void;
+  runtimeSnapshotGeneration?: object;
+  runtimeSettlements?: Map<string, import("../src/governance/runtime-settlement.ts").RuntimeSettlement>;
+  runtimeSettlement?: import("../src/governance/runtime-settlement.ts").RuntimeSettlement;
   root: Record<string, string | undefined>;
   /** Never replaced for the same owner, even when an explicit root environment changes. */
   capacity?: OwnerCapacity;
@@ -99,6 +103,10 @@ export function bindReloadLifecycle(
         activityRootId: existing.activityRootId,
         episodeId: existing.episodeId,
         capacity: existing.capacity,
+        runtimeSettlement: existing.runtimeSettlement,
+        runtimeSettlements: existing.runtimeSettlements,
+        runtimeSnapshotUnsubscribe: existing.runtimeSnapshotUnsubscribe,
+        runtimeSnapshotGeneration: existing.runtimeSnapshotGeneration,
       };
       holder.owners.set(owner, existing);
     }
