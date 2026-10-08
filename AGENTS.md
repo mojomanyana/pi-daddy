@@ -198,6 +198,16 @@ it measured nothing rather than passing quietly.
 
 ## Decisions still in force
 
+**2026-10-09 — operator-controlled session Auto and actionable dashboard.** The owning session keeps live Auto
+permission authority. `PI_DADDY_AUTO_MODE` accepts only 0/1 and sets the session default; `/grants auto` and the
+connected dashboard mutate that same owner. Descendants receive a read/admit/wait reference, never the dashboard's
+mutation credential. Each new delegation/chain admission rechecks live authority. Automatic answers are once-only
+`source: auto`, never banked or exported as reusable human approvals. OFF affects future admissions, not already
+admitted work; reload retains the choice and a new native session resets it. JEV and LoRA consent remain separate.
+The dashboard prioritizes current work and actual pending requests, acknowledges control changes before displaying
+them, and reports disconnected control as unavailable. This amends ADR-0036's enforcement-control restriction only
+for the explicit operator Auto switch; capability and execution checks are unchanged.
+
 **2026-10-08 — current-turn observation and human-paced approvals.** Root activity binds its initial user text
 at the first model-context boundary, after all message transforms, with settlement as the cancellation fallback.
 The active branch supplies current finalized prompt/final bytes; observed hook text is a same-turn fallback.
@@ -619,7 +629,7 @@ renderer that "never affects enforcement" (ADR-0036), and a control there writin
 thing it ever wrote. Turning an advisor on is an operator decision in the reviewable file. **Amended 2026-09-23:**
 the dashboard may edit only the owning session's model/thinking override map over a private session-local socket,
 using the same mutation and `session_config` audit path as `/grants models`; ledger and cost views remain read-only,
-and the control still cannot affect enforcement or persistent settings.
+and the control still cannot affect enforcement or persistent settings. **Amended 2026-10-09:** the explicit session Auto switch is also allowed, as specified above; it does not write persistent settings.
 
 **What is verified about Jev, and what is not.** The request shape is OpenRouter's documented one for
 `POST /api/alpha/decisions`: `{model, state, questions}` with `noul` carrying `criteria.true`/`criteria.false`,
@@ -816,7 +826,7 @@ _About the field (surveyed 2026-09-21, sources in ADR-0076):_
 - **retention (execution retention)** — opt-in storage of a child's stdout, stderr and result bytes with a manifest.
 - **content store** — the content-addressed blob directory `.pi/pi-daddy/content/` shared by retention and activity content, and later an artifact store.
 - **activity timeline** — the default-on local record of parent turns, child lifecycles and runtime-skill reads; it may retain private prompt/final content unless configured for metadata only or disabled.
-- **dashboard** — the ledger projection and session model/thinking control (`pi-daddy-dashboard`, `/grants dashboard` in a Herdr pane); it shows cost read-only and sends model edits to the owning session over a private local socket, never affecting enforcement (ADR-0036 amendment).
+- **dashboard** — the ledger projection and session model/thinking control (`pi-daddy-dashboard`, `/grants dashboard` in a Herdr pane); it shows cost read-only and sends model edits and explicit Auto permission choices to the owning session over a private local socket (ADR-0036 amendments).
 - **chain** — `delegate_chain`: a straight line of steps planned as one unit, each step's task composed from the previous step's fenced output (ADR-0033).
 - **handoff fence** — the nonce-delimited, labelled block a prior step's output crosses in; the nonce is generated after the producer has finished.
 - **kernel, governance, executors, advisors, products** — the five source layers with a mechanically enforced import direction; `extensions/`, `src/index.ts` and `src/cli.ts` are composition (ADR-0076).

@@ -9,11 +9,12 @@ import { realpathSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { createInterface } from "node:readline";
+import { createInterface, emitKeypressEvents, type Key } from "node:readline";
 import { parseDashboardLedger } from "./dashboard-projection.ts";
 import { renderDashboard } from "./dashboard-render.ts";
 import {
   ActivityTimelineAliases,
+  activityTaskKey,
   defaultActivityTimelinePath,
   detailForTimeline,
   parseActivityTimeline,
@@ -22,9 +23,20 @@ import {
   type TimelineFilter,
 } from "./activity-timeline.ts";
 import { createDashboardDisplayControls } from "./dashboard-display-controls.ts";
-import { dashboardSessionRequest, type DashboardSessionSnapshot } from "./dashboard-session-client.ts";
+import {
+  createDashboardConnection,
+  dashboardSessionRequest,
+  type DashboardSessionSnapshot,
+} from "./dashboard-session-client.ts";
 import { adoptLegacyEnvironment, ENV_LEDGER, legacyEnvironmentWarning } from "../kernel/env-names.ts";
 import { projectLedgerPath } from "../kernel/project-paths.ts";
+import {
+  activityDashboardItems,
+  ledgerDashboardItems,
+  renderDashboardScreen,
+  type DashboardItem,
+  type DashboardScreenState,
+} from "./dashboard-screen.ts";
 
 export const DASHBOARD_PROTOCOL_VERSION = 1 as const;
 export const ENV_DASHBOARD_LEDGER = ENV_LEDGER; // one ledger path variable for children and the dashboard (ADR-0076 PR 3b)
@@ -47,6 +59,11 @@ export interface DashboardFrameOptions {
   activityAliases?: ActivityTimelineAliases;
   now?: Date;
   session?: DashboardSessionSnapshot;
+  height?: number;
+  screen?: DashboardScreenState;
+  notice?: string;
+  pending?: boolean;
+  command?: string;
 }
 
 function shellQuote(value: string): string {
@@ -102,7 +119,106 @@ async function renderTimelineFile(path: string, text: string, options: Dashboard
   });
 }
 
+function isActivityTimelineText(text: string): boolean {
+  try {
+    const first = JSON.parse(text.trimStart().split("\n")[0] || "{}");
+    return first?.kind === "activity" || first?.version === 1;
+  } catch {
+    return false;
+  }
+}
+
+async function compactFrame(options: DashboardFrameOptions): Promise<string> {
+  const path = resolve(options.cwd, options.ledgerPath ?? defaultActivityTimelinePath(options.cwd));
+  let items: DashboardItem[] = [],
+    problem: string | undefined,
+    current: string | undefined,
+    currentStatus: string | undefined;
+  let content: { title: string; text: string } | undefined;
+  const aliases = options.activityAliases ?? new ActivityTimelineAliases();
+  if (options.protocol !== undefined && options.protocol !== DASHBOARD_PROTOCOL_VERSION)
+    return renderDashboardScreen({
+      ...options,
+      width: options.width ?? 80,
+      height: options.height!,
+      screen: options.screen!,
+      items: [],
+      problem: "INCOMPATIBLE dashboard protocol; relink this package.",
+    });
+  try {
+    const text = await readFile(path, "utf8");
+    if (!options.ledgerPath || isActivityTimelineText(text)) {
+      const timeline = parseActivityTimeline(text);
+      items = activityDashboardItems(timeline, aliases, options.now ?? new Date()).map((item) => ({
+        ...item,
+        timelinePath: path,
+      }));
+      problem = timeline.refusals[0];
+    } else {
+      const projection = parseDashboardLedger(text, { now: options.now });
+      items = ledgerDashboardItems(projection);
+      if (projection.corrupt.length) problem = `Ledger unavailable: ${projection.corrupt.length} corrupt line(s)`;
+    }
+  } catch (error) {
+    problem =
+      (error as { code?: string }).code === "ENOENT"
+        ? "Waiting for local work; open from /grants dashboard."
+        : `Evidence unavailable: ${error instanceof Error ? error.message : String(error)}`;
+  }
+  // The owner supplies this exact current turn. No sibling timeline or unrelated history is merged.
+  const activity = options.session?.activity;
+  if (activity) {
+    const key = activityTaskKey(activity.rootId, activity.taskId);
+    current = `Task ${activity.taskId}`;
+    try {
+      const timeline = parseActivityTimeline(await readFile(activity.path, "utf8"));
+      timeline.tasks = timeline.tasks.filter((task) => activityTaskKey(task.rootId, task.id) === key);
+      const item = activityDashboardItems(timeline, aliases, options.now ?? new Date())[0];
+      if (item) {
+        current = item.label;
+        currentStatus = item.status;
+        if (!items.some((existing) => existing.key === key)) items.unshift({ ...item, timelinePath: activity.path });
+        try {
+          current = (await detailForTimeline(activity.path, key, "prompt")).text.slice(0, 600);
+        } catch {
+          /* Metadata-only/off and unavailable retained content retain the exact task identity. */
+        }
+      }
+    } catch {
+      /* The owner identity remains useful when its local timeline is unavailable. */
+    }
+  }
+  if (options.activityDetail) {
+    try {
+      const requested = aliases.resolve(options.activityDetail.taskKey) ?? options.activityDetail.taskKey;
+      const key = items.find((value) => value.taskKey === requested)?.taskKey;
+      if (!key) throw Error("unknown task selector");
+      options.screen!.selectedKey = key;
+      const source = items.find((value) => value.taskKey === key)?.timelinePath;
+      if (!source) throw Error("task has no retained activity source");
+      content = {
+        title: `PRIVATE ${options.activityDetail.field.toUpperCase()}`,
+        text: (await detailForTimeline(source, key, options.activityDetail.field)).text,
+      };
+    } catch (error) {
+      problem = `Activity detail unavailable: ${error instanceof Error ? error.message : String(error)}`;
+    }
+  }
+  return renderDashboardScreen({
+    ...options,
+    width: options.width ?? 80,
+    height: options.height!,
+    screen: options.screen!,
+    items,
+    problem,
+    content,
+    current,
+    currentStatus,
+  });
+}
+
 export async function dashboardFrame(options: DashboardFrameOptions): Promise<string> {
+  if (options.screen && options.height !== undefined) return compactFrame(options);
   if (options.protocol !== undefined && options.protocol !== DASHBOARD_PROTOCOL_VERSION) {
     return incompatibleFrame(options.protocol);
   }
@@ -136,7 +252,7 @@ export async function dashboardFrame(options: DashboardFrameOptions): Promise<st
       ].join("\n");
     }
   }
-  const rendered = text.trimStart().startsWith('{"version":1')
+  const rendered = isActivityTimelineText(text)
     ? await renderTimelineFile(ledgerPath, text, options)
     : renderDashboard(parseDashboardLedger(text, { now: options.now }), {
         color: options.color,
@@ -186,17 +302,21 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
   process.title = `pi-daddy-dashboard${key ? `:${key.slice(0, 12)}` : ""}`;
 
   const display = createDashboardDisplayControls(cli.details, true);
-  let previous = "";
-  let notice = "";
+  const interactive = Boolean(process.stdin.isTTY && process.stdout.isTTY) && !cli.once;
+  const connection = createDashboardConnection(
+    sessionSocket && sessionToken
+      ? (action) => dashboardSessionRequest(sessionSocket, sessionToken, action)
+      : undefined,
+  );
+  let previous = "",
+    notice = "",
+    command: string | undefined;
   let input: ReturnType<typeof createInterface> | null = null;
+  let stopped = false,
+    drawing = false;
   const draw = async (clear: boolean): Promise<void> => {
-    let session: DashboardSessionSnapshot | undefined;
-    if (sessionSocket && sessionToken)
-      try {
-        session = await dashboardSessionRequest(sessionSocket, sessionToken, { action: "get" });
-      } catch (error) {
-        notice ||= `session controls unavailable: ${error instanceof Error ? error.message : String(error)}`;
-      }
+    await connection.refresh();
+    if (stopped) return;
     const view = await dashboardFrame({
       cwd,
       ledgerPath,
@@ -205,62 +325,144 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
       width: process.stdout.columns || 80,
       ...display.state,
       activityAliases: display.aliases,
-      session,
+      session: connection.state.snapshot,
+      ...(interactive
+        ? {
+            height: process.stdout.rows || 24,
+            screen: display.screen,
+            notice: connection.state.error || notice,
+            pending: connection.state.pending,
+            command,
+          }
+        : {}),
     });
-    const frame = notice ? `${notice}\n\n${view}` : view;
-    if (frame === previous && !clear) return;
-    previous = frame;
-    const prompt = display.prompt();
-    const draft = input?.line ?? "";
+    if (stopped) return; // A read may complete after q/SIGTERM restored the parent terminal.
+    const frame = interactive
+      ? view
+      : `${connection.state.error || notice ? `${connection.state.error || notice}\n\n` : ""}${view}`;
+    const prompt = display.prompt(),
+      draft = input?.line ?? "";
+    const rendered = `${frame}${!interactive && input ? `\n\n${prompt}${draft}` : ""}`;
+    if (rendered === previous) return;
+    previous = rendered;
     process.stdout.write(
-      clear ? `\u001b]0;PI-DADDY\u0007\u001b[2J\u001b[H${frame}\n\n${input ? prompt + draft : ""}` : `${frame}\n`,
+      interactive
+        ? `\u001b[H${frame}\u001b[J`
+        : clear
+          ? `\u001b]0;PI-DADDY\u0007\u001b[2J\u001b[H${rendered}`
+          : `${rendered}\n`,
     );
-    if (input) input.setPrompt(prompt);
+    input?.setPrompt(prompt);
   };
-
   if (cli.once) {
     await draw(false);
     return;
   }
-  input = createInterface({ input: process.stdin, output: process.stdout, terminal: Boolean(process.stdin.isTTY) });
-  await draw(true);
-  let drawing = false;
   const redraw = (): void => {
-    if (drawing) return;
+    if (drawing || stopped) return;
     drawing = true;
-    void draw(true).finally(() => {
-      drawing = false;
-    });
+    void draw(true)
+      .catch((error) => {
+        notice = `Dashboard unavailable: ${String(error)}`;
+      })
+      .finally(() => {
+        drawing = false;
+      });
   };
-  input.on("line", (line) => {
+  const runCommand = async (line: string): Promise<void> => {
     const trimmed = line.trim();
-    if (trimmed.startsWith("m ") && sessionSocket && sessionToken) {
-      void dashboardSessionRequest(sessionSocket, sessionToken, { action: "set", edits: trimmed.slice(2).trim() })
-        .then(() => {
-          notice = "session model defaults updated";
-        })
-        .catch((error) => {
-          notice = `model edit refused: ${error instanceof Error ? error.message : String(error)}`;
-        })
-        .finally(redraw);
+    if (trimmed.startsWith("m ")) {
+      notice = (await connection.change({ action: "set", edits: trimmed.slice(2).trim() }))
+        ? "Session models updated"
+        : connection.state.error || "Session controls unavailable";
+    } else notice = display.input(line) ? "" : `Unknown command: ${trimmed}. Press ? for help.`;
+    redraw();
+  };
+  let stop: () => void = () => {};
+  const keypress = (text: string | undefined, key: Key): void => {
+    if (key.ctrl && key.name === "c") {
+      stop();
       return;
     }
-    // Rule 8: a line the display controls do not understand is said so, never swallowed.
-    notice = display.input(line) ? "" : `not a display command: ${JSON.stringify(trimmed)}. ${display.prompt()}`;
+    if (command !== undefined) {
+      if (key.name === "escape") command = undefined;
+      else if (key.name === "return") {
+        const line = command;
+        command = undefined;
+        void runCommand(line);
+      } else if (key.name === "backspace") command = [...command].slice(0, -1).join("");
+      else if (text && !key.ctrl && !key.meta && !/[\p{Cc}\p{Cf}]/u.test(text) && command.length < 2048)
+        command += text;
+      redraw();
+      return;
+    }
+    const action = display.key(
+      key.name === "return"
+        ? "return"
+        : ["up", "down", "escape", "tab"].includes(key.name || "")
+          ? key.name!
+          : text || "",
+    );
+    if (action === "quit") {
+      stop();
+      return;
+    }
+    if (action === "command") command = "";
+    if (action === "auto") {
+      const snapshot = connection.state.snapshot;
+      if (!snapshot) notice = "Daddy permission controls unavailable";
+      else {
+        const enabled = !snapshot.auto.enabled;
+        void connection.change({ action: "set-auto", enabled }).then((changed) => {
+          notice = changed
+            ? `Daddy permission Auto ${enabled ? "ON" : "OFF"}; ${enabled ? "future prompts auto-approved" : "admitted work continues"}`
+            : connection.state.error || "Permission change already pending";
+          redraw();
+        });
+      }
+    }
     redraw();
-  });
-  const timer = setInterval(redraw, DASHBOARD_REFRESH_MS);
-  process.on("SIGWINCH", redraw);
-  await new Promise<void>((settle) => {
-    const stop = () => {
-      clearInterval(timer);
-      input?.close();
-      process.off("SIGWINCH", redraw);
-      settle();
-    };
-    process.once("SIGINT", stop);
-    process.once("SIGTERM", stop);
-  });
+  };
+  let timer: ReturnType<typeof setInterval> | undefined;
+  const oldRaw = process.stdin.isRaw;
+  try {
+    if (interactive) {
+      emitKeypressEvents(process.stdin);
+      process.stdin.setRawMode(true);
+      process.stdin.resume();
+      process.stdout.write("\u001b[?1049h\u001b[?25l");
+    } else {
+      input = createInterface({ input: process.stdin, output: process.stdout, terminal: false });
+      input.on("line", (line) => {
+        void runCommand(line);
+      });
+    }
+    await new Promise<void>((settle) => {
+      stop = () => {
+        stopped = true;
+        settle();
+      };
+      process.once("SIGINT", stop);
+      process.once("SIGTERM", stop);
+      if (interactive) process.stdin.on("keypress", keypress);
+      process.on("SIGWINCH", redraw);
+      timer = setInterval(redraw, DASHBOARD_REFRESH_MS);
+      redraw();
+    });
+  } finally {
+    stopped = true;
+    if (timer) clearInterval(timer);
+    process.off("SIGINT", stop);
+    process.off("SIGTERM", stop);
+    process.off("SIGWINCH", redraw);
+    input?.close();
+    if (interactive) {
+      process.stdin.off("keypress", keypress);
+      process.stdin.setRawMode(oldRaw || false);
+      process.stdin.pause();
+      process.stdout.write("\u001b[?25h\u001b[?1049l");
+    }
+  }
 }
 
 const invoked = (() => {

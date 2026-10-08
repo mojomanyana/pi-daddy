@@ -18,7 +18,7 @@ export const APPROVAL_SCOPES = ["once", "session", "always"] as const;
 export type ApprovalScope = (typeof APPROVAL_SCOPES)[number];
 
 /** Where a yes came from, for the ledger. These call for different follow-ups, so they stay distinct. */
-export const APPROVAL_SOURCES = ["prompt", "session", "persisted", "inherited"] as const;
+export const APPROVAL_SOURCES = ["prompt", "session", "persisted", "inherited", "auto"] as const;
 export type ApprovalSource = (typeof APPROVAL_SOURCES)[number];
 
 /** Which call site is asking. Determines the scopes offered — see `offeredScopes`. */

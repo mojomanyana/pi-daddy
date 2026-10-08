@@ -38,11 +38,11 @@ const displayIdentifier = (value: string | undefined): string => (isLedgerDispla
 const ANSI_SGR = /\u001b\[[0-9;]*m/g;
 const WIDE_CELL = /\p{Extended_Pictographic}|[\u2E80-\u9FFF\uF900-\uFAFF]/u;
 
-function cellWidth(value: string): number {
+export function cellWidth(value: string): number {
   return [...value.replace(ANSI_SGR, "")].reduce((sum, char) => sum + (WIDE_CELL.test(char) ? 2 : 1), 0);
 }
 
-function truncate(value: string, width: number): string {
+export function truncate(value: string, width: number): string {
   if (cellWidth(value) <= width) return value;
   const target = Math.max(0, width - 1);
   let cells = 0;

@@ -376,3 +376,42 @@ test("existing Herdr native replies bind session bytes to the exact pane and exe
     prior === undefined ? delete process.env[ENV_NATIVE_SESSION_ROOT] : (process.env[ENV_NATIVE_SESSION_ROOT] = prior);
   }
 });
+
+test("a recovered native read distinguishes current availability from its earlier failure", async () => {
+  const f = await native(),
+    archive = await tempDir("native-read-recovery-");
+  const prior = process.env[ENV_NATIVE_SESSION_ROOT];
+  process.env[ENV_NATIVE_SESSION_ROOT] = f.root;
+  try {
+    const h = beginExecutionRetention(identity, archive);
+    h.observeSession({ source: "pi-session-file", value: join(f.root, "not-created-yet.jsonl") });
+    const path = (await h.flush()).manifestPath!;
+    const unavailable = parseExecutionRetentionManifest(await readFile(path, "utf8"));
+    assert.ok(unavailable.coverage.losses.includes("native-session-content-unavailable"));
+    assert.ok(unavailable.coverage.losses.includes("native-session-read-failed"));
+    h.observeSession({ source: "pi-session-file", value: f.path });
+    await h.flush();
+    const recovered = parseExecutionRetentionManifest(await readFile(path, "utf8"));
+    assert.equal(recovered.content.session.status, "retained");
+    assert.equal(recovered.coverage.losses.includes("native-session-content-unavailable"), false);
+    assert.equal(recovered.coverage.losses.includes("native-session-read-failed"), false);
+    assert.ok(recovered.coverage.losses.includes("native-session-read-failed-earlier"));
+    assert.ok(recovered.coverage.losses.includes("active-branch-unknown"));
+    h.observeSessionManager(f.manager);
+    await h.flush();
+    const observed = parseExecutionRetentionManifest(await readFile(path, "utf8"));
+    assert.equal(observed.nativeSession.branchState, "observed");
+    assert.equal(observed.coverage.losses.includes("active-branch-unknown"), false);
+    h.observeSession({ source: "pi-session-file", value: join(f.root, "now-unavailable.jsonl") });
+    h.finish(outcome);
+    await h.flush();
+    const lost = parseExecutionRetentionManifest(await readFile(path, "utf8"));
+    assert.equal(lost.content.session.status, "missing");
+    assert.ok(lost.coverage.losses.includes("native-session-content-unavailable"));
+    assert.ok(lost.coverage.losses.includes("native-session-read-failed"));
+    assert.ok(lost.coverage.losses.includes("native-session-read-failed-earlier"));
+    assert.ok(lost.coverage.losses.includes("active-branch-unknown"));
+  } finally {
+    prior === undefined ? delete process.env[ENV_NATIVE_SESSION_ROOT] : (process.env[ENV_NATIVE_SESSION_ROOT] = prior);
+  }
+});

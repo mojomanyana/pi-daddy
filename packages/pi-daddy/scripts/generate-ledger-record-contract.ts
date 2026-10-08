@@ -12,6 +12,7 @@ import {
   buildWorkspaceLeaseEvent,
 } from "../src/governance/ledger.ts";
 import type { CorrelationMetadata } from "../src/kernel/correlation.ts";
+import { APPROVAL_SOURCES } from "../src/kernel/approval.ts";
 import { REFUSAL_CODES } from "../src/kernel/refusals.ts";
 import { RECORD_FORMAT, RECORD_KINDS, recordDigest } from "../src/governance/record.ts";
 import { recordKindForEvent } from "../src/governance/ledger.ts";
@@ -216,6 +217,7 @@ export async function syncLedgerV3RefusalEnum(target = schemaPath): Promise<void
     };
   };
   schema.$defs.refusalCode.enum = [...REFUSAL_CODES];
+  (schema.$defs.approvalSource as { enum: string[] }).enum = [...APPROVAL_SOURCES];
   (schema.$defs.capabilityDecision as { properties: { gateOutcome: { enum: string[] } } }).properties.gateOutcome.enum =
     [...LEDGER_GATE_OUTCOMES];
   const prefixes = CAPABILITY_NAMESPACE_PREFIXES.map((prefix) => prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));

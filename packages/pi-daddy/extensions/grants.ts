@@ -1,3 +1,10 @@
+import { bindEcosystemVersions } from "./ecosystem-versions.ts";
+import {
+  initializeSessionAutoMode,
+  closeSessionAutoMode,
+  getDashboardControlState,
+  setAutoApproval,
+} from "./session-auto-mode.ts";
 /**
  * pi-daddy — the extension entry point pi loads.
  *
@@ -79,6 +86,7 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
   })();
   const observerExtensionPath = fileURLToPath(new URL("./activity-timeline.ts", import.meta.url));
   const session = trustedSession ?? createGrantsSession(extensionPath, undefined, observerExtensionPath);
+  bindEcosystemVersions(pi, session, fileURLToPath(new URL("../", import.meta.url)));
   session.currentThinking = typeof pi.getThinkingLevel === "function" ? () => pi.getThinkingLevel() : undefined;
   registerActivityTimeline(pi, session);
   const runtimeSnapshot = registerRuntimeSnapshot(pi, session);
@@ -131,6 +139,13 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
     // this absolute identity verbatim, and resolve(abs) remains abs at every deeper session start.
     if (session.ledgerPath) session.ledgerPath = resolve(ctx.cwd, session.ledgerPath);
     try {
+      try {
+        const nativeId = (owner as { getSessionId?: () => string }).getSessionId?.() ?? session.episodeId;
+        await initializeSessionAutoMode(session, reload.environment, nativeId);
+      } catch (error) {
+        session.autoModeFailure = `Daddy Auto mode unavailable: ${String(error)}`;
+        throw error;
+      }
       // ADR-0076 PR 3d: a pre-format project ledger is imported once into the record envelope, bodies verbatim, each
       // record marked with its source line; the old file is left untouched. Happens before any spawn can append.
       if (session.governed) {
@@ -319,6 +334,10 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
     return undefined;
   });
 
+  pi.on("session_shutdown", async (event) => {
+    if (event.reason !== "reload") await closeSessionAutoMode(session);
+  });
+
   /**
    * Reap the herdr panes this agent run opened — ADR-0032.
    *
@@ -433,8 +452,8 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
     // Built per invocation and spelled out field by field, rather than passing the session whole: what a
     // read-only diagnostic may see is a decision, and `GrantsCommandContext` is where it is recorded.
     handler: async (args, ctx) => {
-      // Named revocation validates the current definition. Emergency revoke-all needs no resource acquisition.
-      if (args.trim() !== "revoke --all") await session.ensureDefinitions?.();
+      // Auto controls and emergency revoke-all need no definition acquisition; OFF must remain reachable.
+      if (args.trim() !== "revoke --all" && args.trim().split(/\s+/)[0] !== "auto") await session.ensureDefinitions?.();
       return grantsCommand.handler(args, {
         ...ctx,
         grants: {
@@ -463,6 +482,13 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
               }
             : {}),
           nativeSessionRoot: session.nativeSessionRoot,
+          changeAutoMode: async (enabled: boolean) => {
+            const { auto } = await setAutoApproval(session, enabled, "command");
+            return `${auto.enabled ? "ON" : "OFF"} (${auto.source}; current session permissions)`;
+          },
+          autoModeStatus: await getDashboardControlState(session)
+            .then(({ auto }) => `${auto.enabled ? "ON" : "OFF"} (${auto.source}; current session permissions)`)
+            .catch((error) => `unavailable: ${String(error)}`),
           catalog: session.catalog,
           definitions: session.definitions,
           sessionApprovals: session.sessionApprovals,

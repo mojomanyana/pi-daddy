@@ -46,12 +46,16 @@ export async function recordDelegationDecision(input: {
       result: plan.result,
       blocked: !plan.ok,
       reason: plan.reason,
-      approved: approval?.approved ?? approvalFacts?.approved,
-      approvalSources: approval?.sources ?? approvalFacts?.sources,
-      approvalScopes: approval?.recordedScopes ?? approvalFacts?.scopes,
-      approvalExpiresAt: approval?.expiresAt ?? approvalFacts?.expiresAt,
-      approvalUses: approval?.uses ?? approvalFacts?.uses,
-      humanDenied: approval?.humanDenied ?? approvalFacts?.humanDenied,
+      // A step can spend an upfront manual once and acquire fresh Auto permission for another capability.
+      approved:
+        approval || approvalFacts
+          ? [...new Set([...(approvalFacts?.approved ?? []), ...(approval?.approved ?? [])])]
+          : undefined,
+      approvalSources: { ...approvalFacts?.sources, ...approval?.sources },
+      approvalScopes: { ...approvalFacts?.scopes, ...approval?.recordedScopes },
+      approvalExpiresAt: { ...approvalFacts?.expiresAt, ...approval?.expiresAt },
+      approvalUses: { ...approvalFacts?.uses, ...approval?.uses },
+      humanDenied: approval?.humanDenied || approvalFacts?.humanDenied,
       gateOutcome: approval?.gateOutcome,
       definitionDigest: plan.definitionDigest,
       definitionHash: plan.definitionHash,

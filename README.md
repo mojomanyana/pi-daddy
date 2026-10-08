@@ -1,6 +1,6 @@
 # pi-daddy
 
-Source target: **0.46.1**. Before installation, verify that `npm view pi-daddy version` and Git tag `v0.46.1` both resolve to this release.
+Source target: **0.47.0**. Before installation, verify that `npm view pi-daddy version` and Git tag `v0.47.0` both resolve to this release.
 
 **Capability governance and coordination for [pi](https://github.com/badlogic/pi-mono)'s multi-level agent system.**
 An orchestrator grants each sub-agent a deliberate subset of what it holds and withholds the rest. A sub-agent may
@@ -163,12 +163,25 @@ escape hatch for an operator who wants the old behaviour, and an explicitly empt
 
 ## Approvals
 
-A gated capability needs the UI of the session executing the delegation. Captured children use Pi's JSON mode
-without a UI; a gate with neither an inherited approval nor an available UI is denied. The answer is **once**, **for this session**, or **always** (persisted for a bounded period, offered only for a
+With Auto OFF, a gated capability needs a valid approval or the UI of the session executing the delegation. Captured children use Pi's JSON mode
+without a UI; a gate with neither a valid approval nor an available UI is denied. The answer is **once**, **for this session**, or **always** (persisted for a bounded period, offered only for a
 named definition, keyed `capability@subject`). Approvals inherit down the subtree intersected with each child's grant;
 a `once` never crosses a spawn. The approval store and governance ledger never store raw task text. `/grants
 approvals` lists what is persisted; `/grants revoke <capability>@<definition>` or `--all` removes it. The store lives
 in pi's agent directory, not in the workspace.
+
+**Auto mode** lets the operator approve every Daddy permission request for the current session and its descendants.
+Start Pi with `PI_DADDY_AUTO_MODE=1` for Auto ON, or `PI_DADDY_AUTO_MODE=0` (the default when unset) for Auto OFF.
+In the connected dashboard, press **a** to switch it on or off. `/grants auto on` and `/grants auto off` control the
+same session setting; `/grants` shows the current state and source. Reload preserves the session choice; a new
+Pi session starts from the environment default.
+
+Auto is checked again before each delegation or chain step. Turning it OFF stops future automatic admissions;
+already admitted work continues and independently granted manual approvals remain valid. Turning it ON can release
+an outstanding Daddy approval prompt. An unavailable owning session never grants automatic permission. Automatic
+decisions are recorded as `source: auto`, once for that admission, rather than banked as human or persistent approvals.
+Capability grants, definition identity, workspace routing and execution settlement checks still apply. JEV calls and
+LoRA storage retain their separate consent controls.
 
 Monetary usage is observational. It never pauses, stops or authorizes a child. Available usage remains in
 lifecycle records and episode reports; missing or partial coverage is not a zero-cost claim. Permission approvals,
@@ -216,7 +229,7 @@ work, final availability, subtree cleanup and optional observation completeness 
 execution returns `isError` with its available evidence. Display, diagnostics and optional recording cannot replace
 the primary final. Unknown cleanup retains capacity and workspace exclusion.
 
-Pi and TypeBox are wildcard host-provided peers so Pi's extension loader supplies one shared runtime copy. Development and release qualification pin exact Pi **1.0.4**; later Pi versions require new qualification. Prefer a Pi-managed install under a host pinned to 1.0.4. An ordinary standalone npm install may resolve newer peer versions and is outside this qualification. In a Pi-managed no-peer install, standalone help, version and reporting remain available; run initialization inside Pi with `/grants init`. Use Principal **4.11.1** with this runtime's `delegate_describe` contract. Native phases use `plan`, `build`, `review`, `debug`, and `investigate` with their returned `definitionId`; independent parallel work uses one `delegate_all` batch.
+Pi and TypeBox are wildcard host-provided peers so Pi's extension loader supplies one shared runtime copy. Development and release qualification pin exact Pi **1.0.4**; later Pi versions require new qualification. Prefer a Pi-managed install under a host pinned to 1.0.4. An ordinary standalone npm install may resolve newer peer versions and is outside this qualification. In a Pi-managed no-peer install, standalone help, version and reporting remain available; run initialization inside Pi with `/grants init`. Use Principal **4.11.2** with this runtime's `delegate_describe` contract. Native phases use `plan`, `build`, `review`, `debug`, and `investigate` with their returned `definitionId`; independent parallel work uses one `delegate_all` batch.
 
 Final capture preserves whitespace and concatenates text blocks without inserting separators. Tool-call terminals, empty visible finals and non-`stop` reasons are unavailable. Persisted message comparisons ignore object key order while preserving array order and every field value. The shared `final-conformance.json` table checks these semantics in both runtime and harness. Capture remains bounded: 4 MiB visible final, 32 MiB protocol line, 64 MiB persisted session, and a 3-second bounded session read. Exceeding a limit reports an unavailable final and blocks dependent handoffs; it does not imply the worker failed to settle.
 
@@ -247,12 +260,29 @@ operator authorization, candidate and artifacts before consuming its checkpoint 
 This bridge never grants capabilities, approves work or calls JEV/OpenAI/other models. The ledger schema is unchanged.
 Same-user hostile filesystem or co-loaded-extension authenticity is outside this cooperative ownership boundary.
 
-`pi-daddy-dashboard` renders a ledger or activity timeline in a terminal; `/grants dashboard` opens it in a Herdr pane
-beside the session. Its execution history and current episode cost are
-read-only. A dashboard connected through `/grants dashboard` accepts
-`m <definition> <provider:model> <thinking>` (or `m all ...`) over a private session-local socket and applies the same
-in-memory overrides and `session_config` audit event as `/grants models`; a standalone dashboard is read-only, and
-neither form can affect enforcement.
+`pi-daddy-dashboard` shows current work and actual pending approvals first; completed history is collapsed by default.
+`/grants dashboard` opens it beside the session in a Herdr pane. The header shows Auto ON/OFF and connection state.
+Use **a** to switch Auto, arrow keys to select a row, **Enter** for details, **m** for session models, **h** for history,
+and **?** for help. The view fits the terminal and follows resize events. A disconnected control displays its state
+as unavailable until the owning session acknowledges a fresh snapshot.
+
+A connected dashboard sends explicit Auto choices and model edits over a private session-local socket. Model edits
+use the same in-memory overrides and `session_config` audit path as `/grants models`; `m <definition>
+<provider:model> <thinking>` and `m all ...` remain available in command mode. A standalone dashboard is read-only.
+Execution history and cost remain observations, and incomplete usage is shown as unavailable rather than zero.
+
+Press **v** for ecosystem versions. Pi, Daddy, Principal and Harness each show the loaded package generation,
+version currently installed on disk, source and path. A mismatch calls for a reload (restart for Pi itself).
+Older extensions without the reporter show their installed version with the loaded version explicitly unknown.
+Multiple sources are flagged for inspection rather than choosing one arbitrarily. Package versions describe
+what is present; they do not establish compatibility qualification or that npm has no newer release.
+Version details provide native Pi commands for changing an explicit npm pin and rechecking Principal's installed
+agent definitions. `pi update --extensions` retains pinned versions; use `pi install npm:<package>@<version>` to
+replace a pin, then deliberately reload. There are no background registry checks or silent installations.
+
+**:** opens command mode, **Tab** changes the task filter, **p/f** shows retained prompt/final content,
+**Esc** returns to the previous view and **q** closes the dashboard.
+
 
 ## Bounds and configuration
 
@@ -261,7 +291,7 @@ configuration where both exist.
 
 | Area | Variables |
 | :--- | :--- |
-| Governance | `PI_DADDY_GOVERNANCE`, `PI_DADDY_GRANT`, `PI_DADDY_GATED`, `PI_DADDY_MAX_DEPTH`, `PI_DADDY_FANOUT`, `PI_DADDY_LEDGER`, `PI_DADDY_APPROVAL_TIMEOUT` |
+| Governance | `PI_DADDY_GOVERNANCE`, `PI_DADDY_GRANT`, `PI_DADDY_GATED`, `PI_DADDY_MAX_DEPTH`, `PI_DADDY_FANOUT`, `PI_DADDY_LEDGER`, `PI_DADDY_APPROVAL_TIMEOUT`, `PI_DADDY_AUTO_MODE` |
 | Child execution | `PI_DADDY_HERDR`, `PI_DADDY_HERDR_WORKSPACE`, `PI_DADDY_HERDR_KEEP_PANE`, `PI_DADDY_CHILD_IDLE_TIMEOUT`, `PI_DADDY_CHILD_TIMEOUT`, `PI_DADDY_ALLOW_UNRESOLVED_MODELS` |
 | Workspaces and retention | `PI_DADDY_WORKSPACE_REGISTRY`, `PI_DADDY_WORKSPACE_LEASE_DIR`, `PI_DADDY_EXECUTION_ARCHIVE`, `PI_DADDY_RETAIN_NATIVE_SESSIONS`, `PI_DADDY_NATIVE_SESSION_ROOT` |
 | Activity | `PI_DADDY_ACTIVITY_TIMELINE`, `PI_DADDY_ACTIVITY_CONTENT` |

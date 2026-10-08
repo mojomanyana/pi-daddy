@@ -1,9 +1,11 @@
+import { ENV_AUTO_MODE, ENV_AUTO_MODE_REF } from "../src/kernel/env-names.ts";
 import type { OwnerCapacity } from "./session-capacity.ts";
 import { GRANT_ENV_KEYS } from "../src/kernel/propagation.ts";
 import type { BoundedReadCleanupError } from "../src/kernel/bounded-read.ts";
 
 /** The root baseline and latest child publication for one real Pi session owner. */
 export interface ReloadLifecycle {
+  autoMode?: import("./session-auto-mode.ts").SessionAutoLifecycle;
   runtimeSnapshotUnsubscribe?: () => void;
   runtimeSnapshotGeneration?: object;
   runtimeSettlements?: Map<string, import("../src/governance/runtime-settlement.ts").RuntimeSettlement>;
@@ -59,7 +61,19 @@ function withRoot(root: Record<string, string | undefined>): NodeJS.ProcessEnv {
 
 /** Factory-time state is provisional: ExtensionAPI is recreated before the stable session owner is known. */
 export function beginExtensionLifecycle(): { environment: NodeJS.ProcessEnv; lifecycle: ReloadLifecycle } {
-  return { environment: process.env, lifecycle: { root: snapshot() } };
+  const root = snapshot();
+  const publication = state().latestChildPublication;
+  if (
+    publication?.environment[ENV_AUTO_MODE_REF] &&
+    root[ENV_AUTO_MODE_REF] === publication.environment[ENV_AUTO_MODE_REF]
+  ) {
+    // Recognize our own published Auto reference independently of unrelated grant setting changes.
+    // A new SDK owner must not adopt another local owner; a real descendant has no local publication.
+    if (root[ENV_AUTO_MODE] === publication.environment[ENV_AUTO_MODE])
+      root[ENV_AUTO_MODE] = publication.lifecycle.root[ENV_AUTO_MODE];
+    root[ENV_AUTO_MODE_REF] = publication.lifecycle.root[ENV_AUTO_MODE_REF];
+  }
+  return { environment: withRoot(root), lifecycle: { root } };
 }
 
 /**
@@ -100,6 +114,7 @@ export function bindReloadLifecycle(
       // Pending old-root operations keep THEIR original owner; they cannot publish/fault this replacement.
       existing = {
         root: current,
+        autoMode: existing.autoMode,
         activityRootId: existing.activityRootId,
         episodeId: existing.episodeId,
         capacity: existing.capacity,

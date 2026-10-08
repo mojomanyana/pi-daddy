@@ -10,6 +10,8 @@
  * no-op UI context whose `select` resolves undefined, so even a missed `hasUI` check would deny.
  */
 
+import { randomUUID } from "node:crypto";
+import type { AutoModeReader } from "../kernel/auto-mode.ts";
 import { approvalKey, offeredScopes, type ApprovalPath, type ApprovalScope } from "../kernel/approval.ts";
 import type { Capability } from "../kernel/resolve.ts";
 
@@ -72,6 +74,8 @@ export interface PromptOutcome {
    * one. The rider's honest source is `session`, and this flag is how the caller can tell.
    */
   joined?: boolean;
+  /** Provisional Auto permission; the admission caller must still check the live owner policy. */
+  source?: "auto";
 }
 
 export interface ApprovalGateOptions {
@@ -82,6 +86,7 @@ export interface ApprovalGateOptions {
   mode: string;
   /** Resolve only when this caller must open a new dialog; unused invalid settings cannot revoke authority. */
   timeoutMs?: number | (() => number | undefined);
+  autoMode?: AutoModeReader;
 }
 
 export interface ApprovalGate {
@@ -106,6 +111,8 @@ function labelToScope(label: string, scopes: ApprovalScope[]): ApprovalScope | n
   return scopes.find((s) => SCOPE_LABELS[s] === label) ?? null;
 }
 
+const autoApproval = (): PromptOutcome => ({ scope: "once", kind: "granted", source: "auto" });
+
 const interrupted = (request: PromptRequest, kind: "expired" | "aborted"): PromptOutcome => ({
   scope: null,
   kind,
@@ -124,26 +131,61 @@ async function selectApproval(
   const timeout = typeof options.timeoutMs === "function" ? options.timeoutMs() : options.timeoutMs;
   const controller = new AbortController();
   let outcome: PromptOutcome | undefined;
+  let settled = false;
   let wake!: (value: PromptOutcome) => void;
   const stopped = new Promise<PromptOutcome>((resolve) => {
     wake = resolve;
   });
-  const stop = (kind: "expired" | "aborted") => {
-    if (outcome) return;
-    outcome = interrupted(request, kind);
+  const settle = (next: PromptOutcome) => {
+    if (settled) return;
+    settled = true;
+    outcome = next;
     // Resolve our tagged outcome before a UI reacts to abort by returning undefined.
     wake(outcome);
     controller.abort();
   };
+  const stop = (kind: "expired" | "aborted") => settle(interrupted(request, kind));
   const abort = () => stop("aborted");
   request.signal?.addEventListener("abort", abort, { once: true });
   const timer = timeout === undefined ? undefined : setTimeout(() => stop("expired"), timeout);
+  let untrack: (() => void) | undefined;
   try {
     if (request.signal?.aborted) stop("aborted");
     if (outcome) return outcome;
-    const chosen = await Promise.race([options.ui.select(title, labels, { signal: controller.signal }), stopped]);
+    untrack = options.autoMode?.trackPending({
+      id: randomUUID(),
+      subject: request.subject,
+      capability: request.capability,
+    });
+    const selection = options.ui.select(title, labels, { signal: controller.signal }).then((chosen) => {
+      settled = true;
+      return chosen;
+    });
+    if (options.autoMode) {
+      const auto = options.autoMode;
+      void (async () => {
+        while (!controller.signal.aborted) {
+          await auto.waitEnabled(controller.signal);
+          // A notification is not authority: ON may already have changed back to OFF.
+          if (!controller.signal.aborted && (await auto.read()).enabled) {
+            settle(autoApproval());
+            return;
+          }
+        }
+      })().catch((error) => {
+        if (!controller.signal.aborted)
+          settle({
+            scope: null,
+            kind: "error",
+            reason: `Auto permission policy unavailable, denying (${String(error)})`,
+          });
+      });
+    }
+    const chosen = await Promise.race([selection, stopped]);
     return outcome ?? chosen;
   } finally {
+    controller.abort();
+    untrack?.();
     if (timer !== undefined) clearTimeout(timer);
     request.signal?.removeEventListener("abort", abort);
   }
@@ -211,6 +253,15 @@ export function createApprovalGate(
   inFlight: InFlightApprovals = new Map(),
 ): ApprovalGate {
   const ask = async (request: PromptRequest): Promise<PromptOutcome> => {
+    // A queued once waiter owns its own decision. Auto may have changed while it joined another dialog.
+    if (options.autoMode) {
+      try {
+        if ((await options.autoMode.read()).enabled)
+          return request.signal?.aborted ? interrupted(request, "aborted") : autoApproval();
+      } catch (error) {
+        return { scope: null, kind: "error", reason: `Auto permission policy unavailable, denying (${String(error)})` };
+      }
+    }
     const scopes = offeredScopes(request.path);
     const title =
       `grants: approve ${request.capability} for ${request.subject}?` +
@@ -251,6 +302,13 @@ export function createApprovalGate(
   return {
     async request(request: PromptRequest): Promise<PromptOutcome> {
       if (request.signal?.aborted) return interrupted(request, "aborted");
+      try {
+        if (options.autoMode && (await options.autoMode.read()).enabled) {
+          return request.signal?.aborted ? interrupted(request, "aborted") : autoApproval();
+        }
+      } catch (error) {
+        return { scope: null, kind: "error", reason: `Auto permission policy unavailable, denying (${String(error)})` };
+      }
       if (!options.hasUI) {
         // Nobody was there to ask — distinct from a person declining, which is why this is its own kind
         // rather than being folded into "declined" (see PromptOutcomeKind).

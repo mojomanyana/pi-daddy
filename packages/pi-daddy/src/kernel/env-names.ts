@@ -20,6 +20,8 @@ export const ENV_MAX_DEPTH = "PI_DADDY_MAX_DEPTH";
 export const ENV_GATED = "PI_DADDY_GATED";
 export const ENV_LEDGER = "PI_DADDY_LEDGER";
 export const ENV_APPROVED = "PI_DADDY_APPROVED";
+export const ENV_AUTO_MODE = "PI_DADDY_AUTO_MODE";
+export const ENV_AUTO_MODE_REF = "PI_DADDY_AUTO_MODE_REF";
 export const ENV_FANOUT = "PI_DADDY_FANOUT";
 export const ENV_PARENT_ID = "PI_DADDY_PARENT_ID";
 export const ENV_EXECUTION_ID = "PI_DADDY_EXECUTION_ID";
@@ -86,6 +88,8 @@ export const GOVERNANCE_ENV_KEYS: readonly string[] = Object.freeze([
   ENV_GATED,
   ENV_LEDGER,
   ENV_APPROVED,
+  ENV_AUTO_MODE,
+  ENV_AUTO_MODE_REF,
   ENV_FANOUT,
   ENV_PARENT_ID,
   ENV_EXECUTION_ID,

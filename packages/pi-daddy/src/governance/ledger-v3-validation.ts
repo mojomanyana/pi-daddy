@@ -21,7 +21,7 @@ export function isRetiredLedgerEvent(event: { event?: unknown }): boolean {
 
 const SHA256_RE = /^[a-f0-9]{64}$/i;
 const EXECUTORS = new Set(["process", "herdr"]);
-const APPROVAL_SOURCES = new Set(["prompt", "session", "persisted", "inherited"]);
+const APPROVAL_SOURCES = new Set(["prompt", "session", "persisted", "inherited", "auto"]);
 const APPROVAL_SCOPES = new Set(["once", "session", "always"]);
 const GATE_OUTCOMES = new Set(["declined", "dismissed", "expired", "aborted", "no-ui", "error"]);
 const LEASE_OUTCOMES = new Set([
@@ -146,7 +146,7 @@ const FIELDS = {
     "outcome",
     "newCeiling",
   ]),
-  session_config: new Set(["ledgerVersion", "event", "ts", "episodeId", "outcome", "trigger", "overrides"]),
+  session_config: new Set(["ledgerVersion", "event", "ts", "episodeId", "outcome", "trigger", "overrides", "autoMode"]),
   episode_outcome: new Set([
     "ledgerVersion",
     "event",
@@ -537,7 +537,7 @@ export function validateLedgerV3Event(event: LedgerV3Object): string | null {
     if (
       !isEpisodeId(event.episodeId) ||
       !["kept", "changed"].includes(String(event.outcome)) ||
-      !["first-delegation", "grants-models"].includes(String(event.trigger)) ||
+      !["first-delegation", "grants-models", "auto-mode"].includes(String(event.trigger)) ||
       !isLedgerObject(event.overrides) ||
       !Object.entries(event.overrides).every(
         ([name, value]) =>
@@ -549,6 +549,20 @@ export function validateLedgerV3Event(event: LedgerV3Object): string | null {
       )
     )
       return "session config fields are invalid";
+    if (event.trigger === "auto-mode") {
+      const auto = event.autoMode;
+      if (
+        event.outcome !== "changed" ||
+        Object.keys(event.overrides).length !== 0 ||
+        !isLedgerObject(auto) ||
+        Object.keys(auto).length !== 3 ||
+        typeof auto.enabled !== "boolean" ||
+        !["default", "environment", "session"].includes(String(auto.source)) ||
+        !Number.isSafeInteger(auto.revision) ||
+        (auto.revision as number) < 0
+      )
+        return "auto mode config fields are invalid";
+    } else if (event.autoMode !== undefined) return "auto mode config requires its own trigger";
     return null;
   }
   if (kind === "episode_outcome") return validateEpisodeOutcome(event);

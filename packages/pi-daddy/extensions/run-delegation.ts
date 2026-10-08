@@ -79,6 +79,13 @@ export interface GatedPlan {
   approval?: ApprovalOutcome;
 }
 
+/** Discard provisional Auto facts when OFF or a policy error requires a fresh decision. */
+function forgetAutoApprovals(outcome: ApprovalOutcome, capabilities: string[]): void {
+  outcome.approved = outcome.approved.filter((capability) => !capabilities.includes(capability));
+  for (const field of ["sources", "scopes", "recordedScopes", "bindings", "expiresAt", "uses"] as const)
+    for (const capability of capabilities) delete outcome[field][capability];
+}
+
 /**
  * Plan a delegation and satisfy its gate as far as approvals allow.
  *
@@ -143,12 +150,13 @@ export async function planWithApprovals(
       plan.approvalBinding,
     );
     const outcome = approval;
-    if (outcome.approved.length > 0) {
-      plan = observedPlan({
+    while (outcome.approved.length > 0) {
+      const context = {
         // The scope is the REAL one: a `once` approval still authorises this spawn, and
         // `inheritApprovals` then keeps it from reaching the child. See ADR-0014. R-29 is what makes
         // this safe under fan-out: a `once` is consumed by exactly one concurrent caller.
         ...(await session.delegationContext([
+          ...(preApproved ?? []),
           ...republishable(session),
           ...outcome.approved.map((capability) => ({
             capability,
@@ -167,7 +175,35 @@ export async function planWithApprovals(
           })),
         ])),
         ...extra,
-      });
+      };
+      const automatic = outcome.approved.filter((capability) => outcome.sources[capability] === "auto");
+      // The owner serializes this check with OFF. Permission is admitted here, after context preparation;
+      // a later OFF does not cancel a delegation already admitted to its load-bearing ledger write.
+      if (automatic.length > 0 && !(await session.autoMode?.admit(signal))) {
+        const renewed = await obtainApprovals(
+          session,
+          automatic,
+          approvalSubject,
+          request.agent ? "definition" : "delegate",
+          ctx,
+          request.task,
+          signal,
+          plan.approvalBinding,
+        );
+        forgetAutoApprovals(outcome, automatic);
+        outcome.approved.push(...renewed.approved);
+        for (const field of ["sources", "scopes", "recordedScopes", "bindings", "expiresAt", "uses"] as const)
+          Object.assign(outcome[field], renewed[field]);
+        outcome.banked = [...(outcome.banked ?? []), ...(renewed.banked ?? [])];
+        outcome.humanDenied ||= renewed.humanDenied;
+        outcome.gateOutcome = renewed.gateOutcome;
+        outcome.refusalCode = renewed.refusalCode;
+        outcome.reason = renewed.reason;
+        if (automatic.some((capability) => !renewed.approved.includes(capability))) break;
+        continue;
+      }
+      plan = observedPlan(context);
+      break;
     }
     if (!plan.ok && approval.reason) {
       plan = {
@@ -178,6 +214,16 @@ export async function planWithApprovals(
     }
   } catch (error) {
     const message = `grants: approval flow failed, denying (${String(error)})`;
+    if (approval) {
+      const failed = approval;
+      forgetAutoApprovals(
+        failed,
+        failed.approved.filter((capability) => failed.sources[capability] === "auto"),
+      );
+      approval.gateOutcome = "error";
+      approval.refusalCode = "APPROVAL_FLOW_FAILED";
+      approval.reason = message;
+    }
     plan = { ...plan, reason: message, refusal: structuredRefusal("APPROVAL_FLOW_FAILED", message) };
   }
 
