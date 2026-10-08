@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
+  LEDGER_GATE_OUTCOMES,
   buildChildLifecycleEvent,
   buildEpisodeCostGateEvent,
   buildEpisodeOutcomeEvent,
@@ -215,6 +216,8 @@ export async function syncLedgerV3RefusalEnum(target = schemaPath): Promise<void
     };
   };
   schema.$defs.refusalCode.enum = [...REFUSAL_CODES];
+  (schema.$defs.capabilityDecision as { properties: { gateOutcome: { enum: string[] } } }).properties.gateOutcome.enum =
+    [...LEDGER_GATE_OUTCOMES];
   const prefixes = CAPABILITY_NAMESPACE_PREFIXES.map((prefix) => prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
   schema.$defs.ledgerCapabilityIdentifier.pattern = `^(?:${prefixes.join("|")})[A-Za-z0-9@*][A-Za-z0-9@*._/-]{0,255}$`;
   if (!schema.oneOf.some((entry) => entry.$ref === "#/$defs/costGate")) schema.oneOf.push({ $ref: "#/$defs/costGate" });

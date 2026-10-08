@@ -1,6 +1,6 @@
 # pi-daddy
 
-Source target: **0.45.0**. Before installation, verify that `npm view pi-daddy version` and Git tag `v0.45.0` both resolve to this release.
+Source target: **0.46.1**. Before installation, verify that `npm view pi-daddy version` and Git tag `v0.46.1` both resolve to this release.
 
 **Capability governance and coordination for [pi](https://github.com/badlogic/pi-mono)'s multi-level agent system.**
 An orchestrator grants each sub-agent a deliberate subset of what it holds and withholds the rest. A sub-agent may
@@ -216,7 +216,7 @@ work, final availability, subtree cleanup and optional observation completeness 
 execution returns `isError` with its available evidence. Display, diagnostics and optional recording cannot replace
 the primary final. Unknown cleanup retains capacity and workspace exclusion.
 
-Pi and TypeBox are wildcard host-provided peers so Pi's extension loader supplies one shared runtime copy. Development and release qualification pin exact Pi **1.0.4**; later Pi versions require new qualification. Prefer a Pi-managed install under a host pinned to 1.0.4. An ordinary standalone npm install may resolve newer peer versions and is outside this qualification. In a Pi-managed no-peer install, standalone help, version and reporting remain available; run initialization inside Pi with `/grants init`. Use Principal **4.8.0** with this runtime's `delegate_describe` contract. Native phases use `plan`, `build`, `review`, `debug`, and `investigate` with their returned `definitionId`; independent parallel work uses one `delegate_all` batch.
+Pi and TypeBox are wildcard host-provided peers so Pi's extension loader supplies one shared runtime copy. Development and release qualification pin exact Pi **1.0.4**; later Pi versions require new qualification. Prefer a Pi-managed install under a host pinned to 1.0.4. An ordinary standalone npm install may resolve newer peer versions and is outside this qualification. In a Pi-managed no-peer install, standalone help, version and reporting remain available; run initialization inside Pi with `/grants init`. Use Principal **4.11.1** with this runtime's `delegate_describe` contract. Native phases use `plan`, `build`, `review`, `debug`, and `investigate` with their returned `definitionId`; independent parallel work uses one `delegate_all` batch.
 
 Final capture preserves whitespace and concatenates text blocks without inserting separators. Tool-call terminals, empty visible finals and non-`stop` reasons are unavailable. Persisted message comparisons ignore object key order while preserving array order and every field value. The shared `final-conformance.json` table checks these semantics in both runtime and harness. Capture remains bounded: 4 MiB visible final, 32 MiB protocol line, 64 MiB persisted session, and a 3-second bounded session read. Exceeding a limit reports an unavailable final and blocks dependent handoffs; it does not imply the worker failed to settle.
 
@@ -276,6 +276,16 @@ limits still apply independently; this is not a lifetime call quota.
 The retired `PI_DADDY_EPISODE_COST_CEILING`, `PI_DADDY_ADVISOR`, `PI_DADDY_ADVISOR_KEY`,
 `PI_DADDY_ADVISOR_MODEL` and `PI_DADDY_ADVISOR_TASK_EGRESS` inputs are inert compatibility inputs.
 
+Interactive approval prompts wait for the human by default. Set `PI_DADDY_APPROVAL_TIMEOUT` to canonical
+whole seconds (1 through 2,147,483) for an explicit deadline; unset it or use literal `0` to wait indefinitely.
+Expiry, user dismissal and caller cancellation have distinct `expired`, `dismissed` and `aborted` outcomes.
+Each grants no permission and explains how to retry the delegation for a new prompt. Existing approvals
+remain usable without consulting an unused timeout setting. Malformed values refuse a needed new prompt.
+
+`/grants` shows effective child deadlines, approval waiting policy, and diagnostic retention settings.
+Child wall/idle controls remain runtime safety bounds; zero or malformed child settings select their defaults.
+They do not add time or token instructions to model prompts.
+
 `PI_DADDY_CHILD_IDLE_TIMEOUT` is seconds without activity before a child is stopped (default fifteen minutes);
 activity is output, a child-session-file change, or Linux process-tree CPU/descendant activity.
 `PI_DADDY_CHILD_TIMEOUT` is the runaway ceiling for a child that never goes quiet (default six hours). The remaining
@@ -314,6 +324,32 @@ or a connected dashboard to edit session overrides. Delegation never opens an au
 
 Valid thinking values are `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`. `/grants` shows the
 resolved value and source for every displayed definition.
+
+### Keep evidence for one diagnostic session
+
+Native child transcripts and execution diagnostics are separate opt-ins. To retain them for one Pi launch,
+create private local directories outside the repository and scope the settings to that command:
+
+```bash
+diagnostic_root=$(mktemp -d "${TMPDIR:-/tmp}/pi-daddy-diagnostic.XXXXXX")
+mkdir -m 700 "$diagnostic_root/native" "$diagnostic_root/archive"
+PI_DADDY_RETAIN_NATIVE_SESSIONS=1 \
+PI_DADDY_NATIVE_SESSION_ROOT="$diagnostic_root/native" \
+PI_DADDY_EXECUTION_ARCHIVE="$diagnostic_root/archive" \
+pi
+```
+
+Use `/grants` to confirm the session's opt-in and destinations. The native root must be an existing canonical
+absolute path owned by your user, mode 0700, without symlink ancestors. Each delegated execution gets a fresh
+native JSONL session. The coordinator keeps its normal Pi session. Diagnostic manifests and bounded captured
+bytes go under `archive`; inspect each delegation result's retention status and manifest coverage for losses.
+An opt-in is not a claim that every observation was retained. Keep the private directory until diagnosis is done;
+the operator controls its lifetime and disposal.
+
+These files may contain task text, tool output and private model reasoning. Local diagnostic retention does not
+enable JEV, provider egress, LoRA collection or training. Existing `/skill-harness` consent remains separate.
+Without native-session opt-in, temporary child transcripts are removed after settlement and cannot be recovered
+later from the activity timeline.
 
 ## Retired intervention inputs
 

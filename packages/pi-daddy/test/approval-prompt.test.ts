@@ -8,9 +8,7 @@ import {
   type ApprovalUI,
 } from "../src/governance/approval-prompt.ts";
 
-// The third argument is captured, not discarded: `opts.timeout` is the only reason an unattended dialog
-// eventually denies, and `opts.signal` is the only reason a cancelled turn does not orphan one. Dropping
-// them from the `select` call is silent unless a test looks.
+// Capture dialog controls: a gate-owned signal closes the dialog on an explicit deadline or cancellation.
 const recordingUI = (answer: string | undefined) => {
   const calls: Array<{
     title: string;
@@ -58,7 +56,7 @@ test("dismissing the dialog denies", async () => {
   const gate = createApprovalGate({ ui, hasUI: true, mode: "tui" });
   const outcome = await gate.request(req());
   assert.equal(outcome.scope, null);
-  assert.equal(outcome.kind, "dismissed", "a timeout/dismissal/abort is not a person declining");
+  assert.equal(outcome.kind, "dismissed", "dismissal is not a person declining");
 });
 
 test("choosing deny denies", async () => {
@@ -169,24 +167,13 @@ test("different keys prompt separately", async () => {
   assert.equal(calls, 2);
 });
 
-test("the timeout and the abort signal actually reach ui.select", async () => {
-  // Deleting `{ timeout, signal }` from the select call changes no other assertion in this file, yet it
-  // removes the dialog's only self-termination: an unattended prompt would wait forever and a cancelled
-  // turn would leave one orphaned. So it is asserted directly.
+test("the dialog receives gate-owned cancellation without a second ambiguous UI timeout", async () => {
   const { ui, calls } = recordingUI("Deny");
   const controller = new AbortController();
   const gate = createApprovalGate({ ui, hasUI: true, mode: "tui", timeoutMs: 45_000 });
   await gate.request(req({ signal: controller.signal }));
-
-  assert.equal(calls[0].opts?.timeout, 45_000, "the configured timeout is handed to the dialog");
-  assert.equal(calls[0].opts?.signal, controller.signal, "the caller's signal is handed to the dialog");
-});
-
-test("no configured timeout is passed through as no timeout, not as a default invented here", async () => {
-  const { ui, calls } = recordingUI("Deny");
-  await createApprovalGate({ ui, hasUI: true, mode: "tui" }).request(req({ signal: undefined }));
   assert.equal(calls[0].opts?.timeout, undefined);
-  assert.equal(calls[0].opts?.signal, undefined);
+  assert.ok(calls[0].opts?.signal instanceof AbortSignal);
 });
 
 test("single-flight survives the CALLER's pattern: a fresh gate per invocation still raises ONE dialog", async () => {
@@ -250,7 +237,7 @@ test("a provider's queue is released once the dialog resolves, so a later reques
 
 test("the timeout env var is read in seconds and converted to milliseconds", () => {
   assert.equal(timeoutMsFromEnv("30"), 30_000);
-  assert.equal(timeoutMsFromEnv(undefined), 120_000, "default is two minutes");
+  assert.equal(timeoutMsFromEnv(undefined), undefined, "default waits for the human");
   assert.equal(timeoutMsFromEnv("0"), undefined, "zero means wait indefinitely");
   assert.equal(timeoutMsFromEnv("2147483"), 2_147_483_000);
   for (const value of [
@@ -478,7 +465,7 @@ test("cancellation cannot turn a late dialog or joined answer into approval", as
   const results = await Promise.all([first, canceled]);
   assert.equal(results[0].scope, "session");
   assert.equal(results[1].scope, null);
-  assert.equal(results[1].kind, "dismissed");
+  assert.equal(results[1].kind, "aborted");
   const late = new AbortController();
   const dialog = createApprovalGate({
     ui: {
