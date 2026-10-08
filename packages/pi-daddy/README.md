@@ -53,3 +53,51 @@ settings or enforcement.
 The full product description is the repository [README](https://github.com/mojomanyana/pi-daddy#readme); the
 [CHANGELOG](./CHANGELOG.md) says what each release changed and what to do about breaking changes. The one shipped
 contract is `contracts/ledger-record/v1`.
+
+## Optional local public evidence capture
+
+Set `PI_DADDY_PUBLIC_EVIDENCE_DIR` before starting the coordinating Pi process to retain exact public
+`delegate_describe`, `delegate`, `delegate_all` and `delegate_chain` return content. It is off by default,
+including source-byte retention. Create a private directory owned by your user first, then use its canonical
+absolute Linux path (no symlink components):
+
+```bash
+mkdir -m 700 "$HOME/pi-public-evidence"
+PI_DADDY_PUBLIC_EVIDENCE_DIR="$(realpath "$HOME/pi-public-evidence")" PI_DADDY_HERDR=0 pi
+```
+
+Each returned result keeps its authored text, runtime evidence, error state and structured details. An added
+`Public evidence capture:` text block gives `status: "captured"` and a reusable `{path, sha256}` reference to a
+versioned `pi-daddy-public-evidence-v1` manifest. Read and hash-check that manifest and its referenced files;
+the manifest's `response` copies the exact public `{isError, content}` before the reference block is appended.
+This is the extension-return boundary, not a claim about downstream Pi hooks or provider wire serialization.
+
+Selected definition sources are copied from the bytes admitted during discovery, including the inline skill,
+Principal binding manifest, package identity and delegated agent where applicable. The exact dispatched body
+is a separate file. Raw source-copy SHA-256 preserves every byte, including a BOM; `sourceHash` retains the
+runtime's existing decoded-text hash semantics. Changing a source path later does not rewrite the snapshot.
+Manifest `requestedDefinitionId` is the caller's claim; `definitionId` is the observed planner selection.
+Requested execution IDs are allocated occurrences, not proof that those children started. Runtime outcomes
+contain only the existing allowlisted final and process-receipt projection, in original child/step order;
+skipped steps have no invented outcome. `finals` also copies each complete attributed public final separately,
+with its ordinal, execution ID and native session/message/leaf identity. Its byte hash must match the native
+final hash; unavailable finals remain null. Consumers never need to reconstruct a final from report delimiters.
+Process settlement remains separate from workspace cleanup.
+
+The configured root must already exist with owner-only permissions. Captures use exclusive ordinary files,
+held directory descriptors and fsync before publishing a reference; each capture is limited to 64 MiB and
+64 files. Files are mode 0600 and capture directories mode 0700. The operator owns total retention and disposal;
+there is no automatic deletion or lifetime disk quota. Partial files can remain after a failure.
+An unavailable source snapshot, bad path, permission error or capture limit produces a loud `failed` status
+without a success reference. It does not rewrite work results, respawn children or turn a failed execution into
+success. Typed exceptions before a result is returned preserve their original behavior and have no returned
+capture. The directory setting is stripped from captured-child environments. The same Pi owner restores its own setting
+on extension reload; unrelated owners do not inherit it. Set the value to literal `off` to explicitly disable
+capture on reload; future calls use the replacement setting while in-flight calls retain their original root.
+
+No request task text, tool arguments, credentials, private session/reasoning, raw `details` or hidden diagnostics
+are collected by this feature. Public authored output can itself contain sensitive information, so choose the
+local root deliberately. Hashes identify retained bytes; they do not authenticate against hostile processes
+running as the same user. Capture integrity establishes neither reviewer approval nor task completion and
+adds no grants, ledger events or automatic resumption. Future JEV/LoRA experiments may explicitly consume
+reviewed public evidence offline; this feature sends nothing to an external evaluator.

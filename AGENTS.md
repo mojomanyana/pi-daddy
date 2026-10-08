@@ -198,6 +198,20 @@ it measured nothing rather than passing quietly.
 
 ## Decisions still in force
 
+**Opt-in public evidence capture, 2026-10-08:** the operator may configure a private local capture directory
+before starting the coordinator. Only then do selected discovery snapshots retain their admitted source bytes;
+returned definition/delegation content receives a compact reference to an exact pre-reference public capture.
+The source identity comes from the actual planning context, not a later filesystem read or model transcription.
+Caller-requested identity, observed definition identity, allocated execution identity and actual native outcome
+remain separate. This is a narrowly authorized local exception to the historical result-retention omission;
+request task arguments, native private sessions/reasoning and hidden details remain excluded. File integrity
+never grants authority, review approval, task acceptance or automatic resume. The native ledger is unchanged.
+Capture errors are loud observations that preserve original work results and exception semantics. Root paths
+are canonical, private and operator-selected; writes are bounded, exclusive and synchronized before publishing
+refs. Same-user hostile authenticity and a lifetime retention quota are not claimed. JEV/LoRA use remains
+optional downstream offline evaluation; no advisor, metered API or automatic policy is restored.
+
+
 **Model-visible execution evidence, 2026-10-07:** native delegation results append a versioned allowlisted
 projection of their actual final identity, process cleanup receipt and observation state to text content.
 Pi's provider conversion does not send tool-result details to the coordinating model. The projection preserves

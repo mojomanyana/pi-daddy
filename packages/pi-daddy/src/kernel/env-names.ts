@@ -45,6 +45,8 @@ export const ENV_WORKSPACE_REGISTRY = "PI_DADDY_WORKSPACE_REGISTRY";
 export const ENV_WORKSPACE_LEASE_DIR = "PI_DADDY_WORKSPACE_LEASE_DIR";
 /** ADR-0042: what each authorised workspace id MEANT when the grant was established. Authority, not metadata. */
 export const ENV_WORKSPACE_PIN = "PI_DADDY_WORKSPACE_PIN";
+/** Explicit operator-only local public-response capture; never inherited by a captured child. */
+export const ENV_PUBLIC_EVIDENCE_DIR = "PI_DADDY_PUBLIC_EVIDENCE_DIR";
 export const ENV_EXECUTION_ARCHIVE = "PI_DADDY_EXECUTION_ARCHIVE";
 export const ENV_NATIVE_SESSION_ROOT = "PI_DADDY_NATIVE_SESSION_ROOT";
 export const ENV_RETAIN_NATIVE_SESSIONS = "PI_DADDY_RETAIN_NATIVE_SESSIONS";
@@ -100,6 +102,7 @@ export const GOVERNANCE_ENV_KEYS: readonly string[] = Object.freeze([
   ENV_WORKSPACE_REGISTRY,
   ENV_WORKSPACE_LEASE_DIR,
   ENV_WORKSPACE_PIN,
+  ENV_PUBLIC_EVIDENCE_DIR,
   ENV_EXECUTION_ARCHIVE,
   ENV_NATIVE_SESSION_ROOT,
   ENV_RETAIN_NATIVE_SESSIONS,

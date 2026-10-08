@@ -1,3 +1,4 @@
+import { publicEvidenceCall } from "./public-evidence.ts";
 import { executionEvidenceContent } from "./execution-evidence.ts";
 import { reconcileDelegationCapacity, reserveDelegationCapacity } from "./session-capacity.ts";
 import { registerDefinitionDescribe } from "./definition-describe.ts";
@@ -253,6 +254,14 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       // ADR-0032: one child, same block. `_onUpdate` was discarded here, so a delegation showed the bare word
       // `delegate` for up to DEFAULT_TIMEOUT_MS — sixty minutes by default.
       const progress = progressReporter(session, [params.agent ?? "delegate"], onUpdate as never);
+      const occurrence = newDelegationOccurrence(session, 0);
+      const capture = publicEvidenceCall(
+        session.publicEvidence,
+        _toolCallId,
+        "delegate",
+        [params],
+        [occurrence.executionId],
+      );
       const outcome = await runOneDelegation(
         session,
         {
@@ -266,12 +275,16 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
           correlation: params.correlation,
           workspace: params.workspace,
         },
-        newDelegationOccurrence(session, 0),
+        occurrence,
         // Reserve one actual child plus the currently available disjoint subtree allowance.
         undefined,
         ctx,
         signal,
-        { onProgress: progress.sink(0), toolCallId: _toolCallId },
+        {
+          onProgress: progress.sink(0),
+          toolCallId: _toolCallId,
+          onDefinition: (definition) => capture.selected(0, definition),
+        },
       );
       progress.settle([outcome]);
 
@@ -284,19 +297,22 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       }
       // Pi 1.0.4 preserves returned isError. Keep every outcome dimension and useful output together.
       const failed = !outcome.ok || outcome.control === "failed";
-      return {
-        isError: failed,
-        content: [
-          {
-            type: "text",
-            text: failed
-              ? `delegation failed: ${outcome.reason ?? "required control failed"}${outcome.text ? `\n\n${outcome.text}` : ""}`
-              : outcome.text || "(no output)",
-          },
-          executionEvidenceContent("delegate", [outcome], 1),
-        ],
-        details: outcome,
-      };
+      return capture.finish(
+        {
+          isError: failed,
+          content: [
+            {
+              type: "text",
+              text: failed
+                ? `delegation failed: ${outcome.reason ?? "required control failed"}${outcome.text ? `\n\n${outcome.text}` : ""}`
+                : outcome.text || "(no output)",
+            },
+            executionEvidenceContent("delegate", [outcome], 1),
+          ],
+          details: outcome,
+        },
+        [outcome],
+      );
     },
   });
 
@@ -356,11 +372,19 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       // (R-116).
       const infrastructureErrors: unknown[] = [],
         occurrences = children.map((_, index) => newDelegationOccurrence(session, index));
+      const capture = publicEvidenceCall(
+        session.publicEvidence,
+        _toolCallId,
+        "delegate_all",
+        children,
+        occurrences.map((row) => row.executionId),
+      );
       const pending = children.map(async (child, index): Promise<DelegationOutcome> => {
         try {
           return await runOneDelegation(session, child, occurrences[index], split.perChild, ctx, signal, {
             // Reserve each batch share synchronously here, before another dispatch can interleave.
             capacityReservation: reserveDelegationCapacity(session, occurrences[index].executionId, split.perChild),
+            onDefinition: (definition) => capture.selected(index, definition),
             onProgress: progress.sink(index),
             toolCallId: _toolCallId,
           });
@@ -385,19 +409,25 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       if (failed.length === children.length && outcomes.every((o) => !o.work && !o.final && !o.cleanup))
         throw totalFanoutFailure(failed, `fan-out failed: every child was refused or failed.\n\n${report}`);
 
-      return {
-        isError: outcomes.some((o) => !o.ok || o.control === "failed"),
-        content: [{ type: "text", text: report }, executionEvidenceContent("delegate_all", outcomes, children.length)],
-        details: {
-          outcomes,
-          children: outcomes.length,
-          failed: failed.length,
-          budgetPerChild: split.perChild,
-          granted: outcomes.map((o) => o.granted),
-          refusals: outcomes.map((o) => o.refusal ?? null),
-          retention: outcomes.map((o) => o.retention ?? null),
+      return capture.finish(
+        {
+          isError: outcomes.some((o) => !o.ok || o.control === "failed"),
+          content: [
+            { type: "text", text: report },
+            executionEvidenceContent("delegate_all", outcomes, children.length),
+          ],
+          details: {
+            outcomes,
+            children: outcomes.length,
+            failed: failed.length,
+            budgetPerChild: split.perChild,
+            granted: outcomes.map((o) => o.granted),
+            refusals: outcomes.map((o) => o.refusal ?? null),
+            retention: outcomes.map((o) => o.retention ?? null),
+          },
         },
-      };
+        outcomes,
+      );
     },
   });
 

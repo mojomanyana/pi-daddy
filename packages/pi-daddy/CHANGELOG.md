@@ -12,6 +12,12 @@ the record of how the package got here and are worth keeping; they are not worth
 > the record of how the package arrived at what it does, and because the reasoning behind each one is
 > usually the clearest statement of why the current behaviour is what it is.
 
+## 0.45.0 — opt-in exact public evidence capture (2026-10-08)
+
+- Add operator-only `PI_DADDY_PUBLIC_EVIDENCE_DIR` for local captures of exact public definition/delegation returns, with compact hash-addressed manifest references in model-visible content. Default behavior and retention remain off; existing authored content, result details, error states, typed exceptions and chain handoffs are preserved.
+- Retain immutable selected-source bytes only when opted in, and bind observed definitions to the exact planner context. Capture the dispatched body separately, preserve original requested identities and ordered native receipts, and keep skipped/missing outcomes explicit. No task arguments, private session reasoning or hidden details are collected.
+- Require an existing canonical private Linux root and use bounded exclusive durable writes. Capture failure returns a visible failure status without changing the execution outcome or retrying work. The opt-in is stripped from captured children. These references establish byte integrity, never review approval, task acceptance or new authority; the native ledger schema is unchanged.
+
 ## 0.44.4 — model-visible execution evidence (2026-10-07)
 
 - Add a versioned runtime evidence block to the model-visible result of `delegate`, `delegate_all` and `delegate_chain`. Pi provider conversion sends tool content, not UI-only details; coordinators can now inspect the actual terminal identity, final hash, captured-process cleanup receipt, observation state and terminal flags without reading private sessions. Authored final text and structured result details remain unchanged.

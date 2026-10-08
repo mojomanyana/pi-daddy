@@ -1,3 +1,4 @@
+import { ENV_PUBLIC_EVIDENCE_DIR } from "../src/kernel/env-names.ts";
 import { evidenceFromProvider } from "./execution-evidence-fixture.ts";
 import { piFixtureScript } from "./pi-fixture.ts";
 /**
@@ -42,6 +43,7 @@ import { recordLines } from "./record-fixtures.ts";
 after(cleanupTempDirs);
 
 const KEYS = [
+  ENV_PUBLIC_EVIDENCE_DIR,
   ENV_GRANT,
   ENV_DEPTH,
   ENV_MAX_DEPTH,
@@ -251,7 +253,10 @@ test("a progress renderer failure cannot kill a process child", async () => {
   const oldPath = process.env.PATH;
   process.env.PATH = `${bin}:${oldPath}`;
   try {
-    const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate" });
+    const { tools, ctx } = await harness({
+      [ENV_PUBLIC_EVIDENCE_DIR]: await tempDir("public-evidence-wiring-"),
+      [ENV_GRANT]: "tool:read,tool:delegate",
+    });
     let updates = 0;
     const result = (await tools.get("delegate")!.execute(
       "display-failure",
@@ -266,6 +271,7 @@ test("a progress renderer failure cannot kill a process child", async () => {
     assert.match(result.content[0]?.text ?? "", /child completed/);
     const evidence = evidenceFromProvider(result);
     assert.equal(evidence.tool, "delegate");
+    await assertPublicCapture(result, "delegate", 1);
     assert.equal(evidence.outcomes[0].final.sha256, createHash("sha256").update(result.details.text).digest("hex"));
     assert.deepEqual(evidence.outcomes[0].cleanup, result.details.cleanup);
     assert.equal(evidence.outcomes[0].cleanup.receipt.reapedAll, true);
@@ -283,7 +289,11 @@ test("a chain progress renderer failure cannot kill its process step", async () 
   const oldPath = process.env.PATH;
   process.env.PATH = `${bin}:${oldPath}`;
   try {
-    const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate", [ENV_FANOUT]: "12" });
+    const { tools, ctx } = await harness({
+      [ENV_PUBLIC_EVIDENCE_DIR]: await tempDir("public-evidence-wiring-"),
+      [ENV_GRANT]: "tool:read,tool:delegate",
+      [ENV_FANOUT]: "12",
+    });
     let updates = 0;
     const result = (await tools.get("delegate_chain")!.execute(
       "chain-display-failure",
@@ -298,6 +308,7 @@ test("a chain progress renderer failure cannot kill its process step", async () 
     assert.match(result.content[0]?.text ?? "", /chain child completed/);
     const evidence = evidenceFromProvider(result);
     assert.equal(evidence.tool, "delegate_chain");
+    await assertPublicCapture(result, "delegate_chain", 1);
     assert.deepEqual(evidence.outcomes[0].cleanup, result.details.outcomes[0].cleanup);
     assert.equal(evidence.outcomes[0].final.messageId, result.details.outcomes[0].final.messageId);
     assert.ok(updates >= 2, "the chain final frame should still be attempted");
@@ -313,7 +324,10 @@ test("mixed all-failed fan-out does not assign one child's refusal code to the a
   const oldPath = process.env.PATH;
   process.env.PATH = `${bin}:${oldPath}`;
   try {
-    const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate" });
+    const { tools, ctx } = await harness({
+      [ENV_PUBLIC_EVIDENCE_DIR]: await tempDir("public-evidence-wiring-"),
+      [ENV_GRANT]: "tool:read,tool:delegate",
+    });
     const result = (await tools.get("delegate_all")!.execute(
       "mixed",
       {
@@ -335,6 +349,7 @@ test("mixed all-failed fan-out does not assign one child's refusal code to the a
     assert.equal(result.details.outcomes[1].cleanup.state, "settled");
     const evidence = evidenceFromProvider(result);
     assert.equal(evidence.tool, "delegate_all");
+    await assertPublicCapture(result, "delegate_all", 2);
     assert.deepEqual(
       evidence.outcomes.map((outcome: any) => outcome.ordinal),
       [1, 2],
@@ -1195,7 +1210,11 @@ test("a complete final too large for required handoff blocks only the dependent 
   const oldPath = process.env.PATH;
   process.env.PATH = `${bin}:${oldPath}`;
   try {
-    const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate", [ENV_FANOUT]: "8" });
+    const { tools, ctx } = await harness({
+      [ENV_PUBLIC_EVIDENCE_DIR]: await tempDir("public-evidence-chain-"),
+      [ENV_GRANT]: "tool:read,tool:delegate",
+      [ENV_FANOUT]: "8",
+    });
     const result = (await tools.get("delegate_chain")!.execute(
       "large-final",
       {
@@ -1212,6 +1231,7 @@ test("a complete final too large for required handoff blocks only the dependent 
     assert.equal(result.details.aborted, true);
     assert.equal(result.details.outcomes.length, 1);
     assert.equal(result.details.outcomes[0].text, final);
+    await assertPublicCapture(result, "delegate_chain", 2);
     const evidence = evidenceFromProvider(result);
     assert.equal(evidence.requested, 2);
     assert.equal(evidence.outcomes.length, 1, "the blocked dependent step must have no invented outcome");
@@ -1239,7 +1259,11 @@ test("chain composition passes exact authored text without coordinator evidence"
   const oldPath = process.env.PATH;
   process.env.PATH = `${bin}:${oldPath}`;
   try {
-    const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate", [ENV_FANOUT]: "8" });
+    const { tools, ctx } = await harness({
+      [ENV_PUBLIC_EVIDENCE_DIR]: await tempDir("public-evidence-chain-"),
+      [ENV_GRANT]: "tool:read,tool:delegate",
+      [ENV_FANOUT]: "8",
+    });
     const result = (await tools.get("delegate_chain")!.execute(
       "evidence-chain",
       {
@@ -1261,7 +1285,8 @@ test("chain composition passes exact authored text without coordinator evidence"
     const handoff = /<<<PRIOR-AGENT-OUTPUT ([a-f0-9]{32})>>>\n([\s\S]*)\n<<<END \1>>>:end$/.exec(tasks[1]);
     assert.ok(handoff, "existing data-only handoff wrapper stays intact");
     assert.equal(handoff[2], final, "only exact authored bytes enter the next step");
-    assert.doesNotMatch(tasks[1], /Runtime execution evidence/);
+    assert.doesNotMatch(tasks[1], /Runtime execution evidence|Public evidence capture/);
+    await assertPublicCapture(result, "delegate_chain", 2);
     const evidence = evidenceFromProvider(result);
     assert.equal(evidence.requested, 2);
     assert.equal(evidence.outcomes.length, 2);
@@ -1277,3 +1302,38 @@ test("chain composition passes exact authored text without coordinator evidence"
     process.env.PATH = oldPath;
   }
 });
+
+async function assertPublicCapture(result: any, tool: string, requested: number) {
+  const status = JSON.parse(result.content.at(-1).text.slice("Public evidence capture: ".length));
+  assert.equal(status.status, "captured");
+  const bytes = await readFile(status.ref.path);
+  assert.equal(createHash("sha256").update(bytes).digest("hex"), status.ref.sha256);
+  const manifest = JSON.parse(bytes.toString("utf8"));
+  assert.equal(manifest.tool, tool);
+  assert.equal(manifest.requested.length, requested);
+  const response = JSON.parse(await readFile(manifest.response.path, "utf8"));
+  assert.deepEqual(response, { isError: result.isError ?? false, content: result.content.slice(0, -1) });
+  assert.equal("details" in response, false);
+  const evidence = evidenceFromProvider(result);
+  assert.deepEqual(manifest.runtimeEvidence, evidence);
+  const nativeOutcomes = result.details.outcomes ?? [result.details];
+  assert.equal(manifest.finals.length, nativeOutcomes.length);
+  for (const [index, outcome] of nativeOutcomes.entries()) {
+    const copy = manifest.finals[index];
+    assert.equal(copy.ordinal, index + 1);
+    assert.equal(copy.executionId, manifest.requested[index].executionId);
+    if (outcome.final?.state === "complete") {
+      assert.equal(await readFile(copy.final.content.path, "utf8"), outcome.final.text);
+      assert.equal(copy.final.content.sha256, outcome.final.sha256);
+      assert.equal(copy.final.messageId, outcome.final.messageId);
+    } else assert.equal(copy.final, null);
+  }
+
+  for (const outcome of evidence.outcomes) {
+    if (outcome.cleanup?.identity) {
+      assert.equal(manifest.requested[outcome.ordinal - 1].executionId, outcome.cleanup.identity.executionId);
+      assert.deepEqual(outcome.cleanup.receipt.identity, outcome.cleanup.identity);
+    }
+  }
+  return manifest;
+}

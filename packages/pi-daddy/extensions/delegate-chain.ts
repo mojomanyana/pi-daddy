@@ -1,3 +1,4 @@
+import { publicEvidenceCall } from "./public-evidence.ts";
 import { executionEvidenceContent } from "./execution-evidence.ts";
 import { assertDefinitionIdentity } from "./definition-describe.ts";
 /**
@@ -142,6 +143,7 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
       // Plan every step first. A step that can never run refuses the chain HERE, before anyone is asked — see
       // `planChain`.
       const executionIds = steps.map(() => newExecutionId());
+      const capture = publicEvidenceCall(session.publicEvidence, _toolCallId, "delegate_chain", steps, executionIds);
       await reconcileDelegationCapacity(session);
       const firstReservation = reserveDelegationCapacity(session, executionIds[0]);
       try {
@@ -326,6 +328,7 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
             {
               ...(index === 0 ? { capacityReservation: firstReservation } : {}),
               resolvedRuntime: runtimeChoices.get(step),
+              onDefinition: (definition) => capture.selected(index, definition),
               preApproved: availableForStep,
               toolCallId: _toolCallId,
               // Only approvals actually offered to this step are attributed or consumed here.
@@ -407,22 +410,25 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
           if (outcomes[0].refusal) throw new GovernanceRefusal({ ...outcomes[0].refusal, message });
           throw new Error(message);
         }
-        return {
-          isError: aborted || outcomes.some((o) => o.control === "failed"),
-          content: [
-            { type: "text", text: `${report}${tail}` },
-            executionEvidenceContent("delegate_chain", outcomes, steps.length),
-          ],
-          details: {
-            outcomes,
-            steps: steps.length,
-            completed: outcomes.filter((o) => o.ok).length,
-            aborted,
-            budgetPerStep: firstReservation.childAllowance,
-            ...(blockedReason ? { blockedReason } : {}),
-            refusals: outcomes.map((outcome) => outcome.refusal ?? null),
+        return capture.finish(
+          {
+            isError: aborted || outcomes.some((o) => o.control === "failed"),
+            content: [
+              { type: "text", text: `${report}${tail}` },
+              executionEvidenceContent("delegate_chain", outcomes, steps.length),
+            ],
+            details: {
+              outcomes,
+              steps: steps.length,
+              completed: outcomes.filter((o) => o.ok).length,
+              aborted,
+              budgetPerStep: firstReservation.childAllowance,
+              ...(blockedReason ? { blockedReason } : {}),
+              refusals: outcomes.map((outcome) => outcome.refusal ?? null),
+            },
           },
-        };
+          outcomes,
+        );
       } finally {
         firstReservation.finalize({ state: "not-started", reason: "chain ended before its first execution" });
       }
