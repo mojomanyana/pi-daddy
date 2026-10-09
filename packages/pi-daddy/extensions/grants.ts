@@ -1,3 +1,4 @@
+import { registerDashboardSettings, childExecutionLimits } from "./dashboard-settings.ts";
 import { bindEcosystemVersions } from "./ecosystem-versions.ts";
 import {
   initializeSessionAutoMode,
@@ -90,6 +91,7 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
   session.currentThinking = typeof pi.getThinkingLevel === "function" ? () => pi.getThinkingLevel() : undefined;
   registerActivityTimeline(pi, session);
   const runtimeSnapshot = registerRuntimeSnapshot(pi, session);
+  registerDashboardSettings(pi, session);
   const dashboardPluginRoot = fileURLToPath(new URL("../herdr-plugin/", import.meta.url));
   const dashboardPaths = defaultDashboardPaths(agentDir());
   // Definitions are registered only after owner-bound session_start. Until then there is no delegation
@@ -481,6 +483,7 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
               }
             : {}),
           nativeSessionRoot: session.nativeSessionRoot,
+          executionLimits: childExecutionLimits(session),
           changeAutoMode: async (enabled: boolean) => {
             const { auto } = await setAutoApproval(session, enabled, "command");
             return `${auto.enabled ? "ON" : "OFF"} (${auto.source}; current session permissions)`;

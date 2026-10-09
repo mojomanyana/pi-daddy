@@ -1,3 +1,4 @@
+import { dashboardSettingsSnapshot, dashboardJev, setDashboardLimit } from "./dashboard-settings.ts";
 import { randomBytes } from "node:crypto";
 import { chmod, rm } from "node:fs/promises";
 import { createServer, type Server } from "node:net";
@@ -69,9 +70,22 @@ async function start(session: GrantsSession): Promise<DashboardSessionEndpoint> 
 }
 
 async function respond(session: GrantsSession, token: string, line: string): Promise<Record<string, unknown>> {
-  const request = JSON.parse(line) as { token?: unknown; action?: unknown; edits?: unknown; enabled?: unknown };
+  const request = JSON.parse(line) as {
+    token?: unknown;
+    action?: unknown;
+    edits?: unknown;
+    enabled?: unknown;
+    key?: unknown;
+    seconds?: unknown;
+  };
   if (request.token !== token) return { ok: false, error: "unauthorised dashboard request" };
-  if (request.action === "set-auto") {
+  let jev;
+  if (request.action === "set-limit") {
+    setDashboardLimit(session, request.key, request.seconds);
+  } else if (request.action === "set-jev") {
+    if (typeof request.enabled !== "boolean") return { ok: false, error: "JEV requires an explicit boolean" };
+    jev = await dashboardJev(session, request.enabled ? "enable" : "disable");
+  } else if (request.action === "set-auto") {
     if (typeof request.enabled !== "boolean") return { ok: false, error: "Auto mode requires an explicit boolean" };
     await setAutoApproval(session, request.enabled, "dashboard");
   } else if (request.action === "set") {
@@ -91,6 +105,7 @@ async function respond(session: GrantsSession, token: string, line: string): Pro
     ...(session.activity ? { activity: { ...session.activity } } : {}),
     rows: sessionModelRows(session, [...session.definitions.keys()].sort()),
     versions: versionSnapshot(session),
+    settings: await dashboardSettingsSnapshot(session, jev),
     cost: null, // Live complete episode cost is unavailable; retained usage remains in the episode report.
   };
 }

@@ -1,5 +1,12 @@
 # Changelog — pi-daddy
 
+## 0.49.0 — 2026-10-09
+
+- Add a compact dashboard Settings view (`s`) for session Auto, JEV activation and child wall/idle timeouts. JEV uses the parent Pi paid-call and LoRA-storage dialogs; Auto cannot answer them. Timeout changes apply to future children. Depth, active-descendant and per-call limits remain visible startup settings. Update all ecosystem packages and restart Pi.
+- Retain exact settled child finals in a bounded session-owned in-process store for Principal report completion. Socket status stays identity-only; stale sessions and unavailable captures cannot supply reports.
+- Add offline `pi-daddy diagnostics export <selection.json> <new-directory>`: explicit selected sources, content deduplication, source/object hashes, visible session projection, private permissions, and an inventory of missing evidence. Known reasoning/environment/credential fields are omitted; free-text scanning remains heuristic. Nothing is uploaded or designated for training.
+- Observe native transcript files after execution instead of recording a guaranteed pre-spawn missing-file observation. Existing evidence and genuine retention gaps remain visible.
+
 ## 0.48.3 — 2026-10-09
 
 Restore Pi's live native interface inside governed Herdr child tabs: initial task, live tool calls/results, and final answer. Ctrl+O expands tool output. The view consumes other user input after session start; task changes and cancellation stay with the parent. Update pi-daddy and restart Pi; existing running children keep their original executor.

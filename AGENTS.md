@@ -198,6 +198,8 @@ it measured nothing rather than passing quietly.
 
 ## Decisions still in force
 
+**2026-10-09 — Explicit local diagnostic export.** The offline exporter reads only operator-selected files and one-level retention roots, filters native reasoning/structured environment fields, and records original and transformed hashes separately. Content-addressed output deduplicates bytes; missing evidence stays missing. Exact embedded JSON strings survive when no redaction is required. New private output never grants training/export eligibility or task approval. Free-text secret detection is heuristic, and source reads are individually checked rather than an atomic whole-workspace snapshot. Native child retention observes the final session after execution instead of attempting a predictable pre-spawn read.
+
 - **2026-10-09 — Owned Herdr uses Pi's native viewer.** Supersedes the earlier one-shot JSON-only Herdr display decision. The actual CLI shares its pane terminal while the unchanged pinned native owner gates and settles it; a separate inherited event pipe supplies real Pi lifecycle events to the existing persisted-current-branch validator. The explicit trusted extension consumes user input after session start except Ctrl+O tool expansion and renderer replies, suppresses thinking only in rendered Markdown, and shuts down on native agent settlement. The parent controls work. Descendant permission dialogs stay unavailable; inherited approvals and live Auto retain their existing semantics. Project trust follows prior noninteractive policy without writing a new decision. A startup interruption may still fail a child; terminal appearance never establishes completion. No ambient extension discovery or legacy pane-text completion fallback is introduced.
 
 - **2026-10-09 — Owned Herdr children report their own display lifecycle.** The launcher uses a unique `pi-daddy:` source to publish working state and guarded role metadata to its actual pane. It releases that source after native settlement, including coordinator loss. The coordinator repairs a missing launcher release only after validating the exact cleanup receipt; unknown cleanup remains unknown. Reports are bounded UI observations, never execution or permission authority. Retained tabs contain output, not a live interactive Pi process; no disposable session is registered for resumption.
@@ -1100,3 +1102,14 @@ uncertain executions non-retryable; explicit retries need native settled/no-star
 Keep candidate/report bookkeeping in Principal and consent/learning policy in Harness.
 Dashboard tool observations expose names, time and cwd, never inferred reasoning/progress.
 Native coordinator tool-only Codemode preserves hooks; governed child Codemode stays refused.
+
+
+## 2026-10-09 — Dashboard session settings
+
+The Settings view sends explicit operator actions to the authenticated parent owner. Auto uses its
+existing authority; JEV uses Harness's bound native-session consent bridge, never Auto or supplied
+consent booleans. Wall/idle overrides belong to the owner lifecycle and are captured before child
+setup awaits; running children keep their limits. Capacity reservations and per-call limits are not
+replaced from the dashboard. Model reasoning/token budgets remain untouched. The focused Settings
+checks exercise owner validation, bound-session resets, immutable snapshots, transport authentication,
+missing/pending JEV states and narrow-pane navigation; paid provider behavior remains Harness's scope.

@@ -12,7 +12,8 @@ export interface SelectedCommand {
   name: string;
   sourceInfo?: { path?: string };
 }
-const phases = ["plan", "build", "review", "debug", "investigate"];
+const requiredPhases = ["plan", "build", "review", "debug", "investigate"];
+const phases = [...requiredPhases, "test-review"];
 const hash = (value: string) => createHash("sha256").update(value, "utf8").digest("hex");
 const object = (x: unknown): x is Record<string, unknown> => !!x && typeof x === "object" && !Array.isArray(x);
 const exact = (x: Record<string, unknown>, keys: string[]) =>
@@ -57,10 +58,10 @@ async function principalBinding(
     manifest.version !== 1 ||
     manifest.package !== "principal-pi-skills" ||
     !object(manifest.bindings) ||
-    !exact(manifest.bindings, phases)
+    !exact(manifest.bindings, Object.hasOwn(manifest.bindings, "test-review") ? phases : requiredPhases)
   )
     throw Error("invalid Principal binding manifest");
-  for (const name of phases) {
+  for (const name of Object.keys(manifest.bindings)) {
     const row = manifest.bindings[name];
     if (
       !object(row) ||
@@ -74,6 +75,7 @@ async function principalBinding(
     )
       throw Error("invalid Principal binding row");
   }
+  if (!Object.hasOwn(manifest.bindings, phase)) throw Error("selected Principal phase has no binding row");
   const row = manifest.bindings[phase] as Record<string, string>;
   const agentPath = join(root, row.agent);
   if (

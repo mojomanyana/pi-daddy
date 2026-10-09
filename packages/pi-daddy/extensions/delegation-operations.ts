@@ -4,7 +4,7 @@ import { realpath } from "node:fs/promises";
 import { Type } from "typebox";
 import { shouldSeekApproval } from "../src/kernel/approval.ts";
 import { planDelegation } from "../src/kernel/delegate.ts";
-import type { OperationClaim } from "../src/kernel/dispatch-operation.ts";
+import type { OperationClaim, OperationReference } from "../src/kernel/dispatch-operation.ts";
 import { validOperationId } from "../src/kernel/dispatch-operation.ts";
 import { GovernanceRefusal } from "../src/kernel/refusals.ts";
 import { assertDefinitionIdentity } from "./definition-describe.ts";
@@ -14,6 +14,79 @@ import type { GrantsSession } from "./session.ts";
 import type { ChildSpec, DelegationToolContext } from "./run-delegation.ts";
 import type { ExecutionOccurrenceIds } from "./execution-occurrence.ts";
 import type { DelegationOutcome } from "./execute-child.ts";
+
+// Short-lived exact finals for explicit workflow retention. The operation registry/socket
+// remains identity-only; losing this observation never changes the original child result.
+// The native-owner lifecycle survives extension reloads, which create a new GrantsSession.
+const FINAL_BYTES = 4 * 1024 * 1024,
+  FINAL_ENTRIES = 128;
+type Final = Extract<NonNullable<DelegationOutcome["final"]>, { state: "complete" }>;
+export interface OperationFinalStore {
+  lifecycle: object;
+  owner: string;
+  bytes: number;
+  entries: Map<string, { executionId: string; final: Final }>;
+}
+export function bindOperationFinals(session: GrantsSession, sessionId: string, cwd: string) {
+  const owner = JSON.stringify([sessionId, cwd]),
+    old = session.reloadLifecycle.operationFinals;
+  if (!old || old.lifecycle !== session.reloadLifecycle || old.owner !== owner)
+    session.reloadLifecycle.operationFinals = {
+      lifecycle: session.reloadLifecycle,
+      owner,
+      bytes: 0,
+      entries: new Map(),
+    };
+}
+/** Capture before admitting work; a late child cannot write a replacement session's store. */
+export function operationFinalScope(session: GrantsSession): object | undefined {
+  return session.reloadLifecycle?.operationFinals;
+}
+export function operationFinal(session: GrantsSession, operation: OperationReference) {
+  const store = session.reloadLifecycle?.operationFinals,
+    item = store?.entries.get(operation.operationId);
+  if (!store || store.lifecycle !== session.reloadLifecycle || !item || item.executionId !== operation.executionId)
+    return {
+      state: "unavailable" as const,
+      reason:
+        "exact native final was not retained, expired from the 4 MiB session buffer, or belongs to an earlier session",
+    };
+  const observed = operation.runtime?.final,
+    final = item.final;
+  if (
+    operation.state !== "settled" ||
+    observed?.state !== "complete" ||
+    ["sessionId", "messageId", "leafId", "sha256"].some(
+      (key) => observed[key as keyof typeof observed] !== final[key as keyof Final],
+    )
+  )
+    return { state: "unavailable" as const, reason: "native final identity no longer matches the operation" };
+  return { ...final };
+}
+function retainOperationFinal(
+  session: GrantsSession,
+  claim: OperationClaim,
+  result: DelegationOutcome,
+  scope: object | undefined,
+) {
+  const store = session.reloadLifecycle?.operationFinals,
+    final = result.final;
+  if (!store || store !== scope || store.lifecycle !== session.reloadLifecycle || final?.state !== "complete") return;
+  const bytes = Buffer.byteLength(final.text);
+  if (!bytes || bytes > FINAL_BYTES || createHash("sha256").update(final.text).digest("hex") !== final.sha256) return;
+  const old = store.entries.get(claim.operation.operationId);
+  if (old) {
+    store.bytes -= Buffer.byteLength(old.final.text);
+    store.entries.delete(claim.operation.operationId);
+  }
+  while (store.bytes + bytes > FINAL_BYTES || store.entries.size >= FINAL_ENTRIES) {
+    const first = store.entries.entries().next().value!;
+    store.bytes -= Buffer.byteLength(first[1].final.text);
+    store.entries.delete(first[0]);
+  }
+  store.entries.set(claim.operation.operationId, { executionId: claim.operation.executionId, final: { ...final } });
+  store.bytes += bytes;
+}
 
 export const operationIdShape = () =>
   Type.Optional(
@@ -121,7 +194,12 @@ export function existingOperationOutcome(claim: OperationClaim, depth: number): 
     operation: { ...claim.operation, reused: true },
   };
 }
-export async function finishDelegationOperation(claim: OperationClaim, result: DelegationOutcome) {
+export async function finishDelegationOperation(
+  claim: OperationClaim,
+  result: DelegationOutcome,
+  session: GrantsSession,
+  finalScope: object | undefined,
+) {
   const cleanup = result.cleanup;
   const state =
     cleanup?.state === "settled"
@@ -161,6 +239,7 @@ export async function finishDelegationOperation(claim: OperationClaim, result: D
         }
       : {}),
   });
+  retainOperationFinal(session, claim, result, finalScope);
   result.operation = {
     ...claim.operation,
     state,

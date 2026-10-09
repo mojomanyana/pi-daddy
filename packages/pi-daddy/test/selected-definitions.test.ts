@@ -8,11 +8,12 @@ import { ceilingForDefinition } from "../src/kernel/definitions.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 after(cleanupTempDirs);
 const hash = (s: string) => createHash("sha256").update(s).digest("hex");
-async function fixture() {
+const legacyPhases = ["plan", "build", "review", "debug", "investigate"];
+async function fixture(phases = legacyPhases) {
   const root = await tempDir("selected-principal-");
   await mkdir(join(root, "agents"));
   const bindings: Record<string, unknown> = {};
-  for (const phase of ["plan", "build", "review", "debug", "investigate"]) {
+  for (const phase of phases) {
     await mkdir(join(root, phase));
     const skill = `---\nname: ${phase}\ndescription: inline\nallowed-tools: read\n---\nINLINE`;
     const agent = `---\nname: principal-${phase}\ndescription: delegated\nallowed-tools: read, write\n---\n  EXACT DELEGATED ${phase}  \n`;
@@ -119,4 +120,65 @@ test("opt-in Principal source snapshot contains exact admitted package, manifest
   assert.equal(snapshot.body, d.body);
   assert.equal(snapshot.resources.at(-1)!.path, join(root, "agents", "principal-build.md"));
   assert.ok(Object.isFrozen(snapshot.resources[0]));
+});
+
+test("native binding supports the legacy five phases and the optional test-review role without widening ceilings", async () => {
+  for (const phases of [legacyPhases, [...legacyPhases, "test-review"]]) {
+    const { root } = await fixture(phases);
+    const commands = phases.map((phase) => ({
+      source: "skill",
+      name: `skill:${phase}`,
+      sourceInfo: { path: join(root, phase, "SKILL.md") },
+    }));
+    const result = await selectedDefinitions(commands, true);
+    assert.deepEqual(result.skips, []);
+    assert.equal(result.definitions.size, phases.length);
+    for (const phase of phases) {
+      const definition = result.definitions.get(phase)!;
+      assert.deepEqual(definition.binding, { package: "principal-pi-skills", phase });
+      assert.equal(definition.body, `  EXACT DELEGATED ${phase}  \n`);
+      assert.deepEqual(ceilingForDefinition(definition).capabilities, ["tool:read"]);
+      assert.equal(definition.sourceSnapshot!.resources.at(-1)!.path, join(root, "agents", `principal-${phase}.md`));
+    }
+  }
+});
+
+test("optional test-review does not admit unknown phases, partial manifests or malformed binding rows", async () => {
+  const { root, commands } = await fixture([...legacyPhases, "test-review"]);
+  const path = join(root, "principal-agents.json");
+  const manifest = JSON.parse(await readFile(path, "utf8"));
+  const row = manifest.bindings["test-review"];
+  const { investigate: _removed, ...partial } = manifest.bindings;
+  for (const bindings of [
+    { ...manifest.bindings, unexpected: row },
+    partial,
+    { ...manifest.bindings, "test-review": null },
+    { ...manifest.bindings, "test-review": { ...row, agentSha256: "invalid" } },
+    { ...manifest.bindings, "test-review": { ...row, agent: "agents/principal-review.md" } },
+    { ...manifest.bindings, "test-review": { skill: row.skill, agent: row.agent, skillSha256: row.skillSha256 } },
+  ]) {
+    await writeFile(path, JSON.stringify({ ...manifest, bindings }));
+    const result = await selectedDefinitions(commands);
+    assert.equal(result.definitions.size, 0);
+    assert.match(result.skips.join(" "), /invalid Principal binding (manifest|row)/);
+  }
+});
+
+test("selected test-review must have its own exact manifest binding and verified agent bytes", async () => {
+  const { root } = await fixture([...legacyPhases, "test-review"]);
+  const commands = [
+    { source: "skill", name: "skill:test-review", sourceInfo: { path: join(root, "test-review", "SKILL.md") } },
+  ];
+  const path = join(root, "principal-agents.json");
+  const manifest = JSON.parse(await readFile(path, "utf8"));
+  const { "test-review": _removed, ...bindings } = manifest.bindings;
+  await writeFile(path, JSON.stringify({ ...manifest, bindings }));
+  let result = await selectedDefinitions(commands);
+  assert.equal(result.definitions.size, 0);
+  assert.match(result.skips.join(" "), /no binding row/);
+  await writeFile(path, JSON.stringify(manifest));
+  await writeFile(join(root, "agents", "principal-test-review.md"), "tampered");
+  result = await selectedDefinitions(commands);
+  assert.equal(result.definitions.size, 0);
+  assert.match(result.skips.join(" "), /hash mismatch/);
 });

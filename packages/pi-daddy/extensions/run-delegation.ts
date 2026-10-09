@@ -2,6 +2,7 @@ import {
   claimDelegationOperation,
   existingOperationOutcome,
   finishDelegationOperation,
+  operationFinalScope,
 } from "./delegation-operations.ts";
 import type { OperationClaim } from "../src/kernel/dispatch-operation.ts";
 import { reconcileDelegationCapacity, reserveDelegationCapacity } from "./session-capacity.ts";
@@ -552,6 +553,7 @@ export async function runOneDelegation(
   ...args: Parameters<typeof runOneDelegationImplementation>
 ): Promise<DelegationOutcome> {
   const [session, spec, ids, , ctx, signal] = args;
+  const finalScope = operationFinalScope(session);
   const options = args[6] ?? {};
   const claim = options.operationClaim ?? (await claimDelegationOperation(session, spec, ids, ctx, signal));
   if (claim?.reused) {
@@ -571,7 +573,7 @@ export async function runOneDelegation(
     const result = await runOneDelegationImplementation(...args);
     if (claim) {
       try {
-        await finishDelegationOperation(claim, result);
+        await finishDelegationOperation(claim, result, session, finalScope);
       } catch (error) {
         // A post-execution observation failure must not erase the native final or settlement receipt.
         result.control = "failed";

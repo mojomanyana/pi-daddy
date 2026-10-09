@@ -1,3 +1,4 @@
+import { dashboardSettingsLines, type DashboardSettingKey } from "./dashboard-settings.ts";
 /** Height-bounded, task-first view. Permission state is always supplied by the owner. */
 import type { EcosystemVersionRow } from "./ecosystem-versions.ts";
 import type { DashboardProjection } from "./dashboard-projection.ts";
@@ -19,7 +20,8 @@ export interface DashboardItem {
   agent?: boolean;
 }
 export interface DashboardScreenState {
-  view: "main" | "details" | "models" | "help" | "versions" | "version-details";
+  view: "main" | "details" | "models" | "help" | "versions" | "version-details" | "settings";
+  settingKey?: DashboardSettingKey;
   versionId?: EcosystemVersionRow["id"];
   versionRows?: EcosystemVersionRow[];
   selectedKey?: string;
@@ -204,12 +206,14 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
   const footer =
     options.command !== undefined
       ? [`: ${clean(options.command)}`]
-      : screen.view === "main" || screen.view === "versions"
-        ? ["↑↓ select · Enter details · a Auto", "m models · v versions · Tab filter · ?"]
-        : [
-            "↑↓ scroll · Esc back · a Auto",
-            screen.view === "details" ? "p prompt · f final · : command · ? help" : ": command · ? help",
-          ];
+      : screen.view === "settings"
+        ? ["↑↓ select · Enter toggle/edit · Esc back", "0 restores a default limit · s settings"]
+        : screen.view === "main" || screen.view === "versions"
+          ? ["↑↓ select · Enter details · a Auto", "m models · v versions · s settings · ?"]
+          : [
+              "↑↓ scroll · Esc back · a Auto",
+              screen.view === "details" ? "p prompt · f final · : command · ? help" : ": command · ? help",
+            ];
   const fixed = [
     header,
     session
@@ -223,7 +227,7 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
       "DASHBOARD KEYS",
       "↑/↓ or j/k: select; Enter/d: details",
       "a: toggle Daddy permission Auto",
-      "m: session models; v: ecosystem versions",
+      "m: session models; v: ecosystem versions; s: settings",
       "h: show/hide finished history",
       "Tab: Everything / Agents / Skills / Needs-you",
       "p/f: selected retained prompt/final",
@@ -234,7 +238,9 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
       "Auto does not enable JEV or change LoRA consent.",
       "Finished means observed completion, not acceptance.",
     );
-  else if (screen.view === "versions" || screen.view === "version-details") {
+  else if (screen.view === "settings") {
+    body.push(...dashboardSettingsLines(session?.settings, session?.auto.enabled, screen.settingKey ?? "auto"));
+  } else if (screen.view === "versions" || screen.view === "version-details") {
     body.push("VERSIONS");
     if (!session?.versions) body.push("Owner has not reported versions.");
     else if (screen.view === "versions") {
@@ -323,6 +329,11 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
     if (row < screen.offset) screen.offset = row;
     else if (row + 1 >= screen.offset + room) screen.offset = Math.max(0, row + 2 - room);
   }
+  if (screen.view === "settings" && room > 0) {
+    const row = detailBody.findIndex((line) => line.startsWith(">"));
+    if (row < screen.offset) screen.offset = Math.max(0, row);
+    else if (row >= screen.offset + room) screen.offset = Math.max(0, row - room + 1);
+  }
   const offset =
     screen.view === "main" ? 0 : Math.max(0, Math.min(screen.offset, Math.max(0, detailBody.length - room)));
   screen.offset = offset;
@@ -337,7 +348,7 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
       const safe = truncate(dashboardText(line), width);
       if (!options.color) return safe;
       const section =
-        /^(CURRENT REQUEST|LATEST REQUEST|CURRENT WORK|NEEDS YOU|NEEDS ATTENTION|WORK IN PROGRESS|HISTORY|VERSIONS|SESSION MODELS|DASHBOARD KEYS|MANAGE)/.test(
+        /^(CURRENT REQUEST|LATEST REQUEST|CURRENT WORK|NEEDS YOU|NEEDS ATTENTION|WORK IN PROGRESS|HISTORY|VERSIONS|SETTINGS|STARTUP LIMITS|SESSION MODELS|DASHBOARD KEYS|MANAGE)/.test(
           safe,
         );
       const code =
