@@ -3,13 +3,17 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFile } from "node:child_process";
 import { runHerdrOwned } from "../../src/executors/herdr-owned.ts";
 import { runCapturedExecution } from "../../src/executors/captured-execution.ts";
 import { FINAL, MODEL, PROVIDER } from "./scripted-provider.ts";
 const target = process.env.PI_DADDY_IT_HERDR_SESSION;
+const configuredPiCli = process.env.PI_DADDY_IT_PI_CLI;
+if (configuredPiCli !== undefined) assert.ok(isAbsolute(configuredPiCli), "PI_DADDY_IT_PI_CLI must be absolute");
+const piCli =
+  configuredPiCli ?? fileURLToPath(new URL("./cli.js", import.meta.resolve("@earendil-works/pi-coding-agent")));
 const exec = (args: string[]) =>
   new Promise<{ code: number; stdout: string; stderr: string }>((resolve) => {
     execFile("herdr", ["--session", target!, ...args], { timeout: 10000 }, (error, stdout, stderr) =>
@@ -44,7 +48,7 @@ for (const scenario of ["success", "nested", "retry", "error", "stop-then-error"
             cwd: root,
             command: process.execPath,
             args: [
-              fileURLToPath(new URL("./cli.js", import.meta.resolve("@earendil-works/pi-coding-agent"))),
+              piCli,
               "--session",
               path,
               "--no-extensions",

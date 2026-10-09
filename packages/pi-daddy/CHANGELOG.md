@@ -1,5 +1,11 @@
 # Changelog — pi-daddy
 
+## 0.48.1 — 2026-10-09
+
+Use Herdr's live structured CLI compatibility status instead of requiring exact client/server release 0.8.2 and private protocol 20. Compatible mixed releases can delegate in separate tabs; incompatible or malformed status still refuses. Require a successful actual tab-list response before selecting Herdr. Native ownership, final validation, cancellation and cleanup receipts remain unchanged.
+
+The isolated live qualification fixture supports separate client/server binaries and an explicit Pi CLI, including retained tabs and direct cancellation of a worker with a detached descendant. All 44 live checks passed across Herdr 0.8.2/Pi 1.0.4, Herdr 0.8.2/Pi 1.1.0, Herdr client 0.9.3/server 0.9.0/Pi 1.1.0 and Herdr 0.9.3/Pi 1.1.0 on Ubuntu WSL2 with Node 24.19.0.
+
 ## 0.48.0 — 2026-10-09
 
 - Admit a stable operation only once across the live delegation tree. Duplicate single/batch/chain requests return an execution reference; changed requests conflict and completed mutations never replay. Expose session-bound operation status and actual execution workspace to deterministic coordinators.

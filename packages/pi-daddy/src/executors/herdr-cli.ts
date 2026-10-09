@@ -97,7 +97,10 @@ export async function probeHerdr(options: { exec?: HerdrExec; timeoutMs?: number
     return await Promise.race<HerdrProbe>([
       exec(["tab", "list"]).then((reply) => {
         const parsed = parseReply(reply);
-        return parsed.error ? { ok: false, error: parsed.error } : { ok: true };
+        if (parsed.error) return { ok: false, error: parsed.error };
+        if (reply.code !== 0 || !Array.isArray(parsed.result?.tabs))
+          return { ok: false, error: "Herdr tab list failed or returned an unsupported response" };
+        return { ok: true };
       }),
       new Promise<HerdrProbe>((settle) => {
         timer = setTimeout(() => settle({ ok: false, error: `probe timed out after ${timeoutMs}ms` }), timeoutMs);

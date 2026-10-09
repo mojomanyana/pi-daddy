@@ -1,6 +1,6 @@
 # pi-daddy
 
-Source target: **0.48.0**. Before installation, verify that `npm view pi-daddy version` and Git tag `v0.48.0` both resolve to this release.
+Source target: **0.48.1**. Before installation, verify that `npm view pi-daddy version` and Git tag `v0.48.1` both resolve to this release.
 
 **Capability governance and coordination for [pi](https://github.com/badlogic/pi-mono)'s multi-level agent system.**
 An orchestrator grants each sub-agent a deliberate subset of what it holds and withholds the rest. A sub-agent may
@@ -240,22 +240,32 @@ anything a child did.
 
 ## Executors and the dashboard
 
-Captured and Herdr pane execution share the native owner and current-final validator on Linux x64. Qualification is limited to the measured Ubuntu WSL2 environment: kernel `6.18.33.2-microsoft-standard-WSL2`, x86_64, Node `v26.7.0`, and exact Pi 1.0.4. Other kernel/runtime combinations, native Windows, and WSL-to-Windows worker interop remain unqualified.
+Captured and Herdr pane execution share the native owner and current-final validator on Linux x64.
+Initial qualification used Ubuntu WSL2, kernel `6.18.33.2-microsoft-standard-WSL2`, Node `v26.7.0`, and Pi 1.0.4.
+Additional live Herdr qualification on Ubuntu WSL2 with Node `v24.19.0` covers client/server 0.8.2 with
+Pi 1.0.4 and 1.1.0, client 0.9.3/server 0.9.0 with Pi 1.1.0, and client/server 0.9.3 with Pi 1.1.0.
+Each combination exercises real child results, retained tabs, cancellation, coordinator loss and server loss.
+These are measured combinations, not a product-version allowlist. Native Windows and WSL-to-Windows worker
+interop remain unqualified.
 A packaged native helper owns and reaps the cooperating child subtree. The final is accepted only when Pi's JSON
 protocol settles and matches the exact persisted current turn and active branch. Complete final text is preserved;
 work, final availability, subtree cleanup and optional observation completeness are separate result fields. A failed
 execution returns `isError` with its available evidence. Display, diagnostics and optional recording cannot replace
 the primary final. Unknown cleanup retains capacity and workspace exclusion.
 
-Pi and TypeBox are wildcard host-provided peers so Pi's extension loader supplies one shared runtime copy. Development and release qualification pin exact Pi **1.0.4**; later Pi versions require new qualification. Prefer a Pi-managed install under a host pinned to 1.0.4. An ordinary standalone npm install may resolve newer peer versions and is outside this qualification. In a Pi-managed no-peer install, standalone help, version and reporting remain available; run initialization inside Pi with `/grants init`. Use Principal **4.11.2** with this runtime's `delegate_describe` contract. Native phases use `plan`, `build`, `review`, `debug`, and `investigate` with their returned `definitionId`; independent parallel work uses one `delegate_all` batch.
+Pi and TypeBox are wildcard host-provided peers so Pi's extension loader supplies one shared runtime copy. Development dependencies pin Pi **1.0.4**; additional native transport checks cover **1.1.0** as described above. Prefer a Pi-managed install under one of these measured hosts. An ordinary standalone npm install may resolve untested peer versions. In a Pi-managed no-peer install, standalone help, version and reporting remain available; run initialization inside Pi with `/grants init`. Use Principal **4.12.0** with this runtime's `delegate_describe` contract. Native phases use `plan`, `build`, `review`, `debug`, and `investigate` with their returned `definitionId`; independent parallel work uses one `delegate_all` batch.
 
 Final capture preserves whitespace and concatenates text blocks without inserting separators. Tool-call terminals, empty visible finals and non-`stop` reasons are unavailable. Persisted message comparisons ignore object key order while preserving array order and every field value. The shared `final-conformance.json` table checks these semantics in both runtime and harness. Capture remains bounded: 4 MiB visible final, 32 MiB protocol line, 64 MiB persisted session, and a 3-second bounded session read. Exceeding a limit reports an unavailable final and blocks dependent handoffs; it does not imply the worker failed to settle.
 
 Retained capacity is rechecked against the original bound ownership and settlement receipt before a new single, parallel or chain dispatch. Exact later proof refunds the reservation once; missing, malformed or mismatched proof and unbound ownership remain retained. Recovery does not rewrite the original failed/unknown outcome or mint new capacity on reload. A single delegation reserves its available subtree; use `delegate_all` to allocate independent parallel children.
 
 Set `PI_DADDY_HERDR=0` for captured execution or `PI_DADDY_HERDR=1` to demand Herdr panes. An unset value
-probes for a responding server. The qualified Herdr transport requires client/server 0.8.2 and protocol 20;
-a version mismatch refuses governed work with no backend fallback. Each owned pane starts a packaged launcher
+probes for a responding server. Startup requires a successful tab-list response and live JSON server status
+reporting a running, CLI-compatible transport. Newer release numbers and an older compatible server do not
+cause refusal. An explicit endpoint incompatibility also refuses; endpoint compatibility alone cannot override
+an incompatible CLI protocol. The status check uses Herdr's own compatibility decision, not a fixed private
+protocol number or a client/server product-version comparison. Missing or incompatible status refuses
+with no backend fallback. Each owned pane starts a packaged launcher
 connected to the coordinator over a private bounded Unix socket. The launcher uses the same pinned native
 subreaper, and the coordinator binds its identity before releasing the worker gate. Child environment and
 arguments come from the governed plan, without inheriting the Herdr daemon's environment. Only public text is

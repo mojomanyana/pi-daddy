@@ -198,6 +198,8 @@ it measured nothing rather than passing quietly.
 
 ## Decisions still in force
 
+- **2026-10-09 — Herdr compatibility follows the live CLI contract.** Supersedes the exact product-version/private-protocol pin from initial owned-pane qualification. Require a successful tab-list response and structured running/compatible server status; honor explicit endpoint incompatibility. Release-number differences alone do not refuse. Endpoint compatibility alone does not prove CLI compatibility. The native ownership gate and exact final/cleanup receipts remain authoritative; a positive transport probe does not approve a task.
+
 **2026-10-09 — operator-controlled session Auto and actionable dashboard.** The owning session keeps live Auto
 permission authority. `PI_DADDY_AUTO_MODE` accepts only 0/1 and sets the session default; `/grants auto` and the
 connected dashboard mutate that same owner. Descendants receive a read/admit/wait reference, never the dashboard's

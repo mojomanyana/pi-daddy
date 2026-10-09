@@ -43,6 +43,18 @@ test("an empty tab list is still a reachable server", async () => {
   assert.equal((await probeHerdr({ exec })).ok, true);
 });
 
+test("a tab probe needs a successful actual tab-list response", async () => {
+  for (const [code, body] of [
+    [0, {}],
+    [0, { result: {} }],
+    [0, { result: { tabs: null } }],
+    [1, { result: { tabs: [] } }],
+  ] as const) {
+    const result = await probeHerdr({ exec: async () => ({ code, stdout: JSON.stringify(body), stderr: "" }) });
+    assert.equal(result.ok, false);
+  }
+});
+
 test("a missing binary is not reachable, and the reason survives", async () => {
   const exec: HerdrExec = async () => ({ code: 1, stdout: "", stderr: "herdr: command not found" });
   const probe = await probeHerdr({ exec });
