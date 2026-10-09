@@ -289,6 +289,15 @@ export async function verifyLedger(path: string): Promise<LedgerReport> {
         events += 1;
         return;
       }
+      if (
+        event.ledgerVersion === 3 &&
+        (event.event === "session_config" || event.event === "cost_gate" || event.event === "episode_outcome")
+      ) {
+        // These facts passed the current v3 schema above. They are history, not capability decisions,
+        // and must not inflate approval, executor, lifecycle or retired-event counters.
+        events += 1;
+        return;
+      }
       if (event.ledgerVersion === 3 && isRetiredLedgerEvent(event)) {
         // Written by 0.30.0 or earlier; counted, never treated as corruption (see RETIRED_LEDGER_EVENT_KINDS).
         retired += 1;

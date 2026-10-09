@@ -1,5 +1,11 @@
 # Changelog — pi-daddy
 
+## 0.47.1 — 2026-10-09
+
+- Clear each terminal row when the dashboard changes views or redraws shorter text, so previous task/history text cannot remain beside Versions or other rows. Unchanged frames still avoid redraws. Update Daddy and reopen the dashboard to use the fix.
+
+- Read schema-valid supplemental ledger facts, including Auto mode session changes, without falsely reporting corruption. Existing ledger bytes, integrity checks and approval counts are preserved.
+
 ## 0.47.0 — 2026-10-09
 
 - Add an explicit session Auto permission switch in the dashboard and `/grants auto on|off`, with `PI_DADDY_AUTO_MODE=0|1` setting the startup default. Descendants consult the live owner for every new admission; OFF prevents future automatic admissions without canceling already admitted work or revoking manual approvals. Reload retains the choice, new sessions reset it, and unavailable control refuses automatic approval.

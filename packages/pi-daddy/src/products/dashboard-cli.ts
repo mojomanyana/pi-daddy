@@ -347,7 +347,8 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
     previous = rendered;
     process.stdout.write(
       interactive
-        ? `\u001b[H${frame}\u001b[J`
+        ? // Erase every row: clearing only below the final cursor leaves old suffixes on shorter rows.
+          `\u001b[H\u001b[2K${frame.replace(/\n/g, "\r\n\u001b[2K")}\u001b[J`
         : clear
           ? `\u001b]0;PI-DADDY\u0007\u001b[2J\u001b[H${rendered}`
           : `${rendered}\n`,
