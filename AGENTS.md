@@ -670,6 +670,10 @@ it does not render, and skips a non-empty unknown future discriminator; malforme
 discriminators remain corruption. `/grants ledger` still treats valid unrendered and future v3 kinds as corruption,
 which is a live compatibility gap.
 
+**2026-10-09 update:** The summary reader now accepts schema-valid current supplemental facts, including Auto
+`session_config` changes. Unknown future kinds remain unsupported; malformed records and integrity damage still
+report errors. The correction does not rewrite stored history or infer approvals.
+
 **Working rules that survive the deletion of the working-rules document.** Decisions, load-bearing claims and
 failure modes are written down or they do not exist; reversals get a dated note, never a rewrite; measure before
 asserting and say which you did, and state what the evidence does not cover; a test that cannot fail is worse than
@@ -1034,7 +1038,8 @@ Kept features only. Numbers are dropped except the two that code and rules cite.
   ledger grows large or projection time climbs.
 - `/grants ledger` still treats valid `cost_gate`, `session_config`, `episode_outcome`, and non-empty future v3 event
   kinds as corruption instead of skipping records it does not report; the dashboard projection already handles them
-  additively.
+  additively. **2026-10-09:** Closed for schema-valid current supplemental kinds; unknown future kinds remain
+  unsupported, and malformed or integrity-damaged records still report errors.
 - Advice append failure is silently ignored, and no advice record exists when no governance ledger is configured;
   advisor output remains non-authoritative, but the audit trail can disappear without a diagnostic.
 - A task digest is a privacy identifier, not anonymisation: a short task can be guessed from a dictionary and equality
