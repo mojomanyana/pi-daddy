@@ -5,6 +5,7 @@ import { openRuntimeSettlement, settlementHash } from "../src/governance/runtime
 import { reconcileDelegationCapacity } from "./session-capacity.ts";
 import { agentDir } from "../src/kernel/project-paths.ts";
 import type { GrantsSession } from "./session.ts";
+import { bindOperationFinals, operationFinal } from "./delegation-operations.ts";
 export const OPERATION_STATUS_EVENT = "pi-daddy:operation-status:v1";
 export const RUNTIME_SNAPSHOT_EVENT = "pi-daddy:runtime-snapshot:v1";
 export function registerRuntimeSnapshot(
@@ -99,6 +100,7 @@ export function registerRuntimeSnapshot(
       sessionId?: string;
       cwd?: string;
       operationId?: string;
+      includeFinal?: boolean;
       reply?: (value: unknown) => void;
     };
     if (
@@ -139,7 +141,12 @@ export function registerRuntimeSnapshot(
           lifecycle.runtimeSnapshotGeneration !== generation
         )
           throw Error("operation owner changed during read");
-        request.reply!({ ...envelope, qualified: true, operation });
+        request.reply!({
+          ...envelope,
+          qualified: true,
+          operation,
+          ...(request.includeFinal === true && operation ? { final: operationFinal(session, operation) } : {}),
+        });
       } catch (error) {
         request.reply!({ ...envelope, qualified: false, operation: null, reason: String(error) });
       }
@@ -172,6 +179,7 @@ export function registerRuntimeSnapshot(
         }
         if (sequence !== bindSequence || session.reloadLifecycle !== lifecycle) return;
         lifecycle.runtimeSettlement = runtime;
+        bindOperationFinals(session, sessionId, cwd);
         bound = { sessionId, cwd, lifecycle: session.reloadLifecycle };
       } catch (error) {
         if (sequence === bindSequence && session.reloadLifecycle === lifecycle) problem = String(error);

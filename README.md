@@ -318,6 +318,23 @@ use the same in-memory overrides and `session_config` audit path as `/grants mod
 <provider:model> <thinking>` and `m all ...` remain available in command mode. A standalone dashboard is read-only.
 Execution history and cost remain observations, and incomplete usage is shown as unavailable rather than zero.
 
+Press **s** for Settings. Select Permission Auto, JEV, Child wall or Child idle with the arrows;
+**Enter** toggles a switch or opens a seconds edit. A limit value of **0** restores its default.
+Settings belong to this owner session and survive reload; a different native session starts fresh.
+Wall/idle edits affect future child launches from this parent, never a running child's captured deadline.
+They are process safety controls, not model time/token budgets. `/grants` reports the effective overrides.
+
+JEV controls require skill-harness in the owning Pi session. Enabling opens its existing paid-call and
+LoRA-storage consent prompts in that parent; the dashboard shows waiting-for-consent, key readiness,
+remaining calls and storage status. Auto cannot answer either consent prompt. Turning JEV off revokes
+its activation, including an outstanding enable request; the switch itself makes no provider call.
+No API keys, consent flags or training permissions can be set from this screen.
+
+Active-descendant capacity and maximum depth are displayed with their startup environment variables;
+start a new session to change them. The per-call bound is fixed. Settings does not replace live capacity
+reservations or promise a limit change it cannot apply. Models and package versions keep their existing
+**m** and **v** views, keeping the main task view focused on work.
+
 Press **v** for ecosystem versions. Pi, Daddy, Principal and Harness each show the loaded package generation,
 version currently installed on disk, source and path. A mismatch calls for a reload (restart for Pi itself).
 Older extensions without the reporter show their installed version with the loaded version explicitly unknown.
@@ -434,6 +451,42 @@ These files may contain task text, tool output and private model reasoning. Loca
 enable JEV, provider egress, LoRA collection or training. Existing `/skill-harness` consent remains separate.
 Without native-session opt-in, temporary child transcripts are removed after settlement and cannot be recovered
 later from the activity timeline.
+
+### Export a private diagnostic bundle
+
+Use the offline exporter instead of asking a model to rewrite session records. Create a JSON selection
+with only the files and retention roots you intend to inspect; relative paths resolve beside that selection:
+
+```json
+{
+  "version": 1,
+  "sources": [
+    { "path": "/absolute/path/coordinator.jsonl", "format": "session" },
+    { "path": "/absolute/path/review.md", "format": "text" },
+    { "path": "/absolute/path/jev/selection.json", "format": "json" }
+  ],
+  "retentionRoots": ["/absolute/path/diagnostic/archive"]
+}
+```
+
+```bash
+pi-daddy diagnostics export selection.json /absolute/path/new-private-bundle
+```
+
+The destination must be new with an existing canonical parent. It contains `inventory.json` and deduplicated
+`objects/` files, with directories mode 0700 and files mode 0600. Originals remain untouched. Each entry records
+its source digest and filtered-object digest separately; unchanged JSON strings inside packets retain their exact
+spacing. Optional source `sha256` requires a matching input. Formats are `session` (native Pi v3 visible messages),
+`json`, `jsonl`, and `text`. Native exports omit reasoning, images and unsupported entries; structured environment
+and credential fields are removed, with omissions recorded. Text files receive heuristic credential filtering.
+
+Retention roots are scanned one directory level for manifests. Referenced session, result and check-receipt
+bytes must match their digest and size; raw streams and pane snapshots are excluded. Current losses and recovered
+read observations are shown separately. Missing or invalid sources produce explicit inventory gaps and exit 1;
+a fully collected selection exits 0. Neither exit code establishes task acceptance. File/count/storage bounds are
+reported as gaps or refusals, never model time/token budgets. This is an individually checked collection, not an
+atomic snapshot, and free-text secret detection is not exhaustive. Review the private bundle before sharing.
+The command never uploads, calls a model, grants training rights, or changes LoRA eligibility.
 
 ## Retired intervention inputs
 

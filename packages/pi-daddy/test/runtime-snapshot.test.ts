@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { finishDelegationOperation, operationFinalScope } from "../extensions/delegation-operations.ts";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { tempDir, cleanupTempDirs } from "./tmp.ts";
@@ -94,7 +96,7 @@ test("operation bridge reads owner facts and refuses a different session or cwd"
     },
   } as unknown as ExtensionAPI;
   const auto = await createAutoModeAuthority({ enabled: false, source: "default" });
-  const session = {
+  let session = {
     ownerBound: true,
     autoMode: auto,
     reloadLifecycle: { root: {} },
@@ -102,12 +104,13 @@ test("operation bridge reads owner facts and refuses a different session or cwd"
     capacity: { reserved: 0 },
   } as unknown as GrantsSession;
   const ctx = { cwd: root, sessionManager: { getSessionId: () => "actual" } } as unknown as ExtensionContext;
-  const read = (sessionId = "actual", cwd = root) =>
+  const read = (sessionId = "actual", cwd = root, includeFinal = false, operationId = "review:one") =>
     new Promise<any>((reply) =>
       pi.events.emit(OPERATION_STATUS_EVENT, {
         version: 1,
         requestId: "lookup",
-        operationId: "review:one",
+        operationId,
+        includeFinal,
         sessionId,
         cwd,
         reply,
@@ -128,12 +131,102 @@ test("operation bridge reads owner facts and refuses a different session or cwd"
     assert.equal(pending.operation.executionId, "exec:actual");
     assert.equal((await read("foreign")).qualified, false);
     assert.equal((await read("actual", "/wrong")).qualified, false);
-    await claim.finish!("not-started");
-    assert.equal((await read()).operation.state, "not-started");
+    const final = (text: string) => ({
+      state: "complete" as const,
+      text,
+      sessionId: "child",
+      messageId: "message",
+      leafId: "leaf",
+      sha256: createHash("sha256").update(text).digest("hex"),
+    });
+    const finish = async (owned: typeof claim, text: string, scope = operationFinalScope(session)) => {
+      const result = {
+        ok: true,
+        work: "succeeded",
+        text,
+        final: final(text),
+        cwd: root,
+        cleanup: {
+          state: "settled",
+          identity: { executionId: owned.operation.executionId, receiptPath: "/tmp/receipt" },
+        },
+      };
+      await finishDelegationOperation(owned, result as never, session, scope);
+      return result;
+    };
+    const text = "Verified report\n".repeat(8192); // Greater than the 64 KiB operation socket response bound.
+    const original = await finish(claim, text);
+    assert.equal((await read()).operation.state, "settled");
+    assert.equal((await read()).final, undefined, "ordinary status never includes report text");
+    assert.equal((await auto.operations!.read("review:one"))?.runtime?.final?.sha256, original.final.sha256);
+    const retained = await read("actual", root, true);
+    assert.equal(
+      retained.final.text,
+      text,
+      "explicit in-process bridge transfers the full final without socket truncation",
+    );
+    assert.equal(retained.final.sha256, original.final.sha256);
+    assert.equal((await read("foreign", root, true)).final, undefined);
+    const previousSession = session;
+    session = { ...previousSession } as GrantsSession; // A real extension reload constructs a new session object.
+    assert.notEqual(session, previousSession);
     const replacement = registerRuntimeSnapshot(pi, session);
     await replacement.bind(ctx);
     assert.equal(listeners.get(OPERATION_STATUS_EVENT)?.size, 1);
     assert.equal((await read()).operation.executionId, "exec:actual");
+    assert.equal(
+      (await read("actual", root, true)).final.text,
+      text,
+      "native-owner lifecycle survives a new session object",
+    );
+    const second = await auto.operations!.claim({
+      operationId: "review:two",
+      requestDigest: "b".repeat(64),
+      executionId: "exec:second",
+      cwd: root,
+      workspaceId: null,
+    });
+    const secondText = "x".repeat(4 * 1024 * 1024);
+    await finish(second, secondText);
+    assert.equal(
+      (await read("actual", root, true)).final.state,
+      "unavailable",
+      "bounded retention expires old observation explicitly",
+    );
+    assert.equal(original.final.text, text, "expiry never mutates the original child result");
+    assert.equal((await read("actual", root, true, "review:two")).final.text, secondText);
+    const oldScope = operationFinalScope(session);
+    const late = await auto.operations!.claim({
+      operationId: "review:late",
+      requestDigest: "c".repeat(64),
+      executionId: "exec:late",
+      cwd: root,
+      workspaceId: null,
+    });
+    await replacement.bind({ ...ctx, sessionManager: { getSessionId: () => "next-session" } } as ExtensionContext);
+    assert.equal(
+      (await read("next-session", root, true, "review:two")).final.state,
+      "unavailable",
+      "new session never inherits prior text",
+    );
+    await finish(late, "Old child finishing late.", oldScope);
+    assert.equal((await read("next-session", root, true, "review:late")).final.state, "unavailable");
+    for (let index = 0; index < 129; index++) {
+      const tiny = await auto.operations!.claim({
+        operationId: `tiny:${index}`,
+        requestDigest: "d".repeat(64),
+        executionId: `exec:tiny-${index}`,
+        cwd: root,
+        workspaceId: null,
+      });
+      await finish(tiny, "x");
+    }
+    assert.equal(
+      (await read("next-session", root, true, "tiny:0")).final.state,
+      "unavailable",
+      "tiny finals also have an entry-count bound",
+    );
+    assert.equal((await read("next-session", root, true, "tiny:128")).final.text, "x");
   } finally {
     await auto.close();
     if (prior === undefined) delete process.env.PI_CODING_AGENT_DIR;

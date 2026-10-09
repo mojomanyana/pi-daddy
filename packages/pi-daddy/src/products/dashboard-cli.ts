@@ -376,6 +376,17 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
       notice = (await connection.change({ action: "set", edits: trimmed.slice(2).trim() }))
         ? "Session models updated"
         : connection.state.error || "Session controls unavailable";
+    } else if (trimmed.startsWith("limit ")) {
+      const edit = /^limit (wall|idle) ([0-9]+)$/.exec(trimmed);
+      if (!edit) notice = "Use limit wall <seconds> or limit idle <seconds>; 0 restores default";
+      else
+        notice = (await connection.change({
+          action: "set-limit",
+          key: edit[1] as "wall" | "idle",
+          seconds: Number(edit[2]),
+        }))
+          ? "Session limit updated for future children; running children unchanged"
+          : connection.state.error || "Settings unavailable";
     } else notice = display.input(line) ? "" : `Unknown command: ${trimmed}. Press ? for help.`;
     redraw();
   };
@@ -397,7 +408,7 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
       redraw();
       return;
     }
-    const action = display.key(
+    let action = display.key(
       key.name === "return"
         ? "return"
         : ["up", "down", "escape", "tab"].includes(key.name || "")
@@ -409,6 +420,32 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
       return;
     }
     if (action === "command") command = "";
+    if (action === "setting") {
+      const selected = display.screen.settingKey ?? "auto";
+      const settings = connection.state.snapshot?.settings;
+      if (!settings?.editable) notice = "Settings can only be changed in the connected owning parent";
+      else if (selected === "auto") action = "auto";
+      else if (selected === "wall" || selected === "idle") command = `limit ${selected} `;
+      else if (selected === "descendants") notice = "Startup only: set PI_DADDY_FANOUT before restarting Pi";
+      else if (selected === "depth") notice = "Startup only: set PI_DADDY_MAX_DEPTH before restarting Pi";
+      else if (selected === "perCall") notice = "Children per call is a fixed safety bound";
+      else if (!settings.jev.available)
+        notice = "JEV controls unavailable; load skill-harness in the parent Pi session";
+      else {
+        void connection
+          .change({ action: "set-jev", enabled: !(settings.jev.enabled || settings.jev.pending) })
+          .then((changed) => {
+            const jev = connection.state.snapshot?.settings?.jev;
+            notice = !changed
+              ? connection.state.error || "JEV change already pending"
+              : jev?.pending
+                ? "Complete JEV paid-call and LoRA-storage choices in the parent Pi session"
+                : jev?.error ||
+                  `JEV ${jev?.enabled ? "enabled" : "disabled"}; ${jev?.availability ?? "status unknown"}`;
+            redraw();
+          });
+      }
+    }
     if (action === "auto") {
       const snapshot = connection.state.snapshot;
       if (!snapshot) notice = "Daddy permission controls unavailable";

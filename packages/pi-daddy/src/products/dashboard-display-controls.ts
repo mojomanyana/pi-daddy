@@ -1,3 +1,4 @@
+import { DASHBOARD_SETTING_KEYS } from "./dashboard-settings.ts";
 /** Local display controls; these never dispatch actions to an owner or change ledger state. */
 import { dashboardScreenState } from "./dashboard-screen.ts";
 import { ActivityTimelineAliases } from "./activity-timeline.ts";
@@ -16,16 +17,17 @@ export function createDashboardDisplayControls(details: boolean, ledger: boolean
   return {
     state,
     screen,
-    key(key: string): "auto" | "quit" | "command" | undefined {
+    key(key: string): "auto" | "quit" | "command" | "setting" | undefined {
       if (key === "a") return "auto";
       if (key === "q" || key === "ctrl-c") return "quit";
       if (key === ":") return "command";
+      if (screen.view === "settings" && (key === "return" || key === "d")) return "setting";
       if (key === "escape") {
         screen.view = screen.view === "version-details" ? "versions" : "main";
         state.activityDetail = undefined;
         screen.offset = 0;
-      } else if (key === "?" || key === "m" || key === "v") {
-        screen.view = key === "?" ? "help" : key === "v" ? "versions" : "models";
+      } else if (key === "?" || key === "m" || key === "v" || key === "s") {
+        screen.view = key === "?" ? "help" : key === "v" ? "versions" : key === "s" ? "settings" : "models";
         state.activityDetail = undefined;
         screen.offset = 0;
       } else if (key === "return" || key === "d") {
@@ -33,7 +35,11 @@ export function createDashboardDisplayControls(details: boolean, ledger: boolean
         screen.offset = 0;
       } else if (["up", "down", "j", "k"].includes(key)) {
         const delta = key === "up" || key === "k" ? -1 : 1;
-        if (screen.view === "versions") {
+        if (screen.view === "settings") {
+          const index = DASHBOARD_SETTING_KEYS.indexOf(screen.settingKey ?? "auto");
+          screen.settingKey =
+            DASHBOARD_SETTING_KEYS[Math.max(0, Math.min(DASHBOARD_SETTING_KEYS.length - 1, index + delta))];
+        } else if (screen.view === "versions") {
           const rows = screen.versionRows ?? [],
             index = rows.findIndex((row) => row.id === screen.versionId);
           screen.versionId = rows[Math.max(0, Math.min(rows.length - 1, index + delta))]?.id;

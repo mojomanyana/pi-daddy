@@ -1,3 +1,4 @@
+import { childExecutionLimits } from "./dashboard-settings.ts";
 import { realpath } from "node:fs/promises";
 import { BoundedReadCleanupError } from "../src/kernel/bounded-read.ts";
 import { retainDiscoveryCleanupFailure } from "./session.ts";
@@ -16,13 +17,7 @@ import { appendLedgerEvent, buildChildLifecycleEvent } from "../src/governance/l
 import { hasFinalizerError } from "../src/governance/finalization.ts";
 import { mergeChildEnv } from "../src/kernel/propagation.ts";
 import type { Capability } from "../src/kernel/resolve.ts";
-import {
-  DEFAULT_KILL_GRACE_MS,
-  ENV_CHILD_IDLE_TIMEOUT,
-  ENV_CHILD_TIMEOUT,
-  idleTimeoutFromEnv,
-  timeoutFromEnv,
-} from "../src/kernel/run-child.ts";
+import { DEFAULT_KILL_GRACE_MS, ENV_CHILD_IDLE_TIMEOUT, ENV_CHILD_TIMEOUT } from "../src/kernel/run-child.ts";
 import { activitySessionFor } from "../src/executors/activity-session.ts";
 import { processTreeActivity } from "../src/executors/process-activity.ts";
 import { resolveWorkspace } from "../src/executors/herdr-cli.ts";
@@ -147,6 +142,7 @@ export async function executePlannedChild(input: ChildExecutionInput): Promise<D
   const runtime = input.session.reloadLifecycle?.runtimeSettlement;
   let registered = false;
   try {
+    const limits = childExecutionLimits(input.session);
     input = { ...input, cwd: await realpath(input.preparedWorkspace?.workspace.root ?? input.cwd) };
     runtime?.begin(input.executionId);
     registered = Boolean(runtime);
@@ -157,6 +153,7 @@ export async function executePlannedChild(input: ChildExecutionInput): Promise<D
         input.onExecutorEntry?.();
       },
       runtime,
+      limits,
     );
     try {
       await runtime?.finish(
@@ -220,7 +217,8 @@ export async function executePlannedChild(input: ChildExecutionInput): Promise<D
 async function executePreparedChild(
   input: ChildExecutionInput,
   onExecutorEntry: () => void,
-  runtime?: import("../src/governance/runtime-settlement.ts").RuntimeSettlement,
+  runtime: import("../src/governance/runtime-settlement.ts").RuntimeSettlement | undefined,
+  limits: ReturnType<typeof childExecutionLimits>,
 ): Promise<DelegationOutcome> {
   const { session, plan, childId, executionId, parentExecutionId, preparedWorkspace, signal, onProgress } = input;
   const ledgerPath = session.ledgerPath;
@@ -269,10 +267,10 @@ async function executePreparedChild(
     );
     activityStarted = true;
   } catch {}
-  const configuredTimeoutMs = timeoutFromEnv(process.env[ENV_CHILD_TIMEOUT]);
+  const configuredTimeoutMs = limits.wallMs;
   // PR 3e: the working bound is inactivity; `deadlineAt` below is the runaway ceiling. Every child gets a pi session
   // file so the parent can see it working when its stdout is quiet (pi appends each message and tool result to it).
-  const configuredIdleMs = idleTimeoutFromEnv(process.env[ENV_CHILD_IDLE_TIMEOUT]);
+  const configuredIdleMs = limits.idleMs;
   const activitySession = await activitySessionFor(plan.args, executionId);
   // Disposed on every path (review finding: it leaked on every throw), except when the operator keeps a Herdr pane,
   // where the interactive pi in that pane is still alive and still appending to this file.
@@ -378,7 +376,7 @@ async function executePreparedChild(
       workspaceId: preparedWorkspace?.workspace.workspaceId ?? null,
     });
     const sessionFlag = plan.args.indexOf("--session");
-    if (sessionFlag >= 0) retention.observeSession({ source: "pi-session-file", value: plan.args[sessionFlag + 1] });
+    // Pi creates the file during execution; observe its exact final below, not a guaranteed pre-spawn miss.
     let releaseReason = "failed";
     let retainWriterLease = false;
     let terminalAttempted = false;

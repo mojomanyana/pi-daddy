@@ -191,3 +191,5 @@ export {
   type WorkspacePins,
   type ParsedPin,
 } from "./kernel/workspace-pin.ts";
+
+export { exportDiagnostics, parseDiagnosticSelection, type DiagnosticSelection } from "./products/diagnostic-export.ts";

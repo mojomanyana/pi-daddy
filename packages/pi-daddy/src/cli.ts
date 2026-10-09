@@ -50,6 +50,7 @@ Usage:
   pi-daddy report [--since <date>] [--definition <name>] [--model <id>]
                   [--group-by definition|model|thinking] [--json]
   pi-daddy outcomes                       append changed episode outcomes from Git and CI
+  pi-daddy diagnostics export <selection.json> <new-directory>  private filtered local evidence
   pi-daddy --help | --version
 
 init references skills already enabled in Pi at their installed or local paths. Legacy unregistered npm
@@ -61,8 +62,11 @@ stays unspawnable. Capabilities that can change your machine
             It never rewrites ${SETTINGS_REL} — delete that file if you want it regenerated.`;
 
 export interface ParsedArgs {
-  command: "init" | "ledger-repair" | "ledger-import" | "report" | "outcomes" | "help" | "version";
+  command:
+    "init" | "ledger-repair" | "ledger-import" | "report" | "outcomes" | "diagnostics-export" | "help" | "version";
   importTarget?: string;
+  selectionPath?: string;
+  exportDirectory?: string;
   /** `ledger repair <path>`: the ledger file; `yes` applies, otherwise preview only. */
   ledgerPath?: string;
   yes?: boolean;
@@ -91,6 +95,19 @@ export function parseArgs(argv: string[]): ParsedArgs {
   if (args.includes("--version") || args.includes("-v")) return { command: "version", force: false, errors: [] };
 
   const [command, ...tail] = args;
+  if (command === "diagnostics") {
+    const [verb, selectionPath, exportDirectory, ...extra] = tail;
+    if (
+      verb !== "export" ||
+      !selectionPath ||
+      !exportDirectory ||
+      selectionPath.startsWith("-") ||
+      exportDirectory.startsWith("-") ||
+      extra.length
+    )
+      return { command: "help", force: false, errors: ["diagnostics needs: export <selection.json> <new-directory>"] };
+    return { command: "diagnostics-export", force: false, errors: [], selectionPath, exportDirectory };
+  }
   if (command === "ledger") {
     // ADR-0076 PR 3d: `ledger repair <path> [--yes]` previews, --yes truncates; `ledger import <source> <target>`.
     const [verb, target, ...flags] = tail;
@@ -387,6 +404,12 @@ export async function main(
   if (parsed.command === "help") {
     console.log(USAGE);
     return 0;
+  }
+  if (parsed.command === "diagnostics-export") {
+    const { exportDiagnostics } = await import("./products/diagnostic-export.ts");
+    const result = await exportDiagnostics(parsed.selectionPath!, parsed.exportDirectory!);
+    console.log(JSON.stringify(result));
+    return result.missing ? 1 : 0;
   }
   if (parsed.command === "outcomes") {
     const cwd = process.cwd();

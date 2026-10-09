@@ -1,3 +1,4 @@
+import type { DashboardSettingsSnapshot } from "./dashboard-settings.ts";
 import type { EcosystemVersions } from "./ecosystem-versions.ts";
 import { createConnection } from "node:net";
 
@@ -6,12 +7,17 @@ export interface DashboardSessionSnapshot {
   cost: number | null;
   activity?: { rootId: string; path: string; taskId: string };
   versions?: EcosystemVersions;
+  settings?: DashboardSettingsSnapshot;
   auto: { enabled: boolean; source: "default" | "environment" | "session" };
   pendingApprovals: Array<{ id: string; subject: string; capability: string }>;
 }
 
 export type DashboardSessionAction =
-  { action: "get" } | { action: "set"; edits: string } | { action: "set-auto"; enabled: boolean };
+  | { action: "get" }
+  | { action: "set"; edits: string }
+  | { action: "set-auto"; enabled: boolean }
+  | { action: "set-jev"; enabled: boolean }
+  | { action: "set-limit"; key: "wall" | "idle"; seconds: number };
 
 export async function dashboardSessionRequest(
   socketPath: string,

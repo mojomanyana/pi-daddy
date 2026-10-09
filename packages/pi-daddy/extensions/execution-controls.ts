@@ -1,3 +1,4 @@
+import type { childExecutionLimits } from "./dashboard-settings.ts";
 /** Operator-facing execution settings; display never changes admission, deadlines or retention. */
 import { timeoutFromEnv, idleTimeoutFromEnv } from "../src/kernel/run-child.ts";
 import { timeoutMsFromEnv } from "../src/governance/approval-prompt.ts";
@@ -11,6 +12,7 @@ import {
 export function renderExecutionControls(
   nativeSessionRoot: string | undefined,
   env: NodeJS.ProcessEnv = process.env,
+  limits?: ReturnType<typeof childExecutionLimits>,
 ): string[] {
   let approval: string;
   try {
@@ -20,9 +22,12 @@ export function renderExecutionControls(
     approval = `${ENV_APPROVAL_TIMEOUT} invalid; a needed new prompt will refuse`;
   }
   const source = (key: string) => (env[key] === undefined ? "default" : `from ${key}; zero/invalid uses default`);
+  const wallSource = limits?.wallSource === "session" ? "session override; future children" : source(ENV_CHILD_TIMEOUT);
+  const idleSource =
+    limits?.idleSource === "session" ? "session override; future children" : source(ENV_CHILD_IDLE_TIMEOUT);
   return [
-    `  child wall ${timeoutFromEnv(env[ENV_CHILD_TIMEOUT]) / 1000}s (${source(ENV_CHILD_TIMEOUT)})`,
-    `  child idle ${idleTimeoutFromEnv(env[ENV_CHILD_IDLE_TIMEOUT]) / 1000}s (${source(ENV_CHILD_IDLE_TIMEOUT)})`,
+    `  child wall ${(limits?.wallMs ?? timeoutFromEnv(env[ENV_CHILD_TIMEOUT])) / 1000}s (${wallSource})`,
+    `  child idle ${(limits?.idleMs ?? idleTimeoutFromEnv(env[ENV_CHILD_IDLE_TIMEOUT])) / 1000}s (${idleSource})`,
     "             process safety controls; no time/token budget is added to the model prompt",
     `  approval   ${approval}`,
     `  transcripts ${

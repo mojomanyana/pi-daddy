@@ -1,3 +1,4 @@
+import type { childExecutionLimits } from "./dashboard-settings.ts";
 /**
  * The `/grants` command — session status, approvals, and ledger integrity.
  *
@@ -28,6 +29,7 @@ export interface GrantsCommandContext {
   governed: boolean;
   /** Host opt-in captured by this session, not a later environment reread. */
   nativeSessionRoot?: string;
+  executionLimits?: ReturnType<typeof childExecutionLimits>;
   autoModeStatus?: string;
   /** Explicit owner mutation; the command parser itself holds no permission authority. */
   changeAutoMode?: (enabled: boolean) => Promise<string>;
@@ -439,7 +441,7 @@ export const grantsCommand = {
       // ADR-0031, and its probe is only defensible because this line exists. Placed next to `holding` so the
       // two facts about what a spawn will be sit together.
       `  executor   ${executor.disclosure}`,
-      ...renderExecutionControls(ctx.grants.nativeSessionRoot),
+      ...renderExecutionControls(ctx.grants.nativeSessionRoot, process.env, ctx.grants.executionLimits),
       `  Auto       ${ctx.grants.autoModeStatus ?? "OFF (default)"}`,
       `  depth      ${depth} of max ${maxDepth}${maxDepth <= 0 ? " (spawning disabled)" : ""}`,
       `  ledger     ${ledgerPath || "(not recording — set PI_DADDY_LEDGER)"}`,
