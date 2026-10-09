@@ -27,6 +27,7 @@ function transport(options: { killLauncher?: boolean; failCreate?: boolean } = {
       if (options.killLauncher) setTimeout(() => child.kill("SIGKILL"), 400);
       return { code: 0, stdout: "", stderr: "" };
     }
+    if (args[0] === "pane" && args[1] === "release-agent") return { code: 0, stdout: '{"result":{}}', stderr: "" };
     if (args[0] === "tab" && args[1] === "close") return { code: 0, stdout: '{"result":{}}', stderr: "" };
     throw Error("unexpected pane transport");
   };
