@@ -71,12 +71,28 @@ export function providerConfig(next: (request: Request) => Step): ProviderConfig
             message.content[contentIndex] = block;
             stream.push({ type: "text_delta", contentIndex, delta: block.text, partial: structuredClone(message) });
             stream.push({ type: "text_end", contentIndex, content: block.text, partial: structuredClone(message) });
+          } else if (block.type === "thinking") {
+            message.content.push({ type: "thinking", thinking: "" });
+            stream.push({ type: "thinking_start", contentIndex, partial: structuredClone(message) });
+            message.content[contentIndex] = block;
+            stream.push({
+              type: "thinking_delta",
+              contentIndex,
+              delta: block.thinking,
+              partial: structuredClone(message),
+            });
+            stream.push({
+              type: "thinking_end",
+              contentIndex,
+              content: block.thinking,
+              partial: structuredClone(message),
+            });
           } else if (block.type === "toolCall") {
             message.content.push(block);
             stream.push({ type: "toolcall_start", contentIndex, partial: structuredClone(message) });
             stream.push({ type: "toolcall_end", contentIndex, toolCall: block, partial: structuredClone(message) });
           } else {
-            throw new Error("Fixture supports only text and tool calls");
+            throw new Error("Fixture supports only text, thinking and tool calls");
           }
         }
         message.stopReason = step.stopReason ?? "stop";

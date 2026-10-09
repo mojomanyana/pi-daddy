@@ -424,6 +424,7 @@ async function executePreparedChild(
       const output = await runCapturedExecution(
         {
           executionId,
+          terminalUi: session.executor.kind === "herdr",
           sessionPath: activitySession.path,
           onReadCleanup,
           onOwnership: async (identity) => {

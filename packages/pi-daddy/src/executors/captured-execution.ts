@@ -2,6 +2,7 @@
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { runOwnedChild, type OwnedChildRunRequest, type OwnedChildRunResult } from "./owned-worker.ts";
 import type { BoundedReadCleanupError } from "../kernel/bounded-read.ts";
 import { ChildFinalCapture, type ChildFinal } from "./child-final.ts";
@@ -36,7 +37,18 @@ export async function runCapturedExecution(
     };
   }
   const capture = new ChildFinalCapture(request.onOutput, request.onReadCleanup);
-  const args = [...request.args.slice(0, -1), "--mode", "json", request.args.at(-1)!];
+  const args = [...request.args];
+  if (request.terminalUi) {
+    const extension = (name: string) =>
+      fileURLToPath(new URL("./" + name + (import.meta.url.endsWith(".ts") ? ".ts" : ".js"), import.meta.url));
+    // Pi enables editor commands before awaiting session_start handlers. The view guard must be first;
+    // the event observer remains last so earlier message transformations are captured exactly.
+    const firstExtension = args.findIndex(
+      (arg, index) => index < args.length - 1 && ["--no-extensions", "-ne", "-e", "--extension"].includes(arg),
+    );
+    args.splice(firstExtension < 0 ? args.length - 1 : firstExtension, 0, "-e", extension("owned-pi-view"));
+    args.splice(args.length - 1, 0, "-e", extension("owned-pi-ui"), "--tui-mode", "regular");
+  } else args.splice(args.length - 1, 0, "--mode", "json");
   const output = await runOwned({
     ...request,
     args,

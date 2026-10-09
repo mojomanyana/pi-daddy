@@ -1,6 +1,6 @@
 # pi-daddy
 
-Source target: **0.48.2**. Before installation, verify that `npm view pi-daddy version` and Git tag `v0.48.2` both resolve to this release.
+Source target: **0.48.3**. Before installation, verify that `npm view pi-daddy version` and Git tag `v0.48.3` both resolve to this release.
 
 **Capability governance and coordination for [pi](https://github.com/badlogic/pi-mono)'s multi-level agent system.**
 An orchestrator grants each sub-agent a deliberate subset of what it holds and withholds the rest. A sub-agent may
@@ -181,8 +181,7 @@ escape hatch for an operator who wants the old behaviour, and an explicitly empt
 
 ## Approvals
 
-With Auto OFF, a gated capability needs a valid approval or the UI of the session executing the delegation. Captured children use Pi's JSON mode
-without a UI; a gate with neither a valid approval nor an available UI is denied. The answer is **once**, **for this session**, or **always** (persisted for a bounded period, offered only for a
+With Auto OFF, a gated capability needs a valid approval or the UI of the session executing the delegation. Captured children use Pi's JSON mode; Herdr children have a view-only native UI. Neither can answer local permission dialogs; a gate with neither a valid approval nor an available UI is denied. The answer is **once**, **for this session**, or **always** (persisted for a bounded period, offered only for a
 named definition, keyed `capability@subject`). Approvals inherit down the subtree intersected with each child's grant;
 a `once` never crosses a spawn. The approval store and governance ledger never store raw task text. `/grants
 approvals` lists what is persisted; `/grants revoke <capability>@<definition>` or `--all` removes it. The store lives
@@ -247,7 +246,7 @@ Pi 1.0.4 and 1.1.0, client 0.9.3/server 0.9.0 with Pi 1.1.0, and client/server 0
 Each combination exercises real child results, retained tabs, cancellation, coordinator loss and server loss.
 These are measured combinations, not a product-version allowlist. Native Windows and WSL-to-Windows worker
 interop remain unqualified.
-A packaged native helper owns and reaps the cooperating child subtree. The final is accepted only when Pi's JSON
+A packaged native helper owns and reaps the cooperating child subtree. The final is accepted only when Pi's native lifecycle
 protocol settles and matches the exact persisted current turn and active branch. Complete final text is preserved;
 work, final availability, subtree cleanup and optional observation completeness are separate result fields. A failed
 execution returns `isError` with its available evidence. Display, diagnostics and optional recording cannot replace
@@ -261,9 +260,22 @@ Retained capacity is rechecked against the original bound ownership and settleme
 
 Governed Herdr children appear in the native agent sidebar while running, with their role (for example
 Plan, Build or Review) and a corresponding named tab. Sidebar state is observational: native process
-receipts still determine settlement. A settled child leaves the active agent list; with
+receipts still determine settlement. The launcher releases its own sidebar source after settlement; with
 `PI_DADDY_HERDR_KEEP_PANE=1`, its output tab remains for inspection, without a live interactive child.
-Missing sidebar delivery is reported but does not change the execution result.
+Herdr can retain a cached unknown Pi entry after that release even when all owned processes have exited.
+This display limitation has been observed on servers 0.8.2, 0.9.0 and 0.9.3; disappearance is not guaranteed by
+a newer release number. Normal settlement resets the terminal title; an abruptly killed launcher can
+leave the last title visible. Neither a title nor a cached entry proves liveness.
+While running, the tab displays Pi's own interface with the initial task, live tool calls and results, and
+the final answer. It is view-only: Ctrl+O expands or collapses tool output, and terminal scrollback remains
+available. Type task changes in the parent session. The child consumes other input once its session starts;
+an interruption during Pi startup can still fail the launch. Reasoning text is suppressed by Pi's public
+display transformer. This does not redact native session files or optional private diagnostic captures.
+
+The parent continues to control task dispatch and cancellation. Children retain existing/Auto permissions;
+a new local approval request refuses instead of waiting in a view-only tab. Existing Pi project-trust
+decisions remain effective; an unknown project receives the same noninteractive refusal as captured mode,
+without writing a new trust decision. Missing sidebar delivery is reported but does not change the execution result.
 
 Set `PI_DADDY_HERDR=0` for captured execution or `PI_DADDY_HERDR=1` to demand Herdr panes. An unset value
 probes for a responding server. Startup requires a successful tab-list response and live JSON server status
@@ -274,8 +286,9 @@ protocol number or a client/server product-version comparison. Missing or incomp
 with no backend fallback. Each owned pane starts a packaged launcher
 connected to the coordinator over a private bounded Unix socket. The launcher uses the same pinned native
 subreaper, and the coordinator binds its identity before releasing the worker gate. Child environment and
-arguments come from the governed plan, without inheriting the Herdr daemon's environment. Only public text is
-shown in the pane; raw protocol/private reasoning is not used as a display channel.
+arguments come from the governed plan, without inheriting the Herdr daemon's environment. The native UI owns the pane terminal, while a separate inherited pipe carries lifecycle events to the
+same final validator. Terminal text never determines success or cleanup. Raw protocol/private reasoning
+is not used as a display channel.
 
 Native receipts, not pane closure or idle screen state, prove subtree cleanup. Model-free qualification covers
 actual Pi CLI success, retry, nested tool and failed-final cases, cancellation, coordinator SIGKILL and loss of

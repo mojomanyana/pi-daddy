@@ -10,6 +10,7 @@ export async function launchHerdrWorker(socketPath: string, token: string): Prom
   const abort = new AbortController();
   let started = false,
     authenticated = false,
+    terminalUi = false,
     acknowledge: (() => void) | undefined,
     rejectGate: ((error: Error) => void) | undefined;
   const lost = (error: Error) => {
@@ -32,7 +33,7 @@ export async function launchHerdrWorker(socketPath: string, token: string): Prom
         return;
       }
       if (message?.type === "display" && authenticated && typeof message.text === "string") {
-        process.stdout.write(message.text);
+        if (!terminalUi) process.stdout.write(message.text);
         return;
       }
       if (message?.type !== "request" || started) {
@@ -43,11 +44,14 @@ export async function launchHerdrWorker(socketPath: string, token: string): Prom
       started = true;
       authenticated = true;
       const request = message.request as OwnedChildRunRequest & { sessionPath?: string };
+      terminalUi = request.terminalUi === true;
       let childPid: number | undefined;
       const display = herdrAgentDisplay(message.display);
       let settled = false;
       void (async () => {
+        const wasRaw = process.stdin.isRaw;
         try {
+          if (terminalUi && process.stdin.isTTY) process.stdin.setRawMode(true);
           const result = await runOwnedChild({
             ...request,
             signal: abort.signal,
@@ -88,10 +92,13 @@ export async function launchHerdrWorker(socketPath: string, token: string): Prom
               childPid = pid;
               void display.working();
               send({ type: "spawned", pid });
-              process.stdout.write("pi-daddy: governed child running\n");
+              if (!terminalUi) process.stdout.write("pi-daddy: governed child running\n");
             },
           });
           settled = result.cleanup.state === "settled" || result.cleanup.state === "not-started";
+          // Mark only this owned terminal as settled; this is cosmetic, not process or sidebar authority.
+          // Unknown cleanup keeps its existing title, and a killed launcher cannot reset it.
+          if (terminalUi && settled) process.stdout.write("\x1b]0;Task settled\x07");
           const displayReleased = await display.finish(settled);
           if (!socket.destroyed) {
             send({ type: "result", result, displayReleased: settled && displayReleased });
@@ -106,6 +113,12 @@ export async function launchHerdrWorker(socketPath: string, token: string): Prom
             } finally {
               socket.end();
             }
+          }
+        } finally {
+          try {
+            if (terminalUi && process.stdin.isTTY) process.stdin.setRawMode(wasRaw);
+          } catch {
+            // A lost pane cannot be restored; native cleanup remains independently recorded.
           }
         }
       })();
