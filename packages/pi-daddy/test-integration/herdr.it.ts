@@ -9,6 +9,7 @@ import { isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runHerdrOwned } from "../src/executors/herdr-owned.ts";
 import { readCapturedWorkerReceipt } from "../src/governance/captured-worker-record.ts";
+import { registerHerdrPiUiTests } from "./pi-sdk/herdr-ui.it.ts";
 import { qualifyHerdr } from "../src/executors/herdr-qualification.ts";
 const name = "pd-it-" + randomUUID().slice(0, 12);
 const exec = (args: string[]) =>
@@ -112,7 +113,7 @@ test("real pane uses the supplied child environment, exact bytes and native clea
       command: process.execPath,
       args: [
         "-e",
-        "process.stdout.write('PUBLIC 🙂 '+process.env.PI_DADDY_GRANT+' '+String(process.env.HERDR_PANE_ID))",
+        "process.stdout.write('PUBLIC \u{1f642} '+process.env.PI_DADDY_GRANT+' '+String(process.env.HERDR_PANE_ID))",
       ],
       env: { PATH: process.env.PATH, PI_DADDY_GRANT: "tool:read" },
       timeoutMs: 5000,
@@ -120,7 +121,7 @@ test("real pane uses the supplied child environment, exact bytes and native clea
     },
     { exec, launcherPath },
   );
-  assert.equal(result.text, "PUBLIC 🙂 tool:read undefined");
+  assert.equal(result.text, "PUBLIC \u{1f642} tool:read undefined");
   assert.equal(result.code, 0);
   assert.equal(result.cleanup.state, "settled");
 });
@@ -194,6 +195,7 @@ for (const mode of ["direct cancellation", "launcher SIGKILL"] as const)
     const running = runHerdrOwned(
       {
         executionId: "direct-cancel",
+        terminalUi: true,
         ownershipDir: join(cwd, "owner"),
         cwd,
         command: process.execPath,
@@ -265,7 +267,7 @@ test("coordinator SIGKILL makes native ownership cancel/reap the real pane tree"
     import {runHerdrOwned} from ${JSON.stringify(ownModule)};
     const exec=args=>new Promise(resolve=>execFile('herdr',['--session',${JSON.stringify(name)},...args],
       {timeout:10000},(error,stdout,stderr)=>resolve({code:error?1:0,stdout,stderr})));
-    await runHerdrOwned({executionId:'parent-kill',ownershipDir:${JSON.stringify(join(cwd, "owner"))},
+    await runHerdrOwned({executionId:'parent-kill',terminalUi:true,ownershipDir:${JSON.stringify(join(cwd, "owner"))},
       cwd:${JSON.stringify(cwd)},command:process.execPath,args:['-e',${JSON.stringify(script)},${JSON.stringify(join(cwd, "pids.json"))}],
       env:process.env,timeoutMs:15000,killGraceMs:100,
       onOwnership:identity=>writeFile(${JSON.stringify(join(cwd, "identity.json"))},JSON.stringify(identity))
@@ -302,6 +304,7 @@ test("coordinator SIGKILL makes native ownership cancel/reap the real pane tree"
   }
 });
 if (available) {
+  registerHerdrPiUiTests(name);
   const previous = process.env.PI_DADDY_IT_HERDR_SESSION;
   process.env.PI_DADDY_IT_HERDR_SESSION = name;
   await import("./pi-sdk/herdr-final.it.ts");
@@ -313,6 +316,7 @@ test("stopping only the owned Herdr server still produces independent cleanup pr
   const running = runHerdrOwned(
     {
       executionId: "daemon-stop",
+      terminalUi: true,
       ownershipDir: join(cwd, "owner"),
       cwd,
       command: process.execPath,

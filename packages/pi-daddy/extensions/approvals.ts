@@ -233,8 +233,9 @@ export async function obtainApprovals(
   // precisely what spec §6.1 exists to prevent. Options are per-call; the queue is session-long.
   const gate = session.approvalGateFor({
     ui: ctx.ui,
-    hasUI: ctx.hasUI,
-    mode: ctx.mode,
+    // A native child tab is a viewer. Auto and inherited approvals still work; only the root can answer.
+    hasUI: ctx.hasUI && !(session.depth > 0),
+    mode: session.depth > 0 && ctx.mode === "tui" ? "view-only child" : ctx.mode,
     timeoutMs: () => timeoutMsFromEnv(process.env[ENV_APPROVAL_TIMEOUT]),
     autoMode: session.autoMode,
   });

@@ -1,7 +1,7 @@
 /** Actual Pi CLI + packaged owner + persisted final, entirely model-free. */
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -22,7 +22,7 @@ const exec = (args: string[]) =>
   });
 for (const scenario of ["success", "nested", "retry", "error", "stop-then-error"])
   test(
-    `actual Herdr owned CLI current final: ${scenario}`,
+    `actual Herdr Pi TUI current final: ${scenario}`,
     { skip: !target && "set PI_DADDY_IT_HERDR_SESSION to a separately owned test server" },
     async () => {
       const root = await mkdtemp(join(tmpdir(), "pi-captured-final-"));
@@ -44,6 +44,7 @@ for (const scenario of ["success", "nested", "retry", "error", "stop-then-error"
         const output = await runCapturedExecution(
           {
             executionId: "exec-final-" + scenario,
+            terminalUi: true,
             sessionPath: path,
             cwd: root,
             command: process.execPath,
@@ -57,7 +58,8 @@ for (const scenario of ["success", "nested", "retry", "error", "stop-then-error"
               "--no-mcp",
               "--no-skills",
               "--no-prompt-templates",
-              "--no-tools",
+              "--tools",
+              "fixture_outer,fixture_inner",
               "--provider",
               PROVIDER,
               "--model",
@@ -72,8 +74,9 @@ for (const scenario of ["success", "nested", "retry", "error", "stop-then-error"
               PI_CODING_AGENT_DIR: agent,
               PI_OFFLINE: "1",
               P01_SCENARIO: scenario,
+              P01_TOOL_MARKER: join(root, "nested-tool.txt"),
               NO_COLOR: "1",
-              TERM: "dumb",
+              TERM: "xterm-256color",
             },
             timeoutMs: 10000,
             killGraceMs: 100,
@@ -82,6 +85,8 @@ for (const scenario of ["success", "nested", "retry", "error", "stop-then-error"
         );
         assert.equal(output.code, 0, JSON.stringify(output));
         assert.equal(output.cleanup.state, "settled");
+        if (scenario === "nested")
+          assert.equal(await readFile(join(root, "nested-tool.txt"), "utf8"), "outer\ninner\n");
         if (["success", "nested", "retry"].includes(scenario)) {
           assert.equal(output.final.state, "complete", JSON.stringify(output));
           assert.equal(output.text, FINAL);

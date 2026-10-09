@@ -25,6 +25,8 @@ export interface OwnedChildRunRequest extends ChildRunRequest {
   onOwnership?: (identity: CapturedWorkerIdentity) => Promise<void> | void;
   /** JSON protocol consumers observe all bytes without capturing enormous replay streams as answer text. */
   captureStdout?: boolean;
+  /** Actual pane terminal for Pi's native view. Protocol events arrive separately on fd 6. */
+  terminalUi?: boolean;
   /** Bounded diagnostics may truncate without stopping independently captured primary output. */
   stopOnOutputLimit?: boolean;
 }
@@ -46,6 +48,8 @@ export async function runOwnedChild(request: OwnedChildRunRequest): Promise<Owne
   if (request.signal?.aborted) return notStarted("cancelled before helper launch", true);
   if (process.platform !== "linux" || process.arch !== "x64")
     return notStarted("captured worker requires qualified Linux x64 helper");
+  if (request.terminalUi && (!process.stdin.isTTY || !process.stdout.isTTY || !process.stderr.isTTY))
+    return notStarted("native Pi view requires a real pane terminal on stdin, stdout and stderr");
   let helper: string, root: string, hash: string;
   const nonce = randomUUID();
   let binary: import("node:fs/promises").FileHandle | undefined;
@@ -95,13 +99,26 @@ export async function runOwnedChild(request: OwnedChildRunRequest): Promise<Owne
       {
         cwd: root,
         env: request.env,
-        stdio: ["ignore", "pipe", "pipe", "pipe", "pipe", binary!.fd],
-        detached: true,
+        stdio: request.terminalUi
+          ? ["inherit", "inherit", "inherit", "pipe", "pipe", binary!.fd, "pipe"]
+          : ["ignore", "pipe", "pipe", "pipe", "pipe", binary!.fd],
+        // The UI shares the pane's foreground process group for raw input and SIGWINCH.
+        // Cleanup still targets owned descendants by pidfd, never by process group.
+        detached: !request.terminalUi,
       },
     );
     void binary!.close();
     const control = child.stdio[3] as import("node:stream").Duplex;
     const status = child.stdio[4] as import("node:stream").Readable;
+    const streams = {
+      stdout: request.terminalUi ? (child.stdio.at(6) as import("node:stream").Readable) : child.stdout,
+      stderr: child.stderr,
+    };
+    const closeObservations = () => {
+      streams.stdout?.destroy();
+      streams.stderr?.destroy();
+      status.destroy();
+    };
     let identity: CapturedWorkerIdentity | undefined;
     let text = "",
       count = 0,
@@ -146,9 +163,7 @@ export async function runOwnedChild(request: OwnedChildRunRequest): Promise<Owne
       stopWatchdog = setTimeout(() => {
         failure ??= "worker helper failed to establish cleanup before its bound";
         child.kill("SIGKILL");
-        child.stdout?.destroy();
-        child.stderr?.destroy();
-        status.destroy();
+        closeObservations();
       }, cleanupCeiling + 1000);
     };
     function armIdle() {
@@ -160,10 +175,15 @@ export async function runOwnedChild(request: OwnedChildRunRequest): Promise<Owne
         stop();
       }, request.idleTimeoutMs);
     }
-    child.stdout?.on("data", (bytes) => observe("stdout", bytes));
-    child.stderr?.on("data", (bytes) => observe("stderr", bytes));
+    streams.stdout?.on("data", (bytes: Buffer) => observe("stdout", bytes));
+    streams.stderr?.on("data", (bytes: Buffer) => observe("stderr", bytes));
+    for (const stream of Object.values(streams))
+      stream?.on("error", (error) => {
+        failure ??= "child event channel failed: " + String(error);
+        stop();
+      });
     for (const stream of ["stdout", "stderr"] as const)
-      child[stream]?.on("end", () => {
+      streams[stream]?.on("end", () => {
         const tail = decoders[stream].end();
         if (tail && !(stream === "stdout" && request.captureStdout === false)) {
           const kept = takeBytes(tail, Math.max(0, (request.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES) - count));
@@ -276,9 +296,7 @@ export async function runOwnedChild(request: OwnedChildRunRequest): Promise<Owne
       void (async () => {
         if (!identity || !(await readCapturedWorkerReceipt(identity))) {
           failure ??= "helper exited without an independent settlement receipt";
-          child.stdout?.destroy();
-          child.stderr?.destroy();
-          status.destroy();
+          closeObservations();
         }
       })();
     });

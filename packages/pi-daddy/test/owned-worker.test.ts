@@ -401,3 +401,18 @@ test("loader rejects altered opened binary bytes using its compiled hash", async
   assert.match(result.spawnError!, /helper hash mismatch/);
   assert.equal(await exists(join(root, "owner")), false);
 });
+
+test("native view refuses missing terminal descriptors before creating an owner or spawning", async (t) => {
+  if (process.stdin.isTTY && process.stdout.isTTY && process.stderr.isTTY)
+    return t.skip("requires non-terminal fixture");
+  const root = await fixture(t);
+  const marker = join(root, "ui-ran");
+  const result = await runOwnedChild({
+    ...request(root, "require('node:fs').writeFileSync(" + JSON.stringify(marker) + ", 'ran')"),
+    terminalUi: true,
+  });
+  assert.equal(result.cleanup.state, "not-started");
+  assert.match(result.spawnError!, /real pane terminal/);
+  assert.equal(await exists(marker), false);
+  assert.equal(await exists(join(root, "owner")), false);
+});

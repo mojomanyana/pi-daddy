@@ -341,3 +341,22 @@ test("Auto decisions and configuration survive real ledger write/read with close
     assert.equal(validator.Check(JSON.parse(JSON.stringify(invalid))), false, JSON.stringify(invalid));
   }
 });
+
+test("native child viewer cannot answer approvals; live Auto and existing approval remain usable", async () => {
+  const f = await fixture(false);
+  f.session.depth = 1;
+  const ctx = { ...f.ctx, mode: "tui" };
+  const blocked = await obtainApprovals(f.session, ["tool:write"], "<delegate>", "delegate", ctx);
+  assert.equal(blocked.gateOutcome, "no-ui");
+  assert.match(blocked.reason!, /view-only child/);
+  assert.deepEqual(blocked.approved, []);
+  f.auto.set(true);
+  const auto = await obtainApprovals(f.session, ["tool:write"], "<delegate>", "delegate", ctx);
+  assert.deepEqual(auto.approved, ["tool:write"]);
+  assert.equal(auto.sources["tool:write"], "auto");
+  f.auto.set(false);
+  f.session.sessionApprovals.add("tool:write@<delegate>");
+  const existing = await obtainApprovals(f.session, ["tool:write"], "<delegate>", "delegate", ctx);
+  assert.deepEqual(existing.approved, ["tool:write"]);
+  assert.equal(existing.sources["tool:write"], "session");
+});

@@ -80,7 +80,7 @@ export interface PromptOutcome {
 
 export interface ApprovalGateOptions {
   ui: ApprovalUI;
-  /** pi's `ctx.hasUI` — false in print/json mode, and therefore in every governed child. */
+  /** Whether a human can answer here. False in print/json mode and view-only child tabs. */
   hasUI: boolean;
   /** pi's `ctx.mode`, quoted back in the refusal so an operator can see why. */
   mode: string;

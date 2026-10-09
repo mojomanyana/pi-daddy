@@ -1,5 +1,13 @@
 # Changelog — pi-daddy
 
+## 0.48.3 — 2026-10-09
+
+Restore Pi's live native interface inside governed Herdr child tabs: initial task, live tool calls/results, and final answer. Ctrl+O expands tool output. The view consumes other user input after session start; task changes and cancellation stay with the parent. Update pi-daddy and restart Pi; existing running children keep their original executor.
+
+A dedicated inherited event channel keeps exact native final/session checks independent of terminal rendering. The same native owner gates startup and reaps descendants. A settled retained tab contains output, not a live authorized child. Reset the terminal title after normal settlement. Herdr can retain a cached unknown Pi sidebar entry after our lifecycle source is released and all owned processes have exited; observed on servers 0.8.2, 0.9.0 and 0.9.3. Native receipts and process checks remain authoritative; a newer release number does not guarantee sidebar removal. A killed launcher can leave the last terminal title visible.
+
+Suppress reasoning in the rendered UI without changing model context or native session files. Preserve headless permission behavior for descendants and existing Pi project-trust policy, so the viewer cannot wait on unanswered local approvals or silently approve an unknown project.
+
 ## 0.48.2 — 2026-10-09
 
 Restore governed children in Herdr's native agent sidebar. Active entries show the role, and tabs are named for that role instead of all using the same generic label. Update pi-daddy and restart Pi to use the fix.

@@ -1,4 +1,5 @@
 /** Loaded by the actual Pi CLI, never calls a remote provider. */
+import { appendFileSync } from "node:fs";
 import { Type } from "typebox";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { providerConfig, PROVIDER, textStep, toolStep } from "./scripted-provider.ts";
@@ -30,6 +31,7 @@ export default function (pi: ExtensionAPI) {
     exposure: "codemode",
     parameters: Type.Object({}),
     async execute() {
+      if (process.env.P01_TOOL_MARKER) appendFileSync(process.env.P01_TOOL_MARKER, "inner\n");
       throw new Error("nested fixture failure");
     },
   });
@@ -39,6 +41,7 @@ export default function (pi: ExtensionAPI) {
     description: "local nested forwarding fixture",
     parameters: Type.Object({}),
     async execute(_id, _args, _signal, _update, ctx) {
+      if (process.env.P01_TOOL_MARKER) appendFileSync(process.env.P01_TOOL_MARKER, "outer\n");
       const outcome = await ctx.executeTool("fixture_inner", {});
       return { ...outcome.result, isError: outcome.isError };
     },

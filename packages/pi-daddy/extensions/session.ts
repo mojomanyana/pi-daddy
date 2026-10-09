@@ -694,14 +694,9 @@ export function createGrantsSession(
         skillPaths: skillPathsFromCatalog(await delegationCatalog(session)),
         // ADR-0016: operator-authored SKILL.md definitions, so `delegate({agent})` can name one.
         definitions: session.definitions,
-        // The herdr executor drives the child after starting it, so its plan must NOT carry `--print`.
-        // Threaded through the plan rather than patched afterwards: the argv is what the ledger records, and
-        // an executor quietly rewriting it would make the record describe a spawn that did not happen.
-        //
-        // Read live off `session.executor` (ADR-0031) rather than a boolean captured in the factory: the probe
-        // has not run when this session object is built, so a captured value would plan `--print` for a session
-        // that turns out to use panes — and `runHerdrPane` refuses a plan containing `--print` by design.
-        interactive: false, // Both qualified backends use the same one-shot Pi JSON protocol.
+        // Plan the real terminal invocation explicitly; the captured backend remains one-shot JSON.
+        // Read the selected executor at dispatch, after its live qualification completes.
+        interactive: session.executor.kind === "herdr",
         ...(approved ? { approved } : {}),
       };
     },
