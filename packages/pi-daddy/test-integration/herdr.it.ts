@@ -5,7 +5,7 @@ import { spawn, execFile, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { readFile, writeFile, access } from "node:fs/promises";
 import { tempDir, cleanupTempDirs } from "../test/tmp.ts";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runHerdrOwned } from "../src/executors/herdr-owned.ts";
 import { readCapturedWorkerReceipt } from "../src/governance/captured-worker-record.ts";
@@ -27,28 +27,36 @@ async function eventually<T>(read: () => Promise<T | undefined>): Promise<T> {
   throw Error("owned Herdr qualification deadline");
 }
 let server: ChildProcess | undefined,
+  serverError: Error | undefined,
   available = false;
+after(async () => {
+  if (server?.pid && server.exitCode === null && server.signalCode === null) await exec(["server", "stop"]);
+});
+after(cleanupTempDirs);
+const serverBinary = process.env.PI_DADDY_IT_HERDR_SERVER_BINARY;
+if (serverBinary !== undefined) assert.ok(isAbsolute(serverBinary), "PI_DADDY_IT_HERDR_SERVER_BINARY must be absolute");
 const version = await exec(["--version"]);
-if (version.code === 0 && version.stdout.trim() === "herdr 0.8.2") {
-  server = spawn("herdr", ["--session", name, "server"], { stdio: "ignore" });
-  server.on("error", () => undefined);
-  await eventually(async () =>
-    (await exec(["status", "server"])).stdout.includes("status: running") ? true : undefined,
-  );
+if (version.code === 0) {
+  server = spawn(serverBinary ?? "herdr", ["--session", name, "server"], { stdio: "ignore" });
+  server.once("error", (error) => {
+    serverError = error;
+  });
+  await eventually(async () => {
+    if (serverError) throw serverError;
+    if (server!.exitCode !== null || server!.signalCode !== null)
+      throw Error("owned Herdr server exited during startup");
+    return (await exec(["status", "server"])).stdout.includes("status: running") ? true : undefined;
+  });
   const workspace = await exec(["workspace", "create", "--label", "qualification-owned", "--no-focus"]);
   assert.equal(workspace.code, 0, workspace.stderr);
   available = true;
 }
-const skip = !available && "qualified Herdr client unavailable; live qualification was not run";
+const skip = !available && "Herdr client unavailable; live qualification was not run";
 const launcherPath = fileURLToPath(new URL("../src/executors/herdr-launcher.ts", import.meta.url));
 async function fixture() {
   return tempDir("pd-herdr-it-");
 }
-after(async () => {
-  if (server && server.exitCode === null) await exec(["server", "stop"]);
-});
-after(cleanupTempDirs);
-test("client and isolated live server match the measured transport matrix", { skip }, async () => {
+test("client and isolated live server report compatible transport", { skip }, async () => {
   const result = await qualifyHerdr({ ok: true }, exec);
   assert.equal(result.qualified, true, JSON.stringify(result));
 });
@@ -121,6 +129,47 @@ const script =
   "const fs=require('fs'),cp=require('child_process');" +
   "const child=cp.spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{detached:true,stdio:'ignore'});" +
   "fs.writeFileSync(process.argv[1],JSON.stringify([process.pid,child.pid]));setInterval(()=>{},1000)";
+test("direct cancellation settles and reaps the real pane tree", { skip }, async () => {
+  const cwd = await fixture();
+  const controller = new AbortController();
+  const running = runHerdrOwned(
+    {
+      executionId: "direct-cancel",
+      ownershipDir: join(cwd, "owner"),
+      cwd,
+      command: process.execPath,
+      args: ["-e", script, join(cwd, "pids.json")],
+      env: process.env,
+      signal: controller.signal,
+      timeoutMs: 15000,
+      killGraceMs: 100,
+    },
+    { exec, launcherPath },
+  );
+  try {
+    await eventually(() =>
+      access(join(cwd, "pids.json"))
+        .then(() => true)
+        .catch(() => undefined),
+    );
+    controller.abort();
+    const result = await running;
+    assert.equal(result.aborted, true, JSON.stringify(result));
+    assert.equal(result.cleanup.state, "settled", JSON.stringify(result));
+    if (result.cleanup.state !== "settled") throw Error("expected settled receipt");
+    assert.equal(result.cleanup.receipt.reapedAll, true);
+    for (const pid of JSON.parse(await readFile(join(cwd, "pids.json"), "utf8")))
+      assert.equal(
+        await access("/proc/" + pid)
+          .then(() => true)
+          .catch(() => false),
+        false,
+      );
+  } finally {
+    controller.abort();
+    await running;
+  }
+});
 test("coordinator SIGKILL makes native ownership cancel/reap the real pane tree", { skip }, async () => {
   const cwd = await fixture(),
     program = join(cwd, "coordinator.mjs");
