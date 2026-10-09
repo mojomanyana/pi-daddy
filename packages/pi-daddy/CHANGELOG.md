@@ -1,5 +1,11 @@
 # Changelog — pi-daddy
 
+## 0.48.2 — 2026-10-09
+
+Restore governed children in Herdr's native agent sidebar. Active entries show the role, and tabs are named for that role instead of all using the same generic label. Update pi-daddy and restart Pi to use the fix.
+
+The pane launcher reports activity through Herdr's existing lifecycle API and releases its own entry after process settlement. A matching native receipt lets the coordinator clear an entry if the launcher dies. Retained output tabs remain inspectable without falsely showing a running child. Display failures do not alter permission checks, native cleanup or task results.
+
 ## 0.48.1 — 2026-10-09
 
 Use Herdr's live structured CLI compatibility status instead of requiring exact client/server release 0.8.2 and private protocol 20. Compatible mixed releases can delegate in separate tabs; incompatible or malformed status still refuses. Require a successful actual tab-list response before selecting Herdr. Native ownership, final validation, cancellation and cleanup receipts remain unchanged.

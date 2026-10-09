@@ -461,6 +461,7 @@ async function executePreparedChild(
         session.executor.kind === "herdr"
           ? (request) =>
               runHerdrOwned(request, {
+                displayName: input.agent ?? "child",
                 onDisplay: (display) => {
                   displayHerdr = display;
                 },

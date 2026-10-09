@@ -198,6 +198,8 @@ it measured nothing rather than passing quietly.
 
 ## Decisions still in force
 
+- **2026-10-09 — Owned Herdr children report their own display lifecycle.** The launcher uses a unique `pi-daddy:` source to publish working state and guarded role metadata to its actual pane. It releases that source after native settlement, including coordinator loss. The coordinator repairs a missing launcher release only after validating the exact cleanup receipt; unknown cleanup remains unknown. Reports are bounded UI observations, never execution or permission authority. Retained tabs contain output, not a live interactive Pi process; no disposable session is registered for resumption.
+
 - **2026-10-09 — Herdr compatibility follows the live CLI contract.** Supersedes the exact product-version/private-protocol pin from initial owned-pane qualification. Require a successful tab-list response and structured running/compatible server status; honor explicit endpoint incompatibility. Release-number differences alone do not refuse. Endpoint compatibility alone does not prove CLI compatibility. The native ownership gate and exact final/cleanup receipts remain authoritative; a positive transport probe does not approve a task.
 
 **2026-10-09 — operator-controlled session Auto and actionable dashboard.** The owning session keeps live Auto

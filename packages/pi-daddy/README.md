@@ -1,6 +1,6 @@
 # pi-daddy
 
-Source target: **0.48.1**. Before installation, verify that `npm view pi-daddy version` and Git tag `v0.48.1` both resolve to this release.
+Source target: **0.48.2**. Before installation, verify that `npm view pi-daddy version` and Git tag `v0.48.2` both resolve to this release.
 
 **Capability governance and coordination for [pi](https://github.com/badlogic/pi-mono)'s multi-level agent system.**
 An orchestrator grants each sub-agent a deliberate subset of what it holds and withholds the rest. A sub-agent may
@@ -258,6 +258,12 @@ Pi and TypeBox are wildcard host-provided peers so Pi's extension loader supplie
 Final capture preserves whitespace and concatenates text blocks without inserting separators. Tool-call terminals, empty visible finals and non-`stop` reasons are unavailable. Persisted message comparisons ignore object key order while preserving array order and every field value. The shared `final-conformance.json` table checks these semantics in both runtime and harness. Capture remains bounded: 4 MiB visible final, 32 MiB protocol line, 64 MiB persisted session, and a 3-second bounded session read. Exceeding a limit reports an unavailable final and blocks dependent handoffs; it does not imply the worker failed to settle.
 
 Retained capacity is rechecked against the original bound ownership and settlement receipt before a new single, parallel or chain dispatch. Exact later proof refunds the reservation once; missing, malformed or mismatched proof and unbound ownership remain retained. Recovery does not rewrite the original failed/unknown outcome or mint new capacity on reload. A single delegation reserves its available subtree; use `delegate_all` to allocate independent parallel children.
+
+Governed Herdr children appear in the native agent sidebar while running, with their role (for example
+Plan, Build or Review) and a corresponding named tab. Sidebar state is observational: native process
+receipts still determine settlement. A settled child leaves the active agent list; with
+`PI_DADDY_HERDR_KEEP_PANE=1`, its output tab remains for inspection, without a live interactive child.
+Missing sidebar delivery is reported but does not change the execution result.
 
 Set `PI_DADDY_HERDR=0` for captured execution or `PI_DADDY_HERDR=1` to demand Herdr panes. An unset value
 probes for a responding server. Startup requires a successful tab-list response and live JSON server status

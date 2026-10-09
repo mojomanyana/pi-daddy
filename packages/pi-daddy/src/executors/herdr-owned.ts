@@ -24,6 +24,8 @@ export interface HerdrOwnedOptions {
   onDisplay?: (display: (text: string) => void) => void;
   /** Tests may select a freshly built launcher. Production always uses the packaged build. */
   launcherPath?: string;
+  /** Human-readable role; display only, never a dispatch selector. */
+  displayName?: string;
 }
 export async function runHerdrOwned(
   request: OwnedChildRunRequest,
@@ -33,11 +35,16 @@ export async function runHerdrOwned(
   const directory = await mkdtemp(join(tmpdir(), "pd-herdr-"));
   const path = join(directory, "owner.sock"),
     token = randomUUID();
+  const role = (options.displayName ?? "child").replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 48) || "child";
+  const display = { source: "pi-daddy:" + randomUUID(), role };
   const launcher =
     options.launcherPath ?? fileURLToPath(new URL("../../dist/executors/herdr-launcher.js", import.meta.url));
   const helper = fileURLToPath(new URL("../../native/linux-x64/worker", import.meta.url));
   let socket: Socket | undefined, send: ((value: unknown) => void) | undefined;
   let identity: CapturedWorkerIdentity | undefined, outcome: OwnedChildRunResult | undefined, error: string | undefined;
+  let paneId: string | undefined,
+    settled = false,
+    displayReleased = false;
   let tabId: string | undefined,
     entered = false,
     done = false,
@@ -86,7 +93,7 @@ export async function runHerdrOwned(
             activityProbe: _probe,
             ...serializable
           } = request;
-          send!({ type: "request", request: serializable });
+          send!({ type: "request", request: serializable, display });
           return;
         }
         if (message?.type === "ownership") {
@@ -142,6 +149,7 @@ export async function runHerdrOwned(
         }
         if (message?.type === "result" && !outcome) {
           outcome = message.result;
+          displayReleased = message.displayReleased === true;
           return;
         }
         if (message?.type === "failure") {
@@ -190,7 +198,7 @@ export async function runHerdrOwned(
         "--cwd",
         request.cwd,
         "--label",
-        "pi-daddy governed child",
+        "pi-daddy " + role,
         "--no-focus",
         ...(options.workspace ? ["--workspace", options.workspace] : []),
       ]),
@@ -199,7 +207,8 @@ export async function runHerdrOwned(
     const pane = created.result?.root_pane as { pane_id?: string; tab_id?: string } | undefined;
     tabId = pane?.tab_id;
     if (!pane?.pane_id || !tabId) throw Error("Herdr creation returned no exact pane/tab identity");
-    options.onPane?.(pane.pane_id, tabId);
+    paneId = pane.pane_id;
+    options.onPane?.(paneId, tabId);
     if (error || request.signal?.aborted) throw Error(error ?? "cancelled before Herdr command launch");
     entered = true;
     const launchReply = await exec([
@@ -218,6 +227,7 @@ export async function runHerdrOwned(
     if (!outcome || !identity) throw Error(error ?? "Herdr launcher closed without a complete result/ownership");
     const receipt = await readCapturedWorkerReceipt(identity);
     if (!receipt) throw Error("Herdr worker supplied no independently verified cleanup receipt");
+    settled = true;
     return { ...outcome, cleanup: { state: "settled", identity, receipt }, ...(error ? { spawnError: error } : {}) };
   } catch (cause) {
     fail(cause);
@@ -229,6 +239,7 @@ export async function runHerdrOwned(
       await new Promise((resolve) => setTimeout(resolve, 50));
       receipt = await readCapturedWorkerReceipt(identity);
     }
+    settled = Boolean(receipt);
     return {
       code: receipt?.workerCode ?? null,
       text: "",
@@ -250,6 +261,28 @@ export async function runHerdrOwned(
     request.signal?.removeEventListener("abort", abort);
     socket?.destroy();
     await new Promise<void>((resolve) => server.close(() => resolve()));
+    // Launcher SIGKILL can bypass its display release. Only the exact native receipt permits this fallback.
+    // Sequence ordering applies to an existing source; UI delivery remains best effort and never changes native results.
+    if (paneId && identity && !(settled && displayReleased)) {
+      try {
+        const reply = await exec([
+          "pane",
+          settled ? "release-agent" : "report-agent",
+          paneId,
+          "--source",
+          display.source,
+          "--agent",
+          "pi",
+          "--seq",
+          "3",
+          ...(settled ? [] : ["--state", "unknown", "--message", "Native cleanup is unverified"]),
+        ]);
+        if (reply.code !== 0 || (reply.stdout.trim() && parseReply(reply).error))
+          console.error("pi-daddy: Herdr agent sidebar cleanup report unavailable");
+      } catch {
+        console.error("pi-daddy: Herdr agent sidebar cleanup report unavailable");
+      }
+    }
     if (tabId && !options.keepPane) {
       const closed = parseReply(await exec(["tab", "close", tabId]));
       if (closed.error && !/tab .* not found|tab_not_found/.test(closed.error))

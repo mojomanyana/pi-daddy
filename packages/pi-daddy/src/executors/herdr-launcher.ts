@@ -4,6 +4,7 @@ import { processTreeActivity } from "./process-activity.ts";
 import { createConnection } from "node:net";
 import { runOwnedChild, type OwnedChildRunRequest } from "./owned-worker.ts";
 import { wire } from "./herdr-wire.ts";
+import { herdrAgentDisplay } from "./herdr-agent-display.ts";
 export async function launchHerdrWorker(socketPath: string, token: string): Promise<void> {
   const socket = createConnection(socketPath);
   const abort = new AbortController();
@@ -43,6 +44,8 @@ export async function launchHerdrWorker(socketPath: string, token: string): Prom
       authenticated = true;
       const request = message.request as OwnedChildRunRequest & { sessionPath?: string };
       let childPid: number | undefined;
+      const display = herdrAgentDisplay(message.display);
+      let settled = false;
       void (async () => {
         try {
           const result = await runOwnedChild({
@@ -83,16 +86,20 @@ export async function launchHerdrWorker(socketPath: string, token: string): Prom
             },
             onSpawn: (pid) => {
               childPid = pid;
+              void display.working();
               send({ type: "spawned", pid });
               process.stdout.write("pi-daddy: governed child running\n");
             },
           });
+          settled = result.cleanup.state === "settled" || result.cleanup.state === "not-started";
+          const displayReleased = await display.finish(settled);
           if (!socket.destroyed) {
-            send({ type: "result", result });
+            send({ type: "result", result, displayReleased: settled && displayReleased });
             socket.end();
           }
           process.stdout.write("\npi-daddy: " + result.cleanup.state + "\n");
         } catch (error) {
+          await display.finish(settled);
           if (!socket.destroyed) {
             try {
               send({ type: "failure", reason: String(error) });
