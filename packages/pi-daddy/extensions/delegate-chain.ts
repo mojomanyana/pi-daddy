@@ -1,3 +1,4 @@
+import { operationIdShape, claimDelegationOperation, existingOperationOutcome } from "./delegation-operations.ts";
 import { publicEvidenceCall } from "./public-evidence.ts";
 import { executionEvidenceContent } from "./execution-evidence.ts";
 import { assertDefinitionIdentity } from "./definition-describe.ts";
@@ -76,6 +77,7 @@ function mergeGateOutcomes(outcomes: readonly ApprovalOutcome[]): ApprovalOutcom
 
 export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): void {
   const stepShape = Type.Object({
+    operation_id: operationIdShape(),
     definitionId: Type.Optional(
       Type.String({ description: "Snapshot id returned by delegate_describe; required for Principal phases." }),
     ),
@@ -143,9 +145,47 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
       // Plan every step first. A step that can never run refuses the chain HERE, before anyone is asked — see
       // `planChain`.
       const executionIds = steps.map(() => newExecutionId());
-      const capture = publicEvidenceCall(session.publicEvidence, _toolCallId, "delegate_chain", steps, executionIds);
       await reconcileDelegationCapacity(session);
-      const firstReservation = reserveDelegationCapacity(session, executionIds[0]);
+      const firstClaim = await claimDelegationOperation(
+        session,
+        steps[0],
+        {
+          executionId: executionIds[0],
+          parentExecutionId: session.ownExecutionId ?? null,
+          parentId: session.ownSpawnId,
+          childId: childSpawnId(session.ownSpawnId, 0),
+        },
+        ctx,
+        signal,
+      );
+      const capture = publicEvidenceCall(
+        session.publicEvidence,
+        _toolCallId,
+        "delegate_chain",
+        steps,
+        executionIds.map((id, index) => (index === 0 ? (firstClaim?.operation.executionId ?? id) : id)),
+      );
+      if (firstClaim?.reused) {
+        const outcome = existingOperationOutcome(firstClaim, session.depth + 1);
+        return capture.finish(
+          {
+            isError: false,
+            content: [
+              { type: "text", text: outcome.text },
+              executionEvidenceContent("delegate_chain", [outcome], steps.length),
+            ],
+            details: { outcomes: [outcome], steps: steps.length, completed: 0, aborted: true },
+          },
+          [outcome],
+        );
+      }
+      let firstReservation: ReturnType<typeof reserveDelegationCapacity>;
+      try {
+        firstReservation = reserveDelegationCapacity(session, executionIds[0]);
+      } catch (error) {
+        await firstClaim?.finish?.("not-started");
+        throw error;
+      }
       try {
         const parentExecutionId = session.ownExecutionId ?? null;
         const piModel = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
@@ -328,7 +368,7 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
             ctx,
             signal,
             {
-              ...(index === 0 ? { capacityReservation: firstReservation } : {}),
+              ...(index === 0 ? { capacityReservation: firstReservation, operationClaim: firstClaim } : {}),
               resolvedRuntime: runtimeChoices.get(step),
               onDefinition: (definition) => capture.selected(index, definition),
               preApproved: availableForStep,
@@ -387,6 +427,7 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
         const report = outcomes
           .map((o) => {
             const label = `### step ${o.step}${o.agent ? ` (${o.agent})` : ""}`;
+            if (o.operation?.reused) return `${label} — existing operation\n\n${o.text}`;
             return o.ok && o.control !== "failed"
               ? `${label} — completed\n\n${o.text || "(no output)"}`
               : `${label} — FAILED: ${o.reason}${o.text ? `\n\n${o.text}` : ""}`;
@@ -414,7 +455,7 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
         }
         return capture.finish(
           {
-            isError: aborted || outcomes.some((o) => o.control === "failed"),
+            isError: (aborted && !outcomes.at(-1)?.operation?.reused) || outcomes.some((o) => o.control === "failed"),
             content: [
               { type: "text", text: `${report}${tail}` },
               executionEvidenceContent("delegate_chain", outcomes, steps.length),
@@ -433,6 +474,7 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
         );
       } finally {
         firstReservation.finalize({ state: "not-started", reason: "chain ended before its first execution" });
+        await firstClaim?.finish?.("not-started").catch(() => undefined);
       }
     },
   });

@@ -410,7 +410,24 @@ export function mergeChildEnv(parentEnv: NodeJS.ProcessEnv, planEnv: Record<stri
 }
 
 /** Extract bare tool names from a provider payload's tool array, tolerating provider shape differences. */
-export function observeToolNames(payload: unknown): string[] | null {
+export function observeToolNames(
+  payload: unknown,
+  registered?: readonly { name: string; exposure?: string }[],
+  active?: readonly string[],
+): string[] | null {
+  // Pi's provider projection may hide declarations while tools remain callable from Codemode.
+  // Exposure metadata is native inventory, not authorization; deriveOwnGrant still intersects inheritance.
+  if (registered && active && registered.length > 0 && registered.every((tool) => typeof tool.exposure === "string")) {
+    const declared = new Set(active);
+    return registered
+      .filter(
+        (tool) =>
+          tool.exposure === "codemode" ||
+          tool.exposure === "deferred" ||
+          ((tool.exposure === "direct" || tool.exposure === "model-only") && declared.has(tool.name)),
+      )
+      .map((tool) => tool.name);
+  }
   if (!payload || typeof payload !== "object") return null;
   const record = payload as Record<string, unknown>;
   for (const key of ["tools", "functions"]) {

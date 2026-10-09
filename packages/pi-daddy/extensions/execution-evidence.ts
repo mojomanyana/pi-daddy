@@ -49,6 +49,9 @@ function outcomeEvidence(outcome: DelegationOutcome, index: number) {
   const final = outcome.final;
   return {
     ordinal: index + 1,
+    cwd: outcome.cwd ?? outcome.operation?.cwd ?? null,
+    workspaceId: outcome.workspaceId ?? outcome.operation?.workspaceId ?? null,
+    operation: outcome.operation ?? null,
     ok: outcome.ok,
     work: outcome.work ?? null,
     control: outcome.control ?? null,

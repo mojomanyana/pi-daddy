@@ -5,9 +5,10 @@ import { after, test } from "node:test";
 import { dashboardFrame } from "../src/products/dashboard-cli.ts";
 import { createDashboardDisplayControls } from "../src/products/dashboard-display-controls.ts";
 import { cellWidth } from "../src/products/dashboard-render.ts";
-import { renderDashboardScreen, type DashboardItem } from "../src/products/dashboard-screen.ts";
+import { activityDashboardItems, renderDashboardScreen, type DashboardItem } from "../src/products/dashboard-screen.ts";
 import { createDashboardConnection, type DashboardSessionSnapshot } from "../src/products/dashboard-session-client.ts";
 import {
+  ActivityTimelineAliases,
   ActivityTimelineRecorder,
   defaultActivityTimelinePath,
   parseActivityTimeline,
@@ -285,4 +286,26 @@ test("finished history is explicitly requested and optional color preserves widt
   assert.match(shown, /build 13 界/);
   assert.match(shown, /\u001b\[1;36mPI DADDY/);
   assert.ok(shown.split("\n").every((line) => cellWidth(line) <= 42));
+});
+
+test("observed tool activity shows actual cwd and silence without inventing a stall or approval", async () => {
+  const cwd = await tempDir("dashboard-observed-"),
+    recorder = new ActivityTimelineRecorder(cwd, {});
+  await recorder.start("Review this candidate");
+  await recorder.append("tool_started", { tool: "bash", cwd: "/actual/pilot" });
+  const timeline = parseActivityTimeline(await readFile(recorder.path, "utf8"));
+  const event = timeline.tasks[0].lastEvent!;
+  const now = new Date(Date.parse(event.at) + 3_800_000);
+  const items = activityDashboardItems(timeline, new ActivityTimelineAliases(), now);
+  assert.match(items[0].observation!, /bash tool started · 1:03:20 ago/);
+  assert.ok(items[0].details.includes("Working directory: /actual/pilot"));
+  assert.equal(items[0].status, "active");
+  const display = createDashboardDisplayControls(false, true);
+  const frame = renderDashboardScreen({ width: 70, height: 16, screen: display.screen, items });
+  assert.match(frame, /Observed: bash tool started · 1:03:20 ago/);
+  assert.doesNotMatch(frame, /Stalled|APPROVE|Thinking/);
+  await recorder.append("tool_finished", { tool: "bash", outcome: "completed" });
+  const after = parseActivityTimeline(await readFile(recorder.path, "utf8"));
+  assert.equal(after.tasks[0].lastEvent?.kind, "tool_finished");
+  assert.equal(after.tasks[0].status, "active");
 });

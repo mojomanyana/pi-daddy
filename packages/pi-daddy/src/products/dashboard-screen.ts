@@ -11,6 +11,7 @@ export interface DashboardItem {
   status: string;
   elapsed: string;
   details: string[];
+  observation?: string;
   taskKey?: string;
   timelinePath?: string;
   approval?: boolean;
@@ -49,7 +50,10 @@ function wrapped(lines: string[], width: number): string[] {
 }
 function elapsed(ms: number): string {
   const seconds = Math.max(0, Math.floor(ms / 1000));
-  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+  const minutes = Math.floor(seconds / 60);
+  return seconds >= 3600
+    ? `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`
+    : `${minutes}:${String(seconds % 60).padStart(2, "0")}`;
 }
 const friendlyStatus = (status: string) =>
   ({
@@ -87,7 +91,10 @@ export function ledgerDashboardItems(projection: DashboardProjection): Dashboard
       `Execution: ${node.executionId}`,
       `State: ${friendlyStatus(node.state)} (observation, not acceptance)`,
       `Grant: ${node.effectiveGrant.join(", ") || "none"}`,
-      ...(node.workspace ? [`Workspace: ${node.workspace.id} (${node.workspace.access})`] : []),
+      ...(node.workspace
+        ? [`Workspace: ${node.workspace.id} (${node.workspace.access})`, `Root: ${node.workspace.root}`]
+        : ["Workspace binding: none recorded"]),
+      `Last lifecycle event: ${node.updatedAt}`,
       ...(node.runtime?.herdrPaneId ? [`Pane: ${node.runtime.herdrPaneId}`] : []),
       ...(node.correlation?.phase ? [`Phase: ${node.correlation.phase}`] : []),
       ...(node.executor ? [`Executor: ${node.executor}`] : []),
@@ -105,11 +112,21 @@ export function activityDashboardItems(
     label: `${task.agent || "User turn"} [${aliases.selector(task)}]`,
     status: task.status,
     elapsed: elapsed(Date.parse(task.endedAt ?? now.toISOString()) - Date.parse(task.startedAt)),
+    observation: task.lastEvent
+      ? `${task.lastEvent.tool ? `${task.lastEvent.tool} ` : ""}${task.lastEvent.kind.replaceAll("_", " ")} · ${elapsed(Date.parse(now.toISOString()) - Date.parse(task.lastEvent.at))} ago`
+      : undefined,
     agent: Boolean(task.agent || task.agents.length),
     skills: task.skills.length > 0,
     details: [
       `Task: ${aliases.selector(task)}`,
       `State: ${friendlyStatus(task.status)} (observation, not acceptance)`,
+      ...(task.cwd ? [`Working directory: ${task.cwd}`] : ["Working directory: not recorded"]),
+      ...(task.lastEvent
+        ? [
+            `Last observed: ${task.lastEvent.kind}${task.lastEvent.tool ? ` (${task.lastEvent.tool})` : ""} at ${task.lastEvent.at}`,
+          ]
+        : []),
+      "Silence is not proof of a stalled process. Finished is not review approval.",
       ...(task.parentTaskId ? [`Parent: ${task.parentTaskId}`] : []),
       ...(task.model ? [`Model: ${task.model}`] : []),
       ...(task.thinking ? [`Thinking: ${task.thinking}`] : []),
@@ -281,6 +298,8 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
       }
       const tail = `${friendlyStatus(item.status)} ${item.elapsed}`.trim(),
         labelWidth = Math.max(1, width - tail.length - 4);
+      if (item.key === screen.selectedKey && item.observation)
+        rows.push({ text: `  Observed: ${clean(item.observation)}` });
       rows.push({
         key: item.key,
         text: `${item.key === screen.selectedKey ? ">" : " "} ${truncate(clean(item.label), labelWidth)}  ${tail}`,

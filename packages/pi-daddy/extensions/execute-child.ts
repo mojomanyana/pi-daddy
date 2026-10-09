@@ -1,9 +1,10 @@
+import { realpath } from "node:fs/promises";
 import { BoundedReadCleanupError } from "../src/kernel/bounded-read.ts";
 import { retainDiscoveryCleanupFailure } from "./session.ts";
 import type { CapacityReservation } from "../src/kernel/capacity.ts";
 import { runHerdrOwned } from "../src/executors/herdr-owned.ts";
 import { runCapturedExecution } from "../src/executors/captured-execution.ts";
-import type { ChildFinal } from "../src/executors/child-final.ts";
+import { capturedFinalSession, type ChildFinal } from "../src/executors/child-final.ts";
 import type { CapturedWorkerCleanup } from "../src/kernel/captured-worker-contract.ts";
 import type { Delegation } from "../src/kernel/delegate.ts";
 import {
@@ -33,6 +34,9 @@ import { releaseDelegationWorkspace, type PreparedWorkspace } from "./workspace-
 import { ActivityTimelineRecorder, ENV_ACTIVITY_PARENT_TASK } from "../src/products/activity-timeline.ts";
 import { resolvedModelOf, type ResolvedDefinitionRuntime } from "./definition-runtime.ts";
 export interface DelegationOutcome {
+  operation?: import("../src/kernel/dispatch-operation.ts").OperationReference & { reused: boolean };
+  cwd?: string;
+  workspaceId?: string | null;
   ok: boolean;
   text: string;
   reason?: string;
@@ -121,6 +125,9 @@ export interface ChildProgressUpdate {
  * blaming "ledger" (R-99). The failure is reported alongside the outcome instead of replacing it.
  */
 export interface ChildExecutionInput {
+  operationClaim?: import("../src/kernel/dispatch-operation.ts").OperationClaim;
+  /** Composition-only launch observation; no permission or result authority. */
+  onExecutorEntry?: () => void;
   session: GrantsSession;
   capacityReservation?: CapacityReservation;
   plan: Delegation;
@@ -140,12 +147,14 @@ export async function executePlannedChild(input: ChildExecutionInput): Promise<D
   const runtime = input.session.reloadLifecycle?.runtimeSettlement;
   let registered = false;
   try {
+    input = { ...input, cwd: await realpath(input.preparedWorkspace?.workspace.root ?? input.cwd) };
     runtime?.begin(input.executionId);
     registered = Boolean(runtime);
     const result = await executePreparedChild(
       input,
       () => {
         executorEntered = true;
+        input.onExecutorEntry?.();
       },
       runtime,
     );
@@ -162,7 +171,11 @@ export async function executePlannedChild(input: ChildExecutionInput): Promise<D
         reason: [result.reason, `runtime settlement record failed: ${String(error)}`].filter(Boolean).join("; "),
       };
     }
-    return result;
+    return {
+      ...result,
+      cwd: input.preparedWorkspace?.workspace.root ?? input.cwd,
+      workspaceId: input.preparedWorkspace?.workspace.workspaceId ?? null,
+    };
   } catch (error) {
     const failures: unknown[] = [error];
     if (registered)
@@ -336,6 +349,7 @@ async function executePreparedChild(
     const remainingTimeoutMs = Math.max(1, Date.parse(deadlineAt) - Date.now());
     const terminationGraceMs = Math.min(DEFAULT_KILL_GRACE_MS, Math.max(1, Math.floor(remainingTimeoutMs / 10)));
     const cwd = preparedWorkspace?.workspace.root ?? input.cwd;
+    await input.operationClaim?.started?.(cwd, preparedWorkspace?.workspace.workspaceId ?? null);
     const leaseAbort = new AbortController();
     const writerLease = preparedWorkspace?.lease.access === "write" ? preparedWorkspace.lease : undefined;
     // Tracked as a FACT, not only as an abort: "the kernel lock protecting this workspace evaporated under
@@ -460,7 +474,11 @@ async function executePreparedChild(
           : undefined,
       );
 
-      if (sessionFlag >= 0) retention.observeSession({ source: "pi-session-file", value: plan.args[sessionFlag + 1] });
+      const capturedBranch = capturedFinalSession(output.final);
+      if (capturedBranch)
+        retention.observeSession({ source: "pi-captured-final", value: capturedBranch.path, capturedBranch });
+      else if (sessionFlag >= 0)
+        retention.observeSession({ source: "pi-session-file", value: plan.args[sessionFlag + 1] });
       retention.capture("result", Buffer.from(output.text), true);
       if ("diagnosticsTruncated" in output && output.diagnosticsTruncated)
         teardownFailures.push("diagnostic output truncated");

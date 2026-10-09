@@ -43,6 +43,7 @@ export function buildFanoutReport(
   return outcomes
     .map((outcome, index) => {
       const label = `### child ${index + 1}${children[index]?.agent ? ` (${children[index].agent})` : ""}`;
+      if (outcome.operation?.reused) return `${label} — existing operation\n\n${outcome.text}`;
       return outcome.ok && outcome.control !== "failed"
         ? `${label} — completed\n\n${outcome.text || "(no output)"}`
         : `${label} — FAILED: ${outcome.reason}${outcome.text ? `\n\n${outcome.text}` : ""}`;

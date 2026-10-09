@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { chmod, mkdir, readFile, writeFile, rename, symlink } from "node:fs/promises";
 import { join } from "node:path";
-import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { ChildFinalCapture, capturedFinalSession } from "../src/executors/child-final.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 after(cleanupTempDirs);
 import {
@@ -20,6 +20,10 @@ import { runHerdrPane } from "../src/executors/run-herdr.ts";
 import { executePlannedChild } from "../extensions/execute-child.ts";
 import { planDelegation } from "../src/kernel/delegate.ts";
 import { pathToFileURL } from "node:url";
+// Optional exact installed package path qualifies native file formats without loading a model.
+const nativeModule = process.env.PI_DADDY_NATIVE_SESSION_PACKAGE
+  ? pathToFileURL(join(process.env.PI_DADDY_NATIVE_SESSION_PACKAGE, "dist/core/session-manager.js")).href
+  : new URL("core/session-manager.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href;
 const identity = {
   executionId: "exec:fixture",
   parentExecutionId: "exec:parent",
@@ -54,6 +58,7 @@ function assistant() {
 async function native() {
   const root = await tempDir("native-session-");
   await chmod(root, 0o700);
+  const { SessionManager } = await import(nativeModule);
   const manager = SessionManager.create(root, root);
   const first = manager.appendMessage({ role: "user", content: "fixture", timestamp: 1788888888000 });
   const last = manager.appendMessage(assistant());
@@ -235,7 +240,7 @@ test("the governed process seam retains actual private SessionManager bytes from
     archive = await tempDir("process-native-archive-");
   const bin = join(f.root, "bin");
   await mkdir(bin);
-  const module = new URL("core/session-manager.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href;
+  const module = nativeModule;
   await writeFile(
     join(bin, "pi"),
     `#!${process.execPath}\n(async()=>{const {SessionManager}=await import(${JSON.stringify(module)});const args=process.argv.slice(2);const file=args[args.indexOf('--session')+1];const sm=SessionManager.open(file);const emit=e=>process.stdout.write(JSON.stringify(e)+'\\n');emit(sm.getHeader());emit({type:'agent_start'});const user={role:'user',content:args.at(-1),timestamp:Date.now()};sm.appendMessage(user);emit({type:'message_end',message:user});const final={...${JSON.stringify(assistant())},content:[{type:'text',text:'fixture finished'}]};sm.appendMessage(final);emit({type:'message_end',message:final});emit({type:'agent_end'});emit({type:'agent_settled'});})().catch(()=>process.exit(91));\n`,
@@ -272,7 +277,10 @@ test("the governed process seam retains actual private SessionManager bytes from
       m = parseExecutionRetentionManifest(await readFile(path, "utf8"));
     assert.equal(m?.native.sessionId, f.manager.getSessionId());
     assert.equal(m?.identity.toolCallId, "call:process");
-    assert.equal(m?.native.branchLeafId, null);
+    assert.equal(m?.native.branchLeafId, result.final!.state === "complete" ? result.final!.leafId : null);
+    assert.equal(m?.nativeSession.source, "pi-captured-final");
+    assert.equal(m?.nativeSession.branchState, "observed");
+    assert.equal(m?.coverage.losses.includes("active-branch-unknown"), false);
     assert.deepEqual(await readFile(join(path, "..", m!.content.session.path!)), await readFile(f.path));
   } finally {
     for (const [k, v] of Object.entries(prior)) v === undefined ? delete process.env[k] : (process.env[k] = v);
@@ -411,6 +419,99 @@ test("a recovered native read distinguishes current availability from its earlie
     assert.ok(lost.coverage.losses.includes("native-session-read-failed"));
     assert.ok(lost.coverage.losses.includes("native-session-read-failed-earlier"));
     assert.ok(lost.coverage.losses.includes("active-branch-unknown"));
+  } finally {
+    prior === undefined ? delete process.env[ENV_NATIVE_SESSION_ROOT] : (process.env[ENV_NATIVE_SESSION_ROOT] = prior);
+  }
+});
+
+test("qualified final branch binds exact native bytes; copies, changed and truncated files cannot fill the gap", async () => {
+  const f = await native(),
+    raw = await readFile(f.path);
+  const capture = new ChildFinalCapture();
+  const user = f.manager
+    .getBranch()
+    .find((entry: any) => entry.type === "message" && entry.message.role === "user").message;
+  capture.observe(
+    Buffer.from(
+      [
+        f.manager.getHeader(),
+        { type: "agent_start" },
+        { type: "message_end", message: user },
+        { type: "message_end", message: assistant() },
+        { type: "agent_settled" },
+      ]
+        .map((event) => JSON.stringify(event))
+        .join("\n") + "\n",
+    ),
+  );
+  const final = await capture.finish(f.path);
+  assert.equal(final.state, "complete");
+  const branch = capturedFinalSession(final)!;
+  assert.ok(branch);
+  assert.equal(capturedFinalSession({ ...final }), undefined, "wire-like copies are not native observations");
+  assert.equal(capturedFinalSession({ state: "unavailable", reason: "fixture" }), undefined);
+  const input = { path: f.path, source: "pi-captured-final" as const, capturedBranch: branch };
+  const observed = parseNativeSessionBytes(raw, input);
+  assert.equal(observed.observation.branchState, "observed");
+  assert.equal(observed.observation.branchLeafId, f.last);
+  for (const changed of [
+    { ...branch, sessionId: "00000000-0000-0000-0000-000000000000" },
+    { ...branch, leafId: "not-present" },
+    { ...branch, sha256: "0".repeat(64) },
+    { ...branch, path: join(f.root, "other.jsonl") },
+  ]) {
+    const rejected = parseNativeSessionBytes(raw, { ...input, capturedBranch: changed });
+    assert.equal(rejected.observation.branchState, "unknown");
+    assert.equal(rejected.observation.reason, "native-session-final-branch-mismatch");
+  }
+  assert.equal(
+    parseNativeSessionBytes(raw, { ...input, capturedBranch: undefined }).observation.branchState,
+    "unknown",
+  );
+  const truncated = parseNativeSessionBytes(raw, { ...input, truncated: true });
+  assert.equal(truncated.observation.status, "truncated");
+  assert.equal(truncated.observation.branchState, "unknown");
+  f.manager.appendCustomEntry("later-observation", { changed: true });
+  const changed = parseNativeSessionBytes(await readFile(f.path), input);
+  assert.equal(changed.observation.branchState, "unknown");
+  assert.equal(changed.observation.reason, "native-session-final-branch-mismatch");
+
+  f.manager.appendCustomEntry("large-diagnostic", { value: "x".repeat(1024 * 1024) });
+  const bounded = await readNativeSession({ ...input, allowedRoot: f.root });
+  assert.equal(bounded.bytes?.length, 1024 * 1024);
+  assert.equal(bounded.observation.status, "truncated");
+  assert.equal(bounded.observation.branchState, "unknown");
+
+  const archive = await tempDir("branch-retention-contract-");
+  const prior = process.env[ENV_NATIVE_SESSION_ROOT];
+  process.env[ENV_NATIVE_SESSION_ROOT] = f.root;
+  try {
+    await writeFile(f.path, raw);
+    const retained = beginExecutionRetention(identity, archive);
+    retained.observeSession({ source: "pi-captured-final", value: f.path, capturedBranch: branch });
+    retained.finish(outcome);
+    const status = await retained.flush();
+    const manifest = parseExecutionRetentionManifest(await readFile(status.manifestPath!, "utf8"));
+    assert.equal(manifest.version, "2.1");
+    assert.equal(manifest.nativeSession.branchState, "observed");
+    assert.equal(manifest.coverage.complete, false);
+    assert.equal(manifest.acceptance, "not-assessed");
+    assert.throws(
+      () => parseExecutionRetentionManifest(JSON.stringify({ ...manifest, version: "2.0" })),
+      /invalid execution-retention/,
+    );
+    const historical = {
+      ...manifest,
+      version: "2.0",
+      native: { ...manifest.native, branchLeafId: null },
+      nativeSession: {
+        ...manifest.nativeSession,
+        source: "pi-session-file",
+        branchState: "unknown",
+        branchLeafId: null,
+      },
+    };
+    assert.equal(parseExecutionRetentionManifest(JSON.stringify(historical)).version, "2.0");
   } finally {
     prior === undefined ? delete process.env[ENV_NATIVE_SESSION_ROOT] : (process.env[ENV_NATIVE_SESSION_ROOT] = prior);
   }

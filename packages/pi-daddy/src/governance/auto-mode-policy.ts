@@ -1,3 +1,5 @@
+import { createDispatchOperations } from "./dispatch-operations.ts";
+import { connectDispatchOperations } from "./dispatch-operation-client.ts";
 /** Root-owned live Auto authority. Descendants receive read/admit access, never mutation access. */
 import { randomBytes, randomUUID } from "node:crypto";
 import { chmod, unlink } from "node:fs/promises";
@@ -38,6 +40,7 @@ export async function createAutoModeAuthority(initial: {
     source = initial.source,
     revision = 0,
     closed = false;
+  const operations = createDispatchOperations();
   const pending = new Map<string, PendingApproval>();
   const waiters = new Set<() => void>();
   const sockets = new Set<Socket>();
@@ -92,12 +95,14 @@ export async function createAutoModeAuthority(initial: {
     const controller = new AbortController();
     let input = "",
       handled = false,
-      untrack: (() => void) | undefined;
+      untrack: (() => void) | undefined,
+      abandonOperation: (() => void) | undefined;
     socket.on("error", () => {});
     socket.once("close", () => {
       sockets.delete(socket);
       controller.abort();
       untrack?.();
+      abandonOperation?.();
     });
     const reply = (value: unknown) => {
       if (!socket.destroyed) socket.end(JSON.stringify(value) + "\n");
@@ -129,6 +134,21 @@ export async function createAutoModeAuthority(initial: {
         } else if (request.action === "pending" && validPending(request.approval)) {
           socket.setTimeout(0);
           untrack = trackPending(request.approval);
+        } else if (request.action === "operation-claim") {
+          const value = operations.claim(request.request);
+          if (!value.reused) {
+            socket.setTimeout(0);
+            abandonOperation = () => operations.abandoned(value.operation.operationId, value.ticket!);
+            socket.write(JSON.stringify({ ok: true, value }) + "\n");
+          } else reply({ ok: true, value });
+        } else if (request.action === "operation-read") {
+          reply({ ok: true, value: operations.read(request.operationId) });
+        } else if (request.action === "operation-started") {
+          operations.started(request.operationId, request.ticket, request.cwd, request.workspaceId);
+          reply({ ok: true });
+        } else if (request.action === "operation-finish") {
+          operations.finish(request.operationId, request.ticket, request.state, request.runtime);
+          reply({ ok: true });
         } else throw new Error("Unknown Auto policy action");
       } catch (error) {
         reply({ ok: false, error: String(error) });
@@ -153,7 +173,9 @@ export async function createAutoModeAuthority(initial: {
     } catch {}
   };
   process.once("exit", exit);
+  const operationAccess = connectDispatchOperations(reference);
   return {
+    operations: operationAccess,
     reference,
     snapshot,
     read: async () => snapshot(),
@@ -175,6 +197,7 @@ export async function createAutoModeAuthority(initial: {
     close: async () => {
       if (closed) return;
       closed = true;
+      operationAccess.close();
       enabled = false;
       for (const wake of [...waiters]) wake();
       for (const socket of sockets) socket.destroy();
@@ -233,6 +256,7 @@ function request(ref: AutoModeRef, action: "read" | "admit" | "wait", signal?: A
 }
 
 export function connectAutoMode(reference: AutoModeRef): AutoModeReader {
+  const operations = connectDispatchOperations(reference);
   let closed = false;
   const active = new Set<AbortController>();
   const pending = new Set<Socket>();
@@ -252,6 +276,7 @@ export function connectAutoMode(reference: AutoModeRef): AutoModeReader {
   };
   return {
     reference,
+    operations,
     read: async () => {
       const value = (await call("read")) as AutoModeSnapshot;
       if (
@@ -290,6 +315,7 @@ export function connectAutoMode(reference: AutoModeRef): AutoModeReader {
     },
     close: async () => {
       closed = true;
+      operations.close();
       for (const controller of active) controller.abort();
       for (const socket of pending) socket.destroy();
     },

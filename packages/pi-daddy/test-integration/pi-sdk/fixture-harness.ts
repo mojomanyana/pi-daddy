@@ -17,23 +17,24 @@ import type { Request, Step } from "./scripted-provider.ts";
 
 type Settings = NonNullable<Parameters<typeof SettingsManager.inMemory>[0]>;
 
-export function assertVersion() {
+export function assertVersion(expected = "1.0.4") {
   for (const name of ["pi-coding-agent", "pi-agent-core", "pi-ai"]) {
     const packagePath = join(fileURLToPath(import.meta.resolve(`@earendil-works/${name}`)), "../../package.json");
     const pkg = JSON.parse(readFileSync(packagePath, "utf8"));
-    if (pkg.version !== "1.0.4") throw new Error(`Expected ${name}@1.0.4; found ${pkg.version}`);
+    if (pkg.version !== expected) throw new Error(`Expected ${name}@${expected}; found ${pkg.version}`);
   }
 }
 
 export async function createFixture(
   options: {
+    sdkVersion?: "1.0.4" | "1.1.0";
     extension?: (root: string) => ExtensionFactory;
     next?: (request: Request, index: number) => Step;
     settings?: Partial<Settings> | ((root: string) => Partial<Settings>);
     prepare?: (root: string) => Promise<void>;
   } = {},
 ) {
-  assertVersion();
+  assertVersion(options.sdkVersion);
   const root = await mkdtemp(join(tmpdir(), "pi-p01-"));
   const agentDir = join(root, "agent");
   await mkdir(agentDir);

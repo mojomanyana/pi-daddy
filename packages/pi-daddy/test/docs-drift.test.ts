@@ -149,6 +149,7 @@ test("every environment variable the documents name is a current one, and no leg
     ENV_ACTIVITY_TIMELINE,
     ENV_ACTIVITY_CONTENT,
     "PI_DADDY_IT_MODEL",
+    "PI_DADDY_NATIVE_SESSION_PACKAGE",
     "PI_DADDY_KEEP_TMP",
     "PI_DADDY_IT_JEV",
     // The handoff probe's corpus. A test-tier switch like the others: it governs no behaviour and is read

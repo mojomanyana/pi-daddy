@@ -1,3 +1,9 @@
+import {
+  claimDelegationOperation,
+  existingOperationOutcome,
+  finishDelegationOperation,
+} from "./delegation-operations.ts";
+import type { OperationClaim } from "../src/kernel/dispatch-operation.ts";
 import { reconcileDelegationCapacity, reserveDelegationCapacity } from "./session-capacity.ts";
 import type { CapacityReservation } from "../src/kernel/capacity.ts";
 import { assertDefinitionIdentity } from "./definition-describe.ts";
@@ -43,7 +49,8 @@ import {
 } from "./workspace-runtime.ts";
 
 /** What one child was asked to do. The shape both tools accept, per child. */
-interface ChildSpec {
+export interface ChildSpec {
+  operation_id?: string;
   definitionId?: string;
   task: string;
   agent?: string;
@@ -64,7 +71,7 @@ interface ChildSpec {
  * bridged the gap, which is the same "a value that was whatever happened to be in scope" shape the module
  * header lists four defects for.
  */
-interface DelegationToolContext extends ApprovalUIContext {
+export interface DelegationToolContext extends ApprovalUIContext {
   cwd: string;
   model?: { provider: string; id: string };
   modelRegistry: ModelCatalogue;
@@ -242,7 +249,7 @@ export async function planWithApprovals(
  * was refused". `delegate` converts a failure back into a throw to keep its own contract, which matters:
  * `AgentToolResult` has no `isError` field, so a returned error is silently discarded by pi.
  */
-export async function runOneDelegation(
+async function runOneDelegationImplementation(
   session: GrantsSession,
   spec: ChildSpec,
   ids: ExecutionOccurrenceIds,
@@ -265,6 +272,9 @@ export async function runOneDelegation(
    * mistake unspellable.
    */
   options: {
+    operationClaim?: OperationClaim;
+    /** Trusted observation at the actual executor boundary, not a caller/tool parameter. */
+    onExecutorEntry?: () => void;
     /** Trusted reservation made before a chain's upfront gate. */
     capacityReservation?: CapacityReservation;
     /** Exact pair selected during the chain preflight; never reselect after its approval. */
@@ -513,6 +523,8 @@ export async function runOneDelegation(
     executorEntered = true;
     return await executePlannedChild({
       capacityReservation: capacity,
+      operationClaim: options.operationClaim,
+      onExecutorEntry: options.onExecutorEntry,
       session,
       plan,
       agent: spec.agent,
@@ -532,5 +544,48 @@ export async function runOneDelegation(
         ? { state: "unknown", reason: "execution returned without qualified cleanup" }
         : { state: "not-started", reason: "delegation ended before entering the executor" },
     );
+  }
+}
+
+/** Duplicate references never enter the executor, consume capacity, or become chain input. */
+export async function runOneDelegation(
+  ...args: Parameters<typeof runOneDelegationImplementation>
+): Promise<DelegationOutcome> {
+  const [session, spec, ids, , ctx, signal] = args;
+  const options = args[6] ?? {};
+  const claim = options.operationClaim ?? (await claimDelegationOperation(session, spec, ids, ctx, signal));
+  if (claim?.reused) {
+    options.capacityReservation?.finalize({ state: "not-started", reason: "existing operation reused" });
+    return existingOperationOutcome(claim, session.depth + 1);
+  }
+  let executorEntered = false;
+  try {
+    args[6] = {
+      ...options,
+      operationClaim: claim,
+      onExecutorEntry: () => {
+        executorEntered = true;
+        options.onExecutorEntry?.();
+      },
+    };
+    const result = await runOneDelegationImplementation(...args);
+    if (claim) {
+      try {
+        await finishDelegationOperation(claim, result);
+      } catch (error) {
+        // A post-execution observation failure must not erase the native final or settlement receipt.
+        result.control = "failed";
+        result.reason = [result.reason, `operation status update failed: ${String(error)}`].filter(Boolean).join("; ");
+        result.operation = { ...claim.operation, state: "uncertain", reused: false };
+      }
+    }
+    return result;
+  } catch (error) {
+    if (claim)
+      await claim.finish!(
+        executorEntered ? "uncertain" : "not-started",
+        executorEntered ? undefined : { cleanup: { state: "not-started" } },
+      ).catch(() => undefined);
+    throw error;
   }
 }

@@ -121,7 +121,7 @@ async function harness(env: Record<string, string>, existingDir?: string) {
   } as never);
 
   await hooks.get("session_start")!({}, ctx);
-  return { dir, tools, commands, ctx, activeTools };
+  return { dir, tools, commands, ctx, activeTools, hooks };
 }
 
 /**
@@ -1337,3 +1337,133 @@ async function assertPublicCapture(result: any, tool: string, requested: number)
   }
   return manifest;
 }
+
+// Breaks if duplicate election happens after capacity reservation, or a reference feeds a chain successor.
+test("an occupied child is reused across delegate, fanout and chain without another process", async () => {
+  const bin = await tempDir("operation-child-"),
+    started = join(bin, "started"),
+    release = join(bin, "release");
+  await writeFile(
+    join(bin, "pi"),
+    piFixtureScript(`#!/usr/bin/env node
+const fs = require('node:fs');
+fs.appendFileSync(${JSON.stringify(started)}, 'started\\n');
+const timer = setInterval(() => { if (fs.existsSync(${JSON.stringify(release)})) { clearInterval(timer); console.log('qualified final'); } }, 10);
+`),
+  );
+  await chmod(join(bin, "pi"), 0o755);
+  const oldPath = process.env.PATH;
+  process.env.PATH = `${bin}:${oldPath}`;
+  let original: Promise<any> | undefined;
+  try {
+    const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate", [ENV_FANOUT]: "1" });
+    const spec = { operation_id: "build:exact", task: "inspect exact candidate", tools: ["read"] };
+    original = tools.get("delegate")!.execute("original", spec, undefined, undefined, ctx) as Promise<any>;
+    // Wait for observable process entry, not a guessed dispatch duration.
+    let ready = false;
+    for (let i = 0; i < 200; i++) {
+      ready = await readFile(started, "utf8").then(
+        () => true,
+        () => false,
+      );
+      if (ready) break;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    assert.equal(ready, true, "the inert child must actually start");
+    const duplicate = (await tools.get("delegate")!.execute("duplicate", spec, undefined, undefined, ctx)) as any;
+    assert.equal(duplicate.details.operation.reused, true);
+    assert.equal(duplicate.isError, false, "returning an existing reference is an observation, not a failed child");
+    assert.equal(duplicate.details.operation.state, "running");
+    assert.equal(duplicate.details.work, "unknown");
+    const all = (await tools
+      .get("delegate_all")!
+      .execute("all", { children: [spec, spec] }, undefined, undefined, ctx)) as any;
+    assert.equal(all.details.outcomes.length, 2);
+    assert.ok(all.details.outcomes.every((x: any) => x.operation.reused));
+    const chain = (await tools
+      .get("delegate_chain")!
+      .execute(
+        "chain",
+        { steps: [spec, { task: "must not start", tools: ["read"] }] },
+        undefined,
+        undefined,
+        ctx,
+      )) as any;
+    assert.equal(chain.details.outcomes.length, 1);
+    assert.equal(chain.details.completed, 0);
+    await assert.rejects(
+      tools.get("delegate")!.execute("conflict", { ...spec, task: "different" }, undefined, undefined, ctx),
+      /identity conflict/,
+    );
+    await assert.rejects(
+      tools.get("delegate")!.execute("escalation", { ...spec, tools: ["write"] }, undefined, undefined, ctx),
+      /not hold|escalat|grant|denied/i,
+    );
+    await writeFile(release, "go");
+    const completed = await original;
+    assert.equal(completed.details.cleanup.state, "settled");
+    assert.equal(completed.details.operation.state, "settled");
+    assert.equal(completed.details.cwd, ctx.cwd);
+    assert.equal(completed.details.operation.executionId, duplicate.details.operation.executionId);
+    const terminal = (await tools.get("delegate")!.execute("terminal", spec, undefined, undefined, ctx)) as any;
+    assert.equal(terminal.details.operation.state, "settled");
+    assert.equal(terminal.details.final, undefined, "a completed mutation is not replayed");
+    assert.equal((await readFile(started, "utf8")).trim().split("\n").length, 1);
+  } finally {
+    await writeFile(release, "go");
+    await original?.catch(() => undefined);
+    process.env.PATH = oldPath;
+  }
+});
+
+test("operation owner loss after launch preserves the native final and settlement as an observation failure", async () => {
+  const bin = await tempDir("operation-owner-loss-"),
+    started = join(bin, "started"),
+    release = join(bin, "release");
+  await writeFile(
+    join(bin, "pi"),
+    piFixtureScript(`#!/usr/bin/env node
+const fs = require('node:fs'); fs.writeFileSync(${JSON.stringify(started)}, 'started');
+const timer = setInterval(() => { if (fs.existsSync(${JSON.stringify(release)})) { clearInterval(timer); console.log('preserved native final'); } }, 10);
+`),
+  );
+  await chmod(join(bin, "pi"), 0o755);
+  const oldPath = process.env.PATH;
+  process.env.PATH = `${bin}:${oldPath}`;
+  let pending: Promise<any> | undefined;
+  try {
+    const { tools, ctx, hooks } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate" });
+    pending = tools
+      .get("delegate")!
+      .execute(
+        "leader",
+        { operation_id: "preserve:one", task: "inspect", tools: ["read"] },
+        undefined,
+        undefined,
+        ctx,
+      ) as Promise<any>;
+    let ready = false;
+    for (let i = 0; i < 200; i++) {
+      ready = await readFile(started).then(
+        () => true,
+        () => false,
+      );
+      if (ready) break;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    assert.equal(ready, true);
+    await hooks.get("session_shutdown")!({ reason: "shutdown" }, ctx);
+    await writeFile(release, "go");
+    const result = await pending;
+    assert.equal(result.isError, true);
+    assert.equal(result.details.control, "failed");
+    assert.equal(result.details.cleanup.state, "settled");
+    assert.equal(result.details.final.state, "complete");
+    assert.equal(result.details.operation.state, "uncertain");
+    assert.match(result.content[0].text, /preserved native final/);
+  } finally {
+    await writeFile(release, "go");
+    await pending?.catch(() => undefined);
+    process.env.PATH = oldPath;
+  }
+});

@@ -57,7 +57,7 @@ test("trusted bridge reports actual owner facts, rejects caller identity and sur
     const settled = await snapshot();
     const replacement = registerRuntimeSnapshot(pi, session);
     await replacement.bind(ctx);
-    assert.equal(listeners.size, 1);
+    assert.equal(listeners.size, 2);
     const reloaded = await snapshot();
     assert.equal(reloaded.ownerScope, settled.ownerScope);
     assert.equal(reloaded.evidenceDigest, settled.evidenceDigest);
@@ -68,6 +68,74 @@ test("trusted bridge reports actual owner facts, rejects caller identity and sur
     assert.equal(session.reloadLifecycle.runtimeSettlement, undefined);
     assert.equal((await snapshot()).state, "unknown");
   } finally {
+    if (prior === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = prior;
+  }
+});
+
+test("operation bridge reads owner facts and refuses a different session or cwd", async () => {
+  const { createAutoModeAuthority } = await import("../src/governance/auto-mode-policy.ts");
+  const { OPERATION_STATUS_EVENT } = await import("../extensions/runtime-snapshot.ts");
+  const root = await tempDir("operation-bridge-"),
+    prior = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = root;
+  const listeners = new Map<string, Set<(value: unknown) => void>>();
+  const pi = {
+    events: {
+      on(name: string, fn: (value: unknown) => void) {
+        const set = listeners.get(name) ?? new Set();
+        set.add(fn);
+        listeners.set(name, set);
+        return () => set.delete(fn);
+      },
+      emit(name: string, value: unknown) {
+        for (const fn of listeners.get(name) ?? []) fn(value);
+      },
+    },
+  } as unknown as ExtensionAPI;
+  const auto = await createAutoModeAuthority({ enabled: false, source: "default" });
+  const session = {
+    ownerBound: true,
+    autoMode: auto,
+    reloadLifecycle: { root: {} },
+    executor: { kind: "process" },
+    capacity: { reserved: 0 },
+  } as unknown as GrantsSession;
+  const ctx = { cwd: root, sessionManager: { getSessionId: () => "actual" } } as unknown as ExtensionContext;
+  const read = (sessionId = "actual", cwd = root) =>
+    new Promise<any>((reply) =>
+      pi.events.emit(OPERATION_STATUS_EVENT, {
+        version: 1,
+        requestId: "lookup",
+        operationId: "review:one",
+        sessionId,
+        cwd,
+        reply,
+      }),
+    );
+  try {
+    await registerRuntimeSnapshot(pi, session).bind(ctx);
+    const claim = await auto.operations!.claim({
+      operationId: "review:one",
+      requestDigest: "a".repeat(64),
+      executionId: "exec:actual",
+      cwd: root,
+      workspaceId: null,
+    });
+    const pending = await read();
+    assert.equal(pending.qualified, true);
+    assert.equal(pending.operation.state, "admitting");
+    assert.equal(pending.operation.executionId, "exec:actual");
+    assert.equal((await read("foreign")).qualified, false);
+    assert.equal((await read("actual", "/wrong")).qualified, false);
+    await claim.finish!("not-started");
+    assert.equal((await read()).operation.state, "not-started");
+    const replacement = registerRuntimeSnapshot(pi, session);
+    await replacement.bind(ctx);
+    assert.equal(listeners.get(OPERATION_STATUS_EVENT)?.size, 1);
+    assert.equal((await read()).operation.executionId, "exec:actual");
+  } finally {
+    await auto.close();
     if (prior === undefined) delete process.env.PI_CODING_AGENT_DIR;
     else process.env.PI_CODING_AGENT_DIR = prior;
   }

@@ -4,6 +4,7 @@ import { isDeepStrictEqual } from "node:util";
 import { join } from "node:path";
 import { readdir } from "node:fs/promises";
 import { SessionManager, type FileEntry } from "@earendil-works/pi-coding-agent";
+import type { CapturedSessionBranch } from "../governance/native-session.ts";
 import { BoundedReadCleanupError, readBoundedBytes } from "../kernel/bounded-read.ts";
 const MAX_FINAL_BYTES = 4 * 1024 * 1024,
   MAX_LINE_BYTES = 32 * 1024 * 1024,
@@ -13,6 +14,11 @@ const hash = (s: string) => createHash("sha256").update(s, "utf8").digest("hex")
 export type ChildFinal =
   | { state: "complete"; text: string; sessionId: string; messageId: string; leafId: string; sha256: string }
   | { state: "unavailable"; reason: string; diagnosticText?: string };
+const capturedSessions = new WeakMap<ChildFinal, Readonly<CapturedSessionBranch>>();
+/** Only the original in-process final carries this observation; JSON/copies do not recreate it. */
+export function capturedFinalSession(final: ChildFinal): Readonly<CapturedSessionBranch> | undefined {
+  return capturedSessions.get(final);
+}
 export class ChildFinalCapture {
   private decoder = new TextDecoder("utf-8", { fatal: true });
   private buffer = "";
@@ -171,7 +177,7 @@ export class ChildFinalCapture {
         !isDeepStrictEqual(currentUser.message, this.user)
       )
         throw Error("stream final does not match the current persisted branch and turn");
-      return {
+      const complete: ChildFinal = {
         state: "complete",
         text,
         sessionId: this.sessionId,
@@ -179,6 +185,16 @@ export class ChildFinalCapture {
         leafId: manager.getLeafId()!,
         sha256: hash(text),
       };
+      capturedSessions.set(
+        complete,
+        Object.freeze({
+          path,
+          sessionId: this.sessionId,
+          leafId: complete.leafId,
+          sha256: createHash("sha256").update(read.bytes).digest("hex"),
+        }),
+      );
+      return complete;
     } catch (error) {
       if (error instanceof BoundedReadCleanupError) {
         if (!this.onReadCleanup) throw error;

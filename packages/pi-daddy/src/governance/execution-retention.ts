@@ -8,6 +8,7 @@ import {
   type NativeSessionObservation,
   type NativeSessionManager,
   type NativeSessionCapture,
+  type CapturedSessionBranch,
 } from "./native-session.ts";
 export {
   buildExecutionRetentionManifest,
@@ -26,7 +27,7 @@ export { ENV_EXECUTION_ARCHIVE } from "../kernel/env-names.ts";
 import { isUnderPiProjectDir } from "../kernel/project-paths.ts";
 
 /** Operator-owned archive boundary; never a model-facing parameter or an authority source. */
-export const RETENTION_VERSION = "2.0";
+export const RETENTION_VERSION = "2.1";
 const LIMIT = 1024 * 1024;
 const MAX_ACTIVE = 32;
 let active = 0;
@@ -49,7 +50,7 @@ export interface RetainedContent {
   bytes: number | null;
 }
 export interface ExecutionRetentionManifest {
-  version: "2.0";
+  version: "2.0" | "2.1";
   archiveId: string;
   identity: RetentionIdentity;
   native: {
@@ -155,9 +156,10 @@ export function beginExecutionRetention(identity: RetentionIdentity, directory =
   let nativeTask: Promise<void> | undefined;
   let nextNative:
     | {
-        source: "herdr-id" | "herdr-path" | "pi-session-file" | "pi-session-manager";
+        source: "herdr-id" | "herdr-path" | "pi-session-file" | "pi-session-manager" | "pi-captured-final";
         value: string;
         manager?: NativeSessionManager;
+        capturedBranch?: CapturedSessionBranch;
       }
     | undefined;
   let pinnedSessionId: string | undefined;
@@ -236,6 +238,7 @@ export function beginExecutionRetention(identity: RetentionIdentity, directory =
       source: reference.source,
       value: reference.value,
       ...(reference.manager ? { manager: reference.manager } : {}),
+      ...(reference.capturedBranch ? { capturedBranch: { ...reference.capturedBranch } } : {}),
     };
     if (nativeTask) return;
     nativeTask = Promise.resolve()
@@ -258,6 +261,7 @@ export function beginExecutionRetention(identity: RetentionIdentity, directory =
                   path: current.value,
                   source: current.source,
                   manager: current.manager,
+                  capturedBranch: current.capturedBranch,
                   expectedSessionId: pinnedSessionId,
                   expectedFile: pinnedFile,
                 });

@@ -60,7 +60,11 @@ for(const e of [header,{type:'agent_start'},{type:'message_end',message:user},{t
       await drainExecutionRetention(result.details.retention);
       const m = parseExecutionRetentionManifest(await readFile(result.details.retention.manifestPath, "utf8"));
       assert.equal(m.nativeSession.status, "verified");
-      assert.equal(m.nativeSession.branchState, "unknown");
+      assert.equal(m.nativeSession.branchState, "observed");
+      assert.equal(m.nativeSession.source, "pi-captured-final");
+      assert.equal(m.nativeSession.branchLeafId, result.details.final.leafId);
+      assert.equal(m.nativeSession.sessionId, result.details.final.sessionId);
+      assert.equal(m.coverage.losses.includes("active-branch-unknown"), false);
       records.push(m);
     }
     assert.notEqual(records[0].nativeSession.sessionPath, records[1].nativeSession.sessionPath);

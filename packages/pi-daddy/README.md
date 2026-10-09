@@ -1,6 +1,6 @@
 # pi-daddy
 
-Source target: **0.47.1**. Before installation, verify that `npm view pi-daddy version` and Git tag `v0.47.1` both resolve to this release.
+Source target: **0.48.0**. Before installation, verify that `npm view pi-daddy version` and Git tag `v0.48.0` both resolve to this release.
 
 **Capability governance and coordination for [pi](https://github.com/badlogic/pi-mono)'s multi-level agent system.**
 An orchestrator grants each sub-agent a deliberate subset of what it holds and withholds the rest. A sub-agent may
@@ -9,6 +9,24 @@ child process, with an optional append-only, hash-chained governance ledger.
 
 This file is the product description, present tense. If code and this file disagree, fix this file. Agents start at
 `AGENTS.md`, which carries the rules, the decisions still in force, the measured facts and the roadmap.
+
+## Reliable workflow handoffs
+
+Native delegation accepts an optional stable `operation_id`. The session owner admits one
+matching request; a concurrent or later duplicate returns its existing execution reference.
+It does not launch another child, replay a completed mutation, or grant approval. A changed
+request under the same ID refuses. An intentional retry needs a new attempt after the
+previous operation is proven settled or never started; uncertainty stays blocked.
+Principal 4.12.0 supplies these IDs and exact candidate/report references automatically.
+
+The dashboard shows the selected task's last observed tool event and time since that event.
+Details include the actual recorded working directory and phase where available. Silence is
+not proof of a hang, and a finished process is not an approved task. Tool observations retain
+names and timestamps, not arguments or output. Diagnostic retention remains operator opt-in.
+
+The coordinator can use Principal's native tool-only Codemode adapter. Nested calls retain
+Pi's normal permission and cancellation hooks. Governed children cannot request `codemode`
+or `principal_codemode`; that child execution path is not qualified.
 
 ## Install and first run
 
@@ -375,6 +393,13 @@ native JSONL session. The coordinator keeps its normal Pi session. Diagnostic ma
 bytes go under `archive`; inspect each delegation result's retention status and manifest coverage for losses.
 An opt-in is not a claim that every observation was retained. Keep the private directory until diagnosis is done;
 the operator controls its lifetime and disposal.
+Retention manifests now emit schema **2.1**. The reader still accepts historical 2.0 records; consumers
+with a strict 2.0 schema must update before reading new manifests. A `pi-captured-final` branch observation
+uses the executor's verified native final and an exact full-session byte hash. An ordinary JSONL file alone
+does not establish its active branch. Changed, unavailable or truncated bytes keep that gap explicit.
+The 1 MiB diagnostic session-copy bound remains a byte-storage limit, not a model token budget or work deadline;
+a complete native source may exist even when its archived copy is truncated. Coverage remains incomplete and
+retention never supplies task acceptance.
 
 These files may contain task text, tool output and private model reasoning. Local diagnostic retention does not
 enable JEV, provider egress, LoRA collection or training. Existing `/skill-harness` consent remains separate.
