@@ -214,9 +214,14 @@ export function registerActivityTimeline(pi: ExtensionAPI, session?: ActivitySes
     }
     return undefined;
   });
-  pi.on("tool_execution_start", (event) => {
-    const value = event as { toolCallId?: string; args?: { path?: unknown } };
+  pi.on("tool_execution_start", async (event, ctx: HookContext) => {
+    const value = event as { toolCallId?: string; toolName?: string; args?: { path?: unknown } };
     if (value.toolCallId && typeof value.args?.path === "string") paths.set(value.toolCallId, value.args.path);
+    try {
+      if (value.toolName) await recorder?.append("tool_started", { tool: value.toolName, cwd: ctx.cwd });
+    } catch {
+      /* observation cannot affect tool execution */
+    }
     return undefined;
   });
   pi.on("tool_execution_end", async (event) => {
@@ -224,6 +229,11 @@ export function registerActivityTimeline(pi: ExtensionAPI, session?: ActivitySes
       const value = event as { isError?: boolean; toolName?: string; toolCallId?: string };
       const path = value.toolCallId ? paths.get(value.toolCallId) : undefined;
       if (value.toolCallId) paths.delete(value.toolCallId);
+      if (value.toolName)
+        await recorder?.append("tool_finished", {
+          tool: value.toolName,
+          outcome: value.isError ? "failed" : "completed",
+        });
       const skill = path ? available.get(resolve(path)) : undefined;
       if (!value.isError && value.toolName === "read" && skill) await recorder?.skill("skill_read", skill);
     } catch {

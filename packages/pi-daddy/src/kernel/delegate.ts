@@ -201,6 +201,20 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
     requested = (request.tools ?? []).map(normaliseCapability);
   }
 
+  // Coordinator-only qualification does not authorize loading native Codemode or its raw model API in children.
+  const coordinatorOnly = requested.filter((capability) =>
+    ["tool:codemode", "ext:codemode", "tool:principal_codemode", "ext:principal_codemode"].includes(capability),
+  );
+  if (coordinatorOnly.length)
+    return denied(
+      {
+        ...empty,
+        requested,
+        reason: `Codemode is qualified only for the coordinator; governed children cannot receive ${coordinatorOnly.join(", ")}`,
+      },
+      "UNKNOWN_TOOL",
+    );
+
   // ADR-0078. A declared `context:` id is a CEILING, not a request: a definition that permits forking must not
   // fork on every spawn. So the declared modes come out of `requested` and exactly the one this call asked for
   // goes back in.

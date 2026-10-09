@@ -31,7 +31,7 @@ export const RETENTION_SCHEMA = freeze({
   $schema: "https://json-schema.org/draft/2020-12/schema",
   $id: "https://pi-daddy.local/contracts/execution-retention/v2/manifest.schema.json",
   ...closed({
-    version: literal("2.0"),
+    version: { enum: ["2.0", "2.1"] },
     archiveId: uuid,
     identity: closed({
       executionId: string(),
@@ -54,7 +54,7 @@ export const RETENTION_SCHEMA = freeze({
       branchLeafId: nullable(string(128)),
     }),
     nativeSession: closed({
-      source: { enum: [null, "herdr-id", "herdr-path", "pi-session-file", "pi-session-manager"] },
+      source: { enum: [null, "herdr-id", "herdr-path", "pi-session-file", "pi-session-manager", "pi-captured-final"] },
       status: { enum: ["missing", "verified", "invalid", "changed", "truncated", "unsupported"] },
       sessionId: nullable(uuid),
       sessionPath: nullable(string(4096)),
@@ -101,6 +101,10 @@ export const RETENTION_SCHEMA = freeze({
     acceptance: literal("not-assessed"),
   }),
   allOf: [
+    {
+      if: { properties: { version: literal("2.0") } },
+      then: { properties: { nativeSession: { properties: { source: { not: literal("pi-captured-final") } } } } },
+    },
     {
       if: { properties: { state: literal("running") } },
       then: { properties: { outcome: literal(null) } },
@@ -162,7 +166,7 @@ export function buildExecutionRetentionManifest(value: unknown): ExecutionRetent
     }
   };
   inspect(value, 0);
-  if (!validator.Check(value)) throw new TypeError("invalid execution-retention 2.0 manifest");
+  if (!validator.Check(value)) throw new TypeError("invalid execution-retention 2.x manifest");
   const m = JSON.parse(JSON.stringify(value)) as ExecutionRetentionManifest;
   if (
     m.native.sessionId !== m.nativeSession.sessionId ||
@@ -178,7 +182,8 @@ export function buildExecutionRetentionManifest(value: unknown): ExecutionRetent
   }
   if (
     m.nativeSession.branchState === "observed" &&
-    (m.nativeSession.source !== "pi-session-manager" || m.nativeSession.status !== "verified")
+    (!["pi-session-manager", "pi-captured-final"].includes(m.nativeSession.source ?? "") ||
+      m.nativeSession.status !== "verified")
   )
     throw new TypeError("unverified active native branch");
   if (

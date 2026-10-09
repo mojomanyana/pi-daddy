@@ -19,6 +19,7 @@ export interface AutoModeRef {
 }
 export interface AutoModeReader {
   readonly reference: AutoModeRef;
+  readonly operations?: import("./dispatch-operation.ts").OperationAccess;
   read(): Promise<AutoModeSnapshot>;
   /** Linearization point: only a current ON answer admits new work. No approval is banked. */
   admit(signal?: AbortSignal): Promise<boolean>;

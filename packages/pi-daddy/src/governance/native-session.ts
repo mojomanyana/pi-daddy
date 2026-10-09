@@ -7,7 +7,8 @@ import { ENV_NATIVE_SESSION_ROOT } from "../kernel/env-names.ts";
 export { ENV_NATIVE_SESSION_ROOT } from "../kernel/env-names.ts";
 
 export const MAX_NATIVE_SESSION_BYTES = 1024 * 1024;
-export type NativeSessionSource = "herdr-id" | "herdr-path" | "pi-session-file" | "pi-session-manager";
+export type NativeSessionSource =
+  "herdr-id" | "herdr-path" | "pi-session-file" | "pi-session-manager" | "pi-captured-final";
 export interface NativeSessionObservation {
   source: NativeSessionSource | null;
   status: "missing" | "verified" | "invalid" | "changed" | "truncated" | "unsupported";
@@ -24,6 +25,13 @@ export interface NativeSessionCapture {
   observation: NativeSessionObservation;
   bytes?: Buffer;
   fileIdentity?: { device: string; inode: string };
+}
+/** Byte-bound metadata from the executor's qualified native final, not a locator-derived branch. */
+export interface CapturedSessionBranch {
+  path: string;
+  sessionId: string;
+  leafId: string;
+  sha256: string;
 }
 /** Read-only methods of pi 0.84.2's public SessionManager; no runtime/session creation or model work. */
 export interface NativeSessionManager {
@@ -59,6 +67,7 @@ export function parseNativeSessionBytes(
     expectedSessionId?: string;
     truncated?: boolean;
     liveLeaf?: { sessionId: string; leafId: string | null };
+    capturedBranch?: CapturedSessionBranch;
   },
 ): NativeSessionCapture {
   const observation = { ...missingNativeSession(), source: input.source, sessionPath: input.path };
@@ -138,6 +147,23 @@ export function parseNativeSessionBytes(
     observation.branchLeafId = input.liveLeaf.leafId;
     observation.branchState = "observed";
   }
+  if (input.source === "pi-captured-final" && !input.capturedBranch)
+    return fail("invalid", "native-session-final-branch-missing");
+  if (input.capturedBranch) {
+    const branch = input.capturedBranch;
+    if (
+      input.source !== "pi-captured-final" ||
+      branch.path !== input.path ||
+      branch.sessionId !== header.id ||
+      branch.sha256 !== observation.sha256 ||
+      !ids.has(branch.leafId) ||
+      (input.liveLeaf && input.liveLeaf.leafId !== branch.leafId)
+    ) {
+      return fail("changed", "native-session-final-branch-mismatch");
+    }
+    observation.branchLeafId = branch.leafId;
+    observation.branchState = "observed";
+  }
   observation.status = "verified";
   observation.reason = observation.branchState === "unknown" ? "active-branch-unknown" : null;
   return result;
@@ -150,6 +176,7 @@ export async function readNativeSession(input: {
   expectedSessionId?: string;
   allowedRoot?: string;
   manager?: NativeSessionManager;
+  capturedBranch?: CapturedSessionBranch;
   expectedFile?: { device: string; inode: string };
 }): Promise<NativeSessionCapture> {
   const gap = (status: NativeSessionObservation["status"], reason: string): NativeSessionCapture => ({

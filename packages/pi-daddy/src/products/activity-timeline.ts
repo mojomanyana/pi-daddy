@@ -44,6 +44,8 @@ export interface ActivityEvent {
   agentId?: string;
   agent?: string;
   outcome?: string;
+  tool?: string;
+  cwd?: string;
   model?: string;
   thinking?: string;
   prompt?: ContentReference;
@@ -63,6 +65,8 @@ export interface TimelineTask {
   agent?: string;
   startedAt: string;
   endedAt?: string;
+  lastEvent?: { at: string; kind: string; tool?: string };
+  cwd?: string;
   status: "active" | "finished" | "failed" | "cancelled" | "needs-you";
   model?: string;
   thinking?: string;
@@ -122,6 +126,8 @@ function eventOf(value: unknown): ActivityEvent | null {
   )
     return null;
   if (
+    (event.tool !== undefined && !validId(event.tool)) ||
+    (event.cwd !== undefined && (typeof event.cwd !== "string" || !event.cwd || event.cwd.length > 4096)) ||
     (event.parentTaskId && !validId(event.parentTaskId)) ||
     (event.agentId && !validId(event.agentId)) ||
     (event.agent && !validId(event.agent)) ||
@@ -169,6 +175,10 @@ export function parseActivityTimeline(text: string): ActivityTimeline {
         agents: [],
       };
       tasks.set(key, task);
+    }
+    if (!task.lastEvent || Date.parse(event.at) >= Date.parse(task.lastEvent.at)) {
+      task.lastEvent = { at: event.at, kind: event.kind, ...(event.tool ? { tool: event.tool } : {}) };
+      if (event.cwd) task.cwd = event.cwd;
     }
     if (event.kind === "task_started") {
       task.model = event.model;

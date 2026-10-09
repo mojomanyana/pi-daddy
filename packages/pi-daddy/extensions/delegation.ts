@@ -1,3 +1,4 @@
+import { operationIdShape, claimDelegationOperation } from "./delegation-operations.ts";
 import { publicEvidenceCall } from "./public-evidence.ts";
 import { executionEvidenceContent } from "./execution-evidence.ts";
 import { reconcileDelegationCapacity, reserveDelegationCapacity } from "./session-capacity.ts";
@@ -190,6 +191,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
     ),
   );
   const childShape = Type.Object({
+    operation_id: operationIdShape(),
     definitionId: Type.Optional(
       Type.String({ description: "Snapshot id returned by delegate_describe; required for Principal phases." }),
     ),
@@ -212,6 +214,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
   });
 
   const delegateParams = Type.Object({
+    operation_id: operationIdShape(),
     definitionId: Type.Optional(
       Type.String({ description: "Snapshot id returned by delegate_describe; required for Principal phases." }),
     ),
@@ -255,16 +258,18 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       // `delegate` for up to DEFAULT_TIMEOUT_MS — sixty minutes by default.
       const progress = progressReporter(session, [params.agent ?? "delegate"], onUpdate as never);
       const occurrence = newDelegationOccurrence(session, 0);
+      const operationClaim = await claimDelegationOperation(session, params, occurrence, ctx, signal);
       const capture = publicEvidenceCall(
         session.publicEvidence,
         _toolCallId,
         "delegate",
         [params],
-        [occurrence.executionId],
+        [operationClaim?.operation.executionId ?? occurrence.executionId],
       );
       const outcome = await runOneDelegation(
         session,
         {
+          operation_id: params.operation_id,
           definitionId: params.definitionId,
           task: params.task,
           agent: params.agent,
@@ -281,6 +286,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
         ctx,
         signal,
         {
+          operationClaim,
           onProgress: progress.sink(0),
           toolCallId: _toolCallId,
           onDefinition: (definition) => capture.selected(0, definition),
@@ -296,7 +302,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
         throw new Error(message);
       }
       // Pi 1.0.4 preserves returned isError. Keep every outcome dimension and useful output together.
-      const failed = !outcome.ok || outcome.control === "failed";
+      const failed = !outcome.operation?.reused && (!outcome.ok || outcome.control === "failed");
       return capture.finish(
         {
           isError: failed,
@@ -348,8 +354,19 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       const children = params.children ?? [];
       if (session.capacityRefusal) throw new GovernanceRefusal(session.capacityRefusal);
       await reconcileDelegationCapacity(session);
-      const split = splitBudget(session.capacity.available, children.length);
+      const occurrences = children.map((_, index) => newDelegationOccurrence(session, index));
+      const claims: Array<import("../src/kernel/dispatch-operation.ts").OperationClaim | undefined> = [];
+      try {
+        for (const [index, child] of children.entries())
+          claims.push(await claimDelegationOperation(session, child, occurrences[index], ctx, signal));
+      } catch (error) {
+        await Promise.all(claims.map((claim) => claim?.finish?.("not-started")));
+        throw error;
+      }
+      const fresh = children.filter((_, index) => !claims[index]?.reused).length;
+      const split = fresh === 0 ? { ok: true as const, perChild: 0 } : splitBudget(session.capacity.available, fresh);
       if (!split.ok) {
+        await Promise.all(claims.map((claim) => claim?.finish?.("not-started")));
         // Thrown, not returned: a returned `isError` is discarded by pi, so a refusal that came back as a
         // normal result would read to the orchestrator as a successful fan-out of zero children.
         throw new GovernanceRefusal(refusal("FANOUT_EXCEEDED", `fan-out refused: ${split.reason}`));
@@ -370,25 +387,32 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       // live and its writer lease is deliberately retained" — a resource-retention notice, not a per-child
       // failure. Losing it meant nobody was told a lease is held with no owner until the process exits
       // (R-116).
-      const infrastructureErrors: unknown[] = [],
-        occurrences = children.map((_, index) => newDelegationOccurrence(session, index));
+      const infrastructureErrors: unknown[] = [];
       const capture = publicEvidenceCall(
         session.publicEvidence,
         _toolCallId,
         "delegate_all",
         children,
-        occurrences.map((row) => row.executionId),
+        occurrences.map((row, index) => claims[index]?.operation.executionId ?? row.executionId),
       );
       const pending = children.map(async (child, index): Promise<DelegationOutcome> => {
+        let enteredDelegation = false;
         try {
+          // Reserve each batch share synchronously here, before another dispatch can interleave.
+          const capacityReservation = claims[index]?.reused
+            ? undefined
+            : reserveDelegationCapacity(session, occurrences[index].executionId, split.perChild);
+          enteredDelegation = true;
           return await runOneDelegation(session, child, occurrences[index], split.perChild, ctx, signal, {
-            // Reserve each batch share synchronously here, before another dispatch can interleave.
-            capacityReservation: reserveDelegationCapacity(session, occurrences[index].executionId, split.perChild),
+            operationClaim: claims[index],
+            capacityReservation,
             onDefinition: (definition) => capture.selected(index, definition),
             onProgress: progress.sink(index),
             toolCallId: _toolCallId,
           });
         } catch (error) {
+          if (!enteredDelegation)
+            await claims[index]?.finish?.("not-started", { cleanup: { state: "not-started" } }).catch(() => undefined);
           infrastructureErrors.push(error);
           return childFailureOutcome(error, session.depth + 1);
         }
@@ -401,7 +425,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       // critical block landed in the same fan-out (R-117).
       throwFanoutInfrastructure(outcomes, infrastructureErrors);
 
-      const failed = outcomes.filter((o) => !o.ok);
+      const failed = outcomes.filter((o) => !o.ok && !o.operation?.reused);
       // Every child is reported, including the ones that failed. R-03's rule: a missing result must never
       // be indistinguishable from an empty one, and a fan-out that hid its refusals would let an
       // orchestrator summarise four reviews when only three happened.
@@ -411,7 +435,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
 
       return capture.finish(
         {
-          isError: outcomes.some((o) => !o.ok || o.control === "failed"),
+          isError: outcomes.some((o) => !o.operation?.reused && (!o.ok || o.control === "failed")),
           content: [
             { type: "text", text: report },
             executionEvidenceContent("delegate_all", outcomes, children.length),

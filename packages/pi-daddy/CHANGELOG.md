@@ -1,5 +1,11 @@
 # Changelog — pi-daddy
 
+## 0.48.0 — 2026-10-09
+
+- Admit a stable operation only once across the live delegation tree. Duplicate single/batch/chain requests return an execution reference; changed requests conflict and completed mutations never replay. Expose session-bound operation status and actual execution workspace to deterministic coordinators.
+- Show last observed tool activity, elapsed silence and actual recorded working directory in the dashboard. Preserve normal native nested-tool permissions and cancellation; governed child Codemode remains refused.
+- Preserve the active native branch in diagnostic retention when the executor qualified the final and the complete session bytes still match. New manifests use schema 2.1 with explicit `pi-captured-final` provenance; update strict 2.0 readers. Historical records stay readable, and truncated or changed files remain incomplete.
+
 ## 0.47.1 — 2026-10-09
 
 - Clear each terminal row when the dashboard changes views or redraws shorter text, so previous task/history text cannot remain beside Versions or other rows. Unchanged frames still avoid redraws. Update Daddy and reopen the dashboard to use the fix.

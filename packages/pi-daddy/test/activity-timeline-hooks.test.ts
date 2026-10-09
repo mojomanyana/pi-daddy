@@ -221,3 +221,27 @@ test("settlement follows Pi aborted and error outcomes while length remains a fi
     ["failed", "finished", "cancelled"],
   );
 });
+
+test("tool hooks retain names and actual cwd without arguments, outputs or inferred progress", async () => {
+  const cwd = await tempDir("activity-tool-observed-"),
+    app = fixture();
+  registerActivityTimeline(app.api as never);
+  await app.hooks.get("session_start")!({}, ctx(cwd));
+  await app.hooks.get("before_agent_start")!({ prompt: "inspect", systemPromptOptions: {} }, ctx(cwd));
+  await app.hooks.get("context")!({}, ctx(cwd));
+  await app.hooks.get("tool_execution_start")!(
+    { toolCallId: "observed", toolName: "bash", args: { command: "private-argument" } },
+    ctx(cwd),
+  );
+  await app.hooks.get("tool_execution_end")!(
+    { toolCallId: "observed", toolName: "bash", isError: true, result: "private-result" },
+    ctx(cwd),
+  );
+  const text = await readFile(defaultActivityTimelinePath(cwd), "utf8");
+  const task = parseActivityTimeline(text).tasks[0];
+  assert.equal(task.cwd, cwd);
+  assert.equal(task.lastEvent?.kind, "tool_finished");
+  assert.equal(task.lastEvent?.tool, "bash");
+  assert.equal(task.status, "active");
+  assert.doesNotMatch(text, /private-argument|private-result/);
+});

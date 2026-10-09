@@ -1075,3 +1075,22 @@ and worker ownership remain additional runtime requirements. Capture size/read d
 Before admitting new work, reread receipts only for the same owner's original bound retained reservations. Exact
 settlement proof may refund capacity once without rewriting the prior outcome; absent proof never authorizes release.
 The captured package declares its Linux x64 platform restriction and exact qualified Pi dependency explicitly.
+
+## 2026-10-09: captured-final retention provenance
+
+An executor-qualified final now carries in-process native-session path, SDK branch leaf and exact session-byte
+hash metadata into retention. File-only records remain branch-unknown; do not infer a leaf from the last JSONL
+entry. The new `pi-captured-final` source requires retention manifest schema 2.1; current readers also accept
+historical 2.0 without rewriting it. The 1 MiB observation cap remains explicit and does not alter work control.
+Model-free fixtures exercise actual Pi1.0.4 files and, with `PI_DADDY_NATIVE_SESSION_PACKAGE` pointing to an exact
+installed package, Pi1.1.0 SessionManager files through the governed process seam. The fixture emits protocol
+events around native persistence; it does not qualify paid inference or raw private-reasoning collection.
+
+## 2026-10-09 — Deterministic workflow convergence
+
+Stable operation admission belongs to the tree owner, using the existing owner connection.
+A reused operation is a reference only, never replayed output or approval. Keep active or
+uncertain executions non-retryable; explicit retries need native settled/no-start proof.
+Keep candidate/report bookkeeping in Principal and consent/learning policy in Harness.
+Dashboard tool observations expose names, time and cwd, never inferred reasoning/progress.
+Native coordinator tool-only Codemode preserves hooks; governed child Codemode stays refused.

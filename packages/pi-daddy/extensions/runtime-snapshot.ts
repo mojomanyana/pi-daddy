@@ -5,6 +5,7 @@ import { openRuntimeSettlement, settlementHash } from "../src/governance/runtime
 import { reconcileDelegationCapacity } from "./session-capacity.ts";
 import { agentDir } from "../src/kernel/project-paths.ts";
 import type { GrantsSession } from "./session.ts";
+export const OPERATION_STATUS_EVENT = "pi-daddy:operation-status:v1";
 export const RUNTIME_SNAPSHOT_EVENT = "pi-daddy:runtime-snapshot:v1";
 export function registerRuntimeSnapshot(
   pi: ExtensionAPI,
@@ -15,7 +16,7 @@ export function registerRuntimeSnapshot(
   let bound: { sessionId: string; cwd: string; lifecycle: object } | undefined, problem: string | undefined;
   const generation = {};
   let bindSequence = 0;
-  const unsubscribe = pi.events?.on?.(RUNTIME_SNAPSHOT_EVENT, (input: unknown) => {
+  const unsubscribeRuntime = pi.events?.on?.(RUNTIME_SNAPSHOT_EVENT, (input: unknown) => {
     const request = input as {
       version?: number;
       requestId?: string;
@@ -91,6 +92,63 @@ export function registerRuntimeSnapshot(
       }
     })().catch(() => undefined);
   });
+  const unsubscribeOperations = pi.events?.on?.(OPERATION_STATUS_EVENT, (input: unknown) => {
+    const request = input as {
+      version?: number;
+      requestId?: string;
+      sessionId?: string;
+      cwd?: string;
+      operationId?: string;
+      reply?: (value: unknown) => void;
+    };
+    if (
+      request?.version !== 1 ||
+      typeof request.requestId !== "string" ||
+      request.requestId.length > 512 ||
+      typeof request.operationId !== "string" ||
+      typeof request.reply !== "function"
+    )
+      return;
+    if (bound && session.reloadLifecycle.runtimeSnapshotGeneration !== generation) return;
+    void (async () => {
+      const current = bound,
+        lifecycle = session.reloadLifecycle;
+      const envelope = {
+        version: 1,
+        requestId: request.requestId,
+        sessionId: current?.sessionId ?? "",
+        cwd: current?.cwd ?? "",
+        operationId: request.operationId,
+      };
+      if (
+        !current ||
+        current.lifecycle !== lifecycle ||
+        request.sessionId !== current.sessionId ||
+        request.cwd !== current.cwd ||
+        !session.ownerBound ||
+        !session.autoMode?.operations
+      ) {
+        request.reply!({ ...envelope, qualified: false, operation: null, reason: "operation owner is not ready" });
+        return;
+      }
+      try {
+        const operation = await session.autoMode.operations.read(request.operationId!);
+        if (
+          bound !== current ||
+          session.reloadLifecycle !== lifecycle ||
+          lifecycle.runtimeSnapshotGeneration !== generation
+        )
+          throw Error("operation owner changed during read");
+        request.reply!({ ...envelope, qualified: true, operation });
+      } catch (error) {
+        request.reply!({ ...envelope, qualified: false, operation: null, reason: String(error) });
+      }
+    })().catch(() => undefined);
+  });
+  const unsubscribe = () => {
+    unsubscribeRuntime?.();
+    unsubscribeOperations?.();
+  };
   return {
     async bind(ctx) {
       const sequence = ++bindSequence,

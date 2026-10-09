@@ -365,12 +365,11 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
     return undefined;
   });
 
-  // Observe this session's real tool surface once, and tighten the grant to it. Authoritative because
-  // it is exactly what pi sent the model.
+  // Observe the native reachable tool surface, including callable tools whose declarations Codemode hides.
   pi.on("before_provider_request", (event, ctx) => {
     try {
       if (session.observed) return undefined;
-      const names = observeToolNames(event.payload);
+      const names = observeToolNames(event.payload, pi.getAllTools(), pi.getActiveTools?.());
       if (names === null) return undefined;
       session.observed = true;
       session.observedTools = names;

@@ -152,6 +152,7 @@ export function composeStepTask(template: string, previous: string | undefined):
 
 /** One chain step as `runOneDelegation` takes it: the operator's spec with its task composed. */
 export interface ChainStep {
+  operation_id?: string;
   definitionId?: string;
   task: string;
   agent?: string;
