@@ -1,6 +1,6 @@
 # pi-daddy
 
-Source target: **0.48.3**. Before installation, verify that `npm view pi-daddy version` and Git tag `v0.48.3` both resolve to this release.
+Source target: **0.49.3**. Before installation, verify that `npm view pi-daddy version` and Git tag `v0.49.3` both resolve to this release.
 
 **Capability governance and coordination for [pi](https://github.com/badlogic/pi-mono)'s multi-level agent system.**
 An orchestrator grants each sub-agent a deliberate subset of what it holds and withholds the rest. A sub-agent may
@@ -188,6 +188,7 @@ approvals` lists what is persisted; `/grants revoke <capability>@<definition>` o
 in pi's agent directory, not in the workspace.
 
 **Auto mode** lets the operator approve every Daddy permission request for the current session and its descendants.
+`/grants` marks an approval-only gate as `AUTO` when Auto is on. This is a preview of the permission step; actual delegation still rechecks Auto and all other execution conditions. Genuine refusals remain `BLOCK`.
 Start Pi with `PI_DADDY_AUTO_MODE=1` for Auto ON, or `PI_DADDY_AUTO_MODE=0` (the default when unset) for Auto OFF.
 In the connected dashboard, press **a** to switch it on or off. `/grants auto on` and `/grants auto off` control the
 same session setting; `/grants` shows the current state and source. Reload preserves the session choice; a new

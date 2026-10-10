@@ -1117,3 +1117,11 @@ setup awaits; running children keep their limits. Capacity reservations and per-
 replaced from the dashboard. Model reasoning/token budgets remain untouched. The focused Settings
 checks exercise owner validation, bound-session resets, immutable snapshots, transport authentication,
 missing/pending JEV states and narrow-pane navigation; paid provider behavior remains Harness's scope.
+
+
+## 2026-10-10 — Auto approval in grant previews
+
+A grant preview must remain read-only: it neither acquires nor banks Auto approval. The command
+may label the exact approval-only refusal as AUTO using the same observed policy state as its
+header. This predicts the permission step only, not successful execution; real dispatch rechecks
+live Auto, and other refusal codes retain their original BLOCK reason.
