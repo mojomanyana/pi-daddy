@@ -473,6 +473,8 @@ with only the files and retention roots you intend to inspect; relative paths re
 pi-daddy diagnostics export selection.json /absolute/path/new-private-bundle
 ```
 
+This offline command runs directly from the installed package without a Pi process or host-provided TypeBox.
+
 The destination must be new with an existing canonical parent. It contains `inventory.json` and deduplicated
 `objects/` files, with directories mode 0700 and files mode 0600. Originals remain untouched. Each entry records
 its source digest and filtered-object digest separately; unchanged JSON strings inside packets retain their exact
