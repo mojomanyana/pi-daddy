@@ -198,6 +198,8 @@ it measured nothing rather than passing quietly.
 
 ## Decisions still in force
 
+**2026-10-10 — JEV route display stays observational.** Dashboard Settings accepts bounded provider/model/transport identifiers from the owner Harness; absent fields remain absent for older releases. It does not infer a provider, switch models, resolve credentials or grant consent. A refreshed owner status replaces the transient consent instruction after the dialog settles.
+
 **2026-10-10 — Standalone diagnostics keep retention validation local.** The offline exporter and runtime share the unchanged retention schema and semantic checks. Its fixed schema vocabulary is evaluated without host peers; unsupported vocabulary refuses construction. A differential fixture checks the original TypeBox schema decisions, and the package smoke exports real selected files and retention gaps from a clean prefix without Pi or TypeBox. This does not change extension peer ownership or grant training rights.
 
 **2026-10-09 — Explicit local diagnostic export.** The offline exporter reads only operator-selected files and one-level retention roots, filters native reasoning/structured environment fields, and records original and transformed hashes separately. Content-addressed output deduplicates bytes; missing evidence stays missing. Exact embedded JSON strings survive when no redaction is required. New private output never grants training/export eligibility or task approval. Free-text secret detection is heuristic, and source reads are individually checked rather than an atomic whole-workspace snapshot. Native child retention observes the final session after execution instead of attempting a predictable pre-spawn read.

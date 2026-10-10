@@ -23,6 +23,7 @@ import {
   type TimelineFilter,
 } from "./activity-timeline.ts";
 import { createDashboardDisplayControls } from "./dashboard-display-controls.ts";
+import { dashboardJevNotice, JEV_CONSENT_NOTICE } from "./dashboard-settings.ts";
 import {
   createDashboardConnection,
   dashboardSessionRequest,
@@ -316,6 +317,8 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
     drawing = false;
   const draw = async (clear: boolean): Promise<void> => {
     await connection.refresh();
+    const jev = connection.state.snapshot?.settings?.jev;
+    if (notice === JEV_CONSENT_NOTICE && jev && !jev.pending) notice = dashboardJevNotice(jev);
     if (stopped) return;
     const view = await dashboardFrame({
       cwd,
@@ -438,10 +441,9 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
             const jev = connection.state.snapshot?.settings?.jev;
             notice = !changed
               ? connection.state.error || "JEV change already pending"
-              : jev?.pending
-                ? "Complete JEV paid-call and LoRA-storage choices in the parent Pi session"
-                : jev?.error ||
-                  `JEV ${jev?.enabled ? "enabled" : "disabled"}; ${jev?.availability ?? "status unknown"}`;
+              : jev
+                ? dashboardJevNotice(jev)
+                : "JEV status unavailable; inspect the parent Pi session";
             redraw();
           });
       }

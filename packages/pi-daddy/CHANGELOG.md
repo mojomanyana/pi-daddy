@@ -1,5 +1,10 @@
 # Changelog — pi-daddy
 
+## 0.49.2 — 2026-10-10
+
+- Show the selected JEV provider/model, transport and shared local data root in dashboard Settings when the owning Harness reports them; older Harness versions remain compatible. Update both packages and restart Pi to see the selected route.
+- Refresh the JEV consent notice after the parent finishes or dismisses the dialog, instead of leaving a stale completion instruction on screen.
+
 ## 0.49.1 — 2026-10-10
 
 - Fix standalone diagnostic export failing when Pi host peers are absent. Retention validation is dependency-free; no resolver hook or separate TypeBox installation is needed. The packaged smoke test now performs real offline exports and verifies filtered hashes, evidence gaps and unchanged source files.
