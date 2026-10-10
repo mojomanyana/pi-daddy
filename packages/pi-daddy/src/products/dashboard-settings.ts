@@ -18,6 +18,10 @@ export interface DashboardJevState {
   remaining?: number;
   availability?: string;
   providerReadiness?: string;
+  selectedProvider?: string;
+  selectedModel?: string;
+  transport?: string;
+  storageRoot?: string;
   error?: string;
 }
 export interface DashboardSettingsSnapshot {
@@ -31,6 +35,12 @@ export interface DashboardSettingsSnapshot {
   maxDepth: number;
   perCall: number;
   jev: DashboardJevState;
+}
+export const JEV_CONSENT_NOTICE = "Complete JEV paid-call and LoRA-storage choices in the parent Pi session";
+export function dashboardJevNotice(jev: DashboardJevState): string {
+  if (jev.pending) return JEV_CONSENT_NOTICE;
+  if (!jev.available) return "JEV controls unavailable; inspect the parent Pi session";
+  return jev.error || `JEV ${jev.enabled ? "enabled" : "disabled"}; ${jev.availability ?? "status unknown"}`;
 }
 export function dashboardSettingsLines(
   settings: DashboardSettingsSnapshot | undefined,
@@ -51,6 +61,11 @@ export function dashboardSettingsLines(
       ? [
           `  ${jev.availability ?? "unknown"} · ${jev.remaining ?? 0} paid calls left`,
           `  Key: ${jev.providerReadiness ?? "unknown"}; storage: ${jev.storage ?? "not granted"}`,
+          ...(jev.selectedProvider || jev.selectedModel
+            ? [`  Model: ${jev.selectedProvider ?? "unknown"}/${jev.selectedModel ?? "not reported"}`]
+            : []),
+          ...(jev.transport ? [`  Via: ${jev.transport}`] : []),
+          ...(jev.storageRoot ? [`  Data: ${jev.storageRoot}`] : []),
         ]
       : ["  Load skill-harness to connect JEV controls."]),
     ...(jev.error ? [`  ${jev.error}`] : []),

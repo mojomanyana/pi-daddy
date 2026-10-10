@@ -58,6 +58,15 @@ export function setDashboardLimit(session: GrantsSession, key: unknown, seconds:
   session.reloadLifecycle.executionSettings = { ...settings, [key === "wall" ? "wallMs" : "idleMs"]: ms };
 }
 const safeText = (value: unknown) => (typeof value === "string" ? value.slice(0, 120) : undefined);
+// Route identifiers are data, never terminal control sequences or free-form provider labels.
+const safeIdentifier = (value: unknown) =>
+  typeof value === "string" && /^[A-Za-z0-9@~][A-Za-z0-9._:/@~+-]{0,255}$/.test(value) ? value : undefined;
+const safeStorageRoot = (value: unknown) =>
+  typeof value === "string" && value.startsWith("/") && !/[\p{Cc}\p{Cf}]/u.test(value)
+    ? value.length > 120
+      ? `${value.slice(0, 117)}...`
+      : value
+    : undefined;
 export async function dashboardJev(
   session: GrantsSession,
   action: "status" | "enable" | "disable",
@@ -88,6 +97,10 @@ export async function dashboardJev(
           remaining?: number;
           availability?: string;
           providerReadiness?: string;
+          selectedProvider?: string | null;
+          selectedModel?: string | null;
+          transport?: string | null;
+          storageRoot?: string | null;
         };
       };
       if (!value || value.version !== 1 || value.requestId !== requestId || value.sessionId !== current.nativeSessionId)
@@ -111,6 +124,10 @@ export async function dashboardJev(
         remaining: Number.isSafeInteger(value.status.remaining) ? value.status.remaining : undefined,
         availability: safeText(value.status.availability),
         providerReadiness: safeText(value.status.providerReadiness),
+        selectedProvider: safeIdentifier(value.status.selectedProvider),
+        selectedModel: safeIdentifier(value.status.selectedModel),
+        transport: safeIdentifier(value.status.transport),
+        storageRoot: safeStorageRoot(value.status.storageRoot),
         ...(value.error ? { error: "JEV request declined or unavailable; inspect the owner Pi session." } : {}),
       });
     };

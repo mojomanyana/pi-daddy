@@ -99,6 +99,12 @@ test("JEV switch asks the native consent owner and exposes pending/readiness wit
   const session = await fixture();
   const events = new EventEmitter();
   const requests: Record<string, unknown>[] = [];
+  let route: Record<string, unknown> = {
+    selectedProvider: "typesafe",
+    selectedModel: "jev-latest",
+    transport: "pi-classifier",
+    storageRoot: "/home/operator/.skill-harness",
+  };
   events.on("skill-harness:jev-control-v1", (request) => {
     requests.push(request);
     request.reply({
@@ -113,6 +119,7 @@ test("JEV switch asks the native consent owner and exposes pending/readiness wit
         remaining: 0,
         availability: "disabled",
         providerReadiness: "missing-key",
+        ...route,
       },
     });
   });
@@ -122,6 +129,27 @@ test("JEV switch asks the native consent owner and exposes pending/readiness wit
     assert.equal(response.pending, true);
     assert.equal(response.enabled, false, "an enable request is not consent");
     assert.equal(response.providerReadiness, "missing-key");
+    assert.equal(response.selectedProvider, "typesafe");
+    assert.equal(response.selectedModel, "jev-latest");
+    assert.equal(response.transport, "pi-classifier");
+    assert.equal(response.storageRoot, "/home/operator/.skill-harness");
+    route = { selectedProvider: "\u001b[31munsafe", selectedModel: "model\nforged row", transport: "x".repeat(257) };
+    const invalidRoute = await dashboardJev(session, "status");
+    assert.equal(invalidRoute.selectedProvider, undefined);
+    assert.equal(invalidRoute.selectedModel, undefined);
+    assert.equal(invalidRoute.transport, undefined);
+    assert.equal(invalidRoute.storageRoot, undefined);
+    route = { selectedModel: "@cf/typesafe/jev", storageRoot: "/data/" + "long".repeat(40) };
+    assert.equal((await dashboardJev(session, "status")).selectedModel, "@cf/typesafe/jev");
+    assert.match((await dashboardJev(session, "status")).storageRoot!, /^\/data\/.+\.\.\.$/);
+    route = { selectedProvider: "openrouter", selectedModel: "~typesafe/jev-latest" };
+    assert.equal((await dashboardJev(session, "status")).selectedModel, "~typesafe/jev-latest");
+    route = { storageRoot: "/data/\u001b[31munsafe" };
+    assert.equal((await dashboardJev(session, "status")).storageRoot, undefined);
+    route = {};
+    const legacy = await dashboardJev(session, "status");
+    assert.equal(legacy.available, true, "an older Harness without route fields remains connected");
+    assert.equal(legacy.selectedModel, undefined);
     assert.deepEqual(Object.keys(requests[0]).sort(), ["action", "reply", "requestId", "sessionId", "version"]);
     assert.equal(requests[0].sessionId, "settings-native-session");
     assert.equal((await session.autoMode!.read()).enabled, false);
@@ -154,6 +182,10 @@ test("Settings navigation fits narrow panes and distinguishes pending consent, e
       remaining: 0,
       availability: "missing-key",
       providerReadiness: "missing-key",
+      selectedProvider: "openrouter",
+      selectedModel: "typesafe/jev-1.13",
+      transport: "pi-classifier",
+      storageRoot: "/home/operator/.skill-harness",
     };
     const display = createDashboardDisplayControls(false, true);
     display.key("s");
@@ -163,6 +195,9 @@ test("Settings navigation fits narrow panes and distinguishes pending consent, e
     assert.match(frame, /SETTINGS.*current session/);
     assert.match(frame, /JEV: waiting for consent/);
     assert.match(frame, /missing-key/);
+    assert.match(frame, /Model: openrouter\/typesafe\/jev-1.13/);
+    assert.match(frame, /Via: pi-classifier/);
+    assert.match(frame, /Data: \/home\/operator\/.skill-harness/);
     display.key("down");
     assert.equal(display.screen.settingKey, "jev");
     assert.equal(display.key("return"), "setting");

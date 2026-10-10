@@ -326,7 +326,7 @@ They are process safety controls, not model time/token budgets. `/grants` report
 
 JEV controls require skill-harness in the owning Pi session. Enabling opens its existing paid-call and
 LoRA-storage consent prompts in that parent; the dashboard shows waiting-for-consent, key readiness,
-remaining calls and storage status. Auto cannot answer either consent prompt. Turning JEV off revokes
+remaining calls, storage status and the selected provider/model, transport and shared local data root when reported by Harness. Auto cannot answer either consent prompt. Turning JEV off revokes
 its activation, including an outstanding enable request; the switch itself makes no provider call.
 No API keys, consent flags or training permissions can be set from this screen.
 

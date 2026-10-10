@@ -163,3 +163,67 @@ test("changed CLI frames erase old cells through Versions, current work, and vie
     } else assert.equal(terminal.lines()[2], "CURRENT WORK");
   }
 });
+
+test("consent instructions follow refreshed owner status and selected JEV route", async () => {
+  const cwd = await tempDir("dashboard-jev-consent-"),
+    ledgerPath = join(cwd, "ledger.jsonl");
+  await writeFile(ledgerPath, "");
+  const entry = new URL("../src/products/dashboard-cli.ts", import.meta.url).href;
+  const script = `
+    import assert from "node:assert/strict";
+    import { createServer } from "node:net";
+    import { setImmediate as nextTurn } from "node:timers/promises";
+    const { runDashboard } = await import(${JSON.stringify(entry)});
+    const socketPath = ${JSON.stringify(join(cwd, "owner.sock"))};
+    let jev = {available:true, enabled:false, pending:false, availability:"disabled"};
+    const server = createServer(socket => {
+      let input="";
+      socket.on("data", bytes => {
+        input+=bytes;
+        if(!input.includes("\\n")) return;
+        const request=JSON.parse(input);
+        if(request.action==="set-jev") jev={available:true,enabled:false,pending:true,availability:"disabled"};
+        socket.end(JSON.stringify({ok:true,rows:[],cost:null,auto:{enabled:false,source:"session"},pendingApprovals:[],
+          settings:{editable:true,wallSeconds:21600,idleSeconds:900,wallSource:"startup",idleSource:"startup",
+            descendants:8,reserved:0,maxDepth:2,perCall:8,jev}}));
+      });
+    });
+    await new Promise(resolve=>server.listen(socketPath,resolve));
+    Object.defineProperty(process.stdin,"isTTY",{value:true});
+    Object.defineProperty(process.stdout,"isTTY",{value:true});
+    process.stdout.columns=100;process.stdout.rows=28;
+    let onFrame;
+    process.stdout.write=value=>{
+      if(String(value).startsWith("\\u001b[H") && onFrame){const accept=onFrame;onFrame=undefined;accept(String(value));}
+      return true;
+    };
+    process.stdin.setRawMode=value=>{process.stdin.isRaw=value;return process.stdin;};
+    process.stdin.resume=process.stdin.pause=()=>process.stdin;
+    async function draw(action, pattern){
+      const frame=new Promise(resolve=>{
+        onFrame=function accept(value){if(pattern && !pattern.test(value)){onFrame=accept;return;}resolve(value);};
+      });
+      const timeout=setTimeout(()=>{throw Error("dashboard did not draw expected state");},3000);
+      action();
+      const value=await frame;clearTimeout(timeout);await nextTurn();return value;
+    }
+    const key=name=>process.stdin.emit("keypress",name,{name});
+    let done;
+    try{
+      await draw(()=>{done=runDashboard(["--ledger",${JSON.stringify(ledgerPath)},"--no-color"],{
+        PI_DADDY_DASHBOARD_SESSION_SOCKET:socketPath,PI_DADDY_DASHBOARD_SESSION_TOKEN:"fixture-token"});});
+      await draw(()=>key("s"));
+      await draw(()=>key("down"));
+      const pending=await draw(()=>key("return"),/Complete JEV paid-call/);
+      assert.match(pending,/JEV: waiting for consent/);
+      jev={available:true,enabled:true,pending:false,availability:"ready",selectedProvider:"typesafe",selectedModel:"jev-latest",transport:"pi-classifier"};
+      const enabled=await draw(()=>process.emit("SIGWINCH"),/JEV enabled; ready/);
+      assert.doesNotMatch(enabled,/Complete JEV paid-call|waiting for consent/);
+      assert.match(enabled,/Model: typesafe\\/jev-latest/);
+      assert.match(enabled,/Via: pi-classifier/);
+    }finally{
+      process.emit("SIGTERM");await done;await new Promise(resolve=>server.close(resolve));
+    }
+  `;
+  execFileSync(process.execPath, ["--input-type=module", "--eval", script], { cwd, timeout: 12000, encoding: "utf8" });
+});
