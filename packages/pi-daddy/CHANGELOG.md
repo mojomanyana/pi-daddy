@@ -1,5 +1,9 @@
 # Changelog — pi-daddy
 
+## 0.49.1 — 2026-10-10
+
+- Fix standalone diagnostic export failing when Pi host peers are absent. Retention validation is dependency-free; no resolver hook or separate TypeBox installation is needed. The packaged smoke test now performs real offline exports and verifies filtered hashes, evidence gaps and unchanged source files.
+
 ## 0.49.0 — 2026-10-09
 
 - Add a compact dashboard Settings view (`s`) for session Auto, JEV activation and child wall/idle timeouts. JEV uses the parent Pi paid-call and LoRA-storage dialogs; Auto cannot answer them. Timeout changes apply to future children. Depth, active-descendant and per-call limits remain visible startup settings. Update all ecosystem packages and restart Pi.

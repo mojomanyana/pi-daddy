@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { Compile } from "typebox/compile";
+import { RETENTION_SCHEMA } from "../src/governance/retention-contract.ts";
+import { compileRetentionShape } from "../src/governance/retention-validator.ts";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, stat, symlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -288,4 +291,70 @@ test("CLI exposes explicit export selection and refuses malformed or conflicting
   );
   await assert.rejects(exportDiagnostics(selection, join(root, "conflict")), /conflicting diagnostic selection/);
   await assert.rejects(stat(join(root, "conflict")), { code: "ENOENT" });
+});
+
+test("offline retention validation preserves host schema decisions across real manifests and boundary mutations", async () => {
+  const { manifest } = await retainedFixture();
+  const host = Compile(RETENTION_SCHEMA),
+    offline = compileRetentionShape(RETENTION_SCHEMA);
+  const paths: string[][] = [];
+  const visit = (value: unknown, path: string[]) => {
+    paths.push(path);
+    if (value && typeof value === "object" && !Array.isArray(value))
+      for (const [key, child] of Object.entries(value)) visit(child, [...path, key]);
+  };
+  visit(manifest, []);
+  const values: unknown[] = [
+    undefined,
+    null,
+    false,
+    true,
+    0,
+    -1,
+    1.5,
+    Number.MAX_SAFE_INTEGER,
+    Number.MAX_SAFE_INTEGER + 1,
+    "",
+    "x",
+    "a".repeat(64),
+    "a".repeat(513),
+    "😀".repeat(512),
+    "😀".repeat(513),
+    "control\n",
+    [],
+    {},
+    ["same", "same"],
+    Array.from({ length: 65 }, (_, i) => `loss-${i}`),
+  ];
+  for (const path of paths) {
+    for (const replacement of values) {
+      let value: any = structuredClone(manifest);
+      if (!path.length) value = replacement;
+      else {
+        let parent = value;
+        for (const key of path.slice(0, -1)) parent = parent[key];
+        if (replacement === undefined) delete parent[path.at(-1)!];
+        else parent[path.at(-1)!] = replacement;
+      }
+      assert.equal(
+        offline(value),
+        host.Check(value),
+        `schema mismatch at ${path.join(".")}: ${JSON.stringify(replacement)}`,
+      );
+    }
+  }
+  for (const version of ["2.0", "2.1"]) {
+    for (const state of ["running", "terminal"]) {
+      for (const source of ["pi-session-file", "pi-captured-final"]) {
+        const value = structuredClone(manifest);
+        Object.assign(value, { version, state });
+        Object.assign(value.nativeSession, { source });
+        assert.equal(offline(value), host.Check(value), `${version}/${state}/${source}`);
+      }
+    }
+  }
+  assert.throws(
+    () => compileRetentionShape({ ...RETENTION_SCHEMA, unevaluatedProperties: false }),
+    /unsupported retention schema keyword/,
+  );
 });

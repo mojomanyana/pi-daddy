@@ -9,6 +9,7 @@
  * Packs a tarball, installs it into a scratch project, and imports it the way a consumer would.
  */
 import { execFileSync, spawnSync } from "node:child_process";
+import { runDiagnosticSmoke } from "./smoke-diagnostics.mjs";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -35,6 +36,7 @@ const run = (cmd, args, cwd) =>
 
 try {
   const packed = run("npm", ["pack", "--pack-destination", work], pkgDir).trim().split("\n").pop();
+  console.log(runDiagnosticSmoke(join(work, packed)));
   writeFileSync(join(work, "package.json"), JSON.stringify({ name: "smoke", private: true, type: "module" }));
   // This standalone host prefix carries the exact qualified Pi and TypeBox versions used by the loader probe
   // and by the ordinary library/CLI checks below. The separate managed prefix intentionally carries neither.

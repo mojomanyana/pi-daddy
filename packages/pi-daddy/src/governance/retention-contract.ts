@@ -1,4 +1,4 @@
-import { Compile } from "typebox/compile";
+import { compileRetentionShape } from "./retention-validator.ts";
 import { parseRetentionJson } from "./retention-json.ts";
 import type { ExecutionRetentionManifest } from "./execution-retention.ts";
 
@@ -121,7 +121,7 @@ export const RETENTION_SCHEMA = freeze({
     },
   ],
 });
-const validator = Compile(RETENTION_SCHEMA);
+const validateShape = compileRetentionShape(RETENTION_SCHEMA);
 function freeze<T>(value: T): T {
   if (value && typeof value === "object") {
     for (const child of Object.values(value)) freeze(child);
@@ -166,7 +166,7 @@ export function buildExecutionRetentionManifest(value: unknown): ExecutionRetent
     }
   };
   inspect(value, 0);
-  if (!validator.Check(value)) throw new TypeError("invalid execution-retention 2.x manifest");
+  if (!validateShape(value)) throw new TypeError("invalid execution-retention 2.x manifest");
   const m = JSON.parse(JSON.stringify(value)) as ExecutionRetentionManifest;
   if (
     m.native.sessionId !== m.nativeSession.sessionId ||
