@@ -455,6 +455,12 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
     handler: async (args, ctx) => {
       // Auto controls and emergency revoke-all need no definition acquisition; OFF must remain reachable.
       if (args.trim() !== "revoke --all" && args.trim().split(/\s+/)[0] !== "auto") await session.ensureDefinitions?.();
+      const autoView = await getDashboardControlState(session)
+        .then(({ auto }) => ({
+          autoModeEnabled: auto.enabled,
+          autoModeStatus: `${auto.enabled ? "ON" : "OFF"} (${auto.source}; current session permissions)`,
+        }))
+        .catch((error) => ({ autoModeEnabled: false, autoModeStatus: `unavailable: ${String(error)}` }));
       return grantsCommand.handler(args, {
         ...ctx,
         grants: {
@@ -488,9 +494,7 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
             const { auto } = await setAutoApproval(session, enabled, "command");
             return `${auto.enabled ? "ON" : "OFF"} (${auto.source}; current session permissions)`;
           },
-          autoModeStatus: await getDashboardControlState(session)
-            .then(({ auto }) => `${auto.enabled ? "ON" : "OFF"} (${auto.source}; current session permissions)`)
-            .catch((error) => `unavailable: ${String(error)}`),
+          ...autoView,
           catalog: session.catalog,
           definitions: session.definitions,
           sessionApprovals: session.sessionApprovals,

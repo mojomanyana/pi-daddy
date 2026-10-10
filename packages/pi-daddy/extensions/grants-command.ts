@@ -14,6 +14,7 @@ import type { childExecutionLimits } from "./dashboard-settings.ts";
  */
 
 import { renderExecutionControls } from "./execution-controls.ts";
+import { shouldSeekApproval } from "../src/kernel/approval.ts";
 import type { Capability } from "../src/kernel/resolve.ts";
 import type { ExecutorChoice } from "../src/executors/executor.ts";
 import type { Catalog } from "../src/kernel/catalog.ts";
@@ -31,6 +32,8 @@ export interface GrantsCommandContext {
   nativeSessionRoot?: string;
   executionLimits?: ReturnType<typeof childExecutionLimits>;
   autoModeStatus?: string;
+  /** Observed with the status line; presentation only, never an approval. */
+  autoModeEnabled?: boolean;
   /** Explicit owner mutation; the command parser itself holds no permission authority. */
   changeAutoMode?: (enabled: boolean) => Promise<string>;
   ownGrant: Capability[];
@@ -513,9 +516,17 @@ export const grantsCommand = {
         plan.ok && approval && approval.approved.length > 0
           ? `  (${approval.approved.map((c) => `${c} approved: ${approval.sources[c] ?? "?"}`).join("; ")})`
           : "";
+      const awaitingAuto =
+        ctx.grants.autoModeEnabled === true &&
+        !plan.ok &&
+        plan.refusal?.code === "GATED_UNAPPROVED" &&
+        shouldSeekApproval(plan.result);
+      const reason = awaitingAuto
+        ? `${plan.result!.gatedBlocked.join(", ")}: Auto supplies approval at dispatch; live state is rechecked`
+        : plan.reason;
       lines.push(
-        `    ${plan.ok ? "allow" : "BLOCK"}  ${name}  [${runtimeText}]` +
-          (plan.ok ? `  ${plan.effective.join(", ")}${because}` : ` — ${plan.reason}`),
+        `    ${plan.ok ? "allow" : awaitingAuto ? "AUTO" : "BLOCK"}  ${name}  [${runtimeText}]` +
+          (plan.ok ? `  ${plan.effective.join(", ")}${because}` : ` — ${reason}`),
       );
     }
     // R-48. The cap is fine; the SILENCE was not. An operator running `/grants` to answer "what can this

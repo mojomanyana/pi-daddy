@@ -1,5 +1,9 @@
 # Changelog — pi-daddy
 
+## 0.49.3 — 2026-10-10
+
+- Show approval-only grant previews as `AUTO` when session Auto is on instead of misleading `BLOCK` rows. The status reads the same observed Auto state as the header; unavailable policy and genuine refusals remain blocked. Preview never acquires permission, and actual delegation still rechecks live Auto and execution conditions.
+
 ## 0.49.2 — 2026-10-10
 
 - Show the selected JEV provider/model, transport and shared local data root in dashboard Settings when the owning Harness reports them; older Harness versions remain compatible. Update both packages and restart Pi to see the selected route.
