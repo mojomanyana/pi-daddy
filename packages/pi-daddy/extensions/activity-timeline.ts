@@ -10,6 +10,7 @@ import {
   ENV_ACTIVITY_TASK,
   type ActivityIdentity,
   type ActivitySkill,
+  type ActivityTrigger,
 } from "../src/products/activity-timeline.ts";
 
 export interface ActivitySessionState {
@@ -41,7 +42,7 @@ export function registerActivityTimeline(pi: ExtensionAPI, session?: ActivitySes
     pendingFinal: string | undefined,
     pendingStopReason: string | undefined,
     observedUser: string | undefined,
-    pendingStart: { event: unknown; prompt: string; priorIds: Set<string> } | undefined;
+    pendingStart: { event: unknown; prompt: string; trigger: ActivityTrigger; priorIds: Set<string> } | undefined;
   let turnPriorIds = new Set<string>();
   let activeRoot = false;
   let paths = new Map<string, string>(),
@@ -102,14 +103,25 @@ export function registerActivityTimeline(pi: ExtensionAPI, session?: ActivitySes
   const startPending = async (ctx: HookContext) => {
     const pending = pendingStart;
     if (!pending) return;
-    const user = ctx.sessionManager
-      ?.getBranch()
-      .find((entry) => !pending.priorIds.has(entry.id) && entry.type === "message" && entry.message?.role === "user");
+    const user =
+      pending.trigger.type === "user"
+        ? ctx.sessionManager
+            ?.getBranch()
+            .find(
+              (entry) => !pending.priorIds.has(entry.id) && entry.type === "message" && entry.message?.role === "user",
+            )
+        : undefined;
     const target = current(ctx);
     const taskId = await target.start(
-      user ? messageText(user.message?.content) : (observedUser ?? pending.prompt),
+      pending.trigger.type === "custom"
+        ? pending.prompt
+        : user
+          ? messageText(user.message?.content)
+          : (observedUser ?? pending.prompt),
       ctx.model?.id,
       ctx.thinkingLevel,
+      undefined,
+      pending.trigger,
     );
     pendingStart = undefined;
     observedUser = undefined;
@@ -184,10 +196,29 @@ export function registerActivityTimeline(pi: ExtensionAPI, session?: ActivitySes
       // Leaves attach to the parent-owned execution. Roots bind the current finalized user at
       // the first context boundary, or at settlement if cancelled before the first model call.
       if (!process.env[ENV_ACTIVITY_TASK]) {
-        activeRoot = true;
-        turnPriorIds = new Set(ctx.sessionManager?.getBranch().map((entry) => entry.id) ?? []);
-        pendingStart = { event, prompt: (event as { prompt?: string }).prompt ?? "", priorIds: turnPriorIds };
+        target.attach();
         if (session) session.activity = { rootId: target.rootId, path: target.path };
+        turnPriorIds = new Set(ctx.sessionManager?.getBranch().map((entry) => entry.id) ?? []);
+        const start = event as {
+          messageType?: string;
+          prompt?: string;
+          message?: { customType?: string; content?: unknown };
+        };
+        if (start.messageType !== undefined && start.messageType !== "user" && start.messageType !== "custom")
+          throw Error("unsupported activity trigger");
+        // Custom turns carry their own starting message, not a user prompt. Do not select a queued
+        // user/custom message from the branch or retain extension details/image payloads as text.
+        const trigger: ActivityTrigger =
+          start.messageType === "custom"
+            ? { type: "custom", customType: start.message?.customType ?? "" }
+            : { type: "user" };
+        pendingStart = {
+          event,
+          prompt: trigger.type === "custom" ? messageText(start.message?.content) : (start.prompt ?? ""),
+          trigger,
+          priorIds: turnPriorIds,
+        };
+        activeRoot = true;
       } else await skills(event, target);
     } catch (error) {
       report(ctx, error);
@@ -206,7 +237,7 @@ export function registerActivityTimeline(pi: ExtensionAPI, session?: ActivitySes
     const message = (event as { message?: { role?: string; content?: unknown; stopReason?: string } }).message;
     // This fallback is scoped to this pending start. Steering within an active turn cannot
     // overwrite its initial prompt or seed the next root task.
-    if (message?.role === "user" && pendingStart && observedUser === undefined)
+    if (message?.role === "user" && pendingStart?.trigger.type === "user" && observedUser === undefined)
       observedUser = messageText(message.content);
     if (message?.role === "assistant") {
       pendingFinal = messageText(message.content);

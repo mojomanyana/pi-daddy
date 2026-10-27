@@ -16,6 +16,9 @@ import { join } from "node:path";
 
 const pkgDir = new URL("..", import.meta.url).pathname;
 const packageVersion = JSON.parse(readFileSync(join(pkgDir, "package.json"), "utf8")).version;
+// Pi 1.4 pins its internal package family. Fresh Pi 1.0.4 installs have broad internal ranges;
+// the lockfile-backed integration tier still tests 1.0.4 separately.
+const smokePiVersion = "1.4.0";
 const work = mkdtempSync(join(tmpdir(), "grants-smoke-"));
 const managed = mkdtempSync(join(tmpdir(), "grants-managed-smoke-"));
 let completed = false;
@@ -46,7 +49,7 @@ try {
     "--no-audit",
     "--no-fund",
     join(work, packed),
-    "@earendil-works/pi-coding-agent@1.0.4",
+    `@earendil-works/pi-coding-agent@${smokePiVersion}`,
     "typebox@1.1.38",
   ], work);
   if (existsSync(join(work, "node_modules/pi-daddy/dist/kernel/run-child-test-control.js"))) {
@@ -276,7 +279,7 @@ ${managedInit.stderr}`);
     'import {FINAL,MODEL,PROVIDER} from "./scripted-provider.ts";',
     'const cwd=process.cwd(),sessionPath=join(cwd,"captured-session.jsonl");',
     'const cli=fileURLToPath(new URL("./cli.js",import.meta.resolve("@earendil-works/pi-coding-agent")));',
-    'assert.equal(JSON.parse(readFileSync(new URL("../package.json",new URL("./",import.meta.resolve("@earendil-works/pi-coding-agent"))))).version,"1.0.4");',
+    `assert.equal(JSON.parse(readFileSync(new URL("../package.json",new URL("./",import.meta.resolve("@earendil-works/pi-coding-agent"))))).version,${JSON.stringify(smokePiVersion)});`,
     'const result=await runCapturedExecution({command:process.execPath,args:[cli,"--session",sessionPath,"--no-extensions","-e",join(cwd,"cli-extension.ts"),"--no-skills","--no-mcp","--offline","--provider",PROVIDER,"--model",MODEL,"--thinking","high","installed fixture"],',
     'executionId:"installed-captured-fixture",cwd,sessionPath,env:{...process.env,PI_CODING_AGENT_DIR:join(cwd,".capture-agent"),P01_SCENARIO:"success"},timeoutMs:10000});',
     'assert.equal(result.code,0,JSON.stringify(result));assert.equal(result.cleanup.state,"settled");',

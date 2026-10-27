@@ -111,7 +111,7 @@ export function activityDashboardItems(
   return timeline.tasks.map((task) => ({
     key: activityTaskKey(task.rootId, task.id),
     taskKey: activityTaskKey(task.rootId, task.id),
-    label: `${task.agent || "User turn"} [${aliases.selector(task)}]`,
+    label: `${task.agent || (task.trigger?.type === "custom" ? "Extension turn" : "User turn")} [${aliases.selector(task)}]`,
     status: task.status,
     elapsed: elapsed(Date.parse(task.endedAt ?? now.toISOString()) - Date.parse(task.startedAt)),
     observation: task.lastEvent
@@ -122,6 +122,7 @@ export function activityDashboardItems(
     details: [
       `Task: ${aliases.selector(task)}`,
       `State: ${friendlyStatus(task.status)} (observation, not acceptance)`,
+      ...(task.trigger?.type === "custom" ? [`Trigger: extension message (${task.trigger.customType})`] : []),
       ...(task.cwd ? [`Working directory: ${task.cwd}`] : ["Working directory: not recorded"]),
       ...(task.lastEvent
         ? [

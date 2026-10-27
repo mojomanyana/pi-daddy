@@ -1,6 +1,6 @@
 # pi-daddy
 
-Source target: **0.49.3**. Before installation, verify that `npm view pi-daddy version` and Git tag `v0.49.3` both resolve to this release.
+Source target: **0.49.4**. Before installation, verify that `npm view pi-daddy version` and Git tag `v0.49.4` both resolve to this release.
 
 **Capability governance and coordination for [pi](https://github.com/badlogic/pi-mono)'s multi-level agent system.**
 An orchestrator grants each sub-agent a deliberate subset of what it holds and withholds the rest. A sub-agent may
@@ -216,7 +216,10 @@ A damaged file is read up to the damage; the writer then refuses with `LEDGER_DA
 escalation attempts, integrity, executors and which definition bodies ran, by digest.
 
 The activity timeline (`activity.jsonl`, parent turns, child lifecycles, runtime-skill reads) uses the same envelope
-and is enabled by default. It may store private prompt and final content in `.pi/pi-daddy/content/`; set
+and distinguishes extension-triggered custom runs from user turns. Extension turns retain their custom type
+and the starting message's text, not unrelated queued messages; details and image payloads are excluded. This
+is observation, not evidence of human authorization. The same content policy below applies to both kinds of turn.
+The timeline is enabled by default. It may store private prompt and final content in `.pi/pi-daddy/content/`; set
 `PI_DADDY_ACTIVITY_CONTENT=metadata-only` (or `off`) to keep only digests, or
 `PI_DADDY_ACTIVITY_TIMELINE=off` to disable observation.
 
