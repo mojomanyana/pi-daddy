@@ -17,7 +17,7 @@ matching request; a concurrent or later duplicate returns its existing execution
 It does not launch another child, replay a completed mutation, or grant approval. A changed
 request under the same ID refuses. An intentional retry needs a new attempt after the
 previous operation is proven settled or never started; uncertainty stays blocked.
-Principal 4.12.0 supplies these IDs and exact candidate/report references automatically.
+Principal 4.12.0 introduced automatic operation IDs and exact candidate/report references for this contract.
 
 The dashboard shows the selected task's last observed tool event and time since that event.
 Details include the actual recorded working directory and phase where available. Silence is
@@ -250,13 +250,19 @@ Pi 1.0.4 and 1.1.0, client 0.9.3/server 0.9.0 with Pi 1.1.0, and client/server 0
 Each combination exercises real child results, retained tabs, cancellation, coordinator loss and server loss.
 These are measured combinations, not a product-version allowlist. Native Windows and WSL-to-Windows worker
 interop remain unqualified.
+
+Captured subprocess qualification on 2026-10-27 used Pi **1.4.0**, Node **v24.19.0**, and Linux x64.
+A real Pi parent delegated to a real Pi child through a scripted loopback endpoint, verifying an allowed read,
+a refused write, the persisted current final, and identity-bound native cleanup. Selected Principal **4.14.0**
+resources loaded successfully. This made no real provider calls and does not extend the Herdr matrix above.
+
 A packaged native helper owns and reaps the cooperating child subtree. The final is accepted only when Pi's native lifecycle
 protocol settles and matches the exact persisted current turn and active branch. Complete final text is preserved;
 work, final availability, subtree cleanup and optional observation completeness are separate result fields. A failed
 execution returns `isError` with its available evidence. Display, diagnostics and optional recording cannot replace
 the primary final. Unknown cleanup retains capacity and workspace exclusion.
 
-Pi and TypeBox are wildcard host-provided peers so Pi's extension loader supplies one shared runtime copy. Development dependencies pin Pi **1.0.4**; additional native transport checks cover **1.1.0** as described above. Prefer a Pi-managed install under one of these measured hosts. An ordinary standalone npm install may resolve untested peer versions. In a Pi-managed no-peer install, standalone help, version and reporting remain available; run initialization inside Pi with `/grants init`. Use Principal **4.12.0** with this runtime's `delegate_describe` contract. Native phases use `plan`, `build`, `review`, `debug`, and `investigate` with their returned `definitionId`; independent parallel work uses one `delegate_all` batch.
+Pi and TypeBox are wildcard host-provided peers so Pi's extension loader supplies one shared runtime copy. Development dependencies pin Pi **1.0.4**; the additional **1.1.0** and **1.4.0** checks have the execution scopes described above. Prefer a Pi-managed install under a measured host and executor combination. An ordinary standalone npm install may resolve untested peer versions. In a Pi-managed no-peer install, standalone help, version and reporting remain available; run initialization inside Pi with `/grants init`. Principal's native phases use `plan`, `build`, `review`, `debug`, and `investigate` with their returned `delegate_describe` `definitionId`; independent parallel work uses one `delegate_all` batch.
 
 Final capture preserves whitespace and concatenates text blocks without inserting separators. Tool-call terminals, empty visible finals and non-`stop` reasons are unavailable. Persisted message comparisons ignore object key order while preserving array order and every field value. The shared `final-conformance.json` table checks these semantics in both runtime and harness. Capture remains bounded: 4 MiB visible final, 32 MiB protocol line, 64 MiB persisted session, and a 3-second bounded session read. Exceeding a limit reports an unavailable final and blocks dependent handoffs; it does not imply the worker failed to settle.
 
