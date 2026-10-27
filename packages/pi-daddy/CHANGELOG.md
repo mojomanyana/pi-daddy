@@ -1,5 +1,10 @@
 # Changelog — pi-daddy
 
+## 0.49.4 — 2026-10-27
+
+- Show Pi custom-triggered runs as `Extension turn`, with their custom message type in details and their own starting text under the existing content-retention policy. They no longer create blank user turns or borrow queued user input. User turns and governed child authority are unchanged. Restart Pi after updating; this fixes attribution and does not by itself qualify every newer Pi integration.
+- Detach failed root observations so later tool events cannot be attributed to a previous completed turn or create a phantom user turn. Native string custom types, including empty and longer identifiers, remain supported within the existing event-size limit.
+
 ## 0.49.3 — 2026-10-10
 
 - Show approval-only grant previews as `AUTO` when session Auto is on instead of misleading `BLOCK` rows. The status reads the same observed Auto state as the header; unavailable policy and genuine refusals remain blocked. Preview never acquires permission, and actual delegation still rechecks live Auto and execution conditions.

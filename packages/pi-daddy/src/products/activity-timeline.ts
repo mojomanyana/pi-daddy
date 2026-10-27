@@ -31,6 +31,8 @@ export interface ActivitySkill {
   source: string;
   digest: string;
 }
+/** Observed Pi run trigger, never human approval or capability authority. Absent on older records. */
+export type ActivityTrigger = { type: "user" } | { type: "custom"; customType: string };
 export interface ActivityEvent {
   version: 1;
   id: string;
@@ -48,6 +50,7 @@ export interface ActivityEvent {
   cwd?: string;
   model?: string;
   thinking?: string;
+  trigger?: ActivityTrigger;
   prompt?: ContentReference;
   final?: ContentReference;
   skill?: ActivitySkill;
@@ -70,6 +73,7 @@ export interface TimelineTask {
   status: "active" | "finished" | "failed" | "cancelled" | "needs-you";
   model?: string;
   thinking?: string;
+  trigger?: ActivityTrigger;
   prompt?: ContentReference;
   final?: ContentReference;
   skills: TimelineSkill[];
@@ -88,6 +92,11 @@ export interface ActivityIdentity {
 
 const sha = (value: string) => createHash("sha256").update(value).digest("hex");
 const validId = (value: unknown) => typeof value === "string" && value.length > 0 && value.length <= 200;
+function validTrigger(value: unknown): value is ActivityTrigger {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const trigger = value as ActivityTrigger;
+  return trigger.type === "user" || (trigger.type === "custom" && typeof trigger.customType === "string");
+}
 /** Stable, unambiguous local selector: encoded root identity and task id, separated once by `:`. */
 export const activityTaskKey = (rootId: string, taskId: string) =>
   `${encodeURIComponent(rootId)}:${encodeURIComponent(taskId)}`;
@@ -126,6 +135,7 @@ function eventOf(value: unknown): ActivityEvent | null {
   )
     return null;
   if (
+    (event.trigger !== undefined && !validTrigger(event.trigger)) ||
     (event.tool !== undefined && !validId(event.tool)) ||
     (event.cwd !== undefined && (typeof event.cwd !== "string" || !event.cwd || event.cwd.length > 4096)) ||
     (event.parentTaskId && !validId(event.parentTaskId)) ||
@@ -183,6 +193,7 @@ export function parseActivityTimeline(text: string): ActivityTimeline {
     if (event.kind === "task_started") {
       task.model = event.model;
       task.thinking = event.thinking;
+      task.trigger = event.trigger;
       task.prompt = event.prompt;
       task.agent = event.agent ?? task.agent;
       task.parentTaskId = event.parentTaskId ?? task.parentTaskId;
@@ -459,13 +470,17 @@ export function renderActivityTimeline(timeline: ActivityTimeline, options: Acti
     const child = Boolean(task.parentTaskId && byKey.has(`${task.rootId}\0${task.parentTaskId}`));
     const state = stateLine(task, child),
       selector = aliases.selector(task);
-    const heading = clean(task.agent) || (child ? "Governed child" : "User turn");
+    const custom = task.trigger?.type === "custom";
+    const heading = clean(task.agent) || (child ? "Governed child" : custom ? "Extension turn" : "User turn");
+    const badge = paint(child ? "AGENT" : custom ? "EXT" : "USER", child ? 36 : 34, color);
     const meta = [task.model && `model ${clean(task.model)}`, task.thinking && `thinking ${clean(task.thinking)}`]
       .filter(Boolean)
       .join(" · ");
     lines.push(
-      `${prefix}${branch}${paint(child ? "AGENT" : "USER", child ? 36 : 34, color)} ${heading} [${selector}] · ${paint(state.text, state.color, color)}${meta ? ` · ${meta}` : ""}`,
+      `${prefix}${branch}${badge} ${heading} [${selector}] · ${paint(state.text, state.color, color)}${meta ? ` · ${meta}` : ""}`,
     );
+    if (options.details && task.trigger?.type === "custom")
+      lines.push(`${prefix}  Trigger: extension message (${clean(task.trigger.customType)})`);
     const failedChildren = directChildren.filter((value) => value.status === "failed").length;
     if (failedChildren)
       lines.push(
@@ -572,13 +587,27 @@ export class ActivityTimelineRecorder {
   get task(): string | undefined {
     return this.taskId;
   }
-  attach(taskId: string): void {
+  /** No id detaches a completed root before observing a new, possibly rejected start. */
+  attach(taskId?: string): void {
     this.taskId = taskId;
   }
-  async start(prompt: string, model?: string, thinking?: string, parentTaskId?: string): Promise<string | undefined> {
+  async start(
+    prompt: string,
+    model?: string,
+    thinking?: string,
+    parentTaskId?: string,
+    trigger?: ActivityTrigger,
+  ): Promise<string | undefined> {
+    this.taskId = undefined;
     if (!this.enabled) return undefined;
+    if (trigger !== undefined && !validTrigger(trigger)) throw Error("invalid activity trigger");
     this.taskId = randomUUID();
-    await this.append("task_started", { parentTaskId, model, thinking, prompt: await this.content(prompt) });
+    try {
+      await this.append("task_started", { parentTaskId, model, thinking, trigger, prompt: await this.content(prompt) });
+    } catch (error) {
+      this.taskId = undefined;
+      throw error;
+    }
     return this.taskId;
   }
   async childStarted(

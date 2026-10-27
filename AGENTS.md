@@ -198,6 +198,18 @@ it measured nothing rather than passing quietly.
 
 ## Decisions still in force
 
+**2026-10-27 — extension-triggered activity is not a user turn.** Pi's custom run hook records the
+explicit custom type and starting text, rather than selecting a queued or earlier user from the branch.
+User-triggered runs retain their finalized-current-user behavior. Both activity views label custom roots
+as extension turns; older records remain readable. The existing private-content/metadata-only/off policy
+applies to custom text too; image payloads and extension details are not copied. This is observational
+attribution only: no trigger metadata confers human approval or changes grants or child execution.
+
+**2026-10-27 — installed-package smoke uses an exact self-consistent Pi runtime.** The fresh-package
+smoke selects Pi 1.4.0, whose internal dependencies are exact. A fresh Pi 1.0.4 installation resolved a
+newer incompatible Codemode dependency and failed before Daddy loaded. The lockfile-backed integration
+tier remains on Pi 1.0.4; no broad version range, peer restriction, or global runtime upgrade is added.
+
 **2026-10-10 — JEV route display stays observational.** Dashboard Settings accepts bounded provider/model/transport identifiers from the owner Harness; absent fields remain absent for older releases. It does not infer a provider, switch models, resolve credentials or grant consent. A refreshed owner status replaces the transient consent instruction after the dialog settles.
 
 **2026-10-10 — Standalone diagnostics keep retention validation local.** The offline exporter and runtime share the unchanged retention schema and semantic checks. Its fixed schema vocabulary is evaluated without host peers; unsupported vocabulary refuses construction. A differential fixture checks the original TypeBox schema decisions, and the package smoke exports real selected files and retention gaps from a clean prefix without Pi or TypeBox. This does not change extension peer ownership or grant training rights.
