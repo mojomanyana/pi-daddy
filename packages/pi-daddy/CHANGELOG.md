@@ -1,5 +1,10 @@
 # Changelog — pi-daddy
 
+## 0.49.5 — 2026-11-03
+
+- Retain native `not-started` operation evidence for non-approval admission-preview refusals, including missing workspace authority. Previously these refusals could leave a prepared coordinator attempt without a native operation record. The original typed refusal still throws; duplicate and conflicting IDs never overwrite an existing execution. After correcting authority, use the coordinator's explicit retry rather than redispatching the terminal ID. No permission or Auto setting changes.
+- Distinguish an absent operation record from unavailable owner status in the status bridge diagnostic. Absence is not proof of no execution. This prevents future preview-refusal gaps; it does not recover historical missing records or failures before preview completion. Keep such attempts blocked pending qualified native evidence; do not fabricate a settlement or replacement ID.
+
 ## 0.49.4 — 2026-10-27
 
 - Show Pi custom-triggered runs as `Extension turn`, with their custom message type in details and their own starting text under the existing content-retention policy. They no longer create blank user turns or borrow queued user input. User turns and governed child authority are unchanged. Restart Pi after updating; this fixes attribution and does not by itself qualify every newer Pi integration.

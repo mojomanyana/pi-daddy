@@ -198,6 +198,16 @@ it measured nothing rather than passing quietly.
 
 ## Decisions still in force
 
+**2026-11-03 — retain operation identity for preflight denials.** After owner/definition checks and a
+completed admission preview, non-approval refusals with a valid explicit operation ID elect and finish
+only their own unlaunched occurrence as `not-started`, then throw the original typed refusal. Duplicate
+or conflicting requests never rewrite an existing owner, and observation failure stays loud. Permission,
+capacity, routing and execution checks remain unchanged. A successful status lookup with no record now
+names absence separately from an unavailable owner; neither supplies no-start proof. Historical missing
+records are not reconstructed from caller prose, ledger fragments or an idle runtime. Correct authority
+and use the coordinator's explicit retry only when native settled/no-start proof already exists. Errors
+before a completed preview, process loss and historical recovery remain outside this repair.
+
 **2026-10-27 — extension-triggered activity is not a user turn.** Pi's custom run hook records the
 explicit custom type and starting text, rather than selecting a queued or earlier user from the branch.
 User-triggered runs retain their finalized-current-user behavior. Both activity views label custom roots

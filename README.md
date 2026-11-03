@@ -1,6 +1,6 @@
 # pi-daddy
 
-Source target: **0.49.4**. Before installation, verify that `npm view pi-daddy version` and Git tag `v0.49.4` both resolve to this release.
+Source target: **0.49.5**. Before installation, verify that `npm view pi-daddy version` and Git tag `v0.49.5` both resolve to this release.
 
 **Capability governance and coordination for [pi](https://github.com/badlogic/pi-mono)'s multi-level agent system.**
 An orchestrator grants each sub-agent a deliberate subset of what it holds and withholds the rest. A sub-agent may

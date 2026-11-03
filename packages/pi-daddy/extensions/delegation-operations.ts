@@ -116,9 +116,10 @@ export async function claimDelegationOperation(
   ctx: DelegationToolContext,
   signal?: AbortSignal,
 ): Promise<OperationClaim | undefined> {
-  if (spec.operation_id === undefined) return undefined;
+  const operationId = spec.operation_id;
+  if (operationId === undefined) return undefined;
   assertDelegationAuthority(session);
-  if (!validOperationId(spec.operation_id)) throw Error("Invalid operation_id");
+  if (!validOperationId(operationId)) throw Error("Invalid operation_id");
   if (signal?.aborted) throw Error("Operation request aborted");
   await session.ensureDefinitions?.();
   assertDefinitionIdentity(session, spec);
@@ -135,47 +136,75 @@ export async function claimDelegationOperation(
       childExecutionId: ids.executionId,
     },
   );
-  if (!preview.ok && !shouldSeekApproval(preview.result)) {
+  const denied = !preview.ok && !shouldSeekApproval(preview.result);
+  const elect = async () => {
+    const operations = session.autoMode?.operations;
+    if (!operations) throw Error("Session operation admission is unavailable; no dispatch started");
+    const cwd = await realpath(ctx.cwd);
+    const { operation_id: _id, ...request } = spec;
+    const requestDigest = createHash("sha256")
+      .update(
+        JSON.stringify(
+          canonical({
+            request,
+            cwd,
+            model,
+            piThinking: session.currentThinking?.(),
+            definitionDigest: preview.definitionDigest,
+            grant: [...session.ownGrant].sort(),
+            gated: [...session.gated].sort(),
+            depth: session.depth,
+            maxDepth: session.maxDepth,
+            executor: session.executor.kind,
+            definition: spec.agent ? session.definitions.get(spec.agent)?.body : null,
+            runtimeSettings: session.definitionRuntimeSettings,
+            runtimeOverrides: [...session.definitionRuntimeOverrides.entries()].sort(([a], [b]) => a.localeCompare(b)),
+            workspaceRoot: spec.workspace ? session.workspacePin?.get(spec.workspace.workspace_id) : null,
+          }),
+        ),
+      )
+      .digest("hex");
+    return operations.claim(
+      {
+        operationId,
+        requestDigest,
+        executionId: ids.executionId,
+        cwd,
+        workspaceId: spec.workspace?.workspace_id ?? null,
+      },
+      signal,
+    );
+  };
+  if (!denied) return elect();
+
+  const failure = preview.refusal
+    ? new GovernanceRefusal(preview.refusal)
+    : Error(preview.reason ?? "Operation request is not authorized");
+  const evidenceErrors: unknown[] = [];
+  try {
     await recordDelegationDecision({ session, plan: preview, ids, agent: spec.agent });
-    if (preview.refusal) throw new GovernanceRefusal(preview.refusal);
-    throw Error(preview.reason ?? "Operation request is not authorized");
+  } catch (error) {
+    // A refused request cannot execute, even if its audit append fails. Keep this
+    // failure visible without making independent no-start evidence depend on it.
+    evidenceErrors.push(error);
+    failure.message += `; ledger evidence unavailable: ${String(error)}`;
   }
-  const operations = session.autoMode?.operations;
-  if (!operations) throw Error("Session operation admission is unavailable; no dispatch started");
-  const cwd = await realpath(ctx.cwd);
-  const { operation_id: _id, ...request } = spec;
-  const requestDigest = createHash("sha256")
-    .update(
-      JSON.stringify(
-        canonical({
-          request,
-          cwd,
-          model,
-          piThinking: session.currentThinking?.(),
-          definitionDigest: preview.definitionDigest,
-          grant: [...session.ownGrant].sort(),
-          gated: [...session.gated].sort(),
-          depth: session.depth,
-          maxDepth: session.maxDepth,
-          executor: session.executor.kind,
-          definition: spec.agent ? session.definitions.get(spec.agent)?.body : null,
-          runtimeSettings: session.definitionRuntimeSettings,
-          runtimeOverrides: [...session.definitionRuntimeOverrides.entries()].sort(([a], [b]) => a.localeCompare(b)),
-          workspaceRoot: spec.workspace ? session.workspacePin?.get(spec.workspace.workspace_id) : null,
-        }),
-      ),
-    )
-    .digest("hex");
-  return operations.claim(
-    {
-      operationId: spec.operation_id,
-      requestDigest,
-      executionId: ids.executionId,
-      cwd,
-      workspaceId: spec.workspace?.workspace_id ?? null,
-    },
-    signal,
-  );
+  try {
+    // Election records identity, not permission. Only this newly elected, unlaunched
+    // occurrence may supply no-start proof; a duplicate must never rewrite its owner.
+    const claim = await elect();
+    if (!claim.reused) await claim.finish!("not-started", { cleanup: { state: "not-started" } });
+  } catch (error) {
+    // Keep the typed governance refusal and make missing/conflicting evidence explicit.
+    evidenceErrors.push(error);
+    failure.message += `; operation evidence unavailable: ${String(error)}`;
+  }
+  if (evidenceErrors.length)
+    failure.cause =
+      evidenceErrors.length === 1
+        ? evidenceErrors[0]
+        : new AggregateError(evidenceErrors, "Refusal evidence recording failed");
+  throw failure;
 }
 export function existingOperationOutcome(claim: OperationClaim, depth: number): DelegationOutcome {
   const active = ["admitting", "running"].includes(claim.operation.state);

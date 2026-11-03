@@ -118,6 +118,11 @@ test("operation bridge reads owner facts and refuses a different session or cwd"
     );
   try {
     await registerRuntimeSnapshot(pi, session).bind(ctx);
+    const absent = await read();
+    assert.equal(absent.qualified, true, "the lookup succeeded, unlike unavailable owner status");
+    assert.equal(absent.operation, null);
+    assert.match(absent.reason, /absent.*does not prove.*not started/);
+    assert.equal(await auto.operations!.read("review:one"), null, "status must not fabricate recovery evidence");
     const claim = await auto.operations!.claim({
       operationId: "review:one",
       requestDigest: "a".repeat(64),
@@ -227,6 +232,11 @@ test("operation bridge reads owner facts and refuses a different session or cwd"
       "tiny finals also have an entry-count bound",
     );
     assert.equal((await read("next-session", root, true, "tiny:128")).final.text, "x");
+    await auto.close();
+    const unavailable = await read("next-session");
+    assert.equal(unavailable.qualified, false);
+    assert.equal(unavailable.operation, null);
+    assert.match(unavailable.reason, /unavailable/);
   } finally {
     await auto.close();
     if (prior === undefined) delete process.env.PI_CODING_AGENT_DIR;

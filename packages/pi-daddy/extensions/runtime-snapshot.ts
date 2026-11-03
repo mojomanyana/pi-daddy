@@ -145,6 +145,9 @@ export function registerRuntimeSnapshot(
           ...envelope,
           qualified: true,
           operation,
+          ...(!operation
+            ? { reason: "operation record is absent; this does not prove the dispatch was not started" }
+            : {}),
           ...(request.includeFinal === true && operation ? { final: operationFinal(session, operation) } : {}),
         });
       } catch (error) {
