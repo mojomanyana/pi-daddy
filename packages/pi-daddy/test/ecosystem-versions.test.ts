@@ -3,15 +3,17 @@ import { test } from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { createEcosystemVersionInventory, type VersionInventoryPorts } from "../extensions/ecosystem-versions.ts";
 
-function fixture() {
+function fixture(bookieName = "bookie-pi-skills") {
   const disk = new Map([
     ["/host", "1.1.0"],
     ["/daddy", "0.47.0"],
     ["/principal", "4.11.2"],
     ["/harness", "0.26.2"],
+    ["/scout", "0.1.1"],
+    ["/bookie", "0.0.0"],
   ]);
   const reports = [{ id: "principal-pi-skills", root: "/principal", version: "4.11.2" }];
-  let configured = [
+  let configured: ReturnType<VersionInventoryPorts["configured"]> = [
     { source: "npm:principal-pi-skills@4.11.2", scope: "project" as const, installedPath: "/principal" },
   ];
   const ports: VersionInventoryPorts = {
@@ -26,6 +28,8 @@ function fixture() {
             "/daddy": "pi-daddy",
             "/principal": "principal-pi-skills",
             "/harness": "skill-harness",
+            "/scout": "pi-scout-research",
+            "/bookie": bookieName,
           } as Record<string, string>
         )[root],
       )
@@ -110,4 +114,50 @@ test("a loaded local package cannot borrow the source and update commands of a d
   assert.equal(row.state, "multiple");
   assert.equal(row.source, null);
   assert.deepEqual(row.commands, ["pi list", "pi config"]);
+});
+
+test("Scout loaded generation and local Bookie availability remain separate from publication and compatibility", () => {
+  const f = fixture();
+  f.configured([
+    { source: "npm:pi-scout-research@0.1.1", scope: "project", installedPath: "/scout" },
+    { source: "/bookie", scope: "project", installedPath: "/bookie" },
+  ]);
+  f.reports.push({ id: "pi-scout-research", root: "/scout", version: "0.1.1" });
+  const scout = f.read().rows.find((x) => x.id === "pi-scout-research")!;
+  assert.equal(scout.state, "current");
+  f.disk.set("/scout", "0.1.2");
+  assert.equal(f.read().rows.find((x) => x.id === "pi-scout-research")!.state, "reload-required");
+  const bookie = f.read().rows.find((x) => x.id === "bookie-pi-skills")!;
+  assert.equal(bookie.state, "not-reported");
+  assert.equal(bookie.installedVersion, "0.0.0");
+  assert.equal(bookie.loadedVersion, null);
+  assert.deepEqual(bookie.commands, ["pi list", "pi config"]);
+});
+
+test("Bookie public and legacy package names retain loaded identity and exact npm update target", () => {
+  for (const name of ["pi-bookie", "bookie-pi-skills", "@bookie/pi-extension"]) {
+    const f = fixture(name);
+    f.disk.set("/bookie", "0.1.0");
+    f.reports.push({ id: "bookie-pi-skills", root: "/bookie", version: "0.1.0" });
+    f.configured([{ source: `npm:${name}@0.1.0`, scope: "project", installedPath: "/bookie" }]);
+    const row = f.read().rows.find((item) => item.id === "bookie-pi-skills")!;
+    assert.equal(row.state, "current", name);
+    assert.equal(row.loadedVersion, "0.1.0", name);
+    assert.equal(row.installedVersion, "0.1.0", name);
+    assert.equal(row.source, `npm:${name}@0.1.0`, name);
+    assert.deepEqual(row.commands, [`pi install --local npm:${name}@<version>`], name);
+  }
+});
+
+test("configured Bookie aliases remain visible when installed bytes are unavailable", () => {
+  for (const name of ["pi-bookie", "bookie-pi-skills", "@bookie/pi-extension"]) {
+    const f = fixture(name);
+    f.configured([{ source: `npm:${name}@0.1.0`, scope: "user" }]);
+    const row = f.read().rows.find((item) => item.id === "bookie-pi-skills")!;
+    assert.equal(row.state, "unavailable", name);
+    assert.equal(row.loadedVersion, null, name);
+    assert.equal(row.installedVersion, null, name);
+    assert.equal(row.source, `npm:${name}@0.1.0`, name);
+    assert.deepEqual(row.commands, [`pi install npm:${name}@<version>`], name);
+  }
 });

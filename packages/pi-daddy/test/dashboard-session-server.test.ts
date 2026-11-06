@@ -28,7 +28,14 @@ test("dashboard edits mutate the owning session map and write the ordinary sessi
   await initializeSessionAutoMode(session, {}, "dashboard-fixture");
   const endpoint = await ensureDashboardSessionServer(session);
   try {
+    let versionReads = 0;
+    session.ecosystemVersions = () => {
+      versionReads++;
+      return { rows: [], checkedAt: new Date().toISOString() };
+    };
     const before = await dashboardSessionRequest(endpoint.socketPath, endpoint.token, { action: "get" });
+    await dashboardSessionRequest(endpoint.socketPath, endpoint.token, { action: "get" });
+    assert.equal(versionReads, 1, "unchanged owner redraw does not repeatedly scan package manifests");
     assert.deepEqual(before.rows, [
       { definition: "review", model: "pi default", thinking: "pi default", source: "pi/pi" },
     ]);
@@ -105,6 +112,18 @@ test("Auto transport authenticates owner edits and returns the actual pending qu
       /unauthorised/,
     );
     await assert.rejects(request({ action: "set-auto", enabled: "yes" } as never), /boolean/);
+    await assert.rejects(
+      request({
+        action: "set-auto",
+        enabled: true,
+        expectedOwner: {
+          sessionId: "old-session",
+          cwd: "/old",
+          generation: "old-generation",
+        },
+      }),
+      /owner changed before action/,
+    );
     assert.equal((await request({ action: "get" })).auto.enabled, false);
     session.ecosystemVersions = () => {
       throw new Error("fixture package path unavailable");

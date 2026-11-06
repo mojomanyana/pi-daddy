@@ -71,12 +71,10 @@ export function dashboardSettingsLines(
     ...(jev.error ? [`  ${jev.error}`] : []),
     row("wall", `Child wall: ${settings.wallSeconds}s (${settings.wallSource})`),
     row("idle", `Child idle: ${settings.idleSeconds}s (${settings.idleSource})`),
-    settings.editable
-      ? "Edits apply to future children from this parent."
-      : "Read-only: change settings in the owning parent.",
-    "Running children keep their captured limits.",
-    "JEV ON asks paid-call and LoRA-storage consent in Pi.",
-    "Auto never supplies that consent. No model token budget.",
+    settings.editable ? "Limits affect future children only." : "Read-only: change settings in the owning parent.",
+    "Running children keep their limits.",
+    "JEV needs separate call/storage consent in Pi.",
+    "Auto does not grant JEV consent. No token budget.",
     "",
     "STARTUP LIMITS · restart to change",
     row("descendants", `Active descendants: ${settings.descendants} (${settings.reserved} reserved) · PI_DADDY_FANOUT`),

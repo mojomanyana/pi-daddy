@@ -114,7 +114,7 @@ ${managedInit.stderr}`);
       `assert.deepEqual(loaded.warnings, [], "installed grants extension must load without package warnings");`,
       `assert.equal(loaded.extensions.length, 1, "managed package must register exactly its declared extension");`,
       `const extension = loaded.extensions[0];`,
-      `assert.deepEqual([...extension.tools.keys()], ["activity_lifecycle"]);`,
+      `assert.deepEqual([...extension.tools.keys()], ["activity_lifecycle", "initiative_task"]);`,
       `assert.deepEqual([...extension.commands.keys()], ["grants"]);`,
       `const manifestPath = join(packageRoot, "package.json");`,
       `const original = readFileSync(manifestPath, "utf8");`,

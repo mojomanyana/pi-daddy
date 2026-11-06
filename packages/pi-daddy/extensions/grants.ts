@@ -28,6 +28,7 @@ import {
  * spawn triggered the human prompt, and `childEnv` clamps it to the grant again on the way out. Each
  * child derives its own grant from the tool array of its first provider request.
  */
+import { inspectSessionWorkspace } from "./workspace-diagnostics.ts";
 import { registerRuntimeSnapshot } from "./runtime-snapshot.ts";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
@@ -124,7 +125,7 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
     // isolated; it cannot carry state into another extension instance.
     const owner = (ctx as { sessionManager?: object }).sessionManager ?? session;
     const reload = bindReloadLifecycle(owner, session.reloadLifecycle);
-    session.reconcileEnvironment(reload.environment, reload.lifecycle);
+    session.reconcileEnvironment(reload.environment, reload.lifecycle, ctx.cwd);
     session.ownerBound = true;
     selectedReady = undefined;
     selectedReportContext = ctx;
@@ -170,24 +171,8 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
           ctx.ui.notify(`grants: legacy ledger import failed: ${String(error)}`, "error");
         }
       }
-      // The one case the stored-grant lookup can get wrong (ADR-0030). The factory reads the store keyed by
-      // `process.cwd()` because it runs before any hook and therefore before `ctx` exists — and S-5 forces
-      // that ordering, since whether `delegate` is registered is decided there. Almost always the two agree.
-      // When they do not, the session is governed by a different directory's decision than the one it is
-      // working in, which is exactly the confusion a grant must never cause, so it is said out loud rather
-      // than left to be inferred from a surprising refusal. Sync, so it is not the R-60 shape.
-      // Inside no try of its own, and that is deliberate: it is synchronous, so it cannot be the R-60 shape. A
-      // reviewer noted it sits before the try that contains `resolveExecutor` — which is the right order, because
-      // this warning is about WHICH directory's grant was read and must reach the operator even if everything
-      // after it fails.
-      if (session.storeCwd !== ctx.cwd && process.env[ENV_GRANT] === undefined) {
-        ctx.ui.notify(
-          `grants: this session's stored grant was read for ${session.storeCwd}, but pi is working in ` +
-            `${ctx.cwd}. A grant belongs to a directory, so run /grants init here, or set PI_DADDY_GRANT ` +
-            `explicitly — the environment always wins.`,
-          "warning",
-        );
-      }
+      // The owner-bound reconciliation already selected ctx.cwd before registering delegation tools.
+      // Preserve exact store identity; aliases do not silently borrow another spelling's saved authority.
       try {
         await reportGrantStoreRefusal(session, ctx.ui);
       } catch (error) {
@@ -454,7 +439,8 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
     // read-only diagnostic may see is a decision, and `GrantsCommandContext` is where it is recorded.
     handler: async (args, ctx) => {
       // Auto controls and emergency revoke-all need no definition acquisition; OFF must remain reachable.
-      if (args.trim() !== "revoke --all" && args.trim().split(/\s+/)[0] !== "auto") await session.ensureDefinitions?.();
+      if (args.trim() !== "revoke --all" && !["auto", "workspace"].includes(args.trim().split(/\s+/)[0]))
+        await session.ensureDefinitions?.();
       const autoView = await getDashboardControlState(session)
         .then(({ auto }) => ({
           autoModeEnabled: auto.enabled,
@@ -465,6 +451,9 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
         ...ctx,
         grants: {
           cwd: session.cwd,
+          storeCwd: session.storeCwd,
+          grantSource: session.grantSource,
+          inspectWorkspace: (id: string) => inspectSessionWorkspace(session, id),
           governed: session.governed,
           ownGrant: session.ownGrant,
           executor: session.executor,

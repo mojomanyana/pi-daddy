@@ -379,7 +379,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
    * **Breaks by:** dropping `registryPath` from `buildCatalog`'s call in `extensions/session.ts`, or dropping
    * the `workspace` term from `/grants`'s catalog line.
    */
-  test("ADR-0035: a real session reads the registry and lists what it may route to", async () => {
+  test("ADR-0035: a real session lists registered workspaces without claiming active routing", async () => {
     const cwd = await projectOnce();
     const registry = join(await tempDir("grants-it-registry-"), "registry.json");
     await mkdir(dirname(registry), { recursive: true });
@@ -403,10 +403,25 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     const text = r.notifies.map((n) => n.message).join("\n");
 
     assert.match(text, /2 workspace/, "the catalog counted the registered ids");
-    assert.match(text, /routable\s+workspace:prod-1, workspace:sandbox/, "and lists them");
+    assert.match(text, /registered\s+workspace:prod-1, workspace:sandbox/, "and lists them");
     // The listing is the CATALOG, not the grant: `prod-1` appears because it is registered, and holding it is
     // a separate question the line says out loud. Display is never authority.
-    assert.match(text, /held ones only are usable/);
+    assert.match(text, /registration alone is not active routing/);
+    const inspection = await runCommand({
+      cwd,
+      command: "/grants workspace sandbox",
+      env: {
+        PI_DADDY_GRANT: "tool:read,tool:delegate,workspace:sandbox",
+        PI_DADDY_WORKSPACE_REGISTRY: registry,
+      },
+    });
+    const observed = inspection.notifies.map((n) => n.message).join("\n");
+    // This catalog fixture is a plain directory, so inspection must not mistake registration for live routing.
+    assert.match(observed, /Workspace sandbox: unavailable/);
+    assert.match(observed, /not the registered Git worktree it claims to be/);
+    assert.match(observed, /Routing requires the exact worktree root/);
+    assert.match(observed, /Grant source: environment/);
+    assert.match(observed, /Observed routing only;.*at dispatch/);
   });
 
   test("R-47/ADR-0024: gating an agent: id gates the SPAWN, and says so", async () => {

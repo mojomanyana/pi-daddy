@@ -81,7 +81,7 @@ interface ToolSpec {
   ) => Promise<unknown>;
 }
 
-async function harness(env: Record<string, string>, existingDir?: string) {
+async function harness(env: Record<string, string>, existingDir?: string, durable = false) {
   // `existingDir` lets a test stage `SKILL.md` definitions before the extension loads them.
   const dir = existingDir ?? (await tempDir("grants-fanout-"));
   for (const k of KEYS) if (!saved.has(k)) saved.set(k, process.env[k]);
@@ -93,13 +93,15 @@ async function harness(env: Record<string, string>, existingDir?: string) {
   // developer's machine, so this suite would select panes here and subprocesses in CI, from the same source.
   // A test whose outcome depends on which daemons happen to be running is not a test. `0` skips the probe
   // entirely; a test that wants the other paths overrides it and says why.
-  Object.assign(process.env, { [ENV_HERDR]: "0", ...env });
+  if (durable && !saved.has("PI_CODING_AGENT_DIR")) saved.set("PI_CODING_AGENT_DIR", process.env.PI_CODING_AGENT_DIR);
+  Object.assign(process.env, { [ENV_HERDR]: "0", ...(durable ? { PI_CODING_AGENT_DIR: dir } : {}), ...env });
 
   const tools = new Map<string, ToolSpec>(),
     commands = new Map<string, any>(),
     activeTools = new Set(["read", "grep", "write"]);
   const hooks = new Map<string, (e: unknown, c: unknown) => unknown>();
   const ctx = {
+    ...(durable ? { sessionManager: { getSessionId: () => `fixture:${dir}` } } : {}),
     cwd: dir,
     ui: { notify: () => {}, select: async () => undefined },
     signal: undefined,
@@ -1356,7 +1358,11 @@ const timer = setInterval(() => { if (fs.existsSync(${JSON.stringify(release)}))
   process.env.PATH = `${bin}:${oldPath}`;
   let original: Promise<any> | undefined;
   try {
-    const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate", [ENV_FANOUT]: "1" });
+    const { tools, ctx } = await harness(
+      { [ENV_GRANT]: "tool:read,tool:delegate", [ENV_FANOUT]: "1" },
+      undefined,
+      true,
+    );
     const spec = { operation_id: "build:exact", task: "inspect exact candidate", tools: ["read"] };
     original = tools.get("delegate")!.execute("original", spec, undefined, undefined, ctx) as Promise<any>;
     // Wait for observable process entry, not a guessed dispatch duration.
@@ -1432,7 +1438,7 @@ const timer = setInterval(() => { if (fs.existsSync(${JSON.stringify(release)}))
   process.env.PATH = `${bin}:${oldPath}`;
   let pending: Promise<any> | undefined;
   try {
-    const { tools, ctx, hooks } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate" });
+    const { tools, ctx, hooks } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate" }, undefined, true);
     pending = tools
       .get("delegate")!
       .execute(

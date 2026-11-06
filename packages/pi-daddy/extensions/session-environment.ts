@@ -32,8 +32,20 @@ export function reconcileSessionEnvironment(
   lifecycle: ReloadLifecycle,
 ): void {
   const grantRaw = environment[ENV_GRANT];
-  const stored = storedGrantSessionState(grantRaw, session.storeCwd);
   const bounds = depthConfig(environment[ENV_DEPTH], environment[ENV_MAX_DEPTH]);
+  // A selected project's store belongs to a root only. Missing inherited authority is never a request
+  // to adopt that project's potentially broader root grant (including when an SDK supplies another cwd).
+  const stored = storedGrantSessionState(grantRaw ?? (bounds.depth > 0 ? "" : undefined), session.storeCwd);
+  session.grantSource =
+    grantRaw !== undefined
+      ? "environment"
+      : bounds.depth > 0
+        ? "missing-inherited"
+        : stored.refusal
+          ? "invalid-store"
+          : stored.stored
+            ? "stored"
+            : "default";
   const ledgerRaw = environment[ENV_LEDGER];
   session.ledgerFromEnvironment = ledgerRaw !== undefined;
   const governanceOff = environment[ENV_GOVERNANCE]?.trim() === "off" || environment[ENV_GOVERNANCE]?.trim() === "0";

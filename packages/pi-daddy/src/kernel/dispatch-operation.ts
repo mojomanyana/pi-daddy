@@ -1,5 +1,7 @@
+import type { OperationArtifactRef } from "./operation-artifact.ts";
 /** Explicit operation identity prevents duplicate dispatch, never authorizes work or caches results. */
 export interface OperationReference {
+  artifact?: OperationArtifactRef;
   operationId: string;
   executionId: string;
   state: "admitting" | "running" | "settled" | "not-started" | "uncertain";

@@ -155,7 +155,7 @@ test("Auto changes only after owner ACK, ignores stale polls, and exposes failur
   fail = true;
   assert.equal(await connection.change({ action: "set-auto", enabled: false }), false);
   assert.equal(connection.state.snapshot, undefined);
-  assert.match(connection.state.error!, /Control change not confirmed: owner closed/);
+  assert.match(connection.state.error!, /Control change not confirmed.*owner closed/);
   await connection.refresh();
   assert.equal((connection.state.snapshot as DashboardSessionSnapshot | undefined)?.auto.enabled, false);
   assert.equal(connection.state.error, undefined);

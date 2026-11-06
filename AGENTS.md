@@ -198,6 +198,28 @@ it measured nothing rather than passing quietly.
 
 ## Decisions still in force
 
+**2026-11-04 — display cannot replay semantic validation.** Initiative terminal refresh uses only bounded
+last-observed owner facts, preserves their timestamps and exposes absent or stale observations. A display
+refresh cannot invoke canonical work-map/currentness scans or become authority. The bound coordinator still
+revalidates selection, generation and native/effect evidence at actual reads, admission and launch. Avoid
+calling the same selected-scope callback twice through nested adapter and coordinator wrappers.
+
+**2026-11-04 — neutral exact effect outcomes.** Selected work-map owners may supply one bounded target per task,
+bound to its revision. Daddy retains exact reported outcomes and provenance beside the original attempt/receipt;
+it does not interpret package publication or infer success from process exit. Unknown never reconciles effects.
+Historical target recovery remains possible after a plan amendment, while current target observations stay separate.
+The current owner revalidates the receipt and native settlement; a human attestation is labelled as such, never
+provider proof, semantic task acceptance, or renewed execution authority.
+
+**2026-11-04 — durable stable-ID producer evidence.** Admission and exact visible outcomes now have immutable,
+private producer manifests under the selected agent directory. The live operation owner remains authoritative;
+historical readers and Pi custom references cannot grant permission, approval or automatic continuation.
+An admitted attempt without a complete result remains uncertain across restart. Retain failed/partial evidence
+as such; exclude raw sessions, private reasoning, environment and task arguments. Bookie registration is a later
+idempotent consumer action, never redispatch. Files are bounded per artifact; lifetime retention remains operator
+owned. Keep the pure record in kernel, persistence in governance and native-final adaptation in extensions.
+Principal dual-definition binding is a compatibility adapter; ordinary roles do not need its package.
+
 **2026-11-03 — retain operation identity for preflight denials.** After owner/definition checks and a
 completed admission preview, non-approval refusals with a valid explicit operation ID elect and finish
 only their own unlaunched occurrence as `not-started`, then throw the original typed refusal. Duplicate
@@ -273,7 +295,6 @@ continuation. New/forked owners do not inherit checkpoint authority. Stable scop
 owner PID identity rotates. The journal and event bus assume cooperating same-uid code, not hostile containment.
 No advisor, automatic model choice or metered decision service is restored.
 
-
 **Opt-in public evidence capture, 2026-10-08:** the operator may configure a private local capture directory
 before starting the coordinator. Only then do selected discovery snapshots retain their admitted source bytes;
 returned definition/delegation content receives a compact reference to an exact pre-reference public capture.
@@ -286,7 +307,6 @@ Capture errors are loud observations that preserve original work results and exc
 are canonical, private and operator-selected; writes are bounded, exclusive and synchronized before publishing
 refs. Same-user hostile authenticity and a lifetime retention quota are not claimed. JEV/LoRA use remains
 optional downstream offline evaluation; no advisor, metered API or automatic policy is restored.
-
 
 **Model-visible execution evidence, 2026-10-07:** native delegation results append a versioned allowlisted
 projection of their actual final identity, process cleanup receipt and observation state to text content.
@@ -303,7 +323,6 @@ but rejected by the stale published schema. This is a schema compatibility corre
 pinned consumers must explicitly adopt it. Production-builder fixtures include context grants, and regression
 checks compare every runtime namespace and identifier-tail boundary against the published schema.
 
-
 ### Captured execution and staged backend qualification — 2026-10-07
 
 The authorized Release A targets Pi 1.0.4 and captured Linux x64 execution. A complete final requires settled Pi
@@ -319,7 +338,6 @@ visible but governed execution refuses with no fallback. `PI_DADDY_HERDR=0` expl
 It also reverses ADR-0033's partial required handoff: oversized complete output blocks the dependent step and stays
 available in the returned result. These are mechanical process/protocol guarantees, not model quality or hostile
 same-user containment claims. Source tests include actual model-free Pi CLI and native phase handoffs.
-
 
 **2026-10-07 — passive cost coverage (P03).** Episode reports preserve a missing recorded child charge as null,
 separate from an observed zero. Rows, groups and totals retain the observed subtotal with complete/partial/unavailable
@@ -350,8 +368,6 @@ Pi 1.0.4 is the qualified integration target for argument preparation and native
 change that breaks the retirement tests is reconnecting an advisor, monetary stop or automatic prompt to dispatch.
 Future JEV/learned-policy experiments may consume versioned sanitized decision and outcome evidence outside the
 authority path; this does not restore automatic runtime advice or promise a trainable JEV model.
-
-
 
 **ADR-0008 — capabilities attenuate monotonically.** A child's effective grant is
 `(requested ∩ parentGrant ∩ ceiling) \ (gated \ approved)`, and the `∩ parentGrant` term is the invariant: no agent
@@ -1090,7 +1106,6 @@ Kept features only. Numbers are dropped except the two that code and rules cite.
 - **R-85** — work reaches `main` by drift, not decision: check the branch before the first edit of a task, and if work
   is already on `main`, branch at HEAD and reset the local pointer rather than rewriting history.
 
-
 ## 2026-10-07 candidate: selected definition and runtime contracts
 
 The authorized ecosystem candidate replaces independent live resource rescans with Pi 1.0.4 public selected
@@ -1099,7 +1114,6 @@ binding manifest and snapshot ID. Preserve the frozen body/ceiling/identity thro
 Model preferences are ordered intact authored pairs, below explicit/session/project fields; no advisor,
 automatic model chooser, monetary gate, or remote preflight is restored. Unknown auth is not missing auth.
 The dedicated model-free SDK fixtures are separate from optional paid model integrations.
-
 
 ## 2026-10-07 review follow-up: final and capacity contracts
 
@@ -1129,7 +1143,6 @@ Keep candidate/report bookkeeping in Principal and consent/learning policy in Ha
 Dashboard tool observations expose names, time and cwd, never inferred reasoning/progress.
 Native coordinator tool-only Codemode preserves hooks; governed child Codemode stays refused.
 
-
 ## 2026-10-09 — Dashboard session settings
 
 The Settings view sends explicit operator actions to the authenticated parent owner. Auto uses its
@@ -1140,10 +1153,65 @@ replaced from the dashboard. Model reasoning/token budgets remain untouched. The
 checks exercise owner validation, bound-session resets, immutable snapshots, transport authentication,
 missing/pending JEV states and narrow-pane navigation; paid provider behavior remains Harness's scope.
 
-
 ## 2026-10-10 — Auto approval in grant previews
 
 A grant preview must remain read-only: it neither acquires nor banks Auto approval. The command
 may label the exact approval-only refusal as AUTO using the same observed policy state as its
 header. This predicts the permission step only, not successful execution; real dispatch rechecks
 live Auto, and other refusal codes retain their original BLOCK reason.
+
+## 2026-11-04 — Bounded current-session dashboard observations
+
+The dashboard is a terminal projection, not a workflow authority or model-disclosure channel. Trusted
+optional producers register against the actual native owner and canonical cwd. Replacement generations,
+strict source sequences and receive timestamps prevent stale publishers from becoming current. Bound
+source count/bytes, parent activity, metadata files and displayed result references in memory. No automatic
+historical restore, output-body import, provider call or durable write belongs in redraw. Exact artifact
+references remain display data; known owner controls remain the only actions. Capture consent is separate
+from ordinary metadata, JEV paid-call/storage consent and Bookie disclosure. Owner RSS is not host health.
+The six views cover one current session. Selected initiative observations explicitly name their wider scope;
+only recorded related sessions are known, and the views are not a global registry.
+
+**2026-11-04 — Initiative ownership extends existing receipts, not execution authority.** The one-host
+coordinator reuses the OS-held runtime lock, exact durable operation records, native cleanup evidence and
+ordinary writer leases. Stable initiative/task revisions are separate from original session/operation/
+execution identities. Only trusted selected-map composition can acquire; `initiative_task` associates but
+cannot dispatch. No age/dead-parent takeover, missing-state reset, generic external-effect approval or
+multi-host scheduler. Dashboard updates cache owner observations on transitions and never write on redraw.
+
+Exact effect reconciliation requires native settlement plus a current owner-verified canonical receipt bound
+to the original session/task revision/operation/execution. Recovery-only selection never increments owner
+generation or permits dispatch; release then normal acquisition is required. Receipt reconciliation is not
+semantic task approval or a provider success assertion.
+
+### 2026-11-04 — Exact owner observation has a separate trusted read guard
+
+A trusted optional observation-authority callback may guard exact runtime facts without replaying semantic task selection. It must retain owner/session/epoch, held-lock, disk generation and native/effect-currentness checks. Clients remain responsible for current canonical inputs before projection disclosure. Acquisition, task mutation, admission, start and reconciliation keep the original full authority callback. Missing callbacks fall back to that full guard. Never infer authorization or authored-intent freshness from an owner observation.
+
+### 2026-11-04 — Task ownership projection follows safe reclaim semantics
+
+A normal current coordinator may report a retained old-generation task as unclaimed only after current settlement observation. Read-only projection must not mutate the prior generation. Recovery-only handles and running/uncertain attempts remain non-free. Explicit claim, admission and duplicate-effect checks remain authoritative.
+
+
+### 2026-11-04 — Default activity storage settles before product observation
+
+Await default activity storage preparation in session_start, before the first product snapshot. A new
+ignore excludes only known volatile activity/content and grants-ledger paths; settings and unrelated
+files remain reviewable. Preserve existing rules and refuse tracked or insufficiently excluded runtime
+paths rather than repairing the index or changing user policy. Configured/transported paths retain
+their explicit policy. Missing Git is compatible with marker-free non-Git workspaces; an unverifiable
+repository stays unavailable. Preparation is per recorder, not per event, and never grants authority.
+
+
+### 2026-11-05 — Selected directory binding and observational workspace diagnostics
+
+Bind stored root grants and configured runtime defaults to the actual Pi context directory before tool
+registration. Explicit/inherited environment grants keep precedence; a descendant without an inherited
+grant never falls back to a root store. Exact stored-directory spelling remains the identity, without
+implicit alias migration. Root/child provider policy and session/explicit model precedence are unchanged.
+
+An explicit workspace inspection reuses routing authority and registered-worktree validation. It reads
+acceptance without first-use writes, distinguishes accepted from active/pending/moved/missing authority,
+and never mints a pin, acquires a lease, starts a session or retries work. Display uses only the bounded
+timestamped result; known owner/grant changes invalidate it. Candidate, task scope, approvals and native
+settlement are dispatch-time checks, never inferred from the display. No LLM or JEV input supplies authority.

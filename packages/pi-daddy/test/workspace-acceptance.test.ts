@@ -140,7 +140,7 @@ test("accepting records the registry's current ids for the next session", async 
   assert.deepEqual(after.unaccepted, ["c"], "an id added after acceptance is still refused");
 });
 
-test("/grants marks an unaccepted id in the routable line, not only in a separate notice", async () => {
+test("/grants marks acceptance at owner pinning without labelling registered IDs as active routing", async () => {
   // The catalog loads the unnarrowed registry, so it lists ids that cannot be routed to. Session start names
   // them, but a reader had to join two places to learn that a listed id was unusable — and review measured a
   // clean-looking `routable` line naming a workspace the session would refuse.
@@ -171,7 +171,11 @@ test("/grants marks an unaccepted id in the routable line, not only in a separat
       unacceptedWorkspaces: ["evil"],
     },
   } as never);
-  assert.match(out, /workspace:evil \(NOT ACCEPTED\)/, "an id that cannot be routed to must not read as routable");
+  assert.match(
+    out,
+    /workspace:evil \(NOT ACCEPTED when this owner pinned\)/,
+    "an id that cannot be routed to must not read as routable",
+  );
   assert.doesNotMatch(out, /workspace:good \(NOT ACCEPTED\)/);
   assert.match(out, /unaccepted evil/);
 });

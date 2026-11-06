@@ -12,15 +12,17 @@ test("trusted bridge reports actual owner facts, rejects caller identity and sur
   const root = await tempDir("runtime-bridge-"),
     prior = process.env.PI_CODING_AGENT_DIR;
   process.env.PI_CODING_AGENT_DIR = root;
-  const listeners = new Set<(value: unknown) => void>();
+  const listeners = new Map<string, Set<(value: unknown) => void>>();
   const pi = {
     events: {
-      on: (_name: string, fn: (value: unknown) => void) => {
-        listeners.add(fn);
-        return () => listeners.delete(fn);
+      on: (name: string, fn: (value: unknown) => void) => {
+        const set = listeners.get(name) ?? new Set();
+        set.add(fn);
+        listeners.set(name, set);
+        return () => set.delete(fn);
       },
-      emit: (_name: string, value: unknown) => {
-        for (const fn of listeners) fn(value);
+      emit: (name: string, value: unknown) => {
+        for (const fn of listeners.get(name) ?? []) fn(value);
       },
     },
   } as unknown as ExtensionAPI;
@@ -59,7 +61,8 @@ test("trusted bridge reports actual owner facts, rejects caller identity and sur
     const settled = await snapshot();
     const replacement = registerRuntimeSnapshot(pi, session);
     await replacement.bind(ctx);
-    assert.equal(listeners.size, 2);
+    assert.equal(listeners.size, 6);
+    for (const set of listeners.values()) assert.equal(set.size, 1, "one active handler per named event after reload");
     const reloaded = await snapshot();
     assert.equal(reloaded.ownerScope, settled.ownerScope);
     assert.equal(reloaded.evidenceDigest, settled.evidenceDigest);

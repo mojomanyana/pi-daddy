@@ -1,3 +1,4 @@
+import { dashboardObservation } from "./dashboard-observation.ts";
 import { dashboardSettingsSnapshot, dashboardJev, setDashboardLimit } from "./dashboard-settings.ts";
 import { randomBytes } from "node:crypto";
 import { chmod, rm } from "node:fs/promises";
@@ -14,6 +15,15 @@ export interface DashboardSessionEndpoint {
   close(): Promise<void>;
 }
 
+const versions = new WeakMap<
+  GrantsSession,
+  {
+    owner: unknown;
+    getter: GrantsSession["ecosystemVersions"];
+    checked: number;
+    value: ReturnType<NonNullable<GrantsSession["ecosystemVersions"]>> | undefined;
+  }
+>();
 const endpoints = new WeakMap<GrantsSession, Promise<DashboardSessionEndpoint>>();
 
 export function ensureDashboardSessionServer(session: GrantsSession): Promise<DashboardSessionEndpoint> {
@@ -77,8 +87,24 @@ async function respond(session: GrantsSession, token: string, line: string): Pro
     enabled?: unknown;
     key?: unknown;
     seconds?: unknown;
+    expectedOwner?: { sessionId?: unknown; cwd?: unknown; generation?: unknown };
   };
   if (request.token !== token) return { ok: false, error: "unauthorised dashboard request" };
+  if (request.action !== "get" && request.expectedOwner !== undefined) {
+    const observed = session.dashboardObservations?.(),
+      expected = request.expectedOwner;
+    if (
+      !observed ||
+      !expected ||
+      expected.sessionId !== observed.sessionId ||
+      expected.cwd !== observed.cwd ||
+      expected.generation !== observed.generation
+    )
+      return { ok: false, error: "Dashboard owner changed before action; refresh and inspect the new session" };
+  }
+  const lifecycle = session.reloadLifecycle,
+    owner = lifecycle.autoMode;
+  const displayOwner = session.dashboardObservations?.()?.generation;
   let jev;
   if (request.action === "set-limit") {
     setDashboardLimit(session, request.key, request.seconds);
@@ -99,20 +125,36 @@ async function respond(session: GrantsSession, token: string, line: string): Pro
     );
     if (invalid) return { ok: false, error: invalid };
   } else if (request.action !== "get") return { ok: false, error: "unknown dashboard action" };
+  const controls = await getDashboardControlState(session);
+  const settings = await dashboardSettingsSnapshot(session, jev);
+  if (
+    session.reloadLifecycle !== lifecycle ||
+    lifecycle.autoMode !== owner ||
+    session.dashboardObservations?.()?.generation !== displayOwner
+  )
+    throw Error("Dashboard owner changed; action outcome requires reconciliation");
   return {
     ok: true,
-    ...(await getDashboardControlState(session)),
+    ...controls,
+    ...dashboardObservation(session),
     ...(session.activity ? { activity: { ...session.activity } } : {}),
     rows: sessionModelRows(session, [...session.definitions.keys()].sort()),
     versions: versionSnapshot(session),
-    settings: await dashboardSettingsSnapshot(session, jev),
+    settings,
     cost: null, // Live complete episode cost is unavailable; retained usage remains in the episode report.
   };
 }
 
 function versionSnapshot(session: GrantsSession) {
   try {
-    return session.ecosystemVersions?.();
+    const cached = versions.get(session),
+      now = Date.now(),
+      owner = session.reloadLifecycle.autoMode;
+    if (cached && cached.owner === owner && cached.getter === session.ecosystemVersions && now - cached.checked < 5000)
+      return cached.value;
+    const value = session.ecosystemVersions?.();
+    versions.set(session, { owner, getter: session.ecosystemVersions, checked: now, value });
+    return value;
   } catch {
     return {
       rows: [],

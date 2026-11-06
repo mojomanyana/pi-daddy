@@ -1,3 +1,4 @@
+import { DASHBOARD_DESTINATIONS } from "./dashboard-panels.ts";
 import { DASHBOARD_SETTING_KEYS } from "./dashboard-settings.ts";
 /** Local display controls; these never dispatch actions to an owner or change ledger state. */
 import { dashboardScreenState } from "./dashboard-screen.ts";
@@ -18,22 +19,44 @@ export function createDashboardDisplayControls(details: boolean, ledger: boolean
     state,
     screen,
     key(key: string): "auto" | "quit" | "command" | "setting" | undefined {
+      if (/^[1-6]$/.test(key)) {
+        screen.selections ??= {};
+        if (screen.selectedKey) screen.selections[screen.destination ?? "now"] = screen.selectedKey;
+        screen.destination = DASHBOARD_DESTINATIONS[Number(key) - 1];
+        screen.selectedKey = screen.selections[screen.destination!];
+        screen.view = screen.destination === "settings" ? "settings" : "main";
+        screen.offset = 0;
+        state.activityDetail = undefined;
+        return;
+      }
+      if (key === "pageup" || key === "pagedown") {
+        screen.manualScroll = true;
+        screen.offset = Math.max(0, screen.offset + (key === "pageup" ? -8 : 8));
+        return;
+      }
+      if (key === "x") {
+        screen.expanded = !screen.expanded;
+        return;
+      }
       if (key === "a") return "auto";
       if (key === "q" || key === "ctrl-c") return "quit";
       if (key === ":") return "command";
       if (screen.view === "settings" && (key === "return" || key === "d")) return "setting";
       if (key === "escape") {
         screen.view = screen.view === "version-details" ? "versions" : "main";
+        if (screen.view === "main" && screen.destination === "settings") screen.destination = "now";
         state.activityDetail = undefined;
         screen.offset = 0;
       } else if (key === "?" || key === "m" || key === "v" || key === "s") {
         screen.view = key === "?" ? "help" : key === "v" ? "versions" : key === "s" ? "settings" : "models";
+        if (key === "s") screen.destination = "settings";
         state.activityDetail = undefined;
         screen.offset = 0;
       } else if (key === "return" || key === "d") {
         screen.view = screen.view === "versions" ? "version-details" : "details";
         screen.offset = 0;
       } else if (["up", "down", "j", "k"].includes(key)) {
+        screen.manualScroll = false;
         const delta = key === "up" || key === "k" ? -1 : 1;
         if (screen.view === "settings") {
           const index = DASHBOARD_SETTING_KEYS.indexOf(screen.settingKey ?? "auto");
@@ -53,8 +76,12 @@ export function createDashboardDisplayControls(details: boolean, ledger: boolean
           state.activityDetail = undefined;
         }
       } else if (key === "tab") {
+        screen.selections ??= {};
+        if (screen.selectedKey)
+          screen.selections[`${screen.destination ?? "now"}:${state.filter ?? "everything"}`] = screen.selectedKey;
         const filters = ["everything", "agents", "skills", "needs-you"] as const;
         state.filter = filters[(filters.indexOf(state.filter ?? "everything") + 1) % filters.length];
+        screen.selectedKey = screen.selections[`${screen.destination ?? "now"}:${state.filter}`];
         screen.view = "main";
         state.activityDetail = undefined;
       } else if (key === "p" || key === "f") {

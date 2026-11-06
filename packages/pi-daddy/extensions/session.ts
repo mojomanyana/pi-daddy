@@ -1,3 +1,7 @@
+import type { InitiativeOperationBinding } from "./initiative-runtime.ts";
+import type { DashboardSourceSnapshot, DashboardContribution } from "../src/kernel/dashboard-observation.ts";
+import type { OperationArtifactRef } from "../src/kernel/operation-artifact.ts";
+import type { DashboardOwnerObservation } from "../src/kernel/dashboard-observation.ts";
 import type { EcosystemVersions } from "../src/products/ecosystem-versions.ts";
 import type { AutoModeReader } from "../src/kernel/auto-mode.ts";
 /**
@@ -143,7 +147,13 @@ export function activityChildEnv(activity: { rootId: string; path: string; taskI
 }
 /** Keep each child's pane after it finishes, for inspection. Off by default: fan-out would flood it. */
 export interface GrantsSession extends NativeSessionHost {
+  initiativeOperations?: InitiativeOperationBinding;
+  dashboardInitiative?: () => DashboardSourceSnapshot | undefined;
+  refreshInitiative?: () => void;
   ecosystemVersions?: () => EcosystemVersions;
+  dashboardLive?: () => { turn?: DashboardContribution; activity: DashboardContribution[] };
+  dashboardArtifacts?: OperationArtifactRef[];
+  dashboardObservations?: () => Omit<DashboardOwnerObservation, "version" | "resources" | "capture"> | undefined;
   autoMode?: AutoModeReader;
   autoModeFailure?: string;
   /** Reconciled from the actual owner root on reload; captured call owners stay immutable. */
@@ -193,7 +203,7 @@ export interface GrantsSession extends NativeSessionHost {
   /** Results from pi's synchronous model catalogue, shared by every delegation in this session. */
   readonly modelResolutionCache: Map<string, boolean>;
   /** Committed per-definition and global child runtime defaults. */
-  readonly definitionRuntimeSettings: DefinitionRuntimeSettings;
+  definitionRuntimeSettings: DefinitionRuntimeSettings;
   /** PD-7's future session controls write here; deliberately empty in this commit. */
   currentThinking?: () => string;
   readonly definitionRuntimeOverrides: Map<string, DefinitionRuntimeChoice>;
@@ -295,11 +305,10 @@ export interface GrantsSession extends NativeSessionHost {
    * prompted the human. A value scoped to one specific child is never written to this global channel.
    */
   publishChildEnv(): void;
-  /**
-   * The directory whose stored grant this session read, or would read. `process.cwd()` — see the note in
-   * `createGrantsSession` for why the factory cannot use `ctx.cwd`.
-   */
-  readonly storeCwd: string;
+  /** Exact selected directory whose stored grant was read; provisional process.cwd() before owner binding. */
+  storeCwd: string;
+  /** Observed provenance only. Explicit/inherited environment always takes precedence over a root store. */
+  grantSource?: "environment" | "stored" | "default" | "invalid-store" | "missing-inherited" | "operator-init";
   /** Invalid stored state fails closed and is reported/ledgered during session_start. */
   grantStoreRefusal?: { reason: GrantStoreRefusalReason; path: string };
   /**
@@ -314,7 +323,7 @@ export interface GrantsSession extends NativeSessionHost {
    * widen its own session's ceiling by calling something.
    */
   adoptGrant(grant: Capability[], projectLedger?: string): void;
-  reconcileEnvironment(environment: NodeJS.ProcessEnv, lifecycle: ReloadLifecycle): void;
+  reconcileEnvironment(environment: NodeJS.ProcessEnv, lifecycle: ReloadLifecycle, cwd?: string): void;
 }
 /**
  * Parse the environment once and build the session every other module reads through.
@@ -578,10 +587,11 @@ export function createGrantsSession(
   // Local governance is on unless PI_DADDY_GOVERNANCE opts out; explicit inherited grants still win.
   // The factory precedes ctx, so its cwd/store identity is reconciled at session_start.
   const grantRaw = environment[ENV_GRANT];
+  const bounds = depthConfig(environment[ENV_DEPTH], environment[ENV_MAX_DEPTH]);
   const storeCwd = process.cwd();
   // One root-only store read supplies both decisions made by `/grants init`. A child always has ENV_GRANT,
   // so it cannot activate a ledger merely because its routed cwd happens to have a v2 store (ADR-0037).
-  const storedState = storedGrantSessionState(grantRaw, storeCwd);
+  const storedState = storedGrantSessionState(grantRaw ?? (bounds.depth > 0 ? "" : undefined), storeCwd);
   const governanceOff = environment[ENV_GOVERNANCE]?.trim() === "off" || environment[ENV_GOVERNANCE]?.trim() === "0";
   const governed = governanceOff ? false : true;
   const inherited = governanceOff ? storedState.inherited : storedState.governed ? storedState.inherited : [WILDCARD];
@@ -593,7 +603,6 @@ export function createGrantsSession(
   const storedLedger = storedState.defaultLedger;
   // G7 / A-S4 + B-I4: strict, three-way parsing that fails CLOSED. A malformed bound used to yield
   // `NaN`, and every comparison against `NaN` is false, so depth limiting switched itself off.
-  const bounds = depthConfig(environment[ENV_DEPTH], environment[ENV_MAX_DEPTH]);
   const runtimeConfig = projectDefinitionRuntimeConfiguration(storeCwd);
   const depth = bounds.depth;
   const maxDepth = runtimeConfig.malformed ? 0 : bounds.maxDepth;
@@ -709,6 +718,8 @@ export function createGrantsSession(
       // enforcer, which is the defect R-28 is named for.
       session.governed = true;
       session.ownGrant = grant;
+      session.grantSource = "operator-init";
+      session.storeCwd = session.cwd;
       // An environment ledger remains the explicit answer. Otherwise init's v2 choice becomes live now,
       // before publishChildEnv gives the same absolute path to descendants.
       if (!session.ledgerFromEnvironment && projectLedger !== undefined) {
@@ -716,7 +727,9 @@ export function createGrantsSession(
       }
       session.publishChildEnv();
     },
-    reconcileEnvironment: (environment, lifecycle) => {
+    reconcileEnvironment: (environment, lifecycle, cwd = session.cwd) => {
+      const runtimeConfig = projectDefinitionRuntimeConfiguration(cwd);
+      session.storeCwd = cwd;
       const evidenceDirectory = environment[ENV_PUBLIC_EVIDENCE_DIR];
       if (session.reloadLifecycle !== lifecycle || session.publicEvidence?.directory !== evidenceDirectory)
         session.publicEvidence = createPublicEvidenceOwner(evidenceDirectory);
@@ -726,6 +739,11 @@ export function createGrantsSession(
         session.discoveryCleanupFailure = lifecycle.discoveryCleanupFailure;
       }
       reconcileSessionEnvironment(session, environment, lifecycle);
+      session.definitionRuntimeSettings = runtimeConfig.settings;
+      if (runtimeConfig.malformed) {
+        session.maxDepth = 0;
+        session.malformedBounds.push(runtimeConfig.malformed);
+      }
     },
     publishChildEnv: () => {
       const env = childEnv({
