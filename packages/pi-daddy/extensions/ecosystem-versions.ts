@@ -18,6 +18,8 @@ const packages = [
   { id: "pi-daddy", label: "pi-daddy", names: ["pi-daddy"] },
   { id: "principal-pi-skills", label: "Principal", names: ["principal-pi-skills"] },
   { id: "skill-harness", label: "Harness", names: ["skill-harness", "skill-harness-monorepo"] },
+  { id: "pi-scout-research", label: "Scout", names: ["pi-scout-research"] },
+  { id: "bookie-pi-skills", label: "Bookie", names: ["pi-bookie", "bookie-pi-skills", "@bookie/pi-extension"] },
 ] as const;
 interface LoadedPackage {
   id: EcosystemPackageId;
@@ -74,7 +76,7 @@ export function createEcosystemVersionInventory(
         if (!value || typeof value !== "object") return;
         const item = value as LoadedPackage;
         if (
-          !["principal-pi-skills", "skill-harness"].includes(item.id) ||
+          !["principal-pi-skills", "skill-harness", "pi-scout-research", "bookie-pi-skills"].includes(item.id) ||
           typeof item.root !== "string" ||
           !item.root.startsWith("/")
         )
@@ -92,10 +94,11 @@ export function createEcosystemVersionInventory(
     }
     const rows: EcosystemVersionRow[] = packages.map((pkg) => {
       const loaded = reports.filter((item) => item.id === pkg.id);
+      const npmName = (source: string) =>
+        pkg.names.find((name) => source === `npm:${name}` || source.startsWith(`npm:${name}@`));
       const sources = configured.filter(
         (item) =>
-          item.source === `npm:${pkg.id}` ||
-          item.source.startsWith(`npm:${pkg.id}@`) ||
+          npmName(item.source) !== undefined ||
           (item.installedPath !== undefined && ports.readVersion(item.installedPath, pkg.names) !== null) ||
           loaded.some((x) => item.installedPath && resolve(item.installedPath) === resolve(x.root)),
       );
@@ -116,7 +119,9 @@ export function createEcosystemVersionInventory(
         pkg.id === "pi"
           ? ["pi update"]
           : source?.source.startsWith("npm:") && !multiple
-            ? [`pi install${source.scope === "project" ? " --local" : ""} npm:${pkg.id}@<version>`]
+            ? [
+                `pi install${source.scope === "project" ? " --local" : ""} npm:${npmName(source.source) ?? pkg.names[0]}@<version>`,
+              ]
             : ["pi list", "pi config"];
       if (pkg.id === "principal-pi-skills" && root && !multiple) {
         const installer = "'" + join(root, "scripts/install-agents.mjs").replaceAll("'", "'\\''") + "'";
@@ -145,7 +150,9 @@ export function createEcosystemVersionInventory(
             ? "This package did not report its loaded generation. Installed bytes alone do not establish the running version."
             : pkg.id === "pi"
               ? "Restart Pi after changing its version."
-              : "Use an explicit npm version to replace a pin; pi update keeps pinned versions. Reload Pi after installation." +
+              : (source?.source.startsWith("npm:")
+                  ? "Use an explicit npm version to replace a pin; pi update keeps pinned versions. Reload Pi after installation."
+                  : "Observed local source; manage its selected path, then reload Pi. This is not a published-version check.") +
                 (pkg.id === "principal-pi-skills"
                   ? " Agent installer commands are optional, for legacy installed agent definitions."
                   : ""),

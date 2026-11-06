@@ -161,11 +161,13 @@ export function registerActivityTimeline(pi: ExtensionAPI, session?: ActivitySes
         return { content: [{ type: "text", text: `Activity recorded: ${params.name} ${params.state}.` }], details: {} };
       },
     });
-  pi.on("session_start", (_event, ctx: HookContext) => {
+  pi.on("session_start", async (_event, ctx: HookContext) => {
     resetTurn();
     recorder = undefined;
     try {
       recorder = current(ctx);
+      // Install a stable exclusion before the host can take its first product snapshot.
+      await recorder.prepareStorage();
       // A leaf observer attaches to the parent-owned child event; a root gets a stable session identity.
       if (process.env[ENV_ACTIVITY_TASK]) recorder.attach(process.env[ENV_ACTIVITY_TASK]!);
       const identity: ActivityIdentity = {

@@ -269,3 +269,31 @@ export async function openRuntimeSettlement(
     throw error;
   }
 }
+
+/** Read-only evidence for one exact historical execution. Does not adopt its session or rewrite the journal. */
+export async function readRuntimeExecutionSettlement(
+  directory: string,
+  sessionId: string,
+  cwd: string,
+  executionId: string,
+) {
+  const root = join(realpathSync(directory), "pi-daddy", "runtime-settlement");
+  if (realpathSync(root) !== root) throw Error("runtime settlement root changed");
+  const info = lstatSync(root);
+  if (!info.isDirectory() || info.uid !== process.getuid?.() || info.mode & 0o077)
+    throw Error("runtime settlement root must remain private");
+  const path = join(root, settlementHash([sessionId, cwd]) + ".json");
+  const text = readBoundedTextSync(path, { maxBytes: MAX_RECORD, confinedRoot: root }).text;
+  const journal = validate(JSON.parse(text), sessionId, cwd);
+  const e = journal.executions.find((item) => item.id === executionId);
+  if (!e || e.problem) return "unknown" as const;
+  let result: "settled" | "not-started" | "unknown" = "unknown";
+  if (e.state === "not-started" && !e.identity) result = "not-started";
+  else if (e.identity) {
+    const receipt = await readCapturedWorkerReceipt(e.identity);
+    if (receipt && (!e.receiptSha256 || e.receiptSha256 === settlementHash(receipt))) result = "settled";
+  }
+  if (readBoundedTextSync(path, { maxBytes: MAX_RECORD, confinedRoot: root }).text !== text)
+    throw Error("runtime settlement evidence changed during read");
+  return result;
+}

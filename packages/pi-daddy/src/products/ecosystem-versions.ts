@@ -1,5 +1,6 @@
 /** Operator version inventory. These observations do not qualify runtime compatibility. */
-export type EcosystemPackageId = "pi" | "pi-daddy" | "principal-pi-skills" | "skill-harness";
+export type EcosystemPackageId =
+  "pi" | "pi-daddy" | "principal-pi-skills" | "skill-harness" | "pi-scout-research" | "bookie-pi-skills";
 export interface EcosystemVersionRow {
   id: EcosystemPackageId;
   label: string;

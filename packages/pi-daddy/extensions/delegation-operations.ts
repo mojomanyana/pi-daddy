@@ -1,4 +1,8 @@
 /** Non-authorizing dispatch election. The elected caller still runs the ordinary governance path. */
+import { claimWithArtifact, retainOperationArtifact } from "./delegation-artifacts.ts";
+import { openOperationArtifacts, type OperationArtifactStore } from "../src/governance/operation-artifacts.ts";
+import type { OperationArtifactRef } from "../src/kernel/operation-artifact.ts";
+import { agentDir } from "../src/kernel/project-paths.ts";
 import { createHash } from "node:crypto";
 import { realpath } from "node:fs/promises";
 import { Type } from "typebox";
@@ -22,21 +26,30 @@ const FINAL_BYTES = 4 * 1024 * 1024,
   FINAL_ENTRIES = 128;
 type Final = Extract<NonNullable<DelegationOutcome["final"]>, { state: "complete" }>;
 export interface OperationFinalStore {
+  artifacts?: OperationArtifactStore;
+  publishArtifact?: (reference: OperationArtifactRef) => void;
   lifecycle: object;
   owner: string;
   bytes: number;
   entries: Map<string, { executionId: string; final: Final }>;
 }
-export function bindOperationFinals(session: GrantsSession, sessionId: string, cwd: string) {
+export function bindOperationFinals(
+  session: GrantsSession,
+  sessionId: string,
+  cwd: string,
+  publishArtifact?: (reference: OperationArtifactRef) => void,
+) {
   const owner = JSON.stringify([sessionId, cwd]),
     old = session.reloadLifecycle.operationFinals;
   if (!old || old.lifecycle !== session.reloadLifecycle || old.owner !== owner)
     session.reloadLifecycle.operationFinals = {
+      artifacts: openOperationArtifacts(agentDir(), { sessionId, cwd }),
       lifecycle: session.reloadLifecycle,
       owner,
       bytes: 0,
       entries: new Map(),
     };
+  session.reloadLifecycle.operationFinals!.publishArtifact = publishArtifact;
 }
 /** Capture before admitting work; a late child cannot write a replacement session's store. */
 export function operationFinalScope(session: GrantsSession): object | undefined {
@@ -116,6 +129,7 @@ export async function claimDelegationOperation(
   ctx: DelegationToolContext,
   signal?: AbortSignal,
 ): Promise<OperationClaim | undefined> {
+  const operationScope = session.reloadLifecycle?.operationFinals;
   const operationId = spec.operation_id;
   if (operationId === undefined) return undefined;
   assertDelegationAuthority(session);
@@ -164,16 +178,14 @@ export async function claimDelegationOperation(
         ),
       )
       .digest("hex");
-    return operations.claim(
-      {
-        operationId,
-        requestDigest,
-        executionId: ids.executionId,
-        cwd,
-        workspaceId: spec.workspace?.workspace_id ?? null,
-      },
-      signal,
-    );
+    const identity = {
+      operationId,
+      requestDigest,
+      executionId: ids.executionId,
+      cwd,
+      workspaceId: spec.workspace?.workspace_id ?? null,
+    };
+    return claimWithArtifact(session, identity, () => operations.claim(identity, signal), operationScope);
   };
   if (!denied) return elect();
 
@@ -230,13 +242,13 @@ export async function finishDelegationOperation(
   finalScope: object | undefined,
 ) {
   const cleanup = result.cleanup;
-  const state =
+  const state: OperationReference["state"] =
     cleanup?.state === "settled"
       ? "settled"
       : cleanup?.state === "not-started" || (!result.work && !result.final && !cleanup)
         ? "not-started"
         : "uncertain";
-  await claim.finish!(state, {
+  const runtime: NonNullable<OperationReference["runtime"]> = {
     work: result.work,
     control: result.control,
     ...(result.final
@@ -267,7 +279,24 @@ export async function finishDelegationOperation(
           },
         }
       : {}),
+  };
+  const operation = {
+    ...claim.operation,
+    state,
+    runtime,
+    cwd: result.cwd ?? claim.operation.cwd,
+    workspaceId: result.workspaceId ?? claim.operation.workspaceId,
+    updatedAt: new Date().toISOString(),
+  };
+  retainOperationArtifact(claim, {
+    operation,
+    ...(result.final?.state === "complete"
+      ? { final: result.final }
+      : result.final?.diagnosticText !== undefined
+        ? { partial: result.final.diagnosticText }
+        : {}),
   });
+  await claim.finish!(state, runtime);
   retainOperationFinal(session, claim, result, finalScope);
   result.operation = {
     ...claim.operation,

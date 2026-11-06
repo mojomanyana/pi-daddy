@@ -1,5 +1,56 @@
 # Changelog — pi-daddy
 
+## 0.50.0 — Unreleased
+
+- Recognize the public `pi-bookie` package and retain legacy Bookie names in version observations.
+  Reload Pi after updating Daddy; suggested npm pin commands keep the selected package name.
+
+- Keep private lifecycle state out of dashboard owner replies by emitting only the public session and
+  directory identity. Restart Pi after updating; circular internal state no longer breaks serialization.
+
+- Inspect routing with `/grants workspace <id>`: distinguish saved acceptance, current grant/pin,
+  pending activation, moved/removed destinations and invalid worktrees. The dashboard retains a bounded
+  last-observed result; candidate, approvals and execution checks remain at dispatch.
+- Use Pi's selected working directory for existing root grants and runtime defaults at startup/reload.
+  Explicit grants keep precedence; descendants with missing inherited grants no longer fall back to a
+  local root store. Acceptance still requires a new root session to establish a new pin; reload never repins.
+
+
+- Prepare default activity storage during awaited session startup so later log/content writes do not
+  alter a product snapshot taken before `/grants init`. Preserve existing ignore rules, settings and
+  unrelated files; tracked or insufficiently excluded runtime paths report observation unavailable.
+  Custom locations retain their policy, and marker-free non-Git use does not require Git.
+
+- Report settled prior-generation tasks as unclaimed after safe exclusive takeover, without changing retained attempt provenance or bypassing explicit claim and admission checks. Recovery-only, running and uncertain ownership remain non-free.
+
+
+- Avoid repeating full selected-work-map scans for exact read-only owner observations when a trusted client supplies a separate current read-authority guard; all execution and mutation guards remain full.
+
+
+- Keep initiative dashboard refresh display-only with bounded last-observed facts and unchanged timestamps.
+  Remove a duplicate selection callback while retaining the coordinator's bound authority/generation checks.
+  Optional display no longer repeats work-map validation during selection or execution controls.
+
+- Retain optional exact neutral effect targets/outcomes with explicit operator-attested or owner-verified provenance.
+  Unknown outcomes do not reconcile effects; current target observations stay separate from historical targets
+  after goal/plan changes. Recovery returns the original attempt's exact receipt outcome, without registry inference
+  or task acceptance. Old outcome-less receipts remain readable without invented upgrade status.
+
+- Add optional one-host initiative ownership for trusted selected work maps. Exact task association feeds the
+  existing durable operation admission; current grants and workspace leases remain required. Interrupted or
+  external-effect-unknown work blocks takeover rather than becoming a silent retry. Add recovery-only selection
+  and exact owner-verified receipt reconciliation without treating process settlement as external success.
+- Show bounded initiative observations and improve narrow dashboard word wrapping, attention summaries and
+  visible page scrolling. These observations never approve work or grant authority.
+
+- Add six bounded current-session dashboard views, shared compact/expanded selection, live metadata with capture off, and optional owner-bound producer status contributions. Stale/disconnected data stays explicitly historical; exact evidence identities do not load payloads, and review observations confer no execution authority. Models/Versions shortcuts and old-owner compatibility remain.
+- Show pending/applied/refused/unconfirmed control effects, reject stale owner snapshots, and recheck the owner across awaited settings reads. Display metadata caching is bounded; redraws create no durable records or provider calls. Add safe typed artifact-read failure codes without changing legacy reasons.
+
+- Add an optional trusted retained-artifact hint/list/read bridge and bounded current-owner enumeration. Missed notifications are recoverable without dispatch; consumer failures cannot alter a published result. Historical reads require independently rechecked consumer authority.
+
+- Retain stable-ID attempt admission and exact visible results in private producer manifests, independently of optional diagnostics. Same-session restart resolves historical evidence without redispatching an interrupted or completed attempt; changed requests remain conflicts. Historical reads are bounded and identity checked, and never grant live authority or task approval. Partial and failed outcomes remain explicitly distinct.
+- Add root-exported artifact readers, owner-bound `pi-daddy:operation-history:v1`, optional live `operation.artifact` references and small Pi custom entries for downstream consumers. Principal retains its engineering policy; its existing binding is isolated without changing ordinary inline roles.
+
 ## 0.49.5 — 2026-11-03
 
 - Retain native `not-started` operation evidence for non-approval admission-preview refusals, including missing workspace authority. Previously these refusals could leave a prepared coordinator attempt without a native operation record. The original typed refusal still throws; duplicate and conflicting IDs never overwrite an existing execution. After correcting authority, use the coordinator's explicit retry rather than redispatching the terminal ID. No permission or Auto setting changes.
@@ -164,7 +215,6 @@ Release candidate for review, not a stable or npm publication. Use the immutable
   legacy settings and cost arguments are inert; manual model edits, permission approvals and retained historical
   usage remain. Pi 1.0.4 argument preparation validates active arguments after removing the retired cost override.
 - Live complete episode cost is explicitly unavailable in the session dashboard; historical usage remains in reports.
-
 
 ### Passive cost coverage
 

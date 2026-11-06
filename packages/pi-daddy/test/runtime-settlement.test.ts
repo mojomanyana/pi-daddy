@@ -5,7 +5,7 @@ import { after, test } from "node:test";
 import { readFile } from "node:fs/promises";
 
 import { join } from "node:path";
-import { openRuntimeSettlement } from "../src/governance/runtime-settlement.ts";
+import { openRuntimeSettlement, readRuntimeExecutionSettlement } from "../src/governance/runtime-settlement.ts";
 import { runOwnedChild } from "../src/executors/owned-worker.ts";
 test("runtime journal holds actual native ownership and cannot infer settled from a process exit", async () => {
   const root = await tempDir("pd-runtime-state-");
@@ -28,6 +28,8 @@ test("runtime journal holds actual native ownership and cannot infer settled fro
   const settled = await journal.snapshot();
   assert.equal(settled.state, "idle");
   assert.deepEqual(settled.settledExecutionIds, ["child-a"]);
+  assert.equal(await readRuntimeExecutionSettlement(root, "session-a", root, "child-a"), "settled");
+  assert.equal(await readRuntimeExecutionSettlement(root, "session-a", root, "missing"), "unknown");
   assert.equal((await journal.snapshot()).evidenceDigest, settled.evidenceDigest);
   await assert.rejects(openRuntimeSettlement(root, "session-a", root), /another live runtime/);
   journal.begin("no-proof");

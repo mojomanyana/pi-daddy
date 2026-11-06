@@ -116,6 +116,24 @@ export async function reconcileAcceptedWorkspaces(
   };
 }
 
+/** Read-only inspection: unlike reconciliation, absence never creates first-use acceptance. */
+export async function inspectAcceptedWorkspaces(
+  registryPath: string,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<{ state: "absent" | "invalid" | "recorded"; accepted: string[] }> {
+  let text: string;
+  try {
+    text = await readAuthorityText(acceptedWorkspacesPath(registryPath, env));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { state: "absent", accepted: [] };
+    throw error;
+  }
+  const stored = parse(text);
+  return stored && stored.registry === registryPath
+    ? { state: "recorded", accepted: [...stored.accepted] }
+    : { state: "invalid", accepted: [] };
+}
+
 /** Accept the registry's current ids, replacing what was accepted before. `/grants` drives this. */
 export async function acceptWorkspaces(
   registryPath: string,

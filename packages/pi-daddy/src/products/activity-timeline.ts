@@ -4,6 +4,7 @@ import { constants } from "node:fs";
 import { appendFile, mkdir, open, readFile, realpath, rename, writeFile } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
 import { activityTimelinePath } from "../kernel/project-paths.ts";
+import { prepareDefaultActivityStorage } from "./activity-storage.ts";
 import { isEpisodeId, newEpisodeId } from "../kernel/episode-id.ts";
 import { ENV_EPISODE_ID } from "../kernel/env-names.ts";
 import { appendRecord, readRecords } from "../governance/record.ts";
@@ -572,7 +573,10 @@ export class ActivityTimelineRecorder {
   readonly rootId: string;
   readonly episodeId: string;
   private taskId?: string;
+  private storageReady?: Promise<void>;
+  private readonly cwd: string;
   constructor(cwd: string, env: NodeJS.ProcessEnv = process.env) {
+    this.cwd = cwd;
     const configured = env[ENV_ACTIVITY_TIMELINE]?.trim();
     this.enabled = configured !== "off" && configured !== "0";
     this.contentEnabled =
@@ -583,6 +587,11 @@ export class ActivityTimelineRecorder {
     const inheritedEpisodeId = env[ENV_EPISODE_ID]?.trim();
     this.episodeId = isEpisodeId(inheritedEpisodeId) ? inheritedEpisodeId : newEpisodeId();
     this.taskId = identity.taskId;
+  }
+  /** Await during session_start. Direct recorder users also pass this before any write. */
+  prepareStorage(): Promise<void> {
+    if (!this.enabled) return Promise.resolve();
+    return (this.storageReady ??= prepareDefaultActivityStorage(this.cwd, this.path));
   }
   get task(): string | undefined {
     return this.taskId;
@@ -660,6 +669,7 @@ export class ActivityTimelineRecorder {
     fields: Omit<Partial<ActivityEvent>, "version" | "id" | "kind" | "at" | "rootId" | "taskId">,
   ): Promise<void> {
     if (!this.enabled || !this.taskId) return;
+    await this.prepareStorage();
     const event: ActivityEvent = {
       version: 1,
       id: randomUUID(),
@@ -676,6 +686,7 @@ export class ActivityTimelineRecorder {
     await appendRecord(this.path, "activity", event); // ADR-0076 PR 3d: envelope, lock, damage refusal
   }
   private async content(value: string): Promise<ContentReference> {
+    await this.prepareStorage();
     const digest = sha(value),
       bytes = Buffer.byteLength(value);
     if (!this.contentEnabled || bytes > MAX_CONTENT_BYTES) return { digest, bytes };

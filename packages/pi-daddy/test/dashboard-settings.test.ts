@@ -216,9 +216,42 @@ test("Settings navigation fits narrow panes and distinguishes pending consent, e
     assert.equal(display.screen.settingKey, "perCall");
     assert.match(draw(), /> Children per call/);
     assert.match(draw(100, 30), /STARTUP LIMITS.*restart/);
-    assert.match(draw(100, 30), /Auto never supplies that consent/);
+    assert.match(draw(100, 30), /Auto does not grant JEV consent/);
     display.key("escape");
     assert.equal(display.screen.view, "main");
+  } finally {
+    await endpoint.close();
+    await closeSessionAutoMode(session);
+  }
+});
+
+test("owner replacement during an awaited settings read refuses a mixed-session acknowledgment", async () => {
+  const session = await fixture(),
+    endpoint = await ensureDashboardSessionServer(session);
+  const events = new EventEmitter();
+  let observed!: () => void;
+  const started = new Promise<void>((resolve) => {
+    observed = resolve;
+  });
+  let answer: any;
+  events.on("skill-harness:jev-control-v1", (request) => {
+    answer = request;
+    observed();
+  });
+  registerDashboardSettings({ events } as unknown as ExtensionAPI, session);
+  try {
+    const pending = dashboardSessionRequest(endpoint.socketPath, endpoint.token, { action: "get" });
+    const refusal = assert.rejects(pending, /owner changed/);
+    await started;
+    await initializeSessionAutoMode(session, {}, "replacement-owner");
+    answer.reply({
+      version: 1,
+      requestId: answer.requestId,
+      sessionId: answer.sessionId,
+      pending: false,
+      status: { enabled: false },
+    });
+    await refusal;
   } finally {
     await endpoint.close();
     await closeSessionAutoMode(session);

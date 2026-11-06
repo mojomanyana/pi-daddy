@@ -19,6 +19,76 @@ request under the same ID refuses. An intentional retry needs a new attempt afte
 previous operation is proven settled or never started; uncertainty stays blocked.
 Principal 4.12.0 introduced automatic operation IDs and exact candidate/report references for this contract.
 
+Stable-ID attempts also retain private producer evidence under
+`<PI_CODING_AGENT_DIR>/pi-daddy/operation-results` (default agent directory: `~/.pi/agent`).
+Admission is synchronized before dispatch; a restart with no published result leaves the attempt uncertain,
+not safe to rerun. Exact visible finals and available visible partial output remain distinct from native
+cleanup, successful work, review approval and current applicability. Diagnostics settings do not control this
+required result store. No raw session, reasoning, environment or task request is captured here.
+
+`OperationArtifactRef`, `openOperationArtifacts` and `readOperationArtifact` are available from the package
+root without loading the extension, Principal or Bookie. Immutable references bind the original owner,
+operation, execution, manifest hash and authored bytes. Historical reads require the selected agent directory,
+check identity and confinement, and refuse missing, altered or oversized evidence. Authored content is bounded
+at 4 MiB per result; manifests at 64 KiB. There is no automatic lifetime quota or deletion: the operator owns
+retention and backup. Deleting evidence does not establish that an interrupted execution never started.
+
+The live `pi-daddy:operation-status:v1` reply retains its original meaning and may add
+`operation.artifact`. `pi-daddy:operation-history:v1` accepts `{version:1, requestId, sessionId, cwd,
+operationId, reply}` for the currently bound session/canonical cwd only, returning `history:true`, the
+historical `operation`, optional `artifact` and exact `final` or explicitly `partial` content. It never claims
+live qualification or approval. Pi custom entries contain only `pi-daddy:operation-artifact:v1` references.
+Bookie can register a reference afterward; a registration retry never dispatches the child again.
+
+## Current-session dashboard
+
+The connected terminal dashboard has six destinations: **1 Now, 2 Work, 3 Reviews, 4 Activity,
+5 Evidence, 6 Settings**. `x` switches the same selection to an expanded details layout at 96 columns;
+smaller panes keep the compact layout. Arrow keys select, PageUp/PageDown scroll, Enter opens details,
+Esc returns, and `m` Models / `v` Versions / `s` Settings remain available. Old owners and standalone
+ledger views keep their compatible legacy display.
+
+Now combines an explicitly reported goal/next-step recommendation with actual parent and child
+observations. Recommendations do not authorize work. Reviews show producer judgments in their stated
+scope; retained output, a successful process, and an overall approved task are different facts. Evidence
+shows exact technical references, never automatically restores output into context. References may contain
+local names or paths. Explicit `p`/`f` reads retain one checked display snapshot until another selection.
+
+Optional Bookie, Scout, Principal and Harness status adapters publish only bounded terminal metadata.
+Absent adapters show unavailable; closed adapters, disconnected owners and observations older than two
+minutes show last observed/stale. Silence is not a hang. Ordinary parent tool-name activity works with
+transcripts/diagnostics disabled; no arguments, results, prompts or reasoning are captured for this view.
+The small resource sample is the parent Pi process's RSS, not host health or total child memory. Native
+children use the current owner's existing ledger/timeline; unrelated sessions are excluded.
+
+Controls remain the existing authenticated owner controls. Changes show pending, applied, refused or
+unconfirmed status. Unconfirmed mutations need owner inspection before retry. Auto changes current
+permission handling, JEV still requires its separate paid-call/storage choices, and model/wall/idle edits
+apply to future children. Running children keep captured settings. The dashboard does not implement a
+new pause/cancel/stop route: use the owning Pi control, and treat a reported request as unconfirmed until
+its owner reports settlement. Existing Herdr child panes stay view-only and parent controlled.
+
+Display storage is bounded and memory-only: at most eight source updates of 4 KiB, 32 parent activity
+observations, 16 recent producer-reference identities, and four metadata files of at most 2 MiB. Unchanged
+metadata is cached with a one-second file-check interval; package version inventory is cached for five seconds
+per owner. Versions includes optional Scout/Bookie observations and separates installed bytes from loaded
+generations; a local 0.0.0 Bookie manifest is not evidence of npm publication. The view does not scan historical artifact stores,
+make provider calls, or write durable records on redraw. Larger ledger files are reported unavailable in
+this view rather than silently truncated into a false complete history.
+
+The optional event `pi-daddy:dashboard-source:v1` takes a trusted
+`{version:1, sessionId, cwd, producer, producerVersion, reply}` registration for the actual current native
+owner and canonical cwd. A successful reply supplies `{version:1, ok:true, generation, publish, close}`.
+`publish({sequence, items})` accepts strictly increasing nonnegative sequence values, no more than eight
+items and 4 KiB total. Each item has `id`, `kind` (`goal`, `next`, `work`, `review`, `evidence`, `status`),
+`label`, `state` (`observed`, `running`, `dependency-wait`, `approval-wait`, `cancel-requested`, `settled`,
+`failed`, `unknown`, `unavailable`), optional bounded `details`, and an optional opaque display `reference`.
+IDs are bounded to 160 characters, labels to 240, details to six strings of 240, and references to 512.
+Replacing a producer invalidates its prior publisher even at the same version; session/lifecycle changes
+invalidate all publishers. Registered extensions own refresh/closure; no callback conveys permission,
+review approval, a content resolver, or executable actions. The exported TypeScript interfaces document
+this seam without making other ecosystem packages mandatory.
+
 The dashboard shows the selected task's last observed tool event and time since that event.
 Details include the actual recorded working directory and phase where available. Silence is
 not proof of a hang, and a finished process is not an approved task. Tool observations retain
@@ -135,13 +205,13 @@ delegate({ agent: "build", task: "Implement it.",
            context: { mode: "files", files: ["src/kernel/resolve.ts"] } })
 ```
 
-| Mode | What crosses |
-| :--- | :--- |
-| `none` | nothing beyond the definition and the task; the default |
-| `files` | the contents of paths the parent names, confined to the working directory |
-| `pruned` | the last few turns of the parent's session, plus older turns naming those files |
-| `summary` | what the parent writes in its own words |
-| `fork` | the parent's whole session, as a fork; **gated**, so a human answers first |
+| Mode      | What crosses                                                                    |
+| :-------- | :------------------------------------------------------------------------------ |
+| `none`    | nothing beyond the definition and the task; the default                         |
+| `files`   | the contents of paths the parent names, confined to the working directory       |
+| `pruned`  | the last few turns of the parent's session, plus older turns naming those files |
+| `summary` | what the parent writes in its own words                                         |
+| `fork`    | the parent's whole session, as a fork; **gated**, so a human answers first      |
 
 A `delegate_chain` step takes the same parameter, and because a chain is planned as one unit, a gate any step
 raises is answered before the first step runs.
@@ -223,6 +293,13 @@ The timeline is enabled by default. It may store private prompt and final conten
 `PI_DADDY_ACTIVITY_CONTENT=metadata-only` (or `off`) to keep only digests, or
 `PI_DADDY_ACTIVITY_TIMELINE=off` to disable observation.
 
+The default location is prepared during session startup, before product snapshots. Fresh ignore rules
+cover activity/content and grants-ledger runtime files only; settings and unrelated files stay reviewable.
+Existing ignore rules are preserved. Already tracked runtime data, unsafe storage paths or insufficient
+exclusions report observation unavailable rather than silently changing repository policy. Custom and
+transported timeline locations keep their existing policy. Non-Git roles can still record without Git;
+an existing repository whose policy cannot be checked remains unavailable.
+
 `pi-daddy outcomes` reads Git history, optional GitHub Actions results from `gh`, and narrowly recognized corrections
 in the next recorded operator turn, then appends only changed `episode_outcome` signals. Only commits carrying a
 `Pi-Episode: <episode-id>` trailer is considered; `pi-daddy report` can display attribution only when matching episode
@@ -230,6 +307,20 @@ data exists in the local ledgers and shows the latest label beside each such epi
 is `packages/pi-daddy/contracts/ledger-record/v1`.
 
 ## Workspaces and leases
+
+`/grants workspace <id>` inspects one workspace without changing grants, acceptance or destination pins.
+It distinguishes saved acceptance, the current routing capability, pending activation, a moved or removed
+destination, and invalid worktrees. It names the selected grant directory and its source. An active route
+is only a current observation: candidate, selected task/input scope, approvals, writer lease and native
+settlement remain dispatch-time checks. The dashboard retains the last explicit inspection with its time
+and freshness; redraw does not scan repositories or refresh authority.
+
+Startup uses the actual Pi working directory's existing root grant and runtime defaults, even when an
+embedding process started elsewhere. Explicit environment grants still win; descendants never adopt a
+target directory's broader root grant. Stored directory identity remains exact: an alias does not silently
+borrow or migrate another spelling's saved grant or approvals. Canonical aliases of registered workspace
+destinations continue to resolve through the existing Git/worktree validator.
+
 
 A registered worktree is named `workspace:<id>` and routing a child there is a capability that attenuates like any
 other. Acceptance is trust on first use: the first session accepts and announces every id already in the registry.
@@ -357,18 +448,17 @@ replace a pin, then deliberately reload. There are no background registry checks
 **:** opens command mode, **Tab** changes the task filter, **p/f** shows retained prompt/final content,
 **Esc** returns to the previous view and **q** closes the dashboard.
 
-
 ## Bounds and configuration
 
 Every variable is `PI_DADDY_*`. Operator-facing controls are grouped below; the environment overrides stored
 configuration where both exist.
 
-| Area | Variables |
-| :--- | :--- |
-| Governance | `PI_DADDY_GOVERNANCE`, `PI_DADDY_GRANT`, `PI_DADDY_GATED`, `PI_DADDY_MAX_DEPTH`, `PI_DADDY_FANOUT`, `PI_DADDY_LEDGER`, `PI_DADDY_APPROVAL_TIMEOUT`, `PI_DADDY_AUTO_MODE` |
-| Child execution | `PI_DADDY_HERDR`, `PI_DADDY_HERDR_WORKSPACE`, `PI_DADDY_HERDR_KEEP_PANE`, `PI_DADDY_CHILD_IDLE_TIMEOUT`, `PI_DADDY_CHILD_TIMEOUT`, `PI_DADDY_ALLOW_UNRESOLVED_MODELS` |
-| Workspaces and retention | `PI_DADDY_WORKSPACE_REGISTRY`, `PI_DADDY_WORKSPACE_LEASE_DIR`, `PI_DADDY_EXECUTION_ARCHIVE`, `PI_DADDY_RETAIN_NATIVE_SESSIONS`, `PI_DADDY_NATIVE_SESSION_ROOT` |
-| Activity | `PI_DADDY_ACTIVITY_TIMELINE`, `PI_DADDY_ACTIVITY_CONTENT` |
+| Area                     | Variables                                                                                                                                                                |
+| :----------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Governance               | `PI_DADDY_GOVERNANCE`, `PI_DADDY_GRANT`, `PI_DADDY_GATED`, `PI_DADDY_MAX_DEPTH`, `PI_DADDY_FANOUT`, `PI_DADDY_LEDGER`, `PI_DADDY_APPROVAL_TIMEOUT`, `PI_DADDY_AUTO_MODE` |
+| Child execution          | `PI_DADDY_HERDR`, `PI_DADDY_HERDR_WORKSPACE`, `PI_DADDY_HERDR_KEEP_PANE`, `PI_DADDY_CHILD_IDLE_TIMEOUT`, `PI_DADDY_CHILD_TIMEOUT`, `PI_DADDY_ALLOW_UNRESOLVED_MODELS`    |
+| Workspaces and retention | `PI_DADDY_WORKSPACE_REGISTRY`, `PI_DADDY_WORKSPACE_LEASE_DIR`, `PI_DADDY_EXECUTION_ARCHIVE`, `PI_DADDY_RETAIN_NATIVE_SESSIONS`, `PI_DADDY_NATIVE_SESSION_ROOT`           |
+| Activity                 | `PI_DADDY_ACTIVITY_TIMELINE`, `PI_DADDY_ACTIVITY_CONTENT`                                                                                                                |
 
 `PI_DADDY_FANOUT` bounds active cooperating descendant sessions. Its default remains 8; literal 0 means exhausted,
 and malformed values refuse. A reservation includes the child and its disjoint descendant allowance, so concurrent
@@ -505,10 +595,10 @@ The command never uploads, calls a model, grants training rights, or changes LoR
 External advisors, monetary cost gates and the first-delegation model chooser were removed. These recognized old
 inputs are inert, including malformed values; the package does not rewrite existing configuration or history:
 
-| Input | Compatibility behavior |
-|---|---|
-| Tool argument `episodeCostCeiling` on single/all/chain | Removed before Pi validates the remaining arguments |
-| Settings `episodeCostCeiling`, `advisor`, `sessionModelPrompt` | Ignored; active model and authority fields still validate |
+| Input                                                                                                                                 | Compatibility behavior                                                          |
+| ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Tool argument `episodeCostCeiling` on single/all/chain                                                                                | Removed before Pi validates the remaining arguments                             |
+| Settings `episodeCostCeiling`, `advisor`, `sessionModelPrompt`                                                                        | Ignored; active model and authority fields still validate                       |
 | `PI_DADDY_EPISODE_COST_CEILING`, `PI_DADDY_ADVISOR`, `PI_DADDY_ADVISOR_KEY`, `PI_DADDY_ADVISOR_MODEL`, `PI_DADDY_ADVISOR_TASK_EGRESS` | Never select or execute an intervention; reserved environment stripping remains |
 
 Historical advice/cost-gate records remain readable. Manual model choices and permission approvals remain active.
@@ -545,14 +635,13 @@ primitives, including `resolve`, `planSpawn`, `appendLedgerEvent`, `readRecords`
 The Files column names the main modules of each layer, not all of them; the module docstrings are the
 specification of who owns what.
 
-
-| Layer | Answers | Files |
-| :--- | :--- | :--- |
-| `src/kernel` | What may a child hold, and how is that carried? Mostly pure; the readers that discover what exists are the exception, and they are bounded. | `resolve`, `spawn`, `propagation`, `catalog`, `definitions`, `capabilities`, `approval`, `chain`, `context-handoff`, `fanout`, `correlation`, `refusals`, `env-names`, `project-paths`, `workspace`, `bounded-read` |
-| `src/governance` | What was decided, and where is it written? | `record`, `ledger`, `ledger-events`, `ledger-report`, `approval-store`, `approval-prompt`, `grant-store`, `init`, `workspace-lease`, `execution-retention` |
-| `src/executors` | How does a child process start and end? | `executor`, `run-herdr`, `herdr-*`, `pane-reaper` |
-| `src/products` | What does the operator see or report? | `activity-timeline`, `dashboard-*`, `episode-report`, `episode-outcomes` |
-| `extensions/` | The pi extension and its wiring: hooks, the three tools, approvals flow, `/grants`. | `grants.ts` is the entry point |
+| Layer            | Answers                                                                                                                                     | Files                                                                                                                                                                                                               |
+| :--------------- | :------------------------------------------------------------------------------------------------------------------------------------------ | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/kernel`     | What may a child hold, and how is that carried? Mostly pure; the readers that discover what exists are the exception, and they are bounded. | `resolve`, `spawn`, `propagation`, `catalog`, `definitions`, `capabilities`, `approval`, `chain`, `context-handoff`, `fanout`, `correlation`, `refusals`, `env-names`, `project-paths`, `workspace`, `bounded-read` |
+| `src/governance` | What was decided, and where is it written?                                                                                                  | `record`, `ledger`, `ledger-events`, `ledger-report`, `approval-store`, `approval-prompt`, `grant-store`, `init`, `workspace-lease`, `execution-retention`                                                          |
+| `src/executors`  | How does a child process start and end?                                                                                                     | `executor`, `run-herdr`, `herdr-*`, `pane-reaper`                                                                                                                                                                   |
+| `src/products`   | What does the operator see or report?                                                                                                       | `activity-timeline`, `dashboard-*`, `episode-report`, `episode-outcomes`                                                                                                                                            |
+| `extensions/`    | The pi extension and its wiring: hooks, the three tools, approvals flow, `/grants`.                                                         | `grants.ts` is the entry point                                                                                                                                                                                      |
 
 ## Tests
 
@@ -568,7 +657,6 @@ PI_DADDY_IT_MODEL=1 npm run test:integration --workspace=pi-daddy # opt-in real-
 ```
 
 `pi-daddy` under `packages/pi-daddy` is the only published package; the workspace root is private.
-
 
 ### Exact definition runtime choices (candidate)
 
@@ -596,3 +684,105 @@ Call `delegate_describe({agent:"build"})` and carry its `definitionId` into `del
 child, or a `delegate_chain` step. Principal bindings require that precondition. Description starts no child
 and grants no authority. A stale ID refuses before approval or launch. This hash is an observation and
 precondition, not an approval record or a learned-policy authorization.
+
+### Optional retained-result consumers
+
+`pi-daddy:operation-artifact-ready:v1` is a best-effort trusted extension hint containing `{ version: 1, reference }`. A missing or failing consumer cannot change the durable result or relaunch work. Pi's custom entry likewise holds only a reference. Consumers recover missed hints through the trusted `pi-daddy:operation-artifacts:v1` event; this is not a model-callable tool.
+
+Requests carry `version:1`, a bounded `requestId`, current `sessionId` and canonical `cwd`, an `action`, and a reply callback. `list` accepts a limit of 1–64 directory entries and an optional opaque continuation cursor. Its response includes exact references, unfinished-admission and invalid-entry counts, completion and optional next cursor. Each page is bounded; traversal is not a snapshot under concurrent publication. Only the current owner is enumerated. A new traversal replaces the previous cursor; session replacement closes it. Consumers serialize scans and restart on failed pages rather than treating missing registration as completed.
+
+`read` accepts an exact producer reference and optional expected `producerInstance`. The instance binds the canonical selected agent directory and filesystem identity. Artifact bytes and original admission/scope are verified under that selected root. A previous owner's exact read additionally requires a trusted asynchronous `authorize` callback, checked before and after reading. A consumer must derive that callback from its already retained, explicitly selected project registration; do not forward model-provided paths or permission flags. This does not grant live execution authority or semantic approval.
+
+`openOperationArtifactScan(agentDirectory, owner)` and `operationArtifactInstance(agentDirectory)` are root package exports for trusted local consumers. A scan has `next(limit)` and `close()`; callers own closing it. No Bookie import or dependency is needed. Bookie may separately register reference metadata after operator consent. A failed/partial producer result remains failed/partial evidence; an admission without a result is not registration-ready completion proof.
+
+### One-host initiative continuation
+
+A trusted work-map owner can select an initiative through `pi-daddy:initiative:v1`. Bookie's optional
+`/bookie-work` command supplies the exact selected Project/map/task revisions and asks the operator before
+acquisition. Daddy remains usable without Bookie: normal delegation is unchanged and initiative association
+stays unavailable until a trusted owner selects a map. There is no background scheduler or new model call.
+
+After selection, `initiative_task` associates a selected `taskId`/`taskRevision` with the intended
+`operationId`. Use that ID as ordinary delegation's `operation_id`. Association does not dispatch, approve,
+or grant tools. Ordinary delegation still checks current capabilities, selected definition and workspace
+routing; actual writers still use the existing workspace lease. A trusted `assertExecutionScope` callback
+also compares the actual routed child directory/workspace with this task's selected resource roots before
+spawn. General permission for another repository does not make it this task's target. The original session, operation and
+execution identities remain in durable attempt records when a later coordinator takes over.
+
+One coordinator holds the existing OS ownership lock per initiative on this host. Acquisition requires an
+exact previous record revision, and every mutation checks the owner generation and selected-map callback.
+A lost process or an old timestamp is insufficient for takeover. Every earlier attempt must have exact
+producer no-start/native-cleanup evidence. External or unknown effects additionally need a selected exact
+canonical receipt, verified by the trusted work-map owner against original owner/task/operation/execution
+identity and current receipt content. A human confirmation can establish operator-confirmed reconciliation;
+it never invents provider success or task acceptance. Missing or changed receipts remain blocked. Local
+cleanup is process settlement, not semantic acceptance, a sandbox, or a way to stop arbitrary shell writes.
+
+The owner status is a cached dashboard contribution with an explicit initiative scope, known session count,
+and bounded task observations. It knows only recorded relationships. Task reviews, releases and registry
+publication remain separate owner facts. The six terminal views do not become a global initiative registry.
+
+After restart, trusted `recover` acquires the same lock and exact state revision without changing the old
+owner/generation or allowing dispatch. The handle lists bounded pending effects and reconciles only a selected
+exact receipt. Release then normal acquisition establishes the next generation. Native process settlement
+is required independently; a receipt cannot authorize takeover while an owned process remains unresolved.
+
+State is a private, bounded per-initiative record under the selected agent directory (256 task revisions,
+1,024 attempt links, 512 KiB). A retained initialization marker makes a deleted record fail closed; restore
+trusted state instead of treating deletion as a new initiative. Closed or revoked selection does not erase
+unresolved attempts. No record is written by dashboard redraws.
+
+Trusted event requests include `version:1`, `requestId`, `sessionId`, `cwd`, `initiativeId`, and `reply`.
+`action:"status"` returns an exact `revision` or null for never-initialized state. `action:"acquire"` additionally
+requires `expectedRevision`, selected `tasks:[{taskId,taskRevision,effectScope}]`, and a trusted
+`assertSelection()` and task-specific `assertTaskReady({taskId,taskRevision})` callbacks. The latter is
+rechecked at association, admission and launch; current inputs alone do not establish dependency readiness.
+The reply echoes request/owner identity and returns a handle with
+`associate`, `observe`, `release` (clean transfer), and `close` (abandon cooperative ownership; no settlement
+claim). `observe` is read-only and returns an `assertCurrent` recheck for exact generation, task revision
+and observed execution states. A callback or opaque identifier supplied by model text is not this authority.
+
+`action:"recover"` uses those same selected-scope callbacks but returns `recoveryOnly:true`. Both handle modes
+provide `pendingEffects()` and `reconcileEffect({initiativeId,taskId,taskRevision,owner,operationId,executionId,
+effectScope,receipt:{reference,sha256}})`. Only the trusted `assertEffectReconciled` callback can verify that
+receipt. No callback means unresolved effects. Task revisions retain their exact `sha256:<64hex>` source
+identity (bare 64-hex revisions are also accepted); receipt digests are bare 64-hex values. Revalidation of a
+previous receipt is required in the new session, using the original attempt identity, not the new owner.
+
+Selected tasks may include one bounded neutral `effectTarget:{owner,kind,reference}`. Its responsible owner
+binds the exact target into the task revision. Receipt `observation` is optional for old records; when present
+it names the same target, an `applied`, `not-applied` or `unknown` outcome, and `operator-attested` or
+`owner-verified` provenance. Daddy does not interpret package, registry or other business semantics.
+`unknown` never resolves effects. Applied/not-applied reconciliation never accepts the task or grants execution.
+An old receipt without an outcome remains readable without inventing an outcome during upgrade.
+
+`observe` returns the selected revision's `effectObservation`: pending only when no attempt exists or exact
+no-start evidence exists, otherwise unknown until native settlement and a current exact receipt establish an
+outcome. Older revisions can independently require reconciliation; their outcome is never rebound to a new
+target. `pendingEffects` includes each original target, and `reconcileEffect` returns that historical attempt's
+exact observation. Recovery can therefore confirm an old target after a plan amendment while the current
+selected target remains pending. The work-map owner still validates current target resources separately.
+
+Task-readiness callbacks must not turn the newly admitted attempt's honest unknown state into a self-block
+at launch. Daddy's `begin` refuses a new attempt while any prior attempt or effects are unresolved; the
+work-map owner separately rejects repeating an already-applied target and enforces semantic prerequisites.
+Immediately before start, Daddy rechecks prior attempts across all revisions of that task, excluding only the
+exact already-admitted owner/operation/execution/request identity. Revoking an older receipt after admission
+therefore blocks launch without misclassifying the current admitted attempt as evidence of earlier effects.
+
+For a selected target, changing only the task revision does not authorize applying that identical target again.
+Admission and launch refuse a current exact applied receipt from any retained revision of the same task. This
+prevents duplicate effects; it does not reclassify the old receipt as current task acceptance. A different target
+still needs normal readiness, permission, resource validation and reconciliation of earlier attempts.
+
+Initiative dashboard refresh is display-only: it uses at most five cached observations from real owner reads,
+keeps their original timestamps and labels missing or invalidated facts unavailable/stale. It performs no
+semantic currentness scan, native read, model call or durable write. Work-map reads and every admission/start
+boundary still invoke their authoritative currentness checks; cached display facts never authorize execution.
+
+Trusted work-map clients may provide `assertObservationAuthority` for exact runtime-fact reads. It binds current read permission and selected owner; it does not certify current authored intent, task acceptance or permission to execute. The client still checks canonical inputs before disclosing or reusing a projection. Missing read callbacks use the original full selection guard. Claim, begin, start, reconciliation and release always keep the full guard; native receipts, held ownership and exact generation checks also remain on observations.
+
+Exact effect-receipt validators also use the observation guard: checking an existing receipt cannot itself authorize a mutation. Coordinator acquisition, claim, begin, start, reconcile and release independently bracket those awaits with full mutation authority, including a final check before retaining an attestation.
+
+After safe exclusive coordinator takeover, a settled previous-generation task is reported as `unclaimed` until explicitly claimed. Observation does not rewrite its historical generation or attempts. Recovery-only handles, running attempts and uncertain settlement remain non-free; current-generation claims remain `owned`.

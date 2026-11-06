@@ -53,6 +53,10 @@ export interface GrantsCommandContext {
   unacceptedWorkspaces?: readonly string[];
   /** Accept the registry's current ids. Injected, so this diagnostic does not become a governance path. */
   acceptWorkspaces?: () => Promise<string[]>;
+  /** Read-only current routing owner inspection; never acquires approval, a pin or a writer lease. */
+  inspectWorkspace?: (id: string) => Promise<string>;
+  grantSource?: string;
+  storeCwd?: string;
   observed: boolean;
   depth: number;
   maxDepth: number;
@@ -110,6 +114,7 @@ const KNOWN_SUBCOMMANDS: readonly string[] = [
   "approvals",
   "revoke",
   "workspaces",
+  "workspace",
   "models",
   "auto",
 ];
@@ -190,6 +195,23 @@ export const grantsCommand = {
       return;
     }
 
+    if (sub === "workspace") {
+      if (words.length !== 2 || !/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(target) || target.length > 128) {
+        ctx.ui.notify("grants: use /grants workspace <id> for a read-only routing inspection.", "warning");
+        return;
+      }
+      if (!ctx.grants.inspectWorkspace) {
+        ctx.ui.notify("grants: workspace inspection is unavailable for this owner.", "warning");
+        return;
+      }
+      try {
+        ctx.ui.notify(await ctx.grants.inspectWorkspace(target), "info");
+      } catch (error) {
+        ctx.ui.notify(`grants: workspace inspection unavailable — ${String(error)}`, "warning");
+      }
+      return;
+    }
+
     if (sub === "workspaces") {
       // The one verb that WRITES, and it takes its ability to do so from the caller — the same shape
       // `/grants init` uses, so this screen cannot become a governance path by accident.
@@ -201,7 +223,8 @@ export const grantsCommand = {
       const accepted = await accept();
       ctx.ui.notify(
         `grants: accepted ${accepted.length} workspace id(s) — ${accepted.join(", ") || "(none)"}. ` +
-          `Ids added to the registry after this are refused until accepted again.`,
+          `Accepted for the next root session; this owner's pin is unchanged, including after /reload. ` +
+          `Use /grants workspace <id> to inspect current routing. Ids added later require acceptance again.`,
         "info",
       );
       return;
@@ -466,19 +489,21 @@ export const grantsCommand = {
             // **Marked here rather than left to a join.** The catalog loads the UNNARROWED registry, so it
             // lists an id nobody accepted; session start names it separately, and review pointed out that a
             // reader has to put the two together. An id that cannot be routed to should not read as routable.
-            `  routable   ${catalog
+            `  registered ${catalog
               .byKind("workspace")
               .map((id) =>
-                (unacceptedWorkspaces ?? []).includes(id.slice("workspace:".length)) ? `${id} (NOT ACCEPTED)` : id,
+                (unacceptedWorkspaces ?? []).includes(id.slice("workspace:".length))
+                  ? `${id} (NOT ACCEPTED when this owner pinned)`
+                  : id,
               )
-              .join(", ")} — held ones only are usable (ADR-0035)`,
+              .join(", ")} — inspect /grants workspace <id>; registration alone is not active routing`,
             // ADR-0042 made a destination pin a PRECONDITION for routing, and it had no operator surface at
             // all: not here, not at session start, not in the README. An operator refused for want of a pin
             // could not discover that the mechanism existed, let alone which ids it covered.
             ...(unacceptedWorkspaces && unacceptedWorkspaces.length > 0
               ? [
-                  `  unaccepted ${unacceptedWorkspaces.join(", ")} — in the registry, never accepted here, ` +
-                    `so not routable. /grants workspaces to review and accept.`,
+                  `  unaccepted ${unacceptedWorkspaces.join(", ")} — unaccepted when this owner pinned. ` +
+                    `Use /grants workspace <id> for current acceptance and activation state.`,
                 ]
               : []),
             `  pinned     ${
@@ -500,6 +525,9 @@ export const grantsCommand = {
     ];
     // Runs the REAL planner AND the real approval step over each definition, so this listing cannot
     // disagree with what a spawn would do — the R-28 lesson, kept structural rather than remembered.
+    lines.push(
+      `  grant source ${ctx.grants.grantSource ?? "unobserved"}; store directory ${ctx.grants.storeCwd ?? cwd}`,
+    );
     const shown = [...definitions].slice(0, PREVIEW_LIMIT);
     for (const [name] of shown) {
       const { plan, approval } = await previewDelegation(name);

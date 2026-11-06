@@ -1,3 +1,8 @@
+import { registerInitiativeRuntime } from "./initiative-runtime.ts";
+import { registerDashboardLive } from "./dashboard-live.ts";
+import { registerDashboardSources } from "./dashboard-sources.ts";
+import { registerArtifactBridge, OPERATION_ARTIFACT_READY_EVENT, type ArtifactBridgeOwner } from "./artifact-bridge.ts";
+import { operationHistory, operationArtifactReference } from "./delegation-artifacts.ts";
 /** Trusted extension event bridge. Tool calls and model-produced text cannot supply runtime facts. */
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { realpath } from "node:fs/promises";
@@ -6,6 +11,7 @@ import { reconcileDelegationCapacity } from "./session-capacity.ts";
 import { agentDir } from "../src/kernel/project-paths.ts";
 import type { GrantsSession } from "./session.ts";
 import { bindOperationFinals, operationFinal } from "./delegation-operations.ts";
+export const OPERATION_HISTORY_EVENT = "pi-daddy:operation-history:v1";
 export const OPERATION_STATUS_EVENT = "pi-daddy:operation-status:v1";
 export const RUNTIME_SNAPSHOT_EVENT = "pi-daddy:runtime-snapshot:v1";
 export function registerRuntimeSnapshot(
@@ -17,6 +23,32 @@ export function registerRuntimeSnapshot(
   let bound: { sessionId: string; cwd: string; lifecycle: object } | undefined, problem: string | undefined;
   const generation = {};
   let bindSequence = 0;
+  let artifactOwner: ArtifactBridgeOwner | undefined;
+  const initiative = registerInitiativeRuntime(pi, session, () =>
+    bound?.lifecycle === session.reloadLifecycle && session.reloadLifecycle.runtimeSnapshotGeneration === generation
+      ? bound
+      : undefined,
+  );
+  const dashboardSources = registerDashboardSources(pi, () =>
+    bound?.lifecycle === session.reloadLifecycle && session.reloadLifecycle.runtimeSnapshotGeneration === generation
+      ? bound
+      : undefined,
+  );
+  session.dashboardObservations = () => dashboardSources.snapshot();
+  session.dashboardLive = registerDashboardLive(pi, () =>
+    bound?.lifecycle === session.reloadLifecycle && session.reloadLifecycle.runtimeSnapshotGeneration === generation
+      ? bound
+      : undefined,
+  );
+  session.dashboardArtifacts = [];
+
+  const artifactBridge = registerArtifactBridge(pi, () =>
+    artifactOwner &&
+    bound?.lifecycle === session.reloadLifecycle &&
+    session.reloadLifecycle.runtimeSnapshotGeneration === generation
+      ? artifactOwner
+      : undefined,
+  );
   const unsubscribeRuntime = pi.events?.on?.(RUNTIME_SNAPSHOT_EVENT, (input: unknown) => {
     const request = input as {
       version?: number;
@@ -141,10 +173,11 @@ export function registerRuntimeSnapshot(
           lifecycle.runtimeSnapshotGeneration !== generation
         )
           throw Error("operation owner changed during read");
+        const artifact = operation ? operationArtifactReference(session, operation) : undefined;
         request.reply!({
           ...envelope,
           qualified: true,
-          operation,
+          operation: operation ? { ...operation, ...(artifact ? { artifact } : {}) } : null,
           ...(!operation
             ? { reason: "operation record is absent; this does not prove the dispatch was not started" }
             : {}),
@@ -155,9 +188,59 @@ export function registerRuntimeSnapshot(
       }
     })().catch(() => undefined);
   });
+  const unsubscribeHistory = pi.events?.on?.(OPERATION_HISTORY_EVENT, (input: unknown) => {
+    const request = input as {
+      version?: number;
+      requestId?: string;
+      sessionId?: string;
+      cwd?: string;
+      operationId?: string;
+      reply?: (value: unknown) => void;
+    };
+    if (
+      request?.version !== 1 ||
+      typeof request.requestId !== "string" ||
+      request.requestId.length > 512 ||
+      typeof request.operationId !== "string" ||
+      typeof request.reply !== "function"
+    )
+      return;
+    const current = bound;
+    if (current && session.reloadLifecycle.runtimeSnapshotGeneration !== generation) return;
+    const envelope = {
+      version: 1,
+      requestId: request.requestId,
+      sessionId: current?.sessionId ?? "",
+      cwd: current?.cwd ?? "",
+      operationId: request.operationId,
+      history: true,
+    };
+    if (
+      !current ||
+      current.lifecycle !== session.reloadLifecycle ||
+      request.sessionId !== current.sessionId ||
+      request.cwd !== current.cwd
+    ) {
+      request.reply({ ...envelope, operation: null, reason: "historical owner is not bound" });
+      return;
+    }
+    try {
+      const retained = operationHistory(session, request.operationId);
+      request.reply({
+        ...envelope,
+        ...(retained ?? { operation: null, reason: "no retained operation; absence is not no-start proof" }),
+      });
+    } catch (error) {
+      request.reply({ ...envelope, operation: null, reason: String(error) });
+    }
+  });
   const unsubscribe = () => {
     unsubscribeRuntime?.();
     unsubscribeOperations?.();
+    unsubscribeHistory?.();
+    artifactBridge.close();
+    void initiative.close().catch(() => undefined);
+    dashboardSources.close();
   };
   return {
     async bind(ctx) {
@@ -165,6 +248,9 @@ export function registerRuntimeSnapshot(
         lifecycle = session.reloadLifecycle;
       lifecycle.runtimeSettlement = undefined;
       bound = undefined;
+      artifactOwner = undefined;
+      artifactBridge.reset();
+      await initiative.reset();
       problem = undefined;
       try {
         const sessionId = ctx.sessionManager.getSessionId(),
@@ -182,8 +268,38 @@ export function registerRuntimeSnapshot(
         }
         if (sequence !== bindSequence || session.reloadLifecycle !== lifecycle) return;
         lifecycle.runtimeSettlement = runtime;
-        bindOperationFinals(session, sessionId, cwd);
+        bindOperationFinals(session, sessionId, cwd, (reference) => {
+          if (
+            bound?.sessionId === sessionId &&
+            bound.cwd === cwd &&
+            bound.lifecycle === lifecycle &&
+            lifecycle.runtimeSnapshotGeneration === generation
+          ) {
+            session.refreshInitiative?.();
+            session.dashboardArtifacts ??= [];
+            if (
+              !session.dashboardArtifacts.some(
+                (item) =>
+                  item.executionId === reference.executionId && item.manifest.sha256 === reference.manifest.sha256,
+              )
+            )
+              session.dashboardArtifacts.push(reference);
+            if (session.dashboardArtifacts.length > 16) session.dashboardArtifacts.shift();
+            try {
+              pi.appendEntry?.("pi-daddy:operation-artifact:v1", reference);
+            } catch {
+              /* recover from producer enumeration */
+            }
+            try {
+              pi.events?.emit?.(OPERATION_ARTIFACT_READY_EVENT, { version: 1, reference });
+            } catch {
+              /* optional consumer cannot alter settled result */
+            }
+          }
+        });
+        session.dashboardArtifacts = [];
         bound = { sessionId, cwd, lifecycle: session.reloadLifecycle };
+        artifactOwner = { owner: { sessionId, cwd }, agentDirectory: agentDir() };
       } catch (error) {
         if (sequence === bindSequence && session.reloadLifecycle === lifecycle) problem = String(error);
       }

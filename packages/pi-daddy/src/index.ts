@@ -193,3 +193,16 @@ export {
 } from "./kernel/workspace-pin.ts";
 
 export { exportDiagnostics, parseDiagnosticSelection, type DiagnosticSelection } from "./products/diagnostic-export.ts";
+
+export * from "./kernel/operation-artifact.ts";
+export * from "./governance/operation-artifacts.ts";
+
+export { openOperationArtifactScan, operationArtifactInstance } from "./governance/operation-artifact-scan.ts";
+
+export * from "./kernel/dashboard-observation.ts";
+
+export * from "./kernel/initiative.ts";
+export * from "./governance/initiative-state.ts";
+export * from "./governance/initiative-coordinator.ts";
+
+export { inspectWorkspaceRouting, type WorkspaceRoutingObservation } from "./kernel/workspace-diagnostics.ts";

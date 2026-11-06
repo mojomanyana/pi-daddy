@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { dashboardFile, dashboardTimeline, dashboardSelectedDetail } from "./dashboard-file-cache.ts";
 /**
  * `pi-daddy-dashboard` — the view of one ledger or activity timeline plus session model controls.
  *
@@ -64,6 +65,8 @@ export interface DashboardFrameOptions {
   screen?: DashboardScreenState;
   notice?: string;
   pending?: boolean;
+  connected?: boolean;
+  acknowledgment?: string;
   command?: string;
 }
 
@@ -147,9 +150,12 @@ async function compactFrame(options: DashboardFrameOptions): Promise<string> {
       problem: "INCOMPATIBLE dashboard protocol; relink this package.",
     });
   try {
-    const text = await readFile(path, "utf8");
+    const text = options.session?.observation ? await dashboardFile(path) : await readFile(path, "utf8");
     if (!options.ledgerPath || isActivityTimelineText(text)) {
-      const timeline = parseActivityTimeline(text);
+      const parsed = dashboardTimeline(path, text);
+      const timeline = options.session?.observation
+        ? { ...parsed, tasks: parsed.tasks.filter((task) => task.rootId === options.session!.activity?.rootId) }
+        : parsed;
       items = activityDashboardItems(timeline, aliases, options.now ?? new Date()).map((item) => ({
         ...item,
         timelinePath: path,
@@ -157,6 +163,22 @@ async function compactFrame(options: DashboardFrameOptions): Promise<string> {
       problem = timeline.refusals[0];
     } else {
       const projection = parseDashboardLedger(text, { now: options.now });
+      if (options.session?.observation) {
+        const owner = options.session.observation.logicalOwnerId;
+        const admitted = new Set(
+          projection.nodes.filter((node) => owner && node.logicalParentId === owner).map((node) => node.executionId),
+        );
+        for (let pass = 0; pass < projection.nodes.length; pass++) {
+          let changed = false;
+          for (const node of projection.nodes)
+            if (node.parentExecutionId && admitted.has(node.parentExecutionId) && !admitted.has(node.executionId)) {
+              admitted.add(node.executionId);
+              changed = true;
+            }
+          if (!changed) break;
+        }
+        projection.nodes = projection.nodes.filter((node) => admitted.has(node.executionId));
+      }
       items = ledgerDashboardItems(projection);
       if (projection.corrupt.length) problem = `Ledger unavailable: ${projection.corrupt.length} corrupt line(s)`;
     }
@@ -172,15 +194,22 @@ async function compactFrame(options: DashboardFrameOptions): Promise<string> {
     const key = activityTaskKey(activity.rootId, activity.taskId);
     current = `Task ${activity.taskId}`;
     try {
-      const timeline = parseActivityTimeline(await readFile(activity.path, "utf8"));
-      timeline.tasks = timeline.tasks.filter((task) => activityTaskKey(task.rootId, task.id) === key);
+      const text = options.session?.observation
+        ? await dashboardFile(activity.path)
+        : await readFile(activity.path, "utf8");
+      const parsed = dashboardTimeline(activity.path, text);
+      const timeline = {
+        ...parsed,
+        tasks: parsed.tasks.filter((task) => activityTaskKey(task.rootId, task.id) === key),
+      };
       const item = activityDashboardItems(timeline, aliases, options.now ?? new Date())[0];
       if (item) {
         current = item.label;
         currentStatus = item.status;
         if (!items.some((existing) => existing.key === key)) items.unshift({ ...item, timelinePath: activity.path });
         try {
-          current = (await detailForTimeline(activity.path, key, "prompt")).text.slice(0, 600);
+          if (!options.session?.observation)
+            current = (await detailForTimeline(activity.path, key, "prompt")).text.slice(0, 600);
         } catch {
           /* Metadata-only/off and unavailable retained content retain the exact task identity. */
         }
@@ -198,8 +227,10 @@ async function compactFrame(options: DashboardFrameOptions): Promise<string> {
       const source = items.find((value) => value.taskKey === key)?.timelinePath;
       if (!source) throw Error("task has no retained activity source");
       content = {
-        title: `PRIVATE ${options.activityDetail.field.toUpperCase()}`,
-        text: (await detailForTimeline(source, key, options.activityDetail.field)).text,
+        title: `PRIVATE ${options.activityDetail.field.toUpperCase()} · selected snapshot`,
+        text: options.session?.observation
+          ? (await dashboardSelectedDetail(options.activityDetail, source, key)).text
+          : (await detailForTimeline(source, key, options.activityDetail.field)).text,
       };
     } catch (error) {
       problem = `Activity detail unavailable: ${error instanceof Error ? error.message : String(error)}`;
@@ -328,7 +359,11 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
       width: process.stdout.columns || 80,
       ...display.state,
       activityAliases: display.aliases,
-      session: connection.state.snapshot,
+      session: connection.state.snapshot ?? connection.state.lastObserved,
+      connected: Boolean(connection.state.snapshot),
+      acknowledgment: connection.state.acknowledgment
+        ? `${connection.state.acknowledgment.action}: ${connection.state.acknowledgment.state} · ${connection.state.acknowledgment.effect}`
+        : undefined,
       ...(interactive
         ? {
             height: process.stdout.rows || 24,
@@ -414,7 +449,7 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
     let action = display.key(
       key.name === "return"
         ? "return"
-        : ["up", "down", "escape", "tab"].includes(key.name || "")
+        : ["up", "down", "pageup", "pagedown", "escape", "tab"].includes(key.name || "")
           ? key.name!
           : text || "",
     );

@@ -50,6 +50,15 @@ export const PROJECT_GITIGNORE_CONTENT = `# Written by pi-daddy init. Only setti
 !settings.json
 `;
 
+/** Startup owns only these volatile paths. Preserve settings and unrelated project files. */
+export const ACTIVITY_GITIGNORE_CONTENT = `# Pi Daddy volatile runtime files; settings.json remains reviewable.
+/${PROJECT_FILES.activityTimeline}
+/${PROJECT_FILES.activityTimeline}.lock
+/content/
+/${PROJECT_FILES.ledger}
+/${PROJECT_FILES.ledger}.lock
+`;
+
 /** Is this path inside pi's per-project directory of any project? The private controller journals refuse such paths. */
 export function isUnderPiProjectDir(path: string): boolean {
   return path.split(/[\\/]/).includes(PI_PROJECT_DIR);
@@ -107,3 +116,10 @@ export const legacyUserApprovalsPath = (cwd: string, env?: NodeJS.ProcessEnv) =>
   join(agentDir(env), "grants-approvals", projectFileName(cwd));
 export const legacyProjectLedgerPath = (cwd: string) => join(piProjectDir(cwd), "grants.jsonl");
 export const legacyGrantEnvPath = (cwd: string) => join(piProjectDir(cwd), "grants.env");
+
+/** Private producer results, separate from optional execution diagnostics. */
+export const operationArtifactsDir = (directory = agentDir()) =>
+  join(directory, PROJECT_STATE_DIRNAME, "operation-results");
+
+/** One-host cooperative initiative ownership, separate from repository writer leases. */
+export const initiativeStateDir = (directory = agentDir()) => join(directory, PROJECT_STATE_DIRNAME, "initiatives");
