@@ -61,7 +61,7 @@ export function wrapDashboardLines(lines: string[], width: number): string[] {
   return lines.flatMap((line) => {
     const safe = dashboardText(line);
     if (cellWidth(safe) <= width) return [safe];
-    const indent = width >= 12 && (safe.startsWith("> ") || safe.startsWith("  ")) ? safe.slice(0, 2) : "";
+    const indent = width >= 12 ? (safe.match(/^(?:> |  ) */)?.[0] ?? "").slice(0, 6) : "";
     const available = width - indent.length;
     const result: string[] = [];
     let row = "";
@@ -437,25 +437,22 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
             "",
           ]
         : []),
+      ...(!modern ? ["SETTINGS · current session"] : []),
       ...dashboardSettingsLines(
         options.connected === false && session?.settings ? { ...session.settings, editable: false } : session?.settings,
         session?.auto.enabled,
         screen.settingKey ?? "auto",
-      ).map((line) => {
-        if (modern && (line === "SETTINGS" || line === "SETTINGS · current session"))
-          return sectionHeading("SESSION CONTROLS", width);
-        if (modern && line.startsWith("STARTUP LIMITS")) return sectionHeading(line, width);
-        return line;
-      }),
+        width,
+      ),
     );
     if (session?.observation)
       body.push(
-        sectionHeading("CAPTURE · startup configuration", width),
-        `Transcripts: ${session.observation.capture.transcripts ? "configured" : "off"}`,
-        `Diagnostics: ${session.observation.capture.diagnostics ? "configured" : "off"}`,
-        "Capture changes require a new parent launch.",
-        "m models · v versions",
+        "",
+        sectionHeading("CAPTURE · restart Pi to change", width),
+        `  Transcripts: ${session.observation.capture.transcripts ? "configured" : "off"}`,
+        `  Diagnostics: ${session.observation.capture.diagnostics ? "configured" : "off"}`,
       );
+    body.push("", "m models · v versions");
   } else if (screen.view === "versions" || screen.view === "version-details") {
     body.push(modern ? sectionHeading("VERSIONS", width) : "VERSIONS");
     if (!session?.versions) body.push("Owner has not reported versions.");
@@ -584,8 +581,13 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
   }
   if (screen.view === "settings" && room > 0 && !screen.manualScroll) {
     const row = detailBody.findIndex((line) => line.startsWith(">"));
-    if (row < screen.offset) screen.offset = Math.max(0, row);
-    else if (row >= screen.offset + room) screen.offset = Math.max(0, row - room + 1);
+    if (row >= 0) {
+      // Keep the first supporting detail with its control, even when the detail wraps.
+      const labelStart = detailBody[row]!.search(/[^> ]/);
+      let last = row;
+      while (last - row < Math.min(2, room - 1) && detailBody[last + 1]?.startsWith(" ".repeat(labelStart + 1))) last++;
+      screen.offset = Math.max(0, Math.min(row, Math.max(screen.offset, last - room + 1)));
+    }
   }
   if (modern && screen.view === "main" && room > 0 && !screen.manualScroll) {
     const selectedRow = detailBody.findIndex((line) => line.startsWith(">"));

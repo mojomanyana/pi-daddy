@@ -483,7 +483,7 @@ test("compact prose wraps at words, attention names waits, and clipped Settings 
   const scrolled = render();
   assert.ok(display.screen.offset > 0, "settings page scroll is not reset to the selected toggle");
   assert.ok(scrolled.includes(`Rows ${display.screen.offset + 1}–`));
-  assert.match(scrolled, /Capture changes require a new parent launch/);
+  assert.match(scrolled, /CAPTURE · restart Pi to change.*\n  Transcripts: off\n  Diagnostics: off/);
 });
 
 test("initiative scope and related-session counts remain explicit; stale goals are not presented as current", () => {

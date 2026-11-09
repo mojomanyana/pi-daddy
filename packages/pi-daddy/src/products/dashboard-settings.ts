@@ -1,3 +1,5 @@
+import { sectionHeading } from "./dashboard-layout.ts";
+
 /** Settings are owner observations; rendering never grants consent or changes execution. */
 export const JEV_EDIT_ACTIONS = ["limit", "configure", "hints"] as const;
 export type JevEditAction = (typeof JEV_EDIT_ACTIONS)[number];
@@ -60,60 +62,69 @@ export function dashboardSettingsLines(
   settings: DashboardSettingsSnapshot | undefined,
   auto: boolean | undefined,
   selected: DashboardSettingKey,
+  width: number,
 ): string[] {
-  if (!settings) return ["SETTINGS", "Owner settings unavailable. Reconnect from /grants dashboard."];
-  const row = (key: DashboardSettingKey, label: string) => `${key === selected ? ">" : " "} ${label}`;
+  if (!settings) return ["Owner settings unavailable. Reconnect from /grants dashboard."];
+  const row = (key: DashboardSettingKey, label: string, nested = false) =>
+    `${key === selected ? ">" : " "}${nested ? "   " : " "}${label}`;
   const jev = settings.jev;
+  const canConfigure = jev.controls?.includes("configure");
+  const providerIndent = canConfigure ? "      " : "    ";
+  const providerLines = [
+    jev.controls?.includes("limit")
+      ? `Provider status: ${jev.availability ?? "unknown"}`
+      : `${jev.availability ?? "unknown"} · ${jev.remaining ?? 0} paid calls left`,
+    `Key: ${jev.providerReadiness ?? "unknown"}; storage: ${jev.storage ?? "not granted"}`,
+    ...(jev.selectedProvider || jev.selectedModel
+      ? [`Model: ${jev.selectedProvider ?? "unknown"}/${jev.selectedModel ?? "not reported"}`]
+      : []),
+    ...(jev.transport ? [`Via: ${jev.transport}`] : []),
+    ...(jev.storageRoot ? [`Data: ${jev.storageRoot}`] : []),
+  ];
   return [
-    "SETTINGS · current session",
+    sectionHeading("PERMISSIONS", width),
     row("auto", `Permission Auto: ${auto ? "ON" : "OFF"}`),
+    "",
+    sectionHeading("JEV · optional advice", width),
     row(
       "jev",
       `JEV: ${jev.pending ? "waiting for consent" : !jev.available ? "unavailable" : jev.enabled ? "ON" : "OFF"}`,
     ),
-    ...(jev.available && jev.controls?.includes("limit")
-      ? [
-          row("limit", `Call limit: ${jev.limit ?? "unknown"} per session`),
-          `  ${jev.used ?? "?"} used · ${jev.remaining ?? "?"} available now`,
-        ]
-      : []),
-    ...(jev.available && jev.controls?.includes("configure")
-      ? [row("configure", "Choose JEV model and storage…")]
-      : []),
-    ...(jev.available && jev.controls?.includes("hints")
-      ? [
-          row(
-            "hints",
-            `Tool hints: ${jev.hintsEnabled === true ? "ON" : jev.hintsEnabled === false ? "OFF" : "unknown"}`,
-          ),
-          "  Suggestions only · above 90% confidence",
-        ]
-      : []),
     ...(jev.available
       ? [
+          "    Pi asks before paid calls or storage.",
           ...(jev.controls?.includes("limit")
-            ? [`  Provider status: ${jev.availability ?? "unknown"}`]
-            : [`  ${jev.availability ?? "unknown"} · ${jev.remaining ?? 0} paid calls left`]),
-          `  Key: ${jev.providerReadiness ?? "unknown"}; storage: ${jev.storage ?? "not granted"}`,
-          ...(jev.selectedProvider || jev.selectedModel
-            ? [`  Model: ${jev.selectedProvider ?? "unknown"}/${jev.selectedModel ?? "not reported"}`]
+            ? [
+                row("limit", `Call limit: ${jev.limit ?? "unknown"} per session`, true),
+                `      ${jev.used ?? "?"} used · ${jev.remaining ?? "?"} available now`,
+              ]
             : []),
-          ...(jev.transport ? [`  Via: ${jev.transport}`] : []),
-          ...(jev.storageRoot ? [`  Data: ${jev.storageRoot}`] : []),
+          ...(canConfigure ? [row("configure", "Choose JEV model and storage…", true)] : []),
+          ...providerLines.map((line) => providerIndent + line),
+          ...(jev.controls?.includes("hints")
+            ? [
+                row(
+                  "hints",
+                  `Tool hints: ${jev.hintsEnabled === true ? "ON" : jev.hintsEnabled === false ? "OFF" : "unknown"}`,
+                  true,
+                ),
+                "      Suggestions only · above 90% confidence",
+              ]
+            : []),
         ]
-      : ["  Load skill-harness to connect JEV controls."]),
-    ...(jev.error ? [`  ${jev.error}`] : []),
+      : ["    Load skill-harness to connect JEV controls."]),
+    ...(jev.error ? [`    ${jev.error}`] : []),
+    "",
+    sectionHeading("CHILD TIMEOUTS", width),
     row("wall", `Child wall: ${settings.wallSeconds}s (${settings.wallSource})`),
     row("idle", `Child idle: ${settings.idleSeconds}s (${settings.idleSource})`),
-    settings.editable ? "Limits affect future children only." : "Read-only: change settings in the owning parent.",
-    "Running children keep their limits.",
-    "JEV needs separate call/storage consent in Pi.",
-    "Auto does not grant JEV consent. No token budget.",
+    settings.editable
+      ? "    Time limits apply to future children only."
+      : "    Read-only: change settings in the owning parent.",
     "",
-    "STARTUP LIMITS · restart to change",
+    sectionHeading("STARTUP LIMITS · restart to change", width),
     row("descendants", `Active descendants: ${settings.descendants} (${settings.reserved} reserved) · PI_DADDY_FANOUT`),
     row("depth", `Maximum depth: ${settings.maxDepth} · PI_DADDY_MAX_DEPTH`),
     row("perCall", `Children per call: ${settings.perCall} (fixed safety bound)`),
-    "s settings · m models · v versions",
   ];
 }

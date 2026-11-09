@@ -1,5 +1,9 @@
 # Changelog — pi-daddy
 
+## 0.53.2 — 2026-11-09
+
+- Settings groups JEV separately from permissions, child timeouts, startup limits and capture. Usage, provider details and the hint threshold sit under their controls, including in narrow side panes.
+
 ## 0.53.1 — 2026-11-09
 
 - A freshly connected dashboard tells you where to start your first task. Opening a standalone dashboard still shows setup guidance.
