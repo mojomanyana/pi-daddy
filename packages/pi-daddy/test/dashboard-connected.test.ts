@@ -314,6 +314,20 @@ test("a disconnected dashboard withdraws permission prompts and their suggested 
   assert.doesNotMatch(offline, /Respond to the permission request|build needs shell access|Auto unavailable \[a\]/);
 });
 
+test("automatically opened Overview welcomes the first task without asking the operator to reopen it", async () => {
+  const cwd = await tempDir("dashboard-first-open-");
+  const screen = createDashboardDisplayControls(false, true).screen;
+  const session = snapshot();
+  Object.assign(session.observation!, { turn: undefined, sources: [], activity: [], artifacts: [] });
+  const common = { cwd, width: 80, height: 24, screen };
+  const connected = await dashboardFrame({ ...common, session, connected: true });
+  assert.match(connected, /Connected/);
+  assert.match(connected, /Give Pi a task in the main chat/);
+  assert.doesNotMatch(connected, /Waiting for local work|\/grants dashboard|Evidence unavailable/);
+  const standalone = await dashboardFrame(common);
+  assert.match(standalone, /open from \/grants dashboard/);
+});
+
 test("recap works from the session snapshot without a local ledger or a retained private detail", async () => {
   const display = createDashboardDisplayControls(false, true);
   display.key("r");
