@@ -582,8 +582,13 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
   }
   if (screen.view === "settings" && room > 0 && !screen.manualScroll) {
     const row = detailBody.findIndex((line) => line.startsWith(">"));
-    if (row < screen.offset) screen.offset = Math.max(0, row);
-    else if (row >= screen.offset + room) screen.offset = Math.max(0, row - room + 1);
+    if (row >= 0) {
+      // Keep the first supporting detail with its control, even when the detail wraps.
+      const labelStart = detailBody[row]!.search(/[^> ]/);
+      let last = row;
+      while (last - row < Math.min(2, room - 1) && detailBody[last + 1]?.startsWith(" ".repeat(labelStart + 1))) last++;
+      screen.offset = Math.max(0, Math.min(row, Math.max(screen.offset, last - room + 1)));
+    }
   }
   if (modern && screen.view === "main" && room > 0 && !screen.manualScroll) {
     const selectedRow = detailBody.findIndex((line) => line.startsWith(">"));

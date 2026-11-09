@@ -338,6 +338,9 @@ test("Settings shows editable JEV controls only when advertised; entering a cont
         session: snapshot,
       });
       assert.match(narrow, /^>   (?:Call limit|Choose JEV model|Tool hints)/m);
+      if (opt === "hints")
+        assert.match(narrow, /^>   Tool hints: OFF\n      Suggestions only · above 90%\n      confidence/m);
+      if (opt === "limit") assert.match(narrow, /^>   Call limit: 300 per session\n      1 used · 299 available/m);
       assert.ok(narrow.split("\n").every((line) => cellWidth(line) <= 36));
       assert.equal(display.key("return"), "setting");
       const opened = await request({ action: "edit-jev", option: opt, expectedOwner });
