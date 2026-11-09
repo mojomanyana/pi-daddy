@@ -1,5 +1,9 @@
 # Changelog — pi-daddy
 
+## 0.53.3 — 2026-11-09
+
+- When you press a JEV setting twice, the dashboard opens one dialog and clears the reminder as soon as the parent Pi session closes it.
+
 ## 0.53.2 — 2026-11-09
 
 - Settings groups JEV separately from permissions, child timeouts, startup limits and capture. Usage, provider details and the hint threshold sit under their controls, including in narrow side panes.
