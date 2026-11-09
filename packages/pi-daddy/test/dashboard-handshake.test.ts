@@ -4,7 +4,8 @@ import { dirname, join } from "node:path";
 import { after, test } from "node:test";
 import {
   dashboardPreferencePath,
-  offerDashboardHandshake,
+  offerDashboardHandshake as handshake,
+  type DashboardHandshakeInput,
   openDashboardCommand,
 } from "../src/products/dashboard-handshake.ts";
 import { DASHBOARD_PLUGIN_ID } from "../src/products/dashboard-herdr.ts";
@@ -12,6 +13,9 @@ import type { HerdrExec } from "../src/executors/herdr-cli.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
 after(cleanupTempDirs);
+
+const offerDashboardHandshake = (input: DashboardHandshakeInput) =>
+  handshake({ registryOwnerHome: input.cwd, ...input });
 
 const result = (value: Record<string, unknown>) => ({
   code: 0,
@@ -168,6 +172,32 @@ test("simultaneous first opens reuse the installed package and one pane", async 
   assert.deepEqual(outcomes.sort(), ["already-installed", "installed"]);
   assert.equal(fake.calls.filter(([a, b]) => a === "plugin" && b === "link").length, 1);
   assert.equal(fake.calls.filter(([a, b, c]) => a === "plugin" && b === "pane" && c === "open").length, 1);
+});
+
+test("two Pi profiles sharing Herdr cannot silently replace the first profile's bundled dashboard", async () => {
+  const root = await tempDir("dashboard-two-profiles-");
+  const fake = hostAndPluginExec();
+  const run = (profile: string) =>
+    offerDashboardHandshake({
+      mode: "tui",
+      env,
+      pid: 42,
+      cwd: join(root, profile),
+      registryOwnerHome: root,
+      exec: async (args) => {
+        const reply = await fake.exec(args);
+        // Delay the observed registry reply so uncoordinated installers would both see no link.
+        if (args[0] === "plugin" && args[1] === "list") await new Promise((resolve) => setTimeout(resolve, 40));
+        return reply;
+      },
+      pluginRoot: join(root, profile, "plugin"),
+      preferencePath: dashboardPreferencePath(join(root, profile)),
+      paneStatePath: join(root, profile, "panes.json"),
+      ui: { select: async () => assert.fail("must not silently replace the winner"), notify() {} },
+    });
+  const outcomes = await Promise.all([run("profile-a"), run("profile-b")]);
+  assert.deepEqual(outcomes.sort(), ["failed", "installed"]);
+  assert.equal(fake.calls.filter(([a, b]) => a === "plugin" && b === "link").length, 1);
 });
 
 test("an incomplete registry reply never triggers an automatic link", async () => {

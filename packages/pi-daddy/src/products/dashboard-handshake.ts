@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
+import { userInfo } from "node:os";
 import {
   DASHBOARD_PLUGIN_ID,
   dashboardHerdrExec,
@@ -74,6 +75,8 @@ export interface DashboardHandshakeInput {
   ledgerPath?: string;
   pluginRoot: string;
   preferencePath: string;
+  /** Supply an isolated OS account home when testing a shared Herdr registry. */
+  registryOwnerHome?: string;
   paneStatePath: string;
   sessionEndpoint?: { socketPath: string; token: string };
   ui: DashboardHandshakeUI;
@@ -112,10 +115,16 @@ export async function offerDashboardHandshake(input: DashboardHandshakeInput): P
     }
     let outcome: DashboardHandshakeOutcome = "already-installed";
     if (plugin.state !== "compatible") {
-      await mkdir(dirname(input.preferencePath), { recursive: true, mode: 0o700 });
-      // Two Pi sessions can start simultaneously from different installations. Inspect again
-      // under the same user-level lock so an earlier "absent" cannot replace the winner.
-      outcome = await withFileLock(input.preferencePath, "dashboard setup", async () => {
+      // Herdr plugin links are shared across Pi profiles. Lock once per OS account,
+      // independently of Pi settings, environment HOME, and the bundled plugin path.
+      const registryLock = resolve(
+        input.registryOwnerHome ?? userInfo().homedir,
+        ".cache",
+        "pi-daddy",
+        "herdr-plugin-registry",
+      );
+      await mkdir(dirname(registryLock), { recursive: true, mode: 0o700 });
+      outcome = await withFileLock(registryLock, "dashboard setup", async () => {
         if (await loadPreference(input.preferencePath)) return "suppressed" as const;
         const current = await inspectDashboardPlugin(exec, input.pluginRoot);
         if (current.state === "compatible") return "already-installed" as const;
