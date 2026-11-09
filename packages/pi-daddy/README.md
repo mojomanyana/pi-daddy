@@ -410,6 +410,8 @@ Same-user hostile filesystem or co-loaded-extension authenticity is outside this
 
 `pi-daddy-dashboard` shows current work and actual pending approvals first; completed history is collapsed by default.
 `/grants dashboard` opens it beside the session in a Herdr pane. The header shows Auto ON/OFF and connection state.
+For a selected Bookie work map, **Now** shows a current review request. Press **3** for **Reviews** and **Enter** on the output for instructions. In the parent Pi session, `/bookie-work review` opens the saved answer. The project owns the review decision.
+
 Use **a** to switch Auto, arrow keys to select a row, **Enter** for details, **m** for session models, **h** for history,
 and **?** for help. The view fits the terminal and follows resize events. A disconnected control displays its state
 as unavailable until the owning session acknowledges a fresh snapshot.

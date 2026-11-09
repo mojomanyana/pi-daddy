@@ -119,6 +119,86 @@ test("six views are bounded, preserve selection on resize and expansion, and kee
   assert.match(render(), /NEXT/);
   assert.match(render(), /Verify the scoped contract/);
 });
+test("Now keeps the current handoff action visible in a side pane and Reviews opens its exact record", () => {
+  const display = createDashboardDisplayControls(false, true);
+  const current = snapshot();
+  const sources = current.observation!.sources;
+  const ref = "sha256:" + "c".repeat(64);
+  sources[0]!.items.push({
+    id: "other-review",
+    kind: "review",
+    state: "approval-wait",
+    label: "Separate review pending",
+  });
+  const recommendation = "Review the filtered CSV export";
+  const ready = {
+    id: "handoff",
+    kind: "review" as const,
+    state: "approval-wait" as const,
+    label: "Filtered CSV export ready for review",
+    details: ["Reviewer: service desk owner"],
+    reference: ref,
+  };
+  const bookie: (typeof sources)[number] = {
+    ...sources[0]!,
+    producer: "bookie",
+    items: [
+      { id: "next", kind: "next", state: "approval-wait", label: recommendation, reference: ref },
+      { ...ready, id: "other", label: "Another draft ready", reference: "sha256:" + "b".repeat(64) },
+      ready,
+    ],
+  };
+  sources.push(bookie);
+  const draw = (connected = true, now = date) =>
+    renderDashboardScreen({
+      width: 42,
+      height: 15,
+      screen: display.screen,
+      items: [],
+      session: current,
+      connected,
+      now: new Date(now),
+    });
+  const initial = draw();
+  assert.match(initial, /NEXT.*\[3\] Reviews/);
+  assert.match(initial, /Review the filtered CSV export/);
+  assert.doesNotMatch(initial, /Verify the scoped contract/);
+  display.key("3");
+  assert.match(draw(), /> Filtered CSV export ready for review/);
+  display.key("return");
+  assert.equal(display.screen.selectedKey, "source:bookie:p-one:handoff");
+  const details = renderDashboardScreen({
+    width: 110,
+    height: 24,
+    screen: display.screen,
+    items: [],
+    session: current,
+    connected: true,
+    now: new Date(date),
+  });
+  assert.match(details, /Reviewer: service desk owner/);
+  assert.ok(details.includes(ref));
+
+  display.key("1");
+  bookie.availability = "closed";
+  assert.match(draw(), /Verify the scoped contract/);
+  assert.doesNotMatch(draw(), /Review the filtered CSV export/);
+  bookie.availability = "observed";
+  assert.doesNotMatch(draw(false), /Review the filtered CSV export|\[3\] Reviews/);
+  assert.doesNotMatch(draw(true, "2026-11-04T13:00:00Z"), /Review the filtered CSV export|\[3\] Reviews/);
+  display.key("3");
+  assert.match(draw(false), /Last seen.*Filtered CSV/);
+
+  display.key("1");
+  bookie.items = [{ id: "next", kind: "next", label: "Restore the missing handoff", state: "dependency-wait" }];
+  assert.match(draw(), /Restore the missing handoff/);
+  assert.doesNotMatch(draw(), /\[3\] Reviews|Review the filtered CSV export/);
+  bookie.items = [{ ...ready, label: "Filtered CSV export accepted", state: "settled" }];
+  assert.match(draw(), /Verify the scoped contract/);
+  display.key("3");
+  assert.match(draw(), /Filtered CSV export accepted/);
+});
+
 test("disconnected owner and stale contributions show last observations without fabricated liveness", () => {
   const display = createDashboardDisplayControls(false, true);
   display.key("2");

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test, after } from "node:test";
 import { tempDir, cleanupTempDirs } from "./tmp.ts";
 import { registerInitiativeRuntime, INITIATIVE_EVENT } from "../extensions/initiative-runtime.ts";
-import { claimWithArtifact, operationHistory } from "../extensions/delegation-artifacts.ts";
+import { claimWithArtifact, operationHistory, retainOperationArtifact } from "../extensions/delegation-artifacts.ts";
 import { bindOperationFinals } from "../extensions/delegation-operations.ts";
 import { createAutoModeAuthority } from "../src/governance/auto-mode-policy.ts";
 import { readInitiativeState } from "../src/governance/initiative-state.ts";
@@ -231,5 +231,68 @@ test("selected work-map association links real durable admission; replay never d
     await runtime.close();
     await auto.close();
     prior === undefined ? delete process.env.PI_CODING_AGENT_DIR : (process.env.PI_CODING_AGENT_DIR = prior);
+  }
+});
+
+test("the selected task wakes only after both artifact retention and live finish, even when settlement yields", async () => {
+  const root = await tempDir("initiative-finish-order-");
+  const previous = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = root;
+  try {
+    const events: string[] = [];
+    const request = {
+      operationId: "op:finish",
+      executionId: "exec:finish",
+      requestDigest: "f".repeat(64),
+      cwd: root,
+      workspaceId: null,
+    };
+    const session = {
+      reloadLifecycle: { root: {} },
+      initiativeOperations: {
+        capture: () => ({
+          async begin() {},
+          async assertCurrent() {},
+          async notAdmitted() {},
+          settled() {
+            events.push("settled");
+          },
+        }),
+      },
+    } as unknown as GrantsSession;
+    bindOperationFinals(session, "parent", root, () => events.push("artifact"));
+    let resolveFinish!: () => void;
+    const barrier = new Promise<void>((r) => (resolveFinish = r));
+    const running = {
+      operationId: request.operationId,
+      executionId: request.executionId,
+      cwd: root,
+      workspaceId: null,
+      state: "running" as const,
+      startedAt: "start",
+      updatedAt: "now",
+    };
+    const claim = await claimWithArtifact(session, request, async () => ({
+      operation: running,
+      reused: false,
+      started: async () => {},
+      finish: () => barrier,
+    }));
+    retainOperationArtifact(claim, {
+      operation: {
+        ...running,
+        state: "settled",
+        runtime: { cleanup: { state: "settled", executionId: request.executionId } },
+      },
+    });
+    const finish = claim.finish!("settled");
+    await Promise.resolve();
+    assert.deepEqual(events, ["artifact"]);
+    resolveFinish();
+    await finish;
+    assert.deepEqual(events, ["artifact", "settled"]);
+  } finally {
+    if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previous;
   }
 });

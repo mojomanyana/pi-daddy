@@ -5,6 +5,7 @@ import { writeFile, readFile, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
+import { retainedInitiativeHandoff } from "../extensions/initiative-handoff.ts";
 import { openOperationArtifacts, readOperationArtifact } from "../src/governance/operation-artifacts.ts";
 import type { OperationArtifactOutcome } from "../src/kernel/operation-artifact.ts";
 after(cleanupTempDirs);
@@ -191,4 +192,66 @@ test("routed scope is immutable and historical uncertainty keeps its admitted wo
     () => store.finish(local, { operation: { ...completed.operation, ...local, cwd: child } }),
     /result scope/,
   );
+});
+
+test("a reviewable handoff pins a successful final, checks the selection on every read and withholds bodies from metadata", async () => {
+  const root = await tempDir("handoff-final-");
+  const owner = { sessionId: "parent", cwd: root },
+    request = identity(root);
+  const store = openOperationArtifacts(root, owner);
+  const attempt = { ...request, owner, state: "pending" as const };
+  let allowed = true;
+  const authorize = async (scope: { cwd: string; workspaceId: string | null }) => {
+    assert.equal(scope.cwd, root);
+    assert.equal(scope.workspaceId, null);
+    if (!allowed) throw Error("selection revoked");
+  };
+  store.admit(request);
+  assert.equal(await retainedInitiativeHandoff(root, attempt, authorize), undefined);
+  const result = outcome(root);
+  result.operation.runtime!.cleanup!.executionId = request.executionId;
+  const ref = store.finish(request, result);
+  const access = await retainedInitiativeHandoff(root, attempt, authorize);
+  assert.ok(access);
+  assert.equal(await access.readText(), result.final!.text);
+  assert.equal(access.reference.reference.manifestSha256, ref.manifest.sha256);
+  assert.equal(access.reference.reference.finalSha256, result.final!.sha256);
+  assert.ok(!JSON.stringify(access.reference).includes(result.final!.text.trim()));
+  assert.ok(!JSON.stringify(access.reference).includes(root));
+  assert.equal(
+    await retainedInitiativeHandoff(root, { ...attempt, requestDigest: "c".repeat(64) }, authorize),
+    undefined,
+  );
+  allowed = false;
+  await assert.rejects(access.readText, /revoked/);
+  allowed = true;
+  const raw = readOperationArtifact(ref, { agentDirectory: root });
+  await writeFile(raw.manifest.final!.content.path, "changed after retention");
+  await assert.rejects(access.assertCurrent);
+});
+
+test("settlement with a failed job, incomplete cleanup, or partial answer never supplies a reviewable handoff", async () => {
+  for (const kind of ["failed", "control", "cleanup", "partial"]) {
+    const root = await tempDir("handoff-invalid-");
+    const owner = { sessionId: "parent", cwd: root },
+      request = identity(root);
+    const store = openOperationArtifacts(root, owner),
+      result = outcome(root);
+    result.operation.runtime!.cleanup!.executionId = request.executionId;
+    if (kind === "failed") result.operation.runtime!.work = "failed";
+    if (kind === "control") result.operation.runtime!.control = "failed";
+    if (kind === "cleanup") result.operation.runtime!.cleanup!.executionId = "exec:other";
+    if (kind === "partial") {
+      delete result.final;
+      delete result.operation.runtime!.final;
+      result.partial = "draft";
+    }
+    store.admit(request);
+    store.finish(request, result);
+    assert.equal(
+      await retainedInitiativeHandoff(root, { ...request, owner, state: "pending" }, async () => {}),
+      undefined,
+      kind,
+    );
+  }
 });

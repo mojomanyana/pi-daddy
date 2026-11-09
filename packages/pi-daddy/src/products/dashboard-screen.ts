@@ -1,4 +1,9 @@
-import { sessionDashboardItems, sessionPanelLines, type DashboardDestination } from "./dashboard-panels.ts";
+import {
+  sessionDashboardItems,
+  sessionNextLines,
+  sessionPanelLines,
+  type DashboardDestination,
+} from "./dashboard-panels.ts";
 import { dashboardSettingsLines, type DashboardSettingKey } from "./dashboard-settings.ts";
 /** Height-bounded, task-first view. Permission state is always supplied by the owner. */
 import type { EcosystemVersionRow } from "./ecosystem-versions.ts";
@@ -257,6 +262,12 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
   if (options.acknowledgment) fixed.push(clean(options.acknowledgment));
   if (modern && options.connected === false)
     fixed.push(`LAST OBSERVED: ${session!.observation!.observedAt}; live state unknown`);
+  if (modern && screen.view === "main" && (screen.destination ?? "now") === "now") {
+    const [heading, action] = sessionNextLines(options);
+    const actionLines = wrapped([action], width);
+    fixed.push(heading, actionLines[0]!);
+    if (actionLines.length > 1) fixed.push(truncate(actionLines.slice(1).join(" "), width));
+  }
   const body: string[] = [];
   if (screen.view === "help")
     body.push(
@@ -411,10 +422,7 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
       `Rows ${offset + 1}–${Math.min(offset + room, detailBody.length)}/${detailBody.length} · PgUp/PgDn`;
   const lines = [...fixed, ...detailBody.slice(offset, offset + room)];
   while (lines.length < height - footer.length) lines.push("");
-  const output =
-    height < fixed.length + footer.length
-      ? fixed.slice(0, height)
-      : [...lines.slice(0, Math.max(0, height - footer.length)), ...footer].slice(0, height);
+  const output = [...lines, ...footer].slice(0, height);
   return output
     .map((line, index) => {
       const safe = truncate(dashboardText(line), width);

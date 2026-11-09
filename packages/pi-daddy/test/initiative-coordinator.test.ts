@@ -325,3 +325,29 @@ test("read-only observation authority never substitutes for mutation authority o
     await c.close();
   }
 });
+
+test("review handoff binds exactly one admitted settled attempt and expires when the task gains another attempt", async () => {
+  const root = await tempDir("initiative-handoff-"),
+    owner = { sessionId: "parent", cwd: root };
+  let result: "running" | "settled" = "running";
+  const c = await acquireInitiativeCoordinator(
+    root,
+    { initiativeId: id, owner, expectedRevision: null },
+    { assertAuthority() {}, resolveAttempt: async () => result },
+  );
+  const selected = { initiativeId: id, taskId: task.taskId, taskRevision: task.taskRevision };
+  try {
+    await c.claim(task);
+    await c.begin(task, request(root));
+    assert.equal(await c.handoffAttempt(selected, task), undefined);
+    result = "settled";
+    assert.equal(await c.handoffAttempt({ ...selected, taskRevision: "b".repeat(64) }, task), undefined);
+    const first = await c.handoffAttempt(selected, task);
+    assert.equal(first?.attempt.executionId, "exec:one");
+    await c.begin(task, request(root, "two"));
+    assert.equal(await c.handoffAttempt(selected, task), undefined, "ambiguous outputs require a choice");
+    await assert.rejects(async () => first!.assertCurrent());
+  } finally {
+    await c.close();
+  }
+});

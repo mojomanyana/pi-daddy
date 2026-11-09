@@ -1,5 +1,9 @@
 # Changelog — pi-daddy
 
+## Unreleased
+
+- Show review requests on the session dashboard and bind the exact final of a settled, selected task to a private review reference. Press **3** for review instructions in the side pane.
+
 ## 0.50.0 — Unreleased
 
 - Recognize the public `pi-bookie` package and retain legacy Bookie names in version observations.

@@ -1,5 +1,5 @@
 /** Six current-session destinations share stable row identities; contributions are labels, never authority. */
-import type { DashboardContribution } from "../kernel/dashboard-observation.ts";
+import type { DashboardContribution, DashboardSourceSnapshot } from "../kernel/dashboard-observation.ts";
 import type { DashboardItem, DashboardScreenOptions } from "./dashboard-screen.ts";
 import { dashboardText } from "./dashboard-screen.ts";
 import { activityTaskKey } from "./activity-timeline.ts";
@@ -14,6 +14,46 @@ export const DASHBOARD_DESTINATIONS: DashboardDestination[] = [
   "settings",
 ];
 const clean = (s: string) => dashboardText(s).replace(/\s+/g, " ").trim();
+function staleSource(source: DashboardSourceSnapshot, options: DashboardScreenOptions): boolean {
+  return (
+    options.connected === false ||
+    source.availability === "closed" ||
+    (options.now?.getTime() ?? Date.now()) - Date.parse(source.observedAt) > source.staleAfterMs
+  );
+}
+
+const sourceKey = (source: DashboardSourceSnapshot, item: DashboardContribution) =>
+  `source:${source.producer}:${source.generation}:${item.id}`;
+
+/** A current request for review takes precedence over general workflow suggestions. */
+function sessionNext(options: DashboardScreenOptions) {
+  const current = options.session!.observation!.sources.filter((source) => !staleSource(source, options));
+  const recommendations = current.flatMap((source) =>
+    source.items.filter((item) => item.kind === "next").map((item) => ({ item, source })),
+  );
+  for (const next of recommendations) {
+    if (next.item.state !== "approval-wait") continue;
+    const review = next.source.items.find(
+      (item) =>
+        item.kind === "review" &&
+        item.state === "approval-wait" &&
+        (!next.item.reference || item.reference === next.item.reference),
+    );
+    if (review) return { ...next, reviewKey: sourceKey(next.source, review) };
+  }
+  const next =
+    recommendations.find(({ item }) => ["dependency-wait", "failed", "unknown", "unavailable"].includes(item.state)) ??
+    recommendations[0];
+  return next && { ...next, reviewKey: undefined };
+}
+
+export function sessionNextLines(options: DashboardScreenOptions): [string, string] {
+  const next = sessionNext(options);
+  return [
+    next?.reviewKey ? "NEXT · [3] Reviews" : "NEXT",
+    next ? `${clean(next.item.label)} (${next.source.producer})` : "No current next step reported.",
+  ];
+}
 const row = (item: DashboardContribution, key: string, source: string, stale = false): DashboardItem => ({
   key,
   label: item.label,
@@ -25,7 +65,13 @@ const row = (item: DashboardContribution, key: string, source: string, stale = f
     `Observed state: ${item.state}${stale ? " (stale/disconnected)" : ""}`,
     ...(item.details ?? []),
     ...(item.reference ? [`Reference: ${item.reference}`] : []),
-    ...(item.kind === "review" ? ["A reported judgment is not execution authority or overall task acceptance."] : []),
+    ...(item.kind === "review"
+      ? [
+          item.state === "approval-wait"
+            ? "The reviewer decides on this output."
+            : "A reported judgment is not execution authority or overall task acceptance.",
+        ]
+      : []),
     "Reported observations do not grant execution authority or task approval.",
     ...(stale ? ["Current liveness/applicability unknown; no automatic retry."] : []),
   ],
@@ -34,7 +80,6 @@ export function sessionDashboardItems(options: DashboardScreenOptions): Dashboar
   const observed = options.session!.observation!;
   const destination = options.screen.destination ?? "now";
   const staleOwner = options.connected === false;
-  const now = options.now?.getTime() ?? Date.now();
   const wanted =
     destination === "work"
       ? ["work"]
@@ -55,13 +100,17 @@ export function sessionDashboardItems(options: DashboardScreenOptions): Dashboar
       .map((item) =>
         row(
           item,
-          `source:${source.producer}:${source.generation}:${item.id}`,
+          sourceKey(source, item),
           `${source.producer}@${source.producerVersion} · seq ${source.sequence} · ${source.observedAt}`,
-          staleOwner || source.availability === "closed" || now - Date.parse(source.observedAt) > source.staleAfterMs,
+          staleSource(source, options),
         ),
       ),
   );
-  if (destination === "reviews") return published;
+  if (destination === "reviews") {
+    const first = sessionNext(options)?.reviewKey;
+    const priority = (item: DashboardItem) => (item.key === first ? 2 : Number(item.status === "approval-wait"));
+    return published.sort((a, b) => priority(b) - priority(a));
+  }
   if (destination === "evidence")
     return [
       ...(observed.artifacts ?? []).map((a) => ({
@@ -115,14 +164,10 @@ export function sessionPanelLines(options: DashboardScreenOptions, items: Dashbo
   const destination = screen.destination ?? "now";
   const sourceRows = observation.sources.flatMap((s) => s.items.map((item) => ({ source: s, item })));
   const lines: string[] = [`${destination.toUpperCase()} · CURRENT SESSION`];
-  const staleSource = (source: (typeof observation.sources)[number]) =>
-    options.connected === false ||
-    source.availability === "closed" ||
-    (options.now?.getTime() ?? Date.now()) - Date.parse(source.observedAt) > source.staleAfterMs;
   const initiative = observation.sources.find((source) => source.producer === "daddy-initiative");
   const scope = initiative?.items.find((item) => item.id === "scope");
   if (scope && (destination === "now" || destination === "work")) {
-    lines.push(`SELECTED ${scope.label}${staleSource(initiative!) ? " (last observed)" : ""}`);
+    lines.push(`SELECTED ${scope.label}${staleSource(initiative!, options) ? " (last observed)" : ""}`);
     if (destination === "work" && scope.details?.[1]) lines.push(scope.details[1]);
   }
   if (destination === "now") {
@@ -130,20 +175,8 @@ export function sessionPanelLines(options: DashboardScreenOptions, items: Dashbo
     lines.push(
       "GOAL",
       goal
-        ? `${goal.item.label} (${goal.source.producer}${staleSource(goal.source) ? "; stale" : ""})`
+        ? `${goal.item.label} (${goal.source.producer}${staleSource(goal.source, options) ? "; stale" : ""})`
         : (options.current ?? "Goal not reported; no inference from a finished step."),
-    );
-    const next = sourceRows.find((x) => x.item.kind === "next");
-    const nextStale =
-      next &&
-      (options.connected === false ||
-        next.source.availability === "closed" ||
-        (options.now?.getTime() ?? Date.now()) - Date.parse(next.source.observedAt) > next.source.staleAfterMs);
-    lines.push(
-      "NEXT",
-      next
-        ? `${next.item.label} (${next.source.producer}${nextStale ? "; stale" : ""})`
-        : "No coordinator recommendation reported.",
     );
     const attention = items.filter((x) =>
       [
@@ -177,7 +210,7 @@ export function sessionPanelLines(options: DashboardScreenOptions, items: Dashbo
   const selected = items.find((x) => x.key === screen.selectedKey);
   const rows = items.map(
     (x) =>
-      `${x.key === screen.selectedKey ? ">" : " "} ${clean(x.label)} · ${clean(x.status)}${x.elapsed ? " " + x.elapsed : ""}`,
+      `${x.key === screen.selectedKey ? ">" : " "} ${x.status === "last-observed" ? "Last seen · " : ""}${clean(x.label)} · ${clean(x.status)}${x.elapsed ? " " + x.elapsed : ""}`,
   );
   const expanded = screen.expanded && width >= 96;
   if (expanded && rows.length) {
@@ -199,12 +232,7 @@ export function sessionPanelLines(options: DashboardScreenOptions, items: Dashbo
       const streams = observation.sources.filter(
         (x) => x.producer === producer || (producer === "scout" && x.producer.startsWith("scout-")),
       );
-      const stale = streams.filter(
-        (s) =>
-          options.connected === false ||
-          s.availability === "closed" ||
-          (options.now?.getTime() ?? Date.now()) - Date.parse(s.observedAt) > s.staleAfterMs,
-      ).length;
+      const stale = streams.filter((s) => staleSource(s, options)).length;
       const status = !streams.length
         ? "status adapter unavailable"
         : `${streams.length - stale} observed${stale ? `; ${stale} last observed / stale` : ""}`;

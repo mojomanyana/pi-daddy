@@ -325,6 +325,22 @@ export async function acquireInitiativeCoordinator(
           },
         };
       },
+      /** Bind a final to the only admitted attempt for this exact selected task revision. */
+      async handoffAttempt(identity: InitiativeTaskIdentity, selectedTask: InitiativeTask) {
+        if (request.recoveryOnly || identity.initiativeId !== record.initiativeId) return;
+        const observation = await this.observe(identity, selectedTask);
+        if (
+          observation.status !== "observed" ||
+          observation.execution !== "settled" ||
+          observation.reconciliationRequired
+        )
+          return;
+        const attempts = taskAt(selectedTask)?.attempts.filter((attempt) => attempt.state !== "not-admitted");
+        // A task with several admitted operations needs an explicit output choice.
+        if (attempts?.length !== 1) return;
+        await observation.assertCurrent();
+        return { attempt: structuredClone(attempts[0]!), assertCurrent: observation.assertCurrent };
+      },
       async pendingEffects() {
         const captured = revision;
         await assertCurrent();
