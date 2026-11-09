@@ -100,19 +100,14 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
   const delegation = { refreshSpawnable: () => {} };
   // Supported public discovery is ready at the first real request/tool execution, not session_start.
   let selectedReady: Promise<void> | undefined;
-  let startupSelection: string | undefined;
-  const selectionKey = (commands: ReturnType<ExtensionAPI["getCommands"]>) =>
-    JSON.stringify(
-      commands.filter((command) => command.source === "skill").map(({ name, sourceInfo }) => [name, sourceInfo?.path]),
-    );
   let selectedReportContext: SessionReportContext | undefined;
   if (typeof pi.getCommands === "function")
     session.ensureDefinitions = () =>
       (selectedReady ??= (async () => {
         const lifecycle = session.reloadLifecycle;
         const selected = pi.getCommands();
-        if (selectionKey(selected) !== startupSelection)
-          await loadProjectDefinitions(session, session.cwd, lifecycle, selected);
+        // The resource paths can stay unchanged while their bytes or companion bindings change.
+        await loadProjectDefinitions(session, session.cwd, lifecycle, selected);
         assertDiscoveryHealthy(session, lifecycle);
         delegation.refreshSpawnable();
         if (selectedReportContext)
@@ -135,7 +130,6 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
     session.reconcileEnvironment(reload.environment, reload.lifecycle, ctx.cwd);
     session.ownerBound = true;
     selectedReady = undefined;
-    startupSelection = undefined;
     selectedReportContext = ctx;
     // ADR-0078: the parent's own session, for a granted `pruned` or `fork` handoff. Read-only, and only ever
     // read after the mode has survived the gate.
@@ -204,8 +198,6 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
         const preview = ctx.mode === "tui" && session.depth === 0 && !session.ownExecutionId && session.governed;
         const initialCommands = session.ensureDefinitions ? (preview ? pi.getCommands() : []) : undefined;
         await loadProjectDefinitions(session, ctx.cwd, reload.lifecycle, initialCommands);
-        if (preview && initialCommands && session.reloadLifecycle === reload.lifecycle)
-          startupSelection = selectionKey(initialCommands);
       } catch (error) {
         if (session.reloadLifecycle !== reload.lifecycle) return undefined;
         if (error instanceof BoundedReadCleanupError) {
