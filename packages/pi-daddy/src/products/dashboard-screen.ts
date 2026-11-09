@@ -10,7 +10,7 @@ import { activityTaskTitle } from "./dashboard-activity.ts";
 import { versionLines } from "./dashboard-components.ts";
 import { sessionRecapLines } from "./dashboard-recap.ts";
 import { colorSessionLine, previewWidth, sectionHeading } from "./dashboard-layout.ts";
-import { dashboardSettingsLines, type DashboardSettingKey } from "./dashboard-settings.ts";
+import { visibleSettingKeys, dashboardSettingsLines, type DashboardSettingKey } from "./dashboard-settings.ts";
 /** Height-bounded, task-first view. Permission state is always supplied by the owner. */
 import type { EcosystemVersionRow } from "./ecosystem-versions.ts";
 import type { DashboardProjection } from "./dashboard-projection.ts";
@@ -43,6 +43,7 @@ export interface DashboardScreenState {
   manualScroll?: boolean;
   selections?: Record<string, string>;
   settingKey?: DashboardSettingKey;
+  settingKeys?: DashboardSettingKey[];
   versionId?: EcosystemVersionRow["id"];
   versionRows?: EcosystemVersionRow[];
   selectedKey?: string;
@@ -351,14 +352,24 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
   const ack = options.acknowledgment;
   if (ack?.state === "unconfirmed") {
     const setting =
-      ({ "set-auto": "Auto", "set-jev": "JEV", set: "model", "set-limit": "limit" } as Record<string, string>)[
-        ack.action
-      ] ?? "setting";
+      (
+        {
+          "set-auto": "Auto",
+          "set-jev": "JEV",
+          "edit-jev": "JEV settings",
+          set: "model",
+          "set-limit": "limit",
+        } as Record<string, string>
+      )[ack.action] ?? "setting";
     fixed.push(
       ...wrapDashboardLines([`Unconfirmed ${setting} change. Check the main Pi chat before trying again.`], width),
     );
   } else if (ack && (!disconnected || !modern) && (!modern || screen.view === "settings" || ack.state === "refused")) {
-    fixed.push(clean(`${ack.action}: ${ack.state} · ${ack.effect}`));
+    fixed.push(
+      ack.action === "edit-jev" && ack.state === "opened"
+        ? "JEV settings · current values below"
+        : clean(`${ack.action}: ${ack.state} · ${ack.effect}`),
+    );
   }
   if (modern && options.filter && options.filter !== "everything" && screen.view === "main")
     fixed.push(`Filter: ${options.filter} · Tab to change`);
@@ -415,6 +426,8 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
       "Finished means observed completion, not acceptance.",
     );
   else if (screen.view === "settings") {
+    screen.settingKeys = visibleSettingKeys(session?.settings?.jev);
+    if (screen.settingKey && !screen.settingKeys.includes(screen.settingKey)) screen.settingKey = "jev";
     body.push(
       ...(disconnected
         ? [

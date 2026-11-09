@@ -105,7 +105,9 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
     session.ensureDefinitions = () =>
       (selectedReady ??= (async () => {
         const lifecycle = session.reloadLifecycle;
-        await loadProjectDefinitions(session, session.cwd, lifecycle, pi.getCommands());
+        const selected = pi.getCommands();
+        // The resource paths can stay unchanged while their bytes or companion bindings change.
+        await loadProjectDefinitions(session, session.cwd, lifecycle, selected);
         assertDiscoveryHealthy(session, lifecycle);
         delegation.refreshSpawnable();
         if (selectedReportContext)
@@ -191,7 +193,11 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
       // delegate by `tools:`, and an operator whose `agent:` spawns have all started failing deserves to
       // know it was the *scan* that broke rather than the grant.
       try {
-        await loadProjectDefinitions(session, ctx.cwd, reload.lifecycle, session.ensureDefinitions ? [] : undefined);
+        // Pi exposes installed selections at open. Later contributors arrive by the first
+        // request, when ensureDefinitions binds the complete snapshot before any dispatch.
+        const preview = ctx.mode === "tui" && session.depth === 0 && !session.ownExecutionId && session.governed;
+        const initialCommands = session.ensureDefinitions ? (preview ? pi.getCommands() : []) : undefined;
+        await loadProjectDefinitions(session, ctx.cwd, reload.lifecycle, initialCommands);
       } catch (error) {
         if (session.reloadLifecycle !== reload.lifecycle) return undefined;
         if (error instanceof BoundedReadCleanupError) {
@@ -275,8 +281,8 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
         );
       }
       if (session.reloadLifecycle !== reload.lifecycle) return undefined;
-      // Explicit installation handshake. It only runs in a Herdr-hosted TUI, asks once, and the only branch
-      // that links software is the literal human choice "Install and open".
+      // Only a parent opens the dashboard. View-only children inherit the parent's controls.
+      if (session.depth !== 0 || session.ownExecutionId || session.malformedBounds.length) return undefined;
       try {
         const sessionEndpoint = await ensureDashboardSessionServer(session);
         if (session.reloadLifecycle !== reload.lifecycle) return undefined;

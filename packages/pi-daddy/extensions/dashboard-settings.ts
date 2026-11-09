@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { GrantsSession } from "./session.ts";
 import type { DashboardJevState, DashboardSettingsSnapshot } from "../src/products/dashboard-settings.ts";
+import { isJevEditAction, type JevEditAction } from "../src/products/dashboard-settings.ts";
 import { MAX_CHILDREN_PER_CALL } from "../src/kernel/fanout.ts";
 import {
   ENV_CHILD_TIMEOUT,
@@ -69,7 +70,7 @@ const safeStorageRoot = (value: unknown) =>
     : undefined;
 export async function dashboardJev(
   session: GrantsSession,
-  action: "status" | "enable" | "disable",
+  action: "status" | "enable" | "disable" | JevEditAction,
 ): Promise<DashboardJevState> {
   const current = owner(session, action !== "status");
   const pi = bridges.get(session);
@@ -95,6 +96,10 @@ export async function dashboardJev(
           mode?: string;
           storage?: string | null;
           remaining?: number;
+          used?: number;
+          limit?: number;
+          hintsEnabled?: boolean;
+          controls?: unknown;
           availability?: string;
           providerReadiness?: string;
           selectedProvider?: string | null;
@@ -115,8 +120,17 @@ export async function dashboardJev(
         else resolve(unavailable("JEV owner is not bound to this session"));
         return;
       }
+      if (value.error && isJevEditAction(action)) {
+        reject(new Error("JEV settings request declined. Check the main Pi session."));
+        return;
+      }
+      const count = (n: unknown) => (typeof n === "number" && Number.isSafeInteger(n) && n >= 0 ? n : undefined);
       resolve({
         available: true,
+        controls: Array.isArray(value.status.controls) ? value.status.controls.filter(isJevEditAction) : undefined,
+        used: count(value.status.used),
+        limit: count(value.status.limit),
+        hintsEnabled: typeof value.status.hintsEnabled === "boolean" ? value.status.hintsEnabled : undefined,
         enabled: value.status.enabled,
         pending: value.pending === true,
         mode: safeText(value.status.mode),

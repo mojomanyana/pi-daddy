@@ -1,5 +1,5 @@
 import type { DashboardOwnerObservation } from "../kernel/dashboard-observation.ts";
-import type { DashboardSettingsSnapshot } from "./dashboard-settings.ts";
+import type { DashboardSettingsSnapshot, JevEditAction } from "./dashboard-settings.ts";
 import type { EcosystemVersions } from "./ecosystem-versions.ts";
 import { createConnection } from "node:net";
 
@@ -19,6 +19,7 @@ export type DashboardSessionAction = (
   | { action: "set"; edits: string }
   | { action: "set-auto"; enabled: boolean }
   | { action: "set-jev"; enabled: boolean }
+  | { action: "edit-jev"; option: JevEditAction }
   | { action: "set-limit"; key: "wall" | "idle"; seconds: number }
 ) & { expectedOwner?: { sessionId: string; cwd: string; generation: string } };
 
@@ -60,7 +61,7 @@ export async function dashboardSessionRequest(
 
 export type DashboardAcknowledgment = {
   action: string;
-  state: "pending" | "applied" | "refused" | "unconfirmed";
+  state: "opened" | "pending" | "applied" | "refused" | "unconfirmed";
   effect: string;
 };
 
@@ -129,9 +130,11 @@ export function createDashboardConnection(
       const effect =
         action.action === "set-auto"
           ? "current permission handling; admitted work unchanged"
-          : action.action === "set-jev"
-            ? "current JEV session; separate paid-call and storage choices"
-            : "future children; running children unchanged";
+          : action.action === "edit-jev"
+            ? "use the main Pi session; current values shown below"
+            : action.action === "set-jev"
+              ? "current JEV session; separate paid-call and storage choices"
+              : "future children; running children unchanged";
       state.acknowledgment = { action: action.action, state: "pending", effect };
       try {
         const snapshot = await request({
@@ -148,13 +151,15 @@ export function createDashboardConnection(
         });
         if (!accept(snapshot)) throw Error("owner acknowledgment is stale; reconcile before another action");
         state.acknowledgment.state =
-          action.action === "set-jev"
-            ? snapshot.settings?.jev.pending
-              ? "pending"
-              : snapshot.settings?.jev.enabled === action.enabled
-                ? "applied"
-                : "refused"
-            : "applied";
+          action.action === "edit-jev"
+            ? "opened"
+            : action.action === "set-jev"
+              ? snapshot.settings?.jev.pending
+                ? "pending"
+                : snapshot.settings?.jev.enabled === action.enabled
+                  ? "applied"
+                  : "refused"
+              : "applied";
         return true;
       } catch (error) {
         state.snapshot = undefined;

@@ -191,6 +191,15 @@ test("adopting init's project ledger is live now, while an explicit environment 
     const session = createGrantsSession(undefined);
     const ledger = projectLedgerPath(cwd);
     session.adoptGrant(["tool:read"], ledger);
+    assert.deepEqual(
+      session.inherited,
+      ["tool:read"],
+      "the first provider observation must intersect the adopted ceiling",
+    );
+    session.observed = true;
+    session.observedTools = ["read"];
+    session.adoptGrant(["tool:read", "tool:bash"], ledger);
+    assert.deepEqual(session.ownGrant, ["tool:read"], "a late project choice still respects the observed tool surface");
     assert.equal(session.ledgerPath, ledger);
     assert.equal(process.env.PI_DADDY_LEDGER, ledger, "the next child inherits the same absolute ledger");
 

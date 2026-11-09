@@ -96,13 +96,17 @@ pi install npm:pi-daddy
 pi
 ```
 
-In the session, `/grants` shows the tool ceiling this session holds and the definitions it can spawn. Governance is
-on after installation unless `PI_DADDY_GOVERNANCE=off`; before initialization a root session is bounded by its
-observed tool surface, but no project grant or ledger consent has been stored. `/grants init` scans enabled packages
-that declare runtime skills, asks which withheld capabilities to grant, writes the review copy at
-`.pi/pi-daddy/settings.json`, stores the enforced grant outside the workspace, enables the project ledger, and applies
-both decisions to the running session. Commit the review copy when the project's ignore rules permit it. The
-standalone `pi-daddy init` command scaffolds files only; it cannot mutate a live pi session.
+Open Pi and start your task. An interactive parent discovers the agents Pi has selected and restores the
+project's saved permissions automatically. Additional agents supplied by extensions become available before
+the first task. In a fresh project the session uses its observed tools and the existing permission gates.
+Inside Herdr, Pi Daddy links its bundled dashboard on first use and opens it beside the parent, keeping the
+keyboard focus in Pi. A disabled dashboard or a saved startup opt-out stays disabled. Replacing a dashboard
+linked from a different installation asks first.
+
+Use `/grants` to inspect access. To explicitly save a different project ceiling and enable the project governance
+ledger, use `/grants init`. It also creates the review copy at `.pi/pi-daddy/settings.json` and stores the enforced
+choice outside the workspace. Headless runs and children keep their existing setup. `PI_DADDY_GOVERNANCE=off`
+still disables governance. The standalone `pi-daddy init` command prepares review files.
 
 ## Optional local public evidence capture
 
@@ -344,7 +348,7 @@ work, final availability, subtree cleanup and optional observation completeness 
 execution returns `isError` with its available evidence. Display, diagnostics and optional recording cannot replace
 the primary final. Unknown cleanup retains capacity and workspace exclusion.
 
-Pi and TypeBox are wildcard host-provided peers so Pi's extension loader supplies one shared runtime copy. Development dependencies pin Pi **1.0.4**; the additional **1.1.0** and **1.4.0** checks have the execution scopes described above. Prefer a Pi-managed install under a measured host and executor combination. An ordinary standalone npm install may resolve untested peer versions. In a Pi-managed no-peer install, standalone help, version and reporting remain available; run initialization inside Pi with `/grants init`. Principal's native phases use `plan`, `build`, `review`, `debug`, and `investigate` with their returned `delegate_describe` `definitionId`; independent parallel work uses one `delegate_all` batch.
+Pi and TypeBox are wildcard host-provided peers so Pi's extension loader supplies one shared runtime copy. Development dependencies pin Pi **1.0.4**; the additional **1.1.0** and **1.4.0** checks have the execution scopes described above. Prefer a Pi-managed install under a measured host and executor combination. An ordinary standalone npm install may resolve untested peer versions. In a Pi-managed no-peer install, standalone help, version and reporting remain available; use `/grants init` inside Pi for an explicit persistent project ceiling. Principal's native phases use `plan`, `build`, `review`, `debug`, and `investigate` with their returned `delegate_describe` `definitionId`; independent parallel work uses one `delegate_all` batch.
 
 Final capture preserves whitespace and concatenates text blocks without inserting separators. Tool-call terminals, empty visible finals and non-`stop` reasons are unavailable. Persisted message comparisons ignore object key order while preserving array order and every field value. The shared `final-conformance.json` table checks these semantics in both runtime and harness. Capture remains bounded: 4 MiB visible final, 32 MiB protocol line, 64 MiB persisted session, and a 3-second bounded session read. Exceeding a limit reports an unavailable final and blocks dependent handoffs; it does not imply the worker failed to settle.
 
@@ -412,8 +416,8 @@ use the same in-memory overrides and `session_config` audit path as `/grants mod
 <provider:model> <thinking>` and `m all ...` remain available in command mode. A standalone dashboard is read-only.
 Execution history and cost remain observations, and incomplete usage is shown as unavailable rather than zero.
 
-Press **s** for Settings. Select Permission Auto, JEV, Child wall or Child idle with the arrows;
-**Enter** toggles a switch or opens a seconds edit. A limit value of **0** restores its default.
+Press **s** for Settings. Select a setting with the arrows;
+**Enter** opens or changes it. For child wall and idle times, **0** restores the startup default.
 Settings belong to this owner session and survive reload; a different native session starts fresh.
 Wall/idle edits affect future child launches from this parent, never a running child's captured deadline.
 They are process safety controls, not model time/token budgets. `/grants` reports the effective overrides.
@@ -423,6 +427,14 @@ LoRA-storage consent prompts in that parent; the dashboard shows waiting-for-con
 remaining calls, storage status and the selected provider/model, transport and shared local data root when reported by Harness. Auto cannot answer either consent prompt. Turning JEV off revokes
 its activation, including an outstanding enable request; the switch itself makes no provider call.
 No API keys, consent flags or training permissions can be set from this screen.
+
+When Harness offers session controls, the **Call limit** row shows the session total, calls already used,
+and how many remain available. Select it to enter a nonnegative whole number in the main Pi session.
+The initial limit is **300**; **0** stops new JEV calls. Raising the limit does not reset spending.
+**Choose JEV model and storage** opens the provider/model and consent choices. **Tool hints** lets
+you opt in separately: a hint names an available tool only when JEV rates its fit above 90%.
+Hints share the same call allowance. They do not execute the tool or grant permission.
+Older Harness versions keep their existing JEV switch.
 
 Active-descendant capacity and maximum depth are displayed with their startup environment variables;
 start a new session to change them. The per-call bound is fixed. Settings does not replace live capacity

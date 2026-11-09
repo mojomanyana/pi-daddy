@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
+import { userInfo } from "node:os";
 import {
   DASHBOARD_PLUGIN_ID,
   dashboardHerdrExec,
@@ -13,6 +14,7 @@ import {
 } from "./dashboard-herdr.ts";
 import { DASHBOARD_PROTOCOL_VERSION } from "./dashboard-cli.ts";
 import type { HerdrExec } from "../executors/herdr-cli.ts";
+import { withFileLock } from "../governance/file-lock.ts";
 import { defaultActivityTimelinePath, parseActivityTimeline, renderActivityTimeline } from "./activity-timeline.ts";
 
 export type DashboardPromptChoice = "not-now" | "never";
@@ -73,6 +75,8 @@ export interface DashboardHandshakeInput {
   ledgerPath?: string;
   pluginRoot: string;
   preferencePath: string;
+  /** Supply an isolated OS account home when testing a shared Herdr registry. */
+  registryOwnerHome?: string;
   paneStatePath: string;
   sessionEndpoint?: { socketPath: string; token: string };
   ui: DashboardHandshakeUI;
@@ -91,61 +95,53 @@ export async function offerDashboardHandshake(input: DashboardHandshakeInput): P
     const preference = await loadPreference(input.preferencePath);
     if (preference) return "suppressed";
     const plugin = await inspectDashboardPlugin(exec, input.pluginRoot);
-    // A compatible bundled panel is local software already chosen by the operator. Present it by default;
-    // pane identity makes this one panel per caller tab/session and --no-focus avoids focus theft.
-    if (plugin.state === "compatible") {
-      const opened = await openOrReuseDashboard({
-        exec,
-        host: host.host,
-        ledgerPath: input.ledgerPath ?? "",
-        cwd: input.cwd,
-        statePath: input.paneStatePath,
-        pluginRoot: input.pluginRoot,
-        allowInactive: true,
-        sessionEndpoint: input.sessionEndpoint,
-      });
-      input.ui.notify(`pi-daddy dashboard ${opened.kind} in pane ${opened.paneId} without changing focus.`, "info");
-      return "already-installed";
-    }
-    const replacingDifferentPackage = plugin.state === "incompatible" && plugin.incompatibility === "package-root";
-    if (plugin.state !== "absent" && !replacingDifferentPackage) {
+    if (plugin.plugin?.enabled === false) return "suppressed";
+    const replacing =
+      plugin.state === "incompatible" && plugin.incompatibility === "package-root" && plugin.plugin?.enabled === true;
+    if (plugin.state !== "compatible" && plugin.state !== "absent" && !replacing) {
       input.ui.notify(`pi-daddy dashboard: ${plugin.diagnostic}`, "error");
       return "failed";
     }
-
-    const affirmative = replacingDifferentPackage ? "Relink and open" : "Install and open";
-    const choices = replacingDifferentPackage ? [affirmative, "Not now"] : [affirmative, "Not now", "Never ask"];
-    const choice = await input.ui.select(
-      replacingDifferentPackage
-        ? "The pi-daddy dashboard is linked from a different package. Relink this bundled copy and open it?"
-        : "Herdr detected. Install and open the pi-daddy dashboard?",
-      choices,
-    );
-    if (!choices.includes(choice ?? "")) {
-      // Escape, timeout and UI teardown return undefined. None is an operator choice, so none may become a
-      // durable preference merely because the dialog disappeared.
-      input.ui.notify("pi-daddy dashboard: installation prompt dismissed; no preference was stored.", "info");
-      return "deferred";
-    }
-    if (choice !== affirmative) {
-      if (replacingDifferentPackage) {
-        input.ui.notify("pi-daddy dashboard: existing link unchanged; no preference was stored.", "info");
+    if (replacing) {
+      const choice = await input.ui.select(
+        "The dashboard is linked to another Pi Daddy installation. Use this installation's dashboard instead?",
+        ["Relink and open", "Not now", "Keep existing link"],
+      );
+      if (choice !== "Relink and open") {
+        if (choice === "Keep existing link") await savePreference(input.preferencePath, "never");
+        input.ui.notify("pi-daddy dashboard: kept the existing dashboard link.", "info");
         return "deferred";
       }
-      const recorded = choice === "Never ask" ? "never" : "not-now";
-      await savePreference(input.preferencePath, recorded);
-      input.ui.notify(
-        recorded === "never"
-          ? "pi-daddy dashboard: startup installation prompt disabled. /grants dashboard remains available."
-          : "pi-daddy dashboard: not installed. /grants dashboard will report the manual setup when requested.",
-        "info",
-      );
-      return "deferred";
     }
-
-    await linkDashboardPlugin(input.pluginRoot, exec);
-    const linked = await inspectDashboardPlugin(exec, input.pluginRoot);
-    if (linked.state !== "compatible") throw new Error(linked.diagnostic);
+    let outcome: DashboardHandshakeOutcome = "already-installed";
+    if (plugin.state !== "compatible") {
+      // Herdr plugin links are shared across Pi profiles. Lock once per OS account,
+      // independently of Pi settings, environment HOME, and the bundled plugin path.
+      const registryLock = resolve(
+        input.registryOwnerHome ?? userInfo().homedir,
+        ".cache",
+        "pi-daddy",
+        "herdr-plugin-registry",
+      );
+      await mkdir(dirname(registryLock), { recursive: true, mode: 0o700 });
+      outcome = await withFileLock(registryLock, "dashboard setup", async () => {
+        if (await loadPreference(input.preferencePath)) return "suppressed" as const;
+        const current = await inspectDashboardPlugin(exec, input.pluginRoot);
+        if (current.state === "compatible") return "already-installed" as const;
+        if (
+          current.state !== plugin.state ||
+          current.incompatibility !== plugin.incompatibility ||
+          current.plugin?.plugin_root !== plugin.plugin?.plugin_root ||
+          current.plugin?.enabled !== plugin.plugin?.enabled
+        )
+          throw Error("The dashboard installation changed during startup. Reopen the dashboard to inspect it.");
+        await linkDashboardPlugin(input.pluginRoot, exec);
+        const linked = await inspectDashboardPlugin(exec, input.pluginRoot);
+        if (linked.state !== "compatible") throw new Error(linked.diagnostic);
+        return "installed" as const;
+      });
+      if (outcome === "suppressed") return outcome;
+    }
     const opened = await openOrReuseDashboard({
       exec,
       host: host.host,
@@ -157,7 +153,7 @@ export async function offerDashboardHandshake(input: DashboardHandshakeInput): P
       sessionEndpoint: input.sessionEndpoint,
     });
     input.ui.notify(`pi-daddy dashboard ${opened.kind} in pane ${opened.paneId} without changing focus.`, "info");
-    return "installed";
+    return outcome;
   } catch (error) {
     input.ui.notify(
       `pi-daddy dashboard setup failed: ${error instanceof Error ? error.message : String(error)}`,

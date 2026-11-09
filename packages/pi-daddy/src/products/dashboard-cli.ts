@@ -26,7 +26,7 @@ import {
   type TimelineFilter,
 } from "./activity-timeline.ts";
 import { createDashboardDisplayControls } from "./dashboard-display-controls.ts";
-import { dashboardJevNotice, JEV_CONSENT_NOTICE } from "./dashboard-settings.ts";
+import { dashboardJevNotice, JEV_CONSENT_NOTICE, JEV_EDITOR_NOTICE } from "./dashboard-settings.ts";
 import {
   createDashboardConnection,
   dashboardSessionRequest,
@@ -374,6 +374,7 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
     await connection.refresh();
     const jev = connection.state.snapshot?.settings?.jev;
     if (notice === JEV_CONSENT_NOTICE && jev && !jev.pending) notice = dashboardJevNotice(jev);
+    if (notice === JEV_EDITOR_NOTICE && jev && !jev.pending) notice = "";
     if (stopped) return;
     const view = await dashboardFrame({
       cwd,
@@ -491,7 +492,21 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
       else if (selected === "perCall") notice = "Children per call is a fixed safety bound";
       else if (!settings.jev.available)
         notice = "JEV controls unavailable; load skill-harness in the parent Pi session";
-      else {
+      else if (selected === "limit" || selected === "configure" || selected === "hints") {
+        if (!settings.jev.controls?.includes(selected)) notice = "Update skill-harness to edit this setting";
+        else if (settings.jev.pending) notice = "Finish the open settings dialog in the main Pi session";
+        else if (selected === "hints" && (!settings.jev.enabled || settings.jev.mode !== "workflow"))
+          notice = "Turn on JEV workflow calls first, then choose Tool hints";
+        else
+          void connection.change({ action: "edit-jev", option: selected }).then((changed) => {
+            notice = changed
+              ? connection.state.snapshot?.settings?.jev.pending
+                ? JEV_EDITOR_NOTICE
+                : "JEV settings refreshed."
+              : connection.state.error || "Settings unavailable";
+            redraw();
+          });
+      } else {
         void connection
           .change({ action: "set-jev", enabled: !(settings.jev.enabled || settings.jev.pending) })
           .then((changed) => {

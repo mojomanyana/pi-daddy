@@ -198,6 +198,13 @@ it measured nothing rather than passing quietly.
 
 ## Decisions still in force
 
+**2026-11-09 — first-run initialization is automatic in the interactive parent.** This supersedes the old
+requirement to confirm linking the bundled dashboard on its first verified Herdr startup. Existing disable and
+opt-out choices still win; replacing a different installation needs a separate human choice. Read the currently
+selected agents at open and reconcile Pi's later contributions before first dispatch. Opening a project never
+records a wider grant or opts the project into the governance ledger. Project defaults still bound subsequent
+tool observations after explicit init.
+
 **2026-11-04 — display cannot replay semantic validation.** Initiative terminal refresh uses only bounded
 last-observed owner facts, preserves their timestamps and exposes absent or stale observations. A display
 refresh cannot invoke canonical work-map/currentness scans or become authority. The bound coordinator still
@@ -241,6 +248,8 @@ attribution only: no trigger metadata confers human approval or changes grants o
 smoke selects Pi 1.4.0, whose internal dependencies are exact. A fresh Pi 1.0.4 installation resolved a
 newer incompatible Codemode dependency and failed before Daddy loaded. The lockfile-backed integration
 tier remains on Pi 1.0.4; no broad version range, peer restriction, or global runtime upgrade is added.
+
+**2026-11-09 — JEV controls open an owner dialog.** Settings advertises optional controls reported by Harness; opening a budget, model or prompt-hint editor neither approves spending nor increases authority. The current parent session owns the decision. Older Harness implementations remain readable and toggleable.
 
 **2026-10-10 — JEV route display stays observational.** Dashboard Settings accepts bounded provider/model/transport identifiers from the owner Harness; absent fields remain absent for older releases. It does not infer a provider, switch models, resolve credentials or grant consent. A refreshed owner status replaces the transient consent instruction after the dialog settles.
 
