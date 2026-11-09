@@ -103,7 +103,13 @@ test("live status carries a durable ref; history remains explicit after owner lo
       sessionManager: { getSessionId: () => "parent" },
     } as never);
     const request = requestFor(root),
-      claim = await claimWithArtifact(session, request, () => auto.operations!.claim(request));
+      claim = await claimWithArtifact(
+        session,
+        request,
+        () => auto.operations!.claim(request),
+        session.reloadLifecycle.operationFinals,
+        { agent: "review", summary: "Check the customer update" },
+      );
     const text = "The useful authored result. ".repeat(200);
     const final = {
       state: "complete",
@@ -132,6 +138,10 @@ test("live status carries a durable ref; history remains explicit after owner lo
     assert.equal(live.operation.artifact.producer, "pi-daddy");
     assert.equal(entries.length, 1);
     assert.equal(entries[0].kind, "pi-daddy:operation-artifact:v1");
+    assert.equal(session.dashboardArtifacts?.[0]?.description?.summary, "Check the customer update");
+    assert.equal(session.dashboardArtifacts?.[0]?.description?.content, "answer");
+    assert.equal(session.dashboardArtifacts?.[0]?.executionId, request.executionId);
+    assert.equal(JSON.stringify(entries).includes("Check the customer update"), false);
     assert.ok(JSON.stringify(entries).length < 2000);
     assert.equal(JSON.stringify(entries).includes(text), false);
     const history = await query(OPERATION_HISTORY_EVENT);

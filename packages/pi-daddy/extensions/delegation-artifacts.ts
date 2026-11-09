@@ -2,6 +2,8 @@
 import type { OperationClaim, OperationRequest, OperationReference } from "../src/kernel/dispatch-operation.ts";
 import type { OperationArtifactOutcome, OperationArtifactRef } from "../src/kernel/operation-artifact.ts";
 import type { OperationArtifactStore } from "../src/governance/operation-artifacts.ts";
+import type { DashboardResultDescription } from "../src/kernel/dashboard-observation.ts";
+import type { OperationFinalStore } from "./delegation-operations.ts";
 import type { GrantsSession } from "./session.ts";
 const owners = new WeakMap<
   OperationClaim,
@@ -9,7 +11,8 @@ const owners = new WeakMap<
     store: OperationArtifactStore;
     request: OperationRequest;
     reference?: OperationArtifactRef;
-    publish?: (reference: OperationArtifactRef) => void;
+    display?: Pick<DashboardResultDescription, "agent" | "summary">;
+    publish?: OperationFinalStore["publishArtifact"];
   }
 >();
 export function operationHistory(session: GrantsSession, operationId: string, includeFinal = true) {
@@ -20,6 +23,7 @@ export async function claimWithArtifact(
   request: OperationRequest,
   claim: () => Promise<OperationClaim>,
   scope = session.reloadLifecycle?.operationFinals,
+  display?: Pick<DashboardResultDescription, "agent" | "summary">,
 ): Promise<OperationClaim> {
   if (scope !== session.reloadLifecycle?.operationFinals) throw Error("Operation owner changed before admission");
   const store = scope?.artifacts;
@@ -72,7 +76,12 @@ export async function claimWithArtifact(
           },
         });
         try {
-          scope.publishArtifact?.(reference);
+          scope.publishArtifact?.(reference, {
+            ...display,
+            content: "record",
+            state: "not-started",
+            observedAt: owned.operation.updatedAt,
+          });
         } catch {
           /* optional reference hint */
         }
@@ -82,7 +91,7 @@ export async function claimWithArtifact(
     }
     throw error;
   }
-  const state = { store, request: { ...request }, publish: scope.publishArtifact };
+  const state = { store, request: { ...request }, publish: scope.publishArtifact, display };
   owners.set(owned, state);
   const started = owned.started!;
   owned.started = async (cwd, workspaceId) => {
@@ -121,7 +130,20 @@ export function retainOperationArtifact(claim: OperationClaim, outcome: Operatio
   claim.operation.artifact = reference;
   // Pi receives only a small reference, never duplicated full authored content.
   try {
-    owner.publish?.(reference);
+    const { operation } = outcome;
+    owner.publish?.(reference, {
+      ...owner.display,
+      content: outcome.final ? "answer" : outcome.partial !== undefined ? "partial" : "record",
+      state:
+        operation.state === "not-started" || operation.state === "uncertain"
+          ? operation.state
+          : operation.runtime?.work === "failed"
+            ? "failed"
+            : operation.state === "settled"
+              ? "settled"
+              : "unknown",
+      observedAt: operation.updatedAt,
+    });
   } catch {
     /* Durable publication is authoritative; optional hints are recoverable. */
   }

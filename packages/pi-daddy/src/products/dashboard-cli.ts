@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import type { DashboardAcknowledgment } from "./dashboard-session-client.ts";
 import { dashboardFile, dashboardTimeline, dashboardSelectedDetail } from "./dashboard-file-cache.ts";
 /**
  * `pi-daddy-dashboard` — the view of one ledger or activity timeline plus session model controls.
@@ -11,6 +12,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createInterface, emitKeypressEvents, type Key } from "node:readline";
+import { applyOwnerTaskTitles } from "./dashboard-activity.ts";
 import { parseDashboardLedger } from "./dashboard-projection.ts";
 import { renderDashboard } from "./dashboard-render.ts";
 import {
@@ -66,7 +68,7 @@ export interface DashboardFrameOptions {
   notice?: string;
   pending?: boolean;
   connected?: boolean;
-  acknowledgment?: string;
+  acknowledgment?: DashboardAcknowledgment;
   command?: string;
 }
 
@@ -139,6 +141,7 @@ async function compactFrame(options: DashboardFrameOptions): Promise<string> {
     current: string | undefined,
     currentStatus: string | undefined;
   let content: { title: string; text: string } | undefined;
+  let governedLedger = false;
   const aliases = options.activityAliases ?? new ActivityTimelineAliases();
   if (options.protocol !== undefined && options.protocol !== DASHBOARD_PROTOCOL_VERSION)
     return renderDashboardScreen({
@@ -164,7 +167,12 @@ async function compactFrame(options: DashboardFrameOptions): Promise<string> {
       const timeline = options.session?.observation
         ? { ...parsed, tasks: parsed.tasks.filter((task) => task.rootId === options.session!.activity?.rootId) }
         : parsed;
-      items = activityDashboardItems(timeline, aliases, options.now ?? new Date()).map((item) => ({
+      items = activityDashboardItems(
+        timeline,
+        aliases,
+        options.now ?? new Date(),
+        Boolean(options.session?.observation),
+      ).map((item) => ({
         ...item,
         timelinePath: path,
       }));
@@ -188,6 +196,7 @@ async function compactFrame(options: DashboardFrameOptions): Promise<string> {
         projection.nodes = projection.nodes.filter((node) => admitted.has(node.executionId));
       }
       items = ledgerDashboardItems(projection);
+      governedLedger = true;
       if (projection.corrupt.length) problem = `Ledger unavailable: ${projection.corrupt.length} corrupt line(s)`;
     }
   } catch (error) {
@@ -206,11 +215,18 @@ async function compactFrame(options: DashboardFrameOptions): Promise<string> {
         ? await dashboardFile(activity.path)
         : await readFile(activity.path, "utf8");
       const parsed = dashboardTimeline(activity.path, text);
+      if (governedLedger && options.session?.observation)
+        items = applyOwnerTaskTitles(items, parsed.tasks, activity.rootId);
       const timeline = {
         ...parsed,
         tasks: parsed.tasks.filter((task) => activityTaskKey(task.rootId, task.id) === key),
       };
-      const item = activityDashboardItems(timeline, aliases, options.now ?? new Date())[0];
+      const item = activityDashboardItems(
+        timeline,
+        aliases,
+        options.now ?? new Date(),
+        Boolean(options.session?.observation),
+      )[0];
       if (item) {
         current = item.label;
         currentStatus = item.status;
@@ -369,9 +385,7 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
       activityAliases: display.aliases,
       session: connection.state.snapshot ?? connection.state.lastObserved,
       connected: Boolean(connection.state.snapshot),
-      acknowledgment: connection.state.acknowledgment
-        ? `${connection.state.acknowledgment.action}: ${connection.state.acknowledgment.state} · ${connection.state.acknowledgment.effect}`
-        : undefined,
+      acknowledgment: connection.state.acknowledgment,
       ...(interactive
         ? {
             height: process.stdout.rows || 24,

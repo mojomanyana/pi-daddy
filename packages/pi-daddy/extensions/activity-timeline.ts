@@ -2,6 +2,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { observedPurpose } from "../src/products/activity-summary.ts";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { ENV_EPISODE_ID } from "../src/kernel/env-names.ts";
 import { Type } from "typebox";
@@ -251,7 +252,12 @@ export function registerActivityTimeline(pi: ExtensionAPI, session?: ActivitySes
     const value = event as { toolCallId?: string; toolName?: string; args?: { path?: unknown } };
     if (value.toolCallId && typeof value.args?.path === "string") paths.set(value.toolCallId, value.args.path);
     try {
-      if (value.toolName) await recorder?.append("tool_started", { tool: value.toolName, cwd: ctx.cwd });
+      if (value.toolName && recorder)
+        await recorder.append("tool_started", {
+          tool: value.toolName,
+          cwd: ctx.cwd,
+          dashboardSummary: observedPurpose(value.toolName, value.args, recorder.contentEnabled),
+        });
     } catch {
       /* observation cannot affect tool execution */
     }

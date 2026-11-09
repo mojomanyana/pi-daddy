@@ -58,6 +58,12 @@ export async function dashboardSessionRequest(
   });
 }
 
+export type DashboardAcknowledgment = {
+  action: string;
+  state: "pending" | "applied" | "refused" | "unconfirmed";
+  effect: string;
+};
+
 /** Controls use only a connected owner; last observations remain explicitly disconnected evidence. */
 export function createDashboardConnection(
   request?: (action: DashboardSessionAction) => Promise<DashboardSessionSnapshot>,
@@ -67,7 +73,7 @@ export function createDashboardConnection(
     lastObserved?: DashboardSessionSnapshot;
     pending: boolean;
     error?: string;
-    acknowledgment?: { action: string; state: "pending" | "applied" | "refused" | "unconfirmed"; effect: string };
+    acknowledgment?: DashboardAcknowledgment;
   } = { pending: false };
   let generation = 0,
     poll = 0,

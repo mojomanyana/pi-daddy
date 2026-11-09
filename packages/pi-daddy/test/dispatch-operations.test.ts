@@ -126,6 +126,29 @@ const routedSpec = {
   workspace: { workspace_id: "pilot", access: "read" as const },
 };
 
+test("changing the dashboard caption reuses the original child while changing the task still conflicts", async () => {
+  const owner = await createAutoModeAuthority({ enabled: false, source: "default" });
+  try {
+    const { session } = refusedWorkspaceHarness(owner);
+    const claim = (task: string, dashboardSummary?: string) =>
+      claimDelegationOperation(
+        session as unknown as GrantsSession,
+        { operation_id: "caption:reuse", task, tools: ["read"], dashboardSummary },
+        { executionId: "exec:caption", parentId: "d0", childId: "d0.0" } as never,
+        { cwd: "/tmp" } as never,
+      );
+    const original = await claim("Read the update");
+    const replay = await claim("Read the update", "Check the update");
+    assert.equal(original?.reused, false);
+    assert.equal(replay?.reused, true);
+    assert.equal(original?.operation.executionId, replay?.operation.executionId);
+    await assert.rejects(claim("Read another file", "Check the update"), /identity conflict/);
+    await original!.finish!("not-started", { cleanup: { state: "not-started" } });
+  } finally {
+    await owner.close();
+  }
+});
+
 async function failingLedgerPath() {
   const parent = join(await tempDir("operation-ledger-"), "not-a-directory");
   await writeFile(parent, "ordinary file blocks ledger parent creation");

@@ -1222,3 +1222,7 @@ settlement are dispatch-time checks, never inferred from the display. No LLM or 
 Now pins a current producer’s review request when that producer also reports a waiting review.
 Current blocking guidance precedes routine suggestions. Disconnected or expired observations can be
 inspected as history. Opening Reviews or showing a retained output grants no authority to approve it.
+
+### 2026-11-09 — Human dashboard and public task descriptions
+
+Overview shows a bounded selection from the current session. Tasks retains the full session list. Identify saved outputs by their exact execution and current reviews by their producer and reference. A short model-authored purpose is optional display text. Keep it separate from authorization, judgments and provider consent. Preserve technical records in Details. A package installation or tool registration alone cannot establish worker or network health.

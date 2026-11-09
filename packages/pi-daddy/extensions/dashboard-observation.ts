@@ -21,9 +21,7 @@ export function dashboardObservation(session: GrantsSession, now = Date.now()) {
       ...live,
       sources: [...value.sources, ...(initiative ? [initiative] : []), ...(workspace ? [workspace] : [])],
       logicalOwnerId: session.ownSpawnId,
-      artifacts: (session.dashboardArtifacts ?? [])
-        .slice(-16)
-        .map((r) => ({ operationId: r.operationId, executionId: r.executionId, sha256: r.manifest.sha256 })),
+      artifacts: (session.dashboardArtifacts ?? []).slice(-16),
       resources: {
         scope: "owner-process" as const,
         sampledAt: new Date(sample.at).toISOString(),

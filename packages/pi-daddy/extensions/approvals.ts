@@ -262,6 +262,13 @@ export async function obtainApprovals(
       path,
       task,
       signal,
+      project: session.cwd,
+      workspace: expectedBinding?.workspace_id,
+      recheckReason: pre.expired.includes(capability)
+        ? "The previous permission expired."
+        : pre.scopeMismatched.includes(capability)
+          ? "The saved permission covers a different request."
+          : undefined,
       ...(expectedBinding ? { bindingKey: approvalBindingDigest(expectedBinding) } : {}),
     });
     if (outcome.scope === null) {

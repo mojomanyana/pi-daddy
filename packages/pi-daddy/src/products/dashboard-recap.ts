@@ -1,17 +1,6 @@
-import type { DashboardContribution } from "../kernel/dashboard-observation.ts";
+import { activityStoryItems } from "./dashboard-activity.ts";
 import { staleSource } from "./dashboard-panels.ts";
-import { truncate } from "./dashboard-render.ts";
-import { dashboardText, type DashboardScreenOptions } from "./dashboard-screen.ts";
-
-function eventLine(event: DashboardContribution): string {
-  const label = dashboardText(event.label).replace(/\s+/g, " ").trim();
-  if (label === "agent_start") return "Parent turn started";
-  if (label === "agent_end") return "Parent turn ended";
-  const tool = /^(.*): tool (start|end)$/.exec(label);
-  const name = truncate(tool?.[1] || label || "Event", 80);
-  if (event.state === "failed") return `${name} failed`;
-  return tool ? `${name} ${tool[2] === "start" ? "started" : "finished"}` : name;
-}
+import type { DashboardScreenOptions } from "./dashboard-screen.ts";
 
 /** Current owner hook events, newest first. Producer snapshots can describe current state only. */
 export function sessionRecapLines(options: DashboardScreenOptions): string[] {
@@ -38,10 +27,21 @@ export function sessionRecapLines(options: DashboardScreenOptions): string[] {
     if (waiting) lines.push(`Waiting on a dependency · ${waiting} shown by Bookie`);
   }
 
-  const recent = (observed.activity ?? []).slice(-5).reverse();
+  const recent = activityStoryItems(observed.activity ?? [], observed.generation, false).slice(0, 5);
   lines.push(
     ...(recent.length
-      ? ["Recent activity · newest first", ...recent.map(eventLine)]
+      ? [
+          "Recent activity · newest first",
+          ...recent.map((item) =>
+            item.status === "failed"
+              ? `Failed · ${item.label}`
+              : item.status === "finished"
+                ? `Finished · ${item.label}`
+                : item.status === "Started"
+                  ? `Started · ${item.label}`
+                  : item.label,
+          ),
+        ]
       : ["No recent session events recorded."]),
   );
   return lines;

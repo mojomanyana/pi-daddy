@@ -7,8 +7,8 @@ export function sectionHeading(title: string, width: number): string {
 }
 
 export function previewWidth(destination: string, expanded: boolean, width: number): number | undefined {
-  if (width < 96 || (!expanded && (width < 110 || !["now", "work", "reviews"].includes(destination)))) return;
-  return Math.min(56, Math.floor(width * 0.45));
+  if (width < 82 || (!expanded && (width < 92 || !["now", "work", "reviews"].includes(destination)))) return;
+  return Math.min(84, Math.floor(width * 0.57));
 }
 
 const sgr = (value: string, code: string) => (value ? `\x1b[${code}m${value}\x1b[0m` : "");
@@ -38,11 +38,32 @@ function paintCell(cell: string): string {
   const rule = /^(.*?)  (─{3,})$/.exec(text);
   if (rule) {
     const title = rule[1]!;
-    const attention =
-      /^(?:SESSION PRIORITY|YOUR DECISIONS|PERMISSION REQUESTS|NEXT ACTION|NEEDS ATTENTION|AWAITING REVIEW)/.test(
+    const attention = /^(?:Next step|Needs |Waiting for your review|NEXT ACTION)/i.test(title);
+    return (
+      sgr(
         title,
-      );
-    return sgr(title, attention ? "1;33" : "1;36") + "  " + sgr(rule[2]!, "36") + padding;
+        attention ? "1;33" : /^(Recently finished|Saved results|What happened)/.test(title) ? "1;32" : "1;36",
+      ) +
+      "  " +
+      sgr(rule[2]!, "36") +
+      padding
+    );
+  }
+  if (/^  /.test(text)) {
+    const status =
+      /( · )(Failed|Blocked|Run failed|Last attempt failed|Unavailable|Awaiting decision|Needs you|Live status unknown|Running|Finished|Saved|Available)(?= |$| ·)/;
+    return (
+      text.replace(status, (_, separator, state) => {
+        const color = /Failed|failed|Blocked|Unavailable/.test(state)
+          ? "1;31"
+          : /Awaiting|Needs you|unknown/.test(state)
+            ? "33"
+            : state === "Running"
+              ? "36"
+              : "32";
+        return separator + sgr(state, color);
+      }) + padding
+    );
   }
   if (text === "/bookie-work review") return sgr(text, "1;36") + padding;
   if (/^(?:!|LAST OBSERVED|Disconnected)/.test(text)) return sgr(text, "1;33") + padding;

@@ -1,4 +1,5 @@
 /** Durable, local-only activity facts. Timeline events never infer skill compliance or provider reasoning. */
+import { safeDashboardSummary } from "./activity-summary.ts";
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { appendFile, mkdir, open, readFile, realpath, rename, writeFile } from "node:fs/promises";
@@ -52,6 +53,7 @@ export interface ActivityEvent {
   model?: string;
   thinking?: string;
   trigger?: ActivityTrigger;
+  dashboardSummary?: string;
   prompt?: ContentReference;
   final?: ContentReference;
   skill?: ActivitySkill;
@@ -75,8 +77,10 @@ export interface TimelineTask {
   model?: string;
   thinking?: string;
   trigger?: ActivityTrigger;
+  dashboardSummary?: string;
   prompt?: ContentReference;
   final?: ContentReference;
+  lastPurpose?: string;
   skills: TimelineSkill[];
   agents: Array<{ id: string; parentTaskId?: string; agent: string; state: string }>;
 }
@@ -146,6 +150,8 @@ function eventOf(value: unknown): ActivityEvent | null {
     (event.final && !validRef(event.final))
   )
     return null;
+  if (event.dashboardSummary !== undefined && safeDashboardSummary(event.dashboardSummary) !== event.dashboardSummary)
+    return null;
   if (
     event.skill &&
     (!validId(event.skill.name) ||
@@ -192,6 +198,7 @@ export function parseActivityTimeline(text: string): ActivityTimeline {
       if (event.cwd) task.cwd = event.cwd;
     }
     if (event.kind === "task_started") {
+      task.dashboardSummary = event.dashboardSummary;
       task.model = event.model;
       task.thinking = event.thinking;
       task.trigger = event.trigger;
@@ -199,6 +206,7 @@ export function parseActivityTimeline(text: string): ActivityTimeline {
       task.agent = event.agent ?? task.agent;
       task.parentTaskId = event.parentTaskId ?? task.parentTaskId;
     }
+    if (event.kind === "tool_started") task.lastPurpose = event.dashboardSummary;
     if (event.kind === "task_finished") {
       task.endedAt = event.at;
       task.final = event.final;
@@ -626,13 +634,16 @@ export class ActivityTimelineRecorder {
     prompt: string,
     model?: string,
     thinking?: string,
+    dashboardSummary?: string,
   ): Promise<void> {
     if (!this.enabled) return;
     this.taskId = taskId;
+    const purpose = this.contentEnabled && safeDashboardSummary(dashboardSummary);
     await this.append("task_started", {
       parentTaskId,
       agentId: taskId,
       agent,
+      ...(purpose ? { dashboardSummary: purpose } : {}),
       model,
       thinking,
       prompt: await this.content(prompt),

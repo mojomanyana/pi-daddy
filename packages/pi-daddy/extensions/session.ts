@@ -1,6 +1,6 @@
 import type { InitiativeOperationBinding } from "./initiative-runtime.ts";
 import type { DashboardSourceSnapshot, DashboardContribution } from "../src/kernel/dashboard-observation.ts";
-import type { OperationArtifactRef } from "../src/kernel/operation-artifact.ts";
+import type { DashboardSavedEvidence } from "../src/kernel/dashboard-observation.ts";
 import type { DashboardOwnerObservation } from "../src/kernel/dashboard-observation.ts";
 import type { EcosystemVersions } from "../src/products/ecosystem-versions.ts";
 import type { AutoModeReader } from "../src/kernel/auto-mode.ts";
@@ -152,7 +152,7 @@ export interface GrantsSession extends NativeSessionHost {
   refreshInitiative?: () => void;
   ecosystemVersions?: () => EcosystemVersions;
   dashboardLive?: () => { turn?: DashboardContribution; activity: DashboardContribution[] };
-  dashboardArtifacts?: OperationArtifactRef[];
+  dashboardArtifacts?: DashboardSavedEvidence[];
   dashboardObservations?: () => Omit<DashboardOwnerObservation, "version" | "resources" | "capture"> | undefined;
   autoMode?: AutoModeReader;
   autoModeFailure?: string;

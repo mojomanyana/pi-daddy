@@ -1,3 +1,9 @@
+import {
+  activityTaskKey,
+  defaultActivityTimelinePath,
+  detailForTimeline,
+  parseActivityTimeline,
+} from "../src/products/activity-timeline.ts";
 import { ENV_PUBLIC_EVIDENCE_DIR } from "../src/kernel/env-names.ts";
 import { evidenceFromProvider } from "./execution-evidence-fixture.ts";
 import { piFixtureScript } from "./pi-fixture.ts";
@@ -1471,5 +1477,49 @@ const timer = setInterval(() => { if (fs.existsSync(${JSON.stringify(release)}))
     await writeFile(release, "go");
     await pending?.catch(() => undefined);
     process.env.PATH = oldPath;
+  }
+});
+
+test("single, parallel and chained delegates bind only the display purpose to the actual child's execution", async () => {
+  const bin = await tempDir("grants-dashboard-purpose-");
+  const executable = join(bin, "pi");
+  await writeFile(executable, piFixtureScript("#!/usr/bin/env node\nprocess.stdout.write('fixture complete');"));
+  await chmod(executable, 0o755);
+  const oldPath = process.env.PATH;
+  process.env.PATH = `${bin}:${oldPath ?? ""}`;
+  try {
+    const { tools, dir, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate" });
+    const one = (n: number) => ({
+      task: `private instruction ${n}`,
+      dashboardSummary: `Check case ${n}`,
+      tools: ["read"],
+    });
+    for (const [name, params] of [
+      ["delegate", one(1)],
+      ["delegate_all", { children: [one(2), one(3)] }],
+      ["delegate_chain", { steps: [one(4), one(5)] }],
+    ] as const) {
+      await tools.get(name)!.execute(name, params, undefined, undefined, ctx);
+    }
+    const text = await readFile(defaultActivityTimelinePath(dir), "utf8");
+    const timeline = parseActivityTimeline(text);
+    const children = timeline.tasks.filter((task) => task.dashboardSummary);
+    assert.deepEqual(
+      children.map((task) => task.dashboardSummary).sort(),
+      [1, 2, 3, 4, 5].map((n) => `Check case ${n}`),
+    );
+    assert.equal(new Set(children.map((task) => task.id)).size, 5);
+    for (const task of children) {
+      const prompt = await detailForTimeline(
+        defaultActivityTimelinePath(dir),
+        activityTaskKey(task.rootId, task.id),
+        "prompt",
+      );
+      assert.ok(prompt.text.includes(`private instruction ${task.dashboardSummary!.slice(-1)}`));
+      assert.doesNotMatch(prompt.text, /Check case/);
+    }
+  } finally {
+    if (oldPath === undefined) delete process.env.PATH;
+    else process.env.PATH = oldPath;
   }
 });

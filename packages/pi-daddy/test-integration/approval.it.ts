@@ -278,11 +278,11 @@ describe(
         granting.toolCalls.some((c) => c.name === "delegate"),
         "precondition: the model called delegate",
       );
-      const dialog = granting.selects.find((sel) => sel.title.includes("tool:bash"));
+      const dialog = granting.selects.find((sel) => sel.title.includes("run shell commands"));
       assert.ok(dialog, "a gated capability on a definition must raise a dialog");
       assert.match(
         dialog.title,
-        /approve tool:bash for bash-user\?/,
+        /Allow bash-user to run shell commands\?/,
         "the subject is the DEFINITION, not <delegate> — that is what makes it human-authored (ADR-0019)",
       );
       assert.ok(
@@ -333,7 +333,7 @@ describe(
       const afterEdit = await runPrompt({ cwd: s.cwd, env, message, cancel: true });
 
       assert.ok(
-        afterEdit.selects.some((sel) => sel.title.includes("tool:bash")),
+        afterEdit.selects.some((sel) => sel.title.includes("run shell commands")),
         "rewriting what the child is told to do must ask the human again",
       );
       assert.ok(

@@ -127,6 +127,7 @@ export interface ChildExecutionInput {
   capacityReservation?: CapacityReservation;
   plan: Delegation;
   agent?: string;
+  dashboardSummary?: string;
   childId: string;
   executionId: string;
   parentExecutionId: string | null;
@@ -264,6 +265,9 @@ async function executePreparedChild(
       activityParent,
       input.agent ?? "governed child",
       (plan.args.at(-1) ?? "").trimStart(),
+      undefined,
+      undefined,
+      input.dashboardSummary,
     );
     activityStarted = true;
   } catch {}

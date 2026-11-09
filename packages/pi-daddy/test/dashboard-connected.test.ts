@@ -8,6 +8,7 @@ import { dashboardFrame } from "../src/products/dashboard-cli.ts";
 after(cleanupTempDirs);
 import { createDashboardDisplayControls } from "../src/products/dashboard-display-controls.ts";
 import { renderDashboardScreen } from "../src/products/dashboard-screen.ts";
+import { activityTaskKey } from "../src/products/activity-timeline.ts";
 import { cellWidth } from "../src/products/dashboard-render.ts";
 import { createDashboardConnection, type DashboardSessionSnapshot } from "../src/products/dashboard-session-client.ts";
 const date = "2026-11-04T12:00:00.000Z";
@@ -97,10 +98,10 @@ test("six views are bounded, preserve selection on resize and expansion, and kee
       now: new Date(date),
       connected: true,
     });
-  assert.match(render(), /REVIEWS/);
+  assert.match(render(), /\[3 Reviews\]/);
   const selected = display.screen.selectedKey;
   display.key("x");
-  assert.match(render(), /│ SELECTED ITEM[^\n]*\n[^\n]*│ Review click safe/);
+  assert.match(render(), /│ Selected item[^\n]*\n[^\n]*│ Review click safe/);
   render(42);
   render();
   assert.equal(display.screen.selectedKey, selected);
@@ -112,11 +113,16 @@ test("six views are bounded, preserve selection on resize and expansion, and kee
   display.key("v");
   assert.match(render(), /VERSIONS/);
   display.key("5");
+  assert.match(render(), /Run record 1/);
+  assert.doesNotMatch(render(), /op:one/);
+  display.key("return");
+  render();
+  display.key("x");
   assert.match(render(), /op:one/);
   display.key("4");
   assert.match(render(), /read observed/);
   display.key("1");
-  assert.match(render(), /SESSION PRIORITY/);
+  assert.match(render(), /Next step/);
   assert.match(render(), /Verify the scoped contract/);
 });
 test("Now keeps the current handoff action visible in a side pane and Reviews opens its exact record", () => {
@@ -160,7 +166,7 @@ test("Now keeps the current handoff action visible in a side pane and Reviews op
       now: new Date(now),
     });
   const initial = draw();
-  assert.match(initial, /SESSION PRIORITY.*\[3\] Reviews/);
+  assert.match(initial, /Next step.*\[3\] Reviews/);
   assert.match(initial, /Review the filtered CSV export/);
   assert.doesNotMatch(initial, /Verify the scoped contract/);
   display.key("3");
@@ -224,7 +230,7 @@ test("disconnected owner and stale contributions show last observations without 
     connected: false,
     now: new Date("2026-11-04T13:00:00Z"),
   });
-  assert.match(result, /LAST OBSERVED/);
+  assert.match(result, /Disconnected · showing last known status/);
   assert.match(result, /Auto unavailable/);
   assert.match(result, /Last seen/);
   assert.doesNotMatch(result, /Permissions connected/);
@@ -232,18 +238,17 @@ test("disconnected owner and stale contributions show last observations without 
   const absent = snapshot();
   absent.observation!.sources = [];
   display.key("x");
-  assert.match(
-    renderDashboardScreen({
-      width: 100,
-      height: 35,
-      screen: display.screen,
-      items: [],
-      session: absent,
-      connected: true,
-      now: new Date(date),
-    }),
-    /bookie: status adapter unavailable/,
-  );
+  const empty = renderDashboardScreen({
+    width: 100,
+    height: 35,
+    screen: display.screen,
+    items: [],
+    session: absent,
+    connected: true,
+    now: new Date(date),
+  });
+  assert.doesNotMatch(empty, /Bookie memory · (Available|Project connected)/);
+  assert.match(empty, /Parent RSS/);
 });
 test("a narrow pane keeps review keys legible, and recap and help preserve the selected detail", () => {
   const display = createDashboardDisplayControls(false, true);
@@ -271,7 +276,7 @@ test("a narrow pane keeps review keys legible, and recap and help preserve the s
   draw();
   display.key("return");
   const identity = display.screen.selectedKey;
-  assert.match(draw(), /REVIEWS \/ Details/);
+  assert.match(draw(), /Reviews \/ Details/);
   display.key("r");
   assert.match(draw(), /Session recap[\s\S]*read observed/);
   display.key("return");
@@ -282,7 +287,7 @@ test("a narrow pane keeps review keys legible, and recap and help preserve the s
   assert.match(draw(), /DASHBOARD KEYS/);
   display.key("escape");
   assert.equal(display.screen.selectedKey, identity);
-  assert.match(draw(), /REVIEWS \/ Details/);
+  assert.match(draw(), /Reviews \/ Details/);
   display.key("r");
   session.observation!.sources[0]!.items = [
     { id: "another", kind: "review", label: "Unrelated answer", state: "observed" },
@@ -303,10 +308,10 @@ test("a disconnected dashboard withdraws permission prompts and their suggested 
   const draw = (connected: boolean) =>
     renderDashboardScreen({ width: 65, height: 20, screen, items: [], session, connected, now: new Date(date) });
   assert.match(draw(true), /permission request in the parent Pi/);
-  assert.match(draw(true), /build · bash/);
+  assert.match(draw(true), /build needs shell access/);
   const offline = draw(false);
-  assert.match(offline, /LAST OBSERVED/);
-  assert.doesNotMatch(offline, /Respond to the permission request|build · bash|Auto unavailable \[a\]/);
+  assert.match(offline, /Disconnected · showing last known status/);
+  assert.doesNotMatch(offline, /Respond to the permission request|build needs shell access|Auto unavailable \[a\]/);
 });
 
 test("recap works from the session snapshot without a local ledger or a retained private detail", async () => {
@@ -499,8 +504,131 @@ test("initiative scope and related-session counts remain explicit; stale goals a
       connected: true,
     });
   display.key("2");
-  assert.match(render(), /SELECTED Initiative bookie:v\/p \(last observed\)/);
+  assert.match(render(), /Selected Initiative bookie:v\/p \(last known\)/);
   assert.match(render(), /2 known session\(s\); 3 recorded attempt\(s\)/);
   display.key("1");
-  assert.match(render(), /Preserve exact result \(principal; stale\)/);
+  assert.match(render(), /Preserve exact result \(last known\)/);
+});
+
+test("Overview reports a real review when no task or next step accompanies it", () => {
+  const session = snapshot();
+  session.observation!.sources[0]!.items = [
+    {
+      id: "draft",
+      kind: "review",
+      label: "Customer update draft",
+      state: "approval-wait",
+      reference: "output/1",
+    },
+  ];
+  const options = {
+    width: 88,
+    height: 28,
+    screen: createDashboardDisplayControls(false, true).screen,
+    session,
+    items: [],
+    connected: true,
+    now: new Date(date),
+  };
+  const overview = renderDashboardScreen(options);
+  assert.match(overview, /Needs your decision/);
+  assert.match(overview, /Customer update draft/);
+  assert.doesNotMatch(overview, /No decision requested/);
+  assert.doesNotMatch(renderDashboardScreen({ ...options, connected: false }), /Needs your decision/);
+});
+
+test("failures are visible in the timeline and the current parent has the latest observed purpose", () => {
+  const session = snapshot();
+  session.activity = { rootId: "root", taskId: "turn", path: "/unused" };
+  const key = activityTaskKey("root", "turn");
+  session.observation!.turn!.label = "Check the queue export";
+  session.observation!.activity = [
+    {
+      id: "e",
+      kind: "status",
+      label: "bash: tool end",
+      state: "failed",
+      details: ["Purpose: Run the project tests", "Call: 1"],
+    },
+  ];
+  const controls = createDashboardDisplayControls(false, true);
+  const render = () =>
+    renderDashboardScreen({
+      width: 84,
+      height: 29,
+      screen: controls.screen,
+      session,
+      connected: true,
+      items: [
+        { key, taskKey: key, label: "Pi is working on your request", status: "active", elapsed: "1:30", details: [] },
+      ],
+      now: new Date(date),
+    });
+  const overview = render();
+  assert.match(overview, /Check the queue export/);
+  assert.match(overview, /Run the project tests · Failed/);
+  controls.key("4");
+  const timeline = render();
+  assert.match(timeline, /Run the project tests · Failed/);
+  assert.doesNotMatch(timeline, /tool end|Purpose: |Call: 1/);
+});
+
+test("Activity keeps an explicit workspace inspection discoverable outside the event timeline", () => {
+  const session = snapshot();
+  session.observation!.sources.push({
+    ...session.observation!.sources[0]!,
+    producer: "workspace-routing",
+    items: [
+      {
+        id: "workspace-routing",
+        label: "Workspace service desk: unavailable",
+        kind: "status",
+        state: "unavailable",
+        details: ["Inspect the selected workspace."],
+      },
+    ],
+  });
+  const display = createDashboardDisplayControls(false, true);
+  display.key("4");
+  const render = () =>
+    renderDashboardScreen({
+      width: 88,
+      height: 26,
+      screen: display.screen,
+      items: [],
+      session,
+      connected: true,
+      now: new Date(date),
+    });
+  assert.match(render(), /Current reports[\s\S]+Workspace service desk: unavailable/);
+  display.key("down");
+  display.key("return");
+  assert.match(render(), /Inspect the selected workspace/);
+});
+
+test("a lost control reply remains actionable even after a second failed poll", async () => {
+  const live = snapshot();
+  let fail = false;
+  const client = createDashboardConnection(async () => {
+    if (fail) throw Error("connect ENOENT /private/control.sock");
+    return live;
+  });
+  await client.refresh();
+  fail = true;
+  await client.change({ action: "set-auto", enabled: true });
+  await client.refresh();
+  const screen = createDashboardDisplayControls(false, true).screen;
+  const result = renderDashboardScreen({
+    width: 65,
+    height: 20,
+    screen,
+    items: [],
+    session: client.state.lastObserved,
+    connected: false,
+    acknowledgment: client.state.acknowledgment,
+    notice: client.state.error,
+    now: new Date(date),
+  });
+  assert.match(result.replace(/\s+/g, " "), /Unconfirmed Auto change. Check the main Pi chat before trying again/);
+  assert.doesNotMatch(result, /ENOENT|control.sock/);
 });

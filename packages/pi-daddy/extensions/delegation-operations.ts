@@ -2,6 +2,8 @@
 import { claimWithArtifact, retainOperationArtifact } from "./delegation-artifacts.ts";
 import { openOperationArtifacts, type OperationArtifactStore } from "../src/governance/operation-artifacts.ts";
 import type { OperationArtifactRef } from "../src/kernel/operation-artifact.ts";
+import type { DashboardResultDescription } from "../src/kernel/dashboard-observation.ts";
+import { dashboardContentEnabled, safeDashboardSummary } from "../src/products/activity-summary.ts";
 import { agentDir } from "../src/kernel/project-paths.ts";
 import { createHash } from "node:crypto";
 import { realpath } from "node:fs/promises";
@@ -27,7 +29,7 @@ const FINAL_BYTES = 4 * 1024 * 1024,
 type Final = Extract<NonNullable<DelegationOutcome["final"]>, { state: "complete" }>;
 export interface OperationFinalStore {
   artifacts?: OperationArtifactStore;
-  publishArtifact?: (reference: OperationArtifactRef) => void;
+  publishArtifact?: (reference: OperationArtifactRef, description?: DashboardResultDescription) => void;
   lifecycle: object;
   owner: string;
   bytes: number;
@@ -37,7 +39,7 @@ export function bindOperationFinals(
   session: GrantsSession,
   sessionId: string,
   cwd: string,
-  publishArtifact?: (reference: OperationArtifactRef) => void,
+  publishArtifact?: OperationFinalStore["publishArtifact"],
 ) {
   const owner = JSON.stringify([sessionId, cwd]),
     old = session.reloadLifecycle.operationFinals;
@@ -155,7 +157,8 @@ export async function claimDelegationOperation(
     const operations = session.autoMode?.operations;
     if (!operations) throw Error("Session operation admission is unavailable; no dispatch started");
     const cwd = await realpath(ctx.cwd);
-    const { operation_id: _id, ...request } = spec;
+    // A display-only caption may change when resuming the very same task.
+    const { operation_id: _id, dashboardSummary: _caption, ...request } = spec;
     const requestDigest = createHash("sha256")
       .update(
         JSON.stringify(
@@ -185,7 +188,12 @@ export async function claimDelegationOperation(
       cwd,
       workspaceId: spec.workspace?.workspace_id ?? null,
     };
-    return claimWithArtifact(session, identity, () => operations.claim(identity, signal), operationScope);
+    const agent = spec.agent && /^[a-z][a-z0-9_-]{0,48}$/i.test(spec.agent) ? spec.agent : undefined;
+    const summary = dashboardContentEnabled(process.env) ? safeDashboardSummary(spec.dashboardSummary) : undefined;
+    return claimWithArtifact(session, identity, () => operations.claim(identity, signal), operationScope, {
+      agent,
+      summary,
+    });
   };
   if (!denied) return elect();
 

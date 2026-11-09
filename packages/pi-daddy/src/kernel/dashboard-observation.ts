@@ -46,6 +46,20 @@ export interface DashboardSourceSnapshot extends DashboardSourceUpdate {
   staleAfterMs: number;
   availability: "observed" | "closed";
 }
+/** Session-local display metadata from the same elected child that published the reference. */
+export interface DashboardResultDescription {
+  agent?: string;
+  summary?: string;
+  content: "answer" | "partial" | "record";
+  state: "not-started" | "uncertain" | "failed" | "settled" | "unknown";
+  observedAt: string;
+}
+export interface DashboardSavedEvidence {
+  operationId: string;
+  executionId: string;
+  sha256: string;
+  description?: DashboardResultDescription;
+}
 export interface DashboardOwnerObservation {
   version: 1;
   sessionId: string;
@@ -57,7 +71,7 @@ export interface DashboardOwnerObservation {
   logicalOwnerId?: string;
   turn?: DashboardContribution;
   activity?: DashboardContribution[];
-  artifacts?: Array<{ operationId: string; executionId: string; sha256: string }>;
+  artifacts?: DashboardSavedEvidence[];
   resources: { scope: "owner-process"; sampledAt: string; rssBytes: number; hostHealth: "unknown" };
   capture: { transcripts: boolean; diagnostics: boolean };
 }
