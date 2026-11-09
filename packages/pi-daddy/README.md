@@ -416,8 +416,8 @@ use the same in-memory overrides and `session_config` audit path as `/grants mod
 <provider:model> <thinking>` and `m all ...` remain available in command mode. A standalone dashboard is read-only.
 Execution history and cost remain observations, and incomplete usage is shown as unavailable rather than zero.
 
-Press **s** for Settings. Select Permission Auto, JEV, Child wall or Child idle with the arrows;
-**Enter** toggles a switch or opens a seconds edit. A limit value of **0** restores its default.
+Press **s** for Settings. Select a setting with the arrows;
+**Enter** opens or changes it. For child wall and idle times, **0** restores the startup default.
 Settings belong to this owner session and survive reload; a different native session starts fresh.
 Wall/idle edits affect future child launches from this parent, never a running child's captured deadline.
 They are process safety controls, not model time/token budgets. `/grants` reports the effective overrides.
@@ -427,6 +427,14 @@ LoRA-storage consent prompts in that parent; the dashboard shows waiting-for-con
 remaining calls, storage status and the selected provider/model, transport and shared local data root when reported by Harness. Auto cannot answer either consent prompt. Turning JEV off revokes
 its activation, including an outstanding enable request; the switch itself makes no provider call.
 No API keys, consent flags or training permissions can be set from this screen.
+
+When Harness offers session controls, the **Call limit** row shows the session total, calls already used,
+and how many remain available. Select it to enter a nonnegative whole number in the main Pi session.
+The initial limit is **300**; **0** stops new JEV calls. Raising the limit does not reset spending.
+**Choose JEV model and storage** opens the provider/model and consent choices. **Tool hints** lets
+you opt in separately: a hint names an available tool only when JEV rates its fit above 90%.
+Hints share the same call allowance. They do not execute the tool or grant permission.
+Older Harness versions keep their existing JEV switch.
 
 Active-descendant capacity and maximum depth are displayed with their startup environment variables;
 start a new session to change them. The per-call bound is fixed. Settings does not replace live capacity

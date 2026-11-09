@@ -257,3 +257,61 @@ test("owner replacement during an awaited settings read refuses a mixed-session 
     await closeSessionAutoMode(session);
   }
 });
+
+test("Settings shows editable JEV controls only when advertised; entering a control opens an owner dialog without authorizing spending", async () => {
+  const session = await fixture();
+  const endpoint = await ensureDashboardSessionServer(session);
+  const events = new EventEmitter();
+  const actions: string[] = [];
+  let modern = true;
+  events.on("skill-harness:jev-control-v1", (request) => {
+    actions.push(request.action);
+    // A control requests the native UI; amounts, prompt text and consent must never cross this socket.
+    assert.deepEqual(Object.keys(request).sort(), ["action", "reply", "requestId", "sessionId", "version"]);
+    request.reply({
+      version: 1,
+      requestId: request.requestId,
+      sessionId: request.sessionId,
+      pending: request.action !== "status",
+      status: {
+        enabled: true,
+        mode: "workflow",
+        remaining: 299,
+        ...(modern
+          ? { limit: 300, used: 1, hintsEnabled: false, controls: ["limit", "hints", "configure", "unknown"] }
+          : {}),
+      },
+    });
+  });
+  registerDashboardSettings({ events } as unknown as ExtensionAPI, session);
+  try {
+    const request = (a: Parameters<typeof dashboardSessionRequest>[2]) =>
+      dashboardSessionRequest(endpoint.socketPath, endpoint.token, a);
+    const snapshot = await request({ action: "get" });
+    const display = createDashboardDisplayControls(false, true);
+    display.key("s");
+    const draw = (s = snapshot) =>
+      renderDashboardScreen({ width: 48, height: 24, screen: display.screen, items: [], session: s });
+    assert.match(draw(), /Call limit: 300 per session/);
+    assert.match(draw(), /1 used · 299 available/);
+    for (const opt of ["limit", "configure", "hints"] as const) {
+      while (display.screen.settingKey !== opt) {
+        const previous = display.screen.settingKey;
+        display.key("down");
+        assert.notEqual(display.screen.settingKey, previous);
+      }
+      assert.equal(display.key("return"), "setting");
+      const opened = await request({ action: "edit-jev", option: opt });
+      assert.equal(opened.settings?.jev.pending, true);
+    }
+    await assert.rejects(request({ action: "edit-jev", option: "not-a-setting" as any }), /Unknown JEV setting/);
+    assert.deepEqual(actions, ["status", "limit", "configure", "hints"]);
+    modern = false;
+    const legacy = await request({ action: "get" });
+    assert.doesNotMatch(draw(legacy), /Call limit:|Choose JEV|Tool hints:/);
+    assert.equal(display.screen.settingKey, "jev");
+  } finally {
+    await endpoint.close();
+    await closeSessionAutoMode(session);
+  }
+});

@@ -93,9 +93,9 @@ export function createDashboardDisplayControls(details: boolean, ledger: boolean
         screen.manualScroll = false;
         const delta = key === "up" || key === "k" ? -1 : 1;
         if (screen.view === "settings") {
-          const index = DASHBOARD_SETTING_KEYS.indexOf(screen.settingKey ?? "auto");
-          screen.settingKey =
-            DASHBOARD_SETTING_KEYS[Math.max(0, Math.min(DASHBOARD_SETTING_KEYS.length - 1, index + delta))];
+          const keys = screen.settingKeys ?? DASHBOARD_SETTING_KEYS;
+          const index = keys.indexOf(screen.settingKey ?? "auto");
+          screen.settingKey = keys[Math.max(0, Math.min(keys.length - 1, index + delta))];
         } else if (screen.view === "versions") {
           const rows = screen.versionRows ?? [],
             index = rows.findIndex((row) => row.id === screen.versionId);

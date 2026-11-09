@@ -249,6 +249,8 @@ smoke selects Pi 1.4.0, whose internal dependencies are exact. A fresh Pi 1.0.4 
 newer incompatible Codemode dependency and failed before Daddy loaded. The lockfile-backed integration
 tier remains on Pi 1.0.4; no broad version range, peer restriction, or global runtime upgrade is added.
 
+**2026-11-09 — JEV controls open an owner dialog.** Settings advertises optional controls reported by Harness; opening a budget, model or prompt-hint editor neither approves spending nor increases authority. The current parent session owns the decision. Older Harness implementations remain readable and toggleable.
+
 **2026-10-10 — JEV route display stays observational.** Dashboard Settings accepts bounded provider/model/transport identifiers from the owner Harness; absent fields remain absent for older releases. It does not infer a provider, switch models, resolve credentials or grant consent. A refreshed owner status replaces the transient consent instruction after the dialog settles.
 
 **2026-10-10 — Standalone diagnostics keep retention validation local.** The offline exporter and runtime share the unchanged retention schema and semantic checks. Its fixed schema vocabulary is evaluated without host peers; unsupported vocabulary refuses construction. A differential fixture checks the original TypeBox schema decisions, and the package smoke exports real selected files and retention gaps from a clean prefix without Pi or TypeBox. This does not change extension peer ownership or grant training rights.

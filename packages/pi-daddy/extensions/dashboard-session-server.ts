@@ -1,3 +1,4 @@
+import { isJevEditAction } from "../src/products/dashboard-settings.ts";
 import { dashboardObservation } from "./dashboard-observation.ts";
 import { dashboardSettingsSnapshot, dashboardJev, setDashboardLimit } from "./dashboard-settings.ts";
 import { randomBytes } from "node:crypto";
@@ -87,6 +88,7 @@ async function respond(session: GrantsSession, token: string, line: string): Pro
     enabled?: unknown;
     key?: unknown;
     seconds?: unknown;
+    option?: unknown;
     expectedOwner?: { sessionId?: unknown; cwd?: unknown; generation?: unknown };
   };
   if (request.token !== token) return { ok: false, error: "unauthorised dashboard request" };
@@ -108,6 +110,9 @@ async function respond(session: GrantsSession, token: string, line: string): Pro
   let jev;
   if (request.action === "set-limit") {
     setDashboardLimit(session, request.key, request.seconds);
+  } else if (request.action === "edit-jev") {
+    if (!isJevEditAction(request.option)) return { ok: false, error: "Unknown JEV setting" };
+    jev = await dashboardJev(session, request.option);
   } else if (request.action === "set-jev") {
     if (typeof request.enabled !== "boolean") return { ok: false, error: "JEV requires an explicit boolean" };
     jev = await dashboardJev(session, request.enabled ? "enable" : "disable");

@@ -1,5 +1,10 @@
 # Changelog — pi-daddy
 
+## 0.53.0 — 2026-11-09
+
+- Start the parent session with its selected tools and agents ready to use, respecting existing grant choices. In a supported Herdr workspace the bundled dashboard can open automatically.
+- Edit the JEV call allowance, model, storage choices and optional tool hints from Settings when supported by Skill Harness. The dashboard shows the limit and used count; the parent Pi session owns paid-call and storage choices.
+
 ## 0.52.0 — 2026-11-09
 
 - Open Overview for decisions, live tasks, recent finishes and tool availability. Tasks shows the full list. Related activity events are grouped, and saved results have readable names.

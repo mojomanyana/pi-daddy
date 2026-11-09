@@ -1,5 +1,10 @@
 /** Settings are owner observations; rendering never grants consent or changes execution. */
-export type DashboardSettingKey = "auto" | "jev" | "wall" | "idle" | "descendants" | "depth" | "perCall";
+export const JEV_EDIT_ACTIONS = ["limit", "configure", "hints"] as const;
+export type JevEditAction = (typeof JEV_EDIT_ACTIONS)[number];
+export const isJevEditAction = (value: unknown): value is JevEditAction =>
+  JEV_EDIT_ACTIONS.some((key) => value === key);
+export type DashboardSettingKey =
+  JevEditAction | "auto" | "jev" | "wall" | "idle" | "descendants" | "depth" | "perCall";
 export const DASHBOARD_SETTING_KEYS: DashboardSettingKey[] = [
   "auto",
   "jev",
@@ -16,6 +21,10 @@ export interface DashboardJevState {
   mode?: string;
   storage?: string | null;
   remaining?: number;
+  limit?: number;
+  used?: number;
+  hintsEnabled?: boolean;
+  controls?: JevEditAction[];
   availability?: string;
   providerReadiness?: string;
   selectedProvider?: string;
@@ -23,6 +32,10 @@ export interface DashboardJevState {
   transport?: string;
   storageRoot?: string;
   error?: string;
+}
+export function visibleSettingKeys(jev?: DashboardJevState): DashboardSettingKey[] {
+  const extra = JEV_EDIT_ACTIONS.filter((key) => jev?.available && jev.controls?.includes(key));
+  return ["auto", "jev", ...extra, ...DASHBOARD_SETTING_KEYS.slice(2)];
 }
 export interface DashboardSettingsSnapshot {
   editable: boolean;
@@ -36,6 +49,7 @@ export interface DashboardSettingsSnapshot {
   perCall: number;
   jev: DashboardJevState;
 }
+export const JEV_EDITOR_NOTICE = "Finish editing in the main Pi session.";
 export const JEV_CONSENT_NOTICE = "Complete JEV paid-call and LoRA-storage choices in the parent Pi session";
 export function dashboardJevNotice(jev: DashboardJevState): string {
   if (jev.pending) return JEV_CONSENT_NOTICE;
@@ -57,9 +71,29 @@ export function dashboardSettingsLines(
       "jev",
       `JEV: ${jev.pending ? "waiting for consent" : !jev.available ? "unavailable" : jev.enabled ? "ON" : "OFF"}`,
     ),
+    ...(jev.available && jev.controls?.includes("limit")
+      ? [
+          row("limit", `Call limit: ${jev.limit ?? "unknown"} per session`),
+          `  ${jev.used ?? "?"} used · ${jev.remaining ?? "?"} available now`,
+        ]
+      : []),
+    ...(jev.available && jev.controls?.includes("configure")
+      ? [row("configure", "Choose JEV model and storage…")]
+      : []),
+    ...(jev.available && jev.controls?.includes("hints")
+      ? [
+          row(
+            "hints",
+            `Tool hints: ${jev.hintsEnabled === true ? "ON" : jev.hintsEnabled === false ? "OFF" : "unknown"}`,
+          ),
+          "  Suggestions only · above 90% confidence",
+        ]
+      : []),
     ...(jev.available
       ? [
-          `  ${jev.availability ?? "unknown"} · ${jev.remaining ?? 0} paid calls left`,
+          ...(jev.controls?.includes("limit")
+            ? [`  Provider status: ${jev.availability ?? "unknown"}`]
+            : [`  ${jev.availability ?? "unknown"} · ${jev.remaining ?? 0} paid calls left`]),
           `  Key: ${jev.providerReadiness ?? "unknown"}; storage: ${jev.storage ?? "not granted"}`,
           ...(jev.selectedProvider || jev.selectedModel
             ? [`  Model: ${jev.selectedProvider ?? "unknown"}/${jev.selectedModel ?? "not reported"}`]
