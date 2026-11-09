@@ -1,5 +1,9 @@
 # Changelog — pi-daddy
 
+## 0.53.1 — 2026-11-09
+
+- A freshly connected dashboard tells you where to start your first task. Opening a standalone dashboard still shows setup guidance.
+
 ## 0.53.0 — 2026-11-09
 
 - Start the parent session with its selected tools and agents ready to use, respecting existing grant choices. In a supported Herdr workspace the bundled dashboard can open automatically.

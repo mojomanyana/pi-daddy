@@ -400,7 +400,9 @@ export function sessionPanelLines(options: DashboardScreenOptions, items: Dashbo
           ? "No saved results reported to this dashboard."
           : destination === "activity"
             ? "No activity has been recorded in this session yet."
-            : "No tasks reported for this session yet.";
+            : destination === "now" && options.connected && !observation.turn
+              ? "Give Pi a task in the main chat. Its progress will appear here."
+              : "No tasks reported for this session yet.";
     lines.push(fallback);
   }
   const left = previewWidth(destination, Boolean(screen.expanded), width);

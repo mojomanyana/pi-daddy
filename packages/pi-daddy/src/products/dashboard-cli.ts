@@ -200,10 +200,10 @@ async function compactFrame(options: DashboardFrameOptions): Promise<string> {
       if (projection.corrupt.length) problem = `Ledger unavailable: ${projection.corrupt.length} corrupt line(s)`;
     }
   } catch (error) {
-    problem =
-      (error as { code?: string }).code === "ENOENT"
-        ? "Waiting for local work; open from /grants dashboard."
-        : `Evidence unavailable: ${error instanceof Error ? error.message : String(error)}`;
+    if ((error as { code?: string }).code === "ENOENT") {
+      // A new owner session can have no local task records yet.
+      if (!options.session && !options.connected) problem = "Waiting for local work; open from /grants dashboard.";
+    } else problem = `Evidence unavailable: ${error instanceof Error ? error.message : String(error)}`;
   }
   // The owner supplies this exact current turn. No sibling timeline or unrelated history is merged.
   const activity = options.session?.activity;
