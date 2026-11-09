@@ -1,3 +1,4 @@
+import { registerProjectMemoryOwner } from "./project-memory-owner.ts";
 import { registerDashboardSettings, childExecutionLimits } from "./dashboard-settings.ts";
 import { bindEcosystemVersions } from "./ecosystem-versions.ts";
 import {
@@ -93,6 +94,7 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
   registerActivityTimeline(pi, session);
   const runtimeSnapshot = registerRuntimeSnapshot(pi, session);
   registerDashboardSettings(pi, session);
+  const projectMemory = registerProjectMemoryOwner(pi, session);
   const dashboardPluginRoot = fileURLToPath(new URL("../herdr-plugin/", import.meta.url));
   const dashboardPaths = defaultDashboardPaths(agentDir());
   // Definitions are registered only after owner-bound session_start. Until then there is no delegation
@@ -129,6 +131,7 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
     const reload = bindReloadLifecycle(owner, session.reloadLifecycle);
     session.reconcileEnvironment(reload.environment, reload.lifecycle, ctx.cwd);
     session.ownerBound = true;
+    const projectMemoryReady = projectMemory.begin(ctx);
     selectedReady = undefined;
     selectedReportContext = ctx;
     // ADR-0078: the parent's own session, for a granted `pruned` or `fork` handoff. Read-only, and only ever
@@ -244,6 +247,7 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
         );
       }
       if (session.reloadLifecycle !== reload.lifecycle) return undefined;
+      projectMemoryReady();
       session.publishChildEnv();
       // The definitions now exist, so the `delegate` schema can finally name them (R-39). pi serialises a
       // tool's schema at REQUEST time, not at registration — measured — which is what makes this reach the
@@ -328,6 +332,7 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
   });
 
   pi.on("session_shutdown", async (event) => {
+    projectMemory.close();
     if (event.reason !== "reload") await closeSessionAutoMode(session);
   });
 

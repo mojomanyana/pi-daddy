@@ -20,6 +20,7 @@ previous operation is proven settled or never started; uncertainty stays blocked
 Principal 4.12.0 introduced automatic operation IDs and exact candidate/report references for this contract.
 
 The dashboard shows the selected task's last observed tool event and time since that event.
+With Auto on in a trusted interactive project, a compatible Bookie can save and recall routine notes for the current folder. Look for **Bookie memory · Ready in this folder** under Overview → Tools. Turning Auto off withdraws automatic memory access.
 Details include the actual recorded working directory and phase where available. Silence is
 not proof of a hang, and a finished process is not an approved task. Tool observations include names, times, local call references and bounded descriptions of the action.
 A delegating model can supply a short public `dashboardSummary` during its usual call. Metadata-only and off modes omit this model-authored text. Diagnostic retention remains operator opt-in.

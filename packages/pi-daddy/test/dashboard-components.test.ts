@@ -179,3 +179,25 @@ test("Saved results show what was retained, keep opaque identifiers in details, 
   assert.match(uncertain.label, /partial output/);
   assert.match(uncertain.status, /uncertain/);
 });
+
+test("automatic Bookie memory is a single live Tools row alongside independent work-map observations", () => {
+  const memory = source("bookie-memory", "observed");
+  memory.items = [{ id: "project-memory", kind: "work", state: "observed", label: "Current workspace memory" }];
+  const work = source("bookie", "observed");
+  work.items = [{ id: "scope", kind: "goal", state: "observed", label: "Project" }];
+  const o = panel([work, memory], [bookie]);
+  assert.deepEqual(
+    componentItems(o).map((r) => r.label),
+    ["Bookie memory · Ready in this folder"],
+  );
+  assert.ok(isComponentObservation(memory, memory.items[0]!));
+  assert.match(versionLines(bookie, false, panel([memory], [bookie])).join(" "), /Active in Pi/);
+  memory.availability = "closed";
+  assert.match(componentItems(o)[0]!.label, /Project connected/);
+  assert.match(componentItems(panel([memory], [bookie]))[0]!.label, /Live status unknown/);
+  memory.availability = "observed";
+  memory.items[0]!.state = "unknown";
+  assert.match(componentItems(o)[0]!.label, /Project connected/);
+  o.connected = false;
+  assert.match(componentItems(o)[0]!.label, /Live status unknown/);
+});

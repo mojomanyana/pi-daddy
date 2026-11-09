@@ -1,5 +1,9 @@
 # Changelog — pi-daddy
 
+## 0.54.0 — 2026-11-09
+
+- With Auto on in a trusted parent Pi session, compatible Bookie versions can remember routine notes for the current folder. Overview shows **Bookie memory · Ready in this folder** when Bookie confirms access. Turning Auto off withdraws it immediately.
+
 ## 0.53.3 — 2026-11-09
 
 - When you press a JEV setting twice, the dashboard opens one dialog and clears the reminder as soon as the parent Pi session closes it.
