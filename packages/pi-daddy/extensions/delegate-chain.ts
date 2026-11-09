@@ -1,3 +1,4 @@
+import { dashboardSummaryDescription } from "../src/products/activity-summary.ts";
 import { operationIdShape, claimDelegationOperation, existingOperationOutcome } from "./delegation-operations.ts";
 import { publicEvidenceCall } from "./public-evidence.ts";
 import { executionEvidenceContent } from "./execution-evidence.ts";
@@ -81,6 +82,7 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
     definitionId: Type.Optional(
       Type.String({ description: "Snapshot id returned by delegate_describe; required for Principal phases." }),
     ),
+    dashboardSummary: Type.Optional(Type.String({ maxLength: 160, description: dashboardSummaryDescription })),
     task: Type.String({
       description:
         `What this step should do. Write ${PLACEHOLDER} where the previous step's output belongs; if you omit it, ` +

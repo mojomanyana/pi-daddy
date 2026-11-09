@@ -78,15 +78,15 @@ function panel(o: DashboardScreenOptions): string[] {
 test("compact Now has one named row per task, keeps full identity in details, and moves diagnostics into expansion", () => {
   const o = options([work, { id: "runner", kind: "work", label: "build", state: "running" }]);
   const compact = panel(o);
-  assert.match(compact[0]!, /^YOUR DECISIONS · 1  ─/);
+  assert.match(compact[0]!, /^Needs your decision  ─/);
   assert.equal(compact[1], "> customer update · Awaiting decision");
-  assert.match(compact[2]!, /^IN PROGRESS · 1  ─/);
+  assert.match(compact[2]!, /^In progress  ─/);
   assert.equal(compact[3], "  build · Running");
   assert.ok(sessionDashboardItems(o)[0]!.details.includes(workPath));
   o.screen.expanded = true;
   o.width = 120;
   const expanded = panel(o).join("\n");
-  assert.match(expanded, /COMPONENTS/);
+  assert.match(expanded, /Tools/);
   assert.match(expanded, /Parent RSS/);
 });
 
@@ -94,7 +94,9 @@ test("task names which would look identical retain their differentiating paths",
   const duplicate = { ...work, id: "other", label: "/projects/other/tasks/customer_update.md" };
   const o = options([work, duplicate]);
   assert.deepEqual(
-    sessionDashboardItems(o).map((x) => x.label),
+    sessionDashboardItems(o)
+      .filter((x) => x.key.startsWith("source:"))
+      .map((x) => x.label),
     [work.label, duplicate.label],
   );
 });
@@ -103,7 +105,7 @@ test("review leads with its actual read action and current owner permission take
   const o = options([review, next]);
   assert.deepEqual(sessionNextLines(o), ["NEXT · [3] Reviews", "Review customer update"]);
   o.screen.destination = "reviews";
-  assert.match(panel(o)[0]!, /^AWAITING REVIEW · 1/);
+  assert.match(panel(o)[0]!, /^Waiting for your review · 1/);
   assert.equal(panel(o)[1], "> Ready for review: customer update");
   const details = sessionDashboardItems(o)[0]!.details;
   assert.match(details[0]!, /^Open \/bookie-work review/);
@@ -117,7 +119,7 @@ test("review leads with its actual read action and current owner permission take
   assert.match(sessionNextLines(o).join(" "), /permission request in the parent Pi session/);
   o.connected = false;
   assert.match(sessionNextLines(o).join(" "), /Reconnect/);
-  assert.match(panel(o)[0]!, /^REVIEW RECORDS · 1/);
+  assert.match(panel(o)[0]!, /^Review records · 1/);
   assert.equal(panel(o)[1], "> Last seen · Ready for review: customer update");
   assert.match(sessionDashboardItems(o)[0]!.details[0]!, /Current state is unknown/);
   assert.doesNotMatch(
@@ -232,22 +234,22 @@ test("selection and action remain distinguishable in monochrome, narrow panes an
     { ...review, id: "review-customer" },
     { ...next, label: "Review the weekly queue" },
   ]);
-  o.screen.selectedKey = sessionDashboardItems(o).at(-1)!.key;
+  o.screen.selectedKey = sessionDashboardItems(o).find((x) => x.label === "customer update")!.key;
   for (const width of [42, 110, 200]) {
     o.width = width;
     const mono = renderDashboardScreen(o);
     const color = renderDashboardScreen({ ...o, color: true });
     assert.equal(color.replace(/\x1b\[[0-9;]*m/g, ""), mono);
     assert.match(color, /\x1b\[1;7m> customer update/);
-    assert.match(mono, /SESSION PRIORITY/);
+    assert.match(mono, /Next step/);
     assert.match(mono, /Review the weekly queue/);
     assert.match(mono, /> customer update/);
     assert.ok(mono.split("\n").every((line) => cellWidth(line) <= width));
     assert.equal(mono.split("\n").length, o.height);
     if (width >= 110) {
-      assert.match(mono, / │ SELECTED ITEM/);
+      assert.match(mono, / │ Selected item/);
       assert.match(mono, / │ customer update/);
       assert.match(mono, / │ \/bookie-work review/);
-    } else assert.doesNotMatch(mono, /SELECTED ITEM/);
+    } else assert.doesNotMatch(mono, /Selected item/);
   }
 });

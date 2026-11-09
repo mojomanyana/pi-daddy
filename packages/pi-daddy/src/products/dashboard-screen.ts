@@ -1,3 +1,4 @@
+import type { DashboardAcknowledgment } from "./dashboard-session-client.ts";
 import {
   sessionDashboardItems,
   sessionNextLines,
@@ -5,6 +6,8 @@ import {
   DASHBOARD_DESTINATIONS,
   type DashboardDestination,
 } from "./dashboard-panels.ts";
+import { activityTaskTitle } from "./dashboard-activity.ts";
+import { versionLines } from "./dashboard-components.ts";
 import { sessionRecapLines } from "./dashboard-recap.ts";
 import { colorSessionLine, previewWidth, sectionHeading } from "./dashboard-layout.ts";
 import { dashboardSettingsLines, type DashboardSettingKey } from "./dashboard-settings.ts";
@@ -20,9 +23,11 @@ export interface DashboardItem {
   label: string;
   status: string;
   elapsed: string;
+  updatedAt?: string;
   details: string[];
   briefDetails?: string[];
   reviewSummary?: boolean;
+  relatedReviewKey?: string;
   observation?: string;
   taskKey?: string;
   timelinePath?: string;
@@ -55,16 +60,18 @@ export function wrapDashboardLines(lines: string[], width: number): string[] {
   return lines.flatMap((line) => {
     const safe = dashboardText(line);
     if (cellWidth(safe) <= width) return [safe];
+    const indent = width >= 12 && (safe.startsWith("> ") || safe.startsWith("  ")) ? safe.slice(0, 2) : "";
+    const available = width - indent.length;
     const result: string[] = [];
     let row = "";
-    for (const word of safe.split(/\s+/)) {
-      if (row && cellWidth(row + " " + word) > width) {
+    for (const word of safe.slice(indent.length).split(/\s+/)) {
+      if (row && cellWidth(row + " " + word) > available) {
         result.push(row);
         row = "";
       }
-      if (cellWidth(word) > width) {
+      if (cellWidth(word) > available) {
         for (const character of word) {
-          if (row && cellWidth(row + character) > width) {
+          if (row && cellWidth(row + character) > available) {
             result.push(row);
             row = "";
           }
@@ -73,7 +80,7 @@ export function wrapDashboardLines(lines: string[], width: number): string[] {
       } else row += (row ? " " : "") + word;
     }
     result.push(row);
-    return result;
+    return result.map((part, i) => (i === 0 ? indent : " ".repeat(indent.length)) + part);
   });
 }
 
@@ -123,6 +130,7 @@ export function ledgerDashboardItems(projection: DashboardProjection): Dashboard
     label: node.agentName || "Governed execution",
     status: node.state,
     elapsed: elapsed(node.durationMs),
+    updatedAt: node.updatedAt,
     agent: true,
     details: [
       `Execution: ${node.executionId}`,
@@ -142,12 +150,16 @@ export function activityDashboardItems(
   timeline: ActivityTimeline,
   aliases: ActivityTimelineAliases,
   now: Date,
+  human = false,
 ): DashboardItem[] {
   return timeline.tasks.map((task) => ({
     key: activityTaskKey(task.rootId, task.id),
     taskKey: activityTaskKey(task.rootId, task.id),
-    label: `${task.agent || (task.trigger?.type === "custom" ? "Extension turn" : "User turn")} [${aliases.selector(task)}]`,
+    label: human
+      ? activityTaskTitle(task)
+      : `${task.agent || (task.trigger?.type === "custom" ? "Extension turn" : "User turn")} [${aliases.selector(task)}]`,
     status: task.status,
+    updatedAt: task.endedAt ?? task.lastEvent?.at ?? task.startedAt,
     elapsed: elapsed(Date.parse(task.endedAt ?? now.toISOString()) - Date.parse(task.startedAt)),
     observation: task.lastEvent
       ? `${task.lastEvent.tool ? `${task.lastEvent.tool} ` : ""}${task.lastEvent.kind.replaceAll("_", " ")} · ${elapsed(Date.parse(now.toISOString()) - Date.parse(task.lastEvent.at))} ago`
@@ -193,9 +205,17 @@ export interface DashboardScreenOptions {
   content?: { title: string; text: string };
   command?: string;
   connected?: boolean;
-  acknowledgment?: string;
+  acknowledgment?: DashboardAcknowledgment;
   now?: Date;
 }
+const destinationNames: Record<DashboardDestination, string> = {
+  now: "Overview",
+  work: "Tasks",
+  reviews: "Reviews",
+  activity: "Activity",
+  evidence: "Evidence",
+  settings: "Settings",
+};
 function sessionLocation(screen: DashboardScreenState, width: number): string {
   const destination = screen.destination ?? "now";
   const overlays = {
@@ -206,15 +226,14 @@ function sessionLocation(screen: DashboardScreenState, width: number): string {
     "version-details": "Version details",
     recap: "Session recap",
   };
-  if (screen.view in overlays)
-    return `${destination.toUpperCase()} / ${overlays[screen.view as keyof typeof overlays]}`;
-  if (width < 74)
-    return width >= 37 && destination === "now"
-      ? "NOW  ·  2 Work  ·  3 Reviews"
-      : `${destination.toUpperCase()}  ·  1–6 views`;
-  return DASHBOARD_DESTINATIONS.map((view, i) =>
-    view === destination ? `[${i + 1} ${view.toUpperCase()}]` : `${i + 1} ${view[0]!.toUpperCase()}${view.slice(1)}`,
+  const name = destinationNames[destination];
+  if (screen.view in overlays) return `${name} / ${overlays[screen.view as keyof typeof overlays]}`;
+  const nav = DASHBOARD_DESTINATIONS.map((view, i) =>
+    view === destination ? `[${i + 1} ${name}]` : `${i + 1} ${destinationNames[view]}`,
   ).join("  ");
+  return cellWidth(nav) <= width
+    ? nav
+    : `[${DASHBOARD_DESTINATIONS.indexOf(destination) + 1} ${name}]  ·  1–6 views  ·  ? help`;
 }
 
 function sessionKeys(screen: DashboardScreenState, selected: DashboardItem | undefined, width: number): string[] {
@@ -232,15 +251,31 @@ function sessionKeys(screen: DashboardScreenState, selected: DashboardItem | und
     ...(view === "details" && selected?.briefDetails ? [screen.sourceDetails ? "x hide source" : "x show source"] : []),
   ];
 }
+const permissionDescriptions: Record<string, string> = {
+  "tool:bash": "shell access",
+  "tool:write": "permission to write files",
+  "tool:edit": "permission to edit files",
+};
 /** Selection follows stable identity through refresh, never an unrelated task at the old row index. */
 export function renderDashboardScreen(options: DashboardScreenOptions): string {
   const width = Math.max(1, Math.floor(options.width)),
     height = Math.max(1, Math.floor(options.height));
   const { screen, session } = options,
     pending = session?.pendingApprovals ?? [];
+  const modern = Boolean(session?.observation);
   const approvals: DashboardItem[] = (options.connected === false ? [] : pending).map((approval) => ({
     key: `approval:${approval.id}`,
-    label: `${approval.subject} · ${approval.capability.replace(/^tool:/, "")}`,
+    label: modern
+      ? `${clean(approval.subject)} needs ${permissionDescriptions[approval.capability] ?? approval.capability}`
+      : `${approval.subject} · ${approval.capability.replace(/^tool:/, "")}`,
+    ...(modern
+      ? {
+          briefDetails: [
+            "Open the permission request in your main Pi chat.",
+            "Choose whether to grant this access for the task.",
+          ],
+        }
+      : {}),
     status: "needs-you",
     elapsed: "",
     approval: true,
@@ -252,7 +287,6 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
       "Respond to the permission request in the parent Pi session.",
     ],
   }));
-  const modern = Boolean(session?.observation);
   const allItems = [
     ...(!modern || ["now", "work"].includes(screen.destination ?? "now") ? approvals : []),
     ...(modern ? sessionDashboardItems(options) : options.items),
@@ -263,7 +297,7 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
       : options.filter === "skills"
         ? item.skills
         : options.filter === "needs-you"
-          ? item.status === "needs-you"
+          ? ["needs-you", "approval-wait"].includes(item.status)
           : true,
   );
   const live = items.filter((item) => active(item.status)),
@@ -311,17 +345,34 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
       : []),
     ...(modern ? [sessionLocation(screen, width)] : []),
   ];
-  if (options.notice || options.problem) fixed.push(`! ${clean(options.notice || options.problem || "")}`);
-  if (options.acknowledgment) fixed.push(clean(options.acknowledgment));
+  const disconnected = modern && options.connected === false;
+  if (disconnected) fixed.push("Disconnected · showing last known status");
+  else if (options.notice || options.problem) fixed.push(`! ${clean(options.notice || options.problem || "")}`);
+  const ack = options.acknowledgment;
+  if (ack?.state === "unconfirmed") {
+    const setting =
+      ({ "set-auto": "Auto", "set-jev": "JEV", set: "model", "set-limit": "limit" } as Record<string, string>)[
+        ack.action
+      ] ?? "setting";
+    fixed.push(
+      ...wrapDashboardLines([`Unconfirmed ${setting} change. Check the main Pi chat before trying again.`], width),
+    );
+  } else if (ack && (!disconnected || !modern) && (!modern || screen.view === "settings" || ack.state === "refused")) {
+    fixed.push(clean(`${ack.action}: ${ack.state} · ${ack.effect}`));
+  }
   if (modern && options.filter && options.filter !== "everything" && screen.view === "main")
     fixed.push(`Filter: ${options.filter} · Tab to change`);
-  if (modern && options.connected === false)
-    fixed.push(`LAST OBSERVED: ${session!.observation!.observedAt}; live state unknown`);
-  if (modern && screen.view === "main" && (screen.destination ?? "now") === "now") {
+  if (modern && options.height >= 22) fixed.push("");
+  if (modern && screen.view === "main" && (screen.destination ?? "now") === "now" && !disconnected) {
     const [heading, action] = sessionNextLines(options);
-    const actionLines = wrapDashboardLines([action], width);
-    fixed.push(sectionHeading(heading.replace("NEXT", "SESSION PRIORITY"), width), actionLines[0]!);
-    if (actionLines.length > 1) fixed.push(truncate(actionLines.slice(1).join(" "), width));
+    const recommendation = action !== "No current next step reported.";
+    if (recommendation) {
+      const title = heading.includes("[3]") ? "Next step · [3] Reviews" : "Next step";
+      fixed.push(sectionHeading(title, width), ...wrapDashboardLines([action], width).slice(0, 2));
+    } else if (!allItems.some((i) => i.approval || ["needs-you", "approval-wait"].includes(i.status))) {
+      fixed.push("No decision requested from you.");
+    }
+    if (options.height >= 22) fixed.push("");
   }
   const body: string[] = [];
   if (screen.view === "recap") {
@@ -342,7 +393,9 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
       "↑/↓ or j/k: select; Enter/d: details",
       "a: toggle Daddy permission Auto",
       "m: session models; v: ecosystem versions; s: settings",
-      "1–6: Now / Work / Reviews / Activity / Evidence / Settings",
+      "1 Overview · what needs you and what Pi is doing",
+      "2 Tasks · full session task list, including finished work",
+      "3 Reviews · 4 Activity · 5 Evidence · 6 Settings",
       "r: recent session activity and review counts",
       "Wide terminals preview the selected item. x shows more session information.",
       "x in a review detail: show or hide its source and exact reference",
@@ -363,6 +416,14 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
     );
   else if (screen.view === "settings") {
     body.push(
+      ...(disconnected
+        ? [
+            sectionHeading("Connection details", width),
+            `Last contact: ${session!.observation!.observedAt}`,
+            ...(options.notice || options.problem ? [clean(options.notice || options.problem || "")] : []),
+            "",
+          ]
+        : []),
       ...dashboardSettingsLines(
         options.connected === false && session?.settings ? { ...session.settings, editable: false } : session?.settings,
         session?.auto.enabled,
@@ -386,12 +447,14 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
     body.push(modern ? sectionHeading("VERSIONS", width) : "VERSIONS");
     if (!session?.versions) body.push("Owner has not reported versions.");
     else if (screen.view === "versions") {
-      body.push("Loaded -> on disk");
+      body.push(modern ? "Packages in this Pi session" : "Loaded -> on disk");
       for (const row of screen.versionRows)
-        body.push(
-          `${row.id === screen.versionId ? ">" : " "} ${row.label}: ${row.loadedVersion ?? "?"} -> ${row.installedVersion ?? "?"}`,
-          `  ${versionStatus(row)}`,
-        );
+        if (modern) body.push(...versionLines(row, row.id === screen.versionId, options));
+        else
+          body.push(
+            `${row.id === screen.versionId ? ">" : " "} ${row.label}: ${row.loadedVersion ?? "?"} -> ${row.installedVersion ?? "?"}`,
+            `  ${versionStatus(row)}`,
+          );
       if (session.versions.note) body.push(session.versions.note);
     } else if (selectedVersion) {
       body.push(
@@ -416,7 +479,8 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
   } else if (screen.view === "details") {
     const title =
       selected &&
-      (selected.status === "approval-wait" && /\bready for review\b/i.test(selected.label)
+      (selected.key.startsWith("component:") ||
+      (selected.status === "approval-wait" && /\bready for review\b/i.test(selected.label))
         ? selected.label
         : selected.status === "last-observed"
           ? `Last seen · ${selected.label}`
@@ -493,7 +557,7 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
       ? previewWidth(screen.destination ?? "now", Boolean(screen.expanded), width)
       : undefined;
   const detailBody =
-    (screen.view === "main" && !modern) || screen.view === "versions" ? body : wrapDashboardLines(body, left ?? width);
+    !modern && (screen.view === "main" || screen.view === "versions") ? body : wrapDashboardLines(body, left ?? width);
   if (modern && height >= 16 && height - fixed.length - footer.length > detailBody.length)
     footer.unshift("─".repeat(Math.min(width, 100)));
   const bodyRoom = height - fixed.length - footer.length;
@@ -501,7 +565,7 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
   if (clipped) footer.push("");
   const room = Math.max(0, height - fixed.length - footer.length);
   if (screen.view === "versions" && selectedVersion && room > 0) {
-    const row = 2 + screen.versionRows.findIndex((value) => value.id === screen.versionId) * 2;
+    const row = detailBody.findIndex((line) => line.startsWith(">"));
     if (row < screen.offset) screen.offset = row;
     else if (row + 1 >= screen.offset + room) screen.offset = Math.max(0, row + 2 - room);
   }
@@ -526,11 +590,10 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
     const right = Math.min(width - left - 3, 72);
     const preview = wrapDashboardLines(
       [
-        sectionHeading("SELECTED ITEM", right),
+        sectionHeading("Selected item", right),
         clean(selected.label),
         "",
-        ...(selected.briefDetails ??
-          (screen.expanded ? selected.details : [friendlyStatus(selected.status), "Press Enter for details."])),
+        ...(selected.briefDetails ?? [friendlyStatus(selected.status), "Press Enter for details."]),
       ],
       right,
     );

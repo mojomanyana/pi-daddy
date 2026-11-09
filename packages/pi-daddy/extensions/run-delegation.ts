@@ -54,6 +54,7 @@ export interface ChildSpec {
   operation_id?: string;
   definitionId?: string;
   task: string;
+  dashboardSummary?: string;
   agent?: string;
   tools?: string[];
   model?: string;
@@ -529,6 +530,7 @@ async function runOneDelegationImplementation(
       session,
       plan,
       agent: spec.agent,
+      dashboardSummary: spec.dashboardSummary,
       childId: ids.childId,
       executionId: ids.executionId,
       parentExecutionId: ids.parentExecutionId,

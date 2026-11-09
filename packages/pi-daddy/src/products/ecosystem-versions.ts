@@ -11,6 +11,8 @@ export interface EcosystemVersionRow {
   state: "current" | "reload-required" | "not-reported" | "unavailable" | "multiple";
   commands: string[];
   note?: string;
+  /** Pi reports the Bookie command from this installed package in the current session. */
+  commandAvailable?: boolean;
 }
 export interface EcosystemVersions {
   rows: EcosystemVersionRow[];

@@ -104,11 +104,11 @@ test("a throwing select denies as an error, not as a decline or a dismissal", as
 test("the interceptor path offers always; the delegate path does not", async () => {
   const a = recordingUI("Deny");
   await createApprovalGate({ ui: a.ui, hasUI: true, mode: "tui" }).request(req());
-  assert.equal(a.calls[0].options.length, 4);
+  assert.deepEqual(a.calls[0].options, ["Deny", ...Object.values(SCOPE_LABELS), "View permission details"]);
 
   const b = recordingUI("Deny");
   await createApprovalGate({ ui: b.ui, hasUI: true, mode: "tui" }).request(req({ path: "delegate" }));
-  assert.equal(b.calls[0].options.length, 3);
+  assert.deepEqual(b.calls[0].options, ["Deny", SCOPE_LABELS.once, SCOPE_LABELS.session, "View permission details"]);
   assert.ok(!b.calls[0].options.some((o) => /always/i.test(o)));
 });
 
@@ -116,7 +116,7 @@ test("the prompt shows the task, so the human sees what they are approving", asy
   const { ui, calls } = recordingUI("Deny");
   await createApprovalGate({ ui, hasUI: true, mode: "tui" }).request(req());
   const shown = `${calls[0].title}`;
-  assert.match(shown, /tool:write/);
+  assert.match(shown, /Allow docs-writer to write files\?/);
   assert.match(shown, /docs-writer/);
   assert.match(shown, /fix the docs typos/, "the task is shown for context");
 });
@@ -126,6 +126,67 @@ test("when task is absent the prompt has no stray task line", async () => {
   await createApprovalGate({ ui, hasUI: true, mode: "tui" }).request(req({ task: undefined }));
   const shown = `${calls[0].title}`;
   assert.ok(!shown.includes("task:"), "no task line when task is absent");
+});
+
+test("the decision distinguishes requested intent from shell access; full task and scope are available on demand", async () => {
+  const screens: string[] = [];
+  const signals = new Set<AbortSignal | undefined>();
+  let opened = false;
+  const ui: ApprovalUI = {
+    select: async (title, options, opts) => {
+      screens.push(title);
+      signals.add(opts?.signal);
+      if (!opened) {
+        opened = true;
+        return "View permission details";
+      }
+      if (!title.startsWith("Permission details")) return SCOPE_LABELS.session;
+      return options.includes("Next page") ? "Next page" : "Back to decision";
+    },
+    notify: () => {},
+  };
+  const outcome = await createApprovalGate({ ui, hasUI: true, mode: "tui" }).request(
+    req({
+      capability: "tool:bash",
+      project: "/work/project",
+      workspace: "registered-copy",
+      bindingKey: "exact",
+      recheckReason: "The saved permission covers a different request.",
+      task:
+        "\x1b[31mReview cache behavior.\x1b[0m\n" +
+        "Long supporting paragraph.\n".repeat(20) +
+        "Unique final instruction.",
+    }),
+  );
+  assert.equal(outcome.scope, "session");
+  const first = screens[0];
+  assert.match(first, /Allow docs-writer to run shell commands\?/);
+  assert.match(first, /Requested task: Review cache behavior\./);
+  assert.match(first, /can change files/);
+  assert.match(first, /different request/);
+  assert.match(first, /exact request/);
+  assert.doesNotMatch(first, /paragraph|Unique final instruction|\x1b/);
+  assert.equal(screens.at(-1), first, "returns to the original decision");
+  const details = screens.slice(1, -1);
+  assert.ok(details.length > 1);
+  assert.ok(details.every((page) => page.split("\n").length <= 9));
+  assert.match(details.join("\n"), /Permission: tool:bash/);
+  assert.match(details.join("\n"), /Permission project: \/work\/project/);
+  assert.match(details.join("\n"), /Requested workspace: registered-copy/);
+  assert.match(details.join("\n"), /Unique final instruction/);
+  assert.equal(signals.size, 1, "the same request and deadline cover navigation");
+});
+
+test("dismissing details or answering them with an allow label grants nothing", async () => {
+  for (const response of [undefined, SCOPE_LABELS.always]) {
+    const ui: ApprovalUI = {
+      select: async (title) => (title.startsWith("Permission details") ? response : "View permission details"),
+      notify: () => {},
+    };
+    const outcome = await createApprovalGate({ ui, hasUI: true, mode: "tui" }).request(req());
+    assert.equal(outcome.kind, "dismissed");
+    assert.equal(outcome.scope, null);
+  }
 });
 
 test("single-flight: two concurrent requests for the same key raise ONE dialog", async () => {

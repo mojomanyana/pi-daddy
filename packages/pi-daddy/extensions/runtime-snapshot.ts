@@ -268,7 +268,7 @@ export function registerRuntimeSnapshot(
         }
         if (sequence !== bindSequence || session.reloadLifecycle !== lifecycle) return;
         lifecycle.runtimeSettlement = runtime;
-        bindOperationFinals(session, sessionId, cwd, (reference) => {
+        bindOperationFinals(session, sessionId, cwd, (reference, description) => {
           if (
             bound?.sessionId === sessionId &&
             bound.cwd === cwd &&
@@ -279,11 +279,15 @@ export function registerRuntimeSnapshot(
             session.dashboardArtifacts ??= [];
             if (
               !session.dashboardArtifacts.some(
-                (item) =>
-                  item.executionId === reference.executionId && item.manifest.sha256 === reference.manifest.sha256,
+                (item) => item.executionId === reference.executionId && item.sha256 === reference.manifest.sha256,
               )
             )
-              session.dashboardArtifacts.push(reference);
+              session.dashboardArtifacts.push({
+                operationId: reference.operationId,
+                executionId: reference.executionId,
+                sha256: reference.manifest.sha256,
+                ...(description ? { description } : {}),
+              });
             if (session.dashboardArtifacts.length > 16) session.dashboardArtifacts.shift();
             try {
               pi.appendEntry?.("pi-daddy:operation-artifact:v1", reference);

@@ -4,6 +4,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { createEcosystemVersionInventory, type VersionInventoryPorts } from "../extensions/ecosystem-versions.ts";
 
 function fixture(bookieName = "bookie-pi-skills") {
+  const commands: ReturnType<ExtensionAPI["getCommands"]> = [];
   const disk = new Map([
     ["/host", "1.1.0"],
     ["/daddy", "0.47.0"],
@@ -38,14 +39,17 @@ function fixture(bookieName = "bookie-pi-skills") {
     configured: () => configured,
   };
   const api = {
+    getCommands: () => commands,
     events: {
+      on: () => () => undefined,
       emit: (_channel: string, request: unknown) => {
         for (const report of reports) (request as { report(value: unknown): void }).report(report);
       },
     },
-  } as Pick<ExtensionAPI, "events">;
+  };
   const read = createEcosystemVersionInventory(api, "/daddy", ports);
   return {
+    commands,
     disk,
     reports,
     read: () => read({} as ExtensionContext),
@@ -160,4 +164,20 @@ test("configured Bookie aliases remain visible when installed bytes are unavaila
     assert.equal(row.source, `npm:${name}@0.1.0`, name);
     assert.deepEqual(row.commands, [`pi install npm:${name}@<version>`], name);
   }
+});
+
+test("only a live command inside the selected Bookie package proves it loaded; the running version stays unknown", () => {
+  const f = fixture("pi-bookie");
+  f.configured([{ source: "npm:pi-bookie", scope: "user", installedPath: "/bookie" }]);
+  const cmd = {
+    name: "bookie-work",
+    source: "extension",
+    sourceInfo: { path: "/bookie-neighbor/src/index.ts" },
+  } as const;
+  const row = () => f.read().rows.find((x) => x.id === "bookie-pi-skills")!;
+  f.commands.push(cmd as (typeof f.commands)[number]);
+  assert.equal(row().commandAvailable, undefined);
+  f.commands[0] = { ...f.commands[0]!, sourceInfo: { ...f.commands[0]!.sourceInfo, path: "/bookie/src/index.ts" } };
+  assert.equal(row().commandAvailable, true);
+  assert.equal(row().loadedVersion, null);
 });

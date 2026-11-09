@@ -155,6 +155,7 @@ export interface ChainStep {
   operation_id?: string;
   definitionId?: string;
   task: string;
+  dashboardSummary?: string;
   agent?: string;
   tools?: string[];
   model?: string;

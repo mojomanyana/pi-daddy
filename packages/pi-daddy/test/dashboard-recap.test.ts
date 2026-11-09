@@ -68,11 +68,11 @@ test("recap reports bounded observed event order and scopes counts to fresh disp
     "Ready for review · 1 shown by Bookie",
     "Waiting on a dependency · 1 shown by Bookie",
     "Recent activity · newest first",
-    "Parent turn ended",
-    "write failed",
-    "read finished",
-    "read started",
-    "Parent turn started",
+    "Pi finished its turn",
+    "Failed · Write a file",
+    "Read a project file (2 events)",
+    "Pi started a turn",
+    "old event",
   ]);
   assert.equal(events[0].label, "old event");
 });
@@ -92,7 +92,7 @@ test("disconnected and expired observations cannot present old counts as current
   assert.deepEqual(sessionRecapLines({ ...input, connected: false }), [
     "Disconnected · last observed activity",
     "Recent activity · newest first",
-    "Parent turn ended",
+    "Pi finished its turn",
   ]);
   const expired = { ...input, now: new Date(Date.parse(time) + source.staleAfterMs + 1) };
   assert.equal(

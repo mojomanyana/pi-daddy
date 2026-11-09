@@ -14,6 +14,7 @@ import { randomUUID } from "node:crypto";
 import type { AutoModeReader } from "../kernel/auto-mode.ts";
 import { approvalKey, offeredScopes, type ApprovalPath, type ApprovalScope } from "../kernel/approval.ts";
 import type { Capability } from "../kernel/resolve.ts";
+import { selectPermission } from "./permission-question.ts";
 
 /** The slice of pi's `ExtensionUIContext` this module needs. */
 export interface ApprovalUI {
@@ -40,6 +41,10 @@ export interface PromptRequest {
   path: ApprovalPath;
   /** Shown to the human for context. Never itself part of a key. */
   task?: string;
+  /** Operator-owned permission store and resolved workspace, for display in the parent UI only. */
+  project?: string;
+  workspace?: string;
+  recheckReason?: string;
   /** Trusted exact-scope identity; bound requests single-flight only with an identical binding. */
   bindingKey?: string;
   signal?: AbortSignal;
@@ -125,7 +130,6 @@ const interrupted = (request: PromptRequest, kind: "expired" | "aborted"): Promp
 async function selectApproval(
   options: ApprovalGateOptions,
   request: PromptRequest,
-  title: string,
   labels: string[],
 ): Promise<string | undefined | PromptOutcome> {
   const timeout = typeof options.timeoutMs === "function" ? options.timeoutMs() : options.timeoutMs;
@@ -157,7 +161,7 @@ async function selectApproval(
       subject: request.subject,
       capability: request.capability,
     });
-    const selection = options.ui.select(title, labels, { signal: controller.signal }).then((chosen) => {
+    const selection = selectPermission(options.ui, request, labels, controller.signal).then((chosen) => {
       settled = true;
       return chosen;
     });
@@ -263,13 +267,10 @@ export function createApprovalGate(
       }
     }
     const scopes = offeredScopes(request.path);
-    const title =
-      `grants: approve ${request.capability} for ${request.subject}?` +
-      (request.task ? `\n  task: ${request.task}` : "");
 
     let chosen: string | undefined | PromptOutcome;
     try {
-      chosen = await selectApproval(options, request, title, [DENY_LABEL, ...scopes.map((s) => SCOPE_LABELS[s])]);
+      chosen = await selectApproval(options, request, [DENY_LABEL, ...scopes.map((s) => SCOPE_LABELS[s])]);
     } catch (error) {
       // A governance layer that errors must deny, not permit. This is a dialog malfunction, not a
       // person's answer — `kind: "error"` keeps it out of "declined".

@@ -2,6 +2,13 @@
 import type { DashboardContribution, DashboardSourceSnapshot } from "../kernel/dashboard-observation.ts";
 import type { DashboardItem, DashboardScreenOptions } from "./dashboard-screen.ts";
 import { dashboardText, friendlyStatus } from "./dashboard-screen.ts";
+import { activityStoryItems } from "./dashboard-activity.ts";
+import {
+  componentItems,
+  isComponentObservation,
+  publishedEvidenceItem,
+  savedEvidenceItem,
+} from "./dashboard-components.ts";
 import { previewWidth, sectionHeading } from "./dashboard-layout.ts";
 import { activityTaskKey } from "./activity-timeline.ts";
 export type DashboardDestination = "now" | "work" | "reviews" | "activity" | "evidence" | "settings";
@@ -191,8 +198,10 @@ function bookieLabel(item: DashboardContribution, source: DashboardSourceSnapsho
 function rowText(item: DashboardItem, destination: DashboardDestination, selected: boolean): string {
   const label = clean(item.label);
   const marker = selected ? "> " : "  ";
+  if (item.key.startsWith("component:")) return marker + label;
   if (item.status === "last-observed") return `${marker}Last seen · ${label}`;
   if (item.reviewSummary) return marker + label;
+  if (item.key.startsWith("activity:") && item.status === "observed") return marker + label;
   const waitingForReview = destination === "reviews" && item.status === "approval-wait";
   const described = waitingForReview && /^ready for review[:\s]/i.test(label);
   const status = described ? "" : ` · ${waitingForReview ? "Awaiting review" : friendlyStatus(clean(item.status))}`;
@@ -211,12 +220,13 @@ export function sessionDashboardItems(options: DashboardScreenOptions): Dashboar
           ? ["evidence"]
           : destination === "activity"
             ? ["status"]
-            : ["work", "status"];
+            : ["work"];
   const published = observed.sources.flatMap((source) =>
     source.items
       .filter(
         (item) =>
           wanted.includes(item.kind) &&
+          !isComponentObservation(source, item) &&
           !(
             destination === "reviews" &&
             !options.screen.expanded &&
@@ -228,14 +238,17 @@ export function sessionDashboardItems(options: DashboardScreenOptions): Dashboar
       )
       .map((item) => {
         const stale = staleSource(source, options);
-        return row(
+        const linked = reviewForTask(item, source, stale);
+        const display = row(
           item,
           sourceKey(source, item),
           `${source.producer}@${source.producerVersion} · seq ${source.sequence} · ${source.observedAt}`,
           stale,
           source.producer === "bookie" ? bookieLabel(item, source) : item.label,
-          reviewForTask(item, source, stale),
+          linked,
         );
+        if (linked) display.relatedReviewKey = sourceKey(source, linked);
+        return item.kind === "evidence" ? publishedEvidenceItem(source, item, display) : display;
       }),
   );
   if (destination === "reviews") {
@@ -244,33 +257,9 @@ export function sessionDashboardItems(options: DashboardScreenOptions): Dashboar
       item.key === first ? 2 : Number(item.status === "approval-wait" && !item.reviewSummary);
     return published.sort((a, b) => priority(b) - priority(a));
   }
-  if (destination === "evidence")
-    return [
-      ...(observed.artifacts ?? []).map((a) => ({
-        key: `artifact:${a.executionId}`,
-        label: a.operationId,
-        status: "retained",
-        elapsed: "",
-        details: [
-          `Producer: pi-daddy`,
-          `Execution: ${a.executionId}`,
-          `Manifest SHA-256: ${a.sha256}`,
-          "Producer reference observed in this session; payload not loaded by the dashboard.",
-          "Retained is not reviewed, applicable or approved. Use the authorized artifact resolver for content.",
-        ],
-      })),
-      ...published,
-    ];
+  if (destination === "evidence") return [...(observed.artifacts ?? []).map(savedEvidenceItem), ...published];
   if (destination === "activity")
-    return [
-      ...(observed.activity ?? [])
-        .slice()
-        .reverse()
-        .map((item) =>
-          row(item, `activity:${observed.generation}:${item.id}`, `Pi owner · ${observed.sessionId}`, staleOwner),
-        ),
-      ...published,
-    ];
+    return [...activityStoryItems(observed.activity ?? [], observed.generation, staleOwner), ...published];
   const native = options.items.map((item) =>
     staleOwner
       ? {
@@ -283,34 +272,98 @@ export function sessionDashboardItems(options: DashboardScreenOptions): Dashboar
   const activity = options.session?.activity;
   const parentShown =
     activity && native.some((item) => item.taskKey === activityTaskKey(activity.rootId, activity.taskId));
+  const ownerTurn = observed.turn;
+  const tasks = native.map((item) => {
+    // A running parent can supply a more recent public tool purpose than its persisted start record.
+    if (
+      activity &&
+      item.taskKey === activityTaskKey(activity.rootId, activity.taskId) &&
+      ownerTurn?.state === "running" &&
+      !staleOwner &&
+      ["running", "active"].includes(item.status)
+    )
+      return { ...item, label: ownerTurn.label };
+    return item;
+  });
   const items = [
-    ...(observed.turn && !parentShown
-      ? [row(observed.turn, `owner:${observed.generation}:${observed.turn.id}`, "Pi owner", staleOwner)]
+    ...(ownerTurn && !parentShown
+      ? [row(ownerTurn, `owner:${observed.generation}:${ownerTurn.id}`, "Pi owner", staleOwner)]
       : []),
-    ...native,
+    ...tasks,
     ...published,
   ];
-  items.sort((a, b) => workGroups.indexOf(workGroup(a)) - workGroups.indexOf(workGroup(b)));
-  return items;
+  items.sort((a, b) => {
+    const rank = workGroups.indexOf(workGroup(a)) - workGroups.indexOf(workGroup(b));
+    return rank || (workGroup(a) === "Recently finished" ? (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "") : 0);
+  });
+  if (destination !== "now") return items;
+  // Tasks has the complete queue. Keep the overview navigable even after a long session.
+  // A producer may publish a review without a matching task or a recommended next action.
+  const represented = new Set(items.map((i) => i.relatedReviewKey).filter(Boolean));
+  for (const source of observed.sources) {
+    if (staleSource(source, options)) continue;
+    for (const review of source.items) {
+      const key = sourceKey(source, review);
+      if (
+        review.kind === "review" &&
+        review.state === "approval-wait" &&
+        review.reference &&
+        !reviewTotals(review) &&
+        !represented.has(key)
+      )
+        items.push(row(review, key, `${source.producer}@${source.producerVersion}`));
+    }
+  }
+  const nextReview = sessionNext(options)?.reviewKey;
+  if (nextReview) {
+    const index = items.findIndex((i) => i.relatedReviewKey === nextReview || i.key === nextReview);
+    // Keep task rows ahead of independent review rows; Reviews opens the exact recommended output.
+    if (index > 0 && items[index]?.relatedReviewKey === nextReview) items.unshift(items.splice(index, 1)[0]!);
+  }
+  const shown = workGroups.flatMap((group) => {
+    const matches = items.filter((item) => workGroup(item) === group);
+    return matches.slice(0, group === "Recently finished" ? 2 : 3);
+  });
+  const recent = shown.some((i) => workGroup(i) === "Recently finished")
+    ? []
+    : activityStoryItems(observed.activity ?? [], observed.generation, staleOwner).slice(0, 2);
+  return [...shown, ...recent, ...componentItems(options)];
 }
 
-const workGroups = ["PERMISSION REQUESTS", "YOUR DECISIONS", "NEEDS ATTENTION", "IN PROGRESS", "OTHER WORK", "HISTORY"];
+const workGroups = [
+  "Needs your permission",
+  "Needs your decision",
+  "Needs attention",
+  "In progress",
+  "Other tasks",
+  "Recently finished",
+  "Last known",
+  "Tools",
+];
 function workGroup(item: DashboardItem): string {
-  if (item.approval) return "PERMISSION REQUESTS";
-  if (item.status === "approval-wait") return "YOUR DECISIONS";
+  if (item.key.startsWith("component:")) return "Tools";
+  if (item.key.startsWith("activity:")) return "Latest activity";
+  if (["last-observed", "historical"].includes(item.status)) return "Last known";
+  if (item.approval) return "Needs your permission";
+  if (item.status === "approval-wait") return "Needs your decision";
   if (["needs-you", "failed", "refused", "incomplete", "dependency-wait"].includes(item.status))
-    return "NEEDS ATTENTION";
-  if (["running", "active", "starting", "authorised", "cancel-requested"].includes(item.status)) return "IN PROGRESS";
+    return "Needs attention";
+  if (["running", "active", "starting", "authorised", "cancel-requested"].includes(item.status)) return "In progress";
   if (["settled", "completed", "finished", "cancelled", "historical", "last-observed"].includes(item.status))
-    return "HISTORY";
-  return "OTHER WORK";
+    return "Recently finished";
+  return "Other tasks";
 }
 
 function listHeading(item: DashboardItem, destination: DashboardDestination) {
-  if (destination === "now" || destination === "work") return workGroup(item);
+  if (destination === "now" || destination === "work")
+    return destination === "work" && workGroup(item) === "Recently finished" ? "Finished" : workGroup(item);
   if (destination === "reviews")
-    return item.status === "approval-wait" && !item.reviewSummary ? "AWAITING REVIEW" : "REVIEW RECORDS";
-  return destination === "evidence" ? "SAVED REFERENCES" : "SESSION ACTIVITY";
+    return item.status === "approval-wait" && !item.reviewSummary ? "Waiting for your review" : "Review records";
+  return destination === "evidence"
+    ? "Saved results"
+    : item.key.startsWith("source:")
+      ? "Current reports"
+      : "What happened";
 }
 export function sessionPanelLines(options: DashboardScreenOptions, items: DashboardItem[], width: number): string[] {
   const observation = options.session!.observation!,
@@ -320,58 +373,57 @@ export function sessionPanelLines(options: DashboardScreenOptions, items: Dashbo
   const lines: string[] = [];
   const initiative = observation.sources.find((source) => source.producer === "daddy-initiative");
   const scope = initiative?.items.find((item) => item.id === "scope");
-  if (scope && (destination === "now" || destination === "work")) {
-    lines.push(`SELECTED ${scope.label}${staleSource(initiative!, options) ? " (last observed)" : ""}`);
-    if (destination === "work" && scope.details?.[1]) lines.push(scope.details[1]);
+  const roomy = options.height >= 22;
+  if (destination === "work") {
+    lines.push("All session tasks, grouped by status.");
+    if (scope) {
+      lines.push(`Selected ${clean(scope.label)}${staleSource(initiative!, options) ? " (last known)" : ""}`);
+      if (scope.details?.[1]) lines.push(scope.details[1]);
+    }
   }
   if (destination === "now") {
     const goals = sourceRows.filter((x) => x.item.kind === "goal");
     const goal = goals.find((x) => !staleSource(x.source, options)) ?? goals[0];
     if (goal) {
-      const name =
-        !screen.expanded && goal.source.producer === "bookie"
-          ? goal.item.label.replace(/^\/projects\/([^/]+)\/project\.md$/, "$1")
-          : goal.item.label;
-      lines.push(
-        `Goal · ${clean(name)} (${goal.source.producer}${staleSource(goal.source, options) ? "; stale" : ""})`,
-      );
-    } else if (options.current) lines.push(`Goal · ${clean(options.current)}`);
+      const project = goal.source.producer === "bookie" && /^\/projects\/([^/]+)\/project\.md$/.exec(goal.item.label);
+      lines.push(project ? `Project · ${clean(project[1]!)}` : `Goal · ${clean(goal.item.label)}`);
+      if (staleSource(goal.source, options)) lines[lines.length - 1] += " (last known)";
+    }
   }
-
-  if (!items.length)
-    lines.push(
+  if (!items.length) {
+    const fallback =
       destination === "reviews"
         ? options.connected === false || observation.sources.some((s) => staleSource(s, options))
-          ? "Current reviews unknown. Check the parent Pi session."
-          : "No reviews reported. [2] Work shows task progress."
+          ? "Current reviews unknown. Check the main Pi chat."
+          : "No reviews waiting. Open [2] Tasks to see progress."
         : destination === "evidence"
-          ? "No current-session result references observed."
-          : "No observations for this view.",
-    );
+          ? "No saved results reported to this dashboard."
+          : destination === "activity"
+            ? "No activity has been recorded in this session yet."
+            : "No tasks reported for this session yet.";
+    lines.push(fallback);
+  }
   const left = previewWidth(destination, Boolean(screen.expanded), width);
   const rows: string[] = [];
   for (let start = 0; start < items.length;) {
     const group = listHeading(items[start]!, destination);
     let end = start + 1;
     while (end < items.length && listHeading(items[end]!, destination) === group) end++;
-    rows.push(sectionHeading(`${group} · ${end - start}`, left ?? width));
+    if (roomy && (rows.length || lines.length)) rows.push("");
+    const count = destination === "now" ? "" : ` · ${end - start}`;
+    rows.push(sectionHeading(group + count, left ?? width));
     for (const item of items.slice(start, end)) rows.push(rowText(item, destination, item.key === screen.selectedKey));
     start = end;
   }
   lines.push(...rows);
-  if (screen.expanded && left === undefined) lines.push("Expanded layout needs 96 columns; same selection retained.");
+  if (destination === "now" && options.height >= 18 && items.some((i) => !i.key.startsWith("component:"))) {
+    if (roomy) lines.push("");
+    lines.push("[2] Tasks · See the full task list");
+  }
+  if (screen.expanded && left === undefined)
+    lines.push("Side-by-side layout needs 82 columns; same selection retained.");
   if (destination === "now" && screen.expanded) {
-    lines.push(sectionHeading("COMPONENTS", width));
-    for (const producer of ["principal", "bookie", "scout", "skill-harness"]) {
-      const streams = observation.sources.filter(
-        (x) => x.producer === producer || (producer === "scout" && x.producer.startsWith("scout-")),
-      );
-      const stale = streams.filter((s) => staleSource(s, options)).length;
-      const status = !streams.length
-        ? "status adapter unavailable"
-        : `${streams.length - stale} observed${stale ? `; ${stale} last observed / stale` : ""}`;
-      lines.push(`${producer}: ${status}`);
-    }
+    lines.push(sectionHeading("Resource details", width));
     const resource = observation.resources;
     lines.push(`Parent RSS: ${(resource.rssBytes / 1024 / 1024).toFixed(1)} MiB`, "Host and child memory: unknown");
   }

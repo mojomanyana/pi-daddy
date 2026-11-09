@@ -149,10 +149,60 @@ test("OFF at final admission reopens only Auto gates and preserves independent m
   const result = await planWithApprovals(f.session, { task: "change", tools: ["bash", "write"] }, {}, f.ctx);
   assert.equal(result.plan.ok, true, result.plan.reason);
   assert.equal(prompts.length, 1);
-  assert.match(prompts[0], /tool:bash/);
+  assert.match(prompts[0], /run shell commands/);
   assert.deepEqual(result.approval?.sources, { "tool:write": "session", "tool:bash": "prompt" });
   assert.equal(f.session.sessionApprovals.has("tool:write@<delegate>"), true);
   assert.equal(f.session.sessionApprovals.has("tool:bash@<delegate>"), false);
+});
+
+test("Auto OFF reuses a named reviewer's session permission across ordinary tasks and asks again for a changed bound task", async () => {
+  const f = await fixture(false);
+  f.session.ownGrant.push("agent:review");
+  f.session.definitions.set("review", {
+    name: "review",
+    description: "Checks a deliverable",
+    allowedTools: "Read Bash",
+    body: "Review the assigned changes.",
+    source: "/skills/review/SKILL.md",
+  });
+  const dialogs: string[] = [];
+  f.ctx.ui.select = async (title?: string) => {
+    dialogs.push(title!);
+    return SCOPE_LABELS.session;
+  };
+  const plan = (task: string, bound = false) =>
+    planWithApprovals(
+      f.session,
+      {
+        task,
+        agent: "review",
+        ...(bound ? { correlation: { schema_version: "1.0", task_id: "review" } } : {}),
+      },
+      {},
+      f.ctx,
+    );
+  const first = await plan("Read the checkout.");
+  assert.equal(first.plan.ok, true, first.plan.reason);
+  assert.equal(dialogs.length, 1);
+  assert.equal(first.approval?.sources["tool:bash"], "prompt");
+  const later = await plan("Review the finished checkout.");
+  assert.equal(later.plan.ok, true, later.plan.reason);
+  assert.equal(dialogs.length, 1);
+  assert.equal(later.approval?.sources["tool:bash"], "session");
+
+  const strict = await plan("Review the exact draft.", true);
+  assert.equal(strict.plan.ok, true, strict.plan.reason);
+  assert.equal(dialogs.length, 2, "the broad ordinary answer cannot substitute for an exact one");
+  assert.match(dialogs[1], /different request/);
+  const replay = await plan("Review the exact draft.", true);
+  assert.equal(replay.plan.ok, true, replay.plan.reason);
+  assert.equal(replay.approval?.sources["tool:bash"], "session");
+  assert.equal(dialogs.length, 2);
+  const changed = await plan("Review a second draft.", true);
+  assert.equal(changed.plan.ok, true, changed.plan.reason);
+  assert.equal(dialogs.length, 3);
+  assert.match(dialogs[2], /different request/);
+  assert.equal(f.auto.admissions, 0);
 });
 
 test("Auto cannot lift a missing capability or a canceled admission", async () => {

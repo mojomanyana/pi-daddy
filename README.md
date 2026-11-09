@@ -21,8 +21,8 @@ Principal 4.12.0 introduced automatic operation IDs and exact candidate/report r
 
 The dashboard shows the selected task's last observed tool event and time since that event.
 Details include the actual recorded working directory and phase where available. Silence is
-not proof of a hang, and a finished process is not an approved task. Tool observations retain
-names and timestamps, not arguments or output. Diagnostic retention remains operator opt-in.
+not proof of a hang, and a finished process is not an approved task. Tool observations include names, times, local call references and bounded descriptions of the action.
+A delegating model can supply a short public `dashboardSummary` during its usual call. Metadata-only and off modes omit this model-authored text. Diagnostic retention remains operator opt-in.
 
 The coordinator can use Principal's native tool-only Codemode adapter. Nested calls retain
 Pi's normal permission and cancellation hooks. Governed children cannot request `codemode`
@@ -323,7 +323,7 @@ Use **a** to switch Auto, arrow keys to select a row, **Enter** for details, **m
 and **?** for help. The view fits the terminal and follows resize events. A disconnected control displays its state
 as unavailable until the owning session acknowledges a fresh snapshot.
 
-The **Now** view keeps the current next action visible while you scroll. When a selected project reports
+The **Overview** view keeps the current next action visible while you scroll. When a selected project reports
 an output ready for review, press **3** for **Reviews** and **Enter** on the output to see the reported
 review instructions and evidence reference. Open the owning project to record a decision.
 

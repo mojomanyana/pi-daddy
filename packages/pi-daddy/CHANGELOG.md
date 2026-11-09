@@ -1,5 +1,11 @@
 # Changelog — pi-daddy
 
+## 0.52.0 — 2026-11-09
+
+- Open Overview for decisions, live tasks, recent finishes and tool availability. Tasks shows the full list. Related activity events are grouped, and saved results have readable names.
+- Delegating models can supply a short public task description for the dashboard. Exact source records remain in details.
+- Permission requests show the access being requested and how long a choice applies. The full task brief is available on demand.
+
 ## 0.51.0 — 2026-11-09
 
 - The dashboard groups navigation, status and work waiting for a decision. Move between tasks to preview the selected one when space permits. In smaller panes, press **Enter** to open its details.

@@ -7,7 +7,7 @@ import {
   type ExtensionAPI,
   type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { readBoundedTextSync } from "../src/kernel/bounded-read-sync.ts";
 import { agentDir } from "../src/kernel/project-paths.ts";
 import type { EcosystemPackageId, EcosystemVersionRow, EcosystemVersions } from "../src/products/ecosystem-versions.ts";
@@ -60,7 +60,7 @@ const defaultPorts = (ownRoot: string): VersionInventoryPorts => ({
 });
 /** Every package answers synchronously on Pi's native event bus; old packages stay explicitly unreported. */
 export function createEcosystemVersionInventory(
-  pi: Pick<ExtensionAPI, "events">,
+  pi: Pick<ExtensionAPI, "events"> & Partial<Pick<ExtensionAPI, "getCommands">>,
   ownRoot: string,
   ports = defaultPorts(ownRoot),
 ) {
@@ -78,7 +78,7 @@ export function createEcosystemVersionInventory(
         if (
           !["principal-pi-skills", "skill-harness", "pi-scout-research", "bookie-pi-skills"].includes(item.id) ||
           typeof item.root !== "string" ||
-          !item.root.startsWith("/")
+          !isAbsolute(item.root)
         )
           return;
         if (typeof item.version !== "string" || !versionPattern.test(item.version)) return;
@@ -115,6 +115,27 @@ export function createEcosystemVersionInventory(
         sources.length > 1 ||
         observedRoots.size > 1 ||
         (loaded.length > 0 && sources.some((item) => !item.installedPath));
+      let bookieCommand = false;
+      if (pkg.id === "bookie-pi-skills" && root && !multiple) {
+        // A registered command proves the extension is loaded, even for older Bookie
+        // releases which did not announce a version. The current disk version cannot prove that.
+        try {
+          bookieCommand =
+            pi.getCommands?.().some((cmd) => {
+              if (
+                cmd.name !== "bookie-work" ||
+                cmd.source !== "extension" ||
+                !cmd.sourceInfo?.path ||
+                !isAbsolute(cmd.sourceInfo.path)
+              )
+                return false;
+              const child = relative(root, cmd.sourceInfo.path);
+              return !!child && !isAbsolute(child) && child !== ".." && !child.startsWith(".." + sep);
+            }) === true;
+        } catch {
+          /* Older Pi hosts may not expose a live command catalog. */
+        }
+      }
       const commands =
         pkg.id === "pi"
           ? ["pi update"]
@@ -144,6 +165,7 @@ export function createEcosystemVersionInventory(
               ? "not-reported"
               : "unavailable",
         commands,
+        ...(bookieCommand ? { commandAvailable: true } : {}),
         note: multiple
           ? "Multiple loaded or configured sources; inspect with pi list before changing versions."
           : !loadedVersion

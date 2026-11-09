@@ -1,3 +1,4 @@
+import { dashboardSummaryDescription } from "../src/products/activity-summary.ts";
 import { operationIdShape, claimDelegationOperation } from "./delegation-operations.ts";
 import { publicEvidenceCall } from "./public-evidence.ts";
 import { executionEvidenceContent } from "./execution-evidence.ts";
@@ -195,6 +196,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
     definitionId: Type.Optional(
       Type.String({ description: "Snapshot id returned by delegate_describe; required for Principal phases." }),
     ),
+    dashboardSummary: Type.Optional(Type.String({ maxLength: 160, description: dashboardSummaryDescription })),
     task: Type.String({ description: "The task for this sub-agent. It receives only this." }),
     agent: Type.Optional(Type.String({ description: describeAgent(spawnable()) })),
     tools: Type.Optional(Type.Array(Type.String(), { description: "Capabilities, when no 'agent' fits." })),
@@ -218,6 +220,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
     definitionId: Type.Optional(
       Type.String({ description: "Snapshot id returned by delegate_describe; required for Principal phases." }),
     ),
+    dashboardSummary: Type.Optional(Type.String({ maxLength: 160, description: dashboardSummaryDescription })),
     task: Type.String({ description: "The task for the sub-agent. It receives only this." }),
     agent: Type.Optional(Type.String({ description: describeAgent(spawnable()) })),
     tools: Type.Optional(
@@ -272,6 +275,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
           operation_id: params.operation_id,
           definitionId: params.definitionId,
           task: params.task,
+          dashboardSummary: params.dashboardSummary,
           agent: params.agent,
           tools: params.tools,
           model: params.model,

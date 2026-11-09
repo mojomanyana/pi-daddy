@@ -42,36 +42,15 @@ Bookie can register a reference afterward; a registration retry never dispatches
 
 ## Current-session dashboard
 
-The connected terminal dashboard has six destinations: **1 Now, 2 Work, 3 Reviews, 4 Activity,
-5 Evidence, 6 Settings**. Now shows a session-wide priority above work grouped by what needs attention.
-The **>** marker follows your selection. On Now, Work and Reviews, a terminal at least 110 columns wide
-also previews that item on the right. In a smaller pane, press **Enter** for the same item.
-`x` opens more information and enables the preview from 96 columns. Arrow keys select, PageUp/PageDown scroll, Enter opens details,
-Esc returns, and `m` Models / `v` Versions / `s` Settings remain available. Old owners and standalone
-ledger views keep their compatible legacy display.
+Open **1 Overview** to see what needs your attention, what Pi is doing and the latest finished tasks. **2 Tasks** has the complete session list. **3 Reviews** opens pending handoffs. **4 Activity** groups related events into a timeline. **5 Evidence** lists saved results. **6 Settings** holds session controls.
 
-When a permission request is pending, **Now** directs you to the parent Pi session. A ready
-handoff points to **3 Reviews**. Select the result and press **Enter** for the next action.
-In a Bookie review, **x** reveals the source and exact reference. In **Now**, **x** reveals
-component and memory details. A recorded result still needs a separate review decision.
+Use the arrow keys to select an item and **Enter** to open it. A side-by-side preview appears on Overview, Tasks and Reviews when the pane is at least 92 columns wide. Press **x** for an expanded view from 82 columns. **Esc** returns to your selection. Press **r** for a session recap, **m** for models or **v** for package versions. Standalone ledger views and older owners retain the legacy display.
 
-Press **r** for a local session recap. It shows up to five recent parent events and current reported
-review or permission counts when available. **Esc** returns to the same item. The recap uses
-recorded session data and works without a model, JEV or network connection. A disconnected
-session is marked as last observed.
+When a decision is pending, Overview directs you to the main Pi chat or to Reviews. Bookie handoffs show the command and the output to select. The Tools section describes Bookie and Scout using the latest available observations. A package can be installed while its live status is unknown. After a disconnect the dashboard labels the last known state and withdraws current permission requests.
 
-Now combines an explicitly reported goal/next-step recommendation with actual parent and child
-observations. Recommendations do not authorize work. Reviews show producer judgments in their stated
-scope; retained output, a successful process, and an overall approved task are different facts. Evidence
-shows exact technical references, never automatically restores output into context. References may contain
-local names or paths. Explicit `p`/`f` reads retain one checked display snapshot until another selection.
+Task descriptions can come from a short public description supplied by the delegating model. When that description is unavailable, the dashboard uses the activity it actually observed. This works without a summarization request or JEV. Open details to inspect a source, and use **x** when offered to see exact references. Saved evidence, process completion and approval are separate facts. Explicit **p** and **f** reads use the existing retention controls.
 
-Optional Bookie, Scout, Principal and Harness status adapters publish only bounded terminal metadata.
-Absent adapters show unavailable; closed adapters, disconnected owners and observations older than two
-minutes show last observed/stale. Silence is not a hang. Ordinary parent tool-name activity works with
-transcripts/diagnostics disabled; no arguments, results, prompts or reasoning are captured for this view.
-The small resource sample is the parent Pi process's RSS, not host health or total child memory. Native
-children use the current owner's existing ledger/timeline; unrelated sessions are excluded.
+The resource display covers the parent Pi process. Transcripts, private reasoning, shell commands and tool results are outside the session activity feed. The dashboard displays only the current owner's tasks and sources.
 
 Controls remain the existing authenticated owner controls. Changes show pending, applied, refused or
 unconfirmed status. Unconfirmed mutations need owner inspection before retry. Auto changes current
@@ -103,8 +82,8 @@ this seam without making other ecosystem packages mandatory.
 
 The dashboard shows the selected task's last observed tool event and time since that event.
 Details include the actual recorded working directory and phase where available. Silence is
-not proof of a hang, and a finished process is not an approved task. Tool observations retain
-names and timestamps, not arguments or output. Diagnostic retention remains operator opt-in.
+not proof of a hang, and a finished process is not an approved task. Tool observations include names, times, local call references and bounded descriptions of the action.
+A delegating model can supply a short public `dashboardSummary` during its usual call. Metadata-only and off modes omit this model-authored text. Diagnostic retention remains operator opt-in.
 
 The coordinator can use Principal's native tool-only Codemode adapter. Nested calls retain
 Pi's normal permission and cancellation hooks. Governed children cannot request `codemode`
