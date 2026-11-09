@@ -164,7 +164,7 @@ test("changed CLI frames erase old cells through Versions, current work, and vie
   }
 });
 
-test("consent instructions follow refreshed owner status and selected JEV route", async () => {
+test("consent and repeated JEV editor requests follow the current owner state", async () => {
   const cwd = await tempDir("dashboard-jev-consent-"),
     ledgerPath = join(cwd, "ledger.jsonl");
   await writeFile(ledgerPath, "");
@@ -176,6 +176,7 @@ test("consent instructions follow refreshed owner status and selected JEV route"
     const { runDashboard } = await import(${JSON.stringify(entry)});
     const socketPath = ${JSON.stringify(join(cwd, "owner.sock"))};
     let jev = {available:true, enabled:false, pending:false, availability:"disabled"};
+    const openedEditors = [];
     const server = createServer(socket => {
       let input="";
       socket.on("data", bytes => {
@@ -183,6 +184,10 @@ test("consent instructions follow refreshed owner status and selected JEV route"
         if(!input.includes("\\n")) return;
         const request=JSON.parse(input);
         if(request.action==="set-jev") jev={available:true,enabled:false,pending:true,availability:"disabled"};
+        if(request.action==="edit-jev") {
+          openedEditors.push(request.option);
+          jev={...jev,pending:true};
+        }
         socket.end(JSON.stringify({ok:true,rows:[],cost:null,auto:{enabled:false,source:"session"},pendingApprovals:[],
           settings:{editable:true,wallSeconds:21600,idleSeconds:900,wallSource:"startup",idleSource:"startup",
             descendants:8,reserved:0,maxDepth:2,perCall:8,jev}}));
@@ -217,10 +222,22 @@ test("consent instructions follow refreshed owner status and selected JEV route"
       const pending=await draw(()=>key("return"),/Complete JEV paid-call/);
       assert.match(pending,/JEV: waiting for consent/);
       jev={available:true,enabled:true,pending:false,availability:"ready",selectedProvider:"typesafe",selectedModel:"jev-latest",transport:"pi-classifier"};
+      jev = {...jev, mode:"workflow", controls:["limit","configure","hints"]};
       const enabled=await draw(()=>process.emit("SIGWINCH"),/JEV enabled; ready/);
       assert.doesNotMatch(enabled,/Complete JEV paid-call|waiting for consent/);
       assert.match(enabled,/Model: typesafe\\/jev-latest/);
       assert.match(enabled,/Via: pi-classifier/);
+
+      for (const option of ["limit", "configure", "hints"]) {
+        await draw(() => key("down"));
+        const editing = await draw(() => key("return"), /Finish editing in the main Pi session/);
+        assert.match(editing, /JEV: waiting for consent/);
+        key("return"); // Press the same control again while its parent dialog is still open.
+        jev = {...jev, pending:false};
+        const closed = await draw(() => process.emit("SIGWINCH"), /JEV: ON/);
+        assert.doesNotMatch(closed, /Finish editing|Finish the open settings dialog|waiting for consent/);
+      }
+      assert.deepEqual(openedEditors, ["limit", "configure", "hints"]);
     }finally{
       process.emit("SIGTERM");await done;await new Promise(resolve=>server.close(resolve));
     }

@@ -494,7 +494,7 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
         notice = "JEV controls unavailable; load skill-harness in the parent Pi session";
       else if (selected === "limit" || selected === "configure" || selected === "hints") {
         if (!settings.jev.controls?.includes(selected)) notice = "Update skill-harness to edit this setting";
-        else if (settings.jev.pending) notice = "Finish the open settings dialog in the main Pi session";
+        else if (settings.jev.pending) notice = JEV_EDITOR_NOTICE;
         else if (selected === "hints" && (!settings.jev.enabled || settings.jev.mode !== "workflow"))
           notice = "Turn on JEV workflow calls first, then choose Tool hints";
         else
