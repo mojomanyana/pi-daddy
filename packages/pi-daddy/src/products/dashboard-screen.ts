@@ -448,10 +448,9 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
     if (session?.observation)
       body.push(
         "",
-        sectionHeading("CAPTURE · startup configuration", width),
+        sectionHeading("CAPTURE · restart Pi to change", width),
         `  Transcripts: ${session.observation.capture.transcripts ? "configured" : "off"}`,
         `  Diagnostics: ${session.observation.capture.diagnostics ? "configured" : "off"}`,
-        "    Capture changes require a new parent launch.",
       );
     body.push("", "m models · v versions");
   } else if (screen.view === "versions" || screen.view === "version-details") {
