@@ -114,8 +114,10 @@ export async function setAutoApproval(session: GrantsSession, enabled: boolean, 
         await record(session, true, "session", before.revision + 1);
         if (current(session) !== state) throw stale();
         state.authority!.set(true, "session");
+        session.reloadLifecycle.projectMemoryOwner?.refresh();
       } else {
         const after = state.authority!.set(false, "session");
+        session.reloadLifecycle.projectMemoryOwner?.refresh();
         await record(session, false, "session", after.revision);
       }
       return getDashboardControlState(session);

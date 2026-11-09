@@ -11,6 +11,7 @@ import { safeDashboardSummary } from "./activity-summary.ts";
 type KnownSource = "bookie" | "scout-local" | "scout-worker";
 
 export function isComponentObservation(source: DashboardSourceSnapshot, item: DashboardContribution): boolean {
+  if (source.producer === "bookie-memory") return item.id === "project-memory" && item.kind === "work";
   return (
     (source.producer === "scout-local" || source.producer === "scout-worker") &&
     item.id === "research" &&
@@ -70,7 +71,17 @@ function componentItem(producer: KnownSource, options: DashboardScreenOptions): 
   const bookie = producer === "bookie";
   const worker = producer === "scout-worker";
   const title = bookie ? "Bookie memory" : worker ? "Scout research worker" : "Scout local sources";
-  const source = options.session?.observation?.sources.find((s) => s.producer === producer);
+  const sources = options.session?.observation?.sources;
+  const workSource = sources?.find((s) => s.producer === producer);
+  const memory = bookie
+    ? sources?.find(
+        (s) =>
+          s.producer === "bookie-memory" && s.items.some((i) => isComponentObservation(s, i) && i.state === "observed"),
+      )
+    : undefined;
+  const source =
+    memory && (current(memory, options) || !workSource || !current(workSource, options)) ? memory : workSource;
+
   const pkg = options.session?.versions?.rows.find((r) => r.id === (bookie ? "bookie-pi-skills" : "pi-scout-research"));
   if (!source && !(pkg?.source || pkg?.loadedVersion || pkg?.installedVersion || pkg?.state === "multiple")) return;
   const item = source?.items.find((i) => isComponentObservation(source, i));
@@ -80,12 +91,18 @@ function componentItem(producer: KnownSource, options: DashboardScreenOptions): 
   if (options.connected === false || (source && !current(source, options))) {
     state = "last-observed";
     status = "Live status unknown";
-    const lastReport = item
-      ? scoutDescription(worker, item)[0]
-      : bookie && source?.items.some((i) => i.kind === "goal" && i.id === "scope")
-        ? "Project connected"
-        : undefined;
+    const lastReport =
+      source?.producer === "bookie-memory"
+        ? "Ready in this folder"
+        : item
+          ? scoutDescription(worker, item)[0]
+          : bookie && source?.items.some((i) => i.kind === "goal" && i.id === "scope")
+            ? "Project connected"
+            : undefined;
     explanation = (lastReport ? `Last report: ${lastReport}. ` : "") + "Check the main Pi chat for current status.";
+  } else if (source?.producer === "bookie-memory") {
+    status = "Ready in this folder";
+    explanation = "Bookie can save and recall routine notes for this workspace.";
   } else if (bookie && source?.items.length) {
     status = "Project connected";
     explanation = "Bookie is sharing the selected project’s work with Pi.";
@@ -94,7 +111,7 @@ function componentItem(producer: KnownSource, options: DashboardScreenOptions): 
     [status, explanation] = scoutDescription(worker, item);
   } else if (bookie && (pkg?.commandAvailable || pkg?.loadedVersion)) {
     status = "Available · no project reported";
-    explanation = "Run /bookie-work in the main Pi chat to select a project and plan.";
+    explanation = "Use /bookie-context for manual memory or /bookie-work to select a project and plan.";
   } else {
     status =
       pkg?.state === "multiple"
@@ -133,15 +150,17 @@ export function componentItems(options: DashboardScreenOptions): DashboardItem[]
 export function versionLines(row: EcosystemVersionRow, selected: boolean, options: DashboardScreenOptions): string[] {
   const prefix = selected ? "> " : "  ";
   const bookieSource =
-    row.id === "bookie-pi-skills" && options.session?.observation?.sources.find((s) => s.producer === "bookie");
+    row.id === "bookie-pi-skills" &&
+    options.session?.observation?.sources.some(
+      (s) => (s.producer === "bookie" || s.producer === "bookie-memory") && current(s, options),
+    );
   let detail: string;
   if (options.connected === false) detail = "Last seen. Reconnect for the running version.";
   else if (row.state === "multiple") detail = "Multiple installations. Open details to check the sources.";
   else if (row.loadedVersion && row.installedVersion && row.loadedVersion !== row.installedVersion)
     detail = `Running ${row.loadedVersion}. ${row.id === "pi" ? "Restart" : "Reload"} Pi to use the installed version.`;
   else if (row.loadedVersion) detail = `Running ${row.loadedVersion}`;
-  else if (row.commandAvailable || (bookieSource && current(bookieSource, options)))
-    detail = "Active in Pi. Running version unreported.";
+  else if (row.commandAvailable || bookieSource) detail = "Active in Pi. Running version unreported.";
   else detail = row.installedVersion ? "Pi has not reported a running version." : "No running version reported.";
   return [
     prefix +

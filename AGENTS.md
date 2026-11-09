@@ -1235,3 +1235,7 @@ inspected as history. Opening Reviews or showing a retained output grants no aut
 ### 2026-11-09 — Human dashboard and public task descriptions
 
 Overview shows a bounded selection from the current session. Tasks retains the full session list. Identify saved outputs by their exact execution and current reviews by their producer and reference. A short model-authored purpose is optional display text. Keep it separate from authorization, judgments and provider consent. Preserve technical records in Details. A package installation or tool registration alone cannot establish worker or network health.
+
+### 2026-11-09 — Bind automatic project memory to current parent Auto
+
+Offer an in-process, revocable observation to compatible Bookie extensions only in the current trusted interactive root session. Recheck native identity, workspace and Auto at use time. Child and headless sessions cannot inherit it. Keep automatic workspace memory separate from manual vault selection, provider consent and grants. Show readiness only when Bookie reports it.

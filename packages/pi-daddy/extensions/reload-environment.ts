@@ -8,6 +8,7 @@ export interface ReloadLifecycle {
   operationFinals?: import("./delegation-operations.ts").OperationFinalStore;
   executionSettings?: { nativeSessionId: string; wallMs?: number; idleMs?: number };
   autoMode?: import("./session-auto-mode.ts").SessionAutoLifecycle;
+  projectMemoryOwner?: { retire(): void; refresh(): void };
   runtimeSnapshotUnsubscribe?: () => void;
   runtimeSnapshotGeneration?: object;
   runtimeSettlements?: Map<string, import("../src/governance/runtime-settlement.ts").RuntimeSettlement>;
