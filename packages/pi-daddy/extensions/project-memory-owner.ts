@@ -1,6 +1,6 @@
 /** In-process root Auto observation for Bookie's automatic workspace memory. No tools, vault paths or provider data. */
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { realpathSync } from "node:fs";
+import { realpathSync, statSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import type { GrantsSession } from "./session.ts";
 
@@ -64,7 +64,7 @@ export function registerProjectMemoryOwner(pi: Pick<ExtensionAPI, "events">, ses
         /* No verifiable native identity. */
       }
       const cwd = ctx.cwd;
-      let canonicalCwd: string | undefined;
+      let workspace: { path: string; dev: bigint; ino: bigint; created: bigint } | undefined;
       function revision() {
         const state = lifecycle.autoMode;
         try {
@@ -92,8 +92,16 @@ export function registerProjectMemoryOwner(pi: Pick<ExtensionAPI, "events">, ses
           )
             return;
           const resolvedCwd = realpathSync.native(cwd);
-          canonicalCwd ??= resolvedCwd;
-          if (canonicalCwd !== resolvedCwd) return;
+          const identity = statSync(resolvedCwd, { bigint: true });
+          if (!identity.isDirectory()) return;
+          workspace ??= { path: resolvedCwd, dev: identity.dev, ino: identity.ino, created: identity.birthtimeNs };
+          if (
+            workspace.path !== resolvedCwd ||
+            workspace.dev !== identity.dev ||
+            workspace.ino !== identity.ino ||
+            workspace.created !== identity.birthtimeNs
+          )
+            return;
           const snapshot = state.authority.snapshot();
           return snapshot.enabled ? snapshot.revision : undefined;
         } catch {

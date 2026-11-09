@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { mkdir, symlink, unlink } from "node:fs/promises";
+import { mkdir, rename, symlink, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
@@ -173,30 +173,39 @@ test("a child, non-interactive session, untrusted project or missing native iden
   }
 });
 
-test("a workspace alias may not redirect an existing owner to a different directory", async () => {
-  const root = await tempDir("memory-owner-");
-  const first = join(root, "first"),
-    second = join(root, "second"),
-    alias = join(root, "selected");
-  await mkdir(first);
-  await mkdir(second);
-  await symlink(first, alias, "junction");
-  const { pi, session, ctx, current, request } = fixture(alias);
-  const bridge = registerProjectMemoryOwner(pi, session);
-  try {
-    await initializeSessionAutoMode(session, { PI_DADDY_AUTO_MODE: "1" }, current.id);
-    bridge.begin(ctx)();
-    const owner = request();
-    assert.ok(owner && owner.isCurrent());
-    await unlink(alias);
-    await symlink(second, alias, "junction");
-    assert.equal(owner.isCurrent(), false);
-    assert.equal(request(), undefined);
-    await unlink(alias);
+for (const change of ["redirect an alias", "replace its target"] as const) {
+  test(`a workspace must not retain an owner after an operator can ${change}`, async () => {
+    const root = await tempDir("memory-owner-");
+    const first = join(root, "first"),
+      second = join(root, "second"),
+      alias = join(root, "selected");
+    await mkdir(first);
+    await mkdir(second);
     await symlink(first, alias, "junction");
-    assert.equal(owner.isCurrent(), false);
-  } finally {
-    bridge.close();
-    await closeSessionAutoMode(session);
-  }
-});
+    const { pi, session, ctx, current, request } = fixture(alias);
+    const bridge = registerProjectMemoryOwner(pi, session);
+    try {
+      await initializeSessionAutoMode(session, { PI_DADDY_AUTO_MODE: "1" }, current.id);
+      bridge.begin(ctx)();
+      const owner = request();
+      assert.ok(owner && owner.isCurrent());
+      if (change === "redirect an alias") {
+        await unlink(alias);
+        await symlink(second, alias, "junction");
+      } else {
+        await rename(first, join(root, "previous"));
+        await mkdir(first);
+      }
+      assert.equal(owner.isCurrent(), false);
+      assert.equal(request(), undefined);
+      if (change === "redirect an alias") {
+        await unlink(alias);
+        await symlink(first, alias, "junction");
+        assert.equal(owner.isCurrent(), false);
+      }
+    } finally {
+      bridge.close();
+      await closeSessionAutoMode(session);
+    }
+  });
+}
