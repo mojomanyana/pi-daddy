@@ -368,7 +368,8 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
         session?.auto.enabled,
         screen.settingKey ?? "auto",
       ).map((line) => {
-        if (modern && line === "SETTINGS · current session") return sectionHeading("SESSION CONTROLS", width);
+        if (modern && (line === "SETTINGS" || line === "SETTINGS · current session"))
+          return sectionHeading("SESSION CONTROLS", width);
         if (modern && line.startsWith("STARTUP LIMITS")) return sectionHeading(line, width);
         return line;
       }),
