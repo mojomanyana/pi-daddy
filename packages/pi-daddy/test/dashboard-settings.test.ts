@@ -262,6 +262,13 @@ test("Settings shows editable JEV controls only when advertised; entering a cont
   const session = await fixture();
   const endpoint = await ensureDashboardSessionServer(session);
   const events = new EventEmitter();
+  const expectedOwner = { sessionId: "settings-native-session", cwd: "/workspace", generation: "fixture-generation" };
+  session.dashboardObservations = () => ({
+    ...expectedOwner,
+    sequence: 1,
+    observedAt: new Date().toISOString(),
+    sources: [],
+  });
   const actions: string[] = [];
   let modern = true;
   events.on("skill-harness:jev-control-v1", (request) => {
@@ -301,10 +308,18 @@ test("Settings shows editable JEV controls only when advertised; entering a cont
         assert.notEqual(display.screen.settingKey, previous);
       }
       assert.equal(display.key("return"), "setting");
-      const opened = await request({ action: "edit-jev", option: opt });
+      const opened = await request({ action: "edit-jev", option: opt, expectedOwner });
       assert.equal(opened.settings?.jev.pending, true);
     }
-    await assert.rejects(request({ action: "edit-jev", option: "not-a-setting" as any }), /Unknown JEV setting/);
+    await assert.rejects(
+      request({ action: "edit-jev", option: "not-a-setting" as any, expectedOwner }),
+      /Unknown JEV setting/,
+    );
+    await assert.rejects(request({ action: "edit-jev", option: "limit" }), /owner changed before action/);
+    await assert.rejects(
+      request({ action: "edit-jev", option: "limit", expectedOwner: { ...expectedOwner, generation: "retired" } }),
+      /owner changed before action/,
+    );
     assert.deepEqual(actions, ["status", "limit", "configure", "hints"]);
     modern = false;
     const legacy = await request({ action: "get" });

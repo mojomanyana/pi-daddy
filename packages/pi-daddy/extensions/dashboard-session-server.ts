@@ -92,7 +92,7 @@ async function respond(session: GrantsSession, token: string, line: string): Pro
     expectedOwner?: { sessionId?: unknown; cwd?: unknown; generation?: unknown };
   };
   if (request.token !== token) return { ok: false, error: "unauthorised dashboard request" };
-  if (request.action !== "get" && request.expectedOwner !== undefined) {
+  if (request.action === "edit-jev" || (request.action !== "get" && request.expectedOwner !== undefined)) {
     const observed = session.dashboardObservations?.(),
       expected = request.expectedOwner;
     if (
