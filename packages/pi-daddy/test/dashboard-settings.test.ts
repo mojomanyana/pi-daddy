@@ -197,7 +197,7 @@ test("Settings navigation fits narrow panes and distinguishes pending consent, e
     assert.match(frame, /missing-key/);
     assert.match(frame, /Model: openrouter\/typesafe\/jev-1.13/);
     assert.match(frame, /Via: pi-classifier/);
-    assert.match(frame, /Data: \/home\/operator\/.skill-harness/);
+    assert.match(draw(44, 24), /Data: \/home\/operator\/.skill-harness/);
     display.key("down");
     assert.equal(display.screen.settingKey, "jev");
     assert.equal(display.key("return"), "setting");
@@ -216,7 +216,7 @@ test("Settings navigation fits narrow panes and distinguishes pending consent, e
     assert.equal(display.screen.settingKey, "perCall");
     assert.match(draw(), /> Children per call/);
     assert.match(draw(100, 30), /STARTUP LIMITS.*restart/);
-    assert.match(draw(100, 30), /Auto does not grant JEV consent/);
+    assert.match(draw(100, 36), /JEV: waiting for consent\n    Pi asks before paid calls or storage/);
     display.key("escape");
     assert.equal(display.screen.view, "main");
   } finally {
@@ -284,6 +284,7 @@ test("Settings shows editable JEV controls only when advertised; entering a cont
         enabled: true,
         mode: "workflow",
         remaining: 299,
+        storageRoot: "/home/operator/private/skill-harness-data",
         ...(modern
           ? { limit: 300, used: 1, hintsEnabled: false, controls: ["limit", "hints", "configure", "unknown"] }
           : {}),
@@ -299,14 +300,45 @@ test("Settings shows editable JEV controls only when advertised; entering a cont
     display.key("s");
     const draw = (s = snapshot) =>
       renderDashboardScreen({ width: 48, height: 24, screen: display.screen, items: [], session: s });
-    assert.match(draw(), /Call limit: 300 per session/);
-    assert.match(draw(), /1 used · 299 available/);
+    const grouped = renderDashboardScreen({
+      width: 80,
+      height: 48,
+      screen: display.screen,
+      items: [],
+      session: snapshot,
+    });
+    assert.match(grouped, /^PERMISSIONS .*\n> Permission Auto:/m);
+    assert.match(grouped, /^JEV · optional advice .*\n  JEV: ON/m);
+    assert.match(grouped, /^    Call limit: 300 per session\n      1 used · 299 available now/m);
+    assert.match(grouped, /^    Choose JEV model and storage…\n      Provider status:/m);
+    assert.match(grouped, /^    Tool hints: OFF\n      Suggestions only · above 90% confidence/m);
+    assert.match(grouped, /^CHILD TIMEOUTS .*\n  Child wall:.*\n  Child idle:/m);
+    assert.match(grouped, /^  Maximum depth: \d+/m);
+    assert.match(grouped, /^CAPTURE .*\n  Transcripts:.*\n  Diagnostics:/m);
+    const sidePane = renderDashboardScreen({
+      width: 36,
+      height: 65,
+      screen: display.screen,
+      items: [],
+      session: snapshot,
+    });
+    const wrappedPath = sidePane.match(/^      Data:\n((?:      \S+\n){2,})/m)?.[1];
+    assert.equal(wrappedPath?.replace(/\s/g, ""), snapshot.settings!.jev.storageRoot);
     for (const opt of ["limit", "configure", "hints"] as const) {
       while (display.screen.settingKey !== opt) {
         const previous = display.screen.settingKey;
         display.key("down");
         assert.notEqual(display.screen.settingKey, previous);
       }
+      const narrow = renderDashboardScreen({
+        width: 36,
+        height: 16,
+        screen: display.screen,
+        items: [],
+        session: snapshot,
+      });
+      assert.match(narrow, /^>   (?:Call limit|Choose JEV model|Tool hints)/m);
+      assert.ok(narrow.split("\n").every((line) => cellWidth(line) <= 36));
       assert.equal(display.key("return"), "setting");
       const opened = await request({ action: "edit-jev", option: opt, expectedOwner });
       assert.equal(opened.settings?.jev.pending, true);
