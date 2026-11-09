@@ -28,6 +28,7 @@ export function assertVersion(expected = "1.0.4") {
 export async function createFixture(
   options: {
     sdkVersion?: "1.0.4" | "1.1.0";
+    mode?: "json" | "tui";
     extension?: (root: string) => ExtensionFactory;
     next?: (request: Request, index: number) => Step;
     settings?: Partial<Settings> | ((root: string) => Partial<Settings>);
@@ -114,7 +115,7 @@ export async function createFixture(
   });
   const events: any[] = [];
   session.subscribe((event) => events.push(structuredClone(event)));
-  await session.bindExtensions({ mode: "json", onError: (error) => errors.push(error) });
+  await session.bindExtensions({ mode: options.mode ?? "json", onError: (error) => errors.push(error) });
   await session.setModel(runtime.getModel(PROVIDER, MODEL)!);
   session.setThinkingLevel("high");
   return {

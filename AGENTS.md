@@ -198,6 +198,13 @@ it measured nothing rather than passing quietly.
 
 ## Decisions still in force
 
+**2026-11-09 — first-run initialization is automatic in the interactive parent.** This supersedes the old
+requirement to confirm linking the bundled dashboard on its first verified Herdr startup. Existing disable and
+opt-out choices still win; replacing a different installation needs a separate human choice. Read the currently
+selected agents at open and reconcile Pi's later contributions before first dispatch. Opening a project never
+records a wider grant or opts the project into the governance ledger. Project defaults still bound subsequent
+tool observations after explicit init.
+
 **2026-11-04 — display cannot replay semantic validation.** Initiative terminal refresh uses only bounded
 last-observed owner facts, preserves their timestamps and exposes absent or stale observations. A display
 refresh cannot invoke canonical work-map/currentness scans or become authority. The bound coordinator still

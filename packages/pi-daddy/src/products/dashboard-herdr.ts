@@ -127,7 +127,15 @@ export async function inspectDashboardPlugin(
   try {
     const parsed = parseReply(await exec(["plugin", "list", "--json"]));
     if (parsed.error) return { state: "unavailable", diagnostic: `Herdr plugin registry unavailable: ${parsed.error}` };
-    const plugins = Array.isArray(parsed.result?.plugins) ? (parsed.result.plugins as Record<string, unknown>[]) : [];
+    if (
+      !Array.isArray(parsed.result?.plugins) ||
+      !parsed.result.plugins.every((row) => typeof row?.plugin_id === "string")
+    )
+      return {
+        state: "unavailable",
+        diagnostic: "Herdr returned an unreadable plugin list. Check the Herdr connection.",
+      };
+    const plugins = parsed.result.plugins as Record<string, unknown>[];
     const plugin = plugins.find((candidate) => candidate.plugin_id === DASHBOARD_PLUGIN_ID);
     if (!plugin) return { state: "absent", diagnostic: `Herdr plugin ${DASHBOARD_PLUGIN_ID} is not installed.` };
     // Protocol and provenance both precede enabled state. A root-only repair is offered only when the

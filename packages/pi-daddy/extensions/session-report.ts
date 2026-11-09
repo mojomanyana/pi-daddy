@@ -253,6 +253,10 @@ export async function reportSessionStart(session: GrantsSession, ctx: SessionRep
   // Warnings and errors are NOT folded in — they go to different components (`showError`), survive on their
   // own, and each says something an operator may need to act on separately.
   const info: string[] = [];
+  if (session.depth === 0 && session.governed && session.grantSource === "default" && !session.malformedBounds.length)
+    info.push("Pi Daddy started with session permissions. Use /grants to inspect access.");
+  if (session.depth === 0 && session.governed && session.grantSource === "stored")
+    info.push("Pi Daddy restored this project's saved permissions.");
 
   if (session.mayDelegate && !session.executor.refusal) {
     info.push(`grants: executor — ${session.executor.disclosure}`);

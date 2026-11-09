@@ -35,13 +35,17 @@ pi install npm:pi-daddy
 pi
 ```
 
-In the session, `/grants` shows the tool ceiling this session holds and the definitions it can spawn. Governance is
-on after installation unless `PI_DADDY_GOVERNANCE=off`; before initialization a root session is bounded by its
-observed tool surface, but no project grant or ledger consent has been stored. `/grants init` scans enabled packages
-that declare runtime skills, asks which withheld capabilities to grant, writes the review copy at
-`.pi/pi-daddy/settings.json`, stores the enforced grant outside the workspace, enables the project ledger, and applies
-both decisions to the running session. Commit the review copy when the project's ignore rules permit it. The
-standalone `pi-daddy init` command scaffolds files only; it cannot mutate a live pi session.
+Open Pi and start your task. An interactive parent discovers the agents Pi has selected and restores the
+project's saved permissions automatically. Additional agents supplied by extensions become available before
+the first task. In a fresh project the session uses its observed tools and the existing permission gates.
+Inside Herdr, Pi Daddy links its bundled dashboard on first use and opens it beside the parent, keeping the
+keyboard focus in Pi. A disabled dashboard or a saved startup opt-out stays disabled. Replacing a dashboard
+linked from a different installation asks first.
+
+Use `/grants` to inspect access. To explicitly save a different project ceiling and enable the project governance
+ledger, use `/grants init`. It also creates the review copy at `.pi/pi-daddy/settings.json` and stores the enforced
+choice outside the workspace. Headless runs and children keep their existing setup. `PI_DADDY_GOVERNANCE=off`
+still disables governance. The standalone `pi-daddy init` command prepares review files.
 
 ## Optional local public evidence capture
 
@@ -262,7 +266,7 @@ work, final availability, subtree cleanup and optional observation completeness 
 execution returns `isError` with its available evidence. Display, diagnostics and optional recording cannot replace
 the primary final. Unknown cleanup retains capacity and workspace exclusion.
 
-Pi and TypeBox are wildcard host-provided peers so Pi's extension loader supplies one shared runtime copy. Development dependencies pin Pi **1.0.4**; the additional **1.1.0** and **1.4.0** checks have the execution scopes described above. Prefer a Pi-managed install under a measured host and executor combination. An ordinary standalone npm install may resolve untested peer versions. In a Pi-managed no-peer install, standalone help, version and reporting remain available; run initialization inside Pi with `/grants init`. Principal's native phases use `plan`, `build`, `review`, `debug`, and `investigate` with their returned `delegate_describe` `definitionId`; independent parallel work uses one `delegate_all` batch.
+Pi and TypeBox are wildcard host-provided peers so Pi's extension loader supplies one shared runtime copy. Development dependencies pin Pi **1.0.4**; the additional **1.1.0** and **1.4.0** checks have the execution scopes described above. Prefer a Pi-managed install under a measured host and executor combination. An ordinary standalone npm install may resolve untested peer versions. In a Pi-managed no-peer install, standalone help, version and reporting remain available; use `/grants init` inside Pi for an explicit persistent project ceiling. Principal's native phases use `plan`, `build`, `review`, `debug`, and `investigate` with their returned `delegate_describe` `definitionId`; independent parallel work uses one `delegate_all` batch.
 
 Final capture preserves whitespace and concatenates text blocks without inserting separators. Tool-call terminals, empty visible finals and non-`stop` reasons are unavailable. Persisted message comparisons ignore object key order while preserving array order and every field value. The shared `final-conformance.json` table checks these semantics in both runtime and harness. Capture remains bounded: 4 MiB visible final, 32 MiB protocol line, 64 MiB persisted session, and a 3-second bounded session read. Exceeding a limit reports an unavailable final and blocks dependent handoffs; it does not imply the worker failed to settle.
 

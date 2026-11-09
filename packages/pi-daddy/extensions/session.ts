@@ -717,7 +717,8 @@ export function createGrantsSession(
       // `/grants` print "inactive" while holding thirteen capabilities — a status line contradicting the
       // enforcer, which is the defect R-28 is named for.
       session.governed = true;
-      session.ownGrant = grant;
+      session.inherited = [...grant];
+      session.ownGrant = deriveOwnGrant(session.inherited, session.observedTools);
       session.grantSource = "operator-init";
       session.storeCwd = session.cwd;
       // An environment ledger remains the explicit answer. Otherwise init's v2 choice becomes live now,

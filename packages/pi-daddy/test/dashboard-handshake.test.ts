@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { after, test } from "node:test";
 import {
   dashboardPreferencePath,
@@ -33,8 +33,11 @@ function hostAndPluginExec(options: { installed?: boolean; linkedRoot?: string; 
     calls.push(args);
     if (args[0] === "pane" && args[1] === "current")
       return result({ pane: { pane_id: "w1:p1", tab_id: "w1:t1", workspace_id: "w1" } });
-    if (args[0] === "pane" && args[1] === "process-info")
-      return result({ process_info: { pane_id: "w1:p1", foreground_processes: [{ pid: 42 }] } });
+    if (args[0] === "pane" && args[1] === "process-info") {
+      const paneId = args.at(-1);
+      const processes = paneId === "w1:p2" ? [{ name: "pi-daddy-dashboard" }] : [{ pid: 42 }];
+      return result({ process_info: { pane_id: paneId, foreground_processes: processes } });
+    }
     if (args[0] === "plugin" && args[1] === "list") {
       return result({
         plugins: installed
@@ -66,69 +69,29 @@ function hostAndPluginExec(options: { installed?: boolean; linkedRoot?: string; 
   return { exec, calls };
 }
 
-test("Not now is recorded and prevents repeated startup prompts", async () => {
-  const root = await tempDir("dashboard-handshake-");
+test("saved first-run opt-outs still suppress automatic dashboard setup", async () => {
+  const root = await tempDir("dashboard-preference-");
   const preferencePath = dashboardPreferencePath(root);
-  const fake = hostAndPluginExec();
-  let prompts = 0;
-  const notices: string[] = [];
-  const input = {
-    mode: "tui" as const,
-    env,
-    pid: 42,
-    exec: fake.exec,
-    cwd: root,
-    ledgerPath: join(root, "ledger.jsonl"),
-    pluginRoot: join(root, "plugin"),
-    preferencePath,
-    paneStatePath: join(root, "panes.json"),
-    ui: {
-      select: async (_title: string, choices: string[]) => {
-        prompts += 1;
-        assert.deepEqual(choices, ["Install and open", "Not now", "Never ask"]);
-        return "Not now";
-      },
-      notify: (message: string) => void notices.push(message),
-    },
-  };
-  await offerDashboardHandshake(input);
-  await offerDashboardHandshake(input);
-  assert.equal(prompts, 1);
-  assert.equal(
-    fake.calls.some((args) => args[1] === "link"),
-    false,
-  );
-});
-
-test("dismissing the startup prompt stores no consent choice", async () => {
-  const root = await tempDir("dashboard-dismissed-");
-  const fake = hostAndPluginExec();
-  let prompts = 0;
-  const input = {
-    mode: "tui" as const,
-    env,
-    pid: 42,
-    exec: fake.exec,
-    cwd: root,
-    ledgerPath: join(root, "ledger.jsonl"),
-    pluginRoot: join(root, "plugin"),
-    preferencePath: dashboardPreferencePath(root),
-    paneStatePath: join(root, "panes.json"),
-    ui: {
-      select: async () => {
-        prompts += 1;
-        return undefined;
-      },
-      notify: () => {},
-    },
-  };
-  assert.equal(await offerDashboardHandshake(input), "deferred");
-  assert.equal(await offerDashboardHandshake(input), "deferred");
-  assert.equal(prompts, 2, "dismissal is not the literal Not now choice and must not be persisted as one");
-  assert.equal(
-    fake.calls.some((args) => args[1] === "link"),
-    false,
-  );
+  await mkdir(dirname(preferencePath), { recursive: true });
+  for (const choice of ["not-now", "never"]) {
+    const fake = hostAndPluginExec();
+    const original = JSON.stringify({ version: 1, protocol: 1, choice, recordedAt: new Date().toISOString() });
+    await writeFile(preferencePath, original);
+    const outcome = await offerDashboardHandshake({
+      mode: "tui",
+      env,
+      pid: 42,
+      exec: fake.exec,
+      cwd: root,
+      pluginRoot: join(root, "plugin"),
+      preferencePath,
+      paneStatePath: join(root, "panes.json"),
+      ui: { select: async () => assert.fail("unexpected question"), notify() {} },
+    });
+    assert.equal(outcome, "suppressed");
+    assert.ok(!fake.calls.some(([cmd]) => cmd === "plugin"));
+    assert.equal(await readFile(preferencePath, "utf8"), original);
+  }
 });
 
 test("a compatible bundled Herdr plugin opens the ordinary panel without another bootstrap prompt", async () => {
@@ -161,12 +124,12 @@ test("a compatible bundled Herdr plugin opens the ordinary panel without another
   assert.equal(fake.calls.filter((args) => args[0] === "plugin" && args[1] === "pane" && args[2] === "open").length, 1);
 });
 
-test("Install and open is the only startup choice that links software", async () => {
+test("a fresh verified Herdr parent links its bundled dashboard once and reuses the pane on reload", async () => {
   const root = await tempDir("dashboard-install-");
   const fake = hostAndPluginExec();
   const notices: string[] = [];
-  await offerDashboardHandshake({
-    mode: "tui",
+  const input = {
+    mode: "tui" as const,
     env,
     pid: 42,
     exec: fake.exec,
@@ -175,11 +138,57 @@ test("Install and open is the only startup choice that links software", async ()
     pluginRoot: join(root, "plugin"),
     preferencePath: dashboardPreferencePath(root),
     paneStatePath: join(root, "panes.json"),
-    ui: { select: async () => "Install and open", notify: (message: string) => void notices.push(message) },
-  });
+    ui: {
+      select: async () => assert.fail("unexpected question"),
+      notify: (message: string) => void notices.push(message),
+    },
+  };
+  assert.equal(await offerDashboardHandshake(input), "installed");
+  assert.equal(await offerDashboardHandshake(input), "already-installed");
   assert.equal(fake.calls.filter((args) => args[0] === "plugin" && args[1] === "link").length, 1);
   assert.equal(fake.calls.filter((args) => args[0] === "plugin" && args[1] === "pane" && args[2] === "open").length, 1);
   assert.ok(notices.some((message) => /opened.*without changing focus/i.test(message)));
+});
+
+test("simultaneous first opens reuse the installed package and one pane", async () => {
+  const root = await tempDir("dashboard-first-starts-");
+  const fake = hostAndPluginExec();
+  const input = {
+    mode: "tui",
+    env,
+    pid: 42,
+    exec: fake.exec,
+    cwd: root,
+    pluginRoot: join(root, "plugin"),
+    preferencePath: dashboardPreferencePath(root),
+    paneStatePath: join(root, "panes.json"),
+    ui: { select: async () => assert.fail("unexpected question"), notify() {} },
+  };
+  const outcomes = await Promise.all([offerDashboardHandshake(input), offerDashboardHandshake(input)]);
+  assert.deepEqual(outcomes.sort(), ["already-installed", "installed"]);
+  assert.equal(fake.calls.filter(([a, b]) => a === "plugin" && b === "link").length, 1);
+  assert.equal(fake.calls.filter(([a, b, c]) => a === "plugin" && b === "pane" && c === "open").length, 1);
+});
+
+test("an incomplete registry reply never triggers an automatic link", async () => {
+  const root = await tempDir("dashboard-registry-");
+  for (const registry of [{}, { plugins: [{ enabled: true }] }]) {
+    const fake = hostAndPluginExec();
+    const outcome = await offerDashboardHandshake({
+      mode: "tui",
+      env,
+      pid: 42,
+      exec: (args) =>
+        args[0] === "plugin" && args[1] === "list" ? Promise.resolve(result(registry)) : fake.exec(args),
+      cwd: root,
+      pluginRoot: join(root, "plugin"),
+      preferencePath: dashboardPreferencePath(root),
+      paneStatePath: join(root, "panes.json"),
+      ui: { select: async () => assert.fail("unexpected question"), notify() {} },
+    });
+    assert.equal(outcome, "failed");
+    assert.ok(!fake.calls.some(([cmd]) => cmd === "plugin"));
+  }
 });
 
 test("a different-package dashboard link can be explicitly relinked and opened", async () => {
@@ -207,8 +216,8 @@ test("a different-package dashboard link can be explicitly relinked and opened",
       notify: () => {},
     },
   });
-  assert.match(promptTitle, /different package/i);
-  assert.deepEqual(promptChoices, ["Relink and open", "Not now"]);
+  assert.match(promptTitle, /another Pi Daddy installation/i);
+  assert.deepEqual(promptChoices, ["Relink and open", "Not now", "Keep existing link"]);
   assert.equal(outcome, "installed");
   assert.deepEqual(fake.calls.find((args) => args[0] === "plugin" && args[1] === "link")?.slice(0, 4), [
     "plugin",
