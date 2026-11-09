@@ -15,17 +15,46 @@ export function createDashboardDisplayControls(details: boolean, ledger: boolean
   const aliases = new ActivityTimelineAliases();
   const screen = dashboardScreenState();
   if (details) screen.view = "details";
+  let returnFromReading: Pick<typeof screen, "view" | "offset" | "manualScroll" | "selectedKey"> | undefined;
   return {
     state,
     screen,
     key(key: string): "auto" | "quit" | "command" | "setting" | undefined {
+      if (key === "?" || key === "r") {
+        const reading = key === "?" ? "help" : "recap";
+        if (screen.view === reading) key = "escape";
+        else {
+          returnFromReading ??= {
+            view: screen.view,
+            offset: screen.offset,
+            manualScroll: screen.manualScroll,
+            selectedKey: screen.selectedKey,
+          };
+          screen.view = reading;
+          screen.offset = 0;
+          screen.manualScroll = false;
+          return;
+        }
+      }
+      if (screen.view === "help" || screen.view === "recap") {
+        if (key === "escape" && returnFromReading) {
+          Object.assign(screen, returnFromReading);
+          returnFromReading = undefined;
+          return;
+        }
+        if (key === "return" || key === "d" || key === "tab" || key === "p" || key === "f") return;
+        if (/^[1-6mvs]$/.test(key)) returnFromReading = undefined;
+      }
       if (/^[1-6]$/.test(key)) {
         screen.selections ??= {};
         if (screen.selectedKey) screen.selections[screen.destination ?? "now"] = screen.selectedKey;
+        if ((screen.destination ?? "now") !== DASHBOARD_DESTINATIONS[Number(key) - 1] && state.filter)
+          state.filter = "everything";
         screen.destination = DASHBOARD_DESTINATIONS[Number(key) - 1];
         screen.selectedKey = screen.selections[screen.destination!];
         screen.view = screen.destination === "settings" ? "settings" : "main";
         screen.offset = 0;
+        screen.manualScroll = false;
         state.activityDetail = undefined;
         return;
       }
@@ -35,7 +64,10 @@ export function createDashboardDisplayControls(details: boolean, ledger: boolean
         return;
       }
       if (key === "x") {
-        screen.expanded = !screen.expanded;
+        if (screen.view === "details") {
+          screen.sourceDetails = !screen.sourceDetails;
+          screen.offset = 0;
+        } else if (screen.view === "main") screen.expanded = !screen.expanded;
         return;
       }
       if (key === "a") return "auto";
@@ -47,13 +79,15 @@ export function createDashboardDisplayControls(details: boolean, ledger: boolean
         if (screen.view === "main" && screen.destination === "settings") screen.destination = "now";
         state.activityDetail = undefined;
         screen.offset = 0;
-      } else if (key === "?" || key === "m" || key === "v" || key === "s") {
-        screen.view = key === "?" ? "help" : key === "v" ? "versions" : key === "s" ? "settings" : "models";
+      } else if (key === "m" || key === "v" || key === "s") {
+        screen.view = key === "v" ? "versions" : key === "s" ? "settings" : "models";
         if (key === "s") screen.destination = "settings";
         state.activityDetail = undefined;
         screen.offset = 0;
       } else if (key === "return" || key === "d") {
+        if (screen.view !== "versions" && (screen.view !== "main" || !screen.selectedKey)) return;
         screen.view = screen.view === "versions" ? "version-details" : "details";
+        screen.sourceDetails = false;
         screen.offset = 0;
       } else if (["up", "down", "j", "k"].includes(key)) {
         screen.manualScroll = false;

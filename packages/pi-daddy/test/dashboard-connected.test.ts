@@ -100,7 +100,7 @@ test("six views are bounded, preserve selection on resize and expansion, and kee
   assert.match(render(), /REVIEWS/);
   const selected = display.screen.selectedKey;
   display.key("x");
-  assert.match(render(), /DETAIL.*Review/);
+  assert.match(render(), /│ SELECTED ITEM[^\n]*\n[^\n]*│ Review click safe/);
   render(42);
   render();
   assert.equal(display.screen.selectedKey, selected);
@@ -116,9 +116,102 @@ test("six views are bounded, preserve selection on resize and expansion, and kee
   display.key("4");
   assert.match(render(), /read observed/);
   display.key("1");
-  assert.match(render(), /NEXT/);
+  assert.match(render(), /SESSION PRIORITY/);
   assert.match(render(), /Verify the scoped contract/);
 });
+test("Now keeps the current handoff action visible in a side pane and Reviews opens its exact record", () => {
+  const display = createDashboardDisplayControls(false, true);
+  const current = snapshot();
+  const sources = current.observation!.sources;
+  const ref = "sha256:" + "c".repeat(64);
+  sources[0]!.items.push({
+    id: "other-review",
+    kind: "review",
+    state: "approval-wait",
+    label: "Separate review pending",
+  });
+  const recommendation = "Review the filtered CSV export";
+  const ready = {
+    id: "handoff",
+    kind: "review" as const,
+    state: "approval-wait" as const,
+    label: "Filtered CSV export ready for review",
+    details: ["Reviewer: service desk owner"],
+    reference: ref,
+  };
+  const bookie: (typeof sources)[number] = {
+    ...sources[0]!,
+    producer: "bookie",
+    items: [
+      { id: "next", kind: "next", state: "approval-wait", label: recommendation, reference: ref },
+      { ...ready, id: "other", label: "Another draft ready", reference: "sha256:" + "b".repeat(64) },
+      ready,
+    ],
+  };
+  sources.push(bookie);
+  const draw = (connected = true, now = date) =>
+    renderDashboardScreen({
+      width: 42,
+      height: 15,
+      screen: display.screen,
+      items: [],
+      session: current,
+      connected,
+      now: new Date(now),
+    });
+  const initial = draw();
+  assert.match(initial, /SESSION PRIORITY.*\[3\] Reviews/);
+  assert.match(initial, /Review the filtered CSV export/);
+  assert.doesNotMatch(initial, /Verify the scoped contract/);
+  display.key("3");
+  assert.match(draw(), /> Filtered CSV export ready for review/);
+  display.key("return");
+  assert.equal(display.screen.selectedKey, "source:bookie:p-one:handoff");
+  const details = renderDashboardScreen({
+    width: 110,
+    height: 24,
+    screen: display.screen,
+    items: [],
+    session: current,
+    connected: true,
+    now: new Date(date),
+  });
+  assert.match(details, /Reviewer: service desk owner/);
+  assert.doesNotMatch(details, /Reference: sha256:/);
+  assert.match(details, /x show source/);
+  display.key("x");
+  const provenance = renderDashboardScreen({
+    width: 110,
+    height: 24,
+    screen: display.screen,
+    items: [],
+    session: current,
+    connected: true,
+    now: new Date(date),
+  });
+  assert.ok(provenance.includes(ref));
+  assert.match(provenance, /x hide source/);
+
+  display.key("1");
+  bookie.availability = "closed";
+  assert.match(draw(), /Verify the scoped contract/);
+  assert.doesNotMatch(draw(), /Review the filtered CSV export/);
+  bookie.availability = "observed";
+  assert.doesNotMatch(draw(false), /Review the filtered CSV export|\[3\] Reviews/);
+  assert.doesNotMatch(draw(true, "2026-11-04T13:00:00Z"), /Review the filtered CSV export|\[3\] Reviews/);
+  display.key("3");
+  assert.match(draw(false), /Last seen.*Filtered CSV/);
+
+  display.key("1");
+  bookie.items = [{ id: "next", kind: "next", label: "Restore the missing handoff", state: "dependency-wait" }];
+  assert.match(draw(), /Restore the missing handoff/);
+  assert.doesNotMatch(draw(), /\[3\] Reviews|Review the filtered CSV export/);
+  bookie.items = [{ ...ready, label: "Filtered CSV export accepted", state: "settled" }];
+  assert.match(draw(), /Verify the scoped contract/);
+  display.key("3");
+  assert.match(draw(), /Filtered CSV export accepted/);
+});
+
 test("disconnected owner and stale contributions show last observations without fabricated liveness", () => {
   const display = createDashboardDisplayControls(false, true);
   display.key("2");
@@ -133,11 +226,12 @@ test("disconnected owner and stale contributions show last observations without 
   });
   assert.match(result, /LAST OBSERVED/);
   assert.match(result, /Auto unavailable/);
-  assert.match(result, /last-observed/);
+  assert.match(result, /Last seen/);
   assert.doesNotMatch(result, /Permissions connected/);
   display.key("1");
   const absent = snapshot();
   absent.observation!.sources = [];
+  display.key("x");
   assert.match(
     renderDashboardScreen({
       width: 100,
@@ -151,6 +245,99 @@ test("disconnected owner and stale contributions show last observations without 
     /bookie: status adapter unavailable/,
   );
 });
+test("a narrow pane keeps review keys legible, and recap and help preserve the selected detail", () => {
+  const display = createDashboardDisplayControls(false, true);
+  const session = snapshot();
+  const draw = () =>
+    renderDashboardScreen({
+      width: 42,
+      height: 16,
+      screen: display.screen,
+      items: [],
+      session,
+      now: new Date(date),
+      ...display.state,
+    });
+  draw();
+  display.key("tab");
+  assert.match(draw(), /Filter: agents/);
+  display.key("3");
+  const list = draw();
+  assert.match(list, /Enter details · \? help/);
+  assert.doesNotMatch(list, /Filter: agents/);
+  display.key("tab");
+  assert.match(draw(), /No items match this filter/);
+  for (let i = 0; i < 3; i++) display.key("tab");
+  draw();
+  display.key("return");
+  const identity = display.screen.selectedKey;
+  assert.match(draw(), /REVIEWS \/ Details/);
+  display.key("r");
+  assert.match(draw(), /Session recap[\s\S]*read observed/);
+  display.key("return");
+  assert.equal(display.screen.view, "recap");
+  display.key("escape");
+  assert.equal(display.screen.view, "details");
+  display.key("?");
+  assert.match(draw(), /DASHBOARD KEYS/);
+  display.key("escape");
+  assert.equal(display.screen.selectedKey, identity);
+  assert.match(draw(), /REVIEWS \/ Details/);
+  display.key("r");
+  session.observation!.sources[0]!.items = [
+    { id: "another", kind: "review", label: "Unrelated answer", state: "observed" },
+  ];
+  draw();
+  display.key("escape");
+  assert.equal(display.screen.selectedKey, identity);
+  assert.match(draw(), /no longer visible/);
+  assert.doesNotMatch(draw(), /Unrelated answer/);
+  display.key("escape");
+  assert.match(draw(), /Unrelated answer/);
+});
+
+test("a disconnected dashboard withdraws permission prompts and their suggested action", () => {
+  const session = snapshot();
+  session.pendingApprovals.push({ id: "pending", subject: "build", capability: "tool:bash" });
+  const screen = createDashboardDisplayControls(false, true).screen;
+  const draw = (connected: boolean) =>
+    renderDashboardScreen({ width: 65, height: 20, screen, items: [], session, connected, now: new Date(date) });
+  assert.match(draw(true), /permission request in the parent Pi/);
+  assert.match(draw(true), /build · bash/);
+  const offline = draw(false);
+  assert.match(offline, /LAST OBSERVED/);
+  assert.doesNotMatch(offline, /Respond to the permission request|build · bash|Auto unavailable \[a\]/);
+});
+
+test("recap works from the session snapshot without a local ledger or a retained private detail", async () => {
+  const display = createDashboardDisplayControls(false, true);
+  display.key("r");
+  const frame = await dashboardFrame({
+    cwd: await tempDir("dashboard-recap-no-ledger-"),
+    ledgerPath: "missing-ledger",
+    width: 42,
+    height: 14,
+    screen: display.screen,
+    session: snapshot(),
+    now: new Date(date),
+    connected: true,
+    activityDetail: { taskKey: "missing:private", field: "final" },
+  });
+  assert.match(frame, /read observed/);
+  assert.doesNotMatch(frame, /Waiting for local work|[Dd]etail unavailable|[Ee]vidence unavailable/);
+  display.key("1");
+  const small = renderDashboardScreen({
+    width: 28,
+    height: 8,
+    screen: display.screen,
+    items: [],
+    session: snapshot(),
+    now: new Date(date),
+  });
+  assert.equal(small.split("\n").length, 8);
+  assert.doesNotMatch(small, /Rows \d+–0/);
+});
+
 test("owner snapshot sequence cannot move backward; connection loss retains display only and does not retry controls", async () => {
   let next = snapshot(2),
     fail = false,
@@ -268,14 +455,16 @@ test("compact prose wraps at words, attention names waits, and clipped Settings 
       connected: true,
     });
   const now = render();
-  assert.match(now, /ATTENTION · 1\nDependent task · dependency-wait/);
+  assert.match(now, /Dependent task · Waiting on dependency/);
+  assert.equal(now.split("Dependent task").length - 1, 1);
   assert.doesNotMatch(now, /recommenda\ntion|obse\nrved/);
   display.key("6");
   assert.match(render(), /Rows 1–.*PgUp\/PgDn/);
   display.key("pagedown");
   const scrolled = render();
   assert.ok(display.screen.offset > 0, "settings page scroll is not reset to the selected toggle");
-  assert.match(scrolled, /Rows 9–/);
+  assert.ok(scrolled.includes(`Rows ${display.screen.offset + 1}–`));
+  assert.match(scrolled, /Capture changes require a new parent launch/);
 });
 
 test("initiative scope and related-session counts remain explicit; stale goals are not presented as current", () => {

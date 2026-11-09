@@ -1,4 +1,12 @@
-import { sessionDashboardItems, sessionPanelLines, type DashboardDestination } from "./dashboard-panels.ts";
+import {
+  sessionDashboardItems,
+  sessionNextLines,
+  sessionPanelLines,
+  DASHBOARD_DESTINATIONS,
+  type DashboardDestination,
+} from "./dashboard-panels.ts";
+import { sessionRecapLines } from "./dashboard-recap.ts";
+import { colorSessionLine, previewWidth, sectionHeading } from "./dashboard-layout.ts";
 import { dashboardSettingsLines, type DashboardSettingKey } from "./dashboard-settings.ts";
 /** Height-bounded, task-first view. Permission state is always supplied by the owner. */
 import type { EcosystemVersionRow } from "./ecosystem-versions.ts";
@@ -13,6 +21,8 @@ export interface DashboardItem {
   status: string;
   elapsed: string;
   details: string[];
+  briefDetails?: string[];
+  reviewSummary?: boolean;
   observation?: string;
   taskKey?: string;
   timelinePath?: string;
@@ -21,9 +31,10 @@ export interface DashboardItem {
   agent?: boolean;
 }
 export interface DashboardScreenState {
-  view: "main" | "details" | "models" | "help" | "versions" | "version-details" | "settings";
+  view: "main" | "details" | "models" | "help" | "versions" | "version-details" | "settings" | "recap";
   destination?: DashboardDestination;
   expanded?: boolean;
+  sourceDetails?: boolean;
   manualScroll?: boolean;
   selections?: Record<string, string>;
   settingKey?: DashboardSettingKey;
@@ -40,11 +51,13 @@ export const dashboardText = (value: string) =>
     .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
     .replace(/[\p{Cc}\p{Cf}]/gu, " ");
 const clean = (value: string) => dashboardText(value).replace(/\s+/g, " ").trim();
-function wrapped(lines: string[], width: number): string[] {
+export function wrapDashboardLines(lines: string[], width: number): string[] {
   return lines.flatMap((line) => {
+    const safe = dashboardText(line);
+    if (cellWidth(safe) <= width) return [safe];
     const result: string[] = [];
     let row = "";
-    for (const word of dashboardText(line).split(/\s+/)) {
+    for (const word of safe.split(/\s+/)) {
       if (row && cellWidth(row + " " + word) > width) {
         result.push(row);
         row = "";
@@ -71,13 +84,21 @@ function elapsed(ms: number): string {
     ? `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`
     : `${minutes}:${String(seconds % 60).padStart(2, "0")}`;
 }
-const friendlyStatus = (status: string) =>
+export const friendlyStatus = (status: string) =>
   ({
     active: "Running",
     running: "Running",
     starting: "Starting",
-    authorised: "Approved",
+    authorised: "Authorized",
+    observed: "Reported",
+    "cancel-requested": "Cancel requested",
+    unknown: "Unknown",
+    unavailable: "Unavailable",
     "needs-you": "Needs you",
+    "approval-wait": "Awaiting decision",
+    "dependency-wait": "Waiting on dependency",
+    "last-observed": "Last seen",
+    settled: "Finished",
     completed: "Finished",
     finished: "Finished",
     failed: "Failed",
@@ -175,13 +196,49 @@ export interface DashboardScreenOptions {
   acknowledgment?: string;
   now?: Date;
 }
+function sessionLocation(screen: DashboardScreenState, width: number): string {
+  const destination = screen.destination ?? "now";
+  const overlays = {
+    details: "Details",
+    models: "Models",
+    help: "Help",
+    versions: "Versions",
+    "version-details": "Version details",
+    recap: "Session recap",
+  };
+  if (screen.view in overlays)
+    return `${destination.toUpperCase()} / ${overlays[screen.view as keyof typeof overlays]}`;
+  if (width < 74)
+    return width >= 37 && destination === "now"
+      ? "NOW  ·  2 Work  ·  3 Reviews"
+      : `${destination.toUpperCase()}  ·  1–6 views`;
+  return DASHBOARD_DESTINATIONS.map((view, i) =>
+    view === destination ? `[${i + 1} ${view.toUpperCase()}]` : `${i + 1} ${view[0]!.toUpperCase()}${view.slice(1)}`,
+  ).join("  ");
+}
+
+function sessionKeys(screen: DashboardScreenState, selected: DashboardItem | undefined, width: number): string[] {
+  const view = screen.view;
+  const brief = width < 34;
+  if (view === "main") {
+    const keys = selected ? (brief ? "↑↓ · Enter details" : "↑↓ select · Enter details") : "1–6 views";
+    return [keys + (brief ? " · ?" : " · ? help"), "r recap · q close"];
+  }
+  if (view === "versions" || view === "settings")
+    return [view === "settings" ? "↑↓ select · Enter edit" : "↑↓ select · Enter details", "Esc back · ? help"];
+  return [
+    brief ? "↑↓ scroll · Esc back" : "↑↓ scroll · Esc back · q close",
+    ...(view === "details" && selected?.taskKey ? ["p prompt · f final · ? help"] : []),
+    ...(view === "details" && selected?.briefDetails ? [screen.sourceDetails ? "x hide source" : "x show source"] : []),
+  ];
+}
 /** Selection follows stable identity through refresh, never an unrelated task at the old row index. */
 export function renderDashboardScreen(options: DashboardScreenOptions): string {
   const width = Math.max(1, Math.floor(options.width)),
     height = Math.max(1, Math.floor(options.height));
   const { screen, session } = options,
     pending = session?.pendingApprovals ?? [];
-  const approvals: DashboardItem[] = pending.map((approval) => ({
+  const approvals: DashboardItem[] = (options.connected === false ? [] : pending).map((approval) => ({
     key: `approval:${approval.id}`,
     label: `${approval.subject} · ${approval.capability.replace(/^tool:/, "")}`,
     status: "needs-you",
@@ -192,7 +249,7 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
       `Subject: ${approval.subject}`,
       `Capability: ${approval.capability}`,
       "Waiting for Daddy permission in the owner session.",
-      "Use the owner's prompt, or a to enable Auto.",
+      "Respond to the permission request in the parent Pi session.",
     ],
   }));
   const modern = Boolean(session?.observation);
@@ -217,7 +274,11 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
     const detail = items.find((item) => item.key === screen.selectedKey);
     if (detail) screen.items.push(detail);
   }
-  if (!screen.items.some((item) => item.key === screen.selectedKey)) screen.selectedKey = screen.items[0]?.key;
+  if (
+    !screen.items.some((item) => item.key === screen.selectedKey) &&
+    !(screen.view === "details" && screen.selectedKey)
+  )
+    screen.selectedKey = screen.items[0]?.key;
   const selectedIndex = screen.items.findIndex((item) => item.key === screen.selectedKey),
     selected = screen.items[selectedIndex];
   screen.versionRows = session?.versions?.rows ?? [];
@@ -225,47 +286,66 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
   const selectedVersion = screen.versionRows.find((row) => row.id === screen.versionId);
   const mode =
     session && options.connected !== false ? `Auto ${session.auto.enabled ? "ON" : "OFF"}` : "Auto unavailable";
-  const header = `PI DADDY | ${mode}${options.pending ? " …" : session ? " [a]" : ""}`;
+  const header = `PI DADDY | ${mode}${options.pending ? " …" : session && options.connected !== false ? " [a]" : ""}`;
   const footer =
     options.command !== undefined
       ? [`: ${clean(options.command)}`]
-      : screen.view === "settings"
-        ? ["↑↓ select · Enter toggle/edit · Esc back", "0 default limit · PgUp/PgDn scroll · s settings"]
-        : screen.view === "main" || screen.view === "versions"
-          ? [
-              modern ? "↑↓ select · PgUp/PgDn scroll · Enter details" : "↑↓ select · Enter details · a Auto",
-              "m models · v versions · s settings · ?",
-            ]
-          : [
-              "↑↓ scroll · Esc back · a Auto",
-              screen.view === "details" ? "p prompt · f final · : command · ? help" : ": command · ? help",
-            ];
+      : modern
+        ? sessionKeys(screen, selected, width)
+        : screen.view === "settings"
+          ? ["↑↓ select · Enter toggle/edit · Esc back", "0 default limit · PgUp/PgDn scroll · s settings"]
+          : screen.view === "main" || screen.view === "versions"
+            ? ["↑↓ select · Enter details · a Auto", "m models · v versions · s settings · ?"]
+            : [
+                "↑↓ scroll · Esc back · a Auto",
+                screen.view === "details" ? "p prompt · f final · : command · ? help" : ": command · ? help",
+              ];
   const fixed = [
-    header,
-    session && options.connected !== false
-      ? `Permissions connected${pending.length ? ` · ${pending.length} needs you` : ""}`
-      : "Permission controls disconnected",
-    ...(modern
+    modern && options.connected !== false ? `${header} · Connected` : header,
+    ...(!modern
       ? [
-          width >= 74
-            ? "1 Now · 2 Work · 3 Reviews · 4 Activity · 5 Evidence · 6 Settings"
-            : `${(screen.destination ?? "now").toUpperCase()} · 1–6 views · x expand`,
+          session && options.connected !== false
+            ? `Permissions connected${pending.length ? ` · ${pending.length} needs you` : ""}`
+            : "Permission controls disconnected",
         ]
       : []),
+    ...(modern ? [sessionLocation(screen, width)] : []),
   ];
   if (options.notice || options.problem) fixed.push(`! ${clean(options.notice || options.problem || "")}`);
   if (options.acknowledgment) fixed.push(clean(options.acknowledgment));
+  if (modern && options.filter && options.filter !== "everything" && screen.view === "main")
+    fixed.push(`Filter: ${options.filter} · Tab to change`);
   if (modern && options.connected === false)
     fixed.push(`LAST OBSERVED: ${session!.observation!.observedAt}; live state unknown`);
+  if (modern && screen.view === "main" && (screen.destination ?? "now") === "now") {
+    const [heading, action] = sessionNextLines(options);
+    const actionLines = wrapDashboardLines([action], width);
+    fixed.push(sectionHeading(heading.replace("NEXT", "SESSION PRIORITY"), width), actionLines[0]!);
+    if (actionLines.length > 1) fixed.push(truncate(actionLines.slice(1).join(" "), width));
+  }
   const body: string[] = [];
-  if (screen.view === "help")
+  if (screen.view === "recap") {
+    const recap = sessionRecapLines(options);
+    const activity = recap.findIndex(
+      (line) => line === "Recent activity · newest first" || line === "No recent session events recorded.",
+    );
+    const summary = activity < 0 ? recap : recap.slice(0, activity);
+    if (summary.length) body.push(sectionHeading("SESSION STATUS", width), ...summary);
+    if (activity >= 0)
+      body.push(
+        sectionHeading("RECENT ACTIVITY", width),
+        ...recap.slice(activity + Number(recap[activity] === "Recent activity · newest first")),
+      );
+  } else if (screen.view === "help")
     body.push(
       "DASHBOARD KEYS",
       "↑/↓ or j/k: select; Enter/d: details",
       "a: toggle Daddy permission Auto",
       "m: session models; v: ecosystem versions; s: settings",
       "1–6: Now / Work / Reviews / Activity / Evidence / Settings",
-      "x: compact/expanded (96 columns); selection is preserved",
+      "r: recent session activity and review counts",
+      "Wide terminals preview the selected item. x shows more session information.",
+      "x in a review detail: show or hide its source and exact reference",
       "No cancellation shortcut: request it in the owning Pi session.",
       "Goals/next steps are owner recommendations, not execution authority.",
       "Reviews apply only to their exact subject; completed is not accepted.",
@@ -287,18 +367,23 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
         options.connected === false && session?.settings ? { ...session.settings, editable: false } : session?.settings,
         session?.auto.enabled,
         screen.settingKey ?? "auto",
-      ),
+      ).map((line) => {
+        if (modern && (line === "SETTINGS" || line === "SETTINGS · current session"))
+          return sectionHeading("SESSION CONTROLS", width);
+        if (modern && line.startsWith("STARTUP LIMITS")) return sectionHeading(line, width);
+        return line;
+      }),
     );
     if (session?.observation)
       body.push(
-        "CAPTURE · startup configuration (not a retention receipt)",
+        sectionHeading("CAPTURE · startup configuration", width),
         `Transcripts: ${session.observation.capture.transcripts ? "configured" : "off"}`,
         `Diagnostics: ${session.observation.capture.diagnostics ? "configured" : "off"}`,
         "Capture changes require a new parent launch.",
         "m models · v versions",
       );
   } else if (screen.view === "versions" || screen.view === "version-details") {
-    body.push("VERSIONS");
+    body.push(modern ? sectionHeading("VERSIONS", width) : "VERSIONS");
     if (!session?.versions) body.push("Owner has not reported versions.");
     else if (screen.view === "versions") {
       body.push("Loaded -> on disk");
@@ -323,19 +408,41 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
       if (session.versions.note) body.push(session.versions.note);
     }
   } else if (screen.view === "models") {
-    body.push("SESSION MODELS");
+    body.push(modern ? sectionHeading("SESSION MODELS", width) : "SESSION MODELS");
     if (!session) body.push("Connect from /grants dashboard to edit models.");
     for (const row of session?.rows ?? [])
       body.push(`${row.definition}: ${row.model}`, `  ${row.thinking} · ${row.source}`);
     body.push(": m <definition|all> <provider:model> <thinking>");
   } else if (screen.view === "details") {
+    const title =
+      selected &&
+      (selected.status === "approval-wait" && /\bready for review\b/i.test(selected.label)
+        ? selected.label
+        : selected.status === "last-observed"
+          ? `Last seen · ${selected.label}`
+          : `${selected.label} · ${friendlyStatus(selected.status)}`);
     body.push(
-      selected ? `${selected.label} · ${friendlyStatus(selected.status)}` : "No selected task",
-      ...(selected?.details ?? []),
+      title ??
+        (screen.selectedKey ? "This item is no longer visible. Press Esc to return to the list." : "No selected task"),
+      ...(modern && selected
+        ? [
+            sectionHeading(
+              screen.sourceDetails
+                ? "SOURCE RECORD"
+                : (selected.briefDetails && selected.status === "approval-wait") || selected.approval
+                  ? "NEXT ACTION"
+                  : "DETAILS",
+              width,
+            ),
+          ]
+        : []),
+      ...((screen.sourceDetails ? selected?.details : (selected?.briefDetails ?? selected?.details)) ?? []),
     );
-    if (options.content) body.push("", options.content.title, ...options.content.text.split(/\r?\n/));
+    if (selected && options.content) body.push("", options.content.title, ...options.content.text.split(/\r?\n/));
   } else if (modern) {
-    body.push(...sessionPanelLines(options, screen.items, width));
+    if (!screen.items.length && options.filter && options.filter !== "everything")
+      body.push("No items match this filter. Press Tab to change it.");
+    else body.push(...sessionPanelLines(options, screen.items, width));
   } else {
     const requestFinished = options.currentStatus && !active(options.currentStatus);
     body.push(
@@ -381,11 +488,16 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
     if (history) body.push(history);
   }
 
+  const left =
+    modern && screen.view === "main" && selected
+      ? previewWidth(screen.destination ?? "now", Boolean(screen.expanded), width)
+      : undefined;
   const detailBody =
-    (screen.view === "main" && (!modern || (screen.expanded && width >= 96))) || screen.view === "versions"
-      ? body
-      : wrapped(body, width);
-  const clipped = modern && detailBody.length > Math.max(0, height - fixed.length - footer.length);
+    (screen.view === "main" && !modern) || screen.view === "versions" ? body : wrapDashboardLines(body, left ?? width);
+  if (modern && height >= 16 && height - fixed.length - footer.length > detailBody.length)
+    footer.unshift("─".repeat(Math.min(width, 100)));
+  const bodyRoom = height - fixed.length - footer.length;
+  const clipped = modern && bodyRoom >= 2 && detailBody.length > bodyRoom;
   if (clipped) footer.push("");
   const room = Math.max(0, height - fixed.length - footer.length);
   if (screen.view === "versions" && selectedVersion && room > 0) {
@@ -409,16 +521,37 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
   if (clipped)
     footer[footer.length - 1] =
       `Rows ${offset + 1}–${Math.min(offset + room, detailBody.length)}/${detailBody.length} · PgUp/PgDn`;
-  const lines = [...fixed, ...detailBody.slice(offset, offset + room)];
+  const page = detailBody.slice(offset, offset + room);
+  if (left !== undefined && selected) {
+    const right = Math.min(width - left - 3, 72);
+    const preview = wrapDashboardLines(
+      [
+        sectionHeading("SELECTED ITEM", right),
+        clean(selected.label),
+        "",
+        ...(selected.briefDetails ??
+          (screen.expanded ? selected.details : [friendlyStatus(selected.status), "Press Enter for details."])),
+      ],
+      right,
+    );
+    const count = Math.min(room, Math.max(page.length, preview.length));
+    for (let i = 0; i < count; i++) {
+      const cell = page[i] ?? "";
+      page[i] = cell + " ".repeat(Math.max(0, left - cellWidth(cell))) + " │ " + (preview[i] ?? "");
+    }
+  }
+  const lines = [...fixed, ...page];
   while (lines.length < height - footer.length) lines.push("");
-  const output =
-    height < fixed.length + footer.length
-      ? fixed.slice(0, height)
-      : [...lines.slice(0, Math.max(0, height - footer.length)), ...footer].slice(0, height);
+  const output = [...lines, ...footer].slice(0, height);
   return output
     .map((line, index) => {
       const safe = truncate(dashboardText(line), width);
       if (!options.color) return safe;
+      if (modern)
+        return colorSessionLine(
+          safe,
+          index === 0 ? "header" : index === 1 ? "navigation" : index >= height - footer.length ? "footer" : "body",
+        );
       const section = [
         "NOW",
         "WORK",

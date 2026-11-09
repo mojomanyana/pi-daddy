@@ -1,9 +1,9 @@
 /** Six current-session destinations share stable row identities; contributions are labels, never authority. */
-import type { DashboardContribution } from "../kernel/dashboard-observation.ts";
+import type { DashboardContribution, DashboardSourceSnapshot } from "../kernel/dashboard-observation.ts";
 import type { DashboardItem, DashboardScreenOptions } from "./dashboard-screen.ts";
-import { dashboardText } from "./dashboard-screen.ts";
+import { dashboardText, friendlyStatus } from "./dashboard-screen.ts";
+import { previewWidth, sectionHeading } from "./dashboard-layout.ts";
 import { activityTaskKey } from "./activity-timeline.ts";
-import { truncate, cellWidth } from "./dashboard-render.ts";
 export type DashboardDestination = "now" | "work" | "reviews" | "activity" | "evidence" | "settings";
 export const DASHBOARD_DESTINATIONS: DashboardDestination[] = [
   "now",
@@ -14,27 +14,194 @@ export const DASHBOARD_DESTINATIONS: DashboardDestination[] = [
   "settings",
 ];
 const clean = (s: string) => dashboardText(s).replace(/\s+/g, " ").trim();
-const row = (item: DashboardContribution, key: string, source: string, stale = false): DashboardItem => ({
-  key,
-  label: item.label,
-  status: stale ? "last-observed" : item.state,
-  elapsed: "",
-  agent: item.kind === "work",
-  details: [
-    `Source: ${source}`,
-    `Observed state: ${item.state}${stale ? " (stale/disconnected)" : ""}`,
-    ...(item.details ?? []),
-    ...(item.reference ? [`Reference: ${item.reference}`] : []),
-    ...(item.kind === "review" ? ["A reported judgment is not execution authority or overall task acceptance."] : []),
-    "Reported observations do not grant execution authority or task approval.",
-    ...(stale ? ["Current liveness/applicability unknown; no automatic retry."] : []),
-  ],
-});
+export function staleSource(source: DashboardSourceSnapshot, options: DashboardScreenOptions): boolean {
+  return (
+    options.connected === false ||
+    source.availability === "closed" ||
+    (options.now?.getTime() ?? Date.now()) - Date.parse(source.observedAt) > source.staleAfterMs
+  );
+}
+
+const sourceKey = (source: DashboardSourceSnapshot, item: DashboardContribution) =>
+  `source:${source.producer}:${source.generation}:${item.id}`;
+
+/** A current request for review takes precedence over general workflow suggestions. */
+function sessionNext(options: DashboardScreenOptions) {
+  const current = options.session!.observation!.sources.filter((source) => !staleSource(source, options));
+  const recommendations = current.flatMap((source) =>
+    source.items.filter((item) => item.kind === "next").map((item) => ({ item, source })),
+  );
+  for (const next of recommendations) {
+    if (next.item.state !== "approval-wait") continue;
+    const reviews = next.source.items.filter(
+      (item) =>
+        item.kind === "review" &&
+        item.state === "approval-wait" &&
+        !(next.source.producer === "bookie" && reviewTotals(item)) &&
+        (!next.item.reference || item.reference === next.item.reference),
+    );
+    if (reviews.length === 1) return { ...next, reviewKey: sourceKey(next.source, reviews[0]!) };
+  }
+  const general = recommendations.filter(({ item }) => item.state !== "approval-wait" || !item.reference);
+  const next =
+    general.find(({ item }) => ["dependency-wait", "failed", "unknown", "unavailable"].includes(item.state)) ??
+    general[0];
+  return next && { ...next, reviewKey: undefined };
+}
+
+export function sessionNextLines(options: DashboardScreenOptions): [string, string] {
+  if (options.connected === false) return ["NEXT", "Reconnect to the parent Pi session for current work."];
+  if (options.session?.pendingApprovals.length)
+    return ["NEXT · Permission", "Respond to the permission request in the parent Pi session."];
+  const next = sessionNext(options);
+  if (!next) {
+    const sources = options.session!.observation!.sources;
+    if (sources.length && sources.every((source) => staleSource(source, options)))
+      return ["NEXT", "Waiting for a current status from Pi."];
+  }
+  return [
+    next?.reviewKey ? "NEXT · [3] Reviews" : "NEXT",
+    next ? clean(next.item.label) : "No current next step reported.",
+  ];
+}
+function contributionDetails(item: DashboardContribution, source: string, stale: boolean): string[] {
+  const details = item.details ?? [];
+  if (!source.startsWith("bookie@") || item.kind !== "review" || item.state !== "approval-wait") return details;
+  const open = details.find((line) => line.startsWith("Open /bookie-work review"));
+  if (stale)
+    return details.filter(
+      (line) => !line.startsWith("Open /bookie-work review") && !line.startsWith("Record your review decision"),
+    );
+  return open ? [open, ...details.filter((line) => line !== open)] : details;
+}
+const row = (
+  item: DashboardContribution,
+  key: string,
+  source: string,
+  stale = false,
+  label = item.label,
+  taskReview?: DashboardContribution,
+): DashboardItem => {
+  const details = contributionDetails(item, source, stale);
+  const handoff = taskReview ?? item;
+  const pendingTask = source.startsWith("bookie@") && item.kind === "work" && item.state === "approval-wait";
+  const currentHandoff =
+    !stale &&
+    source.startsWith("bookie@") &&
+    handoff.kind === "review" &&
+    handoff.state === "approval-wait" &&
+    !reviewTotals(handoff);
+  const brief = currentHandoff
+    ? contributionDetails(handoff, source, stale).filter(
+        (line) =>
+          !/^(?:\/|[A-Za-z]:[\\/]|(?:Reference|Source|Observed at):)/i.test(line) &&
+          !/\b[a-f0-9]{64}\b/i.test(line) &&
+          line !== "Output: handoff",
+      )
+    : [];
+  const openInstruction = brief.indexOf("Open /bookie-work review to read the saved handoff.");
+  if (openInstruction >= 0) {
+    const choice = taskReview && (label === item.label ? label : item.label.split("/").at(-1));
+    brief.splice(
+      openInstruction,
+      1,
+      "In your main Pi chat, run",
+      "/bookie-work review",
+      ...(choice ? [`If asked, select ${choice}.`] : []),
+    );
+    const decision = brief.indexOf("Record your review decision for this output in the selected project.");
+    if (decision >= 0) brief[decision] = "Read the output and record your decision.";
+  }
+  if (currentHandoff && !brief.length) brief.push("Awaiting a review decision for this output.");
+  if (!currentHandoff && pendingTask)
+    brief.push(
+      stale
+        ? "Last seen awaiting a decision. Check the parent Pi session for current status."
+        : "A decision is pending. Check the selected task in the parent Pi session for its review evidence.",
+    );
+  return {
+    key,
+    label,
+    status: stale ? "last-observed" : item.state,
+    elapsed: "",
+    agent: item.kind === "work",
+    ...(source.startsWith("bookie@") && reviewTotals(item) ? { reviewSummary: true } : {}),
+    ...(brief.length ? { briefDetails: brief } : {}),
+    details: [
+      ...(stale ? ["Last recorded details. Current state is unknown."] : []),
+      ...details,
+      ...(label !== item.label ? [item.label] : []),
+      `Observed state: ${item.state}${stale ? " (stale/disconnected)" : ""}`,
+      `Source: ${source}`,
+      ...(item.reference ? [`Reference: ${item.reference}`] : []),
+      ...(taskReview?.reference ? [`Saved handoff reference: ${taskReview.reference}`] : []),
+      ...(item.kind === "review"
+        ? [
+            item.state === "approval-wait"
+              ? "The reviewer decides on this output."
+              : "A reported judgment is not execution authority or overall task acceptance.",
+          ]
+        : []),
+      "Reported observations do not grant execution authority or task approval.",
+      ...(stale ? ["Current liveness/applicability unknown; no automatic retry."] : []),
+    ],
+  };
+};
+
+const reviewTotals = (item: DashboardContribution) =>
+  item.kind === "review" && item.id === "reviews" && item.label === "Selected output judgment observations";
+
+// Bookie publishes work with its task revision and the corresponding review with its output digest.
+// Only the task ID within this one observation links the two records.
+function reviewForTask(item: DashboardContribution, source: DashboardSourceSnapshot, stale: boolean) {
+  if (
+    stale ||
+    source.producer !== "bookie" ||
+    item.kind !== "work" ||
+    item.state !== "approval-wait" ||
+    !item.reference
+  )
+    return;
+  const matches = source.items.filter(
+    (candidate) =>
+      candidate.id === `review-${item.id}` &&
+      candidate.kind === "review" &&
+      candidate.state === "approval-wait" &&
+      candidate.reference,
+  );
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
+// A Bookie task can publish its canonical document path as its only label.
+// Abbreviate unambiguous sibling names while keeping the full path in Details.
+function bookieLabel(item: DashboardContribution, source: DashboardSourceSnapshot): string {
+  if (reviewTotals(item)) return "Review totals";
+  if (item.kind !== "work" || !item.label.startsWith("/")) return item.label;
+  const name = (label: string) => label.split("/").at(-1)?.replace(/\.md$/i, "").replace(/[-_]+/g, " ");
+  const title = name(item.label);
+  if (
+    !title ||
+    !item.label.endsWith(".md") ||
+    source.items.some((other) => other.kind === "work" && other.id !== item.id && name(other.label) === title)
+  )
+    return item.label;
+  return title;
+}
+
+function rowText(item: DashboardItem, destination: DashboardDestination, selected: boolean): string {
+  const label = clean(item.label);
+  const marker = selected ? "> " : "  ";
+  if (item.status === "last-observed") return `${marker}Last seen · ${label}`;
+  if (item.reviewSummary) return marker + label;
+  const waitingForReview = destination === "reviews" && item.status === "approval-wait";
+  const described = waitingForReview && /^ready for review[:\s]/i.test(label);
+  const status = described ? "" : ` · ${waitingForReview ? "Awaiting review" : friendlyStatus(clean(item.status))}`;
+  return `${marker}${label}${status}${item.elapsed ? " " + item.elapsed : ""}`;
+}
 export function sessionDashboardItems(options: DashboardScreenOptions): DashboardItem[] {
   const observed = options.session!.observation!;
   const destination = options.screen.destination ?? "now";
   const staleOwner = options.connected === false;
-  const now = options.now?.getTime() ?? Date.now();
   const wanted =
     destination === "work"
       ? ["work"]
@@ -50,18 +217,33 @@ export function sessionDashboardItems(options: DashboardScreenOptions): Dashboar
       .filter(
         (item) =>
           wanted.includes(item.kind) &&
+          !(
+            destination === "reviews" &&
+            !options.screen.expanded &&
+            source.producer === "bookie" &&
+            reviewTotals(item) &&
+            source.items.some((other) => other.kind === "review" && other.id !== item.id)
+          ) &&
           !(source.producer === "daddy-initiative" && item.id === "scope" && ["now", "work"].includes(destination)),
       )
-      .map((item) =>
-        row(
+      .map((item) => {
+        const stale = staleSource(source, options);
+        return row(
           item,
-          `source:${source.producer}:${source.generation}:${item.id}`,
+          sourceKey(source, item),
           `${source.producer}@${source.producerVersion} · seq ${source.sequence} · ${source.observedAt}`,
-          staleOwner || source.availability === "closed" || now - Date.parse(source.observedAt) > source.staleAfterMs,
-        ),
-      ),
+          stale,
+          source.producer === "bookie" ? bookieLabel(item, source) : item.label,
+          reviewForTask(item, source, stale),
+        );
+      }),
   );
-  if (destination === "reviews") return published;
+  if (destination === "reviews") {
+    const first = sessionNext(options)?.reviewKey;
+    const priority = (item: DashboardItem) =>
+      item.key === first ? 2 : Number(item.status === "approval-wait" && !item.reviewSummary);
+    return published.sort((a, b) => priority(b) - priority(a));
+  }
   if (destination === "evidence")
     return [
       ...(observed.artifacts ?? []).map((a) => ({
@@ -101,110 +283,90 @@ export function sessionDashboardItems(options: DashboardScreenOptions): Dashboar
   const activity = options.session?.activity;
   const parentShown =
     activity && native.some((item) => item.taskKey === activityTaskKey(activity.rootId, activity.taskId));
-  return [
+  const items = [
     ...(observed.turn && !parentShown
       ? [row(observed.turn, `owner:${observed.generation}:${observed.turn.id}`, "Pi owner", staleOwner)]
       : []),
     ...native,
     ...published,
   ];
+  items.sort((a, b) => workGroups.indexOf(workGroup(a)) - workGroups.indexOf(workGroup(b)));
+  return items;
+}
+
+const workGroups = ["PERMISSION REQUESTS", "YOUR DECISIONS", "NEEDS ATTENTION", "IN PROGRESS", "OTHER WORK", "HISTORY"];
+function workGroup(item: DashboardItem): string {
+  if (item.approval) return "PERMISSION REQUESTS";
+  if (item.status === "approval-wait") return "YOUR DECISIONS";
+  if (["needs-you", "failed", "refused", "incomplete", "dependency-wait"].includes(item.status))
+    return "NEEDS ATTENTION";
+  if (["running", "active", "starting", "authorised", "cancel-requested"].includes(item.status)) return "IN PROGRESS";
+  if (["settled", "completed", "finished", "cancelled", "historical", "last-observed"].includes(item.status))
+    return "HISTORY";
+  return "OTHER WORK";
+}
+
+function listHeading(item: DashboardItem, destination: DashboardDestination) {
+  if (destination === "now" || destination === "work") return workGroup(item);
+  if (destination === "reviews")
+    return item.status === "approval-wait" && !item.reviewSummary ? "AWAITING REVIEW" : "REVIEW RECORDS";
+  return destination === "evidence" ? "SAVED REFERENCES" : "SESSION ACTIVITY";
 }
 export function sessionPanelLines(options: DashboardScreenOptions, items: DashboardItem[], width: number): string[] {
   const observation = options.session!.observation!,
     screen = options.screen;
   const destination = screen.destination ?? "now";
   const sourceRows = observation.sources.flatMap((s) => s.items.map((item) => ({ source: s, item })));
-  const lines: string[] = [`${destination.toUpperCase()} · CURRENT SESSION`];
-  const staleSource = (source: (typeof observation.sources)[number]) =>
-    options.connected === false ||
-    source.availability === "closed" ||
-    (options.now?.getTime() ?? Date.now()) - Date.parse(source.observedAt) > source.staleAfterMs;
+  const lines: string[] = [];
   const initiative = observation.sources.find((source) => source.producer === "daddy-initiative");
   const scope = initiative?.items.find((item) => item.id === "scope");
   if (scope && (destination === "now" || destination === "work")) {
-    lines.push(`SELECTED ${scope.label}${staleSource(initiative!) ? " (last observed)" : ""}`);
+    lines.push(`SELECTED ${scope.label}${staleSource(initiative!, options) ? " (last observed)" : ""}`);
     if (destination === "work" && scope.details?.[1]) lines.push(scope.details[1]);
   }
   if (destination === "now") {
-    const goal = sourceRows.find((x) => x.item.kind === "goal");
-    lines.push(
-      "GOAL",
-      goal
-        ? `${goal.item.label} (${goal.source.producer}${staleSource(goal.source) ? "; stale" : ""})`
-        : (options.current ?? "Goal not reported; no inference from a finished step."),
-    );
-    const next = sourceRows.find((x) => x.item.kind === "next");
-    const nextStale =
-      next &&
-      (options.connected === false ||
-        next.source.availability === "closed" ||
-        (options.now?.getTime() ?? Date.now()) - Date.parse(next.source.observedAt) > next.source.staleAfterMs);
-    lines.push(
-      "NEXT",
-      next
-        ? `${next.item.label} (${next.source.producer}${nextStale ? "; stale" : ""})`
-        : "No coordinator recommendation reported.",
-    );
-    const attention = items.filter((x) =>
-      [
-        "failed",
-        "refused",
-        "incomplete",
-        "unknown",
-        "unavailable",
-        "needs-you",
-        "approval-wait",
-        "dependency-wait",
-        "cancel-requested",
-      ].includes(x.status),
-    );
-    if (attention.length) {
-      lines.push(`ATTENTION · ${attention.length}`);
-      for (const item of attention.slice(0, 3)) lines.push(`${item.label} · ${item.status}`);
-    }
-    const result = [...items].reverse().find((x) => ["settled", "finished", "completed"].includes(x.status));
-    if (result) lines.push(`LATEST UPDATE · ${result.label} (${result.status})`);
+    const goals = sourceRows.filter((x) => x.item.kind === "goal");
+    const goal = goals.find((x) => !staleSource(x.source, options)) ?? goals[0];
+    if (goal) {
+      const name =
+        !screen.expanded && goal.source.producer === "bookie"
+          ? goal.item.label.replace(/^\/projects\/([^/]+)\/project\.md$/, "$1")
+          : goal.item.label;
+      lines.push(
+        `Goal · ${clean(name)} (${goal.source.producer}${staleSource(goal.source, options) ? "; stale" : ""})`,
+      );
+    } else if (options.current) lines.push(`Goal · ${clean(options.current)}`);
   }
 
   if (!items.length)
     lines.push(
       destination === "reviews"
-        ? "No review producer observations available."
+        ? options.connected === false || observation.sources.some((s) => staleSource(s, options))
+          ? "Current reviews unknown. Check the parent Pi session."
+          : "No reviews reported. [2] Work shows task progress."
         : destination === "evidence"
           ? "No current-session result references observed."
           : "No observations for this view.",
     );
-  const selected = items.find((x) => x.key === screen.selectedKey);
-  const rows = items.map(
-    (x) =>
-      `${x.key === screen.selectedKey ? ">" : " "} ${clean(x.label)} · ${clean(x.status)}${x.elapsed ? " " + x.elapsed : ""}`,
-  );
-  const expanded = screen.expanded && width >= 96;
-  if (expanded && rows.length) {
-    const left = Math.floor(width * 0.45),
-      right = width - left - 3;
-    const details = [selected ? `DETAIL · ${clean(selected.label)}` : "DETAIL", ...(selected?.details ?? [])];
-    const length = Math.max(rows.length, details.length);
-    for (let i = 0; i < length; i++) {
-      const a = truncate(clean(rows[i] ?? ""), left);
-      lines.push(a + " ".repeat(Math.max(0, left - cellWidth(a))) + " | " + truncate(clean(details[i] ?? ""), right));
-    }
-  } else {
-    lines.push(...rows);
-    if (screen.expanded) lines.push("Expanded layout needs 96 columns; same selection retained.");
+  const left = previewWidth(destination, Boolean(screen.expanded), width);
+  const rows: string[] = [];
+  for (let start = 0; start < items.length;) {
+    const group = listHeading(items[start]!, destination);
+    let end = start + 1;
+    while (end < items.length && listHeading(items[end]!, destination) === group) end++;
+    rows.push(sectionHeading(`${group} · ${end - start}`, left ?? width));
+    for (const item of items.slice(start, end)) rows.push(rowText(item, destination, item.key === screen.selectedKey));
+    start = end;
   }
-  if (destination === "now") {
-    lines.push("COMPONENTS");
+  lines.push(...rows);
+  if (screen.expanded && left === undefined) lines.push("Expanded layout needs 96 columns; same selection retained.");
+  if (destination === "now" && screen.expanded) {
+    lines.push(sectionHeading("COMPONENTS", width));
     for (const producer of ["principal", "bookie", "scout", "skill-harness"]) {
       const streams = observation.sources.filter(
         (x) => x.producer === producer || (producer === "scout" && x.producer.startsWith("scout-")),
       );
-      const stale = streams.filter(
-        (s) =>
-          options.connected === false ||
-          s.availability === "closed" ||
-          (options.now?.getTime() ?? Date.now()) - Date.parse(s.observedAt) > s.staleAfterMs,
-      ).length;
+      const stale = streams.filter((s) => staleSource(s, options)).length;
       const status = !streams.length
         ? "status adapter unavailable"
         : `${streams.length - stale} observed${stale ? `; ${stale} last observed / stale` : ""}`;

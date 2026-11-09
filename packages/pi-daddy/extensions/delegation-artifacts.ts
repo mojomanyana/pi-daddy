@@ -102,6 +102,14 @@ export async function claimWithArtifact(
     };
     if (!owners.get(owned)!.reference) retainOperationArtifact(owned, { operation: owned.operation });
     owned.operation.artifact = owners.get(owned)!.reference;
+    if (status === "settled" && owned.operation.artifact) {
+      // Artifact retention happens before live settlement. Wake the selected work map only after both.
+      try {
+        initiative?.settled?.();
+      } catch {
+        /* A consumer can recover on its next work-map read. */
+      }
+    }
   };
   return owned;
 }

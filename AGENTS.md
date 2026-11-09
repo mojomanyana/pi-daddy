@@ -1215,3 +1215,10 @@ acceptance without first-use writes, distinguishes accepted from active/pending/
 and never mints a pin, acquires a lease, starts a session or retries work. Display uses only the bounded
 timestamped result; known owner/grant changes invalidate it. Candidate, task scope, approvals and native
 settlement are dispatch-time checks, never inferred from the display. No LLM or JEV input supplies authority.
+
+
+### 2026-11-09 — Show actionable handoffs in the terminal
+
+Now pins a current producer’s review request when that producer also reports a waiting review.
+Current blocking guidance precedes routine suggestions. Disconnected or expired observations can be
+inspected as history. Opening Reviews or showing a retained output grants no authority to approve it.

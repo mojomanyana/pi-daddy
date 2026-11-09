@@ -323,6 +323,10 @@ Use **a** to switch Auto, arrow keys to select a row, **Enter** for details, **m
 and **?** for help. The view fits the terminal and follows resize events. A disconnected control displays its state
 as unavailable until the owning session acknowledges a fresh snapshot.
 
+The **Now** view keeps the current next action visible while you scroll. When a selected project reports
+an output ready for review, press **3** for **Reviews** and **Enter** on the output to see the reported
+review instructions and evidence reference. Open the owning project to record a decision.
+
 A connected dashboard sends explicit Auto choices and model edits over a private session-local socket. Model edits
 use the same in-memory overrides and `session_config` audit path as `/grants models`; `m <definition>
 <provider:model> <thinking>` and `m all ...` remain available in command mode. A standalone dashboard is read-only.

@@ -1,3 +1,4 @@
+import { retainedInitiativeHandoff, type HandoffScope } from "./initiative-handoff.ts";
 import { initiativeDashboard } from "./initiative-dashboard.ts";
 /** Trusted selected-work-map connector. A selection permits association only, never dispatch or tool authority. */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -22,6 +23,7 @@ export interface InitiativeOperationBinding {
         begin(): Promise<void>;
         assertCurrent(scope?: { cwd: string; workspaceId: string | null }): Promise<void>;
         notAdmitted(): Promise<void>;
+        settled?(): void;
       }
     | undefined;
 }
@@ -43,6 +45,7 @@ export function registerInitiativeRuntime(
         associations: Map<string, InitiativeTask>;
         assertSelection(): void | Promise<void>;
         assertTaskReady(task: { taskId: string; taskRevision: string }): void | Promise<void>;
+        assertHandoffScope?: (scope: HandoffScope) => void | Promise<void>;
         assertExecutionScope?: (scope: {
           taskId: string;
           taskRevision: string;
@@ -142,6 +145,17 @@ export function registerInitiativeRuntime(
           }
         },
         notAdmitted: () => s.coordinator.notAdmitted(request),
+        settled() {
+          if (selected !== s || currentOwner() !== s.owner) return;
+          pi.events.emit?.("pi-daddy:initiative-settled:v1", {
+            version: 1,
+            sessionId: s.owner.sessionId,
+            cwd: s.owner.cwd,
+            initiativeId: s.initiativeId,
+            taskId: task.taskId,
+            taskRevision: task.taskRevision,
+          });
+        },
       };
     },
   };
@@ -164,6 +178,7 @@ export function registerInitiativeRuntime(
         cwd: string;
         workspaceId: string | null;
       }) => void | Promise<void>;
+      assertHandoffScope?: (scope: HandoffScope) => void | Promise<void>;
       assertEffectReconciled?: (input: InitiativeEffectReconciliation) => void | Promise<void>;
       assertTaskReady?: (task: { taskId: string; taskRevision: string }) => void | Promise<void>;
       reply?: (value: unknown) => void;
@@ -201,6 +216,7 @@ export function registerInitiativeRuntime(
         typeof r.assertSelection !== "function" ||
         typeof r.assertTaskReady !== "function" ||
         (r.assertObservationAuthority !== undefined && typeof r.assertObservationAuthority !== "function") ||
+        (r.assertHandoffScope !== undefined && typeof r.assertHandoffScope !== "function") ||
         (r.action === "acquire" && typeof r.assertExecutionScope !== "function") ||
         !Array.isArray(r.tasks) ||
         !r.tasks.length ||
@@ -212,7 +228,8 @@ export function registerInitiativeRuntime(
         throw Error("invalid selected initiative request");
       if (selected) throw Error("release the current initiative before selecting another");
       const epoch = ++selectionEpoch,
-        assertSelection = r.assertSelection;
+        assertSelection = r.assertSelection,
+        assertHandoffScope = r.assertHandoffScope;
       const assertAuthority = async () => {
         if (selectionEpoch !== epoch || currentOwner() !== owner) throw Error("initiative owner changed");
         await assertSelection();
@@ -291,6 +308,7 @@ export function registerInitiativeRuntime(
         assertSelection,
         assertTaskReady: r.assertTaskReady!,
         assertExecutionScope: r.assertExecutionScope,
+        assertHandoffScope,
       };
       selected = s;
       lastDisplay = { owner, dashboard: s.dashboard };
@@ -316,6 +334,26 @@ export function registerInitiativeRuntime(
               return result;
             },
             associate: (input: InitiativeTaskIdentity & { operationId: string }) => associate(s, input),
+            retainedHandoff: async (input: InitiativeTaskIdentity) => {
+              const identity = structuredClone(input);
+              const task = s.tasks.find(
+                (t) => t.taskId === identity.taskId && t.taskRevision === identity.taskRevision,
+              );
+              if (!task || identity.initiativeId !== s.initiativeId || typeof s.assertHandoffScope !== "function")
+                return;
+              await stillObserved(s);
+              const bound = await coordinator.handoffAttempt(identity, task);
+              if (!bound) return;
+              const assertScope = s.assertHandoffScope;
+              return retainedInitiativeHandoff(agentDir(), bound.attempt, async (scope) => {
+                await stillObserved(s);
+                const revision = coordinator.revision();
+                await bound.assertCurrent();
+                await assertScope({ taskId: task.taskId, taskRevision: task.taskRevision, ...scope });
+                if (revision !== coordinator.revision() || selected !== s || currentOwner() !== s.owner)
+                  throw Error("initiative selection changed");
+              });
+            },
             observe: async (input: InitiativeTaskIdentity) => {
               await stillObserved(s);
               const task = s.tasks.find((t) => t.taskId === input.taskId && t.taskRevision === input.taskRevision);

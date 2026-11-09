@@ -1,5 +1,11 @@
 # Changelog — pi-daddy
 
+## 0.51.0 — 2026-11-09
+
+- The dashboard groups navigation, status and work waiting for a decision. Move between tasks to preview the selected one when space permits. In smaller panes, press **Enter** to open its details.
+- Open a Bookie handoff from **Now**, **Work** or **Reviews** to see the parent Pi command and which output to choose. The review reference identifies the exact saved output for the settled task.
+- Press **r** for a session recap or **x** in a Bookie review to inspect its source. Press **Esc** to return to the same item.
+
 ## 0.50.0 — Unreleased
 
 - Recognize the public `pi-bookie` package and retain legacy Bookie names in version observations.

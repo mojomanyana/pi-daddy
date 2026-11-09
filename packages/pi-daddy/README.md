@@ -43,10 +43,22 @@ Bookie can register a reference afterward; a registration retry never dispatches
 ## Current-session dashboard
 
 The connected terminal dashboard has six destinations: **1 Now, 2 Work, 3 Reviews, 4 Activity,
-5 Evidence, 6 Settings**. `x` switches the same selection to an expanded details layout at 96 columns;
-smaller panes keep the compact layout. Arrow keys select, PageUp/PageDown scroll, Enter opens details,
+5 Evidence, 6 Settings**. Now shows a session-wide priority above work grouped by what needs attention.
+The **>** marker follows your selection. On Now, Work and Reviews, a terminal at least 110 columns wide
+also previews that item on the right. In a smaller pane, press **Enter** for the same item.
+`x` opens more information and enables the preview from 96 columns. Arrow keys select, PageUp/PageDown scroll, Enter opens details,
 Esc returns, and `m` Models / `v` Versions / `s` Settings remain available. Old owners and standalone
 ledger views keep their compatible legacy display.
+
+When a permission request is pending, **Now** directs you to the parent Pi session. A ready
+handoff points to **3 Reviews**. Select the result and press **Enter** for the next action.
+In a Bookie review, **x** reveals the source and exact reference. In **Now**, **x** reveals
+component and memory details. A recorded result still needs a separate review decision.
+
+Press **r** for a local session recap. It shows up to five recent parent events and current reported
+review or permission counts when available. **Esc** returns to the same item. The recap uses
+recorded session data and works without a model, JEV or network connection. A disconnected
+session is marked as last observed.
 
 Now combines an explicitly reported goal/next-step recommendation with actual parent and child
 observations. Recommendations do not authorize work. Reviews show producer judgments in their stated
@@ -410,6 +422,8 @@ Same-user hostile filesystem or co-loaded-extension authenticity is outside this
 
 `pi-daddy-dashboard` shows current work and actual pending approvals first; completed history is collapsed by default.
 `/grants dashboard` opens it beside the session in a Herdr pane. The header shows Auto ON/OFF and connection state.
+For a selected Bookie work map, **Now** shows a current review request. Press **3** for **Reviews** and **Enter** on the output for instructions. In the parent Pi session, `/bookie-work review` opens the saved answer. The project owns the review decision.
+
 Use **a** to switch Auto, arrow keys to select a row, **Enter** for details, **m** for session models, **h** for history,
 and **?** for help. The view fits the terminal and follows resize events. A disconnected control displays its state
 as unavailable until the owning session acknowledges a fresh snapshot.
