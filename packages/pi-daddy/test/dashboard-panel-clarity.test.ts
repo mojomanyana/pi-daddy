@@ -160,3 +160,54 @@ test("a mismatched review reference or expired source cannot advertise a current
   const stale = panel(o);
   assert.match(stale.join(" "), /Last seen/);
 });
+
+test("Now and Work present the selected task's saved review and keep both references in source details", () => {
+  const customer = { ...work, id: "TSK-customer", reference: "sha256:customer-task-revision" };
+  const draft = { ...review, id: "review-TSK-customer", reference: "customer-output" };
+  const engineering = {
+    ...review,
+    id: "review-TSK-engineering",
+    reference: "engineering-output",
+    details: ["Engineering review only"],
+  };
+  const o = options([{ ...next, reference: engineering.reference }, engineering, customer, draft]);
+  for (const destination of ["now", "work"] as const) {
+    o.screen.destination = destination;
+    const selected = sessionDashboardItems(o)[0]!;
+    assert.ok(selected.key.endsWith(":TSK-customer"));
+    const instructions = selected.briefDetails!.join("\n");
+    assert.match(instructions, /parent Pi session, run\n\/bookie-work review\n/);
+    assert.match(instructions, /choose the handoff for customer-update\.md/);
+    assert.doesNotMatch(instructions, /Engineering|sha256:/);
+    assert.ok(selected.details.includes("Reference: " + customer.reference));
+    assert.ok(selected.details.includes("Saved handoff reference: " + draft.reference));
+  }
+});
+
+test("a task cannot borrow a review from another task, producer, or stale observation", () => {
+  const customer = { ...work, id: "TSK-customer", reference: "task-revision" };
+  const draft = { ...review, id: "review-TSK-customer" };
+  const o = options([customer]);
+  const [bookie] = o.session!.observation!.sources;
+  o.session!.observation!.sources.push({ ...bookie!, producer: "principal", items: [draft] });
+  const noReviewAction = () => {
+    const selected = sessionDashboardItems(o)[0]!;
+    assert.doesNotMatch(selected.briefDetails!.join(" "), /\/bookie-work review/);
+    assert.ok(!selected.details.some((detail) => detail.startsWith("Saved handoff reference:")));
+  };
+  for (const candidates of [
+    [],
+    [{ ...draft, id: "review-other" }],
+    [{ ...draft, reference: undefined }],
+    [draft, { ...draft, reference: "conflicting" }],
+  ]) {
+    bookie!.items = [customer, ...candidates];
+    noReviewAction();
+  }
+  bookie!.items = [customer, draft];
+  o.connected = false;
+  noReviewAction();
+  o.connected = true;
+  o.now = new Date(Date.parse(instant) + 1_001);
+  noReviewAction();
+});

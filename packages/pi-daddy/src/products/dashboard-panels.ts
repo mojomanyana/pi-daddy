@@ -80,29 +80,50 @@ const row = (
   source: string,
   stale = false,
   label = item.label,
+  taskReview?: DashboardContribution,
 ): DashboardItem => {
   const details = contributionDetails(item, source, stale);
+  const handoff = taskReview ?? item;
+  const pendingTask = source.startsWith("bookie@") && item.kind === "work" && item.state === "approval-wait";
   const currentHandoff =
     !stale &&
     source.startsWith("bookie@") &&
-    item.kind === "review" &&
-    item.state === "approval-wait" &&
-    !reviewTotals(item);
+    handoff.kind === "review" &&
+    handoff.state === "approval-wait" &&
+    !reviewTotals(handoff);
   const brief = currentHandoff
-    ? details.filter(
+    ? contributionDetails(handoff, source, stale).filter(
         (line) =>
           !/^(?:\/|[A-Za-z]:[\\/]|(?:Reference|Source|Observed at):)/i.test(line) &&
           !/\b[a-f0-9]{64}\b/i.test(line) &&
           line !== "Output: handoff",
       )
     : [];
+  const openInstruction = brief.indexOf("Open /bookie-work review to read the saved handoff.");
+  if (taskReview && openInstruction >= 0) {
+    const choice = label === item.label ? label : item.label.split("/").at(-1)!;
+    brief.splice(
+      openInstruction,
+      1,
+      "In the parent Pi session, run",
+      "/bookie-work review",
+      `If prompted, choose the handoff for ${choice}.`,
+    );
+  }
+  if (currentHandoff && !brief.length) brief.push("Awaiting a review decision for this output.");
+  if (!currentHandoff && pendingTask)
+    brief.push(
+      stale
+        ? "Last seen awaiting a decision. Check the parent Pi session for current status."
+        : "A decision is pending. Check the selected task in the parent Pi session for its review evidence.",
+    );
   return {
     key,
     label,
     status: stale ? "last-observed" : item.state,
     elapsed: "",
     agent: item.kind === "work",
-    ...(currentHandoff ? { briefDetails: brief.length ? brief : ["Awaiting a review decision for this output."] } : {}),
+    ...(brief.length ? { briefDetails: brief } : {}),
     details: [
       ...(stale ? ["Last recorded details. Current state is unknown."] : []),
       ...details,
@@ -110,6 +131,7 @@ const row = (
       `Observed state: ${item.state}${stale ? " (stale/disconnected)" : ""}`,
       `Source: ${source}`,
       ...(item.reference ? [`Reference: ${item.reference}`] : []),
+      ...(taskReview?.reference ? [`Saved handoff reference: ${taskReview.reference}`] : []),
       ...(item.kind === "review"
         ? [
             item.state === "approval-wait"
@@ -125,6 +147,27 @@ const row = (
 
 const reviewTotals = (item: DashboardContribution) =>
   item.kind === "review" && item.id === "reviews" && item.label === "Selected output judgment observations";
+
+// Bookie publishes work with its task revision and the corresponding review with its output digest.
+// Only the task ID within this one observation links the two records.
+function reviewForTask(item: DashboardContribution, source: DashboardSourceSnapshot, stale: boolean) {
+  if (
+    stale ||
+    source.producer !== "bookie" ||
+    item.kind !== "work" ||
+    item.state !== "approval-wait" ||
+    !item.reference
+  )
+    return;
+  const matches = source.items.filter(
+    (candidate) =>
+      candidate.id === `review-${item.id}` &&
+      candidate.kind === "review" &&
+      candidate.state === "approval-wait" &&
+      candidate.reference,
+  );
+  return matches.length === 1 ? matches[0] : undefined;
+}
 
 // A Bookie task can publish its canonical document path as its only label.
 // Abbreviate unambiguous sibling names while keeping the full path in Details.
@@ -179,15 +222,17 @@ export function sessionDashboardItems(options: DashboardScreenOptions): Dashboar
           ) &&
           !(source.producer === "daddy-initiative" && item.id === "scope" && ["now", "work"].includes(destination)),
       )
-      .map((item) =>
-        row(
+      .map((item) => {
+        const stale = staleSource(source, options);
+        return row(
           item,
           sourceKey(source, item),
           `${source.producer}@${source.producerVersion} · seq ${source.sequence} · ${source.observedAt}`,
-          staleSource(source, options),
+          stale,
           source.producer === "bookie" ? bookieLabel(item, source) : item.label,
-        ),
-      ),
+          reviewForTask(item, source, stale),
+        );
+      }),
   );
   if (destination === "reviews") {
     const first = sessionNext(options)?.reviewKey;
@@ -294,7 +339,10 @@ export function sessionPanelLines(options: DashboardScreenOptions, items: Dashbo
   if (expanded && rows.length) {
     const left = Math.floor(width * 0.45),
       right = width - left - 3;
-    const details = [selected ? `DETAIL · ${clean(selected.label)}` : "DETAIL", ...(selected?.details ?? [])];
+    const details = [
+      selected ? `DETAIL · ${clean(selected.label)}` : "DETAIL",
+      ...(selected?.briefDetails ?? selected?.details ?? []),
+    ];
     const length = Math.max(rows.length, details.length);
     for (let i = 0; i < length; i++) {
       const a = truncate(clean(rows[i] ?? ""), left);
