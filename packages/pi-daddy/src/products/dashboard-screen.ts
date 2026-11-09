@@ -6,6 +6,7 @@ import {
   type DashboardDestination,
 } from "./dashboard-panels.ts";
 import { sessionRecapLines } from "./dashboard-recap.ts";
+import { colorSessionLine, previewWidth, sectionHeading } from "./dashboard-layout.ts";
 import { dashboardSettingsLines, type DashboardSettingKey } from "./dashboard-settings.ts";
 /** Height-bounded, task-first view. Permission state is always supplied by the owner. */
 import type { EcosystemVersionRow } from "./ecosystem-versions.ts";
@@ -21,6 +22,7 @@ export interface DashboardItem {
   elapsed: string;
   details: string[];
   briefDetails?: string[];
+  reviewSummary?: boolean;
   observation?: string;
   taskKey?: string;
   timelinePath?: string;
@@ -49,11 +51,13 @@ export const dashboardText = (value: string) =>
     .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
     .replace(/[\p{Cc}\p{Cf}]/gu, " ");
 const clean = (value: string) => dashboardText(value).replace(/\s+/g, " ").trim();
-function wrapped(lines: string[], width: number): string[] {
+export function wrapDashboardLines(lines: string[], width: number): string[] {
   return lines.flatMap((line) => {
+    const safe = dashboardText(line);
+    if (cellWidth(safe) <= width) return [safe];
     const result: string[] = [];
     let row = "";
-    for (const word of dashboardText(line).split(/\s+/)) {
+    for (const word of safe.split(/\s+/)) {
       if (row && cellWidth(row + " " + word) > width) {
         result.push(row);
         row = "";
@@ -315,13 +319,24 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
     fixed.push(`LAST OBSERVED: ${session!.observation!.observedAt}; live state unknown`);
   if (modern && screen.view === "main" && (screen.destination ?? "now") === "now") {
     const [heading, action] = sessionNextLines(options);
-    const actionLines = wrapped([action], width);
-    fixed.push(heading, actionLines[0]!);
+    const actionLines = wrapDashboardLines([action], width);
+    fixed.push(sectionHeading(heading.replace("NEXT", "SESSION PRIORITY"), width), actionLines[0]!);
     if (actionLines.length > 1) fixed.push(truncate(actionLines.slice(1).join(" "), width));
   }
   const body: string[] = [];
-  if (screen.view === "recap") body.push(...sessionRecapLines(options));
-  else if (screen.view === "help")
+  if (screen.view === "recap") {
+    const recap = sessionRecapLines(options);
+    const activity = recap.findIndex(
+      (line) => line === "Recent activity · newest first" || line === "No recent session events recorded.",
+    );
+    const summary = activity < 0 ? recap : recap.slice(0, activity);
+    if (summary.length) body.push(sectionHeading("SESSION STATUS", width), ...summary);
+    if (activity >= 0)
+      body.push(
+        sectionHeading("RECENT ACTIVITY", width),
+        ...recap.slice(activity + Number(recap[activity] === "Recent activity · newest first")),
+      );
+  } else if (screen.view === "help")
     body.push(
       "DASHBOARD KEYS",
       "↑/↓ or j/k: select; Enter/d: details",
@@ -329,7 +344,7 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
       "m: session models; v: ecosystem versions; s: settings",
       "1–6: Now / Work / Reviews / Activity / Evidence / Settings",
       "r: recent session activity and review counts",
-      "x: compact/expanded (96 columns); selection is preserved",
+      "Wide terminals preview the selected item. x shows more session information.",
       "x in a review detail: show or hide its source and exact reference",
       "No cancellation shortcut: request it in the owning Pi session.",
       "Goals/next steps are owner recommendations, not execution authority.",
@@ -352,18 +367,22 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
         options.connected === false && session?.settings ? { ...session.settings, editable: false } : session?.settings,
         session?.auto.enabled,
         screen.settingKey ?? "auto",
-      ),
+      ).map((line) => {
+        if (modern && line === "SETTINGS · current session") return sectionHeading("SESSION CONTROLS", width);
+        if (modern && line.startsWith("STARTUP LIMITS")) return sectionHeading(line, width);
+        return line;
+      }),
     );
     if (session?.observation)
       body.push(
-        "CAPTURE · startup configuration (not a retention receipt)",
+        sectionHeading("CAPTURE · startup configuration", width),
         `Transcripts: ${session.observation.capture.transcripts ? "configured" : "off"}`,
         `Diagnostics: ${session.observation.capture.diagnostics ? "configured" : "off"}`,
         "Capture changes require a new parent launch.",
         "m models · v versions",
       );
   } else if (screen.view === "versions" || screen.view === "version-details") {
-    body.push("VERSIONS");
+    body.push(modern ? sectionHeading("VERSIONS", width) : "VERSIONS");
     if (!session?.versions) body.push("Owner has not reported versions.");
     else if (screen.view === "versions") {
       body.push("Loaded -> on disk");
@@ -388,7 +407,7 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
       if (session.versions.note) body.push(session.versions.note);
     }
   } else if (screen.view === "models") {
-    body.push("SESSION MODELS");
+    body.push(modern ? sectionHeading("SESSION MODELS", width) : "SESSION MODELS");
     if (!session) body.push("Connect from /grants dashboard to edit models.");
     for (const row of session?.rows ?? [])
       body.push(`${row.definition}: ${row.model}`, `  ${row.thinking} · ${row.source}`);
@@ -404,6 +423,18 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
     body.push(
       title ??
         (screen.selectedKey ? "This item is no longer visible. Press Esc to return to the list." : "No selected task"),
+      ...(modern && selected
+        ? [
+            sectionHeading(
+              screen.sourceDetails
+                ? "SOURCE RECORD"
+                : (selected.briefDetails && selected.status === "approval-wait") || selected.approval
+                  ? "NEXT ACTION"
+                  : "DETAILS",
+              width,
+            ),
+          ]
+        : []),
       ...((screen.sourceDetails ? selected?.details : (selected?.briefDetails ?? selected?.details)) ?? []),
     );
     if (selected && options.content) body.push("", options.content.title, ...options.content.text.split(/\r?\n/));
@@ -456,10 +487,14 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
     if (history) body.push(history);
   }
 
+  const left =
+    modern && screen.view === "main" && selected
+      ? previewWidth(screen.destination ?? "now", Boolean(screen.expanded), width)
+      : undefined;
   const detailBody =
-    (screen.view === "main" && (!modern || (screen.expanded && width >= 96))) || screen.view === "versions"
-      ? body
-      : wrapped(body, width);
+    (screen.view === "main" && !modern) || screen.view === "versions" ? body : wrapDashboardLines(body, left ?? width);
+  if (modern && height >= 16 && height - fixed.length - footer.length > detailBody.length)
+    footer.unshift("─".repeat(Math.min(width, 100)));
   const bodyRoom = height - fixed.length - footer.length;
   const clipped = modern && bodyRoom >= 2 && detailBody.length > bodyRoom;
   if (clipped) footer.push("");
@@ -485,13 +520,37 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
   if (clipped)
     footer[footer.length - 1] =
       `Rows ${offset + 1}–${Math.min(offset + room, detailBody.length)}/${detailBody.length} · PgUp/PgDn`;
-  const lines = [...fixed, ...detailBody.slice(offset, offset + room)];
+  const page = detailBody.slice(offset, offset + room);
+  if (left !== undefined && selected) {
+    const right = Math.min(width - left - 3, 72);
+    const preview = wrapDashboardLines(
+      [
+        sectionHeading("SELECTED ITEM", right),
+        clean(selected.label),
+        "",
+        ...(selected.briefDetails ??
+          (screen.expanded ? selected.details : [friendlyStatus(selected.status), "Press Enter for details."])),
+      ],
+      right,
+    );
+    const count = Math.min(room, Math.max(page.length, preview.length));
+    for (let i = 0; i < count; i++) {
+      const cell = page[i] ?? "";
+      page[i] = cell + " ".repeat(Math.max(0, left - cellWidth(cell))) + " │ " + (preview[i] ?? "");
+    }
+  }
+  const lines = [...fixed, ...page];
   while (lines.length < height - footer.length) lines.push("");
   const output = [...lines, ...footer].slice(0, height);
   return output
     .map((line, index) => {
       const safe = truncate(dashboardText(line), width);
       if (!options.color) return safe;
+      if (modern)
+        return colorSessionLine(
+          safe,
+          index === 0 ? "header" : index === 1 ? "navigation" : index >= height - footer.length ? "footer" : "body",
+        );
       const section = [
         "NOW",
         "WORK",

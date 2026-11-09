@@ -43,8 +43,10 @@ Bookie can register a reference afterward; a registration retry never dispatches
 ## Current-session dashboard
 
 The connected terminal dashboard has six destinations: **1 Now, 2 Work, 3 Reviews, 4 Activity,
-5 Evidence, 6 Settings**. `x` switches the same selection to an expanded details layout at 96 columns;
-smaller panes keep the compact layout. Arrow keys select, PageUp/PageDown scroll, Enter opens details,
+5 Evidence, 6 Settings**. Now shows a session-wide priority above work grouped by what needs attention.
+The **>** marker follows your selection. On Now, Work and Reviews, a terminal at least 110 columns wide
+also previews that item on the right. In a smaller pane, press **Enter** for the same item.
+`x` opens more information and enables the preview from 96 columns. Arrow keys select, PageUp/PageDown scroll, Enter opens details,
 Esc returns, and `m` Models / `v` Versions / `s` Settings remain available. Old owners and standalone
 ledger views keep their compatible legacy display.
 

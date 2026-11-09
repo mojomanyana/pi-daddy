@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { DashboardContribution, DashboardSourceSnapshot } from "../src/kernel/dashboard-observation.ts";
 import { sessionDashboardItems, sessionNextLines, sessionPanelLines } from "../src/products/dashboard-panels.ts";
-import { dashboardScreenState, type DashboardScreenOptions } from "../src/products/dashboard-screen.ts";
+import {
+  dashboardScreenState,
+  renderDashboardScreen,
+  type DashboardScreenOptions,
+} from "../src/products/dashboard-screen.ts";
+import { cellWidth } from "../src/products/dashboard-render.ts";
 
 const instant = "2026-11-09T12:00:00.000Z";
 function options(items: DashboardContribution[]): DashboardScreenOptions {
@@ -73,7 +78,10 @@ function panel(o: DashboardScreenOptions): string[] {
 test("compact Now has one named row per task, keeps full identity in details, and moves diagnostics into expansion", () => {
   const o = options([work, { id: "runner", kind: "work", label: "build", state: "running" }]);
   const compact = panel(o);
-  assert.deepEqual(compact, ["> customer update · Awaiting decision", "  build · Running"]);
+  assert.match(compact[0]!, /^YOUR DECISIONS · 1  ─/);
+  assert.equal(compact[1], "> customer update · Awaiting decision");
+  assert.match(compact[2]!, /^IN PROGRESS · 1  ─/);
+  assert.equal(compact[3], "  build · Running");
   assert.ok(sessionDashboardItems(o)[0]!.details.includes(workPath));
   o.screen.expanded = true;
   o.width = 120;
@@ -95,19 +103,22 @@ test("review leads with its actual read action and current owner permission take
   const o = options([review, next]);
   assert.deepEqual(sessionNextLines(o), ["NEXT · [3] Reviews", "Review customer update"]);
   o.screen.destination = "reviews";
-  assert.deepEqual(panel(o), ["> Ready for review: customer update"]);
+  assert.match(panel(o)[0]!, /^AWAITING REVIEW · 1/);
+  assert.equal(panel(o)[1], "> Ready for review: customer update");
   const details = sessionDashboardItems(o)[0]!.details;
   assert.match(details[0]!, /^Open \/bookie-work review/);
   assert.ok(details.includes("Reference: answer-a"));
   assert.deepEqual(sessionDashboardItems(o)[0]!.briefDetails, [
-    "Open /bookie-work review to read the saved handoff.",
-    "Record your review decision for this output in the selected project.",
+    "In your main Pi chat, run",
+    "/bookie-work review",
+    "Read the output and record your decision.",
   ]);
   o.session!.pendingApprovals.push({ id: "permit", subject: "build", capability: "tool:write" });
   assert.match(sessionNextLines(o).join(" "), /permission request in the parent Pi session/);
   o.connected = false;
   assert.match(sessionNextLines(o).join(" "), /Reconnect/);
-  assert.deepEqual(panel(o), ["> Last seen · Ready for review: customer update"]);
+  assert.match(panel(o)[0]!, /^REVIEW RECORDS · 1/);
+  assert.equal(panel(o)[1], "> Last seen · Ready for review: customer update");
   assert.match(sessionDashboardItems(o)[0]!.details[0]!, /Current state is unknown/);
   assert.doesNotMatch(
     sessionDashboardItems(o)[0]!.details.join(" "),
@@ -176,8 +187,8 @@ test("Now and Work present the selected task's saved review and keep both refere
     const selected = sessionDashboardItems(o)[0]!;
     assert.ok(selected.key.endsWith(":TSK-customer"));
     const instructions = selected.briefDetails!.join("\n");
-    assert.match(instructions, /parent Pi session, run\n\/bookie-work review\n/);
-    assert.match(instructions, /choose the handoff for customer-update\.md/);
+    assert.match(instructions, /main Pi chat, run\n\/bookie-work review\n/);
+    assert.match(instructions, /If asked, select customer-update\.md/);
     assert.doesNotMatch(instructions, /Engineering|sha256:/);
     assert.ok(selected.details.includes("Reference: " + customer.reference));
     assert.ok(selected.details.includes("Saved handoff reference: " + draft.reference));
@@ -210,4 +221,33 @@ test("a task cannot borrow a review from another task, producer, or stale observ
   o.connected = true;
   o.now = new Date(Date.parse(instant) + 1_001);
   noReviewAction();
+});
+
+test("selection and action remain distinguishable in monochrome, narrow panes and wide scrolled lists", () => {
+  const customer = { ...work, id: "customer", reference: "task-revision" };
+  const queue = Array.from({ length: 22 }, (_, i) => ({ ...work, label: "Other work " + i, id: "work-" + i }));
+  const o = options([
+    ...queue,
+    customer,
+    { ...review, id: "review-customer" },
+    { ...next, label: "Review the weekly queue" },
+  ]);
+  o.screen.selectedKey = sessionDashboardItems(o).at(-1)!.key;
+  for (const width of [42, 110, 200]) {
+    o.width = width;
+    const mono = renderDashboardScreen(o);
+    const color = renderDashboardScreen({ ...o, color: true });
+    assert.equal(color.replace(/\x1b\[[0-9;]*m/g, ""), mono);
+    assert.match(color, /\x1b\[1;7m> customer update/);
+    assert.match(mono, /SESSION PRIORITY/);
+    assert.match(mono, /Review the weekly queue/);
+    assert.match(mono, /> customer update/);
+    assert.ok(mono.split("\n").every((line) => cellWidth(line) <= width));
+    assert.equal(mono.split("\n").length, o.height);
+    if (width >= 110) {
+      assert.match(mono, / │ SELECTED ITEM/);
+      assert.match(mono, / │ customer update/);
+      assert.match(mono, / │ \/bookie-work review/);
+    } else assert.doesNotMatch(mono, /SELECTED ITEM/);
+  }
 });

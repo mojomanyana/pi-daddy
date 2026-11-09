@@ -100,7 +100,7 @@ test("six views are bounded, preserve selection on resize and expansion, and kee
   assert.match(render(), /REVIEWS/);
   const selected = display.screen.selectedKey;
   display.key("x");
-  assert.match(render(), /DETAIL.*Review/);
+  assert.match(render(), /│ SELECTED ITEM[^\n]*\n[^\n]*│ Review click safe/);
   render(42);
   render();
   assert.equal(display.screen.selectedKey, selected);
@@ -116,7 +116,7 @@ test("six views are bounded, preserve selection on resize and expansion, and kee
   display.key("4");
   assert.match(render(), /read observed/);
   display.key("1");
-  assert.match(render(), /NEXT/);
+  assert.match(render(), /SESSION PRIORITY/);
   assert.match(render(), /Verify the scoped contract/);
 });
 test("Now keeps the current handoff action visible in a side pane and Reviews opens its exact record", () => {
@@ -160,7 +160,7 @@ test("Now keeps the current handoff action visible in a side pane and Reviews op
       now: new Date(now),
     });
   const initial = draw();
-  assert.match(initial, /NEXT.*\[3\] Reviews/);
+  assert.match(initial, /SESSION PRIORITY.*\[3\] Reviews/);
   assert.match(initial, /Review the filtered CSV export/);
   assert.doesNotMatch(initial, /Verify the scoped contract/);
   display.key("3");
@@ -463,7 +463,8 @@ test("compact prose wraps at words, attention names waits, and clipped Settings 
   display.key("pagedown");
   const scrolled = render();
   assert.ok(display.screen.offset > 0, "settings page scroll is not reset to the selected toggle");
-  assert.match(scrolled, /Rows 9–/);
+  assert.ok(scrolled.includes(`Rows ${display.screen.offset + 1}–`));
+  assert.match(scrolled, /Capture changes require a new parent launch/);
 });
 
 test("initiative scope and related-session counts remain explicit; stale goals are not presented as current", () => {

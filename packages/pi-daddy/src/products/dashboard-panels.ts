@@ -2,8 +2,8 @@
 import type { DashboardContribution, DashboardSourceSnapshot } from "../kernel/dashboard-observation.ts";
 import type { DashboardItem, DashboardScreenOptions } from "./dashboard-screen.ts";
 import { dashboardText, friendlyStatus } from "./dashboard-screen.ts";
+import { previewWidth, sectionHeading } from "./dashboard-layout.ts";
 import { activityTaskKey } from "./activity-timeline.ts";
-import { truncate, cellWidth } from "./dashboard-render.ts";
 export type DashboardDestination = "now" | "work" | "reviews" | "activity" | "evidence" | "settings";
 export const DASHBOARD_DESTINATIONS: DashboardDestination[] = [
   "now",
@@ -100,15 +100,17 @@ const row = (
       )
     : [];
   const openInstruction = brief.indexOf("Open /bookie-work review to read the saved handoff.");
-  if (taskReview && openInstruction >= 0) {
-    const choice = label === item.label ? label : item.label.split("/").at(-1)!;
+  if (openInstruction >= 0) {
+    const choice = taskReview && (label === item.label ? label : item.label.split("/").at(-1));
     brief.splice(
       openInstruction,
       1,
-      "In the parent Pi session, run",
+      "In your main Pi chat, run",
       "/bookie-work review",
-      `If prompted, choose the handoff for ${choice}.`,
+      ...(choice ? [`If asked, select ${choice}.`] : []),
     );
+    const decision = brief.indexOf("Record your review decision for this output in the selected project.");
+    if (decision >= 0) brief[decision] = "Read the output and record your decision.";
   }
   if (currentHandoff && !brief.length) brief.push("Awaiting a review decision for this output.");
   if (!currentHandoff && pendingTask)
@@ -123,6 +125,7 @@ const row = (
     status: stale ? "last-observed" : item.state,
     elapsed: "",
     agent: item.kind === "work",
+    ...(source.startsWith("bookie@") && reviewTotals(item) ? { reviewSummary: true } : {}),
     ...(brief.length ? { briefDetails: brief } : {}),
     details: [
       ...(stale ? ["Last recorded details. Current state is unknown."] : []),
@@ -189,6 +192,7 @@ function rowText(item: DashboardItem, destination: DashboardDestination, selecte
   const label = clean(item.label);
   const marker = selected ? "> " : "  ";
   if (item.status === "last-observed") return `${marker}Last seen · ${label}`;
+  if (item.reviewSummary) return marker + label;
   const waitingForReview = destination === "reviews" && item.status === "approval-wait";
   const described = waitingForReview && /^ready for review[:\s]/i.test(label);
   const status = described ? "" : ` · ${waitingForReview ? "Awaiting review" : friendlyStatus(clean(item.status))}`;
@@ -236,7 +240,8 @@ export function sessionDashboardItems(options: DashboardScreenOptions): Dashboar
   );
   if (destination === "reviews") {
     const first = sessionNext(options)?.reviewKey;
-    const priority = (item: DashboardItem) => (item.key === first ? 2 : Number(item.status === "approval-wait"));
+    const priority = (item: DashboardItem) =>
+      item.key === first ? 2 : Number(item.status === "approval-wait" && !item.reviewSummary);
     return published.sort((a, b) => priority(b) - priority(a));
   }
   if (destination === "evidence")
@@ -285,24 +290,34 @@ export function sessionDashboardItems(options: DashboardScreenOptions): Dashboar
     ...native,
     ...published,
   ];
-  if (destination === "now") {
-    const priority = (item: DashboardItem) => {
-      if (["needs-you", "failed", "refused", "incomplete", "approval-wait", "dependency-wait"].includes(item.status))
-        return 0;
-      if (["running", "active", "starting", "cancel-requested"].includes(item.status)) return 1;
-      return 2;
-    };
-    items.sort((a, b) => priority(a) - priority(b));
-  }
+  items.sort((a, b) => workGroups.indexOf(workGroup(a)) - workGroups.indexOf(workGroup(b)));
   return items;
+}
+
+const workGroups = ["PERMISSION REQUESTS", "YOUR DECISIONS", "NEEDS ATTENTION", "IN PROGRESS", "OTHER WORK", "HISTORY"];
+function workGroup(item: DashboardItem): string {
+  if (item.approval) return "PERMISSION REQUESTS";
+  if (item.status === "approval-wait") return "YOUR DECISIONS";
+  if (["needs-you", "failed", "refused", "incomplete", "dependency-wait"].includes(item.status))
+    return "NEEDS ATTENTION";
+  if (["running", "active", "starting", "authorised", "cancel-requested"].includes(item.status)) return "IN PROGRESS";
+  if (["settled", "completed", "finished", "cancelled", "historical", "last-observed"].includes(item.status))
+    return "HISTORY";
+  return "OTHER WORK";
+}
+
+function listHeading(item: DashboardItem, destination: DashboardDestination) {
+  if (destination === "now" || destination === "work") return workGroup(item);
+  if (destination === "reviews")
+    return item.status === "approval-wait" && !item.reviewSummary ? "AWAITING REVIEW" : "REVIEW RECORDS";
+  return destination === "evidence" ? "SAVED REFERENCES" : "SESSION ACTIVITY";
 }
 export function sessionPanelLines(options: DashboardScreenOptions, items: DashboardItem[], width: number): string[] {
   const observation = options.session!.observation!,
     screen = options.screen;
   const destination = screen.destination ?? "now";
   const sourceRows = observation.sources.flatMap((s) => s.items.map((item) => ({ source: s, item })));
-  const lines: string[] =
-    destination === "now" || destination === "reviews" ? [] : [`${destination.toUpperCase()} · CURRENT SESSION`];
+  const lines: string[] = [];
   const initiative = observation.sources.find((source) => source.producer === "daddy-initiative");
   const scope = initiative?.items.find((item) => item.id === "scope");
   if (scope && (destination === "now" || destination === "work")) {
@@ -333,27 +348,20 @@ export function sessionPanelLines(options: DashboardScreenOptions, items: Dashbo
           ? "No current-session result references observed."
           : "No observations for this view.",
     );
-  const selected = items.find((x) => x.key === screen.selectedKey);
-  const rows = items.map((x) => rowText(x, destination, x.key === screen.selectedKey));
-  const expanded = screen.expanded && width >= 96;
-  if (expanded && rows.length) {
-    const left = Math.floor(width * 0.45),
-      right = width - left - 3;
-    const details = [
-      selected ? `DETAIL · ${clean(selected.label)}` : "DETAIL",
-      ...(selected?.briefDetails ?? selected?.details ?? []),
-    ];
-    const length = Math.max(rows.length, details.length);
-    for (let i = 0; i < length; i++) {
-      const a = truncate(clean(rows[i] ?? ""), left);
-      lines.push(a + " ".repeat(Math.max(0, left - cellWidth(a))) + " | " + truncate(clean(details[i] ?? ""), right));
-    }
-  } else {
-    lines.push(...rows);
-    if (screen.expanded) lines.push("Expanded layout needs 96 columns; same selection retained.");
+  const left = previewWidth(destination, Boolean(screen.expanded), width);
+  const rows: string[] = [];
+  for (let start = 0; start < items.length;) {
+    const group = listHeading(items[start]!, destination);
+    let end = start + 1;
+    while (end < items.length && listHeading(items[end]!, destination) === group) end++;
+    rows.push(sectionHeading(`${group} · ${end - start}`, left ?? width));
+    for (const item of items.slice(start, end)) rows.push(rowText(item, destination, item.key === screen.selectedKey));
+    start = end;
   }
+  lines.push(...rows);
+  if (screen.expanded && left === undefined) lines.push("Expanded layout needs 96 columns; same selection retained.");
   if (destination === "now" && screen.expanded) {
-    lines.push("COMPONENTS");
+    lines.push(sectionHeading("COMPONENTS", width));
     for (const producer of ["principal", "bookie", "scout", "skill-harness"]) {
       const streams = observation.sources.filter(
         (x) => x.producer === producer || (producer === "scout" && x.producer.startsWith("scout-")),
