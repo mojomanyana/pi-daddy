@@ -149,6 +149,14 @@ async function compactFrame(options: DashboardFrameOptions): Promise<string> {
       items: [],
       problem: "INCOMPATIBLE dashboard protocol; relink this package.",
     });
+  if (options.screen?.view === "recap")
+    return renderDashboardScreen({
+      ...options,
+      width: options.width ?? 80,
+      height: options.height!,
+      screen: options.screen,
+      items: [],
+    });
   try {
     const text = options.session?.observation ? await dashboardFile(path) : await readFile(path, "utf8");
     if (!options.ledgerPath || isActivityTimelineText(text)) {
@@ -218,7 +226,7 @@ async function compactFrame(options: DashboardFrameOptions): Promise<string> {
       /* The owner identity remains useful when its local timeline is unavailable. */
     }
   }
-  if (options.activityDetail) {
+  if (options.activityDetail && options.screen?.view === "details") {
     try {
       const requested = aliases.resolve(options.activityDetail.taskKey) ?? options.activityDetail.taskKey;
       const key = items.find((value) => value.taskKey === requested)?.taskKey;

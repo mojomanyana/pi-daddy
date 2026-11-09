@@ -177,7 +177,20 @@ test("Now keeps the current handoff action visible in a side pane and Reviews op
     now: new Date(date),
   });
   assert.match(details, /Reviewer: service desk owner/);
-  assert.ok(details.includes(ref));
+  assert.doesNotMatch(details, /Reference: sha256:/);
+  assert.match(details, /x show source/);
+  display.key("x");
+  const provenance = renderDashboardScreen({
+    width: 110,
+    height: 24,
+    screen: display.screen,
+    items: [],
+    session: current,
+    connected: true,
+    now: new Date(date),
+  });
+  assert.ok(provenance.includes(ref));
+  assert.match(provenance, /x hide source/);
 
   display.key("1");
   bookie.availability = "closed";
@@ -213,11 +226,12 @@ test("disconnected owner and stale contributions show last observations without 
   });
   assert.match(result, /LAST OBSERVED/);
   assert.match(result, /Auto unavailable/);
-  assert.match(result, /last-observed/);
+  assert.match(result, /Last seen/);
   assert.doesNotMatch(result, /Permissions connected/);
   display.key("1");
   const absent = snapshot();
   absent.observation!.sources = [];
+  display.key("x");
   assert.match(
     renderDashboardScreen({
       width: 100,
@@ -231,6 +245,99 @@ test("disconnected owner and stale contributions show last observations without 
     /bookie: status adapter unavailable/,
   );
 });
+test("a narrow pane keeps review keys legible, and recap and help preserve the selected detail", () => {
+  const display = createDashboardDisplayControls(false, true);
+  const session = snapshot();
+  const draw = () =>
+    renderDashboardScreen({
+      width: 42,
+      height: 16,
+      screen: display.screen,
+      items: [],
+      session,
+      now: new Date(date),
+      ...display.state,
+    });
+  draw();
+  display.key("tab");
+  assert.match(draw(), /Filter: agents/);
+  display.key("3");
+  const list = draw();
+  assert.match(list, /Enter details · \? help/);
+  assert.doesNotMatch(list, /Filter: agents/);
+  display.key("tab");
+  assert.match(draw(), /No items match this filter/);
+  for (let i = 0; i < 3; i++) display.key("tab");
+  draw();
+  display.key("return");
+  const identity = display.screen.selectedKey;
+  assert.match(draw(), /REVIEWS \/ Details/);
+  display.key("r");
+  assert.match(draw(), /Session recap[\s\S]*read observed/);
+  display.key("return");
+  assert.equal(display.screen.view, "recap");
+  display.key("escape");
+  assert.equal(display.screen.view, "details");
+  display.key("?");
+  assert.match(draw(), /DASHBOARD KEYS/);
+  display.key("escape");
+  assert.equal(display.screen.selectedKey, identity);
+  assert.match(draw(), /REVIEWS \/ Details/);
+  display.key("r");
+  session.observation!.sources[0]!.items = [
+    { id: "another", kind: "review", label: "Unrelated answer", state: "observed" },
+  ];
+  draw();
+  display.key("escape");
+  assert.equal(display.screen.selectedKey, identity);
+  assert.match(draw(), /no longer visible/);
+  assert.doesNotMatch(draw(), /Unrelated answer/);
+  display.key("escape");
+  assert.match(draw(), /Unrelated answer/);
+});
+
+test("a disconnected dashboard withdraws permission prompts and their suggested action", () => {
+  const session = snapshot();
+  session.pendingApprovals.push({ id: "pending", subject: "build", capability: "tool:bash" });
+  const screen = createDashboardDisplayControls(false, true).screen;
+  const draw = (connected: boolean) =>
+    renderDashboardScreen({ width: 65, height: 20, screen, items: [], session, connected, now: new Date(date) });
+  assert.match(draw(true), /permission request in the parent Pi/);
+  assert.match(draw(true), /build · bash/);
+  const offline = draw(false);
+  assert.match(offline, /LAST OBSERVED/);
+  assert.doesNotMatch(offline, /Respond to the permission request|build · bash|Auto unavailable \[a\]/);
+});
+
+test("recap works from the session snapshot without a local ledger or a retained private detail", async () => {
+  const display = createDashboardDisplayControls(false, true);
+  display.key("r");
+  const frame = await dashboardFrame({
+    cwd: await tempDir("dashboard-recap-no-ledger-"),
+    ledgerPath: "missing-ledger",
+    width: 42,
+    height: 14,
+    screen: display.screen,
+    session: snapshot(),
+    now: new Date(date),
+    connected: true,
+    activityDetail: { taskKey: "missing:private", field: "final" },
+  });
+  assert.match(frame, /read observed/);
+  assert.doesNotMatch(frame, /Waiting for local work|[Dd]etail unavailable|[Ee]vidence unavailable/);
+  display.key("1");
+  const small = renderDashboardScreen({
+    width: 28,
+    height: 8,
+    screen: display.screen,
+    items: [],
+    session: snapshot(),
+    now: new Date(date),
+  });
+  assert.equal(small.split("\n").length, 8);
+  assert.doesNotMatch(small, /Rows \d+–0/);
+});
+
 test("owner snapshot sequence cannot move backward; connection loss retains display only and does not retry controls", async () => {
   let next = snapshot(2),
     fail = false,
@@ -348,7 +455,8 @@ test("compact prose wraps at words, attention names waits, and clipped Settings 
       connected: true,
     });
   const now = render();
-  assert.match(now, /ATTENTION · 1\nDependent task · dependency-wait/);
+  assert.match(now, /Dependent task · Waiting on dependency/);
+  assert.equal(now.split("Dependent task").length - 1, 1);
   assert.doesNotMatch(now, /recommenda\ntion|obse\nrved/);
   display.key("6");
   assert.match(render(), /Rows 1–.*PgUp\/PgDn/);
