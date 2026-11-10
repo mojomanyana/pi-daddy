@@ -4,6 +4,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
   DASHBOARD_SOURCE_EVENT,
   DASHBOARD_SOURCE_LIMIT,
+  isBookieChoice,
   validDashboardSourceUpdate,
   type DashboardSourceSnapshot,
   type DashboardSourceUpdate,
@@ -93,6 +94,7 @@ export function registerDashboardSources(
       },
       close() {
         if (active()) {
+          snapshot.items = snapshot.items.filter((item) => !isBookieChoice(producer, item));
           snapshot.availability = "closed";
           snapshot.observedAt = new Date(now()).toISOString();
         }

@@ -1,9 +1,11 @@
 /** Six current-session destinations share stable row identities; contributions are labels, never authority. */
 import type { DashboardContribution, DashboardSourceSnapshot } from "../kernel/dashboard-observation.ts";
+import { isBookieChoice } from "../kernel/dashboard-observation.ts";
 import type { DashboardItem, DashboardScreenOptions } from "./dashboard-screen.ts";
 import { dashboardText, friendlyStatus } from "./dashboard-screen.ts";
 import { activityStoryItems } from "./dashboard-activity.ts";
 import {
+  bookieOpenChoices,
   componentItems,
   isComponentObservation,
   publishedEvidenceItem,
@@ -227,6 +229,7 @@ export function sessionDashboardItems(options: DashboardScreenOptions): Dashboar
         (item) =>
           wanted.includes(item.kind) &&
           !isComponentObservation(source, item) &&
+          !isBookieChoice(source.producer, item) &&
           !(
             destination === "reviews" &&
             !options.screen.expanded &&
@@ -292,6 +295,7 @@ export function sessionDashboardItems(options: DashboardScreenOptions): Dashboar
       ? [row(ownerTurn, `owner:${observed.generation}:${ownerTurn.id}`, "Pi owner", staleOwner)]
       : []),
     ...tasks,
+    ...bookieOpenChoices(options),
     ...published,
   ];
   items.sort((a, b) => {
@@ -337,6 +341,7 @@ const workGroups = [
   "Needs your decision",
   "Needs your input",
   "In progress",
+  "Open choices",
   "Waiting on a dependency",
   "Outcome unknown",
   "Other tasks",
@@ -355,6 +360,7 @@ function workGroup(item: DashboardItem): string {
     if (item.approval) return "Needs your permission";
     return item.status === "approval-wait" ? "Needs your decision" : "Needs your input";
   }
+  if (item.status === "open-choice") return "Open choices";
   if (item.status === "dependency-wait") return "Waiting on a dependency";
   if (item.status === "incomplete") return "Outcome unknown";
   if (["running", "active", "starting", "authorised", "cancel-requested"].includes(item.status)) return "In progress";

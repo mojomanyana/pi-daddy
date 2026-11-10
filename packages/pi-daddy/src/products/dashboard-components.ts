@@ -5,6 +5,7 @@ import type {
   DashboardSourceSnapshot,
 } from "../kernel/dashboard-observation.ts";
 import type { DashboardItem, DashboardScreenOptions } from "./dashboard-screen.ts";
+import { isBookieChoice } from "../kernel/dashboard-observation.ts";
 import type { EcosystemVersionRow } from "./ecosystem-versions.ts";
 import { safeDashboardSummary } from "./activity-summary.ts";
 
@@ -65,6 +66,33 @@ function scoutDescription(worker: boolean, item: DashboardContribution): [string
     case "cancel-requested":
       return ["Stopping", "Scout has received a cancellation request. Cleanup is still pending."];
   }
+}
+
+/** Choices are current project observations; a saved question never creates a live input request. */
+export function bookieOpenChoices(options: DashboardScreenOptions): DashboardItem[] {
+  const source = options.session?.observation?.sources.find((s) => s.producer === "bookie-memory");
+  if (
+    !options.session?.auto.enabled ||
+    !source ||
+    !current(source, options) ||
+    !source.items.some((i) => isComponentObservation(source, i) && i.state === "observed")
+  )
+    return [];
+  return source.items
+    .filter((i) => isBookieChoice(source.producer, i) && i.kind === "work" && i.state === "observed")
+    .map((i) => ({
+      key: `source:${source.producer}:${source.generation}:${i.id}`,
+      label: i.label,
+      status: "open-choice",
+      elapsed: "",
+      briefDetails: ["Saved in this project’s notes.", ...(i.details ?? [])],
+      details: [
+        ...(i.details ?? []),
+        `Source: Bookie ${source.producerVersion}`,
+        `Observed at: ${source.observedAt}`,
+        ...(i.reference ? [`Reference: ${i.reference}`] : []),
+      ],
+    }));
 }
 
 function componentItem(producer: KnownSource, options: DashboardScreenOptions): DashboardItem | undefined {

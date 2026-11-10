@@ -48,7 +48,7 @@ Use the arrow keys to select an item and **Enter** to open it. A side-by-side pr
 
 When a decision is pending, Overview directs you to the main Pi chat or to Reviews. Bookie handoffs show the command and the output to select. The Tools section describes Bookie and Scout using the latest available observations. A package can be installed while its live status is unknown. After a disconnect the dashboard labels the last known state and withdraws current permission requests.
 
-With Auto on in a trusted interactive project, a compatible Bookie can save and recall routine notes for the current folder. Look for **Bookie memory · Ready in this folder** under Overview → Tools. Turning Auto off withdraws automatic memory access.
+With Auto on in a trusted interactive project, a compatible Bookie can save and recall routine notes for the current folder. Look for **Bookie memory · Ready in this folder** under Overview → Tools. With a Bookie version that reports saved choices, Overview and Tasks list them under **Open choices**. Turning Auto off withdraws automatic memory access and hides those choices.
 
 Task descriptions can come from a short public description supplied by the delegating model. When that description is unavailable, the dashboard uses the activity it actually observed. This works without a summarization request or JEV. Open details to inspect a source, and use **x** when offered to see exact references. Saved evidence, process completion and approval are separate facts. Explicit **p** and **f** reads use the existing retention controls.
 

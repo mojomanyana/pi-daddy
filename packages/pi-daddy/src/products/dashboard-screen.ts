@@ -100,6 +100,7 @@ export const friendlyStatus = (status: string) =>
     starting: "Starting",
     authorised: "Authorized",
     observed: "Reported",
+    "open-choice": "Open",
     "cancel-requested": "Cancel requested",
     unknown: "Unknown",
     unavailable: "Unavailable",

@@ -1,5 +1,9 @@
 # Changelog — pi-daddy
 
+## Unreleased
+
+- With compatible Bookie project memory, Overview and Tasks show saved choices under **Open choices**. You can return to these choices after `/new` in the same folder with Auto on.
+
 ## 0.54.1 — 2026-11-10
 
 - In a saved interactive Pi session, `/new` in the same folder opens a fresh parent session. The new session can connect its dashboard and access the folder’s Bookie notes when its own Auto setting is on.
