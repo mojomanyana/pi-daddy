@@ -151,6 +151,7 @@ export interface GrantsSession extends NativeSessionHost {
   dashboardInitiative?: () => DashboardSourceSnapshot | undefined;
   refreshInitiative?: () => void;
   ecosystemVersions?: () => EcosystemVersions;
+  dashboardPrompt?: () => import("../src/kernel/dashboard-observation.ts").DashboardInputPrompt | undefined;
   dashboardLive?: () => { turn?: DashboardContribution; activity: DashboardContribution[] };
   dashboardArtifacts?: DashboardSavedEvidence[];
   dashboardChoices?: ReturnType<typeof import("./dashboard-choice-controls.ts").registerDashboardChoiceOwner>;

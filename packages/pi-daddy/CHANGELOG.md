@@ -1,5 +1,9 @@
 # Changelog — pi-daddy
 
+## 0.56.1 — 2026-11-11
+
+- Native Pi questions now appear under **Needs your input** while waiting. Answer or cancel in the main Pi chat; the row and Herdr waiting indicator clear when the dialog closes or the session changes. Informational panels, saved open choices and earlier failed attempts do not become new attention requests. Restart Pi after updating.
+
 ## 0.56.0 — 2026-11-10
 
 - Select a saved question in **Open choices** to review its alternatives and any supporting recommendation. Pick an option or write your own answer, then save in Bookie. **Decide later** keeps the question open.

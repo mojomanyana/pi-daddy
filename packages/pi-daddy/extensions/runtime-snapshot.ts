@@ -1,3 +1,4 @@
+import { registerDashboardPrompts } from "./dashboard-ui-prompts.ts";
 import { registerInitiativeRuntime } from "./initiative-runtime.ts";
 import { registerDashboardLive } from "./dashboard-live.ts";
 import { registerDashboardSources } from "./dashboard-sources.ts";
@@ -41,6 +42,12 @@ export function registerRuntimeSnapshot(
       ? bound
       : undefined,
   );
+  const prompts = registerDashboardPrompts(pi, () =>
+    bound?.lifecycle === session.reloadLifecycle && session.reloadLifecycle.runtimeSnapshotGeneration === generation
+      ? bound
+      : undefined,
+  );
+  session.dashboardPrompt = prompts.snapshot;
   session.dashboardArtifacts = [];
 
   const artifactBridge = registerArtifactBridge(pi, () =>
@@ -242,9 +249,11 @@ export function registerRuntimeSnapshot(
     artifactBridge.close();
     void initiative.close().catch(() => undefined);
     dashboardSources.close();
+    prompts.close();
   };
   return {
     async bind(ctx) {
+      prompts.reset();
       const sequence = ++bindSequence,
         lifecycle = session.reloadLifecycle;
       lifecycle.runtimeSettlement = undefined;
