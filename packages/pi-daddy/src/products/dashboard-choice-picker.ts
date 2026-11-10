@@ -80,7 +80,13 @@ export function choiceKey(
     return;
   }
   if (picker.phase === "confirm" || picker.phase === "refused") {
-    if (key === (picker.phase === "refused" ? "r" : "return")) {
+    if (picker.phase === "refused" && key === "r") {
+      picker.phase = "confirm";
+      picker.error = undefined;
+      screen.offset = 0;
+      return;
+    }
+    if (picker.phase === "confirm" && key === "return") {
       picker.phase = "saving";
       picker.error = undefined;
       screen.offset = 0;
@@ -115,7 +121,7 @@ export function choiceKeys(screen: DashboardScreenState): string[] {
     case "confirm":
       return ["Enter save to Bookie", "e edit · Esc cancel"];
     case "refused":
-      return ["r retry save · e edit", "Esc cancel"];
+      return ["r review again · e edit", "Esc cancel"];
     case "saving":
       return ["Waiting for Bookie…"];
     default:

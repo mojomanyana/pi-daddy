@@ -204,11 +204,13 @@ test("a real terminal inspects, defers, edits, and explicitly saves only the hig
     key(enter + down + enter);
     assert.equal(submissions.length, 1);
     releaseSave!();
-    await see(/r retry save/);
+    await see(/r review again/);
     assert.match(frame, /q: use both/);
     assert.doesNotMatch(frame, /Answer saved in Bookie/);
     refuse = false;
     key("r");
+    await see(/Enter save to Bookie/);
+    key(enter);
     await see(/Saving your answer/);
     releaseSave!();
     await see(/Answer saved in Bookie/);
