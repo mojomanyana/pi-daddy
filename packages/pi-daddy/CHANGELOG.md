@@ -1,6 +1,6 @@
 # Changelog — pi-daddy
 
-## Unreleased
+## 0.55.0 — 2026-11-10
 
 - With compatible Bookie project memory, Overview and Tasks show saved choices under **Open choices**. You can return to these choices after `/new` in the same folder with Auto on.
 
