@@ -64,6 +64,11 @@ export interface DashboardSavedEvidence {
   sha256: string;
   description?: DashboardResultDescription;
 }
+export interface DashboardInputPrompt {
+  id: string;
+  kind: "select" | "confirm" | "input" | "editor";
+  label: string;
+}
 export interface DashboardOwnerObservation {
   version: 1;
   sessionId: string;
@@ -73,6 +78,7 @@ export interface DashboardOwnerObservation {
   observedAt: string;
   sources: DashboardSourceSnapshot[];
   logicalOwnerId?: string;
+  inputPrompt?: DashboardInputPrompt;
   turn?: DashboardContribution;
   activity?: DashboardContribution[];
   artifacts?: DashboardSavedEvidence[];

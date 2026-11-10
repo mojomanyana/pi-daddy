@@ -289,7 +289,27 @@ export function sessionDashboardItems(options: DashboardScreenOptions): Dashboar
     return item;
   });
   const components = componentItems(options);
+  const prompt = observed.inputPrompt;
+  // The governance gate already owns its permission row. Do not also show the same
+  // native select as a second question. A disconnected owner has no live input request.
+  const input: DashboardItem[] =
+    prompt && !staleOwner && !options.session?.pendingApprovals.length
+      ? [
+          {
+            key: `input:${observed.generation}:${prompt.id}`,
+            label: clean(prompt.label),
+            status: "needs-you",
+            elapsed: "",
+            briefDetails: ["Answer or cancel the open question in your main Pi chat."],
+            details: [
+              "A native Pi dialog is currently waiting for your answer.",
+              "Answer or cancel it in your main Pi chat.",
+            ],
+          },
+        ]
+      : [];
   const items = [
+    ...input,
     ...components.filter(needsUserInput),
     ...(ownerTurn && !parentShown
       ? [row(ownerTurn, `owner:${observed.generation}:${ownerTurn.id}`, "Pi owner", staleOwner)]

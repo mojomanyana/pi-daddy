@@ -12,6 +12,7 @@ export function dashboardObservation(session: GrantsSession, now = Date.now()) {
     samples.set(session, sample);
   }
   const live = session.dashboardLive?.();
+  const inputPrompt = session.dashboardPrompt?.();
   const initiative = session.dashboardInitiative?.();
   const workspace = workspaceDiagnosticSnapshot(session);
   return {
@@ -19,6 +20,7 @@ export function dashboardObservation(session: GrantsSession, now = Date.now()) {
       version: 1 as const,
       ...value,
       ...live,
+      ...(inputPrompt ? { inputPrompt } : {}),
       sources: [...value.sources, ...(initiative ? [initiative] : []), ...(workspace ? [workspace] : [])],
       logicalOwnerId: session.ownSpawnId,
       artifacts: (session.dashboardArtifacts ?? []).slice(-16),

@@ -332,6 +332,14 @@ The **Overview** view keeps the current next action visible while you scroll. Wh
 an output ready for review, press **3** for **Reviews** and **Enter** on the output to see the reported
 review instructions and evidence reference. Open the owning project to record a decision.
 
+On Pi versions that emit native prompt events (verified on Pi 1.5.2), selections, confirmations and
+text-entry dialogs appear under **Needs your input** while they are open. The row shows the question and directs you to answer or cancel in the main Pi chat; it clears when
+the dialog closes or the session changes. A pending Daddy permission takes priority over a duplicate native
+dialog row. The bundled Herdr hook receives the same start/end signal, including on older Herdr installations
+that do not consume Pi's terminal status protocol. Generic custom panels are not inferred to be questions:
+informational views and loading screens stay out, while existing producer-owned approvals keep their own status.
+Neither the dashboard nor the Herdr signal grants authority or changes Auto.
+
 A connected dashboard sends explicit Auto choices and model edits over a private session-local socket. Model edits
 use the same in-memory overrides and `session_config` audit path as `/grants models`; `m <definition>
 <provider:model> <thinking>` and `m all ...` remain available in command mode. A standalone dashboard is read-only.

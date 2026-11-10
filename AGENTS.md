@@ -198,6 +198,13 @@ it measured nothing rather than passing quietly.
 
 ## Decisions still in force
 
+**2026-11-11 — native questions are live input observations.** Public Pi native select/confirm/input/editor
+start/end events may supply one current input row and a balanced Herdr blocked signal, bound to the current
+session and canonical folder. Answer, cancellation, session change and disposal clear it. A pending Daddy
+approval takes display priority. Generic custom UI events do not distinguish loading screens from questions,
+so they never infer a user wait; existing explicit producer approvals keep their own state. Do not parse
+terminal status sequences, assistant text or private answers, or derive permission from a display signal.
+
 **2026-11-10 — open choices are parked project decisions.** Enter may inspect a current Bookie choice through
 the authenticated parent. An explicit save writes the selected option or typed answer against that note’s
 revision. Leaving the picker writes nothing. Recommendations need a reason and supporting evidence. Read-only
