@@ -253,3 +253,97 @@ test("selection and action remain distinguishable in monochrome, narrow panes an
     } else assert.doesNotMatch(mono, /Selected item/);
   }
 });
+
+test("Overview and Tasks show ongoing research ahead of an earlier failed request, with no operator action", () => {
+  const o = options([]);
+  o.width = 80;
+  o.height = 32;
+  o.items.push({
+    key: "earlier-turn",
+    label: "Pi handled your request",
+    status: "failed",
+    elapsed: "0:01",
+    details: [],
+  });
+  o.session!.observation!.turn = { id: "new-turn", kind: "work", label: "Research workshop guides", state: "running" };
+  for (const destination of ["now", "work"] as const) {
+    o.screen.destination = destination;
+    const frame = renderDashboardScreen(o);
+    assert.doesNotMatch(frame, /^Needs (attention|your permission|your decision)\b/im);
+    assert.match(frame, /In progress[^\n]*\n[> ]+Research workshop guides · Running/);
+    assert.match(frame, /Research workshop guides · Running[\s\S]+Pi handled your request · Failed 0:01/);
+    const colorFrame = renderDashboardScreen({ ...o, color: true });
+    const failedLine = colorFrame.split("\n").find((line) => line.includes("Pi handled your request"))!;
+    assert.doesNotMatch(failedLine, /\x1b\[(?:1;)?31m/);
+    if (destination === "now") assert.match(frame, /No pending dashboard requests\./);
+  }
+});
+
+test("only current permission and review requests ask for a decision alongside passive outcomes", () => {
+  const o = options([work, { id: "runner", kind: "work", label: "Waiting for sources", state: "dependency-wait" }]);
+  o.width = 80;
+  o.height = 40;
+  o.items.push(
+    { key: "unfinished", label: "Earlier run", status: "incomplete", elapsed: "0:04", details: [] },
+    { key: "refusal", label: "Earlier lookup", status: "refused", elapsed: "0:01", details: [] },
+  );
+  o.session!.pendingApprovals.push({ id: "permit", subject: "research", capability: "tool:bash" });
+  for (const destination of ["now", "work"] as const) {
+    o.screen.destination = destination;
+    const frame = renderDashboardScreen(o);
+    assert.match(frame, /Needs your permission[^\n]*\n[> ]+research needs shell access/);
+    assert.match(frame, /Needs your decision[^\n]*\n[> ]+customer update · Awaiting decision/);
+    assert.match(frame, /Earlier run · Incomplete/);
+    assert.match(frame, /Earlier lookup · Blocked/);
+    assert.match(frame, /Waiting for sources · Waiting on dependency/);
+    assert.doesNotMatch(frame, /Needs attention|No pending dashboard requests/);
+  }
+  o.session!.pendingApprovals = [];
+  o.session!.observation!.sources[0]!.availability = "closed";
+  for (const destination of ["now", "work"] as const) {
+    o.screen.destination = destination;
+    const closed = renderDashboardScreen(o);
+    assert.match(closed, /Last seen · customer update/);
+    assert.doesNotMatch(
+      closed,
+      /Needs attention|Needs your permission|Needs your decision|research needs shell access/,
+    );
+  }
+});
+
+test("a settled chat turn without an explicit input event reports only the dashboard's queue", () => {
+  const o = options([]);
+  o.width = 80;
+  o.height = 24;
+  // Identical owner metadata is emitted for a final answer and for a question in ordinary chat.
+  o.session!.observation!.turn = { id: "turn:1", kind: "work", state: "settled", label: "Pi finished its turn" };
+  const frame = renderDashboardScreen(o);
+  assert.match(frame, /No pending dashboard requests\./);
+  assert.match(frame, /Pi finished its turn · Finished/);
+  assert.doesNotMatch(frame, /No decision requested from you|No (?:input|response) needed|Needs your input/i);
+});
+
+test("Scout's current request for a decision is shown once alongside the other decisions", () => {
+  const o = options([]);
+  const scout = {
+    ...o.session!.observation!.sources[0]!,
+    producer: "scout-worker",
+    items: [
+      { id: "research", kind: "work", state: "approval-wait", label: "Research" } satisfies DashboardContribution,
+    ],
+  };
+  o.session!.observation!.sources.push(scout);
+  o.width = 80;
+  o.height = 30;
+  for (const destination of ["now", "work"] as const) {
+    o.screen.destination = destination;
+    const frame = renderDashboardScreen(o);
+    assert.match(frame, /Needs your decision[^\n]*\n[> ]+Scout research worker · Waiting for you/);
+    assert.equal(o.screen.items.filter((item) => item.key === "component:scout-worker").length, 1);
+  }
+  scout.availability = "closed";
+  o.screen.destination = "now";
+  const closed = renderDashboardScreen(o);
+  assert.match(closed, /Scout research worker · Live status unknown/);
+  assert.doesNotMatch(closed, /Needs your decision/);
+});

@@ -1239,3 +1239,11 @@ Overview shows a bounded selection from the current session. Tasks retains the f
 ### 2026-11-09 — Bind automatic project memory to current parent Auto
 
 Offer an in-process, revocable observation to compatible Bookie extensions only in the current trusted interactive root session. Recheck native identity, workspace and Auto at use time. Child and headless sessions cannot inherit it. Keep automatic workspace memory separate from manual vault selection, provider consent and grants. Show readiness only when Bookie reports it.
+
+### 2026-11-10 — Only current user requests belong in the dashboard action queue
+
+Permission requests, explicit input waits and pending review decisions draw attention. Failures and refusals are outcomes, and an incomplete observation leaves the outcome unknown. A settled Pi turn alone does not establish whether the assistant asked a question in chat.
+
+### 2026-11-10 — A saved interactive /new starts a fresh parent in the same folder
+
+The matching outgoing and incoming Pi lifecycle events identify the replacement. The new owner binds its own controls and uses the original launch settings. A previous session’s Auto toggle, approvals and project memory access never authorize the new one.

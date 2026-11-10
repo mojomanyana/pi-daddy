@@ -259,7 +259,8 @@ in pi's agent directory, not in the workspace.
 Start Pi with `PI_DADDY_AUTO_MODE=1` for Auto ON, or `PI_DADDY_AUTO_MODE=0` (the default when unset) for Auto OFF.
 In the connected dashboard, press **a** to switch it on or off. `/grants auto on` and `/grants auto off` control the
 same session setting; `/grants` shows the current state and source. Reload preserves the session choice; a new
-Pi session starts from the environment default.
+Pi session starts from the environment default. After `/new` in the same folder, use `/grants auto on` in the
+new chat if you want automatic project memory and your launch default is OFF.
 
 Auto is checked again before each delegation or chain step. Turning it OFF stops future automatic admissions;
 already admitted work continues and independently granted manual approvals remain valid. Turning it ON can release

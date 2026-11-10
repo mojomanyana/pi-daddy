@@ -2,7 +2,16 @@ import assert from "node:assert/strict";
 import { access, mkdir, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import test from "node:test";
-import type { ExtensionAPI, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
+import {
+  createAgentSessionFromServices,
+  createAgentSessionRuntime,
+  createAgentSessionServices,
+  SessionManager,
+  SettingsManager,
+  type AgentSessionRuntime,
+  type ExtensionAPI,
+  type ExtensionUIContext,
+} from "@earendil-works/pi-coding-agent";
 import { PROJECT_MEMORY_OWNER_EVENT, type ProjectMemoryOwner } from "../../extensions/project-memory-owner.ts";
 import {
   DASHBOARD_SOURCE_EVENT,
@@ -170,6 +179,90 @@ test("interactive trusted parent offers workspace memory and the connected dashb
       await (await ensureDashboardSessionServer(current)).close();
       await closeSessionAutoMode(current);
     }
+    await fixture?.close();
+    for (const [key, value] of saved) value === undefined ? delete process.env[key] : (process.env[key] = value);
+  }
+});
+
+test("Pi /new in the same folder gets a fresh root, dashboard and Bookie owner", async () => {
+  const keys = [...GRANT_ENV_KEYS, "PI_CODING_AGENT_DIR", "PI_DADDY_HERDR", "PI_DADDY_ACTIVITY_TIMELINE", "HERDR_ENV"];
+  const saved = new Map(keys.map((key) => [key, process.env[key]]));
+  const sessions: GrantsSession[] = [];
+  const leases: ProjectMemoryOwner[] = [];
+  let host: AgentSessionRuntime | undefined;
+  let fixture: Awaited<ReturnType<typeof createFixture>> | undefined;
+  try {
+    for (const key of keys) delete process.env[key];
+    process.env.PI_DADDY_HERDR = "0";
+    process.env.PI_DADDY_ACTIVITY_TIMELINE = "off";
+    process.env.PI_DADDY_FANOUT = "3";
+    const offline = (fixture = await createFixture());
+    const cwd = offline.root,
+      agentDir = join(cwd, "agent");
+    process.env.PI_CODING_AGENT_DIR = agentDir;
+    const uiContext = { notify() {} } as unknown as ExtensionUIContext;
+    host = await createAgentSessionRuntime(
+      async ({ sessionManager, sessionStartEvent }) => {
+        const services = await createAgentSessionServices({
+          cwd,
+          agentDir,
+          modelRuntime: offline.runtime,
+          settingsManager: SettingsManager.inMemory({}, { projectTrusted: true }),
+          resourceLoaderOptions: {
+            noExtensions: true,
+            noSkills: true,
+            noPromptTemplates: true,
+            noThemes: true,
+            noContextFiles: true,
+            extensionFactories: [
+              (pi) => {
+                const session = createGrantsSession(undefined);
+                sessions.push(session);
+                grants(pi, session);
+                pi.events.on(PROJECT_MEMORY_OWNER_EVENT, (value) => leases.push(value as ProjectMemoryOwner));
+              },
+            ],
+          },
+        });
+        const result = await createAgentSessionFromServices({
+          services,
+          sessionManager,
+          sessionStartEvent,
+          model: offline.session.model,
+        });
+        return { ...result, services, diagnostics: [] };
+      },
+      { cwd, agentDir, sessionManager: SessionManager.create(cwd, join(agentDir, "sessions")) },
+    );
+    host.setRebindSession((session) => session.bindExtensions({ mode: "tui", uiContext }));
+    await host.session.bindExtensions({ mode: "tui", uiContext });
+    await host.session.prompt("/grants auto on");
+    const first = sessions[0]!;
+    const previousLease = leases.at(-1);
+    assert.ok(previousLease && previousLease.isCurrent());
+    const old = await ensureDashboardSessionServer(first);
+    assert.equal((await dashboardSessionRequest(old.socketPath, old.token, { action: "get" })).auto.enabled, true);
+
+    assert.deepEqual(await host.newSession(), { cancelled: false });
+    assert.equal(previousLease.isCurrent(), false);
+    const fresh = sessions[1]!;
+    assert.equal(fresh.depth, 0, "the replacement chat is a parent in the same folder");
+    assert.equal(fresh.capacity.total, 3);
+    assert.notEqual(fresh.episodeId, first.episodeId);
+    assert.notEqual(fresh.capacity, first.capacity);
+    const endpoint = await ensureDashboardSessionServer(fresh);
+    assert.notEqual(endpoint.socketPath, old.socketPath);
+    await assert.rejects(dashboardSessionRequest(old.socketPath, old.token, { action: "get" }));
+    const snapshot = await dashboardSessionRequest(endpoint.socketPath, endpoint.token, { action: "get" });
+    assert.equal(snapshot.observation?.sessionId, host.session.sessionManager.getSessionId());
+    assert.deepEqual(snapshot.auto, { enabled: false, source: "default" });
+    await host.session.prompt("/grants auto on");
+    assert.equal(leases.at(-1)?.sessionId, host.session.sessionManager.getSessionId());
+    assert.ok(leases.at(-1)?.isCurrent());
+    assert.equal(offline.requests.length, 0);
+  } finally {
+    await host?.dispose();
+    for (const session of sessions) await (await ensureDashboardSessionServer(session)).close();
     await fixture?.close();
     for (const [key, value] of saved) value === undefined ? delete process.env[key] : (process.env[key] = value);
   }

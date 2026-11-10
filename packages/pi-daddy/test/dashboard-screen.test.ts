@@ -278,7 +278,7 @@ test("finished history is explicitly requested and optional color preserves widt
     currentStatus: "finished",
   };
   const hidden = renderDashboardScreen(options);
-  assert.match(hidden, /9 finished · h shows history/);
+  assert.match(hidden, /9 earlier · h shows history/);
   assert.doesNotMatch(hidden, /build 5 界|HISTORY/);
   display.key("h");
   const shown = renderDashboardScreen({ ...options, ...display.state, color: true });
@@ -308,4 +308,29 @@ test("observed tool activity shows actual cwd and silence without inventing a st
   const after = parseActivityTimeline(await readFile(recorder.path, "utf8"));
   assert.equal(after.tasks[0].lastEvent?.kind, "tool_finished");
   assert.equal(after.tasks[0].status, "active");
+});
+
+test("legacy dashboard keeps a current input request in view and failed or incomplete attempts in history", () => {
+  const display = createDashboardDisplayControls(false, true);
+  const items = [
+    { key: "failed", label: "Earlier lookup", status: "failed", elapsed: "0:01", details: [] },
+    { key: "unknown", label: "Interrupted lookup", status: "incomplete", elapsed: "0:02", details: [] },
+    { key: "question", label: "Choose an audience", status: "needs-you", elapsed: "", details: [] },
+  ];
+  const o = {
+    width: 70,
+    height: 20,
+    screen: display.screen,
+    items,
+    session: { ...snapshot(), pendingApprovals: [] },
+    connected: true,
+  };
+  const current = renderDashboardScreen(o);
+  assert.match(current, /NEEDS YOU[^\n]*\n[> ]+Choose an audience +Needs you/i);
+  assert.doesNotMatch(current, /Needs attention|Earlier lookup|Interrupted lookup|2 finished/i);
+  display.key("h");
+  const expanded = renderDashboardScreen({ ...o, ...display.state });
+  assert.match(expanded, /HISTORY[\s\S]+Earlier lookup +Failed/);
+  assert.match(expanded, /HISTORY[\s\S]+Interrupted lookup +Incomplete/);
+  assert.doesNotMatch(expanded, /Needs attention/i);
 });

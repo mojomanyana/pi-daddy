@@ -4,7 +4,12 @@ import { dirname } from "node:path";
 import { after, test } from "node:test";
 import grantsExtension from "../extensions/grants.ts";
 import { createGrantsSession, type GrantsSession } from "../extensions/session.ts";
-import { bindReloadLifecycle } from "../extensions/reload-environment.ts";
+import {
+  beginExtensionLifecycle,
+  bindReloadLifecycle,
+  expectNewSession,
+  rememberChildPublication,
+} from "../extensions/reload-environment.ts";
 import { grantStorePath, projectLedgerPath, saveGrant } from "../src/governance/grant-store.ts";
 import { GRANT_ENV_KEYS } from "../src/kernel/propagation.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
@@ -107,6 +112,56 @@ test("owner-bound reload restores its root while a distinct owner keeps inherite
       const value = original.get(key);
       value === undefined ? delete process.env[key] : (process.env[key] = value);
     }
+  }
+});
+
+test("only the exact Pi /new successor can recover launch inputs from the outgoing child publication", () => {
+  const keys = ["PI_DADDY_DEPTH", "PI_DADDY_GRANT"] as const;
+  const original = new Map(keys.map((key) => [key, process.env[key]]));
+  const files = { previous: "/sessions/outgoing", target: "/sessions/next", cwd: "/project" };
+  const bind = (replacement?: Partial<typeof files>) =>
+    bindReloadLifecycle({}, beginExtensionLifecycle().lifecycle, replacement && { ...files, ...replacement })
+      .environment;
+  try {
+    delete process.env.PI_DADDY_DEPTH;
+    process.env.PI_DADDY_GRANT = "tool:read,tool:write";
+    const { lifecycle } = beginExtensionLifecycle();
+    process.env.PI_DADDY_DEPTH = "1";
+    process.env.PI_DADDY_GRANT = "tool:read";
+    rememberChildPublication(lifecycle);
+    expectNewSession(lifecycle, files);
+    for (const replacement of [undefined, { previous: undefined }, { target: "/sessions/other" }, { cwd: "/other" }]) {
+      const unrelated = bind(replacement);
+      assert.equal(unrelated.PI_DADDY_DEPTH, "1");
+      assert.equal(unrelated.PI_DADDY_GRANT, "tool:read");
+    }
+    assert.equal(bind({}).PI_DADDY_GRANT, "tool:read,tool:write");
+    assert.equal(bind({}).PI_DADDY_DEPTH, "1", "the matched pair can be used only once");
+
+    expectNewSession(lifecycle, files);
+    const pending = beginExtensionLifecycle().lifecycle;
+    process.env.PI_DADDY_GRANT = "";
+    assert.equal(
+      bindReloadLifecycle({}, pending, files).environment.PI_DADDY_GRANT,
+      "",
+      "a restriction during setup wins",
+    );
+    process.env.PI_DADDY_GRANT = "tool:read";
+    assert.equal(bind({}).PI_DADDY_DEPTH, "1", "a refused handoff cannot be replayed");
+
+    expectNewSession(lifecycle, files);
+    const provisional = beginExtensionLifecycle().lifecycle;
+    const other = beginExtensionLifecycle().lifecycle;
+    process.env.PI_DADDY_GRANT = "";
+    rememberChildPublication(other);
+    expectNewSession(lifecycle, files);
+    const interleaved = bindReloadLifecycle({}, provisional, files).environment;
+    assert.equal(interleaved.PI_DADDY_DEPTH, "1", "a new publisher invalidates the outgoing owner's handoff");
+    assert.equal(interleaved.PI_DADDY_GRANT, "", "the replacement cannot use the earlier provisional grant");
+    expectNewSession(other, { ...files, target: undefined, previous: undefined });
+    assert.equal(bind({ target: undefined, previous: undefined }).PI_DADDY_DEPTH, "1");
+  } finally {
+    for (const [key, value] of original) value === undefined ? delete process.env[key] : (process.env[key] = value);
   }
 });
 
