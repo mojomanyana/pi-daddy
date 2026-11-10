@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { inspectChoice, saveChoice } from "./dashboard-choice-picker.ts";
 import type { DashboardAcknowledgment } from "./dashboard-session-client.ts";
 import { dashboardFile, dashboardTimeline, dashboardSelectedDetail } from "./dashboard-file-cache.ts";
 /**
@@ -152,7 +153,7 @@ async function compactFrame(options: DashboardFrameOptions): Promise<string> {
       items: [],
       problem: "INCOMPATIBLE dashboard protocol; relink this package.",
     });
-  if (options.screen?.view === "recap")
+  if (options.screen?.view === "recap" || options.screen?.view === "choice")
     return renderDashboardScreen({
       ...options,
       width: options.width ?? 80,
@@ -371,7 +372,17 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
   let stopped = false,
     drawing = false;
   const draw = async (clear: boolean): Promise<void> => {
-    await connection.refresh();
+    const editingChoice =
+      display.screen.view === "choice" &&
+      display.screen.picker &&
+      ["loading", "options", "custom", "confirm", "refused"].includes(display.screen.picker.phase);
+    const showsChoices =
+      display.screen.view === "main" &&
+      display.state.filter === "everything" &&
+      ["now", "work"].includes(display.screen.destination ?? "now");
+    await connection.refresh(
+      interactive && editingChoice ? "picker" : interactive && showsChoices ? "list" : undefined,
+    );
     const jev = connection.state.snapshot?.settings?.jev;
     if (notice === JEV_CONSENT_NOTICE && jev && !jev.pending) notice = dashboardJevNotice(jev);
     if (notice === JEV_EDITOR_NOTICE && jev && !jev.pending) notice = "";
@@ -457,6 +468,7 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
       stop();
       return;
     }
+    connection.requestChoiceRefresh();
     if (command !== undefined) {
       if (key.name === "escape") command = undefined;
       else if (key.name === "return") {
@@ -472,10 +484,13 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
     let action = display.key(
       key.name === "return"
         ? "return"
-        : ["up", "down", "pageup", "pagedown", "escape", "tab"].includes(key.name || "")
+        : ["up", "down", "pageup", "pagedown", "escape", "tab", "backspace"].includes(key.name || "")
           ? key.name!
           : text || "",
+      !key.ctrl && !key.meta ? text : undefined,
     );
+    if (action === "inspect-choice") void inspectChoice(display.screen, connection).then(redraw);
+    if (action === "answer-choice") void saveChoice(display.screen, connection).then(redraw);
     if (action === "quit") {
       stop();
       return;

@@ -61,7 +61,8 @@ test("trusted bridge reports actual owner facts, rejects caller identity and sur
     const settled = await snapshot();
     const replacement = registerRuntimeSnapshot(pi, session);
     await replacement.bind(ctx);
-    assert.equal(listeners.size, 6);
+    assert.equal(listeners.has("pi-daddy:bookie-choice-controls:v1"), true);
+    assert.equal(listeners.size, 7);
     for (const set of listeners.values()) assert.equal(set.size, 1, "one active handler per named event after reload");
     const reloaded = await snapshot();
     assert.equal(reloaded.ownerScope, settled.ownerScope);

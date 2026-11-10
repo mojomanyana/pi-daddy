@@ -1,3 +1,4 @@
+import { openChoice, choiceKey } from "./dashboard-choice-picker.ts";
 import { DASHBOARD_DESTINATIONS } from "./dashboard-panels.ts";
 import { DASHBOARD_SETTING_KEYS } from "./dashboard-settings.ts";
 /** Local display controls; these never dispatch actions to an owner or change ledger state. */
@@ -19,7 +20,11 @@ export function createDashboardDisplayControls(details: boolean, ledger: boolean
   return {
     state,
     screen,
-    key(key: string): "auto" | "quit" | "command" | "setting" | undefined {
+    key(
+      key: string,
+      text?: string,
+    ): "auto" | "quit" | "command" | "setting" | "inspect-choice" | "answer-choice" | undefined {
+      if (screen.view === "choice") return choiceKey(screen, key, text);
       if (key === "?" || key === "r") {
         const reading = key === "?" ? "help" : "recap";
         if (screen.view === reading) key = "escape";
@@ -86,6 +91,7 @@ export function createDashboardDisplayControls(details: boolean, ledger: boolean
         screen.offset = 0;
       } else if (key === "return" || key === "d") {
         if (screen.view !== "versions" && (screen.view !== "main" || !screen.selectedKey)) return;
+        if (screen.view === "main" && key === "return" && openChoice(screen)) return "inspect-choice";
         screen.view = screen.view === "versions" ? "version-details" : "details";
         screen.sourceDetails = false;
         screen.offset = 0;

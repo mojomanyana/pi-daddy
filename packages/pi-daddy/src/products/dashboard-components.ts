@@ -5,6 +5,7 @@ import type {
   DashboardSourceSnapshot,
 } from "../kernel/dashboard-observation.ts";
 import type { DashboardItem, DashboardScreenOptions } from "./dashboard-screen.ts";
+import { validChoiceId } from "../kernel/dashboard-choice.ts";
 import { isBookieChoice } from "../kernel/dashboard-observation.ts";
 import type { EcosystemVersionRow } from "./ecosystem-versions.ts";
 import { safeDashboardSummary } from "./activity-summary.ts";
@@ -80,14 +81,33 @@ export function bookieOpenChoices(options: DashboardScreenOptions): DashboardIte
     !source.items.some((i) => isComponentObservation(source, i) && i.state === "observed")
   )
     return [];
+  const owner = options.session.observation;
+  const canAnswer = owner && options.session.choiceControls?.sourceGeneration === source.generation;
   return source.items
     .filter((i) => isBookieChoice(source.producer, i) && i.kind === "work" && i.state === "observed")
     .map((i) => ({
       key: `source:${source.producer}:${source.generation}:${i.id}`,
       label: i.label,
       status: "open-choice",
+      ...(canAnswer && validChoiceId(i.id)
+        ? {
+            choice: {
+              choiceId: i.id,
+              sourceGeneration: source.generation,
+              expectedOwner: {
+                sessionId: owner.sessionId,
+                cwd: owner.cwd,
+                generation: owner.generation,
+              },
+            },
+          }
+        : {}),
       elapsed: "",
-      briefDetails: ["Saved in this project’s notes.", ...(i.details ?? [])],
+      briefDetails: [
+        "Saved in this project’s notes.",
+        ...(i.details ?? []),
+        ...(canAnswer ? [] : ["This Bookie connection offers viewing only."]),
+      ],
       details: [
         ...(i.details ?? []),
         `Source: Bookie ${source.producerVersion}`,
