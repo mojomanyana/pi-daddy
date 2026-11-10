@@ -1,6 +1,6 @@
 # Changelog — pi-daddy
 
-## Unreleased
+## 0.56.0 — 2026-11-10
 
 - Select a saved question in **Open choices** to review its alternatives and any supporting recommendation. Pick an option or write your own answer, then save in Bookie. **Decide later** keeps the question open.
 
