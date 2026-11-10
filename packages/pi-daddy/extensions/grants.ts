@@ -57,7 +57,7 @@ import {
 } from "./session.ts";
 import { acceptWorkspaces } from "../src/governance/workspace-acceptance.ts";
 import { loadWorkspaceRegistry } from "../src/kernel/workspace.ts";
-import { bindReloadLifecycle } from "./reload-environment.ts";
+import { bindReloadLifecycle, expectNewSession } from "./reload-environment.ts";
 import { reconcileActiveDelegationTools } from "./delegation-activation.ts";
 import { resolveExecutor } from "./executor-session.ts";
 import { reportSelectedDefinitions, reportSessionStart, type SessionReportContext } from "./session-report.ts";
@@ -122,13 +122,17 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
   pi.on("before_agent_start", async () => {
     await session.ensureDefinitions?.();
   });
-  pi.on("session_start", async (_event, ctx) => {
+  pi.on("session_start", async (event, ctx) => {
     if (session.adoptedLegacyEnv.length > 0)
       ctx.ui.notify(legacyEnvironmentWarning(session.adoptedLegacyEnv), "warning");
     // Real SDK contexts always supply SessionManager. The fallback keeps lightweight wiring fixtures
     // isolated; it cannot carry state into another extension instance.
     const owner = (ctx as { sessionManager?: object }).sessionManager ?? session;
-    const reload = bindReloadLifecycle(owner, session.reloadLifecycle);
+    const replacement =
+      event?.reason === "new" && ctx.mode === "tui" && ctx.hasUI
+        ? { previous: event.previousSessionFile, target: ctx.sessionManager?.getSessionFile?.(), cwd: ctx.cwd }
+        : undefined;
+    const reload = bindReloadLifecycle(owner, session.reloadLifecycle, replacement);
     session.reconcileEnvironment(reload.environment, reload.lifecycle, ctx.cwd);
     session.ownerBound = true;
     const projectMemoryReady = projectMemory.begin(ctx);
@@ -331,7 +335,21 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
     return undefined;
   });
 
-  pi.on("session_shutdown", async (event) => {
+  pi.on("session_shutdown", async (event, ctx) => {
+    if (
+      event.reason === "new" &&
+      ctx.mode === "tui" &&
+      ctx.hasUI &&
+      session.depth === 0 &&
+      !session.ownExecutionId &&
+      !session.malformedBounds.length &&
+      session.reloadLifecycle.autoMode?.authority
+    )
+      expectNewSession(session.reloadLifecycle, {
+        previous: ctx.sessionManager.getSessionFile(),
+        target: event.targetSessionFile,
+        cwd: ctx.cwd,
+      });
     projectMemory.close();
     if (event.reason !== "reload") await closeSessionAutoMode(session);
   });

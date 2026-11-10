@@ -1243,3 +1243,7 @@ Offer an in-process, revocable observation to compatible Bookie extensions only 
 ### 2026-11-10 — Only current user requests belong in the dashboard action queue
 
 Permission requests, explicit input waits and pending review decisions draw attention. Failures and refusals are outcomes, and an incomplete observation leaves the outcome unknown. A settled Pi turn alone does not establish whether the assistant asked a question in chat.
+
+### 2026-11-10 — A saved interactive /new starts a fresh parent in the same folder
+
+The matching outgoing and incoming Pi lifecycle events identify the replacement. The new owner binds its own controls and uses the original launch settings. A previous session’s Auto toggle, approvals and project memory access never authorize the new one.

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- In a saved interactive Pi session, `/new` in the same folder opens a fresh parent session. The new session can connect its dashboard and access the folder’s Bookie notes when its own Auto setting is on.
+
 - Overview and Tasks ask for attention only when Pi is waiting for your permission, input or decision. Earlier failed and refused attempts appear with finished tasks. Dependency waits and unconfirmed outcomes have their own headings.
 
 ## 0.54.0 — 2026-11-09

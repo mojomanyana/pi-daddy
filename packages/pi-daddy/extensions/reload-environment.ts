@@ -1,3 +1,4 @@
+import { newEpisodeId } from "../src/kernel/episode-id.ts";
 import { ENV_AUTO_MODE, ENV_AUTO_MODE_REF } from "../src/kernel/env-names.ts";
 import type { OwnerCapacity } from "./session-capacity.ts";
 import { GRANT_ENV_KEYS } from "../src/kernel/propagation.ts";
@@ -42,9 +43,19 @@ export interface ReloadLifecycle {
 }
 type SessionOwner = object;
 
+interface NewSessionFiles {
+  previous?: string;
+  target?: string;
+  cwd: string;
+}
+
 interface ReloadState {
   owners: WeakMap<SessionOwner, ReloadLifecycle>;
-  latestChildPublication?: { lifecycle: ReloadLifecycle; environment: Record<string, string | undefined> };
+  latestChildPublication?: {
+    lifecycle: ReloadLifecycle;
+    environment: Record<string, string | undefined>;
+    next?: NewSessionFiles;
+  };
 }
 const RELOAD_STATE = Symbol.for("pi-daddy.reload-environment.v1");
 function state(): ReloadState {
@@ -60,6 +71,19 @@ function same(left: Record<string, string | undefined>, right: Record<string, st
 }
 function withRoot(root: Record<string, string | undefined>): NodeJS.ProcessEnv {
   return { ...process.env, ...root };
+}
+
+/** Pi names both persisted sessions across /new. Only the outgoing publisher may designate its successor. */
+export function expectNewSession(lifecycle: ReloadLifecycle, files: NewSessionFiles): void {
+  const publication = state().latestChildPublication;
+  if (
+    publication?.lifecycle === lifecycle &&
+    files.previous &&
+    files.target &&
+    files.previous !== files.target &&
+    same(snapshot(), publication.environment)
+  )
+    publication.next = files;
 }
 
 /** Factory-time state is provisional: ExtensionAPI is recreated before the stable session owner is known. */
@@ -88,6 +112,7 @@ export function beginExtensionLifecycle(): { environment: NodeJS.ProcessEnv; lif
 export function bindReloadLifecycle(
   owner: SessionOwner,
   provisional: ReloadLifecycle,
+  replacement?: NewSessionFiles,
 ): {
   lifecycle: ReloadLifecycle;
   environment: NodeJS.ProcessEnv;
@@ -95,6 +120,23 @@ export function bindReloadLifecycle(
   const holder = state();
   let existing = holder.owners.get(owner);
   if (!existing) {
+    if (replacement) {
+      // Re-read at bind: another publisher or an explicit restriction can arrive after the extension factory.
+      let root = beginExtensionLifecycle().lifecycle.root;
+      const publication = holder.latestChildPublication;
+      const next = publication?.next;
+      if (
+        publication &&
+        next &&
+        replacement.previous === next.previous &&
+        replacement.target === next.target &&
+        replacement.cwd === next.cwd
+      ) {
+        delete publication.next;
+        if (same(snapshot(), publication.environment)) root = { ...publication.lifecycle.root };
+      }
+      provisional = { root, episodeId: newEpisodeId() };
+    }
     holder.owners.set(owner, provisional);
     return { lifecycle: provisional, environment: withRoot(provisional.root) };
   }
