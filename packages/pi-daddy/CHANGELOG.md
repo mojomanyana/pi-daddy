@@ -1,6 +1,6 @@
 # Changelog — pi-daddy
 
-## Unreleased
+## 0.54.1 — 2026-11-10
 
 - In a saved interactive Pi session, `/new` in the same folder opens a fresh parent session. The new session can connect its dashboard and access the folder’s Bookie notes when its own Auto setting is on.
 
