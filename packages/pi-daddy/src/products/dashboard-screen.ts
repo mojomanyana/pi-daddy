@@ -1,5 +1,6 @@
 import type { DashboardAcknowledgment } from "./dashboard-session-client.ts";
 import {
+  needsUserInput,
   sessionDashboardItems,
   sessionNextLines,
   sessionPanelLines,
@@ -123,8 +124,7 @@ const versionStatus = (row: EcosystemVersionRow): string => {
     return "Up to date on disk";
   return "Unavailable";
 };
-const attention = (status: string) => ["failed", "refused", "incomplete"].includes(status);
-const active = (status: string) => ["active", "running", "starting", "authorised", "needs-you"].includes(status);
+const active = (status: string) => ["active", "running", "starting", "authorised", "cancel-requested"].includes(status);
 export function ledgerDashboardItems(projection: DashboardProjection): DashboardItem[] {
   return projection.nodes.map((node) => ({
     key: node.executionId,
@@ -288,9 +288,13 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
       "Respond to the permission request in the parent Pi session.",
     ],
   }));
+  const legacyItems =
+    options.connected === false && !modern
+      ? options.items.map((item) => (needsUserInput(item) ? { ...item, status: "last-observed" } : item))
+      : options.items;
   const allItems = [
     ...(!modern || ["now", "work"].includes(screen.destination ?? "now") ? approvals : []),
-    ...(modern ? sessionDashboardItems(options) : options.items),
+    ...(modern ? sessionDashboardItems(options) : legacyItems),
   ];
   const items = allItems.filter((item) =>
     options.filter === "agents"
@@ -298,13 +302,12 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
       : options.filter === "skills"
         ? item.skills
         : options.filter === "needs-you"
-          ? ["needs-you", "approval-wait"].includes(item.status)
+          ? needsUserInput(item)
           : true,
   );
-  const live = items.filter((item) => active(item.status)),
-    needsAttention = items.filter((item) => attention(item.status)),
-    past = items.filter((item) => !active(item.status) && !attention(item.status)).reverse();
-  screen.items = modern ? items : [...live, ...needsAttention, ...(options.history ? past : [])];
+  const live = items.filter((item) => active(item.status));
+  const past = items.filter((item) => !active(item.status) && !needsUserInput(item)).reverse();
+  screen.items = modern ? items : [...items.filter(needsUserInput), ...live, ...(options.history ? past : [])];
   if (screen.view === "details" && !screen.items.some((item) => item.key === screen.selectedKey)) {
     const detail = items.find((item) => item.key === screen.selectedKey);
     if (detail) screen.items.push(detail);
@@ -347,8 +350,11 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
     ...(modern ? [sessionLocation(screen, width)] : []),
   ];
   const disconnected = modern && options.connected === false;
-  if (disconnected) fixed.push("Disconnected · showing last known status");
-  else if (options.notice || options.problem) fixed.push(`! ${clean(options.notice || options.problem || "")}`);
+  if (disconnected) {
+    fixed.push("Disconnected · showing last known status");
+    if (screen.view === "main" && (screen.destination ?? "now") === "now")
+      fixed.push(...wrapDashboardLines(["In the current Pi chat, run /grants dashboard."], width));
+  } else if (options.notice || options.problem) fixed.push(`! ${clean(options.notice || options.problem || "")}`);
   const ack = options.acknowledgment;
   if (ack?.state === "unconfirmed") {
     const setting =
@@ -380,8 +386,8 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
     if (recommendation) {
       const title = heading.includes("[3]") ? "Next step · [3] Reviews" : "Next step";
       fixed.push(sectionHeading(title, width), ...wrapDashboardLines([action], width).slice(0, 2));
-    } else if (!allItems.some((i) => i.approval || ["needs-you", "approval-wait"].includes(i.status))) {
-      fixed.push("No decision requested from you.");
+    } else if (!allItems.some(needsUserInput)) {
+      fixed.push("No pending dashboard requests.");
     }
     if (options.height >= 22) fixed.push("");
   }
@@ -518,26 +524,27 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
       body.push("No items match this filter. Press Tab to change it.");
     else body.push(...sessionPanelLines(options, screen.items, width));
   } else {
-    const requestFinished = options.currentStatus && !active(options.currentStatus);
+    const requestFinished =
+      options.currentStatus &&
+      !active(options.currentStatus) &&
+      !["needs-you", "approval-wait"].includes(options.currentStatus);
     body.push(
       options.current
         ? requestFinished
           ? `LATEST REQUEST · ${friendlyStatus(options.currentStatus!)}`
           : "CURRENT REQUEST"
         : "CURRENT WORK",
-      clean(options.current ?? live.find((item) => !item.approval)?.label ?? "No active work"),
+      clean(options.current ?? live[0]?.label ?? "No active work"),
       "",
     );
     const rows: { text: string; key?: string }[] = [];
     let group: string | undefined;
     for (const item of screen.items) {
-      const next = item.approval
+      const next = needsUserInput(item)
         ? "NEEDS YOU"
-        : attention(item.status)
-          ? "NEEDS ATTENTION"
-          : active(item.status)
-            ? `WORK IN PROGRESS · ${live.filter((value) => !value.approval).length} active`
-            : "HISTORY";
+        : active(item.status)
+          ? `WORK IN PROGRESS · ${live.length} active`
+          : "HISTORY";
       if (next !== group) {
         rows.push({ text: next });
         group = next;
@@ -552,7 +559,7 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
       });
     }
     const hidden = !options.history ? past.length : 0;
-    const history = hidden ? `${hidden} finished · h shows history` : options.history ? "h hides history" : "";
+    const history = hidden ? `${hidden} earlier · h shows history` : options.history ? "h hides history" : "";
     const available = Math.max(0, height - fixed.length - footer.length - body.length - (history ? 1 : 0));
     const rowIndex = rows.findIndex((row) => row.key === selected?.key);
     const start = Math.max(0, rowIndex - available + 1);

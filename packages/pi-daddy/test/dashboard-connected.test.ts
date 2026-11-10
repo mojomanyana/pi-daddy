@@ -311,6 +311,7 @@ test("a disconnected dashboard withdraws permission prompts and their suggested 
   assert.match(draw(true), /build needs shell access/);
   const offline = draw(false);
   assert.match(offline, /Disconnected · showing last known status/);
+  assert.match(offline, /In the current Pi chat, run \/grants dashboard/);
   assert.doesNotMatch(offline, /Respond to the permission request|build needs shell access|Auto unavailable \[a\]/);
 });
 

@@ -285,7 +285,9 @@ export function sessionDashboardItems(options: DashboardScreenOptions): Dashboar
       return { ...item, label: ownerTurn.label };
     return item;
   });
+  const components = componentItems(options);
   const items = [
+    ...components.filter(needsUserInput),
     ...(ownerTurn && !parentShown
       ? [row(ownerTurn, `owner:${observed.generation}:${ownerTurn.id}`, "Pi owner", staleOwner)]
       : []),
@@ -327,29 +329,36 @@ export function sessionDashboardItems(options: DashboardScreenOptions): Dashboar
   const recent = shown.some((i) => workGroup(i) === "Recently finished")
     ? []
     : activityStoryItems(observed.activity ?? [], observed.generation, staleOwner).slice(0, 2);
-  return [...shown, ...recent, ...componentItems(options)];
+  return [...shown, ...recent, ...components.filter((item) => !needsUserInput(item))];
 }
 
 const workGroups = [
   "Needs your permission",
   "Needs your decision",
-  "Needs attention",
+  "Needs your input",
   "In progress",
+  "Waiting on a dependency",
+  "Outcome unknown",
   "Other tasks",
   "Recently finished",
   "Last known",
   "Tools",
 ];
+export function needsUserInput(item: DashboardItem): boolean {
+  return !item.reviewSummary && ["needs-you", "approval-wait"].includes(item.status);
+}
 function workGroup(item: DashboardItem): string {
-  if (item.key.startsWith("component:")) return "Tools";
+  if (item.key.startsWith("component:")) return needsUserInput(item) ? "Needs your decision" : "Tools";
   if (item.key.startsWith("activity:")) return "Latest activity";
   if (["last-observed", "historical"].includes(item.status)) return "Last known";
-  if (item.approval) return "Needs your permission";
-  if (item.status === "approval-wait") return "Needs your decision";
-  if (["needs-you", "failed", "refused", "incomplete", "dependency-wait"].includes(item.status))
-    return "Needs attention";
+  if (needsUserInput(item)) {
+    if (item.approval) return "Needs your permission";
+    return item.status === "approval-wait" ? "Needs your decision" : "Needs your input";
+  }
+  if (item.status === "dependency-wait") return "Waiting on a dependency";
+  if (item.status === "incomplete") return "Outcome unknown";
   if (["running", "active", "starting", "authorised", "cancel-requested"].includes(item.status)) return "In progress";
-  if (["settled", "completed", "finished", "cancelled", "historical", "last-observed"].includes(item.status))
+  if (["settled", "completed", "finished", "cancelled", "failed", "refused"].includes(item.status))
     return "Recently finished";
   return "Other tasks";
 }

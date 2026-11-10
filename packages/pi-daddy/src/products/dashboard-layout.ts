@@ -54,13 +54,15 @@ function paintCell(cell: string): string {
       /( · )(Failed|Blocked|Run failed|Last attempt failed|Unavailable|Awaiting decision|Needs you|Live status unknown|Running|Finished|Saved|Available)(?= |$| ·)/;
     return (
       text.replace(status, (_, separator, state) => {
-        const color = /Failed|failed|Blocked|Unavailable/.test(state)
-          ? "1;31"
-          : /Awaiting|Needs you|unknown/.test(state)
-            ? "33"
-            : state === "Running"
-              ? "36"
-              : "32";
+        const color = /^(Failed|Blocked|Last attempt failed|Run failed)$/.test(state)
+          ? "90"
+          : state === "Unavailable"
+            ? "1;31"
+            : /Awaiting|Needs you|unknown/.test(state)
+              ? "33"
+              : state === "Running"
+                ? "36"
+                : "32";
         return separator + sgr(state, color);
       }) + padding
     );
