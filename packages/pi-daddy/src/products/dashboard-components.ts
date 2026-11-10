@@ -9,6 +9,8 @@ import { isBookieChoice } from "../kernel/dashboard-observation.ts";
 import type { EcosystemVersionRow } from "./ecosystem-versions.ts";
 import { safeDashboardSummary } from "./activity-summary.ts";
 
+const BOOKIE_LIMIT_MESSAGE = "Only a bounded selection of saved open choices could be displayed.";
+
 type KnownSource = "bookie" | "scout-local" | "scout-worker";
 
 export function isComponentObservation(source: DashboardSourceSnapshot, item: DashboardContribution): boolean {
@@ -151,18 +153,25 @@ function componentItem(producer: KnownSource, options: DashboardScreenOptions): 
       ? "Check for /bookie-work in the main Pi chat and select a project. Open Versions for installation details."
       : "Check the loaded Scout extension in the main Pi chat. Research readiness has not been reported.";
   }
+  const sourceDetails = item?.details ?? [];
+  const isMemory = source?.producer === "bookie-memory";
+  const limited =
+    isMemory && state === "observed" && options.session?.auto.enabled && sourceDetails.includes(BOOKIE_LIMIT_MESSAGE);
+  const briefDetails = limited
+    ? [explanation, "Bookie could only show part of this project’s open choices."]
+    : [explanation];
   return {
     key: `component:${producer}`,
     label: `${title} · ${status}`,
     status: state,
     elapsed: "",
-    briefDetails: [explanation],
+    briefDetails,
     details: [
-      explanation,
+      ...briefDetails,
       ...(source
         ? [`Source: ${source.producer} · ${source.producerVersion}`, `Last update: ${source.observedAt}`]
         : []),
-      ...(item?.details ?? []),
+      ...sourceDetails.filter((line) => !isMemory || line !== BOOKIE_LIMIT_MESSAGE),
       ...(pkg?.installedVersion ? [`Installed version: ${pkg.installedVersion}`] : []),
       ...(pkg?.loadedVersion ? [`Running version: ${pkg.loadedVersion}`] : []),
     ],

@@ -201,3 +201,24 @@ test("automatic Bookie memory is a single live Tools row alongside independent w
   o.connected = false;
   assert.match(componentItems(o)[0]!.label, /Live status unknown/);
 });
+
+test("Bookie explains partial choices in current memory details only", () => {
+  const memory = source("bookie-memory", "observed");
+  const marker = "Only a bounded selection of saved open choices could be displayed.";
+  memory.items = [
+    { id: "project-memory", kind: "work", state: "observed", label: "Project memory", details: [marker] },
+  ];
+  const o = panel([memory]);
+  const row = () => componentItems(o)[0]!;
+  const limit = "Bookie could only show part of this project’s open choices.";
+  o.session!.auto.enabled = true;
+  assert.equal(row().label, "Bookie memory · Ready in this folder");
+  assert.deepEqual(row().briefDetails, ["Bookie can save and recall routine notes for this workspace.", limit]);
+  assert.ok(row().details.includes(limit));
+  assert.ok(!row().details.includes(marker));
+  o.session!.auto.enabled = false;
+  assert.ok(!row().briefDetails!.includes(limit) && !row().details.includes(limit));
+  o.session!.auto.enabled = true;
+  memory.availability = "closed";
+  assert.ok(!row().briefDetails!.includes(limit) && !row().details.includes(limit));
+});
