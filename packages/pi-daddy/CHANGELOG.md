@@ -1,5 +1,9 @@
 # Changelog — pi-daddy
 
+## Unreleased
+
+- Activity and in-progress labels now explain Bookie memory, Scout research, skill authoring/evaluations and optional JEV advice in plain language. Labels use fixed tool and action descriptions; private queries, note contents and source links stay out of the dashboard. Results and permissions are unchanged.
+
 ## 0.56.1 — 2026-11-11
 
 - Native Pi questions now appear under **Needs your input** while waiting. Answer or cancel in the main Pi chat; the row and Herdr waiting indicator clear when the dialog closes or the session changes. Informational panels, saved open choices and earlier failed attempts do not become new attention requests. Restart Pi after updating.
