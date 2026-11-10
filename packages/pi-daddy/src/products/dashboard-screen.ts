@@ -1,3 +1,5 @@
+import { choiceBody, choiceKeys, type ChoicePicker } from "./dashboard-choice-picker.ts";
+import type { DashboardChoiceTarget } from "../kernel/dashboard-choice.ts";
 import type { DashboardAcknowledgment } from "./dashboard-session-client.ts";
 import {
   needsUserInput,
@@ -32,12 +34,14 @@ export interface DashboardItem {
   observation?: string;
   taskKey?: string;
   timelinePath?: string;
+  choice?: DashboardChoiceTarget;
   approval?: boolean;
   skills?: boolean;
   agent?: boolean;
 }
 export interface DashboardScreenState {
-  view: "main" | "details" | "models" | "help" | "versions" | "version-details" | "settings" | "recap";
+  view: "main" | "details" | "models" | "help" | "versions" | "version-details" | "settings" | "recap" | "choice";
+  picker?: ChoicePicker;
   destination?: DashboardDestination;
   expanded?: boolean;
   sourceDetails?: boolean;
@@ -227,6 +231,7 @@ function sessionLocation(screen: DashboardScreenState, width: number): string {
     versions: "Versions",
     "version-details": "Version details",
     recap: "Session recap",
+    choice: "Answer choice",
   };
   const name = destinationNames[destination];
   if (screen.view in overlays) return `${name} / ${overlays[screen.view as keyof typeof overlays]}`;
@@ -241,7 +246,9 @@ function sessionLocation(screen: DashboardScreenState, width: number): string {
 function sessionKeys(screen: DashboardScreenState, selected: DashboardItem | undefined, width: number): string[] {
   const view = screen.view;
   const brief = width < 34;
+  if (view === "choice") return choiceKeys(screen);
   if (view === "main") {
+    if (selected?.choice) return ["↑↓ select · Enter answer", "d details · q close"];
     const keys = selected ? (brief ? "↑↓ · Enter details" : "↑↓ select · Enter details") : "1–6 views";
     return [keys + (brief ? " · ?" : " · ? help"), "r recap · q close"];
   }
@@ -315,7 +322,7 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
   }
   if (
     !screen.items.some((item) => item.key === screen.selectedKey) &&
-    !(screen.view === "details" && screen.selectedKey)
+    !((screen.view === "details" || screen.view === "choice") && screen.selectedKey)
   )
     screen.selectedKey = screen.items[0]?.key;
   const selectedIndex = screen.items.findIndex((item) => item.key === screen.selectedKey),
@@ -326,6 +333,7 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
   const mode =
     session && options.connected !== false ? `Auto ${session.auto.enabled ? "ON" : "OFF"}` : "Auto unavailable";
   const header = `PI DADDY | ${mode}${options.pending ? " …" : session && options.connected !== false ? " [a]" : ""}`;
+  const choiceLines = screen.view === "choice" ? choiceBody(screen) : [];
   const footer =
     options.command !== undefined
       ? [`: ${clean(options.command)}`]
@@ -355,8 +363,9 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
     fixed.push("Disconnected · showing last known status");
     if (screen.view === "main" && (screen.destination ?? "now") === "now")
       fixed.push(...wrapDashboardLines(["In the current Pi chat, run /grants dashboard."], width));
-  } else if (options.notice || options.problem) fixed.push(`! ${clean(options.notice || options.problem || "")}`);
-  const ack = options.acknowledgment;
+  } else if (screen.view !== "choice" && (options.notice || options.problem))
+    fixed.push(`! ${clean(options.notice || options.problem || "")}`);
+  const ack = options.acknowledgment?.action === "answer-choice" ? undefined : options.acknowledgment;
   if (ack?.state === "unconfirmed") {
     const setting =
       (
@@ -393,7 +402,8 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
     if (options.height >= 22) fixed.push("");
   }
   const body: string[] = [];
-  if (screen.view === "recap") {
+  if (screen.view === "choice") body.push(...choiceLines);
+  else if (screen.view === "recap") {
     const recap = sessionRecapLines(options);
     const activity = recap.findIndex(
       (line) => line === "Recent activity · newest first" || line === "No recent session events recorded.",
@@ -409,6 +419,7 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
     body.push(
       "DASHBOARD KEYS",
       "↑/↓ or j/k: select; Enter/d: details",
+      "Enter on an open choice: answer in Bookie when available. d: details",
       "a: toggle Daddy permission Auto",
       "m: session models; v: ecosystem versions; s: settings",
       "1 Overview · what needs you and what Pi is doing",
@@ -597,11 +608,13 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
       screen.offset = Math.max(0, Math.min(row, Math.max(screen.offset, last - room + 1)));
     }
   }
-  if (modern && screen.view === "main" && room > 0 && !screen.manualScroll) {
+  if (modern && (screen.view === "main" || screen.view === "choice") && room > 0 && !screen.manualScroll) {
     const selectedRow = detailBody.findIndex((line) => line.startsWith(">"));
     if (selectedRow >= screen.offset + room) screen.offset = selectedRow - room + 1;
     else if (selectedRow >= 0 && selectedRow < screen.offset) screen.offset = selectedRow;
   }
+  if (screen.view === "choice" && screen.picker?.phase === "custom" && !screen.manualScroll && !screen.picker.error)
+    screen.offset = Math.max(0, detailBody.length - room);
   const offset =
     screen.view === "main" && !modern ? 0 : Math.max(0, Math.min(screen.offset, Math.max(0, detailBody.length - room)));
   screen.offset = offset;

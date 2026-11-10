@@ -153,6 +153,7 @@ export interface GrantsSession extends NativeSessionHost {
   ecosystemVersions?: () => EcosystemVersions;
   dashboardLive?: () => { turn?: DashboardContribution; activity: DashboardContribution[] };
   dashboardArtifacts?: DashboardSavedEvidence[];
+  dashboardChoices?: ReturnType<typeof import("./dashboard-choice-controls.ts").registerDashboardChoiceOwner>;
   dashboardObservations?: () => Omit<DashboardOwnerObservation, "version" | "resources" | "capture"> | undefined;
   autoMode?: AutoModeReader;
   autoModeFailure?: string;

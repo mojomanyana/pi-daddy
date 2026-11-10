@@ -198,6 +198,11 @@ it measured nothing rather than passing quietly.
 
 ## Decisions still in force
 
+**2026-11-10 — open choices are parked project decisions.** Enter may inspect a current Bookie choice through
+the authenticated parent. An explicit save writes the selected option or typed answer against that note’s
+revision. Leaving the picker writes nothing. Recommendations need a reason and supporting evidence. Read-only
+publishers continue to show details. A saved choice never creates a permission or attention request.
+
 **2026-11-09 — first-run initialization is automatic in the interactive parent.** This supersedes the old
 requirement to confirm linking the bundled dashboard on its first verified Herdr startup. Existing disable and
 opt-out choices still win; replacing a different installation needs a separate human choice. Read the currently

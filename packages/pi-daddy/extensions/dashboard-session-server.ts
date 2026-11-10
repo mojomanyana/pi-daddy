@@ -1,3 +1,4 @@
+import type { DashboardChoiceDetail } from "../src/kernel/dashboard-choice.ts";
 import { isJevEditAction } from "../src/products/dashboard-settings.ts";
 import { dashboardObservation } from "./dashboard-observation.ts";
 import { dashboardSettingsSnapshot, dashboardJev, setDashboardLimit } from "./dashboard-settings.ts";
@@ -54,9 +55,25 @@ async function start(session: GrantsSession): Promise<DashboardSessionEndpoint> 
       if (!input.includes("\n")) return;
       handled = true;
       const line = input.slice(0, input.indexOf("\n"));
-      void respond(session, token, line)
+      let request: DashboardWireRequest;
+      try {
+        request = JSON.parse(line);
+        if (!request || typeof request !== "object" || Array.isArray(request)) throw Error();
+      } catch {
+        socket.end(JSON.stringify({ ok: false, error: "Invalid dashboard request" }) + "\n");
+        return;
+      }
+      const choiceAction = request.action === "inspect-choice" || request.action === "answer-choice";
+      if (choiceAction && request.token === token) socket.setTimeout(30_000);
+      void respond(session, token, request, () => {
+        if (socket.destroyed) throw Error("Dashboard disconnected");
+      })
         .then((value) => socket.end(`${JSON.stringify(value)}\n`))
-        .catch((error) => socket.end(`${JSON.stringify({ ok: false, error: String(error) })}\n`));
+        .catch((error) =>
+          socket.end(
+            `${JSON.stringify({ ok: false, error: choiceAction ? "Bookie could not confirm the choice request." : String(error) })}\n`,
+          ),
+        );
     });
   });
   await new Promise<void>((resolve, reject) => {
@@ -80,19 +97,40 @@ async function start(session: GrantsSession): Promise<DashboardSessionEndpoint> 
   };
 }
 
-async function respond(session: GrantsSession, token: string, line: string): Promise<Record<string, unknown>> {
-  const request = JSON.parse(line) as {
-    token?: unknown;
-    action?: unknown;
-    edits?: unknown;
-    enabled?: unknown;
-    key?: unknown;
-    seconds?: unknown;
-    option?: unknown;
-    expectedOwner?: { sessionId?: unknown; cwd?: unknown; generation?: unknown };
-  };
+interface DashboardWireRequest {
+  token?: unknown;
+  action?: unknown;
+  edits?: unknown;
+  enabled?: unknown;
+  key?: unknown;
+  refreshChoices?: unknown;
+  seconds?: unknown;
+  option?: unknown;
+  sourceGeneration?: unknown;
+  choiceId?: unknown;
+  revision?: unknown;
+  answer?: unknown;
+  expectedOwner?: { sessionId?: unknown; cwd?: unknown; generation?: unknown };
+}
+async function respond(
+  session: GrantsSession,
+  token: string,
+  request: DashboardWireRequest,
+  checkClient: () => void,
+): Promise<Record<string, unknown>> {
   if (request.token !== token) return { ok: false, error: "unauthorised dashboard request" };
-  if (request.action === "edit-jev" || (request.action !== "get" && request.expectedOwner !== undefined)) {
+  const choiceAction = request.action === "inspect-choice" || request.action === "answer-choice";
+  if (choiceAction) {
+    const allowed = ["token", "action", "expectedOwner", "sourceGeneration", "choiceId"];
+    if (request.action === "answer-choice") allowed.push("revision", "answer");
+    if (Object.keys(request).some((key) => !allowed.includes(key)))
+      return { ok: false, choiceOutcome: "refused", error: "Invalid choice request" };
+  }
+  if (
+    choiceAction ||
+    request.action === "edit-jev" ||
+    (request.action !== "get" && request.expectedOwner !== undefined)
+  ) {
     const observed = session.dashboardObservations?.(),
       expected = request.expectedOwner;
     if (
@@ -102,13 +140,41 @@ async function respond(session: GrantsSession, token: string, line: string): Pro
       expected.cwd !== observed.cwd ||
       expected.generation !== observed.generation
     )
-      return { ok: false, error: "Dashboard owner changed before action; refresh and inspect the new session" };
+      return {
+        ok: false,
+        ...(choiceAction ? { choiceOutcome: "stale" } : {}),
+        error: "Dashboard owner changed before action; refresh and inspect the new session",
+      };
   }
   const lifecycle = session.reloadLifecycle,
     owner = lifecycle.autoMode;
   const displayOwner = session.dashboardObservations?.()?.generation;
-  let jev;
-  if (request.action === "set-limit") {
+  let jev, choiceDetail: DashboardChoiceDetail | undefined;
+  if (request.action === "inspect-choice") {
+    choiceDetail = await session.dashboardChoices?.inspect(request.sourceGeneration, request.choiceId, checkClient);
+    if (!choiceDetail)
+      return { ok: false, choiceOutcome: "stale", error: "Choice is no longer available. Refresh and reopen it." };
+  } else if (request.action === "answer-choice") {
+    const outcome = await session.dashboardChoices?.answer(
+      request.sourceGeneration,
+      request.choiceId,
+      request.revision,
+      request.answer,
+      checkClient,
+    );
+    if (outcome !== "saved")
+      return outcome === "unconfirmed"
+        ? {
+            ok: false,
+            choiceOutcome: "unconfirmed",
+            error: "Bookie could not confirm the save. Check project memory before retrying.",
+          }
+        : {
+            ok: false,
+            choiceOutcome: "refused",
+            error: "Bookie declined the answer. Refresh and check the choice and answer.",
+          };
+  } else if (request.action === "set-limit") {
     setDashboardLimit(session, request.key, request.seconds);
   } else if (request.action === "edit-jev") {
     if (!isJevEditAction(request.option)) return { ok: false, error: "Unknown JEV setting" };
@@ -138,8 +204,17 @@ async function respond(session: GrantsSession, token: string, line: string): Pro
     session.dashboardObservations?.()?.generation !== displayOwner
   )
     throw Error("Dashboard owner changed; action outcome requires reconciliation");
+  if (choiceDetail && !session.dashboardChoices?.currentDetail(request.sourceGeneration, choiceDetail))
+    return { ok: false, choiceOutcome: "stale", error: "Choice is no longer available. Refresh and reopen it." };
+  const choiceRefreshRequested =
+    request.action === "get" && request.refreshChoices === true && session.dashboardChoices?.requestRenewal();
+  const choiceControls = session.dashboardChoices?.controls();
   return {
     ok: true,
+    ...(choiceControls ? { choiceControls } : {}),
+    ...(choiceRefreshRequested ? { choiceRefreshRequested: true } : {}),
+    ...(choiceDetail ? { choiceDetail } : {}),
+    ...(request.action === "answer-choice" ? { choiceSaved: true } : {}),
     ...controls,
     ...dashboardObservation(session),
     ...(session.activity ? { activity: { ...session.activity } } : {}),

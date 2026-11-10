@@ -1,4 +1,5 @@
 /** Optional trusted producers publish display observations; no automatic work, tools, or persistent store. */
+import { registerDashboardChoiceOwner } from "./dashboard-choice-controls.ts";
 import { randomUUID } from "node:crypto";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
@@ -34,6 +35,15 @@ export function registerDashboardSources(
     }
     return selected;
   };
+  const choices = registerDashboardChoiceOwner(
+    pi,
+    () => {
+      const selected = reconcile();
+      const source = sources.get("bookie-memory");
+      return selected && source ? { sessionId: selected.sessionId, cwd: selected.cwd, source } : undefined;
+    },
+    now,
+  );
   const off = pi.events?.on?.(DASHBOARD_SOURCE_EVENT, (input: unknown) => {
     const r = input as {
       version?: unknown;
@@ -102,6 +112,7 @@ export function registerDashboardSources(
     });
   });
   return {
+    choices,
     snapshot() {
       const selected = reconcile();
       return selected
@@ -117,6 +128,7 @@ export function registerDashboardSources(
     },
     close() {
       closed = true;
+      choices.close();
       off?.();
       sources.clear();
       owner = undefined;

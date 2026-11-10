@@ -1,5 +1,9 @@
 # Changelog — pi-daddy
 
+## Unreleased
+
+- Select a saved question in **Open choices** to review its alternatives and any supporting recommendation. Pick an option or write your own answer, then save in Bookie. **Decide later** keeps the question open.
+
 ## 0.55.0 — 2026-11-10
 
 - With compatible Bookie project memory, Overview and Tasks show saved choices under **Open choices**. You can return to these choices after `/new` in the same folder with Auto on.
