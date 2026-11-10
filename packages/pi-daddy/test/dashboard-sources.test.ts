@@ -56,7 +56,15 @@ test("optional source observations bind owner and replacement generation, reject
   replacement.close();
   assert.equal(replacement.publish({ sequence: 1, items: [item] }), false);
   assert.equal(sources.snapshot()!.sources[0].availability, "closed");
-  for (let n = 0; n < 7; n++) assert.equal(register({ producer: `source-${n}` }).ok, true);
+  // Closing automatic memory must withdraw its project text even in a raw status snapshot.
+  const memory = register({ producer: "bookie-memory" });
+  const ready = { id: "project-memory", kind: "work", state: "observed", label: "Current workspace memory" };
+  const choice = { id: "open-choice-abc", kind: "work", state: "observed", label: "Which chart do we print?" };
+  assert.equal(memory.publish({ sequence: 1, items: [ready, choice] }), true);
+  assert.deepEqual(sources.snapshot()!.sources.find((s) => s.producer === "bookie-memory")!.items, [ready, choice]);
+  memory.close();
+  assert.deepEqual(sources.snapshot()!.sources.find((s) => s.producer === "bookie-memory")!.items, [ready]);
+  for (let n = 0; n < 6; n++) assert.equal(register({ producer: `source-${n}` }).ok, true);
   assert.equal(register({ producer: "overflow" }).ok, false);
   owner = { ...owner }; // new native owner binding invalidates all prior in-process handles even same labels
   assert.equal(sources.snapshot()!.sources.length, 0);

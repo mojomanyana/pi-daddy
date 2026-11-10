@@ -22,6 +22,10 @@ export interface DashboardContribution {
   /** Display identity only. The terminal never dereferences or executes it. */
   reference?: string;
 }
+/** Saved choices are project memory. Their display permission ends when Bookie closes its source. */
+export const isBookieChoice = (producer: string, item: DashboardContribution) =>
+  producer === "bookie-memory" && item.id.startsWith("open-choice-");
+
 export interface DashboardSourceUpdate {
   sequence: number;
   items: DashboardContribution[];

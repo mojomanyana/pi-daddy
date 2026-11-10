@@ -347,3 +347,69 @@ test("Scout's current request for a decision is shown once alongside the other d
   assert.match(closed, /Scout research worker · Live status unknown/);
   assert.doesNotMatch(closed, /Needs your decision/);
 });
+
+test("saved project choices appear on Overview and Tasks without requesting input or review", () => {
+  const choice = {
+    id: "open-choice-123abc",
+    kind: "work",
+    state: "observed",
+    label: "StarDome foldout or local planisphere?",
+  } as const;
+  const ready = { id: "project-memory", kind: "work", state: "observed", label: "Current workspace memory" } as const;
+  const o = options([ready, choice]);
+  const memory = o.session!.observation!.sources[0]!;
+  memory.producer = "bookie-memory";
+  o.session!.auto.enabled = true;
+  o.width = 90;
+  o.height = 36;
+  for (const destination of ["now", "work"] as const) {
+    o.screen.destination = destination;
+    const frame = renderDashboardScreen(o);
+    assert.match(frame, /Open choices[^\n]*\n[> ]+StarDome foldout or local planisphere\? · Open/);
+    assert.doesNotMatch(frame, /Needs (attention|your (input|decision|permission))|Next step|Awaiting review/);
+    if (destination === "now") assert.match(frame, /No pending dashboard requests/);
+  }
+  o.screen.destination = "reviews";
+  assert.ok(!sessionDashboardItems(o).some((item) => item.label === choice.label));
+  o.session!.pendingApprovals.push({ id: "real", subject: "review", capability: "tool:bash" });
+  o.screen.destination = "now";
+  const frame = renderDashboardScreen(o);
+  assert.match(frame, /Needs your permission[^\n]*\n[> ]+review needs shell access/);
+  assert.match(frame, /Open choices[^\n]*\n[> ]+StarDome foldout or local planisphere\? · Open/);
+  o.filter = "needs-you";
+  assert.doesNotMatch(renderDashboardScreen(o), /StarDome/);
+});
+
+test("a previously selected open choice disappears when its current Bookie observation is lost", () => {
+  const choice = {
+    id: "open-choice-123abc",
+    kind: "work",
+    state: "observed",
+    label: "StarDome or local chart?",
+  } as const;
+  const ready = { id: "project-memory", kind: "work", state: "observed", label: "Current workspace memory" } as const;
+  const o = options([ready, choice]);
+  const memory = o.session!.observation!.sources[0]!;
+  memory.producer = "bookie-memory";
+  o.session!.auto.enabled = true;
+  o.screen.selectedKey = sessionDashboardItems(o).find((i) => i.label === choice.label)!.key;
+  o.screen.view = "details";
+  assert.match(renderDashboardScreen(o), /StarDome/);
+  const hidden = () => assert.doesNotMatch(renderDashboardScreen(o), /StarDome/);
+  o.connected = false;
+  hidden();
+  o.connected = true;
+  o.now = new Date(Date.parse(instant) + 1_001);
+  hidden();
+  o.now = new Date(instant);
+  o.session!.auto.enabled = false;
+  hidden();
+  o.session!.auto.enabled = true;
+  memory.availability = "closed";
+  hidden();
+  memory.availability = "observed";
+  memory.items = [choice];
+  hidden();
+  memory.items = [ready];
+  hidden();
+});
