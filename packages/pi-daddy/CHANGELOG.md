@@ -1,5 +1,9 @@
 # Changelog — pi-daddy
 
+## Unreleased
+
+- Delegated task and command text no longer appear in the native ownership helper's command line, preventing accidental cleanup matches caused solely by that text. Helper metadata and each worker's own argument contract remain unchanged; continue stopping services by their exact owned process handle. Interrupted work still needs a verified complete final; a zero exit code and settled cleanup do not establish success.
+
 ## 0.56.2 — 2026-11-13
 
 - Activity and in-progress labels now explain Bookie memory, Scout research, skill authoring/evaluations and optional JEV advice in plain language. Labels use fixed tool and action descriptions; private queries, note contents and source links stay out of the dashboard. Results and permissions are unchanged.

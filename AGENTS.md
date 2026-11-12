@@ -198,6 +198,15 @@ it measured nothing rather than passing quietly.
 
 ## Decisions still in force
 
+**2026-11-12 — command payloads stay off the native owner's argv.** A bounded inherited pipe delivers
+literal command arguments before the helper forks or publishes ownership; the pipe closes before either
+process can execute work. This prevents matching the helper solely because a service-name cleanup pattern
+appears in delegated task text. Helper metadata remains visible. The gate, pidfd cleanup and exact final/receipt attribution
+are unchanged. Worker executable arguments remain the command's own contract, and cleanup should still
+use an exact owned process handle. This is accidental-match prevention, not hostile same-user confinement
+or a general service manager. Synthetic session-restricted pattern and exact-PID controls force the argv
+property; interruption with worker exit zero still supplies no final, and operation reuse starts no new work.
+
 **2026-11-11 — native questions are live input observations.** Public Pi native select/confirm/input/editor
 start/end events may supply one current input row and a balanced Herdr blocked signal, bound to the current
 session and canonical folder. Answer, cancellation, session change and disposal clear it. A pending Daddy

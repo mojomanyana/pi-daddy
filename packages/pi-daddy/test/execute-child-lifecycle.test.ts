@@ -28,7 +28,7 @@ const executionId = "exec:00000000-0000-4000-8000-000000000001";
 function plan(): Delegation {
   return {
     ok: true,
-    args: [],
+    args: [" lifecycle fixture task"],
     env: {},
     effective: [],
     result: { effective: [], denied: [], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
@@ -124,6 +124,46 @@ test("a SIGTERM-ignoring child is hard-killed by the recorded lifecycle deadline
     else process.env.PATH = oldPath;
     if (oldTimeout === undefined) delete process.env[ENV_CHILD_TIMEOUT];
     else process.env[ENV_CHILD_TIMEOUT] = oldTimeout;
+  }
+});
+
+test("helper interruption with worker exit zero and settled cleanup never becomes successful work", async () => {
+  const dir = await tempDir("execute-child-helper-interrupted-");
+  const bin = join(dir, "bin");
+  const { mkdir } = await import("node:fs/promises");
+  await mkdir(bin);
+  const shim = join(bin, "pi");
+  await writeFile(
+    shim,
+    piFixtureScript(`
+process.on('SIGTERM',()=>{process.removeAllListeners('exit');process.exit(0)});
+// This fixture's immediate parent is the native owner that just released its gate.
+process.kill(process.ppid,'SIGTERM');setInterval(()=>{},1000);
+`),
+  );
+  await chmod(shim, 0o755);
+  const oldPath = process.env.PATH;
+  process.env.PATH = `${bin}${delimiter}${oldPath ?? ""}`;
+  try {
+    const outcome = await executePlannedChild({
+      session: { executor: { kind: "process" } } as GrantsSession,
+      plan: plan(),
+      childId: "d0.1",
+      executionId,
+      parentExecutionId: null,
+      cwd: dir,
+    });
+    assert.equal(outcome.exitCode, 0);
+    assert.equal(outcome.cleanup?.state, "settled");
+    if (outcome.cleanup?.state !== "settled") assert.fail("missing settled cleanup");
+    assert.equal(outcome.cleanup.receipt.reason, "helper-signal");
+    assert.equal(outcome.cleanup.receipt.reapedAll, true);
+    assert.equal(outcome.final?.state, "unavailable");
+    assert.equal(outcome.work, "unknown");
+    assert.equal(outcome.ok, false);
+  } finally {
+    if (oldPath === undefined) delete process.env.PATH;
+    else process.env.PATH = oldPath;
   }
 });
 

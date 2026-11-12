@@ -17,7 +17,8 @@ async function raw(
   t: import("node:test").TestContext,
   code: string,
   grace = "500",
-  stdio: StdioOptions = ["ignore", "pipe", "pipe", "pipe", "pipe", "ignore"],
+  stdio: StdioOptions = ["ignore", "pipe", "pipe", "pipe", "pipe", "ignore", "ignore", "pipe"],
+  payload: Buffer | null = Buffer.from([process.execPath, "-e", code].join("\0") + "\0"),
 ) {
   const root = await tempDir("pi-native-protocol-");
   const owner = join(root, "owner");
@@ -25,15 +26,14 @@ async function raw(
   const binary = openSync(helper, "r");
   assert.ok(Array.isArray(stdio));
   stdio[5] = binary;
-  const child = spawn(
-    helper,
-    ["fixture", "nonce", root, WORKER_SHA256, owner, grace, "3000", "--", process.execPath, "-e", code],
-    { stdio },
-  );
+  const child = spawn(helper, ["fixture", "nonce", root, WORKER_SHA256, owner, grace, "3000"], { stdio });
   closeSync(binary);
   const closed = once(child, "close");
   const control = child.stdio[3] as Duplex | undefined;
   control?.on("error", () => undefined);
+  const command = child.stdio.at(7) as Duplex | undefined;
+  command?.on("error", () => undefined);
+  if (payload !== null) command?.end(payload);
   t.after(async () => {
     if (child.exitCode === null && child.signalCode === null) {
       control?.end("K");
@@ -42,7 +42,7 @@ async function raw(
       clearTimeout(timer);
     }
   });
-  return { root, owner, child, control, closed };
+  return { root, owner, child, control, command, closed };
 }
 function line(stream: Readable, expected: string) {
   return new Promise<void>((resolve, reject) => {
@@ -62,9 +62,9 @@ function line(stream: Readable, expected: string) {
     stream.on("data", onData);
   });
 }
-for (const descriptor of [3, 4])
+for (const descriptor of [3, 4, 7])
   test(`native worker refuses invalid descriptor ${descriptor} before creating ownership`, async (t) => {
-    const stdio: StdioOptions = ["ignore", "pipe", "pipe", "pipe", "pipe", "ignore"];
+    const stdio: StdioOptions = ["ignore", "pipe", "pipe", "pipe", "pipe", "ignore", "ignore", "pipe"];
     stdio[descriptor] = "ignore";
     const run = await raw(t, "process.exit(99)", "500", stdio);
     assert.equal((await run.closed)[0], 65);
@@ -76,6 +76,36 @@ for (const value of ["", "1junk", "-1", "+1", " 1", "999999999999999999999999999
     assert.equal((await run.closed)[0], 64);
     await assert.rejects(access(join(run.owner, "ownership.json")));
   });
+for (const payload of [
+  Buffer.alloc(0),
+  Buffer.from("unterminated"),
+  Buffer.from("\0"),
+  Buffer.alloc(2 * 1024 * 1024 + 1, 97),
+])
+  test(`native command channel refuses malformed/oversized payload before ownership (${payload.length} bytes)`, async (t) => {
+    const run = await raw(t, "process.exit(99)", "500", undefined, payload);
+    assert.equal((await run.closed)[0], 64);
+    await assert.rejects(access(join(run.owner, "ownership.json")));
+  });
+
+test("native command channel times out without forking when its writer never closes", async (t) => {
+  const started = Date.now();
+  const run = await raw(t, "process.exit(99)", "500", undefined, null);
+  run.command!.write(Buffer.from("/bin/false\0"));
+  assert.equal((await run.closed)[0], 64);
+  assert.ok(Date.now() - started < 7000, "startup command channel exceeded its bound");
+  await assert.rejects(access(join(run.owner, "ownership.json")));
+});
+test("native command channel stops before forking when the helper is signalled during a partial write", async (t) => {
+  const run = await raw(t, "process.exit(99)", "500", undefined, null);
+  run.command!.write(Buffer.from("/bin/false"));
+  // Allow native startup to install its signal handler, while keeping the command incomplete.
+  await delay(100);
+  assert.equal(run.child.kill("SIGTERM"), true);
+  assert.equal((await run.closed)[0], 64);
+  await assert.rejects(access(join(run.owner, "ownership.json")));
+});
+
 test("native worker sends TERM only once during grace, then escalates", async (t) => {
   const run = await raw(
     t,

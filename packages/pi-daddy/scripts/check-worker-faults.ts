@@ -13,9 +13,12 @@ for (const mode of ["read-error", "missing-children"]) {
   await mkdir(owner);
   const binary = await open(helper, "r");
   try {
-    const child = spawn(helper, [mode, "fixture", "nonce", root, hash, owner, "0", "1000", "--", "/bin/false"], {
-      stdio: ["ignore", "ignore", "inherit", "pipe", "pipe", binary.fd],
+    const child = spawn(helper, [mode, "fixture", "nonce", root, hash, owner, "0", "1000"], {
+      stdio: ["ignore", "ignore", "inherit", "pipe", "pipe", binary.fd, "ignore", "pipe"],
     });
+    const command = child.stdio.at(7) as import("node:stream").Writable;
+    command.on("error", () => undefined);
+    command.end("/bin/false\0");
     (child.stdio[3] as import("node:stream").Duplex).on("error", () => undefined);
     (child.stdio[4] as import("node:stream").Readable).resume();
     const timer = setTimeout(() => child.kill("SIGKILL"), 3000);
