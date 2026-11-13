@@ -1,5 +1,12 @@
 # Changelog — pi-daddy
 
+## 0.57.0 — 2026-11-13
+
+- A child now asks once for its exact outstanding permission set. Allow once, allow for this session, project approval, denial and cancellation keep their existing scope; changed instructions, tools, project or expiry explain why approval is needed again.
+- Bookie memory explicitly shows when automatic access is paused by Auto OFF. Settings distinguish current-session choices from launch defaults; this does not enable Auto or restore memory permissions.
+- Requests for child tools without a supported child provider now refuse before permission prompts or launch. A parent extension, MCP or SDK tool being visible does not establish child availability. Keep that work in the parent or use a definition with supported child tools; independent valid fan-out siblings still run.
+- `delegate_describe` and child instructions now include trusted selected-definition locations and, for verified Principal bindings, the selected package root. Relative resources can be located without rediscovering packages; their contents are not loaded or verified, and tool/skill permissions remain unchanged.
+
 ## 0.56.3 — 2026-11-13
 
 - Delegated task and command text no longer appear in the native ownership helper's command line, preventing accidental cleanup matches caused solely by that text. Helper metadata and each worker's own argument contract remain unchanged; continue stopping services by their exact owned process handle. Interrupted work still needs a verified complete final; a zero exit code and settled cleanup do not establish success.

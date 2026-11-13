@@ -35,7 +35,7 @@ async function fixture(phases = legacyPhases) {
   return { root, commands };
 }
 test("selected Principal phase uses verified delegated bytes and intersected ceilings", async () => {
-  const { commands } = await fixture();
+  const { commands, root } = await fixture();
   const result = await selectedDefinitions(commands);
   const d = result.definitions.get("build")!;
   assert.equal(result.definitions.size, 1);
@@ -44,6 +44,17 @@ test("selected Principal phase uses verified delegated bytes and intersected cei
   assert.deepEqual(d.binding, { package: "principal-pi-skills", phase: "build" });
   assert.match(d.definitionId!, /^[a-f0-9]{64}$/);
   assert.ok(Object.isFrozen(d));
+  assert.deepEqual(d.selectedResources, {
+    version: 1,
+    selectedSkill: { path: join(root, "build", "SKILL.md"), sha256: d.selectedSkillHash },
+    definition: { path: join(root, "agents", "principal-build.md"), sha256: d.sourceHash },
+    resourceDirectory: join(root, "build"),
+    package: { name: "principal-pi-skills", root, version: "4.7.3" },
+  });
+  assert.ok(Object.isFrozen(d.selectedResources));
+  assert.ok(Object.isFrozen(d.selectedResources?.package));
+  assert.ok(Object.isFrozen(d.selectedResources?.definition));
+  assert.ok(Object.isFrozen(d.selectedResources?.selectedSkill));
 });
 test("tampered selected agent refuses and does not fall back to inline body", async () => {
   const { commands, root } = await fixture();
@@ -72,6 +83,11 @@ test("unrelated same-named definition is never treated as Principal", async () =
   const d = (await selectedDefinitions(commands)).definitions.get("build")!;
   assert.equal(d.binding, undefined);
   assert.equal(d.body, "INLINE");
+  assert.equal(
+    d.selectedResources?.package,
+    undefined,
+    "an unrelated package never acquires Principal resource authority",
+  );
 });
 
 // Review regression: an expected Principal phase may not become inline when identity disappears.

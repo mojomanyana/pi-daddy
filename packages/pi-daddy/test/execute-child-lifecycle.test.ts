@@ -279,11 +279,16 @@ test("failed lifecycle observations preserve verified output and dispose tempora
   const { readdir, mkdir } = await import("node:fs/promises");
   const { tmpdir } = await import("node:os");
   const dir = await tempDir("execute-child-dispose-");
+  const ownTemp = join(dir, "temporary");
+  await mkdir(ownTemp);
   const bin = join(dir, "bin");
   await mkdir(bin);
   await writeFile(join(bin, "pi"), piFixtureScript("console.log('verified output')"));
   await chmod(join(bin, "pi"), 0o755);
   const oldPath = process.env.PATH;
+  const oldTmpdir = process.env.TMPDIR;
+  // Observe only this execution's temporary files, not concurrent tests' active sessions.
+  process.env.TMPDIR = ownTemp;
   process.env.PATH = `${bin}${delimiter}${oldPath ?? ""}`;
   const listExec = async () => new Set((await readdir(tmpdir())).filter((name) => name.startsWith("pi-daddy-exec_")));
   const before = await listExec();
@@ -307,6 +312,8 @@ test("failed lifecycle observations preserve verified output and dispose tempora
       [],
     );
   } finally {
+    if (oldTmpdir === undefined) delete process.env.TMPDIR;
+    else process.env.TMPDIR = oldTmpdir;
     if (oldPath === undefined) delete process.env.PATH;
     else process.env.PATH = oldPath;
   }

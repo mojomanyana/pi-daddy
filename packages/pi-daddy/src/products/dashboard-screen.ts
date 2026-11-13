@@ -461,6 +461,7 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
         session?.auto.enabled,
         screen.settingKey ?? "auto",
         width,
+        session?.auto.source,
       ),
     );
     if (session?.observation)

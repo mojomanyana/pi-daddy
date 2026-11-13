@@ -1,6 +1,6 @@
 /** Selected Pi 1.0.4 resources, frozen once per extension instance. No independent resource scan. */
 import { createHash } from "node:crypto";
-import { resolve as resolvePath } from "node:path";
+import { dirname, resolve as resolvePath } from "node:path";
 import { lstat } from "node:fs/promises";
 import { BoundedReadCleanupError, readBoundedBytes } from "./bounded-read.ts";
 import { parseSkillDefinition, type SkillDefinition } from "./definitions.ts";
@@ -50,6 +50,14 @@ export async function selectedDefinitions(
       const parsed = parseSkillDefinition(path, text);
       if (!parsed || parsed.name !== name) throw Error("selected name/path does not match definition");
       const bound = await principalBinding(path, parsed, text, sources, read);
+      const selectedResources =
+        bound.selectedResources ??
+        Object.freeze({
+          version: 1 as const,
+          selectedSkill: Object.freeze({ path, sha256: hash(text) }),
+          definition: Object.freeze({ path: bound.source, sha256: bound.sourceHash! }),
+          resourceDirectory: dirname(path),
+        });
       const definitionId = hash(
         JSON.stringify({
           name,
@@ -61,6 +69,7 @@ export async function selectedDefinitions(
           runtimePreferences: bound.runtimePreferences,
           binding: bound.binding,
           packageVersion: bound.packageVersion,
+          selectedResources,
         }),
       );
       if (bound.metadata) Object.freeze(bound.metadata);
@@ -68,6 +77,7 @@ export async function selectedDefinitions(
         name,
         Object.freeze({
           ...bound,
+          selectedResources,
           definitionId,
           ...(sources
             ? { sourceSnapshot: Object.freeze({ resources: Object.freeze(sources), body: bound.body }) }

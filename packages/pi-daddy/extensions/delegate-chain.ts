@@ -44,7 +44,12 @@ import { runOneDelegation } from "./run-delegation.ts";
 import { isCriticalAssuranceBlock } from "./execute-child.ts";
 import type { GrantsSession } from "./session.ts";
 import { GovernanceRefusal, refusal, type StructuredRefusal } from "../src/kernel/refusals.ts";
-import { chainApprovalFacts, newChainApprovalAudit, rememberChainApproval } from "./chain-approval-facts.ts";
+import {
+  chainApprovalFacts,
+  newChainApprovalAudit,
+  rememberChainApproval,
+  retainedChainApproval,
+} from "./chain-approval-facts.ts";
 import { newExecutionId } from "../src/kernel/execution-id.ts";
 import { planChain, type GateRequest } from "./chain-plan.ts";
 import { contextShape } from "./context-shape.ts";
@@ -234,7 +239,7 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
           throw new Error(message);
         }
 
-        // One dialog per `capability@subject`, each naming the step that needs it, all before the first step runs.
+        // One dialog per exact permission set for an agent/step, all before the first step runs.
         const preApproved: InheritableApproval[] = [];
         const approvalAudit = newChainApprovalAudit();
         const approvalStep = new Map<string, number>();
@@ -242,36 +247,45 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
           [];
         let declined: { request: GateRequest; outcome: Awaited<ReturnType<typeof obtainApprovals>> } | undefined;
 
+        const requestGroups = new Map<string, GateRequest[]>();
         for (const request of chainPlan.requests) {
+          const key = JSON.stringify([request.subject, request.path, request.stepIndex]);
+          const group = requestGroups.get(key) ?? [];
+          group.push(request);
+          requestGroups.set(key, group);
+        }
+        for (const requests of requestGroups.values()) {
+          const request = requests[0]!;
           const outcome = await obtainApprovals(
             session,
-            [request.capability],
+            requests.map((entry) => entry.capability),
             request.subject,
             request.path,
             ctx,
             request.task,
             signal,
           );
-          if (!outcome.approved.includes(request.capability)) {
-            // **Stop asking.** The chain's outcome is already fixed, and every further dialog banks authority — a
-            // `session` yes into `sessionApprovals` and an `always` yes onto disk for 30 days — for a chain that will
-            // not run. The single-delegate path breaks on the first no for the same reason.
-            declined = { request, outcome };
+          const missing = requests.find((entry) => !outcome.approved.includes(entry.capability));
+          if (missing) {
+            // Once the chain cannot run, ask nobody else and bank no further authority.
+            declined = { request: missing, outcome };
             break;
           }
-          // Auto is provisional and belongs to an actual step admission, never the upfront union.
-          if (outcome.sources[request.capability] === "auto") continue;
-          preApproved.push({
-            capability: request.capability,
-            subject: request.subject,
-            scope: outcome.scopes[request.capability] ?? ("once" as const),
-            // Pinned to THIS subject's body (ADR-0022). Stamped from a single shared subject, the pin was verified
-            // against one definition's instructions while the capability was spent on another's.
-            bodySha256: snapshotOf(session, request.subject)?.bodySha256,
-          });
-          rememberChainApproval(approvalAudit, request.capability, request.subject, outcome);
-          approvalStep.set(`${request.capability}@${request.subject}`, request.stepIndex);
-          approvedDecisions.push({ request, outcome });
+          for (const entry of requests) {
+            // Auto belongs to actual step admission, never to the upfront permission set.
+            if (outcome.sources[entry.capability] === "auto") continue;
+            preApproved.push({
+              capability: entry.capability,
+              subject: entry.subject,
+              scope: outcome.scopes[entry.capability] ?? ("once" as const),
+              bodySha256: snapshotOf(session, entry.subject)?.bodySha256,
+            });
+            rememberChainApproval(approvalAudit, entry.capability, entry.subject, outcome);
+            approvalStep.set(`${entry.capability}@${entry.subject}`, entry.stepIndex);
+          }
+          // Retain the group once, excluding provisional Auto facts that no step has admitted or consumed.
+          const retained = retainedChainApproval(outcome);
+          if (retained) approvedDecisions.push({ request, outcome: retained });
         }
 
         if (declined) {

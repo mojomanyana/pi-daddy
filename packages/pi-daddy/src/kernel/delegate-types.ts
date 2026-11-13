@@ -80,6 +80,8 @@ export interface DelegationContext {
   extensionPath?: string;
   /** No-tool activity observer injected only for governed leaf children. */
   observerExtensionPath?: string;
+  /** Public tool origins observed in the current host; names alone do not establish child delivery. */
+  childToolSources?: readonly import("./child-tools.ts").ChildToolSource[];
   /**
    * Extra per-child environment supplied by the composition layer (today: the activity timeline's local
    * observation identity). Evaluated once the child's execution id is known. The kernel refuses any key in

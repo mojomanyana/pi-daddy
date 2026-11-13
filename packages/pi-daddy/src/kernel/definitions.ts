@@ -59,6 +59,8 @@ export function digestDefinition(definition: SkillDefinition): DefinitionDigest 
 }
 
 export interface SkillDefinition {
+  /** Trusted selected-source locations, frozen with the definition identity; never additional authority. */
+  selectedResources?: import("./selected-resources.ts").SelectedResources;
   /** Present only for explicit local public-evidence capture; excluded from authority and identity. */
   sourceSnapshot?: import("./definition-sources.ts").DefinitionSourceSnapshot;
   /** Immutable selected-resource identity, independent of the model-authored name. */

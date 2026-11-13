@@ -55,6 +55,8 @@ export interface SpawnPlanInput {
    * definition only has to describe its own job.
    */
   systemPrompt?: string;
+  /** Trusted selected-definition locations, separate from the unchanged authored body. */
+  selectedResourcePrompt?: string;
 }
 
 export interface SpawnPlan {
@@ -99,7 +101,7 @@ export function planSpawn(input: SpawnPlanInput): SpawnPlan {
   else args.push("--no-session");
 
   // Disable discovery so ambient user extensions cannot widen a governed child's surface. Explicit
-  // `-e` paths would still load, so this package never passes one.
+  // `-e` paths still load; the delegation planner adds only its qualified governance/observer entrypoint.
   args.push("--no-extensions");
 
   // R-32. `--no-extensions` governs EXTENSIONS ONLY — measured, not assumed: a child spawned with
@@ -143,6 +145,7 @@ export function planSpawn(input: SpawnPlanInput): SpawnPlan {
   // picks WHICH definition, never its contents. That is what keeps it out of `neutralisePrompt`'s
   // remit: the G1 hazard is a model-controlled string reaching a parser, and this is not one.
   if (input.systemPrompt) args.push("--append-system-prompt", input.systemPrompt);
+  if (input.selectedResourcePrompt) args.push("--append-system-prompt", input.selectedResourcePrompt);
   // After the definition body, so a child reads what it IS before what it was told (ADR-0078). Operator- and
   // parent-authored text, never a model-chosen argv position, so `neutralisePrompt` has no remit here either.
   if (input.contextPrompt) args.push("--append-system-prompt", input.contextPrompt);

@@ -308,6 +308,17 @@ test("Settings shows editable JEV controls only when advertised; entering a cont
       session: snapshot,
     });
     assert.match(grouped, /^PERMISSIONS .*\n> Permission Auto:/m);
+    assert.match(grouped, /Startup default: OFF/);
+    const withAutoSource = (source: "session" | "environment") =>
+      renderDashboardScreen({
+        width: 80,
+        height: 48,
+        screen: display.screen,
+        items: [],
+        session: { ...snapshot, auto: { ...snapshot.auto, source } },
+      });
+    assert.match(withAutoSource("session"), /Session choice; \/new uses the startup setting/);
+    assert.match(withAutoSource("environment"), /From the startup environment/);
     assert.match(grouped, /^JEV · optional advice .*\n  JEV: ON/m);
     assert.match(grouped, /^    Call limit: 300 per session\n      1 used · 299 available now/m);
     assert.match(grouped, /^    Choose JEV model and storage…\n      Provider status:/m);

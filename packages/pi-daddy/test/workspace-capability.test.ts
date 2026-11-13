@@ -43,6 +43,7 @@ const catalog = makeCatalog([
 ]);
 
 const ctx = (over: Record<string, unknown> = {}) => ({
+  extensionPath: "/selected/grants.ts",
   ownGrant: ["tool:read", "tool:delegate", "workspace:prod"],
   depth: 0,
   maxDepth: 3,

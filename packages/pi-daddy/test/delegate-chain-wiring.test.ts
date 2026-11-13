@@ -486,10 +486,10 @@ test("ADR-0033: a gate-refused chain WRITES a ledger line naming the refused sub
   assert.equal(banked.refusal, undefined, "a banked yes must not retain the stale pre-approval refusal");
 });
 
-test("ledger v3: mixed gate outcomes on ONE chain step remain one execution decision", async () => {
+test("ledger v3: declining one exact permission set remains one execution decision", async () => {
   const dir = await tempDir("grants-chain-mixed-gate-");
   const ledger = join(dir, "ledger.jsonl");
-  const { tools, ctx } = await harness(
+  const { tools, ctx, selects } = await harness(
     {
       [ENV_GRANT]: "tool:read,tool:write,tool:delegate",
       [ENV_GATED]: "tool:read,tool:write",
@@ -497,8 +497,13 @@ test("ledger v3: mixed gate outcomes on ONE chain step remain one execution deci
       [ENV_FANOUT]: "12",
     },
     dir,
-    "allow-then-decline",
+    "decline",
   );
+
+  ctx.ui.select = async (title) => {
+    selects.push(title);
+    return "Deny";
+  };
 
   await tools
     .get("delegate_chain")!
@@ -513,11 +518,58 @@ test("ledger v3: mixed gate outcomes on ONE chain step remain one execution deci
     .map((line) => JSON.parse(line).body)
     .filter((body) => body.event === "capability_decision");
   assert.equal(decisions.length, 1, "one execution occurrence must have one capability decision");
-  assert.deepEqual(decisions[0].approved, ["tool:read"]);
+  assert.equal(selects.length, 1);
+  assert.match(selects[0], /2 permissions/);
+  assert.deepEqual(decisions[0].approved ?? [], []);
   assert.equal(decisions[0].humanDenied, true);
   assert.equal(decisions[0].gateOutcome, "declined");
   const projection = parseDashboardLedger(text);
   assert.equal(projection.corrupt.length, 0, "the package must not emit a ledger its own dashboard rejects");
   assert.equal(projection.nodes.length, 1);
   assert.equal(projection.nodes[0].state, "refused");
+});
+
+test("chain groups one agent's permissions but retains each approved capability in its ledger", async () => {
+  const dir = await tempDir("grants-chain-permission-set-");
+  await definition(dir, "digger", "Read, Bash, Write");
+  await definition(dir, "shaper", "Read, Bash");
+  const ledger = join(dir, "ledger.jsonl");
+  const { tools, ctx, selects } = await harness(
+    {
+      [ENV_GRANT]: "agent:digger,agent:shaper,tool:read,tool:bash,tool:write,tool:delegate",
+      [ENV_GATED]: "tool:bash,tool:write",
+      [ENV_LEDGER]: ledger,
+      [ENV_FANOUT]: "12",
+    },
+    dir,
+    "allow-then-decline",
+  );
+  await assert.rejects(
+    () =>
+      tools.get("delegate_chain")!.execute(
+        "grouped",
+        {
+          steps: [
+            { task: "dig", agent: "digger" },
+            { task: "shape {previous}", agent: "shaper" },
+          ],
+        },
+        undefined,
+        undefined,
+        ctx,
+      ),
+    /chain refused/,
+  );
+  assert.equal(selects.length, 2);
+  assert.match(selects[0], /Allow digger these 2 permissions/);
+  assert.match(selects[1], /Allow shaper to run shell commands/);
+  const rows = (await readFile(ledger, "utf8"))
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line).body);
+  const first = rows.find((row) => row.event === "capability_decision" && row.agentType === "digger");
+  assert.deepEqual(first.approved, ["tool:bash", "tool:write"]);
+  assert.deepEqual(first.approvalSources, { "tool:bash": "prompt", "tool:write": "prompt" });
+  assert.ok(rows.some((row) => row.agentType === "shaper" && row.humanDenied === true));
+  assert.ok(!rows.some((row) => row.event === "child_started"));
 });

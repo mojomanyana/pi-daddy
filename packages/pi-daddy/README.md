@@ -190,7 +190,7 @@ same tools, one level deeper, under the same rules.
 
 ## What a child receives
 
-By default a child gets two things: its definition body as its system prompt, and the task. Anything more is a
+By default a child gets its definition body, trusted locations for that selected definition, and the task. Parent conversation context is a
 capability. `context:<mode>` names how much of the parent's own session crosses, and it attenuates like every other
 id, so a child can never receive a richer handoff than the definition's ceiling and the parent's grant allow.
 
@@ -700,6 +700,20 @@ Call `delegate_describe({agent:"build"})` and carry its `definitionId` into `del
 child, or a `delegate_chain` step. Principal bindings require that precondition. Description starts no child
 and grants no authority. A stale ID refuses before approval or launch. This hash is an observation and
 precondition, not an approval record or a learned-policy authorization.
+
+The description also returns `selectedResources`: version `1`, `selectedSkill` and `definition` objects
+containing `path` and `sha256`, and `resourceDirectory` for relative references. A verified Principal binding
+adds `package: {name, root, version?}` for that selected package only. The same frozen locations accompany
+the unchanged authored body in the child's system prompt and participate in `definitionId`. They do not
+load additional runtime skills, grant tools, or attest the contents or availability of referenced helpers.
+
+A tool visible to the parent is not necessarily deliverable to a child. Daddy checks the current public
+Pi tool origins before asking for permissions. Native Pi tools and Daddy's explicitly loaded governance
+tools are supported; granting a Daddy tool also requires the existing `tool:delegate` capability and its
+entrypoint. External extension, MCP and SDK-only tools currently refuse with `child tool unavailable`.
+Keep that work in the parent or select a definition using supported child tools; permission alone cannot
+install a child provider. Ambient extensions stay disabled and `--tools` remains exact. A refused fan-out
+child does not prevent an independent valid sibling from running; a chain refuses before any step starts.
 
 ### Optional retained-result consumers
 

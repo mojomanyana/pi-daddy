@@ -244,6 +244,8 @@ export interface GrantsSession extends NativeSessionHost {
   ownGrant: Capability[];
   observed: boolean;
   observedTools: string[] | null;
+  /** Re-read public origins at admission; a parent's callable name does not prove child delivery. */
+  childToolSources?: () => readonly import("../src/kernel/child-tools.ts").ChildToolSource[];
   /** ADR-0016: `SKILL.md` definitions, keyed by name. The format this package spawns from now. */
   ensureDefinitions?: () => Promise<void>;
   definitions: Map<string, SkillDefinition>;
@@ -687,6 +689,7 @@ export function createGrantsSession(
         ledgerPath: session.ledgerPath,
         extensionPath: session.extensionPath,
         observerExtensionPath: session.observerExtensionPath,
+        childToolSources: session.childToolSources?.(),
         childEnv: activityChildEnv(session.activity),
         // ADR-0042: the pin this session holds, handed to the kernel so a delegated child inherits a narrowed
         // one through the same builder `publishChildEnv` uses. Read here rather than in the kernel so there is

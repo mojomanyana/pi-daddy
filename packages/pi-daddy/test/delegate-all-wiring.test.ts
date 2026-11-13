@@ -6,6 +6,7 @@ import {
 } from "../src/products/activity-timeline.ts";
 import { ENV_PUBLIC_EVIDENCE_DIR } from "../src/kernel/env-names.ts";
 import { evidenceFromProvider } from "./execution-evidence-fixture.ts";
+import { toolSources } from "./tool-sources-fixture.ts";
 import { piFixtureScript } from "./pi-fixture.ts";
 /**
  * Wiring tests for `delegate_all` — the fan-out tool as the extension actually registers it.
@@ -120,7 +121,7 @@ async function harness(env: Record<string, string>, existingDir?: string, durabl
     on: (name: string, handler: (e: unknown, c: unknown) => unknown) => void hooks.set(name, handler),
     registerTool: (spec: ToolSpec) => void tools.set(spec.name, spec),
     registerCommand: (name: string, spec: any) => void commands.set(name, spec),
-    getAllTools: () => ["read", "grep", "write", "delegate"].map((name) => ({ name })),
+    getAllTools: () => toolSources([...toolSources().map(({ name }) => name), "scout_research"]),
     getActiveTools: () => [...activeTools],
     setActiveTools: (names: string[]) => {
       activeTools.clear();
@@ -174,6 +175,80 @@ test("delegate_all is registered when the session may delegate", async () => {
   const { tools } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate" });
   assert.ok(tools.has("delegate_all"), "fan-out must be reachable");
   assert.ok(tools.has("delegate"), "and the single form stays");
+});
+
+test("unsupported child delivery refuses single and chain without prompts while a valid fan-out sibling completes", async () => {
+  const bin = await tempDir("grants-delivery-shim-");
+  const started = join(bin, "started.jsonl");
+  await writeFile(
+    join(bin, "pi"),
+    piFixtureScript(
+      `#!/usr/bin/env node\nrequire('node:fs').appendFileSync(${JSON.stringify(started)},JSON.stringify(process.argv.at(-1))+'\\n');console.log('valid sibling completed');\n`,
+    ),
+  );
+  await chmod(join(bin, "pi"), 0o755);
+  const oldPath = process.env.PATH;
+  process.env.PATH = `${bin}:${oldPath}`;
+  try {
+    const { tools, hooks, ctx } = await harness({
+      [ENV_GRANT]: "tool:read,tool:write,tool:scout_research,tool:delegate",
+      [ENV_GATED]: "tool:write",
+    });
+    let prompts = 0;
+    Object.assign(ctx, { hasUI: true });
+    ctx.ui.select = async () => {
+      prompts++;
+      return undefined;
+    };
+    await hooks.get("before_provider_request")!(
+      { payload: { tools: [{ name: "read" }, { name: "write" }, { name: "scout_research" }, { name: "delegate" }] } },
+      ctx,
+    );
+    const unsupported = { task: "unsupported child", tools: ["write", "scout_research"] };
+    await assert.rejects(
+      () => tools.get("delegate")!.execute("single-unavailable", unsupported, undefined, undefined, ctx),
+      /child tool unavailable/,
+    );
+    await assert.rejects(
+      () =>
+        tools.get("delegate_chain")!.execute(
+          "chain-unavailable",
+          {
+            steps: [{ task: "valid predecessor", tools: ["read"] }, unsupported],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      /child tool unavailable/,
+    );
+    assert.equal(await readFile(started, "utf8").catch(() => ""), "", "neither single nor any chain step started");
+    assert.equal(prompts, 0);
+    const result = (await tools.get("delegate_all")!.execute(
+      "mixed-delivery",
+      {
+        children: [{ task: "valid independent sibling", tools: ["read"] }, unsupported],
+      },
+      undefined,
+      undefined,
+      ctx,
+    )) as any;
+    assert.equal(result.details.outcomes[0].ok, true);
+    assert.equal(result.details.outcomes[1].refusal.details.kind, "child-tool-unavailable");
+    assert.equal(result.details.outcomes[1].work, undefined);
+    assert.equal(result.details.outcomes[1].cleanup, undefined);
+    assert.equal(prompts, 0, "permission cannot repair missing provider delivery");
+    assert.deepEqual(
+      (await readFile(started, "utf8"))
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line)),
+      [" valid independent sibling"],
+    );
+  } finally {
+    if (oldPath === undefined) delete process.env.PATH;
+    else process.env.PATH = oldPath;
+  }
 });
 
 test("all three tool schemas expose only correlation contract 1.0 and its closed scope", async () => {

@@ -403,6 +403,7 @@ test("ADR-0017: agent: authority attenuates — a definition declares which othe
   });
   const ctxFor = (ownGrant: string[]) => ({
     ownGrant,
+    extensionPath: "/selected/grants.ts",
     depth: 0,
     maxDepth: 3,
     gated: [],

@@ -127,8 +127,8 @@ test("Bookie installation, live command and selected work map each make a distin
   assert.match(versionLines(bookie, true, o).join(" "), /Installed 0\.1\.3.*not reported a running version/);
   const loaded = { ...bookie, commandAvailable: true };
   const live = panel([], [loaded]);
-  assert.match(componentItems(live)[0]!.label, /Available · no project reported/);
-  assert.match(componentItems(live)[0]!.briefDetails!.join(" "), /\/bookie-work/);
+  assert.match(componentItems(live)[0]!.label, /Automatic memory paused · Auto OFF/);
+  assert.match(componentItems(live)[0]!.briefDetails!.join(" "), /\/bookie-context/);
   assert.match(versionLines(loaded, true, live).join(" "), /Active in Pi. Running version unreported/);
   const connected = source("bookie", "observed");
   connected.items = [{ id: "scope", label: "Project", kind: "goal", state: "observed" }];
@@ -186,6 +186,7 @@ test("automatic Bookie memory is a single live Tools row alongside independent w
   const work = source("bookie", "observed");
   work.items = [{ id: "scope", kind: "goal", state: "observed", label: "Project" }];
   const o = panel([work, memory], [bookie]);
+  o.session!.auto.enabled = true;
   assert.deepEqual(
     componentItems(o).map((r) => r.label),
     ["Bookie memory · Ready in this folder"],
@@ -194,7 +195,7 @@ test("automatic Bookie memory is a single live Tools row alongside independent w
   assert.match(versionLines(bookie, false, panel([memory], [bookie])).join(" "), /Active in Pi/);
   memory.availability = "closed";
   assert.match(componentItems(o)[0]!.label, /Project connected/);
-  assert.match(componentItems(panel([memory], [bookie]))[0]!.label, /Live status unknown/);
+  assert.match(componentItems(panel([memory], [bookie]))[0]!.label, /Automatic memory paused · Auto OFF/);
   memory.availability = "observed";
   memory.items[0]!.state = "unknown";
   assert.match(componentItems(o)[0]!.label, /Project connected/);
@@ -221,4 +222,21 @@ test("Bookie explains partial choices in current memory details only", () => {
   o.session!.auto.enabled = true;
   memory.availability = "closed";
   assert.ok(!row().briefDetails!.includes(limit) && !row().details.includes(limit));
+});
+
+test("memory paused explains current-session versus startup Auto without claiming lost notes", () => {
+  const loaded = { ...bookie, commandAvailable: true };
+  const o = panel([], [loaded]);
+  const read = () => componentItems(o)[0]!;
+  assert.match(read().label, /Automatic memory paused/);
+  assert.match(read().briefDetails!.join(" "), /starts off by default/);
+  o.session!.auto.source = "environment";
+  assert.match(read().briefDetails!.join(" "), /started with Auto off/);
+  o.session!.auto.source = "session";
+  assert.match(read().briefDetails!.join(" "), /turned off for this session/);
+  assert.match(read().briefDetails!.join(" "), /does not change the startup setting/);
+  assert.doesNotMatch(read().briefDetails!.join(" "), /no notes|empty|deleted/);
+  o.connected = false;
+  assert.match(read().label, /Live status unknown/);
+  assert.doesNotMatch(read().label, /paused/);
 });

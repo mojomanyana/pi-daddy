@@ -9,6 +9,7 @@ import { bindReloadLifecycle } from "../extensions/reload-environment.ts";
 import { runOwnedChild } from "../src/executors/owned-worker.ts";
 import { reconcileDelegationCapacity } from "../extensions/session-capacity.ts";
 import { piFixtureScript } from "./pi-fixture.ts";
+import { toolSources } from "./tool-sources-fixture.ts";
 import { tempDir, cleanupTempDirs } from "./tmp.ts";
 after(cleanupTempDirs);
 
@@ -64,7 +65,7 @@ else {const timer=setInterval(()=>{if(fs.existsSync(process.env.CAPACITY_TEST_GA
       on: (name: string, fn: any) => hooks.set(name, fn),
       registerTool: (tool: any) => tools.set(tool.name, tool),
       registerCommand: () => {},
-      getAllTools: () => ["read", "delegate"].map((name) => ({ name })),
+      getAllTools: () => toolSources(["read", "delegate"]),
       getActiveTools: () => [...active],
       setActiveTools: (names: string[]) => {
         active.clear();

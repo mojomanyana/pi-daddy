@@ -29,6 +29,7 @@ import {
   ENV_PARENT_ID,
 } from "../src/kernel/propagation.ts";
 import { tempDir } from "./tmp.ts";
+import { toolSources } from "./tool-sources-fixture.ts";
 
 const KEYS = [
   ENV_GRANT,
@@ -138,7 +139,7 @@ export async function harness(env: Record<string, string>, existingDir?: string,
     on: (name: string, handler: (e: unknown, c: unknown) => unknown) => void hooks.set(name, handler),
     registerTool: (spec: ToolSpec) => void tools.set(spec.name, spec),
     registerCommand: () => {},
-    getAllTools: () => ["read", "grep", "write", "bash", "delegate"].map((name) => ({ name })),
+    getAllTools: () => toolSources(),
     getActiveTools: () => [...activeTools],
     setActiveTools: (names: string[]) => {
       activeTools.clear();

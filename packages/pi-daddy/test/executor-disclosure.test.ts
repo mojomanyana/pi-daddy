@@ -19,6 +19,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { after, afterEach, test } from "node:test";
 import grantsExtension from "../extensions/grants.ts";
+import { toolSources } from "./tool-sources-fixture.ts";
 import { ENV_HERDR } from "../src/executors/executor.ts";
 import {
   ENV_APPROVED,
@@ -82,7 +83,7 @@ async function harness(env: Record<string, string>, existingDir?: string) {
     on: (name: string, handler: (e: unknown, c: unknown) => unknown) => void hooks.set(name, handler),
     registerTool: () => {},
     registerCommand: (name: string, spec: CommandSpec) => void commands.set(name, spec),
-    getAllTools: () => ["read", "grep", "delegate"].map((name) => ({ name })),
+    getAllTools: () => toolSources(["read", "grep", "delegate"]),
   } as never);
 
   await hooks.get("session_start")!({}, ctx);

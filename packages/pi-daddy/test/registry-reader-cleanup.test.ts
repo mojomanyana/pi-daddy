@@ -10,6 +10,7 @@ import { buildCatalog } from "../src/kernel/catalog.ts";
 import { loadWorkspaceRegistry, registeredWorkspaceIds } from "../src/kernel/workspace.ts";
 import { readBoundedFile, BoundedReadCleanupError, retainedBoundedReadCleanups } from "../src/kernel/bounded-read.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
+import { toolSources } from "./tool-sources-fixture.ts";
 
 after(cleanupTempDirs);
 
@@ -125,6 +126,7 @@ for (const cause of [undefined, null, false]) {
           session.cwd = f.cwd;
           let command!: { handler: (args: string, ctx: unknown) => Promise<void> };
           const api = {
+            getAllTools: () => toolSources(),
             on: () => {},
             registerTool: () => {},
             registerCommand: (_name: string, value: typeof command) => {
@@ -175,6 +177,7 @@ test("registered init keeps the exact cleanup rejection when UI notification its
   grantsExtension(
     {
       on: () => {},
+      getAllTools: () => toolSources(),
       registerTool: () => {},
       registerCommand: (_name: string, value: typeof command) => {
         command = value;
