@@ -12,7 +12,7 @@
 
 import { randomUUID } from "node:crypto";
 import type { AutoModeReader } from "../kernel/auto-mode.ts";
-import { approvalKey, offeredScopes, type ApprovalPath, type ApprovalScope } from "../kernel/approval.ts";
+import { offeredScopes, type ApprovalPath, type ApprovalScope } from "../kernel/approval.ts";
 import type { Capability } from "../kernel/resolve.ts";
 import { selectPermission } from "./permission-question.ts";
 
@@ -36,6 +36,8 @@ export const SCOPE_LABELS: Record<ApprovalScope, string> = {
 
 export interface PromptRequest {
   capability: Capability;
+  /** Exact set covered by this one decision. Omitted for legacy single-capability callers. */
+  capabilities?: Capability[];
   /** Agent type name, or `DELEGATE_SUBJECT` on the delegate path. */
   subject: string;
   path: ApprovalPath;
@@ -159,7 +161,7 @@ async function selectApproval(
     untrack = options.autoMode?.trackPending({
       id: randomUUID(),
       subject: request.subject,
-      capability: request.capability,
+      capability: (request.capabilities ?? [request.capability]).join(", "),
     });
     const selection = selectPermission(options.ui, request, labels, controller.signal).then((chosen) => {
       settled = true;
@@ -211,7 +213,7 @@ async function joinApproval(pending: Promise<PromptOutcome>, request: PromptRequ
 }
 
 /**
- * The single-flight queue: one dialog per approval key at a time.
+ * The single-flight queue: one dialog per exact capability set, subject and binding at a time.
  *
  * `delegate` sets no `executionMode`, so an orchestrator can fan out several children at once and two can
  * hit the same gate simultaneously — otherwise two stacked dialogs asking the identical question.
@@ -302,6 +304,10 @@ export function createApprovalGate(
 
   return {
     async request(request: PromptRequest): Promise<PromptOutcome> {
+      const capabilities = [...new Set(request.capabilities ?? [request.capability])].sort();
+      if (!capabilities.length || !capabilities.includes(request.capability))
+        return { scope: null, kind: "error", reason: "Invalid permission set; no permission was granted." };
+      request = { ...request, capabilities };
       if (request.signal?.aborted) return interrupted(request, "aborted");
       try {
         if (options.autoMode && (await options.autoMode.read()).enabled) {
@@ -322,7 +328,7 @@ export function createApprovalGate(
         };
       }
 
-      const key = `${approvalKey(request.capability, request.subject)}${request.bindingKey ? `#${request.bindingKey}` : ""}`;
+      const key = JSON.stringify([request.path, request.subject, capabilities, request.bindingKey ?? null]);
 
       // R-29. Join an in-flight dialog, but only *keep* its answer if that answer was about more than one
       // spawn. A `once` belongs to whichever caller the human was actually looking at — the title shows

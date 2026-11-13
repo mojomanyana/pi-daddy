@@ -198,6 +198,19 @@ it measured nothing rather than passing quietly.
 
 ## Decisions still in force
 
+**2026-11-13 — child delivery is checked separately from parent permission.** The current public Pi tool
+origins must identify a qualified native tool or Daddy's own explicit governance entrypoint before an
+authorized request can ask for approval. External extension, MCP and SDK-only tools are refused instead of
+being silently dropped by the child. Do not load all parent extensions, infer a working remote provider,
+or weaken the tool allowlist to repair this refusal. Independent fan-out siblings remain independent;
+the chain's existing upfront planning stops all steps when one cannot receive its tools.
+
+Selected definitions expose frozen source locations in `selectedResources`, including only the validated
+Principal package root where applicable. The locator is bound into the definition identity and appended
+beside the unchanged authored body. It conveys no resource contents, tool/skill grant or task approval.
+Existing selected manifest/hash checks remain mandatory. Native startup controls observe exact tool origins,
+active tools and both prompt components; they establish loading behavior, not model compliance or Scout health.
+
 **2026-11-12 — command payloads stay off the native owner's argv.** A bounded inherited pipe delivers
 literal command arguments before the helper forks or publishes ownership; the pipe closes before either
 process can execute work. This prevents matching the helper solely because a service-name cleanup pattern

@@ -24,16 +24,22 @@ function oneLine(value: string, limit: number): string {
         .trimEnd() + "…";
 }
 
-function headline(request: PromptRequest): string {
+function permissionAction(capability: string): string {
   const actions: Record<string, string> = {
     "tool:bash": "run shell commands",
     "tool:write": "write files",
     "tool:edit": "edit files",
     "tool:delegate": "delegate work to another agent",
   };
+  return actions[capability] ?? `use ${oneLine(clean(capability), 90)}`;
+}
+
+function headline(request: PromptRequest): string {
+  const capabilities = request.capabilities ?? [request.capability];
   const subject = request.path === "delegate" ? "this delegated agent" : oneLine(clean(request.subject), 80);
-  const action = actions[request.capability] ?? `use ${oneLine(clean(request.capability), 90)}`;
-  return `Allow ${subject} to ${action}?`;
+  return capabilities.length === 1
+    ? `Allow ${subject} to ${permissionAction(capabilities[0]!)}?`
+    : `Allow ${subject} these ${capabilities.length} permissions?`;
 }
 
 function scopeHint(request: PromptRequest): string {
@@ -46,7 +52,7 @@ function scopeHint(request: PromptRequest): string {
 /** Render the full, untrusted brief in pages so choices stay reachable on a typical terminal. */
 function detailLines(request: PromptRequest): string[] {
   const rows = [
-    `Permission: ${clean(request.capability)}`,
+    ...(request.capabilities ?? [request.capability]).map((capability) => `Permission: ${clean(capability)}`),
     `Agent: ${clean(request.subject)}`,
     ...(request.project ? [`Permission project: ${clean(request.project)}`] : []),
     ...(request.workspace ? [`Requested workspace: ${clean(request.workspace)}`] : []),
@@ -77,11 +83,16 @@ export async function selectPermission(
     .find((line) => line.trim());
   const title = [
     headline(request),
+    ...((request.capabilities?.length ?? 1) > 1
+      ? request.capabilities!.map((capability) => `  • ${permissionAction(capability)}`)
+      : []),
     ...(task ? [`Requested task: ${oneLine(task, 115)}`] : []),
     ...(request.project
       ? [`Permission project: ${oneLine(clean(basename(request.project) || request.project), 60)}`]
       : []),
-    ...(request.capability === "tool:bash" ? ["Shell access can change files and run other commands."] : []),
+    ...((request.capabilities ?? [request.capability]).includes("tool:bash")
+      ? ["Shell access can change files and run other commands."]
+      : []),
     ...(request.recheckReason ? [request.recheckReason] : []),
     scopeHint(request),
   ].join("\n");

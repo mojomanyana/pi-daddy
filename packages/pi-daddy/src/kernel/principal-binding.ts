@@ -100,5 +100,16 @@ export async function principalBinding(
     runtimePreferences: agent.runtimePreferences ?? inline.runtimePreferences,
     ...(typeof pkg.version === "string" ? { packageVersion: pkg.version } : {}),
     binding: Object.freeze({ package: "principal-pi-skills", phase }),
+    selectedResources: Object.freeze({
+      version: 1 as const,
+      selectedSkill: Object.freeze({ path, sha256: hash(skillText) }),
+      definition: Object.freeze({ path: agentPath, sha256: hash(agentText) }),
+      resourceDirectory: dirname(path),
+      package: Object.freeze({
+        name: "principal-pi-skills" as const,
+        root,
+        ...(typeof pkg.version === "string" ? { version: pkg.version } : {}),
+      }),
+    }),
   };
 }

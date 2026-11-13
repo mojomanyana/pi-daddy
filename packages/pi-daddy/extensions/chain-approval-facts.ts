@@ -2,6 +2,26 @@ import type { InheritableApproval } from "../src/kernel/approval.ts";
 import type { Capability } from "../src/kernel/resolve.ts";
 import type { ApprovalOutcome } from "./approvals.ts";
 
+/** An upfront Auto answer is provisional until an actual step admission, never consumed approval evidence. */
+export function retainedChainApproval(outcome: ApprovalOutcome): ApprovalOutcome | undefined {
+  const approved = outcome.approved.filter((capability) => outcome.sources[capability] !== "auto");
+  if (!approved.length) return undefined;
+  const keep = new Set(approved);
+  const filter = <T>(values: Record<Capability, T>): Record<Capability, T> =>
+    Object.fromEntries(Object.entries(values).filter(([capability]) => keep.has(capability)));
+  return {
+    ...outcome,
+    approved,
+    sources: filter(outcome.sources),
+    scopes: filter(outcome.scopes),
+    recordedScopes: filter(outcome.recordedScopes),
+    bindings: filter(outcome.bindings),
+    expiresAt: filter(outcome.expiresAt),
+    uses: filter(outcome.uses),
+    ...(outcome.banked ? { banked: outcome.banked.filter((entry) => keep.has(entry.capability)) } : {}),
+  };
+}
+
 export interface ChainApprovalAudit {
   sources: Map<string, ApprovalOutcome["sources"][Capability]>;
   scopes: Map<string, ApprovalOutcome["recordedScopes"][Capability]>;

@@ -84,6 +84,34 @@ jobs:
         working-directory: packages/pi-daddy
         run: npm run test:smoke
 
+  pi-152-native:
+    name: Pi 1.5.2 native delivery and cleanup (no hosted provider)
+    runs-on: ubuntu-26.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.x"
+          cache: npm
+      - run: npm ci
+      - name: install exact Pi outside the checkout
+        run: npm install --prefix "$RUNNER_TEMP/pi-1.5.2" --no-save --ignore-scripts --no-audit --no-fund @earendil-works/pi-coding-agent@1.5.2
+      - name: real Pi child, local scripted provider, exact process cleanup
+        working-directory: packages/pi-daddy
+        env:
+          DADDY_TEST_PI_CLI: ${{ runner.temp }}/pi-1.5.2/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js
+          DADDY_TEST_PATTERN_RECEIPT: ${{ runner.temp }}/pi-152-native-cleanup.json
+        run: node --test test-integration/pi-sdk/owned-pattern-cleanup.it.ts test-integration/pi-sdk/child-tool-delivery.it.ts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pi-152-native-cleanup
+          path: ${{ runner.temp }}/pi-152-native-cleanup.json
+          if-no-files-found: warn
+      - name: the fixture left tracked source unchanged
+        run: git diff --exit-code
+
 # **What this does NOT cover, because a CI badge that implies more than it checks is the defect this project
 # keeps recording.**
 #

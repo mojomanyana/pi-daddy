@@ -138,7 +138,12 @@ function componentItem(producer: KnownSource, options: DashboardScreenOptions): 
   let state = "observed",
     status: string,
     explanation: string;
-  if (options.connected === false || (source && !current(source, options))) {
+  if (
+    options.connected === false ||
+    (source &&
+      !current(source, options) &&
+      !(source.producer === "bookie-memory" && options.session?.auto.enabled === false))
+  ) {
     state = "last-observed";
     status = "Live status unknown";
     const lastReport =
@@ -150,6 +155,21 @@ function componentItem(producer: KnownSource, options: DashboardScreenOptions): 
             ? "Project connected"
             : undefined;
     explanation = (lastReport ? `Last report: ${lastReport}. ` : "") + "Check the main Pi chat for current status.";
+  } else if (
+    bookie &&
+    options.session &&
+    !options.session.auto.enabled &&
+    (source?.producer === "bookie-memory" || pkg?.commandAvailable || pkg?.loadedVersion) &&
+    !(source?.producer === "bookie" && current(source, options) && source.items.length)
+  ) {
+    status = "Automatic memory paused · Auto OFF";
+    const origin =
+      options.session.auto.source === "session"
+        ? "Auto was turned off for this session."
+        : options.session.auto.source === "environment"
+          ? "Pi started with Auto off."
+          : "Auto starts off by default.";
+    explanation = `${origin} Turn Auto on in Settings for automatic notes in this folder, or use /bookie-context to select memory manually. A session toggle does not change the startup setting.`;
   } else if (source?.producer === "bookie-memory") {
     status = "Ready in this folder";
     explanation = "Bookie can save and recall routine notes for this workspace.";

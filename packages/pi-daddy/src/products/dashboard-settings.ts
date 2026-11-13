@@ -1,3 +1,4 @@
+import type { AutoModeSource } from "../kernel/auto-mode.ts";
 import { sectionHeading } from "./dashboard-layout.ts";
 
 /** Settings are owner observations; rendering never grants consent or changes execution. */
@@ -63,6 +64,7 @@ export function dashboardSettingsLines(
   auto: boolean | undefined,
   selected: DashboardSettingKey,
   width: number,
+  autoSource?: AutoModeSource,
 ): string[] {
   if (!settings) return ["Owner settings unavailable. Reconnect from /grants dashboard."];
   const row = (key: DashboardSettingKey, label: string, nested = false) =>
@@ -84,6 +86,15 @@ export function dashboardSettingsLines(
   return [
     sectionHeading("PERMISSIONS", width),
     row("auto", `Permission Auto: ${auto ? "ON" : "OFF"}`),
+    ...(autoSource
+      ? [
+          autoSource === "session"
+            ? "    Session choice; /new uses the startup setting."
+            : autoSource === "environment"
+              ? "    From the startup environment."
+              : "    Startup default: OFF.",
+        ]
+      : []),
     "",
     sectionHeading("JEV · optional advice", width),
     row(

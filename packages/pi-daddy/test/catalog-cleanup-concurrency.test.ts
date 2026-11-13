@@ -11,6 +11,7 @@ import { loadDefinitions } from "../src/kernel/definitions.ts";
 import { loadWorkspaceRegistry } from "../src/kernel/workspace.ts";
 import { BoundedReadCleanupError, readBoundedFile, retainedBoundedReadCleanups } from "../src/kernel/bounded-read.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
+import { toolSources } from "./tool-sources-fixture.ts";
 
 after(cleanupTempDirs);
 function gate() {
@@ -106,6 +107,7 @@ for (const multiple of [false, true]) {
         const hooks = new Map<string, Function>();
         const notices: string[] = [];
         const api = {
+          getAllTools: () => toolSources(),
           on: (name: string, handler: Function) => hooks.set(name, handler),
           registerTool: () => {},
           registerCommand: () => {},
@@ -283,6 +285,7 @@ for (const schedule of ["ordinary registry", "typed registry", "ordinary definit
         grantsExtension(
           {
             on: (name: string, handler: Function) => hooks.set(name, handler),
+            getAllTools: () => toolSources(),
             registerTool: () => {},
             registerCommand: () => {},
           } as never,

@@ -38,6 +38,7 @@ export function registerDefinitionDescribe(pi: ExtensionAPI, session: GrantsSess
         bodySha256: digestDefinition(definition).sha256,
         binding: definition.binding ?? null,
         definitionId: definition.definitionId,
+        selectedResources: definition.selectedResources ?? null,
       };
       const capture = publicEvidenceCall(session.publicEvidence, _id, "delegate_describe", [{ agent: params.agent }]);
       capture.selected(0, definition);

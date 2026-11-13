@@ -168,13 +168,13 @@ export async function storedApprovals(
   gated: Capability[],
   subject: string,
   expectedBinding?: ApprovalBinding,
-): Promise<ResolveApprovalsResult> {
+): Promise<ResolveApprovalsResult & { recheckReasons: Record<Capability, string> }> {
   const { valid, dropped } = await loadApprovals({
     cwd: session.cwd,
     now: new Date(),
     snapshotOf: (name) => snapshotOf(session, name),
   });
-  return resolveApprovals({
+  const result = resolveApprovals({
     gated,
     subject,
     sessionApprovals: session.sessionApprovals,
@@ -186,6 +186,28 @@ export async function storedApprovals(
     // arrives at `session_start` — after the session object is built.
     inherited: verifyInherited(session.inheritedApprovals, (name) => snapshotOf(session, name)),
   });
+  const recheckReasons: Record<Capability, string> = {};
+  const reasons = {
+    expired: "The previous permission expired or its expiry could not be verified.",
+    "instructions-changed": "The agent instructions changed or their previous version could not be verified.",
+    "type-changed": "The agent’s requested tools changed since the previous permission.",
+    "type-missing": "The previously approved agent definition is no longer available.",
+    "foreign-cwd": "The previous permission belongs to a different project folder.",
+    valid: "",
+  };
+  for (const capability of result.needsPrompt) {
+    const key = approvalKey(capability, subject);
+    const previous = dropped.find((entry) => entry.key === key);
+    if (previous) recheckReasons[capability] = reasons[previous.verdict];
+    else if (result.scopeMismatched.includes(capability))
+      recheckReasons[capability] = "The saved permission covers a different request.";
+    else {
+      const inherited = session.inheritedApprovals.get(key);
+      if (inherited && inherited !== snapshotOf(session, subject)?.bodySha256)
+        recheckReasons[capability] = reasons["instructions-changed"];
+    }
+  }
+  return { ...result, recheckReasons };
 }
 
 /**
@@ -255,40 +277,32 @@ export async function obtainApprovals(
   let refusalCode: RefusalCode | undefined;
   let reason: string | undefined;
 
-  for (const capability of pre.needsPrompt) {
-    const outcome = await gate.request({
-      capability,
-      subject,
-      path,
-      task,
-      signal,
-      project: session.cwd,
-      workspace: expectedBinding?.workspace_id,
-      recheckReason: pre.expired.includes(capability)
-        ? "The previous permission expired."
-        : pre.scopeMismatched.includes(capability)
-          ? "The saved permission covers a different request."
-          : undefined,
-      ...(expectedBinding ? { bindingKey: approvalBindingDigest(expectedBinding) } : {}),
-    });
-    if (outcome.scope === null) {
-      // Forward the gate's own discriminant rather than re-deriving it from `hasUI`: `hasUI` is true in
-      // RPC mode too, so an automated client's timeout or dismissal there would misreport as "a human
-      // declined" if we asked `ctx.hasUI` instead. Only `kind === "declined"` means a person said no.
-      humanDenied = outcome.kind === "declined";
-      // The full discriminant, not just the one bit of it that had a field. `no-ui`, `dismissed` and
-      // `error` used to produce records identical to each other, separated only by free-text `reason` —
-      // so "was there an operator who timed out, or was there nobody?" had no answer, and the two want
-      // different fixes. It was computed here all along and thrown away.
-      gateOutcome = outcome.kind;
-      refusalCode = pre.expired.includes(capability)
+  const outcome = await gate.request({
+    capability: pre.needsPrompt[0]!,
+    capabilities: pre.needsPrompt,
+    subject,
+    path,
+    task,
+    signal,
+    project: session.cwd,
+    workspace: expectedBinding?.workspace_id,
+    recheckReason: [...new Set(Object.values(pre.recheckReasons))].join(" ") || undefined,
+    ...(expectedBinding ? { bindingKey: approvalBindingDigest(expectedBinding) } : {}),
+  });
+  if (outcome.scope === null) {
+    // Only an explicit Deny is a human refusal. Cancellation, expiry and UI failure grant nothing.
+    humanDenied = outcome.kind === "declined";
+    gateOutcome = outcome.kind;
+    refusalCode =
+      pre.expired.length > 0
         ? "APPROVAL_EXPIRED"
-        : pre.scopeMismatched.includes(capability)
+        : pre.scopeMismatched.length > 0
           ? "APPROVAL_SCOPE_MISMATCH"
           : "GATED_UNAPPROVED";
-      reason = outcome.reason;
-      break;
-    }
+    reason = outcome.reason;
+  }
+  for (const capability of outcome.scope === null ? [] : pre.needsPrompt) {
+    const scope = outcome.scope!;
     approved.push(capability);
     // R-66: `prompt` means A HUMAN SAW A DIALOG FOR THIS. A caller that joined another's in-flight answer
     // did not, so it records the source it actually had — the session approval that answer created. Eight
@@ -296,12 +310,12 @@ export async function obtainApprovals(
     // prompt. Same repair as R-46, one level up: stop asserting a human was asked on a path where they
     // were not.
     sources[capability] = outcome.source === "auto" ? "auto" : outcome.joined ? "session" : "prompt";
-    scopes[capability] = outcome.scope;
-    recordedScopes[capability] = outcome.scope;
+    scopes[capability] = scope;
+    recordedScopes[capability] = scope;
     if (expectedBinding) bindings[capability] = expectedBinding;
-    if (outcome.scope === "once") uses[capability] = { max: 1, remaining: 0 };
+    if (scope === "once") uses[capability] = { max: 1, remaining: 0 };
 
-    if (outcome.scope === "session" || outcome.scope === "always") {
+    if (scope === "session" || scope === "always") {
       const key = approvalKey(capability, subject);
       // Whether THIS call created the authority, decided before we add it. `joined` means a human answer
       // opened by another delegation was shared with us; an existing key means it was already standing.
@@ -313,7 +327,7 @@ export async function obtainApprovals(
       else session.sessionApprovals.add(key);
       banked.push({ key, capability, subject, persisted: false, owned });
     }
-    if (outcome.scope === "always") {
+    if (scope === "always") {
       const now = new Date();
       const current = snapshot(subject);
       // No readable ceiling means the entry would carry `grantAtApproval: []`, which `entryVerdict`

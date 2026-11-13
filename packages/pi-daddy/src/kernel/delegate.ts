@@ -5,7 +5,9 @@
 
 import { planSpawn } from "./spawn.ts";
 import { ceilingForDefinition, digestDefinition, type DefinitionDigest, type SkillDefinition } from "./definitions.ts";
-import { assertNarrowing, type Capability, type ResolveResult, expandSubsumed } from "./resolve.ts";
+import { assertNarrowing, type Capability, type ResolveResult, expandSubsumed, resolve } from "./resolve.ts";
+import { childToolDeliveryRefusal } from "./child-tools.ts";
+import { selectedResourcePrompt } from "./selected-resources.ts";
 import { checkRoutingAuthority, checkWorkspaceWildcardRequest } from "./routing-authority.ts";
 import { DELEGATE_CAPABILITY, agentCapability, maySpawnDefinition, normaliseCapability } from "./capabilities.ts";
 
@@ -296,6 +298,14 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
     return denied({ ...empty, requested, reason: wildcardRequest.reason }, wildcardRequest.code);
   }
 
+  // Refuse undeliverable tools before calculating a permission request. Preserve escalation precedence:
+  // a caller without authority still receives the ordinary denial and its exact denied capability set.
+  const authority = resolve({ requested, parentGrant: ctx.ownGrant });
+  if (authority.denied.length === 0 && authority.universal.length === 0) {
+    const unavailable = childToolDeliveryRefusal(requested, ctx);
+    if (unavailable) return { ...empty, requested, reason: unavailable.message, refusal: unavailable };
+  }
+
   const { result, approvalBinding, bindingMismatch } = resolveDelegationApproval({
     task: request.task,
     agent: request.agent,
@@ -365,6 +375,7 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
     skillPaths: ctx.skillPaths,
     contextFiles: ctx.contextFiles,
     systemPrompt,
+    selectedResourcePrompt: selectedResourcePrompt(spawned?.selectedResources),
     // A fork replaces the session file rather than joining it: pi refuses `--fork` beside `--session`.
     ...(staged?.forkFrom ? { forkFrom: staged.forkFrom } : { sessionFile: ctx.sessionFile }),
     ...(staged?.contextPrompt ? { contextPrompt: staged.contextPrompt } : {}),
