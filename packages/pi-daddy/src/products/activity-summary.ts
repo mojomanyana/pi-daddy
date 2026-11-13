@@ -24,9 +24,74 @@ export function dashboardContentEnabled(env: NodeJS.ProcessEnv): boolean {
   );
 }
 
+// Exact public tool names and action enums only. These descriptions are attempts, not results;
+// they never inspect the note, question, source, model prompt or returned content.
+const ecosystemPurposes: Record<string, string> = {
+  bookie_search: "Search project memory",
+  bookie_read: "Read a saved project note",
+  bookie_remember: "Save a project note",
+  bookie_checkpoint: "Prepare a project handoff for review",
+  bookie_write: "Write a project note",
+  bookie_validate: "Check project notes",
+  bookie_export: "Read selected project records for export",
+  bookie_context_prepare: "Prepare selected project context",
+  bookie_context_read: "Read selected project context",
+  bookie_reference_read: "Read a saved result",
+  bookie_work: "Read the project task list",
+  research_sources: "List selected research sources",
+  research_read: "Read a research source",
+  research_brief: "Save a research brief",
+  scout_research: "Research a public question",
+  scout_brief_read: "Read a saved research brief",
+  skill_check_run: "Run skill evaluations",
+  skill_author: "Work on a skill draft",
+  skill_improvement: "Work on a skill improvement proposal",
+  jev_advice: "Check optional JEV advice",
+};
+const ecosystemActionPurposes: Record<string, Record<string, string>> = {
+  bookie_write: {
+    create: "Create a project note",
+    amend: "Update a project note",
+  },
+  bookie_context_read: {
+    revalidate: "Recheck selected project context",
+  },
+  bookie_work: {
+    schema: "Read the task-list format guide",
+  },
+  skill_author: {
+    reference: "Read the skill and evaluation format guide",
+    start: "Start a skill draft",
+    status: "Check skill authoring progress",
+    answer: "Record an answer for the skill brief",
+    question: "Ask the next skill design question",
+    draft: "Validate a skill and evaluation draft",
+    apply: "Save the skill and evaluation files",
+    controls: "Prepare example answers for evaluation",
+    "task-contract": "Define the required task outcomes",
+    "contract-review": "Check evaluation criteria against the task",
+    "review-controls": "Review the example judgments",
+  },
+  skill_improvement: {
+    propose: "Record a skill improvement proposal",
+    inspect: "Read a skill improvement proposal",
+  },
+  jev_advice: {
+    status: "Check optional JEV availability",
+    evaluate: "Ask JEV for optional advice",
+    "link-outcome": "Link an outcome to earlier JEV advice",
+  },
+};
+
 /** Only fixed descriptions cross the observation boundary for regular tools. */
 export function toolPurpose(tool: string, args?: unknown): string {
   const params = args && typeof args === "object" ? (args as Record<string, unknown>) : {};
+  if (Object.hasOwn(ecosystemPurposes, tool)) {
+    const actions = Object.hasOwn(ecosystemActionPurposes, tool) ? ecosystemActionPurposes[tool] : undefined;
+    if (actions && typeof params.action === "string" && Object.hasOwn(actions, params.action))
+      return actions[params.action]!;
+    return ecosystemPurposes[tool]!;
+  }
   if (tool === "bash" && typeof params.command === "string" && /^\s*npm\s+(?:test|run\s+test)\s*$/.test(params.command))
     return "Run the project tests";
   if (tool === "read" && typeof params.path === "string" && params.path.length <= 4096) {
