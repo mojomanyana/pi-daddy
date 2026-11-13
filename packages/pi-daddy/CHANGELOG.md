@@ -1,6 +1,6 @@
 # Changelog — pi-daddy
 
-## Unreleased
+## 0.56.3 — 2026-11-13
 
 - Delegated task and command text no longer appear in the native ownership helper's command line, preventing accidental cleanup matches caused solely by that text. Helper metadata and each worker's own argument contract remain unchanged; continue stopping services by their exact owned process handle. Interrupted work still needs a verified complete final; a zero exit code and settled cleanup do not establish success.
 
