@@ -50,6 +50,12 @@ export async function runOwnedChild(request: OwnedChildRunRequest): Promise<Owne
     return notStarted("captured worker requires qualified Linux x64 helper");
   if (request.terminalUi && (!process.stdin.isTTY || !process.stdout.isTTY || !process.stderr.isTTY))
     return notStarted("native Pi view requires a real pane terminal on stdin, stdout and stderr");
+  const commandArgs = [request.command, ...request.args];
+  if (!request.command || commandArgs.some((arg) => typeof arg !== "string" || arg.includes("\0")))
+    return notStarted("worker command must contain non-NUL strings and a nonempty executable");
+  const commandPayload = Buffer.from(commandArgs.join("\0") + "\0");
+  if (commandPayload.length > 2 * 1024 * 1024 || commandArgs.length > 65536)
+    return notStarted("worker command exceeds the private channel bound");
   let helper: string, root: string, hash: string;
   const nonce = randomUUID();
   let binary: import("node:fs/promises").FileHandle | undefined;
@@ -84,24 +90,13 @@ export async function runOwnedChild(request: OwnedChildRunRequest): Promise<Owne
     const cleanupCeiling = grace + 5000;
     const child = spawn(
       "/proc/self/fd/5",
-      [
-        request.executionId,
-        nonce,
-        root,
-        hash,
-        request.ownershipDir,
-        String(grace),
-        String(cleanupCeiling),
-        "--",
-        request.command,
-        ...request.args,
-      ],
+      [request.executionId, nonce, root, hash, request.ownershipDir, String(grace), String(cleanupCeiling)],
       {
         cwd: root,
         env: request.env,
         stdio: request.terminalUi
-          ? ["inherit", "inherit", "inherit", "pipe", "pipe", binary!.fd, "pipe"]
-          : ["ignore", "pipe", "pipe", "pipe", "pipe", binary!.fd],
+          ? ["inherit", "inherit", "inherit", "pipe", "pipe", binary!.fd, "pipe", "pipe"]
+          : ["ignore", "pipe", "pipe", "pipe", "pipe", binary!.fd, "ignore", "pipe"],
         // The UI shares the pane's foreground process group for raw input and SIGWINCH.
         // Cleanup still targets owned descendants by pidfd, never by process group.
         detached: !request.terminalUi,
@@ -110,6 +105,13 @@ export async function runOwnedChild(request: OwnedChildRunRequest): Promise<Owne
     void binary!.close();
     const control = child.stdio[3] as import("node:stream").Duplex;
     const status = child.stdio[4] as import("node:stream").Readable;
+    // A cleanup pattern in a delegated task must not also identify its native owner.
+    // This inherited pipe is closed before forking; argv remains metadata-only throughout startup.
+    const command = child.stdio.at(7) as import("node:stream").Writable;
+    command.on("error", () => {
+      /* Native readiness/receipt validation evaluates an early command-channel close. */
+    });
+    command.end(commandPayload);
     const streams = {
       stdout: request.terminalUi ? (child.stdio.at(6) as import("node:stream").Readable) : child.stdout,
       stderr: child.stderr,

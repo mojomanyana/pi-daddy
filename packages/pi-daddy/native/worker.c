@@ -101,6 +101,35 @@ static int validate_channel(int fd, int writing) {
   if ((writing && (flags & O_ACCMODE) == O_RDONLY) || (!writing && (flags & O_ACCMODE) == O_WRONLY)) return -1;
   return writing ? 0 : fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 }
+/* Private inherited command channel: bounded NUL-separated argv, ending at EOF before any fork.
+ * Keeping command/task text out of this helper's argv prevents service-name cleanup matching it.
+ * This is accident prevention, not protection against hostile same-uid process inspection. */
+static char **read_command(void) {
+  const size_t maximum = 2 * 1024 * 1024, maximum_args = 65536;
+  char *data = malloc(maximum + 1); if (!data) return NULL;
+  size_t used = 0, count = 0;
+  long long deadline = monotonic_ms() + 5000;
+  for (;;) {
+    if (requested_signal || monotonic_ms() >= deadline) { free(data); return NULL; }
+    ssize_t n = read(7, data + used, maximum + 1 - used);
+    if (n > 0) {
+      used += (size_t)n;
+      if (used > maximum) { free(data); return NULL; }
+    } else if (n == 0) break;
+    else if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) { free(data); return NULL; }
+    struct pollfd pfd = { .fd=7, .events=POLLIN | POLLHUP };
+    int polled = poll(&pfd, 1, 10);
+    if ((polled < 0 && errno != EINTR) || (polled > 0 && (pfd.revents & POLLNVAL))) { free(data); return NULL; }
+  }
+  if (!used || !data[0] || data[used-1]) { free(data); return NULL; }
+  for (size_t i = 0; i < used; i++) if (!data[i]) count++;
+  if (count > maximum_args) { free(data); return NULL; }
+  char **args = calloc(count + 1, sizeof(*args));
+  if (!args) { free(data); return NULL; }
+  args[0] = data;
+  for (size_t i = 0, next = 1; i + 1 < used; i++) if (!data[i]) args[next++] = data + i + 1;
+  return args;
+}
 /* A direct child cannot reuse its PID before our waitpid. Forget its signal record only after reaping. */
 struct signalled_child { pid_t pid; int signo; };
 static struct signalled_child *signalled;
@@ -137,12 +166,12 @@ static int signal_children(int signo) {
   fclose(children); return ok;
 }
 int main(int argc, char **argv) {
-  /* execution nonce canonical-root helper-sha ownership-dir grace-ms cleanup-ms -- command args */
-  if (argc < 10 || strcmp(argv[8], "--")) return 64;
+  /* execution nonce canonical-root helper-sha ownership-dir grace-ms cleanup-ms; command on fd 7 */
+  if (argc != 8) return 64;
   struct identity id = { .execution=argv[1], .nonce=argv[2], .root=argv[3], .hash=argv[4], .directory=argv[5] };
   long grace, ceiling;
   if (milliseconds(argv[6], 60000, &grace) < 0 || milliseconds(argv[7], 120000, &ceiling) < 0 || ceiling < grace) return 64;
-  if (validate_channel(3, 0) < 0 || validate_channel(4, 1) < 0) return 65;
+  if (validate_channel(3, 0) < 0 || validate_channel(4, 1) < 0 || validate_channel(7, 0) < 0) return 65;
   if (stat(id.root, &id.workspace) < 0 || !S_ISDIR(id.workspace.st_mode)) return 65;
   if (read_text("/proc/sys/kernel/random/boot_id", id.boot, sizeof(id.boot)) < 0 || self_start(id.start, sizeof(id.start)) < 0) return 65;
   ssize_t n = readlink("/proc/self/ns/pid", id.ns, sizeof(id.ns)-1); if (n < 0) return 65; id.ns[n] = 0;
@@ -152,6 +181,7 @@ int main(int argc, char **argv) {
   int probe = (int)syscall(SYS_pidfd_open, getpid(), 0); if (probe < 0) return 65; close(probe);
   if (signal_children(0) < 0) return 65; /* Probe /proc children support before admitting work. */
   signal(SIGPIPE, SIG_IGN); signal(SIGTERM, on_signal); signal(SIGINT, on_signal); signal(SIGHUP, on_signal);
+  char **command = read_command(); close(7); if (!command) return 64;
   int gate[2]; if (pipe2(gate, O_CLOEXEC) < 0) return 65;
   id.worker = fork(); if (id.worker < 0) return 65;
   if (id.worker == 0) {
@@ -159,8 +189,9 @@ int main(int argc, char **argv) {
     signal(SIGTERM, SIG_DFL); signal(SIGINT, SIG_DFL); signal(SIGHUP, SIG_DFL); signal(SIGPIPE, SIG_DFL);
     char release; if (read(gate[0], &release, 1) != 1 || release != 'S') _exit(125);
     close(gate[0]); if (chdir(id.root) < 0) _exit(126);
-    execvp(argv[9], &argv[9]); _exit(errno == ENOENT ? 127 : 126);
+    execvp(command[0], command); _exit(errno == ENOENT ? 127 : 126);
   }
+  free(command[0]); free(command);
   close(gate[0]);
   int ready = durable(&id, 0, 0, "ready") == 0;
   if (ready) {
