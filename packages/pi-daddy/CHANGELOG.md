@@ -1,6 +1,6 @@
 # Changelog — pi-daddy
 
-## Unreleased
+## 0.56.2 — 2026-11-13
 
 - Activity and in-progress labels now explain Bookie memory, Scout research, skill authoring/evaluations and optional JEV advice in plain language. Labels use fixed tool and action descriptions; private queries, note contents and source links stay out of the dashboard. Results and permissions are unchanged.
 
