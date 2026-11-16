@@ -301,13 +301,16 @@ export async function reportSessionStart(session: GrantsSession, ctx: SessionRep
 
 /** Public selected resources become available after session start; report their frozen snapshot then. */
 export async function reportSelectedDefinitions(session: GrantsSession, ctx: SessionReportContext): Promise<void> {
+  const lifecycle = session.reloadLifecycle;
   for (const reason of session.definitionSkips)
     ctx.ui.notify(`grants: a definition was not loaded — ${reason}`, "warning");
   if (!session.governed) return;
   try {
     const line = await selectedDefinitionsSummary(session);
+    if (session.reloadLifecycle !== lifecycle) return;
     if (line) ctx.ui.notify(line, "info");
   } catch (error) {
+    if (session.reloadLifecycle !== lifecycle) return;
     ctx.ui.notify(
       `grants: selected definitions could not be summarized (${String(error)}) — run /grants for detail.`,
       "warning",
@@ -321,6 +324,11 @@ function selectedDefinitionsSummary(session: GrantsSession): Promise<string | nu
     // The session facts that make every per-definition verdict identical. `mayDelegate` in
     // particular: without `tool:delegate` there is no delegate tool at all, and the line used to
     // report definitions as spawnable in the one session where nothing can ever be spawned.
-    { mayDelegate: session.mayDelegate, depth: session.depth, maxDepth: session.maxDepth },
+    {
+      mayDelegate: session.mayDelegate,
+      depth: session.depth,
+      maxDepth: session.maxDepth,
+      toolsObserved: session.observed,
+    },
   ).then((summary) => renderSpawnableSummary(summary, session.definitions.size));
 }
