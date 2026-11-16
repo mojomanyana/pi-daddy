@@ -136,7 +136,8 @@ export interface DelegationRegistration {
    *
    * Must be called once the session knows the answer — `session_start` loads the definitions, and the first
    * provider request tightens `ownGrant`. Both change the list, and neither has happened when the tools are
-   * registered. See R-39: without this the answer is permanently `none`.
+   * registered. See R-39: without this the answer is permanently `none`. Each call also re-reads the child-tool
+   * inventory, which lacks Daddy's own tools until they are registered.
    */
   refreshSpawnable: () => void;
 }
@@ -160,9 +161,10 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
    * tool name, so the declared ceiling alone decides delivery.
    *
    * Both filters only remove names. This runs inside `session_start`, `ensureDefinitions` and the
-   * provider-request hook, so it must not throw: Pi's `getAllTools` asserts a bound, live runtime, and an
-   * unreadable inventory falls back to the planner's own unobserved rule (native tools, nothing external).
-   * The planner re-reads the inventory at dispatch and remains the enforcer.
+   * provider-request hook, so the delivery filter must not throw: Pi's `getAllTools` asserts a bound, live
+   * runtime, and an unreadable inventory falls back to the planner's own unobserved rule (native tools,
+   * nothing external). A ceiling that cannot be read is not offered. The planner re-reads the inventory at
+   * dispatch and remains the enforcer.
    */
   const spawnable = () => {
     let childToolSources: readonly ChildToolSource[] | undefined;
@@ -172,12 +174,15 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       // Left unobserved, as for a caller that supplies no inventory.
     }
     const delivery = { childToolSources, extensionPath: session.extensionPath };
+    const deliverable = (definition: Parameters<typeof ceilingForDefinition>[0]) => {
+      try {
+        return !childToolDeliveryRefusal(ceilingForDefinition(definition).capabilities, delivery);
+      } catch {
+        return false; // An unreadable ceiling is not offered; dispatch fails on the same read.
+      }
+    };
     return [...session.definitions]
-      .filter(
-        ([name, definition]) =>
-          maySpawnDefinition(session.ownGrant, name) &&
-          !childToolDeliveryRefusal(ceilingForDefinition(definition).capabilities, delivery),
-      )
+      .filter(([name, definition]) => maySpawnDefinition(session.ownGrant, name) && deliverable(definition))
       .map(([name]) => name)
       .sort();
   };

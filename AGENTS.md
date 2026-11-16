@@ -231,7 +231,8 @@ and the latest run outcome remain distinct. Keep legacy producers working withou
 inventory and extension path the planner is handed. It is a description, not a second enforcer: the planner
 still decides every spawn and `/grants` still reports each refusal with its reason. The filter only removes
 names, is recomputed only at the existing refresh points, and treats an unreadable inventory as unobserved
-rather than throwing into a Pi hook. Definitions refused for an undeclared or pattern ceiling are still listed.
+and an unreadable ceiling as not offered rather than throwing into a Pi hook. Definitions refused for an
+undeclared or pattern ceiling are still listed when their remaining entries are deliverable.
 Model-free controls compare the list with the planner in both directions; no model run establishes which
 definition a model then chooses.
 

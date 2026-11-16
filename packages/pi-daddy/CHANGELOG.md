@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Delegation no longer offers the model a definition whose `allowed-tools` include a tool without a supported child provider. Since 0.57.0 every delegation to such a definition was refused before any prompt, yet its name still appeared among the available agents. Refusals, permissions and `/grants` are unchanged; `/grants` continues to show the definition as blocked with the reason. Keep that work in the parent, or give the definition supported child tools to make it available again.
+- Delegation no longer offers the model a definition whose `allowed-tools` include a tool without a supported child provider. Since 0.57.0 every delegation to such a definition was refused before any prompt, yet its name still appeared among the available agents. Refusals, permissions and `/grants` are unchanged; `/grants` continues to show the definition as blocked with the reason. Keep that work in the parent, or give the definition supported child tools to make it available again; a definition that declares `delegate_all`, `delegate_chain` or `delegate_describe` also needs `delegate`.
 
 ## 0.59.1 — 2026-11-17
 

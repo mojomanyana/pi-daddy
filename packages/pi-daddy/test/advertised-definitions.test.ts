@@ -194,7 +194,8 @@ test("a definition that sub-delegates is advertised only where the governance en
     ...toolSources().filter((tool) => !governed.includes(tool.name)),
     ...governed.map((name) => ({ name, sourceInfo: { source: "local", path: "/elsewhere/grants.ts" } })),
   ];
-  for (const options of [{ inventory: parentInventory }, { inventory: foreign, extensionPath }]) {
+  // `{}` is a caller with neither an inventory nor an entrypoint; it must not be listed on a guessed path.
+  for (const options of [{}, { inventory: parentInventory }, { inventory: foreign, extensionPath }]) {
     const absent = fixture({ ...options, definitions });
     assert.equal((await absent.plan("coordinator")).refusal?.details?.kind, "child-tool-unavailable");
     assert.deepEqual(absent.advertised(), []);
@@ -220,5 +221,19 @@ test("an unreadable or changed inventory never throws into a hook and reaches bo
   assert.doesNotThrow(() => f.registration.refreshSpawnable());
   assert.doesNotThrow(() => registerDelegationTools({ registerTool: () => {} } as never, f.session));
   // Native tools count again and the external one still does not: a subset of what the grant alone listed.
+  assert.deepEqual(f.advertised(), ["coordinator", "handoff-reader", "native-only", "tool-less"]);
+});
+
+test("a definition whose ceiling cannot be read is not offered and does not stop the refresh", () => {
+  // Breaks if the per-definition delivery check in `spawnable()` loses its guard: the throw would escape
+  // `session_start` and leave every schema at `Available: none.` for the session.
+  const f = fixture({ inventory: parentInventory, extensionPath });
+  f.session.definitions.set("unreadable", {
+    ...f.session.definitions.get("native-only")!,
+    name: "unreadable",
+    allowedTools: 7 as never,
+  });
+  f.session.ownGrant = [...f.session.ownGrant, "agent:unreadable"];
+  assert.doesNotThrow(() => f.registration.refreshSpawnable());
   assert.deepEqual(f.advertised(), ["coordinator", "handoff-reader", "native-only", "tool-less"]);
 });
