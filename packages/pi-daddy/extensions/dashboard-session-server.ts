@@ -104,6 +104,7 @@ interface DashboardWireRequest {
   enabled?: unknown;
   key?: unknown;
   refreshChoices?: unknown;
+  refreshSources?: unknown;
   seconds?: unknown;
   option?: unknown;
   sourceGeneration?: unknown;
@@ -208,11 +209,14 @@ async function respond(
     return { ok: false, choiceOutcome: "stale", error: "Choice is no longer available. Refresh and reopen it." };
   const choiceRefreshRequested =
     request.action === "get" && request.refreshChoices === true && session.dashboardChoices?.requestRenewal();
+  const sourceRefreshRequested =
+    request.action === "get" && request.refreshSources === true && session.dashboardRefreshSources?.();
   const choiceControls = session.dashboardChoices?.controls();
   return {
     ok: true,
     ...(choiceControls ? { choiceControls } : {}),
     ...(choiceRefreshRequested ? { choiceRefreshRequested: true } : {}),
+    ...(sourceRefreshRequested ? { sourceRefreshRequested: true } : {}),
     ...(choiceDetail ? { choiceDetail } : {}),
     ...(request.action === "answer-choice" ? { choiceSaved: true } : {}),
     ...controls,

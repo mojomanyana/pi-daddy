@@ -4,7 +4,7 @@ import {
   type DashboardChoiceDetail,
   type DashboardChoiceTarget,
 } from "../kernel/dashboard-choice.ts";
-import type { DashboardOwnerObservation } from "../kernel/dashboard-observation.ts";
+import { DASHBOARD_RESPONSE_BYTES, type DashboardOwnerObservation } from "../kernel/dashboard-observation.ts";
 import type { DashboardSettingsSnapshot, JevEditAction } from "./dashboard-settings.ts";
 import type { EcosystemVersions } from "./ecosystem-versions.ts";
 import { createConnection } from "node:net";
@@ -25,6 +25,7 @@ interface DashboardSessionReply extends DashboardSessionSnapshot {
   choiceDetail?: DashboardChoiceDetail;
   choiceSaved?: true;
   choiceRefreshRequested?: true;
+  sourceRefreshRequested?: true;
 }
 class ChoiceDeclined extends Error {
   readonly stale: boolean;
@@ -39,7 +40,7 @@ class ChoiceDeclined extends Error {
 }
 export type DashboardSessionAction = (
   | DashboardChoiceAction
-  | { action: "get"; refreshChoices?: true }
+  | { action: "get"; refreshChoices?: true; refreshSources?: true }
   | { action: "set"; edits: string }
   | { action: "set-auto"; enabled: boolean }
   | { action: "set-jev"; enabled: boolean }
@@ -63,7 +64,8 @@ export async function dashboardSessionRequest(
     socket.once("error", reject);
     socket.on("data", (chunk) => {
       output += chunk;
-      if (output.length > 64 * 1024) socket.destroy(new Error("dashboard session response too large"));
+      if (Buffer.byteLength(output) > DASHBOARD_RESPONSE_BYTES)
+        socket.destroy(new Error("dashboard session response too large"));
     });
     socket.once("end", () => {
       try {
@@ -127,6 +129,18 @@ export function createDashboardConnection(
   let choiceInterest = 0,
     consumedInterest = 0;
   const retired = new Set<string>();
+  const disconnect = () => {
+    state.snapshot = undefined;
+    const previous = state.lastObserved;
+    if (previous?.observation)
+      state.lastObserved = {
+        ...previous,
+        observation: {
+          ...previous.observation,
+          sources: previous.observation.sources.map(({ inventory: _inventory, ...source }) => source),
+        },
+      };
+  };
   const accept = (snapshot: DashboardSessionSnapshot) => {
     const previous = state.lastObserved?.observation,
       next = snapshot.observation;
@@ -187,24 +201,30 @@ export function createDashboardConnection(
     requestChoiceRefresh() {
       choiceInterest++;
     },
-    async refresh(visibleChoices?: "picker" | "list") {
+    async refresh(visibleChoices?: "picker" | "list", visibleSources = false) {
       if (!request || state.pending) return;
       const observed = generation,
         order = ++poll;
       try {
         const interest = choiceInterest;
         const wanted = visibleChoices === "picker" || (visibleChoices === "list" && interest !== consumedInterest);
-        const { choiceRefreshRequested, ...snapshot } = await request(
-          wanted ? { action: "get", refreshChoices: true } : { action: "get" },
-        );
+        const {
+          choiceRefreshRequested,
+          sourceRefreshRequested: _sourceRefreshRequested,
+          ...snapshot
+        } = await request({
+          action: "get",
+          ...(wanted ? { refreshChoices: true } : {}),
+          ...(visibleSources ? { refreshSources: true } : {}),
+        });
         if (choiceRefreshRequested) consumedInterest = Math.max(consumedInterest, interest);
         if (generation === observed && order === poll && !accept(snapshot)) {
-          state.snapshot = undefined;
+          disconnect();
           state.error = "Owner observation is stale or unavailable; controls disabled until a fresh reply.";
         }
       } catch (error) {
         if (generation === observed && order === poll) {
-          state.snapshot = undefined;
+          disconnect();
           state.error = `Controls unavailable; showing last observation: ${error instanceof Error ? error.message : String(error)}`;
         }
       }
@@ -264,12 +284,12 @@ export function createDashboardConnection(
         return true;
       } catch (error) {
         if (action.action === "answer-choice" && error instanceof ChoiceDeclined) {
-          if (error.stale) state.snapshot = undefined;
+          if (error.stale) disconnect();
           state.acknowledgment.state = "refused";
           state.error = error.message;
           return false;
         }
-        state.snapshot = undefined;
+        disconnect();
         state.acknowledgment.state = "unconfirmed";
         state.error =
           action.action === "answer-choice"

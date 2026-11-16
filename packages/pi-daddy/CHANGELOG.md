@@ -1,5 +1,11 @@
 # Changelog — pi-daddy
 
+## 0.58.0 — 2026-11-16
+
+- Overview separates **Memory** and **Research**, with useful saved topics from compatible Bookie and Scout versions. Select a row and press Enter to browse summaries, findings and gaps; exact source references stay under source details.
+- Status refresh no longer depends on an open choice. While the dashboard is visible, compatible producers perform bounded metadata checks without starting research or model calls. Expired, disconnected and failed checks explain their state and last update; they do not claim readiness or expose stale content.
+- Research availability and saved findings remain distinct: a Docker problem does not erase earlier useful research, and partial findings retain their gaps. Older producers retain their existing status display until they support the new inventory contract.
+
 ## 0.57.0 — 2026-11-13
 
 - A child now asks once for its exact outstanding permission set. Allow once, allow for this session, project approval, denial and cancellation keep their existing scope; changed instructions, tools, project or expiry explain why approval is needed again.

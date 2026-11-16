@@ -86,7 +86,7 @@ test("compact Now has one named row per task, keeps full identity in details, an
   o.screen.expanded = true;
   o.width = 120;
   const expanded = panel(o).join("\n");
-  assert.match(expanded, /Tools/);
+  assert.match(expanded, /Memory/);
   assert.match(expanded, /Parent RSS/);
 });
 
@@ -344,7 +344,7 @@ test("Scout's current request for a decision is shown once alongside the other d
   scout.availability = "closed";
   o.screen.destination = "now";
   const closed = renderDashboardScreen(o);
-  assert.match(closed, /Scout research worker · Live status unknown/);
+  assert.match(closed, /Scout research worker · Status connection ended/);
   assert.doesNotMatch(closed, /Needs your decision/);
 });
 

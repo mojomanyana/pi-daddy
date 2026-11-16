@@ -115,10 +115,10 @@ test("Scout registration, a real run, and stale observations have distinct human
   assert.equal(isComponentObservation(worker, brief), false);
   assert.equal(isComponentObservation(source("other", "observed"), worker.items[0]!), false);
   o.now = new Date(Date.parse(when) + 60_001);
-  assert.ok(componentItems(o).every((row) => row.label.includes("Live status unknown")));
+  assert.ok(componentItems(o).every((row) => row.label.includes("Status update overdue")));
   o.now = new Date(when);
   o.connected = false;
-  assert.ok(componentItems(o).every((row) => row.label.includes("Live status unknown")));
+  assert.ok(componentItems(o).every((row) => row.label.includes("Disconnected")));
 });
 
 test("Bookie installation, live command and selected work map each make a distinct claim", () => {
@@ -135,7 +135,7 @@ test("Bookie installation, live command and selected work map each make a distin
   const mapped = panel([connected], [bookie]);
   assert.match(componentItems(mapped)[0]!.label, /Project connected/);
   connected.availability = "closed";
-  assert.match(componentItems(mapped)[0]!.label, /Live status unknown/);
+  assert.match(componentItems(mapped)[0]!.label, /Status connection ended/);
   assert.doesNotMatch(versionLines(bookie, true, mapped).join(" "), /Active in Pi/);
 });
 
@@ -198,9 +198,9 @@ test("automatic Bookie memory is a single live Tools row alongside independent w
   assert.match(componentItems(panel([memory], [bookie]))[0]!.label, /Automatic memory paused · Auto OFF/);
   memory.availability = "observed";
   memory.items[0]!.state = "unknown";
-  assert.match(componentItems(o)[0]!.label, /Project connected/);
+  assert.match(componentItems(o)[0]!.label, /Cannot check notes/);
   o.connected = false;
-  assert.match(componentItems(o)[0]!.label, /Live status unknown/);
+  assert.match(componentItems(o)[0]!.label, /Disconnected/);
 });
 
 test("Bookie explains partial choices in current memory details only", () => {
@@ -237,6 +237,6 @@ test("memory paused explains current-session versus startup Auto without claimin
   assert.match(read().briefDetails!.join(" "), /does not change the startup setting/);
   assert.doesNotMatch(read().briefDetails!.join(" "), /no notes|empty|deleted/);
   o.connected = false;
-  assert.match(read().label, /Live status unknown/);
+  assert.match(read().label, /Disconnected/);
   assert.doesNotMatch(read().label, /paused/);
 });

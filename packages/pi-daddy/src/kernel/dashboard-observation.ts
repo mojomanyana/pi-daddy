@@ -2,6 +2,9 @@
 export const DASHBOARD_SOURCE_EVENT = "pi-daddy:dashboard-source:v1";
 export const DASHBOARD_SOURCE_LIMIT = 8;
 export const DASHBOARD_SOURCE_BYTES = 4096;
+export const DASHBOARD_INVENTORY_BYTES = 8192;
+export const DASHBOARD_INVENTORY_ENTRIES = 12;
+export const DASHBOARD_RESPONSE_BYTES = 64 * 1024 + DASHBOARD_SOURCE_LIMIT * DASHBOARD_INVENTORY_BYTES;
 export type DashboardContributionKind = "goal" | "next" | "work" | "review" | "evidence" | "status";
 export type DashboardObservedState =
   | "observed"
@@ -26,20 +29,58 @@ export interface DashboardContribution {
 export const isBookieChoice = (producer: string, item: DashboardContribution) =>
   producer === "bookie-memory" && item.id.startsWith("open-choice-");
 
+export interface DashboardInventoryEntry {
+  id: string;
+  title: string;
+  summary: string;
+  details?: string[];
+  /** Exact display reference only; opening inventory never dereferences it or grants access. */
+  reference?: string;
+}
+export interface DashboardInventory {
+  scope: string;
+  state: "available" | "empty" | "unavailable" | "unknown";
+  summary: string;
+  /** Exact visible total only when known. Omit it for an incomplete or unauthorized scan. */
+  count?: number;
+  /** The displayed/enumerated entries are a bounded selection; count may still be exact. */
+  limited: boolean;
+  entries: DashboardInventoryEntry[];
+}
 export interface DashboardSourceUpdate {
   sequence: number;
   items: DashboardContribution[];
+  /** Send only after the registration reply advertises capabilities.inventory === 1. */
+  inventory?: DashboardInventory;
 }
+export interface DashboardSourceRefresh {
+  state: "idle" | "checking" | "failed";
+  attemptedAt?: string;
+  nextAttemptAt?: string;
+}
+/** Return a fresh bounded observation; never publish from inside the refresh callback. */
+export type DashboardSourceRefreshCallback = (request: {
+  signal: AbortSignal;
+}) => DashboardSourceUpdate | undefined | Promise<DashboardSourceUpdate | undefined>;
 /** Trusted in-process registration. Callbacks are never serialized to a model or terminal client. */
 export type DashboardSourceRegistrationReply =
   | { version: 1; ok: false; reason: string }
-  | { version: 1; ok: true; generation: string; publish(update: DashboardSourceUpdate): boolean; close(): void };
+  | {
+      version: 1;
+      ok: true;
+      generation: string;
+      capabilities?: { inventory: 1; refresh: 1 };
+      publish(update: DashboardSourceUpdate): boolean;
+      close(): void;
+    };
 export interface DashboardSourceRegistration {
   version: 1;
   sessionId: string;
   cwd: string;
   producer: string;
   producerVersion: string;
+  /** Authorized metadata reads only, with cancellation; no automatic work or model calls. */
+  refresh?: DashboardSourceRefreshCallback;
   reply(value: DashboardSourceRegistrationReply): void;
 }
 export interface DashboardSourceSnapshot extends DashboardSourceUpdate {
@@ -49,6 +90,7 @@ export interface DashboardSourceSnapshot extends DashboardSourceUpdate {
   observedAt: string;
   staleAfterMs: number;
   availability: "observed" | "closed";
+  refresh?: DashboardSourceRefresh;
 }
 /** Session-local display metadata from the same elected child that published the reference. */
 export interface DashboardResultDescription {
@@ -87,14 +129,53 @@ export interface DashboardOwnerObservation {
 }
 const object = (x: unknown): x is Record<string, unknown> => !!x && typeof x === "object" && !Array.isArray(x);
 const bounded = (x: unknown, max: number): x is string => typeof x === "string" && x.length > 0 && x.length <= max;
+export function validDashboardInventory(value: unknown): value is DashboardInventory {
+  if (
+    !object(value) ||
+    Object.keys(value).some((k) => !["scope", "state", "summary", "count", "limited", "entries"].includes(k)) ||
+    !bounded(value.scope, 160) ||
+    !bounded(value.summary, 480) ||
+    !["available", "empty", "unavailable", "unknown"].includes(String(value.state)) ||
+    typeof value.limited !== "boolean" ||
+    !Array.isArray(value.entries) ||
+    value.entries.length > DASHBOARD_INVENTORY_ENTRIES ||
+    (value.count !== undefined && (!Number.isSafeInteger(value.count) || Number(value.count) < value.entries.length)) ||
+    (value.state === "empty" && (value.entries.length > 0 || value.limited || value.count !== 0)) ||
+    (["unavailable", "unknown"].includes(String(value.state)) &&
+      (value.entries.length > 0 || value.count !== undefined))
+  )
+    return false;
+  const ids = new Set<string>();
+  for (const entry of value.entries) {
+    if (
+      !object(entry) ||
+      Object.keys(entry).some((k) => !["id", "title", "summary", "details", "reference"].includes(k)) ||
+      !bounded(entry.id, 160) ||
+      ids.has(entry.id) ||
+      !bounded(entry.title, 160) ||
+      !bounded(entry.summary, 480) ||
+      (entry.reference !== undefined && !bounded(entry.reference, 512)) ||
+      (entry.details !== undefined &&
+        (!Array.isArray(entry.details) || entry.details.length > 6 || !entry.details.every((x) => bounded(x, 480))))
+    )
+      return false;
+    ids.add(entry.id);
+  }
+  try {
+    return Buffer.byteLength(JSON.stringify(value)) <= DASHBOARD_INVENTORY_BYTES;
+  } catch {
+    return false;
+  }
+}
 export function validDashboardSourceUpdate(value: unknown): value is DashboardSourceUpdate {
   if (
     !object(value) ||
-    Object.keys(value).some((k) => !["sequence", "items"].includes(k)) ||
+    Object.keys(value).some((k) => !["sequence", "items", "inventory"].includes(k)) ||
     !Number.isSafeInteger(value.sequence) ||
     Number(value.sequence) < 0 ||
     !Array.isArray(value.items) ||
-    value.items.length > 8
+    value.items.length > 8 ||
+    (value.inventory !== undefined && !validDashboardInventory(value.inventory))
   )
     return false;
   const ids = new Set<string>();
@@ -125,7 +206,8 @@ export function validDashboardSourceUpdate(value: unknown): value is DashboardSo
     ids.add(row.id);
   }
   try {
-    if (Buffer.byteLength(JSON.stringify(value)) > DASHBOARD_SOURCE_BYTES) return false;
+    if (Buffer.byteLength(JSON.stringify({ sequence: value.sequence, items: value.items })) > DASHBOARD_SOURCE_BYTES)
+      return false;
   } catch {
     return false;
   }

@@ -7,6 +7,7 @@ import { tempDir, cleanupTempDirs } from "./tmp.ts";
 import { registerRuntimeSnapshot, RUNTIME_SNAPSHOT_EVENT } from "../extensions/runtime-snapshot.ts";
 import type { GrantsSession } from "../extensions/session.ts";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { DASHBOARD_SOURCE_EVENT, type DashboardSourceRegistrationReply } from "../src/kernel/dashboard-observation.ts";
 after(cleanupTempDirs);
 test("trusted bridge reports actual owner facts, rejects caller identity and survives replacing a reload registration", async () => {
   const root = await tempDir("runtime-bridge-"),
@@ -59,8 +60,39 @@ test("trusted bridge reports actual owner facts, rejects caller identity and sur
       reason: "prelaunch refusal",
     });
     const settled = await snapshot();
+    let publisher: Extract<DashboardSourceRegistrationReply, { ok: true }> | undefined;
+    pi.events.emit(DASHBOARD_SOURCE_EVENT, {
+      version: 1,
+      sessionId: "actual-session",
+      cwd: root,
+      producer: "bookie-memory",
+      producerVersion: "fixture",
+      refresh: () => ({
+        sequence: 0,
+        items: [],
+        inventory: {
+          scope: "Current workspace",
+          state: "available",
+          summary: "Terminal-only project details",
+          count: 1,
+          limited: false,
+          entries: [{ id: "note", title: "Private topic", summary: "DISPLAY-ONLY-CONTENT" }],
+        },
+      }),
+      reply(value: DashboardSourceRegistrationReply) {
+        assert.ok(value.ok);
+        publisher = value;
+      },
+    });
+    assert.ok(publisher);
+    assert.equal(session.dashboardRefreshSources?.(), true);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(session.dashboardObservations?.()?.sources[0].inventory?.entries[0].summary, "DISPLAY-ONLY-CONTENT");
+    assert.doesNotMatch(JSON.stringify(await snapshot()), /DISPLAY-ONLY-CONTENT|Private topic/);
     const replacement = registerRuntimeSnapshot(pi, session);
     await replacement.bind(ctx);
+    assert.deepEqual(session.dashboardObservations?.()?.sources, []);
+    assert.equal(publisher.publish({ sequence: 1, items: [] }), false);
     assert.equal(listeners.has("pi-daddy:bookie-choice-controls:v1"), true);
     assert.equal(listeners.size, 7);
     for (const set of listeners.values()) assert.equal(set.size, 1, "one active handler per named event after reload");
