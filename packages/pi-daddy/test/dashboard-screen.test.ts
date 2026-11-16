@@ -186,7 +186,7 @@ test("owner activity enriches only its exact task; explicit selectors fail close
       activityAliases: display.aliases,
       ...display.state,
     });
-  assert.match(await frame(), /LATEST REQUEST · Finished\nRepair the current dashboard safely/);
+  assert.match(await frame(), /LATEST REQUEST · Ended\nRepair the current dashboard safely/);
   assert.doesNotMatch(await frame(), /unrelated private|other-root|\u001b/);
   display.input("f r1/t1");
   assert.match(await frame(), /owner final/);

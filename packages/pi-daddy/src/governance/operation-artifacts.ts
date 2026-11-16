@@ -216,53 +216,63 @@ export interface OperationArtifactHistory {
   final?: RetainedOperationFinal;
   partial?: { text: string; sha256: string };
 }
+/** Exact read without creating directories, adopting an owner, or publishing an admission. */
+export function readOperationHistory(
+  agentDirectory: string,
+  owner: OperationArtifactOwner,
+  operationId: string,
+  includeFinal = true,
+): OperationArtifactHistory | null {
+  ownerCheck(owner);
+  const directory = realpathSync(agentDirectory);
+  const path = location(directory, owner, operationId);
+  const admission = admissionAt(path, owner, operationId);
+  if (!admission) return null;
+  let text: string;
+  try {
+    text = readBoundedTextSync(join(path, "result.json"), {
+      maxBytes: MAX_OPERATION_MANIFEST_BYTES,
+      confinedRoot: path,
+    }).text;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    const scope = resolvedScope(path, admission) ?? admission.request;
+    const operation: OperationReference = {
+      operationId,
+      executionId: admission.request.executionId,
+      cwd: scope.cwd,
+      workspaceId: scope.workspaceId,
+      state: "uncertain",
+      startedAt: admission.admittedAt,
+      updatedAt: admission.admittedAt,
+    };
+    return {
+      operation,
+      requestDigest: admission.request.requestDigest,
+      reason: "admission retained without a published result; no retry or no-start proof",
+    };
+  }
+  const manifest = manifestCheck(JSON.parse(text), admission, path);
+  const artifact = refFor(manifest, {
+    path: join(path, "result.json"),
+    sha256: artifactHash(text),
+    bytes: Buffer.byteLength(text),
+  });
+  const content = includeFinal ? readOperationArtifact(artifact, { agentDirectory: directory }) : undefined;
+  return {
+    operation: { ...manifest.operation, artifact },
+    artifact,
+    requestDigest: admission.request.requestDigest,
+    ...(content?.final ? { final: content.final } : {}),
+    ...(content?.partial ? { partial: content.partial } : {}),
+  };
+}
 export function openOperationArtifacts(agentDirectory: string, owner: OperationArtifactOwner) {
   ownerCheck(owner);
   const directory = realpathSync(agentDirectory);
   privateArtifactDirectory(operationArtifactsDir(directory), true);
-  const history = (operationId: string, includeFinal = true): OperationArtifactHistory | null => {
-    const path = location(directory, owner, operationId);
-    const admission = admissionAt(path, owner, operationId);
-    if (!admission) return null;
-    let text: string;
-    try {
-      text = readBoundedTextSync(join(path, "result.json"), {
-        maxBytes: MAX_OPERATION_MANIFEST_BYTES,
-        confinedRoot: path,
-      }).text;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-      const scope = resolvedScope(path, admission) ?? admission.request;
-      const operation: OperationReference = {
-        operationId,
-        executionId: admission.request.executionId,
-        cwd: scope.cwd,
-        workspaceId: scope.workspaceId,
-        state: "uncertain",
-        startedAt: admission.admittedAt,
-        updatedAt: admission.admittedAt,
-      };
-      return {
-        operation,
-        requestDigest: admission.request.requestDigest,
-        reason: "admission retained without a published result; no retry or no-start proof",
-      };
-    }
-    const manifest = manifestCheck(JSON.parse(text), admission, path);
-    const artifact = refFor(manifest, {
-      path: join(path, "result.json"),
-      sha256: artifactHash(text),
-      bytes: Buffer.byteLength(text),
-    });
-    const content = includeFinal ? readOperationArtifact(artifact, { agentDirectory: directory }) : undefined;
-    return {
-      operation: { ...manifest.operation, artifact },
-      artifact,
-      requestDigest: admission.request.requestDigest,
-      ...(content?.final ? { final: content.final } : {}),
-      ...(content?.partial ? { partial: content.partial } : {}),
-    };
-  };
+  const history = (operationId: string, includeFinal = true) =>
+    readOperationHistory(directory, owner, operationId, includeFinal);
   return {
     owner: Object.freeze({ ...owner }),
     history,

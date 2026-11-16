@@ -9,7 +9,7 @@ import {
   DASHBOARD_DESTINATIONS,
   type DashboardDestination,
 } from "./dashboard-panels.ts";
-import { activityTaskTitle } from "./dashboard-activity.ts";
+import { activityTaskStatus, activityTaskTitle } from "./dashboard-activity.ts";
 import { versionLines } from "./dashboard-components.ts";
 import { sessionRecapLines } from "./dashboard-recap.ts";
 import { colorSessionLine, previewWidth, sectionHeading } from "./dashboard-layout.ts";
@@ -114,6 +114,7 @@ export const friendlyStatus = (status: string) =>
     "approval-wait": "Awaiting decision",
     "dependency-wait": "Waiting on dependency",
     "last-observed": "Last seen",
+    "turn-ended": "Ended",
     settled: "Finished",
     completed: "Finished",
     finished: "Finished",
@@ -166,7 +167,7 @@ export function activityDashboardItems(
     label: human
       ? activityTaskTitle(task)
       : `${task.agent || (task.trigger?.type === "custom" ? "Extension turn" : "User turn")} [${aliases.selector(task)}]`,
-    status: task.status,
+    status: activityTaskStatus(task),
     updatedAt: task.endedAt ?? task.lastEvent?.at ?? task.startedAt,
     elapsed: elapsed(Date.parse(task.endedAt ?? now.toISOString()) - Date.parse(task.startedAt)),
     observation: task.lastEvent
@@ -176,7 +177,8 @@ export function activityDashboardItems(
     skills: task.skills.length > 0,
     details: [
       `Task: ${aliases.selector(task)}`,
-      `State: ${friendlyStatus(task.status)} (observation, not acceptance)`,
+      `State: ${friendlyStatus(activityTaskStatus(task))} (observation, not acceptance)`,
+      ...(task.lastPurpose ? [`Last action: ${clean(task.lastPurpose)}`] : []),
       ...(task.trigger?.type === "custom" ? [`Trigger: extension message (${task.trigger.customType})`] : []),
       ...(task.cwd ? [`Working directory: ${task.cwd}`] : ["Working directory: not recorded"]),
       ...(task.lastEvent

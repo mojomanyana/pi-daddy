@@ -41,7 +41,7 @@ export function registerDashboardLive(pi: ExtensionAPI, current: () => Dashboard
       calls.clear();
       turn = {
         ...turn,
-        label: "Pi finished its turn",
+        label: "Pi turn ended",
         state: "settled",
         details: [
           ...(turn.details ?? []),
