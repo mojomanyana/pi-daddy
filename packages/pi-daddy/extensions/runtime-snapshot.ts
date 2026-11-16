@@ -1,3 +1,4 @@
+import { registerOperationRecoveryBridge } from "./operation-recovery-bridge.ts";
 import { registerDashboardPrompts } from "./dashboard-ui-prompts.ts";
 import { registerInitiativeRuntime } from "./initiative-runtime.ts";
 import { registerDashboardLive } from "./dashboard-live.ts";
@@ -52,6 +53,13 @@ export function registerRuntimeSnapshot(
   session.dashboardArtifacts = [];
 
   const artifactBridge = registerArtifactBridge(pi, () =>
+    artifactOwner &&
+    bound?.lifecycle === session.reloadLifecycle &&
+    session.reloadLifecycle.runtimeSnapshotGeneration === generation
+      ? artifactOwner
+      : undefined,
+  );
+  const recoveryBridge = registerOperationRecoveryBridge(pi, () =>
     artifactOwner &&
     bound?.lifecycle === session.reloadLifecycle &&
     session.reloadLifecycle.runtimeSnapshotGeneration === generation
@@ -248,6 +256,7 @@ export function registerRuntimeSnapshot(
     unsubscribeOperations?.();
     unsubscribeHistory?.();
     artifactBridge.close();
+    recoveryBridge.close();
     void initiative.close().catch(() => undefined);
     dashboardSources.close();
     prompts.close();

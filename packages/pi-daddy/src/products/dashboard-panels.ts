@@ -312,7 +312,12 @@ export function sessionDashboardItems(options: DashboardScreenOptions): Dashboar
     ...input,
     ...components.filter(needsUserInput),
     ...(ownerTurn && !parentShown
-      ? [row(ownerTurn, `owner:${observed.generation}:${ownerTurn.id}`, "Pi owner", staleOwner)]
+      ? [
+          {
+            ...row(ownerTurn, `owner:${observed.generation}:${ownerTurn.id}`, "Pi owner", staleOwner),
+            ...(ownerTurn.state === "settled" && !staleOwner ? { label: "Pi turn ended", status: "turn-ended" } : {}),
+          },
+        ]
       : []),
     ...tasks,
     ...bookieOpenChoices(options),
@@ -386,7 +391,7 @@ function workGroup(item: DashboardItem): string {
   if (item.status === "dependency-wait") return "Waiting on a dependency";
   if (item.status === "incomplete") return "Outcome unknown";
   if (["running", "active", "starting", "authorised", "cancel-requested"].includes(item.status)) return "In progress";
-  if (["settled", "completed", "finished", "cancelled", "failed", "refused"].includes(item.status))
+  if (["turn-ended", "settled", "completed", "finished", "cancelled", "failed", "refused"].includes(item.status))
     return "Recently finished";
   return "Other tasks";
 }

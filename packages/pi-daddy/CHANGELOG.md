@@ -1,5 +1,12 @@
 # Changelog — pi-daddy
 
+## 0.59.0 — 2026-11-16
+
+- Compatible workflow extensions can inspect an exact older operation after an update or `/new` without adopting its owner or repeating work. Saved finals retain their original evidence; a confirmed pre-launch stop remains distinct from missing or interrupted records. Current access and cleanup are checked separately, and absent history never authorizes a retry.
+
+- Delegation now distinguishes a missing agent name from a stale definition. Copy the `delegationArguments` returned by `delegate_describe` together, then add the task. Invalid definition arguments are checked before admission, so correcting a malformed batch does not consume earlier operation IDs.
+- Overview distinguishes **Pi turn ended** from completed child work. Failed actions remain visible in Activity; ending a reply does not claim that the last workflow action succeeded or create a request for your attention.
+
 ## 0.58.0 — 2026-11-16
 
 - Overview separates **Memory** and **Research**, with useful saved topics from compatible Bookie and Scout versions. Select a row and press Enter to browse summaries, findings and gaps; exact source references stay under source details.

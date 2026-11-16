@@ -3,7 +3,11 @@ import { operationIdShape, claimDelegationOperation } from "./delegation-operati
 import { publicEvidenceCall } from "./public-evidence.ts";
 import { executionEvidenceContent } from "./execution-evidence.ts";
 import { reconcileDelegationCapacity, reserveDelegationCapacity } from "./session-capacity.ts";
-import { registerDefinitionDescribe } from "./definition-describe.ts";
+import {
+  assertDefinitionInputsBeforeAdmission,
+  definitionIdDescription,
+  registerDefinitionDescribe,
+} from "./definition-describe.ts";
 /**
  * Governed delegation, as pi sees it: the `delegate` and `delegate_all` tool registrations.
  *
@@ -171,7 +175,8 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
    */
   const describeAgent = (names: string[]) =>
     `Name of a definition to spawn — its allowed-tools become the grant and its instructions ` +
-    `become the sub-agent's system prompt. Available: ${names.join(", ") || "none"}.`;
+    `become the sub-agent's system prompt. Copy this together with definitionId from delegate_describe.delegationArguments. ` +
+    `Available: ${names.join(", ") || "none"}.`;
 
   const correlationShape = buildCorrelationShape();
   const workspaceShape = Type.Object({
@@ -193,9 +198,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
   );
   const childShape = Type.Object({
     operation_id: operationIdShape(),
-    definitionId: Type.Optional(
-      Type.String({ description: "Snapshot id returned by delegate_describe; required for Principal phases." }),
-    ),
+    definitionId: Type.Optional(Type.String({ description: definitionIdDescription })),
     dashboardSummary: Type.Optional(Type.String({ maxLength: 160, description: dashboardSummaryDescription })),
     task: Type.String({ description: "The task for this sub-agent. It receives only this." }),
     agent: Type.Optional(Type.String({ description: describeAgent(spawnable()) })),
@@ -217,9 +220,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
 
   const delegateParams = Type.Object({
     operation_id: operationIdShape(),
-    definitionId: Type.Optional(
-      Type.String({ description: "Snapshot id returned by delegate_describe; required for Principal phases." }),
-    ),
+    definitionId: Type.Optional(Type.String({ description: definitionIdDescription })),
     dashboardSummary: Type.Optional(Type.String({ maxLength: 160, description: dashboardSummaryDescription })),
     task: Type.String({ description: "The task for the sub-agent. It receives only this." }),
     agent: Type.Optional(Type.String({ description: describeAgent(spawnable()) })),
@@ -257,6 +258,8 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
     prepareArguments: withoutRetiredDelegationArguments,
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
       assertDelegationAuthority(session);
+      await session.ensureDefinitions?.();
+      assertDefinitionInputsBeforeAdmission(session, [params]);
       // ADR-0032: one child, same block. `_onUpdate` was discarded here, so a delegation showed the bare word
       // `delegate` for up to DEFAULT_TIMEOUT_MS — sixty minutes by default.
       const progress = progressReporter(session, [params.agent ?? "delegate"], onUpdate as never);
@@ -356,6 +359,9 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
       assertDelegationAuthority(session);
       const children = params.children ?? [];
+      // Correctable definition inputs must not consume earlier siblings' operation IDs.
+      await session.ensureDefinitions?.();
+      assertDefinitionInputsBeforeAdmission(session, children);
       if (session.capacityRefusal) throw new GovernanceRefusal(session.capacityRefusal);
       await reconcileDelegationCapacity(session);
       const occurrences = children.map((_, index) => newDelegationOccurrence(session, index));

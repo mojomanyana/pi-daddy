@@ -10,6 +10,8 @@ const clean = (value: string) =>
     .trim();
 
 export function activityTaskTitle(task: TimelineTask): string {
+  if (activityTaskStatus(task) === "turn-ended")
+    return task.trigger?.type === "custom" ? "Extension turn ended" : "Pi turn ended";
   const lastAction = task.lastEvent?.kind === "tool_started" || task.status !== "active";
   const observed = lastAction
     ? (safeDashboardSummary(task.lastPurpose) ?? (task.lastEvent?.tool ? toolPurpose(task.lastEvent.tool) : undefined))
@@ -20,6 +22,11 @@ export function activityTaskTitle(task: TimelineTask): string {
   if (task.trigger?.type === "custom") return "Handle an extension request";
   if (task.status === "finished") return "Pi finished its turn";
   return task.status === "active" ? "Pi is working on your request" : "Pi handled your request";
+}
+
+/** A settled parent response says nothing about delivery; child execution outcomes remain distinct. */
+export function activityTaskStatus(task: TimelineTask): string {
+  return !task.agent && !task.parentTaskId && task.status === "finished" ? "turn-ended" : task.status;
 }
 
 /** Ledger entries retain authoritative state and identity. Only the same owner's matching execution may add a title. */
@@ -55,7 +62,7 @@ export function activityStoryItems(
       if (raw === "agent_start" || raw === "agent_end") starts.clear();
       stories.push({
         events: [event],
-        label: raw === "agent_start" ? "Pi started a turn" : raw === "agent_end" ? "Pi finished its turn" : raw,
+        label: raw === "agent_start" ? "Pi started a turn" : raw === "agent_end" ? "Pi turn ended" : raw,
         status: "observed",
         calls: 1,
       });

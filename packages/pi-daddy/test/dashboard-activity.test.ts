@@ -104,7 +104,7 @@ test("Activity pairs interleaved hooks by call and collapses repeated successes 
   assert.deepEqual(
     rows.map((r) => [r.label, r.status]),
     [
-      ["Pi finished its turn", "observed"],
+      ["Pi turn ended", "observed"],
       ["Read a project file (×2)", "finished"],
       ["Review cache behavior", "finished"],
       ["Run the project tests", "finished"],

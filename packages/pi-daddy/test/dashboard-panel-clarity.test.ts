@@ -319,7 +319,7 @@ test("a settled chat turn without an explicit input event reports only the dashb
   o.session!.observation!.turn = { id: "turn:1", kind: "work", state: "settled", label: "Pi finished its turn" };
   const frame = renderDashboardScreen(o);
   assert.match(frame, /No pending dashboard requests\./);
-  assert.match(frame, /Pi finished its turn · Finished/);
+  assert.match(frame, /Pi turn ended · Ended/);
   assert.doesNotMatch(frame, /No decision requested from you|No (?:input|response) needed|Needs your input/i);
 });
 

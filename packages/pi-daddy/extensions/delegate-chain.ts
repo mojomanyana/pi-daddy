@@ -2,7 +2,7 @@ import { dashboardSummaryDescription } from "../src/products/activity-summary.ts
 import { operationIdShape, claimDelegationOperation, existingOperationOutcome } from "./delegation-operations.ts";
 import { publicEvidenceCall } from "./public-evidence.ts";
 import { executionEvidenceContent } from "./execution-evidence.ts";
-import { assertDefinitionIdentity } from "./definition-describe.ts";
+import { assertDefinitionInputsBeforeAdmission, definitionIdDescription } from "./definition-describe.ts";
 /**
  * `delegate_chain` — a governed sequential pipeline, planned and gated as one unit (ADR-0033).
  *
@@ -84,16 +84,18 @@ function mergeGateOutcomes(outcomes: readonly ApprovalOutcome[]): ApprovalOutcom
 export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): void {
   const stepShape = Type.Object({
     operation_id: operationIdShape(),
-    definitionId: Type.Optional(
-      Type.String({ description: "Snapshot id returned by delegate_describe; required for Principal phases." }),
-    ),
+    definitionId: Type.Optional(Type.String({ description: definitionIdDescription })),
     dashboardSummary: Type.Optional(Type.String({ maxLength: 160, description: dashboardSummaryDescription })),
     task: Type.String({
       description:
         `What this step should do. Write ${PLACEHOLDER} where the previous step's output belongs; if you omit it, ` +
         `that output is appended instead. The first step never receives one.`,
     }),
-    agent: Type.Optional(Type.String({ description: "Definition to spawn for this step." })),
+    agent: Type.Optional(
+      Type.String({
+        description: "Definition for this step; copy with definitionId from delegate_describe.delegationArguments.",
+      }),
+    ),
     tools: Type.Optional(Type.Array(Type.String(), { description: "Capabilities, when no 'agent' fits." })),
     model: Type.Optional(Type.String({ description: "Model as provider/id. Defaults to this session's." })),
     thinking: Type.Optional(
@@ -136,7 +138,7 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
       assertDelegationAuthority(session);
       const steps = args.steps ?? [];
       await session.ensureDefinitions?.();
-      for (const step of steps) assertDefinitionIdentity(session, step);
+      assertDefinitionInputsBeforeAdmission(session, steps);
 
       // **Every cheap refusal happens before any human is asked.** Yesterday's lesson on the `delegate` path: with
       // `PI_DADDY_HERDR=1` and herdr down, the gate ran first, an operator approved `bash`, a 30-day entry was

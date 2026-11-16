@@ -198,6 +198,16 @@ it measured nothing rather than passing quietly.
 
 ## Decisions still in force
 
+### 2026-11-16 — Correctable delegation inputs and honest turn completion
+
+Describe returns exact agent and definition ID together in `delegationArguments`.
+Validate every supplied definition pair before claiming any batch operation; an ordinary
+argument correction must not consume earlier siblings' identities. Keep dispatch-time
+source, grant, ownership, admission and cleanup checks. Never infer a missing agent or
+replace a stale identity silently. A normally settled parent turn is shown as ended,
+not as successful execution of its last tool action. Retain failed actions separately;
+only current permission, input and review requests ask for user attention.
+
 **2026-11-16 — current status and useful saved content are separate terminal observations.**
 The visible dashboard requests bounded, coalesced producer refresh independent of open choices. Only an
 accepted producer report renews its timestamp; connection traffic does not establish health. Producer callbacks
@@ -1290,3 +1300,21 @@ Permission requests, explicit input waits and pending review decisions draw atte
 ### 2026-11-10 — A saved interactive /new starts a fresh parent in the same folder
 
 The matching outgoing and incoming Pi lifecycle events identify the replacement. The new owner binds its own controls and uses the original launch settings. A previous session’s Auto toggle, approvals and project memory access never authorize the new one.
+
+
+### 2026-11-16 — Exact historical prepared-operation observation
+
+A trusted current workflow consumer may inspect one original session/cwd/operation through
+`pi-daddy:operation-recovery:v1`. The native requester remains distinct from the historical source;
+the selected cwd must match, and the consumer revalidates its retained request and access before
+and after asynchronous inspection. Reads create no artifact directories, acquire no old owner,
+start no child and supply no continuation authority. Retained artifact identity is rechecked before
+disclosure, and closing or replacing the bridge invalidates pending observations.
+
+Keep admission, terminal result, native final and current cleanup as separate facts. Only a matching
+immutable not-started terminal record with explicit noncontradictory no-start evidence establishes
+`noStartProven`; missing records and cleanup-only evidence do not. A saved complete final can be
+historical evidence while its current cleanup receipt remains unavailable. The original immutable
+admission continues to prevent exact-ID replay. A compatible consumer owns current authorization,
+source reconciliation and any fresh successor election. No legacy absence tombstone, owner transfer,
+semantic approval or model-supplied execution fact is introduced.
