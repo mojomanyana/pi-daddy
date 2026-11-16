@@ -367,13 +367,15 @@ const workGroups = [
   "Other tasks",
   "Recently finished",
   "Last known",
-  "Tools",
+  "Memory",
+  "Research",
 ];
 export function needsUserInput(item: DashboardItem): boolean {
   return !item.reviewSummary && ["needs-you", "approval-wait"].includes(item.status);
 }
 function workGroup(item: DashboardItem): string {
-  if (item.key.startsWith("component:")) return needsUserInput(item) ? "Needs your decision" : "Tools";
+  if (item.key.startsWith("component:"))
+    return needsUserInput(item) ? "Needs your decision" : item.key === "component:bookie" ? "Memory" : "Research";
   if (item.key.startsWith("activity:")) return "Latest activity";
   if (["last-observed", "historical"].includes(item.status)) return "Last known";
   if (needsUserInput(item)) {
@@ -449,7 +451,11 @@ export function sessionPanelLines(options: DashboardScreenOptions, items: Dashbo
     if (roomy && (rows.length || lines.length)) rows.push("");
     const count = destination === "now" ? "" : ` · ${end - start}`;
     rows.push(sectionHeading(group + count, left ?? width));
-    for (const item of items.slice(start, end)) rows.push(rowText(item, destination, item.key === screen.selectedKey));
+    for (const item of items.slice(start, end)) {
+      rows.push(rowText(item, destination, item.key === screen.selectedKey));
+      for (const line of (item.previewLines ?? []).slice(0, options.height >= 28 ? 3 : 2))
+        rows.push(`    ${clean(line)}`);
+    }
     start = end;
   }
   lines.push(...rows);

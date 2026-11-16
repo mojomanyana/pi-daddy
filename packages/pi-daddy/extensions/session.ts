@@ -156,6 +156,7 @@ export interface GrantsSession extends NativeSessionHost {
   dashboardArtifacts?: DashboardSavedEvidence[];
   dashboardChoices?: ReturnType<typeof import("./dashboard-choice-controls.ts").registerDashboardChoiceOwner>;
   dashboardObservations?: () => Omit<DashboardOwnerObservation, "version" | "resources" | "capture"> | undefined;
+  dashboardRefreshSources?: () => boolean;
   autoMode?: AutoModeReader;
   autoModeFailure?: string;
   /** Reconciled from the actual owner root on reload; captured call owners stay immutable. */

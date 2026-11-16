@@ -29,6 +29,8 @@ export interface DashboardItem {
   updatedAt?: string;
   details: string[];
   briefDetails?: string[];
+  previewLines?: string[];
+  browse?: boolean;
   reviewSummary?: boolean;
   relatedReviewKey?: string;
   observation?: string;
@@ -249,7 +251,8 @@ function sessionKeys(screen: DashboardScreenState, selected: DashboardItem | und
   if (view === "choice") return choiceKeys(screen);
   if (view === "main") {
     if (selected?.choice) return ["↑↓ select · Enter answer", "d details · q close"];
-    const keys = selected ? (brief ? "↑↓ · Enter details" : "↑↓ select · Enter details") : "1–6 views";
+    const action = selected?.browse ? "browse" : "details";
+    const keys = selected ? (brief ? `↑↓ · Enter ${action}` : `↑↓ select · Enter ${action}`) : "1–6 views";
     return [keys + (brief ? " · ?" : " · ? help"), "r recap · q close"];
   }
   if (view === "versions" || view === "settings")
@@ -522,9 +525,13 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
             sectionHeading(
               screen.sourceDetails
                 ? "SOURCE RECORD"
-                : (selected.briefDetails && selected.status === "approval-wait") || selected.approval
-                  ? "NEXT ACTION"
-                  : "DETAILS",
+                : selected.browse
+                  ? selected.key === "component:bookie"
+                    ? "SAVED NOTES"
+                    : "SAVED RESEARCH"
+                  : (selected.briefDetails && selected.status === "approval-wait") || selected.approval
+                    ? "NEXT ACTION"
+                    : "DETAILS",
               width,
             ),
           ]

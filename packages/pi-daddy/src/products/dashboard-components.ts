@@ -9,12 +9,15 @@ import { validChoiceId } from "../kernel/dashboard-choice.ts";
 import { isBookieChoice } from "../kernel/dashboard-observation.ts";
 import type { EcosystemVersionRow } from "./ecosystem-versions.ts";
 import { safeDashboardSummary } from "./activity-summary.ts";
+import { inventoryPresentation, observationAge } from "./dashboard-inventory-view.ts";
 
 const BOOKIE_LIMIT_MESSAGE = "Only a bounded selection of saved open choices could be displayed.";
 
 type KnownSource = "bookie" | "scout-local" | "scout-worker";
 
 export function isComponentObservation(source: DashboardSourceSnapshot, item: DashboardContribution): boolean {
+  if (["bookie-memory", "scout-local", "scout-worker"].includes(source.producer) && item.id === "availability")
+    return item.kind === "status";
   if (source.producer === "bookie-memory") return item.id === "project-memory" && item.kind === "work";
   return (
     (source.producer === "scout-local" || source.producer === "scout-worker") &&
@@ -71,6 +74,15 @@ function scoutDescription(worker: boolean, item: DashboardContribution): [string
   }
 }
 
+function memoryDescription(item: DashboardContribution | undefined, partial: boolean): [string, string] {
+  if (item?.state === "observed")
+    return ["Ready in this folder", "Bookie can save and recall routine notes for this workspace."];
+  return [
+    item?.state === "unavailable" ? "Memory unavailable" : partial ? "Notes partially checked" : "Cannot check notes",
+    item?.details?.[0] ?? "The current project notes could not be checked. Previous history is not confirmed empty.",
+  ];
+}
+
 /** Choices are current project observations; a saved question never creates a live input request. */
 export function bookieOpenChoices(options: DashboardScreenOptions): DashboardItem[] {
   const source = options.session?.observation?.sources.find((s) => s.producer === "bookie-memory");
@@ -125,8 +137,7 @@ function componentItem(producer: KnownSource, options: DashboardScreenOptions): 
   const workSource = sources?.find((s) => s.producer === producer);
   const memory = bookie
     ? sources?.find(
-        (s) =>
-          s.producer === "bookie-memory" && s.items.some((i) => isComponentObservation(s, i) && i.state === "observed"),
+        (s) => s.producer === "bookie-memory" && s.items.some((i) => isComponentObservation(s, i) && i.kind === "work"),
       )
     : undefined;
   const source =
@@ -134,27 +145,48 @@ function componentItem(producer: KnownSource, options: DashboardScreenOptions): 
 
   const pkg = options.session?.versions?.rows.find((r) => r.id === (bookie ? "bookie-pi-skills" : "pi-scout-research"));
   if (!source && !(pkg?.source || pkg?.loadedVersion || pkg?.installedVersion || pkg?.state === "multiple")) return;
-  const item = source?.items.find((i) => isComponentObservation(source, i));
+  const item = source?.items.find((i) => isComponentObservation(source, i) && i.kind === "work");
+  const availability = source?.items.find((i) => i.id === "availability" && i.kind === "status");
   let state = "observed",
     status: string,
     explanation: string;
   if (
     options.connected === false ||
+    source?.refresh?.state === "failed" ||
     (source &&
       !current(source, options) &&
       !(source.producer === "bookie-memory" && options.session?.auto.enabled === false))
   ) {
     state = "last-observed";
-    status = "Live status unknown";
+    status =
+      options.connected === false
+        ? "Disconnected"
+        : source?.availability === "closed"
+          ? "Status connection ended"
+          : source?.refresh?.state === "checking"
+            ? "Checking status"
+            : source?.refresh?.state === "failed"
+              ? "Status check unavailable"
+              : "Status update overdue";
     const lastReport =
       source?.producer === "bookie-memory"
-        ? "Ready in this folder"
+        ? memoryDescription(item, source.inventory?.state === "available")[0]
         : item
           ? scoutDescription(worker, item)[0]
           : bookie && source?.items.some((i) => i.kind === "goal" && i.id === "scope")
             ? "Project connected"
             : undefined;
-    explanation = (lastReport ? `Last report: ${lastReport}. ` : "") + "Check the main Pi chat for current status.";
+    explanation =
+      (lastReport ? `Last report: ${lastReport}. ` : "") +
+      (options.connected === false
+        ? "Reconnect to Pi to check current availability."
+        : source?.availability === "closed"
+          ? "The producer's status connection is no longer active."
+          : source?.refresh?.state === "checking"
+            ? "A fresh status check is in progress."
+            : source?.refresh?.state === "failed"
+              ? "The producer could not return a current report; a later refresh can try again."
+              : "The previous report expired. Current availability has not yet been rechecked.");
   } else if (
     bookie &&
     options.session &&
@@ -171,11 +203,15 @@ function componentItem(producer: KnownSource, options: DashboardScreenOptions): 
           : "Auto starts off by default.";
     explanation = `${origin} Turn Auto on in Settings for automatic notes in this folder, or use /bookie-context to select memory manually. A session toggle does not change the startup setting.`;
   } else if (source?.producer === "bookie-memory") {
-    status = "Ready in this folder";
-    explanation = "Bookie can save and recall routine notes for this workspace.";
+    state = item?.state ?? "unknown";
+    [status, explanation] = memoryDescription(item, source.inventory?.state === "available");
   } else if (bookie && source?.items.length) {
     status = "Project connected";
     explanation = "Bookie is sharing the selected project’s work with Pi.";
+  } else if (availability) {
+    state = availability.state;
+    status = availability.label;
+    explanation = availability.details?.[0] ?? "Current availability reported by Scout.";
   } else if (item) {
     state = item.state;
     [status, explanation] = scoutDescription(worker, item);
@@ -197,17 +233,29 @@ function componentItem(producer: KnownSource, options: DashboardScreenOptions): 
   const isMemory = source?.producer === "bookie-memory";
   const limited =
     isMemory && state === "observed" && options.session?.auto.enabled && sourceDetails.includes(BOOKIE_LIMIT_MESSAGE);
-  const briefDetails = limited
+  const explanationLines = limited
     ? [explanation, "Bookie could only show part of this project’s open choices."]
     : [explanation];
+  const canShowInventory = source && current(source, options) && (!bookie || options.session?.auto.enabled);
+  const showInventory = canShowInventory && source.refresh?.state !== "failed";
+  const inventory = inventoryPresentation(showInventory ? source.inventory : undefined);
+  const age = observationAge(source, options.now?.getTime() ?? Date.now());
+  const briefDetails = [
+    ...explanationLines,
+    ...(source?.inventory || state === "last-observed" ? [age] : []),
+    ...inventory.content,
+  ];
   return {
     key: `component:${producer}`,
     label: `${title} · ${status}`,
     status: state,
     elapsed: "",
     briefDetails,
+    ...(source?.inventory && showInventory ? { browse: true, previewLines: inventory.preview } : {}),
     details: [
       ...briefDetails,
+      age,
+      ...inventory.references,
       ...(source
         ? [`Source: ${source.producer} · ${source.producerVersion}`, `Last update: ${source.observedAt}`]
         : []),

@@ -50,17 +50,19 @@ function paintCell(cell: string): string {
     );
   }
   if (/^  /.test(text)) {
-    const status =
-      /( · )(Failed|Blocked|Run failed|Last attempt failed|Unavailable|Awaiting decision|Needs you|Live status unknown|Running|Finished|Saved|Available)(?= |$| ·)/;
+    const status = new RegExp(
+      "( · )(Failed|Blocked|Run failed|Last attempt failed|Unavailable|Awaiting decision|Needs you|" +
+        "Disconnected|Checking status|Status update overdue|Status check unavailable|Running|Finished|Saved|Available|Ready[^·]*)(?= |$| ·)",
+    );
     return (
       text.replace(status, (_, separator, state) => {
         const color = /^(Failed|Blocked|Last attempt failed|Run failed)$/.test(state)
           ? "90"
           : state === "Unavailable"
             ? "1;31"
-            : /Awaiting|Needs you|unknown/.test(state)
+            : /Awaiting|Needs you|Disconnected|overdue|unavailable/.test(state)
               ? "33"
-              : state === "Running"
+              : /Running|Checking/.test(state)
                 ? "36"
                 : "32";
         return separator + sgr(state, color);

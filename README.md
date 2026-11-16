@@ -20,7 +20,16 @@ previous operation is proven settled or never started; uncertainty stays blocked
 Principal 4.12.0 introduced automatic operation IDs and exact candidate/report references for this contract.
 
 The dashboard shows the selected task's last observed tool event and time since that event.
-With Auto on in a trusted interactive project, a compatible Bookie can save and recall routine notes for the current folder. Look for **Bookie memory · Ready in this folder** under Overview → Tools. With a Bookie version that reports saved choices, Overview and Tasks list them under **Open choices**. Turning Auto off withdraws automatic memory access and hides those choices.
+With Auto on in a trusted interactive project, a compatible Bookie can save and recall routine notes for the current folder. Look for **Bookie memory · Ready in this folder** under Overview → Memory. With a Bookie version that reports saved choices, Overview and Tasks list them under **Open choices**. Turning Auto off withdraws automatic memory access and hides those choices.
+
+**Memory** and **Research** show what compatible tools can currently access and a short preview of saved topics.
+Select a row and press **Enter** to browse its summaries and gaps; press **x** in details for exact source references.
+An empty inventory, unavailable access, a bounded selection and an unchecked worker are labelled separately.
+Saved research can still be useful when Docker is unavailable, and partial findings stay marked partial.
+The visible dashboard refreshes these reports while idle, independently of saved choices. It does not start
+research, model calls or note writes. A failed check shows the last update and an explanation; disconnected
+or expired access hides content until it can be checked again. Older producers continue to show their existing
+status rows until updated to support content browsing.
 Details include the actual recorded working directory and phase where available. Silence is
 not proof of a hang, and a finished process is not an approved task. Tool observations include names, times, local call references and bounded descriptions of the action.
 A delegating model can supply a short public `dashboardSummary` during its usual call. Metadata-only and off modes omit this model-authored text. Diagnostic retention remains operator opt-in.

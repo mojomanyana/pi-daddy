@@ -36,6 +36,7 @@ export function registerRuntimeSnapshot(
       : undefined,
   );
   session.dashboardObservations = () => dashboardSources.snapshot();
+  session.dashboardRefreshSources = () => dashboardSources.requestRefresh();
   session.dashboardChoices = dashboardSources.choices;
   session.dashboardLive = registerDashboardLive(pi, () =>
     bound?.lifecycle === session.reloadLifecycle && session.reloadLifecycle.runtimeSnapshotGeneration === generation

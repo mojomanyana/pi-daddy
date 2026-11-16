@@ -382,6 +382,7 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
       ["now", "work"].includes(display.screen.destination ?? "now");
     await connection.refresh(
       interactive && editingChoice ? "picker" : interactive && showsChoices ? "list" : undefined,
+      interactive,
     );
     const jev = connection.state.snapshot?.settings?.jev;
     if (notice === JEV_CONSENT_NOTICE && jev && !jev.pending) notice = dashboardJevNotice(jev);

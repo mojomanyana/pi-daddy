@@ -198,6 +198,15 @@ it measured nothing rather than passing quietly.
 
 ## Decisions still in force
 
+**2026-11-16 — current status and useful saved content are separate terminal observations.**
+The visible dashboard requests bounded, coalesced producer refresh independent of open choices. Only an
+accepted producer report renews its timestamp; connection traffic does not establish health. Producer callbacks
+must be cancelable metadata reads with no model, research or note-write work. Owner replacement, disconnection
+and revoked access cannot keep old content current. Negotiated inventory is a separate bounded terminal-only
+projection: scoped titles, summaries, findings and gaps, with exact references under source details. It neither
+injects context into the model nor grants model-facing read permission. Saved research, current worker readiness
+and the latest run outcome remain distinct. Keep legacy producers working without invented inventory or counts.
+
 **2026-11-13 — child delivery is checked separately from parent permission.** The current public Pi tool
 origins must identify a qualified native tool or Daddy's own explicit governance entrypoint before an
 authorized request can ask for approval. External extension, MCP and SDK-only tools are refused instead of
