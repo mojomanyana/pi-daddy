@@ -30,7 +30,7 @@ const settings = {
   cacheWarming: "off" as const,
 };
 
-export async function recoveryFixture() {
+export async function recoveryFixture(options: { childExtension?: string } = {}) {
   const principal = process.env.PRINCIPAL_CANDIDATE;
   assert.ok(principal, "PRINCIPAL_CANDIDATE is required");
   // Each fixture is a fresh process root; inherited child publication from another test is not its launch policy.
@@ -80,7 +80,7 @@ export async function recoveryFixture() {
           "--allow-empty",
         ]);
         const cli = fileURLToPath(new URL("./cli.js", import.meta.resolve("@earendil-works/pi-coding-agent")));
-        const child = fileURLToPath(new URL("./native-phase-extension.ts", import.meta.url));
+        const child = fileURLToPath(new URL(options.childExtension ?? "./native-phase-extension.ts", import.meta.url));
         await writeFile(
           join(root, "bin/pi"),
           `#!/bin/sh\nprintf 'launch\\n' >> ${quote(join(root, "bin/launches"))}\nexec ${quote(process.execPath)} ${quote(cli)} -e ${quote(child)} "$@"\n`,
