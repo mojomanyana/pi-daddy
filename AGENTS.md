@@ -198,6 +198,15 @@ it measured nothing rather than passing quietly.
 
 ## Decisions still in force
 
+### 2026-11-16 — Tool inventory observations precede settled availability claims
+
+Before the first native callable-tool observation, an unknown extension capability in the startup summary
+is pending discovery, not evidence of an uninstalled package. Refresh the catalog before reporting the
+settled summary; `/new` must observe again. This is presentation only: the real planner still refuses
+unknown, hidden, denied or gated capabilities. Parent availability does not qualify a child provider.
+Name unsupported child delivery explicitly and keep such work in the parent session. Synthetic terminal
+fixtures use the shipped renderer but do not establish human usability or live producer health.
+
 ### 2026-11-16 — Correctable delegation inputs and honest turn completion
 
 Describe returns exact agent and definition ID together in `delegationArguments`.

@@ -20,18 +20,21 @@
  * grant it classifies against is the one *inherited*; `deriveOwnGrant` narrows it to the observed tool
  * surface only when a request is made, and a definition counted spawnable here can be refused afterwards if
  * its ceiling names a tool this session turns out not to have (R-75, measured live). It is an upper bound,
- * and `/grants` run after any request is the settled answer.
+ * and a first-request refresh reports the settled answer. Unknown extension tools are presented as still
+ * being checked until that native observation arrives; this never changes what dispatch permits.
  */
 
 import type { SkillDefinition } from "../src/kernel/definitions.ts";
 import type { GatedPlan } from "./run-delegation.ts";
 
-/** Why a definition is not spawnable right now. Three causes, three different fixes. */
+/** Why a definition is not spawnable right now; display never changes the planner's refusal. */
 export type WithheldReason =
   /** The grant lacks `agent:<name>`, or lacks a tool the ceiling declares. Fix: widen `PI_DADDY_GRANT`. */
   | "capability"
   /** Everything is held, but a gated capability needs a human yes first. Fix: spawn it and answer. */
   | "approval"
+  /** A parent's registered tool has no qualified child provider. More permission does not fix it. */
+  | "child-provider"
   /** Anything else the planner refused — the file, an unknown capability, an unresolvable skill. */
   | "declaration";
 
@@ -47,6 +50,8 @@ export interface WithheldDefinition {
 export interface SpawnableSummary {
   spawnable: string[];
   withheld: WithheldDefinition[];
+  /** Extension capabilities have not been observed yet; this is not an installation failure. */
+  awaitingTools?: string[];
   /**
    * Set when NOTHING can be spawned for a reason about the SESSION rather than about any definition — no
    * `tool:delegate`, or a depth bound that forbids spawning. Per-definition work is skipped entirely.
@@ -77,6 +82,8 @@ export interface SessionFacts {
   mayDelegate: boolean;
   depth: number;
   maxDepth: number;
+  /** Omitted by callers with an already-settled planner; false only before native tool observation. */
+  toolsObserved?: boolean;
 }
 
 /**
@@ -129,11 +136,25 @@ export async function summariseSpawnable(
 
   const spawnable: string[] = [];
   const withheld: WithheldDefinition[] = [];
+  const awaitingTools: string[] = [];
 
   for (const name of names.slice(0, PREVIEW_LIMIT)) {
     const { plan } = await preview(name);
     if (plan.ok) {
       spawnable.push(name);
+      continue;
+    }
+    // The initial catalog contains built-ins before Pi exposes its callable extension tools. Preserve
+    // the refusal for dispatch, but do not tell the human that an unobserved package is uninstalled.
+    // Only the catalog's own unknown-tool diagnosis is provisional; other refusals stay explicit.
+    if (
+      session.toolsObserved === false &&
+      plan.refusal?.code === "UNKNOWN_TOOL" &&
+      /^unknown capabilit(?:y|ies): (?:tool|ext):[^\s,]+(?:, (?:tool|ext):[^\s,]+)* — not present in this session's catalog/.test(
+        plan.reason ?? "",
+      )
+    ) {
+      awaitingTools.push(name);
       continue;
     }
     // Read off the plan's own result, in the order `planDelegation` decides them: an escalation is reported
@@ -144,13 +165,25 @@ export async function summariseSpawnable(
     const gated = plan.result.gatedBlocked;
     if (denied.length > 0) withheld.push({ name, reason: "capability", missing: [...denied].sort() });
     else if (gated.length > 0) withheld.push({ name, reason: "approval", missing: [...gated].sort() });
+    else if (plan.refusal?.details?.kind === "child-tool-unavailable")
+      withheld.push({
+        name,
+        reason: "child-provider",
+        missing: String(plan.refusal.details.tools).split(","),
+        reasonText: plan.reason,
+      });
     // Everything else: say what the ENFORCER said. Inventing a category here is what told an operator with
     // an unknown capability, an unresolvable `skill:`, or a universal capability that their file was
     // written wrong, in wording that contradicted `/grants` on the same screen.
     else withheld.push({ name, reason: "declaration", missing: [], reasonText: plan.reason });
   }
 
-  return { spawnable, withheld, notChecked: Math.max(0, names.length - PREVIEW_LIMIT) };
+  return {
+    spawnable,
+    withheld,
+    ...(awaitingTools.length ? { awaitingTools } : {}),
+    notChecked: Math.max(0, names.length - PREVIEW_LIMIT),
+  };
 }
 
 /** `a, b, c` — or the first few and a count, so a large skill root does not become the whole line. */
@@ -198,6 +231,8 @@ export function renderSpawnableSummary(summary: SpawnableSummary, total: number)
     // ADR-0024: a gated `agent:` id is the PARENT's authority to run the definition now, and is deliberately
     // kept out of what the child receives. "before a child receives it" was wrong for exactly that case.
     if (w.reason === "approval") return `${name} (needs your approval for ${list(w.missing)})`;
+    if (w.reason === "child-provider")
+      return `${name} (use the parent Pi session; child tools unavailable: ${list(w.missing.map(safeName))})`;
     return `${name} (${w.reasonText ?? "cannot be spawned as its file is written"})`;
   };
 
@@ -205,6 +240,9 @@ export function renderSpawnableSummary(summary: SpawnableSummary, total: number)
     const shown = summary.withheld.slice(0, NAMES_SHOWN).map(clause);
     const extra = summary.withheld.length - shown.length;
     lines.push(`  withheld: ${shown.join("; ")}${extra > 0 ? `; … and ${extra} more` : ""}`);
+  }
+  if (summary.awaitingTools?.length) {
+    lines.push(`  checking available tools: ${list(summary.awaitingTools.map(safeName))} — updates when work starts`);
   }
   if (summary.notChecked > 0) {
     lines.push(`  ${summary.notChecked} more not checked (first ${PREVIEW_LIMIT} only) — /grants lists them`);

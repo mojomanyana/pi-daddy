@@ -384,7 +384,7 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
   });
 
   // Observe the native reachable tool surface, including callable tools whose declarations Codemode hides.
-  pi.on("before_provider_request", (event, ctx) => {
+  pi.on("before_provider_request", async (event, ctx) => {
     try {
       if (session.observed) return undefined;
       const names = observeToolNames(event.payload, pi.getAllTools(), pi.getActiveTools?.());
@@ -393,9 +393,6 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
       session.observedTools = names;
       session.ownGrant = deriveOwnGrant(session.inherited, names);
       session.publishChildEnv();
-      // The grant can only have narrowed, so what is spawnable can only have shrunk. Refreshed for the NEXT
-      // request: this hook runs after the current payload's tools were already serialised.
-      delegation.refreshSpawnable();
       // Refresh the catalog now that the real tool surface is known — this is the only moment extension
       // tools become visible, so it is the only moment `ext:`/`tool:` grants can be validated.
       // Keep the handle: a concurrent `delegate` awaits this rather than reading a half-built catalog.
@@ -410,6 +407,12 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
       void session.catalogReady.catch((error: unknown) => {
         if (error instanceof BoundedReadCleanupError) recordDiscoveryCleanupFailure(session, error, lifecycle);
       });
+      await session.catalogReady;
+      assertDiscoveryHealthy(session, lifecycle);
+      // Refresh and report only after the catalog includes the observed extension tools. Otherwise the
+      // settled summary can repeat startup's provisional "unknown capability" diagnosis.
+      delegation.refreshSpawnable();
+      await reportSelectedDefinitions(session, ctx);
     } catch {
       /* never throw into the agent loop */
     }

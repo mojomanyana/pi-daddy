@@ -1,5 +1,11 @@
 # Changelog — pi-daddy
 
+## 0.59.1 — 2026-11-17
+
+- Startup no longer reports unobserved extension tools as missing packages. It shows that tool availability is still being checked and refreshes the summary after the first native tool inventory, including after `/new`.
+- A tool available to the parent Pi session is not automatically available to a delegated child. The summary now identifies unsupported child delivery and directs that work to the parent; grants, gates and child-provider restrictions are unchanged.
+- Added reproducible narrow/wide terminal fixtures for current work, genuine permission requests, saved open choices, memory topics and partial research. These check the actual renderer without model calls; human usability and live producer health still require their own observation.
+
 ## 0.59.0 — 2026-11-16
 
 - Compatible workflow extensions can inspect an exact older operation after an update or `/new` without adopting its owner or repeating work. Saved finals retain their original evidence; a confirmed pre-launch stop remains distinct from missing or interrupted records. Current access and cleanup are checked separately, and absent history never authorizes a retry.

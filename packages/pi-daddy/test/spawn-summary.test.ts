@@ -25,6 +25,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { planDelegation } from "../src/kernel/delegate.ts";
+import { classifyToolNames, makeCatalog } from "../src/kernel/catalog.ts";
 import type { SkillDefinition } from "../src/kernel/definitions.ts";
 import type { Capability } from "../src/kernel/resolve.ts";
 import {
@@ -45,6 +46,29 @@ function definition(name: string, allowedTools?: string): SkillDefinition {
 }
 
 const ABLE: SessionFacts = { mayDelegate: true, depth: 0, maxDepth: 2 };
+
+test("an unknown non-tool capability is never hidden behind pending tool inventory", async () => {
+  const definitions = new Map([["mixed", definition("mixed", "Read, skill:missing")]]);
+  const summary = await summariseSpawnable(
+    definitions,
+    async (name) => ({
+      plan: planDelegation(
+        { task: "Inspect", agent: name },
+        {
+          ownGrant: ["agent:*", "tool:*", "skill:*"],
+          gated: [],
+          depth: 0,
+          maxDepth: 2,
+          definitions,
+          catalog: makeCatalog(classifyToolNames(["read"])),
+        },
+      ),
+    }),
+    { ...ABLE, toolsObserved: false },
+  );
+  assert.equal(summary.awaitingTools, undefined);
+  assert.match(summary.withheld[0]?.reasonText ?? "", /skill:missing/);
+});
 
 /** The real planner, wrapped in the shape `summariseSpawnable` consumes. No approvals, no human, no I/O. */
 function previewWith(
