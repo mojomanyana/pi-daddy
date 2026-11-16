@@ -22,6 +22,8 @@ import {
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { maySpawnDefinition } from "../src/kernel/delegate.ts";
+import { ceilingForDefinition } from "../src/kernel/definitions.ts";
+import { childToolDeliveryRefusal, type ChildToolSource } from "../src/kernel/child-tools.ts";
 import { MAX_CHILDREN_PER_CALL, splitBudget } from "../src/kernel/fanout.ts";
 import {
   PAINT_INTERVAL_MS,
@@ -148,14 +150,37 @@ export interface DelegationRegistration {
  */
 export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession): DelegationRegistration {
   /**
-   * Definitions this session is actually authorised to spawn (ADR-0017), for the tool description.
+   * Definitions this session is actually authorised to spawn (ADR-0017) and whose declared tools a governed
+   * child can load, for the tool description.
    *
    * Listing all of them would tell the model it can spawn things every attempt at which is refused — the
    * R-28 shape again, a description disagreeing with the enforcer. Computed from the same
-   * `maySpawnDefinition` the planner uses.
+   * `maySpawnDefinition` the planner uses, and from the same `childToolDeliveryRefusal` over the two inputs
+   * `session.delegationContext` hands it. The planner's per-call `context:` handling adds and removes no
+   * tool name, so the declared ceiling alone decides delivery.
+   *
+   * Both filters only remove names. This runs inside `session_start`, `ensureDefinitions` and the
+   * provider-request hook, so it must not throw: Pi's `getAllTools` asserts a bound, live runtime, and an
+   * unreadable inventory falls back to the planner's own unobserved rule (native tools, nothing external).
+   * The planner re-reads the inventory at dispatch and remains the enforcer.
    */
-  const spawnable = () =>
-    [...session.definitions.keys()].filter((name) => maySpawnDefinition(session.ownGrant, name)).sort();
+  const spawnable = () => {
+    let childToolSources: readonly ChildToolSource[] | undefined;
+    try {
+      childToolSources = session.childToolSources?.();
+    } catch {
+      // Left unobserved, as for a caller that supplies no inventory.
+    }
+    const delivery = { childToolSources, extensionPath: session.extensionPath };
+    return [...session.definitions]
+      .filter(
+        ([name, definition]) =>
+          maySpawnDefinition(session.ownGrant, name) &&
+          !childToolDeliveryRefusal(ceilingForDefinition(definition).capabilities, delivery),
+      )
+      .map(([name]) => name)
+      .sort();
+  };
 
   /**
    * **R-39.** This used to be computed once, right here, and it was always `[]`.
