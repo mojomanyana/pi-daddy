@@ -1,6 +1,6 @@
 # Changelog — pi-daddy
 
-## Unreleased
+## 0.59.1 — 2026-11-17
 
 - Startup no longer reports unobserved extension tools as missing packages. It shows that tool availability is still being checked and refreshes the summary after the first native tool inventory, including after `/new`.
 - A tool available to the parent Pi session is not automatically available to a delegated child. The summary now identifies unsupported child delivery and directs that work to the parent; grants, gates and child-provider restrictions are unchanged.
