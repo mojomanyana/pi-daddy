@@ -156,9 +156,10 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
    *
    * Listing all of them would tell the model it can spawn things every attempt at which is refused — the
    * R-28 shape again, a description disagreeing with the enforcer. Computed from the same
-   * `maySpawnDefinition` the planner uses, and from the same `childToolDeliveryRefusal` over the two inputs
-   * `session.delegationContext` hands it. The planner's per-call `context:` handling adds and removes no
-   * tool name, so the declared ceiling alone decides delivery.
+   * `maySpawnDefinition` the planner uses, and from the same `childToolDeliveryRefusal` over the inputs
+   * `session.delegationContext` hands it: the tool inventory, the extension path, and the parent-run facts
+   * (depth, owner channel and the inventory preview of tools this root can run for a child). The planner's
+   * per-call `context:` handling adds and removes no tool name, so the declared ceiling alone decides delivery.
    *
    * Both filters only remove names. This runs inside `session_start`, `ensureDefinitions` and the
    * provider-request hook, so the delivery filter must not throw: Pi's `getAllTools` asserts a bound, live
@@ -173,7 +174,19 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
     } catch {
       // Left unobserved, as for a caller that supplies no inventory.
     }
-    const delivery = { childToolSources, extensionPath: session.extensionPath };
+    let parentRun: ReturnType<NonNullable<GrantsSession["parentToolContext"]>> | undefined;
+    try {
+      parentRun = session.parentToolContext?.();
+    } catch {
+      // None offered: the planner's preview reads the same inventory and fails the same way.
+    }
+    const delivery = {
+      childToolSources,
+      extensionPath: session.extensionPath,
+      depth: session.depth,
+      autoModeRef: session.autoMode?.reference,
+      ...parentRun,
+    };
     const deliverable = (definition: Parameters<typeof ceilingForDefinition>[0]) => {
       try {
         return !childToolDeliveryRefusal(ceilingForDefinition(definition).capabilities, delivery);
